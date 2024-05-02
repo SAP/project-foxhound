@@ -5,8 +5,9 @@
 
 #include "lib/extras/dec/pgx.h"
 
-#include "gtest/gtest.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace extras {
@@ -23,8 +24,7 @@ TEST(CodecPGXTest, Test8bits) {
   PackedPixelFile ppf;
   ThreadPool* pool = nullptr;
 
-  EXPECT_TRUE(DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(),
-                             SizeConstraints(), &ppf));
+  EXPECT_TRUE(DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), &ppf));
   CodecInOut io;
   EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
 
@@ -51,8 +51,7 @@ TEST(CodecPGXTest, Test16bits) {
   PackedPixelFile ppf;
   ThreadPool* pool = nullptr;
 
-  EXPECT_TRUE(DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(),
-                             SizeConstraints(), &ppf));
+  EXPECT_TRUE(DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), &ppf));
   CodecInOut io;
   EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
 

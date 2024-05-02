@@ -12,10 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <limits>
-#include <scoped_allocator>
+#include <memory>
+#include <ostream>
+#include <set>
+#include <type_traits>
+#include <utility>
 
 #include "gtest/gtest.h"
+#include "absl/base/config.h"
 #include "absl/container/internal/raw_hash_set.h"
 #include "absl/container/internal/tracked.h"
 
@@ -466,6 +474,9 @@ class PAlloc {
   size_t id_ = std::numeric_limits<size_t>::max();
 };
 
+// This doesn't compile with GCC 5.4 and 5.5 due to a bug in noexcept handing.
+#if !defined(__GNUC__) || __GNUC__ != 5 || (__GNUC_MINOR__ != 4 && \
+    __GNUC_MINOR__ != 5)
 TEST(NoPropagateOn, Swap) {
   using PA = PAlloc<char>;
   using Table = raw_hash_set<Policy, Identity, std::equal_to<int32_t>, PA>;
@@ -475,6 +486,7 @@ TEST(NoPropagateOn, Swap) {
   EXPECT_EQ(t1.get_allocator(), PA(1));
   EXPECT_EQ(t2.get_allocator(), PA(2));
 }
+#endif
 
 TEST(NoPropagateOn, CopyConstruct) {
   using PA = PAlloc<char>;

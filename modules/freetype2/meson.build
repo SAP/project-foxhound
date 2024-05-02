@@ -2,7 +2,7 @@
 # Meson project file for FreeType 2
 #
 
-# Copyright (C) 2020-2021 by
+# Copyright (C) 2020-2023 by
 # David Turner, Robert Wilhelm, and Werner Lemberg.
 #
 # This file is part of the FreeType project, and may only be used, modified,
@@ -25,9 +25,9 @@
 
 project('freetype2', 'c',
   meson_version: '>= 0.55.0',
-  default_options: ['default_library=both'],
   version: run_command('builds/meson/extract_freetype_version.py',
-                       'include/freetype/freetype.h').stdout().strip(),
+                       'include/freetype/freetype.h',
+                       check: true).stdout().strip(),
 )
 
 
@@ -35,21 +35,24 @@ project('freetype2', 'c',
 # variable; we thus use an external command to have this functionality
 # with older versions, too.
 
-python = import('python')
-python_exe = python.find_installation(required: true)
+python_exe = find_program('python3')
 
 ft2_so_version = run_command(python_exe,
   files('builds/meson/extract_libtool_version.py'),
   '--soversion',
-  files('builds/unix/configure.raw')).stdout().strip()
+  files('builds/unix/configure.raw'),
+  check: true).stdout().strip()
 
 ft2_pkgconfig_version = run_command(python_exe,
   files('builds/meson/extract_libtool_version.py'),
-  files('builds/unix/configure.raw')).stdout().strip()
+  files('builds/unix/configure.raw'),
+  check: true).stdout().strip()
 
 ft2_includes = include_directories('include')
 
 freetype_includedir = join_paths(get_option('includedir'), 'freetype2')
+
+ft2_defines = []
 
 # Generate a custom `ftmodule.h` version based on the content of
 # `modules.cfg`.
@@ -63,6 +66,7 @@ ftmodule_h = custom_target('ftmodule.h',
   install_dir: join_paths(freetype_includedir, 'freetype/config'),
 )
 ft2_sources = [ftmodule_h]
+ft2_defines += ['-DFT_CONFIG_MODULES_H=<ftmodule.h>']
 
 
 # FreeType 2 modules.
@@ -70,7 +74,8 @@ ft2_sources = [ftmodule_h]
 ft_main_modules = run_command(python_exe,
   files('builds/meson/parse_modules_cfg.py'),
   '--format=main-modules',
-  files('modules.cfg')).stdout().strip().split()
+  files('modules.cfg'),
+  check: true).stdout().strip().split()
 
 ft2_sources += files([
   'src/base/ftbase.c',
@@ -91,7 +96,8 @@ endforeach
 ft_aux_modules = run_command(python_exe,
   files('builds/meson/parse_modules_cfg.py'),
   '--format=aux-modules',
-  files('modules.cfg')).stdout().strip().split()
+  files('modules.cfg'),
+  check: true).stdout().strip().split()
 
 foreach auxmod: ft_aux_modules
   source = auxmod
@@ -117,7 +123,8 @@ endforeach
 base_extensions = run_command(python_exe,
   files('builds/meson/parse_modules_cfg.py'),
   '--format=base-extensions-list',
-  files('modules.cfg')).stdout().split()
+  files('modules.cfg'),
+  check: true).stdout().split()
 
 foreach ext: base_extensions
   ft2_sources += files('src/base/' + ext)
@@ -167,6 +174,7 @@ ft2_public_headers = files([
   'include/freetype/fttrigon.h',
   'include/freetype/fttypes.h',
   'include/freetype/ftwinfnt.h',
+  'include/freetype/otsvg.h',
   'include/freetype/t1tables.h',
   'include/freetype/ttnameid.h',
   'include/freetype/tttables.h',
@@ -182,7 +190,7 @@ ft2_config_headers = files([
   'include/freetype/config/public-macros.h',
 ])
 
-ft2_defines = ['-DFT2_BUILD_LIBRARY=1']
+ft2_defines += ['-DFT2_BUILD_LIBRARY=1']
 
 
 # System support file.
@@ -262,15 +270,49 @@ ftoption_command = process_header_command
 
 
 # external GZip support
-zlib_dep = dependency('zlib',
-  required: get_option('zlib'),
-  fallback: 'zlib')
+zlib_option = get_option('zlib')
 
-if zlib_dep.found()
-  ftoption_command += ['--enable=FT_CONFIG_OPTION_SYSTEM_ZLIB']
+# Backwards-compatible aliases.
+if zlib_option == 'disabled'
+  zlib_option = 'none'
+elif zlib_option == 'enabled'
+  zlib_option = 'auto'
+endif
+
+if zlib_option == 'auto'
+  # First try to find a system installation, otherwise fall back to
+  # the subproject.
+  zlib_dep = dependency('zlib',
+    required: false)
+  if zlib_dep.found()
+    zlib_option = 'system'
+  else
+    zlib_option = 'external'
+  endif
+endif
+
+if zlib_option == 'none'
+  ftoption_command += [ '--disable=FT_CONFIG_OPTION_USE_ZLIB' ]
+elif zlib_option == 'internal'
+  ftoption_command += [ '--enable=FT_CONFIG_OPTION_USE_ZLIB' ]
+elif zlib_option == 'external'
+  ftoption_command += [ '--enable=FT_CONFIG_OPTION_USE_ZLIB' ]
+  zlib_project = subproject('zlib',
+    required: true,
+    default_options: 'default_library=static')
+  zlib_dep = zlib_project.get_variable('zlib_dep')
+  ft2_deps += [zlib_dep]
+elif zlib_option == 'system'
+  zlib_dep = dependency('zlib',
+    required: true)
+  assert(zlib_dep.found(), 'Could not find system zlib installation!')
+  ftoption_command += [
+    '--enable=FT_CONFIG_OPTION_USE_ZLIB',
+    '--enable=FT_CONFIG_OPTION_SYSTEM_ZLIB',
+  ]
   ft2_deps += [zlib_dep]
 else
-  ftoption_command += ['--disable=FT_CONFIG_OPTION_SYSTEM_ZLIB']
+  assert(false, 'Invalid zlib option ' + zlib_option)
 endif
 
 # BZip2 support
@@ -296,7 +338,8 @@ endif
 # Harfbuzz support
 harfbuzz_dep = dependency('harfbuzz',
   version: '>= 2.0.0',
-  required: get_option('harfbuzz'))
+  required: get_option('harfbuzz'),
+  default_options: ['freetype=disabled'])
 
 if harfbuzz_dep.found()
   ftoption_command += ['--enable=FT_CONFIG_OPTION_USE_HARFBUZZ']
@@ -417,7 +460,7 @@ gen_docs = custom_target('freetype2 reference documentation',
 summary({'OS': host_machine.system(),
         }, section: 'Operating System')
 
-summary({'Zlib': zlib_dep.found() ? 'external' : 'internal',
+summary({'Zlib': zlib_option,
          'Bzip2': bzip2_dep.found() ? 'yes' : 'no',
          'Png': libpng_dep.found() ? 'yes' : 'no',
          'Harfbuzz': harfbuzz_dep.found() ? 'yes' : 'no',

@@ -1,11 +1,11 @@
 "use strict";
 
-const { ExperimentFakes } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+const { ExperimentFakes } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
 
-const { FirstStartup } = ChromeUtils.import(
-  "resource://gre/modules/FirstStartup.jsm"
+const { FirstStartup } = ChromeUtils.importESModule(
+  "resource://gre/modules/FirstStartup.sys.mjs"
 );
 
 add_task(async function test_createTargetingContext() {
@@ -14,8 +14,8 @@ add_task(async function test_createTargetingContext() {
   const recipe = ExperimentFakes.recipe("foo");
   const rollout = ExperimentFakes.rollout("bar");
   sandbox.stub(manager.store, "ready").resolves();
-  sandbox.stub(manager.store, "getAllActive").returns([recipe]);
-  sandbox.stub(manager.store, "getAllRollouts").returns([rollout]);
+  sandbox.stub(manager.store, "getAllActiveExperiments").returns([recipe]);
+  sandbox.stub(manager.store, "getAllActiveRollouts").returns([rollout]);
 
   let context = manager.createTargetingContext();
   const activeSlugs = await context.activeExperiments;

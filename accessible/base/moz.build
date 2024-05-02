@@ -4,9 +4,24 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+GeneratedFile(
+    "RelationType.h",
+    script="/accessible/base/RelationTypeGen.py",
+    entry_point="generate",
+    inputs=["/accessible/interfaces/nsIAccessibleRelation.idl"],
+)
+GeneratedFile(
+    "Role.h",
+    script="/accessible/base/RoleHGen.py",
+    entry_point="generate",
+    inputs=["/accessible/interfaces/nsIAccessibleRole.idl"],
+)
+
 EXPORTS += ["AccEvent.h", "nsAccessibilityService.h"]
 
 EXPORTS.mozilla.a11y += [
+    "!RelationType.h",
+    "!Role.h",
     "AccAttributes.h",
     "AccGroupInfo.h",
     "AccTypes.h",
@@ -15,8 +30,6 @@ EXPORTS.mozilla.a11y += [
     "FocusManager.h",
     "IDSet.h",
     "Platform.h",
-    "RelationType.h",
-    "Role.h",
     "SelectionManager.h",
     "States.h",
 ]
@@ -34,6 +47,7 @@ UNIFIED_SOURCES += [
     "ARIAMap.cpp",
     "ARIAStateMap.cpp",
     "Asserts.cpp",
+    "CachedTableAccessible.cpp",
     "DocManager.cpp",
     "EmbeddedObjCollector.cpp",
     "EventQueue.cpp",
@@ -42,7 +56,6 @@ UNIFIED_SOURCES += [
     "FocusManager.cpp",
     "NotificationController.cpp",
     "nsAccessibilityService.cpp",
-    "nsAccessiblePivot.cpp",
     "nsAccUtils.cpp",
     "nsCoreUtils.cpp",
     "nsEventShell.cpp",
@@ -69,15 +82,6 @@ LOCAL_INCLUDES += [
     "/dom/base",
     "/dom/xul",
 ]
-
-if CONFIG["OS_ARCH"] == "WINNT":
-    LOCAL_INCLUDES += [
-        "/accessible/ipc/win",
-    ]
-else:
-    LOCAL_INCLUDES += [
-        "/accessible/ipc/other",
-    ]
 
 LOCAL_INCLUDES += [
     "/accessible/xpcom",

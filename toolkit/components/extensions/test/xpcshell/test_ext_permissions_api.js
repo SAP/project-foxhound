@@ -1,22 +1,15 @@
 "use strict";
 
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
+);
+const { ExtensionPermissions } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPermissions.sys.mjs"
 );
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
-);
-const { ExtensionPermissions } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPermissions.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionParent",
-  "resource://gre/modules/ExtensionParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
+});
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
@@ -54,6 +47,7 @@ add_task(async function setup() {
     "activeTab",
     "clipboardRead",
     "clipboardWrite",
+    "declarativeNetRequestFeedback",
     "devtools",
     "downloads.open",
     "geolocation",
@@ -65,6 +59,7 @@ add_task(async function setup() {
     "tabHide",
     "tabs",
     "webRequestBlocking",
+    "webRequestFilterResponse",
     "webRequestFilterResponse.serviceWorkerScript",
   ];
   OptionalPermissions = Schemas.getPermissionNames([
@@ -157,7 +152,7 @@ add_task(async function test_api_on_permissions_changed() {
 
   // Verify access on restart
   await AddonTestUtils.promiseRestartManager();
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
   await verifyPermissions(true);
 
   await withHandlingUserInput(extension, async () => {
@@ -222,7 +217,7 @@ add_task(async function test_geo_permissions() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: "geo-test@test" } },
+      browser_specific_settings: { gecko: { id: "geo-test@test" } },
       optional_permissions: ["geolocation"],
     },
     useAddonManager: "permanent",
@@ -268,7 +263,7 @@ add_task(async function test_geo_permissions() {
   // We should not have geo permission after this upgrade.
   await extension.upgrade({
     manifest: {
-      applications: { gecko: { id: "geo-test@test" } },
+      browser_specific_settings: { gecko: { id: "geo-test@test" } },
     },
     useAddonManager: "permanent",
   });
@@ -330,7 +325,7 @@ add_task(async function test_browserSetting_permissions() {
   await ExtensionPermissions._uninit();
   extensionHandlers.delete(extension);
   await AddonTestUtils.promiseRestartManager();
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   await withHandlingUserInput(extension, async () => {
     extension.sendMessage("remove");
@@ -388,7 +383,7 @@ add_task(async function test_privacy_permissions() {
   await ExtensionPermissions._uninit();
   extensionHandlers.delete(extension);
   await AddonTestUtils.promiseRestartManager();
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   await withHandlingUserInput(extension, async () => {
     extension.sendMessage("remove");
@@ -398,3 +393,72 @@ add_task(async function test_privacy_permissions() {
 
   await extension.unload();
 });
+
+add_task(
+  { pref_set: [["extensions.eventPages.enabled", true]] },
+  async function test_permissions_event_page() {
+    let extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "permanent",
+      manifest: {
+        optional_permissions: ["privacy"],
+        background: { persistent: false },
+      },
+      background() {
+        browser.permissions.onAdded.addListener(details => {
+          browser.test.sendMessage("added", details);
+        });
+
+        browser.permissions.onRemoved.addListener(details => {
+          browser.test.sendMessage("removed", details);
+        });
+      },
+    });
+
+    await extension.startup();
+    let events = ["onAdded", "onRemoved"];
+    for (let event of events) {
+      assertPersistentListeners(extension, "permissions", event, {
+        primed: false,
+      });
+    }
+
+    await extension.terminateBackground();
+    for (let event of events) {
+      assertPersistentListeners(extension, "permissions", event, {
+        primed: true,
+      });
+    }
+
+    let permObj = {
+      permissions: ["privacy"],
+      origins: [],
+    };
+
+    // enable the permissions while the background is stopped
+    await ExtensionPermissions.add(extension.id, permObj, extension.extension);
+    let details = await extension.awaitMessage("added");
+    Assert.deepEqual(permObj, details, "got added event");
+
+    // Restart and test that permission removal wakes the background.
+    await AddonTestUtils.promiseRestartManager();
+    await extension.awaitStartup();
+
+    for (let event of events) {
+      assertPersistentListeners(extension, "permissions", event, {
+        primed: true,
+      });
+    }
+
+    // remove the permissions while the background is stopped
+    await ExtensionPermissions.remove(
+      extension.id,
+      permObj,
+      extension.extension
+    );
+
+    details = await extension.awaitMessage("removed");
+    Assert.deepEqual(permObj, details, "got removed event");
+
+    await extension.unload();
+  }
+);

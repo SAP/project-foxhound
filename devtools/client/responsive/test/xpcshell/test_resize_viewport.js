@@ -8,12 +8,12 @@
 const {
   addViewport,
   resizeViewport,
-} = require("devtools/client/responsive/actions/viewports");
+} = require("resource://devtools/client/responsive/actions/viewports.js");
 const {
   toggleTouchSimulation,
-} = require("devtools/client/responsive/actions/ui");
+} = require("resource://devtools/client/responsive/actions/ui.js");
 
-add_task(async function() {
+add_task(async function () {
   const store = Store();
   const { getState, dispatch } = store;
 

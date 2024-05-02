@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "ipc/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/dom/UIEvent.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
@@ -29,7 +30,7 @@ UIEvent::UIEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                  WidgetGUIEvent* aEvent)
     : Event(aOwner, aPresContext,
             aEvent ? aEvent : new InternalUIEvent(false, eVoidEvent, nullptr)),
-      mClientPoint(0, 0),
+      mDefaultClientPoint(0, 0),
       mLayerPoint(0, 0),
       mPagePoint(0, 0),
       mMovementPoint(0, 0),
@@ -39,7 +40,6 @@ UIEvent::UIEvent(EventTarget* aOwner, nsPresContext* aPresContext,
     mEventIsInternal = false;
   } else {
     mEventIsInternal = true;
-    mEvent->mTime = PR_Now();
   }
 
   // Fill mDetail and mView according to the mEvent (widget-generated
@@ -189,15 +189,16 @@ nsIntPoint UIEvent::GetLayerPoint() const {
 }
 
 void UIEvent::DuplicatePrivateData() {
-  mClientPoint = Event::GetClientCoords(mPresContext, mEvent, mEvent->mRefPoint,
-                                        mClientPoint);
+  mDefaultClientPoint = Event::GetClientCoords(
+      mPresContext, mEvent, mEvent->mRefPoint, mDefaultClientPoint);
   mMovementPoint = GetMovementPoint();
   mLayerPoint = GetLayerPoint();
   mPagePoint = Event::GetPageCoords(mPresContext, mEvent, mEvent->mRefPoint,
-                                    mClientPoint);
+                                    mDefaultClientPoint);
   // GetScreenPoint converts mEvent->mRefPoint to right coordinates.
   CSSIntPoint screenPoint =
-      Event::GetScreenCoords(mPresContext, mEvent, mEvent->mRefPoint);
+      Event::GetScreenCoords(mPresContext, mEvent, mEvent->mRefPoint)
+          .valueOr(CSSIntPoint{0, 0});
 
   Event::DuplicatePrivateData();
 
@@ -207,19 +208,20 @@ void UIEvent::DuplicatePrivateData() {
   mEvent->mRefPoint = RoundedToInt(screenPoint * scale);
 }
 
-void UIEvent::Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType) {
+void UIEvent::Serialize(IPC::MessageWriter* aWriter,
+                        bool aSerializeInterfaceType) {
   if (aSerializeInterfaceType) {
-    IPC::WriteParam(aMsg, u"uievent"_ns);
+    IPC::WriteParam(aWriter, u"uievent"_ns);
   }
 
-  Event::Serialize(aMsg, false);
+  Event::Serialize(aWriter, false);
 
-  IPC::WriteParam(aMsg, Detail());
+  IPC::WriteParam(aWriter, Detail());
 }
 
-bool UIEvent::Deserialize(const IPC::Message* aMsg, PickleIterator* aIter) {
-  NS_ENSURE_TRUE(Event::Deserialize(aMsg, aIter), false);
-  NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &mDetail), false);
+bool UIEvent::Deserialize(IPC::MessageReader* aReader) {
+  NS_ENSURE_TRUE(Event::Deserialize(aReader), false);
+  NS_ENSURE_TRUE(IPC::ReadParam(aReader, &mDetail), false);
   return true;
 }
 
@@ -244,7 +246,6 @@ static const ModifierPair kPairs[] = {
   { MODIFIER_SHIFT,      NS_DOM_KEYNAME_SHIFT },
   { MODIFIER_SYMBOL,     NS_DOM_KEYNAME_SYMBOL },
   { MODIFIER_SYMBOLLOCK, NS_DOM_KEYNAME_SYMBOLLOCK },
-  { MODIFIER_OS,         NS_DOM_KEYNAME_OS }
     // clang-format on
 };
 
@@ -286,6 +287,29 @@ bool UIEvent::GetModifierStateInternal(const nsAString& aKey) {
   return ((inputEvent->mModifiers & WidgetInputEvent::GetModifier(aKey)) != 0);
 }
 
+static Modifiers ConvertToModifiers(const EventModifierInit& aParam) {
+  Modifiers bits = MODIFIER_NONE;
+
+#define SET_MODIFIER(aName, aValue) bits |= aParam.m##aName ? (aValue) : 0;
+
+  SET_MODIFIER(CtrlKey, MODIFIER_CONTROL)
+  SET_MODIFIER(ShiftKey, MODIFIER_SHIFT)
+  SET_MODIFIER(AltKey, MODIFIER_ALT)
+  SET_MODIFIER(MetaKey, MODIFIER_META)
+  SET_MODIFIER(ModifierAltGraph, MODIFIER_ALTGRAPH)
+  SET_MODIFIER(ModifierCapsLock, MODIFIER_CAPSLOCK)
+  SET_MODIFIER(ModifierFn, MODIFIER_FN)
+  SET_MODIFIER(ModifierFnLock, MODIFIER_FNLOCK)
+  SET_MODIFIER(ModifierNumLock, MODIFIER_NUMLOCK)
+  SET_MODIFIER(ModifierScrollLock, MODIFIER_SCROLLLOCK)
+  SET_MODIFIER(ModifierSymbol, MODIFIER_SYMBOL)
+  SET_MODIFIER(ModifierSymbolLock, MODIFIER_SYMBOLLOCK)
+
+#undef SET_MODIFIER
+
+  return bits;
+}
+
 void UIEvent::InitModifiers(const EventModifierInit& aParam) {
   if (NS_WARN_IF(!mEvent)) {
     return;
@@ -297,28 +321,7 @@ void UIEvent::InitModifiers(const EventModifierInit& aParam) {
     return;
   }
 
-  inputEvent->mModifiers = MODIFIER_NONE;
-
-#define SET_MODIFIER(aName, aValue)   \
-  if (aParam.m##aName) {              \
-    inputEvent->mModifiers |= aValue; \
-  }
-
-  SET_MODIFIER(CtrlKey, MODIFIER_CONTROL)
-  SET_MODIFIER(ShiftKey, MODIFIER_SHIFT)
-  SET_MODIFIER(AltKey, MODIFIER_ALT)
-  SET_MODIFIER(MetaKey, MODIFIER_META)
-  SET_MODIFIER(ModifierAltGraph, MODIFIER_ALTGRAPH)
-  SET_MODIFIER(ModifierCapsLock, MODIFIER_CAPSLOCK)
-  SET_MODIFIER(ModifierFn, MODIFIER_FN)
-  SET_MODIFIER(ModifierFnLock, MODIFIER_FNLOCK)
-  SET_MODIFIER(ModifierNumLock, MODIFIER_NUMLOCK)
-  SET_MODIFIER(ModifierOS, MODIFIER_OS)
-  SET_MODIFIER(ModifierScrollLock, MODIFIER_SCROLLLOCK)
-  SET_MODIFIER(ModifierSymbol, MODIFIER_SYMBOL)
-  SET_MODIFIER(ModifierSymbolLock, MODIFIER_SYMBOLLOCK)
-
-#undef SET_MODIFIER
+  inputEvent->mModifiers = ConvertToModifiers(aParam);
 }
 
 }  // namespace mozilla::dom

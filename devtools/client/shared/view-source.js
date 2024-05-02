@@ -12,67 +12,85 @@
  * Firefox View Source is the fallback.
  *
  * @param {Toolbox} toolbox
- * @param {string} sourceURL
- * @param {number} sourceLine
+ * @param {string|Object} stylesheetResourceOrGeneratedURL
+ * @param {number} generatedLine
+ * @param {number} generatedColumn
  *
  * @return {Promise<boolean>}
  */
-exports.viewSourceInStyleEditor = async function(
+exports.viewSourceInStyleEditor = async function (
   toolbox,
-  stylesheetFrontOrGeneratedURL,
+  stylesheetResourceOrGeneratedURL,
   generatedLine,
   generatedColumn
 ) {
-  const panel = await toolbox.loadTool("styleeditor");
-
-  let stylesheetFront;
-  if (typeof stylesheetFrontOrGeneratedURL === "string") {
-    stylesheetFront = panel.getStylesheetFrontForGeneratedURL(
-      stylesheetFrontOrGeneratedURL
-    );
-  } else {
-    stylesheetFront = stylesheetFrontOrGeneratedURL;
-  }
-
-  const originalLocation = stylesheetFront
-    ? await getOriginalLocation(
-        toolbox,
-        stylesheetFront.resourceId,
-        generatedLine,
-        generatedColumn
-      )
-    : null;
+  const originalPanelId = toolbox.currentToolId;
 
   try {
+    const panel = await toolbox.selectTool("styleeditor", "view-source", {
+      // This will be only used in case the styleeditor wasn't loaded yet, to make the
+      // initialization faster in case we already have a stylesheet resource. We still
+      // need the rest of this function to handle subsequent calls and sourcemapped stylesheets.
+      stylesheetToSelect: {
+        stylesheet: stylesheetResourceOrGeneratedURL,
+        line: generatedLine,
+        column: generatedColumn,
+      },
+    });
+
+    let stylesheetResource;
+    if (typeof stylesheetResourceOrGeneratedURL === "string") {
+      stylesheetResource = panel.getStylesheetResourceForGeneratedURL(
+        stylesheetResourceOrGeneratedURL
+      );
+    } else {
+      stylesheetResource = stylesheetResourceOrGeneratedURL;
+    }
+
+    const originalLocation = stylesheetResource
+      ? await getOriginalLocation(
+          toolbox,
+          stylesheetResource.resourceId,
+          generatedLine,
+          generatedColumn
+        )
+      : null;
+
     if (originalLocation) {
       await panel.selectOriginalSheet(
         originalLocation.sourceId,
         originalLocation.line,
         originalLocation.column
       );
-      await toolbox.selectTool("styleeditor");
       return true;
-    } else if (stylesheetFront) {
+    }
+
+    if (stylesheetResource) {
       await panel.selectStyleSheet(
-        stylesheetFront,
+        stylesheetResource,
         generatedLine,
         generatedColumn
       );
-      await toolbox.selectTool("styleeditor");
       return true;
     }
   } catch (e) {
     console.error("Failed to view source in style editor", e);
   }
 
+  // If we weren't able to select the stylesheet in the style editor, display it in a
+  // view-source tab
   exports.viewSource(
     toolbox,
-    typeof stylesheetFrontOrGeneratedURL === "string"
-      ? stylesheetFrontOrGeneratedURL
-      : stylesheetFrontOrGeneratedURL.href ||
-          stylesheetFrontOrGeneratedURL.nodeHref,
+    typeof stylesheetResourceOrGeneratedURL === "string"
+      ? stylesheetResourceOrGeneratedURL
+      : stylesheetResourceOrGeneratedURL.href ||
+          stylesheetResourceOrGeneratedURL.nodeHref,
     generatedLine
   );
+
+  // As we might have moved to the styleeditor, switch back to the original panel
+  await toolbox.selectTool(originalPanelId);
+
   return false;
 };
 
@@ -94,7 +112,7 @@ exports.viewSourceInStyleEditor = async function(
  *
  * @return {Promise<boolean>}
  */
-exports.viewSourceInDebugger = async function(
+exports.viewSourceInDebugger = async function (
   toolbox,
   generatedURL,
   generatedLine,
@@ -102,80 +120,25 @@ exports.viewSourceInDebugger = async function(
   sourceActorId,
   reason = "unknown"
 ) {
-  const location = await getViewSourceInDebuggerLocation(
-    toolbox,
+  // Load the debugger in the background
+  const dbg = await toolbox.loadTool("jsdebugger");
+
+  const openedSourceInDebugger = await dbg.openSourceInDebugger({
     generatedURL,
     generatedLine,
     generatedColumn,
-    sourceActorId
-  );
+    sourceActorId,
+    reason,
+  });
 
-  if (location) {
-    const { id, line, column } = location;
-
-    const dbg = await toolbox.selectTool("jsdebugger", reason);
-    try {
-      await dbg.selectSource(id, line, column);
-      return true;
-    } catch (err) {
-      console.error("Failed to view source in debugger", err);
-    }
+  if (openedSourceInDebugger) {
+    return true;
   }
 
-  exports.viewSource(toolbox, generatedURL, generatedLine);
+  // Fallback to built-in firefox view-source:
+  exports.viewSource(toolbox, generatedURL, generatedLine, generatedColumn);
   return false;
 };
-
-async function getViewSourceInDebuggerLocation(
-  toolbox,
-  generatedURL,
-  generatedLine,
-  generatedColumn,
-  sourceActorId
-) {
-  const dbg = await toolbox.loadTool("jsdebugger");
-
-  const generatedSource = sourceActorId
-    ? dbg.getSourceByActorId(sourceActorId)
-    : dbg.getSourceByURL(generatedURL);
-  if (
-    !generatedSource ||
-    // Note: We're not entirely sure when this can happen, so we may want
-    // to revisit that at some point.
-    dbg.getSourceActorsForSource(generatedSource.id).length === 0
-  ) {
-    return null;
-  }
-
-  const generatedLocation = {
-    id: generatedSource.id,
-    line: generatedLine,
-    column: generatedColumn,
-  };
-
-  const originalLocation = await getOriginalLocation(
-    toolbox,
-    generatedLocation.id,
-    generatedLocation.line,
-    generatedLocation.column
-  );
-
-  if (!originalLocation) {
-    return generatedLocation;
-  }
-
-  const originalSource = dbg.getSource(originalLocation.sourceId);
-
-  if (!originalSource) {
-    return generatedLocation;
-  }
-
-  return {
-    id: originalSource.id,
-    line: originalLocation.line,
-    column: originalLocation.column,
-  };
-}
 
 async function getOriginalLocation(
   toolbox,
@@ -191,7 +154,7 @@ async function getOriginalLocation(
 
   let originalLocation = null;
   try {
-    originalLocation = await toolbox.sourceMapService.getOriginalLocation({
+    originalLocation = await toolbox.sourceMapLoader.getOriginalLocation({
       sourceId: generatedID,
       line: generatedLine,
       column: generatedColumn,
@@ -215,13 +178,20 @@ async function getOriginalLocation(
  * @param {Toolbox} toolbox
  * @param {string} sourceURL
  * @param {number} sourceLine
+ * @param {number} sourceColumn
  *
  * @return {Promise}
  */
-exports.viewSource = async function(toolbox, sourceURL, sourceLine) {
+exports.viewSource = async function (
+  toolbox,
+  sourceURL,
+  sourceLine,
+  sourceColumn
+) {
   const utils = toolbox.gViewSourceUtils;
   utils.viewSource({
     URL: sourceURL,
-    lineNumber: sourceLine || 0,
+    lineNumber: sourceLine || -1,
+    columnNumber: sourceColumn || -1,
   });
 };

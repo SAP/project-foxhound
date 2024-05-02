@@ -8,22 +8,18 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 module.exports = {
   meta: {
     docs: {
-      description: "disallow use of Date for timing measurements",
-      category: "Best Practices",
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/avoid-Date-timing.html",
+    },
+    messages: {
+      usePerfNow:
+        "use performance.now() instead of Date.now() for timing measurements",
     },
     schema: [],
+    type: "problem",
   },
-
-  // ---------------------------------------------------------------------------
-  // Public
-  //  --------------------------------------------------------------------------
 
   create(context) {
     return {
@@ -39,11 +35,10 @@ module.exports = {
           return;
         }
 
-        context.report(
+        context.report({
           node,
-          "use performance.now() instead of Date.now() for timing " +
-            "measurements"
-        );
+          messageId: "usePerfNow",
+        });
       },
 
       NewExpression(node) {
@@ -51,16 +46,15 @@ module.exports = {
         if (
           callee.type !== "Identifier" ||
           callee.name !== "Date" ||
-          node.arguments.length > 0
+          node.arguments.length
         ) {
           return;
         }
 
-        context.report(
+        context.report({
           node,
-          "use performance.now() instead of new Date() for timing " +
-            "measurements"
-        );
+          messageId: "usePerfNow",
+        });
       },
     };
   },

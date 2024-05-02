@@ -3,41 +3,24 @@
 //! shells. This isolates the complexity of dealing with conditional
 //! compilation.
 
-cfg_blocking_impl! {
-    mod pool;
-    pub(crate) use pool::{spawn_blocking, try_spawn_blocking, BlockingPool, Spawner};
+mod pool;
+pub(crate) use pool::{spawn_blocking, BlockingPool, Spawner};
 
-    mod schedule;
-    mod shutdown;
-    pub(crate) mod task;
-
-    use crate::runtime::Builder;
-
-    pub(crate) fn create_blocking_pool(builder: &Builder, thread_cap: usize) -> BlockingPool {
-        BlockingPool::new(builder, thread_cap)
-
-    }
+cfg_fs! {
+    pub(crate) use pool::spawn_mandatory_blocking;
 }
 
-cfg_not_blocking_impl! {
-    use crate::runtime::Builder;
-    use std::time::Duration;
+cfg_trace! {
+    pub(crate) use pool::Mandatory;
+}
 
-    #[derive(Debug, Clone)]
-    pub(crate) struct BlockingPool {}
+mod schedule;
+mod shutdown;
+mod task;
+pub(crate) use task::BlockingTask;
 
-    pub(crate) use BlockingPool as Spawner;
+use crate::runtime::Builder;
 
-    pub(crate) fn create_blocking_pool(_builder: &Builder, _thread_cap: usize) -> BlockingPool {
-        BlockingPool {}
-    }
-
-    impl BlockingPool {
-        pub(crate) fn spawner(&self) -> &BlockingPool {
-            self
-        }
-
-        pub(crate) fn shutdown(&mut self, _duration: Option<Duration>) {
-        }
-    }
+pub(crate) fn create_blocking_pool(builder: &Builder, thread_cap: usize) -> BlockingPool {
+    BlockingPool::new(builder, thread_cap)
 }

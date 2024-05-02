@@ -87,8 +87,6 @@ void VideoDocument::SetScriptGlobalObject(
     if (!nsContentUtils::IsChildOfSameType(this)) {
       LinkStylesheet(nsLiteralString(
           u"resource://content-accessible/TopLevelVideoDocument.css"));
-      LinkStylesheet(nsLiteralString(
-          u"chrome://global/skin/media/TopLevelVideoDocument.css"));
       LinkScript(u"chrome://global/content/TopLevelVideoDocument.js"_ns);
     }
     InitialSetupDone();
@@ -142,11 +140,13 @@ void VideoDocument::UpdateTitle(nsIChannel* aChannel) {
 
 }  // namespace mozilla::dom
 
-nsresult NS_NewVideoDocument(mozilla::dom::Document** aResult) {
+nsresult NS_NewVideoDocument(mozilla::dom::Document** aResult,
+                             nsIPrincipal* aPrincipal,
+                             nsIPrincipal* aPartitionedPrincipal) {
   auto* doc = new mozilla::dom::VideoDocument();
 
   NS_ADDREF(doc);
-  nsresult rv = doc->Init();
+  nsresult rv = doc->Init(aPrincipal, aPartitionedPrincipal);
 
   if (NS_FAILED(rv)) {
     NS_RELEASE(doc);

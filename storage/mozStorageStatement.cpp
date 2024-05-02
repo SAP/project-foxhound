@@ -8,7 +8,6 @@
 #include <stdio.h>
 
 #include "nsError.h"
-#include "nsMemory.h"
 #include "nsThreadUtils.h"
 #include "nsIClassInfoImpl.h"
 #include "Variant.h"
@@ -42,7 +41,7 @@ NS_IMPL_CI_INTERFACE_GETTER(Statement, mozIStorageStatement,
 
 class StatementClassInfo : public nsIClassInfo {
  public:
-  constexpr StatementClassInfo() {}
+  constexpr StatementClassInfo() = default;
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -100,11 +99,9 @@ static StatementClassInfo sStatementClassInfo;
 //// Statement
 
 Statement::Statement()
-    : StorageBaseStatementInternal(),
-      mDBStatement(nullptr),
+    : mDBStatement(nullptr),
       mParamCount(0),
       mResultColumnCount(0),
-      mColumnNames(),
       mExecuting(false),
       mQueryStatusRecorded(false),
       mHasExecuted(false) {}
@@ -129,7 +126,7 @@ nsresult Statement::initialize(Connection* aDBConnection,
 
     aDBConnection->RecordQueryStatus(srv);
     mQueryStatusRecorded = true;
-    return NS_ERROR_FAILURE;
+    return convertResultCode(srv);
   }
 
   MOZ_LOG(gStorageLog, LogLevel::Debug,

@@ -208,6 +208,7 @@ class CPUInfo {
   static bool bmi1Present;
   static bool bmi2Present;
   static bool lzcntPresent;
+  static bool fmaPresent;
   static bool avx2Present;
 
   static void SetMaxEnabledSSEVersion(SSEVersion v) {
@@ -234,6 +235,7 @@ class CPUInfo {
   static bool IsBMI1Present() { return bmi1Present; }
   static bool IsBMI2Present() { return bmi2Present; }
   static bool IsLZCNTPresent() { return lzcntPresent; }
+  static bool IsFMAPresent() { return fmaPresent; }
   static bool IsAVX2Present() { return avx2Present; }
 
   static bool FlagsHaveBeenComputed() { return maxSSEVersion != UnknownSSE; }
@@ -261,6 +263,10 @@ class CPUInfo {
   static void SetSSE42Disabled() {
     MOZ_ASSERT(!FlagsHaveBeenComputed());
     SetMaxEnabledSSEVersion(SSE4_1);
+    avxEnabled = false;
+  }
+  static void SetAVXDisabled() {
+    MOZ_ASSERT(!FlagsHaveBeenComputed());
     avxEnabled = false;
   }
   static void SetAVXEnabled() {
@@ -1172,6 +1178,7 @@ class AssemblerX86Shared : public AssemblerShared {
   static bool SupportsWasmSimd() { return CPUInfo::IsSSE41Present(); }
   static bool HasAVX() { return CPUInfo::IsAVXPresent(); }
   static bool HasAVX2() { return CPUInfo::IsAVX2Present(); }
+  static bool HasFMA() { return CPUInfo::IsFMAPresent(); }
 
   static bool HasRoundInstruction(RoundingMode mode) {
     switch (mode) {
@@ -1260,6 +1267,25 @@ class AssemblerX86Shared : public AssemblerShared {
         break;
       case Operand::MEM_ADDRESS32:
         masm.cmpw_im(rhs.value, lhs.address());
+        break;
+      default:
+        MOZ_CRASH("unexpected operand kind");
+    }
+  }
+  void cmpb(Register rhs, const Operand& lhs) {
+    switch (lhs.kind()) {
+      case Operand::REG:
+        masm.cmpb_rr(rhs.encoding(), lhs.reg());
+        break;
+      case Operand::MEM_REG_DISP:
+        masm.cmpb_rm(rhs.encoding(), lhs.disp(), lhs.base());
+        break;
+      case Operand::MEM_SCALE:
+        masm.cmpb_rm(rhs.encoding(), lhs.disp(), lhs.base(), lhs.index(),
+                     lhs.scale());
+        break;
+      case Operand::MEM_ADDRESS32:
+        masm.cmpb_rm(rhs.encoding(), lhs.address());
         break;
       default:
         MOZ_CRASH("unexpected operand kind");
@@ -3721,6 +3747,16 @@ class AssemblerX86Shared : public AssemblerShared {
         MOZ_CRASH("unexpected operand kind");
     }
   }
+  void vphaddd(const Operand& src1, FloatRegister src0, FloatRegister dest) {
+    MOZ_ASSERT(HasSSE41());
+    switch (src1.kind()) {
+      case Operand::FPREG:
+        masm.vphaddd_rr(src1.fpu(), src0.encoding(), dest.encoding());
+        break;
+      default:
+        MOZ_CRASH("unexpected operand kind");
+    }
+  }
   void vpalignr(const Operand& src1, FloatRegister src0, FloatRegister dest,
                 uint8_t shift) {
     MOZ_ASSERT(HasSSE3());
@@ -4504,6 +4540,12 @@ class AssemblerX86Shared : public AssemblerShared {
         MOZ_CRASH("unexpected operand kind");
     }
   }
+  void vblendvpd(FloatRegister mask, FloatRegister src1, FloatRegister src0,
+                 FloatRegister dest) {
+    MOZ_ASSERT(HasSSE41());
+    masm.vblendvpd_rr(mask.encoding(), src1.encoding(), src0.encoding(),
+                      dest.encoding());
+  }
   void vmovsldup(FloatRegister src, FloatRegister dest) {
     MOZ_ASSERT(HasSSE3());
     masm.vmovsldup_rr(src.encoding(), dest.encoding());
@@ -4750,6 +4792,24 @@ class AssemblerX86Shared : public AssemblerShared {
         MOZ_CRASH("unexpected operand kind");
     }
   }
+  void vfmadd231ps(FloatRegister src1, FloatRegister src0, FloatRegister dest) {
+    MOZ_ASSERT(HasFMA());
+    masm.vfmadd231ps_rrr(src1.encoding(), src0.encoding(), dest.encoding());
+  }
+  void vfnmadd231ps(FloatRegister src1, FloatRegister src0,
+                    FloatRegister dest) {
+    MOZ_ASSERT(HasFMA());
+    masm.vfnmadd231ps_rrr(src1.encoding(), src0.encoding(), dest.encoding());
+  }
+  void vfmadd231pd(FloatRegister src1, FloatRegister src0, FloatRegister dest) {
+    MOZ_ASSERT(HasFMA());
+    masm.vfmadd231pd_rrr(src1.encoding(), src0.encoding(), dest.encoding());
+  }
+  void vfnmadd231pd(FloatRegister src1, FloatRegister src0,
+                    FloatRegister dest) {
+    MOZ_ASSERT(HasFMA());
+    masm.vfnmadd231pd_rrr(src1.encoding(), src0.encoding(), dest.encoding());
+  }
 
   void flushBuffer() {}
 
@@ -4757,22 +4817,26 @@ class AssemblerX86Shared : public AssemblerShared {
 
   static size_t PatchWrite_NearCallSize() { return 5; }
   static uintptr_t GetPointer(uint8_t* instPtr) {
-    uintptr_t* ptr = ((uintptr_t*)instPtr) - 1;
-    return *ptr;
+    uint8_t* ptr = instPtr - sizeof(uintptr_t);
+    return mozilla::LittleEndian::readUintptr(ptr);
   }
   // Write a relative call at the start location |dataLabel|.
   // Note that this DOES NOT patch data that comes before |label|.
   static void PatchWrite_NearCall(CodeLocationLabel startLabel,
                                   CodeLocationLabel target) {
     uint8_t* start = startLabel.raw();
-    *start = 0xE8;
+    *start = 0xE8;  // <CALL> rel32
     ptrdiff_t offset = target - startLabel - PatchWrite_NearCallSize();
     MOZ_ASSERT(int32_t(offset) == offset);
-    *((int32_t*)(start + 1)) = offset;
+    mozilla::LittleEndian::writeInt32(start + 1, offset);  // CALL <rel32>
   }
 
   static void PatchWrite_Imm32(CodeLocationLabel dataLabel, Imm32 toWrite) {
-    *((int32_t*)dataLabel.raw() - 1) = toWrite.value;
+    // dataLabel is a code location which targets the end of an instruction
+    // which has a 32 bits immediate. Thus writting a value requires shifting
+    // back to the address of the 32 bits immediate within the instruction.
+    uint8_t* ptr = dataLabel.raw();
+    mozilla::LittleEndian::writeInt32(ptr - sizeof(int32_t), toWrite.value);
   }
 
   static void PatchDataWithValueCheck(CodeLocationLabel data,
@@ -4798,18 +4862,18 @@ class AssemblerX86Shared : public AssemblerShared {
   // Toggle a jmp or cmp emitted by toggledJump().
   static void ToggleToJmp(CodeLocationLabel inst) {
     uint8_t* ptr = (uint8_t*)inst.raw();
-    MOZ_ASSERT(*ptr == 0x3D);
-    *ptr = 0xE9;
+    MOZ_ASSERT(*ptr == 0x3D);  // <CMP> eax, imm32
+    *ptr = 0xE9;               // <JMP> rel32
   }
   static void ToggleToCmp(CodeLocationLabel inst) {
     uint8_t* ptr = (uint8_t*)inst.raw();
-    MOZ_ASSERT(*ptr == 0xE9);
-    *ptr = 0x3D;
+    MOZ_ASSERT(*ptr == 0xE9);  // <JMP> rel32
+    *ptr = 0x3D;               // <CMP> eax, imm32
   }
   static void ToggleCall(CodeLocationLabel inst, bool enabled) {
     uint8_t* ptr = (uint8_t*)inst.raw();
-    MOZ_ASSERT(*ptr == 0x3D ||  // CMP
-               *ptr == 0xE8);   // CALL
+    MOZ_ASSERT(*ptr == 0x3D ||  // <CMP> eax, imm32
+               *ptr == 0xE8);   // <CALL> rel32
     *ptr = enabled ? 0xE8 : 0x3D;
   }
 

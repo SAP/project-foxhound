@@ -4,17 +4,18 @@
 
 /* globals ExtensionAPI, Services, XPCOMUtils */
 
-const { ComponentUtils } = ChromeUtils.import(
-  "resource://gre/modules/ComponentUtils.jsm"
+const { ComponentUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/ComponentUtils.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AboutHomeStartupCache: "resource:///modules/BrowserGlue.jsm",
-  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
-  PerTestCoverageUtils: "resource://testing-common/PerTestCoverageUtils.jsm",
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
+
+ChromeUtils.defineESModuleGetters(this, {
+  AboutHomeStartupCache: "resource:///modules/BrowserGlue.sys.mjs",
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  PerTestCoverageUtils:
+    "resource://testing-common/PerTestCoverageUtils.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -24,18 +25,15 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsISubstitutingProtocolHandler"
 );
 
-// To support the 'new TextEncoder()' call inside of 'profilerFinish()' here,
-// we have to import TextEncoder.  It's not automagically defined for us,
-// because we are in a child process, because we are an extension. See second
-// category in https://bugzilla.mozilla.org/show_bug.cgi?id=1501127#c2
+// These are not automagically defined for us because we are an extension.
 //
 // eslint-disable-next-line mozilla/reject-importGlobalProperties
-Cu.importGlobalProperties(["TextEncoder"]);
+Cu.importGlobalProperties(["IOUtils", "PathUtils"]);
 
 const Cm = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
 let frameScriptURL;
-let profilerStartTime;
+let profilerSubtestStartTime;
 
 function TalosPowersService() {
   this.wrappedJSObject = this;
@@ -44,7 +42,7 @@ function TalosPowersService() {
 }
 
 TalosPowersService.prototype = {
-  factory: ComponentUtils._getFactory(TalosPowersService),
+  factory: ComponentUtils.generateSingletonFactory(TalosPowersService),
   classDescription: "Talos Powers",
   classID: Components.ID("{f5d53443-d58d-4a2f-8df0-98525d4f91ad}"),
   contractID: "@mozilla.org/talos/talos-powers-service;1",
@@ -105,7 +103,7 @@ TalosPowersService.prototype = {
   },
 
   /**
-   * Enable the Gecko Profiler with some settings and then pause immediately.
+   * Enable the Gecko Profiler with some settings.
    *
    * @param data (object)
    *        A JavaScript object with the following properties:
@@ -126,8 +124,6 @@ TalosPowersService.prototype = {
       data.featuresArray,
       data.threadsArray
     );
-
-    Services.profiler.PauseSampling();
   },
 
   /**
@@ -136,29 +132,28 @@ TalosPowersService.prototype = {
    * the profiles have been dumped. This method returns a Promise that
    * will resolve once this has occurred.
    *
+   * @param profileDir (string)
+   *        The name of the directory to write the profile in.
    * @param profileFile (string)
    *        The name of the file to write to.
    *
    * @returns Promise
    */
-  profilerFinish(profileFile) {
+  profilerFinish(profileDir, profileFile) {
+    const profilePath = PathUtils.join(profileDir, profileFile);
     return new Promise((resolve, reject) => {
       Services.profiler.Pause();
       Services.profiler.getProfileDataAsync().then(
-        profile => {
-          let encoder = new TextEncoder();
-          let array = encoder.encode(JSON.stringify(profile));
-
-          OS.File.writeAtomic(profileFile, array, {
-            tmpPath: profileFile + ".tmp",
+        profile =>
+          IOUtils.writeJSON(profilePath, profile, {
+            tmpPath: `${profilePath}.tmp`,
           }).then(() => {
             Services.profiler.StopProfiler();
             resolve();
             Services.obs.notifyObservers(null, "talos-profile-gathered");
-          });
-        },
+          }),
         error => {
-          Cu.reportError("Failed to gather profile: " + error);
+          console.error("Failed to gather profile:", error);
           // FIXME: We should probably send a message down to the
           // child which causes it to reject the waiting Promise.
           reject();
@@ -168,30 +163,25 @@ TalosPowersService.prototype = {
   },
 
   /**
-   * Pauses the Profiler, optionally setting a parent process marker before
-   * doing so.
+   * Add a parent process marker to the profiler to indicate the subtest duration.
    *
    * @param marker (string, optional)
-   *        A marker to set before pausing.
+   *        Marker name.
    */
-  profilerPause(marker = null) {
+  profilerSubtestEnd(marker = null, startTime = undefined) {
     if (marker) {
-      this.addIntervalMarker(marker, profilerStartTime);
+      this.addIntervalMarker(marker, startTime ?? profilerSubtestStartTime);
     }
-    Services.profiler.PauseSampling();
   },
 
   /**
-   * Resumes a pausedProfiler, optionally setting a parent process marker
-   * after doing so.
+   * * Add a parent process marker to the profiler to indicate the start of the subtest.
    *
    * @param marker (string, optional)
-   *        A marker to set after resuming.
+   *        Marker name.
    */
-  profilerResume(marker = null) {
-    Services.profiler.ResumeSampling();
-
-    profilerStartTime = Cu.now();
+  profilerSubtestStart(marker = null) {
+    profilerSubtestStartTime = Cu.now();
 
     if (marker) {
       this.addInstantMarker(marker);
@@ -205,21 +195,25 @@ TalosPowersService.prototype = {
    *
    */
   addInstantMarker(marker) {
-    ChromeUtils.addProfilerMarker("Talos", undefined, marker);
+    ChromeUtils.addProfilerMarker("Talos", { category: "Test" }, marker);
   },
 
   /**
    * Adds a marker to the Profile in the parent process.
    *
    * @param marker (string)
-   *        A marker to set before pausing.
+   *        A marker to set.
    *
    * @param startTime (number)
    *        Start time, used to create an interval profile marker. If
    *        undefined, a single instance marker will be placed.
    */
   addIntervalMarker(marker, startTime) {
-    ChromeUtils.addProfilerMarker("Talos", startTime, marker);
+    ChromeUtils.addProfilerMarker(
+      "Talos",
+      { startTime, category: "Test" },
+      marker
+    );
   },
 
   receiveProfileCommand(message) {
@@ -241,20 +235,20 @@ TalosPowersService.prototype = {
 
       case "Profiler:Finish": {
         // The test is done. Dump the profile.
-        this.profilerFinish(data.profileFile).then(() => {
+        this.profilerFinish(data.profileDir, data.profileFile).then(() => {
           mm.sendAsyncMessage(ACK_NAME, { name });
         });
         break;
       }
 
-      case "Profiler:Pause": {
-        this.profilerPause(data.marker, data.startTime);
+      case "Profiler:SubtestEnd": {
+        this.profilerSubtestEnd(data.marker, data.startTime);
         mm.sendAsyncMessage(ACK_NAME, { name });
         break;
       }
 
-      case "Profiler:Resume": {
-        this.profilerResume(data.marker);
+      case "Profiler:SubtestStart": {
+        this.profilerSubtestStart(data.marker);
         mm.sendAsyncMessage(ACK_NAME, { name });
         break;
       }
@@ -272,10 +266,9 @@ TalosPowersService.prototype = {
       // We can wait for various startup items here to complete during
       // the getInfo.html step for Talos so that subsequent runs don't
       // have to do things like re-request the SafeBrowsing list.
-      let SafeBrowsing = ChromeUtils.import(
-        "resource://gre/modules/SafeBrowsing.jsm",
-        {}
-      ).SafeBrowsing;
+      let { SafeBrowsing } = ChromeUtils.importESModule(
+        "resource://gre/modules/SafeBrowsing.sys.mjs"
+      );
 
       // Speed things up in case nobody else called this:
       SafeBrowsing.init();
@@ -297,7 +290,7 @@ TalosPowersService.prototype = {
       // There aren't currently any easily observable notifications or
       // events to let us know when the feed is ready, so we'll just poll
       // for now.
-      let pollForFeed = async function() {
+      let pollForFeed = async function () {
         let foundFeed = AboutNewTab.activityStream.store.feeds.get(
           "feeds.system.topsites"
         );
@@ -344,7 +337,7 @@ TalosPowersService.prototype = {
       // the firstPaint measurement hasn't been set yet. In
       // that case, we set up an observer for the next time
       // a window is painted and re-retrieve the startup info.
-      let obs = function(subject, topic) {
+      let obs = function (subject, topic) {
         Services.obs.removeObserver(this, topic);
         startupInfo = Services.startup.getStartupInfo();
         mm.sendAsyncMessage(
@@ -403,13 +396,13 @@ TalosPowersService.prototype = {
     },
 
     dumpAboutSupport(arg, callback, win) {
-      const { Troubleshoot } = ChromeUtils.import(
-        "resource://gre/modules/Troubleshoot.jsm"
+      const { Troubleshoot } = ChromeUtils.importESModule(
+        "resource://gre/modules/Troubleshoot.sys.mjs"
       );
-      Troubleshoot.snapshot(function(snapshot) {
+      Troubleshoot.snapshot().then(snapshot => {
         dump("about:support\t" + JSON.stringify(snapshot) + "\n");
+        callback();
       });
-      callback();
     },
   },
 

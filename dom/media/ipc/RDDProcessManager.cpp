@@ -29,11 +29,11 @@ using namespace layers;
 
 static StaticAutoPtr<RDDProcessManager> sRDDSingleton;
 
-static bool sXPCOMShutdown = false;
+static bool sRDDProcessShutdown = false;
 
 bool RDDProcessManager::IsShutdown() const {
   MOZ_ASSERT(NS_IsMainThread());
-  return sXPCOMShutdown || !sRDDSingleton;
+  return sRDDProcessShutdown || !sRDDSingleton;
 }
 
 RDDProcessManager* RDDProcessManager::Get() { return sRDDSingleton; }
@@ -44,6 +44,14 @@ void RDDProcessManager::Initialize() {
 }
 
 void RDDProcessManager::Shutdown() { sRDDSingleton = nullptr; }
+
+void RDDProcessManager::RDDProcessShutdown() {
+  MOZ_ASSERT(NS_IsMainThread());
+  sRDDProcessShutdown = true;
+  if (sRDDSingleton) {
+    sRDDSingleton->DestroyProcess();
+  }
+}
 
 RDDProcessManager::RDDProcessManager()
     : mObserver(new Observer(this)), mTaskFactory(this) {
@@ -80,10 +88,8 @@ RDDProcessManager::Observer::Observe(nsISupports* aSubject, const char* aTopic,
 
 void RDDProcessManager::OnXPCOMShutdown() {
   MOZ_ASSERT(NS_IsMainThread());
-  sXPCOMShutdown = true;
   nsContentUtils::UnregisterShutdownObserver(mObserver);
   Preferences::RemoveObserver(mObserver, "");
-  CleanShutdown();
 }
 
 void RDDProcessManager::OnPreferenceChange(const char16_t* aData) {
@@ -92,16 +98,15 @@ void RDDProcessManager::OnPreferenceChange(const char16_t* aData) {
     // Process hasn't been launched yet
     return;
   }
-  // A pref changed. If it is useful to do so, inform child processes.
-  if (!dom::ContentParent::ShouldSyncPreference(aData)) {
-    return;
-  }
 
   // We know prefs are ASCII here.
   NS_LossyConvertUTF16toASCII strData(aData);
 
-  mozilla::dom::Pref pref(strData, /* isLocked */ false, Nothing(), Nothing());
-  Preferences::GetPreference(&pref);
+  mozilla::dom::Pref pref(strData, /* isLocked */ false,
+                          /* isSanitized */ false, Nothing(), Nothing());
+
+  Preferences::GetPreference(&pref, GeckoProcessType_RDD,
+                             /* remoteType */ ""_ns);
   if (!!mRDDChild) {
     MOZ_ASSERT(mQueuedPrefs.IsEmpty());
     mRDDChild->SendPreferenceUpdate(pref);
@@ -187,19 +192,20 @@ RefPtr<GenericNonExclusivePromise> RDDProcessManager::LaunchRDDProcess() {
 }
 
 auto RDDProcessManager::EnsureRDDProcessAndCreateBridge(
-    base::ProcessId aOtherProcess) -> RefPtr<EnsureRDDPromise> {
+    base::ProcessId aOtherProcess, dom::ContentParentId aParentId)
+    -> RefPtr<EnsureRDDPromise> {
   return InvokeAsync(
       GetMainThreadSerialEventTarget(), __func__,
-      [aOtherProcess, this]() -> RefPtr<EnsureRDDPromise> {
+      [aOtherProcess, aParentId, this]() -> RefPtr<EnsureRDDPromise> {
         return LaunchRDDProcess()->Then(
             GetMainThreadSerialEventTarget(), __func__,
-            [aOtherProcess, this]() {
+            [aOtherProcess, aParentId, this]() {
               if (IsShutdown()) {
                 return EnsureRDDPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
                                                          __func__);
               }
               ipc::Endpoint<PRemoteDecoderManagerChild> endpoint;
-              if (!CreateContentBridge(aOtherProcess, &endpoint)) {
+              if (!CreateContentBridge(aOtherProcess, aParentId, &endpoint)) {
                 return EnsureRDDPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
                                                          __func__);
               }
@@ -253,8 +259,6 @@ void RDDProcessManager::NotifyRemoteActorDestroyed(
   OnProcessUnexpectedShutdown(mProcess);
 }
 
-void RDDProcessManager::CleanShutdown() { DestroyProcess(); }
-
 void RDDProcessManager::DestroyProcess() {
   MOZ_ASSERT(NS_IsMainThread());
   if (!mProcess) {
@@ -272,7 +276,7 @@ void RDDProcessManager::DestroyProcess() {
 }
 
 bool RDDProcessManager::CreateContentBridge(
-    base::ProcessId aOtherProcess,
+    base::ProcessId aOtherProcess, dom::ContentParentId aParentId,
     ipc::Endpoint<PRemoteDecoderManagerChild>* aOutRemoteDecoderManager) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -293,7 +297,8 @@ bool RDDProcessManager::CreateContentBridge(
     return false;
   }
 
-  mRDDChild->SendNewContentRemoteDecoderManager(std::move(parentPipe));
+  mRDDChild->SendNewContentRemoteDecoderManager(std::move(parentPipe),
+                                                aParentId);
 
   *aOutRemoteDecoderManager = std::move(childPipe);
   return true;
@@ -305,7 +310,8 @@ bool RDDProcessManager::CreateVideoBridge() {
   ipc::Endpoint<PVideoBridgeChild> childPipe;
 
   GPUProcessManager* gpuManager = GPUProcessManager::Get();
-  base::ProcessId gpuProcessPid = gpuManager ? gpuManager->GPUProcessPid() : -1;
+  base::ProcessId gpuProcessPid =
+      gpuManager ? gpuManager->GPUProcessPid() : base::kInvalidProcessId;
 
   // Build content device data first; this ensure that the GPU process is fully
   // ready.
@@ -315,8 +321,9 @@ bool RDDProcessManager::CreateVideoBridge() {
   // The child end is the producer of video frames; the parent end is the
   // consumer.
   base::ProcessId childPid = RDDProcessPid();
-  base::ProcessId parentPid =
-      gpuProcessPid != -1 ? gpuProcessPid : base::GetCurrentProcId();
+  base::ProcessId parentPid = gpuProcessPid != base::kInvalidProcessId
+                                  ? gpuProcessPid
+                                  : base::GetCurrentProcId();
 
   nsresult rv = PVideoBridge::CreateEndpoints(parentPid, childPid, &parentPipe,
                                               &childPipe);
@@ -328,8 +335,9 @@ bool RDDProcessManager::CreateVideoBridge() {
 
   mRDDChild->SendInitVideoBridge(std::move(childPipe),
                                  mNumUnexpectedCrashes == 0, contentDeviceData);
-  if (gpuProcessPid != -1) {
-    gpuManager->InitVideoBridge(std::move(parentPipe));
+  if (gpuProcessPid != base::kInvalidProcessId) {
+    gpuManager->InitVideoBridge(std::move(parentPipe),
+                                VideoBridgeSource::RddProcess);
   } else {
     VideoBridgeParent::Open(std::move(parentPipe),
                             VideoBridgeSource::RddProcess);
@@ -340,7 +348,8 @@ bool RDDProcessManager::CreateVideoBridge() {
 
 base::ProcessId RDDProcessManager::RDDProcessPid() {
   MOZ_ASSERT(NS_IsMainThread());
-  base::ProcessId rddPid = mRDDChild ? mRDDChild->OtherPid() : -1;
+  base::ProcessId rddPid =
+      mRDDChild ? mRDDChild->OtherPid() : base::kInvalidProcessId;
   return rddPid;
 }
 

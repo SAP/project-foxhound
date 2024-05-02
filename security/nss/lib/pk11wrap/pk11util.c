@@ -13,6 +13,7 @@
 #include "pki3hack.h"
 #include "secerr.h"
 #include "dev.h"
+#include "dev3hack.h"
 #include "utilpars.h"
 #include "pkcs11uri.h"
 
@@ -98,28 +99,7 @@ SECMOD_Shutdown()
 PRBool
 SECMOD_GetSystemFIPSEnabled(void)
 {
-#ifdef LINUX
-#ifndef NSS_FIPS_DISABLED
-    FILE *f;
-    char d;
-    size_t size;
-
-    f = fopen("/proc/sys/crypto/fips_enabled", "r");
-    if (!f) {
-        return PR_FALSE;
-    }
-
-    size = fread(&d, 1, sizeof(d), f);
-    fclose(f);
-    if (size != sizeof(d)) {
-        return PR_FALSE;
-    }
-    if (d == '1') {
-        return PR_TRUE;
-    }
-#endif
-#endif
-    return PR_FALSE;
+    return NSS_GetSystemFIPSEnabled();
 }
 
 /*
@@ -451,8 +431,10 @@ SECMOD_DeleteModule(const char *name, int *type)
 SECStatus
 SECMOD_DeleteInternalModule(const char *name)
 {
+#ifndef NSS_FIPS_DISABLED
     SECMODModuleList *mlp;
     SECMODModuleList **mlpp;
+#endif
     SECStatus rv = SECFailure;
 
     if (SECMOD_GetSystemFIPSEnabled() || pendingModule) {
@@ -467,8 +449,7 @@ SECMOD_DeleteInternalModule(const char *name)
 #ifdef NSS_FIPS_DISABLED
     PORT_SetError(PR_OPERATION_NOT_SUPPORTED_ERROR);
     return rv;
-#endif
-
+#else
     SECMOD_GetWriteLock(moduleLock);
     for (mlpp = &modules, mlp = modules;
          mlp != NULL; mlpp = &mlp->next, mlp = *mlpp) {
@@ -540,6 +521,7 @@ SECMOD_DeleteInternalModule(const char *name)
         internalModule = newModule; /* adopt the module */
     }
     return rv;
+#endif
 }
 
 SECStatus
@@ -1001,6 +983,8 @@ SECMOD_CanDeleteInternalModule(void)
  * C_GetSlotList(flag, &data, &count) so that the array doesn't accidently
  * grow on the caller. It is permissible for the slots to increase between
  * successive calls with NULL to get the size.
+ *
+ * Caller must not hold a module list read lock.
  */
 SECStatus
 SECMOD_UpdateSlotList(SECMODModule *mod)
@@ -1266,8 +1250,14 @@ SECMOD_WaitForAnyTokenEvent(SECMODModule *mod, unsigned long flags,
     }
     /* if we are in the delay period for the "isPresent" call, reset
      * the delay since we know things have probably changed... */
-    if (slot && slot->nssToken && slot->nssToken->slot) {
-        nssSlot_ResetDelay(slot->nssToken->slot);
+    if (slot) {
+        NSSToken *nssToken = PK11Slot_GetNSSToken(slot);
+        if (nssToken) {
+            if (nssToken->slot) {
+                nssSlot_ResetDelay(nssToken->slot);
+            }
+            (void)nssToken_Destroy(nssToken);
+        }
     }
     return slot;
 
@@ -1337,14 +1327,27 @@ loser:
 PRBool
 SECMOD_HasRemovableSlots(SECMODModule *mod)
 {
-    int i;
     PRBool ret = PR_FALSE;
-
     if (!moduleLock) {
         PORT_SetError(SEC_ERROR_NOT_INITIALIZED);
         return ret;
     }
     SECMOD_GetReadLock(moduleLock);
+    ret = SECMOD_LockedModuleHasRemovableSlots(mod);
+    SECMOD_ReleaseReadLock(moduleLock);
+    return ret;
+}
+
+PRBool
+SECMOD_LockedModuleHasRemovableSlots(SECMODModule *mod)
+{
+    int i;
+    PRBool ret;
+    if (mod->slotCount == 0) {
+        return PR_TRUE;
+    }
+
+    ret = PR_FALSE;
     for (i = 0; i < mod->slotCount; i++) {
         PK11SlotInfo *slot = mod->slots[i];
         /* perm modules are not inserted or removed */
@@ -1354,10 +1357,6 @@ SECMOD_HasRemovableSlots(SECMODModule *mod)
         ret = PR_TRUE;
         break;
     }
-    if (mod->slotCount == 0) {
-        ret = PR_TRUE;
-    }
-    SECMOD_ReleaseReadLock(moduleLock);
     return ret;
 }
 
@@ -1500,8 +1499,12 @@ SECMOD_OpenNewSlot(SECMODModule *mod, const char *moduleSpec)
     if (slot) {
         /* if we are in the delay period for the "isPresent" call, reset
          * the delay since we know things have probably changed... */
-        if (slot->nssToken && slot->nssToken->slot) {
-            nssSlot_ResetDelay(slot->nssToken->slot);
+        NSSToken *nssToken = PK11Slot_GetNSSToken(slot);
+        if (nssToken) {
+            if (nssToken->slot) {
+                nssSlot_ResetDelay(nssToken->slot);
+            }
+            (void)nssToken_Destroy(nssToken);
         }
         /* force the slot info structures to properly reset */
         (void)PK11_IsPresent(slot);
@@ -1631,8 +1634,12 @@ SECMOD_CloseUserDB(PK11SlotInfo *slot)
     PR_smprintf_free(sendSpec);
     /* if we are in the delay period for the "isPresent" call, reset
      * the delay since we know things have probably changed... */
-    if (slot->nssToken && slot->nssToken->slot) {
-        nssSlot_ResetDelay(slot->nssToken->slot);
+    NSSToken *nssToken = PK11Slot_GetNSSToken(slot);
+    if (nssToken) {
+        if (nssToken->slot) {
+            nssSlot_ResetDelay(nssToken->slot);
+        }
+        (void)nssToken_Destroy(nssToken);
         /* force the slot info structures to properly reset */
         (void)PK11_IsPresent(slot);
     }

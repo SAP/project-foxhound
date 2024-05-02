@@ -126,9 +126,9 @@ macro_rules! elf_reloc {
     };
 }
 
-macro_rules! elf_rela_std_impl { ($size:ident, $isize:ty) => {
-
-    if_alloc! {
+macro_rules! elf_rela_std_impl {
+    ($size:ident, $isize:ty) => {
+        if_alloc! {
             use crate::elf::reloc::Reloc;
 
             use core::slice;
@@ -218,7 +218,6 @@ macro_rules! elf_rela_std_impl { ($size:ident, $isize:ty) => {
     };
 }
 
-
 pub mod reloc32 {
 
     pub use crate::elf::reloc::*;
@@ -245,7 +244,6 @@ pub mod reloc32 {
 
     elf_rela_std_impl!(u32, i32);
 }
-
 
 pub mod reloc64 {
     pub use crate::elf::reloc::*;
@@ -282,7 +280,6 @@ if_alloc! {
     use core::fmt;
     use core::result;
     use crate::container::{Ctx, Container};
-    #[cfg(feature = "endian_fd")]
     use alloc::vec::Vec;
 
     #[derive(Clone, Copy, PartialEq, Default)]
@@ -418,7 +415,11 @@ if_alloc! {
         /// Parse a REL or RELA section of size `filesz` from `offset`.
         pub fn parse(bytes: &'a [u8], offset: usize, filesz: usize, is_rela: bool, ctx: Ctx) -> crate::error::Result<RelocSection<'a>> {
             // TODO: better error message when too large (see symtab implementation)
-            let bytes = bytes.pread_with(offset, filesz)?;
+            let bytes = if filesz != 0 {
+                bytes.pread_with::<&'a [u8]>(offset, filesz)?
+            } else {
+                &[]
+            };
 
             Ok(RelocSection {
                 bytes: bytes,

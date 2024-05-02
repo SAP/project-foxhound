@@ -2,11 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+import { createLocation } from "../../../utils/location";
+
 export function mockPendingBreakpoint(overrides = {}) {
   const { sourceUrl, line, column, condition, disabled, hidden } = overrides;
   return {
     location: {
-      sourceId: "",
       sourceUrl: sourceUrl || "http://localhost:8000/examples/bar.js",
       line: line || 5,
       column: column || 1,
@@ -36,18 +37,24 @@ export function generateBreakpoint(filename, line = 5, column = 0) {
     id: "breakpoint",
     originalText: "",
     text: "",
-    location: {
-      sourceUrl: `http://localhost:8000/examples/${filename}`,
-      sourceId: `${filename}`,
-      line,
-      column,
-    },
-    generatedLocation: {
-      sourceUrl: `http://localhost:8000/examples/${filename}`,
+    location: createLocation({
+      source: {
+        url: `http://localhost:8000/examples/${filename}`,
+        id: filename,
+      },
       sourceId: filename,
       line,
       column,
-    },
+    }),
+    generatedLocation: createLocation({
+      source: {
+        url: `http://localhost:8000/examples/${filename}`,
+        id: filename,
+      },
+      sourceId: filename,
+      line,
+      column,
+    }),
     astLocation: undefined,
     options: {
       condition: "",

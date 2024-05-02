@@ -12,13 +12,12 @@ var gSSService = Cc["@mozilla.org/ssservice;1"].getService(
   Ci.nsISiteSecurityService
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 const SOURCE =
-  "https://chromium.googlesource.com/chromium/src/net/+/master/http/transport_security_state_static.json?format=TEXT";
+  "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/http/transport_security_state_static.json?format=TEXT";
 const TOOL_SOURCE =
   "https://hg.mozilla.org/mozilla-central/file/default/taskcluster/docker/periodic-updates/scripts/getHSTSPreloadList.js";
 const OUTPUT = "nsSTSPreloadList.inc";
@@ -115,20 +114,15 @@ function processStsHeader(host, header, status, securityInfo) {
     value: false,
   };
   let error = ERROR_NONE;
-  if (header != null && securityInfo != null) {
+  if (
+    header != null &&
+    securityInfo != null &&
+    securityInfo.overridableErrorCategory ==
+      Ci.nsITransportSecurityInfo.ERROR_UNSET
+  ) {
     try {
       let uri = Services.io.newURI("https://" + host.name);
-      let secInfo = securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-      gSSService.processHeader(
-        uri,
-        header,
-        secInfo,
-        0,
-        Ci.nsISiteSecurityService.SOURCE_PRELOAD_LIST,
-        {},
-        maxAge,
-        includeSubdomains
-      );
+      gSSService.processHeader(uri, header, {}, maxAge, includeSubdomains);
     } catch (e) {
       dump(
         "ERROR: could not process header '" +
@@ -272,7 +266,7 @@ function shouldRetry(response) {
   );
 }
 
-// Copied from browser/components/migration/MigrationUtils.jsm
+// Copied from browser/components/migration/MigrationUtils.sys.mjs
 function spinResolve(promise) {
   if (!(promise instanceof Promise)) {
     return promise;
@@ -308,9 +302,9 @@ async function probeHSTSStatuses(inHosts) {
   // too many in-flight requests and the time it takes to process them causes
   // them all to time out.
   let allResults = [];
-  while (inHosts.length > 0) {
+  while (inHosts.length) {
     let promises = [];
-    for (let i = 0; i < MAX_CONCURRENT_REQUESTS && inHosts.length > 0; i++) {
+    for (let i = 0; i < MAX_CONCURRENT_REQUESTS && inHosts.length; i++) {
       let host = inHosts.shift();
       promises.push(getHSTSStatus(host));
     }
@@ -439,10 +433,6 @@ function filterForcedInclusions(inHosts, outNotForced, outForced) {
 function output(statuses) {
   dump("INFO: Writing output to " + OUTPUT + "\n");
   try {
-    var { FileUtils } = ChromeUtils.import(
-      "resource://gre/modules/FileUtils.jsm"
-    );
-
     let file = new FileUtils.File(
       PathUtils.join(Services.dirsvc.get("CurWorkD", Ci.nsIFile).path, OUTPUT)
     );
@@ -510,13 +500,13 @@ async function main(args) {
   insertHosts(hstsStatuses, forcedHosts);
 
   let total = await probeHSTSStatuses(hostsToContact)
-    .then(function(probedStatuses) {
+    .then(function (probedStatuses) {
       return hstsStatuses.concat(probedStatuses);
     })
-    .then(function(statuses) {
+    .then(function (statuses) {
       return statuses.sort(compareHSTSStatus);
     })
-    .then(function(statuses) {
+    .then(function (statuses) {
       for (let status of statuses) {
         // If we've encountered an error for this entry (other than the site not
         // sending an HSTS header), be safe and don't remove it from the list
@@ -535,9 +525,9 @@ async function main(args) {
       }
       return statuses;
     })
-    .then(function(statuses) {
+    .then(function (statuses) {
       // Filter out entries we aren't including.
-      var includedStatuses = statuses.filter(function(status) {
+      var includedStatuses = statuses.filter(function (status) {
         if (status.maxAge < MINIMUM_REQUIRED_MAX_AGE && !status.forceInclude) {
           // dump("INFO: " + status.name + " NOT ON the preload list\n");
           return false;

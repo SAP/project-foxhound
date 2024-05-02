@@ -7,7 +7,7 @@ package org.mozilla.gecko.media;
 import android.media.MediaCrypto;
 
 public interface GeckoMediaDrm {
-  public interface Callbacks {
+  interface Callbacks {
     void onSessionCreated(int createSessionToken, int promiseId, byte[] sessionId, byte[] request);
 
     void onSessionUpdated(int promiseId, byte[] sessionId);
@@ -19,6 +19,7 @@ public interface GeckoMediaDrm {
     void onSessionError(byte[] sessionId, String message);
 
     void onSessionBatchedKeyChanged(byte[] sessionId, SessionKeyInfo[] keyInfos);
+
     // All failure cases should go through this function.
     void onRejectPromise(int promiseId, String message);
   }

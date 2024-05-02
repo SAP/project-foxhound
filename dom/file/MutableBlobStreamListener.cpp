@@ -23,7 +23,7 @@ MutableBlobStreamListener::MutableBlobStreamListener(
   MOZ_ASSERT(aCallback);
 
   if (!mEventTarget) {
-    mEventTarget = GetMainThreadEventTarget();
+    mEventTarget = GetMainThreadSerialEventTarget();
   }
 
   MOZ_ASSERT(mEventTarget);
@@ -98,5 +98,8 @@ nsresult MutableBlobStreamListener::WriteSegmentFun(
 
 NS_IMETHODIMP
 MutableBlobStreamListener::CheckListenerChain() { return NS_OK; }
+
+NS_IMETHODIMP
+MutableBlobStreamListener::OnDataFinished(nsresult) { return NS_OK; }
 
 }  // namespace mozilla::dom

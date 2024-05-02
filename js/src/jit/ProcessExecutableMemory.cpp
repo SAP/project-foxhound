@@ -32,7 +32,11 @@
 #  include "mozilla/StackWalk_windows.h"
 #  include "mozilla/WindowsVersion.h"
 #elif defined(__wasi__)
+#  if defined(JS_CODEGEN_WASM32)
+#    include <cstdlib>
+#  else
 // Nothing.
+#  endif
 #else
 #  include <sys/mman.h>
 #  include <unistd.h>
@@ -78,6 +82,7 @@ static void* ComputeRandomAllocationAddress() {
 
 #  ifdef NEED_JIT_UNWIND_HANDLING
 static js::JitExceptionHandler sJitExceptionHandler;
+static bool sHasInstalledFunctionTable = false;
 #  endif
 
 JS_PUBLIC_API void js::SetJitExceptionHandler(JitExceptionHandler handler) {
@@ -96,7 +101,7 @@ JS_PUBLIC_API void js::SetJitExceptionHandler(JitExceptionHandler handler) {
 // These records can have various fields present or absent depending on the
 // bits set in the header. Our struct will use one 32-bit slot for unwind codes,
 // and no slots for epilog scopes.
-struct UnwindInfo {
+struct UnwindData {
   uint32_t functionLength : 18;
   uint32_t version : 2;
   uint32_t hasExceptionHandler : 1;
@@ -106,10 +111,11 @@ struct UnwindInfo {
   uint8_t unwindCodes[4];
   uint32_t exceptionHandler;
 };
+
 static const unsigned ThunkLength = 20;
 #    else
 // From documentation for UNWIND_INFO on
-// http://msdn.microsoft.com/en-us/library/ddssxxy8.aspx
+// https://learn.microsoft.com/en-us/cpp/build/exception-handling-x64
 struct UnwindInfo {
   uint8_t version : 3;
   uint8_t flags : 5;
@@ -117,15 +123,57 @@ struct UnwindInfo {
   uint8_t countOfUnwindCodes;
   uint8_t frameRegister : 4;
   uint8_t frameOffset : 4;
-  ULONG exceptionHandler;
 };
 static const unsigned ThunkLength = 12;
+union UnwindCode {
+  struct {
+    uint8_t codeOffset;
+    uint8_t unwindOp : 4;
+    uint8_t opInfo : 4;
+  };
+  uint16_t frameOffset;
+};
+
+static constexpr int kNumberOfUnwindCodes = 2;
+static constexpr int kPushRbpInstructionLength = 1;
+static constexpr int kMovRbpRspInstructionLength = 3;
+static constexpr int kRbpPrefixCodes = 2;
+static constexpr int kRbpPrefixLength =
+    kPushRbpInstructionLength + kMovRbpRspInstructionLength;
+
+struct UnwindData {
+  UnwindInfo unwindInfo;
+  UnwindCode unwindCodes[kNumberOfUnwindCodes];
+  uint32_t exceptionHandler;
+
+  UnwindData() {
+    static constexpr int kOpPushNonvol = 0;
+    static constexpr int kOpSetFPReg = 3;
+
+    unwindInfo.version = 1;
+    unwindInfo.flags = UNW_FLAG_EHANDLER;
+    unwindInfo.sizeOfPrologue = kRbpPrefixLength;
+    unwindInfo.countOfUnwindCodes = kRbpPrefixCodes;
+    unwindInfo.frameRegister = 5;
+    unwindInfo.frameOffset = 0;
+
+    // Offset here are specified to beginning of the -next- instruction.
+    unwindCodes[0].codeOffset = kRbpPrefixLength;  // movq rbp, rsp
+    unwindCodes[0].unwindOp = kOpSetFPReg;
+    unwindCodes[0].opInfo = 0;
+
+    unwindCodes[1].codeOffset = kPushRbpInstructionLength;  // push rbp
+    unwindCodes[1].unwindOp = kOpPushNonvol;
+    unwindCodes[1].opInfo = 5;
+  }
+};
 #    endif
 
 struct ExceptionHandlerRecord {
-  RUNTIME_FUNCTION runtimeFunction;
-  UnwindInfo unwindInfo;
+  void* dynamicTable;
+  UnwindData unwindData;
   uint8_t thunk[ThunkLength];
+  RUNTIME_FUNCTION runtimeFunction;
 };
 
 // This function must match the function pointer type PEXCEPTION_HANDLER
@@ -136,10 +184,17 @@ struct ExceptionHandlerRecord {
 static DWORD ExceptionHandler(PEXCEPTION_RECORD exceptionRecord,
                               _EXCEPTION_REGISTRATION_RECORD*, PCONTEXT context,
                               _EXCEPTION_REGISTRATION_RECORD**) {
-  return sJitExceptionHandler(exceptionRecord, context);
+  if (sJitExceptionHandler) {
+    return sJitExceptionHandler(exceptionRecord, context);
+  }
+
+  return ExceptionContinueSearch;
 }
 
-PRUNTIME_FUNCTION RuntimeFunctionCallback(DWORD64 ControlPc, PVOID Context);
+// Required for enabling Stackwalking on windows using external tools.
+extern "C" NTSYSAPI DWORD NTAPI RtlAddGrowableFunctionTable(
+    PVOID* DynamicTable, PRUNTIME_FUNCTION FunctionTable, DWORD EntryCount,
+    DWORD MaximumEntryCount, ULONG_PTR RangeBase, ULONG_PTR RangeEnd);
 
 // For an explanation of the problem being solved here, see
 // SetJitExceptionFilter in jsfriendapi.h.
@@ -148,7 +203,10 @@ static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
     MOZ_CRASH();
   }
 
-  ExceptionHandlerRecord* r = reinterpret_cast<ExceptionHandlerRecord*>(p);
+  // A page was reserved inside this structure for the record. This is because
+  // all entries in the record are describes as an offset from the start of the
+  // memory region. We construct the record there.
+  ExceptionHandlerRecord* r = new (p) ExceptionHandlerRecord();
   void* handler = JS_FUNC_TO_DATA_PTR(void*, ExceptionHandler);
 
   // Because the .xdata format on ARM64 can only encode sizes up to 1M (much
@@ -167,23 +225,27 @@ static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
   // access to protect against accidental clobbering.
 
 #    if defined(_M_ARM64)
+  if (!sJitExceptionHandler) {
+    return false;
+  }
+
   r->runtimeFunction.BeginAddress = pageSize;
-  r->runtimeFunction.UnwindData = offsetof(ExceptionHandlerRecord, unwindInfo);
-  static_assert(offsetof(ExceptionHandlerRecord, unwindInfo) % 4 == 0,
+  r->runtimeFunction.UnwindData = offsetof(ExceptionHandlerRecord, unwindData);
+  static_assert(offsetof(ExceptionHandlerRecord, unwindData) % 4 == 0,
                 "The ARM64 .pdata format requires that exception information "
                 "RVAs be 4-byte aligned.");
 
-  memset(&r->unwindInfo, 0, sizeof(r->unwindInfo));
-  r->unwindInfo.hasExceptionHandler = true;
-  r->unwindInfo.exceptionHandler = offsetof(ExceptionHandlerRecord, thunk);
+  memset(&r->unwindData, 0, sizeof(r->unwindData));
+  r->unwindData.hasExceptionHandler = true;
+  r->unwindData.exceptionHandler = offsetof(ExceptionHandlerRecord, thunk);
 
   // Use a fake unwind code to make the Windows unwinder do _something_. If the
   // PC and SP both stay unchanged, we'll fail the unwinder's sanity checks and
   // it won't call our exception handler.
-  r->unwindInfo.codeWords = 1;  // one 32-bit word gives us up to 4 codes
-  r->unwindInfo.unwindCodes[0] =
+  r->unwindData.codeWords = 1;  // one 32-bit word gives us up to 4 codes
+  r->unwindData.unwindCodes[0] =
       0b00000001;  // alloc_s small stack of size 1*16
-  r->unwindInfo.unwindCodes[1] = 0b11100100;  // end
+  r->unwindData.unwindCodes[1] = 0b11100100;  // end
 
   uint32_t* thunk = (uint32_t*)r->thunk;
   uint16_t* addr = (uint16_t*)&handler;
@@ -200,15 +262,8 @@ static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
 #    else
   r->runtimeFunction.BeginAddress = pageSize;
   r->runtimeFunction.EndAddress = (DWORD)bytes;
-  r->runtimeFunction.UnwindData = offsetof(ExceptionHandlerRecord, unwindInfo);
-
-  r->unwindInfo.version = 1;
-  r->unwindInfo.flags = UNW_FLAG_EHANDLER;
-  r->unwindInfo.sizeOfPrologue = 0;
-  r->unwindInfo.countOfUnwindCodes = 0;
-  r->unwindInfo.frameRegister = 0;
-  r->unwindInfo.frameOffset = 0;
-  r->unwindInfo.exceptionHandler = offsetof(ExceptionHandlerRecord, thunk);
+  r->runtimeFunction.UnwindData = offsetof(ExceptionHandlerRecord, unwindData);
+  r->unwindData.exceptionHandler = offsetof(ExceptionHandlerRecord, thunk);
 
   // mov imm64, rax
   r->thunk[0] = 0x48;
@@ -220,17 +275,28 @@ static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
   r->thunk[11] = 0xe0;
 #    endif
 
+  // RtlAddGrowableFunctionTable will write into the region. We must therefore
+  // only write-protect is after this has been called.
+
+  // XXX NB: The profiler believes this function is only called from the main
+  // thread. If that ever becomes untrue, the profiler must be updated
+  // immediately.
+  {
+    AutoSuppressStackWalking suppress;
+    DWORD result = RtlAddGrowableFunctionTable(
+        &r->dynamicTable, &r->runtimeFunction, 1, 1, (ULONG_PTR)p,
+        (ULONG_PTR)p + bytes - pageSize);
+    if (result != S_OK) {
+      return false;
+    }
+  }
+
   DWORD oldProtect;
   if (!VirtualProtect(p, pageSize, PAGE_EXECUTE_READ, &oldProtect)) {
     MOZ_CRASH();
   }
 
-  // XXX NB: The profiler believes this function is only called from the main
-  // thread. If that ever becomes untrue, the profiler must be updated
-  // immediately.
-  AutoSuppressStackWalking suppress;
-  return RtlInstallFunctionTableCallback((DWORD64)p | 0x3, (DWORD64)p, bytes,
-                                         RuntimeFunctionCallback, NULL, NULL);
+  return true;
 }
 
 static void UnregisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
@@ -242,9 +308,8 @@ static void UnregisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
 static void* ReserveProcessExecutableMemory(size_t bytes) {
 #  ifdef NEED_JIT_UNWIND_HANDLING
   size_t pageSize = gc::SystemPageSize();
-  if (sJitExceptionHandler) {
-    bytes += pageSize;
-  }
+  // Always reserve space for the unwind information.
+  bytes += pageSize;
 #  endif
 
   void* p = nullptr;
@@ -265,19 +330,23 @@ static void* ReserveProcessExecutableMemory(size_t bytes) {
   }
 
 #  ifdef NEED_JIT_UNWIND_HANDLING
-  if (sJitExceptionHandler) {
-    if (!RegisterExecutableMemory(p, bytes, pageSize)) {
+  if (RegisterExecutableMemory(p, bytes, pageSize)) {
+    sHasInstalledFunctionTable = true;
+  } else {
+    if (sJitExceptionHandler) {
+      // This should have succeeded if we have an exception handler. Bail.
       VirtualFree(p, 0, MEM_RELEASE);
       return nullptr;
     }
-
-    p = (uint8_t*)p + pageSize;
-    bytes -= pageSize;
   }
+
+  // Skip the first page where we might have allocated an exception handler
+  // record.
+  p = (uint8_t*)p + pageSize;
+  bytes -= pageSize;
 
   RegisterJitCodeRegion((uint8_t*)p, bytes);
 #  endif
-
   return p;
 }
 
@@ -285,9 +354,10 @@ static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
 #  ifdef NEED_JIT_UNWIND_HANDLING
   UnregisterJitCodeRegion((uint8_t*)addr, bytes);
 
-  if (sJitExceptionHandler) {
-    size_t pageSize = gc::SystemPageSize();
-    addr = (uint8_t*)addr - pageSize;
+  size_t pageSize = gc::SystemPageSize();
+  addr = (uint8_t*)addr - pageSize;
+
+  if (sHasInstalledFunctionTable) {
     UnregisterExecutableMemory(addr, bytes, pageSize);
   }
 #  endif
@@ -296,9 +366,10 @@ static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
 }
 
 static DWORD ProtectionSettingToFlags(ProtectionSetting protection) {
+  if (!JitOptions.writeProtectCode) {
+    return PAGE_EXECUTE_READWRITE;
+  }
   switch (protection) {
-    case ProtectionSetting::Protected:
-      return PAGE_NOACCESS;
     case ProtectionSetting::Writable:
       return PAGE_READWRITE;
     case ProtectionSetting::Executable:
@@ -324,6 +395,23 @@ static void DecommitPages(void* addr, size_t bytes) {
   }
 }
 #elif defined(__wasi__)
+#  if defined(JS_CODEGEN_WASM32)
+static void* ReserveProcessExecutableMemory(size_t bytes) {
+  return malloc(bytes);
+}
+
+static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
+  free(addr);
+}
+
+[[nodiscard]] static bool CommitPages(void* addr, size_t bytes,
+                                      ProtectionSetting protection) {
+  return true;
+}
+
+static void DecommitPages(void* addr, size_t bytes) {}
+
+#  else
 static void* ReserveProcessExecutableMemory(size_t bytes) {
   MOZ_CRASH("NYI for WASI.");
   return nullptr;
@@ -339,6 +427,7 @@ static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
 static void DecommitPages(void* addr, size_t bytes) {
   MOZ_CRASH("NYI for WASI.");
 }
+#  endif
 #else  // !XP_WIN && !__wasi__
 #  ifndef MAP_NORESERVE
 #    define MAP_NORESERVE 0
@@ -373,16 +462,51 @@ static void* ComputeRandomAllocationAddress() {
 #  endif
 }
 
+static void DecommitPages(void* addr, size_t bytes);
+
 static void* ReserveProcessExecutableMemory(size_t bytes) {
+  // On most Unix platforms our strategy is as follows:
+  //
+  // * Reserve:  mmap with PROT_NONE
+  // * Commit:   mmap with MAP_FIXED, PROT_READ | ...
+  // * Decommit: mmap with MAP_FIXED, PROT_NONE
+  //
+  // On Apple Silicon this only works if we use mprotect to implement W^X. To
+  // use RWX pages with the faster pthread_jit_write_protect_np API for
+  // thread-local writable/executable switching, the kernel enforces the
+  // following rules:
+  //
+  // * The initial mmap must be called with MAP_JIT.
+  // * MAP_FIXED can't be used with MAP_JIT.
+  // * Since macOS 11.2, mprotect can't be used to change permissions of RWX JIT
+  //   pages (even PROT_NONE fails).
+  //   See https://developer.apple.com/forums/thread/672804.
+  //
+  // This means we have to use the following strategy on Apple Silicon:
+  //
+  // * Reserve:  mmap with PROT_READ | PROT_WRITE | PROT_EXEC, then decommit
+  // * Commit:   madvise with MADV_FREE_REUSE
+  // * Decommit: madvise with MADV_FREE_REUSABLE
+  //
+  // This is inspired by V8's code in OS::SetPermissions.
+
   // Note that randomAddr is just a hint: if the address is not available
   // mmap will pick a different address.
   void* randomAddr = ComputeRandomAllocationAddress();
-  void* p = MozTaggedAnonymousMmap(randomAddr, bytes, PROT_NONE,
-                                   MAP_NORESERVE | MAP_PRIVATE | MAP_ANON, -1,
-                                   0, "js-executable-memory");
+  unsigned protection = PROT_NONE;
+  unsigned flags = MAP_NORESERVE | MAP_PRIVATE | MAP_ANON;
+#  ifdef JS_USE_APPLE_FAST_WX
+  protection = PROT_READ | PROT_WRITE | PROT_EXEC;
+  flags |= MAP_JIT;
+#  endif
+  void* p = MozTaggedAnonymousMmap(randomAddr, bytes, protection, flags, -1, 0,
+                                   "js-executable-memory");
   if (p == MAP_FAILED) {
     return nullptr;
   }
+#  ifdef JS_USE_APPLE_FAST_WX
+  DecommitPages(p, bytes);
+#  endif
   return p;
 }
 
@@ -392,6 +516,9 @@ static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
 }
 
 static unsigned ProtectionSettingToFlags(ProtectionSetting protection) {
+  if (!JitOptions.writeProtectCode) {
+    return PROT_READ | PROT_WRITE | PROT_EXEC;
+  }
 #  ifdef MOZ_VALGRIND
   // If we're configured for Valgrind and running on it, use a slacker
   // scheme that doesn't change execute permissions, since doing so causes
@@ -399,8 +526,6 @@ static unsigned ProtectionSettingToFlags(ProtectionSetting protection) {
   // regains execute permission.  See bug 1338179.
   if (RUNNING_ON_VALGRIND) {
     switch (protection) {
-      case ProtectionSetting::Protected:
-        return PROT_NONE;
       case ProtectionSetting::Writable:
         return PROT_READ | PROT_WRITE | PROT_EXEC;
       case ProtectionSetting::Executable:
@@ -412,8 +537,6 @@ static unsigned ProtectionSettingToFlags(ProtectionSetting protection) {
   // it, so use the standard scheme.
 #  endif
   switch (protection) {
-    case ProtectionSetting::Protected:
-      return PROT_NONE;
     case ProtectionSetting::Writable:
       return PROT_READ | PROT_WRITE;
     case ProtectionSetting::Executable:
@@ -424,23 +547,42 @@ static unsigned ProtectionSettingToFlags(ProtectionSetting protection) {
 
 [[nodiscard]] static bool CommitPages(void* addr, size_t bytes,
                                       ProtectionSetting protection) {
-  void* p = MozTaggedAnonymousMmap(
-      addr, bytes, ProtectionSettingToFlags(protection),
-      MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0, "js-executable-memory");
+  // See the comment in ReserveProcessExecutableMemory.
+#  ifdef JS_USE_APPLE_FAST_WX
+  int ret;
+  do {
+    ret = madvise(addr, bytes, MADV_FREE_REUSE);
+  } while (ret != 0 && errno == EAGAIN);
+  return ret == 0;
+#  else
+  unsigned flags = ProtectionSettingToFlags(protection);
+  void* p = MozTaggedAnonymousMmap(addr, bytes, flags,
+                                   MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0,
+                                   "js-executable-memory");
   if (p == MAP_FAILED) {
     return false;
   }
   MOZ_RELEASE_ASSERT(p == addr);
   return true;
+#  endif
 }
 
 static void DecommitPages(void* addr, size_t bytes) {
+  // See the comment in ReserveProcessExecutableMemory.
+#  ifdef JS_USE_APPLE_FAST_WX
+  int ret;
+  do {
+    ret = madvise(addr, bytes, MADV_FREE_REUSABLE);
+  } while (ret != 0 && errno == EAGAIN);
+  MOZ_RELEASE_ASSERT(ret == 0);
+#  else
   // Use mmap with MAP_FIXED and PROT_NONE. Inspired by jemalloc's
   // pages_decommit.
   void* p = MozTaggedAnonymousMmap(addr, bytes, PROT_NONE,
                                    MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0,
                                    "js-executable-memory");
   MOZ_RELEASE_ASSERT(addr == p);
+#  endif
 }
 #endif
 
@@ -521,7 +663,7 @@ class ProcessExecutableMemory {
   uint8_t* base_;
 
   // The fields below should only be accessed while we hold the lock.
-  Mutex lock_;
+  Mutex lock_ MOZ_UNANNOTATED;
 
   // pagesAllocated_ is an Atomic so that bytesAllocated does not have to
   // take the lock.
@@ -539,7 +681,6 @@ class ProcessExecutableMemory {
         lock_(mutexid::ProcessExecutableRegion),
         pagesAllocated_(0),
         cursor_(0),
-        rng_(),
         pages_() {}
 
   [[nodiscard]] bool init() {
@@ -748,12 +889,14 @@ bool js::jit::AddressIsInExecutableMemory(const void* p) {
 bool js::jit::ReprotectRegion(void* start, size_t size,
                               ProtectionSetting protection,
                               MustFlushICache flushICache) {
+#if defined(JS_CODEGEN_WASM32)
+  return true;
+#endif
+
   // Flush ICache when making code executable, before we modify |size|.
-  if (flushICache == MustFlushICache::LocalThreadOnly ||
-      flushICache == MustFlushICache::AllThreads) {
+  if (flushICache == MustFlushICache::Yes) {
     MOZ_ASSERT(protection == ProtectionSetting::Executable);
-    bool codeIsThreadLocal = flushICache == MustFlushICache::LocalThreadOnly;
-    jit::FlushICache(start, size, codeIsThreadLocal);
+    jit::FlushICache(start, size);
   }
 
   // Calculate the start of the page containing this region,
@@ -788,10 +931,19 @@ bool js::jit::ReprotectRegion(void* start, size_t size,
 #else
   std::atomic_thread_fence(std::memory_order_seq_cst);
 
+  if (!JitOptions.writeProtectCode) {
+    return true;
+  }
+
+#  ifdef JS_USE_APPLE_FAST_WX
+  MOZ_CRASH("writeProtectCode should always be false on Apple Silicon");
+#  endif
+
 #  ifdef XP_WIN
-  DWORD oldProtect;
   DWORD flags = ProtectionSettingToFlags(protection);
-  if (!VirtualProtect(pageStart, size, flags, &oldProtect)) {
+  // This is a essentially a VirtualProtect, but with lighter impact on
+  // antivirus analysis. See bug 1823634.
+  if (!VirtualAlloc(pageStart, size, MEM_COMMIT, flags)) {
     return false;
   }
 #  else
@@ -806,17 +958,31 @@ bool js::jit::ReprotectRegion(void* start, size_t size,
   return true;
 }
 
-#if defined(XP_WIN) && defined(NEED_JIT_UNWIND_HANDLING)
-static PRUNTIME_FUNCTION RuntimeFunctionCallback(DWORD64 ControlPc,
-                                                 PVOID Context) {
-  MOZ_ASSERT(sJitExceptionHandler);
-
-  // RegisterExecutableMemory already set up the runtime function in the
-  // exception-data page preceding the allocation.
-  uint8_t* p = execMemory.base();
-  if (!p) {
-    return nullptr;
+#ifdef JS_USE_APPLE_FAST_WX
+void js::jit::AutoMarkJitCodeWritableForThread::markExecutable(
+    bool executable) {
+  if (__builtin_available(macOS 11.0, *)) {
+    pthread_jit_write_protect_np(executable);
+  } else {
+    MOZ_CRASH("pthread_jit_write_protect_np must be available");
   }
-  return (PRUNTIME_FUNCTION)(p - gc::SystemPageSize());
+}
+#endif
+
+#ifdef DEBUG
+static MOZ_THREAD_LOCAL(bool) sMarkingWritable;
+
+void js::jit::AutoMarkJitCodeWritableForThread::checkConstructor() {
+  if (!sMarkingWritable.initialized()) {
+    sMarkingWritable.infallibleInit();
+  }
+  MOZ_ASSERT(!sMarkingWritable.get(),
+             "AutoMarkJitCodeWritableForThread shouldn't be nested");
+  sMarkingWritable.set(true);
+}
+
+void js::jit::AutoMarkJitCodeWritableForThread::checkDestructor() {
+  MOZ_ASSERT(sMarkingWritable.get());
+  sMarkingWritable.set(false);
 }
 #endif

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/remote-page */
 
 "use strict";
 
@@ -33,6 +33,11 @@ function initPage() {
   document
     .getElementById("openInsecure")
     .addEventListener("click", onOpenInsecureButtonClick);
+
+  const delay = RPMGetIntPref("security.dialog_enable_delay", 1000);
+  setTimeout(() => {
+    document.getElementById("openInsecure").removeAttribute("inert");
+  }, delay);
 
   if (window.top == window) {
     document
@@ -124,6 +129,6 @@ function addAutofocus(selector, position = "afterbegin") {
 
 initPage();
 // Dispatch this event so tests can detect that we finished loading the error page.
-// We're using the same event name as neterror because BrowserTestUtils.jsm relies on that.
+// We're using the same event name as neterror because BrowserTestUtils.sys.mjs relies on that.
 let event = new CustomEvent("AboutNetErrorLoad", { bubbles: true });
 document.dispatchEvent(event);

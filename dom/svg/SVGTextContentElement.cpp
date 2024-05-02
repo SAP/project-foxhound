@@ -17,8 +17,7 @@
 #include "nsTextNode.h"
 #include "SVGTextFrame.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace SVGTextContentElement_Binding;
 
@@ -74,7 +73,7 @@ Maybe<int32_t> SVGTextContentElement::GetNonLayoutDependentNumberOfChars() {
   SVGTextFrame* frame = GetSVGTextFrameForNonLayoutDependentQuery();
   if (!frame || frame != GetPrimaryFrame()) {
     // Only support this fast path on <text>, not child <tspan>s, etc.
-    return Some(0);
+    return Nothing();
   }
 
   uint32_t num = 0;
@@ -133,7 +132,20 @@ float SVGTextContentElement::GetSubStringLength(uint32_t charnum,
   SVGTextFrame* textFrame = GetSVGTextFrameForNonLayoutDependentQuery();
   if (!textFrame) return 0.0f;
 
-  return textFrame->GetSubStringLength(this, charnum, nchars, rv);
+  if (!textFrame->RequiresSlowFallbackForSubStringLength()) {
+    return textFrame->GetSubStringLengthFastPath(this, charnum, nchars, rv);
+  }
+  // We need to make sure that we've been reflowed before using the slow
+  // fallback path as it may affect glyph positioning. GetSVGTextFrame will do
+  // that for us.
+  // XXX perf: It may be possible to limit reflow to just calling ReflowSVG,
+  // but we would still need to resort to full reflow for percentage
+  // positioning attributes.  For now we just do a full reflow regardless
+  // since the cases that would cause us to be called are relatively uncommon.
+  textFrame = GetSVGTextFrame();
+  if (!textFrame) return 0.0f;
+
+  return textFrame->GetSubStringLengthSlowFallback(this, charnum, nchars, rv);
 }
 
 already_AddRefed<DOMSVGPoint> SVGTextContentElement::GetStartPositionOfChar(
@@ -188,5 +200,4 @@ int32_t SVGTextContentElement::GetCharNumAtPosition(
   return textFrame ? textFrame->GetCharNumAtPosition(this, aPoint) : -1;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

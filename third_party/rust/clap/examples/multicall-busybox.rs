@@ -1,20 +1,21 @@
+use std::path::PathBuf;
 use std::process::exit;
 
-use clap::{App, AppSettings, Arg};
+use clap::{value_parser, Arg, ArgAction, Command};
 
-fn applet_commands() -> [App<'static>; 2] {
+fn applet_commands() -> [Command; 2] {
     [
-        App::new("true").about("does nothing successfully"),
-        App::new("false").about("does nothing unsuccessfully"),
+        Command::new("true").about("does nothing successfully"),
+        Command::new("false").about("does nothing unsuccessfully"),
     ]
 }
 
 fn main() {
-    let app = App::new(env!("CARGO_CRATE_NAME"))
-        .setting(AppSettings::Multicall)
+    let cmd = Command::new(env!("CARGO_CRATE_NAME"))
+        .multicall(true)
         .subcommand(
-            App::new("busybox")
-                .setting(AppSettings::ArgRequiredElseHelp)
+            Command::new("busybox")
+                .arg_required_else_help(true)
                 .subcommand_value_name("APPLET")
                 .subcommand_help_heading("APPLETS")
                 .arg(
@@ -22,18 +23,18 @@ fn main() {
                         .long("install")
                         .help("Install hardlinks for all subcommands in path")
                         .exclusive(true)
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .default_missing_value("/usr/local/bin")
-                        .use_delimiter(false),
+                        .value_parser(value_parser!(PathBuf)),
                 )
                 .subcommands(applet_commands()),
         )
         .subcommands(applet_commands());
 
-    let matches = app.get_matches();
+    let matches = cmd.get_matches();
     let mut subcommand = matches.subcommand();
     if let Some(("busybox", cmd)) = subcommand {
-        if cmd.occurrences_of("install") > 0 {
+        if cmd.contains_id("install") {
             unimplemented!("Make hardlinks to the executable here");
         }
         subcommand = cmd.subcommand();

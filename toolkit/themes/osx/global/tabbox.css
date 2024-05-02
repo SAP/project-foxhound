@@ -21,11 +21,14 @@ tabpanels {
 }
 
 tabs {
-  -moz-box-align: center;
+  align-items: center;
   font: menu;
   padding: 0 10px;
   margin-bottom: -12px;
   position: relative;
+  /* Needs to sort on top of the tabbox, which is a grid container (and thus
+   * causes pseudo stacking contexts to be created) */
+  z-index: 1;
 }
 
 tab {
@@ -39,15 +42,15 @@ tab:-moz-focusring {
   position: relative;
 }
 
-tab:first-of-type {
+tab:where(:first-of-type) {
   padding-inline-start: 2px;
 }
 
-tab:last-of-type {
+tab:where(:last-of-type) {
   padding-inline-end: 2px;
 }
 
-tab[visuallyselected="true"]:not(:-moz-window-inactive) {
+tab:where([visuallyselected]:not(:-moz-window-inactive)) {
   color: #FFF;
 }
 
@@ -57,5 +60,5 @@ tab[visuallyselected="true"]:not(:-moz-window-inactive) {
 
 .tabs-left,
 .tabs-right  {
-  -moz-box-flex: 1;
+  flex: 1;
 }

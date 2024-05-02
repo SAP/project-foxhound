@@ -4,32 +4,25 @@
 
 "use strict";
 
-const { components, Ci, Cr, Cu, CC } = require("chrome");
-const ChromeUtils = require("ChromeUtils");
-const Services = require("Services");
-
-loader.lazyRequireGetter(
-  this,
-  "NetworkHelper",
-  "devtools/shared/webconsole/network-helper"
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "NetUtil",
+  "resource://gre/modules/NetUtil.jsm"
 );
-loader.lazyGetter(this, "debugJsModules", function() {
-  const { AppConstants } = require("resource://gre/modules/AppConstants.jsm");
-  return !!AppConstants.DEBUG_JS_MODULES;
-});
 
 const {
   getTheme,
   addThemeObserver,
   removeThemeObserver,
-} = require("devtools/client/shared/theme");
+} = require("resource://devtools/client/shared/theme.js");
 
-const BinaryInput = CC(
+const BinaryInput = Components.Constructor(
   "@mozilla.org/binaryinputstream;1",
   "nsIBinaryInputStream",
   "setInputStream"
 );
-const BufferStream = CC(
+const BufferStream = Components.Constructor(
   "@mozilla.org/io/arraybuffer-input-stream;1",
   "nsIArrayBufferInputStream",
   "setData"
@@ -74,29 +67,40 @@ Converter.prototype = {
    * 5. convert does nothing, it's just the synchronous version
    *    of asyncConvertData
    */
-  convert: function(fromStream, fromType, toType, ctx) {
+  convert(fromStream, fromType, toType, ctx) {
     return fromStream;
   },
 
-  asyncConvertData: function(fromType, toType, listener, ctx) {
+  asyncConvertData(fromType, toType, listener, ctx) {
     this.listener = listener;
   },
-  getConvertedType: function(fromType, channel) {
+  getConvertedType(fromType, channel) {
     return "text/html";
   },
 
-  onDataAvailable: function(request, inputStream, offset, count) {
+  onDataAvailable(request, inputStream, offset, count) {
     // Decode and insert data.
     const buffer = new ArrayBuffer(count);
     new BinaryInput(inputStream).readArrayBuffer(count, buffer);
     this.decodeAndInsertBuffer(buffer);
   },
 
-  onStartRequest: function(request) {
+  onStartRequest(request) {
     // Set the content type to HTML in order to parse the doctype, styles
     // and scripts. The JSON will be manually inserted as text.
     request.QueryInterface(Ci.nsIChannel);
     request.contentType = "text/html";
+
+    // Tweak the request's principal in order to allow the related HTML document
+    // used to display raw JSON to be able to load resource://devtools files
+    // from the jsonview document.
+    const uri = lazy.NetUtil.newURI("resource://devtools/client/jsonview/");
+    const resourcePrincipal =
+      Services.scriptSecurityManager.createContentPrincipal(
+        uri,
+        request.loadInfo.originAttributes
+      );
+    request.owner = resourcePrincipal;
 
     const headers = getHttpHeaders(request);
 
@@ -120,24 +124,19 @@ Converter.prototype = {
     // Changing the content type breaks saving functionality. Fix it.
     fixSave(request);
 
-    // Because content might still have a reference to this window,
-    // force setting it to a null principal to avoid it being same-
-    // origin with (other) content.
-    request.loadInfo.resetPrincipalToInheritToNullPrincipal();
-
     // Start the request.
     this.listener.onStartRequest(request);
 
     // Initialize stuff.
-    const win = NetworkHelper.getWindowForRequest(request);
-    if (!win || !components.isSuccessCode(request.status)) {
+    const win = getWindowForRequest(request);
+    if (!win || !Components.isSuccessCode(request.status)) {
       return;
     }
 
     // We compare actual pointer identities here rather than using .equals(),
     // because if things went correctly then the document must have exactly
     // the principal we reset it to above. If not, something went wrong.
-    if (win.document.nodePrincipal != request.loadInfo.principalToInherit) {
+    if (win.document.nodePrincipal != resourcePrincipal) {
       // Whatever that document is, it's not ours.
       request.cancel(Cr.NS_BINDING_ABORTED);
       return;
@@ -154,9 +153,9 @@ Converter.prototype = {
     this.listener.onDataAvailable(request, stream, 0, stream.available());
   },
 
-  onStopRequest: function(request, statusCode) {
+  onStopRequest(request, statusCode) {
     // Flush data if we haven't been canceled.
-    if (components.isSuccessCode(statusCode)) {
+    if (Components.isSuccessCode(statusCode)) {
       this.decodeAndInsertBuffer(new ArrayBuffer(0), true);
     }
 
@@ -168,7 +167,7 @@ Converter.prototype = {
   },
 
   // Decodes an ArrayBuffer into a string and inserts it into the page.
-  decodeAndInsertBuffer: function(buffer, flush = false) {
+  decodeAndInsertBuffer(buffer, flush = false) {
     // Decode the buffer into a string.
     const data = this.decoder.decode(buffer, { stream: !flush });
 
@@ -213,13 +212,13 @@ function getHttpHeaders(request) {
   // (e.g. in case of data: URLs)
   if (request instanceof Ci.nsIHttpChannel) {
     request.visitResponseHeaders({
-      visitHeader: function(name, value) {
-        headers.response.push({ name: name, value: value });
+      visitHeader(name, value) {
+        headers.response.push({ name, value });
       },
     });
     request.visitRequestHeaders({
-      visitHeader: function(name, value) {
-        headers.request.push({ name: name, value: value });
+      visitHeader(name, value) {
+        headers.request.push({ name, value });
       },
     });
   }
@@ -237,12 +236,57 @@ function getAllStrings() {
   return jsonViewStringDict;
 }
 
+// The two following methods are duplicated from NetworkHelper.sys.mjs
+// to avoid pulling the whole NetworkHelper as a dependency during
+// initialization.
+
+/**
+ * Gets the nsIDOMWindow that is associated with request.
+ *
+ * @param nsIHttpChannel request
+ * @returns nsIDOMWindow or null
+ */
+function getWindowForRequest(request) {
+  try {
+    return getRequestLoadContext(request).associatedWindow;
+  } catch (ex) {
+    // On some request notificationCallbacks and loadGroup are both null,
+    // so that we can't retrieve any nsILoadContext interface.
+    // Fallback on nsILoadInfo to try to retrieve the request's window.
+    // (this is covered by test_network_get.html and its CSS request)
+    return request.loadInfo.loadingDocument?.defaultView;
+  }
+}
+
+/**
+ * Gets the nsILoadContext that is associated with request.
+ *
+ * @param nsIHttpChannel request
+ * @returns nsILoadContext or null
+ */
+function getRequestLoadContext(request) {
+  try {
+    return request.notificationCallbacks.getInterface(Ci.nsILoadContext);
+  } catch (ex) {
+    // Ignore.
+  }
+
+  try {
+    return request.loadGroup.notificationCallbacks.getInterface(
+      Ci.nsILoadContext
+    );
+  } catch (ex) {
+    // Ignore.
+  }
+
+  return null;
+}
+
 // Exports variables that will be accessed by the non-privileged scripts.
 function exportData(win, headers) {
   const json = new win.Text();
   const JSONView = Cu.cloneInto(
     {
-      debugJsModules,
       headers,
       json,
       readyState: "uninitialized",
@@ -261,7 +305,7 @@ function exportData(win, headers) {
       writable: true,
     });
   } catch (error) {
-    Cu.reportError(error);
+    console.error(error);
   }
   return { json };
 }
@@ -288,7 +332,7 @@ function initialHTML(doc) {
     os = "linux";
   }
 
-  const baseURI = "resource://devtools-client-jsonview/";
+  const baseURI = "resource://devtools/client/jsonview/";
 
   return (
     "<!DOCTYPE html>\n" +
@@ -328,7 +372,7 @@ function initialHTML(doc) {
 // However, the HTML parser is not synchronous, so this function uses a mutation
 // observer to detect the creation of the element. Then the text node is appended.
 function insertJsonData(win, json) {
-  new win.MutationObserver(function(mutations, observer) {
+  new win.MutationObserver(function (mutations, observer) {
     for (const { target, addedNodes } of mutations) {
       if (target.nodeType == 1 && target.id == "content") {
         for (const node of addedNodes) {
@@ -347,13 +391,13 @@ function insertJsonData(win, json) {
 }
 
 function keepThemeUpdated(win) {
-  const listener = function() {
+  const listener = function () {
     win.document.documentElement.className = "theme-" + getTheme();
   };
   addThemeObserver(listener);
   win.addEventListener(
     "unload",
-    function(event) {
+    function (event) {
       removeThemeObserver(listener);
       win = null;
     },
@@ -384,5 +428,5 @@ function createInstance() {
 }
 
 exports.JsonViewService = {
-  createInstance: createInstance,
+  createInstance,
 };

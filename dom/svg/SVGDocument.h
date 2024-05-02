@@ -12,8 +12,6 @@
 
 namespace mozilla {
 
-class SVGContextPaint;
-
 namespace dom {
 
 class SVGElement;
@@ -23,19 +21,7 @@ class SVGDocument final : public XMLDocument {
  public:
   SVGDocument() : XMLDocument("image/svg+xml") { mType = eSVG; }
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
-
-  void SetCurrentContextPaint(const SVGContextPaint* aContextPaint) {
-    mCurrentContextPaint = aContextPaint;
-  }
-
-  const SVGContextPaint* GetCurrentContextPaint() const {
-    return mCurrentContextPaint;
-  }
-
- private:
-  // This is maintained by AutoSetRestoreSVGContextPaint.
-  const SVGContextPaint* mCurrentContextPaint = nullptr;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
 inline SVGDocument* Document::AsSVGDocument() {

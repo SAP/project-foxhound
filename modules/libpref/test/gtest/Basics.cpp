@@ -34,3 +34,25 @@ TEST(PrefsBasics, Errors)
   ASSERT_FLOAT_EQ(Preferences::GetFloat("foo.float", 1.0f, PrefValueKind::User),
                   4.44f);
 }
+
+TEST(PrefsBasics, Serialize)
+{
+  // Ensure that at least this one preference exists
+  Preferences::SetBool("foo.bool", true, PrefValueKind::Default);
+  ASSERT_EQ(Preferences::GetBool("foo.bool", false, PrefValueKind::Default),
+            true);
+
+  nsCString str;
+  Preferences::SerializePreferences(str, true);
+  fprintf(stderr, "%s\n", str.Data());
+  // Assert that some prefs were not sanitized
+  ASSERT_NE(nullptr, strstr(str.Data(), "B--:"));
+  ASSERT_NE(nullptr, strstr(str.Data(), "I--:"));
+  ASSERT_NE(nullptr, strstr(str.Data(), "S--:"));
+  // Assert that something was sanitized
+  ASSERT_NE(
+      nullptr,
+      strstr(
+          str.Data(),
+          "I-S:56/datareporting.policy.dataSubmissionPolicyAcceptedVersion"));
+}

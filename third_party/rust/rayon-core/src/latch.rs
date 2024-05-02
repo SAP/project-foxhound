@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::usize;
@@ -37,10 +39,15 @@ pub(super) trait Latch {
     ///
     /// Setting a latch triggers other threads to wake up and (in some
     /// cases) complete. This may, in turn, cause memory to be
-    /// allocated and so forth.  One must be very careful about this,
+    /// deallocated and so forth. One must be very careful about this,
     /// and it's typically better to read all the fields you will need
     /// to access *before* a latch is set!
-    fn set(&self);
+    ///
+    /// This function operates on `*const Self` instead of `&self` to allow it
+    /// to become dangling during this call. The caller must ensure that the
+    /// pointer is valid upon entry, and not invalidated during the call by any
+    /// actions other than `set` itself.
+    unsafe fn set(this: *const Self);
 }
 
 pub(super) trait AsCoreLatch {
@@ -75,13 +82,6 @@ impl CoreLatch {
         Self {
             state: AtomicUsize::new(0),
         }
-    }
-
-    /// Returns the address of this core latch as an integer. Used
-    /// for logging.
-    #[inline]
-    pub(super) fn addr(&self) -> usize {
-        self as *const CoreLatch as usize
     }
 
     /// Invoked by owning thread as it prepares to sleep. Returns true
@@ -123,8 +123,8 @@ impl CoreLatch {
     /// doing some wakeups; those are encapsulated in the surrounding
     /// latch code.
     #[inline]
-    fn set(&self) -> bool {
-        let old_state = self.state.swap(SET, Ordering::AcqRel);
+    unsafe fn set(this: *const Self) -> bool {
+        let old_state = (*this).state.swap(SET, Ordering::AcqRel);
         old_state == SLEEPING
     }
 
@@ -132,6 +132,13 @@ impl CoreLatch {
     #[inline]
     pub(super) fn probe(&self) -> bool {
         self.state.load(Ordering::Acquire) == SET
+    }
+}
+
+impl AsCoreLatch for CoreLatch {
+    #[inline]
+    fn as_core_latch(&self) -> &CoreLatch {
+        self
     }
 }
 
@@ -186,27 +193,29 @@ impl<'r> AsCoreLatch for SpinLatch<'r> {
 
 impl<'r> Latch for SpinLatch<'r> {
     #[inline]
-    fn set(&self) {
+    unsafe fn set(this: *const Self) {
         let cross_registry;
 
-        let registry = if self.cross {
+        let registry: &Registry = if (*this).cross {
             // Ensure the registry stays alive while we notify it.
             // Otherwise, it would be possible that we set the spin
             // latch and the other thread sees it and exits, causing
             // the registry to be deallocated, all before we get a
             // chance to invoke `registry.notify_worker_latch_is_set`.
-            cross_registry = Arc::clone(self.registry);
+            cross_registry = Arc::clone((*this).registry);
             &cross_registry
         } else {
             // If this is not a "cross-registry" spin-latch, then the
             // thread which is performing `set` is itself ensuring
-            // that the registry stays alive.
-            self.registry
+            // that the registry stays alive. However, that doesn't
+            // include this *particular* `Arc` handle if the waiting
+            // thread then exits, so we must completely dereference it.
+            (*this).registry
         };
-        let target_worker_index = self.target_worker_index;
+        let target_worker_index = (*this).target_worker_index;
 
-        // NOTE: Once we `set`, the target may proceed and invalidate `&self`!
-        if self.core_latch.set() {
+        // NOTE: Once we `set`, the target may proceed and invalidate `this`!
+        if CoreLatch::set(&(*this).core_latch) {
             // Subtle: at this point, we can no longer read from
             // `self`, because the thread owning this spin latch may
             // have awoken and deallocated the latch. Therefore, we
@@ -253,10 +262,56 @@ impl LockLatch {
 
 impl Latch for LockLatch {
     #[inline]
-    fn set(&self) {
-        let mut guard = self.m.lock().unwrap();
+    unsafe fn set(this: *const Self) {
+        let mut guard = (*this).m.lock().unwrap();
         *guard = true;
-        self.v.notify_all();
+        (*this).v.notify_all();
+    }
+}
+
+/// Once latches are used to implement one-time blocking, primarily
+/// for the termination flag of the threads in the pool.
+///
+/// Note: like a `SpinLatch`, once-latches are always associated with
+/// some registry that is probing them, which must be tickled when
+/// they are set. *Unlike* a `SpinLatch`, they don't themselves hold a
+/// reference to that registry. This is because in some cases the
+/// registry owns the once-latch, and that would create a cycle. So a
+/// `OnceLatch` must be given a reference to its owning registry when
+/// it is set. For this reason, it does not implement the `Latch`
+/// trait (but it doesn't have to, as it is not used in those generic
+/// contexts).
+#[derive(Debug)]
+pub(super) struct OnceLatch {
+    core_latch: CoreLatch,
+}
+
+impl OnceLatch {
+    #[inline]
+    pub(super) fn new() -> OnceLatch {
+        Self {
+            core_latch: CoreLatch::new(),
+        }
+    }
+
+    /// Set the latch, then tickle the specific worker thread,
+    /// which should be the one that owns this latch.
+    #[inline]
+    pub(super) unsafe fn set_and_tickle_one(
+        this: *const Self,
+        registry: &Registry,
+        target_worker_index: usize,
+    ) {
+        if CoreLatch::set(&(*this).core_latch) {
+            registry.notify_worker_latch_is_set(target_worker_index);
+        }
+    }
+}
+
+impl AsCoreLatch for OnceLatch {
+    #[inline]
+    fn as_core_latch(&self) -> &CoreLatch {
+        &self.core_latch
     }
 }
 
@@ -265,80 +320,63 @@ impl Latch for LockLatch {
 /// necessarily make the latch be considered `set()`; instead, it just
 /// decrements the counter. The latch is only "set" (in the sense that
 /// `probe()` returns true) once the counter reaches zero.
-///
-/// Note: like a `SpinLatch`, count laches are always associated with
-/// some registry that is probing them, which must be tickled when
-/// they are set. *Unlike* a `SpinLatch`, they don't themselves hold a
-/// reference to that registry. This is because in some cases the
-/// registry owns the count-latch, and that would create a cycle. So a
-/// `CountLatch` must be given a reference to its owning registry when
-/// it is set. For this reason, it does not implement the `Latch`
-/// trait (but it doesn't have to, as it is not used in those generic
-/// contexts).
 #[derive(Debug)]
 pub(super) struct CountLatch {
-    core_latch: CoreLatch,
     counter: AtomicUsize,
+    kind: CountLatchKind,
+}
+
+enum CountLatchKind {
+    /// A latch for scopes created on a rayon thread which will participate in work-
+    /// stealing while it waits for completion. This thread is not necessarily part
+    /// of the same registry as the scope itself!
+    Stealing {
+        latch: CoreLatch,
+        /// If a worker thread in registry A calls `in_place_scope` on a ThreadPool
+        /// with registry B, when a job completes in a thread of registry B, we may
+        /// need to call `notify_worker_latch_is_set()` to wake the thread in registry A.
+        /// That means we need a reference to registry A (since at that point we will
+        /// only have a reference to registry B), so we stash it here.
+        registry: Arc<Registry>,
+        /// The index of the worker to wake in `registry`
+        worker_index: usize,
+    },
+
+    /// A latch for scopes created on a non-rayon thread which will block to wait.
+    Blocking { latch: LockLatch },
+}
+
+impl std::fmt::Debug for CountLatchKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CountLatchKind::Stealing { latch, .. } => {
+                f.debug_tuple("Stealing").field(latch).finish()
+            }
+            CountLatchKind::Blocking { latch, .. } => {
+                f.debug_tuple("Blocking").field(latch).finish()
+            }
+        }
+    }
 }
 
 impl CountLatch {
-    #[inline]
-    pub(super) fn new() -> CountLatch {
-        CountLatch {
-            core_latch: CoreLatch::new(),
-            counter: AtomicUsize::new(1),
-        }
+    pub(super) fn new(owner: Option<&WorkerThread>) -> Self {
+        Self::with_count(1, owner)
     }
 
-    #[inline]
-    pub(super) fn increment(&self) {
-        debug_assert!(!self.core_latch.probe());
-        self.counter.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Decrements the latch counter by one. If this is the final
-    /// count, then the latch is **set**, and calls to `probe()` will
-    /// return true. Returns whether the latch was set.
-    #[inline]
-    pub(super) fn set(&self) -> bool {
-        if self.counter.fetch_sub(1, Ordering::SeqCst) == 1 {
-            self.core_latch.set();
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Decrements the latch counter by one and possibly set it.  If
-    /// the latch is set, then the specific worker thread is tickled,
-    /// which should be the one that owns this latch.
-    #[inline]
-    pub(super) fn set_and_tickle_one(&self, registry: &Registry, target_worker_index: usize) {
-        if self.set() {
-            registry.notify_worker_latch_is_set(target_worker_index);
-        }
-    }
-}
-
-impl AsCoreLatch for CountLatch {
-    #[inline]
-    fn as_core_latch(&self) -> &CoreLatch {
-        &self.core_latch
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct CountLockLatch {
-    lock_latch: LockLatch,
-    counter: AtomicUsize,
-}
-
-impl CountLockLatch {
-    #[inline]
-    pub(super) fn new() -> CountLockLatch {
-        CountLockLatch {
-            lock_latch: LockLatch::new(),
-            counter: AtomicUsize::new(1),
+    pub(super) fn with_count(count: usize, owner: Option<&WorkerThread>) -> Self {
+        Self {
+            counter: AtomicUsize::new(count),
+            kind: match owner {
+                Some(owner) => CountLatchKind::Stealing {
+                    latch: CoreLatch::new(),
+                    registry: Arc::clone(owner.registry()),
+                    worker_index: owner.index(),
+                },
+                None => CountLatchKind::Blocking {
+                    latch: LockLatch::new(),
+                },
+            },
         }
     }
 
@@ -348,26 +386,75 @@ impl CountLockLatch {
         debug_assert!(old_counter != 0);
     }
 
-    pub(super) fn wait(&self) {
-        self.lock_latch.wait();
-    }
-}
-
-impl Latch for CountLockLatch {
-    #[inline]
-    fn set(&self) {
-        if self.counter.fetch_sub(1, Ordering::SeqCst) == 1 {
-            self.lock_latch.set();
+    pub(super) fn wait(&self, owner: Option<&WorkerThread>) {
+        match &self.kind {
+            CountLatchKind::Stealing {
+                latch,
+                registry,
+                worker_index,
+            } => unsafe {
+                let owner = owner.expect("owner thread");
+                debug_assert_eq!(registry.id(), owner.registry().id());
+                debug_assert_eq!(*worker_index, owner.index());
+                owner.wait_until(latch);
+            },
+            CountLatchKind::Blocking { latch } => latch.wait(),
         }
     }
 }
 
-impl<'a, L> Latch for &'a L
-where
-    L: Latch,
-{
+impl Latch for CountLatch {
     #[inline]
-    fn set(&self) {
-        L::set(self);
+    unsafe fn set(this: *const Self) {
+        if (*this).counter.fetch_sub(1, Ordering::SeqCst) == 1 {
+            // NOTE: Once we call `set` on the internal `latch`,
+            // the target may proceed and invalidate `this`!
+            match (*this).kind {
+                CountLatchKind::Stealing {
+                    ref latch,
+                    ref registry,
+                    worker_index,
+                } => {
+                    let registry = Arc::clone(registry);
+                    if CoreLatch::set(latch) {
+                        registry.notify_worker_latch_is_set(worker_index);
+                    }
+                }
+                CountLatchKind::Blocking { ref latch } => LockLatch::set(latch),
+            }
+        }
+    }
+}
+
+/// `&L` without any implication of `dereferenceable` for `Latch::set`
+pub(super) struct LatchRef<'a, L> {
+    inner: *const L,
+    marker: PhantomData<&'a L>,
+}
+
+impl<L> LatchRef<'_, L> {
+    pub(super) fn new(inner: &L) -> LatchRef<'_, L> {
+        LatchRef {
+            inner,
+            marker: PhantomData,
+        }
+    }
+}
+
+unsafe impl<L: Sync> Sync for LatchRef<'_, L> {}
+
+impl<L> Deref for LatchRef<'_, L> {
+    type Target = L;
+
+    fn deref(&self) -> &L {
+        // SAFETY: if we have &self, the inner latch is still alive
+        unsafe { &*self.inner }
+    }
+}
+
+impl<L: Latch> Latch for LatchRef<'_, L> {
+    #[inline]
+    unsafe fn set(this: *const Self) {
+        L::set((*this).inner);
     }
 }

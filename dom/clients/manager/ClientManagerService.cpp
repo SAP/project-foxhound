@@ -102,8 +102,7 @@ RefPtr<GenericPromise> OnShutdown() {
         }
       });
 
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 
   return ref;
 }
@@ -204,9 +203,8 @@ ClientSourceParent* ClientManagerService::FindExistingSource(
 
   ClientSourceParent* source = MaybeUnwrapAsExistingSource(entry.Data());
 
-  if (!source || source->IsFrozen() ||
-      NS_WARN_IF(!ClientMatchPrincipalInfo(source->Info().PrincipalInfo(),
-                                           aPrincipalInfo))) {
+  if (!source || NS_WARN_IF(!ClientMatchPrincipalInfo(
+                     source->Info().PrincipalInfo(), aPrincipalInfo))) {
     return nullptr;
   }
   return source;
@@ -377,8 +375,7 @@ RefPtr<SourcePromise> ClientManagerService::FindSource(
   }
 
   ClientSourceParent* source = entry.Data().as<ClientSourceParent*>();
-  if (source->IsFrozen() ||
-      NS_WARN_IF(!ClientMatchPrincipalInfo(source->Info().PrincipalInfo(),
+  if (NS_WARN_IF(!ClientMatchPrincipalInfo(source->Info().PrincipalInfo(),
                                            aPrincipalInfo))) {
     CopyableErrorResult rv;
     rv.ThrowInvalidStateError("Unknown client.");
@@ -408,6 +405,7 @@ void ClientManagerService::RemoveManager(ClientManagerParent* aManager) {
 }
 
 RefPtr<ClientOpPromise> ClientManagerService::Navigate(
+    ThreadsafeContentParentHandle* aOriginContent,
     const ClientNavigateArgs& aArgs) {
   ClientSourceParent* source =
       FindExistingSource(aArgs.target().id(), aArgs.target().principalInfo());
@@ -433,15 +431,12 @@ RefPtr<ClientOpPromise> ClientManagerService::Navigate(
   PClientManagerParent* manager = source->Manager();
   MOZ_DIAGNOSTIC_ASSERT(manager);
 
-  ClientNavigateOpConstructorArgs args;
-  args.url() = aArgs.url();
-  args.baseURL() = aArgs.baseURL();
-
   // This is safe to do because the ClientSourceChild cannot directly delete
   // itself.  Instead it sends a Teardown message to the parent which then
   // calls delete.  That means we can be sure that we are not racing with
   // source destruction here.
-  args.targetParent() = source;
+  ClientNavigateOpConstructorArgs args(WrapNotNull(source), aArgs.url(),
+                                       aArgs.baseURL());
 
   RefPtr<ClientOpPromise::Private> promise =
       new ClientOpPromise::Private(__func__);
@@ -528,6 +523,7 @@ class PromiseListHolder final {
 }  // anonymous namespace
 
 RefPtr<ClientOpPromise> ClientManagerService::MatchAll(
+    ThreadsafeContentParentHandle* aOriginContent,
     const ClientMatchAllArgs& aArgs) {
   AssertIsOnBackgroundThread();
 
@@ -614,8 +610,7 @@ RefPtr<ClientOpPromise> ClaimOnMainThread(
         scopeExit.release();
       });
 
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 
   return promise;
 }
@@ -623,6 +618,7 @@ RefPtr<ClientOpPromise> ClaimOnMainThread(
 }  // anonymous namespace
 
 RefPtr<ClientOpPromise> ClientManagerService::Claim(
+    ThreadsafeContentParentHandle* aOriginContent,
     const ClientClaimArgs& aArgs) {
   AssertIsOnBackgroundThread();
 
@@ -634,7 +630,7 @@ RefPtr<ClientOpPromise> ClientManagerService::Claim(
   for (const auto& entry : mSourceTable) {
     ClientSourceParent* source = MaybeUnwrapAsExistingSource(entry.GetData());
 
-    if (!source || source->IsFrozen()) {
+    if (!source) {
       continue;
     }
 
@@ -660,6 +656,11 @@ RefPtr<ClientOpPromise> ClientManagerService::Claim(
       continue;
     }
 
+    if (source->IsFrozen()) {
+      Unused << source->SendEvictFromBFCache();
+      continue;
+    }
+
     promiseList->AddPromise(ClaimOnMainThread(
         source->Info(), ServiceWorkerDescriptor(serviceWorker)));
   }
@@ -671,6 +672,7 @@ RefPtr<ClientOpPromise> ClientManagerService::Claim(
 }
 
 RefPtr<ClientOpPromise> ClientManagerService::GetInfoAndState(
+    ThreadsafeContentParentHandle* aOriginContent,
     const ClientGetInfoAndStateArgs& aArgs) {
   ClientSourceParent* source =
       FindExistingSource(aArgs.id(), aArgs.principalInfo());
@@ -705,9 +707,12 @@ RefPtr<ClientOpPromise> ClientManagerService::GetInfoAndState(
 }
 
 RefPtr<ClientOpPromise> ClientManagerService::OpenWindow(
+    ThreadsafeContentParentHandle* aOriginContent,
     const ClientOpenWindowArgs& aArgs) {
   return InvokeAsync(GetMainThreadSerialEventTarget(), __func__,
-                     [aArgs]() { return ClientOpenWindow(aArgs); });
+                     [originContent = RefPtr{aOriginContent}, aArgs]() {
+                       return ClientOpenWindow(originContent, aArgs);
+                     });
 }
 
 bool ClientManagerService::HasWindow(

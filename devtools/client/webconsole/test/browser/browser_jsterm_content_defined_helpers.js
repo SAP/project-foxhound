@@ -32,7 +32,7 @@ const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>
     }
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
   const { autocompletePopup } = jsterm;
@@ -48,11 +48,10 @@ add_task(async function() {
       `There's no duplicated "${helper}" item in the autocomplete popup`
     );
 
-    await executeAndWaitForMessage(
+    await executeAndWaitForResultMessage(
       hud,
       `${helper}()`,
-      `"${PREFIX + helper}"`,
-      ".result"
+      `"${PREFIX + helper}"`
     );
     ok(true, `output is correct for ${helper}()`);
   }

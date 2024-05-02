@@ -4,81 +4,150 @@
 
 //! Generic types for color properties.
 
-/// Ratios representing the contribution of color and currentcolor to
-/// the final color value.
-///
-/// NOTE(emilio): For animated colors, the sum of these two might be more than
-/// one (because the background color would've been scaled down already). So
-/// beware that it is not generally safe to assume that if bg is 1 then fg is 0,
-/// for example.
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToShmem)]
-#[repr(C)]
-pub struct ComplexColorRatios {
-    /// Numeric color contribution.
-    pub bg: f32,
-    /// currentcolor contribution.
-    pub fg: f32,
-}
-
-impl ComplexColorRatios {
-    /// Ratios representing a `Numeric` color.
-    pub const NUMERIC: ComplexColorRatios = ComplexColorRatios { bg: 1., fg: 0. };
-    /// Ratios representing the `CurrentColor` color.
-    pub const CURRENT_COLOR: ComplexColorRatios = ComplexColorRatios { bg: 0., fg: 1. };
-}
+use crate::color::mix::ColorInterpolationMethod;
+use crate::color::AbsoluteColor;
+use crate::values::specified::percentage::ToPercentage;
+use std::fmt::{self, Write};
+use style_traits::{CssWriter, ToCss};
 
 /// This struct represents a combined color from a numeric color and
 /// the current foreground color (currentcolor keyword).
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToShmem)]
 #[repr(C)]
-pub struct GenericColor<RGBA> {
+pub enum GenericColor<Percentage> {
     /// The actual numeric color.
-    pub color: RGBA,
-    /// The ratios of mixing between numeric and currentcolor.
-    /// The formula is: `color * ratios.bg + currentcolor * ratios.fg`.
-    pub ratios: ComplexColorRatios,
+    Absolute(AbsoluteColor),
+    /// The `CurrentColor` keyword.
+    CurrentColor,
+    /// The color-mix() function.
+    ColorMix(Box<GenericColorMix<Self, Percentage>>),
+}
+
+/// Flags used to modify the calculation of a color mix result.
+#[derive(Clone, Copy, Debug, Default, MallocSizeOf, PartialEq, ToShmem)]
+#[repr(C)]
+pub struct ColorMixFlags(u8);
+bitflags! {
+    impl ColorMixFlags : u8 {
+        /// Normalize the weights of the mix.
+        const NORMALIZE_WEIGHTS = 1 << 0;
+        /// The result should always be converted to the modern color syntax.
+        const RESULT_IN_MODERN_SYNTAX = 1 << 1;
+    }
+}
+
+/// A restricted version of the css `color-mix()` function, which only supports
+/// percentages.
+///
+/// https://drafts.csswg.org/css-color-5/#color-mix
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    ToAnimatedValue,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[allow(missing_docs)]
+#[repr(C)]
+pub struct GenericColorMix<Color, Percentage> {
+    pub interpolation: ColorInterpolationMethod,
+    pub left: Color,
+    pub left_percentage: Percentage,
+    pub right: Color,
+    pub right_percentage: Percentage,
+    pub flags: ColorMixFlags,
+}
+
+pub use self::GenericColorMix as ColorMix;
+
+impl<Color: ToCss, Percentage: ToCss + ToPercentage> ToCss for ColorMix<Color, Percentage> {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        fn can_omit<Percentage: ToPercentage>(
+            percent: &Percentage,
+            other: &Percentage,
+            is_left: bool,
+        ) -> bool {
+            if percent.is_calc() {
+                return false;
+            }
+            if percent.to_percentage() == 0.5 {
+                return other.to_percentage() == 0.5;
+            }
+            if is_left {
+                return false;
+            }
+            (1.0 - percent.to_percentage() - other.to_percentage()).abs() <= f32::EPSILON
+        }
+
+        dest.write_str("color-mix(")?;
+        self.interpolation.to_css(dest)?;
+        dest.write_str(", ")?;
+        self.left.to_css(dest)?;
+        if !can_omit(&self.left_percentage, &self.right_percentage, true) {
+            dest.write_char(' ')?;
+            self.left_percentage.to_css(dest)?;
+        }
+        dest.write_str(", ")?;
+        self.right.to_css(dest)?;
+        if !can_omit(&self.right_percentage, &self.left_percentage, false) {
+            dest.write_char(' ')?;
+            self.right_percentage.to_css(dest)?;
+        }
+        dest.write_char(')')
+    }
+}
+
+impl<Percentage> ColorMix<GenericColor<Percentage>, Percentage> {
+    /// Mix the colors so that we get a single color. If any of the 2 colors are
+    /// not mixable (perhaps not absolute?), then return None.
+    pub fn mix_to_absolute(&self) -> Option<AbsoluteColor>
+    where
+        Percentage: ToPercentage,
+    {
+        let left = self.left.as_absolute()?;
+        let right = self.right.as_absolute()?;
+
+        Some(crate::color::mix::mix(
+            self.interpolation,
+            &left,
+            self.left_percentage.to_percentage(),
+            &right,
+            self.right_percentage.to_percentage(),
+            self.flags,
+        ))
+    }
 }
 
 pub use self::GenericColor as Color;
 
-impl Color<cssparser::RGBA> {
+impl<Percentage> Color<Percentage> {
+    /// If this color is absolute return it's value, otherwise return None.
+    pub fn as_absolute(&self) -> Option<&AbsoluteColor> {
+        match *self {
+            Self::Absolute(ref absolute) => Some(absolute),
+            _ => None,
+        }
+    }
+
     /// Returns a color value representing currentcolor.
     pub fn currentcolor() -> Self {
-        Color {
-            color: cssparser::RGBA::transparent(),
-            ratios: ComplexColorRatios::CURRENT_COLOR,
-        }
-    }
-}
-
-impl<RGBA> Color<RGBA> {
-    /// Create a color based upon the specified ratios.
-    pub fn new(color: RGBA, ratios: ComplexColorRatios) -> Self {
-        Self { color, ratios }
-    }
-
-    /// Returns a numeric color representing the given RGBA value.
-    pub fn rgba(color: RGBA) -> Self {
-        Self {
-            color,
-            ratios: ComplexColorRatios::NUMERIC,
-        }
-    }
-
-    /// Whether it is a numeric color (no currentcolor component).
-    pub fn is_numeric(&self) -> bool {
-        self.ratios == ComplexColorRatios::NUMERIC
+        Self::CurrentColor
     }
 
     /// Whether it is a currentcolor value (no numeric color component).
     pub fn is_currentcolor(&self) -> bool {
-        self.ratios == ComplexColorRatios::CURRENT_COLOR
+        matches!(*self, Self::CurrentColor)
     }
-}
 
-impl<RGBA> From<RGBA> for Color<RGBA> {
-    fn from(color: RGBA) -> Self {
-        Self::rgba(color)
+    /// Whether this color is an absolute color.
+    pub fn is_absolute(&self) -> bool {
+        matches!(*self, Self::Absolute(..))
     }
 }
 

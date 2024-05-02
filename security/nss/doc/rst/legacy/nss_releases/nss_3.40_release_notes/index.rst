@@ -10,7 +10,7 @@ NSS 3.40 release notes
 
    The NSS team has released Network Security Services (NSS) 3.40, which is a minor release.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -28,8 +28,6 @@ NSS 3.40 release notes
 
 `New in NSS 3.40 <#new_in_nss_3.40>`__
 --------------------------------------
-
-.. container::
 
 .. _new_functionality:
 
@@ -54,8 +52,8 @@ NSS 3.40 release notes
 
 .. container::
 
-   -  The mozilla::pkix library has been ported from Mozilla PSM to NSS.  This is a C++ library for
-      building certification paths.  mozilla::pkix APIs are not exposed in the libraries NSS builds.
+   -  The mozilla::pkix library has been ported from Mozilla PSM to NSS.  This is a C++ library for
+      building certification paths.  mozilla::pkix APIs are not exposed in the libraries NSS builds.
    -  It is easier to build NSS on Windows in
       `mozilla-build <https://wiki.mozilla.org/MozillaBuild>`__ environments.
    -  The following CA certificates were **Removed**:
@@ -71,7 +69,7 @@ NSS 3.40 release notes
 
 .. container::
 
-   -  
+   -
 
       .. container:: field indent
 

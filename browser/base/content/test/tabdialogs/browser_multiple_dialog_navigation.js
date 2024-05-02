@@ -19,10 +19,10 @@ add_task(async function test_multiple_dialog_navigation() {
         throw e;
       };
       // Queue up 2 dialogs
-      let firstTask = SpecialPowers.spawn(browser, [], async function() {
+      let firstTask = SpecialPowers.spawn(browser, [], async function () {
         content.eval(`alert('hi');`);
       }).catch(navigationCatcher);
-      let secondTask = SpecialPowers.spawn(browser, [], async function() {
+      let secondTask = SpecialPowers.spawn(browser, [], async function () {
         content.eval(`alert('hi again');`);
       }).catch(navigationCatcher);
       info("Waiting for first dialog.");
@@ -45,7 +45,10 @@ add_task(async function test_multiple_dialog_navigation() {
         gBrowser,
         "https://example.org/gone"
       );
-      BrowserTestUtils.loadURI(browser, "https://example.org/gone");
+      BrowserTestUtils.startLoadingURIString(
+        browser,
+        "https://example.org/gone"
+      );
       info("Waiting for the next page to load.");
       await loadedOtherPage;
       info(

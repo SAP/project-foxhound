@@ -1,11 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+let { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
-add_task(async function setup() {
+add_setup(async function () {
   await TestUtils.waitForCondition(() => {
     Services.telemetry.clearEvents();
     let events = Services.telemetry.snapshotEvents(
@@ -25,7 +25,7 @@ add_task(async function setup() {
 });
 
 add_task(async function test_open_import() {
-  let promiseImportWindow = BrowserTestUtils.domWindowOpenedAndLoaded();
+  let promiseWizardTab = BrowserTestUtils.waitForMigrationWizard(window);
 
   let browser = gBrowser.selectedBrowser;
   await BrowserTestUtils.synthesizeMouseAtCenter("menu-button", {}, browser);
@@ -44,9 +44,9 @@ add_task(async function test_open_import() {
   }
   await BrowserTestUtils.synthesizeMouseAtCenter(getImportItem, {}, browser);
 
-  info("waiting for Import to get opened");
-  let importWindow = await promiseImportWindow;
-  ok(true, "Import opened");
+  info("waiting for migration wizard to open");
+  let wizardTab = await promiseWizardTab;
+  Assert.ok(wizardTab, "Migration wizard opened");
 
   // First event is for opening about:logins
   await LoginTestUtils.telemetry.waitForEventCount(2);
@@ -56,5 +56,5 @@ add_task(async function test_open_import() {
     { process: "content" }
   );
 
-  importWindow.close();
+  await BrowserTestUtils.removeTab(wizardTab);
 });

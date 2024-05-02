@@ -37,7 +37,7 @@
 #
 #   {
 #     tasks_for: 'action',
-#     push: {owner, pushlog_id, revision},
+#     push: {owner, pushlog_id, revision, base_revision},
 #     repository: {url, project, level},
 #     input,
 #     taskId,      // targetted taskId
@@ -101,7 +101,7 @@ tasks:
                                 description: 'Created by a [cron task](https://firefox-ci-tc.services.mozilla.com/tasks/${cron.task_id}) (${treeherder_link})'
 
               provisionerId: "${trustDomain}-${repository.level}"
-              workerType: "decision"
+              workerType: "decision-gcp"
 
               tags:
                   $if: 'tasks_for == "hg-push"'
@@ -131,7 +131,11 @@ tasks:
                             # Send a notification email if the push comes from try
                             - $if: 'repository.project == "try"'
                               then:
-                                  "notify.email.${ownerEmail}.on-completed"
+                                  - "notify.email.${ownerEmail}.on-completed"
+                            - $if: 'repository.project == "mozilla-central"'
+                              then:
+                                  # Notify #thunderbird-ci
+                                  - "notify.matrix-room.!TWztIhgqLawNpRBZTC:mozilla.org.on-completed"
                         else:
                             $if: 'tasks_for == "action"'
                             then:
@@ -196,6 +200,7 @@ tasks:
                       # to `mach taskgraph decision` are all on the command line.
                       $merge:
                           - GECKO_BASE_REPOSITORY: 'https://hg.mozilla.org/mozilla-unified'
+                            GECKO_BASE_REV: '${push.base_revision}'
                             GECKO_HEAD_REPOSITORY: '${repoUrl}'
                             GECKO_HEAD_REF: '${push.revision}'
                             GECKO_HEAD_REV: '${push.revision}'
@@ -214,7 +219,7 @@ tasks:
                                 ACTION_CALLBACK: '${action.cb_name}'
 
                   cache:
-                      "${trustDomain}-level-${repository.level}-checkouts-sparse-v2": /builds/worker/checkouts
+                      "${trustDomain}-level-${repository.level}-checkouts-sparse-v4": /builds/worker/checkouts
 
                   features:
                       taskclusterProxy: true
@@ -222,7 +227,7 @@ tasks:
 
                   # Note: This task is built server side without the context or tooling that
                   # exist in tree so we must hard code the hash
-                  image: 'mozillareleases/gecko_decision:3.0.1@sha256:9964730ed951584e65032bd1d6a2b7ede6d880a8b7aefb72d0d7f82346d834e3'
+                  image: 'mozillareleases/gecko_decision:4.1.0@sha256:ea73900129328095da4fb033697690d538a08d935298fef4d5fa4aae80273bce'
 
                   maxRunTime: 3600
 
@@ -253,6 +258,7 @@ tasks:
                                 --tasks-for='${tasks_for}'
                                 --repository-type=hg
                                 --base-repository="$GECKO_BASE_REPOSITORY"
+                                --base-rev="$GECKO_BASE_REV"
                                 --head-repository="$GECKO_HEAD_REPOSITORY"
                                 --head-ref="$GECKO_HEAD_REF"
                                 --head-rev="$GECKO_HEAD_REV"
@@ -308,13 +314,16 @@ tasks:
                       - $if: 'tasks_for == "hg-push"'
                         then:
                             notify:
-                                email:
-                                    $merge:
-                                        - link:
-                                              text: "Treeherder Jobs"
-                                              href: "https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}"
-                                        # Email for try pushes should thank you for your revision
-                                        - $if: 'repository.project == "try"'
-                                          then:
-                                              subject: "Thank you for your try submission of ${push.revision}. It's the best!"
-                                              content: "Your try push has been submitted. It's the best! Use the link to view the status of your jobs."
+                                $merge:
+                                    - email:
+                                          $merge:
+                                              - link:
+                                                    text: "Treeherder Jobs"
+                                                    href: "https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}"
+                                              - $if: 'repository.project == "try"'
+                                                then:
+                                                    subject: "Thank you for your try submission of ${push.revision}. It's the best!"
+                                                    content: "Your try push has been submitted. It's the best! Use the link to view the status of your jobs."
+                                    - $if: 'repository.project == "mozilla-central"'
+                                      then:
+                                          matrixBody: "${repository.project} push notification: https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}"

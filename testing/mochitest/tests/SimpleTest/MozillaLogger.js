@@ -8,14 +8,12 @@ function formatLogMessage(msg) {
   return msg.info.join(" ") + "\n";
 }
 
-function importJSM(jsm) {
+function importMJS(mjs) {
   if (typeof ChromeUtils === "object") {
-    return ChromeUtils.import(jsm);
+    return ChromeUtils.importESModule(mjs);
   }
   /* globals SpecialPowers */
-  let obj = {};
-  SpecialPowers.Cu.import(jsm, obj);
-  return SpecialPowers.wrap(obj);
+  return SpecialPowers.ChromeUtils.importESModule(mjs);
 }
 
 // When running in release builds, we get a fake Components object in
@@ -25,9 +23,8 @@ let haveComponents =
   typeof Components === "object" &&
   typeof Components.Constructor === "function";
 
-let CC = (haveComponents
-  ? Components
-  : SpecialPowers.wrap(SpecialPowers.Components)
+let CC = (
+  haveComponents ? Components : SpecialPowers.wrap(SpecialPowers.Components)
 ).Constructor;
 
 let ConverterOutputStream = CC(
@@ -61,7 +58,7 @@ class MozillaFileLogger extends MozillaLogger {
   constructor(aPath) {
     super();
 
-    const { FileUtils } = importJSM("resource://gre/modules/FileUtils.jsm");
+    const { FileUtils } = importMJS("resource://gre/modules/FileUtils.sys.mjs");
 
     this._file = FileUtils.File(aPath);
     this._foStream = FileUtils.openFileOutputStream(

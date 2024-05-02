@@ -33,6 +33,7 @@
   margin-inline-start: 3px;
   border-inline-start: 1px solid #a2d1ff;
   flex-shrink: 0;
+  height: 0;
 }
 
 .tree-node[data-expandable="false"] .tree-last-indent {
@@ -41,12 +42,6 @@
   node's text are indented the same for both expandable and non-expandable
   nodes */
   margin-inline-end: 13px;
-}
-
-/* For non expandable root nodes, we don't have .tree-indent elements, so we declare
-   the margin on the start of the node */
-.tree-node[data-expandable="false"][aria-level="1"] {
-  padding-inline-start: 15px;
 }
 
 .tree .tree-node[data-expandable="true"] {

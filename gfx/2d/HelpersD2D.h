@@ -12,7 +12,6 @@
 #include <vector>
 
 #include <dwrite.h>
-#include <versionhelpers.h>
 #include "2D.h"
 #include "Logging.h"
 #include "ImageScaling.h"
@@ -205,6 +204,7 @@ static inline bool D2DSupportsCompositeMode(CompositionOp aOp) {
     case CompositionOp::OP_DEST_OVER:
     case CompositionOp::OP_DEST_ATOP:
     case CompositionOp::OP_XOR:
+    case CompositionOp::OP_CLEAR:
       return true;
     default:
       return false;
@@ -235,6 +235,8 @@ static inline D2D1_COMPOSITE_MODE D2DCompositionMode(CompositionOp aOp) {
       return D2D1_COMPOSITE_MODE_DESTINATION_ATOP;
     case CompositionOp::OP_XOR:
       return D2D1_COMPOSITE_MODE_XOR;
+    case CompositionOp::OP_CLEAR:
+      return D2D1_COMPOSITE_MODE_DESTINATION_OUT;
     default:
       return D2D1_COMPOSITE_MODE_SOURCE_OVER;
   }
@@ -280,11 +282,10 @@ static inline D2D1_BLEND_MODE D2DBlendMode(CompositionOp aOp) {
 static inline bool D2DSupportsPrimitiveBlendMode(CompositionOp aOp) {
   switch (aOp) {
     case CompositionOp::OP_OVER:
-      //  case CompositionOp::OP_SOURCE:
-      return true;
-      //  case CompositionOp::OP_DARKEN:
+    // case CompositionOp::OP_SOURCE:
+    // case CompositionOp::OP_DARKEN:
     case CompositionOp::OP_ADD:
-      return IsWindows8Point1OrGreater();
+      return true;
     default:
       return false;
   }
@@ -310,7 +311,12 @@ static inline D2D1_PRIMITIVE_BLEND D2DPrimitiveBlendMode(CompositionOp aOp) {
   }
 }
 
-static inline bool IsPatternSupportedByD2D(const Pattern& aPattern) {
+static inline bool IsPatternSupportedByD2D(
+    const Pattern& aPattern, CompositionOp aOp = CompositionOp::OP_OVER) {
+  if (aOp == CompositionOp::OP_CLEAR) {
+    return true;
+  }
+
   if (aPattern.GetType() == PatternType::CONIC_GRADIENT) {
     return false;
   }
@@ -328,7 +334,8 @@ static inline bool IsPatternSupportedByD2D(const Pattern& aPattern) {
 
   Point diff = pat->mCenter2 - pat->mCenter1;
 
-  if (sqrt(diff.x * diff.x + diff.y * diff.y) >= pat->mRadius2) {
+  if (sqrt(diff.x.value * diff.x.value + diff.y.value * diff.y.value) >=
+      pat->mRadius2) {
     // Inner point lies outside the circle.
     return false;
   }

@@ -158,6 +158,7 @@ ka{
                     }
                 }
             }
+            times{"{0}⋅{1}"}
         }
         concentr{
             item{
@@ -180,6 +181,11 @@ ka{
                 one{"{0} მილიმოლი ლიტრზე"}
                 other{"{0} მილიმოლი ლიტრზე"}
             }
+            mole{
+                dnam{"mol"}
+                one{"{0} mol"}
+                other{"{0} mol"}
+            }
             percent{
                 dnam{"პროცენტი"}
                 one{"{0} პროცენტი"}
@@ -194,6 +200,11 @@ ka{
                 dnam{"ნაწილი მილიონზე"}
                 one{"{0} ნაწილი მილიონზე"}
                 other{"{0} ნაწილი მილიონზე"}
+            }
+            permyriad{
+                dnam{"‱"}
+                one{"{0}‱"}
+                other{"{0}‱"}
             }
         }
         consumption{
@@ -332,6 +343,12 @@ ka{
                 one{"{0} ნანოწამი"}
                 other{"{0} ნანოწამი"}
             }
+            quarter{
+                dnam{"კვარტალი"}
+                one{"{0} კვარტალი"}
+                other{"{0} კვარტალი"}
+                per{"{0}/კვარტალში"}
+            }
             second{
                 dnam{"წამი"}
                 one{"{0} წამი"}
@@ -425,6 +442,16 @@ ka{
                 dnam{"კვტსთ/100კმ"}
                 one{"{0} კვტსთ/100კმ"}
                 other{"{0} კვტსთ/100კმ"}
+            }
+            newton{
+                dnam{"N"}
+                one{"{0} N"}
+                other{"{0} N"}
+            }
+            pound-force{
+                dnam{"lbf"}
+                one{"{0} lbf"}
+                other{"{0} lbf"}
             }
         }
         frequency{
@@ -663,11 +690,6 @@ ka{
                 other{"{0} კილოგრამი"}
                 per{"{0} კილოგრამში"}
             }
-            metric-ton{
-                dnam{"მეტრული ტონა"}
-                one{"{0} მეტრული ტონა"}
-                other{"{0} მეტრული ტონა"}
-            }
             microgram{
                 dnam{"მიკროგრამი"}
                 one{"მიკროგრამი"}
@@ -709,6 +731,11 @@ ka{
                 dnam{"ტონა"}
                 one{"{0} ტონა"}
                 other{"{0} ტ"}
+            }
+            tonne{
+                dnam{"მეტრული ტონა"}
+                one{"{0} მეტრული ტონა"}
+                other{"{0} მეტრული ტონა"}
             }
         }
         power{
@@ -1130,11 +1157,13 @@ ka{
                     }
                 }
             }
+            times{"{0}⋅{1}"}
         }
         concentr{
             item{
-                one{"{0} ერთეული"}
-                other{"{0} ერთეული"}
+                dnam{"ერთეული"}
+                one{"{0} ერთე."}
+                other{"{0} ერთე."}
             }
             percent{
                 dnam{"%"}
@@ -1157,15 +1186,32 @@ ka{
             west{"{0} დას."}
         }
         duration{
+            century{
+                dnam{"ს."}
+                one{"{0} ს."}
+                other{"{0} ს."}
+            }
             day{
                 dnam{"დღე"}
                 one{"{0} დღე"}
                 other{"{0} დღე"}
+                per{"{0}/დღე"}
+            }
+            decade{
+                dnam{"დეკადა"}
+                one{"{0} დეკადა"}
+                other{"{0} დეკადა"}
             }
             hour{
                 dnam{"საათი"}
                 one{"{0}სთ"}
                 other{"{0}სთ"}
+                per{"{0}/სთ"}
+            }
+            microsecond{
+                dnam{"მკწმ"}
+                one{"{0} მკწმ"}
+                other{"{0} მკწმ"}
             }
             millisecond{
                 dnam{"მწმ"}
@@ -1176,30 +1222,47 @@ ka{
                 dnam{"წთ"}
                 one{"{0}წთ"}
                 other{"{0}წთ"}
+                per{"{0}/წთ"}
             }
             month{
                 dnam{"თვე"}
                 one{"{0} თვე"}
                 other{"{0} თვე"}
+                per{"{0}/თ."}
+            }
+            nanosecond{
+                dnam{"ნწმ"}
+                one{"{0} ნწმ"}
+                other{"{0} ნწმ"}
+            }
+            quarter{
+                dnam{"კვარტ"}
+                one{"{0} კვარტ"}
+                other{"{0} კვარტ"}
+                per{"{0}/კვარტ"}
             }
             second{
                 dnam{"წმ"}
                 one{"{0}წმ"}
                 other{"{0}წმ"}
+                per{"{0}/წმ"}
             }
             week{
                 dnam{"კვრ"}
                 one{"{0} კვრ"}
                 other{"{0} კვრ"}
+                per{"{0}/კვრ"}
             }
             year{
                 dnam{"წ"}
                 one{"{0} წ"}
                 other{"{0} წ"}
+                per{"{0}/წ"}
             }
         }
         force{
             kilowatt-hour-per-100-kilometer{
+                dnam{"კვტსთ/100კმ"}
                 one{"{0} კვტსთ/100კმ"}
                 other{"{0} კვტსთ/100კმ"}
             }
@@ -1250,6 +1313,13 @@ ka{
                 other{"{0} იარდი"}
             }
         }
+        light{
+            lux{
+                dnam{"ლუქსი"}
+                one{"{0} ლუქსი"}
+                other{"{0} ლუქსი"}
+            }
+        }
         mass{
             gram{
                 dnam{"გრამი"}
@@ -1261,6 +1331,15 @@ ka{
                 one{"{0}კგ"}
                 other{"{0}კგ"}
             }
+            microgram{
+                dnam{"მკგ"}
+                one{"{0}მკგ"}
+                other{"{0}მკგ"}
+            }
+            milligram{
+                one{"{0}მგ"}
+                other{"{0}მგ"}
+            }
             ounce{
                 one{"{0} უნც"}
                 other{"{0} უნც"}
@@ -1268,6 +1347,10 @@ ka{
             pound{
                 one{"{0} ფნტ"}
                 other{"{0} ფნტ"}
+            }
+            ton{
+                one{"{0}ტ"}
+                other{"{0}ტ"}
             }
         }
         power{
@@ -1495,8 +1578,8 @@ ka{
         concentr{
             item{
                 dnam{"ერთეული"}
-                one{"{0} ერთეული"}
-                other{"{0} ერთეული"}
+                one{"{0} ერთე."}
+                other{"{0} ერთე."}
             }
             karat{
                 dnam{"კარატი"}
@@ -1513,6 +1596,10 @@ ka{
                 one{"{0} მმოლ/ლ"}
                 other{"{0} მმოლ/ლ"}
             }
+            mole{
+                one{"{0} mol"}
+                other{"{0} mol"}
+            }
             percent{
                 dnam{"%"}
                 one{"{0}%"}
@@ -1527,6 +1614,10 @@ ka{
                 dnam{"ნაწილი/მილიონზე"}
                 one{"{0} ppm"}
                 other{"{0} ppm"}
+            }
+            permyriad{
+                one{"{0}‱"}
+                other{"{0}‱"}
             }
         }
         consumption{
@@ -1665,6 +1756,12 @@ ka{
                 one{"{0} ნწმ"}
                 other{"{0} ნწმ"}
             }
+            quarter{
+                dnam{"კვარტ"}
+                one{"{0} კვარტ"}
+                other{"{0} კვარტ"}
+                per{"{0}/კვარტ"}
+            }
             second{
                 dnam{"წმ"}
                 one{"{0} წმ"}
@@ -1758,6 +1855,14 @@ ka{
                 dnam{"კვტსთ/100კმ"}
                 one{"{0} კვტსთ/100კმ"}
                 other{"{0} კვტსთ/100კმ"}
+            }
+            newton{
+                one{"{0} N"}
+                other{"{0} N"}
+            }
+            pound-force{
+                one{"{0} lbf"}
+                other{"{0} lbf"}
             }
         }
         frequency{
@@ -1974,6 +2079,10 @@ ka{
                 one{"{0} დალტ."}
                 other{"{0} დალტ."}
             }
+            earth-mass{
+                one{"{0} M⊕"}
+                other{"{0} M⊕"}
+            }
             grain{
                 dnam{"გრანი"}
                 one{"{0} გრანი"}
@@ -1990,11 +2099,6 @@ ka{
                 one{"{0} კგ"}
                 other{"{0} კგ"}
                 per{"{0}/კგ"}
-            }
-            metric-ton{
-                dnam{"მტ"}
-                one{"{0} მტ"}
-                other{"{0} მტ"}
             }
             microgram{
                 dnam{"მკგ"}
@@ -2023,6 +2127,10 @@ ka{
                 other{"{0} ფნტ"}
                 per{"{0}/ფნტ"}
             }
+            solar-mass{
+                one{"{0} M☉"}
+                other{"{0} M☉"}
+            }
             stone{
                 dnam{"სტოუნი"}
                 one{"{0} სტოუნი"}
@@ -2032,6 +2140,11 @@ ka{
                 dnam{"ტონა"}
                 one{"{0} ტ"}
                 other{"{0} ტ"}
+            }
+            tonne{
+                dnam{"მტ"}
+                one{"{0} მტ"}
+                other{"{0} მტ"}
             }
         }
         power{

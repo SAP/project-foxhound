@@ -412,8 +412,6 @@ struct EventFlags;
 
 class WidgetEventTime;
 
-class NativeEventData;
-
 // TextEvents.h
 enum class AccessKeyType;
 
@@ -461,6 +459,29 @@ enum MouseButtonsFlag {
   e5thFlag = 0x10,
   eEraserFlag = 0x20
 };
+
+/**
+ * Returns a MouseButtonsFlag value which is changed by a button state change
+ * event whose mButton is aMouseButton.
+ */
+inline MouseButtonsFlag MouseButtonsFlagToChange(MouseButton aMouseButton) {
+  switch (aMouseButton) {
+    case MouseButton::ePrimary:
+      return MouseButtonsFlag::ePrimaryFlag;
+    case MouseButton::eMiddle:
+      return MouseButtonsFlag::eMiddleFlag;
+    case MouseButton::eSecondary:
+      return MouseButtonsFlag::eSecondaryFlag;
+    case MouseButton::eX1:
+      return MouseButtonsFlag::e4thFlag;
+    case MouseButton::eX2:
+      return MouseButtonsFlag::e5thFlag;
+    case MouseButton::eEraser:
+      return MouseButtonsFlag::eEraserFlag;
+    default:
+      return MouseButtonsFlag::eNoButtons;
+  }
+}
 
 enum class TextRangeType : RawTextRangeType;
 

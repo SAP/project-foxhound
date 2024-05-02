@@ -6,10 +6,12 @@
 #define NetworkConnectivityService_h_
 
 #include "nsINetworkConnectivityService.h"
+#include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "nsIDNSListener.h"
 #include "nsIStreamListener.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/Mutex.h"
 
 namespace mozilla {
 namespace net {
@@ -65,7 +67,7 @@ class NetworkConnectivityService : public nsINetworkConnectivityService,
   bool mCheckedNetworkId = false;
   bool mHasNetworkId = false;
 
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
 };
 
 }  // namespace net

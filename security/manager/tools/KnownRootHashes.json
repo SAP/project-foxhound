@@ -1202,7 +1202,132 @@
       "label": "GTS_Root_R4",
       "binNumber": 239,
       "sha256Fingerprint": "NJ36QFjF4mMSOzmK55VXPE4TE8g/5o+TVWzV6AMbPH0="
+    },
+    {
+      "label": "Telia_Root_CA_v2",
+      "binNumber": 240,
+      "sha256Fingerprint": "JCtpdC/LHlsqv5iJi5RXIYdUTltNmRF4ZXNiH2p0uCw="
+    },
+    {
+      "label": "D_TRUST_BR_Root_CA_1_2020",
+      "binNumber": 241,
+      "sha256Fingerprint": "5ZqqgWAJwiv/WyW6033zBvBJeXwfgdhasInmV72PAEQ="
+    },
+    {
+      "label": "D_TRUST_EV_Root_CA_1_2020",
+      "binNumber": 242,
+      "sha256Fingerprint": "CBcNGqNkU5AaL5WSReNH2wyNN6uqvFa4GqEA3JWJcNs="
+    },
+    {
+      "label": "DigiCert_TLS_ECC_P384_Root_G5",
+      "binNumber": 243,
+      "sha256Fingerprint": "AY4T8HclMs+Am9GxcoGGcoP8SMbhO+nGmBKFSkkMGwU="
+    },
+    {
+      "label": "DigiCert_TLS_RSA4096_Root_G5",
+      "binNumber": 244,
+      "sha256Fingerprint": "NxoA3AUzs3IafutA6EGecHmdKwoPLB2AaTFl987ErXU="
+    },
+    {
+      "label": "Certainly_Root_R1",
+      "binNumber": 245,
+      "sha256Fingerprint": "d7gs2GRMQwX3rMXLFWtFZ1AEAz1RxgxiAqjgwzRn06A="
+    },
+    {
+      "label": "Certainly_Root_E1",
+      "binNumber": 246,
+      "sha256Fingerprint": "tFhfIuSsdWpOhhKhNhxdnQMak/2E/rt3j6MGiw/ELcI="
+    },
+    {
+      "label": "E_Tugra_Global_Root_CA_RSA_v3",
+      "binNumber": 247,
+      "sha256Fingerprint": "72awsQo8258uNkjHa9KvGOrSv+bxF2VeKMQGDaGj9MI="
+    },
+    {
+      "label": "E_Tugra_Global_Root_CA_ECC_v3",
+      "binNumber": 248,
+      "sha256Fingerprint": "hz9Ghfp/VjYlJS5tNrzX8W/CSVHyZOR+G5VPSQjNyhM="
+    },
+    {
+      "label": "Security_Communication_RootCA3",
+      "binNumber": 249,
+      "sha256Fingerprint": "JKVcKrBRRC0GF3ZlQSOaStAy18VRdao0/94vvE9cUpQ="
+    },
+    {
+      "label": "Security_Communication_ECC_RootCA1",
+      "binNumber": 250,
+      "sha256Fingerprint": "50+9pVvVZMRzo2tEGqeZyKaOB3RA6CiLn6HlDku6yhE="
+    },
+    {
+      "label": "BJCA_Global_Root_CA2",
+      "binNumber": 251,
+      "sha256Fingerprint": "V032kx4ngDlme3IK/cFgD8J+tm3TCSl5+3OFZIchKII="
+    },
+    {
+      "label": "BJCA_Global_Root_CA1",
+      "binNumber": 252,
+      "sha256Fingerprint": "84lviP58CognZqf6atJ0n7V6fz6Y+3acH6ewnCxE1a4="
+    },
+    {
+      "label": "Sectigo_Public_Server_Authentication_Root_R46",
+      "binNumber": 253,
+      "sha256Fingerprint": "e7ZHpirurIi/JXqlItAf/qOV4KtFxz+T9lZU7DjyWgY="
+    },
+    {
+      "label": "Sectigo_Public_Server_Authentication_Root_E46",
+      "binNumber": 254,
+      "sha256Fingerprint": "yQ8m8PsbQBiyIidRm1yitT4spbO+XPGO/hvvRzgMU4M="
+    },
+    {
+      "label": "SSL_com_TLS_RSA_Root_CA_2022",
+      "binNumber": 255,
+      "sha256Fingerprint": "j699Liy0cJu44LM2Zr91pd1Ftd5ID46o1L/mvrwX8u0="
+    },
+    {
+      "label": "SSL_com_TLS_ECC_Root_CA_2022",
+      "binNumber": 256,
+      "sha256Fingerprint": "wy/9n0b5NtFsNnOZCVlDS5rWCq+7nnzzNlTxRMwboUM="
+    },
+    {
+      "label": "Atos_TrustedRoot_Root_CA_RSA_TLS_2021",
+      "binNumber": 257,
+      "sha256Fingerprint": "gakIjqWfs2TFSKb4VVkJm28EBe+/GOUyTsn0V7oAES8="
+    },
+    {
+      "label": "Atos_TrustedRoot_Root_CA_ECC_TLS_2021",
+      "binNumber": 258,
+      "sha256Fingerprint": "svrlPhTM16uSEgZHAa4nnB2JiPrLd1+ooAiRTmY5iKg="
+    },
+    {
+      "label": "TrustAsia_Global_Root_CA_G4",
+      "binNumber": 259,
+      "sha256Fingerprint": "vktWy1BWwBNqUm30RFCNqjagtU9C5Kw49yr0cOR5ZUw="
+    },
+    {
+      "label": "TrustAsia_Global_Root_CA_G3",
+      "binNumber": 260,
+      "sha256Fingerprint": "4NMiausRY8Lkj/m+O1C0xkMb57serMXDa11exQkDmgg="
+    },
+    {
+      "label": "CommScope_Public_Trust_RSA_Root_02",
+      "binNumber": 261,
+      "sha256Fingerprint": "/+lD15NCS098RAwcPWSNU2PzS4Lch6p6nxGPxd7hAfE="
+    },
+    {
+      "label": "CommScope_Public_Trust_RSA_Root_01",
+      "binNumber": 262,
+      "sha256Fingerprint": "Ar35bipF3Zvxj8fh298hoDebo8nCYQNEz9jWBv7B7YE="
+    },
+    {
+      "label": "CommScope_Public_Trust_ECC_Root_02",
+      "binNumber": 263,
+      "sha256Fingerprint": "L/t/gTu7s8iatOgWLQ8W1xUJqDDMnXPCYuUUCHXRrUo="
+    },
+    {
+      "label": "CommScope_Public_Trust_ECC_Root_01",
+      "binNumber": 264,
+      "sha256Fingerprint": "EUN82nu0XkE2X0WzmjiYaw3gDe80jgx7sIc2M4ALw4s="
     }
   ],
-  "maxBin": 239
+  "maxBin": 264
 }

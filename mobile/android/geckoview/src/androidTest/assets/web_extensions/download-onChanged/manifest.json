@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Download",
   "version": "1.0",
-  "applications": {
+  "browser_specific_settings": {
     "gecko": {
       "id": "download-onChanged@tests.mozilla.org"
     }
@@ -11,9 +11,5 @@
   "background": {
     "scripts": ["download.js"]
   },
-  "permissions": [
-    "downloads",
-    "geckoViewAddons",
-    "nativeMessaging"
-  ]
+  "permissions": ["downloads", "geckoViewAddons", "nativeMessaging"]
 }

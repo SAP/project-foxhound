@@ -15,10 +15,9 @@ Bug 895360 - [app manager] Device meta data actor
 "use strict";
 
 window.onload = function() {
-  const {require} = ChromeUtils.import("resource://devtools/shared/loader/Loader.jsm");
+  const {require} = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs");
   const {DevToolsClient} = require("devtools/client/devtools-client");
   const {DevToolsServer} = require("devtools/server/devtools-server");
-  const Services = require("Services");
 
   SimpleTest.waitForExplicitFinish();
 
@@ -60,7 +59,7 @@ window.onload = function() {
 
       const currProfD = Services.dirsvc.get("ProfD", Ci.nsIFile);
       const profileDir = currProfD.path;
-      ok(profileDir.includes(desc.profile.length > 0 && desc.profile),
+      ok(profileDir.includes(!!desc.profile.length && desc.profile),
          "valid profile name");
 
       client.close().then(() => {

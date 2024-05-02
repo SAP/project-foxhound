@@ -23,6 +23,10 @@ namespace test {
 
 class FrameGeneratorInterface {
  public:
+  struct Resolution {
+    size_t width;
+    size_t height;
+  };
   struct VideoFrameData {
     VideoFrameData(rtc::scoped_refptr<VideoFrameBuffer> buffer,
                    absl::optional<VideoFrame::UpdateRect> update_rect)
@@ -32,7 +36,8 @@ class FrameGeneratorInterface {
     absl::optional<VideoFrame::UpdateRect> update_rect;
   };
 
-  enum class OutputType { kI420, kI420A, kI010 };
+  enum class OutputType { kI420, kI420A, kI010, kNV12 };
+  static const char* OutputTypeToString(OutputType type);
 
   virtual ~FrameGeneratorInterface() = default;
 
@@ -42,6 +47,13 @@ class FrameGeneratorInterface {
 
   // Change the capture resolution.
   virtual void ChangeResolution(size_t width, size_t height) = 0;
+
+  virtual Resolution GetResolution() const = 0;
+
+  // Returns the frames per second this generator is supposed to provide
+  // according to its data source. Not all frame generators know the frames per
+  // second of the data source, in such case this method returns absl::nullopt.
+  virtual absl::optional<int> fps() const = 0;
 };
 
 }  // namespace test

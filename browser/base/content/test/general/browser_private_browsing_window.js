@@ -22,7 +22,7 @@ function test() {
   );
   nonPrivateWin.close();
 
-  whenDelayedStartupFinished(privateWin, function() {
+  whenDelayedStartupFinished(privateWin, function () {
     nonPrivateWin = privateWin.OpenBrowserWindow({ private: false });
     ok(
       !PrivateBrowsingUtils.isWindowPrivate(nonPrivateWin),
@@ -42,7 +42,7 @@ function test() {
         private: "appmenu_newPrivateWindow",
         accesskey: false,
       },
-    ].forEach(function(menu) {
+    ].forEach(function (menu) {
       let newWindow = privateWin.document.getElementById(menu.normal);
       let newPrivateWindow = privateWin.document.getElementById(menu.private);
       if (newWindow && newPrivateWindow) {
@@ -72,15 +72,15 @@ function test() {
 
     is(
       privateWin.gBrowser.tabs[0].label,
-      "Private Browsing",
-      "New tabs in the private browsing windows should have 'Private Browsing' as the title."
+      "New Private Tab",
+      "New tabs in the private browsing windows should have 'New Private Tab' as the title."
     );
 
     privateWin.close();
 
     Services.prefs.setBoolPref("browser.privatebrowsing.autostart", true);
     privateWin = OpenBrowserWindow({ private: true });
-    whenDelayedStartupFinished(privateWin, function() {
+    whenDelayedStartupFinished(privateWin, function () {
       [
         {
           normal: "menu_newNavigator",
@@ -92,7 +92,7 @@ function test() {
           private: "appmenu_newPrivateWindow",
           accessKey: false,
         },
-      ].forEach(function(menu) {
+      ].forEach(function (menu) {
         let newWindow = privateWin.document.getElementById(menu.normal);
         let newPrivateWindow = privateWin.document.getElementById(menu.private);
         if (newWindow && newPrivateWindow) {

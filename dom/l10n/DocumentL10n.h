@@ -11,8 +11,7 @@
 
 class nsIContentSink;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Document;
 
@@ -69,22 +68,16 @@ class DocumentL10n final : public DOMLocalization {
 
   void InitialTranslationCompleted(bool aL10nCached);
 
-  Document* GetDocument() { return mDocument; };
+  Document* GetDocument() const { return mDocument; };
   void OnCreatePresShell();
 
   void ConnectRoot(nsINode& aNode, bool aTranslate, ErrorResult& aRv);
 
   DocumentL10nState GetState() { return mState; };
 
-  void MaybeRecordTelemetry();
-
   bool mBlockingLayout = false;
-
-  mozilla::TimeStamp mInitialTranslationStart;
-  static bool mIsFirstBrowserWindow;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_l10n_DocumentL10n_h

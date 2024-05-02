@@ -31,7 +31,7 @@ const TEST_URI = `
   </div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openComputedView();
   await selectNode("span", inspector);
@@ -50,7 +50,7 @@ async function testCopySome(view) {
     view,
     {
       start: { prop: 1, offset: 0 },
-      end: { prop: 3, offset: 2 },
+      end: { prop: 3, offset: 3 },
     },
     expectedPattern
   );

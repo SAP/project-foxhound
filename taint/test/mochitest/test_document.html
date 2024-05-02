@@ -1,0 +1,41 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check Location Sources</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+      }
+
+      add_task(async function test_document_static() {
+          check_untainted("hello");
+      });
+
+      add_task(async function test_document_URI() {
+          check_tainted(document.documentURI);
+      });
+
+      add_task(async function test_document_baseURI() {
+          check_tainted(document.baseURI);
+      });
+
+      add_task(async function test_document_referrer() {
+          check_tainted(document.referrer);
+      });
+
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

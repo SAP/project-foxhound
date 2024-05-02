@@ -9,10 +9,14 @@
 #include "zipstruct.h"  // defines ZIP compression codes
 #include "nsZipArchive.h"
 #include "mozilla/MmapFaultHandler.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 #include "nsEscape.h"
 #include "nsDebug.h"
 #include <algorithm>
+#include <limits>
 #if defined(XP_WIN)
 #  include <windows.h>
 #endif
@@ -25,17 +29,22 @@ NS_IMPL_ISUPPORTS(nsJARInputStream, nsIInputStream)
 
 /*----------------------------------------------------------
  * nsJARInputStream implementation
+ * Takes ownership of |fd|, even on failure
  *--------------------------------------------------------*/
 
-nsresult nsJARInputStream::InitFile(nsJAR* aJar, nsZipItem* item) {
+nsresult nsJARInputStream::InitFile(nsZipHandle* aFd, const uint8_t* aData,
+                                    nsZipItem* aItem) {
   nsresult rv = NS_OK;
-  MOZ_ASSERT(aJar, "Argument may not be null");
-  MOZ_ASSERT(item, "Argument may not be null");
+  MOZ_DIAGNOSTIC_ASSERT(aFd, "Argument may not be null");
+  if (!aFd) {
+    return NS_ERROR_INVALID_ARG;
+  }
+  MOZ_ASSERT(aItem, "Argument may not be null");
 
   // Mark it as closed, in case something fails in initialisation
   mMode = MODE_CLOSED;
   //-- prepare for the compression type
-  switch (item->Compression()) {
+  switch (aItem->Compression()) {
     case STORED:
       mMode = MODE_COPY;
       break;
@@ -45,23 +54,24 @@ nsresult nsJARInputStream::InitFile(nsJAR* aJar, nsZipItem* item) {
       NS_ENSURE_SUCCESS(rv, rv);
 
       mMode = MODE_INFLATE;
-      mInCrc = item->CRC32();
+      mInCrc = aItem->CRC32();
       mOutCrc = crc32(0L, Z_NULL, 0);
       break;
 
     default:
+      mFd = aFd;
       return NS_ERROR_NOT_IMPLEMENTED;
   }
 
   // Must keep handle to filepointer and mmap structure as long as we need
   // access to the mmapped data
-  mFd = aJar->mZip->GetFD();
-  mZs.next_in = (Bytef*)aJar->mZip->GetData(item);
+  mFd = aFd;
+  mZs.next_in = (Bytef*)aData;
   if (!mZs.next_in) {
     return NS_ERROR_FILE_CORRUPTED;
   }
-  mZs.avail_in = item->Size();
-  mOutSize = item->RealSize();
+  mZs.avail_in = aItem->Size();
+  mOutSize = aItem->RealSize();
   mZs.total_out = 0;
   return NS_OK;
 }
@@ -77,7 +87,8 @@ nsresult nsJARInputStream::InitDirectory(nsJAR* aJar,
 
   // Keep the zipReader for getting the actual zipItems
   mJar = aJar;
-  nsZipFind* find;
+  mJar->mLock.AssertCurrentThreadIn();
+  mozilla::UniquePtr<nsZipFind> find;
   nsresult rv;
   // We can get aDir's contents as strings via FindEntries
   // with the following pattern (see nsIZipReader.findEntries docs)
@@ -113,7 +124,7 @@ nsresult nsJARInputStream::InitDirectory(nsJAR* aJar,
     ++curr;
   }
   nsAutoCString pattern = escDirName + "?*~"_ns + escDirName + "?*/?*"_ns;
-  rv = mJar->mZip->FindInit(pattern.get(), &find);
+  rv = mJar->mZip->FindInit(pattern.get(), getter_Transfers(find));
   if (NS_FAILED(rv)) return rv;
 
   const char* name;
@@ -122,9 +133,8 @@ nsresult nsJARInputStream::InitDirectory(nsJAR* aJar,
     // Must copy, to make it zero-terminated
     mArray.AppendElement(nsCString(name, nameLen));
   }
-  delete find;
 
-  if (rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST && NS_FAILED(rv)) {
+  if (rv != NS_ERROR_FILE_NOT_FOUND && NS_FAILED(rv)) {
     return NS_ERROR_FAILURE;  // no error translation
   }
 
@@ -149,6 +159,8 @@ nsJARInputStream::Available(uint64_t* _retval) {
   // They just use the _retval value.
   *_retval = 0;
 
+  uint64_t maxAvailableSize = 0;
+
   switch (mMode) {
     case MODE_NOTINITED:
       break;
@@ -162,11 +174,20 @@ nsJARInputStream::Available(uint64_t* _retval) {
 
     case MODE_INFLATE:
     case MODE_COPY:
-      *_retval = mOutSize - mZs.total_out;
+      maxAvailableSize = mozilla::StaticPrefs::network_jar_max_available_size();
+      if (!maxAvailableSize) {
+        maxAvailableSize = std::numeric_limits<uint64_t>::max();
+      }
+      *_retval = std::min<uint64_t>(mOutSize - mZs.total_out, maxAvailableSize);
       break;
   }
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsJARInputStream::StreamStatus() {
+  return mMode == MODE_CLOSED ? NS_BASE_STREAM_CLOSED : NS_OK;
 }
 
 NS_IMETHODIMP
@@ -267,7 +288,9 @@ nsresult nsJARInputStream::ContinueInflate(char* aBuffer, uint32_t aCount,
     if ((zerr != Z_OK) && (zerr != Z_STREAM_END)) {
       return NS_ERROR_FILE_CORRUPTED;
     }
-    finished = (zerr == Z_STREAM_END);
+    // If inflating did not read anything more, then the stream is finished.
+    finished = (zerr == Z_STREAM_END) ||
+               (mZs.avail_out && mZs.total_out == oldTotalOut);
   }
 
   *aBytesRead = (mZs.total_out - oldTotalOut);
@@ -277,9 +300,19 @@ nsresult nsJARInputStream::ContinueInflate(char* aBuffer, uint32_t aCount,
 
   // be aggressive about ending the inflation
   // for some reason we don't always get Z_STREAM_END
-  if (finished || mZs.total_out == mOutSize) {
+  if (finished || mZs.total_out >= mOutSize) {
     if (mMode == MODE_INFLATE) {
-      inflateEnd(&mZs);
+      int zerr = inflateEnd(&mZs);
+      if (zerr != Z_OK) {
+        return NS_ERROR_FILE_CORRUPTED;
+      }
+
+      // Stream is finished but has a different size from what
+      // we expected.
+      if (mozilla::StaticPrefs::network_jar_require_size_match() &&
+          mZs.total_out != mOutSize) {
+        return NS_ERROR_FILE_CORRUPTED;
+      }
     }
 
     // stop returning valid data as soon as we know we have a bad CRC
@@ -301,6 +334,7 @@ nsresult nsJARInputStream::ReadDirectory(char* aBuffer, uint32_t aCount,
   uint32_t numRead = CopyDataToBuffer(aBuffer, aCount);
 
   if (aCount > 0) {
+    mozilla::RecursiveMutexAutoLock lock(mJar->mLock);
     // empty the buffer and start writing directory entry lines to it
     mBuffer.Truncate();
     mCurPos = 0;
@@ -313,7 +347,7 @@ nsresult nsJARInputStream::ReadDirectory(char* aBuffer, uint32_t aCount,
       const char* entryName = mArray[mArrPos].get();
       uint32_t entryNameLen = mArray[mArrPos].Length();
       nsZipItem* ze = mJar->mZip->GetItem(entryName);
-      NS_ENSURE_TRUE(ze, NS_ERROR_FILE_TARGET_DOES_NOT_EXIST);
+      NS_ENSURE_TRUE(ze, NS_ERROR_FILE_NOT_FOUND);
 
       // Last Modified Time
       PRExplodedTime tm;

@@ -9,105 +9,54 @@
 
 #include "nsError.h"
 
-class nsIMemory;
+/**
+ *
+ * A client that wishes to be notified of low memory situations (for
+ * example, because the client maintains a large memory cache that
+ * could be released when memory is tight) should register with the
+ * observer service (see nsIObserverService) using the topic
+ * "memory-pressure".  There are specific types of notifications
+ * that can occur.  These types will be passed as the |aData|
+ * parameter of the of the "memory-pressure" notification:
+ *
+ * "low-memory"
+ * This will be passed as the extra data when the pressure
+ * observer is being asked to flush for low-memory conditions.
+ *
+ * "low-memory-ongoing"
+ * This will be passed when we continue to be in a low-memory
+ * condition and we want to flush caches and do other cheap
+ * forms of memory minimization, but heavy handed approaches like
+ * a GC are unlikely to succeed.
+ *
+ * "heap-minimize"
+ * This will be passed as the extra data when the pressure
+ * observer is being asked to flush because of a heap minimize
+ * call.
+ */
 
-#define NS_MEMORY_CONTRACTID "@mozilla.org/xpcom/memory-service;1"
-#define NS_MEMORY_CID                                \
-  { /* 30a04e40-38e7-11d4-8cf5-0060b0fc14a3 */       \
-    0x30a04e40, 0x38e7, 0x11d4, {                    \
-      0x8c, 0xf5, 0x00, 0x60, 0xb0, 0xfc, 0x14, 0xa3 \
-    }                                                \
-  }
+// This is implemented in nsMemoryImpl.cpp.
+
+namespace nsMemory {
 
 /**
- * Static helper routines to manage memory. These routines allow easy access
- * to xpcom's built-in (global) nsIMemory implementation, without needing
- * to go through the service manager to get it. However this requires clients
- * to link with the xpcom DLL.
- *
- * This class is not threadsafe and is intented for use only on the main
- * thread.
+ * Attempts to shrink the heap.
+ * @param immediate - if true, heap minimization will occur
+ *   immediately if the call was made on the main thread. If
+ *   false, the flush will be scheduled to happen when the app is
+ *   idle.
+ * @throws NS_ERROR_FAILURE if 'immediate' is set and the call
+ *   was not on the application's main thread.
  */
-class nsMemory {
- public:
-  static nsresult HeapMinimize(bool aImmediate);
-  static nsIMemory* GetGlobalMemoryService();  // AddRefs
-};
+nsresult HeapMinimize(bool aImmediate);
 
 /**
- * Macro to free all elements of an XPCOM array of a given size using
- * freeFunc, then frees the array itself using free().
- *
- * Note that this macro (and its wrappers) can be used to deallocate a
- * partially- or completely-built array while unwinding an error
- * condition inside the XPCOM routine that was going to return the
- * array.  For this to work on a partially-built array, your code
- * needs to be building the array from index 0 upwards, and simply
- * pass the number of elements that have already been built (and thus
- * need to be freed) as |size|.
- *
- * Thanks to <alecf@netscape.com> for suggesting this form, which
- * allows the macro to be used with NS_RELEASE / NS_RELEASE_IF in
- * addition to free.
- *
- * @param size      Number of elements in the array.  If not a constant, this
- *                  should be a int32_t.  Note that this means this macro
- *                  will not work if size >= 2^31.
- * @param array     The array to be freed.
- * @param freeFunc  The function or macro to be used to free it.
- *                  For arrays of nsISupports (or any class derived
- *                  from it), NS_IF_RELEASE (or NS_RELEASE) should be
- *                  passed as freeFunc.  For most (all?) other pointer
- *                  types (including XPCOM strings and wstrings),
- *                  free should be used.
+ * This predicate can be used to determine if the platform is a "low-memory"
+ * platform. Callers may use this to dynamically tune their behaviour
+ * to favour reduced memory usage at the expense of performance. The value
+ * returned by this function will not change over the lifetime of the process.
  */
-#define NS_FREE_XPCOM_POINTER_ARRAY(size, array, freeFunc) \
-  do {                                                     \
-    int32_t iter_ = int32_t(size);                         \
-    while (--iter_ >= 0) freeFunc((array)[iter_]);         \
-    free((array));                                         \
-  } while (0)
-
-// convenience macros for commonly used calls.  mmmmm.  syntactic sugar.
-
-/**
- * Macro to free arrays of non-refcounted objects allocated by the
- * shared allocator (nsMemory) such as strings and wstrings.  A
- * convenience wrapper around NS_FREE_XPCOM_POINTER_ARRAY.
- *
- * @param size      Number of elements in the array.  If not a constant, this
- *                  should be a int32_t.  Note that this means this macro
- *                  will not work if size >= 2^31.
- * @param array     The array to be freed.
- */
-#define NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(size, array) \
-  NS_FREE_XPCOM_POINTER_ARRAY((size), (array), free)
-
-/**
- * Macro to free an array of pointers to nsISupports (or classes
- * derived from it).  A convenience wrapper around
- * NS_FREE_XPCOM_POINTER_ARRAY.
- *
- * Note that if you know that none of your nsISupports pointers are
- * going to be 0, you can gain a bit of speed by calling
- * NS_FREE_XPCOM_POINTER_ARRAY directly and using NS_RELEASE as your
- * free function.
- *
- * @param size      Number of elements in the array.  If not a constant, this
- *                  should be a int32_t.  Note that this means this macro
- *                  will not work if size >= 2^31.
- * @param array     The array to be freed.
- */
-#define NS_FREE_XPCOM_ISUPPORTS_POINTER_ARRAY(size, array) \
-  NS_FREE_XPCOM_POINTER_ARRAY((size), (array), NS_IF_RELEASE)
-
-/**
- * An enumeration type used to represent a method of assignment.
- */
-enum nsAssignmentType {
-  NS_ASSIGNMENT_COPY,    // copy by value
-  NS_ASSIGNMENT_DEPEND,  // copy by reference
-  NS_ASSIGNMENT_ADOPT    // copy by reference (take ownership of resource)
-};
+bool IsLowMemoryPlatform();
+}  // namespace nsMemory
 
 #endif  // nsMemory_h__

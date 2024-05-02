@@ -183,8 +183,9 @@ class AudioContext final : public DOMEventTargetHelper,
 
   float SampleRate() const { return mSampleRate; }
 
-  bool ShouldSuspendNewTrack() const { return mSuspendCalled || mCloseCalled; }
-
+  bool ShouldSuspendNewTrack() const {
+    return mTracksAreSuspended || mCloseCalled;
+  }
   double CurrentTime();
 
   AudioListener* Listener();
@@ -304,6 +305,10 @@ class AudioContext final : public DOMEventTargetHelper,
 
   bool IsOffline() const { return mIsOffline; }
 
+  bool ShouldResistFingerprinting() const {
+    return mShouldResistFingerprinting;
+  }
+
   MediaTrackGraph* Graph() const;
   AudioNodeTrack* DestinationTrack() const;
 
@@ -358,7 +363,7 @@ class AudioContext final : public DOMEventTargetHelper,
 
   nsTArray<RefPtr<mozilla::MediaTrack>> GetAllTracks() const;
 
-  void ResumeInternal(AudioContextOperationFlags aFlags);
+  void ResumeInternal();
   void SuspendInternal(void* aPromise, AudioContextOperationFlags aFlags);
   void CloseInternal(void* aPromise, AudioContextOperationFlags aFlags);
 
@@ -419,19 +424,28 @@ class AudioContext final : public DOMEventTargetHelper,
   RefPtr<BasicWaveFormCache> mBasicWaveFormCache;
   // Number of channels passed in the OfflineAudioContext ctor.
   uint32_t mNumberOfChannels;
-  bool mIsOffline;
+  const RTPCallerType mRTPCallerType;
+  const bool mShouldResistFingerprinting;
+  const bool mIsOffline;
+  // true iff realtime or startRendering() has been called.
   bool mIsStarted;
   bool mIsShutDown;
-  // Close has been called, reject suspend and resume call.
-  bool mCloseCalled;
-  // Suspend has been called with no following resume.
-  bool mSuspendCalled;
   bool mIsDisconnecting;
+  // Close has been called; reject suspend and resume calls.
+  bool mCloseCalled;
+  // Whether the MediaTracks are suspended, due to one or more of
+  // !mWasAllowedToStart, mSuspendedByContent, or mSuspendedByChrome.
+  // false if offline.
+  bool mTracksAreSuspended;
   // This flag stores the value of previous status of `allowed-to-start`.
+  // true if offline.
   bool mWasAllowedToStart;
-
-  // True if this AudioContext has been suspended by the page.
+  // Whether this AudioContext is suspended because the page called suspend().
+  // Unused if offline.
   bool mSuspendedByContent;
+  // Whether this AudioContext is suspended because the Window is suspended.
+  // Unused if offline.
+  bool mSuspendedByChrome;
 
   // These variables are used for telemetry, they're not reflect the actual
   // status of AudioContext, they are based on the "assumption" of enabling

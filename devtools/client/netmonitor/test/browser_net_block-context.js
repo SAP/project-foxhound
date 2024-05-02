@@ -7,7 +7,7 @@
  * Tests that context menus for blocked requests work
  */
 
-add_task(async function() {
+add_task(async function () {
   const { monitor } = await initNetMonitor(HTTPS_SIMPLE_URL, {
     requestCount: 1,
   });
@@ -99,8 +99,7 @@ async function openMenuAndClick(monitor, store, document, itemSelector) {
   );
 
   const wait = waitForDispatch(store, "REQUEST_BLOCKING_UPDATE_COMPLETE");
-  const node = getContextMenuItem(monitor, itemSelector);
-  node.click();
+  await selectContextMenuItem(monitor, itemSelector);
   await wait;
 }
 

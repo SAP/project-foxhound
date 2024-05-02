@@ -3,7 +3,7 @@
 
 requestLongerTimeout(5);
 
-var { Toolbox } = require("devtools/client/framework/toolbox");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 const NAME_1 = "";
 const NAME_2 = "Toolbox test for title update";
@@ -72,7 +72,6 @@ add_task(async function test() {
   gBrowser.removeCurrentTab();
   Services.prefs.clearUserPref("devtools.toolbox.host");
   Services.prefs.clearUserPref("devtools.toolbox.selectedTool");
-  Services.prefs.clearUserPref("devtools.toolbox.sideEnabled");
 });
 
 function getExpectedTitle(name, url) {

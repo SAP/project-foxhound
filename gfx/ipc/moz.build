@@ -5,13 +5,14 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "Graphics: Layers")
+    BUG_COMPONENT = ("Core", "Graphics")
 
 EXPORTS.mozilla += ["D3DMessageUtils.h", "GfxMessageUtils.h"]
 
 EXPORTS.mozilla.gfx += [
     "CanvasManagerChild.h",
     "CanvasManagerParent.h",
+    "CanvasRenderThread.h",
     "CrossProcessPaint.h",
     "GPUChild.h",
     "GPUParent.h",
@@ -28,6 +29,7 @@ EXPORTS.mozilla.layers += [
     "CompositorOptions.h",
     "CompositorSession.h",
     "InProcessCompositorSession.h",
+    "OverlayInfo.h",
     "RemoteCompositorSession.h",
 ]
 
@@ -38,6 +40,7 @@ EXPORTS.mozilla.widget += [
 UNIFIED_SOURCES += [
     "CanvasManagerChild.cpp",
     "CanvasManagerParent.cpp",
+    "CanvasRenderThread.cpp",
     "CompositorSession.cpp",
     "CompositorWidgetVsyncObserver.cpp",
     "CrossProcessPaint.cpp",

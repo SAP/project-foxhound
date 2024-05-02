@@ -6,28 +6,28 @@
 #ifndef nsBaseChannel_h__
 #define nsBaseChannel_h__
 
-#include "mozilla/net/NeckoTargetHolder.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/UniquePtr.h"
-#include "nsString.h"
-#include "nsCOMPtr.h"
+#include "mozilla/net/NeckoTargetHolder.h"
+#include "mozilla/net/PrivateBrowsingChannel.h"
 #include "nsHashPropertyBag.h"
-#include "nsInputStreamPump.h"
-
+#include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIChannel.h"
-#include "nsIURI.h"
+#include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
 #include "nsILoadInfo.h"
-#include "nsIStreamListener.h"
-#include "nsIInterfaceRequestor.h"
 #include "nsIProgressEventSink.h"
-#include "nsITransport.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIStreamListener.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIThreadRetargetableStreamListener.h"
-#include "mozilla/net/PrivateBrowsingChannel.h"
+#include "nsITransport.h"
+#include "nsITransportSecurityInfo.h"
+#include "nsIURI.h"
+#include "nsInputStreamPump.h"
+#include "nsString.h"
 #include "nsThreadUtils.h"
+#include "nsCOMPtr.h"
 
 class nsIInputStream;
 class nsICancelable;
@@ -53,7 +53,6 @@ class nsBaseChannel
       public nsIAsyncVerifyRedirectCallback,
       public mozilla::net::PrivateBrowsingChannel<nsBaseChannel>,
       public mozilla::net::NeckoTargetHolder,
-      protected nsIStreamListener,
       protected nsIThreadRetargetableStreamListener {
  public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -187,8 +186,8 @@ class nsBaseChannel
 
   // The security info is a property of the transport-layer, which should be
   // assigned by the subclass.
-  nsISupports* SecurityInfo() { return mSecurityInfo; }
-  void SetSecurityInfo(nsISupports* info) { mSecurityInfo = info; }
+  nsITransportSecurityInfo* SecurityInfo() { return mSecurityInfo; }
+  void SetSecurityInfo(nsITransportSecurityInfo* info) { mSecurityInfo = info; }
 
   // Test the load flags
   bool HasLoadFlag(uint32_t flag) { return (mLoadFlags & flag) != 0; }
@@ -196,6 +195,44 @@ class nsBaseChannel
   // This is a short-cut to calling nsIRequest::IsPending()
   virtual bool Pending() const {
     return mPumpingData || mWaitingOnAsyncRedirect;
+  }
+
+  // Blob requests may specify a range header. We must parse, validate, and
+  // store that info in a place where BlobURLInputStream::StoreBlobImplStream
+  // can access it. This class helps to encapsulate that logic.
+  class ContentRange {
+   private:
+    uint64_t mStart;
+    uint64_t mEnd;
+    uint64_t mSize;
+
+   public:
+    uint64_t Start() const { return mStart; }
+    uint64_t End() const { return mEnd; }
+    uint64_t Size() const { return mSize; }
+    bool IsValid() const { return mStart < mSize; }
+    ContentRange() : mStart(0), mEnd(0), mSize(0) {}
+    ContentRange(uint64_t aStart, uint64_t aEnd, uint64_t aSize)
+        : mStart(aStart), mEnd(aEnd), mSize(aSize) {}
+    ContentRange(const nsACString& aRangeHeader, uint64_t aSize);
+    void AsHeader(nsACString& aOutString) const;
+  };
+
+  const mozilla::Maybe<ContentRange>& GetContentRange() const {
+    return mContentRange;
+  }
+
+  void SetContentRange(uint64_t aStart, uint64_t aEnd, uint64_t aSize) {
+    mContentRange.emplace(ContentRange(aStart, aEnd, aSize));
+  }
+
+  bool SetContentRange(const nsACString& aRangeHeader, uint64_t aSize) {
+    auto range = ContentRange(aRangeHeader, aSize);
+    if (!range.IsValid()) {
+      return false;
+    }
+    mContentRange.emplace(range);
+    return true;
   }
 
   // Helper function for querying the channel's notification callbacks.
@@ -216,17 +253,6 @@ class nsBaseChannel
   // and the channel's listener.  The following methods make that possible.
   void SetStreamListener(nsIStreamListener* listener) { mListener = listener; }
   nsIStreamListener* StreamListener() { return mListener; }
-
-  // Pushes a new stream converter in front of the channel's stream listener.
-  // The fromType and toType values are passed to nsIStreamConverterService's
-  // AsyncConvertData method.  If invalidatesContentLength is true, then the
-  // channel's content-length property will be assigned a value of -1.  This is
-  // necessary when the converter changes the length of the resulting data
-  // stream, which is almost always the case for a "stream converter" ;-)
-  // This function optionally returns a reference to the new converter.
-  nsresult PushStreamConverter(const char* fromType, const char* toType,
-                               bool invalidatesContentLength = true,
-                               nsIStreamListener** result = nullptr);
 
  protected:
   void DisallowThreadRetargeting() { mAllowThreadRetargeting = false; }
@@ -290,10 +316,8 @@ class nsBaseChannel
   nsCOMPtr<nsIProgressEventSink> mProgressSink;
   nsCOMPtr<nsIURI> mOriginalURI;
   nsCOMPtr<nsISupports> mOwner;
-  nsCOMPtr<nsISupports> mSecurityInfo;
+  nsCOMPtr<nsITransportSecurityInfo> mSecurityInfo;
   nsCOMPtr<nsIChannel> mRedirectChannel;
-  nsCString mContentType;
-  nsCString mContentCharset;
   uint32_t mLoadFlags{LOAD_NORMAL};
   bool mQueriedProgressSink{true};
   bool mSynthProgressEvents{false};
@@ -301,8 +325,11 @@ class nsBaseChannel
   bool mWaitingOnAsyncRedirect{false};
   bool mOpenRedirectChannel{false};
   uint32_t mRedirectFlags{0};
+  mozilla::Maybe<ContentRange> mContentRange;
 
  protected:
+  nsCString mContentType;
+  nsCString mContentCharset;
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
   nsCOMPtr<nsILoadInfo> mLoadInfo;

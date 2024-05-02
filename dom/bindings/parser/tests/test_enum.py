@@ -82,12 +82,12 @@ def WebIDLTest(parser, harness):
             "c"
           };
           interface TestInterface {
-            void foo(optional Enum e = "d");
+            undefined foo(optional Enum e = "d");
           };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should not allow a bogus default value for an enum")

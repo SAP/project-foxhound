@@ -2,22 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from appdirs import user_config_dir
-from hglib.error import CommandError
-from mach.decorators import (
-    CommandArgument,
-    Command,
-)
-from mach.base import FailedCommandError
-from mozrelease.scriptworker_canary import get_secret
-from pathlib import Path
-from redo import retry
 import argparse
 import logging
 import os
 import tempfile
+from pathlib import Path
+
+from appdirs import user_config_dir
+from hglib.error import CommandError
+from mach.base import FailedCommandError
+from mach.decorators import Command, CommandArgument
+from mozrelease.scriptworker_canary import get_secret
+from redo import retry
 
 
 @Command(
@@ -180,6 +176,7 @@ def cross_channel(
     strings_path = strings_path.resolve()  # abspath
     if outgoing_path:
         outgoing_path = outgoing_path.resolve()  # abspath
+    get_config = kwargs.get("get_config", None)
     try:
         with tempfile.TemporaryDirectory() as ssh_key_dir:
             retry(
@@ -193,6 +190,7 @@ def cross_channel(
                     ssh_secret,
                     Path(ssh_key_dir),
                     actions,
+                    get_config,
                 ),
             )
     except RetryError as exc:
@@ -206,11 +204,13 @@ def _do_create_content(
     ssh_secret,
     ssh_key_dir,
     actions,
+    get_config,
 ):
-
     from mozxchannel import CrossChannelCreator, get_default_config
 
-    config = get_default_config(Path(command_context.topsrcdir), strings_path)
+    get_config = get_config or get_default_config
+
+    config = get_config(Path(command_context.topsrcdir), strings_path)
     ccc = CrossChannelCreator(config)
     status = 0
     changes = False

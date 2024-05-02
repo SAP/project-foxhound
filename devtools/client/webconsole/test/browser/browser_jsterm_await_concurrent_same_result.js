@@ -9,7 +9,7 @@
 const TEST_URI =
   "data:text/html;charset=utf-8,<!DOCTYPE html>Test concurrent top-level await expressions returning same value";
 
-add_task(async function() {
+add_task(async function () {
   // Enable editor mode as we'll be able to quicly trigger multiple evaluations.
   await pushPref("devtools.webconsole.input.editor", true);
 
@@ -29,7 +29,7 @@ add_task(async function() {
   executeButton.click();
 
   await waitFor(
-    () => findMessages(hud, "foo", ".result").length === 3,
+    () => findEvaluationResultMessages(hud, "foo").length === 3,
     "Waiting for all results to be printed in console",
     1000
   );

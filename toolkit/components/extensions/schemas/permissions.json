@@ -1,7 +1,6 @@
 [
   {
     "namespace": "permissions",
-    "permissions": ["manifest:optional_permissions"],
     "types": [
       {
         "id": "Permissions",
@@ -118,8 +117,7 @@
           {
             "name": "callback",
             "type": "function",
-            "parameters": [
-            ]
+            "parameters": []
           }
         ]
       }

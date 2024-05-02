@@ -2,12 +2,19 @@
   "ui:order": [
     "telemetryId",
     "searchPageRegexp",
+    "queryParamNames",
     "queryParamName",
     "codeParamName",
     "taggedCodes",
+    "expectedOrganicCodes",
     "organicCodes",
     "followOnParamNames",
     "followOnCookies",
-    "extraAdServersRegexps"
+    "extraAdServersRegexps",
+    "adServerAttributes",
+    "components",
+    "nonAdsLinkRegexps",
+    "shoppingTab",
+    "domainExtraction"
   ]
 }

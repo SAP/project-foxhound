@@ -11,8 +11,7 @@
 
 class nsContentList;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLTableSectionElement;
 
@@ -85,11 +84,9 @@ class HTMLTableRowElement final : public nsGenericHTMLElement {
   RefPtr<nsContentList> mCells;
 
  private:
-  static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    MappedDeclarations&);
+  static void MapAttributesIntoRule(MappedDeclarationsBuilder&);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_HTMLTableRowElement_h */

@@ -22,7 +22,7 @@
 #include "mozilla/StaticPtr.h"
 
 #include "nsContentUtils.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsThreadUtils.h"
@@ -145,7 +145,7 @@ void GamepadManager::AddListener(nsGlobalWindowInner* aWindow) {
   }
 
   if (!mEnabled || mShuttingDown ||
-      nsContentUtils::ShouldResistFingerprinting(aWindow->GetExtantDoc())) {
+      aWindow->ShouldResistFingerprinting(RFPTarget::Gamepad)) {
     return;
   }
 
@@ -280,8 +280,7 @@ void GamepadManager::NewConnectionEvent(GamepadHandle aHandle,
 
       // Do not fire gamepadconnected and gamepaddisconnected events when
       // privacy.resistFingerprinting is true.
-      if (nsContentUtils::ShouldResistFingerprinting(
-              listeners[i]->GetExtantDoc())) {
+      if (listeners[i]->ShouldResistFingerprinting(RFPTarget::Gamepad)) {
         continue;
       }
 
@@ -314,8 +313,7 @@ void GamepadManager::NewConnectionEvent(GamepadHandle aHandle,
 
       // Do not fire gamepadconnected and gamepaddisconnected events when
       // privacy.resistFingerprinting is true.
-      if (nsContentUtils::ShouldResistFingerprinting(
-              listeners[i]->GetExtantDoc())) {
+      if (listeners[i]->ShouldResistFingerprinting(RFPTarget::Gamepad)) {
         continue;
       }
 
@@ -351,7 +349,7 @@ void GamepadManager::SyncGamepadState(GamepadHandle aHandle,
                                       nsGlobalWindowInner* aWindow,
                                       Gamepad* aGamepad) {
   if (mShuttingDown || !mEnabled ||
-      nsContentUtils::ShouldResistFingerprinting(aWindow->GetExtantDoc())) {
+      aWindow->ShouldResistFingerprinting(RFPTarget::Gamepad)) {
     return;
   }
 
@@ -444,8 +442,7 @@ void GamepadManager::SetWindowHasSeenGamepad(nsGlobalWindowInner* aWindow,
 }
 
 void GamepadManager::Update(const GamepadChangeEvent& aEvent) {
-  if (!mEnabled || mShuttingDown ||
-      nsContentUtils::ShouldResistFingerprinting()) {
+  if (!mEnabled || mShuttingDown) {
     return;
   }
 
@@ -477,7 +474,8 @@ void GamepadManager::Update(const GamepadChangeEvent& aEvent) {
   for (uint32_t i = 0; i < listeners.Length(); i++) {
     // Only send events to non-background windows
     if (!listeners[i]->IsCurrentInnerWindow() ||
-        listeners[i]->GetOuterWindow()->IsBackground()) {
+        listeners[i]->GetOuterWindow()->IsBackground() ||
+        listeners[i]->ShouldResistFingerprinting(RFPTarget::Gamepad)) {
       continue;
     }
 

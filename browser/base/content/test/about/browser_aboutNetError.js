@@ -8,11 +8,21 @@ const TLS10_PAGE = "https://tls1.example.com/";
 const TLS12_PAGE = "https://tls12.example.com/";
 const TRIPLEDES_PAGE = "https://3des.example.com/";
 
+const lazy = {};
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "gDNSOverride",
+  "@mozilla.org/network/native-dns-override;1",
+  "nsINativeDNSResolverOverride"
+);
+
 // This includes all the cipher suite prefs we have.
 function resetPrefs() {
   Services.prefs.clearUserPref("security.tls.version.min");
   Services.prefs.clearUserPref("security.tls.version.max");
   Services.prefs.clearUserPref("security.tls.version.enable-deprecated");
+  Services.prefs.clearUserPref("browser.fixup.alternate.enabled");
 }
 
 add_task(async function resetToDefaultConfig() {
@@ -46,7 +56,7 @@ add_task(async function resetToDefaultConfig() {
     TLS12_PAGE
   );
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     const doc = content.document;
     ok(
       doc.documentURI.startsWith("about:neterror"),
@@ -54,9 +64,9 @@ add_task(async function resetToDefaultConfig() {
     );
 
     const prefResetButton = doc.getElementById("prefResetButton");
-    ok(
-      ContentTaskUtils.is_visible(prefResetButton),
-      "prefResetButton should be visible"
+    await ContentTaskUtils.waitForCondition(
+      () => ContentTaskUtils.is_visible(prefResetButton),
+      "prefResetButton is visible"
     );
 
     if (!Services.focus.focusedElement == prefResetButton) {
@@ -99,7 +109,7 @@ add_task(async function checkLearnMoreLink() {
 
   const baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
 
-  await SpecialPowers.spawn(browser, [baseURL], function(_baseURL) {
+  await SpecialPowers.spawn(browser, [baseURL], function (_baseURL) {
     const doc = content.document;
     ok(
       doc.documentURI.startsWith("about:neterror"),
@@ -127,7 +137,7 @@ add_task(async function checkLearnMoreLink() {
       "Correct error page title is set"
     );
 
-    const errorCodeEl = doc.querySelector("#errorShortDescText2");
+    const errorCodeEl = doc.querySelector("#errorShortDesc2");
     const actualDataL10Args = errorCodeEl.getAttribute("data-l10n-args");
     ok(
       actualDataL10Args.includes("SSL_ERROR_PROTOCOL_VERSION_ALERT"),
@@ -139,6 +149,63 @@ add_task(async function checkLearnMoreLink() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
+// When a user tries going to a host without a suffix
+// and the term doesn't match a host and we are able to suggest a
+// valid correction, the page should show the correction.
+// e.g. http://example/example2 -> https://www.example.com/example2
+add_task(async function checkDomainCorrection() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.fixup.alternate.enabled", false]],
+  });
+  lazy.gDNSOverride.addIPOverride("www.example.com", "::1");
+
+  info("Try loading a URI that should result in an error page");
+  BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    "http://example/example2/",
+    false
+  );
+
+  info("Loading and waiting for the net error");
+  let browser = gBrowser.selectedBrowser;
+  let pageLoaded = BrowserTestUtils.waitForErrorPage(browser);
+  await pageLoaded;
+
+  const baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
+
+  await SpecialPowers.spawn(browser, [baseURL], async function (_baseURL) {
+    const doc = content.document;
+    ok(
+      doc.documentURI.startsWith("about:neterror"),
+      "Should be showing error page"
+    );
+
+    const errorNotice = doc.getElementById("errorShortDesc");
+    ok(ContentTaskUtils.is_visible(errorNotice), "Error text is visible");
+
+    // Wait for the domain suggestion to be resolved and for the text to update
+    let link;
+    await ContentTaskUtils.waitForCondition(() => {
+      link = errorNotice.querySelector("a");
+      return link && link.textContent != "";
+    }, "Helper link has been set");
+
+    is(
+      link.getAttribute("href"),
+      "https://www.example.com/example2/",
+      "Link was corrected"
+    );
+
+    const actualDataL10nID = link.getAttribute("data-l10n-name");
+    is(actualDataL10nID, "website", "Correct name is set");
+  });
+
+  lazy.gDNSOverride.clearHostOverride("www.example.com");
+  resetPrefs();
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});
+
 // Test that ciphersuites that use 3DES (namely, TLS_RSA_WITH_3DES_EDE_CBC_SHA)
 // can only be enabled when deprecated TLS is enabled.
 add_task(async function onlyAllow3DESWithDeprecatedTLS() {
@@ -146,7 +213,7 @@ add_task(async function onlyAllow3DESWithDeprecatedTLS() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
     async browser => {
-      BrowserTestUtils.loadURI(browser, TRIPLEDES_PAGE);
+      BrowserTestUtils.startLoadingURIString(browser, TRIPLEDES_PAGE);
       await BrowserTestUtils.waitForErrorPage(browser);
     }
   );
@@ -156,7 +223,7 @@ add_task(async function onlyAllow3DESWithDeprecatedTLS() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
     async browser => {
-      BrowserTestUtils.loadURI(browser, TRIPLEDES_PAGE);
+      BrowserTestUtils.startLoadingURIString(browser, TRIPLEDES_PAGE);
       await BrowserTestUtils.browserLoaded(browser, false, TRIPLEDES_PAGE);
     }
   );
@@ -169,7 +236,7 @@ add_task(async function onlyAllow3DESWithDeprecatedTLS() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
     async browser => {
-      BrowserTestUtils.loadURI(browser, TRIPLEDES_PAGE);
+      BrowserTestUtils.startLoadingURIString(browser, TRIPLEDES_PAGE);
       await BrowserTestUtils.waitForErrorPage(browser);
     }
   );

@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from head.js */
-
 "use strict";
 
 requestLongerTimeout(6);
@@ -42,6 +40,8 @@ const TEST_CASES = [
   },
 ];
 
+let listService;
+
 function observeChannel(uri, expected) {
   return TestUtils.topicObserved("http-on-modify-request", (subject, data) => {
     let channel = subject.QueryInterface(Ci.nsIHttpChannel);
@@ -69,14 +69,33 @@ async function verifyQueryString(browser, expected) {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.query_stripping.strip_list", "paramToStrip1 paramToStrip2"],
       ["privacy.query_stripping.redirect", true],
+      ["privacy.query_stripping.listService.logLevel", "Debug"],
+      ["privacy.query_stripping.strip_on_share.enabled", false],
     ],
   });
+
+  // Get the list service so we can wait for it to be fully initialized before running tests.
+  listService = Cc["@mozilla.org/query-stripping-list-service;1"].getService(
+    Ci.nsIURLQueryStrippingListService
+  );
+  // Here we don't care about the actual enabled state, we just want any init to be done so we get reliable starting conditions.
+  await listService.testWaitForInit();
 });
+
+async function waitForListServiceInit(strippingEnabled) {
+  info("Waiting for nsIURLQueryStrippingListService to be initialized.");
+  let isInitialized = await listService.testWaitForInit();
+  is(
+    isInitialized,
+    strippingEnabled,
+    "nsIURLQueryStrippingListService should be initialized when the feature is enabled."
+  );
+}
 
 add_task(async function doTestsForTabOpen() {
   info("Start testing query stripping for tab open.");
@@ -84,6 +103,7 @@ add_task(async function doTestsForTabOpen() {
     await SpecialPowers.pushPrefEnv({
       set: [["privacy.query_stripping.enabled", strippingEnabled]],
     });
+    await waitForListServiceInit(strippingEnabled);
 
     for (const test of TEST_CASES) {
       let testURI = TEST_URI + "?" + test.testQueryString;
@@ -103,6 +123,8 @@ add_task(async function doTestsForTabOpen() {
 
       await networkPromise;
     }
+
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -112,6 +134,7 @@ add_task(async function doTestsForWindowOpen() {
     await SpecialPowers.pushPrefEnv({
       set: [["privacy.query_stripping.enabled", strippingEnabled]],
     });
+    await waitForListServiceInit(strippingEnabled);
 
     for (const test of TEST_CASES) {
       let testFirstPartyURI = TEST_URI + "?" + test.testQueryString;
@@ -172,6 +195,8 @@ add_task(async function doTestsForWindowOpen() {
         BrowserTestUtils.removeTab(newTab);
       });
     }
+
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -181,6 +206,7 @@ add_task(async function doTestsForLinkClick() {
     await SpecialPowers.pushPrefEnv({
       set: [["privacy.query_stripping.enabled", strippingEnabled]],
     });
+    await waitForListServiceInit(strippingEnabled);
 
     for (const test of TEST_CASES) {
       let testFirstPartyURI = TEST_URI + "?" + test.testQueryString;
@@ -252,6 +278,8 @@ add_task(async function doTestsForLinkClick() {
         await verifyQueryString(browser, expectedQueryString);
       });
     }
+
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -261,6 +289,7 @@ add_task(async function doTestsForLinkClickInIframe() {
     await SpecialPowers.pushPrefEnv({
       set: [["privacy.query_stripping.enabled", strippingEnabled]],
     });
+    await waitForListServiceInit(strippingEnabled);
 
     for (const test of TEST_CASES) {
       let testFirstPartyURI = TEST_URI + "?" + test.testQueryString;
@@ -283,7 +312,7 @@ add_task(async function doTestsForLinkClickInIframe() {
             await new Promise(done => {
               frame.addEventListener(
                 "load",
-                function() {
+                function () {
                   done();
                 },
                 { capture: true, once: true }
@@ -365,6 +394,8 @@ add_task(async function doTestsForLinkClickInIframe() {
         BrowserTestUtils.removeTab(newOpenedTab);
       });
     }
+
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -374,6 +405,7 @@ add_task(async function doTestsForScriptNavigation() {
     await SpecialPowers.pushPrefEnv({
       set: [["privacy.query_stripping.enabled", strippingEnabled]],
     });
+    await waitForListServiceInit(strippingEnabled);
 
     for (const test of TEST_CASES) {
       let testFirstPartyURI = TEST_URI + "?" + test.testQueryString;
@@ -436,6 +468,8 @@ add_task(async function doTestsForScriptNavigation() {
         await verifyQueryString(browser, expectedQueryString);
       });
     }
+
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -446,6 +480,7 @@ add_task(async function doTestsForNoStrippingForIframeNavigation() {
     await SpecialPowers.pushPrefEnv({
       set: [["privacy.query_stripping.enabled", strippingEnabled]],
     });
+    await waitForListServiceInit(strippingEnabled);
 
     for (const test of TEST_CASES) {
       let testFirstPartyURI = TEST_URI + "?" + test.testQueryString;
@@ -467,7 +502,7 @@ add_task(async function doTestsForNoStrippingForIframeNavigation() {
             await new Promise(done => {
               frame.addEventListener(
                 "load",
-                function() {
+                function () {
                   done();
                 },
                 { capture: true, once: true }
@@ -531,6 +566,8 @@ add_task(async function doTestsForNoStrippingForIframeNavigation() {
         await verifyQueryString(iframeBC, expectedQueryString);
       });
     }
+
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -541,6 +578,7 @@ add_task(async function doTestsForRedirect() {
     await SpecialPowers.pushPrefEnv({
       set: [["privacy.query_stripping.enabled", strippingEnabled]],
     });
+    await waitForListServiceInit(strippingEnabled);
 
     for (const test of TEST_CASES) {
       let testFirstPartyURI =
@@ -606,6 +644,8 @@ add_task(async function doTestsForRedirect() {
         await verifyQueryString(browser, expectedQueryString);
       });
     }
+
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -619,6 +659,7 @@ add_task(async function doTestForAllowList() {
       ["privacy.query_stripping.allow_list", "xn--exmple-cua.test"],
     ],
   });
+  await waitForListServiceInit(true);
 
   const expected = "paramToStrip1=123";
 
@@ -713,7 +754,7 @@ add_task(async function doTestForAllowList() {
           await new Promise(done => {
             frame.addEventListener(
               "load",
-              function() {
+              function () {
                 done();
               },
               { capture: true, once: true }

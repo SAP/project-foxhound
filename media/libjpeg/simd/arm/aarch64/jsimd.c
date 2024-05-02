@@ -3,8 +3,8 @@
  *
  * Copyright 2009 Pierre Ossman <ossman@cendio.se> for Cendio AB
  * Copyright (C) 2011, Nokia Corporation and/or its subsidiary(-ies).
- * Copyright (C) 2009-2011, 2013-2014, 2016, 2018, 2020, D. R. Commander.
- * Copyright (C) 2015-2016, 2018, Matthieu Darbois.
+ * Copyright (C) 2009-2011, 2013-2014, 2016, 2018, 2020, 2022, D. R. Commander.
+ * Copyright (C) 2015-2016, 2018, 2022, Matthieu Darbois.
  * Copyright (C) 2020, Arm Limited.
  *
  * Based on the x86 SIMD extension for IJG JPEG library,
@@ -23,20 +23,17 @@
 #include "../../../jdct.h"
 #include "../../../jsimddct.h"
 #include "../../jsimd.h"
-#include "jconfigint.h"
 
-#include <stdio.h>
-#include <string.h>
 #include <ctype.h>
 
 #define JSIMD_FASTLD3  1
 #define JSIMD_FASTST3  2
 #define JSIMD_FASTTBL  4
 
-static unsigned int simd_support = ~0;
-static unsigned int simd_huffman = 1;
-static unsigned int simd_features = JSIMD_FASTLD3 | JSIMD_FASTST3 |
-                                    JSIMD_FASTTBL;
+static THREAD_LOCAL unsigned int simd_support = ~0;
+static THREAD_LOCAL unsigned int simd_huffman = 1;
+static THREAD_LOCAL unsigned int simd_features = JSIMD_FASTLD3 |
+                                                 JSIMD_FASTST3 | JSIMD_FASTTBL;
 
 #if defined(__linux__) || defined(ANDROID) || defined(__ANDROID__)
 
@@ -111,8 +108,6 @@ parse_proc_cpuinfo(int bufsize)
 
 /*
  * Check what SIMD accelerations are supported.
- *
- * FIXME: This code is racy under a multi-threaded environment.
  */
 
 /*
@@ -125,7 +120,7 @@ LOCAL(void)
 init_simd(void)
 {
 #ifndef NO_GETENV
-  char *env = NULL;
+  char env[2] = { 0 };
 #endif
 #if defined(__linux__) || defined(ANDROID) || defined(__ANDROID__)
   int bufsize = 1024; /* an initial guess for the line buffer size limit */
@@ -147,24 +142,19 @@ init_simd(void)
 
 #ifndef NO_GETENV
   /* Force different settings through environment variables */
-  env = getenv("JSIMD_FORCENEON");
-  if ((env != NULL) && (strcmp(env, "1") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FORCENEON") && !strcmp(env, "1"))
     simd_support = JSIMD_NEON;
-  env = getenv("JSIMD_FORCENONE");
-  if ((env != NULL) && (strcmp(env, "1") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FORCENONE") && !strcmp(env, "1"))
     simd_support = 0;
-  env = getenv("JSIMD_NOHUFFENC");
-  if ((env != NULL) && (strcmp(env, "1") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_NOHUFFENC") && !strcmp(env, "1"))
     simd_huffman = 0;
-  env = getenv("JSIMD_FASTLD3");
-  if ((env != NULL) && (strcmp(env, "1") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FASTLD3") && !strcmp(env, "1"))
     simd_features |= JSIMD_FASTLD3;
-  if ((env != NULL) && (strcmp(env, "0") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FASTLD3") && !strcmp(env, "0"))
     simd_features &= ~JSIMD_FASTLD3;
-  env = getenv("JSIMD_FASTST3");
-  if ((env != NULL) && (strcmp(env, "1") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FASTST3") && !strcmp(env, "1"))
     simd_features |= JSIMD_FASTST3;
-  if ((env != NULL) && (strcmp(env, "0") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FASTST3") && !strcmp(env, "0"))
     simd_features &= ~JSIMD_FASTST3;
 #endif
 }
@@ -1028,7 +1018,7 @@ jsimd_can_encode_mcu_AC_first_prepare(void)
 GLOBAL(void)
 jsimd_encode_mcu_AC_first_prepare(const JCOEF *block,
                                   const int *jpeg_natural_order_start, int Sl,
-                                  int Al, JCOEF *values, size_t *zerobits)
+                                  int Al, UJCOEF *values, size_t *zerobits)
 {
   jsimd_encode_mcu_AC_first_prepare_neon(block, jpeg_natural_order_start,
                                          Sl, Al, values, zerobits);
@@ -1055,7 +1045,7 @@ jsimd_can_encode_mcu_AC_refine_prepare(void)
 GLOBAL(int)
 jsimd_encode_mcu_AC_refine_prepare(const JCOEF *block,
                                    const int *jpeg_natural_order_start, int Sl,
-                                   int Al, JCOEF *absvalues, size_t *bits)
+                                   int Al, UJCOEF *absvalues, size_t *bits)
 {
   return jsimd_encode_mcu_AC_refine_prepare_neon(block,
                                                  jpeg_natural_order_start,

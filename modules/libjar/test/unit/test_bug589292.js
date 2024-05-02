@@ -1,7 +1,8 @@
 // Make sure we behave appropriately when asking for content-disposition
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 const path = "data/test_bug589292.zip";
 

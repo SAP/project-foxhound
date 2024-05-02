@@ -17,6 +17,13 @@ this.DateTimeBoxWidget = class {
     this.element = shadowRoot.host;
     this.document = this.element.ownerDocument;
     this.window = this.document.defaultView;
+    // The DOMLocalization instance needs to allow for sync methods so that
+    // the placeholder value may be determined and set during the
+    // createEditFieldAndAppend() call.
+    this.l10n = new this.window.DOMLocalization(
+      ["toolkit/global/datetimebox.ftl"],
+      /* aSync = */ true
+    );
   }
 
   /*
@@ -36,7 +43,7 @@ this.DateTimeBoxWidget = class {
     }
 
     if (aDestroy) {
-      this.destructor();
+      this.teardown();
     }
     this.type = newType;
     this.setup();
@@ -50,12 +57,8 @@ this.DateTimeBoxWidget = class {
     return this.type == "date" || this.type == "datetime-local";
   }
 
-  destructor() {
-    this.mResetButton.addEventListener("mousedown", this, {
-      mozSystemGroup: true,
-    });
-
-    this.mInputElement.removeEventListener("keypress", this, {
+  teardown() {
+    this.mInputElement.removeEventListener("keydown", this, {
       capture: true,
       mozSystemGroup: true,
     });
@@ -67,7 +70,10 @@ this.DateTimeBoxWidget = class {
       this.mDateTimeBoxElement.removeEventListener(eventName, this);
     });
 
+    this.l10n.disconnectRoot(this.shadowRoot);
+
     this.removeEditFields();
+    this.removeEventListenersToField(this.mCalendarButton);
 
     this.mInputElement = null;
 
@@ -113,16 +119,23 @@ this.DateTimeBoxWidget = class {
     this.buildEditFields();
 
     if (focused) {
-      this.mInputElement.focus();
+      this._focusFirstField();
     }
+  }
+
+  _focusFirstField() {
+    this.shadowRoot.querySelector(".datetime-edit-field")?.focus();
   }
 
   setup() {
     this.DEBUG = false;
 
+    this.l10n.connectRoot(this.shadowRoot);
+
     this.generateContent();
 
     this.mDateTimeBoxElement = this.shadowRoot.firstChild;
+    this.mCalendarButton = this.shadowRoot.getElementById("calendar-button");
     this.mInputElement = this.element;
     this.mLocales = this.window.getWebExposedLocales();
 
@@ -178,14 +191,8 @@ this.DateTimeBoxWidget = class {
     this.mHourPageUpDownInterval = 3;
     this.mMinSecPageUpDownInterval = 10;
 
-    this.mResetButton = this.shadowRoot.getElementById("reset-button");
-    this.mResetButton.style.visibility = "hidden";
-    this.mResetButton.addEventListener("mousedown", this, {
-      mozSystemGroup: true,
-    });
-
     this.mInputElement.addEventListener(
-      "keypress",
+      "keydown",
       this,
       {
         capture: true,
@@ -193,14 +200,17 @@ this.DateTimeBoxWidget = class {
       },
       false
     );
-    // This is to open the picker when input element is clicked (this
-    // includes padding area).
-    this.mInputElement.addEventListener(
-      "click",
-      this,
-      { mozSystemGroup: true },
-      false
-    );
+    // This is to open the picker when input element is tapped on Android
+    // or for type=time inputs (this includes padding area).
+    this.isAndroid = this.window.navigator.appVersion.includes("Android");
+    if (this.isAndroid || this.type == "time") {
+      this.mInputElement.addEventListener(
+        "click",
+        this,
+        { mozSystemGroup: true },
+        false
+      );
+    }
 
     // Those events are dispatched to <div class="datetimebox"> with bubble set
     // to false. They are trapped inside UA Widget Shadow DOM and are not
@@ -210,26 +220,22 @@ this.DateTimeBoxWidget = class {
     });
 
     this.buildEditFields();
+    this.buildCalendarBtn();
     this.updateEditAttributes();
 
     if (this.mInputElement.value) {
       this.setFieldsFromInputValue();
     }
+
+    if (this.mInputElement.matches(":focus")) {
+      this._focusFirstField();
+    }
   }
 
   generateContent() {
-    /*
-     * Pass the markup through XML parser purely for the reason of loading the localization DTD.
-     * Remove it when migrate to Fluent (bug 1504363).
-     */
     const parser = new this.window.DOMParser();
-    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
-      `<!DOCTYPE bindings [
-      <!ENTITY % datetimeboxDTD SYSTEM "chrome://global/locale/datetimebox.dtd">
-      %datetimeboxDTD;
-      ]>
-      <div class="datetimebox" xmlns="http://www.w3.org/1999/xhtml" role="none">
+      `<div class="datetimebox" xmlns="http://www.w3.org/1999/xhtml" role="none">
         <link rel="stylesheet" type="text/css" href="chrome://global/content/bindings/datetimebox.css" />
         <div class="datetime-input-box-wrapper" id="input-box-wrapper" role="presentation">
           <span class="datetime-input-edit-wrapper"
@@ -237,53 +243,22 @@ this.DateTimeBoxWidget = class {
             <!-- Each of the date/time input types will append their input child
                - elements here -->
           </span>
-
-          <button class="datetime-reset-button" id="reset-button" tabindex="-1" aria-label="&datetime.reset.label;">
-            <svg xmlns="http://www.w3.org/2000/svg" class="datetime-reset-button-svg" width="12" height="12" viewBox="0 0 12 12">
-              <path d="M 3.9,3 3,3.9 5.1,6 3,8.1 3.9,9 6,6.9 8.1,9 9,8.1 6.9,6 9,3.9 8.1,3 6,5.1 Z M 12,6 A 6,6 0 0 1 6,12 6,6 0 0 1 0,6 6,6 0 0 1 6,0 6,6 0 0 1 12,6 Z"/>
+          <button data-l10n-id="datetime-calendar" class="datetime-calendar-button" id="calendar-button" aria-expanded="false">
+            <svg role="none" class="datetime-calendar-button-svg" xmlns="http://www.w3.org/2000/svg" id="calendar-16" viewBox="0 0 16 16" width="16" height="16">
+              <path d="M13.5 2H13V1c0-.6-.4-1-1-1s-1 .4-1 1v1H5V1c0-.6-.4-1-1-1S3 .4 3 1v1h-.5C1.1 2 0 3.1 0 4.5v9C0 14.9 1.1 16 2.5 16h11c1.4 0 2.5-1.1 2.5-2.5v-9C16 3.1 14.9 2 13.5 2zm0 12.5h-11c-.6 0-1-.4-1-1V6h13v7.5c0 .6-.4 1-1 1z"/>
             </svg>
           </button>
         </div>
-        <div id="strings"
-          data-m-year-place-holder="&date.year.placeholder;"
-          data-m-year-label="&date.year.label;"
-          data-m-month-place-holder="&date.month.placeholder;"
-          data-m-month-label="&date.month.label;"
-          data-m-day-place-holder="&date.day.placeholder;"
-          data-m-day-label="&date.day.label;"
-
-          data-m-hour-place-holder="&time.hour.placeholder;"
-          data-m-hour-label="&time.hour.label;"
-          data-m-minute-place-holder="&time.minute.placeholder;"
-          data-m-minute-label="&time.minute.label;"
-          data-m-second-place-holder="&time.second.placeholder;"
-          data-m-second-label="&time.second.label;"
-          data-m-millisecond-place-holder="&time.millisecond.placeholder;"
-          data-m-millisecond-label="&time.millisecond.label;"
-          data-m-day-period-place-holder="&time.dayperiod.placeholder;"
-          data-m-day-period-label="&time.dayperiod.label;"
-        ></div>
       </div>`,
       "application/xml"
     );
-
-    /*
-     * The <div id="strings"> is also parsed in the document so that there is no
-     * need to create another XML document just to get the strings.
-     */
-    let stringsElement = parserDoc.getElementById("strings");
-    stringsElement.remove();
-    for (let key in stringsElement.dataset) {
-      // key will be camelCase version of the attribute key above,
-      // like mYearPlaceHolder.
-      this[key] = stringsElement.dataset[key];
-    }
 
     this.shadowRoot.importNodeAndAppendChildAt(
       this.shadowRoot,
       parserDoc.documentElement,
       true
     );
+    this.l10n.translateRoots();
   }
 
   get FIELD_EVENTS() {
@@ -297,7 +272,12 @@ this.DateTimeBoxWidget = class {
       "MozDateTimeAttributeChanged",
       "MozPickerValueChanged",
       "MozSetDateTimePickerState",
+      "MozDateTimeShowPickerForJS",
     ];
+  }
+
+  get showPickerOnClick() {
+    return this.isAndroid || this.type == "time";
   }
 
   addEventListenersToField(aElement) {
@@ -331,8 +311,8 @@ this.DateTimeBoxWidget = class {
   }
 
   createEditFieldAndAppend(
-    aPlaceHolder,
-    aLabel,
+    aL10nId,
+    aPlaceholderId,
     aIsNumeric,
     aMinDigits,
     aMaxLength,
@@ -343,17 +323,19 @@ this.DateTimeBoxWidget = class {
     let root = this.shadowRoot.getElementById("edit-wrapper");
     let field = this.shadowRoot.createElementAndAppendChildAt(root, "span");
     field.classList.add("datetime-edit-field");
-    field.textContent = aPlaceHolder;
-    field.placeholder = aPlaceHolder;
     field.setAttribute("aria-valuetext", "");
-    field.tabIndex = this.mInputElement.tabIndex;
+    this.setFieldTabIndexAttribute(field);
+
+    const placeholder = this.l10n.formatValueSync(aPlaceholderId);
+    field.placeholder = placeholder;
+    field.textContent = placeholder;
+    this.l10n.setAttributes(field, aL10nId);
 
     field.setAttribute("readonly", this.mInputElement.readOnly);
     field.setAttribute("disabled", this.mInputElement.disabled);
     // Set property as well for convenience.
     field.disabled = this.mInputElement.disabled;
     field.readOnly = this.mInputElement.readOnly;
-    field.setAttribute("aria-label", aLabel);
 
     // Used to store the non-formatted value, cleared when value is
     // cleared.
@@ -396,12 +378,8 @@ this.DateTimeBoxWidget = class {
     return field;
   }
 
-  updateResetButtonVisibility() {
-    if (this.isAnyFieldAvailable(false) && !this.isRequired()) {
-      this.mResetButton.style.visibility = "";
-    } else {
-      this.mResetButton.style.visibility = "hidden";
-    }
+  updateCalendarButtonState(isExpanded) {
+    this.mCalendarButton.setAttribute("aria-expanded", isExpanded);
   }
 
   notifyInputElementValueChanged() {
@@ -418,13 +396,17 @@ this.DateTimeBoxWidget = class {
   }
 
   setValueFromPicker(aValue) {
-    this.setFieldsFromPicker(aValue);
+    if (aValue) {
+      this.setFieldsFromPicker(aValue);
+    } else {
+      this.clearInputFields();
+    }
   }
 
   advanceToNextField(aReverse) {
     this.log("advanceToNextField");
 
-    let focusedInput = this.mLastFocusedField;
+    let focusedInput = this.mLastFocusedElement;
     let next = aReverse
       ? focusedInput.previousElementSibling
       : focusedInput.nextElementSibling;
@@ -445,6 +427,16 @@ this.DateTimeBoxWidget = class {
   setPickerState(aIsOpen) {
     this.log("picker is now " + (aIsOpen ? "opened" : "closed"));
     this.mIsPickerOpen = aIsOpen;
+    // Calendar button's expanded state mirrors this.mIsPickerOpen
+    this.updateCalendarButtonState(this.mIsPickerOpen);
+  }
+
+  setFieldTabIndexAttribute(field) {
+    if (this.mInputElement.disabled) {
+      field.removeAttribute("tabindex");
+    } else {
+      field.tabIndex = this.mInputElement.tabIndex;
+    }
   }
 
   updateEditAttributes() {
@@ -465,13 +457,13 @@ this.DateTimeBoxWidget = class {
       child.disabled = this.mInputElement.disabled;
       child.readOnly = this.mInputElement.readOnly;
 
-      // tabIndex works on all elements
-      child.tabIndex = this.mInputElement.tabIndex;
+      this.setFieldTabIndexAttribute(child);
     }
 
-    this.mResetButton.disabled =
-      this.mInputElement.disabled || this.mInputElement.readOnly;
-    this.updateResetButtonVisibility();
+    this.mCalendarButton.hidden =
+      this.mInputElement.disabled ||
+      this.mInputElement.readOnly ||
+      this.mInputElement.type === "time";
   }
 
   isEmpty(aValue) {
@@ -495,7 +487,6 @@ this.DateTimeBoxWidget = class {
     if (aField.classList.contains("numeric")) {
       aField.setAttribute("typeBuffer", "");
     }
-    this.updateResetButtonVisibility();
   }
 
   openDateTimePicker() {
@@ -562,8 +553,12 @@ this.DateTimeBoxWidget = class {
         this.setPickerState(aEvent.detail);
         break;
       }
-      case "keypress": {
-        this.onKeyPress(aEvent);
+      case "MozDateTimeShowPickerForJS": {
+        this.openDateTimePicker();
+        break;
+      }
+      case "keydown": {
+        this.onKeyDown(aEvent);
         break;
       }
       case "click": {
@@ -597,11 +592,11 @@ this.DateTimeBoxWidget = class {
     }
 
     let target = aEvent.originalTarget;
-    if (target.matches("span.datetime-edit-field")) {
+    if (target.matches(".datetime-edit-field,.datetime-calendar-button")) {
       if (target.disabled) {
         return;
       }
-      this.mLastFocusedField = target;
+      this.mLastFocusedElement = target;
       this.mInputElement.setFocusState(true);
     }
     if (this.mIsPickerOpen && this.isPickerIrrelevantField(target)) {
@@ -616,19 +611,34 @@ this.DateTimeBoxWidget = class {
         " target: " +
         aEvent.target +
         " rt: " +
-        aEvent.relatedTarget
+        aEvent.relatedTarget +
+        " open: " +
+        this.mIsPickerOpen
     );
 
     let target = aEvent.originalTarget;
     target.setAttribute("typeBuffer", "");
     this.setInputValueFromFields();
-    // No need to set and unset the focus state if the focus is staying within
-    // our input. Same about closing the picker.
-    if (aEvent.relatedTarget != this.mInputElement) {
-      this.mInputElement.setFocusState(false);
-      if (this.mIsPickerOpen) {
-        this.closeDateTimePicker();
-      }
+    // No need to set and unset the focus state (or closing the picker) if the
+    // focus is staying within our input.
+    if (aEvent.relatedTarget == this.mInputElement) {
+      return;
+    }
+
+    // If we're in chrome and the focus moves to a separate document
+    // (relatedTarget is null) we also don't want to close it, since it
+    // could've moved to the datetime popup itself.
+    if (
+      !aEvent.relatedTarget &&
+      this.window.isChromeWindow &&
+      this.window == this.window.top
+    ) {
+      return;
+    }
+
+    this.mInputElement.setFocusState(false);
+    if (this.mIsPickerOpen) {
+      this.closeDateTimePicker();
     }
   }
 
@@ -641,11 +651,11 @@ this.DateTimeBoxWidget = class {
     );
   }
 
-  shouldOpenDateTimePickerOnKeyPress() {
-    if (!this.mLastFocusedField) {
+  shouldOpenDateTimePickerOnKeyDown() {
+    if (!this.mLastFocusedElement) {
       return true;
     }
-    return !this.isPickerIrrelevantField(this.mLastFocusedField);
+    return !this.isPickerIrrelevantField(this.mLastFocusedElement);
   }
 
   shouldOpenDateTimePickerOnClick(target) {
@@ -662,19 +672,34 @@ this.DateTimeBoxWidget = class {
     return this.isTimeField(field);
   }
 
-  onKeyPress(aEvent) {
-    this.log("onKeyPress key: " + aEvent.key);
+  onKeyDown(aEvent) {
+    this.log("onKeyDown key: " + aEvent.key);
 
     switch (aEvent.key) {
-      // Toggle the picker on space/enter, close on Escape.
+      // Toggle the picker on Space/Enter on Calendar button or Space on input,
+      // close on Escape anywhere.
+      case "Escape": {
+        if (this.mIsPickerOpen) {
+          this.closeDateTimePicker();
+          aEvent.preventDefault();
+        }
+        break;
+      }
       case "Enter":
-      case "Escape":
       case " ": {
+        // always close, if opened
         if (this.mIsPickerOpen) {
           this.closeDateTimePicker();
         } else if (
-          aEvent.key != "Escape" &&
-          this.shouldOpenDateTimePickerOnKeyPress()
+          // open on Space from anywhere within the input
+          aEvent.key == " " &&
+          this.shouldOpenDateTimePickerOnKeyDown()
+        ) {
+          this.openDateTimePicker();
+        } else if (
+          // open from the Calendar button on either keydown
+          aEvent.originalTarget == this.mCalendarButton &&
+          this.shouldOpenDateTimePickerOnKeyDown()
         ) {
           this.openDateTimePicker();
         } else {
@@ -684,13 +709,26 @@ this.DateTimeBoxWidget = class {
         aEvent.preventDefault();
         break;
       }
+      case "Delete":
       case "Backspace": {
-        // TODO(emilio, bug 1571533): These functions should look at
-        // defaultPrevented.
+        if (aEvent.originalTarget == this.mCalendarButton) {
+          // Do not remove Calendar button
+          aEvent.preventDefault();
+          break;
+        }
         if (this.isEditable()) {
-          let targetField = aEvent.originalTarget;
-          this.clearFieldValue(targetField);
-          this.setInputValueFromFields();
+          // TODO(emilio, bug 1571533): These functions should look at
+          // defaultPrevented.
+          // Ctrl+Backspace/Delete on non-macOS and
+          // Cmd+Backspace/Delete on macOS to clear the field
+          if (aEvent.getModifierState("Accel")) {
+            // Clear the input's value
+            this.clearInputFields(false);
+          } else {
+            let targetField = aEvent.originalTarget;
+            this.clearFieldValue(targetField);
+            this.setInputValueFromFields();
+          }
           aEvent.preventDefault();
         }
         break;
@@ -712,12 +750,12 @@ this.DateTimeBoxWidget = class {
         break;
       }
       default: {
-        // printable characters
+        // Handle printable characters (e.g. letters, digits and numpad digits)
         if (
-          aEvent.keyCode == 0 &&
+          aEvent.key.length === 1 &&
           !(aEvent.ctrlKey || aEvent.altKey || aEvent.metaKey)
         ) {
-          this.handleKeypress(aEvent);
+          this.handleKeydown(aEvent);
           aEvent.preventDefault();
         }
         break;
@@ -737,13 +775,24 @@ this.DateTimeBoxWidget = class {
       return;
     }
 
-    if (aEvent.originalTarget == this.mResetButton) {
-      this.clearInputFields(false);
-    } else if (
-      !this.mIsPickerOpen &&
-      this.shouldOpenDateTimePickerOnClick(aEvent.originalTarget)
+    // We toggle the picker on click on the Calendar button on any platform.
+    // For Android and for type=time inputs, we also toggle the picker when
+    // clicking on the input field.
+    //
+    // We do not toggle the picker when clicking the input field for Calendar
+    // on desktop to avoid interfering with the default Calendar behavior.
+    if (
+      aEvent.originalTarget == this.mCalendarButton ||
+      this.showPickerOnClick
     ) {
-      this.openDateTimePicker();
+      if (
+        !this.mIsPickerOpen &&
+        this.shouldOpenDateTimePickerOnClick(aEvent.originalTarget)
+      ) {
+        this.openDateTimePicker();
+      } else {
+        this.closeDateTimePicker();
+      }
     }
   }
 
@@ -769,8 +818,8 @@ this.DateTimeBoxWidget = class {
       switch (part.type) {
         case "year":
           this.mYearField = this.createEditFieldAndAppend(
-            this.mYearPlaceHolder,
-            this.mYearLabel,
+            "datetime-year",
+            "datetime-year-placeholder",
             true,
             this.mYearLength,
             this.mMaxYear.toString().length,
@@ -782,8 +831,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "month":
           this.mMonthField = this.createEditFieldAndAppend(
-            this.mMonthPlaceHolder,
-            this.mMonthLabel,
+            "datetime-month",
+            "datetime-month-placeholder",
             true,
             this.mMonthDayLength,
             this.mMonthDayLength,
@@ -795,8 +844,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "day":
           this.mDayField = this.createEditFieldAndAppend(
-            this.mDayPlaceHolder,
-            this.mDayLabel,
+            "datetime-day",
+            "datetime-day-placeholder",
             true,
             this.mMonthDayLength,
             this.mMonthDayLength,
@@ -808,8 +857,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "hour":
           this.mHourField = this.createEditFieldAndAppend(
-            this.mHourPlaceHolder,
-            this.mHourLabel,
+            "datetime-hour",
+            "datetime-time-placeholder",
             true,
             this.mMaxLength,
             this.mMaxLength,
@@ -821,8 +870,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "minute":
           this.mMinuteField = this.createEditFieldAndAppend(
-            this.mMinutePlaceHolder,
-            this.mMinuteLabel,
+            "datetime-minute",
+            "datetime-time-placeholder",
             true,
             this.mMaxLength,
             this.mMaxLength,
@@ -834,8 +883,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "second":
           this.mSecondField = this.createEditFieldAndAppend(
-            this.mSecondPlaceHolder,
-            this.mSecondLabel,
+            "datetime-second",
+            "datetime-time-placeholder",
             true,
             this.mMaxLength,
             this.mMaxLength,
@@ -853,8 +902,8 @@ this.DateTimeBoxWidget = class {
             );
             span.textContent = this.mMillisecSeparatorText;
             this.mMillisecField = this.createEditFieldAndAppend(
-              this.mMillisecPlaceHolder,
-              this.mMillisecLabel,
+              "datetime-millisecond",
+              "datetime-time-placeholder",
               true,
               this.mMillisecMaxLength,
               this.mMillisecMaxLength,
@@ -867,8 +916,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "dayPeriod":
           this.mDayPeriodField = this.createEditFieldAndAppend(
-            this.mDayPeriodPlaceHolder,
-            this.mDayPeriodLabel,
+            "datetime-dayperiod",
+            "datetime-time-placeholder",
             false
           );
           this.addEventListenersToField(this.mDayPeriodField);
@@ -885,6 +934,18 @@ this.DateTimeBoxWidget = class {
           break;
       }
     });
+  }
+
+  buildCalendarBtn() {
+    this.addEventListenersToField(this.mCalendarButton);
+    // This is to open the picker when a Calendar button is clicked (this
+    // includes padding area).
+    this.mCalendarButton.addEventListener(
+      "click",
+      this,
+      { mozSystemGroup: true },
+      false
+    );
   }
 
   clearInputFields(aFromInputElement) {
@@ -942,15 +1003,8 @@ this.DateTimeBoxWidget = class {
       return;
     }
 
-    let {
-      year,
-      month,
-      day,
-      hour,
-      minute,
-      second,
-      millisecond,
-    } = this.getInputElementValues();
+    let { year, month, day, hour, minute, second, millisecond } =
+      this.getInputElementValues();
     if (this.shouldShowDate()) {
       this.log("setFieldsFromInputValue: " + value);
       this.setFieldValue(this.mYearField, year);
@@ -1000,16 +1054,8 @@ this.DateTimeBoxWidget = class {
       return;
     }
 
-    let {
-      year,
-      month,
-      day,
-      hour,
-      minute,
-      second,
-      millisecond,
-      dayPeriod,
-    } = this.getCurrentValue();
+    let { year, month, day, hour, minute, second, millisecond, dayPeriod } =
+      this.getCurrentValue();
 
     let time = "";
     let date = "";
@@ -1099,7 +1145,7 @@ this.DateTimeBoxWidget = class {
     this.setInputValueFromFields();
   }
 
-  handleKeypress(aEvent) {
+  handleKeydown(aEvent) {
     if (!this.isEditable()) {
       return;
     }
@@ -1128,7 +1174,12 @@ this.DateTimeBoxWidget = class {
       let n = Number(buffer);
       let max = targetField.getAttribute("max");
       let maxLength = targetField.getAttribute("maxlength");
-      if (buffer.length >= maxLength || n * 10 > max) {
+      if (targetField == this.mHourField) {
+        if (n * 10 > 23 || buffer.length === 2) {
+          buffer = "";
+          this.advanceToNextField();
+        }
+      } else if (buffer.length >= maxLength || n * 10 > max) {
         buffer = "";
         this.advanceToNextField();
       }
@@ -1185,11 +1236,30 @@ this.DateTimeBoxWidget = class {
       if (this.mHour12) {
         // Try to change to 12hr format if user input is 0 or greater
         // than 12.
-        let maxLength = aField.getAttribute("maxlength");
-        if (value == 0 && aValue.length == maxLength) {
-          value = this.mMaxHour;
-        } else {
-          value = value > this.mMaxHour ? value % this.mMaxHour : value;
+        switch (true) {
+          case value == 0 && aValue.length == 2:
+            value = this.mMaxHour;
+            this.setDayPeriodValue(this.mAMIndicator);
+            break;
+
+          case value == this.mMaxHour:
+            this.setDayPeriodValue(this.mPMIndicator);
+            break;
+
+          case value < 12:
+            if (!this.getDayPeriodValue()) {
+              this.setDayPeriodValue(this.mAMIndicator);
+            }
+            break;
+
+          case value > 12 && value < 24:
+            value = value % this.mMaxHour;
+            this.setDayPeriodValue(this.mPMIndicator);
+            break;
+
+          default:
+            value = Math.floor(value / 10);
+            break;
         }
       } else if (value > this.mMaxHour) {
         value = this.mMaxHour;
@@ -1218,19 +1288,11 @@ this.DateTimeBoxWidget = class {
 
     aField.textContent = formatted;
     aField.setAttribute("aria-valuetext", formatted);
-    this.updateResetButtonVisibility();
   }
 
   isAnyFieldAvailable(aForPicker = false) {
-    let {
-      year,
-      month,
-      day,
-      hour,
-      minute,
-      second,
-      millisecond,
-    } = this.getCurrentValue();
+    let { year, month, day, hour, minute, second, millisecond } =
+      this.getCurrentValue();
     if (
       !this.isEmpty(year) ||
       !this.isEmpty(month) ||
@@ -1255,15 +1317,8 @@ this.DateTimeBoxWidget = class {
   }
 
   isAnyFieldEmpty() {
-    let {
-      year,
-      month,
-      day,
-      hour,
-      minute,
-      second,
-      millisecond,
-    } = this.getCurrentValue();
+    let { year, month, day, hour, minute, second, millisecond } =
+      this.getCurrentValue();
     return (
       (this.mYearField && this.isEmpty(year)) ||
       (this.mMonthField && this.isEmpty(month)) ||
@@ -1495,7 +1550,7 @@ this.DateTimeBoxWidget = class {
     this.setInputValueFromFields();
   }
 
-  getDayPeriodValue(aValue) {
+  getDayPeriodValue() {
     if (!this.mDayPeriodField) {
       return "";
     }
@@ -1512,6 +1567,5 @@ this.DateTimeBoxWidget = class {
 
     this.mDayPeriodField.textContent = aValue;
     this.mDayPeriodField.setAttribute("value", aValue);
-    this.updateResetButtonVisibility();
   }
 };

@@ -7,8 +7,12 @@
 #ifndef gc_Tenuring_h
 #define gc_Tenuring_h
 
+#include "mozilla/Maybe.h"
+
 #include "gc/AllocKind.h"
+#include "js/GCAPI.h"
 #include "js/TracingAPI.h"
+#include "util/Text.h"
 
 namespace js {
 
@@ -16,12 +20,66 @@ class NativeObject;
 class Nursery;
 class PlainObject;
 
+namespace wasm {
+class AnyRef;
+}  // namespace wasm
+
 namespace gc {
+
 class RelocationOverlay;
 class StringRelocationOverlay;
-}  // namespace gc
 
-class TenuringTracer final : public GenericTracer {
+template <typename Key>
+struct DeduplicationStringHasher {
+  using Lookup = Key;
+
+  static inline HashNumber hash(const Lookup& lookup) {
+    JS::AutoCheckCannotGC nogc;
+    HashNumber strHash;
+
+    // Include flags in the hash. A string relocation overlay stores either
+    // the nursery root base chars or the dependent string nursery base, but
+    // does not indicate which one. If strings with different string types
+    // were deduplicated, for example, a dependent string gets deduplicated
+    // into an extensible string, the base chain would be broken and the root
+    // base would be unreachable.
+
+    if (lookup->asLinear().hasLatin1Chars()) {
+      strHash = mozilla::HashString(lookup->asLinear().latin1Chars(nogc),
+                                    lookup->length());
+    } else {
+      MOZ_ASSERT(lookup->asLinear().hasTwoByteChars());
+      strHash = mozilla::HashString(lookup->asLinear().twoByteChars(nogc),
+                                    lookup->length());
+    }
+
+    return mozilla::HashGeneric(strHash, lookup->zone(), lookup->flags());
+  }
+
+  static MOZ_ALWAYS_INLINE bool match(const Key& key, const Lookup& lookup) {
+    if (!key->sameLengthAndFlags(*lookup) ||
+        key->asTenured().zone() != lookup->zone() ||
+        key->asTenured().getAllocKind() != lookup->getAllocKind()) {
+      return false;
+    }
+
+    JS::AutoCheckCannotGC nogc;
+
+    if (key->asLinear().hasLatin1Chars()) {
+      MOZ_ASSERT(lookup->asLinear().hasLatin1Chars());
+      return EqualChars(key->asLinear().latin1Chars(nogc),
+                        lookup->asLinear().latin1Chars(nogc), lookup->length());
+    } else {
+      MOZ_ASSERT(key->asLinear().hasTwoByteChars());
+      MOZ_ASSERT(lookup->asLinear().hasTwoByteChars());
+      return EqualChars(key->asLinear().twoByteChars(nogc),
+                        lookup->asLinear().twoByteChars(nogc),
+                        lookup->length());
+    }
+  }
+};
+
+class TenuringTracer final : public JSTracer {
   Nursery& nursery_;
 
   // Amount of data moved to the tenured generation during collection.
@@ -35,18 +93,19 @@ class TenuringTracer final : public GenericTracer {
   gc::RelocationOverlay* objHead = nullptr;
   gc::StringRelocationOverlay* stringHead = nullptr;
 
-  JSObject* onObjectEdge(JSObject* obj) override;
-  JSString* onStringEdge(JSString* str) override;
-  JS::Symbol* onSymbolEdge(JS::Symbol* sym) override;
-  JS::BigInt* onBigIntEdge(JS::BigInt* bi) override;
-  js::BaseScript* onScriptEdge(BaseScript* script) override;
-  js::Shape* onShapeEdge(Shape* shape) override;
-  js::RegExpShared* onRegExpSharedEdge(RegExpShared* shared) override;
-  js::BaseShape* onBaseShapeEdge(BaseShape* base) override;
-  js::GetterSetter* onGetterSetterEdge(GetterSetter* gs) override;
-  js::PropMap* onPropMapEdge(PropMap* map) override;
-  js::jit::JitCode* onJitCodeEdge(jit::JitCode* code) override;
-  js::Scope* onScopeEdge(Scope* scope) override;
+  using StringDeDupSet =
+      HashSet<JSString*, DeduplicationStringHasher<JSString*>,
+              SystemAllocPolicy>;
+
+  // deDupSet is emplaced at the beginning of the nursery collection and reset
+  // at the end of the nursery collection. It can also be reset during nursery
+  // collection when out of memory to insert new entries.
+  mozilla::Maybe<StringDeDupSet> stringDeDupSet;
+
+#define DEFINE_ON_EDGE_METHOD(name, type, _1, _2) \
+  void on##name##Edge(type** thingp, const char* name) override;
+  JS_FOR_EACH_TRACEKIND(DEFINE_ON_EDGE_METHOD)
+#undef DEFINE_ON_EDGE_METHOD
 
  public:
   TenuringTracer(JSRuntime* rt, Nursery* nursery);
@@ -66,13 +125,14 @@ class TenuringTracer final : public GenericTracer {
   size_t getTenuredCells() const;
 
   void traverse(JS::Value* thingp);
+  void traverse(wasm::AnyRef* thingp);
 
   // The store buffers need to be able to call these directly.
-  void traceObject(JSObject* src);
+  void traceObject(JSObject* obj);
   void traceObjectSlots(NativeObject* nobj, uint32_t start, uint32_t end);
   void traceSlots(JS::Value* vp, uint32_t nslots);
-  void traceString(JSString* src);
-  void traceBigInt(JS::BigInt* src);
+  void traceString(JSString* str);
+  void traceBigInt(JS::BigInt* bi);
 
  private:
   // The dependent string chars needs to be relocated if the base which it's
@@ -108,6 +168,7 @@ class TenuringTracer final : public GenericTracer {
   void traceSlots(JS::Value* vp, JS::Value* end);
 };
 
+}  // namespace gc
 }  // namespace js
 
 #endif  // gc_Tenuring_h

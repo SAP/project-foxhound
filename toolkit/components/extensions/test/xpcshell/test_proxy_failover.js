@@ -13,19 +13,21 @@ AddonTestUtils.createAppInfo(
 Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
 
 // Pref is not builtin if direct failover is disabled in compile config.
-XPCOMUtils.defineLazyGetter(this, "directFailoverDisabled", () => {
+ChromeUtils.defineLazyGetter(this, "directFailoverDisabled", () => {
   return (
     Services.prefs.getPrefType("network.proxy.failover_direct") ==
     Ci.nsIPrefBranch.PREF_INVALID
   );
 });
 
-const { ServiceRequest } = ChromeUtils.import(
-  "resource://gre/modules/ServiceRequest.jsm"
+const { ServiceRequest } = ChromeUtils.importESModule(
+  "resource://gre/modules/ServiceRequest.sys.mjs"
 );
 
 // Prevent the request from reaching out to the network.
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 // No hosts defined to avoid the default proxy filter setup.
 const nonProxiedServer = createHttpServer();

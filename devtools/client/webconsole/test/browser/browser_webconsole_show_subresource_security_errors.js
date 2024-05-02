@@ -12,12 +12,12 @@ const TEST_DOC =
   "test/browser/test-subresource-security-error.html";
 const SAMPLE_MSG = "specified a header that could not be parsed successfully.";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   await clearOutput(hud);
   await navigateTo(TEST_DOC);
 
-  await waitFor(() => findMessage(hud, SAMPLE_MSG, ".message.warn"));
+  await waitFor(() => findWarningMessage(hud, SAMPLE_MSG));
 
   ok(true, "non-toplevel security warning message was displayed");
 });

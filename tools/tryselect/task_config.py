@@ -10,20 +10,41 @@ They are added to 'try_task_config.json' and processed by the transforms.
 
 import json
 import os
-import six
+import pathlib
 import subprocess
 import sys
 from abc import ABCMeta, abstractmethod, abstractproperty
-from argparse import Action, SUPPRESS
+from argparse import SUPPRESS, Action
+from contextlib import contextmanager
 from textwrap import dedent
 
 import mozpack.path as mozpath
+import six
 from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
+from mozversioncontrol import Repository
 
 from .tasks import resolve_tests_by_suite
 
 here = os.path.abspath(os.path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here)
+
+
+@contextmanager
+def try_config_commit(vcs: Repository, commit_message: str):
+    """Context manager that creates and removes a try config commit."""
+    # Add the `try_task_config.json` file if it exists.
+    try_task_config_path = pathlib.Path(build.topsrcdir) / "try_task_config.json"
+    if try_task_config_path.exists():
+        vcs.add_remove_files("try_task_config.json")
+
+    try:
+        # Create a try config commit.
+        vcs.create_try_commit(commit_message)
+
+        yield
+    finally:
+        # Revert the try config commit.
+        vcs.remove_current_commit()
 
 
 class TryConfig:
@@ -50,7 +71,6 @@ class TryConfig:
 
 
 class Artifact(TryConfig):
-
     arguments = [
         [
             ["--artifact"],
@@ -78,14 +98,14 @@ class Artifact(TryConfig):
 
     def try_config(self, artifact, no_artifact, **kwargs):
         if artifact:
-            return {"use-artifact-builds": True}
+            return {"use-artifact-builds": True, "disable-pgo": True}
 
         if no_artifact:
             return
 
         if self.is_artifact_build():
             print("Artifact builds enabled, pass --no-artifact to disable")
-            return {"use-artifact-builds": True}
+            return {"use-artifact-builds": True, "disable-pgo": True}
 
 
 class Pernosco(TryConfig):
@@ -104,7 +124,7 @@ class Pernosco(TryConfig):
                 "dest": "pernosco",
                 "action": "store_false",
                 "default": None,
-                "help": "Opt-out of the Pernosco debugging service (if you are on the whitelist).",
+                "help": "Opt-out of the Pernosco debugging service (if you are on the include list).",
             },
         ],
     ]
@@ -173,7 +193,6 @@ class Pernosco(TryConfig):
 
 
 class Path(TryConfig):
-
     arguments = [
         [
             ["paths"],
@@ -208,7 +227,6 @@ class Path(TryConfig):
 
 
 class Environment(TryConfig):
-
     arguments = [
         [
             ["--env"],
@@ -246,7 +264,6 @@ class RangeAction(Action):
 
 
 class Rebuild(TryConfig):
-
     arguments = [
         [
             ["--rebuild"],
@@ -300,7 +317,6 @@ class Routes(TryConfig):
 
 
 class ChemspillPrio(TryConfig):
-
     arguments = [
         [
             ["--chemspill-prio"],
@@ -423,7 +439,6 @@ class Browsertime(TryConfig):
 
 
 class DisablePgo(TryConfig):
-
     arguments = [
         [
             ["--disable-pgo"],
@@ -442,7 +457,6 @@ class DisablePgo(TryConfig):
 
 
 class WorkerOverrides(TryConfig):
-
     arguments = [
         [
             ["--worker-override"],
@@ -472,8 +486,8 @@ class WorkerOverrides(TryConfig):
     ]
 
     def try_config(self, worker_overrides, worker_suffixes, **kwargs):
-        from gecko_taskgraph.config import load_graph_config
         from gecko_taskgraph.util.workertypes import get_worker_type
+        from taskgraph.config import load_graph_config
 
         overrides = {}
         if worker_overrides:
@@ -505,10 +519,7 @@ class WorkerOverrides(TryConfig):
                     )
                     sys.exit(1)
                 provisioner, worker_type = get_worker_type(
-                    graph_config,
-                    alias,
-                    level="1",
-                    release_level="staging",
+                    graph_config, worker_type=alias, parameters={"level": "1"}
                 )
                 overrides[alias] = "{provisioner}/{worker_type}{suffix}".format(
                     provisioner=provisioner, worker_type=worker_type, suffix=suffix

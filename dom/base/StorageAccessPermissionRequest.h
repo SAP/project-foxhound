@@ -8,14 +8,14 @@
 #define StorageAccessPermissionRequest_h_
 
 #include "nsContentPermissionHelper.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 
 #include <functional>
 
 class nsPIDOMWindowInner;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class StorageAccessPermissionRequest final
     : public ContentPermissionRequestBase {
@@ -26,7 +26,8 @@ class StorageAccessPermissionRequest final
 
   // nsIContentPermissionRequest
   NS_IMETHOD Cancel(void) override;
-  NS_IMETHOD Allow(JS::HandleValue choices) override;
+  NS_IMETHOD Allow(JS::Handle<JS::Value> choices) override;
+  NS_IMETHOD GetTypes(nsIArray** aTypes) override;
 
   using AllowCallback = std::function<void()>;
   using CancelCallback = std::function<void()>;
@@ -39,25 +40,41 @@ class StorageAccessPermissionRequest final
       nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal,
       AllowCallback&& aAllowCallback, CancelCallback&& aCancelCallback);
 
+  // The argument aTopLevelBaseDomain is used here to optionally indicate what
+  // the top-level site of the permission requested will be. This is used in
+  // the requestStorageAccessUnderSite call because that call is not made from
+  // an embedded context. If aTopLevelBaseDomain is Nothing() the base domain
+  // of aPrincipal's Top browsing context is used.
+  static already_AddRefed<StorageAccessPermissionRequest> Create(
+      nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal,
+      const Maybe<nsCString>& aTopLevelBaseDomain, bool aFrameOnly,
+      AllowCallback&& aAllowCallback, CancelCallback&& aCancelCallback);
+
   using AutoGrantDelayPromise = MozPromise<bool, bool, true>;
   RefPtr<AutoGrantDelayPromise> MaybeDelayAutomaticGrants();
 
  private:
   StorageAccessPermissionRequest(nsPIDOMWindowInner* aWindow,
                                  nsIPrincipal* aNodePrincipal,
+                                 const Maybe<nsCString>& aTopLevelBaseDomain,
+                                 bool aFrameOnly,
                                  AllowCallback&& aAllowCallback,
                                  CancelCallback&& aCancelCallback);
-  ~StorageAccessPermissionRequest() = default;
+  ~StorageAccessPermissionRequest() {
+    // Invoke Cancel() to ensure we call a callback even if the request has
+    // been destroyed before the request is completed.
+    Cancel();
+  }
 
   unsigned CalculateSimulatedDelay();
 
   AllowCallback mAllowCallback;
   CancelCallback mCancelCallback;
+  nsTArray<nsString> mOptions;
   nsTArray<PermissionRequest> mPermissionRequests;
   bool mCallbackCalled;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // StorageAccessPermissionRequest_h_

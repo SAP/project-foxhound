@@ -1289,7 +1289,6 @@ th{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         RUB{"₽"}
         TRY{"TL"}
     }
@@ -1542,6 +1541,9 @@ th{
         }
         LRD{
             other{"ดอลลาร์ไลบีเรีย"}
+        }
+        LSL{
+            other{"โลตีเลโซโท"}
         }
         LTL{
             other{"ลีตัสลิทัวเนีย"}

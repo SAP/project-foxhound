@@ -1,14 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const {
-  Bookmark,
-  BookmarkFolder,
-  BookmarkQuery,
-  BookmarksEngine,
-  PlacesItem,
-} = ChromeUtils.import("resource://services-sync/engines/bookmarks.js");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Bookmark, BookmarkFolder, BookmarkQuery, PlacesItem } =
+  ChromeUtils.importESModule(
+    "resource://services-sync/engines/bookmarks.sys.mjs"
+  );
+// `Service` is used as a global in head_helpers.js.
+// eslint-disable-next-line no-unused-vars
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 const BookmarksToolbarTitle = "toolbar";
 
@@ -29,7 +30,7 @@ add_bookmark_test(async function test_ignore_specials(engine) {
   record.deleted = true;
   Assert.notEqual(
     null,
-    await PlacesUtils.promiseItemId(PlacesUtils.bookmarks.toolbarGuid)
+    await PlacesTestUtils.promiseItemId(PlacesUtils.bookmarks.toolbarGuid)
   );
 
   await apply_records(engine, [record]);
@@ -37,14 +38,14 @@ add_bookmark_test(async function test_ignore_specials(engine) {
   // Ensure that the toolbar exists.
   Assert.notEqual(
     null,
-    await PlacesUtils.promiseItemId(PlacesUtils.bookmarks.toolbarGuid)
+    await PlacesTestUtils.promiseItemId(PlacesUtils.bookmarks.toolbarGuid)
   );
 
   await apply_records(engine, [record]);
 
   Assert.notEqual(
     null,
-    await PlacesUtils.promiseItemId(PlacesUtils.bookmarks.toolbarGuid)
+    await PlacesTestUtils.promiseItemId(PlacesUtils.bookmarks.toolbarGuid)
   );
   await store.wipe();
 });
@@ -272,6 +273,11 @@ add_bookmark_test(async function test_deleted(engine) {
     let newrec = await store.createRecord(bmk1.guid);
     Assert.equal(null, item);
     Assert.equal(newrec.deleted, true);
+    _("Verify that the keyword has been cleared.");
+    let keyword = await PlacesUtils.keywords.fetch({
+      url: "http://getfirefox.com/",
+    });
+    Assert.equal(null, keyword);
   } finally {
     _("Clean up.");
     await store.wipe();
@@ -393,11 +399,6 @@ add_bookmark_test(async function test_empty_query_doesnt_die(engine) {
   delete record.folderName;
   await apply_records(engine, [record]);
 });
-
-async function assertDeleted(guid) {
-  let item = await PlacesUtils.bookmarks.fetch(guid);
-  ok(!item);
-}
 
 add_bookmark_test(async function test_calculateIndex_for_invalid_url(engine) {
   let store = engine._store;

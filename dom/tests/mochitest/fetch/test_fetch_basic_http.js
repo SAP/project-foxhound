@@ -1,5 +1,7 @@
 var path = "/tests/dom/xhr/tests/";
 
+var is_http2 = location.href.includes("http2");
+
 var passFiles = [
   ["file_XHR_pass1.xml", "GET", 200, "OK", "text/xml"],
   ["file_XHR_pass2.txt", "GET", 200, "OK", "text/plain"],
@@ -8,8 +10,8 @@ var passFiles = [
 
 function testURL() {
   var promises = [];
-  passFiles.forEach(function(entry) {
-    var p = fetch(path + entry[0]).then(function(res) {
+  passFiles.forEach(function (entry) {
+    var p = fetch(path + entry[0]).then(function (res) {
       ok(
         res.type !== "error",
         "Response should not be an error for " + entry[0]
@@ -17,8 +19,13 @@ function testURL() {
       is(res.status, entry[2], "Status should match expected for " + entry[0]);
       is(
         res.statusText,
-        entry[3],
-        "Status text should match expected for " + entry[0]
+        is_http2 ? "" : entry[3],
+        "Status text should match expected for " +
+          entry[0] +
+          " " +
+          is_http2 +
+          " " +
+          location.href
       );
       if (entry[0] != "file_XHR_pass3.txt") {
         ok(
@@ -47,12 +54,12 @@ var failFiles = [["ftp://localhost" + path + "file_XHR_pass1.xml", "GET"]];
 
 function testURLFail() {
   var promises = [];
-  failFiles.forEach(function(entry) {
+  failFiles.forEach(function (entry) {
     var p = fetch(entry[0]).then(
-      function(res) {
+      function (res) {
         ok(false, "Response should be an error for " + entry[0]);
       },
-      function(e) {
+      function (e) {
         ok(
           e instanceof TypeError,
           "Response should be an error for " + entry[0]
@@ -67,9 +74,9 @@ function testURLFail() {
 
 function testRequestGET() {
   var promises = [];
-  passFiles.forEach(function(entry) {
+  passFiles.forEach(function (entry) {
     var req = new Request(path + entry[0], { method: entry[1] });
-    var p = fetch(req).then(function(res) {
+    var p = fetch(req).then(function (res) {
       ok(
         res.type !== "error",
         "Response should not be an error for " + entry[0]
@@ -77,8 +84,13 @@ function testRequestGET() {
       is(res.status, entry[2], "Status should match expected for " + entry[0]);
       is(
         res.statusText,
-        entry[3],
-        "Status text should match expected for " + entry[0]
+        is_http2 ? "" : entry[3],
+        "Status text should match expected for " +
+          entry[0] +
+          " " +
+          is_http2 +
+          " " +
+          location.href
       );
       if (entry[0] != "file_XHR_pass3.txt") {
         ok(
@@ -174,7 +186,7 @@ function testBlob() {
     is(r.status, 200, "status should match");
     return r.blob().then(b => {
       is(b.size, 65536, "blob should have size 65536");
-      return readAsArrayBuffer(b).then(function(ab) {
+      return readAsArrayBuffer(b).then(function (ab) {
         var u8 = new Uint8Array(ab);
         for (var i = 0; i < 65536; i++) {
           if (u8[i] !== (i & 255)) {

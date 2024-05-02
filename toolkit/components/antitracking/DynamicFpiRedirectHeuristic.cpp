@@ -6,14 +6,16 @@
 
 #include "AntiTrackingLog.h"
 #include "DynamicFpiRedirectHeuristic.h"
-#include "ContentBlocking.h"
 #include "ContentBlockingAllowList.h"
 #include "ContentBlockingUserInteraction.h"
+#include "StorageAccessAPIHelper.h"
 
 #include "mozilla/net/HttpBaseChannel.h"
+#include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
+#include "nsICookieJarSettings.h"
 #include "nsICookieService.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsINavHistoryService.h"
@@ -21,6 +23,7 @@
 #include "nsIScriptError.h"
 #include "nsIURI.h"
 #include "nsNetCID.h"
+#include "nsNetUtil.h"
 #include "nsScriptSecurityManager.h"
 #include "nsToolkitCompsCID.h"
 
@@ -175,7 +178,7 @@ bool ShouldRedirectHeuristicApplyTrackingResource(nsIChannel* aOldChannel,
       classifiedOldChannel->GetFirstPartyClassificationFlags();
 
   if (net::UrlClassifierCommon::IsTrackingClassificationFlag(
-          oldClassificationFlags)) {
+          oldClassificationFlags, NS_UsePrivateBrowsing(aOldChannel))) {
     // This is a redirect from tracking.
     LOG_SPEC2(("Ignoring redirect for %s to %s because it's from tracking ",
                _spec1, _spec2),
@@ -297,21 +300,34 @@ void DynamicFpiRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
   }
 
   nsAutoCString oldOrigin;
-  rv = oldPrincipal->GetOrigin(oldOrigin);
+  rv = oldPrincipal->GetOriginNoSuffix(oldOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(("Can't get the origin from the Principal"));
+    LOG(("Can't get the origin from the old Principal"));
     return;
   }
 
   nsAutoCString newOrigin;
-  rv = nsContentUtils::GetASCIIOrigin(aNewURI, newOrigin);
+  rv = newPrincipal->GetOriginNoSuffix(newOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(("Can't get the origin from the URI"));
+    LOG(("Can't get the origin from the new Principal"));
     return;
   }
 
   if (!HasEligibleVisit(aOldURI) || !HasEligibleVisit(aNewURI)) {
     LOG(("No previous visit record, bailing out early."));
+    return;
+  }
+
+  // Check if the new principal is a third party principal
+  bool aResult;
+  rv = newPrincipal->IsThirdPartyPrincipal(oldPrincipal, &aResult);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    LOG(("Error while checking if new principal is third party"));
+    return;
+  }
+  if (!aResult) {
+    LOG(("New principal is a first party principal"));
     return;
   }
 
@@ -329,10 +345,10 @@ void DynamicFpiRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
       Telemetry::LABELS_STORAGE_ACCESS_GRANTED_COUNT::Redirect);
 
   // We don't care about this promise because the operation is actually sync.
-  RefPtr<ContentBlocking::ParentAccessGrantPromise> promise =
-      ContentBlocking::SaveAccessForOriginOnParentProcess(
-          newPrincipal, oldPrincipal, oldOrigin,
-          ContentBlocking::StorageAccessPromptChoices::eAllow,
+  RefPtr<StorageAccessAPIHelper::ParentAccessGrantPromise> promise =
+      StorageAccessAPIHelper::SaveAccessForOriginOnParentProcess(
+          newPrincipal, oldPrincipal,
+          StorageAccessAPIHelper::StorageAccessPromptChoices::eAllow, false,
           StaticPrefs::privacy_restrict3rdpartystorage_expiration_visited());
   Unused << promise;
 }

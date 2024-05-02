@@ -36,10 +36,17 @@ uint32_t gfxFT2LockedFace::GetGlyph(uint32_t aCharCode) {
     }
   }
 
-  return FcFreeTypeCharIndex(mFace, aCharCode);
+  uint32_t gid = FcFreeTypeCharIndex(mFace, aCharCode);
 #else
-  return FT_Get_Char_Index(mFace, aCharCode);
+  uint32_t gid = FT_Get_Char_Index(mFace, aCharCode);
 #endif
+  if (!gid && mFace->charmap &&
+      mFace->charmap->encoding == FT_ENCODING_MS_SYMBOL) {
+    if (auto pua = gfxFontUtils::MapLegacySymbolFontCharToPUA(aCharCode)) {
+      gid = FT_Get_Char_Index(mFace, pua);
+    }
+  }
+  return gid;
 }
 
 typedef FT_UInt (*GetCharVariantFunction)(FT_Face face, FT_ULong charcode,
@@ -124,8 +131,8 @@ void gfxFT2Utils::GetVariationInstances(
   if (!aMMVar) {
     return;
   }
-  hb_blob_t* nameTable =
-      aFontEntry->GetFontTable(TRUETYPE_TAG('n', 'a', 'm', 'e'));
+  gfxFontUtils::AutoHBBlob nameTable(
+      aFontEntry->GetFontTable(TRUETYPE_TAG('n', 'a', 'm', 'e')));
   if (!nameTable) {
     return;
   }
@@ -147,5 +154,4 @@ void gfxFT2Utils::GetVariationInstances(
     }
     aInstances.AppendElement(inst);
   }
-  hb_blob_destroy(nameTable);
 }

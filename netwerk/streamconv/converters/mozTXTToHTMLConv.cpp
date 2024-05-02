@@ -7,6 +7,7 @@
 #include "mozTXTToHTMLConv.h"
 #include "mozilla/intl/Segmenter.h"
 #include "mozilla/Maybe.h"
+#include "nsIThreadRetargetableStreamListener.h"
 #include "nsNetUtil.h"
 #include "nsUnicharUtils.h"
 #include "nsUnicodeProperties.h"
@@ -186,7 +187,7 @@ bool mozTXTToHTMLConv::FindURLStart(const char16_t* aInString,
       return false;
     }
     case RFC2396E: {
-      nsString temp(aInString, aInLength);
+      nsDependentSubstring temp(aInString, aInLength);
       int32_t i = pos <= 0 ? kNotFound : temp.RFindCharInSet(u"<>\"", pos - 1);
       if (i != kNotFound &&
           (temp[uint32_t(i)] == '<' || temp[uint32_t(i)] == '"')) {
@@ -250,7 +251,7 @@ bool mozTXTToHTMLConv::FindURLEnd(const char16_t* aInString,
   switch (check) {  // no breaks, because end of blocks is never reached
     case RFC1738:
     case RFC2396E: {
-      nsString temp(aInString, aInStringLength);
+      nsDependentSubstring temp(aInString, aInStringLength);
 
       int32_t i = temp.FindCharInSet(u"<>\"", pos + 1);
       if (i != kNotFound &&
@@ -597,7 +598,11 @@ uint32_t mozTXTToHTMLConv::NumberOfMatches(const char16_t* aInString,
                                            LIMTYPE before, LIMTYPE after) {
   uint32_t result = 0;
 
-  const uint32_t len = mozilla::AssertedCast<uint32_t>(aInStringLength);
+  // Limit lookahead length to avoid pathological O(n^2) behavior; looking so
+  // far ahead is unlikely to be important for cases where styling marked-up
+  // fragments is actually useful anyhow.
+  const uint32_t len =
+      std::min(2000u, mozilla::AssertedCast<uint32_t>(aInStringLength));
   GraphemeClusterBreakIteratorUtf16 ci(Span<const char16_t>(aInString, len));
   for (uint32_t pos = 0; pos < len; pos = *ci.Next()) {
     if (ItMatchesDelimited(aInString + pos, aInStringLength - pos, rep, aRepLen,
@@ -734,11 +739,11 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
       bArg = false;
     }
     if (bTestSmilie && (SmilyHit(aInString, aInLength, bArg, ":-)",
-                                 u"😄"_ns,  // smile, U+1F604
+                                 u"🙂"_ns,  // smile, U+1F642
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":)",
-                                 u"😄"_ns,  // smile, U+1F604
+                                 u"🙂"_ns,  // smile, U+1F642
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-D",
@@ -753,8 +758,8 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
                                  u"🙁"_ns,  // frown, U+1F641
                                  outputHTML, glyphTextLen) ||
 
-                        SmilyHit(aInString, aInLength, bArg, ":-[",
-                                 u"😅"_ns,  // embarassed, U+1F605
+                        SmilyHit(aInString, aInLength, bArg, ":$",
+                                 u"😳"_ns,  // embarassed, U+1F633
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ";-)",
@@ -786,11 +791,19 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ">:o",
-                                 u"😄"_ns,  // yell, U+1F620
+                                 u"🤬"_ns,  // swearing, U+1F92C
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ">:-o",
-                                 u"😠"_ns,  // yell, U+1F620
+                                 u"🤬"_ns,  // swearing, U+1F92C
+                                 outputHTML, glyphTextLen) ||
+
+                        SmilyHit(aInString, aInLength, bArg, ">:(",
+                                 u"😠"_ns,  // angry, U+1F620
+                                 outputHTML, glyphTextLen) ||
+
+                        SmilyHit(aInString, aInLength, bArg, ">:-(",
+                                 u"😠"_ns,  // angry, U+1F620
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, "8-)",
@@ -814,7 +827,7 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-X",
-                                 u"😷"_ns,  // sealed, U+1F637
+                                 u"🤐"_ns,  // sealed, U+1F910
                                  outputHTML, glyphTextLen))) {
       aOutputString.Append(outputHTML);
       return true;
@@ -897,7 +910,8 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
 ****************************************************************************/
 
 NS_IMPL_ISUPPORTS(mozTXTToHTMLConv, mozITXTToHTMLConv, nsIStreamConverter,
-                  nsIStreamListener, nsIRequestObserver)
+                  nsIThreadRetargetableStreamListener, nsIStreamListener,
+                  nsIRequestObserver)
 
 int32_t mozTXTToHTMLConv::CiteLevelTXT(const char16_t* line,
                                        uint32_t& logLineStart) {
@@ -1135,7 +1149,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       // if a tag, skip until </a>.
       // Make sure there's a white-space character after, not to match "abbr".
       {
-        i = aInString.Find("</a>", true, i);
+        i = aInString.LowerCaseFindASCII("</a>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1144,7 +1158,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       } else if (Substring(aInString, i + 1, 3).LowerCaseEqualsASCII("!--"))
       // if out-commended code, skip until -->
       {
-        i = aInString.Find("-->", false, i);
+        i = aInString.Find(u"-->", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1155,7 +1169,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
                  canFollow.FindChar(aInString[i + 6]) != kNotFound)
       // if style tag, skip until </style>
       {
-        i = aInString.Find("</style>", true, i);
+        i = aInString.LowerCaseFindASCII("</style>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1167,7 +1181,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
                  canFollow.FindChar(aInString[i + 7]) != kNotFound)
       // if script tag, skip until </script>
       {
-        i = aInString.Find("</script>", true, i);
+        i = aInString.LowerCaseFindASCII("</script>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1179,7 +1193,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       // if head tag, skip until </head>
       // Make sure not to match <header>.
       {
-        i = aInString.Find("</head>", true, i);
+        i = aInString.LowerCaseFindASCII("</head>", i);
         if (i == kNotFound) {
           i = lengthOfInString;
         } else {
@@ -1200,7 +1214,7 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       i = aInString.FindChar('<', i);
       if (i == kNotFound) i = lengthOfInString;
 
-      nsString tempString;
+      nsAutoStringN<256> tempString;
       tempString.SetCapacity(uint32_t((uint32_t(i) - start) * growthRate));
       UnescapeStr(uniBuffer, start, uint32_t(i) - start, tempString);
       ScanTXT(tempString, whattodo, aOutString);
@@ -1243,6 +1257,14 @@ mozTXTToHTMLConv::OnDataAvailable(nsIRequest* request, nsIInputStream* inStr,
                                   uint64_t sourceOffset, uint32_t count) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
+
+NS_IMETHODIMP
+mozTXTToHTMLConv::OnDataFinished(nsresult aStatus) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+mozTXTToHTMLConv::CheckListenerChain() { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
 mozTXTToHTMLConv::OnStartRequest(nsIRequest* request) {

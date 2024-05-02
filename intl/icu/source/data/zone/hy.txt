@@ -258,6 +258,9 @@ hy{
         "America:Chihuahua"{
             ec{"Չիուաուա"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"Սյուդադ Խուարես"}
+        }
         "America:Coral_Harbour"{
             ec{"Ատիկոկան"}
         }
@@ -1222,6 +1225,9 @@ hy{
         }
         "Pacific:Johnston"{
             ec{"Ջոնսթոն"}
+        }
+        "Pacific:Kanton"{
+            ec{"Կանտոն"}
         }
         "Pacific:Kiritimati"{
             ec{"Կիրիտիմատի"}

@@ -5,13 +5,12 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
 
-from __future__ import absolute_import
 import copy
 import datetime
 import json
 import os
-import sys
 import subprocess
+import sys
 
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
@@ -21,13 +20,12 @@ from mozharness.base.script import BaseScript, PreScriptAction
 from mozharness.mozilla.automation import TBPL_RETRY
 from mozharness.mozilla.mozbase import MozbaseMixin
 from mozharness.mozilla.testing.android import AndroidMixin
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.mozilla.testing.codecoverage import CodeCoverageMixin
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 
-PY2 = sys.version_info.major == 2
 SUITE_DEFAULT_E10S = ["geckoview-junit", "mochitest", "reftest"]
-SUITE_NO_E10S = ["cppunittest", "xpcshell"]
-SUITE_REPEATABLE = ["mochitest", "reftest"]
+SUITE_NO_E10S = ["cppunittest", "gtest", "jittest"]
+SUITE_REPEATABLE = ["mochitest", "reftest", "xpcshell"]
 
 
 class AndroidHardwareTest(
@@ -81,12 +79,21 @@ class AndroidHardwareTest(
             },
         ],
         [
-            ["--enable-fission"],
+            ["--disable-e10s"],
+            {
+                "action": "store_false",
+                "dest": "e10s",
+                "default": True,
+                "help": "Run tests without multiple processes (e10s).",
+            },
+        ],
+        [
+            ["--disable-fission"],
             {
                 "action": "store_true",
-                "dest": "enable_fission",
+                "dest": "disable_fission",
                 "default": False,
-                "help": "Run with Fission enabled.",
+                "help": "Run with Fission disabled.",
             },
         ],
         [
@@ -157,7 +164,8 @@ class AndroidHardwareTest(
         self.xre_path = None
         self.log_raw_level = c.get("log_raw_level")
         self.log_tbpl_level = c.get("log_tbpl_level")
-        self.enable_fission = c.get("enable_fission")
+        self.disable_e10s = c.get("disable_e10s")
+        self.disable_fission = c.get("disable_fission")
         self.extra_prefs = c.get("extra_prefs")
         self.jittest_flags = c.get("jittest_flags")
 
@@ -239,6 +247,7 @@ class AndroidHardwareTest(
         }
 
         user_paths = json.loads(os.environ.get("MOZHARNESS_TEST_PATHS", '""'))
+        confirm_paths = json.loads(os.environ.get("MOZHARNESS_CONFIRM_PATHS", '""'))
 
         for option in self.config["suite_definitions"][self.test_suite]["options"]:
             opt = option.split("=")[0]
@@ -258,10 +267,7 @@ class AndroidHardwareTest(
                 if option:
                     cmd.extend([option])
 
-        if user_paths:
-            if self.test_suite in user_paths:
-                cmd.extend(user_paths[self.test_suite])
-        elif not self.verify_enabled:
+        if not self.verify_enabled and not user_paths:
             if self.this_chunk is not None:
                 cmd.extend(["--this-chunk", self.this_chunk])
             if self.total_chunks is not None:
@@ -279,14 +285,37 @@ class AndroidHardwareTest(
             else:
                 self.log("--repeat not supported in {}".format(category), level=WARNING)
 
-        if self.enable_fission:
-            cmd.extend(["--enable-fission"])
+        if category not in SUITE_NO_E10S:
+            if category in SUITE_DEFAULT_E10S and not c["e10s"]:
+                cmd.append("--disable-e10s")
+            elif category not in SUITE_DEFAULT_E10S and c["e10s"]:
+                cmd.append("--e10s")
+
+        if self.disable_fission and category not in SUITE_NO_E10S:
+            cmd.append("--disable-fission")
 
         cmd.extend(["--setpref={}".format(p) for p in self.extra_prefs])
 
         try_options, try_tests = self.try_args(self.test_suite)
-        cmd.extend(try_options)
-        if not self.verify_enabled and not self.per_test_coverage:
+        if try_options:
+            cmd.extend(try_options)
+
+        if user_paths:
+            # reftest on android-hw uses a subset (reftest-qr) of tests,
+            # but scheduling only knows about 'reftest'
+            suite = self.test_suite
+            if suite == "reftest-qr":
+                suite = "reftest"
+
+            if user_paths.get(suite, []):
+                suite_test_paths = user_paths.get(suite, [])
+                # NOTE: we do not want to prepend 'tests' if a single path
+                if confirm_paths and confirm_paths.get(suite, []):
+                    suite_test_paths = confirm_paths.get(suite, [])
+                suite_test_paths = [os.path.join("tests", p) for p in suite_test_paths]
+                cmd.extend(suite_test_paths)
+
+        elif not self.verify_enabled and not self.per_test_coverage:
             cmd.extend(
                 self.query_tests_args(
                     self.config["suite_definitions"][self.test_suite].get("tests"),
@@ -313,7 +342,7 @@ class AndroidHardwareTest(
             ("xpcshell", {"xpcshell": "xpcshell"}),
         ]
         suites = []
-        for (category, all_suites) in all:
+        for category, all_suites in all:
             cat_suites = self.query_per_test_category_suites(category, all_suites)
             for k in cat_suites.keys():
                 suites.append((k, cat_suites[k]))
@@ -340,17 +369,12 @@ class AndroidHardwareTest(
         dirs = self.query_abs_dirs()
         requirements = None
         suites = self._query_suites()
-        # mochitest is the only thing that needs this
-        if PY2:
-            wspb_requirements = "websocketprocessbridge_requirements.txt"
-        else:
-            wspb_requirements = "websocketprocessbridge_requirements_3.txt"
         if ("mochitest-media", "mochitest-media") in suites:
             # mochitest-media is the only thing that needs this
             requirements = os.path.join(
                 dirs["abs_mochitest_dir"],
                 "websocketprocessbridge",
-                wspb_requirements,
+                "websocketprocessbridge_requirements_3.txt",
             )
         if requirements:
             self.register_virtualenv_module(requirements=[requirements], two_pass=True)
@@ -392,7 +416,7 @@ class AndroidHardwareTest(
         per_test_args = []
         suites = self._query_suites()
         minidump = self.query_minidump_stackwalk()
-        for (per_test_suite, suite) in suites:
+        for per_test_suite, suite in suites:
             self.test_suite = suite
 
             try:
@@ -456,10 +480,10 @@ class AndroidHardwareTest(
                         return
                 else:
                     self.record_status(tbpl_status, level=log_level)
-                    self.log(
+                    # report as INFO instead of log_level to avoid extra Treeherder lines
+                    self.info(
                         "The %s suite: %s ran with return status: %s"
                         % (suite_category, suite, tbpl_status),
-                        level=log_level,
                     )
 
 

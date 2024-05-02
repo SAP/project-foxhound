@@ -5,8 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "SDKDeclarations.h"
-
 @protocol MOXTextMarkerSupport;
 @protocol mozAccessible;
 
@@ -99,6 +97,9 @@
 // AXValue
 - (id _Nullable)moxValue;
 
+// AXValueDescription
+- (NSString* _Nullable)moxValueDescription;
+
 // AXSize
 - (NSValue* _Nullable)moxSize;
 
@@ -189,6 +190,12 @@
 // AXLoadingProgress
 - (NSNumber* _Nullable)moxLoadingProgress;
 
+// AXMinValue
+- (id _Nullable)moxMinValue;
+
+// AXMaxValue
+- (id _Nullable)moxMaxValue;
+
 // Webkit also implements the following:
 // // AXCaretBrowsingEnabled
 // - (NSString* _Nullable)moxCaretBrowsingEnabled;
@@ -253,6 +260,12 @@
 
 // AXSelectedRows
 - (NSArray* _Nullable)moxSelectedRows;
+
+// AXARIAPosInSet
+- (NSNumber* _Nullable)moxARIAPosInSet;
+
+// AXARIASetSize
+- (NSNumber* _Nullable)moxARIASetSize;
 
 // Math Attributes
 

@@ -47,7 +47,7 @@ add_task(async () => {
 
   // Get the cookie file and the backup file.
   Assert.ok(!do_get_cookie_file(profile).exists());
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 
   // Create a cookie object for testing.
   let now = Date.now() * 1000;
@@ -74,13 +74,13 @@ add_task(async () => {
   Services.prefs.clearUserPref("network.cookie.sameSite.laxByDefault");
 });
 
-function do_get_backup_file(profile) {
+function do_get_backup_file() {
   let file = profile.clone();
   file.append("cookies.sqlite.bak");
   return file;
 }
 
-function do_get_rebuild_backup_file(profile) {
+function do_get_rebuild_backup_file() {
   let file = profile.clone();
   file.append("cookies.sqlite.bak-rebuild");
   return file;
@@ -140,7 +140,7 @@ async function run_test_1() {
   db.close();
 
   // Attempt to insert a cookie with the same (name, host, path) triplet.
-  Services.cookiemgr.add(
+  Services.cookies.add(
     cookie.host,
     cookie.path,
     cookie.name,
@@ -155,10 +155,10 @@ async function run_test_1() {
   );
 
   // Check that the cookie service accepted the new cookie.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost(cookie.host), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost(cookie.host), 1);
 
   let isRebuildingDone = false;
-  let rebuildingObserve = function(subject, topic, data) {
+  let rebuildingObserve = function (subject, topic, data) {
     isRebuildingDone = true;
     Services.obs.removeObserver(rebuildingObserve, "cookie-db-rebuilding");
   };
@@ -169,7 +169,7 @@ async function run_test_1() {
   // cookie thread. Trigger some access of cookies to ensure we won't crash in
   // the chaos status.
   for (let i = 0; i < 10; ++i) {
-    Assert.equal(Services.cookiemgr.countCookiesFromHost(cookie.host), 1);
+    Assert.equal(Services.cookies.countCookiesFromHost(cookie.host), 1);
     await new Promise(resolve => executeSoon(resolve));
   }
 
@@ -182,8 +182,8 @@ async function run_test_1() {
   await new Promise(resolve => executeSoon(resolve));
 
   // At this point, the cookies should still be in memory.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 1);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost(cookie.host), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost(cookie.host), 1);
   Assert.equal(do_count_cookies(), 2);
 
   // Close the profile.
@@ -191,16 +191,16 @@ async function run_test_1() {
 
   // Check that the original database was renamed, and that it contains the
   // original cookie.
-  Assert.ok(do_get_backup_file(profile).exists());
-  let backupdb = Services.storage.openDatabase(do_get_backup_file(profile));
+  Assert.ok(do_get_backup_file().exists());
+  let backupdb = Services.storage.openDatabase(do_get_backup_file());
   Assert.equal(do_count_cookies_in_db(backupdb, "foo.com"), 1);
   backupdb.close();
 
   // Load the profile, and check that it contains the new cookie.
   do_load_profile();
 
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 1);
-  let cookies = Services.cookiemgr.getCookiesFromHost(cookie.host, {});
+  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 1);
+  let cookies = Services.cookies.getCookiesFromHost(cookie.host, {});
   Assert.equal(cookies.length, 1);
   let dbcookie = cookies[0];
   Assert.equal(dbcookie.value, "hallo");
@@ -210,16 +210,16 @@ async function run_test_1() {
 
   // Clean up.
   do_get_cookie_file(profile).remove(false);
-  do_get_backup_file(profile).remove(false);
+  do_get_backup_file().remove(false);
   Assert.ok(!do_get_cookie_file(profile).exists());
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 }
 
 async function run_test_2() {
   // Load the profile and populate it.
   do_load_profile();
 
-  Services.cookiesvc.runInTransaction(_ => {
+  Services.cookies.runInTransaction(_ => {
     let uri = NetUtil.newURI("http://foo.com/");
     const channel = NetUtil.newChannel({
       uri,
@@ -228,8 +228,8 @@ async function run_test_2() {
     });
 
     for (let i = 0; i < 3000; ++i) {
-      let uri = NetUtil.newURI("http://" + i + ".com/");
-      Services.cookiesvc.setCookieStringFromHttp(
+      uri = NetUtil.newURI("http://" + i + ".com/");
+      Services.cookies.setCookieStringFromHttp(
         uri,
         "oh=hai; max-age=1000",
         channel
@@ -248,23 +248,23 @@ async function run_test_2() {
 
   // At this point, the database connection should be open. Ensure that it
   // succeeded.
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 
   // Recreate a new database since it was corrupted
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("0.com"), 0);
   Assert.equal(do_count_cookies(), 0);
 
   // Close the profile.
   await promise_close_profile();
 
   // Check that the original database was renamed.
-  Assert.ok(do_get_backup_file(profile).exists());
-  Assert.equal(do_get_backup_file(profile).fileSize, size);
+  Assert.ok(do_get_backup_file().exists());
+  Assert.equal(do_get_backup_file().fileSize, size);
   let db = Services.storage.openDatabase(do_get_cookie_file(profile));
   db.close();
 
   do_load_profile();
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("0.com"), 0);
   Assert.equal(do_count_cookies(), 0);
 
   // Close the profile.
@@ -272,9 +272,9 @@ async function run_test_2() {
 
   // Clean up.
   do_get_cookie_file(profile).remove(false);
-  do_get_backup_file(profile).remove(false);
+  do_get_backup_file().remove(false);
   Assert.ok(!do_get_cookie_file(profile).exists());
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 }
 
 async function run_test_3() {
@@ -284,7 +284,7 @@ async function run_test_3() {
 
   // Load the profile and populate it.
   do_load_profile();
-  Services.cookiesvc.runInTransaction(_ => {
+  Services.cookies.runInTransaction(_ => {
     let uri = NetUtil.newURI("http://hither.com/");
     let channel = NetUtil.newChannel({
       uri,
@@ -292,7 +292,7 @@ async function run_test_3() {
       contentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
     });
     for (let i = 0; i < 10; ++i) {
-      Services.cookiesvc.setCookieStringFromHttp(
+      Services.cookies.setCookieStringFromHttp(
         uri,
         "oh" + i + "=hai; max-age=1000",
         channel
@@ -305,7 +305,7 @@ async function run_test_3() {
       contentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
     });
     for (let i = 10; i < 3000; ++i) {
-      Services.cookiesvc.setCookieStringFromHttp(
+      Services.cookies.setCookieStringFromHttp(
         uri,
         "oh" + i + "=hai; max-age=1000",
         channel
@@ -324,11 +324,11 @@ async function run_test_3() {
 
   // At this point, the database connection should be open. Ensure that it
   // succeeded.
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 
   // Recreate a new database since it was corrupted
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("hither.com"), 0);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("haithur.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("hither.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("haithur.com"), 0);
 
   // Close the profile.
   await promise_close_profile();
@@ -339,16 +339,16 @@ async function run_test_3() {
   db.close();
 
   // Check that the original database was renamed.
-  Assert.ok(do_get_backup_file(profile).exists());
-  Assert.equal(do_get_backup_file(profile).fileSize, size);
+  Assert.ok(do_get_backup_file().exists());
+  Assert.equal(do_get_backup_file().fileSize, size);
 
   // Rename it back, and try loading the entire database synchronously.
-  do_get_backup_file(profile).moveTo(null, "cookies.sqlite");
+  do_get_backup_file().moveTo(null, "cookies.sqlite");
   do_load_profile();
 
   // At this point, the database connection should be open. Ensure that it
   // succeeded.
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 
   // Synchronously read in everything.
   Assert.equal(do_count_cookies(), 0);
@@ -361,20 +361,20 @@ async function run_test_3() {
   db.close();
 
   // Check that the original database was renamed.
-  Assert.ok(do_get_backup_file(profile).exists());
-  Assert.equal(do_get_backup_file(profile).fileSize, size);
+  Assert.ok(do_get_backup_file().exists());
+  Assert.equal(do_get_backup_file().fileSize, size);
 
   // Clean up.
   do_get_cookie_file(profile).remove(false);
-  do_get_backup_file(profile).remove(false);
+  do_get_backup_file().remove(false);
   Assert.ok(!do_get_cookie_file(profile).exists());
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 }
 
 async function run_test_4() {
   // Load the profile and populate it.
   do_load_profile();
-  Services.cookiesvc.runInTransaction(_ => {
+  Services.cookies.runInTransaction(_ => {
     let uri = NetUtil.newURI("http://foo.com/");
     let channel = NetUtil.newChannel({
       uri,
@@ -382,8 +382,8 @@ async function run_test_4() {
       contentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
     });
     for (let i = 0; i < 3000; ++i) {
-      let uri = NetUtil.newURI("http://" + i + ".com/");
-      Services.cookiesvc.setCookieStringFromHttp(
+      uri = NetUtil.newURI("http://" + i + ".com/");
+      Services.cookies.setCookieStringFromHttp(
         uri,
         "oh=hai; max-age=1000",
         channel
@@ -402,10 +402,10 @@ async function run_test_4() {
 
   // At this point, the database connection should be open. Ensure that it
   // succeeded.
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 
   // Recreate a new database since it was corrupted
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("0.com"), 0);
 
   // Queue up an INSERT for the same base domain. This should also go into
   // memory and be written out during database rebuild.
@@ -415,19 +415,19 @@ async function run_test_4() {
   );
 
   // At this point, the cookies should still be in memory.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost("0.com"), 1);
   Assert.equal(do_count_cookies(), 1);
 
   // Close the profile.
   await promise_close_profile();
 
   // Check that the original database was renamed.
-  Assert.ok(do_get_backup_file(profile).exists());
-  Assert.equal(do_get_backup_file(profile).fileSize, size);
+  Assert.ok(do_get_backup_file().exists());
+  Assert.equal(do_get_backup_file().fileSize, size);
 
   // Load the profile, and check that it contains the new cookie.
   do_load_profile();
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost("0.com"), 1);
   Assert.equal(do_count_cookies(), 1);
 
   // Close the profile.
@@ -435,29 +435,29 @@ async function run_test_4() {
 
   // Clean up.
   do_get_cookie_file(profile).remove(false);
-  do_get_backup_file(profile).remove(false);
+  do_get_backup_file().remove(false);
   Assert.ok(!do_get_cookie_file(profile).exists());
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 }
 
 async function run_test_5() {
   // Load the profile and populate it.
   do_load_profile();
-  Services.cookiesvc.runInTransaction(_ => {
+  Services.cookies.runInTransaction(_ => {
     let uri = NetUtil.newURI("http://bar.com/");
     const channel = NetUtil.newChannel({
       uri,
       loadUsingSystemPrincipal: true,
       contentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
     });
-    Services.cookiesvc.setCookieStringFromHttp(
+    Services.cookies.setCookieStringFromHttp(
       uri,
       "oh=hai; path=/; max-age=1000",
       channel
     );
     for (let i = 0; i < 3000; ++i) {
-      let uri = NetUtil.newURI("http://" + i + ".com/");
-      Services.cookiesvc.setCookieStringFromHttp(
+      uri = NetUtil.newURI("http://" + i + ".com/");
+      Services.cookies.setCookieStringFromHttp(
         uri,
         "oh=hai; max-age=1000",
         channel
@@ -476,15 +476,15 @@ async function run_test_5() {
 
   // At this point, the database connection should be open. Ensure that it
   // succeeded.
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 
   // Recreate a new database since it was corrupted
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("bar.com"), 0);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("bar.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("0.com"), 0);
   Assert.equal(do_count_cookies(), 0);
-  Assert.ok(do_get_backup_file(profile).exists());
-  Assert.equal(do_get_backup_file(profile).fileSize, size);
-  Assert.ok(!do_get_rebuild_backup_file(profile).exists());
+  Assert.ok(do_get_backup_file().exists());
+  Assert.equal(do_get_backup_file().fileSize, size);
+  Assert.ok(!do_get_rebuild_backup_file().exists());
 
   // Open a database connection, and write a row that will trigger a constraint
   // violation.
@@ -495,11 +495,11 @@ async function run_test_5() {
   db.close();
 
   // Check that the original backup and the database itself are gone.
-  Assert.ok(do_get_backup_file(profile).exists());
-  Assert.equal(do_get_backup_file(profile).fileSize, size);
+  Assert.ok(do_get_backup_file().exists());
+  Assert.equal(do_get_backup_file().fileSize, size);
 
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("bar.com"), 0);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("bar.com"), 0);
+  Assert.equal(Services.cookies.countCookiesFromHost("0.com"), 0);
   Assert.equal(do_count_cookies(), 0);
 
   // Close the profile. We do not need to wait for completion, because the
@@ -508,7 +508,7 @@ async function run_test_5() {
 
   // Clean up.
   do_get_cookie_file(profile).remove(false);
-  do_get_backup_file(profile).remove(false);
+  do_get_backup_file().remove(false);
   Assert.ok(!do_get_cookie_file(profile).exists());
-  Assert.ok(!do_get_backup_file(profile).exists());
+  Assert.ok(!do_get_backup_file().exists());
 }

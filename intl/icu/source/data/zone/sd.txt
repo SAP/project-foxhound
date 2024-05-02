@@ -258,6 +258,9 @@ sd{
         "America:Chihuahua"{
             ec{"چي هوا هوا"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"سوڊيڊ جوريز"}
+        }
         "America:Coral_Harbour"{
             ec{"اٽيڪوڪن"}
         }
@@ -1221,6 +1224,9 @@ sd{
         "Pacific:Johnston"{
             ec{"جانسٹن"}
         }
+        "Pacific:Kanton"{
+            ec{"ڪانٽن"}
+        }
         "Pacific:Kiritimati"{
             ec{"ڪريٽمٽي"}
         }
@@ -1880,6 +1886,9 @@ sd{
             ld{"يڪاٽيرنبرگ جي ڏينهن جو وقت"}
             lg{"يڪاٽيرنبرگ جو وقت"}
             ls{"يڪاٽيرنبرگ جو معياري وقت"}
+        }
+        "meta:Yukon"{
+            ls{"يڪون جو وقت"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

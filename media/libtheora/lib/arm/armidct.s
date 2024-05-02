@@ -11,16 +11,10 @@
 ;********************************************************************
 ; Original implementation:
 ;  Copyright (C) 2009 Robin Watts for Pinknoise Productions Ltd
-; last mod: $Id: armidct.s 17481 2010-10-03 22:49:42Z tterribe $
+; last mod: $Id$
 ;********************************************************************
 
 	AREA	|.text|, CODE, READONLY
-
-	; Explicitly specifying alignment here because some versions of
-	; gas don't align code correctly. See
-	; http://lists.gnu.org/archive/html/bug-binutils/2011-06/msg00199.html
-	; https://bugzilla.mozilla.org/show_bug.cgi?id=920992
-	ALIGN
 
 	GET	armopts.s
 
@@ -70,11 +64,8 @@ oc_idct8x8_slow_arm
 	BL	idct8core_arm
 	BL	idct8core_arm
 	LDR	r0, [r13], #4	; Write to the final destination.
-	; Clear input data for next block (decoder only).
 	SUB	r2, r1, #8*16
-	CMP	r0, r2
-	MOV	r1, r13		; And read from temp storage.
-	BEQ	oc_idct8x8_slow_arm_cols
+	; Clear input data for next block.
 	MOV	r4, #0
 	MOV	r5, #0
 	MOV	r6, #0
@@ -87,7 +78,7 @@ oc_idct8x8_slow_arm
 	STMIA	r2!,{r4,r5,r6,r7}
 	STMIA	r2!,{r4,r5,r6,r7}
 	STMIA	r2!,{r4,r5,r6,r7}
-oc_idct8x8_slow_arm_cols
+	MOV	r1, r13		; And read from temp storage.
 ; Column transforms
 	BL	idct8core_down_arm
 	BL	idct8core_down_arm
@@ -111,18 +102,15 @@ oc_idct8x8_10_arm PROC
 	BL	idct3core_arm
 	BL	idct2core_arm
 	BL	idct1core_arm
-	; Clear input data for next block (decoder only).
-	SUB	r0, r1, #4*16
-	CMP	r0, r2
-	MOV	r1, r13		; Read from temp storage.
-	BEQ	oc_idct8x8_10_arm_cols
+	; Clear input data for next block.
 	MOV	r4, #0
-	STR	r4, [r0]
-	STR	r4, [r0,#4]
-	STR	r4, [r0,#16]
-	STR	r4, [r0,#20]
-	STR	r4, [r0,#32]
-	STR	r4, [r0,#48]
+	STR	r4, [r1,#-4*16]!
+	STR	r4, [r1,#4]
+	STR	r4, [r1,#16]
+	STR	r4, [r1,#20]
+	STR	r4, [r1,#32]
+	STR	r4, [r1,#48]
+	MOV	r1, r13		; Read from temp storage.
 	MOV	r0, r2		; Write to the final destination
 oc_idct8x8_10_arm_cols
 ; Column transforms
@@ -147,18 +135,14 @@ oc_idct8x8_6_arm PROC
 	BL	idct3core_arm
 	BL	idct2core_arm
 	BL	idct1core_arm
-	; Clear input data for next block (decoder only).
-	SUB	r0, r1, #3*16
-	CMP	r0, r2
-	MOV	r1, r13		; Read from temp storage.
-	BEQ	oc_idct8x8_6_arm_cols
+	; Clear input data for next block.
 	MOV	r4, #0
-	STR	r4, [r0]
-	STR	r4, [r0,#4]
-	STR	r4, [r0,#16]
-	STR	r4, [r0,#32]
+	STR	r4, [r1,#-3*16]!
+	STR	r4, [r1,#4]
+	STR	r4, [r1,#16]
+	STR	r4, [r1,#32]
+	MOV	r1, r13		; Read from temp storage.
 	MOV	r0, r2		; Write to the final destination
-oc_idct8x8_6_arm_cols
 ; Column transforms
 	BL	idct3core_down_arm
 	BL	idct3core_down_arm
@@ -180,14 +164,12 @@ oc_idct8x8_3_arm PROC
 	MOV	r0, r13		; Write to temp storage.
 	BL	idct2core_arm
 	BL	idct1core_arm
-	; Clear input data for next block (decoder only).
-	SUB	r0, r1, #2*16
-	CMP	r0, r2
+	; Clear input data for next block.
+	MOV	r4, #0
+	STR	r4, [r1,#-2*16]!
+	STR	r4, [r1,#16]
 	MOV	r1, r13		; Read from temp storage.
-	MOVNE	r4, #0
-	STRNE	r4, [r0]
-	STRNE	r4, [r0,#16]
-	MOVNE	r0, r2		; Write to the final destination
+	MOV	r0, r2		; Write to the final destination
 ; Column transforms
 	BL	idct2core_down_arm
 	BL	idct2core_down_arm
@@ -805,30 +787,26 @@ oc_idct8x8_slow_v6
 	BL	idct8_8core_v6
 	BL	idct8_8core_v6
 	LDR	r0, [r13], #4	; Write to the final destination.
-	; Clear input data for next block (decoder only).
-	SUB	r2, r1, #8*16
-	CMP	r0, r2
-	MOV	r1, r13		; And read from temp storage.
-	BEQ	oc_idct8x8_slow_v6_cols
+	; Clear input data for next block.
 	MOV	r4, #0
 	MOV	r5, #0
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-	STRD	r4, [r2], #8
-oc_idct8x8_slow_v6_cols
+	STRD	r4, [r1,#-8*16]!
+	STRD	r4, [r1,#8]
+	STRD	r4, [r1,#16]
+	STRD	r4, [r1,#24]
+	STRD	r4, [r1,#32]
+	STRD	r4, [r1,#40]
+	STRD	r4, [r1,#48]
+	STRD	r4, [r1,#56]
+	STRD	r4, [r1,#64]
+	STRD	r4, [r1,#72]
+	STRD	r4, [r1,#80]
+	STRD	r4, [r1,#88]
+	STRD	r4, [r1,#96]
+	STRD	r4, [r1,#104]
+	STRD	r4, [r1,#112]
+	STRD	r4, [r1,#120]
+	MOV	r1, r13		; And read from temp storage.
 ; Column transforms
 	BL	idct8_8core_down_v6
 	BL	idct8_8core_down_v6
@@ -849,20 +827,16 @@ oc_idct8x8_10_v6 PROC
 	BL	idct4_3core_v6
 	BL	idct2_1core_v6
 	LDR	r0, [r13], #4	; Write to the final destination.
-	; Clear input data for next block (decoder only).
-	SUB	r2, r1, #4*16
-	CMP	r0, r2
-	AND	r1, r13,#4	; Align the stack.
-	BEQ	oc_idct8x8_10_v6_cols
+	; Clear input data for next block.
 	MOV	r4, #0
 	MOV	r5, #0
-	STRD	r4, [r2]
-	STRD	r4, [r2,#16]
-	STR	r4, [r2,#32]
-	STR	r4, [r2,#48]
-oc_idct8x8_10_v6_cols
-; Column transforms
+	STRD	r4, [r1,#-4*16]!
+	STRD	r4, [r1,#16]
+	STR	r4, [r1,#32]
+	STR	r4, [r1,#48]
+	AND	r1, r13,#4	; Align the stack.
 	ADD	r1, r1, r13	; And read from temp storage.
+; Column transforms
 	BL	idct4_4core_down_v6
 	BL	idct4_4core_down_v6
 	BL	idct4_4core_down_v6
@@ -878,14 +852,12 @@ oc_idct8x8_3_v6 PROC
 	MOV	r8, r0
 	MOV	r0, r13		; Write to temp storage.
 	BL	idct2_1core_v6
-	; Clear input data for next block (decoder only).
-	SUB	r0, r1, #2*16
-	CMP	r0, r8
+	; Clear input data for next block.
+	MOV	r4, #0
+	STR	r4, [r1,#-2*16]!
+	STR	r4, [r1,#16]
 	MOV	r1, r13		; Read from temp storage.
-	MOVNE	r4, #0
-	STRNE	r4, [r0]
-	STRNE	r4, [r0,#16]
-	MOVNE	r0, r8		; Write to the final destination.
+	MOV	r0, r8		; Write to the final destination.
 ; Column transforms
 	BL	idct2_2core_down_v6
 	BL	idct2_2core_down_v6
@@ -903,7 +875,7 @@ idct2_1core_v6 PROC
 	LDR	r3, OC_C4S4
 	LDRSH	r6, [r1], #16		; r6 = x[1,0]
 	SMULWB	r12,r3, r2		; r12= t[0,0]=OC_C4S4*x[0,0]>>16
-	LDRD	r4, OC_C7S1		; r4 = OC_C7S1; r5 = OC_C1S7
+	LDRD	r4, r5, OC_C7S1		; r4 = OC_C7S1; r5 = OC_C1S7
 	SMULWB	r6, r3, r6		; r6 = t[1,0]=OC_C4S4*x[1,0]>>16
 	SMULWT	r4, r4, r2		; r4 = t[0,4]=OC_C7S1*x[0,1]>>16
 	SMULWT	r7, r5, r2		; r7 = t[0,7]=OC_C1S7*x[0,1]>>16
@@ -965,7 +937,7 @@ idct2_2core_down_v6 PROC
 	MOV	r7 ,#8			; r7  = 8
 	LDR	r6, [r1], #16		; r6 = <x[1,1]|x[1,0]>
 	SMLAWB	r12,r3, r2, r7		; r12= (t[0,0]=OC_C4S4*x[0,0]>>16)+8
-	LDRD	r4, OC_C7S1		; r4 = OC_C7S1; r5 = OC_C1S7
+	LDRD	r4, r5, OC_C7S1		; r4 = OC_C7S1; r5 = OC_C1S7
 	SMLAWB	r7, r3, r6, r7		; r7 = (t[1,0]=OC_C4S4*x[1,0]>>16)+8
 	SMULWT  r5, r5, r2		; r2 = t[0,7]=OC_C1S7*x[0,1]>>16
 	PKHBT	r12,r12,r7, LSL #16	; r12= <t[1,0]+8|t[0,0]+8>
@@ -1041,20 +1013,16 @@ oc_idct8x8_6_v6 PROC
 	ADD	r0, r0, r13	; Write to temp storage.
 	BL	idct3_2core_v6
 	BL	idct1core_v6
-	; Clear input data for next block (decoder only).
-	SUB	r0, r1, #3*16
-	CMP	r0, r8
-	AND	r1, r13,#4	; Align the stack.
-	BEQ	oc_idct8x8_6_v6_cols
+	; Clear input data for next block.
 	MOV	r4, #0
 	MOV	r5, #0
-	STRD	r4, [r0]
-	STR	r4, [r0,#16]
-	STR	r4, [r0,#32]
+	STRD	r4, [r1,#-3*16]!
+	STR	r4, [r1,#16]
+	STR	r4, [r1,#32]
+	AND	r1, r13,#4	; Align the stack.
 	MOV	r0, r8		; Write to the final destination.
-oc_idct8x8_6_v6_cols
-; Column transforms
 	ADD	r1, r1, r13	; And read from temp storage.
+; Column transforms
 	BL	idct3_3core_down_v6
 	BL	idct3_3core_down_v6
 	BL	idct3_3core_down_v6
@@ -1085,7 +1053,7 @@ idct3_2core_v6 PROC
 	; r1 = const ogg_int16_t *_x (source)
 ; Stage 1:
 	LDRD	r4, [r1], #16		; r4 = <x[0,1]|x[0,0]>; r5 = <*|x[0,2]>
-	LDRD	r10,OC_C6S2_3_v6	; r10= OC_C6S2; r11= OC_C2S6
+	LDRD	r10, r11, OC_C6S2_3_v6	; r10= OC_C6S2; r11= OC_C2S6
 	; Stall
 	SMULWB	r3, r11,r5		; r3 = t[0,3]=OC_C2S6*x[0,2]>>16
 	LDR	r11,OC_C4S4
@@ -1164,12 +1132,12 @@ idct4_3core_v6 PROC
 	; r1 = const ogg_int16_t *_x (source)
 ; Stage 1:
 	LDRD	r10,[r1], #16	; r10= <x[0,1]|x[0,0]>; r11= <x[0,3]|x[0,2]>
-	LDRD	r2, OC_C5S3_4_v6	; r2 = OC_C5S3; r3 = OC_C3S5
+	LDRD	r2, r3, OC_C5S3_4_v6	; r2 = OC_C5S3; r3 = OC_C3S5
 	LDRD	r4, [r1], #16		; r4 = <x[1,1]|x[1,0]>; r5 = <??|x[1,2]>
 	SMULWT	r9, r3, r11		; r9 = t[0,6]=OC_C3S5*x[0,3]>>16
 	SMULWT	r8, r2, r11		; r8 = -t[0,5]=OC_C5S3*x[0,3]>>16
 	PKHBT	r9, r9, r2		; r9 = <0|t[0,6]>
-	LDRD	r6, OC_C6S2_4_v6	; r6 = OC_C6S2; r7 = OC_C2S6
+	LDRD	r6, r7, OC_C6S2_4_v6	; r6 = OC_C6S2; r7 = OC_C2S6
 	PKHBT	r8, r8, r2		; r9 = <0|-t[0,5]>
 	SMULWB	r3, r7, r11		; r3 = t[0,3]=OC_C2S6*x[0,2]>>16
 	SMULWB	r2, r6, r11		; r2 = t[0,2]=OC_C6S2*x[0,2]>>16
@@ -1180,7 +1148,7 @@ idct4_3core_v6 PROC
 	SMULWB	r12,r11,r10		; r12= t[0,0]=OC_C4S4*x[0,0]>>16
 	PKHBT	r2, r2, r5, LSL #16	; r2 = <t[1,2]|t[0,2]>
 	SMULWB	r5, r11,r4		; r5 = t[1,0]=OC_C4S4*x[1,0]>>16
-	LDRD	r6, OC_C7S1_4_v6	; r6 = OC_C7S1; r7 = OC_C1S7
+	LDRD	r6, r7, OC_C7S1_4_v6	; r6 = OC_C7S1; r7 = OC_C1S7
 	PKHBT	r12,r12,r5, LSL #16	; r12= <t[1,0]|t[0,0]>
 	SMULWT  r5, r7, r4		; r5 = t[1,7]=OC_C1S7*x[1,1]>>16
 	SMULWT  r7, r7, r10		; r7 = t[0,7]=OC_C1S7*x[0,1]>>16
@@ -1248,10 +1216,10 @@ idct4_4core_down_v6 PROC
 	; r1 = const ogg_int16_t *_x (source)
 ; Stage 1:
 	LDRD	r10,[r1], #16	; r10= <x[0,1]|x[0,0]>; r11= <x[0,3]|x[0,2]>
-	LDRD	r2, OC_C5S3_4_v6	; r2 = OC_C5S3; r3 = OC_C3S5
+	LDRD	r2, r3, OC_C5S3_4_v6	; r2 = OC_C5S3; r3 = OC_C3S5
 	LDRD	r4, [r1], #16	; r4 = <x[1,1]|x[1,0]>; r5 = <x[1,3]|x[1,2]>
 	SMULWT	r9, r3, r11		; r9 = t[0,6]=OC_C3S5*x[0,3]>>16
-	LDRD	r6, OC_C6S2_4_v6	; r6 = OC_C6S2; r7 = OC_C2S6
+	LDRD	r6, r7, OC_C6S2_4_v6	; r6 = OC_C6S2; r7 = OC_C2S6
 	SMULWT	r8, r2, r11		; r8 = -t[0,5]=OC_C5S3*x[0,3]>>16
 ; Here we cheat: row 3 had just a DC, so x[0,3]==x[1,3] by definition.
 	PKHBT	r9, r9, r9, LSL #16	; r9 = <t[0,6]|t[0,6]>
@@ -1266,7 +1234,7 @@ idct4_4core_down_v6 PROC
 	SMLAWB	r12,r11,r10,r7		; r12= t[0,0]+8=(OC_C4S4*x[0,0]>>16)+8
 	PKHBT	r2, r2, r5, LSL #16	; r2 = <t[1,2]|t[0,2]>
 	SMLAWB	r5, r11,r4 ,r7		; r5 = t[1,0]+8=(OC_C4S4*x[1,0]>>16)+8
-	LDRD	r6, OC_C7S1_4_v6	; r6 = OC_C7S1; r7 = OC_C1S7
+	LDRD	r6, r7, OC_C7S1_4_v6	; r6 = OC_C7S1; r7 = OC_C1S7
 	PKHBT	r12,r12,r5, LSL #16	; r12= <t[1,0]+8|t[0,0]+8>
 	SMULWT  r5, r7, r4		; r5 = t[1,7]=OC_C1S7*x[1,1]>>16
 	SMULWT  r7, r7, r10		; r7 = t[0,7]=OC_C1S7*x[0,1]>>16
@@ -1296,7 +1264,7 @@ idct8_8core_v6 PROC
 	STMFD	r13!,{r0,r14}
 ; Stage 1:
 	;5-6 rotation by 3pi/16
-	LDRD	r10,OC_C5S3_4_v6	; r10= OC_C5S3, r11= OC_C3S5
+	LDRD	r10, r11, OC_C5S3_4_v6	; r10= OC_C5S3, r11= OC_C3S5
 	LDR	r4, [r1,#8]		; r4 = <x[0,5]|x[0,4]>
 	LDR	r7, [r1,#24]		; r7 = <x[1,5]|x[1,4]>
 	SMULWT	r5, r11,r4		; r5 = OC_C3S5*x[0,5]>>16
@@ -1313,7 +1281,7 @@ idct8_8core_v6 PROC
 	PKHBT	r6, r6, r11,LSL #16	; r6 = <t[1,6]|t[0,6]>
 	SMULWT	r8, r10,r12		; r8 = OC_C5S3*x[1,3]>>16
 	;2-3 rotation by 6pi/16
-	LDRD	r10,OC_C6S2_4_v6	; r10= OC_C6S2, r11= OC_C2S6
+	LDRD	r10, r11, OC_C6S2_4_v6	; r10= OC_C6S2, r11= OC_C2S6
 	PKHBT	r3, r3, r8, LSL #16	; r3 = <r8|r3>
 	LDR	r8, [r1,#12]		; r8 = <x[0,7]|x[0,6]>
 	SMULWB	r2, r10,r0		; r2 = OC_C6S2*x[0,2]>>16
@@ -1329,7 +1297,7 @@ idct8_8core_v6 PROC
 	PKHBT	r3, r3, r10,LSL #16	; r3 = <t[1,6]|t[0,6]>
 	SMULWB	r12,r11,r7		; r12= OC_C2S6*x[1,6]>>16
 	;4-7 rotation by 7pi/16
-	LDRD	r10,OC_C7S1_8_v6	; r10= OC_C7S1, r11= OC_C1S7
+	LDRD	r10, r11, OC_C7S1_8_v6	; r10= OC_C7S1, r11= OC_C1S7
 	PKHBT	r9, r9, r12,LSL #16	; r9 = <r9|r12>
 	LDR	r0, [r1],#16		; r0 = <x[0,1]|x[0,0]>
 	PKHTB	r7, r7, r8, ASR #16	; r7 = <x[1,7]|x[0,7]>
@@ -1395,7 +1363,7 @@ idct8_8core_down_v6 PROC
 	STMFD	r13!,{r0,r14}
 ; Stage 1:
 	;5-6 rotation by 3pi/16
-	LDRD	r10,OC_C5S3_8_v6	; r10= OC_C5S3, r11= OC_C3S5
+	LDRD	r10, r11, OC_C5S3_8_v6	; r10= OC_C5S3, r11= OC_C3S5
 	LDR	r4, [r1,#8]		; r4 = <x[0,5]|x[0,4]>
 	LDR	r7, [r1,#24]		; r7 = <x[1,5]|x[1,4]>
 	SMULWT	r5, r11,r4		; r5 = OC_C3S5*x[0,5]>>16
@@ -1412,7 +1380,7 @@ idct8_8core_down_v6 PROC
 	PKHBT	r6, r6, r11,LSL #16	; r6 = <t[1,6]|t[0,6]>
 	SMULWT	r8, r10,r12		; r8 = OC_C5S3*x[1,3]>>16
 	;2-3 rotation by 6pi/16
-	LDRD	r10,OC_C6S2_8_v6	; r10= OC_C6S2, r11= OC_C2S6
+	LDRD	r10, r11, OC_C6S2_8_v6	; r10= OC_C6S2, r11= OC_C2S6
 	PKHBT	r3, r3, r8, LSL #16	; r3 = <r8|r3>
 	LDR	r8, [r1,#12]		; r8 = <x[0,7]|x[0,6]>
 	SMULWB	r2, r10,r0		; r2 = OC_C6S2*x[0,2]>>16
@@ -1428,7 +1396,7 @@ idct8_8core_down_v6 PROC
 	PKHBT	r3, r3, r10,LSL #16	; r3 = <t[1,6]|t[0,6]>
 	SMULWB	r12,r11,r7		; r12= OC_C2S6*x[1,6]>>16
 	;4-7 rotation by 7pi/16
-	LDRD	r10,OC_C7S1_8_v6	; r10= OC_C7S1, r11= OC_C1S7
+	LDRD	r10, r11, OC_C7S1_8_v6	; r10= OC_C7S1, r11= OC_C1S7
 	PKHBT	r9, r9, r12,LSL #16	; r9 = <r9|r12>
 	LDR	r0, [r1],#16		; r0 = <x[0,1]|x[0,0]>
 	PKHTB	r7, r7, r8, ASR #16	; r7 = <x[1,7]|x[0,7]>
@@ -1596,7 +1564,6 @@ oc_idct8x8_slow_neon
 	VSWP		D23,D30
 	; Column transforms
 	BL	oc_idct8x8_stage123_neon
-	CMP	r0,r1
 	; We have to put the return address back in the LR, or the branch
 	;  predictor will not recognize the function return and mis-predict the
 	;  entire call stack.
@@ -1610,7 +1577,6 @@ oc_idct8x8_slow_neon
 	VADD.S16	Q10,Q10,Q5	; Q10 = y[2]=t[2]'+t[5]''
 	VSUB.S16	Q12,Q11,Q4	; Q12 = y[4]=t[3]'-t[4]'
 	VADD.S16	Q11,Q11,Q4	; Q11 = y[3]=t[3]'+t[4]'
-	BEQ		oc_idct8x8_slow_neon_noclear
 	VMOV.I8		Q2,#0
 	VPOP		{D8-D15}
 	VMOV.I8		Q3,#0
@@ -1625,19 +1591,6 @@ oc_idct8x8_slow_neon
 	VRSHR.S16	Q13,Q13,#4	; Q13 = y[5]+8>>4
 	VRSHR.S16	Q14,Q14,#4	; Q14 = y[6]+8>>4
 	VST1.64		{D4, D5, D6, D7}, [r1@128]
-	VRSHR.S16	Q15,Q15,#4	; Q15 = y[7]+8>>4
-	VSTMIA		r0, {D16-D31}
-	MOV	PC, r14
-
-oc_idct8x8_slow_neon_noclear
-	VPOP		{D8-D15}
-	VRSHR.S16	Q8, Q8, #4	; Q8  = y[0]+8>>4
-	VRSHR.S16	Q9, Q9, #4	; Q9  = y[1]+8>>4
-	VRSHR.S16	Q10,Q10,#4	; Q10 = y[2]+8>>4
-	VRSHR.S16	Q11,Q11,#4	; Q11 = y[3]+8>>4
-	VRSHR.S16	Q12,Q12,#4	; Q12 = y[4]+8>>4
-	VRSHR.S16	Q13,Q13,#4	; Q13 = y[5]+8>>4
-	VRSHR.S16	Q14,Q14,#4	; Q14 = y[6]+8>>4
 	VRSHR.S16	Q15,Q15,#4	; Q15 = y[7]+8>>4
 	VSTMIA		r0, {D16-D31}
 	MOV	PC, r14
@@ -1871,7 +1824,6 @@ oc_idct8x8_10_neon PROC
 	VADD.S16	Q10,Q1, Q2	; Q10= t[1]'=t[0]+t[2]
 	VSUB.S16	Q2, Q1, Q2	; Q2 = t[2]'=t[0]-t[2]
 ; Stage 4
-	CMP	r0, r1
 	VADD.S16	Q8, Q11,Q15	; Q8  = y[0]=t[0]'+t[7]'
 	VADD.S16	Q9, Q10,Q14	; Q9  = y[1]=t[1]'+t[6]''
 	VSUB.S16	Q15,Q11,Q15	; Q15 = y[7]=t[0]'-t[7]'
@@ -1880,7 +1832,6 @@ oc_idct8x8_10_neon PROC
 	VADD.S16	Q11,Q3, Q12	; Q11 = y[3]=t[3]'+t[4]'
 	VSUB.S16	Q12,Q3, Q12	; Q12 = y[4]=t[3]'-t[4]'
 	VSUB.S16	Q13,Q2, Q13	; Q13 = y[5]=t[2]'-t[5]''
-	BEQ	oc_idct8x8_10_neon_noclear
 	VMOV.I8		D2, #0
 	VRSHR.S16	Q8, Q8, #4	; Q8  = y[0]+8>>4
 	VST1.64		{D2}, [r1@64], r12
@@ -1893,18 +1844,6 @@ oc_idct8x8_10_neon PROC
 	VRSHR.S16	Q13,Q13,#4	; Q13 = y[5]+8>>4
 	VRSHR.S16	Q14,Q14,#4	; Q14 = y[6]+8>>4
 	VST1.64		{D2}, [r1@64]
-	VRSHR.S16	Q15,Q15,#4	; Q15 = y[7]+8>>4
-	VSTMIA		r0, {D16-D31}
-	MOV	PC, r14
-
-oc_idct8x8_10_neon_noclear
-	VRSHR.S16	Q8, Q8, #4	; Q8  = y[0]+8>>4
-	VRSHR.S16	Q9, Q9, #4	; Q9  = y[1]+8>>4
-	VRSHR.S16	Q10,Q10,#4	; Q10 = y[2]+8>>4
-	VRSHR.S16	Q11,Q11,#4	; Q11 = y[3]+8>>4
-	VRSHR.S16	Q12,Q12,#4	; Q12 = y[4]+8>>4
-	VRSHR.S16	Q13,Q13,#4	; Q13 = y[5]+8>>4
-	VRSHR.S16	Q14,Q14,#4	; Q14 = y[6]+8>>4
 	VRSHR.S16	Q15,Q15,#4	; Q15 = y[7]+8>>4
 	VSTMIA		r0, {D16-D31}
 	MOV	PC, r14

@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <vector>
 
 #include "logging/rtc_event_log/events/rtc_event_alr_state.h"
 #include "logging/rtc_event_log/events/rtc_event_audio_network_adaptation.h"
@@ -45,6 +46,7 @@
 #include "logging/rtc_event_log/rtc_event_log_parser.h"
 #include "logging/rtc_event_log/rtc_stream_config.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/fir.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/loss_notification.h"
@@ -78,6 +80,8 @@ class EventGenerator {
   std::unique_ptr<RtcEventGenericPacketSent> NewGenericPacketSent();
   std::unique_ptr<RtcEventIceCandidatePair> NewIceCandidatePair();
   std::unique_ptr<RtcEventIceCandidatePairConfig> NewIceCandidatePairConfig();
+  std::unique_ptr<RtcEventNetEqSetMinimumDelay> NewNetEqSetMinimumDelay(
+      uint32_t ssrc);
   std::unique_ptr<RtcEventProbeClusterCreated> NewProbeClusterCreated();
   std::unique_ptr<RtcEventProbeResultFailure> NewProbeResultFailure();
   std::unique_ptr<RtcEventProbeResultSuccess> NewProbeResultSuccess();
@@ -93,10 +97,11 @@ class EventGenerator {
   rtcp::Remb NewRemb();
   rtcp::Fir NewFir();
   rtcp::Pli NewPli();
+  rtcp::Bye NewBye();
   rtcp::TransportFeedback NewTransportFeedback();
   rtcp::LossNotification NewLossNotification();
 
-  // |all_configured_exts| determines whether the RTP packet exhibits all
+  // `all_configured_exts` determines whether the RTP packet exhibits all
   // configured extensions, or a random subset thereof.
   void RandomizeRtpPacket(size_t payload_size,
                           size_t padding_size,
@@ -105,23 +110,26 @@ class EventGenerator {
                           RtpPacket* rtp_packet,
                           bool all_configured_exts);
 
-  // |all_configured_exts| determines whether the RTP packet exhibits all
+  // `all_configured_exts` determines whether the RTP packet exhibits all
   // configured extensions, or a random subset thereof.
   std::unique_ptr<RtcEventRtpPacketIncoming> NewRtpPacketIncoming(
       uint32_t ssrc,
       const RtpHeaderExtensionMap& extension_map,
       bool all_configured_exts = true);
 
-  // |all_configured_exts| determines whether the RTP packet exhibits all
+  // `all_configured_exts` determines whether the RTP packet exhibits all
   // configured extensions, or a random subset thereof.
   std::unique_ptr<RtcEventRtpPacketOutgoing> NewRtpPacketOutgoing(
       uint32_t ssrc,
       const RtpHeaderExtensionMap& extension_map,
       bool all_configured_exts = true);
 
-  // |configure_all| determines whether all supported extensions are configured,
-  // or a random subset.
-  RtpHeaderExtensionMap NewRtpHeaderExtensionMap(bool configure_all = false);
+  // `configure_all` determines whether all supported extensions are configured,
+  // or a random subset. Extensions in `excluded_extensions` will always be
+  // excluded.
+  RtpHeaderExtensionMap NewRtpHeaderExtensionMap(
+      bool configure_all = false,
+      const std::vector<RTPExtensionType>& excluded_extensions = {});
 
   std::unique_ptr<RtcEventAudioReceiveStreamConfig> NewAudioReceiveStreamConfig(
       uint32_t ssrc,
@@ -258,35 +266,38 @@ class EventVerifier {
       const RtcEventRtcpPacketOutgoing& original_event,
       const LoggedRtcpPacketOutgoing& logged_event) const;
 
-  void VerifyLoggedSenderReport(int64_t log_time_us,
+  void VerifyLoggedSenderReport(int64_t log_time_ms,
                                 const rtcp::SenderReport& original_sr,
                                 const LoggedRtcpPacketSenderReport& logged_sr);
   void VerifyLoggedReceiverReport(
-      int64_t log_time_us,
+      int64_t log_time_ms,
       const rtcp::ReceiverReport& original_rr,
       const LoggedRtcpPacketReceiverReport& logged_rr);
   void VerifyLoggedExtendedReports(
-      int64_t log_time_us,
+      int64_t log_time_ms,
       const rtcp::ExtendedReports& original_xr,
       const LoggedRtcpPacketExtendedReports& logged_xr);
-  void VerifyLoggedFir(int64_t log_time_us,
+  void VerifyLoggedFir(int64_t log_time_ms,
                        const rtcp::Fir& original_fir,
                        const LoggedRtcpPacketFir& logged_fir);
-  void VerifyLoggedPli(int64_t log_time_us,
+  void VerifyLoggedPli(int64_t log_time_ms,
                        const rtcp::Pli& original_pli,
                        const LoggedRtcpPacketPli& logged_pli);
-  void VerifyLoggedNack(int64_t log_time_us,
+  void VerifyLoggedBye(int64_t log_time_ms,
+                       const rtcp::Bye& original_bye,
+                       const LoggedRtcpPacketBye& logged_bye);
+  void VerifyLoggedNack(int64_t log_time_ms,
                         const rtcp::Nack& original_nack,
                         const LoggedRtcpPacketNack& logged_nack);
   void VerifyLoggedTransportFeedback(
-      int64_t log_time_us,
+      int64_t log_time_ms,
       const rtcp::TransportFeedback& original_transport_feedback,
       const LoggedRtcpPacketTransportFeedback& logged_transport_feedback);
-  void VerifyLoggedRemb(int64_t log_time_us,
+  void VerifyLoggedRemb(int64_t log_time_ms,
                         const rtcp::Remb& original_remb,
                         const LoggedRtcpPacketRemb& logged_remb);
   void VerifyLoggedLossNotification(
-      int64_t log_time_us,
+      int64_t log_time_ms,
       const rtcp::LossNotification& original_loss_notification,
       const LoggedRtcpPacketLossNotification& logged_loss_notification);
 
@@ -311,6 +322,10 @@ class EventVerifier {
   void VerifyLoggedVideoSendConfig(
       const RtcEventVideoSendStreamConfig& original_event,
       const LoggedVideoSendConfig& logged_event) const;
+
+  void VerifyLoggedNetEqSetMinimumDelay(
+      const RtcEventNetEqSetMinimumDelay& original_event,
+      const LoggedNetEqSetMinimumDelayEvent& logged_event) const;
 
  private:
   void VerifyReportBlock(const rtcp::ReportBlock& original_report_block,

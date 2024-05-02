@@ -2,44 +2,49 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from mozbuild.util import EnumString
 from collections import OrderedDict
 
+from mozbuild.util import EnumString
 
-CompilerType = EnumString.subclass(
-    "clang",
-    "clang-cl",
-    "gcc",
-    "msvc",
-)
 
-OS = EnumString.subclass(
-    "Android",
-    "DragonFly",
-    "FreeBSD",
-    "GNU",
-    "NetBSD",
-    "OpenBSD",
-    "OSX",
-    "SunOS",
-    "WINNT",
-    "WASI",
-)
+class CompilerType(EnumString):
+    POSSIBLE_VALUES = (
+        "clang",
+        "clang-cl",
+        "gcc",
+        "msvc",
+    )
 
-Kernel = EnumString.subclass(
-    "Darwin",
-    "DragonFly",
-    "FreeBSD",
-    "kFreeBSD",
-    "Linux",
-    "NetBSD",
-    "OpenBSD",
-    "SunOS",
-    "WINNT",
-    "WASI",
-)
+
+class OS(EnumString):
+    POSSIBLE_VALUES = (
+        "Android",
+        "DragonFly",
+        "FreeBSD",
+        "GNU",
+        "NetBSD",
+        "OpenBSD",
+        "OSX",
+        "SunOS",
+        "WINNT",
+        "WASI",
+    )
+
+
+class Kernel(EnumString):
+    POSSIBLE_VALUES = (
+        "Darwin",
+        "DragonFly",
+        "FreeBSD",
+        "kFreeBSD",
+        "Linux",
+        "NetBSD",
+        "OpenBSD",
+        "SunOS",
+        "WINNT",
+        "WASI",
+    )
+
 
 CPU_bitness = {
     "aarch64": 64,
@@ -47,6 +52,7 @@ CPU_bitness = {
     "arm": 32,
     "hppa": 32,
     "ia64": 64,
+    "loongarch64": 64,
     "m68k": 32,
     "mips32": 32,
     "mips64": 64,
@@ -63,17 +69,31 @@ CPU_bitness = {
     "wasm32": 32,
 }
 
-CPU = EnumString.subclass(*CPU_bitness.keys())
 
-Endianness = EnumString.subclass(
-    "big",
-    "little",
-)
+class CPU(EnumString):
+    POSSIBLE_VALUES = CPU_bitness.keys()
 
-WindowsBinaryType = EnumString.subclass(
-    "win32",
-    "win64",
-)
+
+class Endianness(EnumString):
+    POSSIBLE_VALUES = (
+        "big",
+        "little",
+    )
+
+
+class WindowsBinaryType(EnumString):
+    POSSIBLE_VALUES = (
+        "win32",
+        "win64",
+    )
+
+
+class Abi(EnumString):
+    POSSIBLE_VALUES = (
+        "msvc",
+        "mingw",
+    )
+
 
 # The order of those checks matter
 CPU_preprocessor_checks = OrderedDict(
@@ -95,6 +115,7 @@ CPU_preprocessor_checks = OrderedDict(
         ("mips64", "__mips64"),
         ("mips32", "__mips__"),
         ("riscv64", "__riscv && __riscv_xlen == 64"),
+        ("loongarch64", "__loongarch64"),
         ("sh4", "__sh__"),
         ("wasm32", "__wasm32__"),
     )

@@ -30,17 +30,11 @@ interface nsINSSComponent : nsISupports {
   [noscript] void logoutAuthenticatedPK11();
 
   /**
-   * Used to determine if the given CERTCertificate is the certificate we use in
-   * tests to simulate a built-in root certificate. Returns false in non-debug
-   * builds.
-   */
-  [noscript] bool isCertTestBuiltInRoot(in CERTCertificatePtr cert);
-
-  /**
    * Used to determine if the given certificate (represented as an array of
-   * bytes) is the content signing root certificate.
+   * bytes) is the certificate we use in tests to simulate a built-in root
+   * certificate. Returns false in non-debug builds.
    */
-  [noscript] bool isCertContentSigningRoot(in Array<octet> cert);
+  [noscript] bool isCertTestBuiltInRoot(in Array<octet> cert);
 
   /**
    * If enabled by the preference "security.enterprise_roots.enabled", returns
@@ -92,16 +86,6 @@ interface nsINSSComponent : nsISupports {
   [noscript] void issuerMatchesMitmCanary(in string certIssuer);
 
   /**
-   * Returns true if the user has a PKCS#11 module with removable slots.
-   */
-  [noscript] bool hasActiveSmartCards();
-
-  /**
-   * Returns true if the user has any client authentication certificates.
-   */
-  [noscript] bool hasUserCertsInstalled();
-
-  /**
    * Returns an already-adrefed handle to the currently configured shared
    * certificate verifier.
    */
@@ -109,6 +93,13 @@ interface nsINSSComponent : nsISupports {
 
   /**
    * For clearing both SSL internal and external session cache from JS.
+   * WARNING: May be racy when using the socket process.
    */
   void clearSSLExternalAndInternalSessionCache();
+
+  /**
+   * For clearing both SSL internal and external session cache from JS.
+   */
+  [implicit_jscontext]
+  Promise asyncClearSSLExternalAndInternalSessionCache();
 };

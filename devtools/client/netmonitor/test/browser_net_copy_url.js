@@ -7,7 +7,7 @@
  * Tests if copying a request's url works.
  */
 
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL, {
     requestCount: 1,
   });
@@ -42,8 +42,8 @@ add_task(async function() {
     document.querySelectorAll(".request-list-item")[0]
   );
 
-  await waitForClipboardPromise(function setup() {
-    getContextMenuItem(monitor, "request-list-context-copy-url").click();
+  await waitForClipboardPromise(async function setup() {
+    await selectContextMenuItem(monitor, "request-list-context-copy-url");
   }, requestItem.url);
 
   await teardown(monitor);

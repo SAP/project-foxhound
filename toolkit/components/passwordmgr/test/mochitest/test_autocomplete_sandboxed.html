@@ -10,16 +10,6 @@
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
-
-<script>
-SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
-                                    true]]});
-
-var chromeScript = runChecksAfterCommonInit();
-
-addLoginsInParent(
-  [window.location.origin, "", null, "tempuser1", "temppass1", "uname", "pword"]);
-</script>
 <p id="display"></p>
 
 <!-- we presumably can't hide the content for this test. -->
@@ -39,11 +29,10 @@ let uname;
 let pword;
 let hostname;
 
-add_task(async function setup() {
-  await SpecialPowers.pushPrefEnv({"set": [
-    ["security.insecure_field_warning.contextual.enabled", true],
-  ]});
-
+add_setup(async () => {
+  await setStoredLoginsAsync(
+    [window.location.origin, "", null, "tempuser1", "temppass1", "uname", "pword"]
+  );
   let frameWindow = SpecialPowers.wrap(sandboxed).contentWindow;
   // Can't use SimpleTest.promiseFocus as it doesn't work with the sandbox.
   await SimpleTest.promiseWaitForCondition(() => {
@@ -63,10 +52,7 @@ add_task(async function test_no_autofill() {
 });
 
 add_task(async function test_autocomplete_warning_no_logins() {
-  pword.focus();
-  let shownPromise = promiseACShown();
-  synthesizeKey("KEY_ArrowDown"); // open the popup
-  let results = await shownPromise;
+  const { items } = await openPopupOn(pword);
 
   let popupState = await getPopupState();
   is(popupState.selectedIndex, -1, "Check no entries are selected upon opening");
@@ -74,7 +60,7 @@ add_task(async function test_autocomplete_warning_no_logins() {
   let expectedMenuItems = [
     "This connection is not secure. Logins entered here could be compromised. Learn More",
   ];
-  checkAutoCompleteResults(results, expectedMenuItems, hostname, "Check all menuitems are displayed correctly.");
+  checkAutoCompleteResults(items, expectedMenuItems, hostname, "Check all menuitems are displayed correctly.");
 
   checkLoginForm(uname, "", pword, "");
 });

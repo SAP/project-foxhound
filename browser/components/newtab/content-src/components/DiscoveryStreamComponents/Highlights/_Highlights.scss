@@ -1,3 +1,5 @@
+/* stylelint-disable max-nesting-depth */
+
 .ds-highlights {
   .section {
     .section-list {
@@ -14,6 +16,7 @@
 
       .card-outer {
         $line-height: 20px;
+
         height: 175px;
 
         .card-host-name {
@@ -21,7 +24,7 @@
           line-height: $line-height;
           margin-bottom: 2px;
           padding-bottom: 0;
-          text-transform: unset; // sass-lint:disable-line no-disallowed-properties
+          text-transform: unset;
         }
 
         .card-title {
@@ -29,6 +32,10 @@
           font-weight: 600;
           line-height: $line-height;
           max-height: $line-height;
+        }
+
+        a {
+          text-decoration: none;
         }
       }
     }

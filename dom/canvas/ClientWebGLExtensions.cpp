@@ -9,9 +9,6 @@ namespace mozilla {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(ClientWebGLExtensionBase)
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ClientWebGLExtensionBase, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ClientWebGLExtensionBase, Release)
-
 DEFINE_WEBGL_EXTENSION_GOOP(ANGLE_instanced_arrays,
                             WebGLExtensionInstancedArrays)
 DEFINE_WEBGL_EXTENSION_GOOP(EXT_blend_minmax, WebGLExtensionBlendMinMax)
@@ -55,6 +52,8 @@ DEFINE_WEBGL_EXTENSION_GOOP(WEBGL_draw_buffers, WebGLExtensionDrawBuffers)
 DEFINE_WEBGL_EXTENSION_GOOP(WEBGL_explicit_present,
                             WebGLExtensionExplicitPresent)
 DEFINE_WEBGL_EXTENSION_GOOP(WEBGL_lose_context, WebGLExtensionLoseContext)
+DEFINE_WEBGL_EXTENSION_GOOP(WEBGL_provoking_vertex,
+                            WebGLExtensionProvokingVertex)
 
 // --------------
 

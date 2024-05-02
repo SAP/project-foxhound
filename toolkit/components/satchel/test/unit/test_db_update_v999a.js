@@ -11,7 +11,7 @@
  * Part B tests this when the columns do *not* match, so the DB is reset.
  */
 
-add_task(async function() {
+add_task(async function () {
   let testnum = 0;
 
   try {
@@ -27,7 +27,7 @@ add_task(async function() {
     }
 
     testfile.copyTo(profileDir, "formhistory.sqlite");
-    Assert.equal(999, getDBVersion(testfile));
+    Assert.equal(999, await getDBVersion(testfile));
 
     // ===== 1 =====
     testnum++;
@@ -40,7 +40,7 @@ add_task(async function() {
     Assert.equal(1, await promiseCountEntries("name-E", "value-E"));
 
     // check for downgraded schema.
-    Assert.equal(CURRENT_SCHEMA, getDBVersion(destFile));
+    Assert.equal(CURRENT_SCHEMA, await getDBVersion(destFile));
 
     // ===== 2 =====
     testnum++;

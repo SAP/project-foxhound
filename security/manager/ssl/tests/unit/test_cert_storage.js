@@ -12,12 +12,8 @@
 // * it does a sanity check to ensure other cert verifier behavior is
 //   unmodified
 
-const { setTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm",
-  {}
-);
-const { RemoteSecuritySettings } = ChromeUtils.import(
-  "resource://gre/modules/psm/RemoteSecuritySettings.jsm"
+const { RemoteSecuritySettings } = ChromeUtils.importESModule(
+  "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs"
 );
 
 // First, we need to setup appInfo for the blocklist service to work
@@ -25,8 +21,8 @@ var id = "xpcshell@tests.mozilla.org";
 var appName = "XPCShell";
 var version = "1";
 var platformVersion = "1.9.2";
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo({
   name: appName,
@@ -160,35 +156,13 @@ async function update_blocklist() {
   );
 }
 
-function* generate_revocations_txt_lines() {
-  let profile = do_get_profile();
-  let revocations = profile.clone();
-  revocations.append("revocations.txt");
-  ok(revocations.exists(), "the revocations file should exist");
-  let inputStream = Cc[
-    "@mozilla.org/network/file-input-stream;1"
-  ].createInstance(Ci.nsIFileInputStream);
-  inputStream.init(revocations, -1, -1, 0);
-  inputStream.QueryInterface(Ci.nsILineInputStream);
-  let hasmore = false;
-  do {
-    let line = {};
-    hasmore = inputStream.readLine(line);
-    yield line.value;
-  } while (hasmore);
-}
-
 function run_test() {
   // import the certificates we need
   load_cert("test-ca", "CTu,CTu,CTu");
   load_cert("test-int", ",,");
   load_cert("other-test-ca", "CTu,CTu,CTu");
 
-  let certList = Cc["@mozilla.org/security/certstorage;1"].getService(
-    Ci.nsICertStorage
-  );
-
-  add_task(async function() {
+  add_task(async function () {
     // check some existing items in revocations.txt are blocked.
     // This test corresponds to:
     // issuer: MBIxEDAOBgNVBAMMB1Rlc3QgQ0E= (CN=Test CA)
@@ -213,7 +187,7 @@ function run_test() {
     // revocations.txt is revoked
     // subject: MCsxKTAnBgNVBAMMIEVFIFJldm9rZWQgQnkgU3ViamVjdCBhbmQgUHViS2V5
     // (CN=EE Revoked By Subject and PubKey)
-    // pubkeyhash: VCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8 (this is the
+    // pubkeyhash: VCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8= (this is the
     // shared RSA SPKI)
     file = "test_onecrl/ee-revoked-by-subject-and-pubkey.pem";
     await verify_cert(file, SEC_ERROR_REVOKED_CERTIFICATE);
@@ -238,7 +212,7 @@ function run_test() {
   // blocklist load is async so we must use add_test from here
   add_task(update_blocklist);
 
-  add_task(async function() {
+  add_task(async function () {
     // The blocklist will be loaded now. Let's check the data is sane.
     // In particular, we should still have the revoked issuer / serial pair
     // that was in revocations.txt but not the blocklist.
@@ -278,10 +252,6 @@ function run_test() {
     // Check a bad cert is still bad (unknown issuer)
     file = "bad_certs/unknownissuer.pem";
     await verify_cert(file, SEC_ERROR_UNKNOWN_ISSUER);
-  });
-
-  add_task(async function() {
-    ok(certList.isBlocklistFresh(), "Blocklist should be fresh.");
   });
 
   run_next_test();

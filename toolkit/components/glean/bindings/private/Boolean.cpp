@@ -7,11 +7,10 @@
 #include "mozilla/glean/bindings/Boolean.h"
 
 #include "nsString.h"
-#include "mozilla/Components.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/dom/GleanMetricsBinding.h"
 #include "mozilla/glean/bindings/ScalarGIFFTMap.h"
 #include "mozilla/glean/fog_ffi_generated.h"
-#include "nsIClassInfoImpl.h"
 
 namespace mozilla::glean {
 
@@ -22,17 +21,23 @@ void BooleanMetric::Set(bool aValue) const {
   if (scalarId) {
     Telemetry::ScalarSet(scalarId.extract(), aValue);
   } else if (IsSubmetricId(mId)) {
-    auto lock = GetLabeledMirrorLock();
-    auto tuple = lock.ref()->MaybeGet(mId);
-    if (tuple) {
-      Telemetry::ScalarSet(Get<0>(tuple.ref()), Get<1>(tuple.ref()), aValue);
-    }
+    GetLabeledMirrorLock().apply([&](auto& lock) {
+      auto tuple = lock.ref()->MaybeGet(mId);
+      if (tuple) {
+        Telemetry::ScalarSet(std::get<0>(tuple.ref()), std::get<1>(tuple.ref()),
+                             aValue);
+      }
+    });
   }
   fog_boolean_set(mId, int(aValue));
 }
 
 Result<Maybe<bool>, nsCString> BooleanMetric::TestGetValue(
     const nsACString& aPingName) const {
+  nsCString err;
+  if (fog_boolean_test_get_error(mId, &err)) {
+    return Err(err);
+  }
   if (!fog_boolean_test_has_value(mId, &aPingName)) {
     return Maybe<bool>();
   }
@@ -41,27 +46,26 @@ Result<Maybe<bool>, nsCString> BooleanMetric::TestGetValue(
 
 }  // namespace impl
 
-NS_IMPL_CLASSINFO(GleanBoolean, nullptr, 0, {0})
-NS_IMPL_ISUPPORTS_CI(GleanBoolean, nsIGleanBoolean)
-
-NS_IMETHODIMP
-GleanBoolean::Set(bool aValue) {
-  mBoolean.Set(aValue);
-  return NS_OK;
+JSObject* GleanBoolean::WrapObject(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
+  return dom::GleanBoolean_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMETHODIMP
-GleanBoolean::TestGetValue(const nsACString& aStorageName,
-                           JS::MutableHandleValue aResult) {
-  // Unchecked unwrap is safe because BooleanMetric::TestGetValue() always
-  // returns Ok. (`boolean` has no error return).
-  auto result = mBoolean.TestGetValue(aStorageName).unwrap();
-  if (result.isNothing()) {
-    aResult.set(JS::UndefinedValue());
-  } else {
-    aResult.set(JS::BooleanValue(result.value()));
+void GleanBoolean::Set(bool aValue) { mBoolean.Set(aValue); }
+
+dom::Nullable<bool> GleanBoolean::TestGetValue(const nsACString& aPingName,
+                                               ErrorResult& aRv) {
+  dom::Nullable<bool> ret;
+  auto result = mBoolean.TestGetValue(aPingName);
+  if (result.isErr()) {
+    aRv.ThrowDataError(result.unwrapErr());
+    return ret;
   }
-  return NS_OK;
+  auto optresult = result.unwrap();
+  if (!optresult.isNothing()) {
+    ret.SetValue(optresult.value());
+  }
+  return ret;
 }
 
 }  // namespace mozilla::glean

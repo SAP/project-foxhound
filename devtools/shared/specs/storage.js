@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
+const protocol = require("resource://devtools/shared/protocol.js");
 const { Arg, RetVal, types } = protocol;
 
 const childSpecs = {};
@@ -305,47 +305,4 @@ types.addDictType("storeUpdateObject", {
   added: "nullable:json",
 });
 
-// Generate a type definition for an object with actors for all storage types.
-types.addDictType(
-  "storelist",
-  Object.keys(childSpecs).reduce((obj, type) => {
-    obj[type] = type;
-    return obj;
-  }, {})
-);
-
 exports.childSpecs = childSpecs;
-
-exports.storageSpec = protocol.generateActorSpec({
-  typeName: "storage",
-
-  /**
-   * List of event notifications that the server can send to the client.
-   *
-   *  - stores-update : When any store object in any storage type changes.
-   *  - stores-cleared : When all the store objects are removed.
-   *  - stores-reloaded : When all stores are reloaded. This generally mean that
-   *                      we should refetch everything again.
-   */
-  events: {
-    "stores-update": {
-      type: "storesUpdate",
-      data: Arg(0, "storeUpdateObject"),
-    },
-    "stores-cleared": {
-      type: "storesCleared",
-      data: Arg(0, "json"),
-    },
-    "stores-reloaded": {
-      type: "storesReloaded",
-      data: Arg(0, "json"),
-    },
-  },
-
-  methods: {
-    listStores: {
-      request: {},
-      response: RetVal("storelist"),
-    },
-  },
-});

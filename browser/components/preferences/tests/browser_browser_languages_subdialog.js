@@ -1,10 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 AddonTestUtils.initMochitest(this);
 
@@ -30,10 +29,10 @@ function getManifestData(locale, version = "2.0") {
         version: "1",
       },
     },
-    applications: {
+    browser_specific_settings: {
       gecko: {
-        strict_min_version: AppConstants.MOZ_APP_VERSION,
         id: langpackId(locale),
+        strict_min_version: AppConstants.MOZ_APP_VERSION,
         strict_max_version: AppConstants.MOZ_APP_VERSION,
       },
     },

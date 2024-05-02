@@ -4,32 +4,27 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "DOM: Push Notifications")
+    BUG_COMPONENT = ("Core", "DOM: Notifications")
 
 EXTRA_COMPONENTS += [
     "Push.manifest",
 ]
 
 EXTRA_JS_MODULES += [
-    "Push.jsm",
-    "PushBroadcastService.jsm",
-    "PushComponents.jsm",
-    "PushCrypto.jsm",
-    "PushDB.jsm",
-    "PushRecord.jsm",
-    "PushService.jsm",
+    "Push.sys.mjs",
+    "PushBroadcastService.sys.mjs",
+    "PushComponents.sys.mjs",
+    "PushCrypto.sys.mjs",
+    "PushDB.sys.mjs",
+    "PushRecord.sys.mjs",
+    "PushService.sys.mjs",
 ]
 
 if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
-    # Everything but Fennec.
+    # Everything but GeckoView.
     EXTRA_JS_MODULES += [
-        "PushServiceHttp2.jsm",
-        "PushServiceWebSocket.jsm",
-    ]
-else:
-    # Fennec only.
-    EXTRA_JS_MODULES += [
-        "PushServiceAndroidGCM.jsm",
+        "PushServiceHttp2.sys.mjs",
+        "PushServiceWebSocket.sys.mjs",
     ]
 
 XPCOM_MANIFESTS += [
@@ -37,7 +32,7 @@ XPCOM_MANIFESTS += [
 ]
 
 MOCHITEST_MANIFESTS += [
-    "test/mochitest.ini",
+    "test/mochitest.toml",
 ]
 
 XPCSHELL_TESTS_MANIFESTS += [
@@ -70,5 +65,3 @@ LOCAL_INCLUDES += [
 ]
 
 FINAL_LIBRARY = "xul"
-
-REQUIRES_UNIFIED_BUILD = True

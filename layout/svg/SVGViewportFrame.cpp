@@ -10,11 +10,11 @@
 // Keep others in (case-insensitive) order:
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
-#include "nsIFrame.h"
 #include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/dom/SVGViewportElement.h"
+#include "nsLayoutUtils.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
@@ -27,14 +27,11 @@ namespace mozilla {
 
 void SVGViewportFrame::PaintSVG(gfxContext& aContext,
                                 const gfxMatrix& aTransform,
-                                imgDrawingParams& aImgParams,
-                                const nsIntRect* aDirtyRect) {
-  NS_ASSERTION(
-      !NS_SVGDisplayListPaintingEnabled() || (mState & NS_FRAME_IS_NONDISPLAY),
-      "If display lists are enabled, only painting of non-display "
-      "SVG should take this code path");
+                                imgDrawingParams& aImgParams) {
+  NS_ASSERTION(HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
+               "Only painting of non-display SVG should take this code path");
 
-  gfxContextAutoSaveRestore autoSR;
+  gfxClipAutoSaveRestore autoSaveClip(&aContext);
 
   if (StyleDisplay()->IsScrollableOverflow()) {
     float x, y, width, height;
@@ -45,13 +42,11 @@ void SVGViewportFrame::PaintSVG(gfxContext& aContext,
       return;
     }
 
-    autoSR.SetContext(&aContext);
     gfxRect clipRect = SVGUtils::GetClipRectForFrame(this, x, y, width, height);
-    SVGUtils::SetClipRect(&aContext, aTransform, clipRect);
+    autoSaveClip.TransformedClip(aTransform, clipRect);
   }
 
-  SVGDisplayContainerFrame::PaintSVG(aContext, aTransform, aImgParams,
-                                     aDirtyRect);
+  SVGDisplayContainerFrame::PaintSVG(aContext, aTransform, aImgParams);
 }
 
 void SVGViewportFrame::ReflowSVG() {
@@ -224,22 +219,8 @@ nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
 }
 
 nsIFrame* SVGViewportFrame::GetFrameForPoint(const gfxPoint& aPoint) {
-  NS_ASSERTION(!NS_SVGDisplayListHitTestingEnabled() ||
-                   (mState & NS_FRAME_IS_NONDISPLAY),
-               "If display lists are enabled, only hit-testing of non-display "
-               "SVG should take this code path");
-
-  if (StyleDisplay()->IsScrollableOverflow()) {
-    Rect clip;
-    static_cast<SVGElement*>(GetContent())
-        ->GetAnimatedLengthValues(&clip.x, &clip.y, &clip.width, &clip.height,
-                                  nullptr);
-    if (!clip.Contains(ToPoint(aPoint))) {
-      return nullptr;
-    }
-  }
-
-  return SVGDisplayContainerFrame::GetFrameForPoint(aPoint);
+  MOZ_ASSERT_UNREACHABLE("A clipPath cannot contain svg or symbol elements");
+  return nullptr;
 }
 
 //----------------------------------------------------------------------

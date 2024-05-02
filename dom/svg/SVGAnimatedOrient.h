@@ -79,6 +79,8 @@ class SVGAnimatedOrient {
       SVGElement* aSVGElement);
   UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
+  static bool IsValidUnitType(uint16_t aUnitType);
+
   static bool GetValueFromString(const nsAString& aString, float& aValue,
                                  uint16_t* aUnitType);
   static float GetDegreesPerUnit(uint8_t aUnit);
@@ -136,12 +138,13 @@ class SVGAnimatedOrient {
     SVGElement* mSVGElement;
 
     // SMILAttr methods
-    virtual nsresult ValueFromString(
-        const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
-        SMILValue& aValue, bool& aPreventCachingOfSandwich) const override;
-    virtual SMILValue GetBaseValue() const override;
-    virtual void ClearAnimValue() override;
-    virtual nsresult SetAnimValue(const SMILValue& aValue) override;
+    nsresult ValueFromString(const nsAString& aStr,
+                             const dom::SVGAnimationElement* aSrcElement,
+                             SMILValue& aValue,
+                             bool& aPreventCachingOfSandwich) const override;
+    SMILValue GetBaseValue() const override;
+    void ClearAnimValue() override;
+    nsresult SetAnimValue(const SMILValue& aValue) override;
   };
 };
 

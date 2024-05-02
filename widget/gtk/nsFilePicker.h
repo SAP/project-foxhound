@@ -24,6 +24,8 @@ class nsFilePicker : public nsBaseFilePicker {
 
   // nsIFilePicker (less what's in nsBaseFilePicker)
   NS_IMETHOD Open(nsIFilePickerShownCallback* aCallback) override;
+  NS_IMETHOD IsModeSupported(nsIFilePicker::Mode, JSContext*,
+                             mozilla::dom::Promise**) override;
   NS_IMETHOD AppendFilters(int32_t aFilterMask) override;
   NS_IMETHOD AppendFilter(const nsAString& aTitle,
                           const nsAString& aFilter) override;
@@ -45,8 +47,10 @@ class nsFilePicker : public nsBaseFilePicker {
  protected:
   virtual ~nsFilePicker();
 
-  nsresult Show(int16_t* aReturn) override;
+  nsresult Show(nsIFilePicker::ResultCode* aReturn) override;
   void ReadValuesFromFileChooser(void* file_chooser);
+
+  bool WarnForNonReadableFile(void* file_chooser);
 
   static void OnResponse(void* file_chooser, gint response_id,
                          gpointer user_data);
@@ -58,7 +62,7 @@ class nsFilePicker : public nsBaseFilePicker {
   nsCOMArray<nsIFile> mFiles;
 
   int16_t mSelectedType;
-  int16_t mResult;
+  nsIFilePicker::ResultCode mResult;
   bool mRunning;
   bool mAllowURLs;
   nsCString mFileURL;

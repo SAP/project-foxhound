@@ -7,16 +7,11 @@ import os
 import select
 import signal
 import sys
-
 from datetime import datetime, timedelta
 
-from .progressbar import ProgressBar
-from .results import (
-    NullTestOutput,
-    TestOutput,
-    escape_cmdline,
-)
 from .adaptor import xdr_annotate
+from .progressbar import ProgressBar
+from .results import NullTestOutput, TestOutput, escape_cmdline
 
 
 class Task(object):
@@ -123,7 +118,7 @@ def read_input(tasks, timeout):
     try:
         readable, _, _ = select.select(rlist, [], exlist, timeout)
     except OverflowError:
-        print >>sys.stderr, "timeout value", timeout
+        print >> sys.stderr, "timeout value", timeout
         raise
 
     for fd in readable:

@@ -2,13 +2,9 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { Corroborate } = ChromeUtils.import(
-  "resource://gre/modules/Corroborate.jsm"
+const { Corroborate } = ChromeUtils.importESModule(
+  "resource://gre/modules/Corroborate.sys.mjs"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 add_task(async function test_various_jars() {
   let result = await Corroborate.verifyJar(do_get_file("data/unsigned.xpi"));

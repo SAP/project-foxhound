@@ -4,13 +4,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-
 let trrServer;
-
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 
 function setup() {
   trr_test_setup();
@@ -28,7 +22,7 @@ registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.dns.echconfig.enabled");
   Services.prefs.clearUserPref("network.dns.http3_echconfig.enabled");
   Services.prefs.clearUserPref("network.http.http3.enable");
-  Services.prefs.clearUserPref("network.http.spdy.enabled");
+  Services.prefs.clearUserPref("network.http.http2.enabled");
   if (trrServer) {
     await trrServer.stop();
   }
@@ -60,13 +54,13 @@ function checkResult(inRecord, noHttp2, noHttp3, result) {
 //   There are two records: one has a echConfig and the other doesn't.
 // We want to test if the record with echConfig is preferred.
 add_task(async function testEchConfigEnabled() {
-  let trrServer = new TRRServer();
+  trrServer = new TRRServer();
   await trrServer.start();
 
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", false);
 
@@ -101,7 +95,7 @@ add_task(async function testEchConfigEnabled() {
   });
 
   let { inRecord } = await new TRRDNSListener("test.bar.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
   checkResult(inRecord, false, false, {
@@ -122,10 +116,10 @@ add_task(async function testEchConfigEnabled() {
   checkResult(inRecord, true, true);
 
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   ({ inRecord } = await new TRRDNSListener("test.bar.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   }));
 
   checkResult(inRecord, false, false, {
@@ -156,9 +150,9 @@ add_task(async function testEchConfigEnabled() {
 // When network.dns.http3_echconfig.enabled is false, we should try to
 // connect with h2 and echConfig.
 add_task(async function testTwoRecordsHaveEchConfig() {
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
-  let trrServer = new TRRServer();
+  trrServer = new TRRServer();
   await trrServer.start();
 
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
@@ -166,7 +160,7 @@ add_task(async function testTwoRecordsHaveEchConfig() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
 
   await trrServer.registerDoHAnswers("test.foo.com", "HTTPS", {
@@ -203,7 +197,7 @@ add_task(async function testTwoRecordsHaveEchConfig() {
   });
 
   let { inRecord } = await new TRRDNSListener("test.foo.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
   checkResult(inRecord, false, false, {
@@ -224,9 +218,9 @@ add_task(async function testTwoRecordsHaveEchConfig() {
   checkResult(inRecord, true, true);
 
   Services.prefs.setBoolPref("network.dns.http3_echconfig.enabled", true);
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   ({ inRecord } = await new TRRDNSListener("test.foo.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   }));
 
   checkResult(inRecord, false, false, {
@@ -255,9 +249,9 @@ add_task(async function testTwoRecordsHaveEchConfig() {
 // When network.dns.http3_echconfig.enabled is false, we should use the record
 // that supports h3 and h2 (the alpn is h2).
 add_task(async function testTwoRecordsHaveEchConfig1() {
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
-  let trrServer = new TRRServer();
+  trrServer = new TRRServer();
   await trrServer.start();
 
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
@@ -265,7 +259,7 @@ add_task(async function testTwoRecordsHaveEchConfig1() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
 
   await trrServer.registerDoHAnswers("test.foo.com", "HTTPS", {
@@ -302,7 +296,7 @@ add_task(async function testTwoRecordsHaveEchConfig1() {
   });
 
   let { inRecord } = await new TRRDNSListener("test.foo.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
   checkResult(inRecord, false, false, {
@@ -327,9 +321,9 @@ add_task(async function testTwoRecordsHaveEchConfig1() {
   });
 
   Services.prefs.setBoolPref("network.dns.http3_echconfig.enabled", true);
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   ({ inRecord } = await new TRRDNSListener("test.foo.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   }));
 
   checkResult(inRecord, false, false, {
@@ -361,9 +355,9 @@ add_task(async function testTwoRecordsHaveEchConfig1() {
 //   There are two records: only one support h3 and only one has echConfig.
 // This test is about never usng the record without echConfig.
 add_task(async function testOneRecordsHasEchConfig() {
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
-  let trrServer = new TRRServer();
+  trrServer = new TRRServer();
   await trrServer.start();
 
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
@@ -371,7 +365,7 @@ add_task(async function testOneRecordsHasEchConfig() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
 
   await trrServer.registerDoHAnswers("test.foo.com", "HTTPS", {
@@ -405,7 +399,7 @@ add_task(async function testOneRecordsHasEchConfig() {
   });
 
   let { inRecord } = await new TRRDNSListener("test.foo.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
   checkResult(inRecord, false, false, {
@@ -426,9 +420,9 @@ add_task(async function testOneRecordsHasEchConfig() {
   checkResult(inRecord, true, true);
 
   Services.prefs.setBoolPref("network.dns.http3_echconfig.enabled", true);
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   ({ inRecord } = await new TRRDNSListener("test.foo.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   }));
 
   checkResult(inRecord, false, false, {
@@ -453,11 +447,11 @@ add_task(async function testOneRecordsHasEchConfig() {
 });
 
 // Test the case that "network.http.http3.enable" and
-// "network.http.spdy.enabled" are true/false.
+// "network.http.http2.enabled" are true/false.
 add_task(async function testHttp3AndHttp2Pref() {
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
-  let trrServer = new TRRServer();
+  trrServer = new TRRServer();
   await trrServer.start();
 
   Services.prefs.setBoolPref("network.http.http3.enable", false);
@@ -466,7 +460,7 @@ add_task(async function testHttp3AndHttp2Pref() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
 
   await trrServer.registerDoHAnswers("test.foo.com", "HTTPS", {
@@ -503,7 +497,7 @@ add_task(async function testHttp3AndHttp2Pref() {
   });
 
   let { inRecord } = await new TRRDNSListener("test.foo.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
   checkResult(inRecord, false, false, {
@@ -519,7 +513,7 @@ add_task(async function testHttp3AndHttp2Pref() {
   checkResult(inRecord, true, false);
   checkResult(inRecord, true, true);
 
-  Services.prefs.setBoolPref("network.http.spdy.enabled", false);
+  Services.prefs.setBoolPref("network.http.http2.enabled", false);
   checkResult(inRecord, false, false);
 
   Services.prefs.setBoolPref("network.http.http3.enable", true);

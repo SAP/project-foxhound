@@ -3,20 +3,20 @@
 
 "use strict";
 
-const { CreditCard } = ChromeUtils.import(
-  "resource://gre/modules/CreditCard.jsm"
+const { CreditCard } = ChromeUtils.importESModule(
+  "resource://gre/modules/CreditCard.sys.mjs"
 );
-const { OSKeyStore } = ChromeUtils.import(
-  "resource://gre/modules/OSKeyStore.jsm"
+const { OSKeyStore } = ChromeUtils.importESModule(
+  "resource://gre/modules/OSKeyStore.sys.mjs"
 );
-const { OSKeyStoreTestUtils } = ChromeUtils.import(
-  "resource://testing-common/OSKeyStoreTestUtils.jsm"
+const { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
 );
 
 let oldGetters = {};
 let gFakeLoggedIn = true;
 
-add_task(function setup() {
+add_setup(function () {
   OSKeyStoreTestUtils.setup();
   oldGetters.isLoggedIn = Object.getOwnPropertyDescriptor(
     OSKeyStore,
@@ -26,13 +26,6 @@ add_task(function setup() {
   registerCleanupFunction(async () => {
     OSKeyStore.__defineGetter__("isLoggedIn", oldGetters.isLoggedIn);
     await OSKeyStoreTestUtils.cleanup();
-
-    // CreditCard.jsm, OSKeyStore.jsm, and OSKeyStoreTestUtils.jsm are imported
-    // into the global scope -- the window -- above. If they're not deleted,
-    // they outlive the test and are reported as a leak.
-    delete window.OSKeyStore;
-    delete window.CreditCard;
-    delete window.OSKeyStoreTestUtils;
   });
 });
 

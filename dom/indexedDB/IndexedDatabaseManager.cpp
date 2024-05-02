@@ -22,12 +22,13 @@
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/ErrorEventBinding.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/intl/LocaleCanonicalizer.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "nsContentUtils.h"
-#include "nsGlobalWindow.h"
 #include "mozilla/Logging.h"
 
 #include "ActorsChild.h"
@@ -47,7 +48,6 @@
 #include "mozilla/dom/IDBFactoryBinding.h"
 #include "mozilla/dom/IDBIndexBinding.h"
 #include "mozilla/dom/IDBKeyRangeBinding.h"
-#include "mozilla/dom/IDBMutableFileBinding.h"
 #include "mozilla/dom/IDBObjectStoreBinding.h"
 #include "mozilla/dom/IDBOpenDBRequestBinding.h"
 #include "mozilla/dom/IDBRequestBinding.h"
@@ -74,7 +74,8 @@ class FileManagerInfo {
 
     return !mPersistentStorageFileManagers.IsEmpty() ||
            !mTemporaryStorageFileManagers.IsEmpty() ||
-           !mDefaultStorageFileManagers.IsEmpty();
+           !mDefaultStorageFileManagers.IsEmpty() ||
+           !mPrivateStorageFileManagers.IsEmpty();
   }
 
   void InvalidateAllFileManagers() const;
@@ -96,6 +97,7 @@ class FileManagerInfo {
   nsTArray<SafeRefPtr<DatabaseFileManager> > mPersistentStorageFileManagers;
   nsTArray<SafeRefPtr<DatabaseFileManager> > mTemporaryStorageFileManagers;
   nsTArray<SafeRefPtr<DatabaseFileManager> > mDefaultStorageFileManagers;
+  nsTArray<SafeRefPtr<DatabaseFileManager> > mPrivateStorageFileManagers;
 };
 
 }  // namespace indexedDB
@@ -103,8 +105,6 @@ class FileManagerInfo {
 using namespace mozilla::dom::indexedDB;
 
 namespace {
-
-NS_DEFINE_IID(kIDBPrivateRequestIID, PRIVATE_IDBREQUEST_IID);
 
 // The threshold we use for structured clone data storing.
 // Anything smaller than the threshold is compressed and stored in the database.
@@ -124,15 +124,9 @@ const int32_t kDefaultMaxPreloadExtraRecords = 64;
 
 #define IDB_PREF_BRANCH_ROOT "dom.indexedDB."
 
-const char kTestingPref[] = IDB_PREF_BRANCH_ROOT "testing";
-const char kPrefExperimental[] = IDB_PREF_BRANCH_ROOT "experimental";
-const char kPrefFileHandle[] = "dom.fileHandle.enabled";
 const char kDataThresholdPref[] = IDB_PREF_BRANCH_ROOT "dataThreshold";
 const char kPrefMaxSerilizedMsgSize[] =
     IDB_PREF_BRANCH_ROOT "maxSerializedMsgSize";
-const char kPrefErrorEventToSelfError[] =
-    IDB_PREF_BRANCH_ROOT "errorEventToSelfError";
-const char kPreprocessingPref[] = IDB_PREF_BRANCH_ROOT "preprocessing";
 const char kPrefMaxPreloadExtraRecords[] =
     IDB_PREF_BRANCH_ROOT "maxPreloadExtraRecords";
 
@@ -147,25 +141,14 @@ const char kPrefLoggingProfiler[] =
 #undef IDB_PREF_LOGGING_BRANCH_ROOT
 #undef IDB_PREF_BRANCH_ROOT
 
-StaticRefPtr<IndexedDatabaseManager> gDBManager;
+StaticMutex gDBManagerMutex;
+StaticRefPtr<IndexedDatabaseManager> gDBManager MOZ_GUARDED_BY(gDBManagerMutex);
+bool gInitialized MOZ_GUARDED_BY(gDBManagerMutex) = false;
+bool gClosed MOZ_GUARDED_BY(gDBManagerMutex) = false;
 
-Atomic<bool> gInitialized(false);
-Atomic<bool> gClosed(false);
-Atomic<bool> gTestingMode(false);
-Atomic<bool> gExperimentalFeaturesEnabled(false);
-Atomic<bool> gFileHandleEnabled(false);
-Atomic<bool> gPrefErrorEventToSelfError(false);
 Atomic<int32_t> gDataThresholdBytes(0);
 Atomic<int32_t> gMaxSerializedMsgSize(0);
-Atomic<bool> gPreprocessingEnabled(false);
 Atomic<int32_t> gMaxPreloadExtraRecords(0);
-
-void AtomicBoolPrefChangedCallback(const char* aPrefName, void* aBool) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aBool);
-
-  *static_cast<Atomic<bool>*>(aBool) = Preferences::GetBool(aPrefName);
-}
 
 void DataThresholdPrefChangedCallback(const char* aPrefName, void* aClosure) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -244,7 +227,9 @@ Atomic<IndexedDatabaseManager::LoggingMode>
 IndexedDatabaseManager* IndexedDatabaseManager::GetOrCreate() {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  if (IsClosed()) {
+  StaticMutexAutoLock lock(gDBManagerMutex);
+
+  if (gClosed) {
     NS_ERROR("Calling GetOrCreate() after shutdown!");
     return nullptr;
   }
@@ -252,17 +237,23 @@ IndexedDatabaseManager* IndexedDatabaseManager::GetOrCreate() {
   if (!gDBManager) {
     sIsMainProcess = XRE_IsParentProcess();
 
+    if (gInitialized) {
+      NS_ERROR("Initialized more than once?!");
+    }
+
     RefPtr<IndexedDatabaseManager> instance(new IndexedDatabaseManager());
 
-    QM_TRY(MOZ_TO_RESULT(instance->Init()), nullptr);
+    {
+      StaticMutexAutoUnlock unlock(gDBManagerMutex);
 
-    if (gInitialized.exchange(true)) {
-      NS_ERROR("Initialized more than once?!");
+      QM_TRY(MOZ_TO_RESULT(instance->Init()), nullptr);
     }
 
     gDBManager = instance;
 
     ClearOnShutdown(&gDBManager);
+
+    gInitialized = true;
   }
 
   return gDBManager;
@@ -270,23 +261,14 @@ IndexedDatabaseManager* IndexedDatabaseManager::GetOrCreate() {
 
 // static
 IndexedDatabaseManager* IndexedDatabaseManager::Get() {
+  StaticMutexAutoLock lock(gDBManagerMutex);
+
   // Does not return an owning reference.
   return gDBManager;
 }
 
 nsresult IndexedDatabaseManager::Init() {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
-  Preferences::RegisterCallbackAndCall(AtomicBoolPrefChangedCallback,
-                                       kTestingPref, &gTestingMode);
-  Preferences::RegisterCallbackAndCall(AtomicBoolPrefChangedCallback,
-                                       kPrefExperimental,
-                                       &gExperimentalFeaturesEnabled);
-  Preferences::RegisterCallbackAndCall(AtomicBoolPrefChangedCallback,
-                                       kPrefFileHandle, &gFileHandleEnabled);
-  Preferences::RegisterCallbackAndCall(AtomicBoolPrefChangedCallback,
-                                       kPrefErrorEventToSelfError,
-                                       &gPrefErrorEventToSelfError);
 
   // By default IndexedDB uses SQLite with PRAGMA synchronous = NORMAL. This
   // guarantees (unlike synchronous = OFF) atomicity and consistency, but not
@@ -310,10 +292,6 @@ nsresult IndexedDatabaseManager::Init() {
 
   Preferences::RegisterCallbackAndCall(MaxSerializedMsgSizePrefChangeCallback,
                                        kPrefMaxSerilizedMsgSize);
-
-  Preferences::RegisterCallbackAndCall(AtomicBoolPrefChangedCallback,
-                                       kPreprocessingPref,
-                                       &gPreprocessingEnabled);
 
   Preferences::RegisterCallbackAndCall(MaxPreloadExtraRecordsPrefChangeCallback,
                                        kPrefMaxPreloadExtraRecords);
@@ -341,22 +319,17 @@ nsresult IndexedDatabaseManager::Init() {
 }
 
 void IndexedDatabaseManager::Destroy() {
-  // Setting the closed flag prevents the service from being recreated.
-  // Don't set it though if there's no real instance created.
-  if (gInitialized && gClosed.exchange(true)) {
-    NS_ERROR("Shutdown more than once?!");
-  }
+  {
+    StaticMutexAutoLock lock(gDBManagerMutex);
 
-  Preferences::UnregisterCallback(AtomicBoolPrefChangedCallback, kTestingPref,
-                                  &gTestingMode);
-  Preferences::UnregisterCallback(AtomicBoolPrefChangedCallback,
-                                  kPrefExperimental,
-                                  &gExperimentalFeaturesEnabled);
-  Preferences::UnregisterCallback(AtomicBoolPrefChangedCallback,
-                                  kPrefFileHandle, &gFileHandleEnabled);
-  Preferences::UnregisterCallback(AtomicBoolPrefChangedCallback,
-                                  kPrefErrorEventToSelfError,
-                                  &gPrefErrorEventToSelfError);
+    // Setting the closed flag prevents the service from being recreated.
+    // Don't set it though if there's no real instance created.
+    if (gInitialized && gClosed) {
+      NS_ERROR("Shutdown more than once?!");
+    }
+
+    gClosed = true;
+  }
 
   Preferences::UnregisterCallback(LoggingModePrefChangedCallback,
                                   kPrefLoggingDetails);
@@ -373,112 +346,7 @@ void IndexedDatabaseManager::Destroy() {
   Preferences::UnregisterCallback(MaxSerializedMsgSizePrefChangeCallback,
                                   kPrefMaxSerilizedMsgSize);
 
-  Preferences::UnregisterCallback(AtomicBoolPrefChangedCallback,
-                                  kPreprocessingPref, &gPreprocessingEnabled);
-
   delete this;
-}
-
-// static
-nsresult IndexedDatabaseManager::CommonPostHandleEvent(
-    EventChainPostVisitor& aVisitor, const IDBFactory& aFactory) {
-  MOZ_ASSERT(aVisitor.mDOMEvent);
-
-  if (!gPrefErrorEventToSelfError) {
-    return NS_OK;
-  }
-
-  if (aVisitor.mEventStatus == nsEventStatus_eConsumeNoDefault) {
-    return NS_OK;
-  }
-
-  if (!aVisitor.mDOMEvent->IsTrusted()) {
-    return NS_OK;
-  }
-
-  nsAutoString type;
-  aVisitor.mDOMEvent->GetType(type);
-
-  MOZ_ASSERT(nsDependentString(kErrorEventType).EqualsLiteral("error"));
-  if (!type.EqualsLiteral("error")) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<EventTarget> eventTarget = aVisitor.mDOMEvent->GetTarget();
-  MOZ_ASSERT(eventTarget);
-
-  // Only mess with events that were originally targeted to an IDBRequest.
-  RefPtr<IDBRequest> request;
-  if (NS_FAILED(eventTarget->QueryInterface(kIDBPrivateRequestIID,
-                                            getter_AddRefs(request))) ||
-      !request) {
-    return NS_OK;
-  }
-
-  RefPtr<DOMException> error = request->GetErrorAfterResult();
-
-  nsString errorName;
-  if (error) {
-    error->GetName(errorName);
-  }
-
-  RootedDictionary<ErrorEventInit> init(RootingCx());
-  request->GetCallerLocation(init.mFilename, &init.mLineno, &init.mColno);
-
-  init.mMessage = errorName;
-  init.mCancelable = true;
-  init.mBubbles = true;
-
-  nsEventStatus status = nsEventStatus_eIgnore;
-
-  if (NS_IsMainThread()) {
-    nsCOMPtr<nsIDOMWindow> window =
-        do_QueryInterface(eventTarget->GetOwnerGlobal());
-    if (window) {
-      nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(window);
-      MOZ_ASSERT(sgo);
-
-      if (NS_WARN_IF(!sgo->HandleScriptError(init, &status))) {
-        status = nsEventStatus_eIgnore;
-      }
-    } else {
-      // We don't fire error events at any global for non-window JS on the main
-      // thread.
-    }
-  } else {
-    // Not on the main thread, must be in a worker.
-    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-    MOZ_ASSERT(workerPrivate);
-
-    RefPtr<WorkerGlobalScope> globalScope = workerPrivate->GlobalScope();
-    MOZ_ASSERT(globalScope);
-
-    RefPtr<ErrorEvent> errorEvent = ErrorEvent::Constructor(
-        globalScope, nsDependentString(kErrorEventType), init);
-    MOZ_ASSERT(errorEvent);
-
-    errorEvent->SetTrusted(true);
-
-    RefPtr<EventTarget> target = static_cast<EventTarget*>(globalScope.get());
-
-    if (NS_WARN_IF(NS_FAILED(EventDispatcher::DispatchDOMEvent(
-            target,
-            /* aWidgetEvent */ nullptr, errorEvent,
-            /* aPresContext */ nullptr, &status)))) {
-      status = nsEventStatus_eIgnore;
-    }
-  }
-
-  if (status == nsEventStatus_eConsumeNoDefault) {
-    return NS_OK;
-  }
-
-  // Log the error to the error console.
-  ScriptErrorHelper::Dump(errorName, init.mFilename, init.mLineno, init.mColno,
-                          nsIScriptError::errorFlag, aFactory.IsChrome(),
-                          aFactory.InnerWindowID());
-
-  return NS_OK;
 }
 
 // static
@@ -501,7 +369,6 @@ bool IndexedDatabaseManager::ResolveSandboxBinding(JSContext* aCx) {
       !IDBIndex_Binding::GetConstructorObject(aCx) ||
       !IDBKeyRange_Binding::GetConstructorObject(aCx) ||
       !IDBLocaleAwareKeyRange_Binding::GetConstructorObject(aCx) ||
-      !IDBMutableFile_Binding::GetConstructorObject(aCx) ||
       !IDBObjectStore_Binding::GetConstructorObject(aCx) ||
       !IDBOpenDBRequest_Binding::GetConstructorObject(aCx) ||
       !IDBRequest_Binding::GetConstructorObject(aCx) ||
@@ -539,12 +406,16 @@ bool IndexedDatabaseManager::DefineIndexedDB(JSContext* aCx,
 }
 
 // static
-bool IndexedDatabaseManager::IsClosed() { return gClosed; }
+bool IndexedDatabaseManager::IsClosed() {
+  StaticMutexAutoLock lock(gDBManagerMutex);
+
+  return gClosed;
+}
 
 #ifdef DEBUG
 // static
 bool IndexedDatabaseManager::IsMainProcess() {
-  NS_ASSERTION(gDBManager,
+  NS_ASSERTION(Get(),
                "IsMainProcess() called before indexedDB has been initialized!");
   NS_ASSERTION((XRE_IsParentProcess()) == sIsMainProcess,
                "XRE_GetProcessType changed its tune!");
@@ -553,7 +424,7 @@ bool IndexedDatabaseManager::IsMainProcess() {
 
 // static
 IndexedDatabaseManager::LoggingMode IndexedDatabaseManager::GetLoggingMode() {
-  MOZ_ASSERT(gDBManager,
+  MOZ_ASSERT(Get(),
              "GetLoggingMode called before IndexedDatabaseManager has been "
              "initialized!");
 
@@ -562,7 +433,7 @@ IndexedDatabaseManager::LoggingMode IndexedDatabaseManager::GetLoggingMode() {
 
 // static
 mozilla::LogModule* IndexedDatabaseManager::GetLoggingModule() {
-  MOZ_ASSERT(gDBManager,
+  MOZ_ASSERT(Get(),
              "GetLoggingModule called before IndexedDatabaseManager has been "
              "initialized!");
 
@@ -572,71 +443,16 @@ mozilla::LogModule* IndexedDatabaseManager::GetLoggingModule() {
 #endif  // DEBUG
 
 // static
-bool IndexedDatabaseManager::InTestingMode() {
-  MOZ_ASSERT(gDBManager,
-             "InTestingMode() called before indexedDB has been initialized!");
-
-  return gTestingMode;
-}
-
-// static
 bool IndexedDatabaseManager::FullSynchronous() {
-  MOZ_ASSERT(gDBManager,
+  MOZ_ASSERT(Get(),
              "FullSynchronous() called before indexedDB has been initialized!");
 
   return sFullSynchronousMode;
 }
 
 // static
-bool IndexedDatabaseManager::ExperimentalFeaturesEnabled() {
-  if (NS_IsMainThread()) {
-    if (NS_WARN_IF(!GetOrCreate())) {
-      return false;
-    }
-  } else {
-    MOZ_ASSERT(Get(),
-               "ExperimentalFeaturesEnabled() called off the main thread "
-               "before indexedDB has been initialized!");
-  }
-
-  return gExperimentalFeaturesEnabled;
-}
-
-// static
-bool IndexedDatabaseManager::ExperimentalFeaturesEnabled(JSContext* aCx,
-                                                         JSObject* aGlobal) {
-  // If, in the child process, properties of the global object are enumerated
-  // before the chrome registry (and thus the value of |intl.accept_languages|)
-  // is ready, calling IndexedDatabaseManager::Init will permanently break
-  // that preference. We can retrieve gExperimentalFeaturesEnabled without
-  // actually going through IndexedDatabaseManager.
-  // See Bug 1198093 comment 14 for detailed explanation.
-  MOZ_DIAGNOSTIC_ASSERT(JS_IsGlobalObject(aGlobal));
-  if (IsNonExposedGlobal(aCx, aGlobal, GlobalNames::BackstagePass)) {
-    MOZ_ASSERT(NS_IsMainThread());
-    static bool featureRetrieved = false;
-    if (!featureRetrieved) {
-      gExperimentalFeaturesEnabled = Preferences::GetBool(kPrefExperimental);
-      featureRetrieved = true;
-    }
-    return gExperimentalFeaturesEnabled;
-  }
-
-  return ExperimentalFeaturesEnabled();
-}
-
-// static
-bool IndexedDatabaseManager::IsFileHandleEnabled() {
-  MOZ_ASSERT(gDBManager,
-             "IsFileHandleEnabled() called before indexedDB has been "
-             "initialized!");
-
-  return gFileHandleEnabled;
-}
-
-// static
 uint32_t IndexedDatabaseManager::DataThreshold() {
-  MOZ_ASSERT(gDBManager,
+  MOZ_ASSERT(Get(),
              "DataThreshold() called before indexedDB has been initialized!");
 
   return gDataThresholdBytes;
@@ -645,7 +461,7 @@ uint32_t IndexedDatabaseManager::DataThreshold() {
 // static
 uint32_t IndexedDatabaseManager::MaxSerializedMsgSize() {
   MOZ_ASSERT(
-      gDBManager,
+      Get(),
       "MaxSerializedMsgSize() called before indexedDB has been initialized!");
   MOZ_ASSERT(gMaxSerializedMsgSize > 0);
 
@@ -653,17 +469,8 @@ uint32_t IndexedDatabaseManager::MaxSerializedMsgSize() {
 }
 
 // static
-bool IndexedDatabaseManager::PreprocessingEnabled() {
-  MOZ_ASSERT(gDBManager,
-             "PreprocessingEnabled() called before indexedDB has been "
-             "initialized!");
-
-  return gPreprocessingEnabled;
-}
-
-// static
 int32_t IndexedDatabaseManager::MaxPreloadExtraRecords() {
-  MOZ_ASSERT(gDBManager,
+  MOZ_ASSERT(Get(),
              "MaxPreloadExtraRecords() called before indexedDB has been "
              "initialized!");
 
@@ -710,6 +517,19 @@ void IndexedDatabaseManager::InvalidateAllFileManagers() {
 }
 
 void IndexedDatabaseManager::InvalidateFileManagers(
+    PersistenceType aPersistenceType) {
+  AssertIsOnIOThread();
+
+  for (auto iter = mFileManagerInfos.Iter(); !iter.Done(); iter.Next()) {
+    iter.Data()->InvalidateAndRemoveFileManagers(aPersistenceType);
+
+    if (!iter.Data()->HasFileManagers()) {
+      iter.Remove();
+    }
+  }
+}
+
+void IndexedDatabaseManager::InvalidateFileManagers(
     PersistenceType aPersistenceType, const nsACString& aOrigin) {
   AssertIsOnIOThread();
   MOZ_ASSERT(!aOrigin.IsEmpty());
@@ -749,7 +569,7 @@ nsresult IndexedDatabaseManager::BlockAndGetFileReferences(
     int32_t* aDBRefCnt, bool* aResult) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (NS_WARN_IF(!InTestingMode())) {
+  if (NS_WARN_IF(!StaticPrefs::dom_indexedDB_testing())) {
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -787,7 +607,7 @@ nsresult IndexedDatabaseManager::BlockAndGetFileReferences(
 nsresult IndexedDatabaseManager::FlushPendingFileDeletions() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (NS_WARN_IF(!InTestingMode())) {
+  if (NS_WARN_IF(!StaticPrefs::dom_indexedDB_testing())) {
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -882,6 +702,10 @@ void FileManagerInfo::InvalidateAllFileManagers() const {
   for (i = 0; i < mDefaultStorageFileManagers.Length(); i++) {
     mDefaultStorageFileManagers[i]->Invalidate();
   }
+
+  for (i = 0; i < mPrivateStorageFileManagers.Length(); i++) {
+    mPrivateStorageFileManagers[i]->Invalidate();
+  }
 }
 
 void FileManagerInfo::InvalidateAndRemoveFileManagers(
@@ -922,6 +746,8 @@ nsTArray<SafeRefPtr<DatabaseFileManager> >& FileManagerInfo::GetArray(
       return mTemporaryStorageFileManagers;
     case PERSISTENCE_TYPE_DEFAULT:
       return mDefaultStorageFileManagers;
+    case PERSISTENCE_TYPE_PRIVATE:
+      return mPrivateStorageFileManagers;
 
     case PERSISTENCE_TYPE_INVALID:
     default:

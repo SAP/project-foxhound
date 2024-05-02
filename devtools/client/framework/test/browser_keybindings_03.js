@@ -8,14 +8,13 @@
 
 const URL = "data:text/html;charset=utf8,test page for toolbox switching";
 
-var { Toolbox } = require("devtools/client/framework/toolbox");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
 
-add_task(async function() {
+add_task(async function () {
   info("Create a test tab and open the toolbox");
   const tab = await addTab(URL);
   const toolbox = await gDevTools.showToolboxForTab(tab, "webconsole");

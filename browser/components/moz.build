@@ -7,7 +7,7 @@
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "General")
 
-with Files("distribution.js"):
+with Files("distribution.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Distributions")
 
 with Files("tests/**"):
@@ -30,17 +30,20 @@ DIRS += [
     "about",
     "aboutlogins",
     "attribution",
+    "contentanalysis",
     "contextualidentity",
     "customizableui",
     "doh",
     "downloads",
     "enterprisepolicies",
     "extensions",
-    "pagedata",
+    "firefoxview",
+    "ion",
+    "messagepreview",
     "migration",
     "newtab",
     "originattributes",
-    "ion",
+    "pagedata",
     "places",
     "pocket",
     "preferences",
@@ -48,24 +51,23 @@ DIRS += [
     "prompts",
     "protections",
     "protocolhandler",
+    "reportbrokensite",
     "resistfingerprinting",
     "screenshots",
     "search",
     "sessionstore",
     "shell",
+    "shopping",
     "syncedtabs",
     "tabunloader",
-    "translation",
+    "textrecognition",
+    "translations",
     "uitour",
     "urlbar",
 ]
 
 DIRS += ["build"]
 
-if CONFIG["NIGHTLY_BUILD"]:
-    DIRS += [
-        "payments",
-    ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     DIRS += ["touchbar"]
@@ -84,24 +86,27 @@ XPCOM_MANIFESTS += [
 
 EXTRA_COMPONENTS += [
     "BrowserComponents.manifest",
-    "tests/startupRecorder.js",
-    "tests/testComponents.manifest",
 ]
 
 EXTRA_JS_MODULES += [
-    "BrowserContentHandler.jsm",
-    "BrowserGlue.jsm",
-    "distribution.js",
+    "BrowserContentHandler.sys.mjs",
+    "BrowserGlue.sys.mjs",
+    "distribution.sys.mjs",
 ]
 
+if CONFIG["MOZ_DEBUG"] or CONFIG["MOZ_DEV_EDITION"] or CONFIG["NIGHTLY_BUILD"]:
+    EXTRA_JS_MODULES += [
+        "StartupRecorder.sys.mjs",
+    ]
+
 BROWSER_CHROME_MANIFESTS += [
-    "safebrowsing/content/test/browser.ini",
-    "tests/browser/browser.ini",
+    "safebrowsing/content/test/browser.toml",
+    "tests/browser/browser.toml",
 ]
 
 if CONFIG["MOZ_UPDATER"]:
     BROWSER_CHROME_MANIFESTS += [
-        "tests/browser/whats_new_page/browser.ini",
+        "tests/browser/whats_new_page/browser.toml",
     ]
 
 XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.ini"]

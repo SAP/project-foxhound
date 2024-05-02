@@ -7,9 +7,11 @@
 #ifndef js_WeakMapPtr_h
 #define js_WeakMapPtr_h
 
-#include "jspubtd.h"
+#include "jstypes.h"
 
 #include "js/TypeDecls.h"
+
+class JS_PUBLIC_API JSTracer;
 
 namespace JS {
 
@@ -27,7 +29,7 @@ class JS_PUBLIC_API WeakMapPtr {
   bool initialized() { return ptr != nullptr; }
   void destroy();
   virtual ~WeakMapPtr() { MOZ_ASSERT(!initialized()); }
-  void trace(JSTracer* tracer);
+  void trace(JSTracer* trc);
 
   V lookup(const K& key);
   bool put(JSContext* cx, const K& key, const V& value);

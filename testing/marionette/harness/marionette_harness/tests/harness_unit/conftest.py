@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import pytest
 
 from unittest.mock import Mock, MagicMock
@@ -37,7 +35,7 @@ def mach_parsed_kwargs(logger):
         "app_args": [],
         "avd": None,
         "avd_home": None,
-        "binary": u"/path/to/firefox",
+        "binary": "/path/to/firefox",
         "browsermob_port": None,
         "browsermob_script": None,
         "device_serial": None,
@@ -74,7 +72,7 @@ def mach_parsed_kwargs(logger):
         "startup_timeout": 60,
         "symbols_path": None,
         "test_tags": None,
-        "tests": [u"/path/to/unit-tests.ini"],
+        "tests": ["/path/to/unit-tests.ini"],
         "testvars": None,
         "this_chunk": None,
         "timeout": None,
@@ -96,6 +94,6 @@ def mock_httpd(request):
 def mock_marionette(request):
     """Mock marionette instance"""
     marionette = MagicMock(spec=dir(Marionette()))
-    if "has_crashed" in request.funcargnames:
+    if "has_crashed" in request.fixturenames:
         marionette.check_for_crash.return_value = request.getfixturevalue("has_crashed")
     return marionette

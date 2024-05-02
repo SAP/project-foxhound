@@ -3,7 +3,11 @@ UNIFIED_SOURCES += [
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
-    "chrome.ini",
+    "chrome.toml",
+]
+
+BROWSER_CHROME_MANIFESTS += [
+    "browser/browser.toml",
 ]
 
 FINAL_LIBRARY = "xul-gtest"

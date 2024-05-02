@@ -7,12 +7,12 @@
  * Tests unit conversion on browser.
  */
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.unitConversion.enabled", true]],
   });
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     SpecialPowers.clipboardCopyString("");
   });
 });
@@ -60,7 +60,7 @@ add_task(async function test_selectByKey() {
 
 function assertClipboard() {
   Assert.equal(
-    SpecialPowers.getClipboardData("text/unicode"),
+    SpecialPowers.getClipboardData("text/plain"),
     "100 cm",
     "The result of conversion is copied to clipboard"
   );

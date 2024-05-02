@@ -4,7 +4,6 @@
 "use strict";
 
 var Cm = Components.manager;
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const VKB_ENTER_KEY = 13; // User press of VKB enter key
 const INITIAL_PAGE_DELAY = 500; // Initial pause on program start for scroll alignment
@@ -13,9 +12,6 @@ const PAGE_SCROLL_TRIGGER = 200; // Triggers additional getPrefsBuffer() on user
 const FILTER_CHANGE_TRIGGER = 200; // Delay between responses to filterInput changes
 const INNERHTML_VALUE_DELAY = 100; // Delay before providing prefs innerHTML value
 
-var gStringBundle = Services.strings.createBundle(
-  "chrome://browser/locale/config.properties"
-);
 var gClipboardHelper = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
   Ci.nsIClipboardHelper
 );
@@ -82,8 +78,9 @@ var NewPrefDialog = {
   // Called to update positive button to display text ("Create"/"Change), and enabled/disabled status
   // As new pref name is initially displayed, re-focused, or modifed during user input
   _updatePositiveButton: function AC_updatePositiveButton(aPrefName) {
-    this._positiveButton.textContent = gStringBundle.GetStringFromName(
-      "newPref.createButton"
+    document.l10n.setAttributes(
+      this._positiveButton,
+      "config-new-pref-create-button"
     );
     this._positiveButton.setAttribute("disabled", true);
     if (aPrefName == "") {
@@ -95,8 +92,9 @@ var NewPrefDialog = {
       return i.name == aPrefName;
     });
     if (item.length) {
-      this._positiveButton.textContent = gStringBundle.GetStringFromName(
-        "newPref.changeButton"
+      document.l10n.setAttributes(
+        this._positiveButton,
+        "config-new-pref-change-button"
       );
     } else {
       this._positiveButton.removeAttribute("disabled");
@@ -295,7 +293,7 @@ var AboutConfig = {
     this._prefsContainer = empty;
 
     // Quick clear the prefs li.HTML list
-    this._list.forEach(function(item) {
+    this._list.forEach(function (item) {
       delete item.li;
     });
   },
@@ -609,12 +607,12 @@ Pref.prototype = {
       this.li.setAttribute("name", this.name);
 
       // Click callback to ensure list item selected even on no-action tap events
-      this.li.addEventListener("click", function(aEvent) {
+      this.li.addEventListener("click", function (aEvent) {
         AboutConfig.selected = AboutConfig.getLINodeForEvent(aEvent);
       });
 
       // Contextmenu callback to identify selected list item
-      this.li.addEventListener("contextmenu", function(aEvent) {
+      this.li.addEventListener("contextmenu", function (aEvent) {
         AboutConfig.contextMenuLINode = AboutConfig.getLINodeForEvent(aEvent);
       });
 
@@ -622,7 +620,7 @@ Pref.prototype = {
 
       const prefName = document.createElement("div");
       prefName.className = "pref-name";
-      prefName.addEventListener("click", function(event) {
+      prefName.addEventListener("click", function (event) {
         AboutConfig.selectOrToggleBoolPref(event);
       });
       prefName.textContent = this.name;
@@ -634,10 +632,10 @@ Pref.prototype = {
 
       const prefValue = document.createElement("input");
       prefValue.className = "pref-value";
-      prefValue.addEventListener("blur", function(event) {
+      prefValue.addEventListener("blur", function (event) {
         AboutConfig.setIntOrStringPref(event);
       });
-      prefValue.addEventListener("click", function(event) {
+      prefValue.addEventListener("click", function (event) {
         AboutConfig.selectOrToggleBoolPref(event);
       });
       prefValue.value = "";
@@ -645,34 +643,30 @@ Pref.prototype = {
 
       const resetButton = document.createElement("div");
       resetButton.className = "pref-button reset";
-      resetButton.addEventListener("click", function(event) {
+      resetButton.addEventListener("click", function (event) {
         AboutConfig.resetDefaultPref(event);
       });
-      resetButton.textContent = gStringBundle.GetStringFromName(
-        "pref.resetButton"
-      );
+      resetButton.setAttribute("data-l10n-id", "config-pref-reset-button");
       prefItemLine.appendChild(resetButton);
 
       const toggleButton = document.createElement("div");
       toggleButton.className = "pref-button toggle";
-      toggleButton.addEventListener("click", function(event) {
+      toggleButton.addEventListener("click", function (event) {
         AboutConfig.toggleBoolPref(event);
       });
-      toggleButton.textContent = gStringBundle.GetStringFromName(
-        "pref.toggleButton"
-      );
+      toggleButton.setAttribute("data-l10n-id", "config-pref-toggle-button");
       prefItemLine.appendChild(toggleButton);
 
       const upButton = document.createElement("div");
       upButton.className = "pref-button up";
-      upButton.addEventListener("click", function(event) {
+      upButton.addEventListener("click", function (event) {
         AboutConfig.incrOrDecrIntPref(event, 1);
       });
       prefItemLine.appendChild(upButton);
 
       const downButton = document.createElement("div");
       downButton.className = "pref-button down";
-      downButton.addEventListener("click", function(event) {
+      downButton.addEventListener("click", function (event) {
         AboutConfig.incrOrDecrIntPref(event, -1);
       });
       prefItemLine.appendChild(downButton);

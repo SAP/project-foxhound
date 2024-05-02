@@ -7,27 +7,7 @@
 
 const TEST_URL = "data:text/html;charset=utf-8,";
 
-const { OS } = require("resource://gre/modules/osfile.jsm");
-
-async function waitUntilScreenshot() {
-  const { Downloads } = require("resource://gre/modules/Downloads.jsm");
-  const list = await Downloads.getList(Downloads.ALL);
-
-  return new Promise(function(resolve) {
-    const view = {
-      onDownloadAdded: download => {
-        download.whenSucceeded().then(() => {
-          resolve(download.target.path);
-          list.removeView(view);
-        });
-      },
-    };
-
-    list.addView(view);
-  });
-}
-
-addRDMTask(TEST_URL, async function({ ui }) {
+addRDMTask(TEST_URL, async function ({ ui }) {
   const { toolWindow } = ui;
   const { store, document } = toolWindow;
 
@@ -39,7 +19,7 @@ addRDMTask(TEST_URL, async function({ ui }) {
 
   const filePath = await whenScreenshotSucceeded;
   const image = new Image();
-  image.src = OS.Path.toFileURI(filePath);
+  image.src = PathUtils.toFileURI(filePath);
 
   await once(image, "load");
 
@@ -59,5 +39,6 @@ addRDMTask(TEST_URL, async function({ ui }) {
     "screenshot width has the expected height"
   );
 
-  await OS.File.remove(filePath);
+  await IOUtils.remove(filePath);
+  await resetDownloads();
 });

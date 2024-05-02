@@ -29,8 +29,7 @@
 #include "nsTHashMap.h"
 #include "nsThreadUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace StorageUtils;
 
@@ -134,6 +133,22 @@ bool RecvGetSessionStorageData(
   return true;
 }
 
+bool RecvClearStoragesForOrigin(const nsACString& aOriginAttrs,
+                                const nsACString& aOriginKey) {
+  mozilla::ipc::AssertIsInMainProcess();
+  mozilla::ipc::AssertIsOnBackgroundThread();
+
+  if (!sManagers) {
+    return true;
+  }
+
+  for (auto& entry : *sManagers) {
+    entry.GetData()->ClearStoragesForOrigin(aOriginAttrs, aOriginKey);
+  }
+
+  return true;
+}
+
 void SessionStorageManagerBase::ClearStoragesInternal(
     const OriginAttributesPattern& aPattern, const nsACString& aOriginScope) {
   for (const auto& oaEntry : mOATable) {
@@ -153,6 +168,28 @@ void SessionStorageManagerBase::ClearStoragesInternal(
         cache->Clear(false);
         cache->ResetWriteInfos();
       }
+    }
+  }
+}
+
+void SessionStorageManagerBase::ClearStoragesForOriginInternal(
+    const nsACString& aOriginAttrs, const nsACString& aOriginKey) {
+  for (const auto& oaEntry : mOATable) {
+    // Filter tables which match the given origin attrs.
+    if (oaEntry.GetKey() != aOriginAttrs) {
+      continue;
+    }
+
+    OriginKeyHashTable* table = oaEntry.GetWeak();
+    for (const auto& originKeyEntry : *table) {
+      // Match exact origin (without origin attrs).
+      if (originKeyEntry.GetKey() != aOriginKey) {
+        continue;
+      }
+
+      const auto cache = originKeyEntry.GetData()->mCache;
+      cache->Clear(false);
+      cache->ResetWriteInfos();
     }
   }
 }
@@ -302,7 +339,7 @@ nsresult SessionStorageManager::EnsureManager() {
 }
 
 SessionStorageCacheChild* SessionStorageManager::EnsureCache(
-    nsIPrincipal& aPrincipal, const nsCString& aOriginKey,
+    nsIPrincipal& aPrincipal, const nsACString& aOriginKey,
     SessionStorageCache& aCache) {
   AssertIsOnMainThread();
   MOZ_ASSERT(CanLoadData());
@@ -388,7 +425,7 @@ void SessionStorageManager::CheckpointData(nsIPrincipal& aPrincipal,
 }
 
 void SessionStorageManager::CheckpointDataInternal(
-    nsIPrincipal& aPrincipal, const nsCString& aOriginKey,
+    nsIPrincipal& aPrincipal, const nsACString& aOriginKey,
     SessionStorageCache& aCache) {
   AssertIsOnMainThread();
   MOZ_ASSERT(mActor);
@@ -409,6 +446,15 @@ void SessionStorageManager::CheckpointDataInternal(
   Unused << cacheActor->SendCheckpoint(writeInfos);
 
   aCache.ResetWriteInfos();
+}
+
+nsresult SessionStorageManager::ClearStoragesForOrigin(
+    const nsACString& aOriginAttrs, const nsACString& aOriginKey) {
+  AssertIsOnMainThread();
+
+  ClearStoragesForOriginInternal(aOriginAttrs, aOriginKey);
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -846,10 +892,23 @@ void BackgroundSessionStorageManager::UpdateData(
 }
 
 void BackgroundSessionStorageManager::ClearStorages(
-    const OriginAttributesPattern& aPattern, const nsCString& aOriginScope) {
+    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope) {
   MOZ_ASSERT(XRE_IsParentProcess());
   ::mozilla::ipc::AssertIsOnBackgroundThread();
   ClearStoragesInternal(aPattern, aOriginScope);
+}
+
+void BackgroundSessionStorageManager::ClearStoragesForOrigin(
+    const nsACString& aOriginAttrs, const nsACString& aOriginKey) {
+  ::mozilla::ipc::AssertIsInMainProcess();
+  ::mozilla::ipc::AssertIsOnBackgroundThread();
+
+  for (auto& managerActor : mParticipatingActors) {
+    QM_WARNONLY_TRY(OkIf(managerActor->SendClearStoragesForOrigin(
+        nsCString(aOriginAttrs), nsCString(aOriginKey))));
+  }
+
+  ClearStoragesForOriginInternal(aOriginAttrs, aOriginKey);
 }
 
 void BackgroundSessionStorageManager::SetCurrentBrowsingContextId(
@@ -859,7 +918,7 @@ void BackgroundSessionStorageManager::SetCurrentBrowsingContextId(
 }
 
 void BackgroundSessionStorageManager::MaybeScheduleSessionStoreUpdate() {
-  if constexpr (!SessionStoreUtils::NATIVE_LISTENER) {
+  if (!StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
     return;
   }
 
@@ -925,5 +984,4 @@ void BackgroundSessionStorageManager::RemoveParticipatingActor(
   mParticipatingActors.RemoveElement(aActor);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

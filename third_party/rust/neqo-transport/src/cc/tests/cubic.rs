@@ -7,28 +7,32 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
-use crate::cc::{
-    classic_cc::{ClassicCongestionControl, CWND_INITIAL},
-    cubic::{
-        Cubic, CUBIC_ALPHA, CUBIC_BETA_USIZE_DIVISOR, CUBIC_BETA_USIZE_QUOTIENT, CUBIC_C,
-        CUBIC_FAST_CONVERGENCE,
+use crate::{
+    cc::{
+        classic_cc::{ClassicCongestionControl, CWND_INITIAL},
+        cubic::{
+            Cubic, CUBIC_ALPHA, CUBIC_BETA_USIZE_DIVIDEND, CUBIC_BETA_USIZE_DIVISOR, CUBIC_C,
+            CUBIC_FAST_CONVERGENCE,
+        },
+        CongestionControl, MAX_DATAGRAM_SIZE, MAX_DATAGRAM_SIZE_F64,
     },
-    CongestionControl, MAX_DATAGRAM_SIZE, MAX_DATAGRAM_SIZE_F64,
+    packet::PacketType,
+    tracking::SentPacket,
 };
-use crate::packet::PacketType;
-use crate::tracking::SentPacket;
-use std::convert::TryFrom;
-use std::ops::Sub;
-use std::time::{Duration, Instant};
+use std::{
+    convert::TryFrom,
+    ops::Sub,
+    time::{Duration, Instant},
+};
 use test_fixture::now;
 
 const RTT: Duration = Duration::from_millis(100);
 const CWND_INITIAL_F64: f64 = 10.0 * MAX_DATAGRAM_SIZE_F64;
 const CWND_INITIAL_10_F64: f64 = 10.0 * CWND_INITIAL_F64;
 const CWND_INITIAL_10: usize = 10 * CWND_INITIAL;
-const CWND_AFTER_LOSS: usize = CWND_INITIAL * CUBIC_BETA_USIZE_QUOTIENT / CUBIC_BETA_USIZE_DIVISOR;
+const CWND_AFTER_LOSS: usize = CWND_INITIAL * CUBIC_BETA_USIZE_DIVIDEND / CUBIC_BETA_USIZE_DIVISOR;
 const CWND_AFTER_LOSS_SLOW_START: usize =
-    (CWND_INITIAL + MAX_DATAGRAM_SIZE) * CUBIC_BETA_USIZE_QUOTIENT / CUBIC_BETA_USIZE_DIVISOR;
+    (CWND_INITIAL + MAX_DATAGRAM_SIZE) * CUBIC_BETA_USIZE_DIVIDEND / CUBIC_BETA_USIZE_DIVISOR;
 
 fn fill_cwnd(cc: &mut ClassicCongestionControl<Cubic>, mut next_pn: u64, now: Instant) -> u64 {
     while cc.bytes_in_flight() < cc.cwnd() {
@@ -233,7 +237,7 @@ fn assert_within<T: Sub<Output = T> + PartialOrd + Copy>(value: T, expected: T, 
 fn congestion_event_slow_start() {
     let mut cubic = ClassicCongestionControl::new(Cubic::default());
 
-    let _ = fill_cwnd(&mut cubic, 0, now());
+    _ = fill_cwnd(&mut cubic, 0, now());
     ack_packet(&mut cubic, 0, now());
 
     assert_within(cubic.last_max_cwnd(), 0.0, f64::EPSILON);
@@ -263,7 +267,7 @@ fn congestion_event_congestion_avoidance() {
     // Set last_max_cwnd to something smaller than cwnd so that the fast convergence is not triggered.
     cubic.set_last_max_cwnd(3.0 * MAX_DATAGRAM_SIZE_F64);
 
-    let _ = fill_cwnd(&mut cubic, 0, now());
+    _ = fill_cwnd(&mut cubic, 0, now());
     ack_packet(&mut cubic, 0, now());
 
     assert_eq!(cubic.cwnd(), CWND_INITIAL);
@@ -285,7 +289,7 @@ fn congestion_event_congestion_avoidance_2() {
     // Set last_max_cwnd to something higher than cwnd so that the fast convergence is triggered.
     cubic.set_last_max_cwnd(CWND_INITIAL_10_F64);
 
-    let _ = fill_cwnd(&mut cubic, 0, now());
+    _ = fill_cwnd(&mut cubic, 0, now());
     ack_packet(&mut cubic, 0, now());
 
     assert_within(cubic.last_max_cwnd(), CWND_INITIAL_10_F64, f64::EPSILON);
@@ -313,12 +317,12 @@ fn congestion_event_congestion_avoidance_test_no_overflow() {
     // Set last_max_cwnd to something higher than cwnd so that the fast convergence is triggered.
     cubic.set_last_max_cwnd(CWND_INITIAL_10_F64);
 
-    let _ = fill_cwnd(&mut cubic, 0, now());
+    _ = fill_cwnd(&mut cubic, 0, now());
     ack_packet(&mut cubic, 1, now());
 
     assert_within(cubic.last_max_cwnd(), CWND_INITIAL_10_F64, f64::EPSILON);
     assert_eq!(cubic.cwnd(), CWND_INITIAL);
 
     // Now ack packet that was send earlier.
-    ack_packet(&mut cubic, 0, now() - PTO);
+    ack_packet(&mut cubic, 0, now().checked_sub(PTO).unwrap());
 }

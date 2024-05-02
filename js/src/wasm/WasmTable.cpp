@@ -25,6 +25,10 @@
 #include "vm/Realm.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmJS.h"
+#include "wasm/WasmValue.h"
+
+#include "gc/StableCellHasher-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace js::wasm;
@@ -32,53 +36,55 @@ using mozilla::CheckedInt;
 using mozilla::PodZero;
 
 Table::Table(JSContext* cx, const TableDesc& desc,
-             HandleWasmTableObject maybeObject, UniqueCodePtrArray codePtrs,
-             UniqueTlsPtrArray tlsPtrs)
+             Handle<WasmTableObject*> maybeObject, FuncRefVector&& functions)
     : maybeObject_(maybeObject),
       observers_(cx->zone()),
-      codePtrs_(std::move(codePtrs)),
-      tlsPtrs_(std::move(tlsPtrs)),
+      functions_(std::move(functions)),
       elemType_(desc.elemType),
       isAsmJS_(desc.isAsmJS),
-      isPublic_(desc.isImportedOrExported),
       length_(desc.initialLength),
       maximum_(desc.maximumLength) {
+  // Acquire a strong reference to the type definition this table may be
+  // referencing.
+  elemType_.AddRef();
   MOZ_ASSERT(repr() == TableRepr::Func);
 }
 
 Table::Table(JSContext* cx, const TableDesc& desc,
-             HandleWasmTableObject maybeObject, TableAnyRefVector&& objects)
+             Handle<WasmTableObject*> maybeObject, TableAnyRefVector&& objects)
     : maybeObject_(maybeObject),
       observers_(cx->zone()),
       objects_(std::move(objects)),
       elemType_(desc.elemType),
       isAsmJS_(desc.isAsmJS),
-      isPublic_(desc.isImportedOrExported),
       length_(desc.initialLength),
       maximum_(desc.maximumLength) {
+  // Acquire a strong reference to the type definition this table may be
+  // referencing.
+  elemType_.AddRef();
   MOZ_ASSERT(repr() == TableRepr::Ref);
+}
+
+Table::~Table() {
+  // Release the strong reference, if any.
+  elemType_.Release();
 }
 
 /* static */
 SharedTable Table::create(JSContext* cx, const TableDesc& desc,
-                          HandleWasmTableObject maybeObject) {
-  // We don't support non-nullable references in tables yet.
-  MOZ_RELEASE_ASSERT(desc.elemType.isNullable());
+                          Handle<WasmTableObject*> maybeObject) {
+  // Tables are initialized with init_expr values at Instance::init or
+  // WasmTableObject::create.
 
   switch (desc.elemType.tableRepr()) {
     case TableRepr::Func: {
-      UniqueCodePtrArray codePtrs(cx->pod_calloc<void*>(desc.initialLength));
-      if (!codePtrs) {
+      FuncRefVector functions;
+      if (!functions.resize(desc.initialLength)) {
+        ReportOutOfMemory(cx);
         return nullptr;
       }
-      // In principle we don't need to allocate this for AsmJS, but making this
-      // optimization would complicate all other code in this file.  So don't.
-      UniqueTlsPtrArray tlsPtrs(cx->pod_calloc<TlsData*>(desc.initialLength));
-      if (!tlsPtrs) {
-        return nullptr;
-      }
-      return SharedTable(cx->new_<Table>(
-          cx, desc, maybeObject, std::move(codePtrs), std::move(tlsPtrs)));
+      return SharedTable(
+          cx->new_<Table>(cx, desc, maybeObject, std::move(functions)));
     }
     case TableRepr::Ref: {
       TableAnyRefVector objects;
@@ -105,17 +111,18 @@ void Table::tracePrivate(JSTracer* trc) {
       if (isAsmJS_) {
 #ifdef DEBUG
         for (uint32_t i = 0; i < length_; i++) {
-          MOZ_ASSERT(!tlsPtrs_[i]);
+          MOZ_ASSERT(!functions_[i].instance);
         }
 #endif
         break;
       }
 
       for (uint32_t i = 0; i < length_; i++) {
-        if (tlsPtrs_[i]) {
-          tlsPtrs_[i]->instance->trace(trc);
+        if (functions_[i].instance) {
+          wasm::TraceInstanceEdge(trc, functions_[i].instance,
+                                  "wasm table instance");
         } else {
-          MOZ_ASSERT(!codePtrs_[i]);
+          MOZ_ASSERT(!functions_[i].code);
         }
       }
       break;
@@ -140,89 +147,89 @@ void Table::trace(JSTracer* trc) {
   }
 }
 
-uint8_t* Table::functionBase() const {
+uint8_t* Table::instanceElements() const {
   if (repr() == TableRepr::Ref) {
-    return nullptr;
+    return (uint8_t*)objects_.begin();
   }
-  return (uint8_t*)codePtrs_.get();
+  return (uint8_t*)functions_.begin();
+}
+
+const FunctionTableElem& Table::getFuncRef(uint32_t index) const {
+  MOZ_ASSERT(isFunction());
+  return functions_[index];
 }
 
 bool Table::getFuncRef(JSContext* cx, uint32_t index,
                        MutableHandleFunction fun) const {
   MOZ_ASSERT(isFunction());
 
-  void* const& codePtr = codePtrs_[index];
-  TlsData* const& tlsPtr = tlsPtrs_[index];
-  if (!codePtr) {
+  const FunctionTableElem& elem = getFuncRef(index);
+  if (!elem.code) {
     fun.set(nullptr);
     return true;
   }
 
-  Instance& instance = *tlsPtr->instance;
-  const CodeRange* codeRange = instance.code().lookupIndirectStubRange(codePtr);
-  if (!codeRange) {
-    codeRange = instance.code().lookupFuncRange(codePtr);
-  }
-  MOZ_ASSERT(codeRange);
+  Instance& instance = *elem.instance;
+  const CodeRange& codeRange = *instance.code().lookupFuncRange(elem.code);
 
-  // If the element is a wasm function imported from another
-  // instance then to preserve the === function identity required by
-  // the JS embedding spec, we must set the element to the
-  // imported function's underlying CodeRange.funcCheckedCallEntry and
-  // Instance so that future Table.get()s produce the same
-  // function object as was imported.
-  const Tier callerTier = instance.code().bestTier();
-  JSFunction* callee = nullptr;
-  Instance* calleeInstance = instance.getOriginalInstanceAndFunction(
-      callerTier, codeRange->funcIndex(), &callee);
-  RootedWasmInstanceObject calleeInstanceObj(cx, calleeInstance->object());
-  uint32_t calleeFunctionIndex = codeRange->funcIndex();
-  if (callee && (calleeInstance != &instance)) {
-    const Tier calleeTier = calleeInstance->code().bestTier();
-    calleeFunctionIndex =
-        calleeInstanceObj->getExportedFunctionCodeRange(callee, calleeTier)
-            .funcIndex();
-  }
-  return WasmInstanceObject::getExportedFunction(cx, calleeInstanceObj,
-                                                 calleeFunctionIndex, fun);
+  Rooted<WasmInstanceObject*> instanceObj(cx, instance.object());
+  return instanceObj->getExportedFunction(cx, instanceObj,
+                                          codeRange.funcIndex(), fun);
 }
 
-void Table::setFuncRef(uint32_t index, void* code, const Instance* instance) {
+void Table::setFuncRef(uint32_t index, JSFunction* fun) {
+  MOZ_ASSERT(isFunction());
+  MOZ_ASSERT(fun->isWasm());
+
+  // Tables can store references to wasm functions from other instances. To
+  // preserve the === function identity required by the JS embedding spec, we
+  // must set the element to the function's underlying
+  // CodeRange.funcCheckedCallEntry and Instance so that Table.get()s always
+  // produce the same function object as was imported.
+  WasmInstanceObject* instanceObj = ExportedFunctionToInstanceObject(fun);
+  Instance& instance = instanceObj->instance();
+  Tier tier = instance.code().bestTier();
+  const CodeRange& calleeCodeRange =
+      instanceObj->getExportedFunctionCodeRange(fun, tier);
+  void* code = instance.codeBase(tier) + calleeCodeRange.funcCheckedCallEntry();
+  setFuncRef(index, code, &instance);
+}
+
+void Table::setFuncRef(uint32_t index, void* code, Instance* instance) {
   MOZ_ASSERT(isFunction());
 
-  void*& codePtr = codePtrs_[index];
-  TlsData*& tlsPtr = tlsPtrs_[index];
-  if (tlsPtr) {
-    gc::PreWriteBarrier(tlsPtr->instance->objectUnbarriered());
+  FunctionTableElem& elem = functions_[index];
+  if (elem.instance) {
+    gc::PreWriteBarrier(elem.instance->objectUnbarriered());
   }
 
   if (!isAsmJS_) {
-    codePtr = code;
-    tlsPtr = instance->tlsData();
-    MOZ_ASSERT(tlsPtr->instance->objectUnbarriered()->isTenured(),
+    elem.code = code;
+    elem.instance = instance;
+    MOZ_ASSERT(elem.instance->objectUnbarriered()->isTenured(),
                "no postWriteBarrier (Table::set)");
   } else {
-    codePtr = code;
-    tlsPtr = nullptr;
+    elem.code = code;
+    elem.instance = nullptr;
   }
 }
 
-bool Table::fillFuncRef(Maybe<Tier> maybeTier, uint32_t index,
-                        uint32_t fillCount, FuncRef ref, JSContext* cx) {
+void Table::fillFuncRef(uint32_t index, uint32_t fillCount, FuncRef ref,
+                        JSContext* cx) {
   MOZ_ASSERT(isFunction());
 
   if (ref.isNull()) {
     for (uint32_t i = index, end = index + fillCount; i != end; i++) {
       setNull(i);
     }
-    return true;
+    return;
   }
 
   RootedFunction fun(cx, ref.asJSFunction());
   MOZ_RELEASE_ASSERT(IsWasmExportedFunction(fun));
 
-  RootedWasmInstanceObject instanceObj(cx,
-                                       ExportedFunctionToInstanceObject(fun));
+  Rooted<WasmInstanceObject*> instanceObj(
+      cx, ExportedFunctionToInstanceObject(fun));
   uint32_t funcIndex = ExportedFunctionToFuncIndex(fun);
 
 #ifdef DEBUG
@@ -232,67 +239,84 @@ bool Table::fillFuncRef(Maybe<Tier> maybeTier, uint32_t index,
 #endif
 
   Instance& instance = instanceObj->instance();
-  Tier tier = maybeTier ? maybeTier.value() : instance.code().bestTier();
-  void* code = instance.ensureAndGetIndirectStub(tier, funcIndex);
-  if (!code) {
-    return false;
-  }
-
-  // Note, infallible beyond this point.
-
+  Tier tier = instance.code().bestTier();
+  const MetadataTier& metadata = instance.metadata(tier);
+  const CodeRange& codeRange =
+      metadata.codeRange(metadata.lookupFuncExport(funcIndex));
+  void* code = instance.codeBase(tier) + codeRange.funcCheckedCallEntry();
   for (uint32_t i = index, end = index + fillCount; i != end; i++) {
     setFuncRef(i, code, &instance);
   }
-
-  return true;
 }
-
-#ifdef DEBUG
-bool Table::isNull(uint32_t index) const {
-  if (isFunction()) {
-    MOZ_ASSERT_IF(!isAsmJS_, (tlsPtrs_[index] == nullptr) ==
-                                 (codePtrs_[index] == nullptr));
-    return codePtrs_[index] == nullptr;
-  } else {
-    return objects_[index] == nullptr;
-  }
-}
-#endif
 
 AnyRef Table::getAnyRef(uint32_t index) const {
   MOZ_ASSERT(!isFunction());
-  // TODO/AnyRef-boxing: With boxed immediates and strings, the write barrier
-  // is going to have to be more complicated.
-  ASSERT_ANYREF_IS_JSOBJECT;
-  return AnyRef::fromJSObject(objects_[index]);
+  return objects_[index];
+}
+
+void Table::setAnyRef(uint32_t index, AnyRef ref) {
+  MOZ_ASSERT(!isFunction());
+  objects_[index] = ref;
 }
 
 void Table::fillAnyRef(uint32_t index, uint32_t fillCount, AnyRef ref) {
   MOZ_ASSERT(!isFunction());
-  // TODO/AnyRef-boxing: With boxed immediates and strings, the write barrier
-  // is going to have to be more complicated.
-  ASSERT_ANYREF_IS_JSOBJECT;
   for (uint32_t i = index, end = index + fillCount; i != end; i++) {
-    objects_[i] = ref.asJSObject();
+    objects_[i] = ref;
+  }
+}
+
+void Table::setRef(uint32_t index, AnyRef ref) {
+  if (ref.isNull()) {
+    setNull(index);
+  } else if (isFunction()) {
+    JSFunction* func = &ref.toJSObject().as<JSFunction>();
+    setFuncRef(index, func);
+  } else {
+    setAnyRef(index, ref);
+  }
+}
+
+bool Table::getValue(JSContext* cx, uint32_t index,
+                     MutableHandleValue result) const {
+  switch (repr()) {
+    case TableRepr::Func: {
+      MOZ_RELEASE_ASSERT(!isAsmJS());
+      RootedFunction fun(cx);
+      if (!getFuncRef(cx, index, &fun)) {
+        return false;
+      }
+      result.setObjectOrNull(fun);
+      return true;
+    }
+    case TableRepr::Ref: {
+      if (!ValType(elemType_).isExposable()) {
+        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                                 JSMSG_WASM_BAD_VAL_TYPE);
+        return false;
+      }
+      return ToJSValue(cx, &objects_[index], ValType(elemType_), result);
+    }
+    default:
+      MOZ_CRASH();
   }
 }
 
 void Table::setNull(uint32_t index) {
   switch (repr()) {
     case TableRepr::Func: {
-      void*& codePtr = codePtrs_[index];
-      TlsData*& tlsPtr = tlsPtrs_[index];
       MOZ_RELEASE_ASSERT(!isAsmJS_);
-      if (tlsPtr) {
-        gc::PreWriteBarrier(tlsPtr->instance->objectUnbarriered());
+      FunctionTableElem& elem = functions_[index];
+      if (elem.instance) {
+        gc::PreWriteBarrier(elem.instance->objectUnbarriered());
       }
 
-      codePtr = nullptr;
-      tlsPtr = nullptr;
+      elem.code = nullptr;
+      elem.instance = nullptr;
       break;
     }
     case TableRepr::Ref: {
-      fillAnyRef(index, 1, AnyRef::null());
+      setAnyRef(index, AnyRef::null());
       break;
     }
   }
@@ -303,53 +327,41 @@ bool Table::copy(JSContext* cx, const Table& srcTable, uint32_t dstIndex,
   MOZ_RELEASE_ASSERT(!srcTable.isAsmJS_);
   switch (repr()) {
     case TableRepr::Func: {
-      MOZ_RELEASE_ASSERT(elemType().isFunc() && srcTable.elemType().isFunc());
-      void*& dstCodePtr = codePtrs_[dstIndex];
-      TlsData*& dstTlsPtr = tlsPtrs_[dstIndex];
-      if (dstTlsPtr) {
-        gc::PreWriteBarrier(dstTlsPtr->instance->objectUnbarriered());
+      MOZ_RELEASE_ASSERT(elemType().isFuncHierarchy() &&
+                         srcTable.elemType().isFuncHierarchy());
+      FunctionTableElem& dst = functions_[dstIndex];
+      if (dst.instance) {
+        gc::PreWriteBarrier(dst.instance->objectUnbarriered());
       }
 
-      if (isPublic() && !srcTable.isPublic()) {
-        RootedFunction fun(cx);
-        if (!srcTable.getFuncRef(cx, srcIndex, &fun)) {
-          // OOM, pass it on
-          return false;
-        }
-        if (!fillFuncRef(Nothing(), dstIndex, 1, FuncRef::fromJSFunction(fun),
-                         cx)) {
-          ReportOutOfMemory(cx);
-          return false;
-        }
-      } else {
-        dstCodePtr = srcTable.codePtrs_[srcIndex];
-        dstTlsPtr = srcTable.tlsPtrs_[srcIndex];
+      const FunctionTableElem& src = srcTable.functions_[srcIndex];
+      dst.code = src.code;
+      dst.instance = src.instance;
 
-        if (dstTlsPtr) {
-          MOZ_ASSERT(dstCodePtr);
-          MOZ_ASSERT(dstTlsPtr->instance->objectUnbarriered()->isTenured(),
-                     "no postWriteBarrier (Table::copy)");
-        } else {
-          MOZ_ASSERT(!dstCodePtr);
-        }
+      if (dst.instance) {
+        MOZ_ASSERT(dst.code);
+        MOZ_ASSERT(dst.instance->objectUnbarriered()->isTenured(),
+                   "no postWriteBarrier (Table::copy)");
+      } else {
+        MOZ_ASSERT(!dst.code);
       }
       break;
     }
     case TableRepr::Ref: {
       switch (srcTable.repr()) {
         case TableRepr::Ref: {
-          fillAnyRef(dstIndex, 1, srcTable.getAnyRef(srcIndex));
+          setAnyRef(dstIndex, srcTable.getAnyRef(srcIndex));
           break;
         }
         case TableRepr::Func: {
-          MOZ_RELEASE_ASSERT(srcTable.elemType().isFunc());
+          MOZ_RELEASE_ASSERT(srcTable.elemType().isFuncHierarchy());
           // Upcast.
           RootedFunction fun(cx);
           if (!srcTable.getFuncRef(cx, srcIndex, &fun)) {
             // OOM, so just pass it on.
             return false;
           }
-          fillAnyRef(dstIndex, 1, AnyRef::fromJSObject(fun));
+          setAnyRef(dstIndex, AnyRef::fromJSObject(*fun));
           break;
         }
       }
@@ -383,31 +395,9 @@ uint32_t Table::grow(uint32_t delta) {
   switch (repr()) {
     case TableRepr::Func: {
       MOZ_RELEASE_ASSERT(!isAsmJS_);
-      // Note that realloc does not release the pointees on failure which is
-      // exactly what we need here.
-      //
-      // Note that the first realloc can succeed but the second can OOM, leaving
-      // the first array longer than the second.  This is OK, but be sure to
-      // finish work on the first array before trying the second one.
-
-      void** newCodePtrs =
-          js_pod_realloc<void*>(codePtrs_.get(), length_, newLength.value());
-      if (!newCodePtrs) {
+      if (!functions_.resize(newLength.value())) {
         return -1;
       }
-      (void)codePtrs_.release();
-      codePtrs_.reset(newCodePtrs);
-      PodZero(newCodePtrs + length_, delta);
-
-      TlsData** newTlsPtrs =
-          js_pod_realloc<TlsData*>(tlsPtrs_.get(), length_, newLength.value());
-      if (!newTlsPtrs) {
-        return -1;
-      }
-      (void)tlsPtrs_.release();
-      tlsPtrs_.reset(newTlsPtrs);
-      PodZero(newTlsPtrs + length_, delta);
-
       break;
     }
     case TableRepr::Ref: {
@@ -453,9 +443,61 @@ bool Table::addMovingGrowObserver(JSContext* cx, WasmInstanceObject* instance) {
   return true;
 }
 
+void Table::fillUninitialized(uint32_t index, uint32_t fillCount,
+                              HandleAnyRef ref, JSContext* cx) {
+#ifdef DEBUG
+  assertRangeNull(index, fillCount);
+#endif  // DEBUG
+  switch (repr()) {
+    case TableRepr::Func: {
+      MOZ_RELEASE_ASSERT(!isAsmJS_);
+      fillFuncRef(index, fillCount, FuncRef::fromAnyRefUnchecked(ref), cx);
+      break;
+    }
+    case TableRepr::Ref: {
+      fillAnyRef(index, fillCount, ref);
+      break;
+    }
+  }
+}
+
+#ifdef DEBUG
+void Table::assertRangeNull(uint32_t index, uint32_t length) const {
+  switch (repr()) {
+    case TableRepr::Func:
+      for (uint32_t i = index; i < index + length; i++) {
+        MOZ_ASSERT(getFuncRef(i).instance == nullptr);
+        MOZ_ASSERT(getFuncRef(i).code == nullptr);
+      }
+      break;
+    case TableRepr::Ref:
+      for (uint32_t i = index; i < index + length; i++) {
+        MOZ_ASSERT(getAnyRef(i).isNull());
+      }
+      break;
+  }
+}
+
+void Table::assertRangeNotNull(uint32_t index, uint32_t length) const {
+  switch (repr()) {
+    case TableRepr::Func:
+      for (uint32_t i = index; i < index + length; i++) {
+        MOZ_ASSERT_IF(!isAsmJS_, getFuncRef(i).instance != nullptr);
+        MOZ_ASSERT(getFuncRef(i).code != nullptr);
+      }
+      break;
+    case TableRepr::Ref:
+      for (uint32_t i = index; i < index + length; i++) {
+        MOZ_ASSERT(!getAnyRef(i).isNull());
+      }
+      break;
+  }
+}
+#endif  // DEBUG
+
 size_t Table::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   if (isFunction()) {
-    return mallocSizeOf(codePtrs_.get()) + mallocSizeOf(tlsPtrs_.get());
+    return functions_.sizeOfExcludingThis(mallocSizeOf);
   }
   return objects_.sizeOfExcludingThis(mallocSizeOf);
 }
@@ -463,7 +505,7 @@ size_t Table::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
 size_t Table::gcMallocBytes() const {
   size_t size = sizeof(*this);
   if (isFunction()) {
-    size += length() * (sizeof(void*) + sizeof(TlsData*));
+    size += length() * sizeof(FunctionTableElem);
   } else {
     size += length() * sizeof(TableAnyRefVector::ElementType);
   }

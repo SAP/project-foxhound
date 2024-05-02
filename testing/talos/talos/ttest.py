@@ -11,27 +11,23 @@
      - collects info on any counters while test runs
      - waits for a 'dump' from the browser
 """
-from __future__ import absolute_import, print_function
-
 import json
 import os
 import platform
 import shutil
-import six
 import subprocess
 import sys
 import time
 
 import mozcrash
 import mozfile
-
+import six
 from mozlog import get_proxy_logger
+
+from talos import results, talosconfig, utils
 from talos.cmanager import CounterManagement
 from talos.ffsetup import FFSetup
 from talos.talos_process import run_browser
-from talos import utils
-from talos import results
-from talos import talosconfig
 from talos.utils import TalosCrash, TalosError, TalosRegression, run_in_debug_mode
 
 LOG = get_proxy_logger()
@@ -48,7 +44,7 @@ class TTest(object):
         if found:
             raise TalosCrash("Found crashes after test run, terminating test")
 
-    def runTest(self, browser_config, test_config):
+    def runTest(self, browser_config, test_config, utility_path=None):
         """
             Runs an url based test on the browser as specified in the
             browser_config dictionary
@@ -62,7 +58,9 @@ class TTest(object):
         """
 
         with FFSetup(browser_config, test_config) as setup:
-            return self._runTest(browser_config, test_config, setup)
+            return self._runTest(
+                browser_config, test_config, setup, utility_path=utility_path
+            )
 
     @staticmethod
     def _get_counter_prefix():
@@ -84,7 +82,7 @@ class TTest(object):
         elif platform.system() == "Darwin":
             return "mac"
 
-    def _runTest(self, browser_config, test_config, setup):
+    def _runTest(self, browser_config, test_config, setup, utility_path=None):
         minidump_dir = os.path.join(setup.profile_dir, "minidumps")
         counters = test_config.get("%s_counters" % self._get_counter_prefix(), [])
         resolution = test_config["resolution"]
@@ -95,13 +93,6 @@ class TTest(object):
         if test_config["mainthread"]:
             mainthread_io = os.path.join(here, "mainthread_io.log")
             setup.env["MOZ_MAIN_THREAD_IO_LOG"] = mainthread_io
-
-        # Stylo is on by default
-        setup.env["STYLO_FORCE_ENABLED"] = "1"
-
-        # During the Stylo transition, measure different number of threads
-        if browser_config.get("stylothreads", 0) > 0:
-            setup.env["STYLO_THREADS"] = str(browser_config["stylothreads"])
 
         # set url if there is one (i.e. receiving a test page, not a manifest/pageloader test)
         if test_config.get("url", None) is not None:
@@ -147,6 +138,10 @@ class TTest(object):
             # TODO: ensure that we don't run >1 test with custom frameworks
             if test_config.get("perfherder_framework", None) is not None:
                 test_results.framework = test_config["perfherder_framework"]
+
+            if browser_config.get("browser_version", None) is not None:
+                test_results.browser_name = browser_config["browser_name"]
+                test_results.browser_version = browser_config["browser_version"]
 
             # reinstall any file whose stability we need to ensure across
             # the cycles
@@ -207,6 +202,7 @@ class TTest(object):
                     debug=browser_config["debug"],
                     debugger=browser_config["debugger"],
                     debugger_args=browser_config["debugger_args"],
+                    utility_path=utility_path,
                 )
             except Exception:
                 self.check_for_crashes(
@@ -257,7 +253,7 @@ class TTest(object):
                 ):
                     raise TalosRegression(
                         "Talos has found a regression, if you have questions"
-                        " ask for help in irc on #perf"
+                        " ask for help in matrix on the #perftest channel"
                     )
 
                 # add the results from the browser output

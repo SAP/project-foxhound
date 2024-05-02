@@ -7,23 +7,14 @@
 #ifndef mozilla_dom_DOMJSProxyHandler_h
 #define mozilla_dom_DOMJSProxyHandler_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Likely.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/TextUtils.h"
 
 #include "jsapi.h"
 #include "js/Object.h"  // JS::GetClass
 #include "js/Proxy.h"
-#include "js/String.h"  // JS::AtomToLinearString, JS::GetLinearString{CharAt,Length}
-#include "nsString.h"
 
-// XXX Avoid including this (and maybe some of those above by moving inline
-// function bodies out)
-#include "jsfriendapi.h"
-
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * DOM proxies store the expando object in the private slot.
@@ -117,12 +108,6 @@ class DOMProxyHandler : public BaseDOMProxyHandler {
            JS::Handle<JS::Value> v, JS::Handle<JS::Value> receiver,
            JS::ObjectOpResult& result) const override;
 
-  // Use the DOMProxyExpando object for private fields, rather than the proxy
-  // expando object.
-  virtual bool useProxyExpandoObjectForPrivateFields() const override {
-    return false;
-  }
-
   /*
    * If assigning to proxy[id] hits a named setter with OverrideBuiltins or
    * an indexed setter, call it and set *done to true on success. Otherwise, set
@@ -173,43 +158,6 @@ inline const DOMProxyHandler* GetDOMProxyHandler(JSObject* obj) {
   return static_cast<const DOMProxyHandler*>(js::GetProxyHandler(obj));
 }
 
-extern jsid s_length_id;
-
-// A return value of UINT32_MAX indicates "not an array index".  Note, in
-// particular, that UINT32_MAX itself is not a valid array index in general.
-inline uint32_t GetArrayIndexFromId(JS::Handle<jsid> id) {
-  // Much like js::IdIsIndex, except with a fast path for "length" and another
-  // fast path for starting with a lowercase ascii char.  Is that second one
-  // really needed?  I guess it is because StringIsArrayIndex is out of line...
-  // as of now, use id.get() instead of id otherwise operands mismatch error
-  // occurs.
-  if (MOZ_LIKELY(id.isInt())) {
-    return id.toInt();
-  }
-  if (MOZ_LIKELY(id.get() == s_length_id)) {
-    return UINT32_MAX;
-  }
-  if (MOZ_UNLIKELY(!id.isAtom())) {
-    return UINT32_MAX;
-  }
-
-  JSLinearString* str = JS::AtomToLinearString(id.toAtom());
-  if (MOZ_UNLIKELY(JS::GetLinearStringLength(str) == 0)) {
-    return UINT32_MAX;
-  }
-
-  char16_t firstChar = JS::GetLinearStringCharAt(str, 0);
-  if (MOZ_LIKELY(IsAsciiLowercaseAlpha(firstChar))) {
-    return UINT32_MAX;
-  }
-
-  uint32_t i;
-  return js::StringIsArrayIndex(str, &i) ? i : UINT32_MAX;
-}
-
-inline bool IsArrayIndex(uint32_t index) { return index < UINT32_MAX; }
-
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_DOMProxyHandler_h */

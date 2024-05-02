@@ -4,17 +4,13 @@
 
 "use strict";
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
-
 trr_test_setup();
 registerCleanupFunction(async () => {
   trr_clear_prefs();
 });
 
-const { updateAppInfo, getAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 
 updateAppInfo({
@@ -24,8 +20,8 @@ updateAppInfo({
   platformVersion: "48",
 });
 
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
 
 // This initializes the policy engine for xpcshell tests
@@ -33,36 +29,6 @@ let policies = Cc["@mozilla.org/enterprisepolicies;1"].getService(
   Ci.nsIObserver
 );
 policies.observe(null, "policies-startup", null);
-
-add_task(async function test_enterprise_policy_locked() {
-  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
-    policies: {
-      DNSOverHTTPS: {
-        Enabled: true,
-        ProviderURL: "https://example.com/provider",
-        ExcludedDomains: ["example.com", "example.org"],
-        Locked: true,
-      },
-    },
-  });
-
-  equal(Services.prefs.getIntPref("network.trr.mode"), 2);
-  equal(Services.prefs.prefIsLocked("network.trr.mode"), true);
-  equal(
-    Services.prefs.getStringPref("network.trr.uri"),
-    "https://example.com/provider"
-  );
-  equal(Services.prefs.prefIsLocked("network.trr.uri"), true);
-  equal(
-    Services.prefs.getStringPref("network.trr.excluded-domains"),
-    "example.com,example.org"
-  );
-  equal(Services.prefs.prefIsLocked("network.trr.excluded-domains"), true);
-  equal(dns.currentTrrMode, 2);
-  equal(dns.currentTrrURI, "https://example.com/provider");
-  dns.setDetectedTrrURI("https://autodetect.example.com/provider");
-  equal(dns.currentTrrURI, "https://example.com/provider");
-});
 
 add_task(async function test_enterprise_policy_unlocked() {
   await EnterprisePolicyTesting.setupPolicyEngineWithJson({
@@ -87,9 +53,41 @@ add_task(async function test_enterprise_policy_unlocked() {
     "example.com,example.org"
   );
   equal(Services.prefs.prefIsLocked("network.trr.excluded-domains"), false);
-  equal(dns.currentTrrMode, 5);
-  equal(dns.currentTrrURI, "https://example.org/provider");
-  dns.setDetectedTrrURI("https://autodetect.example.com/provider");
-  equal(dns.currentTrrMode, 5);
-  equal(dns.currentTrrURI, "https://example.org/provider");
+  equal(Services.dns.currentTrrMode, 5);
+  equal(Services.dns.currentTrrURI, "https://example.org/provider");
+  Services.dns.setDetectedTrrURI("https://autodetect.example.com/provider");
+  equal(Services.dns.currentTrrMode, 5);
+  equal(Services.dns.currentTrrURI, "https://example.org/provider");
+});
+
+add_task(async function test_enterprise_policy_locked() {
+  // Read dns.currentTrrMode to make DNS service initialized earlier.
+  info("Services.dns.currentTrrMode:" + Services.dns.currentTrrMode);
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {
+      DNSOverHTTPS: {
+        Enabled: true,
+        ProviderURL: "https://example.com/provider",
+        ExcludedDomains: ["example.com", "example.org"],
+        Locked: true,
+      },
+    },
+  });
+
+  equal(Services.prefs.getIntPref("network.trr.mode"), 2);
+  equal(Services.prefs.prefIsLocked("network.trr.mode"), true);
+  equal(
+    Services.prefs.getStringPref("network.trr.uri"),
+    "https://example.com/provider"
+  );
+  equal(Services.prefs.prefIsLocked("network.trr.uri"), true);
+  equal(
+    Services.prefs.getStringPref("network.trr.excluded-domains"),
+    "example.com,example.org"
+  );
+  equal(Services.prefs.prefIsLocked("network.trr.excluded-domains"), true);
+  equal(Services.dns.currentTrrMode, 2);
+  equal(Services.dns.currentTrrURI, "https://example.com/provider");
+  Services.dns.setDetectedTrrURI("https://autodetect.example.com/provider");
+  equal(Services.dns.currentTrrURI, "https://example.com/provider");
 });

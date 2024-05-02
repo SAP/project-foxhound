@@ -7,6 +7,7 @@
 #include "nsISupports.idl"
 #include "nsIContentPolicy.idl"
 #include "nsIScriptSecurityManager.idl"
+#include "nsIInterceptionInfo.idl"
 
 interface nsIChannel;
 interface nsIContentSecurityPolicy;
@@ -24,6 +25,7 @@ native LoadContextRef(already_AddRefed<nsISupports>);
 #include "mozilla/LoadTainting.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/UniquePtr.h"
+#include "nsRFPService.h"
 #include "nsStringFwd.h"
 
 namespace mozilla {
@@ -49,6 +51,8 @@ native OriginAttributes(mozilla::OriginAttributes);
 [ref] native const_MaybeClientInfoRef(const mozilla::Maybe<mozilla::dom::ClientInfo>);
 [ref] native const_ServiceWorkerDescriptorRef(const mozilla::dom::ServiceWorkerDescriptor);
 [ref] native const_MaybeServiceWorkerDescriptorRef(const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>);
+[ref] native const_MaybeRFPTarget(const mozilla::Maybe<mozilla::RFPTarget>);
+      native RFPTarget(mozilla::RFPTarget);
 [ptr] native PerformanceStoragePtr(mozilla::dom::PerformanceStorage);
       native LoadTainting(mozilla::LoadTainting);
       native CSPRef(already_AddRefed<nsIContentSecurityPolicy>);
@@ -309,6 +313,21 @@ interface nsILoadInfo : nsISupports
   nsIPrincipal binaryTriggeringPrincipal();
 
   /**
+   * The remote type of the process which caused the network load to start. I.e.
+   * this is the remote type of the process which provided the URL to be loaded.
+   *
+   * For subresource loads, this should be the same as the process which will
+   * handle the response, however for document loads this may both be different
+   * than the final process, as well as different from the process which starts
+   * the navigation.
+   *
+   * This field is intentionally not perfectly preserved over IPC, and will be
+   * reset to the remote type of the sending process when sent from a content
+   * process to the parent process.
+   */
+  attribute AUTF8String triggeringRemoteType;
+
+  /**
    * For non-document loads the principalToInherit is always null. For
    * loads of type TYPE_DOCUMENT or TYPE_SUBDOCUMENT the principalToInherit
    * might be null. If it's non null, then this is the principal that is
@@ -416,6 +435,16 @@ interface nsILoadInfo : nsISupports
   */
   [infallible] attribute unsigned long triggeringSandboxFlags;
 
+
+  /**
+  * The window id and storage access status of the window of the
+  * context that triggered the load. This is used to allow self-initiated
+  * same-origin navigations to propogate their "has storage access" bit
+  * to the next Document.
+  */
+  [infallible] attribute unsigned long long triggeringWindowId;
+  [infallible] attribute boolean triggeringStorageAccess;
+
   /**
    * Allows to query only the security mode bits from above.
    */
@@ -479,16 +508,32 @@ interface nsILoadInfo : nsISupports
   const unsigned long HTTPS_ONLY_DO_NOT_LOG_TO_CONSOLE = (1 << 6);
 
   /**
-   * This flag indicates that the request should not be logged to the
-   * console.
+   * This flag indicates that the request was upgraded by https-first mode.
    */
   const unsigned long HTTPS_ONLY_UPGRADED_HTTPS_FIRST = (1 << 7);
+
+  /**
+   * This flag indicates that the request should not be blocked by ORB.
+   */
+  const unsigned long HTTPS_ONLY_BYPASS_ORB = (1 << 8);
+
+  /**
+   * This flag indicates that HTTPS_ONLY_EXEMPT should be
+   * set the next time HTTPS-Only exemptions are checked
+   * and HTTPS-First is enabled.
+   */
+  const unsigned long HTTPS_FIRST_EXEMPT_NEXT_LOAD = (1 << 9);
 
   /**
    * Upgrade state of HTTPS-Only Mode. The flag HTTPS_ONLY_EXEMPT can get
    * set on requests that should be excempt from an upgrade.
    */
   [infallible] attribute unsigned long httpsOnlyStatus;
+
+  /**
+   * Reflects whetehr this is an HTTP Strict Transport Security host
+   */
+[infallible] attribute boolean hstsStatus;
 
   /**
    * Returns true if at the time of the loadinfo construction the document
@@ -509,6 +554,12 @@ interface nsILoadInfo : nsISupports
    * the script was created by the HTML parser.
    */
   [infallible] attribute boolean parserCreatedScript;
+
+  /**
+   * True if this request is known to have been triggered by a user
+   * manually requesting the URI to be saved.
+   */
+  [infallible] attribute boolean isUserTriggeredSave;
 
   /**
    * True if this request is from DevTools.
@@ -561,6 +612,24 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] attribute nsILoadInfo_StoragePermissionState
         storagePermission;
+
+  /**
+   * Get the granular overrides of fingerprinting protections associated to the
+   * channel, the value will override the default fingerprinting protection
+   * settings. This field will only get populated if these is one that comes
+   * from the local granular overrides pref or WebCompat. Otherwise, a value of
+   * Nothing() indicates no granular overrides are present for this channel.
+   *
+   * The RFPTarget defined in the RFPTargets.inc.
+   */
+  [noscript, nostdcall, notxpcom]
+  const_MaybeRFPTarget GetOverriddenFingerprintingSettings();
+
+  /**
+   * Set the granular overrides of fingerprinting protections for the channel.
+   */
+  [noscript, nostdcall, notxpcom]
+  void SetOverriddenFingerprintingSettings(in RFPTarget aTargets);
 
   /**
    * True if the load was triggered by a meta refresh.
@@ -669,7 +738,9 @@ interface nsILoadInfo : nsISupports
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     return static_cast<ExtContentPolicyType>(result);
   }
+
 %}
+
 
   /**
    * The internal contentPolicyType of the channel, used for constructing
@@ -771,6 +842,18 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] readonly attribute unsigned long long browsingContextID;
   [infallible] readonly attribute BrowsingContext browsingContext;
+
+  /**
+   * The BrowsingContext which the worker is associated.
+   *
+   * Note that this could be 0 if the load is not triggered in a WorkerScope.
+   * This value is only set and used in the parent process for some sitautions
+   * the channel is created in the parent process for Workers. Such as fetch().
+   * In content process, it is always 0.
+   * This value would not be propagated through IPC.
+   */
+  [infallible] attribute unsigned long long workerAssociatedBrowsingContextID;
+  [infallible] readonly attribute BrowsingContext workerAssociatedBrowsingContext;
 
   /**
    * Only when the element being loaded is <frame src="foo.html">
@@ -1214,9 +1297,9 @@ interface nsILoadInfo : nsISupports
    * when fetching the resource this loadinfo belongs to.
    *
    * a) Non-navigations:
-   * For non-navigation loads, GetCSP() returns what the spec refers to as the
+   * For non-navigation loads, GetCsp() returns what the spec refers to as the
    * "request's client's global object's CSP list". In practice, if this is the
-   * loadinfo of a subresource load (e.g an image load), then GetCSP() or
+   * loadinfo of a subresource load (e.g an image load), then GetCsp() or
    * GetPreloadCSP() returns the CSP of the document which embeds the image.
    * The returned CSP includes any policy delivered through the HTTP header or
    * also through the meta tag (modulo the difference for preloads, e.g. image
@@ -1227,7 +1310,7 @@ interface nsILoadInfo : nsISupports
    *
    * b) Navigations:
    *   * Top-level loads:
-   *     For top-level loads (navigations) GetCSP() will return null, unless
+   *     For top-level loads (navigations) GetCsp() will return null, unless
    *     the navigation is started by a WebExtension, in which case it will
    *     return the CSP of the webextension, if any.
    *     If you need to query the CSP that potentially should apply to the
@@ -1236,7 +1319,7 @@ interface nsILoadInfo : nsISupports
    *     is for non-navigation requests.
    *
    *   * Iframe-loads:
-   *     For iframe-loads (navigations) GetCSP() will return the CSP of the
+   *     For iframe-loads (navigations) GetCsp() will return the CSP of the
    *     parent document, unless the navigation is started by a WebExtension,
    *     in which case it will return the CSP of the webextension, if any.
    *
@@ -1291,6 +1374,9 @@ interface nsILoadInfo : nsISupports
    */
   attribute AString cspNonce;
 
+  // Subresource Integrity (SRI) metadata.
+  attribute AString integrityMetadata;
+
   /**
    * List of possible reasons the request associated with this load info
    * may have been blocked, set by various content blocking checkers.
@@ -1320,6 +1406,7 @@ interface nsILoadInfo : nsISupports
   const uint32_t BLOCKING_REASON_CLASSIFY_CRYPTOMINING_URI = 2007;
   const uint32_t BLOCKING_REASON_CLASSIFY_FINGERPRINTING_URI = 2008;
   const uint32_t BLOCKING_REASON_CLASSIFY_SOCIALTRACKING_URI = 2009;
+  const uint32_t BLOCKING_REASON_CLASSIFY_EMAILTRACKING_URI = 2010;
   const uint32_t BLOCKING_REASON_MIXED_BLOCKED = 3001;
   // The general reason comes from nsCSPContext::permitsInternal(),
   // which is way too generic to distinguish an exact reason.
@@ -1374,6 +1461,7 @@ interface nsILoadInfo : nsISupports
   cenum CrossOriginEmbedderPolicy : 8 {
     EMBEDDER_POLICY_NULL = 0,
     EMBEDDER_POLICY_REQUIRE_CORP = 1,
+    EMBEDDER_POLICY_CREDENTIALLESS = 2,
   };
 
   /**
@@ -1386,6 +1474,11 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute nsILoadInfo_CrossOriginEmbedderPolicy
         loadingEmbedderPolicy;
 
+  /**
+   * This attribute will be true if the top level document has COEP:
+   * credentialless enabled in Origin Trial.
+   */
+  [infallible] attribute boolean isOriginTrialCoepCredentiallessEnabledForTopLevel;
   /**
    * This attribute will be true if this is a load triggered by a media
    * element.
@@ -1403,10 +1496,39 @@ interface nsILoadInfo : nsISupports
    * elements
    */
   [infallible] attribute boolean isFromObjectOrEmbed;
-  
+
+  /**
+   * This attribute will be true if the URL is known to be possibly broken and
+   * CheckForBrokenChromeURL and RecordZeroLengthEvent should be skipped.
+   */
+  [infallible] readonly attribute boolean shouldSkipCheckForBrokenURLOrZeroSized;
+
   /**
    * If this is non-null, this property holds the URI as it was before query
    * stripping was performed.
    */
   attribute nsIURI unstrippedURI;
+
+  /**
+   * Propagated information from InterceptedHttpChannel
+   * It should be null when the channel is not created from FetchEvent.request
+   * or ServiceWorker NavigationPreload.
+   * nsIFetchEventInfo is C++ only, so it is not an attribute.
+   */
+  [noscript, notxpcom, nostdcall, binaryname(InterceptionInfo)]
+  nsIInterceptionInfo binaryInterceptionInfo();
+
+  [noscript, notxpcom, nostdcall, binaryname(SetInterceptionInfo)]
+  void binarySetInterceptionInfo(in nsIInterceptionInfo info);
+
+  /**
+   * Whether nsICookieInjector has injected a cookie for this request to
+   * handle a cookie banner. This is only done for top-level requests.
+   */
+  [infallible] attribute boolean hasInjectedCookieForCookieBannerHandling;
+
+  /**
+   * Whether the load has gone through the URL bar, where the fixup had to add * the protocol scheme.
+   */
+   [infallible] attribute boolean wasSchemelessInput;
 };

@@ -8,57 +8,6 @@
 /* import-globals-from aboutaddonsCommon.js */
 /* exported loadView */
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "AMTelemetry",
-  "resource://gre/modules/AddonManager.jsm"
-);
-
-async function recordViewTelemetry(param) {
-  let type;
-  let addon;
-
-  if (
-    AddonManager.hasAddonType(param) ||
-    ["recent", "available"].includes(param)
-  ) {
-    type = param;
-  } else if (param) {
-    let id = param.replace("/preferences", "");
-    addon = await AddonManager.getAddonByID(id);
-  }
-
-  let { currentViewId } = gViewController;
-  let viewType = gViewController.parseViewId(currentViewId)?.type;
-  let details = {
-    view: viewType || "other",
-    addon,
-    type,
-  };
-
-  // The extensions list view does also include recommendations that may be
-  // recommended by TAAR, themes list view does not at the moment.
-  if (
-    viewType === "discover" ||
-    (viewType === "list" && type === "extension")
-  ) {
-    // DiscoveryAPI is defined in aboutaddons.js (which is technically loaded after
-    // this script, nevertheless we would never reach this if aboutaddons.js wasn't
-    // already executed and the about:addons views defined, which guarantees that
-    // DiscoveryAPI will always be defined here.
-    // (This telemetry collection is also covered by tests and so there will also be
-    // test failures if that isn't the case anymore).
-    const { DiscoveryAPI } = window;
-    details.taarEnabled = !!DiscoveryAPI.clientIdDiscoveryEnabled;
-  }
-
-  AMTelemetry.recordViewEvent(details);
-}
-
 // Used by external callers to load a specific view into the manager
 function loadView(viewId) {
   if (!gViewController.readyForLoadView) {
@@ -203,11 +152,13 @@ var gViewController = {
       return;
     }
 
+    ScrollOffsets.save();
+    ScrollOffsets.setView(state.historyEntryId);
+
     this.currentViewId = state.view;
     this.isLoading = true;
 
     // Perform tasks before view load
-    recordViewTelemetry(param);
     document.dispatchEvent(
       new CustomEvent("view-selected", {
         detail: { id: state.view, param, type },
@@ -220,9 +171,6 @@ var gViewController = {
 
     // Clear and append the fragment
     if (fragment) {
-      ScrollOffsets.save();
-      ScrollOffsets.setView(state.historyEntryId);
-
       this.container.textContent = "";
       this.container.append(fragment);
 
@@ -232,8 +180,11 @@ var gViewController = {
       // within one tick, so wait a frame before restoring scroll offsets.
       await new Promise(resolve => {
         window.requestAnimationFrame(() => {
-          ScrollOffsets.restore();
-          resolve();
+          // Double requestAnimationFrame in case we reflow.
+          window.requestAnimationFrame(() => {
+            ScrollOffsets.restore();
+            resolve();
+          });
         });
       });
     } else {

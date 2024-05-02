@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::metrics::PingType;
+use crate::metrics::PingType;
 
 /// Glean-provided pings, all enabled by default.
 ///
@@ -10,7 +10,7 @@ use super::metrics::PingType;
 /// This might get auto-generated when the Rust API lands ([Bug 1579146](https://bugzilla.mozilla.org/show_bug.cgi?id=1579146)).
 ///
 /// They are parsed and registered by the platform-specific wrappers, but might be used Glean-internal directly.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InternalPings {
     pub baseline: PingType,
     pub metrics: PingType,
@@ -24,7 +24,8 @@ impl InternalPings {
             baseline: PingType::new(
                 "baseline",
                 true,
-                false,
+                true,
+                true,
                 vec![
                     "active".to_string(),
                     "dirty_startup".to_string(),
@@ -35,6 +36,7 @@ impl InternalPings {
                 "metrics",
                 true,
                 false,
+                true,
                 vec![
                     "overdue".to_string(),
                     "reschedule".to_string(),
@@ -47,6 +49,7 @@ impl InternalPings {
                 "events",
                 true,
                 false,
+                true,
                 vec![
                     "startup".to_string(),
                     "inactive".to_string(),
@@ -55,6 +58,7 @@ impl InternalPings {
             ),
             deletion_request: PingType::new(
                 "deletion-request",
+                true,
                 true,
                 true,
                 vec!["at_init".to_string(), "set_upload_enabled".to_string()],

@@ -10,6 +10,7 @@
 
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Span.h"
+#include "nsBaseClipboard.h"
 #include "nsIClipboard.h"
 #include "nsIObserver.h"
 #include "nsCOMPtr.h"
@@ -40,6 +41,13 @@ class ClipboardTargets {
   ClipboardTargets() = default;
   ClipboardTargets(mozilla::GUniquePtr<GdkAtom> aTargets, uint32_t aCount)
       : mTargets(std::move(aTargets)), mCount(aCount) {}
+
+  void Set(ClipboardTargets);
+  ClipboardTargets Clone();
+  void Clear() {
+    mTargets = nullptr;
+    mCount = 0;
+  };
 
   mozilla::Span<GdkAtom> AsSpan() const { return {mTargets.get(), mCount}; }
   explicit operator bool() const { return bool(mTargets); }
@@ -80,21 +88,31 @@ class nsRetrievalContext {
   virtual mozilla::GUniquePtr<char> GetClipboardText(
       int32_t aWhichClipboard) = 0;
 
-  // Get data mime types which can be obtained from clipboard. The returned
-  // array has to be released by g_free().
-  virtual ClipboardTargets GetTargets(int32_t aWhichClipboard) = 0;
+  // Get data mime types which can be obtained from clipboard.
+  ClipboardTargets GetTargets(int32_t aWhichClipboard);
+
+  // Clipboard/Primary selection owner changed. Clear internal cached data.
+  static void ClearCachedTargetsClipboard(GtkClipboard* aClipboard,
+                                          GdkEvent* aEvent, gpointer data);
+  static void ClearCachedTargetsPrimary(GtkClipboard* aClipboard,
+                                        GdkEvent* aEvent, gpointer data);
+
+  nsRetrievalContext() = default;
 
  protected:
-  virtual ~nsRetrievalContext() = default;
+  virtual ClipboardTargets GetTargetsImpl(int32_t aWhichClipboard) = 0;
+  virtual ~nsRetrievalContext();
+
+  static ClipboardTargets sClipboardTargets;
+  static ClipboardTargets sPrimaryTargets;
 };
 
-class nsClipboard : public nsIClipboard, public nsIObserver {
+class nsClipboard : public nsBaseClipboard, public nsIObserver {
  public:
   nsClipboard();
 
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIOBSERVER
-  NS_DECL_NSICLIPBOARD
 
   // Make sure we are initialized, called from the factory
   // constructor
@@ -105,6 +123,28 @@ class nsClipboard : public nsIClipboard, public nsIObserver {
                          GtkSelectionData* aSelectionData);
   void SelectionClearEvent(GtkClipboard* aGtkClipboard);
 
+  // Clipboard owner changed
+  void OwnerChangedEvent(GtkClipboard* aGtkClipboard,
+                         GdkEventOwnerChange* aEvent);
+
+ protected:
+  // Implement the native clipboard behavior.
+  NS_IMETHOD SetNativeClipboardData(nsITransferable* aTransferable,
+                                    int32_t aWhichClipboard) override;
+  NS_IMETHOD GetNativeClipboardData(nsITransferable* aTransferable,
+                                    int32_t aWhichClipboard) override;
+  void AsyncGetNativeClipboardData(nsITransferable* aTransferable,
+                                   int32_t aWhichClipboard,
+                                   GetDataCallback&& aCallback) override;
+  nsresult EmptyNativeClipboardData(int32_t aWhichClipboard) override;
+  mozilla::Result<int32_t, nsresult> GetNativeClipboardSequenceNumber(
+      int32_t aWhichClipboard) override;
+  mozilla::Result<bool, nsresult> HasNativeClipboardDataMatchingFlavors(
+      const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard) override;
+  void AsyncHasNativeClipboardDataMatchingFlavors(
+      const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard,
+      HasMatchingFlavorsCallback&& aCallback) override;
+
  private:
   virtual ~nsClipboard();
 
@@ -112,23 +152,20 @@ class nsClipboard : public nsIClipboard, public nsIObserver {
   // clipboard
   nsITransferable* GetTransferable(int32_t aWhichClipboard);
 
-  // Send clipboard data by nsITransferable
-  void SetTransferableData(nsITransferable* aTransferable, nsCString& aFlavor,
-                           const char* aClipboardData,
-                           uint32_t aClipboardDataLength);
-
   void ClearTransferable(int32_t aWhichClipboard);
+  void ClearCachedTargets(int32_t aWhichClipboard);
 
   bool FilterImportedFlavors(int32_t aWhichClipboard,
                              nsTArray<nsCString>& aFlavors);
 
-  // Hang on to our owners and transferables so we can transfer data
-  // when asked.
-  nsCOMPtr<nsIClipboardOwner> mSelectionOwner;
-  nsCOMPtr<nsIClipboardOwner> mGlobalOwner;
+  // Hang on to our transferables so we can transfer data when asked.
   nsCOMPtr<nsITransferable> mSelectionTransferable;
   nsCOMPtr<nsITransferable> mGlobalTransferable;
   RefPtr<nsRetrievalContext> mContext;
+
+  // Sequence number of the system clipboard data.
+  int32_t mSelectionSequenceNumber = 0;
+  int32_t mGlobalSequenceNumber = 0;
 };
 
 extern const int kClipboardTimeout;

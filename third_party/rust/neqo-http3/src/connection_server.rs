@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::connection::{Http3Connection, Http3State};
+use crate::connection::{Http3Connection, Http3State, WebTransportSessionAcceptAction};
 use crate::frames::HFrame;
 use crate::recv_message::{RecvMessage, RecvMessageInfo};
 use crate::send_message::SendMessage;
@@ -14,7 +14,9 @@ use crate::{
     ReceiveOutput, Res,
 };
 use neqo_common::{event::Provider, qdebug, qinfo, qtrace, Header, MessageType, Role};
-use neqo_transport::{AppError, Connection, ConnectionEvent, StreamId, StreamType};
+use neqo_transport::{
+    AppError, Connection, ConnectionEvent, DatagramTracking, StreamId, StreamType,
+};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -140,7 +142,7 @@ impl Http3ServerHandler {
         &mut self,
         conn: &mut Connection,
         stream_id: StreamId,
-        accept: bool,
+        accept: &WebTransportSessionAcceptAction,
     ) -> Res<()> {
         self.needs_processing = true;
         self.base_handler.webtransport_session_accept(
@@ -185,6 +187,18 @@ impl Http3ServerHandler {
         )
     }
 
+    pub fn webtransport_send_datagram(
+        &mut self,
+        conn: &mut Connection,
+        session_id: StreamId,
+        buf: &[u8],
+        id: impl Into<DatagramTracking>,
+    ) -> Res<()> {
+        self.needs_processing = true;
+        self.base_handler
+            .webtransport_send_datagram(session_id, conn, buf, id)
+    }
+
     /// Process HTTTP3 layer.
     pub fn process_http3(&mut self, conn: &mut Connection, now: Instant) {
         qtrace!([self], "Process http3 internal.");
@@ -227,7 +241,7 @@ impl Http3ServerHandler {
 
     fn close(&mut self, conn: &mut Connection, now: Instant, err: &Error) {
         qinfo!([self], "Connection error: {}.", err);
-        conn.close(now, err.code(), &format!("{}", err));
+        conn.close(now, err.code(), &format!("{err}"));
         self.base_handler.close(err.code());
         self.events
             .connection_state_change(self.base_handler.state());
@@ -237,7 +251,7 @@ impl Http3ServerHandler {
     fn check_connection_events(&mut self, conn: &mut Connection, now: Instant) -> Res<()> {
         qtrace!([self], "Check connection events.");
         while let Some(e) = conn.next_event() {
-            qdebug!([self], "check_connection_events - event {:?}.", e);
+            qdebug!([self], "check_connection_events - event {e:?}.");
             match e {
                 ConnectionEvent::NewStream { stream_id } => {
                     self.base_handler.add_new_stream(stream_id);
@@ -273,13 +287,13 @@ impl Http3ServerHandler {
                         s.stream_writable();
                     }
                 }
+                ConnectionEvent::Datagram(dgram) => self.base_handler.handle_datagram(&dgram),
                 ConnectionEvent::AuthenticationNeeded
                 | ConnectionEvent::EchFallbackAuthenticationNeeded { .. }
                 | ConnectionEvent::ZeroRttRejected
                 | ConnectionEvent::ResumptionToken(..) => return Err(Error::HttpInternal(4)),
                 ConnectionEvent::SendStreamComplete { .. }
                 | ConnectionEvent::SendStreamCreatable { .. }
-                | ConnectionEvent::Datagram { .. }
                 | ConnectionEvent::OutgoingDatagramOutcome { .. }
                 | ConnectionEvent::IncomingDatagramDropped => {}
             }

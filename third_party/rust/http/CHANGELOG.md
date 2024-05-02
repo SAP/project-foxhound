@@ -1,3 +1,24 @@
+# 0.2.9 (February 17, 2023)
+
+* Add `HeaderName` constants for `cache-status` and `cdn-cache-control`.
+* Implement `Hash` for `PathAndQuery`.
+* Re-export `HeaderName` at crate root.
+
+# 0.2.8 (June 6, 2022)
+
+* Fix internal usage of uninitialized memory to use `MaybeUninit` inside `HeaderName`.
+
+# 0.2.7 (April 28, 2022)
+
+* MSRV bumped to `1.49`.
+* Add `extend()` method to `Extensions`.
+* Add `From<Authority>` and `From<PathAndQuery>` impls for `Uri`.
+* Make `HeaderName::from_static` a `const fn`.
+
+# 0.2.6 (December 30, 2021)
+
+* Upgrade internal `itoa` dependency to 1.0.
+
 # 0.2.5 (September 21, 2021)
 
 * Add `is_empty()` and `len()` methods to `Extensions`.

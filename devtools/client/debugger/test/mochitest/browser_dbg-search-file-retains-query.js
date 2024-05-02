@@ -4,14 +4,14 @@
 
 // Tests the search bar retains previous query on re-opening.
 
-add_task(async function() {
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-scripts.html", "simple1.js");
   const {
-    selectors: { getActiveSearch, getFileSearchQuery },
+    selectors: { getActiveSearch },
   } = dbg;
-  const source = findSource(dbg, "simple1.js");
-
-  await selectSource(dbg, source.url);
+  await selectSource(dbg, "simple1.js");
 
   // Open search bar
   pressKey(dbg, "fileSearch");
@@ -21,7 +21,7 @@ add_task(async function() {
   // Type a search query
   type(dbg, "con");
   await waitForSearchState(dbg);
-  is(getFileSearchQuery(), "con");
+  is(findElement(dbg, "fileSearchInput").value, "con");
   is(getCM(dbg).state.search.query, "con");
 
   // Close the search bar
@@ -36,10 +36,5 @@ add_task(async function() {
 
   // Test for the retained query
   is(getCM(dbg).state.search.query, "con");
-  await waitForDispatch(dbg.store, "UPDATE_FILE_SEARCH_QUERY");
-  is(getFileSearchQuery(), "con");
+  is(findElement(dbg, "fileSearchInput").value, "con");
 });
-
-function waitForSearchState(dbg) {
-  return waitForState(dbg, () => getCM(dbg).state.search);
-}

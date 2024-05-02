@@ -18,6 +18,7 @@
 
 #include "wasm/WasmProcess.h"
 
+#include "mozilla/Attributes.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ScopeExit.h"
 
@@ -25,9 +26,6 @@
 #include "threading/ExclusiveData.h"
 #include "vm/MutexIDs.h"
 #include "vm/Runtime.h"
-#ifdef ENABLE_WASM_CRANELIFT
-#  include "wasm/cranelift/clifapi.h"
-#endif
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmInstance.h"
@@ -64,7 +62,7 @@ class ProcessCodeSegmentMap {
   // Since writes (insertions or removals) can happen on any background
   // thread at the same time, we need a lock here.
 
-  Mutex mutatorsMutex_;
+  Mutex mutatorsMutex_ MOZ_UNANNOTATED;
 
   CodeSegmentVector segments1_;
   CodeSegmentVector segments2_;
@@ -339,20 +337,23 @@ ExclusiveData<ReadLockFlag> sHugeMemoryEnabled32(
 ExclusiveData<ReadLockFlag> sHugeMemoryEnabled64(
     mutexid::WasmHugeMemoryEnabled);
 
-static bool IsHugeMemoryEnabledHelper32() {
+static MOZ_NEVER_INLINE bool IsHugeMemoryEnabledHelper32() {
   auto state = sHugeMemoryEnabled32.lock();
   return state->get();
 }
 
-static bool IsHugeMemoryEnabledHelper64() {
+static MOZ_NEVER_INLINE bool IsHugeMemoryEnabledHelper64() {
   auto state = sHugeMemoryEnabled64.lock();
   return state->get();
 }
 
 bool wasm::IsHugeMemoryEnabled(wasm::IndexType t) {
-  static bool enabled32 = IsHugeMemoryEnabledHelper32();
+  if (t == IndexType::I32) {
+    static bool enabled32 = IsHugeMemoryEnabledHelper32();
+    return enabled32;
+  }
   static bool enabled64 = IsHugeMemoryEnabledHelper64();
-  return t == IndexType::I32 ? enabled32 : enabled64;
+  return enabled64;
 }
 
 bool wasm::DisableHugeMemory() {
@@ -399,11 +400,13 @@ void ConfigureHugeMemory() {
 bool wasm::Init() {
   MOZ_RELEASE_ASSERT(!sProcessCodeSegmentMap);
 
-  ConfigureHugeMemory();
+  // Assert invariants that should universally hold true, but cannot be checked
+  // at compile time.
+  uintptr_t pageSize = gc::SystemPageSize();
+  MOZ_RELEASE_ASSERT(wasm::NullPtrGuardSize <= pageSize);
+  MOZ_RELEASE_ASSERT(intptr_t(nullptr) == AnyRef::NullRefValue);
 
-#ifdef ENABLE_WASM_CRANELIFT
-  cranelift_initialize();
-#endif
+  ConfigureHugeMemory();
 
   AutoEnterOOMUnsafeRegion oomUnsafe;
   ProcessCodeSegmentMap* map = js_new<ProcessCodeSegmentMap>();
@@ -422,6 +425,8 @@ void wasm::ShutDown() {
   if (JSRuntime::hasLiveRuntimes()) {
     return;
   }
+
+  PurgeCanonicalTypes();
 
   // After signalling shutdown by clearing sProcessCodeSegmentMap, wait for
   // concurrent wasm::LookupCodeSegment()s to finish.

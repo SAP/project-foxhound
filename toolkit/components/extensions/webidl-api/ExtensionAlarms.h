@@ -29,12 +29,6 @@ class ExtensionEventManager;
 class ExtensionAlarms final : public nsISupports,
                               public nsWrapperCache,
                               public ExtensionAPINamespace {
-  nsCOMPtr<nsIGlobalObject> mGlobal;
-  RefPtr<ExtensionBrowser> mExtensionBrowser;
-  RefPtr<ExtensionEventManager> mOnAlarmEventMgr;
-
-  ~ExtensionAlarms() = default;
-
  public:
   ExtensionAlarms(nsIGlobalObject* aGlobal,
                   ExtensionBrowser* aExtensionBrowser);
@@ -60,7 +54,14 @@ class ExtensionAlarms final : public nsISupports,
   ExtensionEventManager* OnAlarm();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ExtensionAlarms)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ExtensionAlarms)
+
+ private:
+  ~ExtensionAlarms() = default;
+
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+  RefPtr<ExtensionBrowser> mExtensionBrowser;
+  RefPtr<ExtensionEventManager> mOnAlarmEventMgr;
 };
 
 }  // namespace extensions

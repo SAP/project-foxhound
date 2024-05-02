@@ -14,7 +14,7 @@ NSS 3.44 release notes
    The NSS team would like to recognize first-time contributors: Kevin Jacobs, David Carlier,
    Alexander Scheel, and Edouard Oger.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -34,8 +34,6 @@ NSS 3.44 release notes
 
 `New in NSS 3.44 <#new_in_nss_3.44>`__
 --------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

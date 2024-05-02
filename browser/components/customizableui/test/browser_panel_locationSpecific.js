@@ -10,17 +10,17 @@
  *
  */
 
-add_task(async function() {
+add_task(async function () {
   let specificPanel = document.createXULElement("panel");
   specificPanel.setAttribute("locationspecific", "true");
   specificPanel.setAttribute("noautohide", "true");
-  specificPanel.height = "100px";
-  specificPanel.width = "100px";
+  specificPanel.style.height = "100px";
+  specificPanel.style.width = "100px";
 
   let generalPanel = document.createXULElement("panel");
   generalPanel.setAttribute("noautohide", "true");
-  generalPanel.height = "100px";
-  generalPanel.width = "100px";
+  generalPanel.style.height = "100px";
+  generalPanel.style.width = "100px";
 
   let anchor = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
@@ -57,7 +57,7 @@ add_task(async function() {
   // Simulate a location change, and check which panel closes.
   let browser = gBrowser.selectedBrowser;
   let loaded = BrowserTestUtils.browserLoaded(browser);
-  BrowserTestUtils.loadURI(browser, "http://mochi.test:8888/#0");
+  BrowserTestUtils.startLoadingURIString(browser, "http://mochi.test:8888/#0");
   await loaded;
 
   await specificPanelHiddenPromise;

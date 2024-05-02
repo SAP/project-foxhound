@@ -8,11 +8,13 @@
 
 #include "nsCocoaUtils.h"
 #include "nsIBaseWindow.h"
+#include "gfxPlatform.h"
 
 NS_IMPL_ISUPPORTS(nsMacUserActivityUpdater, nsIMacUserActivityUpdater)
 
 NS_IMETHODIMP
-nsMacUserActivityUpdater::UpdateLocation(const nsAString& aPageUrl, const nsAString& aPageTitle,
+nsMacUserActivityUpdater::UpdateLocation(const nsAString& aPageUrl,
+                                         const nsAString& aPageTitle,
                                          nsIBaseWindow* aWindow) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
   if (gfxPlatform::IsHeadless()) {
@@ -26,8 +28,8 @@ nsMacUserActivityUpdater::UpdateLocation(const nsAString& aPageUrl, const nsAStr
   }
 
   NSURL* pageUrl = nsCocoaUtils::ToNSURL(aPageUrl);
-  if (!pageUrl ||
-      (![pageUrl.scheme isEqualToString:@"https"] && ![pageUrl.scheme isEqualToString:@"http"])) {
+  if (!pageUrl || (![pageUrl.scheme isEqualToString:@"https"] &&
+                   ![pageUrl.scheme isEqualToString:@"http"])) {
     [cocoaWin.userActivity invalidate];
     return NS_OK;
   }
@@ -37,8 +39,8 @@ nsMacUserActivityUpdater::UpdateLocation(const nsAString& aPageUrl, const nsAStr
     pageTitle = pageUrl.absoluteString;
   }
 
-  NSUserActivity* userActivity =
-      [[NSUserActivity alloc] initWithActivityType:NSUserActivityTypeBrowsingWeb];
+  NSUserActivity* userActivity = [[NSUserActivity alloc]
+      initWithActivityType:NSUserActivityTypeBrowsingWeb];
   userActivity.webpageURL = pageUrl;
   userActivity.title = pageTitle;
   cocoaWin.userActivity = userActivity;

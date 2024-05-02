@@ -19,14 +19,14 @@ function PinUnpinHandler(tab, eventName) {
   var self = this;
   tab.addEventListener(
     eventName,
-    function() {
+    function () {
       self.eventCount++;
     },
     { capture: true, once: true }
   );
   gBrowser.tabContainer.addEventListener(
     eventName,
-    function(e) {
+    function (e) {
       if (e.originalTarget == tab) {
         self.eventCount++;
       }
@@ -46,6 +46,10 @@ function test() {
   indexTest(1, 1);
   indexTest(2, 2);
   indexTest(3, 3);
+
+  // Discard one of the test tabs to verify that pinning/unpinning
+  // discarded tabs does not regress (regression test for Bug 1852391).
+  gBrowser.discardBrowser(tabs[1], true);
 
   var eh = new PinUnpinHandler(tabs[3], "TabPinned");
   gBrowser.pinTab(tabs[3]);

@@ -152,6 +152,13 @@ var values = {
             'static to absolute': ['none', 'block', {discrete: true}],
             'block to inline-block': ['block', 'inline-block', {discrete: true}]
         };
+    },
+    'object-view-box': function() {
+        return {
+            inset: ['inset(10% 10% 20% 20%)', 'inset(20% 20% 30% 30%)'],
+            rect: ['rect(10px 20px 30px 40px)', 'rect(20px 30px 40px 50px)'],
+            xywh: ['xywh(10px 20px 30px 40px)', 'xywh(20px 30px 40px 50px)'],
+        };
     }
 };
 
@@ -252,7 +259,6 @@ var unspecified_properties = {
     'box-shadow': ['box-shadow'],
     'font-size-adjust': ['number'],
     'font-stretch': ['font-stretch'],
-    'marker-offset': ['length'],
     'text-decoration-color': ['color'],
     'column-count': ['integer'],
     'column-gap': ['length'],
@@ -261,13 +267,9 @@ var unspecified_properties = {
     'column-width': ['length'],
     'transform': ['transform'],
     'transform-origin': ['horizontal'],
-    'zoom': ['number'],
-    'outline-radius-topleft': ['length', 'percentage'],
-    'outline-radius-topright': ['length', 'percentage'],
-    'outline-radius-bottomright': ['length', 'percentage'],
-    'outline-radius-bottomleft': ['length', 'percentage'],
     'display': ['display'],
-    'position': ['position']
+    'position': ['position'],
+    'object-view-box': ['object-view-box']
 };
 
 /*

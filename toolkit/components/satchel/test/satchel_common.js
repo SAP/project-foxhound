@@ -9,8 +9,6 @@
   }],
 */
 
-/* import-globals-from ../../../../testing/mochitest/tests/SimpleTest/SimpleTest.js */
-
 var gPopupShownExpected = false;
 var gPopupShownListener;
 var gLastAutoCompleteResults;
@@ -25,29 +23,17 @@ const TelemetryFilterPropsAC = Object.freeze({
 /*
  * Returns the element with the specified |name| attribute.
  */
-function $_(formNum, name) {
-  let form = document.getElementById("form" + formNum);
-  if (!form) {
-    ok(false, "$_ couldn't find requested form " + formNum);
+function getFormElementByName(formNum, name) {
+  const formElement = document.querySelector(
+    `#form${formNum} [name="${name}"]`
+  );
+
+  if (!formElement) {
+    ok(false, `getFormElementByName: Couldn't find specified CSS selector.`);
     return null;
   }
 
-  let element = form.elements.namedItem(name);
-  if (!element) {
-    ok(false, "$_ couldn't find requested element " + name);
-    return null;
-  }
-
-  // Note that namedItem is a bit stupid, and will prefer an
-  // |id| attribute over a |name| attribute when looking for
-  // the element.
-
-  if (element.hasAttribute("name") && element.getAttribute("name") != name) {
-    ok(false, "$_ got confused.");
-    return null;
-  }
-
-  return element;
+  return formElement;
 }
 
 function registerPopupShownListener(listener) {
@@ -68,71 +54,28 @@ function getMenuEntries() {
   return results;
 }
 
-function checkArrayValues(actualValues, expectedValues, msg) {
-  is(
-    actualValues.length,
-    expectedValues.length,
-    "Checking array values: " + msg
-  );
-  for (let i = 0; i < expectedValues.length; i++) {
-    is(actualValues[i], expectedValues[i], msg + " Checking array entry #" + i);
-  }
-}
+class StorageEventsObserver {
+  promisesToResolve = [];
 
-var checkObserver = {
-  verifyStack: [],
-  callback: null,
-
-  init() {
+  constructor() {
     gChromeScript.sendAsyncMessage("addObserver");
     gChromeScript.addMessageListener(
       "satchel-storage-changed",
       this.observe.bind(this)
     );
-  },
+  }
 
-  uninit() {
-    gChromeScript.sendAsyncMessage("removeObserver");
-  },
-
-  waitForChecks(callback) {
-    if (!this.verifyStack.length) {
-      callback();
-    } else {
-      this.callback = callback;
-    }
-  },
+  async cleanup() {
+    await gChromeScript.sendQuery("removeObserver");
+  }
 
   observe({ subject, topic, data }) {
-    if (data != "formhistory-add" && data != "formhistory-update") {
-      return;
-    }
-    ok(!!this.verifyStack.length, "checking if saved form data was expected");
+    this.promisesToResolve.shift()?.({ subject, topic, data });
+  }
 
-    // Make sure that every piece of data we expect to be saved is saved, and no
-    // more. Here it is assumed that for every entry satchel saves or modifies, a
-    // message is sent.
-    //
-    // We don't actually check the content of the message, but just that the right
-    // quantity of messages is received.
-    // - if there are too few messages, test will time out
-    // - if there are too many messages, test will error out here
-    //
-    let expected = this.verifyStack.shift();
-
-    countEntries(expected.name, expected.value, function(num) {
-      ok(num > 0, expected.message);
-      if (!checkObserver.verifyStack.length) {
-        let callback = checkObserver.callback;
-        checkObserver.callback = null;
-        callback();
-      }
-    });
-  },
-};
-
-function checkForSave(name, value, message) {
-  checkObserver.verifyStack.push({ name, value, message });
+  promiseNextStorageEvent() {
+    return new Promise(resolve => this.promisesToResolve.push(resolve));
+  }
 }
 
 function getFormSubmitButton(formNum) {
@@ -175,54 +118,35 @@ function countEntries(name, value, then = null) {
 function updateFormHistory(changes, then = null) {
   return new Promise(resolve => {
     gChromeScript.sendAsyncMessage("updateFormHistory", { changes });
-    gChromeScript.addMessageListener("formHistoryUpdated", function updated({
-      ok,
-    }) {
-      gChromeScript.removeMessageListener("formHistoryUpdated", updated);
-      if (!ok) {
-        ok(false, "Error occurred updating form history");
-        SimpleTest.finish();
-        return;
-      }
+    gChromeScript.addMessageListener(
+      "formHistoryUpdated",
+      function updated({ ok }) {
+        gChromeScript.removeMessageListener("formHistoryUpdated", updated);
+        if (!ok) {
+          ok(false, "Error occurred updating form history");
+          SimpleTest.finish();
+          return;
+        }
 
-      if (then) {
-        then();
+        if (then) {
+          then();
+        }
+        resolve();
       }
-      resolve();
-    });
+    );
   });
 }
 
-function notifyMenuChanged(expectedCount, expectedFirstValue, then = null) {
-  return new Promise(resolve => {
-    gChromeScript.sendAsyncMessage("waitForMenuChange", {
-      expectedCount,
-      expectedFirstValue,
-    });
-    gChromeScript.addMessageListener("gotMenuChange", function changed({
-      results,
-    }) {
-      gChromeScript.removeMessageListener("gotMenuChange", changed);
-      gLastAutoCompleteResults = results;
-      if (then) {
-        then(results);
-      }
-      resolve(results);
-    });
-  });
+async function notifyMenuChanged(expectedCount, expectedFirstValue) {
+  gLastAutoCompleteResults = await gChromeScript.sendQuery(
+    "waitForMenuChange",
+    { expectedCount, expectedFirstValue }
+  );
+  return gLastAutoCompleteResults;
 }
 
-function notifySelectedIndex(expectedIndex, then = null) {
-  return new Promise(resolve => {
-    gChromeScript.sendAsyncMessage("waitForSelectedIndex", { expectedIndex });
-    gChromeScript.addMessageListener("gotSelectedIndex", function changed() {
-      gChromeScript.removeMessageListener("gotSelectedIndex", changed);
-      if (then) {
-        then();
-      }
-      resolve();
-    });
-  });
+function notifySelectedIndex(expectedIndex) {
+  return gChromeScript.sendQuery("waitForSelectedIndex", { expectedIndex });
 }
 
 function testMenuEntry(index, statement) {
@@ -259,26 +183,43 @@ function listenForUnexpectedPopupShown() {
   };
 }
 
-async function promiseNoUnexpectedPopupShown() {
+async function popupBy(triggerFn) {
+  gPopupShownExpected = true;
+  const promise = new Promise(resolve => {
+    gPopupShownListener = ({ results }) => {
+      gPopupShownExpected = false;
+      resolve(results);
+    };
+  });
+  if (triggerFn) {
+    triggerFn();
+  }
+  return promise;
+}
+
+async function noPopupBy(triggerFn) {
   gPopupShownExpected = false;
   listenForUnexpectedPopupShown();
   SimpleTest.requestFlakyTimeout(
     "Giving a chance for an unexpected popupshown to occur"
   );
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  if (triggerFn) {
+    await triggerFn();
+  }
+  await new Promise(resolve => setTimeout(resolve, 500));
 }
 
-/**
- * Resolve at the next popupshown event for the autocomplete popup
- * @returns {Promise} with the results
- */
-function promiseACShown() {
-  gPopupShownExpected = true;
-  return new Promise(resolve => {
-    gPopupShownListener = ({ results }) => {
-      gPopupShownExpected = false;
-      resolve(results);
-    };
+async function popupByArrowDown() {
+  return popupBy(() => {
+    synthesizeKey("KEY_Escape"); // in case popup is already open
+    synthesizeKey("KEY_ArrowDown");
+  });
+}
+
+async function noPopupByArrowDown() {
+  await noPopupBy(() => {
+    synthesizeKey("KEY_Escape"); // in case popup is already open
+    synthesizeKey("KEY_ArrowDown");
   });
 }
 
@@ -297,6 +238,12 @@ function checkACTelemetryEvent(actualEvent, input, augmentedExtra) {
   isDeeply(actualEvent[5], expectedExtra, "Check event extra object");
 }
 
+let gStorageEventsObserver;
+
+function promiseNextStorageEvent() {
+  return gStorageEventsObserver.promiseNextStorageEvent();
+}
+
 function satchelCommonSetup() {
   let chromeURL = SimpleTest.getTestFileURL("parent_utils.js");
   gChromeScript = SpecialPowers.loadChromeScript(chromeURL);
@@ -307,16 +254,70 @@ function satchelCommonSetup() {
     }
   });
 
-  SimpleTest.registerCleanupFunction(() => {
-    gChromeScript.sendAsyncMessage("cleanup");
-    return new Promise(resolve => {
-      gChromeScript.addMessageListener("cleanup-done", function done() {
-        gChromeScript.removeMessageListener("cleanup-done", done);
-        gChromeScript.destroy();
-        resolve();
-      });
-    });
+  gStorageEventsObserver = new StorageEventsObserver();
+
+  SimpleTest.registerCleanupFunction(async () => {
+    await gStorageEventsObserver.cleanup();
+    await gChromeScript.sendQuery("cleanup");
+    gChromeScript.destroy();
   });
+}
+
+function add_named_task(name, fn) {
+  return add_task(
+    {
+      [name]() {
+        return fn();
+      },
+    }[name]
+  );
+}
+
+function preventSubmitOnForms() {
+  for (const form of document.querySelectorAll("form")) {
+    form.onsubmit = e => e.preventDefault();
+  }
+}
+
+/**
+ * Press requested keys and assert input's value
+ *
+ * @param {HTMLInputElement} input
+ * @param {string | Array} keys
+ * @param {string} expectedValue
+ */
+function assertValueAfterKeys(input, keys, expectedValue) {
+  if (!Array.isArray(keys)) {
+    keys = [keys];
+  }
+  for (const key of keys) {
+    synthesizeKey(key);
+  }
+
+  is(input.value, expectedValue, "input value");
+}
+
+function assertAutocompleteItems(...expectedValues) {
+  const actualValues = getMenuEntries();
+  isDeeply(actualValues, expectedValues, "expected autocomplete list");
+}
+
+function deleteSelectedAutocompleteItem() {
+  synthesizeKey("KEY_Delete", { shiftKey: true });
+}
+
+async function openPopupOn(
+  inputOrSelector,
+  { inputValue = "", expectPopup = true } = {}
+) {
+  const input =
+    typeof inputOrSelector == "string"
+      ? document.querySelector(inputOrSelector)
+      : inputOrSelector;
+  input.value = inputValue;
+  input.focus();
+  const items = await (expectPopup ? popupByArrowDown() : noPopupByArrowDown());
+  return { input, items };
 }
 
 satchelCommonSetup();

@@ -44,25 +44,28 @@ async function openHistoryMenu(useContextMenu) {
 async function testBackForwardMenu(useContextMenu) {
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com"
   );
 
   for (let iter = 2; iter <= 4; iter++) {
     // Iterate three times. For the first two times through the loop, add a new history item.
     // But for the last iteration, go back in the history instead.
-    await SpecialPowers.spawn(gBrowser.selectedBrowser, [iter], async function(
-      iterChild
-    ) {
-      if (iterChild == 4) {
-        let popStatePromise = new Promise(function(resolve) {
-          content.onpopstate = resolve;
-        });
-        content.history.back();
-        await popStatePromise;
-      } else {
-        content.history.pushState({}, "" + iterChild, iterChild + ".html");
+    await SpecialPowers.spawn(
+      gBrowser.selectedBrowser,
+      [iter],
+      async function (iterChild) {
+        if (iterChild == 4) {
+          let popStatePromise = new Promise(function (resolve) {
+            content.onpopstate = resolve;
+          });
+          content.history.back();
+          await popStatePromise;
+        } else {
+          content.history.pushState({}, "" + iterChild, iterChild + ".html");
+        }
       }
-    });
+    );
 
     // Wait for the session data to be flushed before continuing the test
     await new Promise(resolve =>
@@ -83,6 +86,7 @@ async function testBackForwardMenu(useContextMenu) {
     );
 
     let node = popupEvent.target.lastElementChild;
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     is(node.getAttribute("uri"), "http://example.com/", "'1' item uri");
     is(node.getAttribute("index"), "0", "'1' item index");
     is(
@@ -92,6 +96,7 @@ async function testBackForwardMenu(useContextMenu) {
     );
 
     node = node.previousElementSibling;
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     is(node.getAttribute("uri"), "http://example.com/2.html", "'2' item uri");
     is(node.getAttribute("index"), "1", "'2' item index");
     is(
@@ -102,6 +107,7 @@ async function testBackForwardMenu(useContextMenu) {
 
     if (iter >= 3) {
       node = node.previousElementSibling;
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       is(node.getAttribute("uri"), "http://example.com/3.html", "'3' item uri");
       is(node.getAttribute("index"), "2", "'3' item index");
       is(
@@ -123,6 +129,7 @@ async function testBackForwardMenu(useContextMenu) {
     } else {
       let newTabPromise = BrowserTestUtils.waitForNewTab(
         gBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         url => url == "http://example.com/"
       );
 
@@ -149,6 +156,11 @@ add_task(async function test_preferences_page() {
 
   openPreferences("search");
   let popupEvent = await openHistoryMenu(true);
+
+  // Wait for the session data to be flushed before continuing the test
+  await new Promise(resolve =>
+    SessionStore.getSessionHistory(gBrowser.selectedTab, resolve)
+  );
 
   is(popupEvent.target.children.length, 2, "Correct number of history items");
 

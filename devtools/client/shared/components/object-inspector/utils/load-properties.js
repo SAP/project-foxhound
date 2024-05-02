@@ -12,7 +12,7 @@ const {
   getFullText,
   getPromiseState,
   getProxySlots,
-} = require("devtools/client/shared/components/object-inspector/utils/client");
+} = require("resource://devtools/client/shared/components/object-inspector/utils/client.js");
 
 const {
   getClosestGripNode,
@@ -30,7 +30,7 @@ const {
   nodeIsProxy,
   nodeNeedsNumericalBuckets,
   nodeIsLongString,
-} = require("devtools/client/shared/components/object-inspector/utils/node");
+} = require("resource://devtools/client/shared/components/object-inspector/utils/node.js");
 
 function loadItemProperties(item, client, loadedProperties, threadActorID) {
   const gripItem = getClosestGripNode(item);

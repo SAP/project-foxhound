@@ -12,9 +12,9 @@
 #include "CommandEncoder.h"
 #include "Instance.h"
 #include "Texture.h"
+#include "nsIGlobalObject.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
 template <typename T>
 ChildOf<T>::ChildOf(T* const parent) : mParent(parent) {}
@@ -38,5 +38,4 @@ template class ChildOf<Device>;
 template class ChildOf<Instance>;
 template class ChildOf<Texture>;
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu

@@ -18,14 +18,12 @@ extern crate smallbitvec;
 extern crate smallvec;
 #[cfg(feature = "string_cache")]
 extern crate string_cache;
+extern crate thin_vec;
 
-use servo_arc::{Arc, ThinArc};
+use servo_arc::{Arc, ArcUnion, HeaderSlice, ArcUnionBorrow};
 use smallbitvec::{InternalStorage, SmallBitVec};
 use smallvec::{Array, SmallVec};
 use std::alloc::Layout;
-#[cfg(debug_assertions)]
-use std::any::TypeId;
-#[cfg(debug_assertions)]
 use std::collections::HashSet;
 use std::ffi::CString;
 use std::isize;
@@ -39,6 +37,7 @@ use std::os::raw::c_void;
 use std::ptr::{self, NonNull};
 use std::slice;
 use std::str;
+use thin_vec::ThinVec;
 
 /// Result type for ToShmem::to_shmem.
 ///
@@ -59,16 +58,12 @@ pub struct SharedMemoryBuilder {
     /// The current position in the buffer, where the next value will be written
     /// at.
     index: usize,
-    /// Pointers to every sharable value that we store in the shared memory
+    /// Pointers to every shareable value that we store in the shared memory
     /// buffer.  We use this to assert against encountering the same value
     /// twice, e.g. through another Arc reference, so that we don't
     /// inadvertently store duplicate copies of values.
     #[cfg(debug_assertions)]
     shared_values: HashSet<*const c_void>,
-    /// Types of values that we may duplicate in the shared memory buffer when
-    /// there are shared references to them, such as in Arcs.
-    #[cfg(debug_assertions)]
-    allowed_duplication_types: HashSet<TypeId>,
 }
 
 /// Amount of padding needed after `size` bytes to ensure that the following
@@ -91,17 +86,7 @@ impl SharedMemoryBuilder {
             index: 0,
             #[cfg(debug_assertions)]
             shared_values: HashSet::new(),
-            #[cfg(debug_assertions)]
-            allowed_duplication_types: HashSet::new(),
         }
-    }
-
-    /// Notes a type as being allowed for duplication when being copied to the
-    /// shared memory buffer, such as Arcs referencing the same value.
-    #[inline]
-    pub fn add_allowed_duplication_type<T: 'static>(&mut self) {
-        #[cfg(debug_assertions)]
-        self.allowed_duplication_types.insert(TypeId::of::<T>());
     }
 
     /// Returns the number of bytes currently used in the buffer.
@@ -232,7 +217,6 @@ impl_trivial_to_shmem!(
     usize
 );
 
-impl_trivial_to_shmem!(cssparser::RGBA);
 impl_trivial_to_shmem!(cssparser::SourceLocation);
 impl_trivial_to_shmem!(cssparser::TokenSerializationType);
 
@@ -432,23 +416,48 @@ impl<T: ToShmem> ToShmem for Option<T> {
     }
 }
 
-impl<T: 'static + ToShmem> ToShmem for Arc<T> {
+impl<T: ToShmem, S> ToShmem for HashSet<T, S>
+where
+    Self: Default,
+{
+    fn to_shmem(&self, _builder: &mut SharedMemoryBuilder) -> Result<Self> {
+        if !self.is_empty() {
+            return Err(format!(
+                "ToShmem failed for HashSet: We only support empty sets \
+                 (we don't expect custom properties in UA sheets, they're observable by content)",
+            ));
+        }
+        Ok(ManuallyDrop::new(Self::default()))
+    }
+}
+
+impl<A: 'static, B: 'static> ToShmem for ArcUnion<A, B>
+where
+    Arc<A>: ToShmem,
+    Arc<B>: ToShmem,
+{
+    fn to_shmem(&self, builder: &mut SharedMemoryBuilder) -> Result<Self> {
+        Ok(ManuallyDrop::new(match self.borrow() {
+            ArcUnionBorrow::First(first) => Self::from_first(ManuallyDrop::into_inner(first.with_arc(|a| {
+                a.to_shmem(builder)
+            })?)),
+            ArcUnionBorrow::Second(second) => Self::from_second(ManuallyDrop::into_inner(second.with_arc(|a| {
+                a.to_shmem(builder)
+            })?)),
+        }))
+    }
+}
+
+impl<T: ToShmem> ToShmem for Arc<T> {
     fn to_shmem(&self, builder: &mut SharedMemoryBuilder) -> Result<Self> {
         // Assert that we don't encounter any shared references to values we
-        // don't expect.  Those we expect are those noted by calling
-        // add_allowed_duplication_type, and should be types where we're fine
-        // with duplicating any shared references in the shared memory buffer.
-        //
-        // Unfortunately there's no good way to print out the exact type of T
-        // in the assertion message.
+        // don't expect.
         #[cfg(debug_assertions)]
         assert!(
-            !builder.shared_values.contains(&self.heap_ptr()) ||
-                builder
-                    .allowed_duplication_types
-                    .contains(&TypeId::of::<T>()),
-            "ToShmem failed for Arc<T>: encountered a value of type T with multiple references \
-             and which has not been explicitly allowed with an add_allowed_duplication_type call",
+            !builder.shared_values.contains(&self.heap_ptr()),
+            "ToShmem failed for Arc<{}>: encountered a value with multiple \
+            references.",
+            std::any::type_name::<T>()
         );
 
         // Make a clone of the Arc-owned value with all of its heap allocations
@@ -471,7 +480,7 @@ impl<T: 'static + ToShmem> ToShmem for Arc<T> {
     }
 }
 
-impl<H: 'static + ToShmem, T: 'static + ToShmem> ToShmem for ThinArc<H, T> {
+impl<H: ToShmem, T: ToShmem> ToShmem for Arc<HeaderSlice<H, T>> {
     fn to_shmem(&self, builder: &mut SharedMemoryBuilder) -> Result<Self> {
         // We don't currently have any shared ThinArc values in stylesheets,
         // so don't support them for now.
@@ -484,25 +493,82 @@ impl<H: 'static + ToShmem, T: 'static + ToShmem> ToShmem for ThinArc<H, T> {
 
         // Make a clone of the Arc-owned header and slice values with all of
         // their heap allocations placed in the shared memory buffer.
-        let header = self.header.header.to_shmem(builder)?;
-        let mut values = Vec::with_capacity(self.slice.len());
-        for v in self.slice.iter() {
+        let header = self.header.to_shmem(builder)?;
+        let mut values = Vec::with_capacity(self.len());
+        for v in self.slice().iter() {
             values.push(v.to_shmem(builder)?);
         }
 
         // Create a new ThinArc with the shared value and have it place
         // its ArcInner in the shared memory buffer.
+        let len = values.len();
+        let static_arc = Self::from_header_and_iter_alloc(
+            |layout| builder.alloc(layout),
+            ManuallyDrop::into_inner(header),
+            values.into_iter().map(ManuallyDrop::into_inner),
+            len,
+            /* is_static = */ true,
+        );
+
+        #[cfg(debug_assertions)]
+        builder.shared_values.insert(self.heap_ptr());
+
+        Ok(ManuallyDrop::new(static_arc))
+    }
+}
+
+impl<T: ToShmem> ToShmem for ThinVec<T> {
+    fn to_shmem(&self, builder: &mut SharedMemoryBuilder) -> Result<Self> {
+        assert_eq!(mem::size_of::<Self>(), mem::size_of::<*const ()>());
+
+        // NOTE: We need to do the work of allocating the header in shared memory even if the
+        // length is zero, because an empty ThinVec, even though it doesn't allocate, references
+        // static memory which will not be mapped to other processes, see bug 1841011.
+        let len = self.len();
+
+        // nsTArrayHeader size.
+        // FIXME: Would be nice not to hard-code this, but in practice thin-vec crate also relies
+        // on this.
+        let header_size = 2 * mem::size_of::<u32>();
+        let header_align = mem::size_of::<u32>();
+
+        let item_size = mem::size_of::<T>();
+        let item_align = mem::align_of::<T>();
+
+        // We don't need to support underalignment for now, this could be supported if needed.
+        assert!(item_align >= header_align);
+
+        // This is explicitly unsupported by ThinVec, see:
+        // https://searchfox.org/mozilla-central/rev/ad732108b073742d7324f998c085f459674a6846/third_party/rust/thin-vec/src/lib.rs#375-386
+        assert!(item_align <= header_size);
+        let header_padding = 0;
+
+        let layout = Layout::from_size_align(
+            header_size + header_padding + padded_size(item_size, item_align) * len,
+            item_align,
+        )
+        .unwrap();
+
+        let shmem_header_ptr = builder.alloc::<u8>(layout);
+        let shmem_data_ptr = unsafe { shmem_header_ptr.add(header_size + header_padding) };
+
+        let data_ptr = self.as_ptr() as *const T as *const u8;
+        let header_ptr = unsafe { data_ptr.sub(header_size + header_padding) };
+
         unsafe {
-            let static_arc = ThinArc::static_from_header_and_iter(
-                |layout| builder.alloc(layout),
-                ManuallyDrop::into_inner(header),
-                values.into_iter().map(ManuallyDrop::into_inner),
-            );
+            // Copy the header. Note this might copy a wrong capacity, but it doesn't matter,
+            // because shared memory ptrs are immutable anyways, and we can't relocate.
+            ptr::copy(header_ptr, shmem_header_ptr, header_size);
+            // ToShmem + copy the contents into the shared buffer.
+            to_shmem_slice_ptr(self.iter(), shmem_data_ptr as *mut T, builder)?;
+            // Return the new ThinVec, which is just a pointer to the shared memory buffer.
+            let shmem_thinvec: Self = mem::transmute(shmem_header_ptr);
 
-            #[cfg(debug_assertions)]
-            builder.shared_values.insert(self.heap_ptr());
+            // Sanity-check that the ptr and length match.
+            debug_assert_eq!(shmem_thinvec.as_ptr(), shmem_data_ptr as *const T);
+            debug_assert_eq!(shmem_thinvec.len(), len);
 
-            Ok(ManuallyDrop::new(static_arc))
+            Ok(ManuallyDrop::new(shmem_thinvec))
         }
     }
 }

@@ -5,10 +5,22 @@ use core::fmt;
 /// Error type for the library.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
+    /// A generic error from Rust Decimal with the `String` containing more information as to what
+    /// went wrong.
+    ///
+    /// This is a legacy/deprecated error type retained for backwards compatibility.  
     ErrorString(String),
+    /// The value provided exceeds `Decimal::MAX`.
     ExceedsMaximumPossibleValue,
+    /// The value provided is less than `Decimal::MIN`.
     LessThanMinimumPossibleValue,
+    /// An underflow is when there are more fractional digits than can be represented within `Decimal`.
+    Underflow,
+    /// The scale provided exceeds the maximum scale that `Decimal` can represent.
     ScaleExceedsMaximumPrecision(u32),
+    /// Represents a failure to convert to/from `Decimal` to the specified type. This is typically
+    /// due to type constraints (e.g. `Decimal::MAX` cannot be converted into `i32`).
+    ConversionTo(String),
 }
 
 impl<S> From<S> for Error
@@ -39,12 +51,18 @@ impl fmt::Display for Error {
             Self::LessThanMinimumPossibleValue => {
                 write!(f, "Number less than minimum value that can be represented.")
             }
+            Self::Underflow => {
+                write!(f, "Number has a high precision that can not be represented.")
+            }
             Self::ScaleExceedsMaximumPrecision(ref scale) => {
                 write!(
                     f,
                     "Scale exceeds the maximum precision allowed: {} > {}",
                     scale, MAX_PRECISION_U32
                 )
+            }
+            Self::ConversionTo(ref type_name) => {
+                write!(f, "Error while converting to {}", type_name)
             }
         }
     }

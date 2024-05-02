@@ -4,6 +4,13 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 "use strict";
 
+// Enable the collection (during test) for all products so even products
+// that don't collect the data will be able to run the test without failure.
+Services.prefs.setBoolPref(
+  "toolkit.telemetry.testing.overrideProductsCheck",
+  true
+);
+
 // In which we connect to a number of domains (as faked by a server running
 // locally) with OCSP stapling enabled to determine that good things happen
 // and bad things don't, specifically with respect to various expired OCSP
@@ -28,13 +35,13 @@ function add_ocsp_test(
   add_connection_test(
     aHost,
     aExpectedResult,
-    function() {
+    function () {
       clearOCSPCache();
       clearSessionCache();
       gCurrentOCSPResponse = aOCSPResponseToServe;
       gOCSPRequestCount = 0;
     },
-    function() {
+    function () {
       equal(
         gOCSPRequestCount,
         aExpectedRequestCount,
@@ -54,7 +61,6 @@ Services.prefs.setIntPref("security.OCSP.enabled", 1);
 // That aspect of OCSP requests is not what we're testing here, so we can just
 // bump the timeout and hopefully avoid these failures.
 Services.prefs.setIntPref("security.OCSP.timeoutMilliseconds.soft", 5000);
-Services.prefs.setIntPref("security.pki.sha1_enforcement_level", 4);
 var args = [
   ["good", "default-ee", "unused", 0],
   ["expiredresponse", "default-ee", "unused", 0],
@@ -80,13 +86,12 @@ var ocspResponseGoodMustStaple = ocspResponses[5];
 var willNotRetry = 1;
 // but sometimes, since a bad response is in the cache, OCSP fetch will be
 // attempted for each validation - in practice, for these test certs, this
-// means 6 requests because various hash algorithm and key size combinations
-// are tried.
-var willRetry = 6;
+// means 2 requests because various key sizes are tried.
+var willRetry = 2;
 
 function run_test() {
   let ocspResponder = new HttpServer();
-  ocspResponder.registerPrefixHandler("/", function(request, response) {
+  ocspResponder.registerPrefixHandler("/", function (request, response) {
     if (gCurrentOCSPResponse) {
       response.setStatusLine(request.httpVersion, 200, "OK");
       response.setHeader("Content-Type", "application/ocsp-response");
@@ -279,7 +284,7 @@ function run_test() {
     willNotRetry
   );
 
-  add_test(function() {
+  add_test(function () {
     ocspResponder.stop(run_next_test);
   });
   add_test(check_ocsp_stapling_telemetry);

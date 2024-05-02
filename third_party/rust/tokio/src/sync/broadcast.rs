@@ -4,7 +4,7 @@
 //! A [`Sender`] is used to broadcast values to **all** connected [`Receiver`]
 //! values. [`Sender`] handles are clone-able, allowing concurrent send and
 //! receive actions. [`Sender`] and [`Receiver`] are both `Send` and `Sync` as
-//! long as `T` is also `Send` or `Sync` respectively.
+//! long as `T` is `Send`.
 //!
 //! When a value is sent, **all** [`Receiver`] handles are notified and will
 //! receive the value. The value is stored once inside the channel and cloned on
@@ -17,6 +17,9 @@
 //! New [`Receiver`] handles are created by calling [`Sender::subscribe`]. The
 //! returned [`Receiver`] will receive values sent **after** the call to
 //! `subscribe`.
+//!
+//! This channel is also suitable for the single-producer multi-consumer
+//! use-case, where a single sender broadcasts values to many receivers.
 //!
 //! ## Lagging
 //!
@@ -51,12 +54,16 @@
 //! all values retained by the channel, the next call to [`recv`] will return
 //! with [`RecvError::Closed`].
 //!
+//! When a [`Receiver`] handle is dropped, any messages not read by the receiver
+//! will be marked as read. If this receiver was the only one not to have read
+//! that message, the message will be dropped at this point.
+//!
 //! [`Sender`]: crate::sync::broadcast::Sender
 //! [`Sender::subscribe`]: crate::sync::broadcast::Sender::subscribe
 //! [`Receiver`]: crate::sync::broadcast::Receiver
 //! [`channel`]: crate::sync::broadcast::channel
-//! [`RecvError::Lagged`]: crate::sync::broadcast::RecvError::Lagged
-//! [`RecvError::Closed`]: crate::sync::broadcast::RecvError::Closed
+//! [`RecvError::Lagged`]: crate::sync::broadcast::error::RecvError::Lagged
+//! [`RecvError::Closed`]: crate::sync::broadcast::error::RecvError::Closed
 //! [`recv`]: crate::sync::broadcast::Receiver::recv
 //!
 //! # Examples
@@ -107,11 +114,13 @@
 //!     assert_eq!(20, rx.recv().await.unwrap());
 //!     assert_eq!(30, rx.recv().await.unwrap());
 //! }
+//! ```
 
 use crate::loom::cell::UnsafeCell;
 use crate::loom::sync::atomic::AtomicUsize;
-use crate::loom::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
+use crate::loom::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard};
 use crate::util::linked_list::{self, LinkedList};
+use crate::util::WakeList;
 
 use std::fmt;
 use std::future::Future;
@@ -162,6 +171,11 @@ pub struct Sender<T> {
 /// Must not be used concurrently. Messages may be retrieved using
 /// [`recv`][Receiver::recv].
 ///
+/// To turn this receiver into a `Stream`, you can use the [`BroadcastStream`]
+/// wrapper.
+///
+/// [`BroadcastStream`]: https://docs.rs/tokio-stream/0.1/tokio_stream/wrappers/struct.BroadcastStream.html
+///
 /// # Examples
 ///
 /// ```
@@ -194,89 +208,130 @@ pub struct Receiver<T> {
 
     /// Next position to read from
     next: u64,
-
-    /// Used to support the deprecated `poll_recv` fn
-    waiter: Option<Pin<Box<UnsafeCell<Waiter>>>>,
 }
 
-/// Error returned by [`Sender::send`][Sender::send].
-///
-/// A **send** operation can only fail if there are no active receivers,
-/// implying that the message could never be received. The error contains the
-/// message being sent as a payload so it can be recovered.
-#[derive(Debug)]
-pub struct SendError<T>(pub T);
+pub mod error {
+    //! Broadcast error types
 
-/// An error returned from the [`recv`] function on a [`Receiver`].
-///
-/// [`recv`]: crate::sync::broadcast::Receiver::recv
-/// [`Receiver`]: crate::sync::broadcast::Receiver
-#[derive(Debug, PartialEq)]
-pub enum RecvError {
-    /// There are no more active senders implying no further messages will ever
-    /// be sent.
-    Closed,
+    use std::fmt;
 
-    /// The receiver lagged too far behind. Attempting to receive again will
-    /// return the oldest message still retained by the channel.
+    /// Error returned by from the [`send`] function on a [`Sender`].
     ///
-    /// Includes the number of skipped messages.
-    Lagged(u64),
-}
-
-/// An error returned from the [`try_recv`] function on a [`Receiver`].
-///
-/// [`try_recv`]: crate::sync::broadcast::Receiver::try_recv
-/// [`Receiver`]: crate::sync::broadcast::Receiver
-#[derive(Debug, PartialEq)]
-pub enum TryRecvError {
-    /// The channel is currently empty. There are still active
-    /// [`Sender`][Sender] handles, so data may yet become available.
-    Empty,
-
-    /// There are no more active senders implying no further messages will ever
-    /// be sent.
-    Closed,
-
-    /// The receiver lagged too far behind and has been forcibly disconnected.
-    /// Attempting to receive again will return the oldest message still
-    /// retained by the channel.
+    /// A **send** operation can only fail if there are no active receivers,
+    /// implying that the message could never be received. The error contains the
+    /// message being sent as a payload so it can be recovered.
     ///
-    /// Includes the number of skipped messages.
-    Lagged(u64),
+    /// [`send`]: crate::sync::broadcast::Sender::send
+    /// [`Sender`]: crate::sync::broadcast::Sender
+    #[derive(Debug)]
+    pub struct SendError<T>(pub T);
+
+    impl<T> fmt::Display for SendError<T> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "channel closed")
+        }
+    }
+
+    impl<T: fmt::Debug> std::error::Error for SendError<T> {}
+
+    /// An error returned from the [`recv`] function on a [`Receiver`].
+    ///
+    /// [`recv`]: crate::sync::broadcast::Receiver::recv
+    /// [`Receiver`]: crate::sync::broadcast::Receiver
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    pub enum RecvError {
+        /// There are no more active senders implying no further messages will ever
+        /// be sent.
+        Closed,
+
+        /// The receiver lagged too far behind. Attempting to receive again will
+        /// return the oldest message still retained by the channel.
+        ///
+        /// Includes the number of skipped messages.
+        Lagged(u64),
+    }
+
+    impl fmt::Display for RecvError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                RecvError::Closed => write!(f, "channel closed"),
+                RecvError::Lagged(amt) => write!(f, "channel lagged by {}", amt),
+            }
+        }
+    }
+
+    impl std::error::Error for RecvError {}
+
+    /// An error returned from the [`try_recv`] function on a [`Receiver`].
+    ///
+    /// [`try_recv`]: crate::sync::broadcast::Receiver::try_recv
+    /// [`Receiver`]: crate::sync::broadcast::Receiver
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    pub enum TryRecvError {
+        /// The channel is currently empty. There are still active
+        /// [`Sender`] handles, so data may yet become available.
+        ///
+        /// [`Sender`]: crate::sync::broadcast::Sender
+        Empty,
+
+        /// There are no more active senders implying no further messages will ever
+        /// be sent.
+        Closed,
+
+        /// The receiver lagged too far behind and has been forcibly disconnected.
+        /// Attempting to receive again will return the oldest message still
+        /// retained by the channel.
+        ///
+        /// Includes the number of skipped messages.
+        Lagged(u64),
+    }
+
+    impl fmt::Display for TryRecvError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                TryRecvError::Empty => write!(f, "channel empty"),
+                TryRecvError::Closed => write!(f, "channel closed"),
+                TryRecvError::Lagged(amt) => write!(f, "channel lagged by {}", amt),
+            }
+        }
+    }
+
+    impl std::error::Error for TryRecvError {}
 }
 
-/// Data shared between senders and receivers
+use self::error::*;
+
+/// Data shared between senders and receivers.
 struct Shared<T> {
-    /// slots in the channel
+    /// slots in the channel.
     buffer: Box<[RwLock<Slot<T>>]>,
 
-    /// Mask a position -> index
+    /// Mask a position -> index.
     mask: usize,
 
     /// Tail of the queue. Includes the rx wait list.
     tail: Mutex<Tail>,
 
-    /// Number of outstanding Sender handles
+    /// Number of outstanding Sender handles.
     num_tx: AtomicUsize,
 }
 
-/// Next position to write a value
+/// Next position to write a value.
 struct Tail {
-    /// Next position to write to
+    /// Next position to write to.
     pos: u64,
 
-    /// Number of active receivers
+    /// Number of active receivers.
     rx_cnt: usize,
 
-    /// True if the channel is closed
+    /// True if the channel is closed.
     closed: bool,
 
-    /// Receivers waiting for a value
-    waiters: LinkedList<Waiter>,
+    /// Receivers waiting for a value.
+    waiters: LinkedList<Waiter, <Waiter as linked_list::Link>::Target>,
 }
 
-/// Slot in the buffer
+/// Slot in the buffer.
 struct Slot<T> {
     /// Remaining number of receivers that are expected to see this value.
     ///
@@ -286,11 +341,8 @@ struct Slot<T> {
     /// acquired.
     rem: AtomicUsize,
 
-    /// Uniquely identifies the `send` stored in the slot
+    /// Uniquely identifies the `send` stored in the slot.
     pos: u64,
-
-    /// True signals the channel is closed.
-    closed: bool,
 
     /// The value being broadcast.
     ///
@@ -299,9 +351,9 @@ struct Slot<T> {
     val: UnsafeCell<Option<T>>,
 }
 
-/// An entry in the wait queue
+/// An entry in the wait queue.
 struct Waiter {
-    /// True if queued
+    /// True if queued.
     queued: bool,
 
     /// Task waiting on the broadcast channel.
@@ -314,43 +366,29 @@ struct Waiter {
     _p: PhantomPinned,
 }
 
+generate_addr_of_methods! {
+    impl<> Waiter {
+        unsafe fn addr_of_pointers(self: NonNull<Self>) -> NonNull<linked_list::Pointers<Waiter>> {
+            &self.pointers
+        }
+    }
+}
+
 struct RecvGuard<'a, T> {
     slot: RwLockReadGuard<'a, Slot<T>>,
 }
 
-/// Receive a value future
-struct Recv<R, T>
-where
-    R: AsMut<Receiver<T>>,
-{
-    /// Receiver being waited on
-    receiver: R,
+/// Receive a value future.
+struct Recv<'a, T> {
+    /// Receiver being waited on.
+    receiver: &'a mut Receiver<T>,
 
-    /// Entry in the waiter `LinkedList`
+    /// Entry in the waiter `LinkedList`.
     waiter: UnsafeCell<Waiter>,
-
-    _p: std::marker::PhantomData<T>,
 }
 
-/// `AsMut<T>` is not implemented for `T` (coherence). Explicitly implementing
-/// `AsMut` for `Receiver` would be included in the public API of the receiver
-/// type. Instead, `Borrow` is used internally to bridge the gap.
-struct Borrow<T>(T);
-
-impl<T> AsMut<Receiver<T>> for Borrow<Receiver<T>> {
-    fn as_mut(&mut self) -> &mut Receiver<T> {
-        &mut self.0
-    }
-}
-
-impl<'a, T> AsMut<Receiver<T>> for Borrow<&'a mut Receiver<T>> {
-    fn as_mut(&mut self) -> &mut Receiver<T> {
-        &mut *self.0
-    }
-}
-
-unsafe impl<R: AsMut<Receiver<T>> + Send, T: Send> Send for Recv<R, T> {}
-unsafe impl<R: AsMut<Receiver<T>> + Sync, T: Send> Sync for Recv<R, T> {}
+unsafe impl<'a, T: Send> Send for Recv<'a, T> {}
+unsafe impl<'a, T: Send> Sync for Recv<'a, T> {}
 
 /// Max number of receivers. Reserve space to lock.
 const MAX_RECEIVERS: usize = usize::MAX >> 2;
@@ -373,8 +411,8 @@ const MAX_RECEIVERS: usize = usize::MAX >> 2;
 /// [`Sender::subscribe`]: crate::sync::broadcast::Sender::subscribe
 /// [`Receiver`]: crate::sync::broadcast::Receiver
 /// [`recv`]: crate::sync::broadcast::Receiver::recv
-/// [`SendError`]: crate::sync::broadcast::SendError
-/// [`RecvError`]: crate::sync::broadcast::RecvError
+/// [`SendError`]: crate::sync::broadcast::error::SendError
+/// [`RecvError`]: crate::sync::broadcast::error::RecvError
 ///
 /// # Examples
 ///
@@ -400,7 +438,13 @@ const MAX_RECEIVERS: usize = usize::MAX >> 2;
 ///     tx.send(20).unwrap();
 /// }
 /// ```
-pub fn channel<T>(mut capacity: usize) -> (Sender<T>, Receiver<T>) {
+///
+/// # Panics
+///
+/// This will panic if `capacity` is equal to `0` or larger
+/// than `usize::MAX / 2`.
+#[track_caller]
+pub fn channel<T: Clone>(mut capacity: usize) -> (Sender<T>, Receiver<T>) {
     assert!(capacity > 0, "capacity is empty");
     assert!(capacity <= usize::MAX >> 1, "requested capacity too large");
 
@@ -413,7 +457,6 @@ pub fn channel<T>(mut capacity: usize) -> (Sender<T>, Receiver<T>) {
         buffer.push(RwLock::new(Slot {
             rem: AtomicUsize::new(0),
             pos: (i as u64).wrapping_sub(capacity as u64),
-            closed: false,
             val: UnsafeCell::new(None),
         }));
     }
@@ -433,7 +476,6 @@ pub fn channel<T>(mut capacity: usize) -> (Sender<T>, Receiver<T>) {
     let rx = Receiver {
         shared: shared.clone(),
         next: 0,
-        waiter: None,
     };
 
     let tx = Sender { shared };
@@ -499,8 +541,41 @@ impl<T> Sender<T> {
     /// }
     /// ```
     pub fn send(&self, value: T) -> Result<usize, SendError<T>> {
-        self.send2(Some(value))
-            .map_err(|SendError(maybe_v)| SendError(maybe_v.unwrap()))
+        let mut tail = self.shared.tail.lock();
+
+        if tail.rx_cnt == 0 {
+            return Err(SendError(value));
+        }
+
+        // Position to write into
+        let pos = tail.pos;
+        let rem = tail.rx_cnt;
+        let idx = (pos & self.shared.mask as u64) as usize;
+
+        // Update the tail position
+        tail.pos = tail.pos.wrapping_add(1);
+
+        // Get the slot
+        let mut slot = self.shared.buffer[idx].write().unwrap();
+
+        // Track the position
+        slot.pos = pos;
+
+        // Set remaining receivers
+        slot.rem.with_mut(|v| *v = rem);
+
+        // Write the value
+        slot.val = UnsafeCell::new(Some(value));
+
+        // Release the slot lock before notifying the receivers.
+        drop(slot);
+
+        // Notify and release the mutex. This must happen after the slot lock is
+        // released, otherwise the writer lock bit could be cleared while another
+        // thread is in the critical section.
+        self.shared.notify_rx(tail);
+
+        Ok(rem)
     }
 
     /// Creates a new [`Receiver`] handle that will receive values sent **after**
@@ -528,23 +603,98 @@ impl<T> Sender<T> {
     /// ```
     pub fn subscribe(&self) -> Receiver<T> {
         let shared = self.shared.clone();
+        new_receiver(shared)
+    }
 
-        let mut tail = shared.tail.lock().unwrap();
+    /// Returns the number of queued values.
+    ///
+    /// A value is queued until it has either been seen by all receivers that were alive at the time
+    /// it was sent, or has been evicted from the queue by subsequent sends that exceeded the
+    /// queue's capacity.
+    ///
+    /// # Note
+    ///
+    /// In contrast to [`Receiver::len`], this method only reports queued values and not values that
+    /// have been evicted from the queue before being seen by all receivers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx1) = broadcast::channel(16);
+    ///     let mut rx2 = tx.subscribe();
+    ///
+    ///     tx.send(10).unwrap();
+    ///     tx.send(20).unwrap();
+    ///     tx.send(30).unwrap();
+    ///
+    ///     assert_eq!(tx.len(), 3);
+    ///
+    ///     rx1.recv().await.unwrap();
+    ///
+    ///     // The len is still 3 since rx2 hasn't seen the first value yet.
+    ///     assert_eq!(tx.len(), 3);
+    ///
+    ///     rx2.recv().await.unwrap();
+    ///
+    ///     assert_eq!(tx.len(), 2);
+    /// }
+    /// ```
+    pub fn len(&self) -> usize {
+        let tail = self.shared.tail.lock();
 
-        if tail.rx_cnt == MAX_RECEIVERS {
-            panic!("max receivers");
+        let base_idx = (tail.pos & self.shared.mask as u64) as usize;
+        let mut low = 0;
+        let mut high = self.shared.buffer.len();
+        while low < high {
+            let mid = low + (high - low) / 2;
+            let idx = base_idx.wrapping_add(mid) & self.shared.mask;
+            if self.shared.buffer[idx].read().unwrap().rem.load(SeqCst) == 0 {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
         }
 
-        tail.rx_cnt = tail.rx_cnt.checked_add(1).expect("overflow");
-        let next = tail.pos;
+        self.shared.buffer.len() - low
+    }
 
-        drop(tail);
+    /// Returns true if there are no queued values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx1) = broadcast::channel(16);
+    ///     let mut rx2 = tx.subscribe();
+    ///
+    ///     assert!(tx.is_empty());
+    ///
+    ///     tx.send(10).unwrap();
+    ///
+    ///     assert!(!tx.is_empty());
+    ///
+    ///     rx1.recv().await.unwrap();
+    ///
+    ///     // The queue is still not empty since rx2 hasn't seen the value.
+    ///     assert!(!tx.is_empty());
+    ///
+    ///     rx2.recv().await.unwrap();
+    ///
+    ///     assert!(tx.is_empty());
+    /// }
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        let tail = self.shared.tail.lock();
 
-        Receiver {
-            shared,
-            next,
-            waiter: None,
-        }
+        let idx = (tail.pos.wrapping_sub(1) & self.shared.mask as u64) as usize;
+        self.shared.buffer[idx].read().unwrap().rem.load(SeqCst) == 0
     }
 
     /// Returns the number of active receivers
@@ -584,68 +734,99 @@ impl<T> Sender<T> {
     /// }
     /// ```
     pub fn receiver_count(&self) -> usize {
-        let tail = self.shared.tail.lock().unwrap();
+        let tail = self.shared.tail.lock();
         tail.rx_cnt
     }
 
-    fn send2(&self, value: Option<T>) -> Result<usize, SendError<Option<T>>> {
-        let mut tail = self.shared.tail.lock().unwrap();
+    /// Returns `true` if senders belong to the same channel.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, _rx) = broadcast::channel::<()>(16);
+    ///     let tx2 = tx.clone();
+    ///
+    ///     assert!(tx.same_channel(&tx2));
+    ///
+    ///     let (tx3, _rx3) = broadcast::channel::<()>(16);
+    ///
+    ///     assert!(!tx3.same_channel(&tx2));
+    /// }
+    /// ```
+    pub fn same_channel(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
 
-        if tail.rx_cnt == 0 {
-            return Err(SendError(value));
-        }
+    fn close_channel(&self) {
+        let mut tail = self.shared.tail.lock();
+        tail.closed = true;
 
-        // Position to write into
-        let pos = tail.pos;
-        let rem = tail.rx_cnt;
-        let idx = (pos & self.shared.mask as u64) as usize;
-
-        // Update the tail position
-        tail.pos = tail.pos.wrapping_add(1);
-
-        // Get the slot
-        let mut slot = self.shared.buffer[idx].write().unwrap();
-
-        // Track the position
-        slot.pos = pos;
-
-        // Set remaining receivers
-        slot.rem.with_mut(|v| *v = rem);
-
-        // Set the closed bit if the value is `None`; otherwise write the value
-        if value.is_none() {
-            tail.closed = true;
-            slot.closed = true;
-        } else {
-            slot.val.with_mut(|ptr| unsafe { *ptr = value });
-        }
-
-        // Release the slot lock before notifying the receivers.
-        drop(slot);
-
-        tail.notify_rx();
-
-        // Release the mutex. This must happen after the slot lock is released,
-        // otherwise the writer lock bit could be cleared while another thread
-        // is in the critical section.
-        drop(tail);
-
-        Ok(rem)
+        self.shared.notify_rx(tail);
     }
 }
 
-impl Tail {
-    fn notify_rx(&mut self) {
-        while let Some(mut waiter) = self.waiters.pop_back() {
-            // Safety: `waiters` lock is still held.
-            let waiter = unsafe { waiter.as_mut() };
+/// Create a new `Receiver` which reads starting from the tail.
+fn new_receiver<T>(shared: Arc<Shared<T>>) -> Receiver<T> {
+    let mut tail = shared.tail.lock();
 
-            assert!(waiter.queued);
-            waiter.queued = false;
+    if tail.rx_cnt == MAX_RECEIVERS {
+        panic!("max receivers");
+    }
 
-            let waker = waiter.waker.take().unwrap();
-            waker.wake();
+    tail.rx_cnt = tail.rx_cnt.checked_add(1).expect("overflow");
+
+    let next = tail.pos;
+
+    drop(tail);
+
+    Receiver { shared, next }
+}
+
+impl<T> Shared<T> {
+    fn notify_rx<'a, 'b: 'a>(&'b self, mut tail: MutexGuard<'a, Tail>) {
+        let mut wakers = WakeList::new();
+        'outer: loop {
+            while wakers.can_push() {
+                match tail.waiters.pop_back() {
+                    Some(mut waiter) => {
+                        // Safety: `tail` lock is still held.
+                        let waiter = unsafe { waiter.as_mut() };
+
+                        assert!(waiter.queued);
+                        waiter.queued = false;
+
+                        if let Some(waker) = waiter.waker.take() {
+                            wakers.push(waker);
+                        }
+                    }
+                    None => {
+                        break 'outer;
+                    }
+                }
+            }
+
+            // Release the lock before waking.
+            drop(tail);
+
+            // Before we acquire the lock again all sorts of things can happen:
+            // some waiters may remove themselves from the list and new waiters
+            // may be added. This is fine since at worst we will unnecessarily
+            // wake up waiters which will then queue themselves again.
+
+            wakers.wake_all();
+
+            // Acquire the lock again.
+            tail = self.tail.lock();
         }
+
+        // Release the lock before waking.
+        drop(tail);
+
+        wakers.wake_all();
     }
 }
 
@@ -661,12 +842,102 @@ impl<T> Clone for Sender<T> {
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
         if 1 == self.shared.num_tx.fetch_sub(1, SeqCst) {
-            let _ = self.send2(None);
+            self.close_channel();
         }
     }
 }
 
 impl<T> Receiver<T> {
+    /// Returns the number of messages that were sent into the channel and that
+    /// this [`Receiver`] has yet to receive.
+    ///
+    /// If the returned value from `len` is larger than the next largest power of 2
+    /// of the capacity of the channel any call to [`recv`] will return an
+    /// `Err(RecvError::Lagged)` and any call to [`try_recv`] will return an
+    /// `Err(TryRecvError::Lagged)`, e.g. if the capacity of the channel is 10,
+    /// [`recv`] will start to return `Err(RecvError::Lagged)` once `len` returns
+    /// values larger than 16.
+    ///
+    /// [`Receiver`]: crate::sync::broadcast::Receiver
+    /// [`recv`]: crate::sync::broadcast::Receiver::recv
+    /// [`try_recv`]: crate::sync::broadcast::Receiver::try_recv
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx1) = broadcast::channel(16);
+    ///
+    ///     tx.send(10).unwrap();
+    ///     tx.send(20).unwrap();
+    ///
+    ///     assert_eq!(rx1.len(), 2);
+    ///     assert_eq!(rx1.recv().await.unwrap(), 10);
+    ///     assert_eq!(rx1.len(), 1);
+    ///     assert_eq!(rx1.recv().await.unwrap(), 20);
+    ///     assert_eq!(rx1.len(), 0);
+    /// }
+    /// ```
+    pub fn len(&self) -> usize {
+        let next_send_pos = self.shared.tail.lock().pos;
+        (next_send_pos - self.next) as usize
+    }
+
+    /// Returns true if there aren't any messages in the channel that the [`Receiver`]
+    /// has yet to receive.
+    ///
+    /// [`Receiver]: create::sync::broadcast::Receiver
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx1) = broadcast::channel(16);
+    ///
+    ///     assert!(rx1.is_empty());
+    ///
+    ///     tx.send(10).unwrap();
+    ///     tx.send(20).unwrap();
+    ///
+    ///     assert!(!rx1.is_empty());
+    ///     assert_eq!(rx1.recv().await.unwrap(), 10);
+    ///     assert_eq!(rx1.recv().await.unwrap(), 20);
+    ///     assert!(rx1.is_empty());
+    /// }
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns `true` if receivers belong to the same channel.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, rx) = broadcast::channel::<()>(16);
+    ///     let rx2 = tx.subscribe();
+    ///
+    ///     assert!(rx.same_channel(&rx2));
+    ///
+    ///     let (_tx3, rx3) = broadcast::channel::<()>(16);
+    ///
+    ///     assert!(!rx3.same_channel(&rx2));
+    /// }
+    /// ```
+    pub fn same_channel(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+
     /// Locks the next value if there is one.
     fn recv_ref(
         &mut self,
@@ -678,14 +949,6 @@ impl<T> Receiver<T> {
         let mut slot = self.shared.buffer[idx].read().unwrap();
 
         if slot.pos != self.next {
-            let next_pos = slot.pos.wrapping_add(self.shared.buffer.len() as u64);
-
-            // The receiver has read all current values in the channel and there
-            // is no waiter to register
-            if waiter.is_none() && next_pos == self.next {
-                return Err(TryRecvError::Empty);
-            }
-
             // Release the `slot` lock before attempting to acquire the `tail`
             // lock. This is required because `send2` acquires the tail lock
             // first followed by the slot lock. Acquiring the locks in reverse
@@ -695,7 +958,9 @@ impl<T> Receiver<T> {
             // the slot lock.
             drop(slot);
 
-            let mut tail = self.shared.tail.lock().unwrap();
+            let mut old_waker = None;
+
+            let mut tail = self.shared.tail.lock();
 
             // Acquire slot lock again
             slot = self.shared.buffer[idx].read().unwrap();
@@ -707,6 +972,13 @@ impl<T> Receiver<T> {
                 let next_pos = slot.pos.wrapping_add(self.shared.buffer.len() as u64);
 
                 if next_pos == self.next {
+                    // At this point the channel is empty for *this* receiver. If
+                    // it's been closed, then that's what we return, otherwise we
+                    // set a waker and return empty.
+                    if tail.closed {
+                        return Err(TryRecvError::Closed);
+                    }
+
                     // Store the waker
                     if let Some((waiter, waker)) = waiter {
                         // Safety: called while locked.
@@ -720,7 +992,10 @@ impl<T> Receiver<T> {
                                 match (*ptr).waker {
                                     Some(ref w) if w.will_wake(waker) => {}
                                     _ => {
-                                        (*ptr).waker = Some(waker.clone());
+                                        old_waker = std::mem::replace(
+                                            &mut (*ptr).waker,
+                                            Some(waker.clone()),
+                                        );
                                     }
                                 }
 
@@ -732,6 +1007,11 @@ impl<T> Receiver<T> {
                         }
                     }
 
+                    // Drop the old waker after releasing the locks.
+                    drop(slot);
+                    drop(tail);
+                    drop(old_waker);
+
                     return Err(TryRecvError::Empty);
                 }
 
@@ -740,22 +1020,7 @@ impl<T> Receiver<T> {
                 // catch up by skipping dropped messages and setting the
                 // internal cursor to the **oldest** message stored by the
                 // channel.
-                //
-                // However, finding the oldest position is a bit more
-                // complicated than `tail-position - buffer-size`. When
-                // the channel is closed, the tail position is incremented to
-                // signal a new `None` message, but `None` is not stored in the
-                // channel itself (see issue #2425 for why).
-                //
-                // To account for this, if the channel is closed, the tail
-                // position is decremented by `buffer-size + 1`.
-                let mut adjust = 0;
-                if tail.closed {
-                    adjust = 1
-                }
-                let next = tail
-                    .pos
-                    .wrapping_sub(self.shared.buffer.len() as u64 + adjust);
+                let next = tail.pos.wrapping_sub(self.shared.buffer.len() as u64);
 
                 let missed = next.wrapping_sub(self.next);
 
@@ -776,40 +1041,16 @@ impl<T> Receiver<T> {
 
         self.next = self.next.wrapping_add(1);
 
-        if slot.closed {
-            return Err(TryRecvError::Closed);
-        }
-
         Ok(RecvGuard { slot })
     }
 }
 
-impl<T> Receiver<T>
-where
-    T: Clone,
-{
-    /// Attempts to return a pending value on this receiver without awaiting.
+impl<T: Clone> Receiver<T> {
+    /// Re-subscribes to the channel starting from the current tail element.
     ///
-    /// This is useful for a flavor of "optimistic check" before deciding to
-    /// await on a receiver.
-    ///
-    /// Compared with [`recv`], this function has three failure cases instead of one
-    /// (one for closed, one for an empty buffer, one for a lagging receiver).
-    ///
-    /// `Err(TryRecvError::Closed)` is returned when all `Sender` halves have
-    /// dropped, indicating that no further values can be sent on the channel.
-    ///
-    /// If the [`Receiver`] handle falls behind, once the channel is full, newly
-    /// sent values will overwrite old values. At this point, a call to [`recv`]
-    /// will return with `Err(TryRecvError::Lagged)` and the [`Receiver`]'s
-    /// internal cursor is updated to point to the oldest value still held by
-    /// the channel. A subsequent call to [`try_recv`] will return this value
-    /// **unless** it has been since overwritten. If there are no values to
-    /// receive, `Err(TryRecvError::Empty)` is returned.
-    ///
-    /// [`recv`]: crate::sync::broadcast::Receiver::recv
-    /// [`try_recv`]: crate::sync::broadcast::Receiver::try_recv
-    /// [`Receiver`]: crate::sync::broadcast::Receiver
+    /// This [`Receiver`] handle will receive a clone of all values sent
+    /// **after** it has resubscribed. This will not include elements that are
+    /// in the queue of the current receiver. Consider the following example.
     ///
     /// # Examples
     ///
@@ -818,73 +1059,20 @@ where
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, mut rx) = broadcast::channel(16);
+    ///   let (tx, mut rx) = broadcast::channel(2);
     ///
-    ///     assert!(rx.try_recv().is_err());
+    ///   tx.send(1).unwrap();
+    ///   let mut rx2 = rx.resubscribe();
+    ///   tx.send(2).unwrap();
     ///
-    ///     tx.send(10).unwrap();
-    ///
-    ///     let value = rx.try_recv().unwrap();
-    ///     assert_eq!(10, value);
+    ///   assert_eq!(rx2.recv().await.unwrap(), 2);
+    ///   assert_eq!(rx.recv().await.unwrap(), 1);
     /// }
     /// ```
-    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
-        let guard = self.recv_ref(None)?;
-        guard.clone_value().ok_or(TryRecvError::Closed)
+    pub fn resubscribe(&self) -> Self {
+        let shared = self.shared.clone();
+        new_receiver(shared)
     }
-
-    #[doc(hidden)]
-    #[deprecated(since = "0.2.21", note = "use async fn recv()")]
-    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Result<T, RecvError>> {
-        use Poll::{Pending, Ready};
-
-        // The borrow checker prohibits calling `self.poll_ref` while passing in
-        // a mutable ref to a field (as it should). To work around this,
-        // `waiter` is first *removed* from `self` then `poll_recv` is called.
-        //
-        // However, for safety, we must ensure that `waiter` is **not** dropped.
-        // It could be contained in the intrusive linked list. The `Receiver`
-        // drop implementation handles cleanup.
-        //
-        // The guard pattern is used to ensure that, on return, even due to
-        // panic, the waiter node is replaced on `self`.
-
-        struct Guard<'a, T> {
-            waiter: Option<Pin<Box<UnsafeCell<Waiter>>>>,
-            receiver: &'a mut Receiver<T>,
-        }
-
-        impl<'a, T> Drop for Guard<'a, T> {
-            fn drop(&mut self) {
-                self.receiver.waiter = self.waiter.take();
-            }
-        }
-
-        let waiter = self.waiter.take().or_else(|| {
-            Some(Box::pin(UnsafeCell::new(Waiter {
-                queued: false,
-                waker: None,
-                pointers: linked_list::Pointers::new(),
-                _p: PhantomPinned,
-            })))
-        });
-
-        let guard = Guard {
-            waiter,
-            receiver: self,
-        };
-        let res = guard
-            .receiver
-            .recv_ref(Some((&guard.waiter.as_ref().unwrap(), cx.waker())));
-
-        match res {
-            Ok(guard) => Ready(guard.clone_value().ok_or(RecvError::Closed)),
-            Err(TryRecvError::Closed) => Ready(Err(RecvError::Closed)),
-            Err(TryRecvError::Lagged(n)) => Ready(Err(RecvError::Lagged(n))),
-            Err(TryRecvError::Empty) => Pending,
-        }
-    }
-
     /// Receives the next value for this receiver.
     ///
     /// Each [`Receiver`] handle will receive a clone of all values sent
@@ -899,6 +1087,13 @@ where
     /// internal cursor is updated to point to the oldest value still held by
     /// the channel. A subsequent call to [`recv`] will return this value
     /// **unless** it has been since overwritten.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. If `recv` is used as the event in a
+    /// [`tokio::select!`](crate::select) statement and some other branch
+    /// completes first, it is guaranteed that no messages were received on this
+    /// channel.
     ///
     /// [`Receiver`]: crate::sync::broadcast::Receiver
     /// [`recv`]: crate::sync::broadcast::Receiver::recv
@@ -949,60 +1144,95 @@ where
     ///     assert_eq!(20, rx.recv().await.unwrap());
     ///     assert_eq!(30, rx.recv().await.unwrap());
     /// }
+    /// ```
     pub async fn recv(&mut self) -> Result<T, RecvError> {
-        let fut = Recv::<_, T>::new(Borrow(self));
+        let fut = Recv::new(self);
         fut.await
     }
-}
 
-#[cfg(feature = "stream")]
-#[doc(hidden)]
-impl<T> crate::stream::Stream for Receiver<T>
-where
-    T: Clone,
-{
-    type Item = Result<T, RecvError>;
+    /// Attempts to return a pending value on this receiver without awaiting.
+    ///
+    /// This is useful for a flavor of "optimistic check" before deciding to
+    /// await on a receiver.
+    ///
+    /// Compared with [`recv`], this function has three failure cases instead of two
+    /// (one for closed, one for an empty buffer, one for a lagging receiver).
+    ///
+    /// `Err(TryRecvError::Closed)` is returned when all `Sender` halves have
+    /// dropped, indicating that no further values can be sent on the channel.
+    ///
+    /// If the [`Receiver`] handle falls behind, once the channel is full, newly
+    /// sent values will overwrite old values. At this point, a call to [`recv`]
+    /// will return with `Err(TryRecvError::Lagged)` and the [`Receiver`]'s
+    /// internal cursor is updated to point to the oldest value still held by
+    /// the channel. A subsequent call to [`try_recv`] will return this value
+    /// **unless** it has been since overwritten. If there are no values to
+    /// receive, `Err(TryRecvError::Empty)` is returned.
+    ///
+    /// [`recv`]: crate::sync::broadcast::Receiver::recv
+    /// [`try_recv`]: crate::sync::broadcast::Receiver::try_recv
+    /// [`Receiver`]: crate::sync::broadcast::Receiver
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx) = broadcast::channel(16);
+    ///
+    ///     assert!(rx.try_recv().is_err());
+    ///
+    ///     tx.send(10).unwrap();
+    ///
+    ///     let value = rx.try_recv().unwrap();
+    ///     assert_eq!(10, value);
+    /// }
+    /// ```
+    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
+        let guard = self.recv_ref(None)?;
+        guard.clone_value().ok_or(TryRecvError::Closed)
+    }
 
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<T, RecvError>>> {
-        #[allow(deprecated)]
-        self.poll_recv(cx).map(|v| match v {
-            Ok(v) => Some(Ok(v)),
-            lag @ Err(RecvError::Lagged(_)) => Some(lag),
-            Err(RecvError::Closed) => None,
-        })
+    /// Blocking receive to call outside of asynchronous contexts.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution
+    /// context.
+    ///
+    /// # Examples
+    /// ```
+    /// use std::thread;
+    /// use tokio::sync::broadcast;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx) = broadcast::channel(16);
+    ///
+    ///     let sync_code = thread::spawn(move || {
+    ///         assert_eq!(rx.blocking_recv(), Ok(10));
+    ///     });
+    ///
+    ///     let _ = tx.send(10);
+    ///     sync_code.join().unwrap();
+    /// }
+    pub fn blocking_recv(&mut self) -> Result<T, RecvError> {
+        crate::future::block_on(self.recv())
     }
 }
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        let mut tail = self.shared.tail.lock().unwrap();
-
-        if let Some(waiter) = &self.waiter {
-            // safety: tail lock is held
-            let queued = waiter.with(|ptr| unsafe { (*ptr).queued });
-
-            if queued {
-                // Remove the node
-                //
-                // safety: tail lock is held and the wait node is verified to be in
-                // the list.
-                unsafe {
-                    waiter.with_mut(|ptr| {
-                        tail.waiters.remove((&mut *ptr).into());
-                    });
-                }
-            }
-        }
+        let mut tail = self.shared.tail.lock();
 
         tail.rx_cnt -= 1;
         let until = tail.pos;
 
         drop(tail);
 
-        while self.next != until {
+        while self.next < until {
             match self.recv_ref(None) {
                 Ok(_) => {}
                 // The channel is closed
@@ -1016,11 +1246,8 @@ impl<T> Drop for Receiver<T> {
     }
 }
 
-impl<R, T> Recv<R, T>
-where
-    R: AsMut<Receiver<T>>,
-{
-    fn new(receiver: R) -> Recv<R, T> {
+impl<'a, T> Recv<'a, T> {
+    fn new(receiver: &'a mut Receiver<T>) -> Recv<'a, T> {
         Recv {
             receiver,
             waiter: UnsafeCell::new(Waiter {
@@ -1029,7 +1256,6 @@ where
                 pointers: linked_list::Pointers::new(),
                 _p: PhantomPinned,
             }),
-            _p: std::marker::PhantomData,
         }
     }
 
@@ -1041,19 +1267,20 @@ where
             is_unpin::<&mut Receiver<T>>();
 
             let me = self.get_unchecked_mut();
-            (me.receiver.as_mut(), &me.waiter)
+            (me.receiver, &me.waiter)
         }
     }
 }
 
-impl<R, T> Future for Recv<R, T>
+impl<'a, T> Future for Recv<'a, T>
 where
-    R: AsMut<Receiver<T>>,
     T: Clone,
 {
     type Output = Result<T, RecvError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, RecvError>> {
+        ready!(crate::trace::trace_leaf(cx));
+
         let (receiver, waiter) = self.project();
 
         let guard = match receiver.recv_ref(Some((waiter, cx.waker()))) {
@@ -1067,81 +1294,11 @@ where
     }
 }
 
-cfg_stream! {
-    use futures_core::Stream;
-
-    impl<T: Clone> Receiver<T> {
-        /// Convert the receiver into a `Stream`.
-        ///
-        /// The conversion allows using `Receiver` with APIs that require stream
-        /// values.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use tokio::stream::StreamExt;
-        /// use tokio::sync::broadcast;
-        ///
-        /// #[tokio::main]
-        /// async fn main() {
-        ///     let (tx, rx) = broadcast::channel(128);
-        ///
-        ///     tokio::spawn(async move {
-        ///         for i in 0..10_i32 {
-        ///             tx.send(i).unwrap();
-        ///         }
-        ///     });
-        ///
-        ///    // Streams must be pinned to iterate.
-        ///     tokio::pin! {
-        ///         let stream = rx
-        ///             .into_stream()
-        ///             .filter(Result::is_ok)
-        ///             .map(Result::unwrap)
-        ///             .filter(|v| v % 2 == 0)
-        ///             .map(|v| v + 1);
-        ///     }
-        ///
-        ///     while let Some(i) = stream.next().await {
-        ///         println!("{}", i);
-        ///     }
-        /// }
-        /// ```
-        pub fn into_stream(self) -> impl Stream<Item = Result<T, RecvError>> {
-            Recv::new(Borrow(self))
-        }
-    }
-
-    impl<R, T: Clone> Stream for Recv<R, T>
-    where
-        R: AsMut<Receiver<T>>,
-        T: Clone,
-    {
-        type Item = Result<T, RecvError>;
-
-        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            let (receiver, waiter) = self.project();
-
-            let guard = match receiver.recv_ref(Some((waiter, cx.waker()))) {
-                Ok(value) => value,
-                Err(TryRecvError::Empty) => return Poll::Pending,
-                Err(TryRecvError::Lagged(n)) => return Poll::Ready(Some(Err(RecvError::Lagged(n)))),
-                Err(TryRecvError::Closed) => return Poll::Ready(None),
-            };
-
-            Poll::Ready(guard.clone_value().map(Ok))
-        }
-    }
-}
-
-impl<R, T> Drop for Recv<R, T>
-where
-    R: AsMut<Receiver<T>>,
-{
+impl<'a, T> Drop for Recv<'a, T> {
     fn drop(&mut self) {
         // Acquire the tail lock. This is required for safety before accessing
         // the waiter node.
-        let mut tail = self.receiver.as_mut().shared.tail.lock().unwrap();
+        let mut tail = self.receiver.shared.tail.lock();
 
         // safety: tail lock is held
         let queued = self.waiter.with(|ptr| unsafe { (*ptr).queued });
@@ -1175,8 +1332,8 @@ unsafe impl linked_list::Link for Waiter {
         ptr
     }
 
-    unsafe fn pointers(mut target: NonNull<Waiter>) -> NonNull<linked_list::Pointers<Waiter>> {
-        NonNull::from(&mut target.as_mut().pointers)
+    unsafe fn pointers(target: NonNull<Waiter>) -> NonNull<linked_list::Pointers<Waiter>> {
+        Waiter::addr_of_pointers(target)
     }
 }
 
@@ -1210,28 +1367,5 @@ impl<'a, T> Drop for RecvGuard<'a, T> {
         }
     }
 }
-
-impl fmt::Display for RecvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RecvError::Closed => write!(f, "channel closed"),
-            RecvError::Lagged(amt) => write!(f, "channel lagged by {}", amt),
-        }
-    }
-}
-
-impl std::error::Error for RecvError {}
-
-impl fmt::Display for TryRecvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TryRecvError::Empty => write!(f, "channel empty"),
-            TryRecvError::Closed => write!(f, "channel closed"),
-            TryRecvError::Lagged(amt) => write!(f, "channel lagged by {}", amt),
-        }
-    }
-}
-
-impl std::error::Error for TryRecvError {}
 
 fn is_unpin<T: Unpin>() {}

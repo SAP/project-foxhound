@@ -9,7 +9,7 @@
 const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>Test reverse search`;
 const isMacOS = AppConstants.platform === "macosx";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   const jstermHistory = [
@@ -20,7 +20,7 @@ add_task(async function() {
     `Dog = "Snoopy"`,
   ];
 
-  const onLastMessage = waitForMessage(hud, `"Snoopy"`, ".result");
+  const onLastMessage = waitForMessageByType(hud, `"Snoopy"`, ".result");
   for (const input of jstermHistory) {
     execute(hud, input);
   }

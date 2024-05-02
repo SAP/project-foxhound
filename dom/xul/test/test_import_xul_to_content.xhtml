@@ -17,8 +17,6 @@
   <script type="application/javascript">
   <![CDATA[
 
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
   SimpleTest.waitForExplicitFinish();
 
   function expectWarning(expected, when, f) {
@@ -51,11 +49,12 @@
     expectWarning(false, "appending video", function() {
       doc.documentElement.appendChild(video);
       // Force a layout flush to make sure the anonymous content is added.
+      // eslint-disable-next-line no-unused-vars
       let dummy = doc.documentElement.offsetLeft;
     });
 
     // We add some XUL to a content document. This should generate a warning.
-    var elt = document.createXULElement("label");
+    var elt = document.createXULElement("scrollbar");
     var newElt = doc.importNode(elt, false);
     expectWarning(true, "appending XUL", function() {
       doc.documentElement.appendChild(newElt);

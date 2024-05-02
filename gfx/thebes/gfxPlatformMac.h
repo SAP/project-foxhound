@@ -44,8 +44,6 @@ class gfxPlatformMac : public gfxPlatform {
 
   void ReadSystemFontList(mozilla::dom::SystemFontList* aFontList) override;
 
-  bool IsFontFormatSupported(uint32_t aFormatFlags) override;
-
   void GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
                               eFontPresentation aPresentation,
                               nsTArray<const char*>& aFontList) override;
@@ -70,18 +68,20 @@ class gfxPlatformMac : public gfxPlatform {
     return true;
   }
 
-  already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource()
+  already_AddRefed<mozilla::gfx::VsyncSource> CreateGlobalHardwareVsyncSource()
       override;
 
   // lower threshold on font anti-aliasing
   uint32_t GetAntiAliasingThreshold() { return mFontAntiAliasingThreshold; }
 
+  static bool CheckVariationFontSupport();
+
+  bool SupportsHDR() override;
+
  protected:
   bool AccelerateLayersByDefault() override;
 
   BackendPrefsData GetBackendPrefs() const override;
-
-  bool CheckVariationFontSupport() override;
 
   void InitPlatformGPUProcessPrefs() override;
 
@@ -90,6 +90,8 @@ class gfxPlatformMac : public gfxPlatform {
 
   // read in the pref value for the lower threshold on font anti-aliasing
   static uint32_t ReadAntiAliasingThreshold();
+
+  static void FontRegistrationCallback(void* aUnused);
 
   uint32_t mFontAntiAliasingThreshold;
 

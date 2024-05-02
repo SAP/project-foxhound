@@ -13,10 +13,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "uikit":
     gl_provider = "EAGL"
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
-    if CONFIG["MOZ_EGL_XRENDER_COMPOSITE"]:
-        gl_provider = "EGL"
-    else:
-        gl_provider = "GLX"
+    gl_provider = "Linux"
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
     gl_provider = "EGL"
 
@@ -25,7 +22,8 @@ if CONFIG["MOZ_GL_PROVIDER"]:
 
 EXPORTS += [
     "AndroidSurfaceTexture.h",
-    "DecomposeIntoNoRepeatTriangles.h",
+    "AutoMappable.h",
+    "Colorspaces.h",
     "ForceDiscreteGPUHelperCGL.h",
     "GfxTexturesReporter.h",
     "GLBlitHelper.h",
@@ -44,6 +42,7 @@ EXPORTS += [
     "GLTextureImage.h",
     "GLTypes.h",
     "GLUploadHelpers.h",
+    "GLVendor.h",
     "HeapCopyOfStackArray.h",
     "MozFramebuffer.h",
     "ScopedGLHelpers.h",
@@ -55,7 +54,6 @@ EXPORTS += [
 
 # Win32 is a special snowflake, for ANGLE
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
-    REQUIRES_UNIFIED_BUILD = True
     EXPORTS += [
         "GLContextWGL.h",
         "SharedSurfaceANGLE.h",  # Needs <windows.h> for `HANDLE`.
@@ -107,21 +105,20 @@ elif gl_provider == "EAGL":
         "GLContextEAGL.h",
     ]
 
-elif gl_provider == "GLX":
+elif gl_provider == "Linux":
     # GLContextProviderGLX.cpp needs to be kept out of UNIFIED_SOURCES
     # as it includes X11 headers which cause conflicts.
     SOURCES += [
-        "GLContextProviderGLX.cpp",
-        "GLContextProviderX11.cpp",
+        "GLContextProviderLinux.cpp",
+        "SharedSurfaceDMABUF.cpp",
     ]
     EXPORTS += ["GLContextGLX.h", "GLXLibrary.h"]
-
-if CONFIG["MOZ_WAYLAND"]:
-    SOURCES += ["GLContextProviderWayland.cpp", "SharedSurfaceDMABUF.cpp"]
+    if CONFIG["MOZ_X11"]:
+        SOURCES += ["GLContextProviderGLX.cpp"]
 
 UNIFIED_SOURCES += [
     "AndroidSurfaceTexture.cpp",
-    "DecomposeIntoNoRepeatTriangles.cpp",
+    "Colorspaces.cpp",
     "GfxTexturesReporter.cpp",
     "GLBlitHelper.cpp",
     "GLContext.cpp",
@@ -143,12 +140,13 @@ SOURCES += [
     "GLScreenBuffer.cpp",
 ]
 
+TEST_DIRS += [
+    "gtest",
+]
+
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
-
-if CONFIG["MOZ_D3DCOMPILER_VISTA_DLL"]:
-    DEFINES["MOZ_D3DCOMPILER_VISTA_DLL"] = CONFIG["MOZ_D3DCOMPILER_VISTA_DLL"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]

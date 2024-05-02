@@ -9,24 +9,22 @@ import android.graphics.SurfaceTexture;
 import android.os.Build;
 import android.util.Log;
 import android.util.LongSparseArray;
-import android.util.SparseArray;
-import androidx.annotation.RequiresApi;
 import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.JNIObject;
 
 /* package */ final class GeckoSurfaceTexture extends SurfaceTexture {
   private static final String LOGTAG = "GeckoSurfaceTexture";
   private static final int MAX_SURFACE_TEXTURES = 200;
-  private static volatile int sNextHandle = 1;
-  private static final SparseArray<GeckoSurfaceTexture> sSurfaceTextures =
-      new SparseArray<GeckoSurfaceTexture>();
+  private static final LongSparseArray<GeckoSurfaceTexture> sSurfaceTextures =
+      new LongSparseArray<GeckoSurfaceTexture>();
 
   private static LongSparseArray<LinkedList<GeckoSurfaceTexture>> sUnusedTextures =
       new LongSparseArray<LinkedList<GeckoSurfaceTexture>>();
 
-  private int mHandle;
+  private long mHandle;
   private boolean mIsSingleBuffer;
 
   private long mAttachedContext;
@@ -36,16 +34,15 @@ import org.mozilla.gecko.mozglue.JNIObject;
   private AtomicInteger mUseCount;
   private boolean mFinalized;
 
-  private int mUpstream;
+  private long mUpstream;
   private NativeGLBlitHelper mBlitter;
 
-  private GeckoSurfaceTexture(final int handle) {
+  private GeckoSurfaceTexture(final long handle) {
     super(0);
     init(handle, false);
   }
 
-  @RequiresApi(api = Build.VERSION_CODES.KITKAT)
-  private GeckoSurfaceTexture(final int handle, final boolean singleBufferMode) {
+  private GeckoSurfaceTexture(final long handle, final boolean singleBufferMode) {
     super(0, singleBufferMode);
     init(handle, singleBufferMode);
   }
@@ -61,7 +58,7 @@ import org.mozilla.gecko.mozglue.JNIObject;
     super.finalize();
   }
 
-  private void init(final int handle, final boolean singleBufferMode) {
+  private void init(final long handle, final boolean singleBufferMode) {
     mHandle = handle;
     mIsSingleBuffer = singleBufferMode;
     mUseCount = new AtomicInteger(1);
@@ -71,7 +68,7 @@ import org.mozilla.gecko.mozglue.JNIObject;
   }
 
   @WrapForJNI
-  public int getHandle() {
+  public long getHandle() {
     return mHandle;
   }
 
@@ -164,11 +161,6 @@ import org.mozilla.gecko.mozglue.JNIObject;
   }
 
   @WrapForJNI
-  public static boolean isSingleBufferSupported() {
-    return Build.VERSION.SDK_INT >= 19;
-  }
-
-  @WrapForJNI
   public synchronized void incrementUse() {
     mUseCount.incrementAndGet();
   }
@@ -233,9 +225,11 @@ import org.mozilla.gecko.mozglue.JNIObject;
     }
   }
 
-  public static GeckoSurfaceTexture acquire(final boolean singleBufferMode, final int handle) {
-    if (singleBufferMode && !isSingleBufferSupported()) {
-      throw new IllegalArgumentException("single buffer mode not supported on API version < 19");
+  public static GeckoSurfaceTexture acquire(final boolean singleBufferMode, final long handle) {
+    // Attempting to create a SurfaceTexture from an isolated process on Android versions prior to
+    // 8.0 results in an indefinite hang. See bug 1706656.
+    if (GeckoAppShell.isIsolatedProcess() && Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+      return null;
     }
 
     synchronized (sSurfaceTextures) {
@@ -246,37 +240,26 @@ import org.mozilla.gecko.mozglue.JNIObject;
         return null;
       }
 
-      int resolvedHandle = handle;
-      if (resolvedHandle == 0) {
-        // Generate new handle value when none specified.
-        resolvedHandle = sNextHandle++;
-      }
-
-      final GeckoSurfaceTexture gst;
-      if (isSingleBufferSupported()) {
-        gst = new GeckoSurfaceTexture(resolvedHandle, singleBufferMode);
-      } else {
-        gst = new GeckoSurfaceTexture(resolvedHandle);
-      }
-
-      if (sSurfaceTextures.indexOfKey(resolvedHandle) >= 0) {
-        gst.release();
+      if (sSurfaceTextures.indexOfKey(handle) >= 0) {
         throw new IllegalArgumentException("Already have a GeckoSurfaceTexture with that handle");
       }
 
-      sSurfaceTextures.put(resolvedHandle, gst);
+      final GeckoSurfaceTexture gst = new GeckoSurfaceTexture(handle, singleBufferMode);
+
+      sSurfaceTextures.put(handle, gst);
+
       return gst;
     }
   }
 
   @WrapForJNI
-  public static GeckoSurfaceTexture lookup(final int handle) {
+  public static GeckoSurfaceTexture lookup(final long handle) {
     synchronized (sSurfaceTextures) {
       return sSurfaceTextures.get(handle);
     }
   }
 
-  /* package */ synchronized void track(final int upstream) {
+  /* package */ synchronized void track(final long upstream) {
     mUpstream = upstream;
   }
 
@@ -298,7 +281,7 @@ import org.mozilla.gecko.mozglue.JNIObject;
   @WrapForJNI
   public static final class NativeGLBlitHelper extends JNIObject {
     public static NativeGLBlitHelper create(
-        final int textureHandle,
+        final long textureHandle,
         final GeckoSurface targetSurface,
         final int width,
         final int height) {
@@ -308,7 +291,7 @@ import org.mozilla.gecko.mozglue.JNIObject;
     }
 
     public static native NativeGLBlitHelper nativeCreate(
-        final int textureHandle,
+        final long textureHandle,
         final GeckoSurface targetSurface,
         final int width,
         final int height);

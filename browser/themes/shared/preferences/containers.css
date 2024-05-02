@@ -2,14 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-%include ../../../components/contextualidentity/content/usercontext.css
+@import url("chrome://browser/content/usercontext/usercontext.css");
 
 #category-containers {
   display: none;
 }
 
 .container-header-links {
-  font-size: 1.25rem;
   margin-block-end: 15px;
 }
 
@@ -38,10 +37,16 @@
  * by the prefs' find-in-page feature.
  */
 .userContext-label-inprefs {
-  display: -moz-box;
+  display: flex;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.userContext-icon-inprefs {
+  margin-inline: 4px 10px;
+  width: 24px;
+  height: 24px;
 }
 
 #containersView richlistitem:last-of-type {

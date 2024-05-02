@@ -15,10 +15,7 @@ const TEST_URL =
   `<iframe src=${REMOTE_IFRAME_URL_1}></iframe>` +
   `<iframe src=${REMOTE_IFRAME_URL_2}></iframe>`;
 
-add_task(async function() {
-  // Turn on server side targets
-  await pushPref("devtools.target-switching.server.enabled", true);
-
+add_task(async function () {
   // Create a TargetCommand for a given test tab
   const tab = await addTab(TEST_URL);
   const commands = await CommandsFactory.forTab(tab);

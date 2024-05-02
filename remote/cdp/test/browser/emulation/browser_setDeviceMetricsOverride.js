@@ -8,6 +8,15 @@ const DOC_LARGE = toDataURL("<div style='margin: 150vh 0 0 150vw'>Hello world");
 
 const MAX_WINDOW_SIZE = 10000000;
 
+function getContentDPR() {
+  info(`Retrieve device pixel ratio in content`);
+  return SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [],
+    _ => content.browsingContext.overrideDPPX || content.devicePixelRatio
+  );
+}
+
 add_task(async function dimensionsSmallerThanWindow({ client }) {
   const { Emulation, Page } = client;
 
@@ -193,7 +202,7 @@ add_task(async function failsWithNegativeWidth({ client }) {
 
   await loadURL(DOC_SMALL);
   const { layoutViewport } = await Page.getLayoutMetrics();
-  const ratio = await getContentProperty("devicePixelRatio");
+  const ratio = await getContentDPR();
 
   const overrideSettings = {
     width: -1,
@@ -201,13 +210,14 @@ add_task(async function failsWithNegativeWidth({ client }) {
     deviceScaleFactor: 1.0,
   };
 
-  let errorThrown = false;
-  try {
-    await Emulation.setDeviceMetricsOverride(overrideSettings);
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "Negative width raised error");
+  await Assert.rejects(
+    Emulation.setDeviceMetricsOverride(overrideSettings),
+    err =>
+      err.message.includes(
+        "Width and height values must be positive, not greater than 10000000"
+      ),
+    "Negative width raised error"
+  );
 
   await loadURL(DOC_SMALL);
   const updatedLayoutMetrics = await Page.getLayoutMetrics();
@@ -222,11 +232,7 @@ add_task(async function failsWithNegativeWidth({ client }) {
     layoutViewport.clientHeight,
     "Visible layout height hasn't been changed"
   );
-  is(
-    await getContentProperty("devicePixelRatio"),
-    ratio,
-    "Device pixel ratio hasn't been changed"
-  );
+  is(await getContentDPR(), ratio, "Device pixel ratio hasn't been changed");
 });
 
 add_task(async function failsWithTooLargeWidth({ client }) {
@@ -234,7 +240,7 @@ add_task(async function failsWithTooLargeWidth({ client }) {
 
   await loadURL(DOC_SMALL);
   const { layoutViewport } = await Page.getLayoutMetrics();
-  const ratio = await getContentProperty("devicePixelRatio");
+  const ratio = await getContentDPR();
 
   const overrideSettings = {
     width: MAX_WINDOW_SIZE + 1,
@@ -242,13 +248,14 @@ add_task(async function failsWithTooLargeWidth({ client }) {
     deviceScaleFactor: 1.0,
   };
 
-  let errorThrown = false;
-  try {
-    await Emulation.setDeviceMetricsOverride(overrideSettings);
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "Too large width raised error");
+  await Assert.rejects(
+    Emulation.setDeviceMetricsOverride(overrideSettings),
+    err =>
+      err.message.includes(
+        "Width and height values must be positive, not greater than 10000000"
+      ),
+    "Too large width raised error"
+  );
 
   await loadURL(DOC_SMALL);
   const updatedLayoutMetrics = await Page.getLayoutMetrics();
@@ -263,11 +270,7 @@ add_task(async function failsWithTooLargeWidth({ client }) {
     layoutViewport.clientHeight,
     "Visible layout height hasn't been changed"
   );
-  is(
-    await getContentProperty("devicePixelRatio"),
-    ratio,
-    "Device pixel ratio hasn't been changed"
-  );
+  is(await getContentDPR(), ratio, "Device pixel ratio hasn't been changed");
 });
 
 add_task(async function failsWithNegativeHeight({ client }) {
@@ -275,7 +278,7 @@ add_task(async function failsWithNegativeHeight({ client }) {
 
   await loadURL(DOC_SMALL);
   const { layoutViewport } = await Page.getLayoutMetrics();
-  const ratio = await getContentProperty("devicePixelRatio");
+  const ratio = await getContentDPR();
 
   const overrideSettings = {
     width: Math.floor(layoutViewport.clientWidth / 2),
@@ -283,14 +286,14 @@ add_task(async function failsWithNegativeHeight({ client }) {
     deviceScaleFactor: 1.0,
   };
 
-  let errorThrown = false;
-  try {
-    await Emulation.setDeviceMetricsOverride(overrideSettings);
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "Negative height raised error");
-
+  await Assert.rejects(
+    Emulation.setDeviceMetricsOverride(overrideSettings),
+    err =>
+      err.message.includes(
+        "Width and height values must be positive, not greater than 10000000"
+      ),
+    "Negative height raised error"
+  );
   await loadURL(DOC_SMALL);
   const updatedLayoutMetrics = await Page.getLayoutMetrics();
 
@@ -304,11 +307,7 @@ add_task(async function failsWithNegativeHeight({ client }) {
     layoutViewport.clientHeight,
     "Visible layout height hasn't been changed"
   );
-  is(
-    await getContentProperty("devicePixelRatio"),
-    ratio,
-    "Device pixel ratio hasn't been changed"
-  );
+  is(await getContentDPR(), ratio, "Device pixel ratio hasn't been changed");
 });
 
 add_task(async function failsWithTooLargeHeight({ client }) {
@@ -316,21 +315,21 @@ add_task(async function failsWithTooLargeHeight({ client }) {
 
   await loadURL(DOC_SMALL);
   const { layoutViewport } = await Page.getLayoutMetrics();
-  const ratio = await getContentProperty("devicePixelRatio");
+  const ratio = await getContentDPR();
 
   const overrideSettings = {
     width: Math.floor(layoutViewport.clientWidth / 2),
     height: MAX_WINDOW_SIZE + 1,
     deviceScaleFactor: 1.0,
   };
-
-  let errorThrown = false;
-  try {
-    await Emulation.setDeviceMetricsOverride(overrideSettings);
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "Too large height raised error");
+  await Assert.rejects(
+    Emulation.setDeviceMetricsOverride(overrideSettings),
+    err =>
+      err.message.includes(
+        "Width and height values must be positive, not greater than 10000000"
+      ),
+    "Too large height raised error"
+  );
 
   await loadURL(DOC_SMALL);
   const updatedLayoutMetrics = await Page.getLayoutMetrics();
@@ -345,11 +344,7 @@ add_task(async function failsWithTooLargeHeight({ client }) {
     layoutViewport.clientHeight,
     "Visible layout height hasn't been changed"
   );
-  is(
-    await getContentProperty("devicePixelRatio"),
-    ratio,
-    "Device pixel ratio hasn't been changed"
-  );
+  is(await getContentDPR(), ratio, "Device pixel ratio hasn't been changed");
 });
 
 add_task(async function setDevicePixelRatio({ client }) {
@@ -357,7 +352,7 @@ add_task(async function setDevicePixelRatio({ client }) {
 
   await loadURL(DOC_SMALL);
   const { layoutViewport } = await Page.getLayoutMetrics();
-  const ratio_orig = await getContentProperty("devicePixelRatio");
+  const ratio_orig = await getContentDPR();
 
   const overrideSettings = {
     width: layoutViewport.clientWidth,
@@ -369,11 +364,7 @@ add_task(async function setDevicePixelRatio({ client }) {
   await Emulation.setDeviceMetricsOverride(overrideSettings);
   await loadURL(DOC_SMALL);
 
-  is(
-    await getContentProperty("devicePixelRatio"),
-    ratio_orig * 2,
-    "Expected device pixel ratio set"
-  );
+  is(await getContentDPR(), ratio_orig * 2, "Expected device pixel ratio set");
 });
 
 add_task(async function failsWithNegativeRatio({ client }) {
@@ -381,7 +372,7 @@ add_task(async function failsWithNegativeRatio({ client }) {
 
   await loadURL(DOC_SMALL);
   const { layoutViewport } = await Page.getLayoutMetrics();
-  const ratio = await getContentProperty("devicePixelRatio");
+  const ratio = await getContentDPR();
 
   const overrideSettings = {
     width: Math.floor(layoutViewport.clientHeight / 2),
@@ -389,13 +380,11 @@ add_task(async function failsWithNegativeRatio({ client }) {
     deviceScaleFactor: -1,
   };
 
-  let errorThrown = false;
-  try {
-    await Emulation.setDeviceMetricsOverride(overrideSettings);
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "Negative device scale factor raised error");
+  await Assert.rejects(
+    Emulation.setDeviceMetricsOverride(overrideSettings),
+    err => err.message.includes("deviceScaleFactor: must be positive"),
+    "Negative device scale factor raised error"
+  );
 
   await loadURL(DOC_SMALL);
   const updatedLayoutMetrics = await Page.getLayoutMetrics();
@@ -410,9 +399,5 @@ add_task(async function failsWithNegativeRatio({ client }) {
     layoutViewport.clientHeight,
     "Visible layout height hasn't been changed"
   );
-  is(
-    await getContentProperty("devicePixelRatio"),
-    ratio,
-    "Device pixel ratio hasn't been changed"
-  );
+  is(await getContentDPR(), ratio, "Device pixel ratio hasn't been changed");
 });

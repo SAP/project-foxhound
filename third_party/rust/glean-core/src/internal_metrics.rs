@@ -2,13 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::borrow::Cow;
+
 use super::{metrics::*, CommonMetricData, Lifetime};
 
 #[derive(Debug)]
 pub struct CoreMetrics {
     pub client_id: UuidMetric,
     pub first_run_date: DatetimeMetric,
-    pub first_run_hour: DatetimeMetric,
     pub os: StringMetric,
 }
 
@@ -20,6 +21,16 @@ pub struct AdditionalMetrics {
 
     /// A count of the pings submitted, by ping type.
     pub pings_submitted: LabeledMetric<CounterMetric>,
+
+    /// Time waited for the uploader at shutdown.
+    pub shutdown_wait: TimingDistributionMetric,
+
+    /// Time waited for the dispatcher to unblock during shutdown.
+    pub shutdown_dispatcher_wait: TimingDistributionMetric,
+
+    /// An experimentation identifier derived and provided by the application
+    /// for the purpose of experimentation enrollment.
+    pub experimentation_id: StringMetric,
 }
 
 impl CoreMetrics {
@@ -46,18 +57,6 @@ impl CoreMetrics {
                 TimeUnit::Day,
             ),
 
-            first_run_hour: DatetimeMetric::new(
-                CommonMetricData {
-                    name: "first_run_hour".into(),
-                    category: "glean.validation".into(),
-                    send_in_pings: vec!["metrics".into(), "baseline".into()],
-                    lifetime: Lifetime::User,
-                    disabled: false,
-                    dynamic_label: None,
-                },
-                TimeUnit::Hour,
-            ),
-
             os: StringMetric::new(CommonMetricData {
                 name: "os".into(),
                 category: "".into(),
@@ -82,17 +81,58 @@ impl AdditionalMetrics {
                 dynamic_label: None,
             }),
 
-            pings_submitted: LabeledMetric::new(
-                CounterMetric::new(CommonMetricData {
+            pings_submitted: LabeledMetric::<CounterMetric>::new(
+                CommonMetricData {
                     name: "pings_submitted".into(),
                     category: "glean.validation".into(),
                     send_in_pings: vec!["metrics".into(), "baseline".into()],
                     lifetime: Lifetime::Ping,
                     disabled: false,
                     dynamic_label: None,
-                }),
+                },
                 None,
             ),
+
+            shutdown_wait: TimingDistributionMetric::new(
+                CommonMetricData {
+                    name: "shutdown_wait".into(),
+                    category: "glean.validation".into(),
+                    send_in_pings: vec!["metrics".into()],
+                    lifetime: Lifetime::Ping,
+                    disabled: false,
+                    dynamic_label: None,
+                },
+                TimeUnit::Millisecond,
+            ),
+
+            shutdown_dispatcher_wait: TimingDistributionMetric::new(
+                CommonMetricData {
+                    name: "shutdown_dispatcher_wait".into(),
+                    category: "glean.validation".into(),
+                    send_in_pings: vec!["metrics".into()],
+                    lifetime: Lifetime::Ping,
+                    disabled: false,
+                    dynamic_label: None,
+                },
+                TimeUnit::Millisecond,
+            ),
+
+            // This uses a `send_in_pings` that contains "all-ping".
+            // This works because all of our other current "all-pings" metrics
+            // have special handling internally and are not actually processed
+            // into a store quite like this identifier is.
+            //
+            // This could become an issue if we ever decide to start generating
+            // code from the internal Glean metrics.yaml (there aren't currently
+            // any plans for this).
+            experimentation_id: StringMetric::new(CommonMetricData {
+                name: "experimentation_id".into(),
+                category: "glean.client.annotation".into(),
+                send_in_pings: vec!["all-pings".into()],
+                lifetime: Lifetime::Application,
+                disabled: false,
+                dynamic_label: None,
+            }),
         }
     }
 }
@@ -104,26 +144,30 @@ pub struct UploadMetrics {
     pub pending_pings_directory_size: MemoryDistributionMetric,
     pub deleted_pings_after_quota_hit: CounterMetric,
     pub pending_pings: CounterMetric,
+    pub send_success: TimingDistributionMetric,
+    pub send_failure: TimingDistributionMetric,
+    pub in_flight_pings_dropped: CounterMetric,
+    pub missing_send_ids: CounterMetric,
 }
 
 impl UploadMetrics {
     pub fn new() -> UploadMetrics {
         UploadMetrics {
-            ping_upload_failure: LabeledMetric::new(
-                CounterMetric::new(CommonMetricData {
+            ping_upload_failure: LabeledMetric::<CounterMetric>::new(
+                CommonMetricData {
                     name: "ping_upload_failure".into(),
                     category: "glean.upload".into(),
                     send_in_pings: vec!["metrics".into()],
                     lifetime: Lifetime::Ping,
                     disabled: false,
                     dynamic_label: None,
-                }),
+                },
                 Some(vec![
-                    "status_code_4xx".into(),
-                    "status_code_5xx".into(),
-                    "status_code_unknown".into(),
-                    "unrecoverable".into(),
-                    "recoverable".into(),
+                    Cow::from("status_code_4xx"),
+                    Cow::from("status_code_5xx"),
+                    Cow::from("status_code_unknown"),
+                    Cow::from("unrecoverable"),
+                    Cow::from("recoverable"),
                 ]),
             ),
 
@@ -162,6 +206,48 @@ impl UploadMetrics {
 
             pending_pings: CounterMetric::new(CommonMetricData {
                 name: "pending_pings".into(),
+                category: "glean.upload".into(),
+                send_in_pings: vec!["metrics".into()],
+                lifetime: Lifetime::Ping,
+                disabled: false,
+                dynamic_label: None,
+            }),
+
+            send_success: TimingDistributionMetric::new(
+                CommonMetricData {
+                    name: "send_success".into(),
+                    category: "glean.upload".into(),
+                    send_in_pings: vec!["metrics".into()],
+                    lifetime: Lifetime::Ping,
+                    disabled: false,
+                    dynamic_label: None,
+                },
+                TimeUnit::Millisecond,
+            ),
+
+            send_failure: TimingDistributionMetric::new(
+                CommonMetricData {
+                    name: "send_failure".into(),
+                    category: "glean.upload".into(),
+                    send_in_pings: vec!["metrics".into()],
+                    lifetime: Lifetime::Ping,
+                    disabled: false,
+                    dynamic_label: None,
+                },
+                TimeUnit::Millisecond,
+            ),
+
+            in_flight_pings_dropped: CounterMetric::new(CommonMetricData {
+                name: "in_flight_pings_dropped".into(),
+                category: "glean.upload".into(),
+                send_in_pings: vec!["metrics".into()],
+                lifetime: Lifetime::Ping,
+                disabled: false,
+                dynamic_label: None,
+            }),
+
+            missing_send_ids: CounterMetric::new(CommonMetricData {
+                name: "missing_send_ids".into(),
                 category: "glean.upload".into(),
                 send_in_pings: vec!["metrics".into()],
                 lifetime: Lifetime::Ping,

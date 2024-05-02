@@ -8,10 +8,14 @@
 
 "use strict";
 
-const TEST_COM_URI =
-  URL_ROOT_COM + "examples/doc_dbg-fission-frame-sources.html";
+const TEST_COM_URI = `${URL_ROOT_COM_SSL}examples/doc_dbg-fission-frame-sources.html`;
+const TEST_ORG_IFRAME_URI = `${URL_ROOT_ORG_SSL}examples/doc_dbg-fission-frame-sources-frame.html`;
+const DATA_URI = "data:text/html,<title>foo</title>";
 
-add_task(async function() {
+add_task(async function () {
+  // Make sure that the thread section is expanded
+  await pushPref("devtools.debugger.threads-visible", true);
+
   // Load a test page with a remote frame and wait for both sources to be visible.
   // simple1.js is imported by the main page. simple2.js comes from the frame.
   const dbg = await initDebuggerWithAbsoluteURL(
@@ -20,12 +24,10 @@ add_task(async function() {
     "simple2.js"
   );
 
-  // expand threads pane
   const threadsPaneEl = await waitForElementWithSelector(
     dbg,
     ".threads-pane .header-label"
   );
-  threadsPaneEl.click();
 
   await waitForElement(dbg, "threadsPaneItems");
   const threadsEl = findAllElements(dbg, "threadsPaneItems");
@@ -42,11 +44,11 @@ add_task(async function() {
     "second thread displayed is the remote thread"
   );
 
-  await addExpression(dbg, "document.location.host");
+  await addExpression(dbg, "document.location.href");
 
   is(
     getWatchExpressionValue(dbg, 1),
-    `"example.com"`,
+    JSON.stringify(TEST_COM_URI),
     "expression is evaluated on the expected thread"
   );
 
@@ -62,7 +64,7 @@ add_task(async function() {
 
   is(
     getWatchExpressionValue(dbg, 1),
-    `"example.org"`,
+    JSON.stringify(TEST_ORG_IFRAME_URI),
     "expression is evaluated on the remote origin thread"
   );
 
@@ -73,10 +75,26 @@ add_task(async function() {
 
   is(
     getWatchExpressionValue(dbg, 1),
-    `"example.com"`,
+    JSON.stringify(TEST_COM_URI),
     "expression is evaluated on the main thread again"
   );
 
   // close the threads pane so following test don't have it open
   threadsPaneEl.click();
+
+  await navigateToAbsoluteURL(dbg, DATA_URI);
+
+  is(
+    getWatchExpressionValue(dbg, 1),
+    JSON.stringify(DATA_URI),
+    "The location.host expression is updated after a navigaiton"
+  );
+
+  await addExpression(dbg, "document.title");
+
+  is(
+    getWatchExpressionValue(dbg, 2),
+    `"foo"`,
+    "We can add expressions after a navigation"
+  );
 });

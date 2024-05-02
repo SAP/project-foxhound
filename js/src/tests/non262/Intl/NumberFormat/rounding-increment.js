@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl")||release_or_beta)
+// |reftest| skip-if(!this.hasOwnProperty("Intl"))
 
 // Nickel rounding.
 {
@@ -57,28 +57,58 @@
   assertEq(nf3.format(123), "120");
 }
 
-// The default |maximumFractionDigits| value can lead to surprising results
-// when |roundingIncrement| is used.
+// |minimumFractionDigits| must be equal to |maximumFractionDigits| when
+// |roundingIncrement| is used.
+//
+// |minimumFractionDigits| defaults to zero.
 {
   let nf = new Intl.NumberFormat("en", {
     roundingIncrement: 10,
+    // minimumFractionDigits: 0, (default)
+    maximumFractionDigits: 0,
   });
 
   let resolved = nf.resolvedOptions();
   assertEq(resolved.minimumFractionDigits, 0);
-  assertEq(resolved.maximumFractionDigits, 3);
+  assertEq(resolved.maximumFractionDigits, 0);
   assertEq(resolved.roundingIncrement, 10);
 
-  // |roundingIncrement| is relative to |maximumFractionDigits|, so when
-  // |maximumFractionDigits| is unchanged, the rounding is applied to the
-  // default maximum fraction digits value.
-  assertEq(nf.format(123), "123.000");
-  assertEq(nf.format(123.456), "123.460");
+  assertEq(nf.format(123), "120");
+  assertEq(nf.format(123.456), "120");
+}
+
+// |maximumFractionDigitsDefault| is set to |minimumFractionDigitsDefault| when
+// roundingIncrement isn't equal to 1.
+{
+  let options = {
+    roundingIncrement: 10,
+    // minimumFractionDigits: 0, (default)
+    // maximumFractionDigits: 0, (default)
+  };
+  let nf = new Intl.NumberFormat("en", options);
+  assertEq(nf.resolvedOptions().minimumFractionDigits, 0);
+  assertEq(nf.resolvedOptions().maximumFractionDigits, 0);
+}
+
+// |maximumFractionDigits| must be equal to |minimumFractionDigits| when
+// roundingIncrement isn't equal to 1.
+{
+  let options = {
+    roundingIncrement: 10,
+    // minimumFractionDigits: 0, (default)
+    maximumFractionDigits: 1,
+  };
+  assertThrowsInstanceOf(() => new Intl.NumberFormat("en", options), RangeError);
 }
 
 // Invalid values.
 for (let roundingIncrement of [-1, 0, Infinity, NaN]){
-  assertThrowsInstanceOf(() => new Intl.NumberFormat("en", {roundingIncrement}), RangeError);
+  let options = {
+    roundingIncrement,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  };
+  assertThrowsInstanceOf(() => new Intl.NumberFormat("en", options), RangeError);
 }
 
 if (typeof reportCompare === "function")

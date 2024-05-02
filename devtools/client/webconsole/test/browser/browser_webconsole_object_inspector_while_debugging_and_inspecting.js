@@ -10,7 +10,7 @@ const TEST_URI =
   "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-eval-in-stackframe.html";
 
-add_task(async function() {
+add_task(async function () {
   // TODO: Remove this pref change when middleware for terminating requests
   // when closing a panel is implemented
   await pushPref("devtools.debugger.features.inline-preview", false);
@@ -34,11 +34,10 @@ add_task(async function() {
   await gDevTools.showToolboxForTab(tab, { toolId: "webconsole" });
 
   info("Test logging and inspecting objects while on a breakpoint.");
-  const message = await executeAndWaitForMessage(
+  const message = await executeAndWaitForResultMessage(
     hud,
     "fooObj",
-    '{ testProp2: "testValue2" }',
-    ".result"
+    '{ testProp2: "testValue2" }'
   );
 
   const objectInspectors = [...message.node.querySelectorAll(".tree")];

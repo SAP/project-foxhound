@@ -25,17 +25,17 @@ var bookmarkData = [
   - tag multiple URIs with multiple tags
   - export as json, import, test
 */
-add_task(async function() {
+add_task(async function () {
   // Remove eventual bookmarks.exported.json.
-  let jsonFile = OS.Path.join(
-    OS.Constants.Path.profileDir,
+  let jsonFile = PathUtils.join(
+    PathUtils.profileDir,
     "bookmarks.exported.json"
   );
   await IOUtils.remove(jsonFile, { ignoreAbsent: true });
 
   // Test importing a pre-Places canonical bookmarks file.
   // Note: we do not empty the db before this import to catch bugs like 380999
-  let htmlFile = OS.Path.join(do_get_cwd().path, "bookmarks.preplaces.html");
+  let htmlFile = PathUtils.join(do_get_cwd().path, "bookmarks.preplaces.html");
   await BookmarkHTMLUtils.importFromFile(htmlFile, { replace: true });
 
   // Populate the database.
@@ -130,8 +130,9 @@ async function testMenuBookmarks() {
 }
 
 async function testToolbarBookmarks() {
-  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.toolbarGuid)
-    .root;
+  let root = PlacesUtils.getFolderContents(
+    PlacesUtils.bookmarks.toolbarGuid
+  ).root;
 
   // child count (add 2 for pre-existing items, one of the feeds is skipped
   // because it doesn't have href)
@@ -161,8 +162,9 @@ async function testToolbarBookmarks() {
 }
 
 function testUnfiledBookmarks() {
-  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.unfiledGuid)
-    .root;
+  let root = PlacesUtils.getFolderContents(
+    PlacesUtils.bookmarks.unfiledGuid
+  ).root;
   // child count (add 1 for pre-existing item)
   Assert.equal(root.childCount, bookmarkData.length + 1);
   for (let i = 1; i < root.childCount; ++i) {

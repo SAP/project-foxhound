@@ -1,9 +1,9 @@
 "use strict";
 
 var FormAutofillContent;
-add_task(async function() {
-  ({ FormAutofillContent } = ChromeUtils.import(
-    "resource://autofill/FormAutofillContent.jsm"
+add_task(async function () {
+  ({ FormAutofillContent } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillContent.sys.mjs"
   ));
 });
 
@@ -154,11 +154,11 @@ function inputDetailAssertion(detail, expected) {
   Assert.equal(detail.addressType, expected.addressType);
   Assert.equal(detail.contactType, expected.contactType);
   Assert.equal(detail.fieldName, expected.fieldName);
-  Assert.equal(detail.elementWeakRef.get(), expected.elementWeakRef.get());
+  Assert.equal(detail.element, expected.elementWeakRef.deref());
 }
 
 TESTCASES.forEach(testcase => {
-  add_task(async function() {
+  add_task(async function () {
     info("Starting testcase: " + testcase.description);
 
     let doc = MockDocument.createTestDocument(
@@ -173,9 +173,7 @@ TESTCASES.forEach(testcase => {
 
       // Put the input element reference to `element` to make sure the result of
       // `activeFieldDetail` contains the same input element.
-      testcase.expectedResult[i].input.elementWeakRef = Cu.getWeakReference(
-        input
-      );
+      testcase.expectedResult[i].input.elementWeakRef = new WeakRef(input);
 
       inputDetailAssertion(
         FormAutofillContent.activeFieldDetail,
@@ -192,9 +190,7 @@ TESTCASES.forEach(testcase => {
           " > *[autocomplete=" +
           formDetail.fieldName +
           "]";
-        formDetail.elementWeakRef = Cu.getWeakReference(
-          doc.querySelector(queryString)
-        );
+        formDetail.elementWeakRef = new WeakRef(doc.querySelector(queryString));
       }
 
       FormAutofillContent.activeFormDetails.forEach((detail, index) => {

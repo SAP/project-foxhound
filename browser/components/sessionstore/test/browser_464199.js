@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let { ForgetAboutSite } = ChromeUtils.import(
-  "resource://gre/modules/ForgetAboutSite.jsm"
+let { ForgetAboutSite } = ChromeUtils.importESModule(
+  "resource://gre/modules/ForgetAboutSite.sys.mjs"
 );
 
 function promiseClearHistory() {
@@ -24,7 +24,7 @@ function promiseClearHistory() {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   /** Test for Bug 464199 **/
 
   const REMEMBER = Date.now(),
@@ -134,7 +134,7 @@ add_task(async function() {
   await restoring;
   await restored;
 
-  let closedTabs = ss.getClosedTabData(newWin);
+  let closedTabs = ss.getClosedTabDataForWindow(newWin);
   is(
     closedTabs.length,
     test_state.windows[0]._closedTabs.length,
@@ -154,7 +154,7 @@ add_task(async function() {
   let promise = promiseClearHistory();
   await ForgetAboutSite.removeDataFromDomain("example.net");
   await promise;
-  closedTabs = ss.getClosedTabData(newWin);
+  closedTabs = ss.getClosedTabDataForWindow(newWin);
   is(
     closedTabs.length,
     remember_count,

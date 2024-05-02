@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/cache/DBAction.h"
 
+#include "mozilla/Assertions.h"
 #include "mozilla/dom/cache/Connection.h"
 #include "mozilla/dom/cache/DBSchema.h"
 #include "mozilla/dom/cache/FileUtils.h"
@@ -20,16 +21,11 @@
 #include "nsIURI.h"
 #include "nsIURIMutator.h"
 #include "nsIFileURL.h"
-#include "nsThreadUtils.h"
 
 namespace mozilla::dom::cache {
 
-using mozilla::dom::quota::AssertIsOnIOThread;
-using mozilla::dom::quota::Client;
 using mozilla::dom::quota::CloneFileAndAppend;
 using mozilla::dom::quota::IsDatabaseCorruptionError;
-using mozilla::dom::quota::PERSISTENCE_TYPE_DEFAULT;
-using mozilla::dom::quota::PersistenceType;
 
 namespace {
 
@@ -60,7 +56,7 @@ DBAction::~DBAction() = default;
 void DBAction::RunOnTarget(
     SafeRefPtr<Resolver> aResolver,
     const Maybe<CacheDirectoryMetadata>& aDirectoryMetadata,
-    Data* aOptionalData) {
+    Data* aOptionalData, const Maybe<CipherKey>& aMaybeCipherKey) {
   MOZ_ASSERT(!NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(aResolver);
   MOZ_DIAGNOSTIC_ASSERT(aDirectoryMetadata);
@@ -88,8 +84,9 @@ void DBAction::RunOnTarget(
 
   // If there is no previous Action, then we must open one.
   if (!conn) {
-    QM_TRY_UNWRAP(conn, OpenConnection(*aDirectoryMetadata, *dbDir), QM_VOID,
-                  resolveErr);
+    QM_TRY_UNWRAP(conn,
+                  OpenConnection(*aDirectoryMetadata, *dbDir, aMaybeCipherKey),
+                  QM_VOID, resolveErr);
     MOZ_DIAGNOSTIC_ASSERT(conn);
 
     // Save this connection in the shared Data object so later Actions can
@@ -108,7 +105,8 @@ void DBAction::RunOnTarget(
 }
 
 Result<nsCOMPtr<mozIStorageConnection>, nsresult> DBAction::OpenConnection(
-    const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBDir) {
+    const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBDir,
+    const Maybe<CipherKey>& aMaybeCipherKey) {
   MOZ_ASSERT(!NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(aDirectoryMetadata.mDirectoryLockId >= 0);
 
@@ -123,7 +121,7 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> DBAction::OpenConnection(
   QM_TRY_INSPECT(const auto& dbFile,
                  CloneFileAndAppend(aDBDir, kCachesSQLiteFilename));
 
-  QM_TRY_RETURN(OpenDBConnection(aDirectoryMetadata, *dbFile));
+  QM_TRY_RETURN(OpenDBConnection(aDirectoryMetadata, *dbFile, aMaybeCipherKey));
 }
 
 SyncDBAction::SyncDBAction(Mode aMode) : DBAction(aMode) {}
@@ -144,9 +142,11 @@ void SyncDBAction::RunWithDBOnTarget(
 }
 
 Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenDBConnection(
-    const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBFile) {
+    const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBFile,
+    const Maybe<CipherKey>& aMaybeCipherKey) {
   MOZ_ASSERT(!NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(aDirectoryMetadata.mDirectoryLockId >= -1);
+  MOZ_DIAGNOSTIC_ASSERT_IF(aDirectoryMetadata.mIsPrivate, aMaybeCipherKey);
 
   // Use our default file:// protocol handler directly to construct the database
   // URL.  This avoids any problems if a plugin registers a custom file://
@@ -165,10 +165,22 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenDBConnection(
                 IntToCString(aDirectoryMetadata.mDirectoryLockId)
           : EmptyCString();
 
+  const auto keyClause = [&aMaybeCipherKey] {
+    nsAutoCString keyClause;
+    if (aMaybeCipherKey) {
+      keyClause.AssignLiteral("&key=");
+      for (uint8_t byte : CipherStrategy::SerializeKey(*aMaybeCipherKey)) {
+        keyClause.AppendPrintf("%02x", byte);
+      }
+    }
+    return keyClause;
+  }();
+
   nsCOMPtr<nsIFileURL> dbFileUrl;
-  QM_TRY(MOZ_TO_RESULT(NS_MutateURI(mutator)
-                           .SetQuery("cache=private"_ns + directoryLockIdClause)
-                           .Finalize(dbFileUrl)));
+  QM_TRY(MOZ_TO_RESULT(
+      NS_MutateURI(mutator)
+          .SetQuery("cache=private"_ns + directoryLockIdClause + keyClause)
+          .Finalize(dbFileUrl)));
 
   QM_TRY_INSPECT(const auto& storageService,
                  MOZ_TO_RESULT_GET_TYPED(nsCOMPtr<mozIStorageService>,
@@ -182,7 +194,8 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenDBConnection(
           // Expression.
           MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
               nsCOMPtr<mozIStorageConnection>, storageService,
-              OpenDatabaseWithFileURL, dbFileUrl, ""_ns),
+              OpenDatabaseWithFileURL, dbFileUrl, ""_ns,
+              mozIStorageService::CONNECTION_DEFAULT),
           // Predicate.
           IsDatabaseCorruptionError,
           // Fallback.
@@ -197,7 +210,8 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenDBConnection(
 
             QM_TRY_RETURN(MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                 nsCOMPtr<mozIStorageConnection>, storageService,
-                OpenDatabaseWithFileURL, dbFileUrl, ""_ns));
+                OpenDatabaseWithFileURL, dbFileUrl, ""_ns,
+                mozIStorageService::CONNECTION_DEFAULT));
           })));
 
   // Check the schema to make sure it is not too old.
@@ -211,7 +225,8 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenDBConnection(
 
     QM_TRY_UNWRAP(conn, MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                             nsCOMPtr<mozIStorageConnection>, storageService,
-                            OpenDatabaseWithFileURL, dbFileUrl, ""_ns));
+                            OpenDatabaseWithFileURL, dbFileUrl, ""_ns,
+                            mozIStorageService::CONNECTION_DEFAULT));
   }
 
   QM_TRY(MOZ_TO_RESULT(db::InitializeConnection(*conn)));

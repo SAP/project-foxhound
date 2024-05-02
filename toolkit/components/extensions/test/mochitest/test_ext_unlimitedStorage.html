@@ -19,7 +19,6 @@
 async function test_background_storagePersist(EXTENSION_ID) {
   await SpecialPowers.pushPrefEnv({
     "set": [
-      ["dom.storageManager.enabled", true],
       ["dom.storageManager.prompt.testing", false],
       ["dom.storageManager.prompt.testing.allow", false],
     ],
@@ -30,7 +29,7 @@ async function test_background_storagePersist(EXTENSION_ID) {
 
     manifest: {
       permissions: ["storage", "unlimitedStorage"],
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
         },
@@ -78,14 +77,15 @@ async function test_background_storagePersist(EXTENSION_ID) {
   await extension.awaitMessage("storage-local-called");
 
   let chromeScript = SpecialPowers.loadChromeScript(function test_country_data() {
+    /* eslint-env mozilla/chrome-script */
     const {addMessageListener, sendAsyncMessage} = this;
 
     addMessageListener("getPersistedStatus", (uuid) => {
       const {
         ExtensionStorageIDB,
-      } = ChromeUtils.import("resource://gre/modules/ExtensionStorageIDB.jsm");
-
-      const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+      } = ChromeUtils.importESModule(
+        "resource://gre/modules/ExtensionStorageIDB.sys.mjs"
+      );
 
       const {WebExtensionPolicy} = Cu.getGlobalForObject(ExtensionStorageIDB);
       const policy = WebExtensionPolicy.getByHostname(uuid);

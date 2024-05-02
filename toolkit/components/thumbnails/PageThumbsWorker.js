@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/chrome-worker */
+/* eslint-env worker */
 
 /**
  * A worker dedicated for the I/O component of PageThumbs storage.
@@ -10,23 +10,24 @@
 
 "use strict";
 
+/* import-globals-from /toolkit/components/workerloader/require.js */
 importScripts("resource://gre/modules/workers/require.js");
 
 var PromiseWorker = require("resource://gre/modules/workers/PromiseWorker.js");
 
 var worker = new PromiseWorker.AbstractWorker();
-worker.dispatch = function(method, args = []) {
+worker.dispatch = function (method, args = []) {
   return Agent[method](...args);
 };
-worker.postMessage = function(message, ...transfers) {
+worker.postMessage = function (message, ...transfers) {
   self.postMessage(message, ...transfers);
 };
-worker.close = function() {
+worker.close = function () {
   self.close();
 };
 
 self.addEventListener("message", msg => worker.handleMessage(msg));
-self.addEventListener("unhandledrejection", function(error) {
+self.addEventListener("unhandledrejection", function (error) {
   throw error.reason;
 });
 

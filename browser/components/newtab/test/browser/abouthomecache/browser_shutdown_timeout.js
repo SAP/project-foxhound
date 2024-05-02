@@ -11,7 +11,7 @@
  * hang crash.
  */
 add_task(async function test_shutdown_timeout() {
-  await BrowserTestUtils.withNewTab("about:home", async browser => {
+  await withFullyLoadedAboutHome(async browser => {
     // First, make sure the cache is populated so that later on, after
     // the timeout, simulateRestart doesn't complain about not finding
     // a pre-existing cache. This complaining only happens if this test
@@ -22,8 +22,8 @@ add_task(async function test_shutdown_timeout() {
     // Next, manually shutdown the AboutHomeStartupCacheChild so that
     // it doesn't respond to requests to the cache streams.
     await SpecialPowers.spawn(browser, [], async () => {
-      let { AboutHomeStartupCacheChild } = ChromeUtils.import(
-        "resource:///modules/AboutNewTabService.jsm"
+      let { AboutHomeStartupCacheChild } = ChromeUtils.importESModule(
+        "resource:///modules/AboutNewTabService.sys.mjs"
       );
       AboutHomeStartupCacheChild.uninit();
     });

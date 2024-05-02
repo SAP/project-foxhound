@@ -4,36 +4,39 @@
 
 "use strict";
 
-const Services = require("Services");
 const {
   VIEW_NODE_SELECTOR_TYPE,
   VIEW_NODE_PROPERTY_TYPE,
   VIEW_NODE_VALUE_TYPE,
   VIEW_NODE_IMAGE_URL_TYPE,
   VIEW_NODE_LOCATION_TYPE,
-} = require("devtools/client/inspector/shared/node-types");
+} = require("resource://devtools/client/inspector/shared/node-types.js");
 
-loader.lazyRequireGetter(this, "Menu", "devtools/client/framework/menu");
+loader.lazyRequireGetter(
+  this,
+  "Menu",
+  "resource://devtools/client/framework/menu.js"
+);
 loader.lazyRequireGetter(
   this,
   "MenuItem",
-  "devtools/client/framework/menu-item"
+  "resource://devtools/client/framework/menu-item.js"
 );
 loader.lazyRequireGetter(
   this,
   "getRuleFromNode",
-  "devtools/client/inspector/rules/utils/utils",
+  "resource://devtools/client/inspector/rules/utils/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "clipboardHelper",
-  "devtools/shared/platform/clipboard"
+  "resource://devtools/shared/platform/clipboard.js"
 );
 
 const STYLE_INSPECTOR_PROPERTIES =
   "devtools/shared/locales/styleinspector.properties";
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const STYLE_INSPECTOR_L10N = new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
 
 const PREF_ORIG_SOURCES = "devtools.source-map.client-service.enabled";
@@ -72,7 +75,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Display the style inspector context menu
    */
-  show: function(event) {
+  show(event) {
     try {
       this._openMenu({
         target: event.target,
@@ -84,7 +87,7 @@ StyleInspectorMenu.prototype = {
     }
   },
 
-  _openMenu: function({ target, screenX = 0, screenY = 0 } = {}) {
+  _openMenu({ target, screenX = 0, screenY = 0 } = {}) {
     this.currentTarget = target;
     this.styleWindow.focus();
 
@@ -273,7 +276,7 @@ StyleInspectorMenu.prototype = {
     return menu;
   },
 
-  _hasTextSelected: function() {
+  _hasTextSelected() {
     let hasTextSelected;
     const selection = this.styleWindow.getSelection();
 
@@ -294,7 +297,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Get the type of the currently clicked node
    */
-  _getClickedNodeInfo: function() {
+  _getClickedNodeInfo() {
     const node = this._getClickedNode();
     return this.view.getNodeInfo(node);
   },
@@ -306,7 +309,7 @@ StyleInspectorMenu.prototype = {
    * @return {Boolean}
    *         true if click on color opened the popup, false otherwise.
    */
-  _isColorPopup: function() {
+  _isColorPopup() {
     this._colorToCopy = "";
 
     const container = this._getClickedNode();
@@ -328,7 +331,7 @@ StyleInspectorMenu.prototype = {
    *
    * @return {Boolean} true if the node is an image url
    */
-  _isImageUrl: function() {
+  _isImageUrl() {
     const nodeInfo = this._getClickedNodeInfo();
     if (!nodeInfo) {
       return false;
@@ -343,7 +346,7 @@ StyleInspectorMenu.prototype = {
    *
    * @return {DOMNode}
    */
-  _getClickedNode: function() {
+  _getClickedNode() {
     const node = this.currentTarget;
 
     if (!node) {
@@ -356,7 +359,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Select all text.
    */
-  _onSelectAll: function() {
+  _onSelectAll() {
     const selection = this.styleWindow.getSelection();
 
     if (this.isRuleView) {
@@ -371,21 +374,21 @@ StyleInspectorMenu.prototype = {
   /**
    * Copy the most recently selected color value to clipboard.
    */
-  _onCopy: function() {
+  _onCopy() {
     this.view.copySelection(this.currentTarget);
   },
 
   /**
    * Copy the most recently selected color value to clipboard.
    */
-  _onCopyColor: function() {
+  _onCopyColor() {
     clipboardHelper.copyString(this._colorToCopy);
   },
 
   /*
    * Retrieve the url for the selected image and copy it to the clipboard
    */
-  _onCopyUrl: function() {
+  _onCopyUrl() {
     if (!this._clickedNodeInfo) {
       return;
     }
@@ -420,7 +423,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Copy the rule source location of the current clicked node.
    */
-  _onCopyLocation: function() {
+  _onCopyLocation() {
     if (!this._clickedNodeInfo) {
       return;
     }
@@ -431,7 +434,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Copy the CSS declaration of the current clicked node.
    */
-  _onCopyDeclaration: function() {
+  _onCopyDeclaration() {
     if (!this._clickedNodeInfo) {
       return;
     }
@@ -443,7 +446,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Copy the rule property name of the current clicked node.
    */
-  _onCopyPropertyName: function() {
+  _onCopyPropertyName() {
     if (!this._clickedNodeInfo) {
       return;
     }
@@ -454,7 +457,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Copy the rule property value of the current clicked node.
    */
-  _onCopyPropertyValue: function() {
+  _onCopyPropertyValue() {
     if (!this._clickedNodeInfo) {
       return;
     }
@@ -465,7 +468,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Copy the rule of the current clicked node.
    */
-  _onCopyRule: function() {
+  _onCopyRule() {
     const node = this._getClickedNode();
     const rule = getRuleFromNode(node, this.view._elementStyle);
     clipboardHelper.copyString(rule.stringifyRule());
@@ -474,7 +477,7 @@ StyleInspectorMenu.prototype = {
   /**
    * Copy the rule selector of the current clicked node.
    */
-  _onCopySelector: function() {
+  _onCopySelector() {
     if (!this._clickedNodeInfo) {
       return;
     }
@@ -485,12 +488,12 @@ StyleInspectorMenu.prototype = {
   /**
    * Toggle the original sources pref.
    */
-  _onToggleOrigSources: function() {
+  _onToggleOrigSources() {
     const isEnabled = Services.prefs.getBoolPref(PREF_ORIG_SOURCES);
     Services.prefs.setBoolPref(PREF_ORIG_SOURCES, !isEnabled);
   },
 
-  destroy: function() {
+  destroy() {
     this.currentTarget = null;
     this.view = null;
     this.inspector = null;

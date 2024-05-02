@@ -16,7 +16,7 @@ description {
 }
 
 #type {
-  -moz-box-flex: 1;
+  flex: 1;
   background-color: transparent;
   color: inherit;
 }
@@ -24,4 +24,9 @@ description {
 #container > .small-indent,
 .small-indent label {
   margin-inline-start: 0;
+}
+
+#source,
+#location {
+  contain: inline-size;
 }

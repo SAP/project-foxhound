@@ -13,10 +13,13 @@
 #include "mozilla/dom/DocumentFragment.h"
 #include "ChildIterator.h"
 #include "nsContentUtils.h"
+#include "nsINode.h"
 #include "nsWindowSizes.h"
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLDetailsElement.h"
 #include "mozilla/dom/HTMLSlotElement.h"
+#include "mozilla/dom/HTMLSummaryElement.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/TreeOrderedArrayInlines.h"
 #include "mozilla/EventDispatcher.h"
@@ -44,7 +47,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END_INHERITED(DocumentFragment)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ShadowRoot)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIContent)
-  NS_INTERFACE_MAP_ENTRY(nsIRadioGroupContainer)
 NS_INTERFACE_MAP_END_INHERITING(DocumentFragment)
 
 NS_IMPL_ADDREF_INHERITED(ShadowRoot, DocumentFragment)
@@ -59,8 +61,13 @@ ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
       mMode(aMode),
       mDelegatesFocus(aDelegatesFocus),
       mSlotAssignment(aSlotAssignment),
-      mIsUAWidget(false),
+      mIsDetailsShadowTree(aElement->IsHTMLElement(nsGkAtoms::details)),
       mIsAvailableToElementInternals(false) {
+  // nsINode.h relies on this.
+  MOZ_ASSERT(static_cast<nsINode*>(this) == reinterpret_cast<nsINode*>(this));
+  MOZ_ASSERT(static_cast<nsIContent*>(this) ==
+             reinterpret_cast<nsIContent*>(this));
+
   SetHost(aElement);
 
   // Nodes in a shadow tree should never store a value
@@ -69,6 +76,17 @@ ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
   ClearSubtreeRootPointer();
 
   SetFlags(NODE_IS_IN_SHADOW_TREE);
+  if (Host()->IsInNativeAnonymousSubtree()) {
+    // NOTE(emilio): We could consider just propagating the
+    // IN_NATIVE_ANONYMOUS_SUBTREE flag (not making this an anonymous root), but
+    // that breaks the invariant that if two nodes have the same
+    // NativeAnonymousSubtreeRoot() they are in the same DOM tree, which we rely
+    // on a couple places and would need extra fixes.
+    //
+    // We don't hit this case for now anyways, bug 1824886 would start hitting
+    // it.
+    SetIsNativeAnonymousRoot();
+  }
   Bind();
 
   ExtendedDOMSlots()->mContainingShadow = this;
@@ -104,7 +122,22 @@ JSObject* ShadowRoot::WrapNode(JSContext* aCx,
   return mozilla::dom::ShadowRoot_Binding::Wrap(aCx, this, aGivenProto);
 }
 
+void ShadowRoot::NodeInfoChanged(Document* aOldDoc) {
+  DocumentFragment::NodeInfoChanged(aOldDoc);
+  Document* newDoc = OwnerDoc();
+  const bool fromOrToTemplate =
+      aOldDoc->GetTemplateContentsOwnerIfExists() == newDoc ||
+      newDoc->GetTemplateContentsOwnerIfExists() == aOldDoc;
+  if (!fromOrToTemplate) {
+    ClearAdoptedStyleSheets();
+  }
+}
+
 void ShadowRoot::CloneInternalDataFrom(ShadowRoot* aOther) {
+  if (aOther->IsRootOfNativeAnonymousSubtree()) {
+    SetIsNativeAnonymousRoot();
+  }
+
   if (aOther->IsUAWidget()) {
     SetIsUAWidget();
   }
@@ -243,9 +276,7 @@ void ShadowRoot::AddSlot(HTMLSlotElement* aSlot) {
       for (nsIContent* child = GetHost()->GetFirstChild(); child;
            child = child->GetNextSibling()) {
         nsAutoString slotName;
-        if (auto* element = Element::FromNode(*child)) {
-          element->GetAttr(nsGkAtoms::slot, slotName);
-        }
+        GetSlotNameFor(*child, slotName);
         if (!child->IsSlotable() || !slotName.Equals(name)) {
           continue;
         }
@@ -443,7 +474,7 @@ void ShadowRoot::InsertSheetIntoAuthorData(
   MOZ_ASSERT(&aList == &mAdoptedStyleSheets || &aList == &mStyleSheets);
 
   if (!mServoStyles) {
-    mServoStyles = Servo_AuthorStyles_Create().Consume();
+    mServoStyles.reset(Servo_AuthorStyles_Create());
   }
 
   if (mStyleRuleMap) {
@@ -573,6 +604,24 @@ void ShadowRoot::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   }
 }
 
+void ShadowRoot::GetSlotNameFor(const nsIContent& aContent,
+                                nsAString& aName) const {
+  if (mIsDetailsShadowTree) {
+    const auto* summary = HTMLSummaryElement::FromNode(aContent);
+    if (summary && summary->IsMainSummary()) {
+      aName.AssignLiteral("internal-main-summary");
+    }
+    // Otherwise use the default slot.
+    return;
+  }
+
+  // Note that if slot attribute is missing, assign it to the first default
+  // slot, if exists.
+  if (const Element* element = Element::FromNode(aContent)) {
+    element->GetAttr(nsGkAtoms::slot, aName);
+  }
+}
+
 ShadowRoot::SlotInsertionPoint ShadowRoot::SlotInsertionPointFor(
     nsIContent& aContent) {
   HTMLSlotElement* slot = nullptr;
@@ -584,11 +633,7 @@ ShadowRoot::SlotInsertionPoint ShadowRoot::SlotInsertionPointFor(
     }
   } else {
     nsAutoString slotName;
-    // Note that if slot attribute is missing, assign it to the first default
-    // slot, if exists.
-    if (Element* element = Element::FromNode(aContent)) {
-      element->GetAttr(nsGkAtoms::slot, slotName);
-    }
+    GetSlotNameFor(aContent, slotName);
 
     SlotArray* slots = mSlotMap.Get(slotName);
     if (!slots) {
@@ -693,6 +738,29 @@ void ShadowRoot::MaybeReassignContent(nsIContent& aElementOrText) {
   }
 }
 
+void ShadowRoot::MaybeReassignMainSummary(SummaryChangeReason aReason) {
+  MOZ_ASSERT(mIsDetailsShadowTree);
+  if (aReason == SummaryChangeReason::Insertion) {
+    // We've inserted a summary element, may need to remove the existing one.
+    SlotArray* array = mSlotMap.Get(u"internal-main-summary"_ns);
+    MOZ_RELEASE_ASSERT(array && (*array)->Length() == 1);
+    HTMLSlotElement* slot = (*array)->ElementAt(0);
+    auto* summary = HTMLSummaryElement::FromNodeOrNull(
+        slot->AssignedNodes().SafeElementAt(0));
+    if (summary) {
+      MaybeReassignContent(*summary);
+    }
+  } else if (MOZ_LIKELY(GetHost())) {
+    // We need to null-check GetHost() in case we're unlinking already.
+    auto* details = HTMLDetailsElement::FromNode(Host());
+    MOZ_DIAGNOSTIC_ASSERT(details);
+    // We've removed a summary element, we may need to assign the new one.
+    if (HTMLSummaryElement* newMainSummary = details->GetFirstSummary()) {
+      MaybeReassignContent(*newMainSummary);
+    }
+  }
+}
+
 Element* ShadowRoot::GetActiveElement() {
   return GetRetargetedFocusedElement();
 }
@@ -700,9 +768,9 @@ Element* ShadowRoot::GetActiveElement() {
 nsINode* ShadowRoot::ImportNodeAndAppendChildAt(nsINode& aParentNode,
                                                 nsINode& aNode, bool aDeep,
                                                 mozilla::ErrorResult& rv) {
-  MOZ_ASSERT(mIsUAWidget);
+  MOZ_ASSERT(IsUAWidget());
 
-  if (!aParentNode.IsInUAWidget()) {
+  if (aParentNode.SubtreeRoot() != this) {
     rv.Throw(NS_ERROR_INVALID_ARG);
     return nullptr;
   }
@@ -718,9 +786,9 @@ nsINode* ShadowRoot::ImportNodeAndAppendChildAt(nsINode& aParentNode,
 nsINode* ShadowRoot::CreateElementAndAppendChildAt(nsINode& aParentNode,
                                                    const nsAString& aTagName,
                                                    mozilla::ErrorResult& rv) {
-  MOZ_ASSERT(mIsUAWidget);
+  MOZ_ASSERT(IsUAWidget());
 
-  if (!aParentNode.IsInUAWidget()) {
+  if (aParentNode.SubtreeRoot() != this) {
     rv.Throw(NS_ERROR_INVALID_ARG);
     return nullptr;
   }
@@ -755,37 +823,10 @@ void ShadowRoot::MaybeUnslotHostChild(nsIContent& aChild) {
 
   slot->RemoveAssignedNode(aChild);
   slot->EnqueueSlotChangeEvent();
-}
 
-Element* ShadowRoot::GetFirstFocusable(bool aWithMouse) const {
-  MOZ_ASSERT(DelegatesFocus(), "Why are we here?");
-
-  Element* potentialFocus = nullptr;
-
-  for (nsINode* node = GetFirstChild(); node; node = node->GetNextNode(this)) {
-    auto* el = Element::FromNode(*node);
-    if (!el) {
-      continue;
-    }
-    nsIFrame* frame = el->GetPrimaryFrame();
-    if (frame && frame->IsFocusable(aWithMouse)) {
-      if (el->GetBoolAttr(nsGkAtoms::autofocus)) {
-        return el;
-      }
-      if (!potentialFocus) {
-        potentialFocus = el;
-      }
-    }
-    if (!potentialFocus) {
-      ShadowRoot* shadow = el->GetShadowRoot();
-      if (shadow && shadow->DelegatesFocus()) {
-        if (Element* nested = shadow->GetFirstFocusable(aWithMouse)) {
-          potentialFocus = nested;
-        }
-      }
-    }
+  if (mIsDetailsShadowTree && aChild.IsHTMLElement(nsGkAtoms::summary)) {
+    MaybeReassignMainSummary(SummaryChangeReason::Deletion);
   }
-  return potentialFocus;
 }
 
 void ShadowRoot::MaybeSlotHostChild(nsIContent& aChild) {
@@ -799,6 +840,10 @@ void ShadowRoot::MaybeSlotHostChild(nsIContent& aChild) {
 
   if (!aChild.IsSlotable()) {
     return;
+  }
+
+  if (mIsDetailsShadowTree && aChild.IsHTMLElement(nsGkAtoms::summary)) {
+    MaybeReassignMainSummary(SummaryChangeReason::Insertion);
   }
 
   SlotInsertionPoint assignment = SlotInsertionPointFor(aChild);

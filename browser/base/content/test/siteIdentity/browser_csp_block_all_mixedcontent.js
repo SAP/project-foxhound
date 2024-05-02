@@ -43,7 +43,7 @@ function runTests() {
   BrowserTestUtils.browserLoaded(gTestBrowser, false, url).then(
     verifyUInotDegraded
   );
-  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gTestBrowser, url);
 }
 
 // ------------------------------------------------------
@@ -53,7 +53,7 @@ function test() {
 
   SpecialPowers.pushPrefEnv(
     { set: [["security.mixed_content.block_active_content", true]] },
-    function() {
+    function () {
       runTests();
     }
   );

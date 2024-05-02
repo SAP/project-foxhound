@@ -16,6 +16,7 @@
 #include "mozilla/Base64.h"
 #include "mozilla/StyleColorInlines.h"
 #include "mozilla/Components.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/ImageEncoder.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
@@ -40,7 +41,6 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/Unused.h"
-#include "mozilla/Vector.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "nsAppRunner.h"
 #include "nsComponentManagerUtils.h"
@@ -51,6 +51,7 @@
 #include "nsPresContext.h"
 #include "nsRegion.h"
 #include "nsServiceManagerUtils.h"
+#include "nsRFPService.h"
 #include "ImageContainer.h"
 #include "ImageRegion.h"
 #include "gfx2DGlue.h"
@@ -290,7 +291,10 @@ static already_AddRefed<gfxDrawable> CreateSamplingRestrictedDrawable(
   AUTO_PROFILER_LABEL("CreateSamplingRestrictedDrawable", GRAPHICS);
 
   DrawTarget* destDrawTarget = aContext->GetDrawTarget();
-  if (destDrawTarget->GetBackendType() == BackendType::DIRECT2D1_1) {
+  // We've been not using CreateSamplingRestrictedDrawable in a bunch of places
+  // for a while. Let's disable it everywhere and confirm that it's ok to get
+  // rid of.
+  if (destDrawTarget->GetBackendType() == BackendType::DIRECT2D1_1 || (true)) {
     return nullptr;
   }
 
@@ -318,13 +322,12 @@ static already_AddRefed<gfxDrawable> CreateSamplingRestrictedDrawable(
     return nullptr;
   }
 
-  RefPtr<gfxContext> tmpCtx = gfxContext::CreateOrNull(target);
-  MOZ_ASSERT(tmpCtx);  // already checked the target above
+  gfxContext tmpCtx(target);
 
   if (aUseOptimalFillOp) {
-    tmpCtx->SetOp(OptimalFillOp());
+    tmpCtx.SetOp(OptimalFillOp());
   }
-  aDrawable->Draw(tmpCtx, needed - needed.TopLeft(), ExtendMode::REPEAT,
+  aDrawable->Draw(&tmpCtx, needed - needed.TopLeft(), ExtendMode::REPEAT,
                   SamplingFilter::LINEAR, 1.0,
                   gfxMatrix::Translation(needed.TopLeft()));
   RefPtr<SourceSurface> surface = target->Snapshot();
@@ -425,13 +428,14 @@ static bool PrescaleAndTileDrawable(gfxDrawable* aDrawable,
                                     const SamplingFilter aSamplingFilter,
                                     const SurfaceFormat aFormat,
                                     gfxFloat aOpacity, ExtendMode aExtendMode) {
-  Size scaleFactor = aContext->CurrentMatrix().ScaleFactors();
-  Matrix scaleMatrix = Matrix::Scaling(scaleFactor.width, scaleFactor.height);
+  MatrixScales scaleFactor =
+      aContext->CurrentMatrix().ScaleFactors().ConvertTo<float>();
+  Matrix scaleMatrix = Matrix::Scaling(scaleFactor.xScale, scaleFactor.yScale);
   const float fuzzFactor = 0.01;
 
   // If we aren't scaling or translating, don't go down this path
-  if ((FuzzyEqual(scaleFactor.width, 1.0, fuzzFactor) &&
-       FuzzyEqual(scaleFactor.width, 1.0, fuzzFactor)) ||
+  if ((FuzzyEqual(scaleFactor.xScale, 1.0f, fuzzFactor) &&
+       FuzzyEqual(scaleFactor.yScale, 1.0f, fuzzFactor)) ||
       aContext->CurrentMatrix().HasNonAxisAlignedTransform()) {
     return false;
   }
@@ -470,16 +474,15 @@ static bool PrescaleAndTileDrawable(gfxDrawable* aDrawable,
     return false;
   }
 
-  RefPtr<gfxContext> tmpCtx = gfxContext::CreateOrNull(scaledDT);
-  MOZ_ASSERT(tmpCtx);  // already checked the target above
+  gfxContext tmpCtx(scaledDT);
 
   scaledDT->SetTransform(scaleMatrix);
   gfxRect gfxImageRect(aImageRect.x, aImageRect.y, aImageRect.width,
                        aImageRect.height);
 
   // Since this is just the scaled image, we don't want to repeat anything yet.
-  aDrawable->Draw(tmpCtx, gfxImageRect, ExtendMode::CLAMP, aSamplingFilter, 1.0,
-                  gfxMatrix());
+  aDrawable->Draw(&tmpCtx, gfxImageRect, ExtendMode::CLAMP, aSamplingFilter,
+                  1.0, gfxMatrix());
 
   RefPtr<SourceSurface> scaledImage = scaledDT->Snapshot();
 
@@ -489,7 +492,7 @@ static bool PrescaleAndTileDrawable(gfxDrawable* aDrawable,
     DrawTarget* destDrawTarget = aContext->GetDrawTarget();
 
     // The translation still is in scaled units
-    withoutScale.PreScale(1.0 / scaleFactor.width, 1.0 / scaleFactor.height);
+    withoutScale.PreScale(1.0f / scaleFactor.xScale, 1.0f / scaleFactor.yScale);
     aContext->SetMatrix(withoutScale);
 
     DrawOptions drawOptions(aOpacity, aContext->CurrentOp(),
@@ -1068,20 +1071,15 @@ const gfx::DeviceColor& gfxUtils::GetColorForFrameNumber(
   return colors[aFrameNumber % sNumFrameColors];
 }
 
-/* static */
-nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
-                                       const ImageType aImageType,
-                                       const nsAString& aOutputOptions,
-                                       BinaryOrData aBinaryOrData, FILE* aFile,
-                                       nsACString* aStrOut) {
-  MOZ_ASSERT(aBinaryOrData == gfxUtils::eDataURIEncode || aFile || aStrOut,
-             "Copying binary encoding to clipboard not currently supported");
-
+// static
+nsresult gfxUtils::EncodeSourceSurfaceAsStream(SourceSurface* aSurface,
+                                               const ImageType aImageType,
+                                               const nsAString& aOutputOptions,
+                                               nsIInputStream** aOutStream) {
   const IntSize size = aSurface->GetSize();
   if (size.IsEmpty()) {
-    return NS_ERROR_INVALID_ARG;
+    return NS_ERROR_FAILURE;
   }
-  const Size floatSize(size.width, size.height);
 
   RefPtr<DataSourceSurface> dataSurface;
   if (aSurface->GetFormat() != SurfaceFormat::B8G8R8A8) {
@@ -1130,53 +1128,91 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
       size.width, size.height, map.mStride, imgIEncoder::INPUT_FORMAT_HOSTARGB,
       aOutputOptions);
   dataSurface->Unmap();
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsCOMPtr<nsIInputStream> imgStream(encoder);
   if (!imgStream) {
     return NS_ERROR_FAILURE;
   }
 
+  imgStream.forget(aOutStream);
+
+  return NS_OK;
+}
+
+// static
+Maybe<nsTArray<uint8_t>> gfxUtils::EncodeSourceSurfaceAsBytes(
+    SourceSurface* aSurface, const ImageType aImageType,
+    const nsAString& aOutputOptions) {
+  nsCOMPtr<nsIInputStream> imgStream;
+  nsresult rv = EncodeSourceSurfaceAsStream(
+      aSurface, aImageType, aOutputOptions, getter_AddRefs(imgStream));
+  if (NS_FAILED(rv)) {
+    return Nothing();
+  }
+
   uint64_t bufSize64;
   rv = imgStream->Available(&bufSize64);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  NS_ENSURE_TRUE(bufSize64 < UINT32_MAX - 16, NS_ERROR_FAILURE);
-
-  uint32_t bufSize = (uint32_t)bufSize64;
-
-  // ...leave a little extra room so we can call read again and make sure we
-  // got everything. 16 bytes for better padding (maybe)
-  bufSize += 16;
-  uint32_t imgSize = 0;
-  Vector<char> imgData;
-  if (!imgData.initCapacity(bufSize)) {
-    return NS_ERROR_OUT_OF_MEMORY;
+  if (NS_FAILED(rv) || bufSize64 > UINT32_MAX) {
+    return Nothing();
   }
-  uint32_t numReadThisTime = 0;
-  while ((rv = imgStream->Read(imgData.begin() + imgSize, bufSize - imgSize,
-                               &numReadThisTime)) == NS_OK &&
-         numReadThisTime > 0) {
-    // Update the length of the vector without overwriting the new data.
-    if (!imgData.growByUninitialized(numReadThisTime)) {
-      return NS_ERROR_OUT_OF_MEMORY;
+
+  uint32_t bytesLeft = static_cast<uint32_t>(bufSize64);
+
+  nsTArray<uint8_t> imgData;
+  imgData.SetLength(bytesLeft);
+  uint8_t* bytePtr = imgData.Elements();
+
+  while (bytesLeft > 0) {
+    uint32_t bytesRead = 0;
+    rv = imgStream->Read(reinterpret_cast<char*>(bytePtr), bytesLeft,
+                         &bytesRead);
+    if (NS_FAILED(rv) || bytesRead == 0) {
+      return Nothing();
     }
 
-    imgSize += numReadThisTime;
-    if (imgSize == bufSize) {
-      // need a bigger buffer, just double
-      bufSize *= 2;
-      if (!imgData.resizeUninitialized(bufSize)) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
-    }
+    bytePtr += bytesRead;
+    bytesLeft -= bytesRead;
   }
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(!imgData.empty(), NS_ERROR_FAILURE);
+
+#ifdef DEBUG
+
+  // Currently, all implementers of imgIEncoder report their exact size through
+  // nsIInputStream::Available(), but let's explicitly state that we rely on
+  // that behavior for the algorithm above.
+
+  char dummy = 0;
+  uint32_t bytesRead = 0;
+  rv = imgStream->Read(&dummy, 1, &bytesRead);
+  MOZ_ASSERT(NS_SUCCEEDED(rv) && bytesRead == 0);
+
+#endif
+
+  return Some(std::move(imgData));
+}
+
+/* static */
+nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
+                                       const ImageType aImageType,
+                                       const nsAString& aOutputOptions,
+                                       BinaryOrData aBinaryOrData, FILE* aFile,
+                                       nsACString* aStrOut) {
+  MOZ_ASSERT(aBinaryOrData == gfxUtils::eDataURIEncode || aFile || aStrOut,
+             "Copying binary encoding to clipboard not currently supported");
+
+  auto maybeImgData =
+      EncodeSourceSurfaceAsBytes(aSurface, aImageType, aOutputOptions);
+  if (!maybeImgData) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsTArray<uint8_t>& imgData = *maybeImgData;
 
   if (aBinaryOrData == gfxUtils::eBinaryEncode) {
     if (aFile) {
-      Unused << fwrite(imgData.begin(), 1, imgSize, aFile);
+      Unused << fwrite(imgData.Elements(), 1, imgData.Length(), aFile);
     }
     return NS_OK;
   }
@@ -1206,7 +1242,8 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
   }
 
   dataURI.AppendLiteral(";base64,");
-  rv = Base64EncodeAppend(imgData.begin(), imgSize, dataURI);
+  nsresult rv = Base64EncodeAppend(reinterpret_cast<char*>(imgData.Elements()),
+                                   imgData.Length(), dataURI);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aFile) {
@@ -1381,6 +1418,48 @@ const float kIdentityNarrowYCbCrToRGB_RowMajor[16] = {
   }
 }
 
+// Translate from CICP values to the color primaries we support, or return
+// Nothing() if there is no appropriate match to let the caller choose
+// a default or generate an error.
+//
+// See Rec. ITU-T H.273 (12/2016) for details on CICP
+/* static */ Maybe<gfx::ColorSpace2> gfxUtils::CicpToColorPrimaries(
+    const CICP::ColourPrimaries aColourPrimaries, LazyLogModule& aLogger) {
+  switch (aColourPrimaries) {
+    case CICP::ColourPrimaries::CP_BT709:
+      return Some(gfx::ColorSpace2::BT709);
+    case CICP::ColourPrimaries::CP_BT2020:
+      return Some(gfx::ColorSpace2::BT2020);
+    default:
+      MOZ_LOG(aLogger, LogLevel::Debug,
+              ("Unsupported color primaries value: %hhu", aColourPrimaries));
+      return {};
+  }
+}
+
+// Translate from CICP values to the transfer functions we support, or return
+// Nothing() if there is no appropriate match.
+//
+/* static */ Maybe<gfx::TransferFunction> gfxUtils::CicpToTransferFunction(
+    const CICP::TransferCharacteristics aTransferCharacteristics) {
+  switch (aTransferCharacteristics) {
+    case CICP::TransferCharacteristics::TC_BT709:
+      return Some(gfx::TransferFunction::BT709);
+
+    case CICP::TransferCharacteristics::TC_SRGB:
+      return Some(gfx::TransferFunction::SRGB);
+
+    case CICP::TransferCharacteristics::TC_SMPTE2084:
+      return Some(gfx::TransferFunction::PQ);
+
+    case CICP::TransferCharacteristics::TC_HLG:
+      return Some(gfx::TransferFunction::HLG);
+
+    default:
+      return {};
+  }
+}
+
 /* static */
 void gfxUtils::WriteAsPNG(SourceSurface* aSurface, const nsAString& aFile) {
   WriteAsPNG(aSurface, NS_ConvertUTF16toUTF8(aFile).get());
@@ -1502,9 +1581,10 @@ void gfxUtils::CopyAsDataURI(DrawTarget* aDT) {
   }
 }
 
-/* static */ UniquePtr<uint8_t[]> gfxUtils::GetImageBuffer(
-    gfx::DataSourceSurface* aSurface, bool aIsAlphaPremultiplied,
-    int32_t* outFormat) {
+/* static */
+UniquePtr<uint8_t[]> gfxUtils::GetImageBuffer(gfx::DataSourceSurface* aSurface,
+                                              bool aIsAlphaPremultiplied,
+                                              int32_t* outFormat) {
   *outFormat = 0;
 
   DataSourceSurface::MappedSurface map;
@@ -1537,6 +1617,22 @@ void gfxUtils::CopyAsDataURI(DrawTarget* aDT) {
 }
 
 /* static */
+UniquePtr<uint8_t[]> gfxUtils::GetImageBufferWithRandomNoise(
+    gfx::DataSourceSurface* aSurface, bool aIsAlphaPremultiplied,
+    nsICookieJarSettings* aCookieJarSettings, int32_t* outFormat) {
+  UniquePtr<uint8_t[]> imageBuffer =
+      GetImageBuffer(aSurface, aIsAlphaPremultiplied, outFormat);
+
+  nsRFPService::RandomizePixels(
+      aCookieJarSettings, imageBuffer.get(), aSurface->GetSize().width,
+      aSurface->GetSize().height,
+      aSurface->GetSize().width * aSurface->GetSize().height * 4,
+      SurfaceFormat::A8R8G8B8_UINT32);
+
+  return imageBuffer;
+}
+
+/* static */
 nsresult gfxUtils::GetInputStream(gfx::DataSourceSurface* aSurface,
                                   bool aIsAlphaPremultiplied,
                                   const char* aMimeType,
@@ -1551,6 +1647,36 @@ nsresult gfxUtils::GetInputStream(gfx::DataSourceSurface* aSurface,
   UniquePtr<uint8_t[]> imageBuffer =
       GetImageBuffer(aSurface, aIsAlphaPremultiplied, &format);
   if (!imageBuffer) return NS_ERROR_FAILURE;
+
+  return dom::ImageEncoder::GetInputStream(
+      aSurface->GetSize().width, aSurface->GetSize().height, imageBuffer.get(),
+      format, encoder, aEncoderOptions, outStream);
+}
+
+/* static */
+nsresult gfxUtils::GetInputStreamWithRandomNoise(
+    gfx::DataSourceSurface* aSurface, bool aIsAlphaPremultiplied,
+    const char* aMimeType, const nsAString& aEncoderOptions,
+    nsICookieJarSettings* aCookieJarSettings, nsIInputStream** outStream) {
+  nsCString enccid("@mozilla.org/image/encoder;2?type=");
+  enccid += aMimeType;
+  nsCOMPtr<imgIEncoder> encoder = do_CreateInstance(enccid.get());
+  if (!encoder) {
+    return NS_ERROR_FAILURE;
+  }
+
+  int32_t format = 0;
+  UniquePtr<uint8_t[]> imageBuffer =
+      GetImageBuffer(aSurface, aIsAlphaPremultiplied, &format);
+  if (!imageBuffer) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsRFPService::RandomizePixels(
+      aCookieJarSettings, imageBuffer.get(), aSurface->GetSize().width,
+      aSurface->GetSize().height,
+      aSurface->GetSize().width * aSurface->GetSize().height * 4,
+      SurfaceFormat::A8R8G8B8_UINT32);
 
   return dom::ImageEncoder::GetInputStream(
       aSurface->GetSize().width, aSurface->GetSize().height, imageBuffer.get(),
@@ -1674,8 +1800,22 @@ DeviceColor ToDeviceColor(nscolor aColor) {
   return ToDeviceColor(sRGBColor::FromABGR(aColor));
 }
 
-DeviceColor ToDeviceColor(const StyleRGBA& aColor) {
+DeviceColor ToDeviceColor(const StyleAbsoluteColor& aColor) {
   return ToDeviceColor(aColor.ToColor());
+}
+
+sRGBColor ToSRGBColor(const StyleAbsoluteColor& aColor) {
+  auto srgb = aColor.ToColorSpace(StyleColorSpace::Srgb);
+
+  const auto ToComponent = [](float aF) -> float {
+    float component = std::min(std::max(0.0f, aF), 1.0f);
+    if (MOZ_UNLIKELY(!std::isfinite(component))) {
+      return 0.0f;
+    }
+    return component;
+  };
+  return {ToComponent(srgb.components._0), ToComponent(srgb.components._1),
+          ToComponent(srgb.components._2), ToComponent(srgb.alpha)};
 }
 
 }  // namespace gfx

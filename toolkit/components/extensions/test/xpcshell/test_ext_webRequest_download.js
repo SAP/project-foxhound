@@ -2,6 +2,7 @@
 
 // Test for Bug 1579911: Check that download requests created by the
 // downloads.download API can be observed by extensions.
+// The DNR version is in test_ext_dnr_download.js.
 add_task(async function testDownload() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -12,7 +13,7 @@ add_task(async function testDownload() {
         "https://example.com/*",
       ],
     },
-    background: async function() {
+    background: async function () {
       browser.webRequest.onBeforeRequest.addListener(
         details => {
           browser.test.sendMessage("request_intercepted");

@@ -1,21 +1,19 @@
-from __future__ import absolute_import, print_function
 import codecs
-from difflib import unified_diff
 import logging
 import os
 import re
 import shutil
 import sys
+from difflib import unified_diff
 
 import hglib
-from mach.util import get_state_dir
 import mozpack.path as mozpath
-
 from compare_locales.merge import merge_channels
-from compare_locales.paths.files import ProjectFiles
 from compare_locales.paths.configparser import TOMLParser
+from compare_locales.paths.files import ProjectFiles
 from fluent.migrate import validator
 from fluent.syntax import FluentParser, FluentSerializer
+from mach.util import get_state_dir
 
 
 def inspect_migration(path):
@@ -165,9 +163,9 @@ def test_migration(cmd, obj_dir, to_test, references):
     messages = [
         l.desc.decode("utf-8") for l in client.log(b"::%s - ::%s" % (tip, old_tip))
     ]
-    bug = re.search("[0-9]{5,}", migration_name).group()
+    bug = re.search("[0-9]{5,}", migration_name)
     # Just check first message for bug number, they're all following the same pattern
-    if bug not in messages[0]:
+    if bug is None or bug.group() not in messages[0]:
         rv = 1
         cmd.log(
             logging.ERROR,

@@ -12,6 +12,7 @@
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
 #include "nsCOMPtr.h"
+#include "nsIURI.h"
 #include "nsTHashtable.h"
 #include "nsTArray.h"
 #include "nsString.h"
@@ -20,6 +21,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/ThreadBound.h"
 #include "mozilla/Variant.h"
@@ -216,8 +218,10 @@ class PermissionManager final : public nsIPermissionManager,
    * @param aKey  A string which will be filled with the permission
    * key.
    */
-  static void GetKeyForPrincipal(nsIPrincipal* aPrincipal, bool aForceStripOA,
-                                 bool aSiteScopePermissions, nsACString& aKey);
+  static nsresult GetKeyForPrincipal(nsIPrincipal* aPrincipal,
+                                     bool aForceStripOA,
+                                     bool aSiteScopePermissions,
+                                     nsACString& aKey);
 
   /**
    * See `nsIPermissionManager::GetPermissionsWithKey` for more info on
@@ -240,8 +244,8 @@ class PermissionManager final : public nsIPermissionManager,
    * @param aKey  A string which will be filled with the permission
    * key.
    */
-  static void GetKeyForOrigin(const nsACString& aOrigin, bool aForceStripOA,
-                              bool aSiteScopePermissions, nsACString& aKey);
+  static nsresult GetKeyForOrigin(const nsACString& aOrigin, bool aForceStripOA,
+                                  bool aSiteScopePermissions, nsACString& aKey);
 
   /**
    * See `nsIPermissionManager::GetPermissionsWithKey` for more info on
@@ -261,8 +265,9 @@ class PermissionManager final : public nsIPermissionManager,
    * @param aPermissionKey  A string which will be filled with the permission
    * key.
    */
-  static void GetKeyForPermission(nsIPrincipal* aPrincipal,
-                                  const nsACString& aType, nsACString& aKey);
+  static nsresult GetKeyForPermission(nsIPrincipal* aPrincipal,
+                                      const nsACString& aType,
+                                      nsACString& aKey);
 
   /**
    * See `nsIPermissionManager::GetPermissionsWithKey` for more info on
@@ -365,7 +370,7 @@ class PermissionManager final : public nsIPermissionManager,
 
  private:
   ~PermissionManager();
-  static StaticMutex sCreationMutex;
+  static StaticMutex sCreationMutex MOZ_UNANNOTATED;
 
   /**
    * Get all permissions for a given principal, which should not be isolated
@@ -534,7 +539,7 @@ class PermissionManager final : public nsIPermissionManager,
   // This monitor is used to ensure the database reading before any other
   // operation. The reading of the database happens OMT. See |State| to know the
   // steps of the database reading.
-  Monitor mMonitor;
+  Monitor mMonitor MOZ_UNANNOTATED;
 
   enum State {
     // Initial state. The database has not been read yet.

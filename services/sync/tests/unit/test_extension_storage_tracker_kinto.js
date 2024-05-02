@@ -5,13 +5,16 @@
 
 Services.prefs.setBoolPref("webextensions.storage.sync.kinto", true);
 
-const { ExtensionStorageEngine } = ChromeUtils.import(
-  "resource://services-sync/engines/extension-storage.js"
+const { ExtensionStorageEngine } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/extension-storage.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { extensionStorageSync } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionStorageSyncKinto.jsm"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
 );
+const { extensionStorageSyncKinto: extensionStorageSync } =
+  ChromeUtils.importESModule(
+    "resource://gre/modules/ExtensionStorageSyncKinto.sys.mjs"
+  );
 
 let engine;
 
@@ -26,13 +29,13 @@ add_task(async function test_changing_extension_storage_changes_score() {
   const tracker = engine._tracker;
   const extension = { id: "my-extension-id" };
   tracker.start();
-  await withSyncContext(async function(context) {
+  await withSyncContext(async function (context) {
     await extensionStorageSync.set(extension, { a: "b" }, context);
   });
   Assert.equal(tracker.score, SCORE_INCREMENT_MEDIUM);
 
   tracker.resetScore();
-  await withSyncContext(async function(context) {
+  await withSyncContext(async function (context) {
     await extensionStorageSync.remove(extension, "a", context);
   });
   Assert.equal(tracker.score, SCORE_INCREMENT_MEDIUM);

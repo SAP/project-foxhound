@@ -6,8 +6,11 @@
 
 #include "nsMathMLmmultiscriptsFrame.h"
 
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_mathml.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include <algorithm>
 #include "gfxContext.h"
@@ -96,47 +99,6 @@ nsresult nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
   nscoord supScriptShift = 0;
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
 
-  if (!StaticPrefs::mathml_script_shift_attributes_disabled()) {
-    // subscriptshift
-    //
-    // "Specifies the minimum amount to shift the baseline of subscript down;
-    // the default is for the rendering agent to use its own positioning rules."
-    //
-    // values: length
-    // default: automatic
-    //
-    // We use 0 as the default value so unitless values can be ignored.
-    // As a minimum, negative values can be ignored.
-    //
-    nsAutoString value;
-    if (!mContent->IsMathMLElement(nsGkAtoms::msup_) &&
-        mContent->AsElement()->GetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::subscriptshift_, value)) {
-      mContent->OwnerDoc()->WarnOnceAbout(
-          dom::DeprecatedOperations::eMathML_DeprecatedScriptShiftAttributes);
-      ParseNumericValue(value, &subScriptShift, 0, PresContext(),
-                        mComputedStyle, fontSizeInflation);
-    }
-    // superscriptshift
-    //
-    // "Specifies the minimum amount to shift the baseline of superscript up;
-    // the default is for the rendering agent to use its own positioning rules."
-    //
-    // values: length
-    // default: automatic
-    //
-    // We use 0 as the default value so unitless values can be ignored.
-    // As a minimum, negative values can be ignored.
-    //
-    if (!mContent->IsMathMLElement(nsGkAtoms::msub_) &&
-        mContent->AsElement()->GetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::superscriptshift_, value)) {
-      mContent->OwnerDoc()->WarnOnceAbout(
-          dom::DeprecatedOperations::eMathML_DeprecatedScriptShiftAttributes);
-      ParseNumericValue(value, &supScriptShift, 0, PresContext(),
-                        mComputedStyle, fontSizeInflation);
-    }
-  }
   return PlaceMultiScript(PresContext(), aDrawTarget, aPlaceOrigin,
                           aDesiredSize, this, subScriptShift, supScriptShift,
                           fontSizeInflation);
@@ -177,7 +139,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
       aFrame->ReportErrorToConsole("NoBase");
     else
       aFrame->ReportChildCountError();
-    return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+    return aFrame->PlaceAsMrow(aDrawTarget, aPlaceOrigin, aDesiredSize);
   }
 
   // get x-height (an ex)
@@ -188,7 +150,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
   nscoord xHeight = fm->XHeight();
 
   nscoord oneDevPixel = fm->AppUnitsPerDevPixel();
-  gfxFont* mathFont = fm->GetThebesFontGroup()->GetFirstMathFont();
+  RefPtr<gfxFont> mathFont = fm->GetThebesFontGroup()->GetFirstMathFont();
   // scriptspace from TeX for extra spacing after sup/subscript
   nscoord scriptSpace;
   if (mathFont) {
@@ -267,8 +229,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
 
     // get sup script shift depending on current script level and display style
     // Rule 18c, App. G, TeXbook
-    if (font->mMathDepth == 0 &&
-        font->mMathStyle == NS_STYLE_MATH_STYLE_NORMAL &&
+    if (font->mMathDepth == 0 && font->mMathStyle == StyleMathStyle::Normal &&
         !NS_MATHML_IS_COMPRESSED(presentationData.flags)) {
       // Style D in TeXbook
       supScriptShift = supScriptShift1;
@@ -320,7 +281,6 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
   aDesiredSize.Width() = aDesiredSize.Height() = 0;
 
   int32_t count = 0;
-  bool foundNoneTag = false;
 
   // Boolean to determine whether the current child is a subscript.
   // Note that only msup starts with a superscript.
@@ -333,7 +293,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
         if (aPlaceOrigin) {
           aFrame->ReportInvalidChildError(nsGkAtoms::mprescripts_);
         }
-        return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+        return aFrame->PlaceAsMrow(aDrawTarget, aPlaceOrigin, aDesiredSize);
       }
       if (prescriptsFrame) {
         // duplicate <mprescripts/> found
@@ -341,31 +301,19 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
         if (aPlaceOrigin) {
           aFrame->ReportErrorToConsole("DuplicateMprescripts");
         }
-        return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+        return aFrame->PlaceAsMrow(aDrawTarget, aPlaceOrigin, aDesiredSize);
       }
       if (!isSubScript) {
         if (aPlaceOrigin) {
           aFrame->ReportErrorToConsole("SubSupMismatch");
         }
-        return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+        return aFrame->PlaceAsMrow(aDrawTarget, aPlaceOrigin, aDesiredSize);
       }
 
       prescriptsFrame = childFrame;
       firstPrescriptsPair = true;
     } else if (0 == count) {
       // base
-
-      if (childFrame->GetContent()->IsMathMLElement(nsGkAtoms::none)) {
-        if (tag == nsGkAtoms::mmultiscripts_) {
-          if (aPlaceOrigin) {
-            aFrame->ReportErrorToConsole("NoBase");
-          }
-          return aFrame->ReflowError(aDrawTarget, aDesiredSize);
-        } else {
-          // A different error message is triggered later for the other tags
-          foundNoneTag = true;
-        }
-      }
       baseFrame = childFrame;
       GetReflowAndBoundingMetricsFor(baseFrame, baseSize, bmBase);
 
@@ -386,10 +334,6 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
       boundingMetrics.leftBearing = bmBase.leftBearing;  // until overwritten
     } else {
       // super/subscript block
-      if (childFrame->GetContent()->IsMathMLElement(nsGkAtoms::none)) {
-        foundNoneTag = true;
-      }
-
       if (isSubScript) {
         // subscript
         subScriptFrame = childFrame;
@@ -535,7 +479,6 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
   // NoBase error may also have been reported above
   if ((count != 2 && (tag == nsGkAtoms::msup_ || tag == nsGkAtoms::msub_)) ||
       (count != 3 && tag == nsGkAtoms::msubsup_) || !baseFrame ||
-      (foundNoneTag && tag != nsGkAtoms::mmultiscripts_) ||
       (!isSubScript && tag == nsGkAtoms::mmultiscripts_)) {
     // report an error, encourage people to get their markups in order
     if (aPlaceOrigin) {
@@ -543,15 +486,13 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
            (tag == nsGkAtoms::msup_ || tag == nsGkAtoms::msub_)) ||
           (count != 3 && tag == nsGkAtoms::msubsup_)) {
         aFrame->ReportChildCountError();
-      } else if (foundNoneTag && tag != nsGkAtoms::mmultiscripts_) {
-        aFrame->ReportInvalidChildError(nsGkAtoms::none);
       } else if (!baseFrame) {
         aFrame->ReportErrorToConsole("NoBase");
       } else {
         aFrame->ReportErrorToConsole("SubSupMismatch");
       }
     }
-    return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+    return aFrame->PlaceAsMrow(aDrawTarget, aPlaceOrigin, aDesiredSize);
   }
 
   // we left out the width of prescripts, so ...

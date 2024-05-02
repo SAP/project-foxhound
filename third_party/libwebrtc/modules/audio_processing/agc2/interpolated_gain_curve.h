@@ -12,10 +12,9 @@
 #define MODULES_AUDIO_PROCESSING_AGC2_INTERPOLATED_GAIN_CURVE_H_
 
 #include <array>
-#include <string>
 
+#include "absl/strings/string_view.h"
 #include "modules/audio_processing/agc2/agc2_common.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/gtest_prod_util.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -61,8 +60,11 @@ class InterpolatedGainCurve {
   };
 
   InterpolatedGainCurve(ApmDataDumper* apm_data_dumper,
-                        std::string histogram_name_prefix);
+                        absl::string_view histogram_name_prefix);
   ~InterpolatedGainCurve();
+
+  InterpolatedGainCurve(const InterpolatedGainCurve&) = delete;
+  InterpolatedGainCurve& operator=(const InterpolatedGainCurve&) = delete;
 
   Stats get_stats() const { return stats_; }
 
@@ -75,7 +77,7 @@ class InterpolatedGainCurve {
  private:
   // For comparing 'approximation_params_*_' with ones computed by
   // ComputeInterpolatedGainCurve.
-  FRIEND_TEST_ALL_PREFIXES(AutomaticGainController2InterpolatedGainCurve,
+  FRIEND_TEST_ALL_PREFIXES(GainController2InterpolatedGainCurve,
                            CheckApproximationParams);
 
   struct RegionLogger {
@@ -84,10 +86,10 @@ class InterpolatedGainCurve {
     metrics::Histogram* limiter_histogram;
     metrics::Histogram* saturation_histogram;
 
-    RegionLogger(std::string identity_histogram_name,
-                 std::string knee_histogram_name,
-                 std::string limiter_histogram_name,
-                 std::string saturation_histogram_name);
+    RegionLogger(absl::string_view identity_histogram_name,
+                 absl::string_view knee_histogram_name,
+                 absl::string_view limiter_histogram_name,
+                 absl::string_view saturation_histogram_name);
 
     ~RegionLogger();
 
@@ -143,8 +145,6 @@ class InterpolatedGainCurve {
 
   // Stats.
   mutable Stats stats_;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(InterpolatedGainCurve);
 };
 
 }  // namespace webrtc

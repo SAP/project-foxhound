@@ -2,7 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::error_recording::{record_error, ErrorType};
+use std::sync::Arc;
+
+use crate::common_metric_data::CommonMetricDataInternal;
+use crate::error_recording::{record_error, test_get_num_recorded_errors, ErrorType};
 use crate::histogram::{Functional, Histogram};
 use crate::metrics::memory_unit::MemoryUnit;
 use crate::metrics::{DistributionData, Metric, MetricType};
@@ -23,9 +26,9 @@ const MAX_BYTES: u64 = 1 << 40;
 /// A memory distribution metric.
 ///
 /// Memory distributions are used to accumulate and store memory sizes.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MemoryDistributionMetric {
-    meta: CommonMetricData,
+    meta: Arc<CommonMetricDataInternal>,
     memory_unit: MemoryUnit,
 }
 
@@ -36,18 +39,19 @@ pub(crate) fn snapshot(hist: &Histogram<Functional>) -> DistributionData {
     DistributionData {
         // **Caution**: This cannot use `Histogram::snapshot_values` and needs to use the more
         // specialized snapshot function.
-        values: hist.snapshot(),
-        sum: hist.sum(),
+        values: hist
+            .snapshot()
+            .into_iter()
+            .map(|(k, v)| (k as i64, v as i64))
+            .collect(),
+        sum: hist.sum() as i64,
+        count: hist.count() as i64,
     }
 }
 
 impl MetricType for MemoryDistributionMetric {
-    fn meta(&self) -> &CommonMetricData {
+    fn meta(&self) -> &CommonMetricDataInternal {
         &self.meta
-    }
-
-    fn meta_mut(&mut self) -> &mut CommonMetricData {
-        &mut self.meta
     }
 }
 
@@ -58,7 +62,10 @@ impl MetricType for MemoryDistributionMetric {
 impl MemoryDistributionMetric {
     /// Creates a new memory distribution metric.
     pub fn new(meta: CommonMetricData, memory_unit: MemoryUnit) -> Self {
-        Self { meta, memory_unit }
+        Self {
+            meta: Arc::new(meta.into()),
+            memory_unit,
+        }
     }
 
     /// Accumulates the provided sample in the metric.
@@ -72,12 +79,32 @@ impl MemoryDistributionMetric {
     ///
     /// Values bigger than 1 Terabyte (2<sup>40</sup> bytes) are truncated
     /// and an [`ErrorType::InvalidValue`] error is recorded.
-    pub fn accumulate(&self, glean: &Glean, sample: u64) {
+    pub fn accumulate(&self, sample: i64) {
+        let metric = self.clone();
+        crate::launch_with_glean(move |glean| metric.accumulate_sync(glean, sample))
+    }
+
+    /// Accumulates the provided sample in the metric synchronously.
+    ///
+    /// See [`accumulate`](Self::accumulate) for details.
+    #[doc(hidden)]
+    pub fn accumulate_sync(&self, glean: &Glean, sample: i64) {
         if !self.should_record(glean) {
             return;
         }
 
-        let mut sample = self.memory_unit.as_bytes(sample);
+        if sample < 0 {
+            record_error(
+                glean,
+                &self.meta,
+                ErrorType::InvalidValue,
+                "Accumulated a negative sample",
+                None,
+            );
+            return;
+        }
+
+        let mut sample = self.memory_unit.as_bytes(sample as u64);
 
         if sample > MAX_BYTES {
             let msg = "Sample is bigger than 1 terabyte";
@@ -85,9 +112,14 @@ impl MemoryDistributionMetric {
             sample = MAX_BYTES;
         }
 
-        glean
-            .storage()
-            .record_with(glean, &self.meta, |old_value| match old_value {
+        // Let's be defensive here:
+        // The uploader tries to store some memory distribution metrics,
+        // but in tests that storage might be gone already.
+        // Let's just ignore those.
+        // We do the same for counters and timing distributions.
+        // This should never happen in real app usage.
+        if let Some(storage) = glean.storage_opt() {
+            storage.record_with(glean, &self.meta, |old_value| match old_value {
                 Some(Metric::MemoryDistribution(mut hist)) => {
                     hist.accumulate(sample);
                     Metric::MemoryDistribution(hist)
@@ -98,6 +130,12 @@ impl MemoryDistributionMetric {
                     Metric::MemoryDistribution(hist)
                 }
             });
+        } else {
+            log::warn!(
+                "Couldn't get storage. Can't record memory distribution '{}'.",
+                self.meta.base_identifier()
+            );
+        }
     }
 
     /// Accumulates the provided signed samples in the metric.
@@ -123,7 +161,16 @@ impl MemoryDistributionMetric {
     ///
     /// Values bigger than 1 Terabyte (2<sup>40</sup> bytes) are truncated
     /// and an [`ErrorType::InvalidValue`] error is recorded.
-    pub fn accumulate_samples_signed(&self, glean: &Glean, samples: Vec<i64>) {
+    pub fn accumulate_samples(&self, samples: Vec<i64>) {
+        let metric = self.clone();
+        crate::launch_with_glean(move |glean| metric.accumulate_samples_sync(glean, samples))
+    }
+
+    /// Accumulates the provided signed samples in the metric synchronously.
+    ///
+    /// See [`accumulate_samples`](Self::accumulate_samples) for details.
+    #[doc(hidden)]
+    pub fn accumulate_samples_sync(&self, glean: &Glean, samples: Vec<i64>) {
         if !self.should_record(glean) {
             return;
         }
@@ -180,17 +227,22 @@ impl MemoryDistributionMetric {
         }
     }
 
-    /// **Test-only API (exported for FFI purposes).**
-    ///
-    /// Gets the currently stored value as an integer.
-    ///
-    /// This doesn't clear the stored value.
-    pub fn test_get_value(&self, glean: &Glean, storage_name: &str) -> Option<DistributionData> {
+    /// Gets the currently stored value synchronously.
+    #[doc(hidden)]
+    pub fn get_value<'a, S: Into<Option<&'a str>>>(
+        &self,
+        glean: &Glean,
+        ping_name: S,
+    ) -> Option<DistributionData> {
+        let queried_ping_name = ping_name
+            .into()
+            .unwrap_or_else(|| &self.meta().inner.send_in_pings[0]);
+
         match StorageManager.snapshot_metric_for_test(
             glean.storage(),
-            storage_name,
+            queried_ping_name,
             &self.meta.identifier(glean),
-            self.meta.lifetime,
+            self.meta.inner.lifetime,
         ) {
             Some(Metric::MemoryDistribution(hist)) => Some(snapshot(&hist)),
             _ => None,
@@ -199,15 +251,32 @@ impl MemoryDistributionMetric {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Gets the currently-stored histogram as a JSON String of the serialized value.
+    /// Gets the currently stored value.
     ///
     /// This doesn't clear the stored value.
-    pub fn test_get_value_as_json_string(
-        &self,
-        glean: &Glean,
-        storage_name: &str,
-    ) -> Option<String> {
-        self.test_get_value(glean, storage_name)
-            .map(|snapshot| serde_json::to_string(&snapshot).unwrap())
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        crate::block_on_dispatcher();
+        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
+    }
+
+    /// **Exported for test purposes.**
+    ///
+    /// Gets the number of recorded errors for the given metric and error type.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The type of error
+    /// * `ping_name` - represents the optional name of the ping to retrieve the
+    ///   metric for. Defaults to the first value in `send_in_pings`.
+    ///
+    /// # Returns
+    ///
+    /// The number of errors reported.
+    pub fn test_get_num_recorded_errors(&self, error: ErrorType) -> i32 {
+        crate::block_on_dispatcher();
+
+        crate::core::with_glean(|glean| {
+            test_get_num_recorded_errors(glean, self.meta(), error).unwrap_or(0)
+        })
     }
 }

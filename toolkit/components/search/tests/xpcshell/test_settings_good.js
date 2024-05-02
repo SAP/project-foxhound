@@ -7,8 +7,8 @@
 
 "use strict";
 
-const { getAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { getAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 
 const enginesSettings = {
@@ -21,8 +21,11 @@ const enginesSettings = {
     searchDefaultHash: "TBD",
     // Intentionally in the past, but shouldn't actually matter for this test.
     searchDefaultExpir: 1567694909002,
-    current: "",
-    hash: "TBD",
+    // We use the second engine here so that the user's default is set
+    // to something different, and hence so that we exercise the appropriate
+    // code paths.
+    defaultEngineId: "engine2@search.mozilla.orgdefault",
+    defaultEngineIdHash: "TBD",
     visibleDefaultEngines: "engine1,engine2",
     visibleDefaultEnginesHash: "TBD",
   },
@@ -40,7 +43,7 @@ const enginesSettings = {
   ],
 };
 
-add_task(async function setup() {
+add_setup(async function () {
   await AddonTestUtils.promiseStartupManager();
 
   // Allow telemetry probes which may otherwise be disabled for some applications (e.g. Thunderbird)
@@ -58,18 +61,18 @@ add_task(async function setup() {
   enginesSettings.metaData.searchDefaultHash = SearchUtils.getVerificationHash(
     enginesSettings.metaData.searchDefault
   );
-  enginesSettings.metaData.hash = SearchUtils.getVerificationHash(
-    enginesSettings.metaData.current
-  );
-  enginesSettings.metaData.visibleDefaultEnginesHash = SearchUtils.getVerificationHash(
-    enginesSettings.metaData.visibleDefaultEngines
-  );
+  enginesSettings.metaData.defaultEngineIdHash =
+    SearchUtils.getVerificationHash(enginesSettings.metaData.defaultEngineId);
+  enginesSettings.metaData.visibleDefaultEnginesHash =
+    SearchUtils.getVerificationHash(
+      enginesSettings.metaData.visibleDefaultEngines
+    );
   const appInfo = getAppInfo();
   enginesSettings.buildID = appInfo.platformBuildID;
   enginesSettings.appVersion = appInfo.version;
 
   await IOUtils.writeJSON(
-    PathUtils.join(await PathUtils.getProfileDir(), SETTINGS_FILENAME),
+    PathUtils.join(PathUtils.profileDir, SETTINGS_FILENAME),
     enginesSettings,
     { compress: true }
   );
@@ -87,10 +90,14 @@ add_task(async function test_cached_engine_properties() {
   );
 
   const engines = await Services.search.getEngines();
-
+  Assert.equal(
+    Services.search.defaultEngine.name,
+    "engine2",
+    "Should have the expected default engine"
+  );
   Assert.deepEqual(
     engines.map(e => e.name),
     ["engine1", "engine2"],
-    "Should have the expected default engines"
+    "Should have the expected application provided engines"
   );
 });

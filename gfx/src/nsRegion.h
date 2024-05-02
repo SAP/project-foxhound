@@ -26,7 +26,7 @@
 #include "pixman.h"
 
 // Uncomment this line to get additional integrity checking.
-//#define DEBUG_REGIONS
+// #define DEBUG_REGIONS
 #ifdef DEBUG_REGIONS
 #  include <sstream>
 #endif
@@ -1642,6 +1642,11 @@ class nsRegion {
     }
     return false;
   }
+
+  bool Contains(const nsPoint& aPoint) const {
+    return Contains(aPoint.x, aPoint.y);
+  }
+
   bool Contains(const nsRectAbsolute& aRect) const {
     if (aRect.IsEmpty()) {
       return false;
@@ -2320,6 +2325,9 @@ class BaseIntRegion {
    * the point x=100, y=100.
    */
   bool Contains(int aX, int aY) const { return mImpl.Contains(aX, aY); }
+  bool Contains(const Point& aPoint) const {
+    return mImpl.Contains(aPoint.x, aPoint.y);
+  }
   bool Contains(const Rect& aRect) const {
     return mImpl.Contains(ToRect(aRect));
   }

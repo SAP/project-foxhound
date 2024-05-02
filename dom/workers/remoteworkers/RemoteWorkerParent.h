@@ -9,8 +9,7 @@
 
 #include "mozilla/dom/PRemoteWorkerParent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class RemoteWorkerController;
 
@@ -23,7 +22,7 @@ class RemoteWorkerParent final : public PRemoteWorkerParent {
   friend class PRemoteWorkerParent;
 
  public:
-  NS_INLINE_DECL_REFCOUNTING(RemoteWorkerParent)
+  NS_INLINE_DECL_REFCOUNTING(RemoteWorkerParent, override);
 
   RemoteWorkerParent();
 
@@ -45,6 +44,8 @@ class RemoteWorkerParent final : public PRemoteWorkerParent {
 
   mozilla::ipc::IPCResult RecvNotifyLock(const bool& aCreated);
 
+  mozilla::ipc::IPCResult RecvNotifyWebTransport(const bool& aCreated);
+
   mozilla::ipc::IPCResult RecvClose();
 
   mozilla::ipc::IPCResult RecvCreated(const bool& aStatus);
@@ -56,7 +57,6 @@ class RemoteWorkerParent final : public PRemoteWorkerParent {
   RefPtr<RemoteWorkerController> mController;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_RemoteWorkerParent_h

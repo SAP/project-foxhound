@@ -13,13 +13,15 @@ import * as ui from "./ui";
 import * as fileSearch from "./file-search";
 import * as projectTextSearch from "./project-text-search";
 import * as quickOpen from "./quick-open";
-import * as sourceTree from "./source-tree";
+import * as sourcesTree from "./sources-tree";
 import * as sources from "./sources";
 import * as sourcesActors from "./source-actors";
 import * as tabs from "./tabs";
 import * as threads from "./threads";
 import * as toolbox from "./toolbox";
 import * as preview from "./preview";
+import * as tracing from "./tracing";
+import * as contextMenu from "./context-menus";
 
 import { objectInspector } from "devtools/client/shared/components/reps/index";
 
@@ -39,8 +41,10 @@ export default {
   ...objectInspector.actions,
   ...projectTextSearch,
   ...quickOpen,
-  ...sourceTree,
+  ...sourcesTree,
   ...threads,
   ...toolbox,
   ...preview,
+  ...tracing,
+  ...contextMenu,
 };

@@ -35,7 +35,8 @@ function clearStorage() {
 function resetStorage() {
   return new Promise(function(resolve, reject) {
     var qms = SpecialPowers.Services.qms;
-    var request = qms.reset();
+    var principal = SpecialPowers.wrap(document).nodePrincipal;
+    var request = qms.resetStoragesForPrincipal(principal);
     var cb = SpecialPowers.wrapCallback(resolve);
     request.callback = cb;
   });
@@ -100,15 +101,9 @@ SpecialPowers.pushPrefEnv({
   // Note: For the cloned and cached opaque response, the padding size shouldn't
   // be changed. Thus, it makes the attacker harder to get the padding size.
 
-  // Bug 1746646: Make mochitests work with TCP enabled (cookieBehavior = 5)
-  // Acquire storage access permission here so that the Cache API is avaialable
-  SpecialPowers.wrap(document).notifyUserGestureActivation();
-  await SpecialPowers.addPermission("storageAccessAPI", true, window.location.href);
-  await SpecialPowers.wrap(document).requestStorageAccess();
-
   const name = "cachePadding";
   const other_name = "cachePaddingOther";
-  const cors_base = "https://example.com/test/dom/cache/test/mochitest/";
+  const cors_base = "https://example.com/tests/dom/cache/test/mochitest/";
   const url = "test_cache_add.js";
 
   await setupTestIframe();

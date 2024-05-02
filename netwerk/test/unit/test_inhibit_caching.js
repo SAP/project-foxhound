@@ -1,6 +1,8 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var first = true;
 function contentHandler(metadata, response) {
@@ -13,7 +15,7 @@ function contentHandler(metadata, response) {
   response.bodyOutputStream.write(body, body.length);
 }
 
-XPCOMUtils.defineLazyGetter(this, "uri", function() {
+ChromeUtils.defineLazyGetter(this, "uri", function () {
   return "http://localhost:" + httpserver.identity.primaryPort;
 });
 
@@ -59,7 +61,7 @@ function check_first_response(request, buffer) {
 function cache_entry_callback(status, entry) {
   equal(status, Cr.NS_OK);
   var inputStream = entry.openInputStream(0);
-  pumpReadStream(inputStream, function(read) {
+  pumpReadStream(inputStream, function (read) {
     inputStream.close();
     equal(read, "first");
     run_next_test();

@@ -7,7 +7,7 @@
  * Caret move events checker.
  */
 function caretMoveChecker(target, caretOffset) {
-  return function(event) {
+  return function (event) {
     let cmEvent = event.QueryInterface(nsIAccessibleCaretMoveEvent);
     return (
       cmEvent.accessible == getAccessible(target) &&
@@ -19,7 +19,7 @@ function caretMoveChecker(target, caretOffset) {
 async function checkURLBarCaretEvents() {
   const kURL = "about:mozilla";
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
-  BrowserTestUtils.loadURI(newWin.gBrowser.selectedBrowser, kURL);
+  BrowserTestUtils.startLoadingURIString(newWin.gBrowser.selectedBrowser, kURL);
   newWin.gBrowser.selectedBrowser.focus();
 
   await waitForEvent(EVENT_DOCUMENT_LOAD_COMPLETE, event => {

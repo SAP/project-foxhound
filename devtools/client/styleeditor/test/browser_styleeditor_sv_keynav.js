@@ -6,20 +6,26 @@
 
 const TESTCASE_URI = TEST_BASE_HTTP + "four.html";
 
-add_task(async function() {
+add_task(async function () {
   const { panel, ui } = await openStyleEditorForURL(TESTCASE_URI);
 
   info("Waiting for source editor to load.");
   await ui.editors[0].getSourceEditor();
 
-  const selected = ui.once("editor-selected");
+  const onEditorSelected = new Promise(resolve => {
+    const off = ui.on("editor-selected", editor => {
+      if (editor == ui.editors[2]) {
+        resolve();
+        off();
+      }
+    });
+  });
 
   info("Testing keyboard navigation on the sheet list.");
   testKeyboardNavigation(ui.editors[0], panel);
 
   info("Waiting for editor #2 to be selected due to keyboard navigation.");
-  await selected;
-
+  await onEditorSelected;
   ok(ui.editors[2].sourceEditor.hasFocus(), "Editor #2 has focus.");
 });
 
@@ -30,7 +36,7 @@ function getStylesheetNameLinkFor(editor) {
 function testKeyboardNavigation(editor, panel) {
   const panelWindow = panel.panelWindow;
   const ui = panel.UI;
-  waitForFocus(function() {
+  waitForFocus(function () {
     const summary = editor.summary;
     EventUtils.synthesizeMouseAtCenter(summary, {}, panelWindow);
 

@@ -3,7 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   // ToDo: Replace storage and default with a getter function once we expose the
   // filenames of them to a IDL file.
   const basePath = `${storageDirName}/${defaultPersistenceDirName}/`;
@@ -48,7 +48,7 @@ async function testSteps() {
       wantGlobalProperties: ["caches", "fetch"],
     });
 
-    const promise = new Promise(function(resolve, reject) {
+    const promise = new Promise(function (resolve, reject) {
       sandbox.resolve = resolve;
       sandbox.reject = reject;
     });
@@ -246,4 +246,4 @@ async function testSteps() {
   }
 
   await testPermanentCacheDir();
-}
+});

@@ -1,7 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 Services.scriptloader.loadSubScript(
   "chrome://global/content/globalOverlay.js",
   this
@@ -11,35 +10,19 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserTestUtils",
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserTestUtils: "resource://testing-common/BrowserTestUtils.sys.mjs",
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+});
 
-ChromeUtils.defineModuleGetter(
-  window,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  window,
-  "PlacesUIUtils",
-  "resource:///modules/PlacesUIUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  window,
-  "PlacesTransactions",
-  "resource://gre/modules/PlacesTransactions.jsm"
-);
+ChromeUtils.defineESModuleGetters(window, {
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+});
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 XPCOMUtils.defineLazyScriptGetter(
   window,

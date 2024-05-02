@@ -9,6 +9,7 @@ async function locateBookmarkAndTestCtrlClick(menupopup) {
     node => node.label == "Test1"
   );
   ok(testMenuitem, "Found test bookmark.");
+  ok(BrowserTestUtils.is_visible(testMenuitem), "Should be visible");
   let promiseTabOpened = BrowserTestUtils.waitForNewTab(gBrowser, null);
   EventUtils.synthesizeMouseAtCenter(testMenuitem, { accelKey: true });
   let newTab = await promiseTabOpened;
@@ -27,12 +28,14 @@ async function testContextmenu(menuitem) {
   });
   await promiseEvent;
   let promiseTabOpened = BrowserTestUtils.waitForNewTab(gBrowser, null);
+  let hidden = BrowserTestUtils.waitForEvent(cm, "popuphidden");
   cm.activateItem(doc.getElementById("placesContext_open:newtab"));
+  await hidden;
   let newTab = await promiseTabOpened;
   return newTab;
 }
 
-add_task(async function test_setup() {
+add_setup(async function () {
   // Ensure BMB is available in UI.
   let origBMBlocation = CustomizableUI.getPlacementOfWidget(
     "bookmarks-menu-button"
@@ -79,7 +82,7 @@ add_task(async function test_setup() {
     title: "Test1",
   });
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.eraseEverything();
     // if BMB was not originally in UI, remove it.
     if (!origBMBlocation) {

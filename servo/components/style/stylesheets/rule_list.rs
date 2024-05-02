@@ -8,12 +8,12 @@ use crate::shared_lock::{DeepCloneParams, DeepCloneWithLock, Locked};
 use crate::shared_lock::{SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard};
 use crate::str::CssStringWriter;
 use crate::stylesheets::loader::StylesheetLoader;
-use crate::stylesheets::rule_parser::{InsertRuleContext, State};
+use crate::stylesheets::rule_parser::InsertRuleContext;
 use crate::stylesheets::stylesheet::StylesheetContents;
-use crate::stylesheets::{AllowImportRules, CssRule, RulesMutateError};
+use crate::stylesheets::{AllowImportRules, CssRule, CssRuleTypes, RulesMutateError};
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocShallowSizeOf, MallocSizeOfOps};
-use servo_arc::{Arc, RawOffsetArc};
+use servo_arc::Arc;
 use std::fmt::{self, Write};
 
 /// A list of CSS rules.
@@ -102,6 +102,15 @@ impl CssRules {
         dest: &mut CssStringWriter,
     ) -> fmt::Result {
         dest.write_str(" {")?;
+        self.to_css_block_without_opening(guard, dest)
+    }
+
+    /// As above, but without the opening curly bracket. That's needed for nesting.
+    pub fn to_css_block_without_opening(
+        &self,
+        guard: &SharedRwLockReadGuard,
+        dest: &mut CssStringWriter,
+    ) -> fmt::Result {
         for rule in self.0.iter() {
             dest.write_str("\n  ")?;
             rule.to_css(guard, dest)?;
@@ -126,20 +135,20 @@ pub trait CssRulesHelpers {
         rule: &str,
         parent_stylesheet_contents: &StylesheetContents,
         index: usize,
-        nested: bool,
+        nested: CssRuleTypes,
         loader: Option<&dyn StylesheetLoader>,
         allow_import_rules: AllowImportRules,
     ) -> Result<CssRule, RulesMutateError>;
 }
 
-impl CssRulesHelpers for RawOffsetArc<Locked<CssRules>> {
+impl CssRulesHelpers for Locked<CssRules> {
     fn insert_rule(
         &self,
         lock: &SharedRwLock,
         rule: &str,
         parent_stylesheet_contents: &StylesheetContents,
         index: usize,
-        nested: bool,
+        containing_rule_types: CssRuleTypes,
         loader: Option<&dyn StylesheetLoader>,
         allow_import_rules: AllowImportRules,
     ) -> Result<CssRule, RulesMutateError> {
@@ -152,22 +161,10 @@ impl CssRulesHelpers for RawOffsetArc<Locked<CssRules>> {
                 return Err(RulesMutateError::IndexSize);
             }
 
-            // Computes the parser state at the given index
-            let state = if nested {
-                State::Body
-            } else if index == 0 {
-                State::Start
-            } else {
-                rules
-                    .0
-                    .get(index - 1)
-                    .map(CssRule::rule_state)
-                    .unwrap_or(State::Body)
-            };
-
             let insert_rule_context = InsertRuleContext {
                 rule_list: &rules.0,
                 index,
+                containing_rule_types,
             };
 
             // Steps 3, 4, 5, 6
@@ -176,7 +173,6 @@ impl CssRulesHelpers for RawOffsetArc<Locked<CssRules>> {
                 insert_rule_context,
                 parent_stylesheet_contents,
                 lock,
-                state,
                 loader,
                 allow_import_rules,
             )?

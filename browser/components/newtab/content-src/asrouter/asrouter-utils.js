@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { MESSAGE_TYPE_HASH as msg } from "common/ActorConstants.jsm";
-import { actionCreators as ac } from "common/Actions.jsm";
+import { MESSAGE_TYPE_HASH as msg } from "common/ActorConstants.sys.mjs";
+import { actionCreators as ac } from "common/Actions.sys.mjs";
 
 export const ASRouterUtils = {
   addListener(listener) {
@@ -62,6 +62,12 @@ export const ASRouterUtils = {
     return ASRouterUtils.sendMessage({
       type: msg.OVERRIDE_MESSAGE,
       data: { id },
+    });
+  },
+  editState(key, value) {
+    return ASRouterUtils.sendMessage({
+      type: msg.EDIT_STATE,
+      data: { [key]: value },
     });
   },
   sendTelemetry(ping) {

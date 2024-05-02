@@ -20,7 +20,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
@@ -33,6 +32,13 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::GetLane;
+using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::MulAdd;
+using hwy::HWY_NAMESPACE::Sqrt;
 
 void ProcessTile(const Image3F& opsin, PassesEncoderState* enc_state,
                  const Rect& rect,
@@ -114,18 +120,18 @@ void ProcessTile(const Image3F& opsin, PassesEncoderState* enc_state,
       auto sumsqr = Zero(df);
       for (size_t c = 0; c < 3; c++) {
         auto laplacian =
-            LoadU(df, in_row[c] + cx) * Set(df, kChannelWeights[c]);
+            Mul(LoadU(df, in_row[c] + cx), Set(df, kChannelWeights[c]));
         auto sum_oth0 = LoadU(df, in_row[c] + cx - 1);
         auto sum_oth1 = LoadU(df, in_row[c] + cx + 1);
         auto sum_oth2 = LoadU(df, in_row_t[c] + cx - 1);
         auto sum_oth3 = LoadU(df, in_row_t[c] + cx);
-        sum_oth0 += LoadU(df, in_row_t[c] + cx + 1);
-        sum_oth1 += LoadU(df, in_row_b[c] + cx - 1);
-        sum_oth2 += LoadU(df, in_row_b[c] + cx);
-        sum_oth3 += LoadU(df, in_row_b[c] + cx + 1);
-        sum_oth0 += sum_oth1;
-        sum_oth2 += sum_oth3;
-        sum_oth0 += sum_oth2;
+        sum_oth0 = Add(sum_oth0, LoadU(df, in_row_t[c] + cx + 1));
+        sum_oth1 = Add(sum_oth1, LoadU(df, in_row_b[c] + cx - 1));
+        sum_oth2 = Add(sum_oth2, LoadU(df, in_row_b[c] + cx));
+        sum_oth3 = Add(sum_oth3, LoadU(df, in_row_b[c] + cx + 1));
+        sum_oth0 = Add(sum_oth0, sum_oth1);
+        sum_oth2 = Add(sum_oth2, sum_oth3);
+        sum_oth0 = Add(sum_oth0, sum_oth2);
         laplacian =
             MulAdd(Set(df, kChannelWeightsLapNeg[c]), sum_oth0, laplacian);
         sumsqr = MulAdd(laplacian, laplacian, sumsqr);
@@ -154,7 +160,7 @@ void ProcessTile(const Image3F& opsin, PassesEncoderState* enc_state,
       auto sum = Zero(df4);
       for (size_t iy = 0; iy < 4; iy++) {
         for (size_t ix = 0; ix < 4; ix += Lanes(df4)) {
-          sum += LoadU(df4, rows_in[iy] + x * 4 + ix + 2);
+          sum = Add(sum, LoadU(df4, rows_in[iy] + x * 4 + ix + 2));
         }
       }
       row_out[x] = GetLane(Sqrt(SumOfLanes(df4, sum))) * (1.0f / 4.0f);
@@ -190,7 +196,7 @@ void ProcessTile(const Image3F& opsin, PassesEncoderState* enc_state,
         auto sum = Zero(df4);
         for (size_t iy = 0; iy < 4; iy++) {
           for (size_t ix = 0; ix < 4; ix += Lanes(df4)) {
-            sum += Load(df4, rows_in[iy] + sx + ix);
+            sum = Add(sum, Load(df4, rows_in[iy] + sx + ix));
           }
         }
         row_out[x] = GetLane(Sqrt(SumOfLanes(df4, sum))) * (1.0f / 4.0f);

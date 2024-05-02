@@ -1,9 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env mozilla/frame-script */
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+/* eslint-env mozilla/chrome-script */
 
 var dbService = Cc["@mozilla.org/url-classifier/dbservice;1"].getService(
   Ci.nsIUrlClassifierDBService

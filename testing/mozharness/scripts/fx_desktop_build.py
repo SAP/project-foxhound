@@ -13,9 +13,8 @@ author: Jordan Lund
 
 """
 
-from __future__ import absolute_import
-import sys
 import os
+import sys
 
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
@@ -52,7 +51,7 @@ class FxDesktopBuild(BuildScript, object):
                 # jobs have a minimal `hg pull`.
                 "clone_upstream_url": "https://hg.mozilla.org/mozilla-unified",
                 "repo_base": "https://hg.mozilla.org",
-                "build_resources_path": "%(upload_path)s/build_resources.json",
+                "profile_build_resources_path": "%(upload_path)s/profile_build_resources.json",
                 "nightly_promotion_branches": ["mozilla-central", "mozilla-aurora"],
                 # try will overwrite these
                 "clone_with_purge": False,

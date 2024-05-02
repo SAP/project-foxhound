@@ -14,11 +14,10 @@ namespace gc {
 
 struct ClearEdgesTracer final : public GenericTracerImpl<ClearEdgesTracer> {
   explicit ClearEdgesTracer(JSRuntime* rt);
-  ClearEdgesTracer();
 
  private:
   template <typename T>
-  T* onEdge(T* thing);
+  void onEdge(T** thingp, const char* name);
   friend class GenericTracerImpl<ClearEdgesTracer>;
 };
 

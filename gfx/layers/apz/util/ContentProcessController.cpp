@@ -54,9 +54,11 @@ void ContentProcessController::NotifyPinchGesture(
 }
 
 void ContentProcessController::NotifyAPZStateChange(
-    const ScrollableLayerGuid& aGuid, APZStateChange aChange, int aArg) {
+    const ScrollableLayerGuid& aGuid, APZStateChange aChange, int aArg,
+    Maybe<uint64_t> aInputBlockId) {
   if (mBrowser) {
-    mBrowser->NotifyAPZStateChange(aGuid.mScrollId, aChange, aArg);
+    mBrowser->NotifyAPZStateChange(aGuid.mScrollId, aChange, aArg,
+                                   aInputBlockId);
   }
 }
 
@@ -93,6 +95,12 @@ void ContentProcessController::NotifyAsyncAutoscrollRejected(
 
 void ContentProcessController::CancelAutoscroll(
     const ScrollableLayerGuid& aGuid) {
+  // This should never get called
+  MOZ_ASSERT_UNREACHABLE("Unexpected message to content process");
+}
+
+void ContentProcessController::NotifyScaleGestureComplete(
+    const ScrollableLayerGuid& aGuid, float aScale) {
   // This should never get called
   MOZ_ASSERT_UNREACHABLE("Unexpected message to content process");
 }

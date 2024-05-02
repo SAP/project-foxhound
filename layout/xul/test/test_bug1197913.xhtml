@@ -37,16 +37,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1197913
   function onDOMMenuItemActive(e) {
     menuitem.removeEventListener("DOMMenuItemActive", onDOMMenuItemActive);
 
-    synthesizeMouse(menuitem, 0, 0, { type: "mousemove" });
+    synthesizeMouse(menuitem, 5, 0, { type: "mousemove" });
     synthesizeMouse(menuitem, -1, 0, { type: "mousemove" });
 
     setTimeout(() => {
-      if (navigator.platform.toLowerCase().startsWith("win")) {
-        ok(menuitem.getAttribute("_moz-menuactive"));
-      } else {
-        ok(!menuitem.getAttribute("_moz-menuactive"));
-      }
-
+      ok(menuitem.getAttribute("_moz-menuactive"), "Should be active");
       SimpleTest.finish();
     });
   }
@@ -54,8 +49,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1197913
   function onPopupShown(e) {
     menulist.removeEventListener("popupshown", onPopupShown);
     menuitem.addEventListener("DOMMenuItemActive", onDOMMenuItemActive);
-    synthesizeMouse(menuitem, 0, 0, { type: "mousemove" });
-    synthesizeMouse(menuitem, 1, 0, { type: "mousemove" });
+    synthesizeMouse(menuitem, 5, 0, { type: "mousemove" });
+    synthesizeMouse(menuitem, 6, 0, { type: "mousemove" });
   }
 
   function nextTest(e) {

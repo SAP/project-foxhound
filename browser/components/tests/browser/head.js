@@ -3,9 +3,9 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  sinon: "resource://testing-common/Sinon.jsm",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 // Helpers for testing telemetry events.
@@ -21,24 +21,8 @@ function AssertEvents(message, ...events) {
   );
 }
 
-const BROWSER_GLUE = Cc["@mozilla.org/browser/browserglue;1"].getService()
-  .wrappedJSObject;
-
-// Helpers for showing the upgrade dialog.
-
-function waitForDialog(callback = win => win.close()) {
-  return BrowserTestUtils.promiseAlertDialog(
-    null,
-    "chrome://browser/content/upgradeDialog.html",
-    { callback, isSubDialog: true }
-  );
-}
-
-function showAndWaitForDialog(callback) {
-  const promise = waitForDialog(callback);
-  BROWSER_GLUE._showUpgradeDialog();
-  return promise;
-}
+const BROWSER_GLUE =
+  Cc["@mozilla.org/browser/browserglue;1"].getService().wrappedJSObject;
 
 // Helpers for mocking various shell states.
 
@@ -52,13 +36,13 @@ function mockShell(overrides = {}) {
     didMockShell = true;
   }
 
-  const sharedPinStub = sinon.stub();
+  const sharedPinStub = sinon.stub().resolves(undefined);
   let mock = {
     canPin: false,
     isDefault: false,
     isPinned: false,
 
-    checkPinCurrentAppToTaskbar() {
+    async checkPinCurrentAppToTaskbarAsync(privateBrowsing = false) {
       if (!this.canPin) {
         throw Error;
       }
@@ -66,7 +50,7 @@ function mockShell(overrides = {}) {
     get isAppInDock() {
       return this.isPinned;
     },
-    isCurrentAppPinnedToTaskbarAsync() {
+    isCurrentAppPinnedToTaskbarAsync(privateBrowsing = false) {
       return Promise.resolve(this.isPinned);
     },
     isDefaultBrowser() {
@@ -84,7 +68,7 @@ function mockShell(overrides = {}) {
     },
 
     ensureAppIsPinnedToDock: sharedPinStub,
-    pinCurrentAppToTaskbar: sharedPinStub,
+    pinCurrentAppToTaskbarAsync: sharedPinStub,
     setAsDefault: sinon.stub(),
     ...overrides,
   };

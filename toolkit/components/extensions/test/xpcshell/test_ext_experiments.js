@@ -1,11 +1,18 @@
 "use strict";
 
 /* globals browser */
-const { AddonSettings } = ChromeUtils.import(
-  "resource://gre/modules/addons/AddonSettings.jsm"
+const { AddonSettings } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/AddonSettings.sys.mjs"
 );
 
 AddonTestUtils.init(this);
+AddonTestUtils.overrideCertDB();
+AddonTestUtils.createAppInfo(
+  "xpcshell@tests.mozilla.org",
+  "XPCShell",
+  "1",
+  "42"
+);
 
 add_task(async function setup() {
   AddonTestUtils.overrideCertDB();
@@ -23,7 +30,10 @@ let fooExperimentAPIs = {
     child: {
       scopes: ["addon_child"],
       script: "child.js",
-      paths: [["experiments", "foo", "child"]],
+      paths: [
+        ["experiments", "foo", "child"],
+        ["experiments", "foo", "onChildEvent"],
+      ],
     },
   },
 };
@@ -53,6 +63,13 @@ let fooExperimentFiles = {
           returns: { type: "string" },
         },
       ],
+      events: [
+        {
+          name: "onChildEvent",
+          type: "function",
+          parameters: [],
+        },
+      ],
     },
   ]),
 
@@ -76,12 +93,46 @@ let fooExperimentFiles = {
   "child.js": () => {
     this.foo = class extends ExtensionAPI {
       getAPI(context) {
+        const EventManagerWithAssertions = class extends ExtensionCommon.EventManager {
+          constructor(...args) {
+            super(...args);
+            this.assertResetOnIdleOnEvent();
+          }
+
+          assertResetOnIdleOnEvent() {
+            const expectResetIdleOnEventFalse =
+              this.context.extension.persistentBackground;
+            if (expectResetIdleOnEventFalse && this.resetIdleOnEvent) {
+              const details = {
+                eventManagerName: this.name,
+                resetIdleOnEvent: this.resetIdleOnEvent,
+                envType: this.context.envType,
+                viewType: this.context.viewType,
+                isBackgroundContext: this.context.isBackgroundContext,
+                persistentBackground:
+                  this.context.extension.persistentBackground,
+              };
+              throw new Error(
+                `EventManagerWithAssertions: resetIdleOnEvent should be forcefully set to false - ${JSON.stringify(
+                  details
+                )}`
+              );
+            }
+          }
+        };
         return {
           experiments: {
             foo: {
               child() {
                 return "child";
               },
+              onChildEvent: new EventManagerWithAssertions({
+                context,
+                name: `experiments.foo.onChildEvent`,
+                register: fire => {
+                  return () => {};
+                },
+              }).api(),
             },
           },
         };
@@ -201,11 +252,21 @@ add_task(async function test_bundled_experiments() {
       files: fooExperimentFiles,
     });
 
-    await extension.startup();
+    if (testCase.temporarilyInstalled && !testCase.shouldHaveExperiments) {
+      ExtensionTestUtils.failOnSchemaWarnings(false);
+      await Assert.rejects(
+        extension.startup(),
+        /Using 'experiment_apis' requires a privileged add-on/,
+        "startup failed without experimental api access"
+      );
+      ExtensionTestUtils.failOnSchemaWarnings(true);
+    } else {
+      await extension.startup();
 
-    await extension.awaitFinish("background.experiments.foo");
+      await extension.awaitFinish("background.experiments.foo");
 
-    await extension.unload();
+      await extension.unload();
+    }
   }
 });
 
@@ -267,7 +328,9 @@ add_task(async function test_unbundled_experiments() {
     isPrivileged: true,
 
     manifest: {
-      applications: { gecko: { id: "crunk@experiments.addons.mozilla.org" } },
+      browser_specific_settings: {
+        gecko: { id: "crunk@experiments.addons.mozilla.org" },
+      },
 
       experiment_apis: {
         crunk: {
@@ -355,4 +418,34 @@ add_task(async function test_unbundled_experiments() {
 
   await extension.unload();
   await apiExtension.unload();
+});
+
+add_task(async function test_eventpage_with_experiments_resetOnIdleAssert() {
+  async function event_page() {
+    browser.test.log("EventPage startup");
+    // We expect EventManagerWithAssertions instance to throw
+    // here if the resetIdleOnEvent didn't got forcefully
+    // set to false for the EventManager instantiated in
+    // the child process.
+    browser.experiments.foo.onChildEvent.addListener(() => {});
+    browser.test.sendMessage("eventpage:ready");
+  }
+
+  const extension = ExtensionTestUtils.loadExtension({
+    isPrivileged: true,
+    manifest: {
+      experiment_apis: fooExperimentAPIs,
+      background: { persistent: false },
+    },
+
+    background: event_page,
+
+    files: fooExperimentFiles,
+  });
+
+  await extension.startup();
+
+  await extension.awaitMessage("eventpage:ready");
+
+  await extension.unload();
 });

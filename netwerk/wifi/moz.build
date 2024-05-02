@@ -18,40 +18,46 @@ UNIFIED_SOURCES += [
 ]
 
 if CONFIG["OS_ARCH"] == "Darwin":
-    UNIFIED_SOURCES += [
-        "nsWifiScannerMac.cpp",
-    ]
     SOURCES += [
-        "osx_corewlan.mm",
+        "mac/MacWifiScanner.mm",
     ]
-    # osx_corewlan.mm has warnings about scanForNetworksWithParameters,
-    # bssidData and rssi. These are APIs that were removed in 10.7, so we need
-    # to accept the warnings when targeting the newer SDKs.
-    SOURCES["osx_corewlan.mm"].flags += ["-Wno-error=objc-method-access"]
+    LOCAL_INCLUDES += [
+        "mac",
+    ]
 elif CONFIG["OS_ARCH"] in ("DragonFly", "FreeBSD"):
     UNIFIED_SOURCES += [
-        "nsWifiScannerFreeBSD.cpp",
+        "freebsd/FreeBsdWifiScanner.cpp",
+    ]
+    LOCAL_INCLUDES += [
+        "freebsd",
     ]
 elif CONFIG["OS_ARCH"] == "WINNT":
     UNIFIED_SOURCES += [
-        "nsWifiScannerWin.cpp",
-        "win_wifiScanner.cpp",
-        "win_wlanLibrary.cpp",
+        "win/WinWifiScanner.cpp",
+        "win/WlanLibrary.cpp",
+    ]
+    LOCAL_INCLUDES += [
+        "win",
     ]
 elif CONFIG["OS_ARCH"] == "SunOS":
     CXXFLAGS += CONFIG["GLIB_CFLAGS"]
     UNIFIED_SOURCES += [
-        "nsWifiScannerSolaris.cpp",
+        "solaris/SolarisWifiScanner.cpp",
     ]
-
-if CONFIG["NECKO_WIFI_DBUS"]:
+    LOCAL_INCLUDES += [
+        "solaris",
+    ]
+elif CONFIG["NECKO_WIFI_DBUS"]:
     UNIFIED_SOURCES += [
-        "nsWifiScannerDBus.cpp",
+        "dbus/DbusWifiScanner.cpp",
     ]
+    LOCAL_INCLUDES += [
+        "dbus",
+    ]
+    CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
 
-if CONFIG["NECKO_WIFI_DBUS"]:
-    CXXFLAGS += CONFIG["MOZ_DBUS_GLIB_CFLAGS"]
+TEST_DIRS += ["gtest"]
 
 FINAL_LIBRARY = "xul"
 
-REQUIRES_UNIFIED_BUILD = True
+include("/ipc/chromium/chromium-config.mozbuild")

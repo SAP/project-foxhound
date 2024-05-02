@@ -34,7 +34,8 @@ class Attr final : public nsINode {
   Attr(nsDOMAttributeMap* aAttrMap, already_AddRefed<dom::NodeInfo>&& aNodeInfo,
        const nsAString& aValue);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL_DELETECYCLECOLLECTABLE
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_IMETHOD_(void) DeleteCycleCollectable(void) final;
 
   NS_DECL_DOMARENA_DESTROY
 
@@ -67,14 +68,13 @@ class Attr final : public nsINode {
   nsresult SetOwnerDocument(Document* aDocument);
 
   // nsINode interface
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   nsIURI* GetBaseURI(bool aTryUseXHRDocBaseURI = false) const override;
 
   static void Initialize();
   static void Shutdown();
 
-  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(Attr)
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_WRAPPERCACHE_CLASS(Attr)
 
   // WebIDL
   virtual JSObject* WrapNode(JSContext* aCx,
@@ -93,7 +93,7 @@ class Attr final : public nsINode {
   // XPCOM GetPrefix() is OK
   // XPCOM GetLocalName() is OK
 
-  Element* GetOwnerElement(ErrorResult& aRv);
+  Element* GetOwnerElement();
 
  protected:
   virtual Element* GetNameSpaceElement() override { return GetElement(); }

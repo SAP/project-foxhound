@@ -1,10 +1,17 @@
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+});
+
+ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
+  const { UrlbarTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/UrlbarTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
 });
 
 async function loadTipExtension(options = {}) {
@@ -64,7 +71,8 @@ async function loadTipExtension(options = {}) {
 
 /**
  * Updates the Top Sites feed.
- * @param {function} condition
+ *
+ * @param {Function} condition
  *   A callback that returns true after Top Sites are successfully updated.
  * @param {boolean} searchShortcuts
  *   True if Top Sites search shortcuts should be enabled.
@@ -89,7 +97,11 @@ async function updateTopSites(condition, searchShortcuts = false) {
   }, "Waiting for top sites to be updated");
 }
 
-add_task(async function setUp() {
+add_setup(async function () {
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
+  registerCleanupFunction(async () => {
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
+  });
   // Set the notification timeout to a really high value to avoid intermittent
   // failures due to the mock extensions not responding in time.
   await SpecialPowers.pushPrefEnv({
@@ -119,7 +131,7 @@ add_task(async function tip_onResultPicked_mainButton_noURL_mouse() {
     waitForFocus,
     value: "test",
   });
-  let mainButton = gURLBar.querySelector(".urlbarView-tip-button");
+  let mainButton = gURLBar.querySelector(".urlbarView-button-tip");
   Assert.ok(mainButton);
   EventUtils.synthesizeMouseAtCenter(mainButton, {});
   await ext.awaitMessage("onResultPicked received");
@@ -129,7 +141,7 @@ add_task(async function tip_onResultPicked_mainButton_noURL_mouse() {
 // Loads a tip extension with a main button URL and presses enter on the main
 // button.
 add_task(async function tip_onResultPicked_mainButton_url_enter() {
-  let ext = await loadTipExtension({ buttonUrl: "http://example.com/" });
+  let ext = await loadTipExtension({ buttonUrl: "https://example.com/" });
   await BrowserTestUtils.withNewTab("about:blank", async () => {
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
@@ -144,21 +156,21 @@ add_task(async function tip_onResultPicked_mainButton_url_enter() {
     });
     EventUtils.synthesizeKey("KEY_Enter");
     await loadedPromise;
-    Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    Assert.equal(gBrowser.currentURI.spec, "https://example.com/");
   });
   await ext.unload();
 });
 
 // Loads a tip extension with a main button URL and clicks the main button.
 add_task(async function tip_onResultPicked_mainButton_url_mouse() {
-  let ext = await loadTipExtension({ buttonUrl: "http://example.com/" });
+  let ext = await loadTipExtension({ buttonUrl: "https://example.com/" });
   await BrowserTestUtils.withNewTab("about:blank", async () => {
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       waitForFocus,
       value: "test",
     });
-    let mainButton = gURLBar.querySelector(".urlbarView-tip-button");
+    let mainButton = gURLBar.querySelector(".urlbarView-button-tip");
     Assert.ok(mainButton);
     let loadedPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser
@@ -168,7 +180,7 @@ add_task(async function tip_onResultPicked_mainButton_url_mouse() {
     });
     EventUtils.synthesizeMouseAtCenter(mainButton, {});
     await loadedPromise;
-    Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    Assert.equal(gBrowser.currentURI.spec, "https://example.com/");
   });
   await ext.unload();
 });
@@ -176,47 +188,48 @@ add_task(async function tip_onResultPicked_mainButton_url_mouse() {
 // Loads a tip extension with a help button URL and presses enter on the help
 // button.
 add_task(async function tip_onResultPicked_helpButton_url_enter() {
-  let ext = await loadTipExtension({ helpUrl: "http://example.com/" });
+  let ext = await loadTipExtension({ helpUrl: "https://example.com/" });
   await BrowserTestUtils.withNewTab("about:blank", async () => {
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       waitForFocus,
       value: "test",
     });
-    let loadedPromise = BrowserTestUtils.browserLoaded(
-      gBrowser.selectedBrowser
-    );
     ext.onMessage("onResultPicked received", () => {
       Assert.ok(false, "onResultPicked should not be called");
     });
-    EventUtils.synthesizeKey("KEY_ArrowDown");
-    EventUtils.synthesizeKey("KEY_Enter");
+    let loadedPromise = BrowserTestUtils.browserLoaded(
+      gBrowser.selectedBrowser
+    );
+    await UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "h");
+    info("Waiting for help URL to load");
     await loadedPromise;
-    Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    Assert.equal(gBrowser.currentURI.spec, "https://example.com/");
   });
   await ext.unload();
 });
 
 // Loads a tip extension with a help button URL and clicks the help button.
 add_task(async function tip_onResultPicked_helpButton_url_mouse() {
-  let ext = await loadTipExtension({ helpUrl: "http://example.com/" });
+  let ext = await loadTipExtension({ helpUrl: "https://example.com/" });
   await BrowserTestUtils.withNewTab("about:blank", async () => {
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       waitForFocus,
       value: "test",
     });
-    let helpButton = gURLBar.querySelector(".urlbarView-help");
-    Assert.ok(helpButton);
-    let loadedPromise = BrowserTestUtils.browserLoaded(
-      gBrowser.selectedBrowser
-    );
     ext.onMessage("onResultPicked received", () => {
       Assert.ok(false, "onResultPicked should not be called");
     });
-    EventUtils.synthesizeMouseAtCenter(helpButton, {});
+    let loadedPromise = BrowserTestUtils.browserLoaded(
+      gBrowser.selectedBrowser
+    );
+    await UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "h", {
+      openByMouse: true,
+    });
+    info("Waiting for help URL to load");
     await loadedPromise;
-    Assert.equal(gBrowser.currentURI.spec, "http://example.com/");
+    Assert.equal(gBrowser.currentURI.spec, "https://example.com/");
   });
   await ext.unload();
 });
@@ -304,8 +317,8 @@ add_task(async function searchFocusFalse() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesTestUtils.addVisits([
-    "http://example.com/test1",
-    "http://example.com/test2",
+    "https://example.com/test1",
+    "https://example.com/test2",
   ]);
 
   gURLBar.blur();
@@ -336,11 +349,11 @@ add_task(async function searchFocusFalse() {
 
   result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.URL);
-  Assert.equal(result.url, "http://example.com/test2");
+  Assert.equal(result.url, "https://example.com/test2");
 
   result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.URL);
-  Assert.equal(result.url, "http://example.com/test1");
+  Assert.equal(result.url, "https://example.com/test1");
 
   await UrlbarTestUtils.promisePopupClose(window);
   await ext.unload();
@@ -352,7 +365,7 @@ add_task(async function searchFocusFalseEmpty() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
   for (let i = 0; i < 5; i++) {
-    await PlacesTestUtils.addVisits(["http://example.com/test1"]);
+    await PlacesTestUtils.addVisits(["https://example.com/test1"]);
   }
   await updateTopSites(sites => sites.length == 1);
   gURLBar.blur();
@@ -379,7 +392,7 @@ add_task(async function searchFocusFalseEmpty() {
 
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.URL);
-  Assert.equal(result.url, "http://example.com/test1");
+  Assert.equal(result.url, "https://example.com/test1");
 
   await UrlbarTestUtils.promisePopupClose(window);
   await ext.unload();
@@ -462,8 +475,7 @@ add_task(async function closeView() {
 
 // Tests the onEngagement events.
 add_task(async function onEngagement() {
-  // Enable engagement telemetry.
-  Services.prefs.setBoolPref("browser.urlbar.eventTelemetry.enabled", true);
+  gURLBar.blur();
 
   let ext = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -575,5 +587,4 @@ add_task(async function onEngagement() {
   Assert.equal(state, "engagement");
 
   await ext.unload();
-  Services.prefs.clearUserPref("browser.urlbar.eventTelemetry.enabled");
 });

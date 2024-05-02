@@ -4,8 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMultiMixedConv.h"
-#include "plstr.h"
 #include "nsIHttpChannel.h"
+#include "nsIThreadRetargetableStreamListener.h"
 #include "nsNetCID.h"
 #include "nsMimeTypes.h"
 #include "nsIStringStream.h"
@@ -26,10 +26,11 @@
 using namespace mozilla;
 
 nsPartChannel::nsPartChannel(nsIChannel* aMultipartChannel, uint32_t aPartID,
-                             nsIStreamListener* aListener)
+                             bool aIsFirstPart, nsIStreamListener* aListener)
     : mMultipartChannel(aMultipartChannel),
       mListener(aListener),
-      mPartID(aPartID) {
+      mPartID(aPartID),
+      mIsFirstPart(aIsFirstPart) {
   // Inherit the load flags from the original channel...
   mMultipartChannel->GetLoadFlags(&mLoadFlags);
 
@@ -115,6 +116,19 @@ nsPartChannel::GetStatus(nsresult* aResult) {
   }
 
   return rv;
+}
+
+NS_IMETHODIMP nsPartChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsPartChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsPartChannel::CancelWithReason(nsresult aStatus,
+                                              const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -259,7 +273,7 @@ nsPartChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aCallbacks) {
 }
 
 NS_IMETHODIMP
-nsPartChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsPartChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   return mMultipartChannel->GetSecurityInfo(aSecurityInfo);
 }
 
@@ -344,6 +358,12 @@ nsPartChannel::GetPartID(uint32_t* aPartID) {
 }
 
 NS_IMETHODIMP
+nsPartChannel::GetIsFirstPart(bool* aIsFirstPart) {
+  *aIsFirstPart = mIsFirstPart;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsPartChannel::GetIsLastPart(bool* aIsLastPart) {
   *aIsLastPart = mIsLastPart;
   return NS_OK;
@@ -383,7 +403,7 @@ nsPartChannel::GetBaseChannel(nsIChannel** aReturn) {
 
 // nsISupports implementation
 NS_IMPL_ISUPPORTS(nsMultiMixedConv, nsIStreamConverter, nsIStreamListener,
-                  nsIRequestObserver)
+                  nsIThreadRetargetableStreamListener, nsIRequestObserver)
 
 // nsIStreamConverter implementation
 
@@ -533,6 +553,12 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest* request, nsIInputStream* inStr,
 
   return NS_FAILED(rv_send) ? rv_send : rv_feed;
 }
+
+NS_IMETHODIMP
+nsMultiMixedConv::OnDataFinished(nsresult aStatus) { return NS_OK; }
+
+NS_IMETHODIMP
+nsMultiMixedConv::CheckListenerChain() { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
 nsMultiMixedConv::OnStopRequest(nsIRequest* request, nsresult aStatus) {
@@ -797,8 +823,10 @@ nsresult nsMultiMixedConv::SendStart() {
   MOZ_ASSERT(!mPartChannel, "tisk tisk, shouldn't be overwriting a channel");
 
   nsPartChannel* newChannel;
-  newChannel = new nsPartChannel(mChannel, mCurrentPartID++, partListener);
-  if (!newChannel) return NS_ERROR_OUT_OF_MEMORY;
+  newChannel = new nsPartChannel(mChannel, mCurrentPartID, mCurrentPartID == 0,
+                                 partListener);
+
+  ++mCurrentPartID;
 
   if (mIsByteRangeRequest) {
     newChannel->InitializeByteRange(mByteRangeStart, mByteRangeEnd);

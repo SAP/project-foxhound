@@ -9,8 +9,7 @@
 #include "mozilla/net/PHttpConnectionMgrChild.h"
 #include "mozilla/RefPtr.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 class nsHttpConnectionMgr;
 
@@ -23,8 +22,7 @@ class HttpConnectionMgrChild final : public PHttpConnectionMgrChild {
 
   mozilla::ipc::IPCResult RecvDoShiftReloadConnectionCleanupWithConnInfo(
       const HttpConnectionInfoCloneArgs& aArgs);
-  mozilla::ipc::IPCResult RecvUpdateCurrentTopBrowsingContextId(
-      const uint64_t& aId);
+  mozilla::ipc::IPCResult RecvUpdateCurrentBrowserId(const uint64_t& aId);
   mozilla::ipc::IPCResult RecvAddTransaction(PHttpTransactionChild* aTrans,
                                              const int32_t& aPriority);
   mozilla::ipc::IPCResult RecvAddTransactionWithStickyConn(
@@ -33,7 +31,7 @@ class HttpConnectionMgrChild final : public PHttpConnectionMgrChild {
   mozilla::ipc::IPCResult RecvRescheduleTransaction(
       PHttpTransactionChild* aTrans, const int32_t& aPriority);
   mozilla::ipc::IPCResult RecvUpdateClassOfServiceOnTransaction(
-      PHttpTransactionChild* aTrans, const uint32_t& aClassOfService);
+      PHttpTransactionChild* aTrans, const ClassOfService& aClassOfService);
   mozilla::ipc::IPCResult RecvCancelTransaction(PHttpTransactionChild* aTrans,
                                                 const nsresult& aReason);
   mozilla::ipc::IPCResult RecvSpeculativeConnect(
@@ -49,7 +47,6 @@ class HttpConnectionMgrChild final : public PHttpConnectionMgrChild {
   RefPtr<nsHttpConnectionMgr> mConnMgr;
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // HttpConnectionMgrChild_h__

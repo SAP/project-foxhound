@@ -28,6 +28,159 @@ Released YYYY-MM-DD.
 
 --------------------------------------------------------------------------------
 
+## 1.3.0
+
+Released 2023-03-13.
+
+### Added
+
+* Added the ability to manually specify derived trait bounds for
+  `Arbitrary`. See [#138](https://github.com/rust-fuzz/arbitrary/pull/138) for
+  details.
+
+### Fixed
+
+* Fixed minimal versions correctness for `syn`.
+
+--------------------------------------------------------------------------------
+
+## 1.2.3
+
+Released 2023-01-20.
+
+### Fixed
+
+* The `derive(Arbitrary)` will now annotate the generated `impl`s with a `#[automatically_derived]`
+  attribute to indicate to e.g. clippy that lints should not fire for the code within the derived
+  implementation.
+
+## 1.2.2
+
+Released 2023-01-03.
+
+### Fixed
+
+* Ensured that `arbitrary` and `derive_arbitrary` versions are synced up so that
+  they don't, e.g., emit generated code that depends on newer versions of
+  `arbitrary` than the one currently in
+  use. [#134](https://github.com/rust-fuzz/arbitrary/issues/134)
+
+## 1.2.1
+
+### Fixed
+
+* Fixed an issue where `std::thread_local!` macro invocations in derive code
+  were not fully prefixed, causing confusing build errors in certain situations.
+
+## 1.2.0
+
+Released 2022-10-20.
+
+### Added
+
+* Support custom arbitrary implementation for fields on
+  derive. [#129](https://github.com/rust-fuzz/arbitrary/pull/129)
+
+--------------------------------------------------------------------------------
+
+## 1.1.6
+
+Released 2022-09-08.
+
+### Fixed
+
+* Fixed a potential panic due to an off-by-one error in the `Arbitrary`
+  implementation for `std::ops::Bound<T>`.
+
+--------------------------------------------------------------------------------
+
+## 1.1.5
+
+Released 2022-09-20.
+
+### Added
+
+* Implemented `Arbitrary` for `std::ops::Bound<T>`.
+
+### Fixed
+
+* Fixed a bug where `Unstructured::int_in_range` could return out-of-range
+  integers when generating arbitrary signed integers.
+
+--------------------------------------------------------------------------------
+
+## 1.1.4
+
+Released 2022-08-29.
+
+### Added
+
+* Implemented `Arbitrary` for `Rc<str>` and `Arc<str>`
+
+### Changed
+
+* Allow overriding the error type in `arbitrary::Result`
+* The `Unstructured::arbitrary_loop` method will consume fewer bytes of input
+  now.
+
+### Fixed
+
+* Fixed a bug where `Unstructured::int_in_range` could return out-of-range
+  integers.
+
+--------------------------------------------------------------------------------
+
+## 1.1.3
+
+Released 2022-06-23.
+
+### Fixed
+
+* Fixed some potential (but highly unlikely) name-clashes inside
+  `derive(Arbitrary)`'s generated
+  code. [#111](https://github.com/rust-fuzz/arbitrary/pull/111)
+* Fixed an edge case where `derive(Arbitrary)` for recursive types that detected
+  an overflow would not reset the overflow
+  detection. [#111](https://github.com/rust-fuzz/arbitrary/pull/111)
+
+--------------------------------------------------------------------------------
+
+## 1.1.2
+
+Released 2022-06-16.
+
+### Fixed
+
+* Fixed a warning inside `derive(Arbitrary)`-generated
+  code. [#110](https://github.com/rust-fuzz/arbitrary/pull/110)
+
+--------------------------------------------------------------------------------
+
+## 1.1.1
+
+Released 2022-06-14.
+
+### Fixed
+
+* Fixed a stack overflow when using `derive(Arbitrary)` with recursive types and
+  empty inputs. [#109](https://github.com/rust-fuzz/arbitrary/pull/109)
+
+--------------------------------------------------------------------------------
+
+## 1.1.0
+
+Released 2022-02-09.
+
+### Added
+
+* Added the `Unstructured::ratio` method to generate a boolean that is `true` at
+  the given rate.
+
+* Added the `Unstructured::arbitrary_loop` method to call a function an
+  arbitrary number of times.
+
+--------------------------------------------------------------------------------
+
 ## 1.0.3
 
 Released 2021-11-20.

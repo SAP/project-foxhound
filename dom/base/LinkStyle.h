@@ -18,9 +18,7 @@ class nsICSSLoaderObserver;
 class nsIPrincipal;
 class nsIURI;
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 class Document;
 class ShadowRoot;
@@ -94,11 +92,18 @@ class LinkStyle {
     return aNode.AsLinkStyle();
   }
 
-  static LinkStyle* FromNodeOrNull(nsINode* aNode) {
+  static LinkStyle* FromNode(Element&);
+  static const LinkStyle* FromNode(const Element& aElement) {
+    return FromNode(const_cast<Element&>(aElement));
+  }
+
+  template <typename T>
+  static LinkStyle* FromNodeOrNull(T* aNode) {
     return aNode ? FromNode(*aNode) : nullptr;
   }
 
-  static const LinkStyle* FromNodeOrNull(const nsINode* aNode) {
+  template <typename T>
+  static const LinkStyle* FromNodeOrNull(const T* aNode) {
     return aNode ? FromNode(*aNode) : nullptr;
   }
 
@@ -110,7 +115,8 @@ class LinkStyle {
     eALTERNATE = 0x00000010,
     ePRECONNECT = 0x00000020,
     // NOTE: 0x40 is unused
-    ePRELOAD = 0x00000080
+    ePRELOAD = 0x00000080,
+    eMODULE_PRELOAD = 0x00000100
   };
 
   // The return value is a bitwise or of 0 or more RelValues.
@@ -164,21 +170,16 @@ class LinkStyle {
   void SetStyleSheet(StyleSheet* aStyleSheet);
 
   /**
-   * Tells this element to update the stylesheet.
-   *
-   * @param aObserver    observer to notify once the stylesheet is loaded.
-   *                     This will be passed to the CSSLoader
+   * Tells this element whether to update the stylesheet when the element's
+   * properties change. This is used by the parser until it has all content etc,
+   * and to guarantee that the right observer is used.
    */
-  Result<Update, nsresult> UpdateStyleSheet(nsICSSLoaderObserver*);
-
-  /**
-   * Tells this element whether to update the stylesheet when the
-   * element's properties change.
-   *
-   * @param aEnableUpdates update on changes or not.
-   */
-  void SetEnableUpdates(bool aEnableUpdates) {
-    mUpdatesEnabled = aEnableUpdates;
+  void DisableUpdates() { mUpdatesEnabled = false; }
+  Result<Update, nsresult> EnableUpdatesAndUpdateStyleSheet(
+      nsICSSLoaderObserver* aObserver) {
+    MOZ_ASSERT(!mUpdatesEnabled);
+    mUpdatesEnabled = true;
+    return DoUpdateStyleSheet(nullptr, nullptr, aObserver, ForceUpdate::No);
   }
 
   /**
@@ -276,15 +277,15 @@ class LinkStyle {
                                               nsICSSLoaderObserver*,
                                               ForceUpdate);
 
+  void BindToTree();
+
   RefPtr<mozilla::StyleSheet> mStyleSheet;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
-  bool mUpdatesEnabled;
-  uint32_t mLineNumber;
-  uint32_t mColumnNumber;
+  bool mUpdatesEnabled = true;
+  uint32_t mLineNumber = 1;
+  uint32_t mColumnNumber = 1;
 };
 
-}  // namespace dom
-
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_LinkStyle_h

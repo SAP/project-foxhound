@@ -8,14 +8,22 @@ import { CommandBarButton, debugBtn } from "../";
 
 describe("CommandBarButton", () => {
   it("renders", () => {
-    const wrapper = shallow(<CommandBarButton children={[]} className={""} />);
+    const wrapper = shallow(
+      React.createElement(CommandBarButton, {
+        children: [],
+        className: "",
+      })
+    );
     expect(wrapper).toMatchSnapshot();
   });
 
   it("renders children", () => {
     const children = [1, 2, 3, 4];
     const wrapper = shallow(
-      <CommandBarButton children={children} className={""} />
+      React.createElement(CommandBarButton, {
+        children: children,
+        className: "",
+      })
     );
     expect(wrapper.find("button").children()).toHaveLength(4);
   });
@@ -23,13 +31,13 @@ describe("CommandBarButton", () => {
 
 describe("debugBtn", () => {
   it("renders", () => {
-    const wrapper = shallow(<debugBtn />);
+    const wrapper = shallow(debugBtn());
     expect(wrapper).toMatchSnapshot();
   });
 
   it("handles onClick", () => {
     const onClickSpy = jest.fn();
-    const wrapper = shallow(<debugBtn onClick={onClickSpy} />);
+    const wrapper = shallow(debugBtn(onClickSpy));
     wrapper.simulate("click");
     expect(onClickSpy).toHaveBeenCalled();
   });

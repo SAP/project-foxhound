@@ -15,7 +15,7 @@ const TEST_URI = `
   <iframe src="data:text/html,<meta charset=utf8><style>h2 {background: yellow;}</style><h2>In iframe</h2>">
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, toolbox, view } = await openRuleView();
 
@@ -43,7 +43,10 @@ add_task(async function() {
   const menuList = toolbox.doc.getElementById("toolbox-frame-menu");
   const frames = Array.from(menuList.querySelectorAll(".command"));
 
-  const onNewRoot = inspector.once("new-root");
+  // Wait for the inspector to be reloaded
+  // (instead of only new-root) in order to wait for full
+  // async update of the inspector.
+  const onNewRoot = inspector.once("reloaded");
   frames[1].click();
   await onNewRoot;
 

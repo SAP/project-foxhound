@@ -1,10 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { CryptoWrapper, WBORecord } = ChromeUtils.import(
-  "resource://services-sync/record.js"
+const { CryptoWrapper, WBORecord } = ChromeUtils.importESModule(
+  "resource://services-sync/record.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 add_task(async function v4_upgrade() {
   enableValidationPrefs();
@@ -173,7 +175,9 @@ add_task(async function v4_upgrade() {
     // Clean up.
     await Service.startOver();
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     await promiseStopServer(server);
   }
 });
@@ -256,7 +260,9 @@ add_task(async function v5_upgrade() {
     // Clean up.
     await Service.startOver();
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     await promiseStopServer(server);
   }
 });

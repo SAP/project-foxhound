@@ -10,9 +10,10 @@ function test() {
   Services.prefs.setBoolPref("browser.zoom.siteSpecific", true);
 
   let uri =
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/browser/browser/base/content/test/zoom/zoom_test.html";
 
-  (async function() {
+  (async function () {
     tab = BrowserTestUtils.addTab(gBrowser);
     await FullZoomHelper.load(tab, uri);
 
@@ -26,7 +27,7 @@ function test() {
 // -------------
 // Test clean-up
 function endTest() {
-  (async function() {
+  (async function () {
     await FullZoomHelper.removeTabAndWaitForLocationChange(tab);
 
     tab = null;

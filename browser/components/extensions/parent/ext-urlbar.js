@@ -4,13 +4,13 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
-  UrlbarProviderExtension: "resource:///modules/UrlbarProviderExtension.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarProviderExtension:
+    "resource:///modules/UrlbarProviderExtension.sys.mjs",
 });
 
-var { ExtensionPreferencesManager } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPreferencesManager.jsm"
+var { ExtensionPreferencesManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPreferencesManager.sys.mjs"
 );
 var { getSettingsAPI } = ExtensionPreferencesManager;
 
@@ -144,7 +144,8 @@ this.urlbar = class extends ExtensionAPI {
         engagementTelemetry: getSettingsAPI({
           context,
           name: "engagementTelemetry",
-          callback: () => UrlbarPrefs.get("eventTelemetry.enabled"),
+          readOnly: true,
+          callback: () => false,
         }),
       },
     };

@@ -27,11 +27,6 @@ EXPORTS += [
     "nsChangeObserver.h",
     "nsCocoaFeatures.h",
     "nsCocoaUtils.h",
-    "SDKDeclarations.h",
-]
-
-EXPORTS.mozilla.widget += [
-    "NativeMenuSupport.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -81,6 +76,7 @@ UNIFIED_SOURCES += [
     "OSXNotificationCenter.mm",
     "ScreenHelperCocoa.mm",
     "TextInputHandler.mm",
+    "TextRecognition.mm",
     "VibrancyManager.mm",
     "ViewRegion.mm",
     "WidgetTraceEvent.mm",
@@ -179,8 +175,7 @@ RESOURCE_FILES.__setattr__(
 
 OS_LIBS += [
     "-framework IOSurface",
+    "-framework Vision",
 ]
 
 SPHINX_TREES["/widget/cocoa"] = "docs"
-
-REQUIRES_UNIFIED_BUILD = True

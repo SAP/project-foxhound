@@ -1,10 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
-const { EngineSynchronizer } = ChromeUtils.import(
-  "resource://services-sync/stages/enginesync.js"
+const { EngineSynchronizer } = ChromeUtils.importESModule(
+  "resource://services-sync/stages/enginesync.sys.mjs"
 );
 
 function QuietStore() {
@@ -20,7 +22,6 @@ function SteamEngine() {
   SyncEngine.call(this, "Steam", Service);
 }
 SteamEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   // We're not interested in engine sync but what the service does.
   _storeObj: QuietStore,
 
@@ -28,17 +29,18 @@ SteamEngine.prototype = {
     await this._syncStartup();
   },
 };
+Object.setPrototypeOf(SteamEngine.prototype, SyncEngine.prototype);
 
 function StirlingEngine() {
   SyncEngine.call(this, "Stirling", Service);
 }
 StirlingEngine.prototype = {
-  __proto__: SteamEngine.prototype,
   // This engine's enabled state is the same as the SteamEngine's.
   get prefName() {
     return "steam";
   },
 };
+Object.setPrototypeOf(StirlingEngine.prototype, SteamEngine.prototype);
 
 // Tracking info/collections.
 var collectionsHelper = track_collections_helper();

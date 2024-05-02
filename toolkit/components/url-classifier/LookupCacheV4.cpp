@@ -5,8 +5,10 @@
 
 #include "LookupCacheV4.h"
 #include "HashStore.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsCheckSummedOutputStream.h"
+#include "nsUrlClassifierDBService.h"
 #include "crc32c.h"
 #include <string>
 
@@ -21,11 +23,6 @@ extern mozilla::LazyLogModule gUrlClassifierDbServiceLog;
 
 namespace mozilla {
 namespace safebrowsing {
-
-const int LookupCacheV4::VER = 4;
-const uint32_t LookupCacheV4::VLPSET_MAGIC = 0x36044a35;
-const uint32_t LookupCacheV4::VLPSET_VERSION = 1;
-const uint32_t LookupCacheV4::MAX_METADATA_VALUE_LENGTH = 256;
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -153,6 +150,13 @@ nsresult LookupCacheV4::GetPrefixes(PrefixStringMap& aPrefixMap) {
 nsresult LookupCacheV4::GetFixedLengthPrefixes(
     FallibleTArray<uint32_t>& aPrefixes) {
   return mVLPrefixSet->GetFixedLengthPrefixes(&aPrefixes, nullptr);
+}
+
+nsresult LookupCacheV4::GetFixedLengthPrefixByIndex(
+    uint32_t aIndex, uint32_t* aOutPrefix) const {
+  NS_ENSURE_ARG_POINTER(aOutPrefix);
+
+  return mVLPrefixSet->GetFixedLengthPrefixByIndex(aIndex, aOutPrefix);
 }
 
 nsresult LookupCacheV4::ClearLegacyFile() {

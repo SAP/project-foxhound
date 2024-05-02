@@ -14,80 +14,10 @@ fn parse_comment() {
     .unwrap();
 }
 
-// Regexes for the literals are taken from the working draft at
-// https://www.w3.org/TR/2021/WD-WGSL-20210806/#literals
-
-#[test]
-fn parse_decimal_floats() {
-    // /^(-?[0-9]*\.[0-9]+|-?[0-9]+\.[0-9]*)((e|E)(\+|-)?[0-9]+)?$/
-    parse_str("let a : f32 = -1.;").unwrap();
-    parse_str("let a : f32 = -.1;").unwrap();
-    parse_str("let a : f32 = 42.1234;").unwrap();
-    parse_str("let a : f32 = -1.E3;").unwrap();
-    parse_str("let a : f32 = -.1e-5;").unwrap();
-    parse_str("let a : f32 = 2.3e+55;").unwrap();
-
-    assert!(parse_str("let a : f32 = 42.1234f;").is_err());
-    assert!(parse_str("let a : f32 = 42.1234f32;").is_err());
-}
-
-#[test]
-fn parse_hex_floats() {
-    // /^-?0x([0-9a-fA-F]*\.?[0-9a-fA-F]+|[0-9a-fA-F]+\.[0-9a-fA-F]*)(p|P)(\+|-)?[0-9]+$/
-    parse_str("let a : f32 = -0xa.p1;").unwrap();
-    parse_str("let a : f32 = -0x.fp9;").unwrap();
-    parse_str("let a : f32 = 0x2a.4D2P4;").unwrap();
-    parse_str("let a : f32 = -0x.1p-5;").unwrap();
-    parse_str("let a : f32 = 0xC.8p+55;").unwrap();
-    parse_str("let a : f32 = 0x1p1;").unwrap();
-
-    assert!(parse_str("let a : f32 = 0x1p1f;").is_err());
-    assert!(parse_str("let a : f32 = 0x1p1f32;").is_err());
-}
-
-#[test]
-fn parse_decimal_ints() {
-    // i32 /^-?0x[0-9a-fA-F]+|0|-?[1-9][0-9]*$/
-    parse_str("let a : i32 = 0;").unwrap();
-    parse_str("let a : i32 = 1092;").unwrap();
-    parse_str("let a : i32 = -9923;").unwrap();
-
-    assert!(parse_str("let a : i32 = -0;").is_err());
-    assert!(parse_str("let a : i32 = 01;").is_err());
-    assert!(parse_str("let a : i32 = 1.0;").is_err());
-    assert!(parse_str("let a : i32 = 1i;").is_err());
-    assert!(parse_str("let a : i32 = 1i32;").is_err());
-
-    // u32 /^0x[0-9a-fA-F]+u|0u|[1-9][0-9]*u$/
-    parse_str("let a : u32 = 0u;").unwrap();
-    parse_str("let a : u32 = 1092u;").unwrap();
-
-    assert!(parse_str("let a : u32 = -0u;").is_err());
-    assert!(parse_str("let a : u32 = 01u;").is_err());
-    assert!(parse_str("let a : u32 = 1.0u;").is_err());
-    assert!(parse_str("let a : u32 = 1u32;").is_err());
-}
-
-#[test]
-fn parse_hex_ints() {
-    // i32 /^-?0x[0-9a-fA-F]+|0|-?[1-9][0-9]*$/
-    parse_str("let a : i32 = -0x0;").unwrap();
-    parse_str("let a : i32 = 0x2a4D2;").unwrap();
-
-    assert!(parse_str("let a : i32 = 0x2a4D2i;").is_err());
-    assert!(parse_str("let a : i32 = 0x2a4D2i32;").is_err());
-
-    // u32 /^0x[0-9a-fA-F]+u|0u|[1-9][0-9]*u$/
-    parse_str("let a : u32 = 0x0u;").unwrap();
-    parse_str("let a : u32 = 0x2a4D2u;").unwrap();
-
-    assert!(parse_str("let a : u32 = 0x2a4D2u32;").is_err());
-}
-
 #[test]
 fn parse_types() {
-    parse_str("let a : i32 = 2;").unwrap();
-    assert!(parse_str("let a : x32 = 2;").is_err());
+    parse_str("const a : i32 = 2;").unwrap();
+    assert!(parse_str("const a : x32 = 2;").is_err());
     parse_str("var t: texture_2d<f32>;").unwrap();
     parse_str("var t: texture_cube_array<i32>;").unwrap();
     parse_str("var t: texture_multisampled_2d<u32>;").unwrap();
@@ -118,7 +48,7 @@ fn parse_type_inference() {
 fn parse_type_cast() {
     parse_str(
         "
-        let a : i32 = 2;
+        const a : i32 = 2;
         fn main() {
             var x: f32 = f32(a);
             x = f32(i32(a + 1) / 2);
@@ -157,13 +87,13 @@ fn parse_type_cast() {
 fn parse_struct() {
     parse_str(
         "
-        struct Foo { x: i32; };
+        struct Foo { x: i32 }
         struct Bar {
-            [[size(16)]] x: vec2<i32>;
-            [[align(16)]] y: f32;
-            [[size(32), align(8)]] z: vec3<f32>;
+            @size(16) x: vec2<i32>,
+            @align(16) y: f32,
+            @size(32) @align(128) z: vec3<f32>,
         };
-        struct Empty {};
+        struct Empty {}
         var<storage,read_write> s: Foo;
     ",
     )
@@ -209,6 +139,26 @@ fn parse_if() {
     parse_str(
         "
         fn main() {
+            if true {
+                discard;
+            } else {}
+            if 0 != 1 {}
+            if false {
+                return;
+            } else if true {
+                return;
+            } else {}
+        }
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+fn parse_parentheses_if() {
+    parse_str(
+        "
+        fn main() {
             if (true) {
                 discard;
             } else {}
@@ -231,11 +181,37 @@ fn parse_loop() {
         fn main() {
             var i: i32 = 0;
             loop {
-                if (i == 1) { break; }
+                if i == 1 { break; }
                 continuing { i = 1; }
             }
             loop {
-                if (i == 0) { continue; }
+                if i == 0 { continue; }
+                break;
+            }
+        }
+    ",
+    )
+    .unwrap();
+    parse_str(
+        "
+        fn main() {
+            var found: bool = false;
+            var i: i32 = 0;
+            while !found {
+                if i == 10 {
+                    found = true;
+                }
+
+                i = i + 1;
+            }
+        }
+    ",
+    )
+    .unwrap();
+    parse_str(
+        "
+        fn main() {
+            while true {
                 break;
             }
         }
@@ -273,8 +249,56 @@ fn parse_switch() {
             var pos: f32;
             switch (3) {
                 case 0, 1: { pos = 0.0; }
-                case 2: { pos = 1.0; fallthrough; }
-                case 3: {}
+                case 2: { pos = 1.0; }
+                default: { pos = 3.0; }
+            }
+        }
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+fn parse_switch_optional_colon_in_case() {
+    parse_str(
+        "
+        fn main() {
+            var pos: f32;
+            switch (3) {
+                case 0, 1 { pos = 0.0; }
+                case 2 { pos = 1.0; }
+                default { pos = 3.0; }
+            }
+        }
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+fn parse_switch_default_in_case() {
+    parse_str(
+        "
+        fn main() {
+            var pos: f32;
+            switch (3) {
+                case 0, 1: { pos = 0.0; }
+                case 2: {}
+                case default, 3: { pos = 3.0; }
+            }
+        }
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+fn parse_parentheses_switch() {
+    parse_str(
+        "
+        fn main() {
+            var pos: f32;
+            switch pos > 1.0 {
                 default: { pos = 3.0; }
             }
         }
@@ -333,10 +357,10 @@ fn parse_texture_query() {
         "
         var t: texture_multisampled_2d_array<f32>;
         fn foo() {
-            var dim: vec2<i32> = textureDimensions(t);
+            var dim: vec2<u32> = textureDimensions(t);
             dim = textureDimensions(t, 0);
-            let layers: i32 = textureNumLayers(t);
-            let samples: i32 = textureNumSamples(t);
+            let layers: u32 = textureNumLayers(t);
+            let samples: u32 = textureNumSamples(t);
         }
     ",
     )
@@ -364,12 +388,83 @@ fn parse_expressions() {
 }
 
 #[test]
+fn binary_expression_mixed_scalar_and_vector_operands() {
+    for (operand, expect_splat) in [
+        ('<', false),
+        ('>', false),
+        ('&', false),
+        ('|', false),
+        ('+', true),
+        ('-', true),
+        ('*', false),
+        ('/', true),
+        ('%', true),
+    ] {
+        let module = parse_str(&format!(
+            "
+            @fragment
+            fn main(@location(0) some_vec: vec3<f32>) -> @location(0) vec4<f32> {{
+                if (all(1.0 {operand} some_vec)) {{
+                    return vec4(0.0);
+                }}
+                return vec4(1.0);
+            }}
+            "
+        ))
+        .unwrap();
+
+        let expressions = &&module.entry_points[0].function.expressions;
+
+        let found_expressions = expressions
+            .iter()
+            .filter(|&(_, e)| {
+                if let crate::Expression::Binary { left, .. } = *e {
+                    matches!(
+                        (expect_splat, &expressions[left]),
+                        (false, &crate::Expression::Literal(crate::Literal::F32(..)))
+                            | (true, &crate::Expression::Splat { .. })
+                    )
+                } else {
+                    false
+                }
+            })
+            .count();
+
+        assert_eq!(
+            found_expressions,
+            1,
+            "expected `{operand}` expression {} splat",
+            if expect_splat { "with" } else { "without" }
+        );
+    }
+
+    let module = parse_str(
+        "@fragment
+        fn main(mat: mat3x3<f32>) {
+            let vec = vec3<f32>(1.0, 1.0, 1.0);
+            let result = mat / vec;
+        }",
+    )
+    .unwrap();
+    let expressions = &&module.entry_points[0].function.expressions;
+    let found_splat = expressions.iter().any(|(_, e)| {
+        if let crate::Expression::Binary { left, .. } = *e {
+            matches!(&expressions[left], &crate::Expression::Splat { .. })
+        } else {
+            false
+        }
+    });
+    assert!(!found_splat, "'mat / vec' should not be splatted");
+}
+
+#[test]
 fn parse_pointers() {
     parse_str(
-        "fn foo() {
+        "fn foo(a: ptr<private, f32>) -> f32 { return *a; }
+    fn bar() {
         var x: f32 = 1.0;
         let px = &x;
-        let py = frexp(0.5, px);
+        let py = foo(px);
     }",
     )
     .unwrap();
@@ -380,11 +475,11 @@ fn parse_struct_instantiation() {
     parse_str(
         "
     struct Foo {
-        a: f32;
-        b: vec3<f32>;
-    };
-    
-    [[stage(fragment)]]
+        a: f32,
+        b: vec3<f32>,
+    }
+
+    @fragment
     fn fs_main() {
         var foo: Foo = Foo(0.0, vec3<f32>(0.0, 1.0, 42.0));
     }
@@ -398,13 +493,13 @@ fn parse_array_length() {
     parse_str(
         "
         struct Foo {
-            data: [[stride(4)]] array<u32>;
-        }; // this is used as both input and output for convenience
+            data: array<u32>
+        } // this is used as both input and output for convenience
 
-        [[group(0), binding(0)]]
+        @group(0) @binding(0)
         var<storage> foo: Foo;
 
-        [[group(0), binding(1)]]
+        @group(0) @binding(1)
         var<storage> bar: array<u32>;
 
         fn baz() {
@@ -420,30 +515,123 @@ fn parse_array_length() {
 fn parse_storage_buffers() {
     parse_str(
         "
-        [[group(0), binding(0)]]
+        @group(0) @binding(0)
         var<storage> foo: array<u32>;
         ",
     )
     .unwrap();
     parse_str(
         "
-        [[group(0), binding(0)]]
+        @group(0) @binding(0)
         var<storage,read> foo: array<u32>;
         ",
     )
     .unwrap();
     parse_str(
         "
-        [[group(0), binding(0)]]
+        @group(0) @binding(0)
         var<storage,write> foo: array<u32>;
         ",
     )
     .unwrap();
     parse_str(
         "
-        [[group(0), binding(0)]]
+        @group(0) @binding(0)
         var<storage,read_write> foo: array<u32>;
         ",
     )
     .unwrap();
+}
+
+#[test]
+fn parse_alias() {
+    parse_str(
+        "
+        alias Vec4 = vec4<f32>;
+        ",
+    )
+    .unwrap();
+}
+
+#[test]
+fn parse_texture_load_store_expecting_four_args() {
+    for (func, texture) in [
+        (
+            "textureStore",
+            "texture_storage_2d_array<rg11b10float, write>",
+        ),
+        ("textureLoad", "texture_2d_array<i32>"),
+    ] {
+        let error = parse_str(&format!(
+            "
+            @group(0) @binding(0) var tex_los_res: {texture};
+            @compute
+            @workgroup_size(1)
+            fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
+                var color = vec4(1, 1, 1, 1);
+                {func}(tex_los_res, id, color);
+            }}
+            "
+        ))
+        .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "wrong number of arguments: expected 4, found 3"
+        );
+    }
+}
+
+#[test]
+fn parse_repeated_attributes() {
+    use crate::{
+        front::wgsl::{error::Error, Frontend},
+        Span,
+    };
+
+    let template_vs = "@vertex fn vs() -> __REPLACE__ vec4<f32> { return vec4<f32>(0.0); }";
+    let template_struct = "struct A { __REPLACE__ data: vec3<f32> }";
+    let template_resource = "__REPLACE__ var tex_los_res: texture_2d_array<i32>;";
+    let template_stage = "__REPLACE__ fn vs() -> vec4<f32> { return vec4<f32>(0.0); }";
+    for (attribute, template) in [
+        ("align(16)", template_struct),
+        ("binding(0)", template_resource),
+        ("builtin(position)", template_vs),
+        ("compute", template_stage),
+        ("fragment", template_stage),
+        ("group(0)", template_resource),
+        ("interpolate(flat)", template_vs),
+        ("invariant", template_vs),
+        ("location(0)", template_vs),
+        ("size(16)", template_struct),
+        ("vertex", template_stage),
+        ("early_depth_test(less_equal)", template_resource),
+        ("workgroup_size(1)", template_stage),
+    ] {
+        let shader = template.replace("__REPLACE__", &format!("@{attribute} @{attribute}"));
+        let name_length = attribute.rfind('(').unwrap_or(attribute.len()) as u32;
+        let span_start = shader.rfind(attribute).unwrap() as u32;
+        let span_end = span_start + name_length;
+        let expected_span = Span::new(span_start, span_end);
+
+        let result = Frontend::new().inner(&shader);
+        assert!(matches!(
+            result.unwrap_err(),
+            Error::RepeatedAttribute(span) if span == expected_span
+        ));
+    }
+}
+
+#[test]
+fn parse_missing_workgroup_size() {
+    use crate::{
+        front::wgsl::{error::Error, Frontend},
+        Span,
+    };
+
+    let shader = "@compute fn vs() -> vec4<f32> { return vec4<f32>(0.0); }";
+    let result = Frontend::new().inner(shader);
+    assert!(matches!(
+        result.unwrap_err(),
+        Error::MissingWorkgroupSize(span) if span == Span::new(1, 8)
+    ));
 }

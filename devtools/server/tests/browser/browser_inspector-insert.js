@@ -3,7 +3,7 @@
 
 "use strict";
 
-add_task(async function setup() {
+add_task(async function () {
   const { walker } = await initInspectorFront(
     MAIN_DOMAIN + "inspector-traversal-data.html"
   );
@@ -21,7 +21,7 @@ async function testRearrange(walker) {
   // Move nodeA to the end of the list.
   await walker.insertBefore(nodeA, longlist, null);
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     ok(
       !content.document.querySelector("#a").nextSibling,
       "a should now be at the end of the list."
@@ -42,14 +42,16 @@ async function testRearrange(walker) {
   await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [[nextNode.actorID]],
-    async function(actorID) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+    async function (actorID) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
       const {
         DocumentWalker,
-      } = require("devtools/server/actors/inspector/document-walker");
+      } = require("resource://devtools/server/actors/inspector/document-walker.js");
       const sibling = new DocumentWalker(
         content.document.querySelector("#a"),
         content
@@ -81,11 +83,13 @@ async function testInsertInvalidInput(walker) {
   await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [[longlist.actorID]],
-    async function(actorID) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+    async function (actorID) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
       // Convert actorID to current compartment string otherwise
       // searchAllConnectionsForActor is confused and won't find the actor.
       actorID = String(actorID);
@@ -104,7 +108,7 @@ async function testInsertInvalidInput(walker) {
   let hasMutated = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    async function() {
+    async function () {
       const state = content.hasMutated;
       content.hasMutated = false;
       return state;
@@ -116,7 +120,7 @@ async function testInsertInvalidInput(walker) {
   hasMutated = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    async function() {
+    async function () {
       const state = content.hasMutated;
       content.hasMutated = false;
       return state;
@@ -128,7 +132,7 @@ async function testInsertInvalidInput(walker) {
   hasMutated = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    async function() {
+    async function () {
       const state = content.hasMutated;
       content.hasMutated = false;
       return state;
@@ -140,7 +144,7 @@ async function testInsertInvalidInput(walker) {
   hasMutated = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    async function() {
+    async function () {
       const state = content.hasMutated;
       content.hasMutated = false;
       return state;
@@ -148,7 +152,7 @@ async function testInsertInvalidInput(walker) {
   );
   ok(!hasMutated, "hasn't mutated after inserting with null sibling again");
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     content.observer.disconnect();
   });
 }

@@ -33,6 +33,7 @@ hy{
             }
             patterns{
                 accountingFormat{"#,##0.00 ¤"}
+                accountingFormat%noCurrency{"#,##0.00"}
                 currencyFormat{"#,##0.00 ¤"}
                 decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
@@ -220,8 +221,8 @@ hy{
                 other{"Թեքվեք աջ {0}-րդ խաչմերուկից:"}
             }
             plural{
-                one{"այդ {0} ժամը"}
-                other{"այդ {0} ժամերը"}
+                one{"այդ {0} պանակը"}
+                other{"այդ {0} պանակները"}
             }
         }
         minimumGroupingDigits{"1"}
@@ -240,6 +241,12 @@ hy{
                 "dd MMM, y թ. G",
                 "dd.MM.y GGGGG",
                 "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1}, {0}",
                 "{1}, {0}",
                 "{1}, {0}",
@@ -432,6 +439,12 @@ hy{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimePatterns%atTime{
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
             DateTimeSkeletons{
                 "HHmmsszzzz",
                 "HHmmssz",
@@ -460,7 +473,7 @@ hy{
                 Gy{"G y թ."}
                 GyMMM{"G y թ. MMM"}
                 GyMMMEd{"G y թ. MMM d, E"}
-                GyMMMd{"d MMM, y թ."}
+                GyMMMd{"G y թ․ MMM d"}
                 GyMd{"dd.MM.y GGGGG"}
                 H{"H"}
                 Hm{"H:mm"}
@@ -1715,6 +1728,11 @@ hy{
         }
         week-narrow{
             dn{"շաբ"}
+            relative{
+                "-1"{"նախորդ շաբաթ"}
+                "0"{"այս շաբաթ"}
+                "1"{"հաջորդ շաբաթ"}
+            }
             relativePeriod{"{0} շաբ-ում"}
             relativeTime{
                 future{
@@ -1729,6 +1747,11 @@ hy{
         }
         week-short{
             dn{"շաբ"}
+            relative{
+                "-1"{"նախորդ շաբաթ"}
+                "0"{"այս շաբաթ"}
+                "1"{"հաջորդ շաբաթ"}
+            }
             relativePeriod{"{0} շաբ-ում"}
             relativeTime{
                 future{
@@ -1788,6 +1811,11 @@ hy{
         }
         year-narrow{
             dn{"տ"}
+            relative{
+                "-1"{"նախորդ տարի"}
+                "0"{"այս տարի"}
+                "1"{"հաջորդ տարի"}
+            }
             relativeTime{
                 future{
                     one{"{0} տարուց"}
@@ -1801,6 +1829,11 @@ hy{
         }
         year-short{
             dn{"տ"}
+            relative{
+                "-1"{"նախորդ տարի"}
+                "0"{"այս տարի"}
+                "1"{"հաջորդ տարի"}
+            }
             relativeTime{
                 future{
                     one{"{0} տարուց"}
@@ -1829,6 +1862,18 @@ hy{
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
+        or-narrow{
+            2{"{0} կամ {1}"}
+            end{"{0} կամ {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
+        or-short{
+            2{"{0} կամ {1}"}
+            end{"{0} կամ {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
         standard{
             2{"{0} և {1}"}
             end{"{0} և {1}"}
@@ -1838,6 +1883,8 @@ hy{
         standard-narrow{
             2{"{0}, {1}"}
             end{"{0}, {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         standard-short{
             2{"{0} և {1}"}
@@ -1868,5 +1915,66 @@ hy{
         UK{"Անգլիական"}
         US{"Ամերիկյան"}
         metric{"Մետրական"}
+    }
+    personNames{
+        initialPattern{
+            initial{"{0}․"}
+        }
+        nameOrderLocales{
+            givenFirst{
+                "und",
+                "hy",
+            }
+            surnameFirst{
+                "ko",
+                "vi",
+                "yue",
+                "zh",
+            }
+        }
+        namePattern{
+            givenFirst-long-addressing-formal{"{title} {surname}"}
+            givenFirst-long-addressing-informal{"{given-informal}"}
+            givenFirst-long-monogram-formal{"{given-monogram-allCaps}{surname-monogram-allCaps}"}
+            givenFirst-long-monogram-informal{"{given-informal-monogram-allCaps}{surname-monogram-allCaps}"}
+            givenFirst-long-referring-formal{"{credentials} {title} {given} {given2} {surname}"}
+            givenFirst-long-referring-informal{"{given-informal} {surname}"}
+            givenFirst-medium-addressing-formal{"{title} {surname}"}
+            givenFirst-medium-addressing-informal{"{given-informal}"}
+            givenFirst-medium-monogram-formal{"{surname-monogram-allCaps}"}
+            givenFirst-medium-monogram-informal{"{given-informal-monogram-allCaps}"}
+            givenFirst-medium-referring-formal{"{credentials} {given} {given2-initial} {surname}"}
+            givenFirst-medium-referring-informal{"{given-informal} {surname}"}
+            givenFirst-short-addressing-formal{"{title} {surname}"}
+            givenFirst-short-addressing-informal{"{given-informal}"}
+            givenFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
+            givenFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
+            givenFirst-short-referring-formal{"{given-initial} {surname}"}
+            givenFirst-short-referring-informal{"{given-informal} {surname-initial}"}
+            sorting-long-referring-formal{"{surname-core} {given}"}
+            sorting-long-referring-informal{"{surname} {given-informal}"}
+            sorting-medium-referring-formal{"{surname-core} {given}"}
+            sorting-medium-referring-informal{"{surname-core} {given}"}
+            sorting-short-referring-formal{"{surname-core} {given-initial}"}
+            sorting-short-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-long-addressing-formal{"{title} {surname}"}
+            surnameFirst-long-addressing-informal{"{given-informal}"}
+            surnameFirst-long-monogram-formal{"{surname-monogram-allCaps}{given-monogram-allCaps}"}
+            surnameFirst-long-monogram-informal{"{surname-monogram-allCaps}{given-informal-monogram-allCaps}"}
+            surnameFirst-long-referring-formal{"{credentials} {surname} {given} {given2}"}
+            surnameFirst-long-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-medium-addressing-formal{"{title} {surname}"}
+            surnameFirst-medium-addressing-informal{"{given-informal}"}
+            surnameFirst-medium-monogram-formal{"{surname-monogram-allCaps}"}
+            surnameFirst-medium-monogram-informal{"{given-informal-monogram-allCaps}"}
+            surnameFirst-medium-referring-formal{"{credentials} {surname} {given}"}
+            surnameFirst-medium-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-short-addressing-formal{"{title} {surname}"}
+            surnameFirst-short-addressing-informal{"{given-informal}"}
+            surnameFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
+            surnameFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
+            surnameFirst-short-referring-formal{"{surname} {given-initial}"}
+            surnameFirst-short-referring-informal{"{surname} {given-initial}"}
+        }
     }
 }

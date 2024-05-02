@@ -15,39 +15,27 @@
 
 #include "ds/BitArray.h"
 #include "ds/LifoAlloc.h"
+#include "gc/Cell.h"
 #include "gc/Nursery.h"
+#include "gc/TraceKind.h"
 #include "js/AllocPolicy.h"
-#include "js/MemoryMetrics.h"
 #include "js/UniquePtr.h"
 #include "threading/Mutex.h"
+#include "wasm/WasmAnyRef.h"
+
+namespace JS {
+struct GCSizes;
+}
 
 namespace js {
+
+class NativeObject;
 
 #ifdef DEBUG
 extern bool CurrentThreadIsGCMarking();
 #endif
 
 namespace gc {
-
-// Map from all trace kinds to the base GC type.
-template <JS::TraceKind kind>
-struct MapTraceKindToType {};
-
-#define DEFINE_TRACE_KIND_MAP(name, type, _, _1)   \
-  template <>                                      \
-  struct MapTraceKindToType<JS::TraceKind::name> { \
-    using Type = type;                             \
-  };
-JS_FOR_EACH_TRACEKIND(DEFINE_TRACE_KIND_MAP);
-#undef DEFINE_TRACE_KIND_MAP
-
-// Map from a possibly-derived type to the base GC type.
-template <typename T>
-struct BaseGCType {
-  using type =
-      typename MapTraceKindToType<JS::MapTypeToTraceKind<T>::kind>::Type;
-  static_assert(std::is_base_of_v<type, T>, "Failed to find base type");
-};
 
 class Arena;
 class ArenaCellSet;
@@ -72,7 +60,7 @@ class BufferableRef {
   bool maybeInRememberedSet(const Nursery&) const { return true; }
 };
 
-typedef HashSet<void*, PointerHasher<void*>, SystemAllocPolicy> EdgeSet;
+using EdgeSet = HashSet<void*, PointerHasher<void*>, SystemAllocPolicy>;
 
 /* The size of a single block of store buffer storage space. */
 static const size_t LifoAllocBlockSize = 8 * 1024;
@@ -91,6 +79,8 @@ class StoreBuffer {
   /* The size at which other store buffers are about to overflow. */
   static const size_t BufferOverflowThresholdBytes = 128 * 1024;
 
+  enum class PutResult { OK, AboutToOverflow };
+
   /*
    * This buffer holds only a single type of edge. Using this buffer is more
    * efficient than the generic buffer when many writes will be to the same
@@ -99,24 +89,22 @@ class StoreBuffer {
   template <typename T>
   struct MonoTypeBuffer {
     /* The canonical set of stores. */
-    typedef HashSet<T, typename T::Hasher, SystemAllocPolicy> StoreSet;
+    using StoreSet = HashSet<T, typename T::Hasher, SystemAllocPolicy>;
     StoreSet stores_;
 
     /*
      * A one element cache in front of the canonical set to speed up
      * temporary instances of HeapPtr.
      */
-    T last_;
-
-    StoreBuffer* owner_;
-
-    JS::GCReason gcReason_;
+    T last_ = T();
 
     /* Maximum number of entries before we request a minor GC. */
     const static size_t MaxEntries = BufferOverflowThresholdBytes / sizeof(T);
 
-    explicit MonoTypeBuffer(StoreBuffer* owner, JS::GCReason reason)
-        : last_(T()), owner_(owner), gcReason_(reason) {}
+    MonoTypeBuffer() = default;
+
+    MonoTypeBuffer(const MonoTypeBuffer& other) = delete;
+    MonoTypeBuffer& operator=(const MonoTypeBuffer& other) = delete;
 
     void clear() {
       last_ = T();
@@ -124,9 +112,10 @@ class StoreBuffer {
     }
 
     /* Add one item to the buffer. */
-    void put(const T& t) {
-      sinkStore();
+    PutResult put(const T& t) {
+      PutResult r = sinkStore();
       last_ = t;
+      return r;
     }
 
     /* Remove an item from the store buffer. */
@@ -140,7 +129,7 @@ class StoreBuffer {
     }
 
     /* Move any buffered stores to the canonical store set. */
-    void sinkStore() {
+    PutResult sinkStore() {
       if (last_) {
         AutoEnterOOMUnsafeRegion oomUnsafe;
         if (!stores_.put(last_)) {
@@ -149,36 +138,33 @@ class StoreBuffer {
       }
       last_ = T();
 
-      if (MOZ_UNLIKELY(stores_.count() > MaxEntries)) {
-        owner_->setAboutToOverflow(gcReason_);
+      if (stores_.count() > MaxEntries) {
+        return PutResult::AboutToOverflow;
       }
+
+      return PutResult::OK;
     }
 
     /* Trace the source of all edges in the store buffer. */
-    void trace(TenuringTracer& mover);
+    void trace(TenuringTracer& mover, StoreBuffer* owner);
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
       return stores_.shallowSizeOfExcludingThis(mallocSizeOf);
     }
 
     bool isEmpty() const { return last_ == T() && stores_.empty(); }
-
-   private:
-    MonoTypeBuffer(const MonoTypeBuffer& other) = delete;
-    MonoTypeBuffer& operator=(const MonoTypeBuffer& other) = delete;
   };
 
   struct WholeCellBuffer {
     UniquePtr<LifoAlloc> storage_;
-    ArenaCellSet* stringHead_;
-    ArenaCellSet* nonStringHead_;
-    StoreBuffer* owner_;
+    ArenaCellSet* stringHead_ = nullptr;
+    ArenaCellSet* nonStringHead_ = nullptr;
+    const Cell* last_ = nullptr;
 
-    explicit WholeCellBuffer(StoreBuffer* owner)
-        : storage_(nullptr),
-          stringHead_(nullptr),
-          nonStringHead_(nullptr),
-          owner_(owner) {}
+    WholeCellBuffer() = default;
+
+    WholeCellBuffer(const WholeCellBuffer& other) = delete;
+    WholeCellBuffer& operator=(const WholeCellBuffer& other) = delete;
 
     [[nodiscard]] bool init();
 
@@ -189,9 +175,10 @@ class StoreBuffer {
              storage_->used() > BufferOverflowThresholdBytes;
     }
 
-    void trace(TenuringTracer& mover);
+    void trace(TenuringTracer& mover, StoreBuffer* owner);
 
     inline void put(const Cell* cell);
+    inline void putDontCheckLast(const Cell* cell);
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
       return storage_ ? storage_->sizeOfIncludingThis(mallocSizeOf) : 0;
@@ -203,19 +190,19 @@ class StoreBuffer {
       return !stringHead_ && !nonStringHead_;
     }
 
+    const Cell** lastBufferedPtr() { return &last_; }
+
    private:
     ArenaCellSet* allocateCellSet(Arena* arena);
-
-    WholeCellBuffer(const WholeCellBuffer& other) = delete;
-    WholeCellBuffer& operator=(const WholeCellBuffer& other) = delete;
   };
 
   struct GenericBuffer {
     UniquePtr<LifoAlloc> storage_;
-    StoreBuffer* owner_;
 
-    explicit GenericBuffer(StoreBuffer* owner)
-        : storage_(nullptr), owner_(owner) {}
+    GenericBuffer() = default;
+
+    GenericBuffer(const GenericBuffer& other) = delete;
+    GenericBuffer& operator=(const GenericBuffer& other) = delete;
 
     [[nodiscard]] bool init();
 
@@ -231,10 +218,10 @@ class StoreBuffer {
     }
 
     /* Trace all generic edges. */
-    void trace(JSTracer* trc);
+    void trace(JSTracer* trc, StoreBuffer* owner);
 
     template <typename T>
-    void put(const T& t) {
+    PutResult put(const T& t) {
       MOZ_ASSERT(storage_);
 
       /* Ensure T is derived from BufferableRef. */
@@ -254,8 +241,10 @@ class StoreBuffer {
       }
 
       if (isAboutToOverflow()) {
-        owner_->setAboutToOverflow(JS::GCReason::FULL_GENERIC_BUFFER);
+        return PutResult::AboutToOverflow;
       }
+
+      return PutResult::OK;
     }
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
@@ -263,10 +252,6 @@ class StoreBuffer {
     }
 
     bool isEmpty() const { return !storage_ || storage_->isEmpty(); }
-
-   private:
-    GenericBuffer(const GenericBuffer& other) = delete;
-    GenericBuffer& operator=(const GenericBuffer& other) = delete;
   };
 
   template <typename Edge>
@@ -404,63 +389,96 @@ class StoreBuffer {
 
     explicit operator bool() const { return objectAndKind_ != 0; }
 
-    typedef struct Hasher {
+    struct Hasher {
       using Lookup = SlotsEdge;
       static HashNumber hash(const Lookup& l) {
         return mozilla::HashGeneric(l.objectAndKind_, l.start_, l.count_);
       }
       static bool match(const SlotsEdge& k, const Lookup& l) { return k == l; }
-    } Hasher;
+    };
   };
 
-  // The GC runs tasks that may access the storebuffer in parallel and so must
-  // take a lock. The mutator may only access the storebuffer from the main
-  // thread.
-  inline void CheckAccess() const {
-#ifdef DEBUG
-    if (JS::RuntimeHeapIsBusy()) {
-      MOZ_ASSERT(!CurrentThreadIsGCMarking());
-      lock_.assertOwnedByCurrentThread();
-    } else {
-      MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
+  struct WasmAnyRefEdge {
+    wasm::AnyRef* edge;
+
+    WasmAnyRefEdge() : edge(nullptr) {}
+    explicit WasmAnyRefEdge(wasm::AnyRef* v) : edge(v) {}
+    bool operator==(const WasmAnyRefEdge& other) const {
+      return edge == other.edge;
     }
+    bool operator!=(const WasmAnyRefEdge& other) const {
+      return edge != other.edge;
+    }
+
+    Cell* deref() const {
+      return edge->isGCThing() ? static_cast<Cell*>(edge->toGCThing())
+                               : nullptr;
+      return nullptr;
+    }
+
+    bool maybeInRememberedSet(const Nursery& nursery) const {
+      MOZ_ASSERT(IsInsideNursery(deref()));
+      return !nursery.isInside(edge);
+    }
+
+    void trace(TenuringTracer& mover) const;
+
+    explicit operator bool() const { return edge != nullptr; }
+
+    using Hasher = PointerEdgeHasher<WasmAnyRefEdge>;
+  };
+
+#ifdef DEBUG
+  void checkAccess() const;
+#else
+  void checkAccess() const {}
 #endif
-  }
 
   template <typename Buffer, typename Edge>
   void unput(Buffer& buffer, const Edge& edge) {
-    CheckAccess();
+    checkAccess();
     if (!isEnabled()) {
       return;
     }
+
     mozilla::ReentrancyGuard g(*this);
+
     buffer.unput(edge);
   }
 
   template <typename Buffer, typename Edge>
-  void put(Buffer& buffer, const Edge& edge) {
-    CheckAccess();
+  void put(Buffer& buffer, const Edge& edge, JS::GCReason overflowReason) {
+    checkAccess();
     if (!isEnabled()) {
       return;
     }
+
     mozilla::ReentrancyGuard g(*this);
-    if (edge.maybeInRememberedSet(nursery_)) {
-      buffer.put(edge);
+
+    if (!edge.maybeInRememberedSet(nursery_)) {
+      return;
+    }
+
+    PutResult r = buffer.put(edge);
+
+    if (MOZ_UNLIKELY(r == PutResult::AboutToOverflow)) {
+      setAboutToOverflow(overflowReason);
     }
   }
 
-  Mutex lock_;
+  Mutex lock_ MOZ_UNANNOTATED;
 
   MonoTypeBuffer<ValueEdge> bufferVal;
   MonoTypeBuffer<StringPtrEdge> bufStrCell;
   MonoTypeBuffer<BigIntPtrEdge> bufBigIntCell;
   MonoTypeBuffer<ObjectPtrEdge> bufObjCell;
   MonoTypeBuffer<SlotsEdge> bufferSlot;
+  MonoTypeBuffer<WasmAnyRefEdge> bufferWasmAnyRef;
   WholeCellBuffer bufferWholeCell;
   GenericBuffer bufferGeneric;
 
   JSRuntime* runtime_;
-  const Nursery& nursery_;
+  Nursery& nursery_;
 
   bool aboutToOverflow_;
   bool enabled_;
@@ -474,7 +492,7 @@ class StoreBuffer {
   bool markingNondeduplicatable;
 #endif
 
-  explicit StoreBuffer(JSRuntime* rt, const Nursery& nursery);
+  explicit StoreBuffer(JSRuntime* rt, Nursery& nursery);
   [[nodiscard]] bool enable();
 
   void disable();
@@ -497,16 +515,27 @@ class StoreBuffer {
   }
 
   /* Insert a single edge into the buffer/remembered set. */
-  void putValue(JS::Value* vp) { put(bufferVal, ValueEdge(vp)); }
+  void putValue(JS::Value* vp) {
+    put(bufferVal, ValueEdge(vp), JS::GCReason::FULL_VALUE_BUFFER);
+  }
   void unputValue(JS::Value* vp) { unput(bufferVal, ValueEdge(vp)); }
 
-  void putCell(JSString** strp) { put(bufStrCell, StringPtrEdge(strp)); }
+  void putCell(JSString** strp) {
+    put(bufStrCell, StringPtrEdge(strp),
+        JS::GCReason::FULL_CELL_PTR_STR_BUFFER);
+  }
   void unputCell(JSString** strp) { unput(bufStrCell, StringPtrEdge(strp)); }
 
-  void putCell(JS::BigInt** bip) { put(bufBigIntCell, BigIntPtrEdge(bip)); }
+  void putCell(JS::BigInt** bip) {
+    put(bufBigIntCell, BigIntPtrEdge(bip),
+        JS::GCReason::FULL_CELL_PTR_BIGINT_BUFFER);
+  }
   void unputCell(JS::BigInt** bip) { unput(bufBigIntCell, BigIntPtrEdge(bip)); }
 
-  void putCell(JSObject** strp) { put(bufObjCell, ObjectPtrEdge(strp)); }
+  void putCell(JSObject** strp) {
+    put(bufObjCell, ObjectPtrEdge(strp),
+        JS::GCReason::FULL_CELL_PTR_OBJ_BUFFER);
+  }
   void unputCell(JSObject** strp) { unput(bufObjCell, ObjectPtrEdge(strp)); }
 
   void putSlot(NativeObject* obj, int kind, uint32_t start, uint32_t count) {
@@ -514,30 +543,47 @@ class StoreBuffer {
     if (bufferSlot.last_.overlaps(edge)) {
       bufferSlot.last_.merge(edge);
     } else {
-      put(bufferSlot, edge);
+      put(bufferSlot, edge, JS::GCReason::FULL_SLOT_BUFFER);
     }
   }
 
+  void putWasmAnyRef(wasm::AnyRef* vp) {
+    put(bufferWasmAnyRef, WasmAnyRefEdge(vp),
+        JS::GCReason::FULL_WASM_ANYREF_BUFFER);
+  }
+  void unputWasmAnyRef(wasm::AnyRef* vp) {
+    unput(bufferWasmAnyRef, WasmAnyRefEdge(vp));
+  }
+
   inline void putWholeCell(Cell* cell);
+  inline void putWholeCellDontCheckLast(Cell* cell);
+  const void* addressOfLastBufferedWholeCell() {
+    return bufferWholeCell.lastBufferedPtr();
+  }
 
   /* Insert an entry into the generic buffer. */
   template <typename T>
   void putGeneric(const T& t) {
-    put(bufferGeneric, t);
+    put(bufferGeneric, t, JS::GCReason::FULL_GENERIC_BUFFER);
   }
 
   void setMayHavePointersToDeadCells() { mayHavePointersToDeadCells_ = true; }
 
   /* Methods to trace the source of all edges in the store buffer. */
-  void traceValues(TenuringTracer& mover) { bufferVal.trace(mover); }
+  void traceValues(TenuringTracer& mover) { bufferVal.trace(mover, this); }
   void traceCells(TenuringTracer& mover) {
-    bufStrCell.trace(mover);
-    bufBigIntCell.trace(mover);
-    bufObjCell.trace(mover);
+    bufStrCell.trace(mover, this);
+    bufBigIntCell.trace(mover, this);
+    bufObjCell.trace(mover, this);
   }
-  void traceSlots(TenuringTracer& mover) { bufferSlot.trace(mover); }
-  void traceWholeCells(TenuringTracer& mover) { bufferWholeCell.trace(mover); }
-  void traceGenericEntries(JSTracer* trc) { bufferGeneric.trace(trc); }
+  void traceSlots(TenuringTracer& mover) { bufferSlot.trace(mover, this); }
+  void traceWasmAnyRefs(TenuringTracer& mover) {
+    bufferWasmAnyRef.trace(mover, this);
+  }
+  void traceWholeCells(TenuringTracer& mover) {
+    bufferWholeCell.trace(mover, this);
+  }
+  void traceGenericEntries(JSTracer* trc) { bufferGeneric.trace(trc, this); }
 
   /* For use by our owned buffers and for testing. */
   void setAboutToOverflow(JS::GCReason);
@@ -661,13 +707,13 @@ MOZ_ALWAYS_INLINE void PostWriteBarrier(T** vp, T* prev, T* next) {
   static_assert(std::is_base_of_v<Cell, T>);
   static_assert(!std::is_same_v<Cell, T> && !std::is_same_v<TenuredCell, T>);
 
-  if constexpr (!std::is_base_of_v<TenuredCell, T>) {
+  if constexpr (!GCTypeIsTenured<T>()) {
     using BaseT = typename BaseGCType<T>::type;
     PostWriteBarrierImpl<BaseT>(vp, prev, next);
     return;
   }
 
-  MOZ_ASSERT(!IsInsideNursery(next));
+  MOZ_ASSERT_IF(next, !IsInsideNursery(next));
 }
 
 // Used when we don't have a specific edge to put in the store buffer.

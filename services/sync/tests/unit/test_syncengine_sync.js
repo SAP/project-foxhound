@@ -1,11 +1,17 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-const { WBORecord } = ChromeUtils.import("resource://services-sync/record.js");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { RotaryEngine } = ChromeUtils.import(
-  "resource://testing-common/services/sync/rotaryengine.js"
+const { Weave } = ChromeUtils.importESModule(
+  "resource://services-sync/main.sys.mjs"
+);
+const { WBORecord } = ChromeUtils.importESModule(
+  "resource://services-sync/record.sys.mjs"
+);
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { RotaryEngine } = ChromeUtils.importESModule(
+  "resource://testing-common/services/sync/rotaryengine.sys.mjs"
 );
 
 function makeRotaryEngine() {
@@ -13,8 +19,10 @@ function makeRotaryEngine() {
 }
 
 async function clean(engine) {
-  Svc.Prefs.resetBranch("");
-  Svc.Prefs.set("log.logger.engine.rotary", "Trace");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
+  Svc.PrefBranch.setCharPref("log.logger.engine.rotary", "Trace");
   Service.recordManager.clearCache();
   await engine._tracker.clearChangedIDs();
   await engine.finalize();
@@ -70,7 +78,7 @@ async function createServerAndConfigureClient() {
 
 add_task(async function setup() {
   await generateNewKeys(Service.collectionKeys);
-  Svc.Prefs.set("log.logger.engine.rotary", "Trace");
+  Svc.PrefBranch.setCharPref("log.logger.engine.rotary", "Trace");
 });
 
 add_task(async function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
@@ -716,14 +724,18 @@ add_task(async function test_processIncoming_notify_count() {
   // Engine that fails every 5 records.
   let engine = makeRotaryEngine();
   engine._store._applyIncomingBatch = engine._store.applyIncomingBatch;
-  engine._store.applyIncomingBatch = async function(records) {
+  engine._store.applyIncomingBatch = async function (records, countTelemetry) {
     let sortedRecords = records.sort((a, b) => (a.id > b.id ? 1 : -1));
     let recordsToApply = [],
       recordsToFail = [];
     for (let i = 0; i < sortedRecords.length; i++) {
       (i % 5 === 0 ? recordsToFail : recordsToApply).push(sortedRecords[i]);
     }
-    await engine._store._applyIncomingBatch(recordsToApply);
+    recordsToFail.forEach(() => {
+      countTelemetry.addIncomingFailedReason("failed message");
+    });
+    await engine._store._applyIncomingBatch(recordsToApply, countTelemetry);
+
     return recordsToFail.map(record => record.id);
   };
 
@@ -777,6 +789,8 @@ add_task(async function test_processIncoming_notify_count() {
     // There are newly failed records and they are reported.
     Assert.equal(called, 1);
     Assert.equal(counts.failed, 3);
+    Assert.equal(counts.failedReasons[0].count, 3);
+    Assert.equal(counts.failedReasons[0].name, "failed message");
     Assert.equal(counts.applied, 15);
     Assert.equal(counts.newFailed, 3);
     Assert.equal(counts.succeeded, 12);
@@ -786,10 +800,14 @@ add_task(async function test_processIncoming_notify_count() {
 
     // Confirming removed failures.
     do_check_attribute_count(engine._store.items, 14);
-    Assert.deepEqual(Array.from(engine.previousFailed), ["record-no-00"]);
+    // After failing twice the record that failed again [record-no-00]
+    // should NOT be stored to try again
+    Assert.deepEqual(Array.from(engine.previousFailed), []);
 
     Assert.equal(called, 2);
     Assert.equal(counts.failed, 1);
+    Assert.equal(counts.failedReasons[0].count, 1);
+    Assert.equal(counts.failedReasons[0].name, "failed message");
     Assert.equal(counts.applied, 3);
     Assert.equal(counts.newFailed, 0);
     Assert.equal(counts.succeeded, 2);
@@ -808,7 +826,7 @@ add_task(async function test_processIncoming_previousFailed() {
   // Engine that alternates between failing and applying every 2 records.
   let engine = makeRotaryEngine();
   engine._store._applyIncomingBatch = engine._store.applyIncomingBatch;
-  engine._store.applyIncomingBatch = async function(records) {
+  engine._store.applyIncomingBatch = async function (records, countTelemetry) {
     let sortedRecords = records.sort((a, b) => (a.id > b.id ? 1 : -1));
     let recordsToApply = [],
       recordsToFail = [];
@@ -816,7 +834,7 @@ add_task(async function test_processIncoming_previousFailed() {
     for (let i = 0; i < chunks.length; i++) {
       (i % 2 === 0 ? recordsToFail : recordsToApply).push(...chunks[i]);
     }
-    await engine._store._applyIncomingBatch(recordsToApply);
+    await engine._store._applyIncomingBatch(recordsToApply, countTelemetry);
     return recordsToFail.map(record => record.id);
   };
 
@@ -879,13 +897,10 @@ add_task(async function test_processIncoming_previousFailed() {
     // Sync again with the same failed items (records 0, 1, 8, 9).
     await engine._processIncoming();
 
-    // A second sync with the same failed items should not add the same items again.
-    // Items that did not fail a second time should no longer be in previousFailed.
     do_check_attribute_count(engine._store.items, 10);
-    Assert.deepEqual(
-      Array.from(engine.previousFailed).sort(),
-      ["record-no-00", "record-no-01", "record-no-08", "record-no-09"].sort()
-    );
+    // A second sync with the same failed items should NOT add the same items again.
+    // Items that did not fail a second time should no longer be in previousFailed.
+    Assert.deepEqual(Array.from(engine.previousFailed).sort(), []);
 
     // Refetched items that didn't fail the second time are in engine._store.items.
     Assert.equal(engine._store.items["record-no-04"], "Record No. 4");
@@ -937,7 +952,7 @@ add_task(async function test_processIncoming_failed_records() {
     return this.__reconcile.apply(this, arguments);
   };
   engine._store._applyIncoming = engine._store.applyIncoming;
-  engine._store.applyIncoming = async function(record) {
+  engine._store.applyIncoming = async function (record) {
     if (BOGUS_RECORDS.indexOf(record.id) % 2 == 1) {
       throw new Error("I don't like this record! Baaaaaah!");
     }
@@ -949,7 +964,7 @@ add_task(async function test_processIncoming_failed_records() {
   let uris = [];
   function recording_handler(recordedCollection) {
     let h = recordedCollection.handler();
-    return function(req, res) {
+    return function (req, res) {
       ++count;
       uris.push(req.path + "?" + req.queryString);
       return h(req, res);
@@ -1020,9 +1035,10 @@ add_task(async function test_processIncoming_failed_records() {
     _("Test batching with ID batch size 3, normal mobile batch size.");
     Assert.equal(await batchDownload(3), 3);
 
-    // Now see with a more realistic limit.
-    _("Test batching with sufficient ID batch size.");
-    Assert.equal(await batchDownload(BOGUS_RECORDS.length), 1);
+    // Since there the previous batch failed again, there should be
+    // no more records to fetch
+    _("Test that the second time a record failed to sync, gets ignored");
+    Assert.equal(await batchDownload(BOGUS_RECORDS.length), 0);
   } finally {
     await cleanAndGo(engine, server);
   }
@@ -1049,7 +1065,7 @@ add_task(async function test_processIncoming_decrypt_failed() {
 
   // Patch the fake crypto service to throw on the record above.
   Weave.Crypto._decrypt = Weave.Crypto.decrypt;
-  Weave.Crypto.decrypt = function(ciphertext) {
+  Weave.Crypto.decrypt = function (ciphertext) {
     if (ciphertext == "Decrypt this!") {
       throw new Error(
         "Derp! Cipher finalized failed. Im ur crypto destroyin ur recordz."
@@ -1092,6 +1108,13 @@ add_task(async function test_processIncoming_decrypt_failed() {
     let ping = await sync_engine_and_validate_telem(engine, true);
     Assert.equal(ping.engines[0].incoming.applied, 2);
     Assert.equal(ping.engines[0].incoming.failed, 4);
+    console.log("incoming telem: ", ping.engines[0].incoming);
+    Assert.equal(
+      ping.engines[0].incoming.failedReasons[0].name,
+      "No ciphertext: nothing to decrypt?"
+    );
+    // There should be 4 of the same error
+    Assert.equal(ping.engines[0].incoming.failedReasons[0].count, 4);
 
     Assert.equal(engine.previousFailed.size, 4);
     Assert.ok(engine.previousFailed.has("nojson"));
@@ -1103,6 +1126,7 @@ add_task(async function test_processIncoming_decrypt_failed() {
     Assert.equal(observerData, engine.name);
     Assert.equal(observerSubject.applied, 2);
     Assert.equal(observerSubject.failed, 4);
+    Assert.equal(observerSubject.failedReasons[0].count, 4);
   } finally {
     await promiseClean(engine, server);
   }
@@ -1384,6 +1408,7 @@ async function createRecordFailTelemetry(allowSkippedRecord) {
   } finally {
     // We reported in telemetry that we failed a record
     Assert.equal(ping.engines[0].outgoing[0].failed, 1);
+    Assert.equal(ping.engines[0].outgoing[0].failedReasons[0].name, "oops");
 
     // In any case, the 'scotsman' record couldn't be created so it wasn't
     // uploaded nor it was not cleared from the tracker.
@@ -1507,8 +1532,8 @@ add_task(async function test_syncFinish_deleteLotsInBatches() {
 
   // Let's count how many times the client does a DELETE request to the server
   var noOfUploads = 0;
-  collection.delete = (function(orig) {
-    return function() {
+  collection.delete = (function (orig) {
+    return function () {
       noOfUploads++;
       return orig.apply(this, arguments);
     };
@@ -1584,8 +1609,8 @@ add_task(async function test_sync_partialUpload() {
 
   // Let the third upload fail completely
   var noOfUploads = 0;
-  collection.post = (function(orig) {
-    return function() {
+  collection.post = (function (orig) {
+    return function () {
       if (noOfUploads == 2) {
         throw new Error("FAIL!");
       }

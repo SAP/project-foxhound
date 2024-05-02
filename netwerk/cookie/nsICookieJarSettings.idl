@@ -30,6 +30,11 @@ interface nsICookieJarSettings : nsISerializable
   [infallible] readonly attribute boolean isFirstPartyIsolated;
 
   /**
+   * Resist Fingerprinting state at the loading of the document.
+   */
+  [infallible] readonly attribute boolean shouldResistFingerprinting;
+
+  /**
    * Whether our cookie behavior mandates rejecting third-party contexts.
    */
   [infallible] readonly attribute boolean rejectThirdPartyContexts;
@@ -37,7 +42,7 @@ interface nsICookieJarSettings : nsISerializable
   [infallible] readonly attribute boolean limitForeignContexts;
 
   [infallible] readonly attribute boolean blockingAllThirdPartyContexts;
-  
+
   [infallible] readonly attribute boolean blockingAllContexts;
   /**
    * Whether our cookie behavior mandates partitioning third-party content.
@@ -53,6 +58,11 @@ interface nsICookieJarSettings : nsISerializable
    * The key used for partitioning.
    */
   readonly attribute AString partitionKey;
+
+  /**
+   * The key used for fingerprinting randomization.
+   */
+  readonly attribute Array<uint8_t> fingerprintingRandomizationKey;
 
   /**
    * CookiePermission at the loading of the document for a particular

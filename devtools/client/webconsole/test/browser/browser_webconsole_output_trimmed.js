@@ -53,13 +53,13 @@ const TEST_ITEMS = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   // Check that expected output and actual trimmed output match
   for (const { name, command, expected } of TEST_ITEMS) {
     await clearOutput(hud);
-    await executeAndWaitForMessage(hud, command, "", ".result");
+    await executeAndWaitForResultMessage(hud, command, "");
 
     const result = await getActualDisplayedInput(hud);
 

@@ -9,12 +9,6 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ContentTaskUtils",
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 const ACCORDION_LABEL_SELECTOR = ".accordion-header-label";
 const ACCORDION_CONTENT_SELECTOR = ".accordion-content";
 
@@ -56,15 +50,15 @@ async function expectNoSuchActorIDs(client, actors) {
 
 function waitForObjectInspector(panelDoc, waitForNodeWithType = "object") {
   const selector = `.object-inspector .objectBox-${waitForNodeWithType}`;
-  return ContentTaskUtils.waitForCondition(() => {
-    return panelDoc.querySelectorAll(selector).length > 0;
+  return TestUtils.waitForCondition(() => {
+    return !!panelDoc.querySelectorAll(selector).length;
   }, `Wait for objectInspector's node type "${waitForNodeWithType}" to be loaded`);
 }
 
 // Helper function used inside the sidebar.setExtensionPage test case.
 async function testSetExtensionPageSidebarPanel(panelDoc, expectedURL) {
   const selector = "iframe.inspector-extension-sidebar-page";
-  const iframesCount = await ContentTaskUtils.waitForCondition(() => {
+  const iframesCount = await TestUtils.waitForCondition(() => {
     return panelDoc.querySelectorAll(selector).length;
   }, "Wait for the extension page iframe");
 
@@ -75,7 +69,7 @@ async function testSetExtensionPageSidebarPanel(panelDoc, expectedURL) {
   );
 
   const iframeWindow = panelDoc.querySelector(selector).contentWindow;
-  await ContentTaskUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     return iframeWindow.document.readyState === "complete";
   }, "Wait for the extension page iframe to complete to load");
 
@@ -100,7 +94,7 @@ async function testSetExpressionSidebarPanel(panel, expected) {
   );
   const [objectInspector] = objectInspectors;
 
-  await ContentTaskUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     return objectInspector.querySelectorAll(".node").length >= nodesLength;
   }, "Wait the objectInspector to have been fully rendered");
 
@@ -149,11 +143,8 @@ async function testSetExpressionSidebarPanel(panel, expected) {
 }
 
 function assertTreeView(panelDoc, expectedContent) {
-  const {
-    expectedTreeTables,
-    expectedStringCells,
-    expectedNumberCells,
-  } = expectedContent;
+  const { expectedTreeTables, expectedStringCells, expectedNumberCells } =
+    expectedContent;
 
   if (expectedTreeTables) {
     is(

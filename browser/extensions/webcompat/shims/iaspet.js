@@ -12,12 +12,34 @@
  */
 
 if (!window.__iasPET?.VERSION) {
+  let queue = window?.__iasPET?.queue;
+  if (!Array.isArray(queue)) {
+    queue = [];
+  }
+
+  const response = JSON.stringify({
+    brandSafety: {},
+    slots: {},
+  });
+
+  function run(cmd) {
+    try {
+      cmd?.dataHandler?.(response);
+    } catch (_) {}
+  }
+
+  queue.push = run;
+
   window.__iasPET = {
     VERSION: "1.16.18",
-    queue: [],
+    queue,
     sessionId: "",
     setTargetingForAppNexus() {},
     setTargetingForGPT() {},
     start() {},
   };
+
+  while (queue.length) {
+    run(queue.shift());
+  }
 }

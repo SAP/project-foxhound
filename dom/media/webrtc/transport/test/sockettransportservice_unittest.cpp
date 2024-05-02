@@ -11,7 +11,6 @@
 
 #include "nsCOMPtr.h"
 #include "nsNetCID.h"
-#include "nsXPCOM.h"
 
 #include "nsISocketTransportService.h"
 
@@ -29,8 +28,7 @@ namespace {
 class SocketTransportServiceTest : public MtransportTest {
  public:
   SocketTransportServiceTest()
-      : MtransportTest(),
-        received_(0),
+      : received_(0),
         readpipe_(nullptr),
         writepipe_(nullptr),
         registered_(false) {}
@@ -98,7 +96,7 @@ class SocketHandler : public nsASocketHandler {
     int32_t rv;
     rv = PR_Recv(fd, buf, sizeof(buf), 0, PR_INTERVAL_NO_WAIT);
     if (rv > 0) {
-      std::cerr << "Read " << rv << " bytes" << std::endl;
+      std::cerr << "Read " << rv << " bytes\n";
       test_->ReceivePacket();
     }
   }

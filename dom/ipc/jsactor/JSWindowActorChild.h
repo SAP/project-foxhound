@@ -36,14 +36,12 @@ class WindowProxyHolder;
 }  // namespace dom
 }  // namespace mozilla
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class JSWindowActorChild final : public JSActor {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(JSWindowActorChild,
-                                                         JSActor)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(JSWindowActorChild, JSActor)
 
   explicit JSWindowActorChild(nsISupports* aGlobal = nullptr)
       : JSActor(aGlobal) {}
@@ -79,7 +77,6 @@ class JSWindowActorChild final : public JSActor {
   nsCOMPtr<nsIGlobalObject> mGlobal;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_JSWindowActorChild_h

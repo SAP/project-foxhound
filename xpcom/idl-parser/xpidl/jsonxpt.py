@@ -7,11 +7,10 @@
 
 """Generate a json XPT typelib for an IDL file"""
 
-from __future__ import absolute_import
+import itertools
+import json
 
 from xpidl import xpidl
-import json
-import itertools
 
 # A map of xpidl.py types to xpt enum variants
 TypeMap = {
@@ -147,11 +146,13 @@ def mk_method(method, params, getter=0, setter=0, optargc=0, hasretval=0, symbol
 
 
 def attr_param_idx(p, m, attr):
-    if hasattr(p, attr) and getattr(p, attr):
-        for i, param in enumerate(m.params):
-            if param.name == getattr(p, attr):
-                return i
+    attr_val = getattr(p, attr, None)
+    if not attr_val:
         return None
+    for i, param in enumerate(m.params):
+        if param.name == attr_val:
+            return i
+    raise Exception(f"Need parameter named '{attr_val}' for attribute '{attr}'")
 
 
 def build_interface(iface):

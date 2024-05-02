@@ -16,12 +16,12 @@ const POPUP_ACTION_COLOR_BRIGHT = "#bfbfc9";
 
 const SEARCH_TERM = "urlbar-reflows-" + Date.now();
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
-add_task(async function setup() {
+add_setup(async function () {
   await PlacesUtils.history.clear();
   const NUM_VISITS = 10;
   let visits = [];
@@ -35,7 +35,7 @@ add_task(async function setup() {
 
   await PlacesTestUtils.addVisits(visits);
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
   });
 });
@@ -71,7 +71,7 @@ add_task(async function test_popup_url() {
     gBrowser,
     "about:mozilla"
   );
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     await BrowserTestUtils.removeTab(tab);
   });
@@ -100,7 +100,7 @@ add_task(async function test_popup_url() {
   UrlbarTestUtils.setSelectedRowIndex(window, 1);
   let actionResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   let urlResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
-  let resultCS = window.getComputedStyle(urlResult.element.row._content);
+  let resultCS = window.getComputedStyle(urlResult.element.row);
 
   Assert.equal(
     resultCS.backgroundColor,

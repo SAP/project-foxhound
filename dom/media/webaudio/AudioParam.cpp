@@ -12,7 +12,7 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(AudioParam)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(AudioParam)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AudioParam)
   tmp->DisconnectFromGraphAndDestroyTrack();
@@ -23,13 +23,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AudioParam)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNode)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(AudioParam)
-
 NS_IMPL_CYCLE_COLLECTING_NATIVE_ADDREF(AudioParam)
 NS_IMPL_CYCLE_COLLECTING_NATIVE_RELEASE(AudioParam)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AudioParam, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AudioParam, Release)
 
 AudioParam::AudioParam(AudioNode* aNode, uint32_t aIndex,
                        const nsAString& aName, float aDefaultValue,
@@ -96,7 +91,7 @@ mozilla::MediaTrack* AudioParam::Track() {
   }
 
   // Send the track to the timeline on the MTG side.
-  AudioTimelineEvent event(mTrack);
+  AudioParamEvent event(mTrack);
   SendEventToEngine(event);
 
   return mTrack;
@@ -125,20 +120,21 @@ static const char* ToString(AudioTimelineEvent::Type aType) {
   }
 }
 
-void AudioParam::SendEventToEngine(const AudioTimelineEvent& aEvent) {
+void AudioParam::SendEventToEngine(const AudioParamEvent& aEvent) {
   WEB_AUDIO_API_LOG(
       "%f: %s for %u %s %s=%g time=%f %s=%g", GetParentObject()->CurrentTime(),
       NS_ConvertUTF16toUTF8(mName).get(), ParentNodeId(),
       ToString(aEvent.mType),
       aEvent.mType == AudioTimelineEvent::SetValueCurve ? "length" : "value",
       aEvent.mType == AudioTimelineEvent::SetValueCurve
-          ? static_cast<double>(aEvent.mCurveLength)
-          : static_cast<double>(aEvent.mValue),
+          ? static_cast<double>(aEvent.CurveLength())
+          : static_cast<double>(aEvent.NominalValue()),
       aEvent.Time<double>(),
       aEvent.mType == AudioTimelineEvent::SetValueCurve ? "duration"
                                                         : "constant",
-      aEvent.mType == AudioTimelineEvent::SetValueCurve ? aEvent.mDuration
-                                                        : aEvent.mTimeConstant);
+      aEvent.mType == AudioTimelineEvent::SetValueCurve
+          ? aEvent.Duration()
+          : aEvent.TimeConstant());
 
   AudioNodeTrack* track = mNode->GetTrack();
   if (track) {

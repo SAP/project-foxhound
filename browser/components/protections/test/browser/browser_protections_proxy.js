@@ -4,28 +4,28 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Region: "resource://gre/modules/Region.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  Region: "resource://gre/modules/Region.sys.mjs",
 });
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.vpn.enabled", false],
+      ["browser.vpn_promo.enabled", false],
     ],
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   let tab = await BrowserTestUtils.openNewForegroundTab({
     url: "about:protections",
     gBrowser,
   });
 
   info("Secure Proxy card should be hidden by default");
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(() => {
       const proxyCard = content.document.querySelector(".proxy-card");
       return !proxyCard["data-enabled"];
@@ -45,7 +45,7 @@ add_task(async function() {
     "Check that secure proxy card is hidden if user's language is not en-US"
   );
   Services.prefs.setCharPref("intl.accept_languages", "en-CA");
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await checkProxyCardVisibility(tab, true);
 
   info(
@@ -54,14 +54,14 @@ add_task(async function() {
   // Set language back to en-US
   Services.prefs.setCharPref("intl.accept_languages", "en-US");
   Region._setHomeRegion("US", false);
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await checkProxyCardVisibility(tab, false);
 
   info(
     "Check that secure proxy card is hidden if user's location is not in the US."
   );
   Region._setHomeRegion("CA", false);
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await checkProxyCardVisibility(tab, true);
 
   info(
@@ -72,13 +72,13 @@ add_task(async function() {
   const id = "secure-proxy@mozilla.com";
   const extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       name: "Firefox Proxy",
     },
     useAddonManager: "temporary",
   });
   await extension.startup();
-  await reloadTab(tab);
+  await BrowserTestUtils.reloadTab(tab);
   await checkProxyCardVisibility(tab, true);
   await extension.unload();
 
@@ -94,7 +94,7 @@ async function checkProxyCardVisibility(tab, shouldBeHidden) {
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [{ _shouldBeHidden: shouldBeHidden }],
-    async function({ _shouldBeHidden }) {
+    async function ({ _shouldBeHidden }) {
       await ContentTaskUtils.waitForCondition(() => {
         const proxyCard = content.document.querySelector(".proxy-card");
         return ContentTaskUtils.is_hidden(proxyCard) === _shouldBeHidden;

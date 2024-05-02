@@ -5,12 +5,12 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
 
-from __future__ import absolute_import
-import six
 import argparse
 import os
 import re
 from collections import defaultdict
+
+import six
 
 from mozharness.base.script import PostScriptAction
 from mozharness.base.transfer import TransferMixin
@@ -29,6 +29,8 @@ try_config_options = [
 
 test_flavors = {
     "browser-chrome": {},
+    "browser-a11y": {},
+    "browser-media": {},
     "chrome": {},
     "devtools-chrome": {},
     "mochitest": {},
@@ -63,6 +65,8 @@ class TryToolsMixin(TransferMixin):
             },
             (
                 "browser-chrome",
+                "browser-a11y",
+                "browser-media",
                 "chrome",
                 "devtools-chrome",
                 "marionette",

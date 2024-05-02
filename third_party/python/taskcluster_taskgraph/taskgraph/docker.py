@@ -5,14 +5,18 @@
 
 import json
 import os
+import subprocess
 import tarfile
 from io import BytesIO
+from textwrap import dedent
+
+try:
+    import zstandard as zstd
+except ImportError as e:
+    zstd = e
 
 from taskgraph.util import docker
-from taskgraph.util.taskcluster import (
-    get_artifact_url,
-    get_session,
-)
+from taskgraph.util.taskcluster import get_artifact_url, get_session
 
 
 def get_image_digest(image_name):
@@ -98,7 +102,9 @@ def build_image(name, tag, args=None):
 
     buf = BytesIO()
     docker.stream_context_tar(".", image_dir, buf, "", args)
-    docker.post_to_docker(buf.getvalue(), "/build", nocache=1, t=tag)
+    subprocess.run(
+        ["docker", "image", "build", "--no-cache", "-t", tag, "-"], input=buf.getvalue()
+    )
 
     print(f"Successfully built {name} and tagged with {tag}")
 
@@ -118,7 +124,15 @@ def load_image(url, imageName=None, imageTag=None):
 
     Returns an object with properties 'image', 'tag' and 'layer'.
     """
-    import zstandard as zstd
+    if isinstance(zstd, ImportError):
+        raise ImportError(
+            dedent(
+                """
+                zstandard is not installed! Use `pip install taskcluster-taskgraph[load-image]`
+                to use this feature.
+                """
+            )
+        ) from zstd
 
     # If imageName is given and we don't have an imageTag
     # we parse out the imageTag from imageName, or default it to 'latest'
@@ -133,14 +147,13 @@ def load_image(url, imageName=None, imageTag=None):
 
     def download_and_modify_image():
         # This function downloads and edits the downloaded tar file on the fly.
-        # It emits chunked buffers of the editted tar file, as a generator.
+        # It emits chunked buffers of the edited tar file, as a generator.
         print(f"Downloading from {url}")
         # get_session() gets us a requests.Session set to retry several times.
         req = get_session().get(url, stream=True)
         req.raise_for_status()
 
         with zstd.ZstdDecompressor().stream_reader(req.raw) as ifh:
-
             tarin = tarfile.open(
                 mode="r|",
                 fileobj=ifh,
@@ -195,7 +208,9 @@ def load_image(url, imageName=None, imageTag=None):
 
                 reader.close()
 
-    docker.post_to_docker(download_and_modify_image(), "/images/load", quiet=0)
+    subprocess.run(
+        ["docker", "image", "load"], input=b"".join(download_and_modify_image())
+    )
 
     # Check that we found a repositories file
     if not info.get("image") or not info.get("tag") or not info.get("layer"):

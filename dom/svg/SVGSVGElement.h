@@ -61,8 +61,8 @@ class SVGSVGElement final : public SVGSVGElementBase {
  protected:
   SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                 FromParser aFromParser);
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
   friend nsresult(::NS_NewSVGSVGElement(
       nsIContent** aResult,
@@ -72,6 +72,8 @@ class SVGSVGElement final : public SVGSVGElementBase {
   ~SVGSVGElement() = default;
 
  public:
+  NS_IMPL_FROMNODE_WITH_TAG(SVGSVGElement, kNameSpaceID_SVG, svg)
+
   // interfaces:
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_SVGSVGELEMENT_IID)
   NS_DECL_ISUPPORTS_INHERITED
@@ -86,10 +88,10 @@ class SVGSVGElement final : public SVGSVGElementBase {
 
   // nsIContent interface
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
-  virtual bool IsEventAttributeNameInternal(nsAtom* aName) override;
+  bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
   // nsINode methods:
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedLength> X();
@@ -125,9 +127,9 @@ class SVGSVGElement final : public SVGSVGElementBase {
 
   // SVGElement overrides
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent) override;
-  virtual SVGAnimatedTransformList* GetAnimatedTransformList(
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent) override;
+  SVGAnimatedTransformList* GetAnimatedTransformList(
       uint32_t aFlags = 0) override;
 
   // SVGSVGElement methods:
@@ -147,14 +149,8 @@ class SVGSVGElement final : public SVGSVGElementBase {
     return mCurrentTranslate != SVGPoint() || mCurrentScale != 1.0f;
   }
 
-  /**
-   * Returns -1 if the width/height is a percentage, else returns the user unit
-   * length clamped to fit in a int32_t.
-   * XXX see bug 1112533 comment 3 - we should fix drawImage so that we can
-   * change these methods to make zero the error flag for percentages.
-   */
-  int32_t GetIntrinsicWidth();
-  int32_t GetIntrinsicHeight();
+  LengthPercentage GetIntrinsicWidth();
+  LengthPercentage GetIntrinsicHeight();
 
   // This services any pending notifications for the transform on on this root
   // <svg> node needing to be recalculated.  (Only applicable in
@@ -165,8 +161,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
   // SVGViewportElement methods:
 
   virtual SVGViewElement* GetCurrentViewElement() const;
-  virtual SVGPreserveAspectRatio GetPreserveAspectRatioWithOverride()
-      const override;
+  SVGPreserveAspectRatio GetPreserveAspectRatioWithOverride() const override;
 
   // implementation helpers:
 
@@ -184,6 +179,8 @@ class SVGSVGElement final : public SVGSVGElementBase {
    */
   bool WillBeOutermostSVG(nsINode& aParent) const;
 
+  LengthPercentage GetIntrinsicWidthOrHeight(int aAttr);
+
   // invalidate viewbox -> viewport xform & inform frames
   void InvalidateTransformNotifyFrame();
 
@@ -199,10 +196,10 @@ class SVGSVGElement final : public SVGSVGElementBase {
   const SVGPreserveAspectRatio* GetPreserveAspectRatioProperty() const;
   bool ClearPreserveAspectRatioProperty();
 
-  virtual const SVGAnimatedViewBox& GetViewBoxInternal() const override;
-  virtual SVGAnimatedTransformList* GetTransformInternal() const override;
+  const SVGAnimatedViewBox& GetViewBoxInternal() const override;
+  SVGAnimatedTransformList* GetTransformInternal() const override;
 
-  virtual EnumAttributesInfo GetEnumInfo() override;
+  EnumAttributesInfo GetEnumInfo() override;
 
   enum { ZOOMANDPAN };
   SVGAnimatedEnumeration mEnumAttributes[1];
@@ -252,18 +249,17 @@ class MOZ_RAII AutoSVGTimeSetRestore {
 
 class MOZ_RAII AutoPreserveAspectRatioOverride {
  public:
-  AutoPreserveAspectRatioOverride(const Maybe<SVGImageContext>& aSVGContext,
+  AutoPreserveAspectRatioOverride(const SVGImageContext& aSVGContext,
                                   dom::SVGSVGElement* aRootElem)
       : mRootElem(aRootElem), mDidOverride(false) {
     MOZ_ASSERT(mRootElem, "No SVG/Symbol node to manage?");
 
-    if (aSVGContext.isSome() &&
-        aSVGContext->GetPreserveAspectRatio().isSome()) {
+    if (aSVGContext.GetPreserveAspectRatio().isSome()) {
       // Override preserveAspectRatio in our helper document.
       // XXXdholbert We should technically be overriding the helper doc's clip
       // and overflow properties here, too. See bug 272288 comment 36.
       mRootElem->SetImageOverridePreserveAspectRatio(
-          *aSVGContext->GetPreserveAspectRatio());
+          *aSVGContext.GetPreserveAspectRatio());
       mDidOverride = true;
     }
   }

@@ -6,16 +6,11 @@
 
 // Original author: bcampen@mozilla.com
 
+#include <cstddef>
+
 extern "C" {
-#include "stun_msg.h"  // for NR_STUN_MAX_MESSAGE_SIZE
-#include "stun_util.h"
-#include "nr_api.h"
+#include "r_errors.h"
 #include "async_wait.h"
-#include "nr_socket.h"
-#include "nr_socket_local.h"
-#include "stun_hint.h"
-#include "local_addr.h"
-#include "registry.h"
 }
 
 #include "test_nr_socket.h"
@@ -37,13 +32,7 @@ namespace mozilla {
 
 class TestNrSocketTest : public MtransportTest {
  public:
-  TestNrSocketTest()
-      : MtransportTest(),
-        wait_done_for_main_(false),
-        sts_(),
-        public_addrs_(),
-        private_addrs_(),
-        nats_() {}
+  TestNrSocketTest() : wait_done_for_main_(false) {}
 
   void SetUp() override {
     MtransportTest::SetUp();
@@ -55,8 +44,7 @@ class TestNrSocketTest : public MtransportTest {
   }
 
   void TearDown() override {
-    sts_->Dispatch(WrapRunnable(this, &TestNrSocketTest::TearDown_s),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnable(this, &TestNrSocketTest::TearDown_s));
 
     MtransportTest::TearDown();
   }
@@ -84,9 +72,8 @@ class TestNrSocketTest : public MtransportTest {
 
   void CreatePublicAddrs(size_t count, const char* ip_str = "127.0.0.1",
                          int proto = IPPROTO_UDP) {
-    sts_->Dispatch(WrapRunnable(this, &TestNrSocketTest::CreatePublicAddrs_s,
-                                count, ip_str, proto),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnable(this, &TestNrSocketTest::CreatePublicAddrs_s,
+                                   count, ip_str, proto));
   }
 
   void CreatePublicAddrs_s(size_t count, const char* ip_str, int proto) {
@@ -102,10 +89,9 @@ class TestNrSocketTest : public MtransportTest {
                                      const char* ip_str = "127.0.0.1",
                                      int proto = IPPROTO_UDP) {
     RefPtr<TestNat> result;
-    sts_->Dispatch(
-        WrapRunnableRet(&result, this, &TestNrSocketTest::CreatePrivateAddrs_s,
-                        size, ip_str, proto),
-        NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnableRet(&result, this,
+                                      &TestNrSocketTest::CreatePrivateAddrs_s,
+                                      size, ip_str, proto));
     return result;
   }
 
@@ -135,9 +121,8 @@ class TestNrSocketTest : public MtransportTest {
     }
 
     int result = 0;
-    sts_->Dispatch(WrapRunnableRet(&result, this, &TestNrSocketTest::SendData_s,
-                                   from, via),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnableRet(
+        &result, this, &TestNrSocketTest::SendData_s, from, via));
     if (result) {
       return false;
     }
@@ -152,9 +137,9 @@ class TestNrSocketTest : public MtransportTest {
     }
 
     MOZ_ASSERT(to);
-    sts_->Dispatch(WrapRunnableRet(&result, this, &TestNrSocketTest::RecvData_s,
-                                   to, sender_external_address),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnableRet(&result, this,
+                                      &TestNrSocketTest::RecvData_s, to,
+                                      sender_external_address));
 
     return !result;
   }
@@ -185,9 +170,8 @@ class TestNrSocketTest : public MtransportTest {
     }
 
     int r;
-    sts_->Dispatch(
-        WrapRunnableRet(&r, this, &TestNrSocketTest::SendDataTcp_s, from),
-        NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(
+        WrapRunnableRet(&r, this, &TestNrSocketTest::SendDataTcp_s, from));
     if (r) {
       std::cerr << "SendDataTcp_s (1) failed" << std::endl;
       return false;
@@ -198,9 +182,8 @@ class TestNrSocketTest : public MtransportTest {
       return false;
     }
 
-    sts_->Dispatch(WrapRunnableRet(&r, this, &TestNrSocketTest::RecvDataTcp_s,
-                                   accepted_sock),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnableRet(
+        &r, this, &TestNrSocketTest::RecvDataTcp_s, accepted_sock));
     if (r) {
       std::cerr << "RecvDataTcp_s (1) failed" << std::endl;
       return false;
@@ -211,9 +194,8 @@ class TestNrSocketTest : public MtransportTest {
       return false;
     }
 
-    sts_->Dispatch(WrapRunnableRet(&r, this, &TestNrSocketTest::SendDataTcp_s,
-                                   accepted_sock),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnableRet(
+        &r, this, &TestNrSocketTest::SendDataTcp_s, accepted_sock));
     if (r) {
       std::cerr << "SendDataTcp_s (2) failed" << std::endl;
       return false;
@@ -224,9 +206,8 @@ class TestNrSocketTest : public MtransportTest {
       return false;
     }
 
-    sts_->Dispatch(
-        WrapRunnableRet(&r, this, &TestNrSocketTest::RecvDataTcp_s, from),
-        NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(
+        WrapRunnableRet(&r, this, &TestNrSocketTest::RecvDataTcp_s, from));
     if (r) {
       std::cerr << "RecvDataTcp_s (2) failed" << std::endl;
       return false;
@@ -239,9 +220,8 @@ class TestNrSocketTest : public MtransportTest {
     MOZ_ASSERT(sock);
     MOZ_ASSERT(address);
     int r;
-    sts_->Dispatch(WrapRunnableRet(&r, this, &TestNrSocketTest::GetAddress_s,
-                                   sock, address),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnableRet(&r, this, &TestNrSocketTest::GetAddress_s,
+                                      sock, address));
     return r;
   }
 
@@ -326,16 +306,15 @@ class TestNrSocketTest : public MtransportTest {
   bool Connect(TestNrSocket* from, TestNrSocket* to,
                NrSocketBase** accepted_sock) {
     int r;
-    sts_->Dispatch(WrapRunnableRet(&r, this, &TestNrSocketTest::Listen_s, to),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(
+        WrapRunnableRet(&r, this, &TestNrSocketTest::Listen_s, to));
     if (r) {
       std::cerr << "Listen_s failed: " << r << std::endl;
       return false;
     }
 
-    sts_->Dispatch(
-        WrapRunnableRet(&r, this, &TestNrSocketTest::Connect_s, from, to),
-        NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(
+        WrapRunnableRet(&r, this, &TestNrSocketTest::Connect_s, from, to));
     if (r && r != R_WOULDBLOCK) {
       std::cerr << "Connect_s failed: " << r << std::endl;
       return false;
@@ -346,9 +325,8 @@ class TestNrSocketTest : public MtransportTest {
       return false;
     }
 
-    sts_->Dispatch(WrapRunnableRet(&r, this, &TestNrSocketTest::Accept_s, to,
-                                   accepted_sock),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnableRet(&r, this, &TestNrSocketTest::Accept_s, to,
+                                      accepted_sock));
 
     if (r) {
       std::cerr << "Accept_s failed: " << r << std::endl;
@@ -359,18 +337,16 @@ class TestNrSocketTest : public MtransportTest {
 
   bool WaitForSocketState(NrSocketBase* sock, int state) {
     MOZ_ASSERT(sock);
-    sts_->Dispatch(WrapRunnable(this, &TestNrSocketTest::WaitForSocketState_s,
-                                sock, state),
-                   NS_DISPATCH_SYNC);
+    SyncDispatchToSTS(WrapRunnable(
+        this, &TestNrSocketTest::WaitForSocketState_s, sock, state));
 
     bool res;
     WAIT_(wait_done_for_main_, 500, res);
     wait_done_for_main_ = false;
 
     if (!res) {
-      sts_->Dispatch(
-          WrapRunnable(this, &TestNrSocketTest::CancelWait_s, sock, state),
-          NS_DISPATCH_SYNC);
+      SyncDispatchToSTS(
+          WrapRunnable(this, &TestNrSocketTest::CancelWait_s, sock, state));
     }
 
     return res;
@@ -388,6 +364,11 @@ class TestNrSocketTest : public MtransportTest {
 
   bool WaitForWriteable(NrSocketBase* sock) {
     return WaitForSocketState(sock, NR_ASYNC_WAIT_WRITE);
+  }
+
+  void SyncDispatchToSTS(nsIRunnable* runnable) {
+    NS_DispatchAndSpinEventLoopUntilComplete(
+        "TestNrSocketTest::SyncDispatchToSTS"_ns, sts_, do_AddRef(runnable));
   }
 
   static void WaitDone(void* sock, int how, void* test_fixture) {

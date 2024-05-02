@@ -3,10 +3,7 @@
 
 "use strict";
 
-const { PushDB, PushService, PushServiceWebSocket } = serviceExports;
-
 const userAgentID = "aaabf1f8-2f68-44f1-a920-b88e9e7d7559";
-const nsIPushQuotaManager = Ci.nsIPushQuotaManager;
 
 function run_test() {
   do_get_profile();
@@ -72,7 +69,7 @@ add_task(async function test_expiration_origin_threshold() {
 
   let updateQuotaPromise = new Promise((resolve, reject) => {
     let quotaUpdateCount = 0;
-    PushService._updateQuotaTestCallback = function() {
+    PushService._updateQuotaTestCallback = function () {
       quotaUpdateCount++;
       if (quotaUpdateCount == numMessages) {
         resolve();

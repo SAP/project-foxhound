@@ -16,8 +16,7 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Filter)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace SVGUnitTypes_Binding;
 
@@ -91,21 +90,6 @@ already_AddRefed<DOMSVGAnimatedString> SVGFilterElement::Href() {
 }
 
 //----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGFilterElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {
-      sColorMap,        sFEFloodMap,
-      sFiltersMap,      sFontSpecificationMap,
-      sGradientStopMap, sLightingEffectsMap,
-      sMarkersMap,      sTextContentElementsMap,
-      sViewportsMap};
-  return FindAttributeDependence(name, map) ||
-         SVGFilterElementBase::IsAttributeMapped(name);
-}
-
-//----------------------------------------------------------------------
 // SVGElement methods
 
 /* virtual */
@@ -130,5 +114,4 @@ SVGElement::StringAttributesInfo SVGFilterElement::GetStringInfo() {
                               ArrayLength(sStringInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -10,6 +10,7 @@
 #include "nsIPushService.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsServiceManagerUtils.h"
+#include "nsTaintingUtils.h"
 
 #include "mozilla/Base64.h"
 #include "mozilla/Unused.h"
@@ -23,8 +24,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -231,8 +231,7 @@ already_AddRefed<PushSubscription> PushSubscription::Constructor(
   nsTArray<uint8_t> rawKey;
   if (aInitDict.mP256dhKey.WasPassed() &&
       !aInitDict.mP256dhKey.Value().IsNull() &&
-      !PushUtil::CopyArrayBufferToArray(aInitDict.mP256dhKey.Value().Value(),
-                                        rawKey)) {
+      !aInitDict.mP256dhKey.Value().Value().AppendDataTo(rawKey)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
@@ -240,8 +239,7 @@ already_AddRefed<PushSubscription> PushSubscription::Constructor(
   nsTArray<uint8_t> authSecret;
   if (aInitDict.mAuthSecret.WasPassed() &&
       !aInitDict.mAuthSecret.Value().IsNull() &&
-      !PushUtil::CopyArrayBufferToArray(aInitDict.mAuthSecret.Value().Value(),
-                                        authSecret)) {
+      !aInitDict.mAuthSecret.Value().Value().AppendDataTo(authSecret)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
@@ -370,5 +368,4 @@ already_AddRefed<Promise> PushSubscription::UnsubscribeFromWorker(
   return p.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

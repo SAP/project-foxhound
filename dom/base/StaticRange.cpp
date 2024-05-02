@@ -46,8 +46,8 @@ template void StaticRange::DoSetRange(const RawRangeBoundary& aStartBoundary,
 
 nsTArray<RefPtr<StaticRange>>* StaticRange::sCachedRanges = nullptr;
 
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_ADDREF(StaticRange)
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_RELEASE_WITH_INTERRUPTABLE_LAST_RELEASE(
+NS_IMPL_CYCLE_COLLECTING_ADDREF(StaticRange)
+NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_INTERRUPTABLE_LAST_RELEASE(
     StaticRange, DoSetRange(RawRangeBoundary(), RawRangeBoundary(), nullptr),
     AbstractRange::MaybeCacheToReuse(*this))
 
@@ -90,14 +90,25 @@ already_AddRefed<StaticRange> StaticRange::Create(
   return staticRange.forget();
 }
 
+StaticRange::~StaticRange() {
+  DoSetRange(RawRangeBoundary(), RawRangeBoundary(), nullptr);
+}
+
 template <typename SPT, typename SRT, typename EPT, typename ERT>
 void StaticRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
                              const RangeBoundaryBase<EPT, ERT>& aEndBoundary,
                              nsINode* aRootNode) {
-  mStart = aStartBoundary;
-  mEnd = aEndBoundary;
+  bool checkCommonAncestor =
+      IsInAnySelection() && (mStart.Container() != aStartBoundary.Container() ||
+                             mEnd.Container() != aEndBoundary.Container());
+  mStart.CopyFrom(aStartBoundary, RangeBoundaryIsMutationObserved::No);
+  mEnd.CopyFrom(aEndBoundary, RangeBoundaryIsMutationObserved::No);
   MOZ_ASSERT(mStart.IsSet() == mEnd.IsSet());
   mIsPositioned = mStart.IsSet() && mEnd.IsSet();
+
+  if (checkCommonAncestor) {
+    UpdateCommonAncestorIfNecessary();
+  }
 }
 
 /* static */

@@ -22,7 +22,7 @@ async function loadExtension(options) {
           </head>
         </html>`,
 
-      "options.js": function() {
+      "options.js": function () {
         window.iAmOption = true;
         browser.runtime.sendMessage("options.html");
         browser.runtime.onMessage.addListener((msg, sender, respond) => {
@@ -70,13 +70,15 @@ add_task(async function run_test_inline_options() {
 
   let extension = await loadExtension({
     manifest: {
-      applications: { gecko: { id: "inline_options@tests.mozilla.org" } },
+      browser_specific_settings: {
+        gecko: { id: "inline_options@tests.mozilla.org" },
+      },
       options_ui: {
         page: "options.html",
       },
     },
 
-    background: async function() {
+    background: async function () {
       let _optionsPromise;
       let awaitOptions = () => {
         browser.test.assertFalse(
@@ -268,14 +270,16 @@ add_task(async function test_tab_options() {
 
   let extension = await loadExtension({
     manifest: {
-      applications: { gecko: { id: "tab_options@tests.mozilla.org" } },
+      browser_specific_settings: {
+        gecko: { id: "tab_options@tests.mozilla.org" },
+      },
       options_ui: {
         page: "options.html",
         open_in_tab: true,
       },
     },
 
-    background: async function() {
+    background: async function () {
       let _optionsPromise;
       let awaitOptions = () => {
         browser.test.assertFalse(
@@ -413,7 +417,9 @@ add_task(async function test_options_no_manifest() {
 
   let extension = await loadExtension({
     manifest: {
-      applications: { gecko: { id: "no_options@tests.mozilla.org" } },
+      browser_specific_settings: {
+        gecko: { id: "no_options@tests.mozilla.org" },
+      },
     },
 
     async background() {

@@ -4,6 +4,9 @@
 
 // Test is taking too much time to complete on some hardware since
 // release at https://bugzilla.mozilla.org/show_bug.cgi?id=1423158
+
+"use strict";
+
 requestLongerTimeout(3);
 
 /**
@@ -11,23 +14,47 @@ requestLongerTimeout(3);
  *  1. pause in the main thread
  *  2. pause in the iframe
  */
-add_task(async function() {
+add_task(async function () {
   const dbg = await initDebugger("doc-iframes.html");
 
   // test pausing in the main thread
-  await reload(dbg);
+  const onReloaded = reload(dbg);
   await waitForPaused(dbg);
   await waitForLoadedSource(dbg, "doc-iframes.html");
-  assertPausedLocation(dbg);
+  assertPausedAtSourceAndLine(dbg, findSource(dbg, "doc-iframes.html").id, 11);
 
   // test pausing in the iframe
   await resume(dbg);
   await waitForPaused(dbg);
   await waitForLoadedSource(dbg, "doc-debugger-statements.html");
-  assertPausedLocation(dbg);
+  assertPausedAtSourceAndLine(
+    dbg,
+    findSource(dbg, "doc-debugger-statements.html").id,
+    11
+  );
 
   // test pausing in the iframe
   await resume(dbg);
   await waitForPaused(dbg);
-  assertPausedLocation(dbg);
+  assertPausedAtSourceAndLine(
+    dbg,
+    findSource(dbg, "doc-debugger-statements.html").id,
+    16
+  );
+  await waitFor(() => dbg.toolbox.isHighlighted("jsdebugger"));
+  ok(true, "Debugger is highlighted when paused");
+
+  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
+    info("Remove the iframe and wait for resume");
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+      const iframe = content.document.querySelector("iframe");
+      iframe.remove();
+    });
+    await waitForResumed(dbg);
+    await waitFor(() => !dbg.toolbox.isHighlighted("jsdebugger"));
+    ok(true, "Debugger is no longer highlighted when resumed");
+
+    info("Wait for reload to complete after resume");
+    await onReloaded;
+  }
 });

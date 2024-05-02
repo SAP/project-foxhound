@@ -3,19 +3,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * This IDL file is related to the WebExtensions API object.
- *
  * You are granted a license to use, reproduce and create derivative works of
  * this document.
+ *
+ * This IDL file is related to the WebExtensions API object.
+ *
+ * More info about generating webidl API bindings for WebExtensions API at:
+ *
+ * https://firefox-source-docs.mozilla.org/toolkit/components/extensions/webextensions/webidl_bindings.html
+ *
+ * A short summary of the special setup used by these WebIDL files (meant to aid
+ * webidl peers reviews and sign-offs) is available in the following section:
+ *
+ * https://firefox-source-docs.mozilla.org/toolkit/components/extensions/webextensions/webidl_bindings.html#review-process-on-changes-to-webidl-definitions
  */
 
 [Exposed=(ServiceWorker), LegacyNoInterfaceObject]
 interface ExtensionEventManager {
   [Throws]
-  void    addListener(Function callback, optional object listenerOptions);
+  undefined addListener(Function callback, optional object listenerOptions);
 
   [Throws]
-  void    removeListener(Function callback);
+  undefined removeListener(Function callback);
 
   [Throws]
   boolean hasListener(Function callback);

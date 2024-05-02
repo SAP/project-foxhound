@@ -5,6 +5,7 @@
 
 [Exposed=Window]
 partial interface AnimationTimeline {
+    readonly attribute CSSNumberish? currentTime;
     readonly attribute CSSNumberish? duration;
     Animation play (optional AnimationEffect? effect = null);
 };
@@ -29,6 +30,8 @@ partial interface AnimationEffect {
 };
 
 partial dictionary EffectTiming {
+    double delay;
+    double endDelay;
     double playbackRate = 1.0;
     (unrestricted double or CSSNumericValue or DOMString) duration = "auto";
 };
@@ -85,6 +88,16 @@ enum IterationCompositeOperation { "replace", "accumulate" };
 callback EffectCallback = undefined (double? progress,
                                 (Element or CSSPseudoElement) currentTarget,
                                 Animation animation);
+
+dictionary TimelineRangeOffset {
+  CSSOMString? rangeName;
+  CSSNumericValue offset;
+};
+
+partial dictionary KeyframeAnimationOptions {
+    (TimelineRangeOffset or CSSNumericValue or CSSKeywordValue or DOMString) rangeStart = "normal";
+    (TimelineRangeOffset or CSSNumericValue or CSSKeywordValue or DOMString) rangeEnd = "normal";
+};
 
 [Exposed=Window]
 interface AnimationPlaybackEvent : Event {

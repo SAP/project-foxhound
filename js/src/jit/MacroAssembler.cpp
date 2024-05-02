@@ -7,10 +7,12 @@
 #include "jit/MacroAssembler-inl.h"
 
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Latin1.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "jit/AtomicOp.h"
 #include "jit/AtomicOperations.h"
@@ -20,29 +22,39 @@
 #include "jit/JitFrames.h"
 #include "jit/JitOptions.h"
 #include "jit/JitRuntime.h"
+#include "jit/JitScript.h"
 #include "jit/MoveEmitter.h"
+#include "jit/ReciprocalMulConstants.h"
 #include "jit/SharedICHelpers.h"
 #include "jit/SharedICRegisters.h"
 #include "jit/Simulator.h"
 #include "jit/VMFunctions.h"
 #include "js/Conversions.h"
 #include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
+#include "js/GCAPI.h"            // JS::AutoCheckCannotGC
 #include "js/ScalarType.h"       // js::Scalar::Type
 #include "vm/ArgumentsObject.h"
 #include "vm/ArrayBufferViewObject.h"
+#include "vm/BoundFunctionObject.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
+#include "vm/Iteration.h"
 #include "vm/JSContext.h"
-#include "vm/TraceLogging.h"
+#include "vm/JSFunction.h"
+#include "vm/StringType.h"
 #include "vm/TypedArrayObject.h"
 #include "wasm/WasmBuiltins.h"
+#include "wasm/WasmCodegenConstants.h"
 #include "wasm/WasmCodegenTypes.h"
+#include "wasm/WasmGcObject.h"
+#include "wasm/WasmInstanceData.h"
 #include "wasm/WasmMemory.h"
-#include "wasm/WasmTlsData.h"
+#include "wasm/WasmTypeDef.h"
 #include "wasm/WasmValidate.h"
 
 #include "jit/TemplateObject-inl.h"
 #include "vm/BytecodeUtil-inl.h"
 #include "vm/Interpreter-inl.h"
+#include "vm/JSObject-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -53,7 +65,7 @@ using JS::ToInt32;
 using mozilla::CheckedInt;
 
 TrampolinePtr MacroAssembler::preBarrierTrampoline(MIRType type) {
-  const JitRuntime* rt = GetJitContext()->runtime->jitRuntime();
+  const JitRuntime* rt = runtime()->jitRuntime();
   return rt->preBarrier(type);
 }
 
@@ -255,7 +267,8 @@ template void MacroAssembler::loadFromTypedBigIntArray(Scalar::Type arrayType,
 
 // Inlined version of gc::CheckAllocatorState that checks the bare essentials
 // and bails for anything that cannot be handled with our jit allocators.
-void MacroAssembler::checkAllocatorState(Label* fail) {
+void MacroAssembler::checkAllocatorState(Register temp, gc::AllocKind allocKind,
+                                         Label* fail) {
   // Don't execute the inline path if GC probes are built in.
 #ifdef JS_GC_PROBES
   jump(fail);
@@ -263,28 +276,32 @@ void MacroAssembler::checkAllocatorState(Label* fail) {
 
 #ifdef JS_GC_ZEAL
   // Don't execute the inline path if gc zeal or tracing are active.
-  const uint32_t* ptrZealModeBits =
-      GetJitContext()->runtime->addressOfGCZealModeBits();
+  const uint32_t* ptrZealModeBits = runtime()->addressOfGCZealModeBits();
   branch32(Assembler::NotEqual, AbsoluteAddress(ptrZealModeBits), Imm32(0),
            fail);
 #endif
 
-  // Don't execute the inline path if the realm has an object metadata callback,
-  // as the metadata to use for the object may vary between executions of the
-  // op.
-  if (GetJitContext()->realm()->hasAllocationMetadataBuilder()) {
-    jump(fail);
+  // If the zone has a realm with an object allocation metadata hook, emit a
+  // guard for this. Note that IC stubs and some other trampolines can be shared
+  // across realms, so we don't bake in a realm pointer.
+  if (gc::IsObjectAllocKind(allocKind) &&
+      realm()->zone()->hasRealmWithAllocMetadataBuilder()) {
+    loadJSContext(temp);
+    loadPtr(Address(temp, JSContext::offsetOfRealm()), temp);
+    branchPtr(Assembler::NotEqual,
+              Address(temp, Realm::offsetOfAllocationMetadataBuilder()),
+              ImmWord(0), fail);
   }
 }
 
 bool MacroAssembler::shouldNurseryAllocate(gc::AllocKind allocKind,
-                                           gc::InitialHeap initialHeap) {
+                                           gc::Heap initialHeap) {
   // Note that Ion elides barriers on writes to objects known to be in the
   // nursery, so any allocation that can be made into the nursery must be made
   // into the nursery, even if the nursery is disabled. At runtime these will
   // take the out-of-line path, which is required to insert a barrier for the
   // initializing writes.
-  return IsNurseryAllocable(allocKind) && initialHeap != gc::TenuredHeap;
+  return IsNurseryAllocable(allocKind) && initialHeap != gc::Heap::Tenured;
 }
 
 // Inline version of Nursery::allocateObject. If the object has dynamic slots,
@@ -294,6 +311,12 @@ void MacroAssembler::nurseryAllocateObject(Register result, Register temp,
                                            size_t nDynamicSlots, Label* fail,
                                            const AllocSiteInput& allocSite) {
   MOZ_ASSERT(IsNurseryAllocable(allocKind));
+
+  // Currently the JIT does not nursery allocate foreground finalized
+  // objects. This is allowed for objects that support this and have the
+  // JSCLASS_SKIP_NURSERY_FINALIZE class flag set. It's hard to assert that here
+  // though so disallow all foreground finalized objects for now.
+  MOZ_ASSERT(!IsForegroundFinalized(allocKind));
 
   // We still need to allocate in the nursery, per the comment in
   // shouldNurseryAllocate; however, we need to insert into the
@@ -315,7 +338,7 @@ void MacroAssembler::nurseryAllocateObject(Register result, Register temp,
 
   // No explicit check for nursery.isEnabled() is needed, as the comparison
   // with the nursery's end will always fail in such cases.
-  CompileZone* zone = GetJitContext()->realm()->zone();
+  CompileZone* zone = realm()->zone();
   size_t thingSize = gc::Arena::thingSize(allocKind);
   size_t totalSize = thingSize;
   if (nDynamicSlots) {
@@ -324,9 +347,7 @@ void MacroAssembler::nurseryAllocateObject(Register result, Register temp,
   MOZ_ASSERT(totalSize < INT32_MAX);
   MOZ_ASSERT(totalSize % gc::CellAlignBytes == 0);
 
-  bumpPointerAllocate(result, temp, fail, zone,
-                      zone->addressOfNurseryPosition(),
-                      zone->addressOfNurseryCurrentEnd(), JS::TraceKind::Object,
+  bumpPointerAllocate(result, temp, fail, zone, JS::TraceKind::Object,
                       totalSize, allocSite);
 
   if (nDynamicSlots) {
@@ -335,6 +356,8 @@ void MacroAssembler::nurseryAllocateObject(Register result, Register temp,
     store32(
         Imm32(0),
         Address(result, thingSize + ObjectSlots::offsetOfDictionarySlotSpan()));
+    store64(Imm64(ObjectSlots::NoUniqueIdInDynamicSlots),
+            Address(result, thingSize + ObjectSlots::offsetOfMaybeUniqueId()));
     computeEffectiveAddress(
         Address(result, thingSize + ObjectSlots::offsetOfSlots()), temp);
     storePtr(temp, Address(result, NativeObject::offsetOfSlots()));
@@ -344,7 +367,7 @@ void MacroAssembler::nurseryAllocateObject(Register result, Register temp,
 // Inlined version of FreeSpan::allocate. This does not fill in slots_.
 void MacroAssembler::freeListAllocate(Register result, Register temp,
                                       gc::AllocKind allocKind, Label* fail) {
-  CompileZone* zone = GetJitContext()->realm()->zone();
+  CompileZone* zone = realm()->zone();
   int thingSize = int(gc::Arena::thingSize(allocKind));
 
   Label fallback;
@@ -381,9 +404,8 @@ void MacroAssembler::freeListAllocate(Register result, Register temp,
 
   bind(&success);
 
-  if (GetJitContext()->runtime->geckoProfiler().enabled()) {
-    uint32_t* countAddress =
-        GetJitContext()->runtime->addressOfTenuredAllocCount();
+  if (runtime()->geckoProfiler().enabled()) {
+    uint32_t* countAddress = zone->addressOfTenuredAllocCount();
     movePtr(ImmPtr(countAddress), temp);
     add32(Imm32(1), Address(temp, 0));
   }
@@ -395,7 +417,7 @@ void MacroAssembler::callFreeStub(Register slots) {
 
   push(regSlots);
   movePtr(slots, regSlots);
-  call(GetJitContext()->runtime->jitRuntime()->freeStub());
+  call(runtime()->jitRuntime()->freeStub());
   pop(regSlots);
 }
 
@@ -403,14 +425,14 @@ void MacroAssembler::callFreeStub(Register slots) {
 void MacroAssembler::allocateObject(Register result, Register temp,
                                     gc::AllocKind allocKind,
                                     uint32_t nDynamicSlots,
-                                    gc::InitialHeap initialHeap, Label* fail,
+                                    gc::Heap initialHeap, Label* fail,
                                     const AllocSiteInput& allocSite) {
   MOZ_ASSERT(gc::IsObjectAllocKind(allocKind));
 
-  checkAllocatorState(fail);
+  checkAllocatorState(temp, allocKind, fail);
 
   if (shouldNurseryAllocate(allocKind, initialHeap)) {
-    MOZ_ASSERT(initialHeap == gc::DefaultHeap);
+    MOZ_ASSERT(initialHeap == gc::Heap::Default);
     return nurseryAllocateObject(result, temp, allocKind, nDynamicSlots, fail,
                                  allocSite);
   }
@@ -427,7 +449,7 @@ void MacroAssembler::allocateObject(Register result, Register temp,
 
 void MacroAssembler::createGCObject(Register obj, Register temp,
                                     const TemplateObject& templateObj,
-                                    gc::InitialHeap initialHeap, Label* fail,
+                                    gc::Heap initialHeap, Label* fail,
                                     bool initContents /* = true */) {
   gc::AllocKind allocKind = templateObj.getAllocKind();
   MOZ_ASSERT(gc::IsObjectAllocKind(allocKind));
@@ -446,7 +468,8 @@ void MacroAssembler::createGCObject(Register obj, Register temp,
 void MacroAssembler::createPlainGCObject(
     Register result, Register shape, Register temp, Register temp2,
     uint32_t numFixedSlots, uint32_t numDynamicSlots, gc::AllocKind allocKind,
-    gc::InitialHeap initialHeap, Label* fail, const AllocSiteInput& allocSite) {
+    gc::Heap initialHeap, Label* fail, const AllocSiteInput& allocSite,
+    bool initContents /* = true */) {
   MOZ_ASSERT(gc::IsObjectAllocKind(allocKind));
   MOZ_ASSERT(shape != temp, "shape can overlap with temp2, but not temp");
 
@@ -469,8 +492,10 @@ void MacroAssembler::createPlainGCObject(
            Address(result, NativeObject::offsetOfElements()));
 
   // Initialize fixed slots.
-  fillSlotsWithUndefined(Address(result, NativeObject::getFixedSlotOffset(0)),
-                         temp, 0, numFixedSlots);
+  if (initContents) {
+    fillSlotsWithUndefined(Address(result, NativeObject::getFixedSlotOffset(0)),
+                           temp, 0, numFixedSlots);
+  }
 
   // Initialize dynamic slots.
   if (numDynamicSlots > 0) {
@@ -480,28 +505,35 @@ void MacroAssembler::createPlainGCObject(
 }
 
 void MacroAssembler::createArrayWithFixedElements(
-    Register result, Register shape, Register temp, uint32_t arrayLength,
-    uint32_t arrayCapacity, gc::AllocKind allocKind,
-    gc::InitialHeap initialHeap, Label* fail, const AllocSiteInput& allocSite) {
+    Register result, Register shape, Register temp, Register dynamicSlotsTemp,
+    uint32_t arrayLength, uint32_t arrayCapacity, uint32_t numUsedDynamicSlots,
+    uint32_t numDynamicSlots, gc::AllocKind allocKind, gc::Heap initialHeap,
+    Label* fail, const AllocSiteInput& allocSite) {
   MOZ_ASSERT(gc::IsObjectAllocKind(allocKind));
   MOZ_ASSERT(shape != temp, "shape can overlap with temp2, but not temp");
   MOZ_ASSERT(result != temp);
 
   // This only supports allocating arrays with fixed elements and does not
-  // support any dynamic slots or elements.
+  // support any dynamic elements.
   MOZ_ASSERT(arrayCapacity >= arrayLength);
   MOZ_ASSERT(gc::GetGCKindSlots(allocKind) >=
              arrayCapacity + ObjectElements::VALUES_PER_HEADER);
 
+  MOZ_ASSERT(numUsedDynamicSlots <= numDynamicSlots);
+
   // Allocate object.
-  allocateObject(result, temp, allocKind, 0, initialHeap, fail, allocSite);
+  allocateObject(result, temp, allocKind, numDynamicSlots, initialHeap, fail,
+                 allocSite);
 
   // Initialize shape field.
   storePtr(shape, Address(result, JSObject::offsetOfShape()));
 
-  // There are no dynamic slots.
-  storePtr(ImmPtr(emptyObjectSlots),
-           Address(result, NativeObject::offsetOfSlots()));
+  // If the object has dynamic slots, allocateObject will initialize
+  // the slots field. If not, we must initialize it now.
+  if (numDynamicSlots == 0) {
+    storePtr(ImmPtr(emptyObjectSlots),
+             Address(result, NativeObject::offsetOfSlots()));
+  }
 
   // Initialize elements pointer for fixed (inline) elements.
   computeEffectiveAddress(
@@ -509,11 +541,21 @@ void MacroAssembler::createArrayWithFixedElements(
   storePtr(temp, Address(result, NativeObject::offsetOfElements()));
 
   // Initialize elements header.
-  store32(Imm32(0), Address(temp, ObjectElements::offsetOfFlags()));
+  store32(Imm32(ObjectElements::FIXED),
+          Address(temp, ObjectElements::offsetOfFlags()));
   store32(Imm32(0), Address(temp, ObjectElements::offsetOfInitializedLength()));
   store32(Imm32(arrayCapacity),
           Address(temp, ObjectElements::offsetOfCapacity()));
   store32(Imm32(arrayLength), Address(temp, ObjectElements::offsetOfLength()));
+
+  // Initialize dynamic slots.
+  if (numUsedDynamicSlots > 0) {
+    MOZ_ASSERT(dynamicSlotsTemp != temp);
+    MOZ_ASSERT(dynamicSlotsTemp != InvalidReg);
+    loadPtr(Address(result, NativeObject::offsetOfSlots()), dynamicSlotsTemp);
+    fillSlotsWithUndefined(Address(dynamicSlotsTemp, 0), temp, 0,
+                           numUsedDynamicSlots);
+  }
 }
 
 // Inline version of Nursery::allocateString.
@@ -525,15 +567,10 @@ void MacroAssembler::nurseryAllocateString(Register result, Register temp,
   // No explicit check for nursery.isEnabled() is needed, as the comparison
   // with the nursery's end will always fail in such cases.
 
-  CompileZone* zone = GetJitContext()->realm()->zone();
-  uint64_t* allocStrsPtr = &zone->zone()->nurseryAllocatedStrings.ref();
-  inc64(AbsoluteAddress(allocStrsPtr));
+  CompileZone* zone = realm()->zone();
   size_t thingSize = gc::Arena::thingSize(allocKind);
-
-  bumpPointerAllocate(result, temp, fail, zone,
-                      zone->addressOfStringNurseryPosition(),
-                      zone->addressOfStringNurseryCurrentEnd(),
-                      JS::TraceKind::String, thingSize);
+  bumpPointerAllocate(result, temp, fail, zone, JS::TraceKind::String,
+                      thingSize);
 }
 
 // Inline version of Nursery::allocateBigInt.
@@ -544,18 +581,28 @@ void MacroAssembler::nurseryAllocateBigInt(Register result, Register temp,
   // No explicit check for nursery.isEnabled() is needed, as the comparison
   // with the nursery's end will always fail in such cases.
 
-  CompileZone* zone = GetJitContext()->realm()->zone();
+  CompileZone* zone = realm()->zone();
   size_t thingSize = gc::Arena::thingSize(gc::AllocKind::BIGINT);
 
-  bumpPointerAllocate(result, temp, fail, zone,
-                      zone->addressOfBigIntNurseryPosition(),
-                      zone->addressOfBigIntNurseryCurrentEnd(),
-                      JS::TraceKind::BigInt, thingSize);
+  bumpPointerAllocate(result, temp, fail, zone, JS::TraceKind::BigInt,
+                      thingSize);
+}
+
+static bool IsNurseryAllocEnabled(CompileZone* zone, JS::TraceKind kind) {
+  switch (kind) {
+    case JS::TraceKind::Object:
+      return zone->allocNurseryObjects();
+    case JS::TraceKind::String:
+      return zone->allocNurseryStrings();
+    case JS::TraceKind::BigInt:
+      return zone->allocNurseryBigInts();
+    default:
+      MOZ_CRASH("Bad nursery allocation kind");
+  }
 }
 
 void MacroAssembler::bumpPointerAllocate(Register result, Register temp,
                                          Label* fail, CompileZone* zone,
-                                         void* posAddr, const void* curEndAddr,
                                          JS::TraceKind traceKind, uint32_t size,
                                          const AllocSiteInput& allocSite) {
   MOZ_ASSERT(size >= gc::MinCellSize);
@@ -564,45 +611,52 @@ void MacroAssembler::bumpPointerAllocate(Register result, Register temp,
   MOZ_ASSERT(totalSize < INT32_MAX, "Nursery allocation too large");
   MOZ_ASSERT(totalSize % gc::CellAlignBytes == 0);
 
-  // The position (allocation pointer) and the end pointer are stored
-  // very close to each other -- specifically, easily within a 32 bit offset.
-  // Use relative offsets between them, to avoid 64-bit immediate loads.
-  //
-  // I tried to optimise this further by using an extra register to avoid
-  // the final subtraction and hopefully get some more instruction
-  // parallelism, but it made no difference.
+  // We know statically whether nursery allocation is enable for a particular
+  // kind because we discard JIT code when this changes.
+  if (!IsNurseryAllocEnabled(zone, traceKind)) {
+    jump(fail);
+    return;
+  }
+
+  // Use a relative 32 bit offset to the Nursery position_ to currentEnd_ to
+  // avoid 64-bit immediate loads.
+  void* posAddr = zone->addressOfNurseryPosition();
+  int32_t endOffset = Nursery::offsetOfCurrentEndFromPosition();
+
   movePtr(ImmPtr(posAddr), temp);
   loadPtr(Address(temp, 0), result);
   addPtr(Imm32(totalSize), result);
-  CheckedInt<int32_t> endOffset =
-      (CheckedInt<uintptr_t>(uintptr_t(curEndAddr)) -
-       CheckedInt<uintptr_t>(uintptr_t(posAddr)))
-          .toChecked<int32_t>();
-  MOZ_ASSERT(endOffset.isValid(), "Position and end pointers must be nearby");
-  branchPtr(Assembler::Below, Address(temp, endOffset.value()), result, fail);
+  branchPtr(Assembler::Below, Address(temp, endOffset), result, fail);
   storePtr(result, Address(temp, 0));
   subPtr(Imm32(size), result);
-
-  if (GetJitContext()->runtime->geckoProfiler().enabled()) {
-    uint32_t* countAddress = zone->addressOfNurseryAllocCount();
-    CheckedInt<int32_t> counterOffset =
-        (CheckedInt<uintptr_t>(uintptr_t(countAddress)) -
-         CheckedInt<uintptr_t>(uintptr_t(posAddr)))
-            .toChecked<int32_t>();
-    if (counterOffset.isValid()) {
-      add32(Imm32(1), Address(temp, counterOffset.value()));
-    } else {
-      movePtr(ImmPtr(countAddress), temp);
-      add32(Imm32(1), Address(temp, 0));
-    }
-  }
 
   if (allocSite.is<gc::CatchAllAllocSite>()) {
     // No allocation site supplied. This is the case when called from Warp, or
     // from places that don't support pretenuring.
     gc::CatchAllAllocSite siteKind = allocSite.as<gc::CatchAllAllocSite>();
-    storePtr(ImmWord(zone->nurseryCellHeader(traceKind, siteKind)),
+    gc::AllocSite* site = zone->catchAllAllocSite(traceKind, siteKind);
+    uintptr_t headerWord = gc::NurseryCellHeader::MakeValue(site, traceKind);
+    storePtr(ImmWord(headerWord),
              Address(result, -js::Nursery::nurseryCellHeaderSize()));
+
+    // Update the catch all allocation site for strings or if the profiler is
+    // enabled. This is used to calculate the nursery allocation count. The
+    // string data is used to determine whether to disable nursery string
+    // allocation.
+    if (traceKind == JS::TraceKind::String ||
+        runtime()->geckoProfiler().enabled()) {
+      uint32_t* countAddress = site->nurseryAllocCountAddress();
+      CheckedInt<int32_t> counterOffset =
+          (CheckedInt<uintptr_t>(uintptr_t(countAddress)) -
+           CheckedInt<uintptr_t>(uintptr_t(posAddr)))
+              .toChecked<int32_t>();
+      if (counterOffset.isValid()) {
+        add32(Imm32(1), Address(temp, counterOffset.value()));
+      } else {
+        movePtr(ImmPtr(countAddress), temp);
+        add32(Imm32(1), Address(temp, 0));
+      }
+    }
   } else {
     // Update allocation site and store pointer in the nursery cell header. This
     // is only used from baseline.
@@ -621,9 +675,9 @@ void MacroAssembler::updateAllocSite(Register temp, Register result,
 
   add32(Imm32(1), Address(site, gc::AllocSite::offsetOfNurseryAllocCount()));
 
-  branchPtr(Assembler::NotEqual,
-            Address(site, gc::AllocSite::offsetOfNextNurseryAllocated()),
-            ImmPtr(nullptr), &done);
+  branch32(Assembler::NotEqual,
+           Address(site, gc::AllocSite::offsetOfNurseryAllocCount()), Imm32(1),
+           &done);
 
   loadPtr(AbsoluteAddress(zone->addressOfNurseryAllocatedSites()), temp);
   storePtr(temp, Address(site, gc::AllocSite::offsetOfNextNurseryAllocated()));
@@ -636,14 +690,14 @@ void MacroAssembler::updateAllocSite(Register temp, Register result,
 // allocation requested but unsuccessful.
 void MacroAssembler::allocateString(Register result, Register temp,
                                     gc::AllocKind allocKind,
-                                    gc::InitialHeap initialHeap, Label* fail) {
+                                    gc::Heap initialHeap, Label* fail) {
   MOZ_ASSERT(allocKind == gc::AllocKind::STRING ||
              allocKind == gc::AllocKind::FAT_INLINE_STRING);
 
-  checkAllocatorState(fail);
+  checkAllocatorState(temp, allocKind, fail);
 
   if (shouldNurseryAllocate(allocKind, initialHeap)) {
-    MOZ_ASSERT(initialHeap == gc::DefaultHeap);
+    MOZ_ASSERT(initialHeap == gc::Heap::Default);
     return nurseryAllocateString(result, temp, allocKind, fail);
   }
 
@@ -651,27 +705,28 @@ void MacroAssembler::allocateString(Register result, Register temp,
 }
 
 void MacroAssembler::newGCString(Register result, Register temp,
-                                 gc::InitialHeap initialHeap, Label* fail) {
+                                 gc::Heap initialHeap, Label* fail) {
   allocateString(result, temp, js::gc::AllocKind::STRING, initialHeap, fail);
 }
 
 void MacroAssembler::newGCFatInlineString(Register result, Register temp,
-                                          gc::InitialHeap initialHeap,
-                                          Label* fail) {
+                                          gc::Heap initialHeap, Label* fail) {
   allocateString(result, temp, js::gc::AllocKind::FAT_INLINE_STRING,
                  initialHeap, fail);
 }
 
 void MacroAssembler::newGCBigInt(Register result, Register temp,
-                                 gc::InitialHeap initialHeap, Label* fail) {
-  checkAllocatorState(fail);
+                                 gc::Heap initialHeap, Label* fail) {
+  constexpr gc::AllocKind allocKind = gc::AllocKind::BIGINT;
 
-  if (shouldNurseryAllocate(gc::AllocKind::BIGINT, initialHeap)) {
-    MOZ_ASSERT(initialHeap == gc::DefaultHeap);
+  checkAllocatorState(temp, allocKind, fail);
+
+  if (shouldNurseryAllocate(allocKind, initialHeap)) {
+    MOZ_ASSERT(initialHeap == gc::Heap::Default);
     return nurseryAllocateBigInt(result, temp, fail);
   }
 
-  freeListAllocate(result, temp, gc::AllocKind::BIGINT, fail);
+  freeListAllocate(result, temp, allocKind, fail);
 }
 
 void MacroAssembler::copySlotsFromTemplate(
@@ -708,18 +763,18 @@ void MacroAssembler::fillSlotsWithConstantValue(Address base, Register temp,
   // strided writes of the tag and body.
   Address addr = base;
   move32(Imm32(v.toNunboxPayload()), temp);
-  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtrValue)) {
+  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtr<Value>)) {
     store32(temp, ToPayload(addr));
   }
 
   addr = base;
   move32(Imm32(v.toNunboxTag()), temp);
-  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtrValue)) {
+  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtr<Value>)) {
     store32(temp, ToType(addr));
   }
 #else
   moveValue(v, ValueOperand(temp));
-  for (uint32_t i = start; i < end; ++i, base.offset += sizeof(GCPtrValue)) {
+  for (uint32_t i = start; i < end; ++i, base.offset += sizeof(GCPtr<Value>)) {
     storePtr(temp, base);
   }
 #endif
@@ -736,9 +791,8 @@ void MacroAssembler::fillSlotsWithUninitialized(Address base, Register temp,
                              MagicValue(JS_UNINITIALIZED_LEXICAL));
 }
 
-static void FindStartOfUninitializedAndUndefinedSlots(
-    const TemplateNativeObject& templateObj, uint32_t nslots,
-    uint32_t* startOfUninitialized, uint32_t* startOfUndefined) {
+static std::pair<uint32_t, uint32_t> FindStartOfUninitializedAndUndefinedSlots(
+    const TemplateNativeObject& templateObj, uint32_t nslots) {
   MOZ_ASSERT(nslots == templateObj.slotSpan());
   MOZ_ASSERT(nslots > 0);
 
@@ -748,7 +802,7 @@ static void FindStartOfUninitializedAndUndefinedSlots(
       break;
     }
   }
-  *startOfUndefined = first;
+  uint32_t startOfUndefined = first;
 
   if (first != 0 && IsUninitializedLexical(templateObj.getSlot(first - 1))) {
     for (; first != 0; --first) {
@@ -756,10 +810,10 @@ static void FindStartOfUninitializedAndUndefinedSlots(
         break;
       }
     }
-    *startOfUninitialized = first;
-  } else {
-    *startOfUninitialized = *startOfUndefined;
   }
+  uint32_t startOfUninitialized = first;
+
+  return {startOfUninitialized, startOfUndefined};
 }
 
 void MacroAssembler::initTypedArraySlots(Register obj, Register temp,
@@ -813,12 +867,14 @@ void MacroAssembler::initTypedArraySlots(Register obj, Register temp,
       move32(Imm32(length), lengthReg);
     }
 
+    // Ensure volatile |obj| is saved across the call.
+    if (obj.volatile_()) {
+      liveRegs.addUnchecked(obj);
+    }
+
     // Allocate a buffer on the heap to store the data elements.
-    liveRegs.addUnchecked(temp);
-    liveRegs.addUnchecked(obj);
-    liveRegs.addUnchecked(lengthReg);
     PushRegsInMask(liveRegs);
-    using Fn = void (*)(JSContext * cx, TypedArrayObject * obj, int32_t count);
+    using Fn = void (*)(JSContext* cx, TypedArrayObject* obj, int32_t count);
     setupUnalignedABICall(temp);
     loadJSContext(temp);
     passABIArg(temp);
@@ -833,8 +889,9 @@ void MacroAssembler::initTypedArraySlots(Register obj, Register temp,
 }
 
 void MacroAssembler::initGCSlots(Register obj, Register temp,
-                                 const TemplateNativeObject& templateObj,
-                                 bool initContents) {
+                                 const TemplateNativeObject& templateObj) {
+  MOZ_ASSERT(!templateObj.isArrayObject());
+
   // Slots of non-array objects are required to be initialized.
   // Use the values currently in the template object.
   uint32_t nslots = templateObj.slotSpan();
@@ -855,32 +912,29 @@ void MacroAssembler::initGCSlots(Register obj, Register temp,
   //
   // The template object may be a CallObject, in which case we need to
   // account for uninitialized lexical slots as well as undefined
-  // slots. Unitialized lexical slots appears in CallObjects if the function
+  // slots. Uninitialized lexical slots appears in CallObjects if the function
   // has parameter expressions, in which case closed over parameters have
   // TDZ. Uninitialized slots come before undefined slots in CallObjects.
-  uint32_t startOfUninitialized = nslots;
-  uint32_t startOfUndefined = nslots;
-  FindStartOfUninitializedAndUndefinedSlots(
-      templateObj, nslots, &startOfUninitialized, &startOfUndefined);
+  auto [startOfUninitialized, startOfUndefined] =
+      FindStartOfUninitializedAndUndefinedSlots(templateObj, nslots);
   MOZ_ASSERT(startOfUninitialized <= nfixed);  // Reserved slots must be fixed.
   MOZ_ASSERT(startOfUndefined >= startOfUninitialized);
-  MOZ_ASSERT_IF(!templateObj.isCallObject(),
+  MOZ_ASSERT_IF(!templateObj.isCallObject() &&
+                    !templateObj.isBlockLexicalEnvironmentObject(),
                 startOfUninitialized == startOfUndefined);
 
   // Copy over any preserved reserved slots.
   copySlotsFromTemplate(obj, templateObj, 0, startOfUninitialized);
 
   // Fill the rest of the fixed slots with undefined and uninitialized.
-  if (initContents) {
-    size_t offset = NativeObject::getFixedSlotOffset(startOfUninitialized);
-    fillSlotsWithUninitialized(Address(obj, offset), temp, startOfUninitialized,
-                               std::min(startOfUndefined, nfixed));
+  size_t offset = NativeObject::getFixedSlotOffset(startOfUninitialized);
+  fillSlotsWithUninitialized(Address(obj, offset), temp, startOfUninitialized,
+                             std::min(startOfUndefined, nfixed));
 
-    if (startOfUndefined < nfixed) {
-      offset = NativeObject::getFixedSlotOffset(startOfUndefined);
-      fillSlotsWithUndefined(Address(obj, offset), temp, startOfUndefined,
-                             nfixed);
-    }
+  if (startOfUndefined < nfixed) {
+    offset = NativeObject::getFixedSlotOffset(startOfUndefined);
+    fillSlotsWithUndefined(Address(obj, offset), temp, startOfUndefined,
+                           nfixed);
   }
 
   if (ndynamic) {
@@ -921,12 +975,15 @@ void MacroAssembler::initGCThing(Register obj, Register temp,
 
     // If the object has dynamic slots, the slots member has already been
     // filled in.
-    if (!ntemplate.hasDynamicSlots()) {
+    if (ntemplate.numDynamicSlots() == 0) {
       storePtr(ImmPtr(emptyObjectSlots),
                Address(obj, NativeObject::offsetOfSlots()));
     }
 
     if (ntemplate.isArrayObject()) {
+      // Can't skip initializing reserved slots.
+      MOZ_ASSERT(initContents);
+
       int elementsOffset = NativeObject::offsetOfFixedElements();
 
       computeEffectiveAddress(Address(obj, elementsOffset), temp);
@@ -941,7 +998,7 @@ void MacroAssembler::initGCThing(Register obj, Register temp,
                                ObjectElements::offsetOfInitializedLength()));
       store32(Imm32(ntemplate.getArrayLength()),
               Address(obj, elementsOffset + ObjectElements::offsetOfLength()));
-      store32(Imm32(0),
+      store32(Imm32(ObjectElements::FIXED),
               Address(obj, elementsOffset + ObjectElements::offsetOfFlags()));
     } else if (ntemplate.isArgumentsObject()) {
       // The caller will initialize the reserved slots.
@@ -953,10 +1010,13 @@ void MacroAssembler::initGCThing(Register obj, Register temp,
       // then this would need to store emptyObjectElementsShared in that case.
       MOZ_ASSERT(!ntemplate.isSharedMemory());
 
+      // Can't skip initializing reserved slots.
+      MOZ_ASSERT(initContents);
+
       storePtr(ImmPtr(emptyObjectElements),
                Address(obj, NativeObject::offsetOfElements()));
 
-      initGCSlots(obj, temp, ntemplate, initContents);
+      initGCSlots(obj, temp, ntemplate);
     }
   } else {
     MOZ_CRASH("Unknown object");
@@ -970,13 +1030,220 @@ void MacroAssembler::initGCThing(Register obj, Register temp,
   regs.takeUnchecked(obj);
   Register temp2 = regs.takeAnyGeneral();
 
-  using Fn = void (*)(JSObject * obj);
+  using Fn = void (*)(JSObject* obj);
   setupUnalignedABICall(temp2);
   passABIArg(obj);
   callWithABI<Fn, TraceCreateObject>();
 
   PopRegsInMask(save);
 #endif
+}
+
+static size_t StringCharsByteLength(const JSLinearString* linear) {
+  CharEncoding encoding =
+      linear->hasLatin1Chars() ? CharEncoding::Latin1 : CharEncoding::TwoByte;
+  size_t encodingSize = encoding == CharEncoding::Latin1
+                            ? sizeof(JS::Latin1Char)
+                            : sizeof(char16_t);
+  return linear->length() * encodingSize;
+}
+
+bool MacroAssembler::canCompareStringCharsInline(const JSLinearString* linear) {
+  // Limit the number of inline instructions used for character comparisons. Use
+  // the same instruction limit for both encodings, i.e. two-byte uses half the
+  // limit of Latin-1 strings.
+  constexpr size_t ByteLengthCompareCutoff = 32;
+
+  size_t byteLength = StringCharsByteLength(linear);
+  return 0 < byteLength && byteLength <= ByteLengthCompareCutoff;
+}
+
+template <typename T, typename CharT>
+static inline T CopyCharacters(const CharT* chars) {
+  T value = 0;
+  std::memcpy(&value, chars, sizeof(T));
+  return value;
+}
+
+template <typename T>
+static inline T CopyCharacters(const JSLinearString* linear, size_t index) {
+  JS::AutoCheckCannotGC nogc;
+
+  if (linear->hasLatin1Chars()) {
+    MOZ_ASSERT(index + sizeof(T) / sizeof(JS::Latin1Char) <= linear->length());
+    return CopyCharacters<T>(linear->latin1Chars(nogc) + index);
+  }
+
+  MOZ_ASSERT(sizeof(T) >= sizeof(char16_t));
+  MOZ_ASSERT(index + sizeof(T) / sizeof(char16_t) <= linear->length());
+  return CopyCharacters<T>(linear->twoByteChars(nogc) + index);
+}
+
+void MacroAssembler::branchIfNotStringCharsEquals(Register stringChars,
+                                                  const JSLinearString* linear,
+                                                  Label* label) {
+  CharEncoding encoding =
+      linear->hasLatin1Chars() ? CharEncoding::Latin1 : CharEncoding::TwoByte;
+  size_t encodingSize = encoding == CharEncoding::Latin1
+                            ? sizeof(JS::Latin1Char)
+                            : sizeof(char16_t);
+  size_t byteLength = StringCharsByteLength(linear);
+
+  size_t pos = 0;
+  for (size_t stride : {8, 4, 2, 1}) {
+    while (byteLength >= stride) {
+      Address addr(stringChars, pos * encodingSize);
+      switch (stride) {
+        case 8: {
+          auto x = CopyCharacters<uint64_t>(linear, pos);
+          branch64(Assembler::NotEqual, addr, Imm64(x), label);
+          break;
+        }
+        case 4: {
+          auto x = CopyCharacters<uint32_t>(linear, pos);
+          branch32(Assembler::NotEqual, addr, Imm32(x), label);
+          break;
+        }
+        case 2: {
+          auto x = CopyCharacters<uint16_t>(linear, pos);
+          branch16(Assembler::NotEqual, addr, Imm32(x), label);
+          break;
+        }
+        case 1: {
+          auto x = CopyCharacters<uint8_t>(linear, pos);
+          branch8(Assembler::NotEqual, addr, Imm32(x), label);
+          break;
+        }
+      }
+
+      byteLength -= stride;
+      pos += stride / encodingSize;
+    }
+
+    // Prefer a single comparison for trailing bytes instead of doing
+    // multiple consecutive comparisons.
+    //
+    // For example when comparing against the string "example", emit two
+    // four-byte comparisons against "exam" and "mple" instead of doing
+    // three comparisons against "exam", "pl", and finally "e".
+    if (pos > 0 && byteLength > stride / 2) {
+      MOZ_ASSERT(stride == 8 || stride == 4);
+
+      size_t prev = pos - (stride - byteLength) / encodingSize;
+      Address addr(stringChars, prev * encodingSize);
+      switch (stride) {
+        case 8: {
+          auto x = CopyCharacters<uint64_t>(linear, prev);
+          branch64(Assembler::NotEqual, addr, Imm64(x), label);
+          break;
+        }
+        case 4: {
+          auto x = CopyCharacters<uint32_t>(linear, prev);
+          branch32(Assembler::NotEqual, addr, Imm32(x), label);
+          break;
+        }
+      }
+
+      // Break from the loop, because we've finished the complete string.
+      break;
+    }
+  }
+}
+
+void MacroAssembler::loadStringCharsForCompare(Register input,
+                                               const JSLinearString* linear,
+                                               Register stringChars,
+                                               Label* fail) {
+  CharEncoding encoding =
+      linear->hasLatin1Chars() ? CharEncoding::Latin1 : CharEncoding::TwoByte;
+
+  // Take the slow path when the string is a rope or has a different character
+  // representation.
+  branchIfRope(input, fail);
+  if (encoding == CharEncoding::Latin1) {
+    branchTwoByteString(input, fail);
+  } else {
+    JS::AutoCheckCannotGC nogc;
+    if (mozilla::IsUtf16Latin1(linear->twoByteRange(nogc))) {
+      branchLatin1String(input, fail);
+    } else {
+      // This case was already handled in the caller.
+#ifdef DEBUG
+      Label ok;
+      branchTwoByteString(input, &ok);
+      assumeUnreachable("Unexpected Latin-1 string");
+      bind(&ok);
+#endif
+    }
+  }
+
+#ifdef DEBUG
+  {
+    size_t length = linear->length();
+    MOZ_ASSERT(length > 0);
+
+    Label ok;
+    branch32(Assembler::AboveOrEqual,
+             Address(input, JSString::offsetOfLength()), Imm32(length), &ok);
+    assumeUnreachable("Input mustn't be smaller than search string");
+    bind(&ok);
+  }
+#endif
+
+  // Load the input string's characters.
+  loadStringChars(input, stringChars, encoding);
+}
+
+void MacroAssembler::compareStringChars(JSOp op, Register stringChars,
+                                        const JSLinearString* linear,
+                                        Register output) {
+  MOZ_ASSERT(IsEqualityOp(op));
+
+  size_t byteLength = StringCharsByteLength(linear);
+
+  // Prefer a single compare-and-set instruction if possible.
+  if (byteLength == 1 || byteLength == 2 || byteLength == 4 ||
+      byteLength == 8) {
+    auto cond = JSOpToCondition(op, /* isSigned = */ false);
+
+    Address addr(stringChars, 0);
+    switch (byteLength) {
+      case 8: {
+        auto x = CopyCharacters<uint64_t>(linear, 0);
+        cmp64Set(cond, addr, Imm64(x), output);
+        break;
+      }
+      case 4: {
+        auto x = CopyCharacters<uint32_t>(linear, 0);
+        cmp32Set(cond, addr, Imm32(x), output);
+        break;
+      }
+      case 2: {
+        auto x = CopyCharacters<uint16_t>(linear, 0);
+        cmp16Set(cond, addr, Imm32(x), output);
+        break;
+      }
+      case 1: {
+        auto x = CopyCharacters<uint8_t>(linear, 0);
+        cmp8Set(cond, addr, Imm32(x), output);
+        break;
+      }
+    }
+  } else {
+    Label setNotEqualResult;
+    branchIfNotStringCharsEquals(stringChars, linear, &setNotEqualResult);
+
+    // Falls through if both strings are equal.
+
+    Label done;
+    move32(Imm32(op == JSOp::Eq || op == JSOp::StrictEq), output);
+    jump(&done);
+
+    bind(&setNotEqualResult);
+    move32(Imm32(op == JSOp::Ne || op == JSOp::StrictNe), output);
+
+    bind(&done);
+  }
 }
 
 void MacroAssembler::compareStrings(JSOp op, Register left, Register right,
@@ -1136,6 +1403,20 @@ void MacroAssembler::loadRopeLeftChild(Register str, Register dest) {
   }
 }
 
+void MacroAssembler::loadRopeRightChild(Register str, Register dest) {
+  MOZ_ASSERT(str != dest);
+
+  if (JitOptions.spectreStringMitigations) {
+    // Zero the output register if the input was not a rope.
+    movePtr(ImmWord(0), dest);
+    test32LoadPtr(Assembler::Zero, Address(str, JSString::offsetOfFlags()),
+                  Imm32(JSString::LINEAR_BIT),
+                  Address(str, JSRope::offsetOfRight()), dest);
+  } else {
+    loadPtr(Address(str, JSRope::offsetOfRight()), dest);
+  }
+}
+
 void MacroAssembler::storeRopeChildren(Register left, Register right,
                                        Register str) {
   storePtr(left, Address(str, JSRope::offsetOfLeft()));
@@ -1161,14 +1442,55 @@ void MacroAssembler::storeDependentStringBase(Register base, Register str) {
   storePtr(base, Address(str, JSDependentString::offsetOfBase()));
 }
 
+void MacroAssembler::loadRopeChild(Register str, Register index,
+                                   Register output, Label* isLinear) {
+  // This follows JSString::getChar.
+  branchIfNotRope(str, isLinear);
+
+  loadRopeLeftChild(str, output);
+
+  // Check if the index is contained in the leftChild.
+  Label loadedChild;
+  branch32(Assembler::Above, Address(output, JSString::offsetOfLength()), index,
+           &loadedChild);
+
+  // The index must be in the rightChild.
+  loadRopeRightChild(str, output);
+
+  bind(&loadedChild);
+}
+
+void MacroAssembler::branchIfCanLoadStringChar(Register str, Register index,
+                                               Register scratch, Label* label) {
+  loadRopeChild(str, index, scratch, label);
+
+  // Branch if the left resp. right side is linear.
+  branchIfNotRope(scratch, label);
+}
+
+void MacroAssembler::branchIfNotCanLoadStringChar(Register str, Register index,
+                                                  Register scratch,
+                                                  Label* label) {
+  Label done;
+  loadRopeChild(str, index, scratch, &done);
+
+  // Branch if the left or right side is another rope.
+  branchIfRope(scratch, label);
+
+  bind(&done);
+}
+
 void MacroAssembler::loadStringChar(Register str, Register index,
-                                    Register output, Register scratch,
-                                    Label* fail) {
+                                    Register output, Register scratch1,
+                                    Register scratch2, Label* fail) {
   MOZ_ASSERT(str != output);
   MOZ_ASSERT(str != index);
   MOZ_ASSERT(index != output);
-  MOZ_ASSERT(output != scratch);
+  MOZ_ASSERT(output != scratch1);
+  MOZ_ASSERT(output != scratch2);
 
+  // Use scratch1 for the index (adjusted below).
+  move32(index, scratch1);
   movePtr(str, output);
 
   // This follows JSString::getChar.
@@ -1178,11 +1500,19 @@ void MacroAssembler::loadStringChar(Register str, Register index,
   loadRopeLeftChild(str, output);
 
   // Check if the index is contained in the leftChild.
-  // Todo: Handle index in the rightChild.
-  spectreBoundsCheck32(index, Address(output, JSString::offsetOfLength()),
-                       scratch, fail);
+  Label loadedChild, notInLeft;
+  spectreBoundsCheck32(scratch1, Address(output, JSString::offsetOfLength()),
+                       scratch2, &notInLeft);
+  jump(&loadedChild);
 
-  // If the left side is another rope, give up.
+  // The index must be in the rightChild.
+  // index -= rope->leftChild()->length()
+  bind(&notInLeft);
+  sub32(Address(output, JSString::offsetOfLength()), scratch1);
+  loadRopeRightChild(str, output);
+
+  // If the left or right side is another rope, give up.
+  bind(&loadedChild);
   branchIfRope(output, fail);
 
   bind(&notRope);
@@ -1191,13 +1521,13 @@ void MacroAssembler::loadStringChar(Register str, Register index,
   // We have to check the left/right side for ropes,
   // because a TwoByte rope might have a Latin1 child.
   branchLatin1String(output, &isLatin1);
-  loadStringChars(output, scratch, CharEncoding::TwoByte);
-  loadChar(scratch, index, output, CharEncoding::TwoByte);
+  loadStringChars(output, scratch2, CharEncoding::TwoByte);
+  loadChar(scratch2, scratch1, output, CharEncoding::TwoByte);
   jump(&done);
 
   bind(&isLatin1);
-  loadStringChars(output, scratch, CharEncoding::Latin1);
-  loadChar(scratch, index, output, CharEncoding::Latin1);
+  loadStringChars(output, scratch2, CharEncoding::Latin1);
+  loadChar(scratch2, scratch1, output, CharEncoding::Latin1);
 
   bind(&done);
 }
@@ -1233,6 +1563,196 @@ void MacroAssembler::addToCharPtr(Register chars, Register index,
   } else {
     computeEffectiveAddress(BaseIndex(chars, index, TimesTwo), chars);
   }
+}
+
+void MacroAssembler::loadStringFromUnit(Register unit, Register dest,
+                                        const StaticStrings& staticStrings) {
+  movePtr(ImmPtr(&staticStrings.unitStaticTable), dest);
+  loadPtr(BaseIndex(dest, unit, ScalePointer), dest);
+}
+
+void MacroAssembler::loadLengthTwoString(Register c1, Register c2,
+                                         Register dest,
+                                         const StaticStrings& staticStrings) {
+  // Compute (toSmallCharTable[c1] << SMALL_CHAR_BITS) + toSmallCharTable[c2]
+  // to obtain the index into `StaticStrings::length2StaticTable`.
+  static_assert(sizeof(StaticStrings::SmallChar) == 1);
+
+  movePtr(ImmPtr(&StaticStrings::toSmallCharTable.storage), dest);
+  load8ZeroExtend(BaseIndex(dest, c1, Scale::TimesOne), c1);
+  load8ZeroExtend(BaseIndex(dest, c2, Scale::TimesOne), c2);
+
+  lshift32(Imm32(StaticStrings::SMALL_CHAR_BITS), c1);
+  add32(c2, c1);
+
+  // Look up the string from the computed index.
+  movePtr(ImmPtr(&staticStrings.length2StaticTable), dest);
+  loadPtr(BaseIndex(dest, c1, ScalePointer), dest);
+}
+
+void MacroAssembler::loadInt32ToStringWithBase(
+    Register input, Register base, Register dest, Register scratch1,
+    Register scratch2, const StaticStrings& staticStrings,
+    const LiveRegisterSet& volatileRegs, Label* fail) {
+#ifdef DEBUG
+  Label baseBad, baseOk;
+  branch32(Assembler::LessThan, base, Imm32(2), &baseBad);
+  branch32(Assembler::LessThanOrEqual, base, Imm32(36), &baseOk);
+  bind(&baseBad);
+  assumeUnreachable("base must be in range [2, 36]");
+  bind(&baseOk);
+#endif
+
+  // Compute |"0123456789abcdefghijklmnopqrstuvwxyz"[r]|.
+  auto toChar = [this, base](Register r) {
+#ifdef DEBUG
+    Label ok;
+    branch32(Assembler::Below, r, base, &ok);
+    assumeUnreachable("bad digit");
+    bind(&ok);
+#else
+    // Silence unused lambda capture warning.
+    (void)base;
+#endif
+
+    Label done;
+    add32(Imm32('0'), r);
+    branch32(Assembler::BelowOrEqual, r, Imm32('9'), &done);
+    add32(Imm32('a' - '0' - 10), r);
+    bind(&done);
+  };
+
+  // Perform a "unit" lookup when |unsigned(input) < unsigned(base)|.
+  Label lengthTwo, done;
+  branch32(Assembler::AboveOrEqual, input, base, &lengthTwo);
+  {
+    move32(input, scratch1);
+    toChar(scratch1);
+
+    loadStringFromUnit(scratch1, dest, staticStrings);
+
+    jump(&done);
+  }
+  bind(&lengthTwo);
+
+  // Compute |base * base|.
+  move32(base, scratch1);
+  mul32(scratch1, scratch1);
+
+  // Perform a "length2" lookup when |unsigned(input) < unsigned(base * base)|.
+  branch32(Assembler::AboveOrEqual, input, scratch1, fail);
+  {
+    // Compute |scratch1 = input / base| and |scratch2 = input % base|.
+    move32(input, scratch1);
+    flexibleDivMod32(base, scratch1, scratch2, true, volatileRegs);
+
+    // Compute the digits of the divisor and remainder.
+    toChar(scratch1);
+    toChar(scratch2);
+
+    // Look up the 2-character digit string in the small-char table.
+    loadLengthTwoString(scratch1, scratch2, dest, staticStrings);
+  }
+  bind(&done);
+}
+
+void MacroAssembler::loadInt32ToStringWithBase(
+    Register input, int32_t base, Register dest, Register scratch1,
+    Register scratch2, const StaticStrings& staticStrings, Label* fail) {
+  MOZ_ASSERT(2 <= base && base <= 36, "base must be in range [2, 36]");
+
+  // Compute |"0123456789abcdefghijklmnopqrstuvwxyz"[r]|.
+  auto toChar = [this, base](Register r) {
+#ifdef DEBUG
+    Label ok;
+    branch32(Assembler::Below, r, Imm32(base), &ok);
+    assumeUnreachable("bad digit");
+    bind(&ok);
+#endif
+
+    if (base <= 10) {
+      add32(Imm32('0'), r);
+    } else {
+      Label done;
+      add32(Imm32('0'), r);
+      branch32(Assembler::BelowOrEqual, r, Imm32('9'), &done);
+      add32(Imm32('a' - '0' - 10), r);
+      bind(&done);
+    }
+  };
+
+  // Perform a "unit" lookup when |unsigned(input) < unsigned(base)|.
+  Label lengthTwo, done;
+  branch32(Assembler::AboveOrEqual, input, Imm32(base), &lengthTwo);
+  {
+    move32(input, scratch1);
+    toChar(scratch1);
+
+    loadStringFromUnit(scratch1, dest, staticStrings);
+
+    jump(&done);
+  }
+  bind(&lengthTwo);
+
+  // Perform a "length2" lookup when |unsigned(input) < unsigned(base * base)|.
+  branch32(Assembler::AboveOrEqual, input, Imm32(base * base), fail);
+  {
+    // Compute |scratch1 = input / base| and |scratch2 = input % base|.
+    if (mozilla::IsPowerOfTwo(uint32_t(base))) {
+      uint32_t shift = mozilla::FloorLog2(base);
+
+      move32(input, scratch1);
+      rshift32(Imm32(shift), scratch1);
+
+      move32(input, scratch2);
+      and32(Imm32((uint32_t(1) << shift) - 1), scratch2);
+    } else {
+      // The following code matches CodeGenerator::visitUDivOrModConstant()
+      // for x86-shared. Also see Hacker's Delight 2nd edition, chapter 10-8
+      // "Unsigned Division by 7" for the case when |rmc.multiplier| exceeds
+      // UINT32_MAX and we need to adjust the shift amount.
+
+      auto rmc = ReciprocalMulConstants::computeUnsignedDivisionConstants(base);
+
+      // We first compute |q = (M * n) >> 32), where M = rmc.multiplier.
+      mulHighUnsigned32(Imm32(rmc.multiplier), input, scratch1);
+
+      if (rmc.multiplier > UINT32_MAX) {
+        // M >= 2^32 and shift == 0 is impossible, as d >= 2 implies that
+        // ((M * n) >> (32 + shift)) >= n > floor(n/d) whenever n >= d,
+        // contradicting the proof of correctness in computeDivisionConstants.
+        MOZ_ASSERT(rmc.shiftAmount > 0);
+        MOZ_ASSERT(rmc.multiplier < (int64_t(1) << 33));
+
+        // Compute |t = (n - q) / 2|.
+        move32(input, scratch2);
+        sub32(scratch1, scratch2);
+        rshift32(Imm32(1), scratch2);
+
+        // Compute |t = (n - q) / 2 + q = (n + q) / 2|.
+        add32(scratch2, scratch1);
+
+        // Finish the computation |q = floor(n / d)|.
+        rshift32(Imm32(rmc.shiftAmount - 1), scratch1);
+      } else {
+        rshift32(Imm32(rmc.shiftAmount), scratch1);
+      }
+
+      // Compute the remainder from |r = n - q * d|.
+      move32(scratch1, dest);
+      mul32(Imm32(base), dest);
+      move32(input, scratch2);
+      sub32(dest, scratch2);
+    }
+
+    // Compute the digits of the divisor and remainder.
+    toChar(scratch1);
+    toChar(scratch2);
+
+    // Look up the 2-character digit string in the small-char table.
+    loadLengthTwoString(scratch1, scratch2, dest, staticStrings);
+  }
+  bind(&done);
 }
 
 void MacroAssembler::loadBigIntDigits(Register bigInt, Register digits) {
@@ -1491,7 +2011,7 @@ void MacroAssembler::initializeBigIntAbsolute(Register bigInt, Register val) {
 
 void MacroAssembler::copyBigIntWithInlineDigits(Register src, Register dest,
                                                 Register temp,
-                                                gc::InitialHeap initialHeap,
+                                                gc::Heap initialHeap,
                                                 Label* fail) {
   branch32(Assembler::Above, Address(src, BigInt::offsetOfLength()),
            Imm32(int32_t(BigInt::inlineDigitsLength())), fail);
@@ -1727,6 +2247,21 @@ void MacroAssembler::isCallableOrConstructor(bool isCallable, Register obj,
 
   bind(&notFunction);
 
+  if (!isCallable) {
+    // For bound functions, we need to check the isConstructor flag.
+    Label notBoundFunction;
+    branchPtr(Assembler::NotEqual, output, ImmPtr(&BoundFunctionObject::class_),
+              &notBoundFunction);
+
+    static_assert(BoundFunctionObject::IsConstructorFlag == 0b1,
+                  "AND operation results in boolean value");
+    unboxInt32(Address(obj, BoundFunctionObject::offsetOfFlagsSlot()), output);
+    and32(Imm32(BoundFunctionObject::IsConstructorFlag), output);
+    jump(&done);
+
+    bind(&notBoundFunction);
+  }
+
   // Just skim proxies off. Their notion of isCallable()/isConstructor() is
   // more complicated.
   branchTestClassIsProxy(true, output, isProxy);
@@ -1747,18 +2282,22 @@ void MacroAssembler::isCallableOrConstructor(bool isCallable, Register obj,
 }
 
 void MacroAssembler::loadJSContext(Register dest) {
-  JitContext* jcx = GetJitContext();
-  movePtr(ImmPtr(jcx->runtime->mainContextPtr()), dest);
+  movePtr(ImmPtr(runtime()->mainContextPtr()), dest);
 }
 
-static const uint8_t* ContextRealmPtr() {
-  return (
-      static_cast<const uint8_t*>(GetJitContext()->runtime->mainContextPtr()) +
-      JSContext::offsetOfRealm());
+static const uint8_t* ContextRealmPtr(CompileRuntime* rt) {
+  return (static_cast<const uint8_t*>(rt->mainContextPtr()) +
+          JSContext::offsetOfRealm());
+}
+
+void MacroAssembler::loadGlobalObjectData(Register dest) {
+  loadPtr(AbsoluteAddress(ContextRealmPtr(runtime())), dest);
+  loadPtr(Address(dest, Realm::offsetOfActiveGlobal()), dest);
+  loadPrivate(Address(dest, GlobalObject::offsetOfGlobalDataSlot()), dest);
 }
 
 void MacroAssembler::switchToRealm(Register realm) {
-  storePtr(realm, AbsoluteAddress(ContextRealmPtr()));
+  storePtr(realm, AbsoluteAddress(ContextRealmPtr(runtime())));
 }
 
 void MacroAssembler::switchToRealm(const void* realm, Register scratch) {
@@ -1776,16 +2315,16 @@ void MacroAssembler::switchToObjectRealm(Register obj, Register scratch) {
 }
 
 void MacroAssembler::switchToBaselineFrameRealm(Register scratch) {
-  Address envChain(BaselineFrameReg,
+  Address envChain(FramePointer,
                    BaselineFrame::reverseOffsetOfEnvironmentChain());
   loadPtr(envChain, scratch);
   switchToObjectRealm(scratch, scratch);
 }
 
-void MacroAssembler::switchToWasmTlsRealm(Register scratch1,
-                                          Register scratch2) {
-  loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, cx)), scratch1);
-  loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, realm)), scratch2);
+void MacroAssembler::switchToWasmInstanceRealm(Register scratch1,
+                                               Register scratch2) {
+  loadPtr(Address(InstanceReg, wasm::Instance::offsetOfCx()), scratch1);
+  loadPtr(Address(InstanceReg, wasm::Instance::offsetOfRealm()), scratch2);
   storePtr(scratch2, Address(scratch1, JSContext::offsetOfRealm()));
 }
 
@@ -1794,7 +2333,8 @@ void MacroAssembler::debugAssertContextRealm(const void* realm,
 #ifdef DEBUG
   Label ok;
   movePtr(ImmPtr(realm), scratch);
-  branchPtr(Assembler::Equal, AbsoluteAddress(ContextRealmPtr()), scratch, &ok);
+  branchPtr(Assembler::Equal, AbsoluteAddress(ContextRealmPtr(runtime())),
+            scratch, &ok);
   assumeUnreachable("Unexpected context realm");
   bind(&ok);
 #endif
@@ -1814,8 +2354,8 @@ void MacroAssembler::setIsCrossRealmArrayConstructor(Register obj,
   loadPtr(Address(obj, JSObject::offsetOfShape()), output);
   loadPtr(Address(output, Shape::offsetOfBaseShape()), output);
   loadPtr(Address(output, BaseShape::offsetOfRealm()), output);
-  branchPtr(Assembler::Equal, AbsoluteAddress(ContextRealmPtr()), output,
-            &isFalse);
+  branchPtr(Assembler::Equal, AbsoluteAddress(ContextRealmPtr(runtime())),
+            output, &isFalse);
 
   // The object must be a function.
   branchTestObjIsFunction(Assembler::NotEqual, obj, output, obj, &isFalse);
@@ -1866,6 +2406,580 @@ void MacroAssembler::setIsDefinitelyTypedArrayConstructor(Register obj,
 
   bind(&done);
 }
+
+void MacroAssembler::loadMegamorphicCache(Register dest) {
+  movePtr(ImmPtr(runtime()->addressOfMegamorphicCache()), dest);
+}
+void MacroAssembler::loadMegamorphicSetPropCache(Register dest) {
+  movePtr(ImmPtr(runtime()->addressOfMegamorphicSetPropCache()), dest);
+}
+
+void MacroAssembler::loadStringToAtomCacheLastLookups(Register dest) {
+  uintptr_t cachePtr = uintptr_t(runtime()->addressOfStringToAtomCache());
+  void* offset = (void*)(cachePtr + StringToAtomCache::offsetOfLastLookups());
+  movePtr(ImmPtr(offset), dest);
+}
+
+void MacroAssembler::loadAtomHash(Register id, Register outHash, Label* done) {
+  Label doneInner, fatInline;
+  if (!done) {
+    done = &doneInner;
+  }
+  move32(Imm32(JSString::FAT_INLINE_MASK), outHash);
+  and32(Address(id, JSString::offsetOfFlags()), outHash);
+
+  branch32(Assembler::Equal, outHash, Imm32(JSString::FAT_INLINE_MASK),
+           &fatInline);
+  load32(Address(id, NormalAtom::offsetOfHash()), outHash);
+  jump(done);
+  bind(&fatInline);
+  load32(Address(id, FatInlineAtom::offsetOfHash()), outHash);
+  jump(done);
+  bind(&doneInner);
+}
+
+void MacroAssembler::loadAtomOrSymbolAndHash(ValueOperand value, Register outId,
+                                             Register outHash,
+                                             Label* cacheMiss) {
+  Label isString, isSymbol, isNull, isUndefined, done, nonAtom, atom,
+      lastLookupAtom;
+
+  {
+    ScratchTagScope tag(*this, value);
+    splitTagForTest(value, tag);
+    branchTestString(Assembler::Equal, tag, &isString);
+    branchTestSymbol(Assembler::Equal, tag, &isSymbol);
+    branchTestNull(Assembler::Equal, tag, &isNull);
+    branchTestUndefined(Assembler::NotEqual, tag, cacheMiss);
+  }
+
+  const JSAtomState& names = runtime()->names();
+  movePropertyKey(PropertyKey::NonIntAtom(names.undefined), outId);
+  move32(Imm32(names.undefined->hash()), outHash);
+  jump(&done);
+
+  bind(&isNull);
+  movePropertyKey(PropertyKey::NonIntAtom(names.null), outId);
+  move32(Imm32(names.null->hash()), outHash);
+  jump(&done);
+
+  bind(&isSymbol);
+  unboxSymbol(value, outId);
+  load32(Address(outId, JS::Symbol::offsetOfHash()), outHash);
+  orPtr(Imm32(PropertyKey::SymbolTypeTag), outId);
+  jump(&done);
+
+  bind(&isString);
+  unboxString(value, outId);
+  branchTest32(Assembler::Zero, Address(outId, JSString::offsetOfFlags()),
+               Imm32(JSString::ATOM_BIT), &nonAtom);
+
+  bind(&atom);
+  loadAtomHash(outId, outHash, &done);
+
+  bind(&nonAtom);
+  loadStringToAtomCacheLastLookups(outHash);
+
+  // Compare each entry in the StringToAtomCache's lastLookups_ array
+  size_t stringOffset = StringToAtomCache::LastLookup::offsetOfString();
+  branchPtr(Assembler::Equal, Address(outHash, stringOffset), outId,
+            &lastLookupAtom);
+  for (size_t i = 0; i < StringToAtomCache::NumLastLookups - 1; ++i) {
+    addPtr(Imm32(sizeof(StringToAtomCache::LastLookup)), outHash);
+    branchPtr(Assembler::Equal, Address(outHash, stringOffset), outId,
+              &lastLookupAtom);
+  }
+
+  // Couldn't find us in the cache, so fall back to the C++ call
+  jump(cacheMiss);
+
+  // We found a hit in the lastLookups_ array! Load the associated atom
+  // and jump back up to our usual atom handling code
+  bind(&lastLookupAtom);
+  size_t atomOffset = StringToAtomCache::LastLookup::offsetOfAtom();
+  loadPtr(Address(outHash, atomOffset), outId);
+  jump(&atom);
+
+  bind(&done);
+}
+
+void MacroAssembler::emitExtractValueFromMegamorphicCacheEntry(
+    Register obj, Register entry, Register scratch1, Register scratch2,
+    ValueOperand output, Label* cacheHit, Label* cacheMiss) {
+  Label isMissing, dynamicSlot, protoLoopHead, protoLoopTail;
+
+  // scratch2 = entry->numHops_
+  load8ZeroExtend(Address(entry, MegamorphicCache::Entry::offsetOfNumHops()),
+                  scratch2);
+  // if (scratch2 == NumHopsForMissingOwnProperty) goto cacheMiss
+  branch32(Assembler::Equal, scratch2,
+           Imm32(MegamorphicCache::Entry::NumHopsForMissingOwnProperty),
+           cacheMiss);
+  // if (scratch2 == NumHopsForMissingProperty) goto isMissing
+  branch32(Assembler::Equal, scratch2,
+           Imm32(MegamorphicCache::Entry::NumHopsForMissingProperty),
+           &isMissing);
+
+  // NOTE: Where this is called, `output` can actually alias `obj`, and before
+  // the last cacheMiss branch above we can't write to `obj`, so we can't
+  // use `output`'s scratch register there. However a cache miss is impossible
+  // now, so we're free to use `output` as we like.
+  Register outputScratch = output.scratchReg();
+  if (!outputScratch.aliases(obj)) {
+    // We're okay with paying this very slight extra cost to avoid a potential
+    // footgun of writing to what callers understand as only an input register.
+    movePtr(obj, outputScratch);
+  }
+  branchTest32(Assembler::Zero, scratch2, scratch2, &protoLoopTail);
+  bind(&protoLoopHead);
+  loadObjProto(outputScratch, outputScratch);
+  branchSub32(Assembler::NonZero, Imm32(1), scratch2, &protoLoopHead);
+  bind(&protoLoopTail);
+
+  // scratch1 = entry->slotOffset()
+  load32(Address(entry, MegamorphicCacheEntry::offsetOfSlotOffset()), scratch1);
+
+  // scratch2 = slotOffset.offset()
+  move32(scratch1, scratch2);
+  rshift32(Imm32(TaggedSlotOffset::OffsetShift), scratch2);
+
+  // if (!slotOffset.isFixedSlot()) goto dynamicSlot
+  branchTest32(Assembler::Zero, scratch1,
+               Imm32(TaggedSlotOffset::IsFixedSlotFlag), &dynamicSlot);
+  // output = outputScratch[scratch2]
+  loadValue(BaseIndex(outputScratch, scratch2, TimesOne), output);
+  jump(cacheHit);
+
+  bind(&dynamicSlot);
+  // output = outputScratch->slots_[scratch2]
+  loadPtr(Address(outputScratch, NativeObject::offsetOfSlots()), outputScratch);
+  loadValue(BaseIndex(outputScratch, scratch2, TimesOne), output);
+  jump(cacheHit);
+
+  bind(&isMissing);
+  // output = undefined
+  moveValue(UndefinedValue(), output);
+  jump(cacheHit);
+}
+
+template <typename IdOperandType>
+void MacroAssembler::emitMegamorphicCacheLookupByValueCommon(
+    IdOperandType id, Register obj, Register scratch1, Register scratch2,
+    Register outEntryPtr, Label* cacheMiss, Label* cacheMissWithEntry) {
+  // A lot of this code is shared with emitMegamorphicCacheLookup. It would
+  // be nice to be able to avoid the duplication here, but due to a few
+  // differences like taking the id in a ValueOperand instead of being able
+  // to bake it in as an immediate, and only needing a Register for the output
+  // value, it seemed more awkward to read once it was deduplicated.
+
+  // outEntryPtr = obj->shape()
+  loadPtr(Address(obj, JSObject::offsetOfShape()), outEntryPtr);
+
+  movePtr(outEntryPtr, scratch2);
+
+  // outEntryPtr = (outEntryPtr >> 3) ^ (outEntryPtr >> 13) + idHash
+  rshiftPtr(Imm32(MegamorphicCache::ShapeHashShift1), outEntryPtr);
+  rshiftPtr(Imm32(MegamorphicCache::ShapeHashShift2), scratch2);
+  xorPtr(scratch2, outEntryPtr);
+
+  if constexpr (std::is_same<IdOperandType, ValueOperand>::value) {
+    loadAtomOrSymbolAndHash(id, scratch1, scratch2, cacheMiss);
+  } else {
+    static_assert(std::is_same<IdOperandType, Register>::value);
+    movePtr(id, scratch1);
+    loadAtomHash(scratch1, scratch2, nullptr);
+  }
+  addPtr(scratch2, outEntryPtr);
+
+  // outEntryPtr %= MegamorphicCache::NumEntries
+  constexpr size_t cacheSize = MegamorphicCache::NumEntries;
+  static_assert(mozilla::IsPowerOfTwo(cacheSize));
+  size_t cacheMask = cacheSize - 1;
+  and32(Imm32(cacheMask), outEntryPtr);
+
+  loadMegamorphicCache(scratch2);
+  // outEntryPtr = &scratch2->entries_[outEntryPtr]
+  constexpr size_t entrySize = sizeof(MegamorphicCache::Entry);
+  static_assert(sizeof(void*) == 4 || entrySize == 24);
+  if constexpr (sizeof(void*) == 4) {
+    mul32(Imm32(entrySize), outEntryPtr);
+    computeEffectiveAddress(BaseIndex(scratch2, outEntryPtr, TimesOne,
+                                      MegamorphicCache::offsetOfEntries()),
+                            outEntryPtr);
+  } else {
+    computeEffectiveAddress(BaseIndex(outEntryPtr, outEntryPtr, TimesTwo),
+                            outEntryPtr);
+    computeEffectiveAddress(BaseIndex(scratch2, outEntryPtr, TimesEight,
+                                      MegamorphicCache::offsetOfEntries()),
+                            outEntryPtr);
+  }
+
+  // if (outEntryPtr->key_ != scratch1) goto cacheMissWithEntry
+  branchPtr(Assembler::NotEqual,
+            Address(outEntryPtr, MegamorphicCache::Entry::offsetOfKey()),
+            scratch1, cacheMissWithEntry);
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch1);
+
+  // if (outEntryPtr->shape_ != scratch1) goto cacheMissWithEntry
+  branchPtr(Assembler::NotEqual,
+            Address(outEntryPtr, MegamorphicCache::Entry::offsetOfShape()),
+            scratch1, cacheMissWithEntry);
+
+  // scratch2 = scratch2->generation_
+  load16ZeroExtend(Address(scratch2, MegamorphicCache::offsetOfGeneration()),
+                   scratch2);
+  load16ZeroExtend(
+      Address(outEntryPtr, MegamorphicCache::Entry::offsetOfGeneration()),
+      scratch1);
+  // if (outEntryPtr->generation_ != scratch2) goto cacheMissWithEntry
+  branch32(Assembler::NotEqual, scratch1, scratch2, cacheMissWithEntry);
+}
+
+void MacroAssembler::emitMegamorphicCacheLookup(
+    PropertyKey id, Register obj, Register scratch1, Register scratch2,
+    Register outEntryPtr, ValueOperand output, Label* cacheHit) {
+  Label cacheMiss, isMissing, dynamicSlot, protoLoopHead, protoLoopTail;
+
+  // scratch1 = obj->shape()
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch1);
+
+  movePtr(scratch1, outEntryPtr);
+  movePtr(scratch1, scratch2);
+
+  // outEntryPtr = (scratch1 >> 3) ^ (scratch1 >> 13) + hash(id)
+  rshiftPtr(Imm32(MegamorphicCache::ShapeHashShift1), outEntryPtr);
+  rshiftPtr(Imm32(MegamorphicCache::ShapeHashShift2), scratch2);
+  xorPtr(scratch2, outEntryPtr);
+  addPtr(Imm32(HashAtomOrSymbolPropertyKey(id)), outEntryPtr);
+
+  // outEntryPtr %= MegamorphicCache::NumEntries
+  constexpr size_t cacheSize = MegamorphicCache::NumEntries;
+  static_assert(mozilla::IsPowerOfTwo(cacheSize));
+  size_t cacheMask = cacheSize - 1;
+  and32(Imm32(cacheMask), outEntryPtr);
+
+  loadMegamorphicCache(scratch2);
+  // outEntryPtr = &scratch2->entries_[outEntryPtr]
+  constexpr size_t entrySize = sizeof(MegamorphicCache::Entry);
+  static_assert(sizeof(void*) == 4 || entrySize == 24);
+  if constexpr (sizeof(void*) == 4) {
+    mul32(Imm32(entrySize), outEntryPtr);
+    computeEffectiveAddress(BaseIndex(scratch2, outEntryPtr, TimesOne,
+                                      MegamorphicCache::offsetOfEntries()),
+                            outEntryPtr);
+  } else {
+    computeEffectiveAddress(BaseIndex(outEntryPtr, outEntryPtr, TimesTwo),
+                            outEntryPtr);
+    computeEffectiveAddress(BaseIndex(scratch2, outEntryPtr, TimesEight,
+                                      MegamorphicCache::offsetOfEntries()),
+                            outEntryPtr);
+  }
+
+  // if (outEntryPtr->shape_ != scratch1) goto cacheMiss
+  branchPtr(Assembler::NotEqual,
+            Address(outEntryPtr, MegamorphicCache::Entry::offsetOfShape()),
+            scratch1, &cacheMiss);
+
+  // if (outEntryPtr->key_ != id) goto cacheMiss
+  movePropertyKey(id, scratch1);
+  branchPtr(Assembler::NotEqual,
+            Address(outEntryPtr, MegamorphicCache::Entry::offsetOfKey()),
+            scratch1, &cacheMiss);
+
+  // scratch2 = scratch2->generation_
+  load16ZeroExtend(Address(scratch2, MegamorphicCache::offsetOfGeneration()),
+                   scratch2);
+  load16ZeroExtend(
+      Address(outEntryPtr, MegamorphicCache::Entry::offsetOfGeneration()),
+      scratch1);
+  // if (outEntryPtr->generation_ != scratch2) goto cacheMiss
+  branch32(Assembler::NotEqual, scratch1, scratch2, &cacheMiss);
+
+  emitExtractValueFromMegamorphicCacheEntry(
+      obj, outEntryPtr, scratch1, scratch2, output, cacheHit, &cacheMiss);
+
+  bind(&cacheMiss);
+}
+
+template <typename IdOperandType>
+void MacroAssembler::emitMegamorphicCacheLookupByValue(
+    IdOperandType id, Register obj, Register scratch1, Register scratch2,
+    Register outEntryPtr, ValueOperand output, Label* cacheHit) {
+  Label cacheMiss, cacheMissWithEntry;
+  emitMegamorphicCacheLookupByValueCommon(id, obj, scratch1, scratch2,
+                                          outEntryPtr, &cacheMiss,
+                                          &cacheMissWithEntry);
+  emitExtractValueFromMegamorphicCacheEntry(obj, outEntryPtr, scratch1,
+                                            scratch2, output, cacheHit,
+                                            &cacheMissWithEntry);
+  bind(&cacheMiss);
+  xorPtr(outEntryPtr, outEntryPtr);
+  bind(&cacheMissWithEntry);
+}
+
+template void MacroAssembler::emitMegamorphicCacheLookupByValue<ValueOperand>(
+    ValueOperand id, Register obj, Register scratch1, Register scratch2,
+    Register outEntryPtr, ValueOperand output, Label* cacheHit);
+
+template void MacroAssembler::emitMegamorphicCacheLookupByValue<Register>(
+    Register id, Register obj, Register scratch1, Register scratch2,
+    Register outEntryPtr, ValueOperand output, Label* cacheHit);
+
+void MacroAssembler::emitMegamorphicCacheLookupExists(
+    ValueOperand id, Register obj, Register scratch1, Register scratch2,
+    Register outEntryPtr, Register output, Label* cacheHit, bool hasOwn) {
+  Label cacheMiss, cacheMissWithEntry, cacheHitFalse;
+  emitMegamorphicCacheLookupByValueCommon(id, obj, scratch1, scratch2,
+                                          outEntryPtr, &cacheMiss,
+                                          &cacheMissWithEntry);
+
+  // scratch1 = outEntryPtr->numHops_
+  load8ZeroExtend(
+      Address(outEntryPtr, MegamorphicCache::Entry::offsetOfNumHops()),
+      scratch1);
+
+  branch32(Assembler::Equal, scratch1,
+           Imm32(MegamorphicCache::Entry::NumHopsForMissingProperty),
+           &cacheHitFalse);
+
+  if (hasOwn) {
+    branch32(Assembler::NotEqual, scratch1, Imm32(0), &cacheHitFalse);
+  } else {
+    branch32(Assembler::Equal, scratch1,
+             Imm32(MegamorphicCache::Entry::NumHopsForMissingOwnProperty),
+             &cacheMissWithEntry);
+  }
+
+  move32(Imm32(1), output);
+  jump(cacheHit);
+
+  bind(&cacheHitFalse);
+  xor32(output, output);
+  jump(cacheHit);
+
+  bind(&cacheMiss);
+  xorPtr(outEntryPtr, outEntryPtr);
+  bind(&cacheMissWithEntry);
+}
+
+void MacroAssembler::extractCurrentIndexAndKindFromIterator(Register iterator,
+                                                            Register outIndex,
+                                                            Register outKind) {
+  // Load iterator object
+  Address nativeIterAddr(iterator,
+                         PropertyIteratorObject::offsetOfIteratorSlot());
+  loadPrivate(nativeIterAddr, outIndex);
+
+  // Compute offset of propertyCursor_ from propertiesBegin()
+  loadPtr(Address(outIndex, NativeIterator::offsetOfPropertyCursor()), outKind);
+  subPtr(Address(outIndex, NativeIterator::offsetOfShapesEnd()), outKind);
+
+  // Compute offset of current index from indicesBegin(). Note that because
+  // propertyCursor has already been incremented, this is actually the offset
+  // of the next index. We adjust accordingly below.
+  size_t indexAdjustment =
+      sizeof(GCPtr<JSLinearString*>) / sizeof(PropertyIndex);
+  if (indexAdjustment != 1) {
+    MOZ_ASSERT(indexAdjustment == 2);
+    rshift32(Imm32(1), outKind);
+  }
+
+  // Load current index.
+  loadPtr(Address(outIndex, NativeIterator::offsetOfPropertiesEnd()), outIndex);
+  load32(BaseIndex(outIndex, outKind, Scale::TimesOne,
+                   -int32_t(sizeof(PropertyIndex))),
+         outIndex);
+
+  // Extract kind.
+  move32(outIndex, outKind);
+  rshift32(Imm32(PropertyIndex::KindShift), outKind);
+
+  // Extract index.
+  and32(Imm32(PropertyIndex::IndexMask), outIndex);
+}
+
+template <typename IdType>
+void MacroAssembler::emitMegamorphicCachedSetSlot(
+    IdType id, Register obj, Register scratch1,
+#ifndef JS_CODEGEN_X86  // See MegamorphicSetElement in LIROps.yaml
+    Register scratch2, Register scratch3,
+#endif
+    ValueOperand value, Label* cacheHit,
+    void (*emitPreBarrier)(MacroAssembler&, const Address&, MIRType)) {
+  Label cacheMiss, dynamicSlot, doAdd, doSet, doAddDynamic, doSetDynamic;
+
+#ifdef JS_CODEGEN_X86
+  pushValue(value);
+  Register scratch2 = value.typeReg();
+  Register scratch3 = value.payloadReg();
+#endif
+
+  // outEntryPtr = obj->shape()
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch3);
+
+  movePtr(scratch3, scratch2);
+
+  // scratch3 = (scratch3 >> 3) ^ (scratch3 >> 13) + idHash
+  rshiftPtr(Imm32(MegamorphicSetPropCache::ShapeHashShift1), scratch3);
+  rshiftPtr(Imm32(MegamorphicSetPropCache::ShapeHashShift2), scratch2);
+  xorPtr(scratch2, scratch3);
+
+  if constexpr (std::is_same<IdType, ValueOperand>::value) {
+    loadAtomOrSymbolAndHash(id, scratch1, scratch2, &cacheMiss);
+    addPtr(scratch2, scratch3);
+  } else {
+    static_assert(std::is_same<IdType, PropertyKey>::value);
+    addPtr(Imm32(HashAtomOrSymbolPropertyKey(id)), scratch3);
+    movePropertyKey(id, scratch1);
+  }
+
+  // scratch3 %= MegamorphicSetPropCache::NumEntries
+  constexpr size_t cacheSize = MegamorphicSetPropCache::NumEntries;
+  static_assert(mozilla::IsPowerOfTwo(cacheSize));
+  size_t cacheMask = cacheSize - 1;
+  and32(Imm32(cacheMask), scratch3);
+
+  loadMegamorphicSetPropCache(scratch2);
+  // scratch3 = &scratch2->entries_[scratch3]
+  constexpr size_t entrySize = sizeof(MegamorphicSetPropCache::Entry);
+  mul32(Imm32(entrySize), scratch3);
+  computeEffectiveAddress(BaseIndex(scratch2, scratch3, TimesOne,
+                                    MegamorphicSetPropCache::offsetOfEntries()),
+                          scratch3);
+
+  // if (scratch3->key_ != scratch1) goto cacheMiss
+  branchPtr(Assembler::NotEqual,
+            Address(scratch3, MegamorphicSetPropCache::Entry::offsetOfKey()),
+            scratch1, &cacheMiss);
+
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch1);
+  // if (scratch3->shape_ != scratch1) goto cacheMiss
+  branchPtr(Assembler::NotEqual,
+            Address(scratch3, MegamorphicSetPropCache::Entry::offsetOfShape()),
+            scratch1, &cacheMiss);
+
+  // scratch2 = scratch2->generation_
+  load16ZeroExtend(
+      Address(scratch2, MegamorphicSetPropCache::offsetOfGeneration()),
+      scratch2);
+  load16ZeroExtend(
+      Address(scratch3, MegamorphicSetPropCache::Entry::offsetOfGeneration()),
+      scratch1);
+  // if (scratch3->generation_ != scratch2) goto cacheMiss
+  branch32(Assembler::NotEqual, scratch1, scratch2, &cacheMiss);
+
+  // scratch2 = entry->slotOffset()
+  load32(
+      Address(scratch3, MegamorphicSetPropCache::Entry::offsetOfSlotOffset()),
+      scratch2);
+
+  // scratch1 = slotOffset.offset()
+  move32(scratch2, scratch1);
+  rshift32(Imm32(TaggedSlotOffset::OffsetShift), scratch1);
+
+  Address afterShapePtr(scratch3,
+                        MegamorphicSetPropCache::Entry::offsetOfAfterShape());
+
+  // if (!slotOffset.isFixedSlot()) goto dynamicSlot
+  branchTest32(Assembler::Zero, scratch2,
+               Imm32(TaggedSlotOffset::IsFixedSlotFlag), &dynamicSlot);
+
+  // Calculate slot address in scratch1. Jump to doSet if scratch3 == nullptr,
+  // else jump (or fall-through) to doAdd.
+  addPtr(obj, scratch1);
+  branchPtr(Assembler::Equal, afterShapePtr, ImmPtr(nullptr), &doSet);
+  jump(&doAdd);
+
+  bind(&dynamicSlot);
+  branchPtr(Assembler::Equal, afterShapePtr, ImmPtr(nullptr), &doSetDynamic);
+
+  Address slotAddr(scratch1, 0);
+
+  // If entry->newCapacity_ is nonzero, we need to grow the slots on the
+  // object. Otherwise just jump straight to a dynamic add.
+  load16ZeroExtend(
+      Address(scratch3, MegamorphicSetPropCache::Entry::offsetOfNewCapacity()),
+      scratch2);
+  branchTest32(Assembler::Zero, scratch2, scratch2, &doAddDynamic);
+
+  AllocatableRegisterSet regs(RegisterSet::Volatile());
+  LiveRegisterSet save(regs.asLiveSet());
+
+  PushRegsInMask(save);
+
+  regs.takeUnchecked(scratch2);
+  Register tmp;
+  if (regs.has(obj)) {
+    regs.takeUnchecked(obj);
+    tmp = regs.takeAnyGeneral();
+    regs.addUnchecked(obj);
+  } else {
+    tmp = regs.takeAnyGeneral();
+  }
+
+  using Fn = bool (*)(JSContext* cx, NativeObject* obj, uint32_t newCount);
+  setupUnalignedABICall(tmp);
+  loadJSContext(tmp);
+  passABIArg(tmp);
+  passABIArg(obj);
+  passABIArg(scratch2);
+  callWithABI<Fn, NativeObject::growSlotsPure>();
+  storeCallPointerResult(scratch2);
+  PopRegsInMask(save);
+
+  branchIfFalseBool(scratch2, &cacheMiss);
+
+  bind(&doAddDynamic);
+  addPtr(Address(obj, NativeObject::offsetOfSlots()), scratch1);
+
+  bind(&doAdd);
+  // scratch3 = entry->afterShape()
+  loadPtr(
+      Address(scratch3, MegamorphicSetPropCache::Entry::offsetOfAfterShape()),
+      scratch3);
+
+  storeObjShape(scratch3, obj,
+                [emitPreBarrier](MacroAssembler& masm, const Address& addr) {
+                  emitPreBarrier(masm, addr, MIRType::Shape);
+                });
+#ifdef JS_CODEGEN_X86
+  popValue(value);
+#endif
+  storeValue(value, slotAddr);
+  jump(cacheHit);
+
+  bind(&doSetDynamic);
+  addPtr(Address(obj, NativeObject::offsetOfSlots()), scratch1);
+  bind(&doSet);
+  guardedCallPreBarrier(slotAddr, MIRType::Value);
+
+#ifdef JS_CODEGEN_X86
+  popValue(value);
+#endif
+  storeValue(value, slotAddr);
+  jump(cacheHit);
+
+  bind(&cacheMiss);
+#ifdef JS_CODEGEN_X86
+  popValue(value);
+#endif
+}
+
+template void MacroAssembler::emitMegamorphicCachedSetSlot<PropertyKey>(
+    PropertyKey id, Register obj, Register scratch1,
+#ifndef JS_CODEGEN_X86  // See MegamorphicSetElement in LIROps.yaml
+    Register scratch2, Register scratch3,
+#endif
+    ValueOperand value, Label* cacheHit,
+    void (*emitPreBarrier)(MacroAssembler&, const Address&, MIRType));
+
+template void MacroAssembler::emitMegamorphicCachedSetSlot<ValueOperand>(
+    ValueOperand id, Register obj, Register scratch1,
+#ifndef JS_CODEGEN_X86  // See MegamorphicSetElement in LIROps.yaml
+    Register scratch2, Register scratch3,
+#endif
+    ValueOperand value, Label* cacheHit,
+    void (*emitPreBarrier)(MacroAssembler&, const Address&, MIRType));
 
 void MacroAssembler::guardNonNegativeIntPtrToInt32(Register reg, Label* fail) {
 #ifdef DEBUG
@@ -1945,17 +3059,43 @@ void MacroAssembler::guardSpecificAtom(Register str, JSAtom* atom,
   branch32(Assembler::NotEqual, Address(str, JSString::offsetOfLength()),
            Imm32(atom->length()), fail);
 
+  // Compare short atoms using inline assembly.
+  if (canCompareStringCharsInline(atom)) {
+    // Pure two-byte strings can't be equal to Latin-1 strings.
+    if (atom->hasTwoByteChars()) {
+      JS::AutoCheckCannotGC nogc;
+      if (!mozilla::IsUtf16Latin1(atom->twoByteRange(nogc))) {
+        branchLatin1String(str, fail);
+      }
+    }
+
+    // Call into the VM when the input is a rope or has a different encoding.
+    Label vmCall;
+
+    // Load the input string's characters.
+    Register stringChars = scratch;
+    loadStringCharsForCompare(str, atom, stringChars, &vmCall);
+
+    // Start comparing character by character.
+    branchIfNotStringCharsEquals(stringChars, atom, fail);
+
+    // Falls through if both strings are equal.
+    jump(&done);
+
+    bind(&vmCall);
+  }
+
   // We have a non-atomized string with the same length. Call a helper
   // function to do the comparison.
   PushRegsInMask(volatileRegs);
 
-  using Fn = bool (*)(JSString * str1, JSString * str2);
+  using Fn = bool (*)(JSString* str1, JSString* str2);
   setupUnalignedABICall(scratch);
   movePtr(ImmGCPtr(atom), scratch);
   passABIArg(scratch);
   passABIArg(str);
   callWithABI<Fn, EqualStringsHelperPure>();
-  mov(ReturnReg, scratch);
+  storeCallPointerResult(scratch);
 
   MOZ_ASSERT(!volatileRegs.has(scratch));
   PopRegsInMask(volatileRegs);
@@ -1986,14 +3126,14 @@ void MacroAssembler::guardStringToInt32(Register str, Register output,
     }
     PushRegsInMask(volatileRegs);
 
-    using Fn = bool (*)(JSContext * cx, JSString * str, int32_t * result);
+    using Fn = bool (*)(JSContext* cx, JSString* str, int32_t* result);
     setupUnalignedABICall(scratch);
     loadJSContext(scratch);
     passABIArg(scratch);
     passABIArg(str);
     passABIArg(output);
     callWithABI<Fn, GetInt32FromStringPure>();
-    mov(ReturnReg, scratch);
+    storeCallPointerResult(scratch);
 
     PopRegsInMask(volatileRegs);
 
@@ -2017,10 +3157,8 @@ void MacroAssembler::guardStringToInt32(Register str, Register output,
 
 void MacroAssembler::generateBailoutTail(Register scratch,
                                          Register bailoutInfo) {
-  loadJSContext(scratch);
-  enterFakeExitFrame(scratch, scratch, ExitFrameType::Bare);
-
-  branchIfFalseBool(ReturnReg, exceptionLabel());
+  Label bailoutFailed;
+  branchIfFalseBool(ReturnReg, &bailoutFailed);
 
   // Finish bailing out to Baseline.
   {
@@ -2030,13 +3168,21 @@ void MacroAssembler::generateBailoutTail(Register scratch,
                   !regs.has(AsRegister(getStackPointer())));
     regs.take(bailoutInfo);
 
-    // Reset SP to the point where clobbering starts.
-    loadStackPtr(
-        Address(bailoutInfo, offsetof(BaselineBailoutInfo, incomingStack)));
+    Register temp = regs.takeAny();
+
+#ifdef DEBUG
+    // Assert the stack pointer points to the JitFrameLayout header. Copying
+    // starts here.
+    Label ok;
+    loadPtr(Address(bailoutInfo, offsetof(BaselineBailoutInfo, incomingStack)),
+            temp);
+    branchStackPtr(Assembler::Equal, temp, &ok);
+    assumeUnreachable("Unexpected stack pointer value");
+    bind(&ok);
+#endif
 
     Register copyCur = regs.takeAny();
     Register copyEnd = regs.takeAny();
-    Register temp = regs.takeAny();
 
     // Copy data onto stack.
     loadPtr(Address(bailoutInfo, offsetof(BaselineBailoutInfo, copyStackTop)),
@@ -2049,31 +3195,30 @@ void MacroAssembler::generateBailoutTail(Register scratch,
       Label endOfCopy;
       bind(&copyLoop);
       branchPtr(Assembler::BelowOrEqual, copyCur, copyEnd, &endOfCopy);
-      subPtr(Imm32(4), copyCur);
-      subFromStackPtr(Imm32(4));
-      load32(Address(copyCur, 0), temp);
-      store32(temp, Address(getStackPointer(), 0));
+      subPtr(Imm32(sizeof(uintptr_t)), copyCur);
+      subFromStackPtr(Imm32(sizeof(uintptr_t)));
+      loadPtr(Address(copyCur, 0), temp);
+      storePtr(temp, Address(getStackPointer(), 0));
       jump(&copyLoop);
       bind(&endOfCopy);
     }
 
+    loadPtr(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeFramePtr)),
+            FramePointer);
+
     // Enter exit frame for the FinishBailoutToBaseline call.
-    load32(Address(bailoutInfo,
-                   offsetof(BaselineBailoutInfo, frameSizeOfInnerMostFrame)),
-           temp);
-    makeFrameDescriptor(temp, FrameType::BaselineJS, ExitFrameLayout::Size());
-    push(temp);
+    pushFrameDescriptor(FrameType::BaselineJS);
     push(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeAddr)));
+    push(FramePointer);
     // No GC things to mark on the stack, push a bare token.
     loadJSContext(scratch);
     enterFakeExitFrame(scratch, scratch, ExitFrameType::Bare);
 
     // Save needed values onto stack temporarily.
-    push(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeFramePtr)));
     push(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeAddr)));
 
     // Call a stub to free allocated memory and create arguments objects.
-    using Fn = bool (*)(BaselineBailoutInfo * bailoutInfoArg);
+    using Fn = bool (*)(BaselineBailoutInfo* bailoutInfoArg);
     setupUnalignedABICall(temp);
     passABIArg(bailoutInfo);
     callWithABI<Fn, FinishBailoutToBaseline>(
@@ -2082,35 +3227,27 @@ void MacroAssembler::generateBailoutTail(Register scratch,
 
     // Restore values where they need to be and resume execution.
     AllocatableGeneralRegisterSet enterRegs(GeneralRegisterSet::All());
-    enterRegs.take(BaselineFrameReg);
+    MOZ_ASSERT(!enterRegs.has(FramePointer));
     Register jitcodeReg = enterRegs.takeAny();
 
     pop(jitcodeReg);
-    pop(BaselineFrameReg);
 
     // Discard exit frame.
     addToStackPtr(Imm32(ExitFrameLayout::SizeWithFooter()));
 
     jump(jitcodeReg);
   }
-}
 
-void MacroAssembler::assertRectifierFrameParentType(Register frameType) {
-#ifdef DEBUG
+  bind(&bailoutFailed);
   {
-    // Check the possible previous frame types here.
-    Label checkOk;
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::IonJS), &checkOk);
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::BaselineStub),
-             &checkOk);
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::WasmToJSJit),
-             &checkOk);
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::CppToJSJit),
-             &checkOk);
-    assumeUnreachable("Unrecognized frame type preceding RectifierFrame.");
-    bind(&checkOk);
+    // jit::Bailout or jit::InvalidationBailout failed and returned false. The
+    // Ion frame has already been discarded and the stack pointer points to the
+    // JitFrameLayout header. Turn it into an ExitFrameLayout, similar to
+    // EnsureUnwoundJitExitFrame, and call the exception handler.
+    loadJSContext(scratch);
+    enterFakeExitFrame(scratch, scratch, ExitFrameType::UnwoundJit);
+    jump(exceptionLabel());
   }
-#endif
 }
 
 void MacroAssembler::loadJitCodeRaw(Register func, Register dest) {
@@ -2118,6 +3255,10 @@ void MacroAssembler::loadJitCodeRaw(Register func, Register dest) {
                     SelfHostedLazyScript::offsetOfJitCodeRaw(),
                 "SelfHostedLazyScript and BaseScript must use same layout for "
                 "jitCodeRaw_");
+  static_assert(
+      BaseScript::offsetOfJitCodeRaw() == wasm::JumpTableJitEntryOffset,
+      "Wasm exported functions jit entries must use same layout for "
+      "jitCodeRaw_");
   loadPrivate(Address(func, JSFunction::offsetOfJitInfoOrScript()), dest);
   loadPtr(Address(dest, BaseScript::offsetOfJitCodeRaw()), dest);
 }
@@ -2151,21 +3292,19 @@ void MacroAssembler::loadBaselineFramePtr(Register framePtr, Register dest) {
   subPtr(Imm32(BaselineFrame::Size()), dest);
 }
 
-static const uint8_t* ContextInlinedICScriptPtr() {
-  return (
-      static_cast<const uint8_t*>(GetJitContext()->runtime->mainContextPtr()) +
-      JSContext::offsetOfInlinedICScript());
+static const uint8_t* ContextInlinedICScriptPtr(CompileRuntime* rt) {
+  return (static_cast<const uint8_t*>(rt->mainContextPtr()) +
+          JSContext::offsetOfInlinedICScript());
 }
 
 void MacroAssembler::storeICScriptInJSContext(Register icScript) {
-  storePtr(icScript, AbsoluteAddress(ContextInlinedICScriptPtr()));
+  storePtr(icScript, AbsoluteAddress(ContextInlinedICScriptPtr(runtime())));
 }
 
 void MacroAssembler::handleFailure() {
   // Re-entry code is irrelevant because the exception will leave the
   // running function and never come back
-  TrampolinePtr excTail =
-      GetJitContext()->runtime->jitRuntime()->getExceptionTail();
+  TrampolinePtr excTail = runtime()->jitRuntime()->getExceptionTail();
   jump(excTail);
 }
 
@@ -2229,119 +3368,6 @@ void MacroAssembler::printf(const char* output, Register value) {
   PopRegsInMask(save);
 #endif
 }
-
-#ifdef JS_TRACE_LOGGING
-void MacroAssembler::loadTraceLogger(Register logger) {
-  loadJSContext(logger);
-  loadPtr(Address(logger, offsetof(JSContext, traceLogger)), logger);
-}
-
-void MacroAssembler::tracelogStartId(Register logger, uint32_t textId,
-                                     bool force) {
-  if (!force && !TraceLogTextIdEnabled(textId)) {
-    return;
-  }
-
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  move32(Imm32(textId), temp);
-  passABIArg(temp);
-  callWithABI<Fn, TraceLogStartEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStartId(Register logger, Register textId) {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-  regs.takeUnchecked(textId);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  passABIArg(textId);
-  callWithABI<Fn, TraceLogStartEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStartEvent(Register logger, Register event) {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-  regs.takeUnchecked(event);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread*, const TraceLoggerEvent&);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  passABIArg(event);
-  callWithABI<Fn, TraceLogStartEvent>(MoveOp::GENERAL,
-                                      CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStopId(Register logger, uint32_t textId,
-                                    bool force) {
-  if (!force && !TraceLogTextIdEnabled(textId)) {
-    return;
-  }
-
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  move32(Imm32(textId), temp);
-  passABIArg(temp);
-
-  callWithABI<Fn, TraceLogStopEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStopId(Register logger, Register textId) {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-  regs.takeUnchecked(textId);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  passABIArg(textId);
-  callWithABI<Fn, TraceLogStopEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-#endif
 
 void MacroAssembler::convertInt32ValueToDouble(ValueOperand val) {
   Label done;
@@ -2410,12 +3436,13 @@ void MacroAssembler::outOfLineTruncateSlow(FloatRegister src, Register dest,
                                            bool compilingWasm,
                                            wasm::BytecodeOffset callOffset) {
   if (compilingWasm) {
-    Push(WasmTlsReg);
+    Push(InstanceReg);
   }
-  int32_t framePushedAfterTls = framePushed();
+  int32_t framePushedAfterInstance = framePushed();
 
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||     \
+    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   ScratchDoubleScope fpscratch(*this);
   if (widenFloatToDouble) {
     convertFloat32ToDouble(src, fpscratch);
@@ -2438,11 +3465,11 @@ void MacroAssembler::outOfLineTruncateSlow(FloatRegister src, Register dest,
   MOZ_ASSERT(src.isDouble());
 
   if (compilingWasm) {
-    int32_t tlsOffset = framePushed() - framePushedAfterTls;
+    int32_t instanceOffset = framePushed() - framePushedAfterInstance;
     setupWasmABICall();
     passABIArg(src, MoveOp::DOUBLE);
     callWithABI(callOffset, wasm::SymbolicAddress::ToInt32,
-                mozilla::Some(tlsOffset));
+                mozilla::Some(instanceOffset));
   } else {
     using Fn = int32_t (*)(double);
     setupUnalignedABICall(dest);
@@ -2452,8 +3479,9 @@ void MacroAssembler::outOfLineTruncateSlow(FloatRegister src, Register dest,
   }
   storeCallInt32Result(dest);
 
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||     \
+    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   // Nothing
 #elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
   if (widenFloatToDouble) {
@@ -2464,7 +3492,7 @@ void MacroAssembler::outOfLineTruncateSlow(FloatRegister src, Register dest,
 #endif
 
   if (compilingWasm) {
-    Pop(WasmTlsReg);
+    Pop(InstanceReg);
   }
 }
 
@@ -2482,10 +3510,6 @@ void MacroAssembler::convertDoubleToInt(FloatRegister src, Register output,
     case IntConversionBehavior::Truncate:
       branchTruncateDoubleMaybeModUint32(src, output,
                                          truncateFail ? truncateFail : fail);
-      break;
-    case IntConversionBehavior::TruncateNoWrap:
-      branchTruncateDoubleToInt32(src, output,
-                                  truncateFail ? truncateFail : fail);
       break;
     case IntConversionBehavior::ClampToUint8:
       // Clamping clobbers the input register, so use a temp.
@@ -2531,7 +3555,6 @@ void MacroAssembler::convertValueToInt(
           break;
 
         case IntConversionBehavior::Truncate:
-        case IntConversionBehavior::TruncateNoWrap:
         case IntConversionBehavior::ClampToUint8:
           branchTestNull(Equal, tag, &isNull);
           if (handleStrings) {
@@ -2719,7 +3742,8 @@ void MacroAssembler::alignJitStackBasedOnNArgs(Register nargs,
   bind(&end);
 }
 
-void MacroAssembler::alignJitStackBasedOnNArgs(uint32_t argc) {
+void MacroAssembler::alignJitStackBasedOnNArgs(uint32_t argc,
+                                               bool countIncludesThis) {
   // The stack should already be aligned to the size of a value.
   assertStackAlignment(sizeof(Value), 0);
 
@@ -2730,7 +3754,7 @@ void MacroAssembler::alignJitStackBasedOnNArgs(uint32_t argc) {
   }
 
   // See above for full explanation.
-  uint32_t nArgs = argc + 1;
+  uint32_t nArgs = argc + !countIncludesThis;
   if (nArgs % 2 == 0) {
     // |argN| should be 16-byte aligned
     andToStackPtr(Imm32(~(JitStackAlignment - 1)));
@@ -2747,55 +3771,11 @@ void MacroAssembler::alignJitStackBasedOnNArgs(uint32_t argc) {
 
 // ===============================================================
 
-MacroAssembler::MacroAssembler(JSContext* cx)
-    : wasmMaxOffsetGuardLimit_(0),
-      framePushed_(0),
-#ifdef DEBUG
-      inCall_(false),
-#endif
-      dynamicAlignment_(false),
-      emitProfilingInstrumentation_(false) {
-  jitContext_.emplace(cx, (js::jit::TempAllocator*)nullptr);
-  alloc_.emplace(&cx->tempLifoAlloc());
-  moveResolver_.setAllocator(*jitContext_->temp);
-#if defined(JS_CODEGEN_ARM)
-  initWithAllocator();
-  m_buffer.id = GetJitContext()->getNextAssemblerId();
-#elif defined(JS_CODEGEN_ARM64)
-  initWithAllocator();
-  armbuffer_.id = GetJitContext()->getNextAssemblerId();
-#endif
-}
-
-MacroAssembler::MacroAssembler()
-    : wasmMaxOffsetGuardLimit_(0),
-      framePushed_(0),
-#ifdef DEBUG
-      inCall_(false),
-#endif
-      dynamicAlignment_(false),
-      emitProfilingInstrumentation_(false) {
-  JitContext* jcx = GetJitContext();
-
-  if (!jcx->temp) {
-    JSContext* cx = jcx->cx;
-    MOZ_ASSERT(cx);
-    alloc_.emplace(&cx->tempLifoAlloc());
-  }
-
-  moveResolver_.setAllocator(*jcx->temp);
-
-#if defined(JS_CODEGEN_ARM)
-  initWithAllocator();
-  m_buffer.id = jcx->getNextAssemblerId();
-#elif defined(JS_CODEGEN_ARM64)
-  initWithAllocator();
-  armbuffer_.id = jcx->getNextAssemblerId();
-#endif
-}
-
-MacroAssembler::MacroAssembler(WasmToken, TempAllocator& alloc)
-    : wasmMaxOffsetGuardLimit_(0),
+MacroAssembler::MacroAssembler(TempAllocator& alloc,
+                               CompileRuntime* maybeRuntime,
+                               CompileRealm* maybeRealm)
+    : maybeRuntime_(maybeRuntime),
+      maybeRealm_(maybeRealm),
       framePushed_(0),
 #ifdef DEBUG
       inCall_(false),
@@ -2803,21 +3783,25 @@ MacroAssembler::MacroAssembler(WasmToken, TempAllocator& alloc)
       dynamicAlignment_(false),
       emitProfilingInstrumentation_(false) {
   moveResolver_.setAllocator(alloc);
+}
 
-#if defined(JS_CODEGEN_ARM)
-  initWithAllocator();
-  m_buffer.id = 0;
-#elif defined(JS_CODEGEN_ARM64)
-  initWithAllocator();
-  // Stubs + builtins + the baseline compiler all require the native SP,
-  // not the PSP.
-  SetStackPointer64(sp);
-  armbuffer_.id = 0;
-#endif
+StackMacroAssembler::StackMacroAssembler(JSContext* cx, TempAllocator& alloc)
+    : MacroAssembler(alloc, CompileRuntime::get(cx->runtime()),
+                     CompileRealm::get(cx->realm())) {}
+
+IonHeapMacroAssembler::IonHeapMacroAssembler(TempAllocator& alloc,
+                                             CompileRealm* realm)
+    : MacroAssembler(alloc, realm->runtime(), realm) {
+  MOZ_ASSERT(CurrentThreadIsIonCompiling());
 }
 
 WasmMacroAssembler::WasmMacroAssembler(TempAllocator& alloc, bool limitedSize)
-    : MacroAssembler(WasmToken(), alloc) {
+    : MacroAssembler(alloc) {
+#if defined(JS_CODEGEN_ARM64)
+  // Stubs + builtins + the baseline compiler all require the native SP,
+  // not the PSP.
+  SetStackPointer64(sp);
+#endif
   if (!limitedSize) {
     setUnlimitedBuffer();
   }
@@ -2826,9 +3810,12 @@ WasmMacroAssembler::WasmMacroAssembler(TempAllocator& alloc, bool limitedSize)
 WasmMacroAssembler::WasmMacroAssembler(TempAllocator& alloc,
                                        const wasm::ModuleEnvironment& env,
                                        bool limitedSize)
-    : MacroAssembler(WasmToken(), alloc) {
-  setWasmMaxOffsetGuardLimit(
-      wasm::GetMaxOffsetGuardLimit(env.hugeMemoryEnabled()));
+    : MacroAssembler(alloc) {
+#if defined(JS_CODEGEN_ARM64)
+  // Stubs + builtins + the baseline compiler all require the native SP,
+  // not the PSP.
+  SetStackPointer64(sp);
+#endif
   if (!limitedSize) {
     setUnlimitedBuffer();
   }
@@ -2871,9 +3858,9 @@ void MacroAssembler::Push(PropertyKey key, Register scratchReg) {
 
     if (key.isString()) {
       JSString* str = key.toString();
-      MOZ_ASSERT((uintptr_t(str) & JSID_TYPE_MASK) == 0);
-      static_assert(JSID_TYPE_STRING == 0,
-                    "need to orPtr JSID_TYPE_STRING tag if it's not 0");
+      MOZ_ASSERT((uintptr_t(str) & PropertyKey::TypeMask) == 0);
+      static_assert(PropertyKey::StringTypeTag == 0,
+                    "need to orPtr StringTypeTag if it's not 0");
       Push(ImmGCPtr(str));
     } else {
       MOZ_ASSERT(key.isSymbol());
@@ -2882,7 +3869,7 @@ void MacroAssembler::Push(PropertyKey key, Register scratchReg) {
     }
   } else {
     MOZ_ASSERT(key.isInt());
-    Push(ImmWord(key.asBits));
+    Push(ImmWord(key.asRawBits()));
   }
 }
 
@@ -2891,19 +3878,19 @@ void MacroAssembler::movePropertyKey(PropertyKey key, Register dest) {
     // See comment in |Push(PropertyKey, ...)| above for an explanation.
     if (key.isString()) {
       JSString* str = key.toString();
-      MOZ_ASSERT((uintptr_t(str) & JSID_TYPE_MASK) == 0);
-      static_assert(JSID_TYPE_STRING == 0,
-                    "need to orPtr JSID_TYPE_STRING tag if it's not 0");
+      MOZ_ASSERT((uintptr_t(str) & PropertyKey::TypeMask) == 0);
+      static_assert(PropertyKey::StringTypeTag == 0,
+                    "need to orPtr StringTypeTag tag if it's not 0");
       movePtr(ImmGCPtr(str), dest);
     } else {
       MOZ_ASSERT(key.isSymbol());
       JS::Symbol* sym = key.toSymbol();
       movePtr(ImmGCPtr(sym), dest);
-      orPtr(Imm32(JSID_TYPE_SYMBOL), dest);
+      orPtr(Imm32(PropertyKey::SymbolTypeTag), dest);
     }
   } else {
     MOZ_ASSERT(key.isInt());
-    movePtr(ImmWord(key.asBits), dest);
+    movePtr(ImmWord(key.asRawBits()), dest);
   }
 }
 
@@ -2976,25 +3963,7 @@ void MacroAssembler::PushEmptyRooted(VMFunctionData::RootType rootType) {
       Push(UndefinedValue());
       break;
     case VMFunctionData::RootId:
-      Push(ImmWord(JSID_BITS(JSID_VOID)));
-      break;
-  }
-}
-
-void MacroAssembler::popRooted(VMFunctionData::RootType rootType,
-                               Register cellReg, const ValueOperand& valueReg) {
-  switch (rootType) {
-    case VMFunctionData::RootNone:
-      MOZ_CRASH("Handle must have root type");
-    case VMFunctionData::RootObject:
-    case VMFunctionData::RootString:
-    case VMFunctionData::RootCell:
-    case VMFunctionData::RootId:
-    case VMFunctionData::RootBigInt:
-      Pop(cellReg);
-      break;
-    case VMFunctionData::RootValue:
-      Pop(valueReg);
+      Push(ImmWord(JS::PropertyKey::Void().asRawBits()));
       break;
   }
 }
@@ -3016,6 +3985,76 @@ void MacroAssembler::freeStack(uint32_t amount) {
 }
 
 void MacroAssembler::freeStack(Register amount) { addToStackPtr(amount); }
+
+void MacroAssembler::reserveVMFunctionOutParamSpace(const VMFunctionData& f) {
+  switch (f.outParam) {
+    case Type_Handle:
+      PushEmptyRooted(f.outParamRootType);
+      break;
+
+    case Type_Value:
+    case Type_Double:
+    case Type_Pointer:
+    case Type_Int32:
+    case Type_Bool:
+      reserveStack(f.sizeOfOutParamStackSlot());
+      break;
+
+    case Type_Void:
+      break;
+
+    case Type_Cell:
+      MOZ_CRASH("Unexpected outparam type");
+  }
+}
+
+void MacroAssembler::loadVMFunctionOutParam(const VMFunctionData& f,
+                                            const Address& addr) {
+  switch (f.outParam) {
+    case Type_Handle:
+      switch (f.outParamRootType) {
+        case VMFunctionData::RootNone:
+          MOZ_CRASH("Handle must have root type");
+        case VMFunctionData::RootObject:
+        case VMFunctionData::RootString:
+        case VMFunctionData::RootCell:
+        case VMFunctionData::RootBigInt:
+        case VMFunctionData::RootId:
+          loadPtr(addr, ReturnReg);
+          break;
+        case VMFunctionData::RootValue:
+          loadValue(addr, JSReturnOperand);
+          break;
+      }
+      break;
+
+    case Type_Value:
+      loadValue(addr, JSReturnOperand);
+      break;
+
+    case Type_Int32:
+      load32(addr, ReturnReg);
+      break;
+
+    case Type_Bool:
+      load8ZeroExtend(addr, ReturnReg);
+      break;
+
+    case Type_Double:
+      loadDouble(addr, ReturnDoubleReg);
+      break;
+
+    case Type_Pointer:
+      loadPtr(addr, ReturnReg);
+      break;
+
+    case Type_Void:
+      break;
+
+    case Type_Cell:
+      MOZ_CRASH("Unexpected outparam type");
+  }
+}
 
 // ===============================================================
 // ABI function calls.
@@ -3070,14 +4109,16 @@ void MacroAssembler::setupWasmABICall() {
   dynamicAlignment_ = false;
 }
 
+void MacroAssembler::setupUnalignedABICallDontSaveRestoreSP() {
+  andToStackPtr(Imm32(~(ABIStackAlignment - 1)));
+  setFramePushed(0);  // Required for aligned callWithABI.
+  setupAlignedABICall();
+}
+
 void MacroAssembler::setupAlignedABICall() {
   MOZ_ASSERT(!IsCompilingWasm(), "wasm should use setupWasmABICall");
   setupNativeABICall();
   dynamicAlignment_ = false;
-
-#if defined(JS_CODEGEN_ARM64)
-  MOZ_CRASH("Not supported on arm64");
-#endif
 }
 
 void MacroAssembler::passABIArg(const MoveOperand& from, MoveOp::Type type) {
@@ -3154,18 +4195,19 @@ void MacroAssembler::callWithABINoProfiler(void* fun, MoveOp::Type result,
 
 CodeOffset MacroAssembler::callWithABI(wasm::BytecodeOffset bytecode,
                                        wasm::SymbolicAddress imm,
-                                       mozilla::Maybe<int32_t> tlsOffset,
+                                       mozilla::Maybe<int32_t> instanceOffset,
                                        MoveOp::Type result) {
   MOZ_ASSERT(wasm::NeedsBuiltinThunk(imm));
 
   uint32_t stackAdjust;
   callWithABIPre(&stackAdjust, /* callFromWasm = */ true);
 
-  // The TLS register is used in builtin thunks and must be set.
-  if (tlsOffset) {
-    loadPtr(Address(getStackPointer(), *tlsOffset + stackAdjust), WasmTlsReg);
+  // The instance register is used in builtin thunks and must be set.
+  if (instanceOffset) {
+    loadPtr(Address(getStackPointer(), *instanceOffset + stackAdjust),
+            InstanceReg);
   } else {
-    MOZ_CRASH("tlsOffset is Nothing only for unsupported abi calls.");
+    MOZ_CRASH("instanceOffset is Nothing only for unsupported abi calls.");
   }
   CodeOffset raOffset = call(
       wasm::CallSiteDesc(bytecode.offset(), wasm::CallSite::Symbolic), imm);
@@ -3223,13 +4265,13 @@ void MacroAssembler::pow32(Register base, Register power, Register dest,
   // Inline int32-specialized implementation of js::powi with overflow
   // detection.
 
-  move32(Imm32(1), dest);  // p = 1
+  move32(Imm32(1), dest);  // result = 1
 
   // x^y where x == 1 returns 1 for any y.
   Label done;
   branch32(Assembler::Equal, base, Imm32(1), &done);
 
-  move32(base, temp1);   // m = x
+  move32(base, temp1);   // runningSquare = x
   move32(power, temp2);  // n = y
 
   // x^y where y < 0 returns a non-int32 value for any x != 1. Except when y is
@@ -3245,19 +4287,19 @@ void MacroAssembler::pow32(Register base, Register power, Register dest,
   Label loop;
   bind(&loop);
 
-  // m *= m
+  // runningSquare *= runningSquare
   branchMul32(Assembler::Overflow, temp1, temp1, onOver);
 
   bind(&start);
 
-  // if ((n & 1) != 0) p *= m
+  // if ((n & 1) != 0) result *= runningSquare
   Label even;
   branchTest32(Assembler::Zero, temp2, Imm32(1), &even);
   branchMul32(Assembler::Overflow, temp1, dest, onOver);
   bind(&even);
 
   // n >>= 1
-  // if (n == 0) return p
+  // if (n == 0) return result
   branchRshift32(Assembler::NonZero, Imm32(1), temp2, &loop);
 
   bind(&done);
@@ -3526,26 +4568,117 @@ void MacroAssembler::minMaxArrayNumber(Register array, FloatRegister result,
   bind(&done);
 }
 
-void MacroAssembler::branchIfNotRegExpPrototypeOptimizable(Register proto,
-                                                           Register temp,
-                                                           Label* fail) {
-  loadJSContext(temp);
-  loadPtr(Address(temp, JSContext::offsetOfRealm()), temp);
-  size_t offset = Realm::offsetOfRegExps() +
+void MacroAssembler::branchIfNotRegExpPrototypeOptimizable(
+    Register proto, Register temp, const GlobalObject* maybeGlobal,
+    Label* fail) {
+  if (maybeGlobal) {
+    movePtr(ImmGCPtr(maybeGlobal), temp);
+    loadPrivate(Address(temp, GlobalObject::offsetOfGlobalDataSlot()), temp);
+  } else {
+    loadGlobalObjectData(temp);
+  }
+  size_t offset = GlobalObjectData::offsetOfRegExpRealm() +
                   RegExpRealm::offsetOfOptimizableRegExpPrototypeShape();
   loadPtr(Address(temp, offset), temp);
   branchTestObjShapeUnsafe(Assembler::NotEqual, proto, temp, fail);
 }
 
-void MacroAssembler::branchIfNotRegExpInstanceOptimizable(Register regexp,
-                                                          Register temp,
-                                                          Label* label) {
-  loadJSContext(temp);
-  loadPtr(Address(temp, JSContext::offsetOfRealm()), temp);
-  size_t offset = Realm::offsetOfRegExps() +
+void MacroAssembler::branchIfNotRegExpInstanceOptimizable(
+    Register regexp, Register temp, const GlobalObject* maybeGlobal,
+    Label* label) {
+  if (maybeGlobal) {
+    movePtr(ImmGCPtr(maybeGlobal), temp);
+    loadPrivate(Address(temp, GlobalObject::offsetOfGlobalDataSlot()), temp);
+  } else {
+    loadGlobalObjectData(temp);
+  }
+  size_t offset = GlobalObjectData::offsetOfRegExpRealm() +
                   RegExpRealm::offsetOfOptimizableRegExpInstanceShape();
   loadPtr(Address(temp, offset), temp);
   branchTestObjShapeUnsafe(Assembler::NotEqual, regexp, temp, label);
+}
+
+void MacroAssembler::loadRegExpLastIndex(Register regexp, Register string,
+                                         Register lastIndex,
+                                         Label* notFoundZeroLastIndex) {
+  Address flagsSlot(regexp, RegExpObject::offsetOfFlags());
+  Address lastIndexSlot(regexp, RegExpObject::offsetOfLastIndex());
+  Address stringLength(string, JSString::offsetOfLength());
+
+  Label notGlobalOrSticky, loadedLastIndex;
+
+  branchTest32(Assembler::Zero, flagsSlot,
+               Imm32(JS::RegExpFlag::Global | JS::RegExpFlag::Sticky),
+               &notGlobalOrSticky);
+  {
+    // It's a global or sticky regular expression. Emit the following code:
+    //
+    //   lastIndex = regexp.lastIndex
+    //   if lastIndex > string.length:
+    //     jump to notFoundZeroLastIndex (skip the regexp match/test operation)
+    //
+    // The `notFoundZeroLastIndex` code should set regexp.lastIndex to 0 and
+    // treat this as a not-found result.
+    //
+    // See steps 5-8 in js::RegExpBuiltinExec.
+    //
+    // Earlier guards must have ensured regexp.lastIndex is a non-negative
+    // integer.
+#ifdef DEBUG
+    {
+      Label ok;
+      branchTestInt32(Assembler::Equal, lastIndexSlot, &ok);
+      assumeUnreachable("Expected int32 value for lastIndex");
+      bind(&ok);
+    }
+#endif
+    unboxInt32(lastIndexSlot, lastIndex);
+#ifdef DEBUG
+    {
+      Label ok;
+      branchTest32(Assembler::NotSigned, lastIndex, lastIndex, &ok);
+      assumeUnreachable("Expected non-negative lastIndex");
+      bind(&ok);
+    }
+#endif
+    branch32(Assembler::Below, stringLength, lastIndex, notFoundZeroLastIndex);
+    jump(&loadedLastIndex);
+  }
+
+  bind(&notGlobalOrSticky);
+  move32(Imm32(0), lastIndex);
+
+  bind(&loadedLastIndex);
+}
+
+void MacroAssembler::loadAndClearRegExpSearcherLastLimit(Register result,
+                                                         Register scratch) {
+  MOZ_ASSERT(result != scratch);
+
+  loadJSContext(scratch);
+
+  Address limitField(scratch, JSContext::offsetOfRegExpSearcherLastLimit());
+  load32(limitField, result);
+
+#ifdef DEBUG
+  Label ok;
+  branch32(Assembler::NotEqual, result, Imm32(RegExpSearcherLastLimitSentinel),
+           &ok);
+  assumeUnreachable("Unexpected sentinel for regExpSearcherLastLimit");
+  bind(&ok);
+  store32(Imm32(RegExpSearcherLastLimitSentinel), limitField);
+#endif
+}
+
+void MacroAssembler::loadParsedRegExpShared(Register regexp, Register result,
+                                            Label* unparsed) {
+  Address sharedSlot(regexp, RegExpObject::offsetOfShared());
+  branchTestUndefined(Assembler::Equal, sharedSlot, unparsed);
+  unboxNonDouble(sharedSlot, result, JSVAL_TYPE_PRIVATE_GCTHING);
+
+  static_assert(sizeof(RegExpShared::Kind) == sizeof(uint32_t));
+  branch32(Assembler::Equal, Address(result, RegExpShared::offsetOfKind()),
+           Imm32(int32_t(RegExpShared::Kind::Unparsed)), unparsed);
 }
 
 // ===============================================================
@@ -3570,23 +4703,13 @@ void MacroAssembler::loadFunctionLength(Register func,
   // NOTE: `funFlagsAndArgCount` and `output` must be allowed to alias.
 
   // Load the target function's length.
-  Label isInterpreted, isBound, lengthLoaded;
-  branchTest32(Assembler::NonZero, funFlagsAndArgCount,
-               Imm32(FunctionFlags::BOUND_FUN), &isBound);
+  Label isInterpreted, lengthLoaded;
   branchTest32(Assembler::NonZero, funFlagsAndArgCount,
                Imm32(FunctionFlags::BASESCRIPT), &isInterpreted);
   {
     // The length property of a native function stored with the flags.
     move32(funFlagsAndArgCount, output);
     rshift32(Imm32(JSFunction::ArgCountShift), output);
-    jump(&lengthLoaded);
-  }
-  bind(&isBound);
-  {
-    // Load the length property of a bound function.
-    Address boundLength(func,
-                        FunctionExtended::offsetOfBoundFunctionLengthSlot());
-    fallibleUnboxInt32(boundLength, output, slowPath);
     jump(&lengthLoaded);
   }
   bind(&isInterpreted);
@@ -3610,34 +4733,17 @@ void MacroAssembler::loadFunctionName(Register func, Register output,
   load32(Address(func, JSFunction::offsetOfFlagsAndArgCount()), output);
 
   // If the name was previously resolved, the name property may be shadowed.
-  branchTest32(Assembler::NonZero, output, Imm32(FunctionFlags::RESOLVED_NAME),
-               slowPath);
-
-  Label notBoundTarget, loadName;
-  branchTest32(Assembler::Zero, output, Imm32(FunctionFlags::BOUND_FUN),
-               &notBoundTarget);
-  {
-    // Call into the VM if the target's name atom doesn't contain the bound
-    // function prefix.
-    branchTest32(Assembler::Zero, output,
-                 Imm32(FunctionFlags::HAS_BOUND_FUNCTION_NAME_PREFIX),
-                 slowPath);
-
-    // Bound functions reuse HAS_GUESSED_ATOM for
-    // HAS_BOUND_FUNCTION_NAME_PREFIX, so skip the guessed atom check below.
-    static_assert(
-        FunctionFlags::HAS_BOUND_FUNCTION_NAME_PREFIX ==
-            FunctionFlags::HAS_GUESSED_ATOM,
-        "HAS_BOUND_FUNCTION_NAME_PREFIX is shared with HAS_GUESSED_ATOM");
-    jump(&loadName);
-  }
-  bind(&notBoundTarget);
+  // If the function is an accessor with lazy name, AtomSlot contains the
+  // unprefixed name.
+  branchTest32(
+      Assembler::NonZero, output,
+      Imm32(FunctionFlags::RESOLVED_NAME | FunctionFlags::LAZY_ACCESSOR_NAME),
+      slowPath);
 
   Label noName, done;
   branchTest32(Assembler::NonZero, output,
                Imm32(FunctionFlags::HAS_GUESSED_ATOM), &noName);
 
-  bind(&loadName);
   Address atomAddr(func, JSFunction::offsetOfAtom());
   branchTestUndefined(Assembler::Equal, atomAddr, &noName);
   unboxString(atomAddr, output);
@@ -3651,6 +4757,16 @@ void MacroAssembler::loadFunctionName(Register func, Register output,
   }
 
   bind(&done);
+}
+
+void MacroAssembler::assertFunctionIsExtended(Register func) {
+#ifdef DEBUG
+  Label extended;
+  branchTestFunctionFlags(func, FunctionFlags::EXTENDED, Assembler::NonZero,
+                          &extended);
+  assumeUnreachable("Function is not extended");
+  bind(&extended);
+#endif
 }
 
 void MacroAssembler::branchTestType(Condition cond, Register tag,
@@ -3691,6 +4807,55 @@ void MacroAssembler::branchTestType(Condition cond, Register tag,
   }
 }
 
+void MacroAssembler::branchTestObjShapeList(
+    Condition cond, Register obj, Register shapeElements, Register shapeScratch,
+    Register endScratch, Register spectreScratch, Label* label) {
+  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
+
+  bool needSpectreMitigations = spectreScratch != InvalidReg;
+
+  Label done;
+  Label* onMatch = cond == Assembler::Equal ? label : &done;
+  Label* onNoMatch = cond == Assembler::Equal ? &done : label;
+
+  // Load the object's shape pointer into shapeScratch, and prepare to compare
+  // it with the shapes in the list. The shapes are stored as private values so
+  // we can compare directly.
+  loadPtr(Address(obj, JSObject::offsetOfShape()), shapeScratch);
+
+  // Compute end pointer.
+  Address lengthAddr(shapeElements,
+                     ObjectElements::offsetOfInitializedLength());
+  load32(lengthAddr, endScratch);
+  branch32(Assembler::Equal, endScratch, Imm32(0), onNoMatch);
+  BaseObjectElementIndex endPtrAddr(shapeElements, endScratch);
+  computeEffectiveAddress(endPtrAddr, endScratch);
+
+  Label loop;
+  bind(&loop);
+
+  // Compare the object's shape with a shape from the list. Note that on 64-bit
+  // this includes the tag bits, but on 32-bit we only compare the low word of
+  // the value. This is fine because the list of shapes is never exposed and the
+  // tag is guaranteed to be PrivateGCThing.
+  if (needSpectreMitigations) {
+    move32(Imm32(0), spectreScratch);
+  }
+  branchPtr(Assembler::Equal, Address(shapeElements, 0), shapeScratch, onMatch);
+  if (needSpectreMitigations) {
+    spectreMovePtr(Assembler::Equal, spectreScratch, obj);
+  }
+
+  // Advance to next shape and loop if not finished.
+  addPtr(Imm32(sizeof(Value)), shapeElements);
+  branchPtr(Assembler::Below, shapeElements, endScratch, &loop);
+
+  if (cond == Assembler::NotEqual) {
+    jump(label);
+  }
+  bind(&done);
+}
+
 void MacroAssembler::branchTestObjCompartment(Condition cond, Register obj,
                                               const Address& compartment,
                                               Register scratch, Label* label) {
@@ -3715,9 +4880,10 @@ void MacroAssembler::branchTestObjCompartment(
 
 void MacroAssembler::branchIfNonNativeObj(Register obj, Register scratch,
                                           Label* label) {
-  loadObjClassUnsafe(obj, scratch);
-  branchTest32(Assembler::NonZero, Address(scratch, JSClass::offsetOfFlags()),
-               Imm32(JSClass::NON_NATIVE), label);
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
+  branchTest32(Assembler::Zero,
+               Address(scratch, Shape::offsetOfImmutableFlags()),
+               Imm32(Shape::isNativeBit()), label);
 }
 
 void MacroAssembler::branchIfObjectNotExtensible(Register obj, Register scratch,
@@ -3732,30 +4898,43 @@ void MacroAssembler::branchIfObjectNotExtensible(Register obj, Register scratch,
                Imm32(uint32_t(ObjectFlag::NotExtensible)), label);
 }
 
+void MacroAssembler::branchTestObjectNeedsProxyResultValidation(
+    Condition cond, Register obj, Register scratch, Label* label) {
+  MOZ_ASSERT(cond == Assembler::Zero || cond == Assembler::NonZero);
+
+  Label done;
+  Label* doValidation = cond == NonZero ? label : &done;
+  Label* skipValidation = cond == NonZero ? &done : label;
+
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
+  branchTest32(Assembler::Zero,
+               Address(scratch, Shape::offsetOfImmutableFlags()),
+               Imm32(Shape::isNativeBit()), doValidation);
+  static_assert(sizeof(ObjectFlags) == sizeof(uint16_t));
+  load16ZeroExtend(Address(scratch, Shape::offsetOfObjectFlags()), scratch);
+  branchTest32(Assembler::NonZero, scratch,
+               Imm32(uint32_t(ObjectFlag::NeedsProxyGetSetResultValidation)),
+               doValidation);
+
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
+  loadPtr(Address(scratch, Shape::offsetOfBaseShape()), scratch);
+  loadPtr(Address(scratch, BaseShape::offsetOfClasp()), scratch);
+  loadPtr(Address(scratch, offsetof(JSClass, cOps)), scratch);
+  branchTestPtr(Assembler::Zero, scratch, scratch, skipValidation);
+  loadPtr(Address(scratch, offsetof(JSClassOps, resolve)), scratch);
+  branchTestPtr(Assembler::NonZero, scratch, scratch, doValidation);
+  bind(&done);
+}
+
 void MacroAssembler::wasmTrap(wasm::Trap trap,
                               wasm::BytecodeOffset bytecodeOffset) {
-  uint32_t trapOffset = wasmTrapInstruction().offset();
+  FaultingCodeOffset fco = wasmTrapInstruction();
   MOZ_ASSERT_IF(!oom(),
-                currentOffset() - trapOffset == WasmTrapInstructionLength);
+                currentOffset() - fco.get() == WasmTrapInstructionLength);
 
-  append(trap, wasm::TrapSite(trapOffset, bytecodeOffset));
+  append(trap, wasm::TrapSite(wasm::TrapMachineInsn::OfficialUD, fco,
+                              bytecodeOffset));
 }
-
-void MacroAssembler::wasmInterruptCheck(Register tls,
-                                        wasm::BytecodeOffset bytecodeOffset) {
-  Label ok;
-  branch32(Assembler::Equal, Address(tls, offsetof(wasm::TlsData, interrupt)),
-           Imm32(0), &ok);
-  wasmTrap(wasm::Trap::CheckInterrupt, bytecodeOffset);
-  bind(&ok);
-}
-
-#ifdef ENABLE_WASM_EXCEPTIONS
-[[nodiscard]] bool MacroAssembler::wasmStartTry(size_t* tryNoteIndex) {
-  wasm::WasmTryNote tryNote = wasm::WasmTryNote(currentOffset(), 0, 0);
-  return append(tryNote, tryNoteIndex);
-}
-#endif
 
 std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
     uint32_t amount, wasm::BytecodeOffset trapOffset) {
@@ -3770,8 +4949,8 @@ std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
     branchPtr(Assembler::Below, scratch, Imm32(amount), &trap);
     subPtr(Imm32(amount), scratch);
     branchPtr(Assembler::Below,
-              Address(WasmTlsReg, offsetof(wasm::TlsData, stackLimit)), scratch,
-              &ok);
+              Address(InstanceReg, wasm::Instance::offsetOfStackLimit()),
+              scratch, &ok);
 
     bind(&trap);
     wasmTrap(wasm::Trap::StackOverflow, trapOffset);
@@ -3785,7 +4964,7 @@ std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
   reserveStack(amount);
   Label ok;
   branchStackPtrRhs(Assembler::Below,
-                    Address(WasmTlsReg, offsetof(wasm::TlsData, stackLimit)),
+                    Address(InstanceReg, wasm::Instance::offsetOfStackLimit()),
                     &ok);
   wasmTrap(wasm::Trap::StackOverflow, trapOffset);
   CodeOffset trapInsnOffset = CodeOffset(currentOffset());
@@ -3793,62 +4972,499 @@ std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
   return std::pair<CodeOffset, uint32_t>(trapInsnOffset, amount);
 }
 
-void MacroAssembler::loadWasmGlobalPtr(uint32_t globalDataOffset,
-                                       Register dest) {
-  loadPtr(Address(WasmTlsReg,
-                  offsetof(wasm::TlsData, globalArea) + globalDataOffset),
-          dest);
+#ifdef ENABLE_WASM_TAIL_CALLS
+static void MoveDataBlock(MacroAssembler& masm, Register base, int32_t from,
+                          int32_t to, uint32_t size) {
+  MOZ_ASSERT(base != masm.getStackPointer());
+  if (from == to || size == 0) {
+    return;  // noop
+  }
+
+#  ifdef JS_CODEGEN_ARM64
+  vixl::UseScratchRegisterScope temps(&masm);
+  const Register scratch = temps.AcquireX().asUnsized();
+#  elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_X86)
+  static constexpr Register scratch = ABINonArgReg0;
+  masm.push(scratch);
+#  elif defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64) || \
+      defined(JS_CODEGEN_RISCV64)
+  ScratchRegisterScope scratch(masm);
+#  elif !defined(JS_CODEGEN_NONE)
+  const Register scratch = ScratchReg;
+#  else
+  const Register scratch = InvalidReg;
+#  endif
+
+  if (to < from) {
+    for (uint32_t i = 0; i < size; i += sizeof(void*)) {
+      masm.loadPtr(Address(base, from + i), scratch);
+      masm.storePtr(scratch, Address(base, to + i));
+    }
+  } else {
+    for (uint32_t i = size; i > 0;) {
+      i -= sizeof(void*);
+      masm.loadPtr(Address(base, from + i), scratch);
+      masm.storePtr(scratch, Address(base, to + i));
+    }
+  }
+
+#  if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_X86)
+  masm.pop(scratch);
+#  endif
 }
+
+struct ReturnCallTrampolineData {
+#  ifdef JS_CODEGEN_ARM
+  uint32_t trampolineOffset;
+#  else
+  CodeLabel trampoline;
+#  endif
+};
+
+static ReturnCallTrampolineData MakeReturnCallTrampoline(MacroAssembler& masm) {
+  uint32_t savedPushed = masm.framePushed();
+
+  // Build simple trampoline code: load the instance slot from the frame,
+  // restore FP, and return to prevous caller.
+  ReturnCallTrampolineData data;
+#  ifdef JS_CODEGEN_ARM
+  data.trampolineOffset = masm.currentOffset();
+#  else
+  masm.bind(&data.trampoline);
+#  endif
+
+  masm.setFramePushed(
+      AlignBytes(wasm::FrameWithInstances::sizeOfInstanceFieldsAndShadowStack(),
+                 WasmStackAlignment));
+
+#  ifdef ENABLE_WASM_TAIL_CALLS
+  masm.wasmMarkSlowCall();
+#  endif
+
+  masm.loadPtr(
+      Address(masm.getStackPointer(), WasmCallerInstanceOffsetBeforeCall),
+      InstanceReg);
+  masm.switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
+  masm.moveToStackPtr(FramePointer);
+#  ifdef JS_CODEGEN_ARM64
+  masm.pop(FramePointer, lr);
+  masm.append(wasm::CodeRangeUnwindInfo::UseFpLr, masm.currentOffset());
+  masm.Mov(PseudoStackPointer64, vixl::sp);
+  masm.abiret();
+#  else
+  masm.pop(FramePointer);
+  masm.append(wasm::CodeRangeUnwindInfo::UseFp, masm.currentOffset());
+  masm.ret();
+#  endif
+
+  masm.append(wasm::CodeRangeUnwindInfo::Normal, masm.currentOffset());
+  masm.setFramePushed(savedPushed);
+  return data;
+}
+
+// CollapseWasmFrame methods merge frames fields: callee parameters, instance
+// slots, and caller RA. See the diagram below. The C0 is the previous caller,
+// the C1 is the caller of the return call, and the C2 is the callee.
+//
+//    +-------------------+          +--------------------+
+//    |C0 instance slots  |          |C0 instance slots   |
+//    +-------------------+ -+       +--------------------+ -+
+//    |   RA              |  |       |   RA               |  |
+//    +-------------------+  | C0    +--------------------+  |C0
+//    |   FP              |  v       |   FP               |  v
+//    +-------------------+          +--------------------+
+//    |C0 private frame   |          |C0 private frame    |
+//    +-------------------+          +--------------------+
+//    |C1 results area    |          |C1/C2 results area  |
+//    +-------------------+          +--------------------+
+//    |C1 parameters      |          |? trampoline frame  |
+//    +-------------------+          +--------------------+
+//    |C1 instance slots  |          |C2 parameters       |
+//    +-------------------+ -+       +--------------------+
+//    |C0 RA              |  |       |C2 instance slots’  |
+//    +-------------------+  | C1    +--------------------+ -+
+//    |C0 FP              |  v       |C0 RA’              |  |
+//    +-------------------+          +--------------------+  | C2
+//    |C1 private frame   |          |C0 FP’              |  v
+//    +-------------------+          +--------------------+ <= start of C2
+//    |C2 parameters      |
+//    +-------------------+
+//    |C2 instance slots  |
+//    +-------------------+ <= call C2
+//
+// The C2 parameters are moved in place of the C1 parameters, and the
+// C1 frame data is removed. The instance slots, return address, and
+// frame pointer to the C0 callsite are saved or adjusted.
+//
+// For cross-instance calls, the trampoline frame will be introduced
+// if the C0 callsite has no ability to restore instance registers and realm.
+
+static void CollapseWasmFrameFast(MacroAssembler& masm,
+                                  const ReturnCallAdjustmentInfo& retCallInfo) {
+  uint32_t framePushedAtStart = masm.framePushed();
+  static_assert(sizeof(wasm::Frame) == 2 * sizeof(void*));
+
+  // The instance slots + stack arguments are expected to be padded and
+  // aligned to the WasmStackAlignment boundary. There is no data expected
+  // in the padded region, such as results stack area or locals, to avoid
+  // unwanted stack growth.
+  uint32_t newSlotsAndStackArgBytes =
+      AlignBytes(retCallInfo.newSlotsAndStackArgBytes, WasmStackAlignment);
+  uint32_t oldSlotsAndStackArgBytes =
+      AlignBytes(retCallInfo.oldSlotsAndStackArgBytes, WasmStackAlignment);
+
+  static constexpr Register tempForCaller = WasmTailCallInstanceScratchReg;
+  static constexpr Register tempForFP = WasmTailCallFPScratchReg;
+  static constexpr Register tempForRA = WasmTailCallRAScratchReg;
+#  ifndef JS_USE_LINK_REGISTER
+  masm.push(tempForRA);
+#  endif
+
+  // Load the FP, RA, and instance slots into registers to preserve them while
+  // the new frame is collapsed over the current one.
+  masm.loadPtr(Address(FramePointer, wasm::Frame::callerFPOffset()), tempForFP);
+  masm.loadPtr(Address(FramePointer, wasm::Frame::returnAddressOffset()),
+               tempForRA);
+  masm.append(wasm::CodeRangeUnwindInfo::RestoreFpRa, masm.currentOffset());
+  bool copyCallerSlot = oldSlotsAndStackArgBytes != newSlotsAndStackArgBytes;
+  if (copyCallerSlot) {
+    masm.loadPtr(
+        Address(FramePointer, wasm::FrameWithInstances::callerInstanceOffset()),
+        tempForCaller);
+  }
+
+  // Copy parameters data, ignoring shadow data and instance slots.
+  // Make all offsets relative to the FramePointer.
+  int32_t newArgSrc = -framePushedAtStart;
+  int32_t newArgDest =
+      sizeof(wasm::Frame) + oldSlotsAndStackArgBytes - newSlotsAndStackArgBytes;
+  const uint32_t SlotsSize =
+      wasm::FrameWithInstances::sizeOfInstanceFieldsAndShadowStack();
+  MoveDataBlock(masm, FramePointer, newArgSrc + SlotsSize,
+                newArgDest + SlotsSize,
+                retCallInfo.newSlotsAndStackArgBytes - SlotsSize);
+
+  // Copy caller instance slots from the current frame.
+  if (copyCallerSlot) {
+    masm.storePtr(
+        tempForCaller,
+        Address(FramePointer, newArgDest + WasmCallerInstanceOffsetBeforeCall));
+  }
+
+  // Store current instance as the new callee instance slot.
+  masm.storePtr(
+      InstanceReg,
+      Address(FramePointer, newArgDest + WasmCalleeInstanceOffsetBeforeCall));
+
+#  ifdef JS_USE_LINK_REGISTER
+  // RA is already in its place, just move stack.
+  masm.addToStackPtr(Imm32(framePushedAtStart + newArgDest));
+#  else
+  // Push RA to new frame: store RA, restore temp, and move stack.
+  int32_t newFrameOffset = newArgDest - sizeof(wasm::Frame);
+  masm.storePtr(tempForRA,
+                Address(FramePointer,
+                        newFrameOffset + wasm::Frame::returnAddressOffset()));
+  // Restore tempForRA, but keep RA on top of the stack.
+  // There is no non-locking exchange instruction between register and memory.
+  // Using tempForCaller as scratch register.
+  masm.loadPtr(Address(masm.getStackPointer(), 0), tempForCaller);
+  masm.storePtr(tempForRA, Address(masm.getStackPointer(), 0));
+  masm.mov(tempForCaller, tempForRA);
+  masm.append(wasm::CodeRangeUnwindInfo::RestoreFp, masm.currentOffset());
+  masm.addToStackPtr(Imm32(framePushedAtStart + newFrameOffset +
+                           wasm::Frame::returnAddressOffset() + sizeof(void*)));
+#  endif
+
+  masm.movePtr(tempForFP, FramePointer);
+  // Setting framePushed to pre-collapse state, to properly set that in the
+  // following code.
+  masm.setFramePushed(framePushedAtStart);
+}
+
+static void CollapseWasmFrameSlow(MacroAssembler& masm,
+                                  const ReturnCallAdjustmentInfo& retCallInfo,
+                                  wasm::CallSiteDesc desc,
+                                  ReturnCallTrampolineData data) {
+  uint32_t framePushedAtStart = masm.framePushed();
+  static constexpr Register tempForCaller = WasmTailCallInstanceScratchReg;
+  static constexpr Register tempForFP = WasmTailCallFPScratchReg;
+  static constexpr Register tempForRA = WasmTailCallRAScratchReg;
+
+  static_assert(sizeof(wasm::Frame) == 2 * sizeof(void*));
+
+  // The hidden frame will "break" after wasm::Frame data fields.
+  // Calculate sum of wasm stack alignment before and after the break as
+  // the size to reserve.
+  const uint32_t HiddenFrameAfterSize =
+      AlignBytes(wasm::FrameWithInstances::sizeOfInstanceFieldsAndShadowStack(),
+                 WasmStackAlignment);
+  const uint32_t HiddenFrameSize =
+      AlignBytes(sizeof(wasm::Frame), WasmStackAlignment) +
+      HiddenFrameAfterSize;
+
+  // If it is not slow, prepare two frame: one is regular wasm frame, and
+  // another one is hidden. The hidden frame contains one instance slots
+  // for unwind and recovering pinned registers.
+  // The instance slots + stack arguments are expected to be padded and
+  // aligned to the WasmStackAlignment boundary. There is no data expected
+  // in the padded region, such as results stack area or locals, to avoid
+  // unwanted stack growth.
+  // The Hidden frame will be inserted with this constraint too.
+  uint32_t newSlotsAndStackArgBytes =
+      AlignBytes(retCallInfo.newSlotsAndStackArgBytes, WasmStackAlignment);
+  uint32_t oldSlotsAndStackArgBytes =
+      AlignBytes(retCallInfo.oldSlotsAndStackArgBytes, WasmStackAlignment);
+
+  // Make all offsets relative to the FramePointer.
+  int32_t newArgSrc = -framePushedAtStart;
+  int32_t newArgDest = sizeof(wasm::Frame) + oldSlotsAndStackArgBytes -
+                       HiddenFrameSize - newSlotsAndStackArgBytes;
+  int32_t hiddenFrameArgsDest =
+      sizeof(wasm::Frame) + oldSlotsAndStackArgBytes - HiddenFrameAfterSize;
+
+  // It will be possible to overwrite data (on the top of the stack) due to
+  // the added hidden frame, reserve needed space.
+  uint32_t reserved = newArgDest - int32_t(sizeof(void*)) < newArgSrc
+                          ? newArgSrc - newArgDest + sizeof(void*)
+                          : 0;
+  masm.reserveStack(reserved);
+
+#  ifndef JS_USE_LINK_REGISTER
+  masm.push(tempForRA);
+#  endif
+
+  // Load FP, RA and instance slots to preserve them from being overwritten.
+  masm.loadPtr(Address(FramePointer, wasm::Frame::callerFPOffset()), tempForFP);
+  masm.loadPtr(Address(FramePointer, wasm::Frame::returnAddressOffset()),
+               tempForRA);
+  masm.append(wasm::CodeRangeUnwindInfo::RestoreFpRa, masm.currentOffset());
+  masm.loadPtr(
+      Address(FramePointer, newArgSrc + WasmCallerInstanceOffsetBeforeCall),
+      tempForCaller);
+
+  // Copy parameters data, ignoring shadow data and instance slots.
+  const uint32_t SlotsSize =
+      wasm::FrameWithInstances::sizeOfInstanceFieldsAndShadowStack();
+  MoveDataBlock(masm, FramePointer, newArgSrc + SlotsSize,
+                newArgDest + SlotsSize,
+                retCallInfo.newSlotsAndStackArgBytes - SlotsSize);
+
+  // Form hidden frame for trampoline.
+  int32_t newFPOffset = hiddenFrameArgsDest - sizeof(wasm::Frame);
+  masm.storePtr(
+      tempForRA,
+      Address(FramePointer, newFPOffset + wasm::Frame::returnAddressOffset()));
+
+  // Copy original FP.
+  masm.storePtr(
+      tempForFP,
+      Address(FramePointer, newFPOffset + wasm::Frame::callerFPOffset()));
+
+  // Set up instance slots.
+  masm.storePtr(
+      tempForCaller,
+      Address(FramePointer,
+              newFPOffset + wasm::FrameWithInstances::calleeInstanceOffset()));
+  masm.storePtr(
+      tempForCaller,
+      Address(FramePointer, newArgDest + WasmCallerInstanceOffsetBeforeCall));
+  masm.storePtr(
+      InstanceReg,
+      Address(FramePointer, newArgDest + WasmCalleeInstanceOffsetBeforeCall));
+
+#  ifdef JS_CODEGEN_ARM
+  // ARM has no CodeLabel -- calculate PC directly.
+  masm.mov(pc, tempForRA);
+  masm.computeEffectiveAddress(
+      Address(tempForRA,
+              int32_t(data.trampolineOffset - masm.currentOffset() - 4)),
+      tempForRA);
+  masm.append(desc, CodeOffset(data.trampolineOffset));
+#  else
+  masm.mov(&data.trampoline, tempForRA);
+
+  masm.addCodeLabel(data.trampoline);
+  // Add slow trampoline callsite description, to be annotated in
+  // stack/frame iterators.
+  masm.append(desc, *data.trampoline.target());
+#  endif
+
+#  ifdef JS_USE_LINK_REGISTER
+  masm.freeStack(reserved);
+  // RA is already in its place, just move stack.
+  masm.addToStackPtr(Imm32(framePushedAtStart + newArgDest));
+#  else
+  // Push RA to new frame: store RA, restore temp, and move stack.
+  int32_t newFrameOffset = newArgDest - sizeof(wasm::Frame);
+  masm.storePtr(tempForRA,
+                Address(FramePointer,
+                        newFrameOffset + wasm::Frame::returnAddressOffset()));
+  // Restore tempForRA, but keep RA on top of the stack.
+  // There is no non-locking exchange instruction between register and memory.
+  // Using tempForCaller as scratch register.
+  masm.loadPtr(Address(masm.getStackPointer(), 0), tempForCaller);
+  masm.storePtr(tempForRA, Address(masm.getStackPointer(), 0));
+  masm.mov(tempForCaller, tempForRA);
+  masm.append(wasm::CodeRangeUnwindInfo::RestoreFp, masm.currentOffset());
+  masm.addToStackPtr(Imm32(framePushedAtStart + newFrameOffset +
+                           wasm::Frame::returnAddressOffset() + reserved +
+                           sizeof(void*)));
+#  endif
+
+  // Point FramePointer to hidden frame.
+  masm.computeEffectiveAddress(Address(FramePointer, newFPOffset),
+                               FramePointer);
+  // Setting framePushed to pre-collapse state, to properly set that in the
+  // following code.
+  masm.setFramePushed(framePushedAtStart);
+}
+
+void MacroAssembler::wasmCollapseFrameFast(
+    const ReturnCallAdjustmentInfo& retCallInfo) {
+  CollapseWasmFrameFast(*this, retCallInfo);
+}
+
+void MacroAssembler::wasmCollapseFrameSlow(
+    const ReturnCallAdjustmentInfo& retCallInfo, wasm::CallSiteDesc desc) {
+  static constexpr Register temp1 = ABINonArgReg1;
+  static constexpr Register temp2 = ABINonArgReg3;
+
+  // Check if RA has slow marker. If there is no marker, generate a trampoline
+  // frame to restore register state when this tail call returns.
+
+  Label slow, done;
+  loadPtr(Address(FramePointer, wasm::Frame::returnAddressOffset()), temp1);
+  wasmCheckSlowCallsite(temp1, &slow, temp1, temp2);
+  CollapseWasmFrameFast(*this, retCallInfo);
+  jump(&done);
+  append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
+
+  ReturnCallTrampolineData data = MakeReturnCallTrampoline(*this);
+
+  bind(&slow);
+  CollapseWasmFrameSlow(*this, retCallInfo, desc, data);
+
+  bind(&done);
+}
+#endif  // ENABLE_WASM_TAIL_CALLS
 
 CodeOffset MacroAssembler::wasmCallImport(const wasm::CallSiteDesc& desc,
                                           const wasm::CalleeDesc& callee) {
-  storePtr(WasmTlsReg,
-           Address(getStackPointer(), WasmCallerTlsOffsetBeforeCall));
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
 
   // Load the callee, before the caller's registers are clobbered.
-  uint32_t globalDataOffset = callee.importGlobalDataOffset();
-  loadWasmGlobalPtr(globalDataOffset + offsetof(wasm::FuncImportTls, code),
-                    ABINonArgReg0);
+  uint32_t instanceDataOffset = callee.importInstanceDataOffset();
+  loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetInData(
+                               instanceDataOffset +
+                               offsetof(wasm::FuncImportInstanceData, code))),
+      ABINonArgReg0);
 
-#ifndef JS_CODEGEN_NONE
-  static_assert(ABINonArgReg0 != WasmTlsReg, "by constraint");
+#if !defined(JS_CODEGEN_NONE) && !defined(JS_CODEGEN_WASM32)
+  static_assert(ABINonArgReg0 != InstanceReg, "by constraint");
 #endif
 
   // Switch to the callee's realm.
-  loadWasmGlobalPtr(globalDataOffset + offsetof(wasm::FuncImportTls, realm),
-                    ABINonArgReg1);
-  loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, cx)), ABINonArgReg2);
+  loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetInData(
+                               instanceDataOffset +
+                               offsetof(wasm::FuncImportInstanceData, realm))),
+      ABINonArgReg1);
+  loadPtr(Address(InstanceReg, wasm::Instance::offsetOfCx()), ABINonArgReg2);
   storePtr(ABINonArgReg1, Address(ABINonArgReg2, JSContext::offsetOfRealm()));
 
-  // Switch to the callee's TLS and pinned registers and make the call.
-  loadWasmGlobalPtr(globalDataOffset + offsetof(wasm::FuncImportTls, tls),
-                    WasmTlsReg);
+  // Switch to the callee's instance and pinned registers and make the call.
+  loadPtr(Address(InstanceReg,
+                  wasm::Instance::offsetInData(
+                      instanceDataOffset +
+                      offsetof(wasm::FuncImportInstanceData, instance))),
+          InstanceReg);
 
-  storePtr(WasmTlsReg,
-           Address(getStackPointer(), WasmCalleeTlsOffsetBeforeCall));
-  loadWasmPinnedRegsFromTls();
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
+  loadWasmPinnedRegsFromInstance();
 
-  return call(desc, ABINonArgReg0);
+  CodeOffset res = call(desc, ABINonArgReg0);
+#ifdef ENABLE_WASM_TAIL_CALLS
+  wasmMarkSlowCall();
+#endif
+  return res;
 }
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+CodeOffset MacroAssembler::wasmReturnCallImport(
+    const wasm::CallSiteDesc& desc, const wasm::CalleeDesc& callee,
+    const ReturnCallAdjustmentInfo& retCallInfo) {
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+
+  // Load the callee, before the caller's registers are clobbered.
+  uint32_t instanceDataOffset = callee.importInstanceDataOffset();
+  loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetInData(
+                               instanceDataOffset +
+                               offsetof(wasm::FuncImportInstanceData, code))),
+      ABINonArgReg0);
+
+#  if !defined(JS_CODEGEN_NONE) && !defined(JS_CODEGEN_WASM32)
+  static_assert(ABINonArgReg0 != InstanceReg, "by constraint");
+#  endif
+
+  // Switch to the callee's realm.
+  loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetInData(
+                               instanceDataOffset +
+                               offsetof(wasm::FuncImportInstanceData, realm))),
+      ABINonArgReg1);
+  loadPtr(Address(InstanceReg, wasm::Instance::offsetOfCx()), ABINonArgReg2);
+  storePtr(ABINonArgReg1, Address(ABINonArgReg2, JSContext::offsetOfRealm()));
+
+  // Switch to the callee's instance and pinned registers and make the call.
+  loadPtr(Address(InstanceReg,
+                  wasm::Instance::offsetInData(
+                      instanceDataOffset +
+                      offsetof(wasm::FuncImportInstanceData, instance))),
+          InstanceReg);
+
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
+  loadWasmPinnedRegsFromInstance();
+
+  wasm::CallSiteDesc stubDesc(desc.lineOrBytecode(),
+                              wasm::CallSiteDesc::ReturnStub);
+  wasmCollapseFrameSlow(retCallInfo, stubDesc);
+  jump(ABINonArgReg0);
+  append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
+  return CodeOffset(currentOffset());
+}
+
+CodeOffset MacroAssembler::wasmReturnCall(
+    const wasm::CallSiteDesc& desc, uint32_t funcDefIndex,
+    const ReturnCallAdjustmentInfo& retCallInfo) {
+  wasmCollapseFrameFast(retCallInfo);
+  CodeOffset offset = farJumpWithPatch();
+  append(desc, offset, funcDefIndex);
+  append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
+  return offset;
+}
+#endif  // ENABLE_WASM_TAIL_CALLS
 
 CodeOffset MacroAssembler::wasmCallBuiltinInstanceMethod(
     const wasm::CallSiteDesc& desc, const ABIArg& instanceArg,
     wasm::SymbolicAddress builtin, wasm::FailureMode failureMode) {
   MOZ_ASSERT(instanceArg != ABIArg());
 
-  storePtr(WasmTlsReg,
-           Address(getStackPointer(), WasmCallerTlsOffsetBeforeCall));
-  storePtr(WasmTlsReg,
-           Address(getStackPointer(), WasmCalleeTlsOffsetBeforeCall));
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
 
   if (instanceArg.kind() == ABIArg::GPR) {
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, instance)),
-            instanceArg.gpr());
+    movePtr(InstanceReg, instanceArg.gpr());
   } else if (instanceArg.kind() == ABIArg::Stack) {
-    // Safe to use ABINonArgReg0 since it's the last thing before the call.
-    Register scratch = ABINonArgReg0;
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, instance)), scratch);
-    storePtr(scratch,
+    storePtr(InstanceReg,
              Address(getStackPointer(), instanceArg.offsetFromArgBase()));
   } else {
     MOZ_CRASH("Unknown abi passing style for pointer");
@@ -3885,78 +5501,1037 @@ CodeOffset MacroAssembler::asmCallIndirect(const wasm::CallSiteDesc& desc,
                                            const wasm::CalleeDesc& callee) {
   MOZ_ASSERT(callee.which() == wasm::CalleeDesc::AsmJSTable);
 
-  Register scratch = WasmTableCallScratchReg0;
-  Register index = WasmTableCallIndexReg;
+  const Register scratch = WasmTableCallScratchReg0;
+  const Register index = WasmTableCallIndexReg;
+
+  // Optimization opportunity: when offsetof(FunctionTableElem, code) == 0, as
+  // it is at present, we can probably generate better code here by folding
+  // the address computation into the load.
+
+  static_assert(sizeof(wasm::FunctionTableElem) == 8 ||
+                    sizeof(wasm::FunctionTableElem) == 16,
+                "elements of function tables are two words");
 
   // asm.js tables require no signature check, and have had their index
   // masked into range and thus need no bounds check.
-  loadWasmGlobalPtr(callee.tableFunctionBaseGlobalDataOffset(), scratch);
-  loadPtr(BaseIndex(scratch, index, ScalePointer), scratch);
-  storePtr(WasmTlsReg,
-           Address(getStackPointer(), WasmCallerTlsOffsetBeforeCall));
-  storePtr(WasmTlsReg,
-           Address(getStackPointer(), WasmCalleeTlsOffsetBeforeCall));
+  loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetInData(
+                               callee.tableFunctionBaseInstanceDataOffset())),
+      scratch);
+  if (sizeof(wasm::FunctionTableElem) == 8) {
+    computeEffectiveAddress(BaseIndex(scratch, index, TimesEight), scratch);
+  } else {
+    lshift32(Imm32(4), index);
+    addPtr(index, scratch);
+  }
+  loadPtr(Address(scratch, offsetof(wasm::FunctionTableElem, code)), scratch);
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
   return call(desc, scratch);
 }
 
-CodeOffset MacroAssembler::wasmCallIndirect(
-    const wasm::CallSiteDesc& desc, const wasm::CalleeDesc& callee,
-    bool needsBoundsCheck, mozilla::Maybe<uint32_t> tableSize) {
+// In principle, call_indirect requires an expensive context switch to the
+// callee's instance and realm before the call and an almost equally expensive
+// switch back to the caller's ditto after.  However, if the caller's instance
+// is the same as the callee's instance then no context switch is required, and
+// it only takes a compare-and-branch at run-time to test this - all values are
+// in registers already.  We therefore generate two call paths, one for the fast
+// call without the context switch (which additionally avoids a null check) and
+// one for the slow call with the context switch.
+
+void MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc,
+                                      const wasm::CalleeDesc& callee,
+                                      Label* boundsCheckFailedLabel,
+                                      Label* nullCheckFailedLabel,
+                                      mozilla::Maybe<uint32_t> tableSize,
+                                      CodeOffset* fastCallOffset,
+                                      CodeOffset* slowCallOffset) {
+  static_assert(sizeof(wasm::FunctionTableElem) == 2 * sizeof(void*),
+                "Exactly two pointers or index scaling won't work correctly");
   MOZ_ASSERT(callee.which() == wasm::CalleeDesc::WasmTable);
 
-  Register scratch = WasmTableCallScratchReg0;
-  Register index = WasmTableCallIndexReg;
-
+  const int shift = sizeof(wasm::FunctionTableElem) == 8 ? 3 : 4;
   wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
+  const Register calleeScratch = WasmTableCallScratchReg0;
+  const Register index = WasmTableCallIndexReg;
 
-  // WebAssembly throws if the index is out-of-bounds.
-  if (needsBoundsCheck) {
-    Label ok;
+  // Check the table index and throw if out-of-bounds.
+  //
+  // Frequently the table size is known, so optimize for that.  Otherwise
+  // compare with a memory operand when that's possible.  (There's little sense
+  // in hoisting the load of the bound into a register at a higher level and
+  // reusing that register, because a hoisted value would either have to be
+  // spilled and re-loaded before the next call_indirect, or would be abandoned
+  // because we could not trust that a hoisted value would not have changed.)
+
+  if (boundsCheckFailedLabel) {
     if (tableSize.isSome()) {
-      branch32(Assembler::Condition::Below, index, Imm32(*tableSize), &ok);
+      branch32(Assembler::Condition::AboveOrEqual, index, Imm32(*tableSize),
+               boundsCheckFailedLabel);
     } else {
-      branch32(Assembler::Condition::Above,
-               Address(WasmTlsReg, offsetof(wasm::TlsData, globalArea) +
-                                       callee.tableLengthGlobalDataOffset()),
-               index, &ok);
+      branch32(
+          Assembler::Condition::BelowOrEqual,
+          Address(InstanceReg, wasm::Instance::offsetInData(
+                                   callee.tableLengthInstanceDataOffset())),
+          index, boundsCheckFailedLabel);
     }
-    wasmTrap(wasm::Trap::OutOfBounds, trapOffset);
-    bind(&ok);
   }
-
-  // Load the base pointer of the table.  Do this as early as we can to avoid
-  // waiting for the value below.
-  loadWasmGlobalPtr(callee.tableFunctionBaseGlobalDataOffset(), scratch);
 
   // Write the functype-id into the ABI functype-id register.
-  wasm::TypeIdDesc funcTypeId = callee.wasmTableSigId();
-  switch (funcTypeId.kind()) {
-    case wasm::TypeIdDescKind::Global:
-      loadWasmGlobalPtr(funcTypeId.globalDataOffset(), WasmTableCallSigReg);
+
+  const wasm::CallIndirectId callIndirectId = callee.wasmTableSigId();
+  switch (callIndirectId.kind()) {
+    case wasm::CallIndirectIdKind::Global:
+      loadPtr(Address(InstanceReg, wasm::Instance::offsetInData(
+                                       callIndirectId.instanceDataOffset() +
+                                       offsetof(wasm::TypeDefInstanceData,
+                                                superTypeVector))),
+              WasmTableCallSigReg);
       break;
-    case wasm::TypeIdDescKind::Immediate:
-      move32(Imm32(funcTypeId.immediate()), WasmTableCallSigReg);
+    case wasm::CallIndirectIdKind::Immediate:
+      move32(Imm32(callIndirectId.immediate()), WasmTableCallSigReg);
       break;
-    case wasm::TypeIdDescKind::None:
+    case wasm::CallIndirectIdKind::AsmJS:
+    case wasm::CallIndirectIdKind::None:
       break;
   }
 
-  // Load the callee from the table.
-  loadPtr(BaseIndex(scratch, index, ScalePointer), scratch);
+  // Load the base pointer of the table and compute the address of the callee in
+  // the table.
 
-#ifdef ENABLE_WASM_CALL_INDIRECT_NULL
-  CodeOffset callOffset = call(desc, scratch);
-  append(wasm::Trap::IndirectCallToNull,
-         wasm::TrapSite(callOffset.offset(), trapOffset));
-  return callOffset;
+  loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetInData(
+                               callee.tableFunctionBaseInstanceDataOffset())),
+      calleeScratch);
+  shiftIndex32AndAdd(index, shift, calleeScratch);
+
+  // Load the callee instance and decide whether to take the fast path or the
+  // slow path.
+
+  Label fastCall;
+  Label done;
+  const Register newInstanceTemp = WasmTableCallScratchReg1;
+  loadPtr(Address(calleeScratch, offsetof(wasm::FunctionTableElem, instance)),
+          newInstanceTemp);
+  branchPtr(Assembler::Equal, InstanceReg, newInstanceTemp, &fastCall);
+
+  // Slow path: Save context, check for null, setup new context, call, restore
+  // context.
+  //
+  // TODO: The slow path could usefully be out-of-line and the test above would
+  // just fall through to the fast path.  This keeps the fast-path code dense,
+  // and has correct static prediction for the branch (forward conditional
+  // branches predicted not taken, normally).
+
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+  movePtr(newInstanceTemp, InstanceReg);
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
+
+#ifdef WASM_HAS_HEAPREG
+  // Use the null pointer exception resulting from loading HeapReg from a null
+  // instance to handle a call to a null slot.
+  MOZ_ASSERT(nullCheckFailedLabel == nullptr);
+  loadWasmPinnedRegsFromInstance(mozilla::Some(trapOffset));
 #else
-  Label nonNull;
-  branchTestPtr(Assembler::NonZero, scratch, scratch, &nonNull);
-  wasmTrap(wasm::Trap::IndirectCallToNull, trapOffset);
-  bind(&nonNull);
+  MOZ_ASSERT(nullCheckFailedLabel != nullptr);
+  branchTestPtr(Assembler::Zero, InstanceReg, InstanceReg,
+                nullCheckFailedLabel);
 
-  return call(desc, scratch);
+  loadWasmPinnedRegsFromInstance();
 #endif
+  switchToWasmInstanceRealm(index, WasmTableCallScratchReg1);
+
+  loadPtr(Address(calleeScratch, offsetof(wasm::FunctionTableElem, code)),
+          calleeScratch);
+
+  *slowCallOffset = call(desc, calleeScratch);
+#ifdef ENABLE_WASM_TAIL_CALLS
+  wasmMarkSlowCall();
+#endif
+
+  // Restore registers and realm and join up with the fast path.
+
+  loadPtr(Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall),
+          InstanceReg);
+  loadWasmPinnedRegsFromInstance();
+  switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
+  jump(&done);
+
+  // Fast path: just load the code pointer and go.  The instance and heap
+  // register are the same as in the caller, and nothing will be null.
+  //
+  // (In particular, the code pointer will not be null: if it were, the instance
+  // would have been null, and then it would not have been equivalent to our
+  // current instance.  So no null check is needed on the fast path.)
+
+  bind(&fastCall);
+
+  loadPtr(Address(calleeScratch, offsetof(wasm::FunctionTableElem, code)),
+          calleeScratch);
+
+  // We use a different type of call site for the fast call since the instance
+  // slots in the frame do not have valid values.
+
+  wasm::CallSiteDesc newDesc(desc.lineOrBytecode(),
+                             wasm::CallSiteDesc::IndirectFast);
+  *fastCallOffset = call(newDesc, calleeScratch);
+
+  bind(&done);
+}
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+void MacroAssembler::wasmReturnCallIndirect(
+    const wasm::CallSiteDesc& desc, const wasm::CalleeDesc& callee,
+    Label* boundsCheckFailedLabel, Label* nullCheckFailedLabel,
+    mozilla::Maybe<uint32_t> tableSize,
+    const ReturnCallAdjustmentInfo& retCallInfo) {
+  static_assert(sizeof(wasm::FunctionTableElem) == 2 * sizeof(void*),
+                "Exactly two pointers or index scaling won't work correctly");
+  MOZ_ASSERT(callee.which() == wasm::CalleeDesc::WasmTable);
+
+  const int shift = sizeof(wasm::FunctionTableElem) == 8 ? 3 : 4;
+  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
+  const Register calleeScratch = WasmTableCallScratchReg0;
+  const Register index = WasmTableCallIndexReg;
+
+  // Check the table index and throw if out-of-bounds.
+  //
+  // Frequently the table size is known, so optimize for that.  Otherwise
+  // compare with a memory operand when that's possible.  (There's little sense
+  // in hoisting the load of the bound into a register at a higher level and
+  // reusing that register, because a hoisted value would either have to be
+  // spilled and re-loaded before the next call_indirect, or would be abandoned
+  // because we could not trust that a hoisted value would not have changed.)
+
+  if (boundsCheckFailedLabel) {
+    if (tableSize.isSome()) {
+      branch32(Assembler::Condition::AboveOrEqual, index, Imm32(*tableSize),
+               boundsCheckFailedLabel);
+    } else {
+      branch32(
+          Assembler::Condition::BelowOrEqual,
+          Address(InstanceReg, wasm::Instance::offsetInData(
+                                   callee.tableLengthInstanceDataOffset())),
+          index, boundsCheckFailedLabel);
+    }
+  }
+
+  // Write the functype-id into the ABI functype-id register.
+
+  const wasm::CallIndirectId callIndirectId = callee.wasmTableSigId();
+  switch (callIndirectId.kind()) {
+    case wasm::CallIndirectIdKind::Global:
+      loadPtr(Address(InstanceReg, wasm::Instance::offsetInData(
+                                       callIndirectId.instanceDataOffset() +
+                                       offsetof(wasm::TypeDefInstanceData,
+                                                superTypeVector))),
+              WasmTableCallSigReg);
+      break;
+    case wasm::CallIndirectIdKind::Immediate:
+      move32(Imm32(callIndirectId.immediate()), WasmTableCallSigReg);
+      break;
+    case wasm::CallIndirectIdKind::AsmJS:
+    case wasm::CallIndirectIdKind::None:
+      break;
+  }
+
+  // Load the base pointer of the table and compute the address of the callee in
+  // the table.
+
+  loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetInData(
+                               callee.tableFunctionBaseInstanceDataOffset())),
+      calleeScratch);
+  shiftIndex32AndAdd(index, shift, calleeScratch);
+
+  // Load the callee instance and decide whether to take the fast path or the
+  // slow path.
+
+  Label fastCall;
+  Label done;
+  const Register newInstanceTemp = WasmTableCallScratchReg1;
+  loadPtr(Address(calleeScratch, offsetof(wasm::FunctionTableElem, instance)),
+          newInstanceTemp);
+  branchPtr(Assembler::Equal, InstanceReg, newInstanceTemp, &fastCall);
+
+  // Slow path: Save context, check for null, setup new context.
+
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+  movePtr(newInstanceTemp, InstanceReg);
+
+#  ifdef WASM_HAS_HEAPREG
+  // Use the null pointer exception resulting from loading HeapReg from a null
+  // instance to handle a call to a null slot.
+  MOZ_ASSERT(nullCheckFailedLabel == nullptr);
+  loadWasmPinnedRegsFromInstance(mozilla::Some(trapOffset));
+#  else
+  MOZ_ASSERT(nullCheckFailedLabel != nullptr);
+  branchTestPtr(Assembler::Zero, InstanceReg, InstanceReg,
+                nullCheckFailedLabel);
+
+  loadWasmPinnedRegsFromInstance();
+#  endif
+  switchToWasmInstanceRealm(index, WasmTableCallScratchReg1);
+
+  loadPtr(Address(calleeScratch, offsetof(wasm::FunctionTableElem, code)),
+          calleeScratch);
+
+  wasm::CallSiteDesc stubDesc(desc.lineOrBytecode(),
+                              wasm::CallSiteDesc::ReturnStub);
+  wasmCollapseFrameSlow(retCallInfo, stubDesc);
+  jump(calleeScratch);
+  append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
+
+  // Fast path: just load the code pointer and go.
+
+  bind(&fastCall);
+
+  loadPtr(Address(calleeScratch, offsetof(wasm::FunctionTableElem, code)),
+          calleeScratch);
+
+  wasmCollapseFrameFast(retCallInfo);
+  jump(calleeScratch);
+  append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
+}
+#endif  // ENABLE_WASM_TAIL_CALLS
+
+void MacroAssembler::wasmCallRef(const wasm::CallSiteDesc& desc,
+                                 const wasm::CalleeDesc& callee,
+                                 CodeOffset* fastCallOffset,
+                                 CodeOffset* slowCallOffset) {
+  MOZ_ASSERT(callee.which() == wasm::CalleeDesc::FuncRef);
+  const Register calleeScratch = WasmCallRefCallScratchReg0;
+  const Register calleeFnObj = WasmCallRefReg;
+
+  // Load from the function's WASM_INSTANCE_SLOT extended slot, and decide
+  // whether to take the fast path or the slow path. Register this load
+  // instruction to be source of a trap -- null pointer check.
+
+  Label fastCall;
+  Label done;
+  const Register newInstanceTemp = WasmCallRefCallScratchReg1;
+  size_t instanceSlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_INSTANCE_SLOT);
+  static_assert(FunctionExtended::WASM_INSTANCE_SLOT < wasm::NullPtrGuardSize);
+  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
+  FaultingCodeOffset fco =
+      loadPtr(Address(calleeFnObj, instanceSlotOffset), newInstanceTemp);
+  append(wasm::Trap::NullPointerDereference,
+         wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco, trapOffset));
+  branchPtr(Assembler::Equal, InstanceReg, newInstanceTemp, &fastCall);
+
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+  movePtr(newInstanceTemp, InstanceReg);
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
+
+  loadWasmPinnedRegsFromInstance();
+  switchToWasmInstanceRealm(WasmCallRefCallScratchReg0,
+                            WasmCallRefCallScratchReg1);
+
+  // Get funcUncheckedCallEntry() from the function's
+  // WASM_FUNC_UNCHECKED_ENTRY_SLOT extended slot.
+  size_t uncheckedEntrySlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_FUNC_UNCHECKED_ENTRY_SLOT);
+  loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
+
+  *slowCallOffset = call(desc, calleeScratch);
+#ifdef ENABLE_WASM_TAIL_CALLS
+  wasmMarkSlowCall();
+#endif
+
+  // Restore registers and realm and back to this caller's.
+  loadPtr(Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall),
+          InstanceReg);
+  loadWasmPinnedRegsFromInstance();
+  switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
+  jump(&done);
+
+  // Fast path: just load WASM_FUNC_UNCHECKED_ENTRY_SLOT value and go.
+  // The instance and pinned registers are the same as in the caller.
+
+  bind(&fastCall);
+
+  loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
+
+  // We use a different type of call site for the fast call since the instance
+  // slots in the frame do not have valid values.
+
+  wasm::CallSiteDesc newDesc(desc.lineOrBytecode(),
+                             wasm::CallSiteDesc::FuncRefFast);
+  *fastCallOffset = call(newDesc, calleeScratch);
+
+  bind(&done);
+}
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+void MacroAssembler::wasmReturnCallRef(
+    const wasm::CallSiteDesc& desc, const wasm::CalleeDesc& callee,
+    const ReturnCallAdjustmentInfo& retCallInfo) {
+  MOZ_ASSERT(callee.which() == wasm::CalleeDesc::FuncRef);
+  const Register calleeScratch = WasmCallRefCallScratchReg0;
+  const Register calleeFnObj = WasmCallRefReg;
+
+  // Load from the function's WASM_INSTANCE_SLOT extended slot, and decide
+  // whether to take the fast path or the slow path. Register this load
+  // instruction to be source of a trap -- null pointer check.
+
+  Label fastCall;
+  Label done;
+  const Register newInstanceTemp = WasmCallRefCallScratchReg1;
+  size_t instanceSlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_INSTANCE_SLOT);
+  static_assert(FunctionExtended::WASM_INSTANCE_SLOT < wasm::NullPtrGuardSize);
+  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
+  FaultingCodeOffset fco =
+      loadPtr(Address(calleeFnObj, instanceSlotOffset), newInstanceTemp);
+  append(wasm::Trap::NullPointerDereference,
+         wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco, trapOffset));
+  branchPtr(Assembler::Equal, InstanceReg, newInstanceTemp, &fastCall);
+
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+  movePtr(newInstanceTemp, InstanceReg);
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
+
+  loadWasmPinnedRegsFromInstance();
+  switchToWasmInstanceRealm(WasmCallRefCallScratchReg0,
+                            WasmCallRefCallScratchReg1);
+
+  // Get funcUncheckedCallEntry() from the function's
+  // WASM_FUNC_UNCHECKED_ENTRY_SLOT extended slot.
+  size_t uncheckedEntrySlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_FUNC_UNCHECKED_ENTRY_SLOT);
+  loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
+
+  wasm::CallSiteDesc stubDesc(desc.lineOrBytecode(),
+                              wasm::CallSiteDesc::ReturnStub);
+  wasmCollapseFrameSlow(retCallInfo, stubDesc);
+  jump(calleeScratch);
+  append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
+
+  // Fast path: just load WASM_FUNC_UNCHECKED_ENTRY_SLOT value and go.
+  // The instance and pinned registers are the same as in the caller.
+
+  bind(&fastCall);
+
+  loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
+
+  wasmCollapseFrameFast(retCallInfo);
+  jump(calleeScratch);
+  append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
+}
+#endif
+
+void MacroAssembler::wasmBoundsCheckRange32(
+    Register index, Register length, Register limit, Register tmp,
+    wasm::BytecodeOffset bytecodeOffset) {
+  Label ok;
+  Label fail;
+
+  mov(index, tmp);
+  branchAdd32(Assembler::CarrySet, length, tmp, &fail);
+  branch32(Assembler::Above, tmp, limit, &fail);
+  jump(&ok);
+
+  bind(&fail);
+  wasmTrap(wasm::Trap::OutOfBounds, bytecodeOffset);
+
+  bind(&ok);
+}
+
+bool MacroAssembler::needScratch1ForBranchWasmRefIsSubtypeAny(
+    wasm::RefType type) {
+  MOZ_ASSERT(type.isValid());
+  MOZ_ASSERT(type.isAnyHierarchy());
+  return !type.isNone() && !type.isAny();
+}
+
+bool MacroAssembler::needScratch2ForBranchWasmRefIsSubtypeAny(
+    wasm::RefType type) {
+  MOZ_ASSERT(type.isValid());
+  MOZ_ASSERT(type.isAnyHierarchy());
+  return type.isTypeRef() &&
+         type.typeDef()->subTypingDepth() >= wasm::MinSuperTypeVectorLength;
+}
+
+bool MacroAssembler::needSuperSTVForBranchWasmRefIsSubtypeAny(
+    wasm::RefType type) {
+  MOZ_ASSERT(type.isValid());
+  MOZ_ASSERT(type.isAnyHierarchy());
+  return type.isTypeRef();
+}
+
+void MacroAssembler::branchWasmRefIsSubtypeAny(
+    Register ref, wasm::RefType sourceType, wasm::RefType destType,
+    Label* label, bool onSuccess, Register superSTV, Register scratch1,
+    Register scratch2) {
+  MOZ_ASSERT(sourceType.isValid());
+  MOZ_ASSERT(destType.isValid());
+  MOZ_ASSERT(sourceType.isAnyHierarchy());
+  MOZ_ASSERT(destType.isAnyHierarchy());
+  MOZ_ASSERT_IF(needScratch1ForBranchWasmRefIsSubtypeAny(destType),
+                scratch1 != Register::Invalid());
+  MOZ_ASSERT_IF(needScratch2ForBranchWasmRefIsSubtypeAny(destType),
+                scratch2 != Register::Invalid());
+  MOZ_ASSERT_IF(needSuperSTVForBranchWasmRefIsSubtypeAny(destType),
+                superSTV != Register::Invalid());
+
+  Label fallthrough;
+  Label* successLabel = onSuccess ? label : &fallthrough;
+  Label* failLabel = onSuccess ? &fallthrough : label;
+  Label* nullLabel = destType.isNullable() ? successLabel : failLabel;
+
+  // Check for null.
+  if (sourceType.isNullable()) {
+    branchWasmAnyRefIsNull(true, ref, nullLabel);
+  }
+
+  // The only value that can inhabit 'none' is null. So, early out if we got
+  // not-null.
+  if (destType.isNone()) {
+    jump(failLabel);
+    bind(&fallthrough);
+    return;
+  }
+
+  if (destType.isAny()) {
+    // No further checks for 'any'
+    jump(successLabel);
+    bind(&fallthrough);
+    return;
+  }
+
+  // 'type' is now 'eq' or lower, which currently will either be a gc object or
+  // an i31.
+
+  // Check first for i31 values, and get them out of the way. i31 values are
+  // valid when casting to i31 or eq, and invalid otherwise.
+  if (destType.isI31() || destType.isEq()) {
+    branchWasmAnyRefIsI31(true, ref, successLabel);
+
+    if (destType.isI31()) {
+      // No further checks for 'i31'
+      jump(failLabel);
+      bind(&fallthrough);
+      return;
+    }
+  }
+
+  // Then check for any kind of gc object.
+  MOZ_ASSERT(scratch1 != Register::Invalid());
+  if (!wasm::RefType::isSubTypeOf(sourceType, wasm::RefType::struct_()) &&
+      !wasm::RefType::isSubTypeOf(sourceType, wasm::RefType::array())) {
+    branchWasmAnyRefIsObjectOrNull(false, ref, failLabel);
+    branchObjectIsWasmGcObject(false, ref, scratch1, failLabel);
+  }
+
+  if (destType.isEq()) {
+    // No further checks for 'eq'
+    jump(successLabel);
+    bind(&fallthrough);
+    return;
+  }
+
+  // 'type' is now 'struct', 'array', or a concrete type. (Bottom types and i31
+  // were handled above.)
+  //
+  // Casting to a concrete type only requires a simple check on the
+  // object's super type vector. Casting to an abstract type (struct, array)
+  // requires loading the object's superTypeVector->typeDef->kind, and checking
+  // that it is correct.
+
+  loadPtr(Address(ref, int32_t(WasmGcObject::offsetOfSuperTypeVector())),
+          scratch1);
+  if (destType.isTypeRef()) {
+    // concrete type, do superTypeVector check
+    branchWasmSTVIsSubtype(scratch1, superSTV, scratch2,
+                           destType.typeDef()->subTypingDepth(), successLabel,
+                           true);
+  } else {
+    // abstract type, do kind check
+    loadPtr(Address(scratch1,
+                    int32_t(wasm::SuperTypeVector::offsetOfSelfTypeDef())),
+            scratch1);
+    load8ZeroExtend(Address(scratch1, int32_t(wasm::TypeDef::offsetOfKind())),
+                    scratch1);
+    branch32(Assembler::Equal, scratch1, Imm32(int32_t(destType.typeDefKind())),
+             successLabel);
+  }
+
+  // The cast failed.
+  jump(failLabel);
+  bind(&fallthrough);
+}
+
+bool MacroAssembler::needSuperSTVAndScratch1ForBranchWasmRefIsSubtypeFunc(
+    wasm::RefType type) {
+  MOZ_ASSERT(type.isValid());
+  MOZ_ASSERT(type.isFuncHierarchy());
+  return type.isTypeRef();
+}
+
+bool MacroAssembler::needScratch2ForBranchWasmRefIsSubtypeFunc(
+    wasm::RefType type) {
+  MOZ_ASSERT(type.isValid());
+  MOZ_ASSERT(type.isFuncHierarchy());
+  return type.isTypeRef() &&
+         type.typeDef()->subTypingDepth() >= wasm::MinSuperTypeVectorLength;
+}
+
+void MacroAssembler::branchWasmRefIsSubtypeFunc(
+    Register ref, wasm::RefType sourceType, wasm::RefType destType,
+    Label* label, bool onSuccess, Register superSTV, Register scratch1,
+    Register scratch2) {
+  MOZ_ASSERT(sourceType.isValid());
+  MOZ_ASSERT(destType.isValid());
+  MOZ_ASSERT(sourceType.isFuncHierarchy());
+  MOZ_ASSERT(destType.isFuncHierarchy());
+  MOZ_ASSERT_IF(
+      needSuperSTVAndScratch1ForBranchWasmRefIsSubtypeFunc(destType),
+      superSTV != Register::Invalid() && scratch1 != Register::Invalid());
+  MOZ_ASSERT_IF(needScratch2ForBranchWasmRefIsSubtypeFunc(destType),
+                scratch2 != Register::Invalid());
+
+  Label fallthrough;
+  Label* successLabel = onSuccess ? label : &fallthrough;
+  Label* failLabel = onSuccess ? &fallthrough : label;
+  Label* nullLabel = destType.isNullable() ? successLabel : failLabel;
+
+  // Check for null.
+  if (sourceType.isNullable()) {
+    branchTestPtr(Assembler::Zero, ref, ref, nullLabel);
+  }
+
+  // The only value that can inhabit 'nofunc' is null. So, early out if we got
+  // not-null.
+  if (destType.isNoFunc()) {
+    jump(failLabel);
+    bind(&fallthrough);
+    return;
+  }
+
+  if (destType.isFunc()) {
+    // No further checks for 'func' (any func)
+    jump(successLabel);
+    bind(&fallthrough);
+    return;
+  }
+
+  // In the func hierarchy, a supertype vector check is now sufficient for all
+  // remaining cases.
+  loadPrivate(Address(ref, int32_t(FunctionExtended::offsetOfWasmSTV())),
+              scratch1);
+  branchWasmSTVIsSubtype(scratch1, superSTV, scratch2,
+                         destType.typeDef()->subTypingDepth(), successLabel,
+                         true);
+
+  // If we didn't branch away, the cast failed.
+  jump(failLabel);
+  bind(&fallthrough);
+}
+
+void MacroAssembler::branchWasmRefIsSubtypeExtern(Register ref,
+                                                  wasm::RefType sourceType,
+                                                  wasm::RefType destType,
+                                                  Label* label,
+                                                  bool onSuccess) {
+  MOZ_ASSERT(sourceType.isValid());
+  MOZ_ASSERT(destType.isValid());
+  MOZ_ASSERT(sourceType.isExternHierarchy());
+  MOZ_ASSERT(destType.isExternHierarchy());
+
+  Label fallthrough;
+  Label* successLabel = onSuccess ? label : &fallthrough;
+  Label* failLabel = onSuccess ? &fallthrough : label;
+  Label* nullLabel = destType.isNullable() ? successLabel : failLabel;
+
+  // Check for null.
+  if (sourceType.isNullable()) {
+    branchTestPtr(Assembler::Zero, ref, ref, nullLabel);
+  }
+
+  // The only value that can inhabit 'noextern' is null. So, early out if we got
+  // not-null.
+  if (destType.isNoExtern()) {
+    jump(failLabel);
+    bind(&fallthrough);
+    return;
+  }
+
+  // There are no other possible types except externref, so succeed!
+  jump(successLabel);
+  bind(&fallthrough);
+}
+
+void MacroAssembler::branchWasmSTVIsSubtype(Register subSTV, Register superSTV,
+                                            Register scratch,
+                                            uint32_t superDepth, Label* label,
+                                            bool onSuccess) {
+  MOZ_ASSERT_IF(superDepth >= wasm::MinSuperTypeVectorLength,
+                scratch != Register::Invalid());
+  Label fallthrough;
+  Label* failed = onSuccess ? &fallthrough : label;
+
+  // At this point, we could generate a fast success check which jumps to
+  // `success` if `subSTV == superSTV`.  However,
+  // profiling of Barista-3 seems to show this is hardly worth anything,
+  // whereas it is worth us generating smaller code and in particular one
+  // fewer conditional branch.
+
+  // Emit a bounds check if the super type depth may be out-of-bounds.
+  if (superDepth >= wasm::MinSuperTypeVectorLength) {
+    load32(Address(subSTV, wasm::SuperTypeVector::offsetOfLength()), scratch);
+    branch32(Assembler::BelowOrEqual, scratch, Imm32(superDepth), failed);
+  }
+
+  // Load the `superTypeDepth` entry from subSTV. This will be `superSTV` if
+  // `subSTV` is indeed a subtype.
+  loadPtr(
+      Address(subSTV, wasm::SuperTypeVector::offsetOfSTVInVector(superDepth)),
+      subSTV);
+
+  // We succeed iff the entries are equal
+  branchPtr(onSuccess ? Assembler::Equal : Assembler::NotEqual, subSTV,
+            superSTV, label);
+
+  bind(&fallthrough);
+}
+
+void MacroAssembler::branchWasmSTVIsSubtypeDynamicDepth(
+    Register subSTV, Register superSTV, Register superDepth, Register scratch,
+    Label* label, bool onSuccess) {
+  Label fallthrough;
+  Label* failed = onSuccess ? &fallthrough : label;
+
+  // Bounds check of the super type vector
+  load32(Address(subSTV, wasm::SuperTypeVector::offsetOfLength()), scratch);
+  branch32(Assembler::BelowOrEqual, scratch, superDepth, failed);
+
+  // Load `subSTV[superTypeDepth]`. This will be `superSTV` if `subSTV` is
+  // indeed a subtype.
+  loadPtr(BaseIndex(subSTV, superDepth, ScalePointer,
+                    offsetof(wasm::SuperTypeVector, types_)),
+          subSTV);
+
+  // We succeed iff the entries are equal
+  branchPtr(onSuccess ? Assembler::Equal : Assembler::NotEqual, subSTV,
+            superSTV, label);
+
+  bind(&fallthrough);
+}
+
+void MacroAssembler::branchWasmAnyRefIsNull(bool isNull, Register src,
+                                            Label* label) {
+  branchTestPtr(isNull ? Assembler::Zero : Assembler::NonZero, src, src, label);
+}
+
+void MacroAssembler::branchWasmAnyRefIsI31(bool isI31, Register src,
+                                           Label* label) {
+  branchTestPtr(isI31 ? Assembler::NonZero : Assembler::Zero, src,
+                Imm32(int32_t(wasm::AnyRefTag::I31)), label);
+}
+
+void MacroAssembler::branchWasmAnyRefIsObjectOrNull(bool isObject, Register src,
+                                                    Label* label) {
+  branchTestPtr(isObject ? Assembler::Zero : Assembler::NonZero, src,
+                Imm32(int32_t(wasm::AnyRef::TagMask)), label);
+}
+
+void MacroAssembler::branchWasmAnyRefIsGCThing(bool isGCThing, Register src,
+                                               Label* label) {
+  Label fallthrough;
+  Label* isGCThingLabel = isGCThing ? label : &fallthrough;
+  Label* isNotGCThingLabel = isGCThing ? &fallthrough : label;
+
+  // A null value or i31 value are not GC things.
+  branchWasmAnyRefIsNull(true, src, isNotGCThingLabel);
+  branchWasmAnyRefIsI31(true, src, isNotGCThingLabel);
+  jump(isGCThingLabel);
+  bind(&fallthrough);
+}
+
+void MacroAssembler::branchWasmAnyRefIsNurseryCell(bool isNurseryCell,
+                                                   Register src, Register temp,
+                                                   Label* label) {
+  Label done;
+  branchWasmAnyRefIsGCThing(false, src, isNurseryCell ? &done : label);
+
+  getWasmAnyRefGCThingChunk(src, temp);
+  branchPtr(isNurseryCell ? Assembler::NotEqual : Assembler::Equal,
+            Address(temp, gc::ChunkStoreBufferOffset), ImmWord(0), label);
+  bind(&done);
+}
+
+void MacroAssembler::truncate32ToWasmI31Ref(Register src, Register dest) {
+  // This will either zero-extend or sign-extend the high 32-bits on 64-bit
+  // platforms (see comments on invariants in MacroAssembler.h). Either case
+  // is fine, as we won't use this bits.
+  move32(src, dest);
+  // Move the payload of the integer over by 1 to make room for the tag. This
+  // will perform the truncation required by the spec.
+  lshift32(Imm32(1), dest);
+  // Add the i31 tag to the integer.
+  orPtr(Imm32(int32_t(wasm::AnyRefTag::I31)), dest);
+}
+
+void MacroAssembler::convertWasmI31RefTo32Signed(Register src, Register dest) {
+  // This will either zero-extend or sign-extend the high 32-bits on 64-bit
+  // platforms (see comments on invariants in MacroAssembler.h). Either case
+  // is fine, as we won't use this bits.
+  move32(src, dest);
+  // Shift the payload back (clobbering the tag). This will sign-extend, giving
+  // us the unsigned behavior we want.
+  rshift32Arithmetic(Imm32(1), dest);
+}
+
+void MacroAssembler::convertWasmI31RefTo32Unsigned(Register src,
+                                                   Register dest) {
+  // This will either zero-extend or sign-extend the high 32-bits on 64-bit
+  // platforms (see comments on invariants in MacroAssembler.h). Either case
+  // is fine, as we won't use this bits.
+  move32(src, dest);
+  // Shift the payload back (clobbering the tag). This will zero-extend, giving
+  // us the unsigned behavior we want.
+  rshift32(Imm32(1), dest);
+}
+
+void MacroAssembler::branchValueConvertsToWasmAnyRefInline(
+    ValueOperand src, Register scratchInt, FloatRegister scratchFloat,
+    Label* label) {
+  // We can convert objects, strings, 31-bit integers and null without boxing.
+  Label checkInt32;
+  Label checkDouble;
+  Label fallthrough;
+  ScratchTagScope tag(*this, src);
+  splitTagForTest(src, tag);
+  branchTestObject(Assembler::Equal, tag, label);
+  branchTestString(Assembler::Equal, tag, label);
+  branchTestNull(Assembler::Equal, tag, label);
+  branchTestInt32(Assembler::Equal, tag, &checkInt32);
+  branchTestDouble(Assembler::Equal, tag, &checkDouble);
+  jump(&fallthrough);
+
+  bind(&checkInt32);
+  unboxInt32(src, scratchInt);
+  branch32(Assembler::GreaterThan, scratchInt, Imm32(wasm::AnyRef::MaxI31Value),
+           &fallthrough);
+  branch32(Assembler::LessThan, scratchInt, Imm32(wasm::AnyRef::MinI31Value),
+           &fallthrough);
+  jump(label);
+
+  bind(&checkDouble);
+  {
+    ScratchTagScopeRelease _(&tag);
+    convertValueToInt32(src, scratchFloat, scratchInt, &fallthrough, true,
+                        IntConversionInputKind::NumbersOnly);
+  }
+  branch32(Assembler::GreaterThan, scratchInt, Imm32(wasm::AnyRef::MaxI31Value),
+           &fallthrough);
+  branch32(Assembler::LessThan, scratchInt, Imm32(wasm::AnyRef::MinI31Value),
+           &fallthrough);
+  jump(label);
+
+  bind(&fallthrough);
+}
+
+void MacroAssembler::convertValueToWasmAnyRef(ValueOperand src, Register dest,
+                                              FloatRegister scratchFloat,
+                                              Label* oolConvert) {
+  Label doubleValue, int32Value, nullValue, stringValue, objectValue, done;
+  {
+    ScratchTagScope tag(*this, src);
+    splitTagForTest(src, tag);
+    branchTestObject(Assembler::Equal, tag, &objectValue);
+    branchTestString(Assembler::Equal, tag, &stringValue);
+    branchTestNull(Assembler::Equal, tag, &nullValue);
+    branchTestInt32(Assembler::Equal, tag, &int32Value);
+    branchTestDouble(Assembler::Equal, tag, &doubleValue);
+    jump(oolConvert);
+  }
+
+  bind(&doubleValue);
+  convertValueToInt32(src, scratchFloat, dest, oolConvert, true,
+                      IntConversionInputKind::NumbersOnly);
+  branch32(Assembler::GreaterThan, dest, Imm32(wasm::AnyRef::MaxI31Value),
+           oolConvert);
+  branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
+           oolConvert);
+  lshiftPtr(Imm32(1), dest);
+  orPtr(Imm32((int32_t)wasm::AnyRefTag::I31), dest);
+  jump(&done);
+
+  bind(&int32Value);
+  unboxInt32(src, dest);
+  branch32(Assembler::GreaterThan, dest, Imm32(wasm::AnyRef::MaxI31Value),
+           oolConvert);
+  branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
+           oolConvert);
+  lshiftPtr(Imm32(1), dest);
+  orPtr(Imm32((int32_t)wasm::AnyRefTag::I31), dest);
+  jump(&done);
+
+  bind(&nullValue);
+  static_assert(wasm::AnyRef::NullRefValue == 0);
+  xorPtr(dest, dest);
+  jump(&done);
+
+  bind(&stringValue);
+  unboxString(src, dest);
+  orPtr(Imm32((int32_t)wasm::AnyRefTag::String), dest);
+  jump(&done);
+
+  bind(&objectValue);
+  unboxObject(src, dest);
+
+  bind(&done);
+}
+
+void MacroAssembler::convertObjectToWasmAnyRef(Register src, Register dest) {
+  // JS objects are represented without any tagging.
+  movePtr(src, dest);
+}
+
+void MacroAssembler::convertStringToWasmAnyRef(Register src, Register dest) {
+  // JS strings require a tag.
+  movePtr(src, dest);
+  orPtr(Imm32(int32_t(wasm::AnyRefTag::String)), dest);
+}
+
+void MacroAssembler::branchObjectIsWasmGcObject(bool isGcObject, Register src,
+                                                Register scratch,
+                                                Label* label) {
+  constexpr uint32_t ShiftedMask = (Shape::kindMask() << Shape::kindShift());
+  constexpr uint32_t ShiftedKind =
+      (uint32_t(Shape::Kind::WasmGC) << Shape::kindShift());
+  MOZ_ASSERT(src != scratch);
+
+  loadPtr(Address(src, JSObject::offsetOfShape()), scratch);
+  load32(Address(scratch, Shape::offsetOfImmutableFlags()), scratch);
+  and32(Imm32(ShiftedMask), scratch);
+  branch32(isGcObject ? Assembler::Equal : Assembler::NotEqual, scratch,
+           Imm32(ShiftedKind), label);
+}
+
+// Unboxing is branchy and contorted because of Spectre mitigations - we don't
+// have enough scratch registers.  Were it not for the spectre mitigations in
+// branchTestObjClass, the branch nest below would be restructured significantly
+// by inverting branches and using fewer registers.
+
+// Unbox an anyref in src (clobbering src in the process) and then re-box it as
+// a Value in *dst.  See the definition of AnyRef for a discussion of pointer
+// representation.
+void MacroAssembler::convertWasmAnyRefToValue(Register instance, Register src,
+                                              ValueOperand dst,
+                                              Register scratch) {
+  MOZ_ASSERT(src != scratch);
+#if JS_BITS_PER_WORD == 32
+  MOZ_ASSERT(dst.typeReg() != scratch);
+  MOZ_ASSERT(dst.payloadReg() != scratch);
+#else
+  MOZ_ASSERT(dst.valueReg() != scratch);
+#endif
+
+  Label isI31, isObjectOrNull, isObject, isWasmValueBox, done;
+
+  // Check for if this is an i31 value first
+  branchTestPtr(Assembler::NonZero, src, Imm32(int32_t(wasm::AnyRefTag::I31)),
+                &isI31);
+  // Then check for the object or null tag
+  branchTestPtr(Assembler::Zero, src, Imm32(wasm::AnyRef::TagMask),
+                &isObjectOrNull);
+
+  // If we're not i31, object, or null, we must be a string
+  rshiftPtr(Imm32(wasm::AnyRef::TagShift), src);
+  lshiftPtr(Imm32(wasm::AnyRef::TagShift), src);
+  moveValue(TypedOrValueRegister(MIRType::String, AnyRegister(src)), dst);
+  jump(&done);
+
+  // This is an i31 value, convert to an int32 JS value
+  bind(&isI31);
+  convertWasmI31RefTo32Signed(src, src);
+  moveValue(TypedOrValueRegister(MIRType::Int32, AnyRegister(src)), dst);
+  jump(&done);
+
+  // Check for the null value
+  bind(&isObjectOrNull);
+  branchTestPtr(Assembler::NonZero, src, src, &isObject);
+  moveValue(NullValue(), dst);
+  jump(&done);
+
+  // Otherwise we must be a non-null object. We next to check if it's storing a
+  // boxed value
+  bind(&isObject);
+  // The type test will clear src if the test fails, so store early.
+  moveValue(TypedOrValueRegister(MIRType::Object, AnyRegister(src)), dst);
+  // Spectre mitigations: see comment above about efficiency.
+  branchTestObjClass(Assembler::Equal, src,
+                     Address(instance, wasm::Instance::offsetOfValueBoxClass()),
+                     scratch, src, &isWasmValueBox);
+  jump(&done);
+
+  // This is a boxed JS value, unbox it.
+  bind(&isWasmValueBox);
+  loadValue(Address(src, wasm::AnyRef::valueBoxOffsetOfValue()), dst);
+
+  bind(&done);
+}
+
+void MacroAssembler::convertWasmAnyRefToValue(Register instance, Register src,
+                                              const Address& dst,
+                                              Register scratch) {
+  MOZ_ASSERT(src != scratch);
+
+  Label isI31, isObjectOrNull, isObject, isWasmValueBox, done;
+
+  // Check for if this is an i31 value first
+  branchTestPtr(Assembler::NonZero, src, Imm32(int32_t(wasm::AnyRefTag::I31)),
+                &isI31);
+  // Then check for the object or null tag
+  branchTestPtr(Assembler::Zero, src, Imm32(wasm::AnyRef::TagMask),
+                &isObjectOrNull);
+
+  // If we're not i31, object, or null, we must be a string
+  rshiftPtr(Imm32(wasm::AnyRef::TagShift), src);
+  lshiftPtr(Imm32(wasm::AnyRef::TagShift), src);
+  storeValue(JSVAL_TYPE_STRING, src, dst);
+  jump(&done);
+
+  // This is an i31 value, convert to an int32 JS value
+  bind(&isI31);
+  convertWasmI31RefTo32Signed(src, src);
+  storeValue(JSVAL_TYPE_INT32, src, dst);
+  jump(&done);
+
+  // Check for the null value
+  bind(&isObjectOrNull);
+  branchTestPtr(Assembler::NonZero, src, src, &isObject);
+  storeValue(NullValue(), dst);
+  jump(&done);
+
+  // Otherwise we must be a non-null object. We next to check if it's storing a
+  // boxed value
+  bind(&isObject);
+  // The type test will clear src if the test fails, so store early.
+  storeValue(JSVAL_TYPE_OBJECT, src, dst);
+  // Spectre mitigations: see comment above about efficiency.
+  branchTestObjClass(Assembler::Equal, src,
+                     Address(instance, wasm::Instance::offsetOfValueBoxClass()),
+                     scratch, src, &isWasmValueBox);
+  jump(&done);
+
+  // This is a boxed JS value, unbox it.
+  bind(&isWasmValueBox);
+  copy64(Address(src, wasm::AnyRef::valueBoxOffsetOfValue()), dst, scratch);
+
+  bind(&done);
 }
 
 void MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc) {
@@ -3974,6 +6549,8 @@ void MacroAssembler::emitPreBarrierFastPath(JSRuntime* rt, MIRType type,
   // Load the GC thing in temp1.
   if (type == MIRType::Value) {
     unboxGCThingForGCBarrier(Address(PreBarrierReg, 0), temp1);
+  } else if (type == MIRType::WasmAnyRef) {
+    unboxWasmAnyRefGCThingForGCBarrier(Address(PreBarrierReg, 0), temp1);
   } else {
     MOZ_ASSERT(type == MIRType::Object || type == MIRType::String ||
                type == MIRType::Shape);
@@ -3989,12 +6566,12 @@ void MacroAssembler::emitPreBarrierFastPath(JSRuntime* rt, MIRType type,
 #endif
 
   // Load the chunk address in temp2.
-  movePtr(ImmWord(~gc::ChunkMask), temp2);
-  andPtr(temp1, temp2);
+  movePtr(temp1, temp2);
+  andPtr(Imm32(int32_t(~gc::ChunkMask)), temp2);
 
   // If the GC thing is in the nursery, we don't need to barrier it.
   if (type == MIRType::Value || type == MIRType::Object ||
-      type == MIRType::String) {
+      type == MIRType::String || type == MIRType::WasmAnyRef) {
     branchPtr(Assembler::NotEqual, Address(temp2, gc::ChunkStoreBufferOffset),
               ImmWord(0), noBarrier);
   } else {
@@ -4059,6 +6636,12 @@ void MacroAssembler::emitPreBarrierFastPath(JSRuntime* rt, MIRType type,
   ma_sll(temp1, temp1, temp3);
 #elif JS_CODEGEN_MIPS64
   ma_dsll(temp1, temp1, temp3);
+#elif JS_CODEGEN_LOONG64
+  as_sll_d(temp1, temp1, temp3);
+#elif JS_CODEGEN_RISCV64
+  sll(temp1, temp1, temp3);
+#elif JS_CODEGEN_WASM32
+  MOZ_CRASH();
 #elif JS_CODEGEN_NONE
   MOZ_CRASH();
 #else
@@ -4146,6 +6729,23 @@ void MacroAssembler::boundsCheck32PowerOfTwo(Register index, uint32_t length,
   }
 }
 
+void MacroAssembler::loadWasmPinnedRegsFromInstance(
+    mozilla::Maybe<wasm::BytecodeOffset> trapOffset) {
+#ifdef WASM_HAS_HEAPREG
+  static_assert(wasm::Instance::offsetOfMemory0Base() < 4096,
+                "We count only on the low page being inaccessible");
+  FaultingCodeOffset fco = loadPtr(
+      Address(InstanceReg, wasm::Instance::offsetOfMemory0Base()), HeapReg);
+  if (trapOffset) {
+    append(
+        wasm::Trap::IndirectCallToNull,
+        wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco, *trapOffset));
+  }
+#else
+  MOZ_ASSERT(!trapOffset);
+#endif
+}
+
 //}}} check_macroassembler_style
 
 #ifdef JS_64BIT
@@ -4157,7 +6757,7 @@ void MacroAssembler::debugAssertCanonicalInt32(Register r) {
     branchPtr(Assembler::BelowOrEqual, r, ImmWord(UINT32_MAX), &ok);
     breakpoint();
     bind(&ok);
-#    elif defined(JS_CODEGEN_MIPS64)
+#    elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
     Label ok;
     ScratchRegisterScope scratch(asMasm());
     move32SignExtendToPtr(r, scratch);
@@ -4196,7 +6796,7 @@ void MacroAssembler::debugAssertObjHasFixedSlots(Register obj,
   loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
   branchTest32(Assembler::NonZero,
                Address(scratch, Shape::offsetOfImmutableFlags()),
-               Imm32(Shape::fixedSlotsMask()), &hasFixedSlots);
+               Imm32(NativeShape::fixedSlotsMask()), &hasFixedSlots);
   assumeUnreachable("Expected a fixed slot");
   bind(&hasFixedSlots);
 #endif
@@ -4213,12 +6813,20 @@ void MacroAssembler::debugAssertObjectHasClass(Register obj, Register scratch,
 #endif
 }
 
+void MacroAssembler::debugAssertGCThingIsTenured(Register ptr, Register temp) {
+#ifdef DEBUG
+  Label done;
+  branchPtrInNurseryChunk(Assembler::NotEqual, ptr, temp, &done);
+  assumeUnreachable("Expected a tenured pointer");
+  bind(&done);
+#endif
+}
+
 void MacroAssembler::branchArrayIsNotPacked(Register array, Register temp1,
                                             Register temp2, Label* label) {
   loadPtr(Address(array, NativeObject::offsetOfElements()), temp1);
 
   // Test length == initializedLength.
-  Label done;
   Address initLength(temp1, ObjectElements::offsetOfInitializedLength());
   load32(Address(temp1, ObjectElements::offsetOfLength()), temp2);
   branch32(Assembler::NotEqual, initLength, temp2, label);
@@ -4330,37 +6938,25 @@ void MacroAssembler::packedArrayShift(Register array, ValueOperand output,
   Address elementAddr(temp1, 0);
   loadValue(elementAddr, output);
 
-  // Pre-barrier the element because we're removing it from the array.
-  EmitPreBarrier(*this, elementAddr, MIRType::Value);
-
-  // Move the other elements.
+  // Move the other elements and update the initializedLength/length. This will
+  // also trigger pre-barriers.
   {
-    // Ensure output and temp2 are in volatileRegs. Don't preserve temp1.
+    // Ensure output is in volatileRegs. Don't preserve temp1 and temp2.
     volatileRegs.takeUnchecked(temp1);
+    volatileRegs.takeUnchecked(temp2);
     if (output.hasVolatileReg()) {
       volatileRegs.addUnchecked(output);
-    }
-    if (temp2.volatile_()) {
-      volatileRegs.addUnchecked(temp2);
     }
 
     PushRegsInMask(volatileRegs);
 
-    using Fn = void (*)(ArrayObject * arr);
+    using Fn = void (*)(ArrayObject* arr);
     setupUnalignedABICall(temp1);
     passABIArg(array);
     callWithABI<Fn, ArrayShiftMoveElements>();
 
     PopRegsInMask(volatileRegs);
-
-    // Reload the elements. The call may have updated it.
-    loadPtr(Address(array, NativeObject::offsetOfElements()), temp1);
   }
-
-  // Update length and initializedLength.
-  sub32(Imm32(1), temp2);
-  store32(temp2, lengthAddr);
-  store32(temp2, initLengthAddr);
 
   bind(&done);
 }
@@ -4568,8 +7164,8 @@ void MacroAssembler::branchIfHasDetachedArrayBuffer(Register obj, Register temp,
                Address(temp, ObjectElements::offsetOfFlags()),
                Imm32(ObjectElements::SHARED_MEMORY), &done);
 
-  // An ArrayBufferView with a null buffer has never had its buffer exposed to
-  // become detached.
+  // An ArrayBufferView with a null/true buffer has never had its buffer
+  // exposed, so nothing can possibly detach it.
   fallibleUnboxObject(Address(obj, ArrayBufferViewObject::bufferOffset()), temp,
                       &done);
 
@@ -4600,6 +7196,17 @@ void MacroAssembler::branchIfNativeIteratorNotReusable(Register ni,
                Imm32(NativeIterator::Flags::NotReusable), notReusable);
 }
 
+void MacroAssembler::branchNativeIteratorIndices(Condition cond, Register ni,
+                                                 Register temp,
+                                                 NativeIteratorIndices kind,
+                                                 Label* label) {
+  Address iterFlagsAddr(ni, NativeIterator::offsetOfFlagsAndCount());
+  load32(iterFlagsAddr, temp);
+  and32(Imm32(NativeIterator::IndicesMask), temp);
+  uint32_t shiftedKind = uint32_t(kind) << NativeIterator::IndicesShift;
+  branch32(cond, temp, Imm32(shiftedKind), label);
+}
+
 static void LoadNativeIterator(MacroAssembler& masm, Register obj,
                                Register dest) {
   MOZ_ASSERT(obj != dest);
@@ -4616,6 +7223,108 @@ static void LoadNativeIterator(MacroAssembler& masm, Register obj,
   // Load NativeIterator object.
   Address slotAddr(obj, PropertyIteratorObject::offsetOfIteratorSlot());
   masm.loadPrivate(slotAddr, dest);
+}
+
+// The ShapeCachePtr may be used to cache an iterator for for-in. Return that
+// iterator in |dest| if:
+// - the shape cache pointer exists and stores a native iterator
+// - the iterator is reusable
+// - the iterated object has no dense elements
+// - the shapes of each object on the proto chain of |obj| match the cached
+//   shapes
+// - the proto chain has no dense elements
+// Otherwise, jump to |failure|.
+void MacroAssembler::maybeLoadIteratorFromShape(Register obj, Register dest,
+                                                Register temp, Register temp2,
+                                                Register temp3,
+                                                Label* failure) {
+  // Register usage:
+  // obj: always contains the input object
+  // temp: walks the obj->shape->baseshape->proto->shape->... chain
+  // temp2: points to the native iterator. Incremented to walk the shapes array.
+  // temp3: scratch space
+  // dest: stores the resulting PropertyIteratorObject on success
+
+  Label success;
+  Register shapeAndProto = temp;
+  Register nativeIterator = temp2;
+
+  // Load ShapeCache from shape.
+  loadPtr(Address(obj, JSObject::offsetOfShape()), shapeAndProto);
+  loadPtr(Address(shapeAndProto, Shape::offsetOfCachePtr()), dest);
+
+  // Check if it's an iterator.
+  movePtr(dest, temp3);
+  andPtr(Imm32(ShapeCachePtr::MASK), temp3);
+  branch32(Assembler::NotEqual, temp3, Imm32(ShapeCachePtr::ITERATOR), failure);
+
+  // If we've cached an iterator, |obj| must be a native object.
+#ifdef DEBUG
+  Label nonNative;
+  branchIfNonNativeObj(obj, temp3, &nonNative);
+#endif
+
+  // Verify that |obj| has no dense elements.
+  loadPtr(Address(obj, NativeObject::offsetOfElements()), temp3);
+  branch32(Assembler::NotEqual,
+           Address(temp3, ObjectElements::offsetOfInitializedLength()),
+           Imm32(0), failure);
+
+  // Clear tag bits from iterator object. |dest| is now valid.
+  // Load the native iterator and verify that it's reusable.
+  andPtr(Imm32(~ShapeCachePtr::MASK), dest);
+  LoadNativeIterator(*this, dest, nativeIterator);
+  branchIfNativeIteratorNotReusable(nativeIterator, failure);
+
+  // We have to compare the shapes in the native iterator with the shapes on the
+  // proto chain to ensure the cached iterator is still valid. The shape array
+  // always starts at a fixed offset from the base of the NativeIterator, so
+  // instead of using an instruction outside the loop to initialize a pointer to
+  // the shapes array, we can bake it into the offset and reuse the pointer to
+  // the NativeIterator. We add |sizeof(Shape*)| to start at the second shape.
+  // (The first shape corresponds to the object itself. We don't have to check
+  // it, because we got the iterator via the shape.)
+  size_t nativeIteratorProtoShapeOffset =
+      NativeIterator::offsetOfFirstShape() + sizeof(Shape*);
+
+  // Loop over the proto chain. At the head of the loop, |shape| is the shape of
+  // the current object, and |iteratorShapes| points to the expected shape of
+  // its proto.
+  Label protoLoop;
+  bind(&protoLoop);
+
+  // Load the proto. If the proto is null, then we're done.
+  loadPtr(Address(shapeAndProto, Shape::offsetOfBaseShape()), shapeAndProto);
+  loadPtr(Address(shapeAndProto, BaseShape::offsetOfProto()), shapeAndProto);
+  branchPtr(Assembler::Equal, shapeAndProto, ImmPtr(nullptr), &success);
+
+#ifdef DEBUG
+  // We have guarded every shape up until this point, so we know that the proto
+  // is a native object.
+  branchIfNonNativeObj(shapeAndProto, temp3, &nonNative);
+#endif
+
+  // Verify that the proto has no dense elements.
+  loadPtr(Address(shapeAndProto, NativeObject::offsetOfElements()), temp3);
+  branch32(Assembler::NotEqual,
+           Address(temp3, ObjectElements::offsetOfInitializedLength()),
+           Imm32(0), failure);
+
+  // Compare the shape of the proto to the expected shape.
+  loadPtr(Address(shapeAndProto, JSObject::offsetOfShape()), shapeAndProto);
+  loadPtr(Address(nativeIterator, nativeIteratorProtoShapeOffset), temp3);
+  branchPtr(Assembler::NotEqual, shapeAndProto, temp3, failure);
+
+  // Increment |iteratorShapes| and jump back to the top of the loop.
+  addPtr(Imm32(sizeof(Shape*)), nativeIterator);
+  jump(&protoLoop);
+
+#ifdef DEBUG
+  bind(&nonNative);
+  assumeUnreachable("Expected NativeObject in maybeLoadIteratorFromShape");
+#endif
+
+  bind(&success);
 }
 
 void MacroAssembler::iteratorMore(Register obj, ValueOperand output,
@@ -4636,7 +7345,7 @@ void MacroAssembler::iteratorMore(Register obj, ValueOperand output,
   loadPtr(Address(temp, 0), temp);
 
   // Increase the cursor.
-  addPtr(Imm32(sizeof(GCPtrLinearString)), cursorAddr);
+  addPtr(Imm32(sizeof(GCPtr<JSLinearString*>)), cursorAddr);
 
   tagValue(JSVAL_TYPE_STRING, temp, output);
   jump(&done);
@@ -4654,13 +7363,18 @@ void MacroAssembler::iteratorClose(Register obj, Register temp1, Register temp2,
   // The shared iterator used for for-in with null/undefined is immutable and
   // unlinked. See NativeIterator::isEmptyIteratorSingleton.
   Label done;
-  branchPtr(Assembler::Equal,
-            Address(temp1, NativeIterator::offsetOfObjectBeingIterated()),
-            ImmPtr(nullptr), &done);
+  branchTest32(Assembler::NonZero,
+               Address(temp1, NativeIterator::offsetOfFlagsAndCount()),
+               Imm32(NativeIterator::Flags::IsEmptyIteratorSingleton), &done);
 
   // Clear active bit.
   and32(Imm32(~NativeIterator::Flags::Active),
         Address(temp1, NativeIterator::offsetOfFlagsAndCount()));
+
+  // Clear objectBeingIterated.
+  Address iterObjAddr(temp1, NativeIterator::offsetOfObjectBeingIterated());
+  guardedCallPreBarrierAnyZone(iterObjAddr, MIRType::Object, temp2);
+  storePtr(ImmPtr(nullptr), iterObjAddr);
 
   // Reset property cursor.
   loadPtr(Address(temp1, NativeIterator::offsetOfShapesEnd()), temp2);
@@ -4679,6 +7393,22 @@ void MacroAssembler::iteratorClose(Register obj, Register temp1, Register temp2,
 #endif
 
   bind(&done);
+}
+
+void MacroAssembler::registerIterator(Register enumeratorsList, Register iter,
+                                      Register temp) {
+  // iter->next = list
+  storePtr(enumeratorsList, Address(iter, NativeIterator::offsetOfNext()));
+
+  // iter->prev = list->prev
+  loadPtr(Address(enumeratorsList, NativeIterator::offsetOfPrev()), temp);
+  storePtr(temp, Address(iter, NativeIterator::offsetOfPrev()));
+
+  // list->prev->next = iter
+  storePtr(iter, Address(temp, NativeIterator::offsetOfNext()));
+
+  // list->prev = iter
+  storePtr(iter, Address(enumeratorsList, NativeIterator::offsetOfPrev()));
 }
 
 void MacroAssembler::toHashableNonGCThing(ValueOperand value,
@@ -5296,6 +8026,28 @@ void MacroAssembler::mapObjectGet(Register mapObj, ValueOperand value,
   bind(&done);
 }
 
+template <typename OrderedHashTable>
+void MacroAssembler::loadOrderedHashTableCount(Register setOrMapObj,
+                                               Register result) {
+  // Inline implementation of |OrderedHashTable::count()|.
+
+  // Load the |ValueSet| or |ValueMap|.
+  static_assert(SetObject::getDataSlotOffset() ==
+                MapObject::getDataSlotOffset());
+  loadPrivate(Address(setOrMapObj, SetObject::getDataSlotOffset()), result);
+
+  // Load the live count.
+  load32(Address(result, OrderedHashTable::offsetOfImplLiveCount()), result);
+}
+
+void MacroAssembler::loadSetObjectSize(Register setObj, Register result) {
+  loadOrderedHashTableCount<ValueSet>(setObj, result);
+}
+
+void MacroAssembler::loadMapObjectSize(Register mapObj, Register result) {
+  loadOrderedHashTableCount<ValueMap>(mapObj, result);
+}
+
 // Can't push large frames blindly on windows, so we must touch frame memory
 // incrementally, with no more than 4096 - 1 bytes between touches.
 //
@@ -5307,22 +8059,25 @@ void MacroAssembler::touchFrameValues(Register numStackValues,
                 "Frame increment is too large");
 
   moveStackPtrTo(scratch2);
+
   mov(numStackValues, scratch1);
   lshiftPtr(Imm32(3), scratch1);
-  subPtr(scratch1, scratch2);
   {
-    moveStackPtrTo(scratch1);
-    subPtr(Imm32(FRAME_TOUCH_INCREMENT), scratch1);
-
+    // Note: this loop needs to update the stack pointer register because older
+    // Linux kernels check the distance between the touched address and RSP.
+    // See bug 1839669 comment 47.
     Label touchFrameLoop;
     Label touchFrameLoopEnd;
     bind(&touchFrameLoop);
-    branchPtr(Assembler::Below, scratch1, scratch2, &touchFrameLoopEnd);
-    store32(Imm32(0), Address(scratch1, 0));
-    subPtr(Imm32(FRAME_TOUCH_INCREMENT), scratch1);
+    branchSub32(Assembler::Signed, Imm32(FRAME_TOUCH_INCREMENT), scratch1,
+                &touchFrameLoopEnd);
+    subFromStackPtr(Imm32(FRAME_TOUCH_INCREMENT));
+    store32(Imm32(0), Address(getStackPointer(), 0));
     jump(&touchFrameLoop);
     bind(&touchFrameLoopEnd);
   }
+
+  moveToStackPtr(scratch2);
 }
 
 namespace js {

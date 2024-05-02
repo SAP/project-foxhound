@@ -1,6 +1,8 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 // Generate a post with known pre-calculated md5 sum.
 function generateContent(size) {
@@ -56,13 +58,10 @@ function run_next_test() {
 }
 
 function run_test() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
-  let h3Port = env.get("MOZHTTP3_PORT");
+  let h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
   h3AltSvc = ":" + h3Port;
@@ -142,7 +141,7 @@ function makeChan(uri) {
   return chan;
 }
 
-let Http3CheckListener = function() {};
+let Http3CheckListener = function () {};
 
 Http3CheckListener.prototype = {
   onDataAvailableFired: false,
@@ -187,7 +186,7 @@ Http3CheckListener.prototype = {
   },
 };
 
-let WaitForHttp3Listener = function() {};
+let WaitForHttp3Listener = function () {};
 
 WaitForHttp3Listener.prototype = new Http3CheckListener();
 
@@ -250,7 +249,7 @@ function test_https_alt_svc() {
 
 // Listener for a number of parallel requests. if with_error is set, one of
 // the channels will be cancelled (by the server or in onStartRequest).
-let MultipleListener = function() {};
+let MultipleListener = function () {};
 
 MultipleListener.prototype = {
   number_of_parallel_requests: 0,
@@ -349,7 +348,7 @@ function test_request_cancelled_by_server() {
   do_test_pending();
 }
 
-let CancelRequestListener = function() {};
+let CancelRequestListener = function () {};
 
 CancelRequestListener.prototype = new Http3CheckListener();
 
@@ -415,11 +414,11 @@ function test_multiple_request_one_is_cancelled_by_necko() {
   }
 }
 
-let PostListener = function() {};
+let PostListener = function () {};
 
 PostListener.prototype = new Http3CheckListener();
 
-PostListener.prototype.onDataAvailable = function(request, stream, off, cnt) {
+PostListener.prototype.onDataAvailable = function (request, stream, off, cnt) {
   this.onDataAvailableFired = true;
   read_stream(stream, cnt);
 };
@@ -467,12 +466,12 @@ function test_http_alt_svc() {
   doTest(httpOrigin + "http3-test", h3Route, h3AltSvc);
 }
 
-let SlowReceiverListener = function() {};
+let SlowReceiverListener = function () {};
 
 SlowReceiverListener.prototype = new Http3CheckListener();
 SlowReceiverListener.prototype.count = 0;
 
-SlowReceiverListener.prototype.onDataAvailable = function(
+SlowReceiverListener.prototype.onDataAvailable = function (
   request,
   stream,
   off,
@@ -483,7 +482,7 @@ SlowReceiverListener.prototype.onDataAvailable = function(
   read_stream(stream, cnt);
 };
 
-SlowReceiverListener.prototype.onStopRequest = function(request, status) {
+SlowReceiverListener.prototype.onStopRequest = function (request, status) {
   Assert.equal(status, this.expectedStatus);
   Assert.equal(this.count, 10000000);
   let routed = "NA";
@@ -517,7 +516,7 @@ function test_slow_receiver() {
   do_timeout(1000, chan.resume);
 }
 
-let CheckFallbackListener = function() {};
+let CheckFallbackListener = function () {};
 
 CheckFallbackListener.prototype = {
   onStartRequest: function testOnStartRequest(request) {

@@ -169,13 +169,6 @@ TEST_P(TlsConnectGenericPre13, ServerAuthRejectAsync) {
   server_->ExpectReceiveAlert(kTlsAlertCloseNotify, kTlsAlertWarning);
 }
 
-TEST_P(TlsConnectGeneric, ClientAuth) {
-  client_->SetupClientAuth();
-  server_->RequestClientAuth(true);
-  Connect();
-  CheckKeys();
-}
-
 class TlsCertificateRequestContextRecorder : public TlsHandshakeFilter {
  public:
   TlsCertificateRequestContextRecorder(const std::shared_ptr<TlsAgent>& a,
@@ -204,16 +197,135 @@ class TlsCertificateRequestContextRecorder : public TlsHandshakeFilter {
   bool filtered_;
 };
 
-// All stream only tests; DTLS isn't supported yet.
+using ClientAuthParam =
+    std::tuple<SSLProtocolVariant, uint16_t, ClientAuthCallbackType>;
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuth) {
+class TlsConnectClientAuth
+    : public TlsConnectTestBase,
+      public testing::WithParamInterface<ClientAuthParam> {
+ public:
+  TlsConnectClientAuth()
+      : TlsConnectTestBase(std::get<0>(GetParam()), std::get<1>(GetParam())) {}
+};
+
+// Wrapper classes for tests that target specific versions
+
+class TlsConnectClientAuth13 : public TlsConnectClientAuth {};
+
+class TlsConnectClientAuth12 : public TlsConnectClientAuth {};
+
+class TlsConnectClientAuthStream13 : public TlsConnectClientAuth {};
+
+class TlsConnectClientAuthPre13 : public TlsConnectClientAuth {};
+
+class TlsConnectClientAuth12Plus : public TlsConnectClientAuth {};
+
+std::string getClientAuthTestName(
+    testing::TestParamInfo<ClientAuthParam> info) {
+  auto param = info.param;
+  auto variant = std::get<0>(param);
+  auto version = std::get<1>(param);
+  auto callback_type = std::get<2>(param);
+
+  std::string output = std::string();
+  switch (variant) {
+    case ssl_variant_stream:
+      output.append("TLS");
+      break;
+    case ssl_variant_datagram:
+      output.append("DTLS");
+      break;
+  }
+  output.append(VersionString(version).replace(1, 1, ""));
+  switch (callback_type) {
+    case ClientAuthCallbackType::kAsyncImmediate:
+      output.append("AsyncImmediate");
+      break;
+    case ClientAuthCallbackType::kAsyncDelay:
+      output.append("AsyncDelay");
+      break;
+    case ClientAuthCallbackType::kSync:
+      output.append("Sync");
+      break;
+    case ClientAuthCallbackType::kNone:
+      output.append("None");
+      break;
+  }
+  return output;
+}
+
+auto kClientAuthCallbacks = testing::Values(
+    ClientAuthCallbackType::kAsyncImmediate,
+    ClientAuthCallbackType::kAsyncDelay, ClientAuthCallbackType::kSync,
+    ClientAuthCallbackType::kNone);
+
+INSTANTIATE_TEST_SUITE_P(
+    ClientAuthGenericStream, TlsConnectClientAuth,
+    testing::Combine(TlsConnectTestBase::kTlsVariantsStream,
+                     TlsConnectTestBase::kTlsVAll, kClientAuthCallbacks),
+    getClientAuthTestName);
+
+INSTANTIATE_TEST_SUITE_P(
+    ClientAuthGenericDatagram, TlsConnectClientAuth,
+    testing::Combine(TlsConnectTestBase::kTlsVariantsDatagram,
+                     TlsConnectTestBase::kTlsV11Plus, kClientAuthCallbacks),
+    getClientAuthTestName);
+
+INSTANTIATE_TEST_SUITE_P(ClientAuth13, TlsConnectClientAuth13,
+                         testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                                          TlsConnectTestBase::kTlsV13,
+                                          kClientAuthCallbacks),
+                         getClientAuthTestName);
+
+INSTANTIATE_TEST_SUITE_P(
+    ClientAuth13, TlsConnectClientAuthStream13,
+    testing::Combine(TlsConnectTestBase::kTlsVariantsStream,
+                     TlsConnectTestBase::kTlsV13, kClientAuthCallbacks),
+    getClientAuthTestName);
+
+INSTANTIATE_TEST_SUITE_P(ClientAuth12, TlsConnectClientAuth12,
+                         testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                                          TlsConnectTestBase::kTlsV12,
+                                          kClientAuthCallbacks),
+                         getClientAuthTestName);
+
+INSTANTIATE_TEST_SUITE_P(
+    ClientAuthPre13Stream, TlsConnectClientAuthPre13,
+    testing::Combine(TlsConnectTestBase::kTlsVariantsStream,
+                     TlsConnectTestBase::kTlsV10ToV12, kClientAuthCallbacks),
+    getClientAuthTestName);
+
+INSTANTIATE_TEST_SUITE_P(
+    ClientAuthPre13Datagram, TlsConnectClientAuthPre13,
+    testing::Combine(TlsConnectTestBase::kTlsVariantsDatagram,
+                     TlsConnectTestBase::kTlsV11V12, kClientAuthCallbacks),
+    getClientAuthTestName);
+
+INSTANTIATE_TEST_SUITE_P(ClientAuth12Plus, TlsConnectClientAuth12Plus,
+                         testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                                          TlsConnectTestBase::kTlsV12Plus,
+                                          kClientAuthCallbacks),
+                         getClientAuthTestName);
+
+TEST_P(TlsConnectClientAuth, ClientAuth) {
   EnsureTlsSetup();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
+  server_->RequestClientAuth(true);
+  Connect();
+  CheckKeys();
+  client_->CheckClientAuthCompleted();
+}
+
+// All stream only tests; PostHandshakeAuth isn't supported for DTLS.
+
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuth) {
+  EnsureTlsSetup();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   auto capture_cert_req = MakeTlsFilter<TlsCertificateRequestContextRecorder>(
       server_, kTlsHandshakeCertificateRequest);
   auto capture_certificate =
       MakeTlsFilter<TlsCertificateRequestContextRecorder>(
           client_, kTlsHandshakeCertificate);
-  client_->SetupClientAuth();
   client_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
   size_t called = 0;
   server_->SetAuthCertificateCallback(
@@ -232,11 +344,15 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuth) {
   // handled on both client and server.
   server_->SendData(50);
   client_->ReadBytes(50);
+  client_->ClientAuthCallbackComplete();
   client_->SendData(50);
   server_->ReadBytes(50);
+
   EXPECT_EQ(1U, called);
-  EXPECT_TRUE(capture_cert_req->filtered());
-  EXPECT_TRUE(capture_certificate->filtered());
+  ASSERT_TRUE(capture_cert_req->filtered());
+  ASSERT_TRUE(capture_certificate->filtered());
+
+  client_->CheckClientAuthCompleted();
   // Check if a non-empty request context is generated and it is
   // properly sent back.
   EXPECT_LT(0U, capture_cert_req->buffer().len());
@@ -252,7 +368,7 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuth) {
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthAfterResumption) {
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthAfterResumption) {
   ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
   ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
   Connect();
@@ -267,7 +383,7 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthAfterResumption) {
   ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
   ExpectResumption(RESUME_TICKET);
 
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   client_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
   Connect();
   SendReceive();
@@ -280,10 +396,14 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthAfterResumption) {
       });
   EXPECT_EQ(SECSuccess, SSL_SendCertificateRequest(server_->ssl_fd()))
       << "Unexpected error: " << PORT_ErrorToName(PORT_GetError());
+
   server_->SendData(50);
   client_->ReadBytes(50);
+  client_->ClientAuthCallbackComplete();
   client_->SendData(50);
   server_->ReadBytes(50);
+
+  client_->CheckClientAuthCompleted();
   EXPECT_EQ(1U, called);
 
   ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
@@ -309,8 +429,128 @@ static SECStatus GetClientAuthDataHook(void* self, PRFileDesc* fd,
   return SECSuccess;
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthMultiple) {
+typedef struct AutoClientTestStr {
+  SECStatus result;
+  const std::string cert;
+} AutoClientTest;
+
+typedef struct AutoClientResultsStr {
+  AutoClientTest isRsa2048;
+  AutoClientTest isClient;
+  AutoClientTest isNull;
+  bool hookCalled;
+} AutoClientResults;
+
+void VerifyClientCertMatch(CERTCertificate* clientCert,
+                           const std::string expectedName) {
+  const char* name = clientCert->nickname;
+  std::cout << "Match name=\"" << name << "\" expected=\"" << expectedName
+            << "\"" << std::endl;
+  EXPECT_TRUE(PORT_Strcmp(name, expectedName.c_str()) == 0)
+      << " Certmismatch: \"" << name << "\" != \"" << expectedName << "\"";
+}
+
+static SECStatus GetAutoClientAuthDataHook(void* expectResults, PRFileDesc* fd,
+                                           CERTDistNames* caNames,
+                                           CERTCertificate** clientCert,
+                                           SECKEYPrivateKey** clientKey) {
+  AutoClientResults& results = *(AutoClientResults*)expectResults;
+  SECStatus rv;
+
+  results.hookCalled = true;
+  *clientCert = NULL;
+  *clientKey = NULL;
+  rv = NSS_GetClientAuthData((void*)TlsAgent::kRsa2048.c_str(), fd, caNames,
+                             clientCert, clientKey);
+  if (rv == SECSuccess) {
+    VerifyClientCertMatch(*clientCert, results.isRsa2048.cert);
+    CERT_DestroyCertificate(*clientCert);
+    SECKEY_DestroyPrivateKey(*clientKey);
+    *clientCert = NULL;
+    *clientKey = NULL;
+  }
+  EXPECT_EQ(results.isRsa2048.result, rv);
+
+  rv = NSS_GetClientAuthData((void*)TlsAgent::kClient.c_str(), fd, caNames,
+                             clientCert, clientKey);
+  if (rv == SECSuccess) {
+    VerifyClientCertMatch(*clientCert, results.isClient.cert);
+    CERT_DestroyCertificate(*clientCert);
+    SECKEY_DestroyPrivateKey(*clientKey);
+    *clientCert = NULL;
+    *clientKey = NULL;
+  }
+  EXPECT_EQ(results.isClient.result, rv);
+  EXPECT_EQ(*clientCert, nullptr);
+  EXPECT_EQ(*clientKey, nullptr);
+  rv = NSS_GetClientAuthData(NULL, fd, caNames, clientCert, clientKey);
+  if (rv == SECSuccess) {
+    VerifyClientCertMatch(*clientCert, results.isNull.cert);
+    // return this result
+  }
+  EXPECT_EQ(results.isNull.result, rv);
+  return rv;
+}
+
+// while I would have liked to use a new INSTANTIATE macro the
+// generates the following three tests, figuring out how to make that
+// work on top of the existing TlsConnect* plumbing hurts my head.
+TEST_P(TlsConnectTls12, AutoClientSelectRsaPss) {
+  AutoClientResults rsa = {{SECSuccess, TlsAgent::kRsa2048},
+                           {SECSuccess, TlsAgent::kClient},
+                           {SECSuccess, TlsAgent::kDelegatorRsaPss2048},
+                           false};
+  static const SSLSignatureScheme kSchemes[] = {ssl_sig_rsa_pss_pss_sha256,
+                                                ssl_sig_rsa_pkcs1_sha256,
+                                                ssl_sig_rsa_pkcs1_sha1};
+  Reset("rsa_pss_noparam");
   client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+  EXPECT_EQ(SECSuccess,
+            SSL_GetClientAuthDataHook(client_->ssl_fd(),
+                                      GetAutoClientAuthDataHook, (void*)&rsa));
+  server_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  client_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  Connect();
+  EXPECT_TRUE(rsa.hookCalled);
+}
+
+TEST_P(TlsConnectTls12, AutoClientSelectEcc) {
+  AutoClientResults ecc = {{SECFailure, TlsAgent::kClient},
+                           {SECFailure, TlsAgent::kClient},
+                           {SECSuccess, TlsAgent::kDelegatorEcdsa256},
+                           false};
+  static const SSLSignatureScheme kSchemes[] = {ssl_sig_ecdsa_secp256r1_sha256};
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+  EXPECT_EQ(SECSuccess,
+            SSL_GetClientAuthDataHook(client_->ssl_fd(),
+                                      GetAutoClientAuthDataHook, (void*)&ecc));
+  server_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  client_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  Connect();
+  EXPECT_TRUE(ecc.hookCalled);
+}
+
+TEST_P(TlsConnectTls12, AutoClientSelectDsa) {
+  AutoClientResults dsa = {{SECFailure, TlsAgent::kClient},
+                           {SECFailure, TlsAgent::kClient},
+                           {SECSuccess, TlsAgent::kServerDsa},
+                           false};
+  static const SSLSignatureScheme kSchemes[] = {ssl_sig_dsa_sha256};
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+  EXPECT_EQ(SECSuccess,
+            SSL_GetClientAuthDataHook(client_->ssl_fd(),
+                                      GetAutoClientAuthDataHook, (void*)&dsa));
+  server_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  client_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  Connect();
+  EXPECT_TRUE(dsa.hookCalled);
+}
+
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthMultiple) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   size_t called = 0;
@@ -325,36 +565,42 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthMultiple) {
   // Send 1st CertificateRequest.
   EXPECT_EQ(SECSuccess, SSL_SendCertificateRequest(server_->ssl_fd()))
       << "Unexpected error: " << PORT_ErrorToName(PORT_GetError());
+
   server_->SendData(50);
+  client_->ReadBytes(50);
+  client_->ClientAuthCallbackComplete();
   client_->ReadBytes(50);
   client_->SendData(50);
   server_->ReadBytes(50);
   EXPECT_EQ(1U, called);
+  client_->CheckClientAuthCompleted(1);
   ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
   ASSERT_NE(nullptr, cert1.get());
   ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
   ASSERT_NE(nullptr, cert2.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
   // Send 2nd CertificateRequest.
-  EXPECT_EQ(SECSuccess, SSL_GetClientAuthDataHook(
-                            client_->ssl_fd(), GetClientAuthDataHook, nullptr));
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_SendCertificateRequest(server_->ssl_fd()))
       << "Unexpected error: " << PORT_ErrorToName(PORT_GetError());
+
   server_->SendData(50);
+  client_->ReadBytes(50);
+  client_->ClientAuthCallbackComplete();
   client_->ReadBytes(50);
   client_->SendData(50);
   server_->ReadBytes(50);
+  client_->CheckClientAuthCompleted(2);
   EXPECT_EQ(2U, called);
   ScopedCERTCertificate cert3(SSL_PeerCertificate(server_->ssl_fd()));
   ASSERT_NE(nullptr, cert3.get());
   ScopedCERTCertificate cert4(SSL_LocalCertificate(client_->ssl_fd()));
   ASSERT_NE(nullptr, cert4.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert3->derCert, &cert4->derCert));
-  EXPECT_FALSE(SECITEM_ItemsAreEqual(&cert3->derCert, &cert1->derCert));
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthConcurrent) {
-  client_->SetupClientAuth();
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthConcurrent) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   Connect();
@@ -366,8 +612,8 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthConcurrent) {
   EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PORT_GetError());
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthBeforeKeyUpdate) {
-  client_->SetupClientAuth();
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthBeforeKeyUpdate) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   Connect();
@@ -379,8 +625,9 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthBeforeKeyUpdate) {
   EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PORT_GetError());
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDuringClientKeyUpdate) {
-  client_->SetupClientAuth();
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthDuringClientKeyUpdate) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
+  ;
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   Connect();
@@ -394,11 +641,14 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDuringClientKeyUpdate) {
   client_->SendData(50);   // client sends KeyUpdate
   server_->ReadBytes(50);  // server receives KeyUpdate and defers response
   CheckEpochs(4, 3);
-  client_->ReadBytes(50);  // client receives CertificateRequest
+  client_->ReadBytes(60);  // client receives CertificateRequest
+  client_->ClientAuthCallbackComplete();
+  client_->ReadBytes(50);  // Finish reading the remaining bytes
   client_->SendData(
       50);  // client sends Certificate, CertificateVerify, Finished
   server_->ReadBytes(
       50);  // server receives Certificate, CertificateVerify, Finished
+  client_->CheckClientAuthCompleted();
   client_->CheckEpochs(3, 4);
   server_->CheckEpochs(4, 4);
   server_->SendData(50);   // server sends KeyUpdate
@@ -406,8 +656,8 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDuringClientKeyUpdate) {
   client_->CheckEpochs(4, 4);
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthMissingExtension) {
-  client_->SetupClientAuth();
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthMissingExtension) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   Connect();
   // Send CertificateRequest, should fail due to missing
   // post_handshake_auth extension.
@@ -415,8 +665,8 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthMissingExtension) {
   EXPECT_EQ(SSL_ERROR_MISSING_POST_HANDSHAKE_AUTH_EXTENSION, PORT_GetError());
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthAfterClientAuth) {
-  client_->SetupClientAuth();
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthAfterClientAuth) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
@@ -473,10 +723,10 @@ class TlsDamageCertificateRequestContextFilter : public TlsHandshakeFilter {
   }
 };
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthContextMismatch) {
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthContextMismatch) {
   EnsureTlsSetup();
   MakeTlsFilter<TlsDamageCertificateRequestContextFilter>(server_);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   Connect();
@@ -484,6 +734,8 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthContextMismatch) {
   EXPECT_EQ(SECSuccess, SSL_SendCertificateRequest(server_->ssl_fd()))
       << "Unexpected error: " << PORT_ErrorToName(PORT_GetError());
   server_->SendData(50);
+  client_->ReadBytes(50);
+  client_->ClientAuthCallbackComplete();
   client_->ReadBytes(50);
   client_->SendData(50);
   server_->ExpectSendAlert(kTlsAlertIllegalParameter);
@@ -516,10 +768,10 @@ class TlsDamageSignatureFilter : public TlsHandshakeFilter {
   }
 };
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthBadSignature) {
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthBadSignature) {
   EnsureTlsSetup();
   MakeTlsFilter<TlsDamageSignatureFilter>(client_);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   Connect();
@@ -528,20 +780,22 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthBadSignature) {
       << "Unexpected error: " << PORT_ErrorToName(PORT_GetError());
   server_->SendData(50);
   client_->ReadBytes(50);
+  client_->ClientAuthCallbackComplete();
   client_->SendData(50);
+  client_->CheckClientAuthCompleted();
   server_->ExpectSendAlert(kTlsAlertDecodeError);
   server_->ReadBytes(50);
   EXPECT_EQ(SSL_ERROR_RX_MALFORMED_CERT_VERIFY, PORT_GetError());
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDecline) {
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthDecline) {
   EnsureTlsSetup();
   auto capture_cert_req = MakeTlsFilter<TlsCertificateRequestContextRecorder>(
       server_, kTlsHandshakeCertificateRequest);
   auto capture_certificate =
       MakeTlsFilter<TlsCertificateRequestContextRecorder>(
           client_, kTlsHandshakeCertificate);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   EXPECT_EQ(SECSuccess,
@@ -589,9 +843,10 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDecline) {
 
 // Check if post-handshake auth still works when session tickets are enabled:
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1553443
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthWithSessionTicketsEnabled) {
+TEST_P(TlsConnectClientAuthStream13,
+       PostHandshakeAuthWithSessionTicketsEnabled) {
   EnsureTlsSetup();
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
                                       SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
   EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
@@ -623,7 +878,8 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthWithSessionTicketsEnabled) {
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
 }
 
-TEST_P(TlsConnectGenericPre13, ClientAuthRequiredRejected) {
+TEST_P(TlsConnectClientAuthPre13, ClientAuthRequiredRejected) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), false);
   server_->RequestClientAuth(true);
   ConnectExpectAlert(server_, kTlsAlertBadCertificate);
   client_->CheckErrorCode(SSL_ERROR_BAD_CERT_ALERT);
@@ -632,13 +888,16 @@ TEST_P(TlsConnectGenericPre13, ClientAuthRequiredRejected) {
 
 // In TLS 1.3, the client will claim that the connection is done and then
 // receive the alert afterwards.  So drive the handshake manually.
-TEST_P(TlsConnectTls13, ClientAuthRequiredRejected) {
+TEST_P(TlsConnectClientAuth13, ClientAuthRequiredRejected) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), false);
   server_->RequestClientAuth(true);
   StartConnect();
   client_->Handshake();  // CH
   server_->Handshake();  // SH.. (no resumption)
+
   client_->Handshake();  // Next message
   ASSERT_EQ(TlsAgent::STATE_CONNECTED, client_->state());
+  client_->CheckClientAuthCompleted();
   ExpectAlert(server_, kTlsAlertCertificateRequired);
   server_->Handshake();  // Alert
   server_->CheckErrorCode(SSL_ERROR_NO_CERTIFICATE);
@@ -646,33 +905,34 @@ TEST_P(TlsConnectTls13, ClientAuthRequiredRejected) {
   client_->CheckErrorCode(SSL_ERROR_RX_CERTIFICATE_REQUIRED_ALERT);
 }
 
-TEST_P(TlsConnectGeneric, ClientAuthRequestedRejected) {
+TEST_P(TlsConnectClientAuth, ClientAuthRequestedRejected) {
+  client_->SetupClientAuth(std::get<2>(GetParam()), false);
   server_->RequestClientAuth(false);
   Connect();
   CheckKeys();
 }
 
-TEST_P(TlsConnectGeneric, ClientAuthEcdsa) {
+TEST_P(TlsConnectClientAuth, ClientAuthEcdsa) {
   Reset(TlsAgent::kServerEcdsa256);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
   Connect();
   CheckKeys(ssl_kea_ecdh, ssl_auth_ecdsa);
 }
 
-TEST_P(TlsConnectGeneric, ClientAuthWithEch) {
+TEST_P(TlsConnectClientAuth, ClientAuthWithEch) {
   Reset(TlsAgent::kServerEcdsa256);
   EnsureTlsSetup();
   SetupEch(client_, server_);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
   Connect();
   CheckKeys(ssl_kea_ecdh, ssl_auth_ecdsa);
 }
 
-TEST_P(TlsConnectGeneric, ClientAuthBigRsa) {
+TEST_P(TlsConnectClientAuth, ClientAuthBigRsa) {
   Reset(TlsAgent::kServerRsa, TlsAgent::kRsa2048);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
   Connect();
   CheckKeys();
@@ -715,11 +975,11 @@ TEST_P(TlsConnectTls12, ServerAuthCheckSigAlg) {
                  1024);
 }
 
-TEST_P(TlsConnectTls12, ClientAuthCheckSigAlg) {
+TEST_P(TlsConnectClientAuth12, ClientAuthCheckSigAlg) {
   EnsureTlsSetup();
   auto capture_cert_verify = MakeTlsFilter<TlsHandshakeRecorder>(
       client_, kTlsHandshakeCertificateVerify);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
   Connect();
   CheckKeys();
@@ -727,11 +987,11 @@ TEST_P(TlsConnectTls12, ClientAuthCheckSigAlg) {
   CheckSigScheme(capture_cert_verify, 0, server_, ssl_sig_rsa_pkcs1_sha1, 1024);
 }
 
-TEST_P(TlsConnectTls12, ClientAuthBigRsaCheckSigAlg) {
+TEST_P(TlsConnectClientAuth12, ClientAuthBigRsaCheckSigAlg) {
   Reset(TlsAgent::kServerRsa, TlsAgent::kRsa2048);
   auto capture_cert_verify = MakeTlsFilter<TlsHandshakeRecorder>(
       client_, kTlsHandshakeCertificateVerify);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
   Connect();
   CheckKeys();
@@ -739,34 +999,13 @@ TEST_P(TlsConnectTls12, ClientAuthBigRsaCheckSigAlg) {
                  2048);
 }
 
-// Replaces the signature scheme in a CertificateVerify message.
-class TlsReplaceSignatureSchemeFilter : public TlsHandshakeFilter {
- public:
-  TlsReplaceSignatureSchemeFilter(const std::shared_ptr<TlsAgent>& a,
-                                  SSLSignatureScheme scheme)
-      : TlsHandshakeFilter(a, {kTlsHandshakeCertificateVerify}),
-        scheme_(scheme) {}
-
- protected:
-  virtual PacketFilter::Action FilterHandshake(const HandshakeHeader& header,
-                                               const DataBuffer& input,
-                                               DataBuffer* output) {
-    *output = input;
-    output->Write(0, scheme_, 2);
-    return CHANGE;
-  }
-
- private:
-  SSLSignatureScheme scheme_;
-};
-
 // Check if CertificateVerify signed with rsa_pss_rsae_* is properly
 // rejected when the certificate is RSA-PSS.
 //
 // This only works under TLS 1.2, because PSS doesn't work with TLS
 // 1.0 or TLS 1.1 and the TLS 1.3 1-RTT handshake is partially
 // successful at the client side.
-TEST_P(TlsConnectTls12, ClientAuthInconsistentRsaeSignatureScheme) {
+TEST_P(TlsConnectClientAuth12, ClientAuthInconsistentRsaeSignatureScheme) {
   static const SSLSignatureScheme kSignatureSchemePss[] = {
       ssl_sig_rsa_pss_pss_sha256, ssl_sig_rsa_pss_rsae_sha256};
 
@@ -775,7 +1014,7 @@ TEST_P(TlsConnectTls12, ClientAuthInconsistentRsaeSignatureScheme) {
                                PR_ARRAY_SIZE(kSignatureSchemePss));
   server_->SetSignatureSchemes(kSignatureSchemePss,
                                PR_ARRAY_SIZE(kSignatureSchemePss));
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
 
   EnsureTlsSetup();
@@ -792,7 +1031,7 @@ TEST_P(TlsConnectTls12, ClientAuthInconsistentRsaeSignatureScheme) {
 // This only works under TLS 1.2, because PSS doesn't work with TLS
 // 1.0 or TLS 1.1 and the TLS 1.3 1-RTT handshake is partially
 // successful at the client side.
-TEST_P(TlsConnectTls12, ClientAuthInconsistentPssSignatureScheme) {
+TEST_P(TlsConnectClientAuth12, ClientAuthInconsistentPssSignatureScheme) {
   static const SSLSignatureScheme kSignatureSchemePss[] = {
       ssl_sig_rsa_pss_rsae_sha256, ssl_sig_rsa_pss_pss_sha256};
 
@@ -801,7 +1040,7 @@ TEST_P(TlsConnectTls12, ClientAuthInconsistentPssSignatureScheme) {
                                PR_ARRAY_SIZE(kSignatureSchemePss));
   server_->SetSignatureSchemes(kSignatureSchemePss,
                                PR_ARRAY_SIZE(kSignatureSchemePss));
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
 
   EnsureTlsSetup();
@@ -812,7 +1051,7 @@ TEST_P(TlsConnectTls12, ClientAuthInconsistentPssSignatureScheme) {
   ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
 }
 
-TEST_P(TlsConnectTls13, ClientAuthPkcs1SignatureScheme) {
+TEST_P(TlsConnectClientAuth13, ClientAuthPkcs1SignatureScheme) {
   static const SSLSignatureScheme kSignatureScheme[] = {
       ssl_sig_rsa_pkcs1_sha256, ssl_sig_rsa_pss_rsae_sha256};
 
@@ -821,7 +1060,7 @@ TEST_P(TlsConnectTls13, ClientAuthPkcs1SignatureScheme) {
                                PR_ARRAY_SIZE(kSignatureScheme));
   server_->SetSignatureSchemes(kSignatureScheme,
                                PR_ARRAY_SIZE(kSignatureScheme));
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
 
   auto capture_cert_verify = MakeTlsFilter<TlsHandshakeRecorder>(
@@ -834,14 +1073,14 @@ TEST_P(TlsConnectTls13, ClientAuthPkcs1SignatureScheme) {
 }
 
 // Client should refuse to connect without a usable signature scheme.
-TEST_P(TlsConnectTls13, ClientAuthPkcs1SignatureSchemeOnly) {
+TEST_P(TlsConnectClientAuth13, ClientAuthPkcs1SignatureSchemeOnly) {
   static const SSLSignatureScheme kSignatureScheme[] = {
       ssl_sig_rsa_pkcs1_sha256};
 
   Reset(TlsAgent::kServerRsa, "rsa");
   client_->SetSignatureSchemes(kSignatureScheme,
                                PR_ARRAY_SIZE(kSignatureScheme));
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   client_->StartConnect();
   client_->Handshake();
   EXPECT_EQ(TlsAgent::STATE_ERROR, client_->state());
@@ -850,14 +1089,14 @@ TEST_P(TlsConnectTls13, ClientAuthPkcs1SignatureSchemeOnly) {
 
 // Though the client has a usable signature scheme, when a certificate is
 // requested, it can't produce one.
-TEST_P(TlsConnectTls13, ClientAuthPkcs1AndEcdsaScheme) {
+TEST_P(TlsConnectClientAuth13, ClientAuthPkcs1AndEcdsaScheme) {
   static const SSLSignatureScheme kSignatureScheme[] = {
       ssl_sig_rsa_pkcs1_sha256, ssl_sig_ecdsa_secp256r1_sha256};
 
   Reset(TlsAgent::kServerRsa, "rsa");
   client_->SetSignatureSchemes(kSignatureScheme,
                                PR_ARRAY_SIZE(kSignatureScheme));
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
 
   ConnectExpectAlert(server_, kTlsAlertHandshakeFailure);
@@ -911,12 +1150,12 @@ class TlsZeroCertificateRequestSigAlgsFilter : public TlsHandshakeFilter {
 
 // Check that we send an alert when the server doesn't provide any
 // supported_signature_algorithms in the CertificateRequest message.
-TEST_P(TlsConnectTls12, ClientAuthNoSigAlgs) {
+TEST_P(TlsConnectClientAuth12, ClientAuthNoSigAlgs) {
   EnsureTlsSetup();
   MakeTlsFilter<TlsZeroCertificateRequestSigAlgsFilter>(server_);
   auto capture_cert_verify = MakeTlsFilter<TlsHandshakeRecorder>(
       client_, kTlsHandshakeCertificateVerify);
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
 
   ConnectExpectAlert(client_, kTlsAlertHandshakeFailure);
@@ -941,9 +1180,9 @@ static SECStatus GetEcClientAuthDataHook(void* self, PRFileDesc* fd,
   return SECSuccess;
 }
 
-TEST_P(TlsConnectTls12Plus, ClientAuthDisjointSchemes) {
+TEST_P(TlsConnectClientAuth12Plus, ClientAuthDisjointSchemes) {
   EnsureTlsSetup();
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   server_->RequestClientAuth(true);
 
   SSLSignatureScheme server_scheme = ssl_sig_rsa_pss_rsae_sha256;
@@ -983,7 +1222,7 @@ TEST_P(TlsConnectTls12Plus, ClientAuthDisjointSchemes) {
   }
 }
 
-TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDisjointSchemes) {
+TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthDisjointSchemes) {
   EnsureTlsSetup();
   SSLSignatureScheme server_scheme = ssl_sig_rsa_pss_rsae_sha256;
   std::vector<SSLSignatureScheme> client_schemes{
@@ -996,7 +1235,7 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDisjointSchemes) {
       static_cast<unsigned int>(client_schemes.size()));
   EXPECT_EQ(SECSuccess, rv);
 
-  client_->SetupClientAuth();
+  client_->SetupClientAuth(std::get<2>(GetParam()), true);
   client_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
 
   // Select an EC cert that's incompatible with server schemes.
@@ -1298,8 +1537,8 @@ class BeforeFinished13 : public PacketFilter {
                   SSLInt_SetMTU(server_.lock()->ssl_fd(), input.len() - 1));
         return DROP;
 
-      // Packet 2 is the first part of the server's retransmitted first
-      // flight.  Keep that.
+        // Packet 2 is the first part of the server's retransmitted first
+        // flight.  Keep that.
 
       case 3:
         // Packet 3 is the second part of the server's retransmitted first

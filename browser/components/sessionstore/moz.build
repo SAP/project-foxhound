@@ -5,29 +5,32 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
-BROWSER_CHROME_MANIFESTS += ["test/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
 
 JAR_MANIFESTS += ["jar.mn"]
 
 EXTRA_JS_MODULES.sessionstore = [
-    "ContentRestore.jsm",
-    "ContentSessionStore.jsm",
-    "GlobalState.jsm",
-    "RecentlyClosedTabsAndWindowsMenuUtils.jsm",
-    "RunState.jsm",
-    "SessionCookies.jsm",
-    "SessionFile.jsm",
-    "SessionMigration.jsm",
-    "SessionSaver.jsm",
-    "SessionStartup.jsm",
-    "SessionStore.jsm",
-    "SessionWorker.js",
-    "SessionWorker.jsm",
-    "StartupPerformance.jsm",
-    "TabAttributes.jsm",
-    "TabState.jsm",
-    "TabStateCache.jsm",
-    "TabStateFlusher.jsm",
+    "ContentRestore.sys.mjs",
+    "ContentSessionStore.sys.mjs",
+    "GlobalState.sys.mjs",
+    "RecentlyClosedTabsAndWindowsMenuUtils.sys.mjs",
+    "RunState.sys.mjs",
+    "SessionCookies.sys.mjs",
+    "SessionFile.sys.mjs",
+    "SessionMigration.sys.mjs",
+    "SessionSaver.sys.mjs",
+    "SessionStartup.sys.mjs",
+    "SessionStore.sys.mjs",
+    "SessionWriter.sys.mjs",
+    "StartupPerformance.sys.mjs",
+    "TabAttributes.sys.mjs",
+    "TabState.sys.mjs",
+    "TabStateCache.sys.mjs",
+    "TabStateFlusher.sys.mjs",
+]
+
+TESTING_JS_MODULES += [
+    "test/SessionStoreTestUtils.sys.mjs",
 ]
 
 with Files("**"):

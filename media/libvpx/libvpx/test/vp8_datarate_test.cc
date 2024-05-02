@@ -24,10 +24,10 @@ class DatarateTestLarge
  public:
   DatarateTestLarge() : EncoderTest(GET_PARAM(0)) {}
 
-  virtual ~DatarateTestLarge() {}
+  ~DatarateTestLarge() override = default;
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     InitializeConfig();
     SetMode(GET_PARAM(1));
     set_cpu_used_ = GET_PARAM(2);
@@ -47,8 +47,8 @@ class DatarateTestLarge
     use_roi_ = false;
   }
 
-  virtual void PreEncodeFrameHook(::libvpx_test::VideoSource *video,
-                                  ::libvpx_test::Encoder *encoder) {
+  void PreEncodeFrameHook(::libvpx_test::VideoSource *video,
+                          ::libvpx_test::Encoder *encoder) override {
     if (video->frame() == 0) {
       encoder->Control(VP8E_SET_NOISE_SENSITIVITY, denoiser_on_);
       encoder->Control(VP8E_SET_CPUUSED, set_cpu_used_);
@@ -74,7 +74,7 @@ class DatarateTestLarge
     duration_ = 0;
   }
 
-  virtual void FramePktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void FramePktHook(const vpx_codec_cx_pkt_t *pkt) override {
     // Time since last timestamp = duration.
     vpx_codec_pts_t duration = pkt->data.frame.pts - last_pts_;
 
@@ -121,7 +121,7 @@ class DatarateTestLarge
     ++frame_number_;
   }
 
-  virtual void EndPassHook(void) {
+  void EndPassHook() override {
     if (bits_total_) {
       const double file_size_in_kb = bits_total_ / 1000.;  // bits per kilobit
 
@@ -301,7 +301,7 @@ TEST_P(DatarateTestLarge, DropFramesMultiThreads) {
 
 class DatarateTestRealTime : public DatarateTestLarge {
  public:
-  virtual ~DatarateTestRealTime() {}
+  ~DatarateTestRealTime() override = default;
 };
 
 #if CONFIG_TEMPORAL_DENOISING
@@ -408,9 +408,31 @@ TEST_P(DatarateTestRealTime, GFBoost) {
       << " The datarate for the file missed the target!";
 }
 
-VP8_INSTANTIATE_TEST_CASE(DatarateTestLarge, ALL_TEST_MODES,
-                          ::testing::Values(0));
-VP8_INSTANTIATE_TEST_CASE(DatarateTestRealTime,
-                          ::testing::Values(::libvpx_test::kRealTime),
-                          ::testing::Values(-6, -12));
+TEST_P(DatarateTestRealTime, NV12) {
+  denoiser_on_ = 0;
+  cfg_.rc_buf_initial_sz = 500;
+  cfg_.rc_dropframe_thresh = 0;
+  cfg_.rc_max_quantizer = 56;
+  cfg_.rc_end_usage = VPX_CBR;
+  cfg_.g_error_resilient = 0;
+  ::libvpx_test::YUVVideoSource video("hantro_collage_w352h288_nv12.yuv",
+                                      VPX_IMG_FMT_NV12, 352, 288, 30, 1, 0,
+                                      100);
+
+  cfg_.rc_target_bitrate = 200;
+  ResetModel();
+
+  ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+  ASSERT_GE(cfg_.rc_target_bitrate, effective_datarate_ * 0.95)
+      << " The datarate for the file exceeds the target!";
+
+  ASSERT_LE(cfg_.rc_target_bitrate, file_datarate_ * 1.4)
+      << " The datarate for the file missed the target!";
+}
+
+VP8_INSTANTIATE_TEST_SUITE(DatarateTestLarge, ALL_TEST_MODES,
+                           ::testing::Values(0));
+VP8_INSTANTIATE_TEST_SUITE(DatarateTestRealTime,
+                           ::testing::Values(::libvpx_test::kRealTime),
+                           ::testing::Values(-6, -12));
 }  // namespace

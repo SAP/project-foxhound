@@ -206,9 +206,14 @@ class NS_NO_VTABLE nsCycleCollectionParticipant {
   using Flags = uint8_t;
   static constexpr Flags FlagMightSkip = 1u << 0;
   static constexpr Flags FlagTraverseShouldTrace = 1u << 1;
-  static constexpr Flags FlagMultiZoneJSHolder = 1u << 2;
-  static constexpr Flags AllFlags =
-      FlagMightSkip | FlagTraverseShouldTrace | FlagMultiZoneJSHolder;
+  // The object is a single zone js holder if FlagMaybeSingleZoneJSHolder is set
+  // and FlagMultiZoneJSHolder isn't set. This setup is needed so that
+  // inheriting classes can unset single zone behavior.
+  static constexpr Flags FlagMaybeSingleZoneJSHolder = 1u << 2;
+  static constexpr Flags FlagMultiZoneJSHolder = 1u << 3;
+  static constexpr Flags AllFlags = FlagMightSkip | FlagTraverseShouldTrace |
+                                    FlagMaybeSingleZoneJSHolder |
+                                    FlagMultiZoneJSHolder;
 
   constexpr explicit nsCycleCollectionParticipant(Flags aFlags)
       : mFlags(aFlags) {
@@ -309,7 +314,10 @@ class NS_NO_VTABLE nsCycleCollectionParticipant {
 
   NS_IMETHOD_(void) DeleteCycleCollectable(void* aPtr) = 0;
 
-  bool IsMultiZoneJSHolder() const { return mFlags & FlagMultiZoneJSHolder; }
+  bool IsSingleZoneJSHolder() const {
+    return (mFlags & FlagMaybeSingleZoneJSHolder) &&
+           !(mFlags & FlagMultiZoneJSHolder);
+  }
 
  protected:
   NS_IMETHOD_(bool) CanSkipReal(void* aPtr, bool aRemovingAllowed) {
@@ -686,11 +694,8 @@ T* DowncastCCParticipant(void* aPtr) {
  * builds.
  */
 #ifdef DEBUG
-// clang-format off
-// Force this line to remain this way to make sure we don't trigger the
-// lint cpp-virtual-final. see bug 1505943
-#define NOT_INHERITED_CANT_OVERRIDE virtual void BaseCycleCollectable() final {}
-// clang-format on
+#  define NOT_INHERITED_CANT_OVERRIDE \
+    virtual void BaseCycleCollectable() final {}
 #else
 #  define NOT_INHERITED_CANT_OVERRIDE
 #endif
@@ -785,7 +790,8 @@ T* DowncastCCParticipant(void* aPtr) {
       : public NS_CYCLE_COLLECTION_CLASSNAME(_base_class) {                    \
    public:                                                                     \
     constexpr explicit NS_CYCLE_COLLECTION_INNERCLASS(                         \
-        Flags aFlags = FlagMightSkip) /* We always want skippability. */       \
+        Flags aFlags = FlagMightSkip | /* We always want skippability. */      \
+                       FlagMultiZoneJSHolder)                                  \
         : NS_CYCLE_COLLECTION_CLASSNAME(_base_class)(aFlags | FlagMightSkip) { \
     }                                                                          \
                                                                                \
@@ -829,30 +835,35 @@ T* DowncastCCParticipant(void* aPtr) {
   NS_CHECK_FOR_RIGHT_PARTICIPANT_IMPL_INHERITED(_class)                 \
   static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
 
-#define NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(_class,      \
-                                                               _base_class) \
-  class NS_CYCLE_COLLECTION_INNERCLASS                                      \
-      : public NS_CYCLE_COLLECTION_CLASSNAME(_base_class) {                 \
-   public:                                                                  \
-    constexpr explicit NS_CYCLE_COLLECTION_INNERCLASS(Flags aFlags = 0)     \
-        : NS_CYCLE_COLLECTION_CLASSNAME(_base_class)(aFlags) {}             \
-                                                                            \
-   private:                                                                 \
-    NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY(_class, _base_class)      \
-    NS_IMETHOD_(void)                                                       \
-    Trace(void* p, const TraceCallbacks& cb, void* closure) override;       \
-    NS_IMPL_GET_XPCOM_CYCLE_COLLECTION_PARTICIPANT(_class)                  \
-  };                                                                        \
-  NS_CHECK_FOR_RIGHT_PARTICIPANT_IMPL_INHERITED(_class)                     \
+#define NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(_class,         \
+                                                               _base_class)    \
+  class NS_CYCLE_COLLECTION_INNERCLASS                                         \
+      : public NS_CYCLE_COLLECTION_CLASSNAME(_base_class) {                    \
+   public:                                                                     \
+    constexpr explicit NS_CYCLE_COLLECTION_INNERCLASS(Flags aFlags = 0)        \
+        : NS_CYCLE_COLLECTION_CLASSNAME(_base_class)(aFlags |                  \
+                                                     FlagMultiZoneJSHolder) {} \
+                                                                               \
+   private:                                                                    \
+    NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY(_class, _base_class)         \
+    NS_IMETHOD_(void)                                                          \
+    Trace(void* p, const TraceCallbacks& cb, void* closure) override;          \
+    NS_IMPL_GET_XPCOM_CYCLE_COLLECTION_PARTICIPANT(_class)                     \
+  };                                                                           \
+  NS_CHECK_FOR_RIGHT_PARTICIPANT_IMPL_INHERITED(_class)                        \
   static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
 
 // Cycle collector participant declarations.
 
 #define NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS_BODY(_class)                   \
  public:                                                                     \
-  NS_IMETHOD_(void) Root(void* n) override;                                  \
+  NS_IMETHOD_(void) Root(void* p) override {                                 \
+    static_cast<_class*>(p)->AddRef();                                       \
+  }                                                                          \
   NS_IMETHOD_(void) Unlink(void* n) override;                                \
-  NS_IMETHOD_(void) Unroot(void* n) override;                                \
+  NS_IMETHOD_(void) Unroot(void* p) override {                               \
+    static_cast<_class*>(p)->Release();                                      \
+  }                                                                          \
   NS_IMETHOD TraverseNative(void* n, nsCycleCollectionTraversalCallback& cb) \
       override;                                                              \
   NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(_class)                         \
@@ -933,30 +944,15 @@ T* DowncastCCParticipant(void* aPtr) {
   };                                                                    \
   static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
 
-#define NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(_class, _root_function) \
-  NS_IMETHODIMP_(void)                                               \
-  NS_CYCLE_COLLECTION_CLASSNAME(_class)::Root(void* p) {             \
-    _class* tmp = static_cast<_class*>(p);                           \
-    tmp->_root_function();                                           \
-  }
-
-#define NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(_class, _unroot_function) \
-  NS_IMETHODIMP_(void)                                                   \
-  NS_CYCLE_COLLECTION_CLASSNAME(_class)::Unroot(void* p) {               \
-    _class* tmp = static_cast<_class*>(p);                               \
-    tmp->_unroot_function();                                             \
-  }
-
 #define NS_IMPL_CYCLE_COLLECTION_CLASS(_class) \
   _class::NS_CYCLE_COLLECTION_INNERCLASS _class::NS_CYCLE_COLLECTION_INNERNAME;
 
-// Most JS holder classes should only contain pointers to JS GC things in a
-// single JS zone (excluding pointers into the atoms zone), but there are some
-// exceptions. Such classes should use this macro to tell the system about this.
-#define NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(_class) \
-  _class::NS_CYCLE_COLLECTION_INNERCLASS                           \
-      _class::NS_CYCLE_COLLECTION_INNERNAME(                       \
-          nsCycleCollectionParticipant::FlagMultiZoneJSHolder);
+// By default JS holders are treated as if they may store pointers to multiple
+// zones, but one may optimize GC handling by using single zone holders.
+#define NS_IMPL_CYCLE_COLLECTION_SINGLE_ZONE_SCRIPT_HOLDER_CLASS(_class) \
+  _class::NS_CYCLE_COLLECTION_INNERCLASS                                 \
+      _class::NS_CYCLE_COLLECTION_INNERNAME(                             \
+          nsCycleCollectionParticipant::FlagMaybeSingleZoneJSHolder);
 
 // NB: This is not something you usually want to use.  It is here to allow
 // adding things to the CC graph to help debugging via CC logs, but it does not
@@ -1037,6 +1033,75 @@ inline bool TopThreeWordsEquals(const nsID& aID, const nsID& aOther1,
  */
 inline bool LowWordEquals(const nsID& aID, const nsID& aOther) {
   return (((uint32_t*)&aID.m0)[3] == ((uint32_t*)&aOther.m0)[3]);
+}
+
+// Template magic to modify JS::Heap without including relevant headers, to
+// prevent excessive header dependency.
+template <typename T>
+inline void ImplCycleCollectionUnlink(JS::Heap<T>& aField) {
+  aField.setNull();
+}
+template <typename T>
+inline void ImplCycleCollectionUnlink(JS::Heap<T*>& aField) {
+  aField = nullptr;
+}
+
+#define NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBERS(...)                \
+  MOZ_ASSERT(!IsSingleZoneJSHolder());                                \
+  MOZ_FOR_EACH(NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK, (), \
+               (__VA_ARGS__))
+
+#define NS_IMPL_CYCLE_COLLECTION_WITH_JS_MEMBERS(class_, native_members_,   \
+                                                 js_members_)               \
+  NS_IMPL_CYCLE_COLLECTION_CLASS(class_)                                    \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(class_)                             \
+    using ::ImplCycleCollectionUnlink;                                      \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(                                        \
+        MOZ_FOR_EACH_EXPAND_HELPER native_members_)                         \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(MOZ_FOR_EACH_EXPAND_HELPER js_members_) \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                       \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(class_)                           \
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(                                      \
+        MOZ_FOR_EACH_EXPAND_HELPER native_members_)                         \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END                                     \
+  NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(class_)                              \
+    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBERS(                              \
+        MOZ_FOR_EACH_EXPAND_HELPER js_members_)                             \
+  NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+#define NS_IMPL_CYCLE_COLLECTION_INHERITED_WITH_JS_MEMBERS(                 \
+    class_, _base, native_members_, js_members_)                            \
+  NS_IMPL_CYCLE_COLLECTION_CLASS(class_)                                    \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(class_, _base)            \
+    using ::ImplCycleCollectionUnlink;                                      \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(                                        \
+        MOZ_FOR_EACH_EXPAND_HELPER native_members_)                         \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(MOZ_FOR_EACH_EXPAND_HELPER js_members_) \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                       \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(class_, _base)          \
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(                                      \
+        MOZ_FOR_EACH_EXPAND_HELPER native_members_)                         \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END                                     \
+  NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(class_, _base)             \
+    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBERS(                              \
+        MOZ_FOR_EACH_EXPAND_HELPER js_members_)                             \
+  NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+template <typename... Elements>
+inline void ImplCycleCollectionUnlink(std::tuple<Elements...>& aField) {
+  std::apply([](auto&&... aArgs) { (ImplCycleCollectionUnlink(aArgs), ...); },
+             aField);
+}
+template <typename... Elements>
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    std::tuple<Elements...>& aField, const char* aName, uint32_t aFlags) {
+  aFlags |= CycleCollectionEdgeNameArrayFlag;
+  std::apply(
+      [&](auto&&... aArgs) {
+        (ImplCycleCollectionTraverse(aCallback, aArgs, aName, aFlags), ...);
+      },
+      aField);
 }
 
 #endif  // nsCycleCollectionParticipant_h__

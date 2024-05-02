@@ -5,12 +5,14 @@
 
 #include "DeleteTextTransaction.h"
 
+#include "EditorBase.h"
+#include "EditorDOMPoint.h"
 #include "HTMLEditUtils.h"
+#include "SelectionState.h"
+
 #include "mozilla/Assertions.h"
-#include "mozilla/EditorBase.h"
-#include "mozilla/EditorDOMPoint.h"
-#include "mozilla/SelectionState.h"
 #include "mozilla/dom/Selection.h"
+
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsISupportsImpl.h"
@@ -77,7 +79,7 @@ DeleteTextTransaction::MaybeCreateForNextCharacter(EditorBase& aEditorBase,
 DeleteTextTransaction::DeleteTextTransaction(EditorBase& aEditorBase,
                                              Text& aTextNode, uint32_t aOffset,
                                              uint32_t aLengthToDelete)
-    : mEditorBase(&aEditorBase),
+    : DeleteContentTransactionBase(aEditorBase),
       mTextNode(&aTextNode),
       mOffset(aOffset),
       mLengthToDelete(aLengthToDelete) {
@@ -99,11 +101,11 @@ std::ostream& operator<<(std::ostream& aStream,
   return aStream;
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(DeleteTextTransaction, EditTransactionBase,
-                                   mEditorBase, mTextNode)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(DeleteTextTransaction,
+                                   DeleteContentTransactionBase, mTextNode)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DeleteTextTransaction)
-NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
+NS_INTERFACE_MAP_END_INHERITING(DeleteContentTransactionBase)
 
 bool DeleteTextTransaction::CanDoIt() const {
   if (NS_WARN_IF(!mTextNode) || NS_WARN_IF(!mEditorBase)) {
@@ -123,9 +125,9 @@ NS_IMETHODIMP DeleteTextTransaction::DoTransaction() {
   }
 
   // Get the text that we're about to delete
-  ErrorResult error;
+  IgnoredErrorResult error;
   mTextNode->SubstringData(mOffset, mLengthToDelete, mDeletedText, error);
-  if (error.Failed()) {
+  if (MOZ_UNLIKELY(error.Failed())) {
     NS_WARNING("Text::SubstringData() failed");
     return error.StealNSResult();
   }
@@ -133,26 +135,21 @@ NS_IMETHODIMP DeleteTextTransaction::DoTransaction() {
   OwningNonNull<EditorBase> editorBase = *mEditorBase;
   OwningNonNull<Text> textNode = *mTextNode;
   editorBase->DoDeleteText(textNode, mOffset, mLengthToDelete, error);
-  if (error.Failed()) {
+  if (MOZ_UNLIKELY(error.Failed())) {
     NS_WARNING("EditorBase::DoDeleteText() failed");
     return error.StealNSResult();
   }
 
   editorBase->RangeUpdaterRef().SelAdjDeleteText(textNode, mOffset,
                                                  mLengthToDelete);
+  return NS_OK;
+}
 
-  if (!editorBase->AllowsTransactionsToChangeSelection()) {
-    return NS_OK;
+EditorDOMPoint DeleteTextTransaction::SuggestPointToPutCaret() const {
+  if (NS_WARN_IF(!mTextNode) || NS_WARN_IF(!mTextNode->IsInComposedDoc())) {
+    return EditorDOMPoint();
   }
-
-  RefPtr<Selection> selection = editorBase->GetSelection();
-  if (NS_WARN_IF(!selection)) {
-    return NS_ERROR_FAILURE;
-  }
-  selection->CollapseInLimiter(EditorRawDOMPoint(textNode, mOffset), error);
-  NS_WARNING_ASSERTION(!error.Failed(),
-                       "Selection::CollapseInLimiter() failed");
-  return error.StealNSResult();
+  return EditorDOMPoint(mTextNode, mOffset);
 }
 
 // XXX: We may want to store the selection state and restore it properly.  Was
@@ -177,7 +174,21 @@ NS_IMETHODIMP DeleteTextTransaction::RedoTransaction() {
   MOZ_LOG(GetLogModule(), LogLevel::Info,
           ("%p DeleteTextTransaction::%s this=%s", this, __FUNCTION__,
            ToString(*this).c_str()));
-  return DoTransaction();
+  nsresult rv = DoTransaction();
+  if (NS_FAILED(rv)) {
+    NS_WARNING("DeleteTextTransaction::DoTransaction() failed");
+    return rv;
+  }
+  if (!mEditorBase || !mEditorBase->AllowsTransactionsToChangeSelection()) {
+    return NS_OK;
+  }
+  OwningNonNull<EditorBase> editorBase = *mEditorBase;
+  rv = editorBase->CollapseSelectionTo(SuggestPointToPutCaret());
+  if (NS_FAILED(rv)) {
+    NS_WARNING("EditorBase::CollapseSelectionTo() failed");
+    return rv;
+  }
+  return NS_OK;
 }
 
 }  // namespace mozilla

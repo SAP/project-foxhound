@@ -14,6 +14,7 @@
 #include <memory>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "system_wrappers/include/clock.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -197,7 +198,7 @@ TEST_F(BitrateAllocatorTest, UpdatingBitrateObserver) {
       CreateTargetRateMessage(4000000, 0, 0, kDefaultProbingIntervalMs));
   EXPECT_EQ(3000000, allocator_->GetStartBitrate(&bitrate_observer));
 
-  // Expect |max_padding_bitrate_bps| to change to 0 if the observer is updated.
+  // Expect `max_padding_bitrate_bps` to change to 0 if the observer is updated.
   EXPECT_CALL(limit_observer_, OnAllocationLimitsChanged(
                                    AllocationLimitsEq(kMinSendBitrateBps, 0)));
   AddObserver(&bitrate_observer, kMinSendBitrateBps, 4000000, 0, true,
@@ -306,7 +307,7 @@ class BitrateAllocatorTestNoEnforceMin : public ::testing::Test {
                    uint32_t max_bitrate_bps,
                    uint32_t pad_up_bitrate_bps,
                    bool enforce_min_bitrate,
-                   std::string track_id,
+                   absl::string_view track_id,
                    double bitrate_priority) {
     allocator_->AddObserver(
         observer, {min_bitrate_bps, max_bitrate_bps, pad_up_bitrate_bps, 0,
@@ -320,8 +321,8 @@ class BitrateAllocatorTestNoEnforceMin : public ::testing::Test {
 // intended.
 TEST_F(BitrateAllocatorTestNoEnforceMin, OneBitrateObserver) {
   TestBitrateObserver bitrate_observer_1;
-  // Expect OnAllocationLimitsChanged with |min_send_bitrate_bps| = 0 since
-  // AddObserver is called with |enforce_min_bitrate| = false.
+  // Expect OnAllocationLimitsChanged with `min_send_bitrate_bps` = 0 since
+  // AddObserver is called with `enforce_min_bitrate` = false.
   EXPECT_CALL(limit_observer_,
               OnAllocationLimitsChanged(AllocationLimitsEq(0, 0)));
   EXPECT_CALL(limit_observer_,
@@ -421,8 +422,8 @@ TEST_F(BitrateAllocatorTestNoEnforceMin, OneBitrateObserverWithPacketLoss) {
   const uint32_t kMinStartBitrateBps =
       kMinBitrateBps + std::max(20000u, kMinBitrateBps / 10);
 
-  // Expect OnAllocationLimitsChanged with |min_send_bitrate_bps| = 0 since
-  // AddObserver is called with |enforce_min_bitrate| = false.
+  // Expect OnAllocationLimitsChanged with `min_send_bitrate_bps` = 0 since
+  // AddObserver is called with `enforce_min_bitrate` = false.
   TestBitrateObserver bitrate_observer;
   EXPECT_CALL(limit_observer_, OnAllocationLimitsChanged(
                                    AllocationLimitsEq(0, 0, kMaxBitrateBps)));
@@ -494,7 +495,7 @@ TEST_F(BitrateAllocatorTest,
   const uint32_t kMinBitrateBps = 100000;
   const uint32_t kMaxBitrateBps = 400000;
 
-  // Register |bitrate_observer| and expect total allocation limits to change.
+  // Register `bitrate_observer` and expect total allocation limits to change.
   EXPECT_CALL(limit_observer_, OnAllocationLimitsChanged(AllocationLimitsEq(
                                    kMinBitrateBps, 0, kMaxBitrateBps)))
       .Times(1);

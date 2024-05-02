@@ -8,6 +8,7 @@
 
 #include "GMPContentParent.h"
 #include "GMPCrashHelper.h"
+#include "gmp-video-codec.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/gmp/GMPTypes.h"
@@ -32,15 +33,16 @@ class GMPCrashHelper;
 class MediaResult;
 
 extern LogModule* GetGMPLog();
+extern LogModule* GetGMPLibraryLog();
+extern GMPLogLevel GetGMPLibraryLogLevel();
 
 namespace gmp {
 
-typedef MozPromise<RefPtr<GMPContentParent::CloseBlocker>, MediaResult,
-                   /* IsExclusive = */ true>
-    GetGMPContentParentPromise;
-typedef MozPromise<RefPtr<ChromiumCDMParent>, MediaResult,
-                   /* IsExclusive = */ true>
-    GetCDMParentPromise;
+using GetGMPContentParentPromise =
+    MozPromise<RefPtr<GMPContentParentCloseBlocker>, MediaResult,
+               /* IsExclusive = */ true>;
+using GetCDMParentPromise = MozPromise<RefPtr<ChromiumCDMParent>, MediaResult,
+                                       /* IsExclusive = */ true>;
 
 class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
                                 public nsIObserver {
@@ -97,7 +99,7 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
 
   virtual RefPtr<GetGMPContentParentPromise> GetContentParent(
       GMPCrashHelper* aHelper, const NodeIdVariant& aNodeIdVariant,
-      const nsCString& aAPI, const nsTArray<nsCString>& aTags) = 0;
+      const nsACString& aAPI, const nsTArray<nsCString>& aTags) = 0;
 
   nsresult GMPDispatch(nsIRunnable* event, uint32_t flags = NS_DISPATCH_NORMAL);
   nsresult GMPDispatch(already_AddRefed<nsIRunnable> event,
@@ -106,8 +108,9 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
 
   static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier();
 
-  Mutex mMutex;  // Protects mGMPThread, mPluginCrashHelpers,
-                 // mGMPThreadShutdown and some members in derived classes.
+  Mutex mMutex MOZ_UNANNOTATED;  // Protects mGMPThread, mPluginCrashHelpers,
+                                 // mGMPThreadShutdown and some members in
+                                 // derived classes.
 
   const nsCOMPtr<nsISerialEventTarget> mMainThread;
 

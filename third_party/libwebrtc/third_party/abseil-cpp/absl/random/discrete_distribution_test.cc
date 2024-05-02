@@ -26,7 +26,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/internal/raw_logging.h"
+#include "absl/log/log.h"
 #include "absl/random/internal/chi_square.h"
 #include "absl/random/internal/distribution_test_util.h"
 #include "absl/random/internal/pcg_engine.h"
@@ -99,6 +99,7 @@ TYPED_TEST(DiscreteDistributionTypeTest, Constructor) {
 }
 
 TEST(DiscreteDistributionTest, InitDiscreteDistribution) {
+  using testing::_;
   using testing::Pair;
 
   {
@@ -111,8 +112,8 @@ TEST(DiscreteDistributionTest, InitDiscreteDistribution) {
     // Each bucket is p=1/3, so bucket 0 will send half it's traffic
     // to bucket 2, while the rest will retain all of their traffic.
     EXPECT_THAT(q, testing::ElementsAre(Pair(0.5, 2),  //
-                                        Pair(1.0, 1),  //
-                                        Pair(1.0, 2)));
+                                        Pair(1.0, _),  //
+                                        Pair(1.0, _)));
   }
 
   {
@@ -135,7 +136,7 @@ TEST(DiscreteDistributionTest, InitDiscreteDistribution) {
 
     EXPECT_THAT(q, testing::ElementsAre(Pair(b0, 3),   //
                                         Pair(b1, 3),   //
-                                        Pair(1.0, 2),  //
+                                        Pair(1.0, _),  //
                                         Pair(b3, 2),   //
                                         Pair(b1, 3)));
   }
@@ -145,7 +146,7 @@ TEST(DiscreteDistributionTest, ChiSquaredTest50) {
   using absl::random_internal::kChiSquared;
 
   constexpr size_t kTrials = 10000;
-  constexpr int kBuckets = 50;  // inclusive, so actally +1
+  constexpr int kBuckets = 50;  // inclusive, so actually +1
 
   // 1-in-100000 threshold, but remember, there are about 8 tests
   // in this file. And the test could fail for other reasons.
@@ -193,7 +194,7 @@ TEST(DiscreteDistributionTest, ChiSquaredTest50) {
     absl::StrAppend(&msg, kChiSquared, " p-value ", p_value, "\n");
     absl::StrAppend(&msg, "High ", kChiSquared, " value: ", chi_square, " > ",
                     kThreshold);
-    ABSL_RAW_LOG(INFO, "%s", msg.c_str());
+    LOG(INFO) << msg;
     FAIL() << msg;
   }
 }

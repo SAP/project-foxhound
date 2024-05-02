@@ -4,7 +4,9 @@ use futures_core::task::{Context, Poll, Waker};
 use slab::Slab;
 use std::cell::UnsafeCell;
 use std::fmt;
+use std::hash::Hasher;
 use std::pin::Pin;
+use std::ptr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, SeqCst};
 use std::sync::{Arc, Mutex, Weak};
@@ -103,7 +105,6 @@ impl<Fut: Future> Shared<Fut> {
 impl<Fut> Shared<Fut>
 where
     Fut: Future,
-    Fut::Output: Clone,
 {
     /// Returns [`Some`] containing a reference to this [`Shared`]'s output if
     /// it has already been computed by a clone or [`None`] if it hasn't been
@@ -139,6 +140,7 @@ where
     /// This method by itself is safe, but using it correctly requires extra care. Another thread
     /// can change the strong count at any time, including potentially between calling this method
     /// and acting on the result.
+    #[allow(clippy::unnecessary_safety_doc)]
     pub fn strong_count(&self) -> Option<usize> {
         self.inner.as_ref().map(|arc| Arc::strong_count(arc))
     }
@@ -152,15 +154,44 @@ where
     /// This method by itself is safe, but using it correctly requires extra care. Another thread
     /// can change the weak count at any time, including potentially between calling this method
     /// and acting on the result.
+    #[allow(clippy::unnecessary_safety_doc)]
     pub fn weak_count(&self) -> Option<usize> {
         self.inner.as_ref().map(|arc| Arc::weak_count(arc))
+    }
+
+    /// Hashes the internal state of this `Shared` in a way that's compatible with `ptr_eq`.
+    pub fn ptr_hash<H: Hasher>(&self, state: &mut H) {
+        match self.inner.as_ref() {
+            Some(arc) => {
+                state.write_u8(1);
+                ptr::hash(Arc::as_ptr(arc), state);
+            }
+            None => {
+                state.write_u8(0);
+            }
+        }
+    }
+
+    /// Returns `true` if the two `Shared`s point to the same future (in a vein similar to
+    /// `Arc::ptr_eq`).
+    ///
+    /// Returns `false` if either `Shared` has terminated.
+    pub fn ptr_eq(&self, rhs: &Self) -> bool {
+        let lhs = match self.inner.as_ref() {
+            Some(lhs) => lhs,
+            None => return false,
+        };
+        let rhs = match rhs.inner.as_ref() {
+            Some(rhs) => rhs,
+            None => return false,
+        };
+        Arc::ptr_eq(lhs, rhs)
     }
 }
 
 impl<Fut> Inner<Fut>
 where
     Fut: Future,
-    Fut::Output: Clone,
 {
     /// Safety: callers must first ensure that `self.inner.state`
     /// is `COMPLETE`
@@ -170,6 +201,13 @@ where
             FutureOrOutput::Future(_) => unreachable!(),
         }
     }
+}
+
+impl<Fut> Inner<Fut>
+where
+    Fut: Future,
+    Fut::Output: Clone,
+{
     /// Registers the current task to receive a wakeup when we are awoken.
     fn record_waker(&self, waker_key: &mut usize, cx: &mut Context<'_>) {
         let mut wakers_guard = self.notifier.wakers.lock().unwrap();
@@ -262,19 +300,20 @@ where
         let waker = waker_ref(&inner.notifier);
         let mut cx = Context::from_waker(&waker);
 
-        struct Reset<'a>(&'a AtomicUsize);
+        struct Reset<'a> {
+            state: &'a AtomicUsize,
+            did_not_panic: bool,
+        }
 
         impl Drop for Reset<'_> {
             fn drop(&mut self) {
-                use std::thread;
-
-                if thread::panicking() {
-                    self.0.store(POISONED, SeqCst);
+                if !self.did_not_panic {
+                    self.state.store(POISONED, SeqCst);
                 }
             }
         }
 
-        let _reset = Reset(&inner.notifier.state);
+        let mut reset = Reset { state: &inner.notifier.state, did_not_panic: false };
 
         let output = {
             let future = unsafe {
@@ -284,12 +323,15 @@ where
                 }
             };
 
-            match future.poll(&mut cx) {
+            let poll_result = future.poll(&mut cx);
+            reset.did_not_panic = true;
+
+            match poll_result {
                 Poll::Pending => {
                     if inner.notifier.state.compare_exchange(POLLING, IDLE, SeqCst, SeqCst).is_ok()
                     {
                         // Success
-                        drop(_reset);
+                        drop(reset);
                         this.inner = Some(inner);
                         return Poll::Pending;
                     } else {
@@ -313,7 +355,7 @@ where
             waker.wake();
         }
 
-        drop(_reset); // Make borrow checker happy
+        drop(reset); // Make borrow checker happy
         drop(wakers_guard);
 
         // Safety: We're in the COMPLETE state

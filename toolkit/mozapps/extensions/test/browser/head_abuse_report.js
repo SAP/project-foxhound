@@ -12,14 +12,14 @@
 
 /* global MockProvider, loadInitialView, closeView */
 
-const { AbuseReporter } = ChromeUtils.import(
-  "resource://gre/modules/AbuseReporter.jsm"
+const { AbuseReporter } = ChromeUtils.importESModule(
+  "resource://gre/modules/AbuseReporter.sys.mjs"
 );
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
+const { ExtensionCommon } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionCommon.sys.mjs"
 );
 
 const { makeWidgetId } = ExtensionCommon;
@@ -103,7 +103,10 @@ async function installTestExtension(
         },
       };
       break;
-    case "sitepermission":
+
+    // TODO(Bug 1789718): Remove after the deprecated XPIProvider-based
+    // implementation is also removed.
+    case "sitepermission-deprecated":
       additionalProps = {
         name: "WebMIDI test addon for https://mochi.test",
         install_origins: ["https://mochi.test"],
@@ -126,7 +129,9 @@ async function installTestExtension(
     useAddonManager: "temporary",
   };
 
-  if (type === "sitepermission") {
+  // TODO(Bug 1789718): Remove after the deprecated XPIProvider-based
+  // implementation is also removed.
+  if (type === "sitepermission-deprecated") {
     const xpi = AddonTestUtils.createTempWebExtensionFile(extensionOpts);
     const addon = await AddonManager.installTemporaryAddon(xpi);
     // The extension object that ExtensionTestUtils.loadExtension returns for
@@ -183,7 +188,7 @@ const AbuseReportTestUtils = {
 
   // Returns the currently open abuse report dialog window (if any).
   getReportDialog() {
-    return Services.ww.getWindowByName("addons-abuse-report-dialog", null);
+    return Services.ww.getWindowByName("addons-abuse-report-dialog");
   },
 
   // Returns the parameters related to the report dialog (if any).
@@ -360,22 +365,34 @@ const AbuseReportTestUtils = {
 
   async assertFluentStrings(containerEl) {
     // Make sure all localized elements have defined Fluent strings.
-    const localizedEls = Array.from(
+    let localizedEls = Array.from(
       containerEl.querySelectorAll("[data-l10n-id]")
     );
+    if (containerEl.getAttribute("data-l10n-id")) {
+      localizedEls.push(containerEl);
+    }
     ok(localizedEls.length, "Got localized elements");
     for (let el of localizedEls) {
       const l10nId = el.getAttribute("data-l10n-id");
-      await TestUtils.waitForCondition(
-        () => el.textContent !== "",
-        `Element with Fluent id '${l10nId}' should not be empty`
-      );
+      const l10nAttrs = el.getAttribute("data-l10n-attrs");
+      if (!l10nAttrs) {
+        await TestUtils.waitForCondition(
+          () => el.textContent !== "",
+          `Element with Fluent id '${l10nId}' should not be empty`
+        );
+      } else {
+        await TestUtils.waitForCondition(
+          () => el.message !== "",
+          `Message attribute of the element with Fluent id '${l10nId}' 
+          should not be empty`
+        );
+      }
     }
   },
 
-  // Assert that the report action is hidden on the addon card
+  // Assert that the report action visibility on the addon card
   // for the given about:addons windows and extension id.
-  async assertReportActionHidden(gManagerWindow, extId) {
+  async assertReportActionVisibility(gManagerWindow, extId, expectShown) {
     let addonCard = gManagerWindow.document.querySelector(
       `addon-list addon-card[addon-id="${extId}"]`
     );
@@ -383,7 +400,23 @@ const AbuseReportTestUtils = {
 
     let reportButton = addonCard.querySelector("[action=report]");
     ok(reportButton, `Got the report action for ${extId}`);
-    ok(reportButton.hidden, `${extId} report action should be hidden`);
+    Assert.equal(
+      reportButton.hidden,
+      !expectShown,
+      `${extId} report action should be ${expectShown ? "shown" : "hidden"}`
+    );
+  },
+
+  // Assert that the report action is hidden on the addon card
+  // for the given about:addons windows and extension id.
+  assertReportActionHidden(gManagerWindow, extId) {
+    return this.assertReportActionVisibility(gManagerWindow, extId, false);
+  },
+
+  // Assert that the report action is shown on the addon card
+  // for the given about:addons windows and extension id.
+  assertReportActionShown(gManagerWindow, extId) {
+    return this.assertReportActionVisibility(gManagerWindow, extId, true);
   },
 
   // Assert that the report panel is hidden (or closed if the report
@@ -410,9 +443,8 @@ const AbuseReportTestUtils = {
   },
 
   triggerSubmit(reason, message) {
-    const reportEl = this.getReportDialog().document.querySelector(
-      "addon-abuse-report"
-    );
+    const reportEl =
+      this.getReportDialog().document.querySelector("addon-abuse-report");
     reportEl._form.elements.message.value = message;
     reportEl._form.elements.reason.value = reason;
     reportEl.submit();

@@ -23,7 +23,6 @@
 
 namespace mozilla {
 namespace ipc {
-class AutoIPCStream;
 class PBackgroundChild;
 class PBackgroundParent;
 class PrincipalInfo;
@@ -52,14 +51,14 @@ class InternalResponse final : public AtomicSafeRefCounted<InternalResponse> {
   static SafeRefPtr<InternalResponse> FromIPC(
       const ParentToParentInternalResponse& aIPCResponse);
 
-  // Note: the AutoIPCStreams must outlive the ChildToParentInternalResponse.
   void ToChildToParentInternalResponse(
       ChildToParentInternalResponse* aIPCResponse,
-      mozilla::ipc::PBackgroundChild* aManager,
-      UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoBodyStream,
-      UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoAlternativeBodyStream);
+      mozilla::ipc::PBackgroundChild* aManager);
 
   ParentToParentInternalResponse ToParentToParentInternalResponse();
+
+  ParentToChildInternalResponse ToParentToChildInternalResponse(
+      NotNull<mozilla::ipc::PBackgroundParent*> aBackgroundParent);
 
   enum CloneType {
     eCloneInputStream,
@@ -312,12 +311,15 @@ class InternalResponse final : public AtomicSafeRefCounted<InternalResponse> {
 
   bool HasBeenCloned() const { return mCloned; }
 
+  void SetSerializeAsLazy(bool aAllow) { mSerializeAsLazy = aAllow; }
+  bool CanSerializeAsLazy() const { return mSerializeAsLazy; }
+
   void InitChannelInfo(nsIChannel* aChannel) {
     mChannelInfo.InitFromChannel(aChannel);
   }
 
-  void InitChannelInfo(const mozilla::ipc::IPCChannelInfo& aChannelInfo) {
-    mChannelInfo.InitFromIPCChannelInfo(aChannelInfo);
+  void InitChannelInfo(nsITransportSecurityInfo* aSecurityInfo) {
+    mChannelInfo.InitFromTransportSecurityInfo(aSecurityInfo);
   }
 
   void InitChannelInfo(const ChannelInfo& aChannelInfo) {
@@ -341,6 +343,15 @@ class InternalResponse final : public AtomicSafeRefCounted<InternalResponse> {
 
   SafeRefPtr<InternalResponse> Unfiltered();
 
+  InternalResponseMetadata GetMetadata();
+
+  RequestCredentials GetCredentialsMode() const {
+    if (mWrappedResponse) {
+      return mWrappedResponse->GetCredentialsMode();
+    }
+    return mCredentialsMode;
+  }
+
   ~InternalResponse();
 
  private:
@@ -354,8 +365,6 @@ class InternalResponse final : public AtomicSafeRefCounted<InternalResponse> {
 
   template <typename T>
   static SafeRefPtr<InternalResponse> FromIPCTemplate(const T& aIPCResponse);
-
-  InternalResponseMetadata GetMetadata();
 
   ResponseType mType;
   // A response has an associated url list (a list of zero or more fetch URLs).
@@ -381,6 +390,9 @@ class InternalResponse final : public AtomicSafeRefCounted<InternalResponse> {
   nsCOMPtr<nsIInputStream> mAlternativeBody;
   nsMainThreadPtrHandle<nsICacheInfoChannel> mCacheInfoChannel;
   bool mCloned;
+  // boolean to indicate the body/alternativeBody will be serialized as a
+  // RemoteLazyInputStream.
+  bool mSerializeAsLazy{true};
 
  public:
   static constexpr int64_t UNKNOWN_BODY_SIZE = -1;

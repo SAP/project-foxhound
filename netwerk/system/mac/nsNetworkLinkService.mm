@@ -35,6 +35,7 @@
 #include "mozilla/Telemetry.h"
 #include "nsNetworkLinkService.h"
 #include "../../base/IPv6Utils.h"
+#include "../LinkServiceCommon.h"
 #include "../NetworkLinkServiceDefines.h"
 
 #import <Cocoa/Cocoa.h>
@@ -74,7 +75,9 @@ static OSStatus getErrorCodeBool(Boolean success) {
 }
 
 // If given a NULL pointer, return the error code.
-static OSStatus getErrorCodePtr(const void* value) { return getErrorCodeBool(value != nullptr); }
+static OSStatus getErrorCodePtr(const void* value) {
+  return getErrorCodeBool(value != nullptr);
+}
 
 // Convenience function to allow NULL input.
 static void CFReleaseSafe(CFTypeRef cf) {
@@ -85,8 +88,8 @@ static void CFReleaseSafe(CFTypeRef cf) {
   }
 }
 
-NS_IMPL_ISUPPORTS(nsNetworkLinkService, nsINetworkLinkService, nsIObserver, nsITimerCallback,
-                  nsINamed)
+NS_IMPL_ISUPPORTS(nsNetworkLinkService, nsINetworkLinkService, nsIObserver,
+                  nsITimerCallback, nsINamed)
 
 nsNetworkLinkService::nsNetworkLinkService()
     : mLinkUp(true),
@@ -128,7 +131,8 @@ nsNetworkLinkService::GetNetworkID(nsACString& aNetworkID) {
 }
 
 NS_IMETHODIMP
-nsNetworkLinkService::GetPlatformDNSIndications(uint32_t* aPlatformDNSIndications) {
+nsNetworkLinkService::GetPlatformDNSIndications(
+    uint32_t* aPlatformDNSIndications) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -138,8 +142,9 @@ void nsNetworkLinkService::GetDnsSuffixListInternal() {
 
   auto sendNotification = mozilla::MakeScopeExit([self = RefPtr{this}] {
     NS_DispatchToMainThread(NS_NewRunnableFunction(
-        "nsNetworkLinkService::GetDnsSuffixListInternal",
-        [self]() { self->NotifyObservers(NS_DNS_SUFFIX_LIST_UPDATED_TOPIC, nullptr); }));
+        "nsNetworkLinkService::GetDnsSuffixListInternal", [self]() {
+          self->NotifyObservers(NS_DNS_SUFFIX_LIST_UPDATED_TOPIC, nullptr);
+        }));
   });
 
   nsTArray<nsCString> result;
@@ -175,15 +180,17 @@ nsNetworkLinkService::GetResolvers(nsTArray<RefPtr<nsINetAddr>>& aResolvers) {
 }
 
 NS_IMETHODIMP
-nsNetworkLinkService::GetNativeResolvers(nsTArray<mozilla::net::NetAddr>& aResolvers) {
+nsNetworkLinkService::GetNativeResolvers(
+    nsTArray<mozilla::net::NetAddr>& aResolvers) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 #ifndef SA_SIZE
-#  define SA_SIZE(sa)                                 \
-    ((!(sa) || ((struct sockaddr*)(sa))->sa_len == 0) \
-         ? sizeof(uint32_t)                           \
-         : 1 + ((((struct sockaddr*)(sa))->sa_len - 1) | (sizeof(uint32_t) - 1)))
+#  define SA_SIZE(sa)                                    \
+    ((!(sa) || ((struct sockaddr*)(sa))->sa_len == 0)    \
+         ? sizeof(uint32_t)                              \
+         : 1 + ((((struct sockaddr*)(sa))->sa_len - 1) | \
+                (sizeof(uint32_t) - 1)))
 #endif
 
 static bool getMac(struct sockaddr_dl* sdl, char* buf, size_t bufsize) {
@@ -195,14 +202,14 @@ static bool getMac(struct sockaddr_dl* sdl, char* buf, size_t bufsize) {
     return false;
   }
 
-  snprintf(buf, bufsize, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4],
-           mac[5]);
+  snprintf(buf, bufsize, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1],
+           mac[2], mac[3], mac[4], mac[5]);
   return true;
 }
 
 /* If the IP matches, get the MAC and return true */
-static bool matchIp(struct sockaddr_dl* sdl, struct sockaddr_inarp* addr, char* ip, char* buf,
-                    size_t bufsize) {
+static bool matchIp(struct sockaddr_dl* sdl, struct sockaddr_inarp* addr,
+                    char* ip, char* buf, size_t bufsize) {
   if (sdl->sdl_alen) {
     if (!strcmp(inet_ntoa(addr->sin_addr), ip)) {
       if (getMac(sdl, buf, bufsize)) {
@@ -232,37 +239,52 @@ static bool scanArp(char* ip, char* mac, size_t maclen) {
   mib[5] = RTF_LLINFO;
 
   size_t needed;
-  if (sysctl(mib, 6, nullptr, &needed, nullptr, 0) < 0) {
-    return false;
-  }
-  if (needed == 0) {
-    LOG(("scanArp: empty table"));
-    return false;
-  }
-
-  UniquePtr<char[]> buf(new char[needed]);
-
-  for (;;) {
-    st = sysctl(mib, 6, &buf[0], &needed, nullptr, 0);
-    if (st == 0 || errno != ENOMEM) {
-      break;
+  auto allocateBuf = [&]() -> UniquePtr<char[]> {
+    // calling sysctl with a null buffer to get the minimum buffer size
+    if (sysctl(mib, 6, nullptr, &needed, nullptr, 0) < 0) {
+      return nullptr;
     }
-    needed += needed / 8;
 
-    auto tmp = MakeUnique<char[]>(needed);
-    memcpy(&tmp[0], &buf[0], needed);
-    buf = std::move(tmp);
-  }
-  if (st == -1) {
+    if (needed == 0) {
+      LOG(("scanArp: empty table"));
+      return nullptr;
+    }
+
+    return MakeUnique<char[]>(needed);
+  };
+
+  UniquePtr<char[]> buf = allocateBuf();
+  if (!buf) {
     return false;
   }
+
+  st = sysctl(mib, 6, &buf[0], &needed, nullptr, 0);
+  // If errno is ENOMEM, try to allocate a new buffer and try again.
+  if (st != 0) {
+    if (errno != ENOMEM) {
+      return false;
+    }
+
+    buf = allocateBuf();
+    if (!buf) {
+      return false;
+    }
+
+    st = sysctl(mib, 6, &buf[0], &needed, nullptr, 0);
+    if (st == -1) {
+      return false;
+    }
+  }
+
   lim = &buf[needed];
 
   struct rt_msghdr* rtm;
   for (next = &buf[0]; next < lim; next += rtm->rtm_msglen) {
     rtm = reinterpret_cast<struct rt_msghdr*>(next);
-    struct sockaddr_inarp* sin2 = reinterpret_cast<struct sockaddr_inarp*>(rtm + 1);
-    struct sockaddr_dl* sdl = reinterpret_cast<struct sockaddr_dl*>((char*)sin2 + SA_SIZE(sin2));
+    struct sockaddr_inarp* sin2 =
+        reinterpret_cast<struct sockaddr_inarp*>(rtm + 1);
+    struct sockaddr_dl* sdl =
+        reinterpret_cast<struct sockaddr_dl*>((char*)sin2 + SA_SIZE(sin2));
     if (matchIp(sdl, sin2, ip, mac, maclen)) {
       return true;
     }
@@ -271,9 +293,10 @@ static bool scanArp(char* ip, char* mac, size_t maclen) {
   return false;
 }
 
-// Append the mac address of rtm to `stringsToHash`. If it's not in arp table, append
-// ifname and IP address.
-static bool parseHashKey(struct rt_msghdr* rtm, nsTArray<nsCString>& stringsToHash,
+// Append the mac address of rtm to `stringsToHash`. If it's not in arp table,
+// append ifname and IP address.
+static bool parseHashKey(struct rt_msghdr* rtm,
+                         nsTArray<nsCString>& stringsToHash,
                          bool skipDstCheck) {
   struct sockaddr* sa;
   struct sockaddr_in* sockin;
@@ -303,8 +326,8 @@ static bool parseHashKey(struct rt_msghdr* rtm, nsTArray<nsCString>& stringsToHa
     return false;
   }
 
-  struct sockaddr* gateway =
-      reinterpret_cast<struct sockaddr*>((char*)sa + RTAX_GATEWAY * SA_SIZE(sa));
+  struct sockaddr* gateway = reinterpret_cast<struct sockaddr*>(
+      (char*)sa + RTAX_GATEWAY * SA_SIZE(sa));
 
   if (!gateway) {
     return false;
@@ -426,7 +449,8 @@ bool nsNetworkLinkService::RoutingFromKernel(nsTArray<nsCString>& aHash) {
   sin->sin_addr = mRouteCheckIPv4;
 
   if (write(sockfd, rtm, rtm->rtm_msglen) == -1) {
-    LOG(("RoutingFromKernel: write() failed. No route to the predefine destincation"));
+    LOG(("RoutingFromKernel: write() failed. No route to the predefine "
+         "destincation"));
     return false;
   }
 
@@ -437,9 +461,11 @@ bool nsNetworkLinkService::RoutingFromKernel(nsTArray<nsCString>& aHash) {
       return false;
     }
 
-    LOG(("RoutingFromKernel: read() rtm_type: %d (%d), rtm_pid: %d (%d), rtm_seq: %d (%d)\n",
+    LOG(("RoutingFromKernel: read() rtm_type: %d (%d), rtm_pid: %d (%d), "
+         "rtm_seq: %d (%d)\n",
          rtm->rtm_type, RTM_GET, rtm->rtm_pid, pid, rtm->rtm_seq, seq));
-  } while (rtm->rtm_type != RTM_GET || rtm->rtm_pid != pid || rtm->rtm_seq != seq);
+  } while (rtm->rtm_type != RTM_GET || rtm->rtm_pid != pid ||
+           rtm->rtm_seq != seq);
 
   return parseHashKey(rtm, aHash, true);
 }
@@ -475,8 +501,9 @@ bool nsNetworkLinkService::IPv4NetworkId(SHA1Sum* aSHA1) {
 //
 void nsNetworkLinkService::HashSortedPrefixesAndNetmasks(
     std::vector<prefix_and_netmask> prefixAndNetmaskStore, SHA1Sum* sha1) {
-  // getifaddrs does not guarantee the interfaces will always be in the same order.
-  // We want to make sure the hash remains consistent Regardless of the interface order.
+  // getifaddrs does not guarantee the interfaces will always be in the same
+  // order. We want to make sure the hash remains consistent Regardless of the
+  // interface order.
   std::sort(prefixAndNetmaskStore.begin(), prefixAndNetmaskStore.end(),
             [](prefix_and_netmask a, prefix_and_netmask b) {
               // compare prefixStore
@@ -507,7 +534,8 @@ bool nsNetworkLinkService::IPv6NetworkId(SHA1Sum* sha1) {
       if ((AF_INET6 == ifa->ifa_addr->sa_family) &&
           !(ifa->ifa_flags & (IFF_POINTOPOINT | IFF_LOOPBACK))) {
         // only IPv6 interfaces that aren't pointtopoint or loopback
-        struct sockaddr_in6* sin_netmask = (struct sockaddr_in6*)ifa->ifa_netmask;
+        struct sockaddr_in6* sin_netmask =
+            (struct sockaddr_in6*)ifa->ifa_netmask;
         if (sin_netmask) {
           struct sockaddr_in6* sin_addr = (struct sockaddr_in6*)ifa->ifa_addr;
           int scope = net::utils::ipv6_scope(sin_addr->sin6_addr.s6_addr);
@@ -516,17 +544,20 @@ bool nsNetworkLinkService::IPv6NetworkId(SHA1Sum* sha1) {
             memset(&prefix, 0, sizeof(prefix));
             // Get the prefix by combining the address and netmask.
             for (size_t i = 0; i < sizeof(prefix); ++i) {
-              prefix.s6_addr[i] =
-                  sin_addr->sin6_addr.s6_addr[i] & sin_netmask->sin6_addr.s6_addr[i];
+              prefix.s6_addr[i] = sin_addr->sin6_addr.s6_addr[i] &
+                                  sin_netmask->sin6_addr.s6_addr[i];
             }
 
             // check if prefix and netmask was already found
-            auto prefixAndNetmask = std::make_pair(prefix, sin_netmask->sin6_addr);
+            auto prefixAndNetmask =
+                std::make_pair(prefix, sin_netmask->sin6_addr);
             auto foundPosition = std::find_if(
                 prefixAndNetmaskStore.begin(), prefixAndNetmaskStore.end(),
                 [&prefixAndNetmask](prefix_and_netmask current) {
-                  return memcmp(&prefixAndNetmask.first, &current.first, sizeof(in6_addr)) == 0 &&
-                         memcmp(&prefixAndNetmask.second, &current.second, sizeof(in6_addr)) == 0;
+                  return memcmp(&prefixAndNetmask.first, &current.first,
+                                sizeof(in6_addr)) == 0 &&
+                         memcmp(&prefixAndNetmask.second, &current.second,
+                                sizeof(in6_addr)) == 0;
                 });
             if (foundPosition != prefixAndNetmaskStore.end()) {
               continue;
@@ -543,7 +574,8 @@ bool nsNetworkLinkService::IPv6NetworkId(SHA1Sum* sha1) {
     return false;
   }
 
-  nsNetworkLinkService::HashSortedPrefixesAndNetmasks(prefixAndNetmaskStore, sha1);
+  nsNetworkLinkService::HashSortedPrefixesAndNetmasks(prefixAndNetmaskStore,
+                                                      sha1);
 
   return true;
 }
@@ -563,15 +595,17 @@ void nsNetworkLinkService::calculateNetworkIdWithDelay(uint32_t aDelay) {
     return;
   }
 
-  nsCOMPtr<nsIEventTarget> target = do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
+  nsCOMPtr<nsIEventTarget> target =
+      do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
   if (!target) {
     return;
   }
 
-  MOZ_ALWAYS_SUCCEEDS(
-      target->Dispatch(NewRunnableMethod("nsNetworkLinkService::calculateNetworkIdInternal", this,
-                                         &nsNetworkLinkService::calculateNetworkIdInternal),
-                       NS_DISPATCH_NORMAL));
+  MOZ_ALWAYS_SUCCEEDS(target->Dispatch(
+      NewRunnableMethod("nsNetworkLinkService::calculateNetworkIdInternal",
+                        this,
+                        &nsNetworkLinkService::calculateNetworkIdInternal),
+      NS_DISPATCH_NORMAL));
 }
 
 NS_IMETHODIMP
@@ -597,14 +631,12 @@ void nsNetworkLinkService::calculateNetworkIdInternal(void) {
   bool found6 = IPv6NetworkId(&sha1);
 
   if (found4 || found6) {
-    // This 'addition' could potentially be a fixed number from the
-    // profile or something.
-    nsAutoCString addition("local-rubbish");
     nsAutoCString output;
-    sha1.update(addition.get(), addition.Length());
+    SeedNetworkId(sha1);
     uint8_t digest[SHA1Sum::kHashSize];
     sha1.finish(digest);
-    nsAutoCString newString(reinterpret_cast<char*>(digest), SHA1Sum::kHashSize);
+    nsAutoCString newString(reinterpret_cast<char*>(digest),
+                            SHA1Sum::kHashSize);
     nsresult rv = Base64Encode(newString, output);
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
     LOG(("networkid: id %s\n", output.get()));
@@ -641,16 +673,17 @@ void nsNetworkLinkService::calculateNetworkIdInternal(void) {
   if (idChanged && !initialIDCalculation) {
     RefPtr<nsNetworkLinkService> self = this;
 
-    NS_DispatchToMainThread(
-        NS_NewRunnableFunction("nsNetworkLinkService::calculateNetworkIdInternal",
-                               [self]() { self->OnNetworkIdChanged(); }));
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "nsNetworkLinkService::calculateNetworkIdInternal",
+        [self]() { self->OnNetworkIdChanged(); }));
   }
 
   initialIDCalculation = false;
 }
 
 NS_IMETHODIMP
-nsNetworkLinkService::Observe(nsISupports* subject, const char* topic, const char16_t* data) {
+nsNetworkLinkService::Observe(nsISupports* subject, const char* topic,
+                              const char16_t* data) {
   if (!strcmp(topic, "xpcom-shutdown")) {
     Shutdown();
   }
@@ -660,14 +693,17 @@ nsNetworkLinkService::Observe(nsISupports* subject, const char* topic, const cha
 
 /* static */
 void nsNetworkLinkService::NetworkConfigChanged(SCDynamicStoreRef aStoreREf,
-                                                CFArrayRef aChangedKeys, void* aInfo) {
+                                                CFArrayRef aChangedKeys,
+                                                void* aInfo) {
   LOG(("nsNetworkLinkService::NetworkConfigChanged"));
 
   bool ipConfigChanged = false;
   bool dnsConfigChanged = false;
   for (CFIndex i = 0; i < CFArrayGetCount(aChangedKeys); ++i) {
-    CFStringRef key = static_cast<CFStringRef>(CFArrayGetValueAtIndex(aChangedKeys, i));
-    if (CFStringHasSuffix(key, kSCEntNetIPv4) || CFStringHasSuffix(key, kSCEntNetIPv6)) {
+    CFStringRef key =
+        static_cast<CFStringRef>(CFArrayGetValueAtIndex(aChangedKeys, i));
+    if (CFStringHasSuffix(key, kSCEntNetIPv4) ||
+        CFStringHasSuffix(key, kSCEntNetIPv6)) {
       ipConfigChanged = true;
     }
     if (CFStringHasSuffix(key, kSCEntNetDNS)) {
@@ -687,19 +723,29 @@ void nsNetworkLinkService::NetworkConfigChanged(SCDynamicStoreRef aStoreREf,
 
 void nsNetworkLinkService::DNSConfigChanged(uint32_t aDelayMs) {
   LOG(("nsNetworkLinkService::DNSConfigChanged"));
-  nsCOMPtr<nsIEventTarget> target = do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
+  nsCOMPtr<nsIEventTarget> target =
+      do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
   if (!target) {
     return;
   }
   if (aDelayMs) {
-    MOZ_ALWAYS_SUCCEEDS(target->DelayedDispatch(
-        NS_NewRunnableFunction("nsNetworkLinkService::GetDnsSuffixListInternal",
-                               [self = RefPtr{this}]() { self->GetDnsSuffixListInternal(); }),
-        aDelayMs));
+    MutexAutoLock lock(mMutex);
+    nsCOMPtr<nsITimer> timer;
+    MOZ_ALWAYS_SUCCEEDS(NS_NewTimerWithCallback(
+        getter_AddRefs(timer),
+        [self = RefPtr{this}](nsITimer* aTimer) {
+          self->GetDnsSuffixListInternal();
+
+          MutexAutoLock lock(self->mMutex);
+          self->mDNSConfigChangedTimers.RemoveElement(aTimer);
+        },
+        TimeDuration::FromMilliseconds(aDelayMs), nsITimer::TYPE_ONE_SHOT,
+        "nsNetworkLinkService::GetDnsSuffixListInternal", target));
+    mDNSConfigChangedTimers.AppendElement(timer);
   } else {
-    MOZ_ALWAYS_SUCCEEDS(target->Dispatch(
-        NS_NewRunnableFunction("nsNetworkLinkService::GetDnsSuffixListInternal",
-                               [self = RefPtr{this}]() { self->GetDnsSuffixListInternal(); })));
+    MOZ_ALWAYS_SUCCEEDS(target->Dispatch(NS_NewRunnableFunction(
+        "nsNetworkLinkService::GetDnsSuffixListInternal",
+        [self = RefPtr{this}]() { self->GetDnsSuffixListInternal(); })));
   }
 }
 
@@ -725,13 +771,15 @@ nsresult nsNetworkLinkService::Init(void) {
   bzero(&addr, sizeof(addr));
   addr.sin_len = sizeof(addr);
   addr.sin_family = AF_INET;
-  mReachability = ::SCNetworkReachabilityCreateWithAddress(nullptr, (struct sockaddr*)&addr);
+  mReachability = ::SCNetworkReachabilityCreateWithAddress(
+      nullptr, (struct sockaddr*)&addr);
   if (!mReachability) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   SCNetworkReachabilityContext context = {0, this, nullptr, nullptr, nullptr};
-  if (!::SCNetworkReachabilitySetCallback(mReachability, ReachabilityChanged, &context)) {
+  if (!::SCNetworkReachabilitySetCallback(mReachability, ReachabilityChanged,
+                                          &context)) {
     NS_WARNING("SCNetworkReachabilitySetCallback failed.");
     ::CFRelease(mReachability);
     mReachability = nullptr;
@@ -739,24 +787,25 @@ nsresult nsNetworkLinkService::Init(void) {
   }
 
   SCDynamicStoreContext storeContext = {0, this, nullptr, nullptr, nullptr};
-  mStoreRef = ::SCDynamicStoreCreate(nullptr, CFSTR("IPAndDNSChangeCallbackSCF"),
-                                     NetworkConfigChanged, &storeContext);
+  mStoreRef =
+      ::SCDynamicStoreCreate(nullptr, CFSTR("IPAndDNSChangeCallbackSCF"),
+                             NetworkConfigChanged, &storeContext);
 
   CFStringRef patterns[4] = {nullptr, nullptr, nullptr, nullptr};
   OSStatus err = getErrorCodePtr(mStoreRef);
   if (err == noErr) {
     // This pattern is "State:/Network/Service/[^/]+/IPv4".
-    patterns[0] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(nullptr, kSCDynamicStoreDomainState,
-                                                                kSCCompAnyRegex, kSCEntNetIPv4);
+    patterns[0] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(
+        nullptr, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
     // This pattern is "State:/Network/Service/[^/]+/IPv6".
-    patterns[1] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(nullptr, kSCDynamicStoreDomainState,
-                                                                kSCCompAnyRegex, kSCEntNetIPv6);
+    patterns[1] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(
+        nullptr, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
     // This pattern is "State:/Network/Service/[^/]+/DNS".
-    patterns[2] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(nullptr, kSCDynamicStoreDomainState,
-                                                                kSCCompAnyRegex, kSCEntNetDNS);
+    patterns[2] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(
+        nullptr, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetDNS);
     // This pattern is "Setup:/Network/Service/[^/]+/DNS".
-    patterns[3] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(nullptr, kSCDynamicStoreDomainSetup,
-                                                                kSCCompAnyRegex, kSCEntNetDNS);
+    patterns[3] = ::SCDynamicStoreKeyCreateNetworkServiceEntity(
+        nullptr, kSCDynamicStoreDomainSetup, kSCCompAnyRegex, kSCEntNetDNS);
     if (!patterns[0] || !patterns[1] || !patterns[2] || !patterns[3]) {
       err = -1;
     }
@@ -768,13 +817,15 @@ nsresult nsNetworkLinkService::Init(void) {
   // that match that pattern list, then create our run loop
   // source.
   if (err == noErr) {
-    patternList = ::CFArrayCreate(nullptr, (const void**)patterns, 4, &kCFTypeArrayCallBacks);
+    patternList = ::CFArrayCreate(nullptr, (const void**)patterns, 4,
+                                  &kCFTypeArrayCallBacks);
     if (!patternList) {
       err = -1;
     }
   }
   if (err == noErr) {
-    err = getErrorCodeBool(::SCDynamicStoreSetNotificationKeys(mStoreRef, nullptr, patternList));
+    err = getErrorCodeBool(
+        ::SCDynamicStoreSetNotificationKeys(mStoreRef, nullptr, patternList));
   }
 
   if (err == noErr) {
@@ -849,6 +900,16 @@ nsresult nsNetworkLinkService::Shutdown() {
     mNetworkIdTimer = nullptr;
   }
 
+  nsTArray<nsCOMPtr<nsITimer>> dnsConfigChangedTimers;
+  {
+    MutexAutoLock lock(mMutex);
+    dnsConfigChangedTimers = std::move(mDNSConfigChangedTimers);
+    mDNSConfigChangedTimers.Clear();
+  }
+  for (const auto& timer : dnsConfigChangedTimers) {
+    timer->Cancel();
+  }
+
   return NS_OK;
 }
 
@@ -895,26 +956,31 @@ void nsNetworkLinkService::OnReachabilityChanged() {
     return;
   }
 
-  NotifyObservers(NS_NETWORK_LINK_TOPIC,
-                  mLinkUp ? NS_NETWORK_LINK_DATA_UP : NS_NETWORK_LINK_DATA_DOWN);
+  NotifyObservers(NS_NETWORK_LINK_TOPIC, mLinkUp ? NS_NETWORK_LINK_DATA_UP
+                                                 : NS_NETWORK_LINK_DATA_DOWN);
 }
 
-void nsNetworkLinkService::NotifyObservers(const char* aTopic, const char* aData) {
+void nsNetworkLinkService::NotifyObservers(const char* aTopic,
+                                           const char* aData) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  LOG(("nsNetworkLinkService::NotifyObservers: topic:%s data:%s\n", aTopic, aData ? aData : ""));
+  LOG(("nsNetworkLinkService::NotifyObservers: topic:%s data:%s\n", aTopic,
+       aData ? aData : ""));
 
-  nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
 
   if (observerService) {
-    observerService->NotifyObservers(static_cast<nsINetworkLinkService*>(this), aTopic,
-                                     aData ? NS_ConvertASCIItoUTF16(aData).get() : nullptr);
+    observerService->NotifyObservers(
+        static_cast<nsINetworkLinkService*>(this), aTopic,
+        aData ? NS_ConvertASCIItoUTF16(aData).get() : nullptr);
   }
 }
 
 /* static */
 void nsNetworkLinkService::ReachabilityChanged(SCNetworkReachabilityRef target,
-                                               SCNetworkConnectionFlags flags, void* info) {
+                                               SCNetworkConnectionFlags flags,
+                                               void* info) {
   LOG(("nsNetworkLinkService::ReachabilityChanged"));
   nsNetworkLinkService* service = static_cast<nsNetworkLinkService*>(info);
 

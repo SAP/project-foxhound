@@ -36,7 +36,9 @@ class TaggedValue {
     PointerKind1 = 2,
     PointerKind2 = 3
   };
-  using PackedRepr = uintptr_t;
+  using PackedRepr = uint64_t;
+  static_assert(std::is_same<PackedTypeCode::PackedRepr, uint64_t>(),
+                "can use pointer tagging with PackedTypeCode");
 
  private:
   PackedRepr bits_;
@@ -89,10 +91,6 @@ class TaggedValue {
   }
 };
 
-static_assert(
-    std::is_same<TaggedValue<void*>::PackedRepr, PackedTypeCode::PackedRepr>(),
-    "can use pointer tagging with PackedTypeCode");
-
 // ResultType represents the WebAssembly spec's `resulttype`. Semantically, a
 // result type is just a vec(valtype).  For effiency, though, the ResultType
 // value is packed into a word, with separate encodings for these 3 cases:
@@ -118,7 +116,8 @@ class ResultType {
     InvalidKind = Tagged::PointerKind2,
   };
 
-  ResultType(Kind kind, uintptr_t imm) : tagged_(Tagged::Kind(kind), imm) {}
+  ResultType(Kind kind, Tagged::PackedRepr imm)
+      : tagged_(Tagged::Kind(kind), imm) {}
   explicit ResultType(const ValTypeVector* ptr)
       : tagged_(Tagged::Kind(VectorKind), ptr) {}
 
@@ -137,7 +136,9 @@ class ResultType {
  public:
   ResultType() : tagged_(Tagged::Kind(InvalidKind), nullptr) {}
 
-  static ResultType Empty() { return ResultType(EmptyKind, uintptr_t(0)); }
+  static ResultType Empty() {
+    return ResultType(EmptyKind, Tagged::PackedRepr(0));
+  }
   static ResultType Single(ValType vt) {
     return ResultType(SingleKind, vt.bitsUnsafe());
   }
@@ -166,6 +167,7 @@ class ResultType {
     }
   }
 
+  bool valid() const { return kind() != InvalidKind; }
   bool empty() const { return kind() == EmptyKind; }
 
   size_t length() const {
@@ -234,7 +236,8 @@ class BlockType {
     FuncResultsKind = Tagged::PointerKind2
   };
 
-  BlockType(Kind kind, uintptr_t imm) : tagged_(Tagged::Kind(kind), imm) {}
+  BlockType(Kind kind, Tagged::PackedRepr imm)
+      : tagged_(Tagged::Kind(kind), imm) {}
   BlockType(Kind kind, const FuncType& type)
       : tagged_(Tagged::Kind(kind), &type) {}
 
@@ -252,7 +255,7 @@ class BlockType {
                 PackedTypeCode::invalid().bits()) {}
 
   static BlockType VoidToVoid() {
-    return BlockType(VoidToVoidKind, uintptr_t(0));
+    return BlockType(VoidToVoidKind, Tagged::PackedRepr(0));
   }
   static BlockType VoidToSingle(ValType vt) {
     return BlockType(VoidToSingleKind, vt.bitsUnsafe());
@@ -310,7 +313,7 @@ class BlockType {
       case VoidToSingleKind:
         return tagged_.bits() == rhs.tagged_.bits();
       case FuncKind:
-        return funcType() == rhs.funcType();
+        return FuncType::strictlyEquals(funcType(), rhs.funcType());
       case FuncResultsKind:
         return EqualContainers(funcType().results(), rhs.funcType().results());
       default:

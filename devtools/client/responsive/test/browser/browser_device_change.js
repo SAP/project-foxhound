@@ -8,7 +8,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 const TEST_URL = `${URL_ROOT}doc_page_state.html`;
 const DEFAULT_DPPX = window.devicePixelRatio;
 
-const Types = require("devtools/client/responsive/types");
+const Types = require("resource://devtools/client/responsive/types.js");
 
 const testDevice = {
   name: "Fake Phone RDM Test",
@@ -25,9 +25,18 @@ const testDevice = {
 // Add the new device to the list
 addDeviceForTest(testDevice);
 
+// Add the laptop to the device list
+const {
+  updatePreferredDevices,
+} = require("resource://devtools/client/responsive/actions/devices.js");
+updatePreferredDevices({
+  added: ["Laptop with MDPI screen"],
+  removed: [],
+});
+
 addRDMTask(
   TEST_URL,
-  async function({ ui }) {
+  async function ({ ui }) {
     reloadOnUAChange(true);
 
     // Test defaults
@@ -64,8 +73,8 @@ addRDMTask(
     testViewportDeviceMenuLabel(ui, "Responsive");
 
     // Test device with generic properties
-    await selectDevice(ui, "Laptop (1366 x 768)");
-    await waitForViewportResizeTo(ui, 1366, 768);
+    await selectDevice(ui, "Laptop with MDPI screen");
+    await waitForViewportResizeTo(ui, 1280, 800);
     info("Should have default UA when using device without specific UA");
     await testUserAgent(ui, DEFAULT_UA);
     await testDevicePixelRatio(ui, 1);
@@ -78,7 +87,7 @@ addRDMTask(
 
 addRDMTask(
   null,
-  async function() {
+  async function () {
     const tab = await addTab(TEST_URL);
     const { ui } = await openRDM(tab);
 
@@ -91,7 +100,7 @@ addRDMTask(
       store,
       state =>
         state.viewports.length == 1 &&
-        state.viewports[0].device === "Laptop (1366 x 768)" &&
+        state.viewports[0].device === "Laptop with MDPI screen" &&
         state.devices.listState == Types.loadableState.LOADED
     );
 

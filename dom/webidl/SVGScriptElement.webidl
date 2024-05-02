@@ -14,11 +14,11 @@
 interface SVGScriptElement : SVGElement {
   [SetterThrows]
   attribute DOMString type;
-
-  // CORS attribute
+  // See https://github.com/w3c/svgwg/issues/918
+  attribute boolean async;
+  attribute boolean defer;
   [SetterThrows]
   attribute DOMString? crossOrigin;
 };
 
 SVGScriptElement includes SVGURIReference;
-

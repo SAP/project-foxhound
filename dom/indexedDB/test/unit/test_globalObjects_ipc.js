@@ -3,11 +3,12 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
   // Test for IDBKeyRange and indexedDB availability in ipcshell.
-  run_test_in_child("./GlobalObjectsChild.js", function() {
+  run_test_in_child("./GlobalObjectsChild.js", function () {
     do_test_finished();
     continueToNextStep();
   });

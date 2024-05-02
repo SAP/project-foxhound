@@ -4,28 +4,36 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
+requestLongerTimeout(2);
 
 /**
  * Test opening and closing the bookmarks panel.
  */
-
-StarUI._createPanelIfNeeded();
-let bookmarkPanel = document.getElementById("editBookmarkPanel");
-let bookmarkStar = BookmarkingUI.star;
-let bookmarkPanelTitle = document.getElementById("editBookmarkPanelTitle");
-let bookmarkRemoveButton = document.getElementById(
-  "editBookmarkPanelRemoveButton"
-);
+let win;
+let bookmarkPanel;
+let bookmarkStar;
+let bookmarkPanelTitle;
+let bookmarkRemoveButton;
 let editBookmarkPanelRemoveButtonRect;
 
 const TEST_URL = "data:text/html,<html><body></body></html>";
 
-StarUI._closePanelQuickForTesting = true;
+add_setup(async function () {
+  win = await BrowserTestUtils.openNewBrowserWindow();
 
-add_task(async function setup() {
+  win.StarUI._createPanelIfNeeded();
+  win.StarUI._closePanelQuickForTesting = true;
+  bookmarkPanel = win.document.getElementById("editBookmarkPanel");
   bookmarkPanel.setAttribute("animate", false);
-  registerCleanupFunction(() => {
-    bookmarkPanel.removeAttribute("animate");
+  bookmarkStar = win.BookmarkingUI.star;
+  bookmarkPanelTitle = win.document.getElementById("editBookmarkPanelTitle");
+  bookmarkRemoveButton = win.document.getElementById(
+    "editBookmarkPanelRemoveButton"
+  );
+
+  registerCleanupFunction(async () => {
+    delete win.StarUI._closePanelQuickForTesting;
+    await BrowserTestUtils.closeWindow(win);
   });
 });
 
@@ -34,8 +42,14 @@ function mouseout() {
     bookmarkPanel,
     "mouseout"
   );
-  EventUtils.synthesizeMouse(bookmarkPanel, 0, 0, { type: "mouseout" });
-  EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, { type: "mousemove" });
+  EventUtils.synthesizeNativeMouseEvent({
+    type: "mousemove",
+    target: win.gURLBar.textbox,
+    offsetX: 0,
+    offsetY: 0,
+    win,
+  });
+  EventUtils.synthesizeMouse(bookmarkPanel, 0, 0, { type: "mouseout" }, win);
   info("Waiting for mouseout event");
   return mouseOutPromise;
 }
@@ -48,115 +62,134 @@ async function test_bookmarks_popup({
   popupHideFn,
   isBookmarkRemoved,
 }) {
-  await BrowserTestUtils.withNewTab({ gBrowser, url: TEST_URL }, async function(
-    browser
-  ) {
-    try {
-      if (!isNewBookmark) {
-        await PlacesUtils.bookmarks.insert({
-          parentGuid: await PlacesUIUtils.defaultParentGuid,
-          url: TEST_URL,
-          title: "Home Page",
-        });
-      }
+  await BrowserTestUtils.withNewTab(
+    { gBrowser: win.gBrowser, url: TEST_URL },
+    async function (browser) {
+      try {
+        if (!isNewBookmark) {
+          await PlacesUtils.bookmarks.insert({
+            parentGuid: await PlacesUIUtils.defaultParentGuid,
+            url: TEST_URL,
+            title: "Home Page",
+          });
+        }
 
-      info(`BookmarkingUI.status is ${BookmarkingUI.status}`);
-      await TestUtils.waitForCondition(
-        () => BookmarkingUI.status != BookmarkingUI.STATUS_UPDATING,
-        "BookmarkingUI should not be updating"
-      );
+        info(`BookmarkingUI.status is ${win.BookmarkingUI.status}`);
+        await TestUtils.waitForCondition(
+          () => win.BookmarkingUI.status != win.BookmarkingUI.STATUS_UPDATING,
+          "BookmarkingUI should not be updating"
+        );
 
-      Assert.equal(
-        bookmarkStar.hasAttribute("starred"),
-        !isNewBookmark,
-        "Page should only be starred prior to popupshown if editing bookmark"
-      );
-      Assert.equal(
-        bookmarkPanel.state,
-        "closed",
-        "Panel should be 'closed' to start test"
-      );
-      let shownPromise = promisePopupShown(bookmarkPanel);
-      await popupShowFn(browser);
-      await shownPromise;
-      Assert.equal(
-        bookmarkPanel.state,
-        "open",
-        "Panel should be 'open' after shownPromise is resolved"
-      );
-
-      editBookmarkPanelRemoveButtonRect = bookmarkRemoveButton.getBoundingClientRect();
-
-      if (popupEditFn) {
-        await popupEditFn();
-      }
-      let bookmarks = [];
-      await PlacesUtils.bookmarks.fetch({ url: TEST_URL }, bm =>
-        bookmarks.push(bm)
-      );
-      Assert.equal(bookmarks.length, 1, "Only one bookmark should exist");
-      Assert.equal(
-        bookmarkStar.getAttribute("starred"),
-        "true",
-        "Page is starred"
-      );
-      Assert.equal(
-        bookmarkPanelTitle.dataset.l10nId,
-        isNewBookmark ? "bookmarks-add-bookmark" : "bookmarks-edit-bookmark",
-        "title should match isEditingBookmark state"
-      );
-      Assert.equal(
-        bookmarkRemoveButton.dataset.l10nId,
-        isNewBookmark ? "bookmark-panel-cancel" : "bookmark-panel-remove",
-        "remove/cancel button label should match isEditingBookmark state"
-      );
-
-      if (!shouldAutoClose) {
-        await new Promise(resolve => setTimeout(resolve, 400));
+        Assert.equal(
+          bookmarkStar.hasAttribute("starred"),
+          !isNewBookmark,
+          "Page should only be starred prior to popupshown if editing bookmark"
+        );
+        Assert.equal(
+          bookmarkPanel.state,
+          "closed",
+          "Panel should be 'closed' to start test"
+        );
+        let shownPromise = promisePopupShown(bookmarkPanel);
+        await popupShowFn(browser);
+        await shownPromise;
         Assert.equal(
           bookmarkPanel.state,
           "open",
-          "Panel should still be 'open' for non-autoclose"
+          "Panel should be 'open' after shownPromise is resolved"
         );
-      }
 
-      let defaultLocation = await PlacesUIUtils.defaultParentGuid;
-      let bookmarkRemovedPromise = Promise.resolve();
-      if (isBookmarkRemoved) {
-        bookmarkRemovedPromise = PlacesTestUtils.waitForNotification(
-          "bookmark-removed",
-          events =>
-            events.some(
-              event =>
-                event.parentGuid == defaultLocation && TEST_URL == event.url
-            ),
-          "places"
+        editBookmarkPanelRemoveButtonRect =
+          bookmarkRemoveButton.getBoundingClientRect();
+
+        if (popupEditFn) {
+          await popupEditFn();
+        }
+        Assert.equal(
+          bookmarkStar.getAttribute("starred"),
+          "true",
+          "Page is starred"
         );
-      }
+        Assert.equal(
+          bookmarkPanelTitle.dataset.l10nId,
+          isNewBookmark ? "bookmarks-add-bookmark" : "bookmarks-edit-bookmark",
+          "title should match isEditingBookmark state"
+        );
+        Assert.equal(
+          bookmarkRemoveButton.dataset.l10nId,
+          isNewBookmark ? "bookmark-panel-cancel" : "bookmark-panel-remove",
+          "remove/cancel button label should match isEditingBookmark state"
+        );
 
-      let hiddenPromise = promisePopupHidden(bookmarkPanel);
-      if (popupHideFn) {
-        await popupHideFn();
-      }
-      await Promise.all([hiddenPromise, bookmarkRemovedPromise]);
+        if (!shouldAutoClose) {
+          await new Promise(resolve => setTimeout(resolve, 400));
+          Assert.equal(
+            bookmarkPanel.state,
+            "open",
+            "Panel should still be 'open' for non-autoclose"
+          );
+        }
 
-      Assert.equal(
-        bookmarkStar.hasAttribute("starred"),
-        !isBookmarkRemoved,
-        "Page is starred after closing"
-      );
-    } finally {
-      let bookmark = await PlacesUtils.bookmarks.fetch({ url: TEST_URL });
-      Assert.equal(
-        !!bookmark,
-        !isBookmarkRemoved,
-        "bookmark should not be present if a panel action should've removed it"
-      );
-      if (bookmark) {
-        await PlacesUtils.bookmarks.remove(bookmark);
+        let defaultLocation = await PlacesUIUtils.defaultParentGuid;
+        const promises = [];
+        if (isNewBookmark && !isBookmarkRemoved) {
+          // Expect new bookmark to be created.
+          promises.push(
+            PlacesTestUtils.waitForNotification("bookmark-added", events =>
+              events.some(
+                ({ parentGuid, url }) =>
+                  parentGuid == defaultLocation && TEST_URL == url
+              )
+            )
+          );
+        }
+        if (!isNewBookmark && isBookmarkRemoved) {
+          // Expect existing bookmark to be removed.
+          promises.push(
+            PlacesTestUtils.waitForNotification("bookmark-removed", events =>
+              events.some(
+                ({ parentGuid, url }) =>
+                  parentGuid == defaultLocation && TEST_URL == url
+              )
+            )
+          );
+        }
+
+        promises.push(promisePopupHidden(bookmarkPanel));
+        if (popupHideFn) {
+          await popupHideFn();
+        } else {
+          // Move the mouse out of the way so that the panel will auto-close.
+          await mouseout();
+        }
+        await Promise.all(promises);
+
+        Assert.equal(
+          bookmarkStar.hasAttribute("starred"),
+          !isBookmarkRemoved,
+          "Page is starred after closing"
+        );
+
+        // Count number of bookmarks.
+        let count = 0;
+        await PlacesUtils.bookmarks.fetch({ url: TEST_URL }, () => count++);
+        const message = isBookmarkRemoved
+          ? "No bookmark should exist"
+          : "Only one bookmark should exist";
+        Assert.equal(count, isBookmarkRemoved ? 0 : 1, message);
+      } finally {
+        let bookmark = await PlacesUtils.bookmarks.fetch({ url: TEST_URL });
+        Assert.equal(
+          !!bookmark,
+          !isBookmarkRemoved,
+          "bookmark should not be present if a panel action should've removed it"
+        );
+        if (bookmark) {
+          await PlacesUtils.bookmarks.remove(bookmark);
+        }
       }
     }
-  });
+  );
 }
 
 add_task(async function panel_shown_for_new_bookmarks_and_autocloses() {
@@ -180,7 +213,7 @@ add_task(
           10,
           10,
           { clickCount: 2 },
-          window
+          win
         );
       },
       shouldAutoClose: true,
@@ -217,7 +250,7 @@ add_task(
     await test_bookmarks_popup({
       isNewBookmark: true,
       popupShowFn() {
-        EventUtils.synthesizeKey("D", { accelKey: true }, window);
+        EventUtils.synthesizeKey("D", { accelKey: true }, win);
       },
       shouldAutoClose: true,
       isBookmarkRemoved: false,
@@ -236,7 +269,11 @@ add_task(async function panel_shown_for_new_bookmarks_mousemove_mouseout() {
         bookmarkPanel,
         "mousemove"
       );
-      EventUtils.synthesizeMouseAtCenter(bookmarkPanel, { type: "mousemove" });
+      EventUtils.synthesizeMouseAtCenter(
+        bookmarkPanel,
+        { type: "mousemove" },
+        win
+      );
       info("Waiting for mousemove event");
       await mouseMovePromise;
       info("Got mousemove event");
@@ -265,7 +302,7 @@ add_task(async function panel_shown_for_new_bookmark_close_with_ESC() {
     },
     shouldAutoClose: true,
     popupHideFn() {
-      EventUtils.synthesizeKey("VK_ESCAPE", { accelKey: true }, window);
+      EventUtils.synthesizeKey("VK_ESCAPE", {}, win);
     },
     isBookmarkRemoved: true,
   });
@@ -279,7 +316,7 @@ add_task(async function panel_shown_for_editing_no_autoclose_close_with_ESC() {
     },
     shouldAutoClose: false,
     popupHideFn() {
-      EventUtils.synthesizeKey("VK_ESCAPE", { accelKey: true }, window);
+      EventUtils.synthesizeKey("VK_ESCAPE", {}, win);
     },
     isBookmarkRemoved: false,
   });
@@ -292,7 +329,7 @@ add_task(async function panel_shown_for_new_bookmark_keypress_no_autoclose() {
       bookmarkStar.click();
     },
     popupEditFn() {
-      EventUtils.sendChar("VK_TAB", window);
+      EventUtils.sendChar("VK_TAB", win);
     },
     shouldAutoClose: false,
     popupHideFn() {
@@ -309,7 +346,7 @@ add_task(async function bookmark_with_invalid_default_folder() {
     isNewBookmark: true,
     shouldAutoClose: true,
     async popupShowFn(browser) {
-      EventUtils.synthesizeKey("d", { accelKey: true }, window);
+      EventUtils.synthesizeKey("d", { accelKey: true }, win);
     },
   });
 });
@@ -326,14 +363,17 @@ add_task(
           bookmarkPanel,
           "compositionstart"
         );
-        EventUtils.synthesizeComposition({ type: "compositionstart" }, window);
+        EventUtils.synthesizeComposition({ type: "compositionstart" }, win);
         info("Waiting for compositionstart event");
         await compositionStartPromise;
         info("Got compositionstart event");
       },
       shouldAutoClose: false,
       popupHideFn() {
-        EventUtils.synthesizeComposition({ type: "compositioncommitasis" });
+        EventUtils.synthesizeComposition(
+          { type: "compositioncommitasis" },
+          win
+        );
         bookmarkPanel.hidePopup();
       },
       isBookmarkRemoved: false,
@@ -353,9 +393,13 @@ add_task(
           bookmarkPanel,
           "mousemove"
         );
-        EventUtils.synthesizeMouseAtCenter(bookmarkPanel, {
-          type: "mousemove",
-        });
+        EventUtils.synthesizeMouseAtCenter(
+          bookmarkPanel,
+          {
+            type: "mousemove",
+          },
+          win
+        );
         info("Waiting for mousemove event");
         await mouseMovePromise;
         info("Got mousemove event");
@@ -364,7 +408,7 @@ add_task(
           bookmarkPanel,
           "compositionstart"
         );
-        EventUtils.synthesizeComposition({ type: "compositionstart" }, window);
+        EventUtils.synthesizeComposition({ type: "compositionstart" }, win);
         info("Waiting for compositionstart event");
         await compositionStartPromise;
         info("Got compositionstart event");
@@ -374,7 +418,10 @@ add_task(
       },
       shouldAutoClose: false,
       popupHideFn() {
-        EventUtils.synthesizeComposition({ type: "compositioncommitasis" });
+        EventUtils.synthesizeComposition(
+          { type: "compositioncommitasis" },
+          win
+        );
         bookmarkPanel.hidePopup();
       },
       isBookmarkRemoved: false,
@@ -394,17 +441,24 @@ add_task(
           bookmarkPanel,
           "mousemove"
         );
-        EventUtils.synthesizeMouseAtCenter(bookmarkPanel, {
-          type: "mousemove",
-        });
+        EventUtils.synthesizeMouseAtCenter(
+          bookmarkPanel,
+          {
+            type: "mousemove",
+          },
+          win
+        );
         info("Waiting for mousemove event");
         await mouseMovePromise;
         info("Got mousemove event");
 
-        EventUtils.synthesizeComposition({
-          type: "compositioncommit",
-          data: "committed text",
-        });
+        EventUtils.synthesizeComposition(
+          {
+            type: "compositioncommit",
+            data: "committed text",
+          },
+          win
+        );
       },
       popupHideFn() {
         bookmarkPanel.hidePopup();
@@ -419,7 +473,7 @@ add_task(async function contextmenu_new_bookmark_keypress_no_autoclose() {
   await test_bookmarks_popup({
     isNewBookmark: true,
     async popupShowFn(browser) {
-      let contextMenu = document.getElementById("contentAreaContextMenu");
+      let contextMenu = win.document.getElementById("contentAreaContextMenu");
       let awaitPopupShown = BrowserTestUtils.waitForEvent(
         contextMenu,
         "popupshown"
@@ -437,12 +491,13 @@ add_task(async function contextmenu_new_bookmark_keypress_no_autoclose() {
         browser
       );
       await awaitPopupShown;
-      document.getElementById("context-bookmarkpage").click();
-      contextMenu.hidePopup();
+      contextMenu.activateItem(
+        win.document.getElementById("context-bookmarkpage")
+      );
       await awaitPopupHidden;
     },
     popupEditFn() {
-      EventUtils.sendChar("VK_TAB", window);
+      EventUtils.sendChar("VK_TAB", win);
     },
     shouldAutoClose: false,
     popupHideFn() {
@@ -456,11 +511,11 @@ add_task(async function bookmarks_menu_new_bookmark_remove_bookmark() {
   await test_bookmarks_popup({
     isNewBookmark: true,
     popupShowFn(browser) {
-      document.getElementById("menu_bookmarkThisPage").doCommand();
+      win.document.getElementById("menu_bookmarkThisPage").doCommand();
     },
     shouldAutoClose: true,
     popupHideFn() {
-      document.getElementById("editBookmarkPanelRemoveButton").click();
+      win.document.getElementById("editBookmarkPanelRemoveButton").click();
     },
     isBookmarkRemoved: true,
   });
@@ -470,11 +525,11 @@ add_task(async function ctrl_d_edit_bookmark_remove_bookmark() {
   await test_bookmarks_popup({
     isNewBookmark: false,
     popupShowFn(browser) {
-      EventUtils.synthesizeKey("D", { accelKey: true }, window);
+      EventUtils.synthesizeKey("D", { accelKey: true }, win);
     },
     shouldAutoClose: true,
     popupHideFn() {
-      document.getElementById("editBookmarkPanelRemoveButton").click();
+      win.document.getElementById("editBookmarkPanelRemoveButton").click();
     },
     isBookmarkRemoved: true,
   });
@@ -490,17 +545,17 @@ add_task(async function enter_on_remove_bookmark_should_remove_bookmark() {
   await test_bookmarks_popup({
     isNewBookmark: true,
     popupShowFn(browser) {
-      EventUtils.synthesizeKey("D", { accelKey: true }, window);
+      EventUtils.synthesizeKey("D", { accelKey: true }, win);
     },
     shouldAutoClose: true,
     popupHideFn() {
       while (
-        !document.activeElement ||
-        document.activeElement.id != "editBookmarkPanelRemoveButton"
+        !win.document.activeElement ||
+        win.document.activeElement.id != "editBookmarkPanelRemoveButton"
       ) {
-        EventUtils.sendChar("VK_TAB", window);
+        EventUtils.sendChar("VK_TAB", win);
       }
-      EventUtils.sendChar("VK_RETURN", window);
+      EventUtils.sendChar("VK_RETURN", win);
     },
     isBookmarkRemoved: true,
   });
@@ -517,15 +572,15 @@ add_task(async function mouse_hovering_panel_should_prevent_autoclose() {
     async popupShowFn() {
       await EventUtils.promiseNativeMouseEvent({
         type: "mousemove",
-        target: document.documentElement,
+        target: win.document.documentElement,
         offsetX: editBookmarkPanelRemoveButtonRect.left,
         offsetY: editBookmarkPanelRemoveButtonRect.top,
       });
-      EventUtils.synthesizeKey("D", { accelKey: true }, window);
+      EventUtils.synthesizeKey("D", { accelKey: true }, win);
     },
     shouldAutoClose: false,
     popupHideFn() {
-      document.getElementById("editBookmarkPanelRemoveButton").click();
+      win.document.getElementById("editBookmarkPanelRemoveButton").click();
     },
     isBookmarkRemoved: true,
   });
@@ -535,14 +590,18 @@ add_task(async function ctrl_d_new_bookmark_mousedown_mouseout_no_autoclose() {
   await test_bookmarks_popup({
     isNewBookmark: true,
     popupShowFn(browser) {
-      EventUtils.synthesizeKey("D", { accelKey: true }, window);
+      EventUtils.synthesizeKey("D", { accelKey: true }, win);
     },
     async popupEditFn() {
       let mouseMovePromise = BrowserTestUtils.waitForEvent(
         bookmarkPanel,
         "mousemove"
       );
-      EventUtils.synthesizeMouseAtCenter(bookmarkPanel, { type: "mousemove" });
+      EventUtils.synthesizeMouseAtCenter(
+        bookmarkPanel,
+        { type: "mousemove" },
+        win
+      );
       info("Waiting for mousemove event");
       await mouseMovePromise;
       info("Got mousemove event");
@@ -554,16 +613,20 @@ add_task(async function ctrl_d_new_bookmark_mousedown_mouseout_no_autoclose() {
         "Panel should still be open on mousemove"
       );
 
-      EventUtils.synthesizeMouseAtCenter(bookmarkPanelTitle, {
-        button: 1,
-        type: "mousedown",
-      });
+      EventUtils.synthesizeMouseAtCenter(
+        bookmarkPanelTitle,
+        {
+          button: 1,
+          type: "mousedown",
+        },
+        win
+      );
 
       await mouseout();
     },
     shouldAutoClose: false,
     popupHideFn() {
-      document.getElementById("editBookmarkPanelRemoveButton").click();
+      win.document.getElementById("editBookmarkPanelRemoveButton").click();
     },
     isBookmarkRemoved: true,
   });
@@ -571,33 +634,27 @@ add_task(async function ctrl_d_new_bookmark_mousedown_mouseout_no_autoclose() {
 
 add_task(async function enter_during_autocomplete_should_prevent_autoclose() {
   await test_bookmarks_popup({
-    isNewBookmark: true,
+    isNewBookmark: false,
     async popupShowFn(browser) {
-      EventUtils.synthesizeKey("d", { accelKey: true }, window);
+      PlacesUtils.tagging.tagURI(makeURI(TEST_URL), ["Abc"]);
+      EventUtils.synthesizeKey("d", { accelKey: true }, win);
     },
     async popupEditFn() {
-      let tagsField = document.getElementById("editBMPanel_tagsField");
-      tagsField.value = "";
-      tagsField.focus();
-
-      // Register a tag into the DB.
-      EventUtils.sendString("Abc", window);
-      tagsField.blur();
-
       // Start autocomplete with the registered tag.
+      let tagsField = win.document.getElementById("editBMPanel_tagsField");
       tagsField.value = "";
-      let popup = document.getElementById("editBMPanel_tagsAutocomplete");
+      let popup = win.document.getElementById("editBMPanel_tagsAutocomplete");
       let promiseShown = BrowserTestUtils.waitForEvent(popup, "popupshown");
       tagsField.focus();
-      EventUtils.sendString("a", window);
+      EventUtils.sendString("a", win);
       await promiseShown;
       ok(promiseShown, "autocomplete shown");
 
       // Select first candidate.
-      EventUtils.synthesizeKey("KEY_ArrowDown", {}, window);
+      EventUtils.synthesizeKey("KEY_ArrowDown", {}, win);
 
       // Type Enter key to choose the item.
-      EventUtils.synthesizeKey("KEY_Enter", {}, window);
+      EventUtils.synthesizeKey("KEY_Enter", {}, win);
 
       Assert.equal(
         tagsField.value,
@@ -607,41 +664,35 @@ add_task(async function enter_during_autocomplete_should_prevent_autoclose() {
     },
     shouldAutoClose: false,
     popupHideFn() {
-      EventUtils.synthesizeKey("KEY_Escape", {}, window);
+      EventUtils.synthesizeKey("KEY_Escape", {}, win);
     },
-    isBookmarkRemoved: true,
+    isBookmarkRemoved: false,
   });
 });
 
 add_task(async function escape_during_autocomplete_should_prevent_autoclose() {
   await test_bookmarks_popup({
-    isNewBookmark: true,
+    isNewBookmark: false,
     async popupShowFn(browser) {
-      EventUtils.synthesizeKey("d", { accelKey: true }, window);
+      PlacesUtils.tagging.tagURI(makeURI(TEST_URL), ["Abc"]);
+      EventUtils.synthesizeKey("d", { accelKey: true }, win);
     },
     async popupEditFn() {
-      let tagsField = document.getElementById("editBMPanel_tagsField");
-      tagsField.value = "";
-      tagsField.focus();
-
-      // Register a tag into the DB.
-      EventUtils.sendString("Abc", window);
-      tagsField.blur();
-
       // Start autocomplete with the registered tag.
+      let tagsField = win.document.getElementById("editBMPanel_tagsField");
       tagsField.value = "";
-      let popup = document.getElementById("editBMPanel_tagsAutocomplete");
+      let popup = win.document.getElementById("editBMPanel_tagsAutocomplete");
       let promiseShown = BrowserTestUtils.waitForEvent(popup, "popupshown");
       tagsField.focus();
-      EventUtils.sendString("a", window);
+      EventUtils.sendString("a", win);
       await promiseShown;
       ok(promiseShown, "autocomplete shown");
 
       // Select first candidate.
-      EventUtils.synthesizeKey("KEY_ArrowDown", {}, window);
+      EventUtils.synthesizeKey("KEY_ArrowDown", {}, win);
 
       // Type Escape key to close autocomplete.
-      EventUtils.synthesizeKey("KEY_Escape", {}, window);
+      EventUtils.synthesizeKey("KEY_Escape", {}, win);
 
       // The text reverts to what was typed.
       // Note, it's important that this is different from the previously
@@ -654,12 +705,8 @@ add_task(async function escape_during_autocomplete_should_prevent_autoclose() {
     },
     shouldAutoClose: false,
     popupHideFn() {
-      EventUtils.synthesizeKey("KEY_Escape", {}, window);
+      EventUtils.synthesizeKey("KEY_Escape", {}, win);
     },
-    isBookmarkRemoved: true,
+    isBookmarkRemoved: false,
   });
-});
-
-registerCleanupFunction(function() {
-  delete StarUI._closePanelQuickForTesting;
 });

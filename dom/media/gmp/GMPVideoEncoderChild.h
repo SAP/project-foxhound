@@ -12,8 +12,7 @@
 #include "GMPSharedMemManager.h"
 #include "GMPVideoHost.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPContentChild;
 
@@ -39,8 +38,7 @@ class GMPVideoEncoderChild : public PGMPVideoEncoderChild,
   void Error(GMPErr aError) override;
 
   // GMPSharedMemManager
-  bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType,
-             Shmem* aMem) override;
+  bool Alloc(size_t aSize, Shmem* aMem) override;
   void Dealloc(Shmem&& aMem) override;
 
  private:
@@ -72,7 +70,6 @@ class GMPVideoEncoderChild : public PGMPVideoEncoderChild,
   bool mPendingEncodeComplete;
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // GMPVideoEncoderChild_h_

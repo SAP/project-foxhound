@@ -1,7 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 const sandbox = sinon.createSandbox();
 
 const URL1 = "https://example.com/1/";
@@ -9,7 +11,7 @@ const URL2 = "https://example.com/2/";
 const BOOKMARKLET_URL = `javascript: (() => {alert('Hello, World!');})();`;
 let bookmarks;
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   sandbox.restore();
 });
 
@@ -22,7 +24,7 @@ add_task(async function test() {
 
   if (toolbar.collapsed) {
     await promiseSetToolbarVisibility(toolbar, true);
-    registerCleanupFunction(function() {
+    registerCleanupFunction(function () {
       return promiseSetToolbarVisibility(toolbar, false);
     });
   }
@@ -36,10 +38,8 @@ add_task(async function test() {
    *
    * @param {string} aEffect
    *        The effect to use for the drop operation: move, copy, or link.
-   * @param {string} aMimeType
-   *        The mime type to use for the drop operation.
    */
-  let simulateDragDrop = async function(aEffect) {
+  let simulateDragDrop = async function (aEffect) {
     info("Simulates drag/drop of a new javascript:URL to the bookmarks");
     await withBookmarksDialog(
       true,
@@ -74,8 +74,7 @@ add_task(async function test() {
 
     let promise = PlacesTestUtils.waitForNotification(
       "bookmark-added",
-      events => events.some(({ url }) => url == URL1),
-      "places"
+      events => events.some(({ url }) => url == URL1)
     );
 
     EventUtils.synthesizeDrop(
@@ -97,10 +96,16 @@ add_task(async function test() {
   }
 
   info("Move of existing bookmark / bookmarklet on toolbar");
-  //clean previous bookmarks to ensure right ids count
+  // Clean previous bookmarks to ensure right ids count.
   await PlacesUtils.bookmarks.eraseEverything();
 
-  info("Insert list of bookamrks to have bookamrks (ids) for moving");
+  info("Insert list of bookamrks to have bookmarks (ids) for moving");
+  // Ensure bookmarks are visible on the toolbar.
+  let promiseBookmarksOnToolbar = BrowserTestUtils.waitForMutationCondition(
+    placesItems,
+    { childList: true },
+    () => placesItems.childNodes.length == 3
+  );
   bookmarks = await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.toolbarGuid,
     children: [
@@ -118,6 +123,7 @@ add_task(async function test() {
       },
     ],
   });
+  await promiseBookmarksOnToolbar;
 
   let spy = sandbox
     .stub(PlacesUIUtils, "showBookmarkDialog")
@@ -133,12 +139,11 @@ add_task(async function test() {
           e.oldParentGuid === PlacesUtils.bookmarks.toolbarGuid &&
           e.oldIndex == 1 &&
           e.index == 0
-      ),
-    "places"
+      )
   );
 
   EventUtils.synthesizeDrop(
-    toolbar,
+    placesItems,
     placesItems.childNodes[0],
     [
       [
@@ -168,8 +173,7 @@ add_task(async function test() {
           e.oldParentGuid === PlacesUtils.bookmarks.toolbarGuid &&
           e.oldIndex == 2 &&
           e.index == 1
-      ),
-    "places"
+      )
   );
 
   EventUtils.synthesizeDrop(

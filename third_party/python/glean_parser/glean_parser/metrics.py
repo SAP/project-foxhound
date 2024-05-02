@@ -29,7 +29,8 @@ class Lifetime(enum.Enum):
 class DataSensitivity(enum.Enum):
     technical = 1
     interaction = 2
-    web_activity = 3
+    stored_content = 3
+    web_activity = 3  # Old, deprecated name
     highly_sensitive = 4
 
 
@@ -60,7 +61,7 @@ class Metric:
         data_sensitivity: Optional[List[str]] = None,
         defined_in: Optional[Dict] = None,
         telemetry_mirror: Optional[str] = None,
-        _config: Dict[str, Any] = None,
+        _config: Optional[Dict[str, Any]] = None,
         _validated: bool = False,
     ):
         # Avoid cyclical import
@@ -85,8 +86,7 @@ class Metric:
         if send_in_pings is None:
             send_in_pings = ["default"]
         self.send_in_pings = send_in_pings
-        if unit is not None:
-            self.unit = unit
+        self.unit = unit
         self.gecko_datapoint = gecko_datapoint
         if no_lint is None:
             no_lint = []
@@ -177,6 +177,10 @@ class Metric:
                 d[key] = [x.name for x in val]
         del d["name"]
         del d["category"]
+        if not d["unit"]:
+            d.pop("unit")
+        d.pop("_config", None)
+        d.pop("_generate_enums", None)
         return d
 
     def _serialize_input(self) -> Dict[str, util.JSONType]:
@@ -198,10 +202,16 @@ class Metric:
         return self.disabled or self.is_expired()
 
     def is_expired(self) -> bool:
-        return self._config.get("custom_is_expired", util.is_expired)(self.expires)
+        def default_handler(expires) -> bool:
+            return util.is_expired(expires, self._config.get("expire_by_version"))
+
+        return self._config.get("custom_is_expired", default_handler)(self.expires)
 
     def validate_expires(self):
-        return self._config.get("custom_validate_expires", util.validate_expires)(
+        def default_handler(expires):
+            return util.validate_expires(expires, self._config.get("expire_by_version"))
+
+        return self._config.get("custom_validate_expires", default_handler)(
             self.expires
         )
 
@@ -299,14 +309,11 @@ class Event(Metric):
 
     default_store_names = ["events"]
 
-    _generate_enums = [("allowed_extra_keys", "Keys")]
-
     def __init__(self, *args, **kwargs):
         self.extra_keys = kwargs.pop("extra_keys", {})
         self.validate_extra_keys(self.extra_keys, kwargs.get("_config", {}))
-        if self.has_extra_types:
-            self._generate_enums = [("allowed_extra_keys_with_types", "Extra")]
         super().__init__(*args, **kwargs)
+        self._generate_enums = [("allowed_extra_keys_with_types", "Extra")]
 
     @property
     def allowed_extra_keys(self):
@@ -320,14 +327,6 @@ class Event(Metric):
             [(k, v.get("type", "string")) for (k, v) in self.extra_keys.items()],
             key=lambda x: x[0],
         )
-
-    @property
-    def has_extra_types(self):
-        """
-        If any extra key has a `type` specified,
-        we generate the new struct/object-based API.
-        """
-        return any("type" in x for x in self.extra_keys.values())
 
     @staticmethod
     def validate_extra_keys(extra_keys: Dict[str, str], config: Dict[str, Any]) -> None:
@@ -358,6 +357,30 @@ class Jwe(Metric):
         )
 
 
+class CowString(str):
+    """
+    Wrapper class for strings that should be represented
+    as a `Cow<'static, str>` in Rust,
+    or `String` in other target languages.
+
+    This wraps `str`, so unless `CowString` is specifically
+    handled it acts (and serializes)
+    as a string.
+    """
+
+    def __init__(self, val: str):
+        self.inner: str = val
+
+    def __eq__(self, other):
+        return self.inner == other.inner
+
+    def __hash__(self):
+        return self.inner.__hash__()
+
+    def __lt__(self, other):
+        return self.inner.__lt__(other.inner)
+
+
 class Labeled(Metric):
     labeled = True
 
@@ -365,7 +388,7 @@ class Labeled(Metric):
         labels = kwargs.pop("labels", None)
         if labels is not None:
             self.ordered_labels = labels
-            self.labels = set(labels)
+            self.labels = set([CowString(label) for label in labels])
         else:
             self.ordered_labels = None
             self.labels = None
@@ -399,6 +422,12 @@ class Rate(Metric):
     def __init__(self, *args, **kwargs):
         self.denominator_metric = kwargs.pop("denominator_metric", None)
         super().__init__(*args, **kwargs)
+
+
+class Denominator(Counter):
+    typename = "denominator"
+    # A denominator is a counter with an additional list of numerators.
+    numerators: List[Rate] = []
 
 
 class Text(Metric):

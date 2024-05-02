@@ -3,25 +3,11 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppMenuNotifications",
-  "resource://gre/modules/AppMenuNotifications.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadUtils",
-  "resource://gre/modules/DownloadUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "UpdateListener",
-  "resource://gre/modules/UpdateListener.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
+  DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
+  UpdateListener: "resource://gre/modules/UpdateListener.sys.mjs",
+});
 const { XPIInstall } = ChromeUtils.import(
   "resource://gre/modules/addons/XPIInstall.jsm"
 );
@@ -65,7 +51,7 @@ requestLongerTimeout(10);
 /**
  * Common tasks to perform for all tests before each one has started.
  */
-add_task(async function setupTestCommon() {
+add_setup(async function setupTestCommon() {
   await SpecialPowers.pushPrefEnv({
     set: [
       [PREF_APP_UPDATE_BADGEWAITTIME, 1800],
@@ -130,9 +116,9 @@ add_task(async function setupTestCommon() {
  */
 registerCleanupFunction(async () => {
   AppMenuNotifications.removeNotification(/.*/);
-  gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "");
-  gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "");
-  gEnv.set("MOZ_TEST_STAGING_ERROR", "");
+  Services.env.set("MOZ_TEST_SKIP_UPDATE_STAGE", "");
+  Services.env.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "");
+  Services.env.set("MOZ_TEST_STAGING_ERROR", "");
   UpdateListener.reset();
   AppMenuNotifications.removeNotification(/.*/);
   reloadUpdateManagerData(true);
@@ -277,7 +263,7 @@ async function setAppUpdateAutoEnabledHelper(enabled) {
  * @param  notificationId
  *         The ID of the notification to get the button for.
  * @param  button
- *         The anonid of the button to get.
+ *         The anonid of the button to get, or a function to find it.
  * @return The button element.
  */
 function getNotificationButton(win, notificationId, button) {
@@ -285,6 +271,9 @@ function getNotificationButton(win, notificationId, button) {
     `appMenu-${notificationId}-notification`
   );
   ok(!notification.hidden, `${notificationId} notification is showing`);
+  if (typeof button === "function") {
+    return button(notification);
+  }
   return notification[button];
 }
 
@@ -295,7 +284,7 @@ function getNotificationButton(win, notificationId, button) {
  * called to continue the setup of the test updater.
  */
 function setupTestUpdater() {
-  return (async function() {
+  return (async function () {
     if (Services.prefs.getBoolPref(PREF_APP_UPDATE_STAGING_ENABLED)) {
       try {
         restoreUpdaterBackup();
@@ -320,7 +309,7 @@ function setupTestUpdater() {
  * copyTestUpdater to continue the setup of the test updater.
  */
 function moveRealUpdater() {
-  return (async function() {
+  return (async function () {
     try {
       // Move away the real updater
       let greBinDir = getGREBinDir();
@@ -360,7 +349,7 @@ function moveRealUpdater() {
  * at times leave the file in use.
  */
 function copyTestUpdater(attempt = 0) {
-  return (async function() {
+  return (async function () {
     try {
       // Copy the test updater
       let greBinDir = getGREBinDir();
@@ -450,7 +439,7 @@ function restoreUpdaterBackup() {
  * and the other files for the updater if a backup of the file exists.
  */
 function finishTestRestoreUpdaterBackup() {
-  return (async function() {
+  return (async function () {
     try {
       // Windows debug builds keep the updater file in use for a short period of
       // time after the updater process exits.
@@ -541,8 +530,14 @@ function runDoorhangerUpdateTest(params, steps) {
       return step();
     }
 
-    const { notificationId, button, checkActiveUpdate, pageURLs } = step;
-    return (async function() {
+    const {
+      notificationId,
+      button,
+      checkActiveUpdate,
+      pageURLs,
+      expectedStateOverride,
+    } = step;
+    return (async function () {
       if (!params.popupShown && !PanelUI.isNotificationPanelOpen) {
         await BrowserTestUtils.waitForEvent(
           PanelUI.notificationPanel,
@@ -554,6 +549,21 @@ function runDoorhangerUpdateTest(params, steps) {
         shownNotificationId,
         notificationId,
         "The right notification showed up."
+      );
+
+      let expectedState = Ci.nsIApplicationUpdateService.STATE_IDLE;
+      if (expectedStateOverride) {
+        expectedState = expectedStateOverride;
+      } else if (notificationId == "update-restart") {
+        expectedState = Ci.nsIApplicationUpdateService.STATE_PENDING;
+      }
+      let actualState = gAUS.currentState;
+      is(
+        actualState,
+        expectedState,
+        `The current update state should be ` +
+          `"${gAUS.getStateName(expectedState)}". Actual: ` +
+          `"${gAUS.getStateName(actualState)}"`
       );
 
       if (checkActiveUpdate) {
@@ -590,11 +600,11 @@ function runDoorhangerUpdateTest(params, steps) {
     })();
   }
 
-  return (async function() {
+  return (async function () {
     if (params.slowStaging) {
-      gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
+      Services.env.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
     } else {
-      gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
+      Services.env.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
     }
     await SpecialPowers.pushPrefEnv({
       set: [
@@ -606,19 +616,22 @@ function runDoorhangerUpdateTest(params, steps) {
 
     await setupTestUpdater();
 
+    let baseURL = URL_HTTP_UPDATE_SJS;
+    if (params.baseURL) {
+      baseURL = params.baseURL;
+    }
     let queryString = params.queryString ? params.queryString : "";
     let updateURL =
-      URL_HTTP_UPDATE_SJS +
+      baseURL +
       "?detailsURL=" +
       gDetailsURL +
       queryString +
       getVersionParams(params.version);
     setUpdateURL(updateURL);
-
     if (params.checkAttempts) {
       // Perform a background check doorhanger test.
       executeSoon(() => {
-        (async function() {
+        (async function () {
           gAUS.checkForBackgroundUpdates();
           for (var i = 0; i < params.checkAttempts - 1; i++) {
             await waitForEvent("update-error", "check-attempt-failed");
@@ -658,8 +671,16 @@ function runAboutDialogUpdateTest(params, steps) {
       return step(aboutDialog);
     }
 
-    const { panelId, checkActiveUpdate, continueFile, downloadInfo } = step;
-    return (async function() {
+    const {
+      panelId,
+      checkActiveUpdate,
+      continueFile,
+      downloadInfo,
+      forceApply,
+      noContinue,
+      expectedStateOverride,
+    } = step;
+    return (async function () {
       await TestUtils.waitForCondition(
         () =>
           aboutDialog.gAppUpdater &&
@@ -674,6 +695,49 @@ function runAboutDialogUpdateTest(params, steps) {
       });
       let { selectedPanel } = aboutDialog.gAppUpdater;
       is(selectedPanel.id, panelId, "The panel ID should equal " + panelId);
+      ok(
+        BrowserTestUtils.is_visible(selectedPanel),
+        "The panel should be visible"
+      );
+
+      if (
+        panelId == "downloading" &&
+        gAUS.currentState == Ci.nsIApplicationUpdateService.STATE_IDLE
+      ) {
+        // Now that `AUS.downloadUpdate` is async, we start showing the
+        // downloading panel while `AUS.downloadUpdate` is still resolving.
+        // But the below checks assume that this resolution has already
+        // happened. So we need to wait for things to actually resolve.
+        debugDump("Waiting for downloading state to actually start");
+        await gAUS.stateTransition;
+
+        // Check that the checks that we made above are still valid.
+        selectedPanel = aboutDialog.gAppUpdater.selectedPanel;
+        is(selectedPanel.id, panelId, "The panel ID should equal " + panelId);
+        ok(
+          BrowserTestUtils.is_visible(selectedPanel),
+          "The panel should be visible"
+        );
+      }
+
+      let expectedState = Ci.nsIApplicationUpdateService.STATE_IDLE;
+      if (expectedStateOverride) {
+        expectedState = expectedStateOverride;
+      } else if (panelId == "apply") {
+        expectedState = Ci.nsIApplicationUpdateService.STATE_PENDING;
+      } else if (panelId == "downloading") {
+        expectedState = Ci.nsIApplicationUpdateService.STATE_DOWNLOADING;
+      } else if (panelId == "applying") {
+        expectedState = Ci.nsIApplicationUpdateService.STATE_STAGING;
+      }
+      let actualState = gAUS.currentState;
+      is(
+        actualState,
+        expectedState,
+        `The current update state should be ` +
+          `"${gAUS.getStateName(expectedState)}". Actual: ` +
+          `"${gAUS.getStateName(actualState)}"`
+      );
 
       if (checkActiveUpdate) {
         let activeUpdate =
@@ -694,10 +758,11 @@ function runAboutDialogUpdateTest(params, steps) {
         ok(!gUpdateManager.readyUpdate, "There should not be a ready update");
       }
 
-      if (panelId == "downloading") {
+      // Some tests just want to stop at the downloading state. These won't
+      // include a continue file in that state.
+      if (panelId == "downloading" && continueFile) {
         for (let i = 0; i < downloadInfo.length; ++i) {
           let data = downloadInfo[i];
-          // The About Dialog tests always specify a continue file.
           await continueFileHandler(continueFile);
           let patch = getPatchOfType(
             data.patchType,
@@ -742,8 +807,16 @@ function runAboutDialogUpdateTest(params, steps) {
               expectedText,
               "Sanity check: Expected download status text should be non-empty"
             );
+            if (aboutDialog.document.hasPendingL10nMutations) {
+              await BrowserTestUtils.waitForEvent(
+                aboutDialog.document,
+                "L10nMutationsFinished"
+              );
+            }
             Assert.equal(
-              aboutDialog.downloadStatus.textContent,
+              aboutDialog.document.querySelector(
+                `#downloading label[data-l10n-name="download-status"]`
+              ).textContent,
               expectedText,
               "Download status text should be correct"
             );
@@ -753,21 +826,48 @@ function runAboutDialogUpdateTest(params, steps) {
         await continueFileHandler(continueFile);
       }
 
-      let linkPanels = ["downloadFailed", "manualUpdate", "unsupportedSystem"];
+      let linkPanels = [
+        "downloadFailed",
+        "manualUpdate",
+        "unsupportedSystem",
+        "internalError",
+      ];
       if (linkPanels.includes(panelId)) {
         // The unsupportedSystem panel uses the update's detailsURL and the
         // downloadFailed and manualUpdate panels use the app.update.url.manual
         // preference.
-        let link = selectedPanel.querySelector("label.text-link");
+        let selector = "label.text-link";
+        if (selectedPanel.ownerDocument.hasPendingL10nMutations) {
+          await BrowserTestUtils.waitForEvent(
+            selectedPanel.ownerDocument,
+            "L10nMutationsFinished"
+          );
+        }
+        let link = selectedPanel.querySelector(selector);
         is(
           link.href,
           gDetailsURL,
           `The panel's link href should equal ${gDetailsURL}`
         );
+        const assertNonEmptyText = (node, description) => {
+          let textContent = node.textContent.trim();
+          ok(textContent, `${description}, got "${textContent}"`);
+        };
+        assertNonEmptyText(
+          link,
+          `The panel's link should have non-empty textContent`
+        );
+        let linkWrapperClone = link.parentNode.cloneNode(true);
+        linkWrapperClone.querySelector(selector).remove();
+        assertNonEmptyText(
+          linkWrapperClone,
+          `The panel's link should have text around the link`
+        );
       }
 
+      // Automatically click the download button unless `noContinue` was passed.
       let buttonPanels = ["downloadAndInstall", "apply"];
-      if (buttonPanels.includes(panelId)) {
+      if (buttonPanels.includes(panelId) && !noContinue) {
         let buttonEl = selectedPanel.querySelector("button");
         await TestUtils.waitForCondition(
           () => aboutDialog.document.activeElement == buttonEl,
@@ -776,15 +876,15 @@ function runAboutDialogUpdateTest(params, steps) {
         ok(!buttonEl.disabled, "The button should be enabled");
         // Don't click the button on the apply panel since this will restart the
         // application.
-        if (panelId != "apply") {
+        if (panelId != "apply" || forceApply) {
           buttonEl.click();
         }
       }
     })();
   }
 
-  return (async function() {
-    gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
+  return (async function () {
+    Services.env.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
     await SpecialPowers.pushPrefEnv({
       set: [
         [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
@@ -794,9 +894,13 @@ function runAboutDialogUpdateTest(params, steps) {
 
     await setupTestUpdater();
 
+    let baseURL = URL_HTTP_UPDATE_SJS;
+    if (params.baseURL) {
+      baseURL = params.baseURL;
+    }
     let queryString = params.queryString ? params.queryString : "";
     let updateURL =
-      URL_HTTP_UPDATE_SJS +
+      baseURL +
       "?detailsURL=" +
       gDetailsURL +
       queryString +
@@ -865,8 +969,15 @@ function runAboutPrefsUpdateTest(params, steps) {
       return step(tab);
     }
 
-    const { panelId, checkActiveUpdate, continueFile, downloadInfo } = step;
-    return (async function() {
+    const {
+      panelId,
+      checkActiveUpdate,
+      continueFile,
+      downloadInfo,
+      forceApply,
+      expectedStateOverride,
+    } = step;
+    return (async function () {
       await SpecialPowers.spawn(
         tab.linkedBrowser,
         [{ panelId }],
@@ -891,6 +1002,50 @@ function runAboutPrefsUpdateTest(params, steps) {
         }
       );
 
+      if (
+        panelId == "downloading" &&
+        gAUS.currentState == Ci.nsIApplicationUpdateService.STATE_IDLE
+      ) {
+        // Now that `AUS.downloadUpdate` is async, we start showing the
+        // downloading panel while `AUS.downloadUpdate` is still resolving.
+        // But the below checks assume that this resolution has already
+        // happened. So we need to wait for things to actually resolve.
+        debugDump("Waiting for downloading state to actually start");
+        await gAUS.stateTransition;
+
+        // Check that the checks that we made above are still valid.
+        await SpecialPowers.spawn(
+          tab.linkedBrowser,
+          [{ panelId }],
+          ({ panelId }) => {
+            is(
+              content.gAppUpdater.selectedPanel.id,
+              panelId,
+              "The panel ID should equal " + panelId
+            );
+          }
+        );
+      }
+
+      let expectedState = Ci.nsIApplicationUpdateService.STATE_IDLE;
+      if (expectedStateOverride) {
+        expectedState = expectedStateOverride;
+      } else if (panelId == "apply") {
+        expectedState = Ci.nsIApplicationUpdateService.STATE_PENDING;
+      } else if (panelId == "downloading") {
+        expectedState = Ci.nsIApplicationUpdateService.STATE_DOWNLOADING;
+      } else if (panelId == "applying") {
+        expectedState = Ci.nsIApplicationUpdateService.STATE_STAGING;
+      }
+      let actualState = gAUS.currentState;
+      is(
+        actualState,
+        expectedState,
+        `The current update state should be ` +
+          `"${gAUS.getStateName(expectedState)}". Actual: ` +
+          `"${gAUS.getStateName(actualState)}"`
+      );
+
       if (checkActiveUpdate) {
         let activeUpdate =
           checkActiveUpdate.state == STATE_DOWNLOADING
@@ -911,6 +1066,9 @@ function runAboutPrefsUpdateTest(params, steps) {
       }
 
       if (panelId == "downloading") {
+        if (!downloadInfo) {
+          logTestInfo("no downloadinfo, possible error?");
+        }
         for (let i = 0; i < downloadInfo.length; ++i) {
           let data = downloadInfo[i];
           // The About Dialog tests always specify a continue file.
@@ -954,7 +1112,16 @@ function runAboutPrefsUpdateTest(params, steps) {
             let actualText = await SpecialPowers.spawn(
               tab.linkedBrowser,
               [],
-              () => content.document.getElementById("downloading").textContent
+              async () => {
+                const { document } = content;
+                if (document.hasPendingL10nMutations) {
+                  await ContentTaskUtils.waitForEvent(
+                    document,
+                    "L10nMutationsFinished"
+                  );
+                }
+                return document.getElementById("downloading").textContent;
+              }
             );
             let expectedSuffix = DownloadUtils.getTransferTotal(
               data[resultName] == gBadSizeResult ? 0 : patch.size,
@@ -977,12 +1144,13 @@ function runAboutPrefsUpdateTest(params, steps) {
 
       await SpecialPowers.spawn(
         tab.linkedBrowser,
-        [{ panelId, gDetailsURL }],
-        async ({ panelId, gDetailsURL }) => {
+        [{ panelId, gDetailsURL, forceApply }],
+        async ({ panelId, gDetailsURL, forceApply }) => {
           let linkPanels = [
             "downloadFailed",
             "manualUpdate",
             "unsupportedSystem",
+            "internalError",
           ];
           if (linkPanels.includes(panelId)) {
             let { selectedPanel } = content.gAppUpdater;
@@ -995,11 +1163,37 @@ function runAboutPrefsUpdateTest(params, steps) {
             if (selectedPanel.id == "downloadFailed") {
               selector = "a.text-link";
             }
+            // The manualUpdate panel in about:preferences uses
+            // the moz-support-link element which doesn't have
+            // the .text-link class.
+            if (selectedPanel.id == "manualUpdate") {
+              selector = "a.manualLink";
+            }
+            if (selectedPanel.ownerDocument.hasPendingL10nMutations) {
+              await ContentTaskUtils.waitForEvent(
+                selectedPanel.ownerDocument,
+                "L10nMutationsFinished"
+              );
+            }
             let link = selectedPanel.querySelector(selector);
             is(
               link.href,
               gDetailsURL,
               `The panel's link href should equal ${gDetailsURL}`
+            );
+            const assertNonEmptyText = (node, description) => {
+              let textContent = node.textContent.trim();
+              ok(textContent, `${description}, got "${textContent}"`);
+            };
+            assertNonEmptyText(
+              link,
+              `The panel's link should have non-empty textContent`
+            );
+            let linkWrapperClone = link.parentNode.cloneNode(true);
+            linkWrapperClone.querySelector(selector).remove();
+            assertNonEmptyText(
+              linkWrapperClone,
+              `The panel's link should have text around the link`
             );
           }
 
@@ -1012,7 +1206,7 @@ function runAboutPrefsUpdateTest(params, steps) {
             ok(!buttonEl.disabled, "The button should be enabled");
             // Don't click the button on the apply panel since this will restart
             // the application.
-            if (selectedPanel.id != "apply") {
+            if (selectedPanel.id != "apply" || forceApply) {
               buttonEl.click();
             }
           }
@@ -1021,8 +1215,8 @@ function runAboutPrefsUpdateTest(params, steps) {
     })();
   }
 
-  return (async function() {
-    gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
+  return (async function () {
+    Services.env.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
     await SpecialPowers.pushPrefEnv({
       set: [
         [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
@@ -1032,9 +1226,13 @@ function runAboutPrefsUpdateTest(params, steps) {
 
     await setupTestUpdater();
 
+    let baseURL = URL_HTTP_UPDATE_SJS;
+    if (params.baseURL) {
+      baseURL = params.baseURL;
+    }
     let queryString = params.queryString ? params.queryString : "";
     let updateURL =
-      URL_HTTP_UPDATE_SJS +
+      baseURL +
       "?detailsURL=" +
       gDetailsURL +
       queryString +
@@ -1126,9 +1324,9 @@ function removeUpdateSettingsIni() {
  * @return A promise which will resolve after the .
  */
 function runTelemetryUpdateTest(updateParams, event, stageFailure = false) {
-  return (async function() {
+  return (async function () {
     Services.telemetry.clearScalars();
-    gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
+    Services.env.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
     await SpecialPowers.pushPrefEnv({
       set: [[PREF_APP_UPDATE_DISABLEDFORTESTING, false]],
     });

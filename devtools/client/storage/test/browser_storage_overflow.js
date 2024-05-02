@@ -8,7 +8,7 @@
 
 const ITEMS_PER_PAGE = 50;
 
-add_task(async function() {
+add_task(async function () {
   await openTabAndSetupStorage(MAIN_DOMAIN_SECURED + "storage-overflow.html");
 
   info("Run the tests with short DevTools");
@@ -24,19 +24,50 @@ add_task(async function() {
   await openStoragePanel();
 
   info("Run the tests with tall DevTools");
-  await runTests();
+  await runTests(true);
 });
 
-async function runTests() {
+async function runTests(tall) {
+  if (tall) {
+    // We need to zoom out and a tall storage panel in order to fit more than 50
+    // items in the table. We do this to ensure that we load enough content to
+    // show a scrollbar so that we can still use infinite scrolling.
+    zoom(0.5);
+  }
+
   gUI.tree.expandAll();
   await selectTreeItem(["localStorage", "https://test1.example.org"]);
-  checkCellLength(ITEMS_PER_PAGE);
 
-  await scroll();
-  checkCellLength(ITEMS_PER_PAGE * 2);
+  if (tall) {
+    if (getCellLength() === ITEMS_PER_PAGE) {
+      await scrollToAddItems();
+      await waitForStorageData("item-100", "value-100");
+    }
 
-  await scroll();
-  checkCellLength(ITEMS_PER_PAGE * 3);
+    if (getCellLength() === ITEMS_PER_PAGE * 2) {
+      await scrollToAddItems();
+      await waitForStorageData("item-150", "value-150");
+    }
+
+    if (getCellLength() === ITEMS_PER_PAGE * 3) {
+      await scrollToAddItems();
+      await waitForStorageData("item-151", "value-151");
+    }
+  } else {
+    checkCellLength(ITEMS_PER_PAGE);
+    await scrollToAddItems();
+    await waitForStorageData("item-100", "value-100");
+
+    checkCellLength(ITEMS_PER_PAGE * 2);
+    await scrollToAddItems();
+    await waitForStorageData("item-150", "value-150");
+
+    checkCellLength(ITEMS_PER_PAGE * 3);
+    await scrollToAddItems();
+    await waitForStorageData("item-151", "value-151");
+  }
+
+  is(getCellLength(), 151, "Storage table contains 151 items");
 
   // Check that the columns are sorted in a human readable way (ascending).
   checkCellValues("ASC");
@@ -46,14 +77,28 @@ async function runTests() {
 
   // Check that the columns are sorted in a human readable way (descending).
   checkCellValues("DEC");
+
+  if (tall) {
+    zoom(1);
+  }
 }
 
 function checkCellValues(order) {
   const cells = [
     ...gPanelWindow.document.querySelectorAll("#name .table-widget-cell"),
   ];
-  cells.forEach(function(cell, index, arr) {
+  cells.forEach(function (cell, index, arr) {
     const i = order === "ASC" ? index + 1 : arr.length - index;
-    is(cell.value, `item-${i}`, `Cell value is correct (${order}).`);
+    is(cell.value, `item-${i}`, `Cell value is "item-${i}" (${order}).`);
   });
+}
+
+async function scrollToAddItems() {
+  info(`Scrolling to add ${ITEMS_PER_PAGE} items`);
+  await scroll();
+}
+
+function zoom(zoomValue) {
+  const bc = BrowsingContext.getFromWindow(gPanelWindow);
+  bc.fullZoom = zoomValue;
 }

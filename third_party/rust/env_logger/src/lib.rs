@@ -1,10 +1,6 @@
-// Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
@@ -97,28 +93,38 @@
 //! directives*. A logging directive is of the form:
 //!
 //! ```text
-//! path::to::module=level
+//! example::log::target=level
 //! ```
 //!
-//! The path to the module is rooted in the name of the crate it was compiled
-//! for, so if your program is contained in a file `hello.rs`, for example, to
-//! turn on logging for this file you would use a value of `RUST_LOG=hello`.
-//! Furthermore, this path is a prefix-search, so all modules nested in the
-//! specified module will also have logging enabled.
+//! The log target is typically equal to the path of the module the message
+//! in question originated from, though it can be overridden.
+//!
+//! The path is rooted in the name of the crate it was compiled for, so if
+//! your program is in a file called, for example, `hello.rs`, the path would
+//! simply be be `hello`.
+//!
+//! Furthermore, the log can be filtered using prefix-search based on the
+//! specified log target. A value of, for example, `RUST_LOG=example`, would
+//! match all of the messages with targets:
+//!
+//! * `example`
+//! * `example::test`
+//! * `example::test::module::submodule`
+//! * `examples::and_more_examples`
 //!
 //! When providing the crate name or a module path, explicitly specifying the
-//! log level is optional. If omitted, all logging for the item (and its
-//! children) will be enabled.
+//! log level is optional. If omitted, all logging for the item will be
+//! enabled.
 //!
 //! The names of the log levels that may be specified correspond to the
 //! variations of the [`log::Level`][level-enum] enum from the `log`
 //! crate. They are:
 //!
-//!    * `error`
-//!    * `warn`
-//!    * `info`
-//!    * `debug`
-//!    * `trace`
+//! * `error`
+//! * `warn`
+//! * `info`
+//! * `debug`
+//! * `trace`
 //!
 //! There is also a pseudo logging level, `off`, which may be specified to
 //! disable all logging for a given module or for the entire application. As
@@ -260,7 +266,7 @@
 //! env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 //! ```
 //!
-//! [gh-repo-examples]: https://github.com/env-logger-rs/env_logger/tree/master/examples
+//! [gh-repo-examples]: https://github.com/env-logger-rs/env_logger/tree/main/examples
 //! [level-enum]: https://docs.rs/log/latest/log/enum.Level.html
 //! [log-crate-url]: https://docs.rs/log/
 //! [`Builder`]: struct.Builder.html
@@ -598,6 +604,12 @@ impl Builder {
         self
     }
 
+    /// Whether or not to write the target in the default format.
+    pub fn format_target(&mut self, write: bool) -> &mut Self {
+        self.format.format_target = write;
+        self
+    }
+
     /// Configures the amount of spaces to use to indent multiline log records.
     /// A value of `None` disables any kind of indentation.
     pub fn format_indent(&mut self, indent: Option<usize>) -> &mut Self {
@@ -660,7 +672,7 @@ impl Builder {
     ///
     /// # Examples
     ///
-    /// Only include messages for info and above for logs in `path::to::module`:
+    /// Only include messages for info and above for logs globally:
     ///
     /// ```
     /// use env_logger::Builder;
@@ -895,7 +907,7 @@ impl Log for Logger {
     fn log(&self, record: &Record) {
         if self.matches(record) {
             // Log records are written to a thread-local buffer before being printed
-            // to the terminal. We clear these buffers afterwards, but they aren't shrinked
+            // to the terminal. We clear these buffers afterwards, but they aren't shrunk
             // so will always at least have capacity for the largest log record formatted
             // on that thread.
             //
@@ -1156,7 +1168,7 @@ pub fn init() {
 /// ```
 /// use env_logger::{Builder, Env};
 ///
-/// # fn run() -> Result<(), Box<::std::error::Error>> {
+/// # fn run() -> Result<(), Box<dyn ::std::error::Error>> {
 /// let env = Env::new().filter("MY_LOG").write_style("MY_LOG_STYLE");
 ///
 /// env_logger::try_init_from_env(env)?;

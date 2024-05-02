@@ -1,5 +1,26 @@
-import { CONTENT_MESSAGE_TYPE } from "common/Actions.jsm";
+import { CONTENT_MESSAGE_TYPE } from "common/Actions.sys.mjs";
 import { ActivityStream, PREFS_CONFIG } from "lib/ActivityStream.jsm";
+import { GlobalOverrider } from "test/unit/utils";
+
+import { DEFAULT_SITES } from "lib/DefaultSites.sys.mjs";
+import { AboutPreferences } from "lib/AboutPreferences.jsm";
+import { DefaultPrefs } from "lib/ActivityStreamPrefs.jsm";
+import { NewTabInit } from "lib/NewTabInit.jsm";
+import { SectionsFeed } from "lib/SectionsManager.jsm";
+import { RecommendationProvider } from "lib/RecommendationProvider.jsm";
+import { PlacesFeed } from "lib/PlacesFeed.jsm";
+import { PrefsFeed } from "lib/PrefsFeed.jsm";
+import { SystemTickFeed } from "lib/SystemTickFeed.jsm";
+import { TelemetryFeed } from "lib/TelemetryFeed.jsm";
+import { FaviconFeed } from "lib/FaviconFeed.jsm";
+import { TopSitesFeed } from "lib/TopSitesFeed.jsm";
+import { TopStoriesFeed } from "lib/TopStoriesFeed.jsm";
+import { HighlightsFeed } from "lib/HighlightsFeed.jsm";
+import { DiscoveryStreamFeed } from "lib/DiscoveryStreamFeed.jsm";
+
+import { LinksCache } from "lib/LinksCache.sys.mjs";
+import { PersistentCache } from "lib/PersistentCache.sys.mjs";
+import { DownloadsManager } from "lib/DownloadsManager.jsm";
 
 describe("ActivityStream", () => {
   let sandbox;
@@ -8,9 +29,34 @@ describe("ActivityStream", () => {
     return { init: () => {}, uninit: () => {}, feeds: { get: () => {} } };
   }
 
+  let globals;
   beforeEach(() => {
+    globals = new GlobalOverrider();
+    globals.set({
+      Store: FakeStore,
+
+      DEFAULT_SITES,
+      AboutPreferences,
+      DefaultPrefs,
+      NewTabInit,
+      SectionsFeed,
+      RecommendationProvider,
+      PlacesFeed,
+      PrefsFeed,
+      SystemTickFeed,
+      TelemetryFeed,
+      FaviconFeed,
+      TopSitesFeed,
+      TopStoriesFeed,
+      HighlightsFeed,
+      DiscoveryStreamFeed,
+
+      LinksCache,
+      PersistentCache,
+      DownloadsManager,
+    });
+
     as = new ActivityStream();
-    as.store = new FakeStore();
     sandbox = sinon.createSandbox();
     sandbox.stub(as.store, "init");
     sandbox.stub(as.store, "uninit");
@@ -18,7 +64,10 @@ describe("ActivityStream", () => {
     PREFS_CONFIG.get("feeds.system.topstories").value = undefined;
   });
 
-  afterEach(() => sandbox.restore());
+  afterEach(() => {
+    sandbox.restore();
+    globals.restore();
+  });
 
   it("should exist", () => {
     assert.ok(ActivityStream);
@@ -67,6 +116,15 @@ describe("ActivityStream", () => {
         "browser.newtabpage.activity-stream.discoverystream.config"
       );
     });
+    it("should call addObserver for the app locales", () => {
+      sandbox.stub(global.Services.obs, "addObserver");
+      as.init();
+      assert.calledWith(
+        global.Services.obs.addObserver,
+        as,
+        "intl:app-locales-changed"
+      );
+    });
   });
   describe("#uninit", () => {
     beforeEach(() => {
@@ -79,7 +137,7 @@ describe("ActivityStream", () => {
     it("should call .store.uninit", () => {
       assert.calledOnce(as.store.uninit);
     });
-    it("should call removeObserver", () => {
+    it("should call removeObserver for the region", () => {
       sandbox.stub(global.Services.obs, "removeObserver");
       as.geo = "";
       as.uninit();
@@ -87,6 +145,15 @@ describe("ActivityStream", () => {
         global.Services.obs.removeObserver,
         as,
         global.Region.REGION_TOPIC
+      );
+    });
+    it("should call removeObserver for the app locales", () => {
+      sandbox.stub(global.Services.obs, "removeObserver");
+      as.uninit();
+      assert.calledWith(
+        global.Services.obs.removeObserver,
+        as,
+        "intl:app-locales-changed"
       );
     });
   });
@@ -245,11 +312,14 @@ describe("ActivityStream", () => {
     });
   });
   describe("_updateDynamicPrefs topstories default value", () => {
-    let getStringPrefStub;
+    let getVariableStub;
     let getBoolPrefStub;
     let appLocaleAsBCP47Stub;
     beforeEach(() => {
-      getStringPrefStub = sandbox.stub(global.Services.prefs, "getStringPref");
+      getVariableStub = sandbox.stub(
+        global.NimbusFeatures.pocketNewtab,
+        "getVariable"
+      );
       appLocaleAsBCP47Stub = sandbox.stub(
         global.Services.locale,
         "appLocaleAsBCP47"
@@ -264,11 +334,7 @@ describe("ActivityStream", () => {
 
       sandbox.stub(global.Region, "home").get(() => "US");
 
-      getStringPrefStub
-        .withArgs(
-          "browser.newtabpage.activity-stream.discoverystream.region-stories-config"
-        )
-        .returns("US,CA");
+      getVariableStub.withArgs("regionStoriesConfig").returns("US,CA");
     });
     it("should be false with no geo/locale", () => {
       appLocaleAsBCP47Stub.get(() => "");
@@ -282,10 +348,8 @@ describe("ActivityStream", () => {
       appLocaleAsBCP47Stub.get(() => "");
       sandbox.stub(global.Region, "home").get(() => "");
       appLocaleAsBCP47Stub.get(() => "en-US");
-      getStringPrefStub
-        .withArgs(
-          "browser.newtabpage.activity-stream.discoverystream.locale-list-config"
-        )
+      getVariableStub
+        .withArgs("localeListConfig")
         .returns("en-US,en-CA,en-GB")
         // We only have this pref set to trigger a close to real situation.
         .withArgs(
@@ -331,11 +395,7 @@ describe("ActivityStream", () => {
     it("should be true with updated pref change", () => {
       appLocaleAsBCP47Stub.get(() => "en-GB");
       sandbox.stub(global.Region, "home").get(() => "GB");
-      getStringPrefStub
-        .withArgs(
-          "browser.newtabpage.activity-stream.discoverystream.region-stories-config"
-        )
-        .returns("GB");
+      getVariableStub.withArgs("regionStoriesConfig").returns("GB");
 
       as._updateDynamicPrefs();
 
@@ -344,11 +404,7 @@ describe("ActivityStream", () => {
     it("should be true with allowed locale in non US region", () => {
       appLocaleAsBCP47Stub.get(() => "en-CA");
       sandbox.stub(global.Region, "home").get(() => "DE");
-      getStringPrefStub
-        .withArgs(
-          "browser.newtabpage.activity-stream.discoverystream.locale-list-config"
-        )
-        .returns("en-US,en-CA,en-GB");
+      getVariableStub.withArgs("localeListConfig").returns("en-US,en-CA,en-GB");
 
       as._updateDynamicPrefs();
 
@@ -385,10 +441,8 @@ describe("ActivityStream", () => {
     });
     it("should set true with expected geo and locale", () => {
       sandbox
-        .stub(global.Services.prefs, "getStringPref")
-        .withArgs(
-          "browser.newtabpage.activity-stream.discoverystream.region-stories-config"
-        )
+        .stub(global.NimbusFeatures.pocketNewtab, "getVariable")
+        .withArgs("regionStoriesConfig")
         .returns("US");
 
       sandbox.stub(global.Services.prefs, "getBoolPref").returns(true);

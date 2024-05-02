@@ -9,13 +9,13 @@
 const TEST_URL =
   "http://example.com/browser/devtools/client/webconsole/test/browser/test-network-request.html";
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.filter.netxhr", true);
 
   const toolbox = await openNewTabAndToolbox(TEST_URL, "webconsole");
   const hud = toolbox.getCurrentPanel().hud;
 
-  const onMessage = waitForMessage(hud, "testxhr", ".network");
+  const onMessage = waitForMessageByType(hud, "testxhr", ".network");
 
   const XHR_TEST_URL_WITHOUT_PARAMS = "http://flüge.example.com/testxhr";
   const XHR_TEST_URL = XHR_TEST_URL_WITHOUT_PARAMS + "?foo";

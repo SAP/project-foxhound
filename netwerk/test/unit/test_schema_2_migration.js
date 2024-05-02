@@ -13,7 +13,7 @@ function run_test() {
 }
 
 function finish_test() {
-  executeSoon(function() {
+  executeSoon(function () {
     test_generator.return();
     do_test_finished();
   });
@@ -25,7 +25,7 @@ function* do_run_test() {
 
   // Start the cookieservice, to force creation of a database.
   // Get the sessionCookies to join the initialization in cookie thread
-  Services.cookiemgr.sessionCookies;
+  Services.cookies.sessionCookies;
 
   // Close the profile.
   do_close_profile(test_generator);
@@ -154,15 +154,15 @@ function* do_run_test() {
   do_load_profile();
 
   // 1) All unexpired, unique cookies exist.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 20);
 
   // 2) All expired, unique cookies exist.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("bar.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("bar.com"), 20);
 
   // 3) Only one cookie remains, and it's the one with the highest expiration
   // time.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("baz.com"), 1);
-  let cookies = Services.cookiemgr.getCookiesFromHost("baz.com", {});
+  Assert.equal(Services.cookies.countCookiesFromHost("baz.com"), 1);
+  let cookies = Services.cookies.getCookiesFromHost("baz.com", {});
   let cookie = cookies[0];
   Assert.equal(cookie.expiry, futureExpiry + 44);
 
@@ -174,36 +174,36 @@ function* do_run_test() {
 
   // Populate it with more cookies.
   for (let i = 60; i < 80; ++i) {
-    let cookie = new Cookie(
-      "oh" + i,
-      "hai",
-      "foo.com",
-      "/",
-      futureExpiry,
-      now,
-      now + i,
-      false,
-      false,
-      false
+    schema2db.insertCookie(
+      new Cookie(
+        "oh" + i,
+        "hai",
+        "foo.com",
+        "/",
+        futureExpiry,
+        now,
+        now + i,
+        false,
+        false,
+        false
+      )
     );
-
-    schema2db.insertCookie(cookie);
   }
   for (let i = 80; i < 100; ++i) {
-    let cookie = new Cookie(
-      "oh" + i,
-      "hai",
-      "cat.com",
-      "/",
-      futureExpiry,
-      now,
-      now + i,
-      false,
-      false,
-      false
+    schema2db.insertCookie(
+      new Cookie(
+        "oh" + i,
+        "hai",
+        "cat.com",
+        "/",
+        futureExpiry,
+        now,
+        now + i,
+        false,
+        false,
+        false
+      )
     );
-
-    schema2db.insertCookie(cookie);
   }
 
   // Attempt to add a cookie with the same (name, host, path) values as another
@@ -244,10 +244,10 @@ function* do_run_test() {
   yield;
 
   // Test the expected set of cookies.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 40);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("bar.com"), 20);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("baz.com"), 1);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("cat.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 40);
+  Assert.equal(Services.cookies.countCookiesFromHost("bar.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("baz.com"), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost("cat.com"), 20);
 
   do_close_profile(test_generator);
   yield;
@@ -260,10 +260,10 @@ function* do_run_test() {
   do_load_profile();
 
   // Test the expected set of cookies.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 40);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("bar.com"), 20);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("baz.com"), 1);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("cat.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 40);
+  Assert.equal(Services.cookies.countCookiesFromHost("bar.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("baz.com"), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost("cat.com"), 20);
 
   do_close_profile(test_generator);
   yield;
@@ -284,10 +284,10 @@ function* do_run_test() {
   Assert.equal(do_count_cookies(), 81);
 
   // Test the expected set of cookies.
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 40);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("bar.com"), 20);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("baz.com"), 1);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost("cat.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 40);
+  Assert.equal(Services.cookies.countCookiesFromHost("bar.com"), 20);
+  Assert.equal(Services.cookies.countCookiesFromHost("baz.com"), 1);
+  Assert.equal(Services.cookies.countCookiesFromHost("cat.com"), 20);
 
   do_close_profile(test_generator);
   yield;

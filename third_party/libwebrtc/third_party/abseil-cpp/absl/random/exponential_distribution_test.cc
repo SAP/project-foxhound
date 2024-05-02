@@ -15,6 +15,7 @@
 #include "absl/random/exponential_distribution.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -28,8 +29,9 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/internal/raw_logging.h"
 #include "absl/base/macros.h"
+#include "absl/log/log.h"
+#include "absl/numeric/internal/representation.h"
 #include "absl/random/internal/chi_square.h"
 #include "absl/random/internal/distribution_test_util.h"
 #include "absl/random/internal/pcg_engine.h"
@@ -47,12 +49,16 @@ using absl::random_internal::kChiSquared;
 template <typename RealType>
 class ExponentialDistributionTypedTest : public ::testing::Test {};
 
-#if defined(__EMSCRIPTEN__)
-using RealTypes = ::testing::Types<float, double>;
-#else
-using RealTypes = ::testing::Types<float, double, long double>;
-#endif  // defined(__EMSCRIPTEN__)
-TYPED_TEST_CASE(ExponentialDistributionTypedTest, RealTypes);
+// double-double arithmetic is not supported well by either GCC or Clang; see
+// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=99048,
+// https://bugs.llvm.org/show_bug.cgi?id=49131, and
+// https://bugs.llvm.org/show_bug.cgi?id=49132. Don't bother running these tests
+// with double doubles until compiler support is better.
+using RealTypes =
+    std::conditional<absl::numeric_internal::IsDoubleDouble(),
+                     ::testing::Types<float, double>,
+                     ::testing::Types<float, double, long double>>::type;
+TYPED_TEST_SUITE(ExponentialDistributionTypedTest, RealTypes);
 
 TYPED_TEST(ExponentialDistributionTypedTest, SerializeTest) {
   using param_type =
@@ -109,9 +115,8 @@ TYPED_TEST(ExponentialDistributionTypedTest, SerializeTest) {
       if (sample < sample_min) sample_min = sample;
     }
     if (!std::is_same<TypeParam, long double>::value) {
-      ABSL_INTERNAL_LOG(INFO,
-                        absl::StrFormat("Range {%f}: %f, %f, lambda=%f", lambda,
-                                        sample_min, sample_max, lambda));
+      LOG(INFO) << "Range {" << lambda << "}: " << sample_min << ", "
+                << sample_max << ", lambda=" << lambda;
     }
 
     std::stringstream ss;
@@ -129,23 +134,6 @@ TYPED_TEST(ExponentialDistributionTypedTest, SerializeTest) {
     EXPECT_NE(before, after);
 
     ss >> after;
-
-#if defined(__powerpc64__) || defined(__PPC64__) || defined(__powerpc__) || \
-    defined(__ppc__) || defined(__PPC__)
-    if (std::is_same<TypeParam, long double>::value) {
-      // Roundtripping floating point values requires sufficient precision to
-      // reconstruct the exact value. It turns out that long double has some
-      // errors doing this on ppc, particularly for values
-      // near {1.0 +/- epsilon}.
-      if (lambda <= std::numeric_limits<double>::max() &&
-          lambda >= std::numeric_limits<double>::lowest()) {
-        EXPECT_EQ(static_cast<double>(before.lambda()),
-                  static_cast<double>(after.lambda()))
-            << ss.str();
-      }
-      continue;
-    }
-#endif
 
     EXPECT_EQ(before.lambda(), after.lambda())  //
         << ss.str() << " "                      //
@@ -230,17 +218,16 @@ bool ExponentialDistributionTests::SingleZTest(const double p,
   const bool pass = absl::random_internal::Near("z", z, 0.0, max_err);
 
   if (!pass) {
-    ABSL_INTERNAL_LOG(
-        INFO, absl::StrFormat("p=%f max_err=%f\n"
-                              " lambda=%f\n"
-                              " mean=%f vs. %f\n"
-                              " stddev=%f vs. %f\n"
-                              " skewness=%f vs. %f\n"
-                              " kurtosis=%f vs. %f\n"
-                              " z=%f vs. 0",
-                              p, max_err, lambda(), m.mean, mean(),
-                              std::sqrt(m.variance), stddev(), m.skewness,
-                              skew(), m.kurtosis, kurtosis(), z));
+    // clang-format off
+    LOG(INFO)
+        << "p=" << p << " max_err=" << max_err << "\n"
+           " lambda=" << lambda() << "\n"
+           " mean=" << m.mean << " vs. " << mean() << "\n"
+           " stddev=" << std::sqrt(m.variance) << " vs. " << stddev() << "\n"
+           " skewness=" << m.skewness << " vs. " << skew() << "\n"
+           " kurtosis=" << m.kurtosis << " vs. " << kurtosis() << "\n"
+           " z=" << z << " vs. 0";
+    // clang-format on
   }
   return pass;
 }
@@ -285,16 +272,16 @@ double ExponentialDistributionTests::SingleChiSquaredTest() {
   double p = absl::random_internal::ChiSquarePValue(chi_square, dof);
 
   if (chi_square > threshold) {
-    for (int i = 0; i < cutoffs.size(); i++) {
-      ABSL_INTERNAL_LOG(
-          INFO, absl::StrFormat("%d : (%f) = %d", i, cutoffs[i], counts[i]));
+    for (size_t i = 0; i < cutoffs.size(); i++) {
+      LOG(INFO) << i << " : (" << cutoffs[i] << ") = " << counts[i];
     }
 
-    ABSL_INTERNAL_LOG(INFO,
-                      absl::StrCat("lambda ", lambda(), "\n",     //
-                                   " expected ", expected, "\n",  //
-                                   kChiSquared, " ", chi_square, " (", p, ")\n",
-                                   kChiSquared, " @ 0.98 = ", threshold));
+    // clang-format off
+    LOG(INFO) << "lambda " << lambda() << "\n"
+                 " expected " << expected << "\n"
+              << kChiSquared << " " << chi_square << " (" << p << ")\n"
+              << kChiSquared << " @ 0.98 = " << threshold;
+    // clang-format on
   }
   return p;
 }
@@ -354,8 +341,8 @@ std::string ParamName(const ::testing::TestParamInfo<Param>& info) {
   return absl::StrReplaceAll(name, {{"+", "_"}, {"-", "_"}, {".", "_"}});
 }
 
-INSTANTIATE_TEST_CASE_P(All, ExponentialDistributionTests,
-                        ::testing::ValuesIn(GenParams()), ParamName);
+INSTANTIATE_TEST_SUITE_P(All, ExponentialDistributionTests,
+                         ::testing::ValuesIn(GenParams()), ParamName);
 
 // NOTE: absl::exponential_distribution is not guaranteed to be stable.
 TEST(ExponentialDistributionTest, StabilityTest) {
@@ -396,6 +383,15 @@ TEST(ExponentialDistributionTest, StabilityTest) {
 TEST(ExponentialDistributionTest, AlgorithmBounds) {
   // Relies on absl::uniform_real_distribution, so some of these comments
   // reference that.
+
+#if (defined(__i386__) || defined(_M_IX86)) && FLT_EVAL_METHOD != 0
+  // We're using an x87-compatible FPU, and intermediate operations can be
+  // performed with 80-bit floats. This produces slightly different results from
+  // what we expect below.
+  GTEST_SKIP()
+      << "Skipping the test because we detected x87 floating-point semantics";
+#endif
+
   absl::exponential_distribution<double> dist;
 
   {

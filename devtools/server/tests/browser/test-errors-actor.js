@@ -3,8 +3,7 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const { components, Cr } = require("chrome");
+const protocol = require("resource://devtools/shared/protocol.js");
 
 const testErrorsSpec = protocol.generateActorSpec({
   typeName: "testErrors",
@@ -33,36 +32,35 @@ const testErrorsSpec = protocol.generateActorSpec({
   },
 });
 
-const TestErrorsActor = protocol.ActorClassWithSpec(testErrorsSpec, {
-  initialize: function(conn) {
-    protocol.Actor.prototype.initialize.call(this, conn);
-    this.conn = conn;
-  },
+class TestErrorsActor extends protocol.Actor {
+  constructor(conn) {
+    super(conn, testErrorsSpec);
+  }
 
   throwsComponentsException() {
-    throw components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
-  },
+    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+  }
 
   throwsException() {
     return this.a.b.c;
-  },
+  }
 
   throwsJSError() {
     throw new Error("JSError");
-  },
+  }
 
   throwsString() {
     // eslint-disable-next-line no-throw-literal
     throw "ErrorString";
-  },
+  }
 
   throwsObject() {
     // eslint-disable-next-line no-throw-literal
     throw {
       error: "foo",
     };
-  },
-});
+  }
+}
 exports.TestErrorsActor = TestErrorsActor;
 
 class TestErrorsFront extends protocol.FrontClassWithSpec(testErrorsSpec) {

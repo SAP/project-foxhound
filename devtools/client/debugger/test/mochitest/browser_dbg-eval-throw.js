@@ -4,7 +4,10 @@
 
 // Test that exceptions thrown while evaluating code will pause at the point the
 // exception was generated when pausing on uncaught exceptions.
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-eval-throw.html");
   await togglePauseOnExceptions(dbg, true, true);
 

@@ -37,14 +37,11 @@ class AwaitPromiseProvider extends UrlbarTestUtils.TestProvider {
   }
 }
 
-add_task(async function setup() {
-  await SearchTestUtils.installSearchExtension();
-  let engine = Services.search.getEngineByName("Example");
-  let oldDefaultEngine = Services.search.defaultEngine;
-  Services.search.defaultEngine = engine;
-  registerCleanupFunction(function() {
+add_setup(async function () {
+  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
+
+  registerCleanupFunction(function () {
     SpecialPowers.clipboardCopyString("");
-    Services.search.defaultEngine = oldDefaultEngine;
   });
 });
 
@@ -216,7 +213,7 @@ add_task(async function searchTip() {
 
   info("Click the tip button.");
   const result = await UrlbarTestUtils.getDetailsOfResultAt(win, 0);
-  const button = result.element.row._elements.get("tipButton");
+  const button = result.element.row._buttons.get("0");
   await UrlbarTestUtils.promisePopupClose(win, () => {
     EventUtils.synthesizeMouseAtCenter(button, {}, win);
   });
@@ -373,7 +370,7 @@ async function withAwaitProvider(args, promise, callback) {
   try {
     await callback();
   } catch (ex) {
-    Cu.reportError(ex);
+    console.error(ex);
   } finally {
     UrlbarProvidersManager.unregisterProvider(provider);
   }

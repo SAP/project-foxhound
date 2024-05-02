@@ -5,6 +5,7 @@ use tokio::time::*;
 
 use std::sync::mpsc;
 
+#[cfg(all(feature = "rt-multi-thread", not(tokio_wasi)))] // Wasi doesn't support threads
 #[test]
 fn timer_with_threaded_runtime() {
     use tokio::runtime::Runtime;
@@ -13,9 +14,9 @@ fn timer_with_threaded_runtime() {
     let (tx, rx) = mpsc::channel();
 
     rt.spawn(async move {
-        let when = Instant::now() + Duration::from_millis(100);
+        let when = Instant::now() + Duration::from_millis(10);
 
-        delay_until(when).await;
+        sleep_until(when).await;
         assert!(Instant::now() >= when);
 
         tx.send(()).unwrap();
@@ -25,20 +26,16 @@ fn timer_with_threaded_runtime() {
 }
 
 #[test]
-fn timer_with_basic_scheduler() {
+fn timer_with_current_thread_scheduler() {
     use tokio::runtime::Builder;
 
-    let mut rt = Builder::new()
-        .basic_scheduler()
-        .enable_all()
-        .build()
-        .unwrap();
+    let rt = Builder::new_current_thread().enable_all().build().unwrap();
     let (tx, rx) = mpsc::channel();
 
     rt.block_on(async move {
-        let when = Instant::now() + Duration::from_millis(100);
+        let when = Instant::now() + Duration::from_millis(10);
 
-        delay_until(when).await;
+        sleep_until(when).await;
         assert!(Instant::now() >= when);
 
         tx.send(()).unwrap();
@@ -71,8 +68,8 @@ async fn starving() {
         }
     }
 
-    let when = Instant::now() + Duration::from_millis(20);
-    let starve = Starve(delay_until(when), 0);
+    let when = Instant::now() + Duration::from_millis(10);
+    let starve = Starve(Box::pin(sleep_until(when)), 0);
 
     starve.await;
     assert!(Instant::now() >= when);
@@ -85,7 +82,7 @@ async fn timeout_value() {
     let (_tx, rx) = oneshot::channel::<()>();
 
     let now = Instant::now();
-    let dur = Duration::from_millis(20);
+    let dur = Duration::from_millis(10);
 
     let res = timeout(dur, rx).await;
     assert!(res.is_err());

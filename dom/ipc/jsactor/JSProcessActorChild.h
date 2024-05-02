@@ -10,15 +10,13 @@
 #include "mozilla/dom/JSActor.h"
 #include "nsIDOMProcessChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Placeholder implementation.
 class JSProcessActorChild final : public JSActor {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(JSProcessActorChild,
-                                                         JSActor)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(JSProcessActorChild, JSActor)
 
   explicit JSProcessActorChild(nsISupports* aGlobal = nullptr)
       : JSActor(aGlobal) {}
@@ -51,7 +49,6 @@ class JSProcessActorChild final : public JSActor {
   nsCOMPtr<nsIDOMProcessChild> mManager;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_JSProcessActorChild_h

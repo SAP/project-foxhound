@@ -8,6 +8,7 @@ UNIFIED_SOURCES += [
     "APZTestAccess.cpp",
     "APZTestCommon.cpp",
     "MockHitTester.cpp",
+    "TestAxisLock.cpp",
     "TestBasic.cpp",
     "TestEventRegions.cpp",
     "TestEventResult.cpp",
@@ -18,9 +19,11 @@ UNIFIED_SOURCES += [
     "TestOverscroll.cpp",
     "TestPanning.cpp",
     "TestPinching.cpp",
+    "TestPointerEventsConsumable.cpp",
     "TestScrollHandoff.cpp",
     "TestSnapping.cpp",
     "TestSnappingOnMomentum.cpp",
+    "TestTransformNotifications.cpp",
     "TestTreeManager.cpp",
     "TestWRScrollData.cpp",
 ]
@@ -31,7 +34,6 @@ LOCAL_INCLUDES += [
     "/gfx/2d",
     "/gfx/cairo/cairo/src",
     "/gfx/layers",
-    "/gfx/tests/gtest",  # for TestLayers.h, which is shared with the gfx gtests
 ]
 
 FINAL_LIBRARY = "xul-gtest"

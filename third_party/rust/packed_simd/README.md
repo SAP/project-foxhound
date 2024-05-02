@@ -2,10 +2,10 @@
 
 ## Implementation of [Rust RFC #2366: `std::simd`][rfc2366]
 
-[![Travis-CI Status]][travis] [![Appveyor Status]][appveyor] [![Latest Version]][crates.io] [![docs]][master_docs]
+[![Latest Version]][crates.io] [![docs]][master_docs]
 
 **WARNING**: this crate only supports the most recent nightly Rust toolchain
-and will be superceded by [stdsimd](https://github.com/rust-lang/stdsimd).
+and will be superseded by [`#![feature(portable_simd)]`](https://github.com/rust-lang/portable-simd).
 
 ## Documentation
 
@@ -71,30 +71,25 @@ whether the test suite passes for a given target.
 | `i586-unknown-linux-gnu`              | ✓         | ✗       |
 | `i686-unknown-linux-gnu`              | ✓         | ✗       |
 | `x86_64-unknown-linux-gnu`            | ✓         | ✓       |
-| `arm-unknown-linux-gnueabi`           | ✗         | ✗       |
 | `arm-unknown-linux-gnueabihf`         | ✓         | ✓       |
 | `armv7-unknown-linux-gnueabi`         | ✓         | ✓       |
 | `aarch64-unknown-linux-gnu`           | ✓         | ✓       |
-| `mips-unknown-linux-gnu`              | ✓         | ✗       |
-| `mipsel-unknown-linux-musl`           | ✓         | ✗       |
-| `mips64-unknown-linux-gnuabi64`       | ✓         | ✗       |
-| `mips64el-unknown-linux-gnuabi64`     | ✓         | ✗       |
-| `powerpc-unknown-linux-gnu`           | ✗         | ✗       |
-| `powerpc64-unknown-linux-gnu`         | ✗         | ✗       |
+| `powerpc-unknown-linux-gnu`           | ✓         | ✗       |
+| `powerpc64-unknown-linux-gnu`         | ✓         | ✗       |
 | `powerpc64le-unknown-linux-gnu`       | ✓         | ✓       |
-| `s390x-unknown-linux-gnu`             | ✗         | ✗       |
+| `s390x-unknown-linux-gnu`             | ✓         | ✗       |
 | `sparc64-unknown-linux-gnu`           | ✓         | ✗       |
 | `thumbv7neon-unknown-linux-gnueabihf` | ✓         | ✓       |
 | **MacOSX**                            | **build** | **run** |
 | `x86_64-apple-darwin`                 | ✓         | ✓       |
 | **Android**                           | **build** | **run** |
 | `x86_64-linux-android`                | ✓         | ✓       |
-| `arm-linux-androideabi`               | ✓         | ✓       |
-| `aarch64-linux-android`               | ✓         | ✓       |
-| `thumbv7neon-linux-androideabi`       | ✗         | ✗       |
+| `armv7-linux-androideabi`             | ✓         | ✗       |
+| `aarch64-linux-android`               | ✓         | ✗       |
+| `thumbv7neon-linux-androideabi`       | ✓         | ✗       |
 | **iOS**                               | **build** | **run** |
-| `x86_64-apple-ios`                    | ✓         | ✗       |
-| `aarch64-apple-ios`                   | ✓         | ✗       |
+| `x86_64-apple-ios`                    | ✗         | ✗       |
+| `aarch64-apple-ios`                   | ✗         | ✗       |
 
 
 ## Machine code verification
@@ -129,14 +124,14 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in `packed_simd` by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
 
-[travis]: https://travis-ci.com/rust-lang-nursery/packed_simd
-[Travis-CI Status]: https://travis-ci.com/rust-lang-nursery/packed_simd.svg?branch=master
+[travis]: https://travis-ci.com/rust-lang/packed_simd
+[Travis-CI Status]: https://travis-ci.com/rust-lang/packed_simd.svg?branch=master
 [appveyor]: https://ci.appveyor.com/project/gnzlbg/packed-simd
 [Appveyor Status]: https://ci.appveyor.com/api/projects/status/hd7v9dvr442hgdix?svg=true
 [Latest Version]: https://img.shields.io/crates/v/packed_simd.svg
 [crates.io]: https://crates.io/crates/packed_simd
 [docs]: https://docs.rs/packed_simd/badge.svg
-[docs.rs]: https://docs.rs/packed_simd/
+[docs.rs]: https://docs.rs/packed_simd
 [master_docs]: https://rust-lang-nursery.github.io/packed_simd/packed_simd/
 [perf_guide]: https://rust-lang-nursery.github.io/packed_simd/perf-guide/
 [rfc2366]: https://github.com/rust-lang/rfcs/pull/2366

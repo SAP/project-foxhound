@@ -6,54 +6,68 @@
 [Exposed=Window]
 interface CustomElementRegistry {
   [CEReactions, Throws, UseCounter]
-  void define(DOMString name, CustomElementConstructor constructor,
-              optional ElementDefinitionOptions options = {});
+  undefined define(DOMString name, CustomElementConstructor constructor,
+                   optional ElementDefinitionOptions options = {});
   [ChromeOnly, Throws]
-  void setElementCreationCallback(DOMString name, CustomElementCreationCallback callback);
-  any get(DOMString name);
+  undefined setElementCreationCallback(DOMString name, CustomElementCreationCallback callback);
+  (CustomElementConstructor or undefined) get(DOMString name);
+  DOMString? getName(CustomElementConstructor constructor);
   [Throws]
   Promise<CustomElementConstructor> whenDefined(DOMString name);
-  [CEReactions] void upgrade(Node root);
+  [CEReactions] undefined upgrade(Node root);
 };
 
 dictionary ElementDefinitionOptions {
   DOMString extends;
 };
 
+enum RestoreReason {
+  "restore",
+  "autocomplete",
+};
+
 callback constructor CustomElementConstructor = any ();
 
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback CustomElementCreationCallback = void (DOMString name);
+callback CustomElementCreationCallback = undefined (DOMString name);
 
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback LifecycleConnectedCallback = void();
+callback LifecycleConnectedCallback = undefined();
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback LifecycleDisconnectedCallback = void();
+callback LifecycleDisconnectedCallback = undefined();
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback LifecycleAdoptedCallback = void(Document? oldDocument,
-                                         Document? newDocment);
+callback LifecycleAdoptedCallback = undefined(Document? oldDocument,
+                                              Document? newDocment);
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback LifecycleAttributeChangedCallback = void(DOMString attrName,
-                                                  DOMString? oldValue,
-                                                  DOMString? newValue,
-                                                  DOMString? namespaceURI);
+callback LifecycleAttributeChangedCallback = undefined(DOMString attrName,
+                                                       DOMString? oldValue,
+                                                       DOMString? newValue,
+                                                       DOMString? namespaceURI);
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback LifecycleFormAssociatedCallback = void(HTMLFormElement? form);
+callback LifecycleFormAssociatedCallback = undefined(HTMLFormElement? form);
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback LifecycleFormResetCallback = void();
+callback LifecycleFormResetCallback = undefined();
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback LifecycleFormDisabledCallback = void(boolean disabled);
+callback LifecycleFormDisabledCallback = undefined(boolean disabled);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleFormStateRestoreCallback = undefined((File or USVString or FormData)? state, RestoreReason reason);
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
 callback LifecycleGetCustomInterfaceCallback = object?(any iid);
 
-[GenerateInit]
+// Unsorted is necessary until https://github.com/whatwg/html/issues/3580 is resolved.
+[GenerateInit, Unsorted]
 dictionary LifecycleCallbacks {
   LifecycleConnectedCallback connectedCallback;
   LifecycleDisconnectedCallback disconnectedCallback;
   LifecycleAdoptedCallback adoptedCallback;
   LifecycleAttributeChangedCallback attributeChangedCallback;
+  [ChromeOnly] LifecycleGetCustomInterfaceCallback getCustomInterfaceCallback;
+};
+
+[GenerateInit, Unsorted]
+dictionary FormAssociatedLifecycleCallbacks {
   LifecycleFormAssociatedCallback formAssociatedCallback;
   LifecycleFormResetCallback formResetCallback;
   LifecycleFormDisabledCallback formDisabledCallback;
-  [ChromeOnly] LifecycleGetCustomInterfaceCallback getCustomInterfaceCallback;
+  LifecycleFormStateRestoreCallback formStateRestoreCallback;
 };

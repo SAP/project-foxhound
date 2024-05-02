@@ -10,7 +10,6 @@
 #include "js/Array.h"               // JS::NewArrayObject
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty
 #include "js/String.h"
-#include "mozilla/HangAnnotations.h"
 
 namespace mozilla::Telemetry {
 
@@ -22,6 +21,7 @@ CombinedStacks::CombinedStacks() : CombinedStacks(kMaxChromeStacksKept) {}
 CombinedStacks::CombinedStacks(size_t aMaxStacksCount)
     : mNextIndex(0), mMaxStacksCount(aMaxStacksCount) {}
 
+size_t CombinedStacks::GetMaxStacksCount() const { return mMaxStacksCount; }
 size_t CombinedStacks::GetModuleCount() const { return mModules.size(); }
 
 const Telemetry::ProcessedStack::Module& CombinedStacks::GetModule(
@@ -149,13 +149,11 @@ void CombinedStacks::Swap(CombinedStacks& aOther) {
   mMaxStacksCount = maxStacksCount;
 }
 
-#if defined(MOZ_GECKO_PROFILER)
 void CombinedStacks::Clear() {
   mNextIndex = 0;
   mStacks.clear();
   mModules.clear();
 }
-#endif
 
 JSObject* CreateJSStackObject(JSContext* cx, const CombinedStacks& stacks) {
   JS::Rooted<JSObject*> ret(cx, JS_NewPlainObject(cx));

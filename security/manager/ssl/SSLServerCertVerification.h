@@ -7,9 +7,11 @@
 #define _SSLSERVERCERTVERIFICATION_H
 
 #include "CertVerifier.h"
+#include "CommonSocketControl.h"
 #include "ScopedNSSTypes.h"
 #include "mozilla/Maybe.h"
 #include "mozpkix/pkix.h"
+#include "nsITransportSecurityInfo.h"
 #include "nsIX509Cert.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -23,7 +25,6 @@ using namespace mozilla::pkix;
 namespace mozilla {
 namespace psm {
 
-class TransportSecurityInfo;
 enum class EVStatus : uint8_t;
 
 SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd, PRBool checkSig,
@@ -33,7 +34,7 @@ SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd, PRBool checkSig,
 // asynchronous and the info object will be notified when the verification has
 // completed via SetCertVerificationResult.
 SECStatus AuthCertificateHookWithInfo(
-    TransportSecurityInfo* infoObject, const nsACString& aHostName,
+    CommonSocketControl* socketControl, const nsACString& aHostName,
     const void* aPtrForLogging, nsTArray<nsTArray<uint8_t>>&& peerCertChain,
     Maybe<nsTArray<nsTArray<uint8_t>>>& stapledOCSPResponses,
     Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags);
@@ -47,9 +48,11 @@ class BaseSSLServerCertVerificationResult {
                         nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
                         uint16_t aCertificateTransparencyStatus,
                         EVStatus aEVStatus, bool aSucceeded,
-                        PRErrorCode aFinalError, uint32_t aCollectedErrors,
+                        PRErrorCode aFinalError,
+                        nsITransportSecurityInfo::OverridableErrorCategory
+                            aOverridableErrorCategory,
                         bool aIsBuiltCertChainRootBuiltInRoot,
-                        uint32_t aProviderFlags) = 0;
+                        uint32_t aProviderFlags, bool aMadeOCSPRequests) = 0;
 };
 
 // Dispatched to the STS thread to notify the infoObject of the verification
@@ -65,29 +68,31 @@ class SSLServerCertVerificationResult final
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIRUNNABLE
 
-  explicit SSLServerCertVerificationResult(TransportSecurityInfo* infoObject);
+  explicit SSLServerCertVerificationResult(CommonSocketControl* socketControl);
 
   void Dispatch(nsTArray<nsTArray<uint8_t>>&& aBuiltChain,
                 nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
                 uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
                 bool aSucceeded, PRErrorCode aFinalError,
-                uint32_t aCollectedErrors,
-                bool aIsBuiltCertChainRootBuiltInRoot,
-                uint32_t aProviderFlags) override;
+                nsITransportSecurityInfo::OverridableErrorCategory
+                    aOverridableErrorCategory,
+                bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+                bool aMadeOCSPRequests) override;
 
  private:
   ~SSLServerCertVerificationResult() = default;
 
-  const RefPtr<TransportSecurityInfo> mInfoObject;
+  const RefPtr<CommonSocketControl> mSocketControl;
   nsTArray<nsTArray<uint8_t>> mBuiltChain;
   nsTArray<nsTArray<uint8_t>> mPeerCertChain;
   uint16_t mCertificateTransparencyStatus;
   EVStatus mEVStatus;
   bool mSucceeded;
   PRErrorCode mFinalError;
-  uint32_t mCollectedErrors;
+  nsITransportSecurityInfo::OverridableErrorCategory mOverridableErrorCategory;
   bool mIsBuiltCertChainRootBuiltInRoot;
   uint32_t mProviderFlags;
+  bool mMadeOCSPRequests;
 };
 
 class SSLServerCertVerificationJob : public Runnable {

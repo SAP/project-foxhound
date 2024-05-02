@@ -4,17 +4,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, with_statement
-import sys
 import os
+import sys
 from optparse import OptionParser
 from os import environ as env
+
 import manifestparser
-import mozprocess
-import mozinfo
 import mozcrash
 import mozfile
+import mozinfo
 import mozlog
+import mozprocess
 import mozrunner.utils
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
@@ -30,7 +30,13 @@ class CPPUnitTests(object):
     TEST_PROC_NO_OUTPUT_TIMEOUT = 300
 
     def run_one_test(
-        self, prog, env, symbols_path=None, interactive=False, timeout_factor=1
+        self,
+        prog,
+        env,
+        symbols_path=None,
+        utility_path=None,
+        interactive=False,
+        timeout_factor=1,
     ):
         """
         Run a single C++ unit test program.
@@ -44,59 +50,65 @@ class CPPUnitTests(object):
 
         Return True if the program exits with a zero status, False otherwise.
         """
+        CPPUnitTests.run_one_test.timed_out = False
+        output = []
+
+        def timeout_handler(proc):
+            CPPUnitTests.run_one_test.timed_out = True
+            message = "timed out after %d seconds" % CPPUnitTests.TEST_PROC_TIMEOUT
+            self.log.test_end(
+                basename, status="TIMEOUT", expected="PASS", message=message
+            )
+            mozcrash.kill_and_get_minidump(proc.pid, tempdir, utility_path)
+
+        def output_timeout_handler(proc):
+            CPPUnitTests.run_one_test.timed_out = True
+            message = (
+                "timed out after %d seconds without output"
+                % CPPUnitTests.TEST_PROC_NO_OUTPUT_TIMEOUT
+            )
+            self.log.test_end(
+                basename, status="TIMEOUT", expected="PASS", message=message
+            )
+            mozcrash.kill_and_get_minidump(proc.pid, tempdir, utility_path)
+
+        def output_line_handler(_, line):
+            fixed_line = self.fix_stack(line) if self.fix_stack else line
+            if interactive:
+                print(fixed_line)
+            else:
+                output.append(fixed_line)
+
         basename = os.path.basename(prog)
         self.log.test_start(basename)
         with mozfile.TemporaryDirectory() as tempdir:
-            if interactive:
-                # For tests run locally, via mach, print output directly
-                proc = mozprocess.ProcessHandler(
-                    [prog],
-                    cwd=tempdir,
-                    env=env,
-                    storeOutput=False,
-                    universal_newlines=True,
-                )
-            else:
-                proc = mozprocess.ProcessHandler(
-                    [prog],
-                    cwd=tempdir,
-                    env=env,
-                    storeOutput=True,
-                    processOutputLine=lambda _: None,
-                    universal_newlines=True,
-                )
-            # TODO: After bug 811320 is fixed, don't let .run() kill the process,
-            # instead use a timeout in .wait() and then kill to get a stack.
             test_timeout = CPPUnitTests.TEST_PROC_TIMEOUT * timeout_factor
-            proc.run(
+            proc = mozprocess.run_and_wait(
+                [prog],
+                cwd=tempdir,
+                env=env,
+                output_line_handler=output_line_handler,
                 timeout=test_timeout,
-                outputTimeout=CPPUnitTests.TEST_PROC_NO_OUTPUT_TIMEOUT,
+                timeout_handler=timeout_handler,
+                output_timeout=CPPUnitTests.TEST_PROC_NO_OUTPUT_TIMEOUT,
+                output_timeout_handler=output_timeout_handler,
             )
-            proc.wait()
-            if proc.output:
-                if self.fix_stack:
-                    procOutput = [self.fix_stack(l) for l in proc.output]
-                else:
-                    procOutput = proc.output
 
-                output = "\n%s" % "\n".join(procOutput)
+            if output:
+                output = "\n%s" % "\n".join(output)
                 self.log.process_output(proc.pid, output, command=[prog])
-            if proc.timedOut:
-                message = "timed out after %d seconds" % CPPUnitTests.TEST_PROC_TIMEOUT
-                self.log.test_end(
-                    basename, status="TIMEOUT", expected="PASS", message=message
-                )
+            if CPPUnitTests.run_one_test.timed_out:
                 return False
             if mozcrash.check_for_crashes(tempdir, symbols_path, test_name=basename):
                 self.log.test_end(basename, status="CRASH", expected="PASS")
                 return False
-            result = proc.proc.returncode == 0
+            result = proc.returncode == 0
             if not result:
                 self.log.test_end(
                     basename,
                     status="FAIL",
                     expected="PASS",
-                    message=("test failed with return code %d" % proc.proc.returncode),
+                    message=("test failed with return code %d" % proc.returncode),
                 )
             else:
                 self.log.test_end(basename, status="PASS", expected="PASS")
@@ -143,21 +155,25 @@ class CPPUnitTests(object):
             else:
                 env[pathvar] = libpath
 
+        symbolizer_path = None
         if mozinfo.info["asan"]:
-            # Use llvm-symbolizer for ASan if available/required
-            llvmsym = os.path.join(
-                self.xre_path, "llvm-symbolizer" + mozinfo.info["bin_suffix"]
-            )
-            if os.path.isfile(llvmsym):
-                env["ASAN_SYMBOLIZER_PATH"] = llvmsym
-                self.log.info("ASan using symbolizer at %s" % llvmsym)
-            else:
-                self.log.info("Failed to find ASan symbolizer at %s" % llvmsym)
+            symbolizer_path = "ASAN_SYMBOLIZER_PATH"
+        elif mozinfo.info["tsan"]:
+            symbolizer_path = "TSAN_SYMBOLIZER_PATH"
 
-            # dom/media/webrtc/transport tests statically link in NSS, which
-            # causes ODR violations. See bug 1215679.
-            assert "ASAN_OPTIONS" not in env
-            env["ASAN_OPTIONS"] = "detect_leaks=0:detect_odr_violation=0"
+        if symbolizer_path is not None:
+            # Use llvm-symbolizer for ASan/TSan if available/required
+            if symbolizer_path in env and os.path.isfile(env[symbolizer_path]):
+                llvmsym = env[symbolizer_path]
+            else:
+                llvmsym = os.path.join(
+                    self.xre_path, "llvm-symbolizer" + mozinfo.info["bin_suffix"]
+                )
+            if os.path.isfile(llvmsym):
+                env[symbolizer_path] = llvmsym
+                self.log.info("Using LLVM symbolizer at %s" % llvmsym)
+            else:
+                self.log.info("Failed to find LLVM symbolizer at %s" % llvmsym)
 
         return env
 
@@ -197,7 +213,7 @@ class CPPUnitTests(object):
             test_path = prog[0]
             timeout_factor = prog[1]
             single_result = self.run_one_test(
-                test_path, env, symbols_path, interactive, timeout_factor
+                test_path, env, symbols_path, utility_path, interactive, timeout_factor
             )
             if single_result:
                 pass_count += 1
@@ -272,8 +288,8 @@ def extract_unittests_from_args(args, environ, manifest_path):
             else:
                 tests.append((os.path.abspath(p), 1))
 
-    # we skip the existence check here because not all tests are built
-    # for all platforms (and it will fail on Windows anyway)
+    # We don't use the manifest parser's existence-check only because it will
+    # fail on Windows due to the `.exe` suffix.
     active_tests = mp.active_tests(exists=False, disabled=False, **environ)
     suffix = ".exe" if mozinfo.isWin else ""
     if binary_path:
@@ -294,16 +310,18 @@ def extract_unittests_from_args(args, environ, manifest_path):
             ]
         )
 
-    # skip and warn for any tests in the manifest that are not found
-    final_tests = []
+    # Manually confirm that all tests named in the manifest exist.
+    errors = False
     log = mozlog.get_default_logger()
     for test in tests:
-        if os.path.isfile(test[0]):
-            final_tests.append(test)
-        else:
-            log.warning("test file not found: %s - skipped" % test[0])
+        if not os.path.isfile(test[0]):
+            errors = True
+            log.error("test file not found: %s" % test[0])
 
-    return final_tests
+    if errors:
+        raise RuntimeError("One or more cppunittests not found; aborting.")
+
+    return tests
 
 
 def update_mozinfo():

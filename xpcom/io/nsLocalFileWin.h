@@ -30,7 +30,7 @@ class nsLocalFile final : public nsILocalFileWin {
   nsLocalFile();
   explicit nsLocalFile(const nsAString& aFilePath);
 
-  static nsresult nsLocalFileConstructor(nsISupports* aOuter, const nsIID& aIID,
+  static nsresult nsLocalFileConstructor(const nsIID& aIID,
                                          void** aInstancePtr);
 
   // nsISupports interface
@@ -48,6 +48,19 @@ class nsLocalFile final : public nsILocalFileWin {
   static bool CleanupCmdHandlerPath(nsAString& aCommandHandler);
   // Called off the main thread to open the window revealing the file
   static nsresult RevealFile(const nsString& aResolvedPath);
+
+  // Checks if the filename is one of the windows reserved filenames
+  // (com1, com2, etc...) and returns true if so.
+  static bool CheckForReservedFileName(const nsString& aFileName);
+
+  // PRFileInfo64 does not hvae an accessTime field;
+  struct FileInfo {
+    PRFileType type;
+    PROffset64 size;
+    PRTime creationTime;
+    PRTime accessTime;
+    PRTime modifyTime;
+  };
 
  private:
   // CopyMove and CopySingleFile constants for |options| parameter:
@@ -77,7 +90,7 @@ class nsLocalFile final : public nsILocalFileWin {
   // mWorkingPath
   nsString mShortWorkingPath;
 
-  PRFileInfo64 mFileInfo64;
+  FileInfo mFileInfo;
 
   void MakeDirty() {
     mDirty = true;
@@ -99,7 +112,10 @@ class nsLocalFile final : public nsILocalFileWin {
   nsresult CopySingleFile(nsIFile* aSource, nsIFile* aDest,
                           const nsAString& aNewName, uint32_t aOptions);
 
-  nsresult SetModDate(int64_t aLastModifiedTime, const wchar_t* aFilePath);
+  enum class TimeField { AccessedTime, ModifiedTime };
+
+  nsresult SetDateImpl(int64_t aTime, TimeField aTimeField);
+  nsresult GetDateImpl(PRTime* aTime, TimeField aTimeField, bool aFollowLinks);
   nsresult HasFileAttribute(DWORD aFileAttrib, bool* aResult);
   nsresult AppendInternal(const nsString& aNode, bool aMultipleComponents);
 

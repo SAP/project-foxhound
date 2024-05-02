@@ -34,7 +34,7 @@ class OwningByteStringSequenceSequenceOrByteStringByteStringRecord;
  */
 class Headers final : public nsISupports, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Headers)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Headers)
 
   friend class Request;
   friend class Response;
@@ -79,6 +79,10 @@ class Headers final : public nsISupports, public nsWrapperCache {
   void Get(const nsACString& aName, nsACString& aValue,
            ErrorResult& aRv) const {
     mInternalHeaders->Get(aName, aValue, aRv);
+  }
+
+  void GetSetCookie(nsTArray<nsCString>& aValues) const {
+    mInternalHeaders->GetSetCookie(aValues);
   }
 
   void GetFirst(const nsACString& aName, nsACString& aValue,

@@ -1,12 +1,12 @@
 import { GlobalOverrider } from "test/unit/utils";
-import { PersistentCache } from "lib/PersistentCache.jsm";
+import { PersistentCache } from "lib/PersistentCache.sys.mjs";
 
 describe("PersistentCache", () => {
   let fakeIOUtils;
   let fakePathUtils;
   let cache;
   let filename = "cache.json";
-  let reportErrorStub;
+  let consoleErrorStub;
   let globals;
   let sandbox;
 
@@ -19,10 +19,10 @@ describe("PersistentCache", () => {
     };
     fakePathUtils = {
       join: sinon.stub().returns(filename),
-      getLocalProfileDir: sinon.stub().resolves("/"),
+      localProfileDir: "/",
     };
-    reportErrorStub = sandbox.stub();
-    globals.set("Cu", { reportError: reportErrorStub });
+    consoleErrorStub = sandbox.stub();
+    globals.set("console", { error: consoleErrorStub });
     globals.set("IOUtils", fakeIOUtils);
     globals.set("PathUtils", fakePathUtils);
 
@@ -47,25 +47,25 @@ describe("PersistentCache", () => {
     it("should catch and report errors", async () => {
       fakeIOUtils.readJSON.rejects(new SyntaxError("Failed to parse JSON"));
       await cache._load();
-      assert.calledOnce(reportErrorStub);
+      assert.calledOnce(consoleErrorStub);
 
       cache._cache = undefined;
-      reportErrorStub.resetHistory();
+      consoleErrorStub.resetHistory();
 
       fakeIOUtils.readJSON.rejects(
         new DOMException("IOUtils shutting down", "AbortError")
       );
       await cache._load();
-      assert.calledOnce(reportErrorStub);
+      assert.calledOnce(consoleErrorStub);
 
       cache._cache = undefined;
-      reportErrorStub.resetHistory();
+      consoleErrorStub.resetHistory();
 
       fakeIOUtils.readJSON.rejects(
         new DOMException("File not found", "NotFoundError")
       );
       await cache._load();
-      assert.notCalled(reportErrorStub);
+      assert.notCalled(consoleErrorStub);
     });
     it("returns data for a given cache key", async () => {
       fakeIOUtils.readJSON.resolves({ foo: "bar" });
@@ -123,7 +123,11 @@ describe("PersistentCache", () => {
       );
     });
     it("throws when failing to get file path", async () => {
-      fakePathUtils.getLocalProfileDir.rejects(new Error());
+      Object.defineProperty(fakePathUtils, "localProfileDir", {
+        get() {
+          throw new Error();
+        },
+      });
 
       let rejected = false;
       try {

@@ -3,7 +3,10 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Test checking inline preview feature
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   await pushPref("devtools.debugger.features.inline-preview", true);
 
   const dbg = await initDebugger(
@@ -19,6 +22,7 @@ add_task(async function() {
     { identifier: "d:", value: "null" },
     { identifier: "e:", value: "Array []" },
     { identifier: "f:", value: "Object { }" },
+    { identifier: "reg:", value: "/^\\p{RGI_Emoji}$/v" },
     { identifier: "obj:", value: "Object { foo: 1 }" },
     {
       identifier: "bs:",
@@ -45,6 +49,11 @@ add_task(async function() {
     { identifier: "self:", value: `Object { x: 1, #privateVar: 2 }` },
   ]);
 
+  // Check inline previews for values within a module script
+  await checkInlinePreview(dbg, "runInModule", [
+    { identifier: "val:", value: "4" },
+  ]);
+
   // Checks that open in inspector button works in inline preview
   invokeInTab("btnClick");
   await checkInspectorIcon(dbg);
@@ -52,11 +61,42 @@ add_task(async function() {
   const { toolbox } = dbg;
   await toolbox.selectTool("jsdebugger");
 
-  await waitForPaused(dbg);
+  await waitForSelectedSource(dbg);
 
   // Check preview of event ( event.target should be clickable )
   // onBtnClick function in inline-preview.js
   await checkInspectorIcon(dbg);
+});
+
+// Test that the preview tooltip does not show when hovering over
+// inline-preview.
+add_task(async function () {
+  await pushPref("devtools.debugger.features.inline-preview", true);
+
+  const dbg = await initDebugger(
+    "doc-inline-preview.html",
+    "inline-preview.js"
+  );
+  await selectSource(dbg, "inline-preview.js");
+
+  invokeInTab("classProperties");
+  await waitForPaused(dbg);
+
+  await waitForInlinePreviews(dbg);
+
+  const elPromise = Promise.any([
+    waitForElement(dbg, "previewPopup"),
+    wait(2000),
+  ]);
+  // Hover over the inline preview element on line 44
+  hoverToken(
+    findElementWithSelector(
+      dbg,
+      ".CodeMirror-code div:nth-child(18) .CodeMirror-line .CodeMirror-widget"
+    )
+  );
+  const element = await elPromise;
+  ok(!element, "No popup was displayed over the inline preview");
 });
 
 async function checkInlinePreview(dbg, fnName, inlinePreviews) {
@@ -68,7 +108,7 @@ async function checkInlinePreview(dbg, fnName, inlinePreviews) {
   const values = findAllElements(dbg, "inlinePreviewValues");
 
   inlinePreviews.forEach((inlinePreview, index) => {
-    const { identifier, value, expandedValue } = inlinePreview;
+    const { identifier, value } = inlinePreview;
     is(
       labels[index].innerText,
       identifier,

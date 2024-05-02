@@ -40,9 +40,6 @@ void VsyncBridgeChild::Open(Endpoint<PVsyncBridgeChild>&& aEndpoint) {
       gpm->NotifyRemoteActorDestroyed(mProcessToken);
     return;
   }
-
-  // Last reference is freed in DeallocPVsyncBridgeChild.
-  AddRef();
 }
 
 class NotifyVsyncTask : public Runnable {
@@ -117,14 +114,12 @@ void VsyncBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
   }
 }
 
-void VsyncBridgeChild::ActorDealloc() { Release(); }
-
 void VsyncBridgeChild::ProcessingError(Result aCode, const char* aReason) {
   MOZ_RELEASE_ASSERT(aCode == MsgDropped,
                      "Processing error in VsyncBridgeChild");
 }
 
-void VsyncBridgeChild::HandleFatalError(const char* aMsg) const {
+void VsyncBridgeChild::HandleFatalError(const char* aMsg) {
   dom::ContentChild::FatalErrorIfNotUsingGPUProcess(aMsg, OtherPid());
 }
 

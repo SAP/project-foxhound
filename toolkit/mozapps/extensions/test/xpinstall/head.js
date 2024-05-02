@@ -1,10 +1,10 @@
 /* eslint no-unused-vars: ["error", {vars: "local", args: "none"}] */
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
-const { PromptTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromptTestUtils.jsm"
+const { PromptTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromptTestUtils.sys.mjs"
 );
 
 const RELATIVE_DIR = "toolkit/mozapps/extensions/test/xpinstall/";
@@ -35,6 +35,20 @@ function extractChromeRoot(path) {
     return "file://" + tmpdir.path + "/";
   }
   return chromeRootPath;
+}
+
+function setInstallTriggerPrefs() {
+  Services.prefs.setBoolPref("extensions.InstallTrigger.enabled", true);
+  Services.prefs.setBoolPref("extensions.InstallTriggerImpl.enabled", true);
+  // Relax the user input requirements while running tests that call this test helper.
+  Services.prefs.setBoolPref("xpinstall.userActivation.required", false);
+  registerCleanupFunction(clearInstallTriggerPrefs);
+}
+
+function clearInstallTriggerPrefs() {
+  Services.prefs.clearUserPref("extensions.InstallTrigger.enabled");
+  Services.prefs.clearUserPref("extensions.InstallTriggerImpl.enabled");
+  Services.prefs.clearUserPref("xpinstall.userActivation.required");
 }
 
 /**
@@ -117,7 +131,6 @@ var Harness = {
       Services.obs.addObserver(this, "addon-install-origin-blocked");
       Services.obs.addObserver(this, "addon-install-blocked");
       Services.obs.addObserver(this, "addon-install-failed");
-      Services.obs.addObserver(this, "addon-install-complete");
 
       // For browser_auth tests which trigger auth dialogs.
       Services.obs.addObserver(this, "tabmodal-dialog-loaded");
@@ -131,7 +144,7 @@ var Harness = {
       win.PanelUI.notificationPanel.addEventListener("popupshown", this);
 
       var self = this;
-      registerCleanupFunction(async function() {
+      registerCleanupFunction(async function () {
         Services.prefs.clearUserPref(PREF_LOGGING_ENABLED);
         Services.prefs.clearUserPref(PREF_INSTALL_REQUIRESECUREORIGIN);
         Services.prefs.clearUserPref(
@@ -143,7 +156,6 @@ var Harness = {
         Services.obs.removeObserver(self, "addon-install-origin-blocked");
         Services.obs.removeObserver(self, "addon-install-blocked");
         Services.obs.removeObserver(self, "addon-install-failed");
-        Services.obs.removeObserver(self, "addon-install-complete");
 
         Services.obs.removeObserver(self, "tabmodal-dialog-loaded");
         Services.obs.removeObserver(self, "common-dialog-loaded");
@@ -162,7 +174,7 @@ var Harness = {
           "Should be no active installs at the end of the test"
         );
         await Promise.all(
-          aInstalls.map(async function(aInstall) {
+          aInstalls.map(async function (aInstall) {
             info(
               "Install for " +
                 aInstall.sourceURI +
@@ -200,7 +212,7 @@ var Harness = {
     let count = this.installCount;
 
     is(this.runningInstalls.length, 0, "Should be no running installs left");
-    this.runningInstalls.forEach(function(aInstall) {
+    this.runningInstalls.forEach(function (aInstall) {
       info(
         "Install for " + aInstall.sourceURI + " is in state " + aInstall.state
       );
@@ -277,10 +289,33 @@ var Harness = {
       }
     }
 
-    if (!result) {
-      panel.secondaryButton.click();
+    const panelEl = panel.closest("panel");
+    const panelState = panelEl.state;
+
+    const clickButton = () => {
+      info(`Clicking ${result ? "primary" : "secondary"} panel button`);
+      Assert.equal(
+        panelEl.state,
+        "open",
+        "Expect panel state to be open when clicking panel buttons"
+      );
+      if (!result) {
+        panel.secondaryButton.click();
+      } else {
+        panel.button.click();
+      }
+    };
+
+    if (panelState === "showing") {
+      info(
+        "panel is still showing, wait for 'popup-shown' topic to be notified"
+      );
+      BrowserUtils.promiseObserved(
+        "popup-shown",
+        shownPanel => shownPanel === panelEl
+      ).then(clickButton);
     } else {
-      panel.button.click();
+      clickButton();
     }
   },
 
@@ -350,7 +385,7 @@ var Harness = {
       installInfo.install();
     } else {
       this.expectingCancelled = true;
-      installInfo.installs.forEach(function(install) {
+      installInfo.installs.forEach(function (install) {
         install.cancel();
       });
       this.expectingCancelled = false;
@@ -500,7 +535,7 @@ var Harness = {
         this.installBlocked(installInfo);
         break;
       case "addon-install-failed":
-        installInfo.installs.forEach(function(aInstall) {
+        installInfo.installs.forEach(function (aInstall) {
           isnot(
             this.runningInstalls.indexOf(aInstall),
             -1,
@@ -510,34 +545,6 @@ var Harness = {
           ok(
             aInstall.error != 0 || aInstall.addon.appDisabled,
             "Failed installs should have an error or be appDisabled"
-          );
-
-          this.runningInstalls.splice(
-            this.runningInstalls.indexOf(aInstall),
-            1
-          );
-        }, this);
-        break;
-      case "addon-install-complete":
-        installInfo.installs.forEach(function(aInstall) {
-          isnot(
-            this.runningInstalls.indexOf(aInstall),
-            -1,
-            "Should only see completed events for started installs"
-          );
-
-          is(aInstall.error, 0, "Completed installs should have no error");
-          ok(
-            !aInstall.appDisabled,
-            "Completed installs should not be appDisabled"
-          );
-
-          // Complete installs are either in the INSTALLED or CANCELLED state
-          // since the test may cancel installs the moment they complete.
-          ok(
-            aInstall.state == AddonManager.STATE_INSTALLED ||
-              aInstall.state == AddonManager.STATE_CANCELLED,
-            "Completed installs should be in the right state"
           );
 
           this.runningInstalls.splice(

@@ -8,18 +8,22 @@ Services.prefs.setBoolPref("webextensions.storage.sync.kinto", true);
 
 const {
   KintoStorageTestUtils: { EncryptionRemoteTransformer },
-} = ChromeUtils.import("resource://gre/modules/ExtensionStorageSyncKinto.jsm");
-const { CryptoUtils } = ChromeUtils.import(
-  "resource://services-crypto/utils.js"
+} = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionStorageSyncKinto.sys.mjs"
 );
-const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
+const { CryptoUtils } = ChromeUtils.importESModule(
+  "resource://services-crypto/utils.sys.mjs"
+);
+const { Utils } = ChromeUtils.importESModule(
+  "resource://services-sync/util.sys.mjs"
+);
 
 /**
  * Like Assert.throws, but for generators.
  *
- * @param {string | Object | function} constraint
+ * @param {string | object | Function} constraint
  *        What to use to check the exception.
- * @param {function} f
+ * @param {Function} f
  *        The function to call.
  */
 async function throwsGen(constraint, f) {
@@ -72,10 +76,7 @@ add_task(async function setup() {
     2 * 32
   );
   const KEY_BUNDLE = {
-    sha256HMACHasher: Utils.makeHMACHasher(
-      Ci.nsICryptoHMAC.SHA256,
-      Utils.makeHMACKey(STRETCHED_KEY.slice(0, 32))
-    ),
+    hmacKey: STRETCHED_KEY.slice(0, 32),
     encryptionKeyB64: btoa(STRETCHED_KEY.slice(32, 64)),
   };
   transformer = new StaticKeyEncryptionRemoteTransformer(KEY_BUNDLE);
@@ -108,14 +109,14 @@ add_task(async function test_refuses_to_decrypt_tampered() {
   const tamperedHMAC = Object.assign({}, encryptedRecord, {
     hmac: "0000000000000000000000000000000000000000000000000000000000000001",
   });
-  await throwsGen(Utils.isHMACMismatch, async function() {
+  await throwsGen(Utils.isHMACMismatch, async function () {
     await transformer.decode(tamperedHMAC);
   });
 
   const tamperedIV = Object.assign({}, encryptedRecord, {
     IV: "aaaaaaaaaaaaaaaaaaaaaa==",
   });
-  await throwsGen(Utils.isHMACMismatch, async function() {
+  await throwsGen(Utils.isHMACMismatch, async function () {
     await transformer.decode(tamperedIV);
   });
 });

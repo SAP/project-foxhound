@@ -14,6 +14,10 @@
 namespace mozilla {
 namespace gfx {
 
+already_AddRefed<PathBuilder> PathBuilderCairo::Create(FillRule aFillRule) {
+  return MakeAndAddRef<PathBuilderCairo>(aFillRule);
+}
+
 PathBuilderCairo::PathBuilderCairo(FillRule aFillRule) : mFillRule(aFillRule) {}
 
 void PathBuilderCairo::MoveTo(const Point& aPoint) {
@@ -233,6 +237,20 @@ void PathCairo::StreamToSink(PathSink* aSink) const {
         MOZ_ASSERT(false);
     }
   }
+}
+
+bool PathCairo::IsEmpty() const {
+  for (size_t i = 0; i < mPathData.size(); i++) {
+    switch (mPathData[i].header.type) {
+      case CAIRO_PATH_MOVE_TO:
+        break;
+      case CAIRO_PATH_CLOSE_PATH:
+        break;
+      default:
+        return false;
+    }
+  }
+  return true;
 }
 
 void PathCairo::EnsureContainingContext(const Matrix& aTransform) const {

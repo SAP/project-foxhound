@@ -5,21 +5,20 @@
 Transform the {partials,mar}-signing task into an actual task description.
 """
 
+import logging
 import os
 
-from gecko_taskgraph.transforms.base import TransformSequence
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_primary_dependency
+from taskgraph.util.taskcluster import get_artifact_prefix
+from taskgraph.util.treeherder import inherit_treeherder_from_dep, join_symbol
+
 from gecko_taskgraph.util.attributes import (
     copy_attributes_from_dependent_job,
     sorted_unique_list,
 )
-from gecko_taskgraph.util.scriptworker import (
-    get_signing_cert_scope_per_platform,
-)
 from gecko_taskgraph.util.partials import get_partials_artifacts_from_params
-from gecko_taskgraph.util.taskcluster import get_artifact_prefix
-from gecko_taskgraph.util.treeherder import join_symbol, inherit_treeherder_from_dep
-
-import logging
+from gecko_taskgraph.util.scriptworker import get_signing_cert_scope_per_platform
 
 logger = logging.getLogger(__name__)
 
@@ -48,32 +47,10 @@ def generate_partials_artifacts(job, release_history, platform, locale=None):
         {
             "taskId": {"task-reference": "<partials>"},
             "taskType": "partials",
-            "paths": [
-                f"{artifact_prefix}/{path}"
-                for path, version in artifacts
-                # TODO Use mozilla-version to avoid comparing strings. Otherwise Firefox 100 will
-                # be considered smaller than Firefox 56
-                if version is None or version >= "56"
-            ],
+            "paths": [f"{artifact_prefix}/{path}" for path, version in artifacts],
             "formats": ["autograph_hash_only_mar384"],
         }
     ]
-
-    old_mar_upstream_artifacts = {
-        "taskId": {"task-reference": "<partials>"},
-        "taskType": "partials",
-        "paths": [
-            f"{artifact_prefix}/{path}"
-            for path, version in artifacts
-            # TODO Use mozilla-version to avoid comparing strings. Otherwise Firefox 100 will be
-            # considered smaller than Firefox 56
-            if version is not None and version < "56"
-        ],
-        "formats": ["mar"],
-    }
-
-    if old_mar_upstream_artifacts["paths"]:
-        upstream_artifacts.append(old_mar_upstream_artifacts)
 
     return upstream_artifacts
 
@@ -82,7 +59,7 @@ def generate_complete_artifacts(job, kind):
     upstream_artifacts = []
     if kind not in SIGNING_FORMATS:
         kind = "default"
-    for artifact in job.release_artifacts:
+    for artifact in job.attributes["release_artifacts"]:
         basename = os.path.basename(artifact)
         if basename in SIGNING_FORMATS[kind]:
             upstream_artifacts.append(
@@ -100,7 +77,9 @@ def generate_complete_artifacts(job, kind):
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job["primary-dependency"]
+        dep_job = get_primary_dependency(config, job)
+        assert dep_job
+
         locale = dep_job.attributes.get("locale")
 
         treeherder = inherit_treeherder_from_dep(job, dep_job)

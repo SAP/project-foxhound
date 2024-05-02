@@ -13,7 +13,6 @@
 // http://msdn.microsoft.com/library/default.asp?url=/library/en-us/dnsecure/html/http-sso-1.asp
 //
 
-#include <string.h>
 #include <stdlib.h>
 
 #include "nsAuth.h"
@@ -30,26 +29,19 @@
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
 #include "plbase64.h"
-#include "plstr.h"
 #include "mozilla/Base64.h"
-#include "mozilla/Logging.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
-#include "prmem.h"
-#include "prnetdb.h"
-#include "mozilla/Likely.h"
 #include "mozilla/Sprintf.h"
 #include "nsIChannel.h"
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
 #include "nsIHttpAuthenticatorCallback.h"
-#include "mozilla/Mutex.h"
 #include "nsICancelable.h"
-#include "nsUnicharUtils.h"
 #include "mozilla/net/HttpAuthUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/StaticPrefs_browser.h"
 
 using mozilla::Base64Decode;
 
@@ -100,10 +92,7 @@ static bool TestNotInPBMode(nsIHttpAuthenticableChannel* authChannel,
     // When the "Never remember history" option is set, all channels are
     // set PB mode flag, but here we want to make an exception, users
     // want their credentials go out.
-    bool dontRememberHistory;
-    if (NS_SUCCEEDED(prefs->GetBoolPref("browser.privatebrowsing.autostart",
-                                        &dontRememberHistory)) &&
-        dontRememberHistory) {
+    if (mozilla::StaticPrefs::browser_privatebrowsing_autostart()) {
       return true;
     }
   }

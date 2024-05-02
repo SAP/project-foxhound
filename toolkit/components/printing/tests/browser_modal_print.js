@@ -40,12 +40,15 @@ add_task(async function testPrintMultiple() {
     assertExpectedPrintPage(helper);
 
     // Trigger the command a few more times, verify the overlay still exists.
-    await helper.startPrint();
-    helper.assertDialogOpen();
-    await helper.startPrint();
-    helper.assertDialogOpen();
-    await helper.startPrint();
-    helper.assertDialogOpen();
+    ignoreAllUncaughtExceptions(true);
+    for (let i = 0; i < 3; ++i) {
+      try {
+        await helper.startPrint();
+      } finally {
+        helper.assertDialogOpen();
+      }
+    }
+    ignoreAllUncaughtExceptions(false);
 
     // Verify it's still the correct page.
     assertExpectedPrintPage(helper);
@@ -89,8 +92,9 @@ add_task(async function testTabOrder() {
     ok(previewBrowser, "Got the print preview browser");
 
     let focused;
-    let navigationShadowRoot = document.querySelector(".printPreviewNavigation")
-      .shadowRoot;
+    let navigationShadowRoot = document.querySelector(
+      ".printPreviewNavigation"
+    ).shadowRoot;
     for (let buttonId of [
       "navigateEnd",
       "navigateNext",
@@ -134,10 +138,10 @@ add_task(async function testTabOrder() {
     await focused;
     ok(true, "Printer picker focused after tab");
 
-    const lastButtonName = AppConstants.platform == "win" ? "cancel" : "print";
-    const lastButton = helper.doc.querySelector(
-      `button[name=${lastButtonName}]`
-    );
+    const lastButtonId =
+      AppConstants.platform == "win" ? "cancel-button" : "print-button";
+    const lastButton = helper.doc.getElementById(lastButtonId);
+
     focused = BrowserTestUtils.waitForEvent(lastButton, "focus");
     lastButton.focus();
     await focused;
@@ -151,7 +155,7 @@ add_task(async function testTabOrder() {
     focused = BrowserTestUtils.waitForEvent(lastButton, "focus");
     EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
     await focused;
-    ok(true, "Cancel button focused after shift+tab");
+    ok(true, "Last button focused after shift+tab");
 
     await helper.withClosingFn(() => {
       EventUtils.synthesizeKey("VK_ESCAPE", {});
@@ -245,9 +249,6 @@ add_task(async function testPrintProgressIndicator() {
 });
 
 add_task(async function testPageSizePortrait() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["layout.css.page-size.enabled", true]],
-  });
   await PrintHelper.withTestPageHTTPS(async helper => {
     await helper.startPrint();
 
@@ -263,9 +264,6 @@ add_task(async function testPageSizePortrait() {
 });
 
 add_task(async function testPageSizeLandscape() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["layout.css.page-size.enabled", true]],
-  });
   await PrintHelper.withTestPageHTTPS(async helper => {
     await helper.startPrint();
 
@@ -278,4 +276,34 @@ add_task(async function testPageSizeLandscape() {
       "Orientation set to landscape"
     );
   }, "file_landscape.html");
+});
+
+add_task(async function testFirstPageSizePortrait() {
+  await PrintHelper.withTestPageHTTPS(async helper => {
+    await helper.startPrint();
+
+    let orientation = helper.get("orientation");
+    ok(orientation.hidden, "Orientation selector is hidden");
+
+    is(
+      helper.settings.orientation,
+      Ci.nsIPrintSettings.kPortraitOrientation,
+      "Orientation set to portrait"
+    );
+  }, "file_first_portrait.html");
+});
+
+add_task(async function testFirstPageSizeLandscape() {
+  await PrintHelper.withTestPageHTTPS(async helper => {
+    await helper.startPrint();
+
+    let orientation = helper.get("orientation");
+    ok(orientation.hidden, "Orientation selector is hidden");
+
+    is(
+      helper.settings.orientation,
+      Ci.nsIPrintSettings.kLandscapeOrientation,
+      "Orientation set to landscape"
+    );
+  }, "file_first_landscape.html");
 });

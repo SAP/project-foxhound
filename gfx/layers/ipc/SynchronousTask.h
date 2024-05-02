@@ -17,36 +17,53 @@ class MOZ_STACK_CLASS SynchronousTask {
   friend class AutoCompleteTask;
 
  public:
-  explicit SynchronousTask(const char* name)
-      : mMonitor(name), mAutoEnter(mMonitor), mDone(false) {}
+  explicit SynchronousTask(const char* name) : mMonitor(name), mDone(false) {}
 
-  void Wait() {
-    while (!mDone) {
+  nsresult Wait(PRIntervalTime aInterval = PR_INTERVAL_NO_TIMEOUT) {
+    ReentrantMonitorAutoEnter lock(mMonitor);
+
+    // For indefinite timeouts, wait in a while loop to handle spurious
+    // wakeups.
+    while (aInterval == PR_INTERVAL_NO_TIMEOUT && !mDone) {
       mMonitor.Wait();
     }
+
+    // For finite timeouts, we only check once for completion, and otherwise
+    // rely on the ReentrantMonitor to manage the interval. If the monitor
+    // returns too early, we'll never know, but we can check if the mDone
+    // flag was set to true, indicating that the task finished successfully.
+    if (!mDone) {
+      // We ignore the return value from ReentrantMonitor::Wait, because it's
+      // always NS_OK, even in the case of timeout.
+      mMonitor.Wait(aInterval);
+
+      if (!mDone) {
+        return NS_ERROR_ABORT;
+      }
+    }
+
+    return NS_OK;
   }
 
  private:
   void Complete() {
+    ReentrantMonitorAutoEnter lock(mMonitor);
     mDone = true;
     mMonitor.NotifyAll();
   }
 
  private:
-  ReentrantMonitor mMonitor;
-  ReentrantMonitorAutoEnter mAutoEnter;
+  ReentrantMonitor mMonitor MOZ_UNANNOTATED;
   bool mDone;
 };
 
 class MOZ_STACK_CLASS AutoCompleteTask final {
  public:
-  explicit AutoCompleteTask(SynchronousTask* aTask)
-      : mTask(aTask), mAutoEnter(aTask->mMonitor) {}
+  explicit AutoCompleteTask(SynchronousTask* aTask) : mTask(aTask) {}
   ~AutoCompleteTask() { mTask->Complete(); }
 
  private:
   SynchronousTask* mTask;
-  ReentrantMonitorAutoEnter mAutoEnter;
 };
 
 }  // namespace layers

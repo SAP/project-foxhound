@@ -103,17 +103,15 @@ class SPSCRingBufferBase {
    */
   explicit SPSCRingBufferBase(int aCapacity)
       : mReadIndex(0),
-        mWriteIndex(0)
+        mWriteIndex(0),
         /* One more element to distinguish from empty and full buffer. */
-        ,
         mCapacity(aCapacity + 1) {
-    MOZ_ASSERT(StorageCapacity() < std::numeric_limits<int>::max() / 2,
-               "buffer too large for the type of index used.");
-    MOZ_ASSERT(mCapacity > 0 && aCapacity != std::numeric_limits<int>::max());
+    MOZ_RELEASE_ASSERT(aCapacity != std::numeric_limits<int>::max());
+    MOZ_RELEASE_ASSERT(mCapacity > 0);
 
     mData = std::make_unique<T[]>(StorageCapacity());
 
-    std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);
+    std::atomic_thread_fence(std::memory_order_seq_cst);
   }
   /**
    * Push `aCount` zero or default constructed elements in the array.
@@ -152,8 +150,8 @@ class SPSCRingBufferBase {
     AssertCorrectThread(mProducerId);
 #endif
 
-    int rdIdx = mReadIndex.load(std::memory_order::memory_order_acquire);
-    int wrIdx = mWriteIndex.load(std::memory_order::memory_order_relaxed);
+    int rdIdx = mReadIndex.load(std::memory_order_acquire);
+    int wrIdx = mWriteIndex.load(std::memory_order_relaxed);
 
     if (IsFull(rdIdx, wrIdx)) {
       return 0;
@@ -178,7 +176,7 @@ class SPSCRingBufferBase {
     }
 
     mWriteIndex.store(IncrementIndex(wrIdx, toWrite),
-                      std::memory_order::memory_order_release);
+                      std::memory_order_release);
 
     return toWrite;
   }
@@ -198,8 +196,8 @@ class SPSCRingBufferBase {
     AssertCorrectThread(mConsumerId);
 #endif
 
-    int wrIdx = mWriteIndex.load(std::memory_order::memory_order_acquire);
-    int rdIdx = mReadIndex.load(std::memory_order::memory_order_relaxed);
+    int wrIdx = mWriteIndex.load(std::memory_order_acquire);
+    int rdIdx = mReadIndex.load(std::memory_order_relaxed);
 
     if (IsEmpty(rdIdx, wrIdx)) {
       return 0;
@@ -217,8 +215,7 @@ class SPSCRingBufferBase {
                                               secondPart);
     }
 
-    mReadIndex.store(IncrementIndex(rdIdx, toRead),
-                     std::memory_order::memory_order_release);
+    mReadIndex.store(IncrementIndex(rdIdx, toRead), std::memory_order_release);
 
     return toRead;
   }
@@ -233,9 +230,8 @@ class SPSCRingBufferBase {
    * @return The number of available elements for reading.
    */
   int AvailableRead() const {
-    return AvailableReadInternal(
-        mReadIndex.load(std::memory_order::memory_order_relaxed),
-        mWriteIndex.load(std::memory_order::memory_order_relaxed));
+    return AvailableReadInternal(mReadIndex.load(std::memory_order_relaxed),
+                                 mWriteIndex.load(std::memory_order_relaxed));
   }
   /**
    * Get the number of available elements for writing.
@@ -248,9 +244,8 @@ class SPSCRingBufferBase {
    * @return The number of empty slots in the buffer, available for writing.
    */
   int AvailableWrite() const {
-    return AvailableWriteInternal(
-        mReadIndex.load(std::memory_order::memory_order_relaxed),
-        mWriteIndex.load(std::memory_order::memory_order_relaxed));
+    return AvailableWriteInternal(mReadIndex.load(std::memory_order_relaxed),
+                                  mWriteIndex.load(std::memory_order_relaxed));
   }
   /**
    * Get the total Capacity, for this ring buffer.
@@ -260,15 +255,39 @@ class SPSCRingBufferBase {
    * @return The maximum Capacity of this ring buffer.
    */
   int Capacity() const { return StorageCapacity() - 1; }
+
   /**
-   * Reset the consumer and producer thread identifier, in case the threads are
-   * being changed. This has to be externally synchronized. This is no-op when
-   * asserts are disabled.
+   * Reset the consumer thread id to the current thread. The caller must
+   * guarantee that the last call to Dequeue() on the previous consumer thread
+   * has completed, and subsequent calls to Dequeue() will only happen on the
+   * current thread.
    */
-  void ResetThreadIds() {
+  void ResetConsumerThreadId() {
 #ifdef DEBUG
-    mConsumerId = mProducerId = std::thread::id();
+    mConsumerId = std::this_thread::get_id();
 #endif
+
+    // When changing consumer from thread A to B, the last Dequeue on A (synced
+    // by mReadIndex.store with memory_order_release) must be picked up by B
+    // through an acquire operation.
+    std::ignore = mReadIndex.load(std::memory_order_acquire);
+  }
+
+  /**
+   * Reset the producer thread id to the current thread. The caller must
+   * guarantee that the last call to Enqueue() on the previous consumer thread
+   * has completed, and subsequent calls to Dequeue() will only happen on the
+   * current thread.
+   */
+  void ResetProducerThreadId() {
+#ifdef DEBUG
+    mProducerId = std::this_thread::get_id();
+#endif
+
+    // When changing producer from thread A to B, the last Enqueue on A (synced
+    // by mWriteIndex.store with memory_order_release) must be picked up by B
+    // through an acquire operation.
+    std::ignore = mWriteIndex.load(std::memory_order_acquire);
   }
 
  private:
@@ -358,7 +377,7 @@ class SPSCRingBufferBase {
    * called by the right thread.
    *
    * The role of the thread are assigned the first time they call Enqueue or
-   * Dequeue, and cannot change, except when ResetThreadIds is called..
+   * Dequeue, and cannot change, except by a ResetThreadId method.
    *
    * @param id the id of the thread that has called the calling method first.
    */

@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import os
 
 config = {
@@ -15,5 +14,4 @@ config = {
         "TOOLTOOL_CACHE": os.environ.get("TOOLTOOL_CACHE"),
         "EN_US_PACKAGE_NAME": "target.zip",
     },
-    "tooltool_manifest_src": "browser/config/tooltool-manifests/vs2017-15.9.manifest",
 }

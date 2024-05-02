@@ -8,8 +8,10 @@
 #define jit_shared_Assembler_shared_h
 
 #include "mozilla/CheckedInt.h"
+#include "mozilla/DebugOnly.h"
 
 #include <limits.h>
+#include <utility>  // std::pair
 
 #include "gc/Barrier.h"
 #include "jit/AtomicOp.h"
@@ -24,23 +26,29 @@
 #include "wasm/WasmCodegenTypes.h"
 #include "wasm/WasmConstants.h"
 
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||      \
+    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) ||  \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_WASM32) || \
+    defined(JS_CODEGEN_RISCV64)
 // Push return addresses callee-side.
 #  define JS_USE_LINK_REGISTER
 #endif
 
 #if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
-    defined(JS_CODEGEN_ARM64)
+    defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_LOONG64) || \
+    defined(JS_CODEGEN_RISCV64)
 // JS_CODELABEL_LINKMODE gives labels additional metadata
 // describing how Bind() should patch them.
 #  define JS_CODELABEL_LINKMODE
 #endif
 
+using js::wasm::FaultingCodeOffset;
+
 namespace js {
 namespace jit {
 
 enum class FrameType;
+enum class ExceptionResumeKind : int32_t;
 
 namespace Disassembler {
 class HeapAccess;
@@ -97,6 +105,7 @@ struct Imm32 {
 
   explicit Imm32(int32_t value) : value(value) {}
   explicit Imm32(FrameType type) : Imm32(int32_t(type)) {}
+  explicit Imm32(ExceptionResumeKind kind) : Imm32(int32_t(kind)) {}
 
   static inline Imm32 ShiftOf(enum Scale s) {
     switch (s) {
@@ -149,6 +158,11 @@ struct ImmPtr {
   void* value;
 
   struct NoCheckToken {};
+
+  explicit constexpr ImmPtr(std::nullptr_t) : value(nullptr) {
+    // Explicit constructor for nullptr. This ensures ImmPtr(0) can't be called.
+    // Either use ImmPtr(nullptr) or ImmWord(0).
+  }
 
   explicit ImmPtr(void* value, NoCheckToken) : value(value) {
     // A special unchecked variant for contexts where we know it is safe to
@@ -469,7 +483,7 @@ class CodeLocationLabel {
     raw_ = raw;
   }
 
-  ptrdiff_t operator-(const CodeLocationLabel& other) {
+  ptrdiff_t operator-(const CodeLocationLabel& other) const {
     return raw_ - other.raw_;
   }
 
@@ -498,6 +512,7 @@ typedef Vector<SymbolicAccess, 0, SystemAllocPolicy> SymbolicAccessVector;
 // code and metadata.
 
 class MemoryAccessDesc {
+  uint32_t memoryIndex_;
   uint64_t offset64_;
   uint32_t align_;
   Scalar::Type type_;
@@ -505,20 +520,29 @@ class MemoryAccessDesc {
   wasm::BytecodeOffset trapOffset_;
   wasm::SimdOp widenOp_;
   enum { Plain, ZeroExtend, Splat, Widen } loadOp_;
+  // Used for an assertion in MacroAssembler about offset length
+  mozilla::DebugOnly<bool> hugeMemory_;
 
  public:
   explicit MemoryAccessDesc(
-      Scalar::Type type, uint32_t align, uint64_t offset,
-      BytecodeOffset trapOffset,
+      uint32_t memoryIndex, Scalar::Type type, uint32_t align, uint64_t offset,
+      BytecodeOffset trapOffset, mozilla::DebugOnly<bool> hugeMemory,
       const jit::Synchronization& sync = jit::Synchronization::None())
-      : offset64_(offset),
+      : memoryIndex_(memoryIndex),
+        offset64_(offset),
         align_(align),
         type_(type),
         sync_(sync),
         trapOffset_(trapOffset),
         widenOp_(wasm::SimdOp::Limit),
-        loadOp_(Plain) {
+        loadOp_(Plain),
+        hugeMemory_(hugeMemory) {
     MOZ_ASSERT(mozilla::IsPowerOfTwo(align));
+  }
+
+  uint32_t memoryIndex() const {
+    MOZ_ASSERT(memoryIndex_ != UINT32_MAX);
+    return memoryIndex_;
   }
 
   // The offset is a 64-bit value because of memory64.  Almost always, it will
@@ -554,6 +578,13 @@ class MemoryAccessDesc {
   bool isSplatSimd128Load() const { return loadOp_ == Splat; }
   bool isWidenSimd128Load() const { return loadOp_ == Widen; }
 
+  mozilla::DebugOnly<bool> isHugeMemory() const { return hugeMemory_; }
+#ifdef DEBUG
+  void assertOffsetInGuardPages() const;
+#else
+  void assertOffsetInGuardPages() const {}
+#endif
+
   void setZeroExtendSimd128Load() {
     MOZ_ASSERT(type() == Scalar::Float32 || type() == Scalar::Float64);
     MOZ_ASSERT(!isAtomic());
@@ -588,9 +619,9 @@ class AssemblerShared {
   wasm::CallSiteTargetVector callSiteTargets_;
   wasm::TrapSiteVectorArray trapSites_;
   wasm::SymbolicAccessVector symbolicAccesses_;
-#ifdef ENABLE_WASM_EXCEPTIONS
-  wasm::WasmTryNoteVector tryNotes_;
-#endif
+  wasm::TryNoteVector tryNotes_;
+  wasm::CodeRangeUnwindInfoVector codeRangesUnwind_;
+
 #ifdef DEBUG
   // To facilitate figuring out which part of SM created each instruction as
   // shown by IONFLAGS=codegen, this maintains a stack of (notionally)
@@ -647,20 +678,18 @@ class AssemblerShared {
   void append(wasm::Trap trap, wasm::TrapSite site) {
     enoughMemory_ &= trapSites_[trap].append(site);
   }
-  void append(const wasm::MemoryAccessDesc& access, uint32_t pcOffset) {
-    appendOutOfBoundsTrap(access.trapOffset(), pcOffset);
-  }
-  void appendOutOfBoundsTrap(wasm::BytecodeOffset trapOffset,
-                             uint32_t pcOffset) {
-    append(wasm::Trap::OutOfBounds, wasm::TrapSite(pcOffset, trapOffset));
+  void append(const wasm::MemoryAccessDesc& access, wasm::TrapMachineInsn insn,
+              FaultingCodeOffset assemblerOffsetOfFaultingMachineInsn) {
+    append(wasm::Trap::OutOfBounds,
+           wasm::TrapSite(insn, assemblerOffsetOfFaultingMachineInsn,
+                          access.trapOffset()));
   }
   void append(wasm::SymbolicAccess access) {
     enoughMemory_ &= symbolicAccesses_.append(access);
   }
   // This one returns an index as the try note so that it can be looked up
   // later to add the end point and stack position of the try block.
-#ifdef ENABLE_WASM_EXCEPTIONS
-  [[nodiscard]] bool append(wasm::WasmTryNote tryNote, size_t* tryNoteIndex) {
+  [[nodiscard]] bool append(wasm::TryNote tryNote, size_t* tryNoteIndex) {
     if (!tryNotes_.append(tryNote)) {
       enoughMemory_ = false;
       return false;
@@ -668,15 +697,20 @@ class AssemblerShared {
     *tryNoteIndex = tryNotes_.length() - 1;
     return true;
   }
-#endif
+
+  void append(wasm::CodeRangeUnwindInfo::UnwindHow unwindHow,
+              uint32_t pcOffset) {
+    enoughMemory_ &= codeRangesUnwind_.emplaceBack(pcOffset, unwindHow);
+  }
 
   wasm::CallSiteVector& callSites() { return callSites_; }
   wasm::CallSiteTargetVector& callSiteTargets() { return callSiteTargets_; }
   wasm::TrapSiteVectorArray& trapSites() { return trapSites_; }
   wasm::SymbolicAccessVector& symbolicAccesses() { return symbolicAccesses_; }
-#ifdef ENABLE_WASM_EXCEPTIONS
-  wasm::WasmTryNoteVector& tryNotes() { return tryNotes_; }
-#endif
+  wasm::TryNoteVector& tryNotes() { return tryNotes_; }
+  wasm::CodeRangeUnwindInfoVector& codeRangeUnwindInfos() {
+    return codeRangesUnwind_;
+  }
 };
 
 // AutoCreatedBy pushes and later pops a who-created-these-insns? tag into the

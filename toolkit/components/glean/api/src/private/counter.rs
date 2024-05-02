@@ -3,13 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use inherent::inherent;
+use std::sync::Arc;
 
 use glean::traits::Counter;
 
-use super::CommonMetricData;
-
+use super::{CommonMetricData, MetricId};
 use crate::ipc::{need_ipc, with_ipc_payload};
-use crate::private::MetricId;
 
 /// A counter metric.
 ///
@@ -22,7 +21,7 @@ pub enum CounterMetric {
         ///
         /// **TEST-ONLY** - Do not use unless gated with `#[cfg(test)]`.
         id: MetricId,
-        inner: glean::private::CounterMetric,
+        inner: Arc<glean::private::CounterMetric>,
     },
     Child(CounterMetricIpc),
 }
@@ -35,8 +34,30 @@ impl CounterMetric {
         if need_ipc() {
             CounterMetric::Child(CounterMetricIpc(id))
         } else {
-            let inner = glean::private::CounterMetric::new(meta);
+            let inner = Arc::new(glean::private::CounterMetric::new(meta));
             CounterMetric::Parent { id, inner }
+        }
+    }
+
+    /// Special-purpose ctor for use by codegen.
+    /// Only useful if the metric is:
+    ///   * not disabled
+    ///   * lifetime: ping
+    ///   * and is sent in precisely one ping.
+    pub fn codegen_new(id: u32, category: &str, name: &str, ping: &str) -> Self {
+        if need_ipc() {
+            CounterMetric::Child(CounterMetricIpc(id.into()))
+        } else {
+            let inner = Arc::new(glean::private::CounterMetric::new(CommonMetricData {
+                category: category.into(),
+                name: name.into(),
+                send_in_pings: vec![ping.into()],
+                ..Default::default()
+            }));
+            CounterMetric::Parent {
+                id: id.into(),
+                inner,
+            }
         }
     }
 
@@ -57,7 +78,7 @@ impl CounterMetric {
     }
 }
 
-#[inherent(pub)]
+#[inherent]
 impl Counter for CounterMetric {
     /// Increase the counter by `amount`.
     ///
@@ -68,10 +89,10 @@ impl Counter for CounterMetric {
     /// ## Notes
     ///
     /// Logs an error if the `amount` is 0 or negative.
-    fn add(&self, amount: i32) {
+    pub fn add(&self, amount: i32) {
         match self {
             CounterMetric::Parent { inner, .. } => {
-                Counter::add(&*inner, amount);
+                inner.add(amount);
             }
             CounterMetric::Child(c) => {
                 with_ipc_payload(move |payload| {
@@ -97,7 +118,8 @@ impl Counter for CounterMetric {
     /// ## Return value
     ///
     /// Returns the stored value or `None` if nothing stored.
-    fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<i32> {
+    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<i32> {
+        let ping_name = ping_name.into().map(|s| s.to_string());
         match self {
             CounterMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
             CounterMetric::Child(c) => {
@@ -119,15 +141,9 @@ impl Counter for CounterMetric {
     /// # Returns
     ///
     /// The number of errors reported.
-    fn test_get_num_recorded_errors<'a, S: Into<Option<&'a str>>>(
-        &self,
-        error: glean::ErrorType,
-        ping_name: S,
-    ) -> i32 {
+    pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
-            CounterMetric::Parent { inner, .. } => {
-                inner.test_get_num_recorded_errors(error, ping_name)
-            }
+            CounterMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
             CounterMetric::Child(c) => panic!(
                 "Cannot get the number of recorded errors for {:?} in non-parent process!",
                 c.0

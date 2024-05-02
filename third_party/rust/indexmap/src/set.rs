@@ -10,7 +10,7 @@ use crate::vec::{self, Vec};
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
-use core::iter::{Chain, FromIterator};
+use core::iter::{Chain, FusedIterator};
 use core::ops::{BitAnd, BitOr, BitXor, Index, RangeBounds, Sub};
 use core::slice;
 
@@ -61,11 +61,11 @@ type Bucket<T> = super::Bucket<T, ()>;
 /// ```
 #[cfg(has_std)]
 pub struct IndexSet<T, S = RandomState> {
-    map: IndexMap<T, (), S>,
+    pub(crate) map: IndexMap<T, (), S>,
 }
 #[cfg(not(has_std))]
 pub struct IndexSet<T, S> {
-    map: IndexMap<T, (), S>,
+    pub(crate) map: IndexMap<T, (), S>,
 }
 
 impl<T, S> Clone for IndexSet<T, S>
@@ -155,8 +155,11 @@ impl<T, S> IndexSet<T, S> {
         }
     }
 
-    /// Create a new set with `hash_builder`
-    pub fn with_hasher(hash_builder: S) -> Self {
+    /// Create a new set with `hash_builder`.
+    ///
+    /// This function is `const`, so it
+    /// can be called in `static` contexts.
+    pub const fn with_hasher(hash_builder: S) -> Self {
         IndexSet {
             map: IndexMap::with_hasher(hash_builder),
         }
@@ -189,7 +192,7 @@ impl<T, S> IndexSet<T, S> {
     /// Return an iterator over the values of the set, in their order
     pub fn iter(&self) -> Iter<'_, T> {
         Iter {
-            iter: self.map.keys().iter,
+            iter: self.map.as_entries().iter(),
         }
     }
 
@@ -263,6 +266,13 @@ where
     /// Computes in **O(n)** time.
     pub fn shrink_to_fit(&mut self) {
         self.map.shrink_to_fit();
+    }
+
+    /// Shrink the capacity of the set with a lower limit.
+    ///
+    /// Computes in **O(n)** time.
+    pub fn shrink_to(&mut self, min_capacity: usize) {
+        self.map.shrink_to(min_capacity);
     }
 
     /// Insert the value into the set.
@@ -393,18 +403,29 @@ where
     }
 
     /// Adds a value to the set, replacing the existing value, if any, that is
-    /// equal to the given one. Returns the replaced value.
+    /// equal to the given one, without altering its insertion order. Returns
+    /// the replaced value.
     ///
     /// Computes in **O(1)** time (average).
     pub fn replace(&mut self, value: T) -> Option<T> {
+        self.replace_full(value).1
+    }
+
+    /// Adds a value to the set, replacing the existing value, if any, that is
+    /// equal to the given one, without altering its insertion order. Returns
+    /// the index of the item and its replaced value.
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn replace_full(&mut self, value: T) -> (usize, Option<T>) {
         use super::map::Entry::*;
 
         match self.map.entry(value) {
             Vacant(e) => {
+                let index = e.index();
                 e.insert(());
-                None
+                (index, None)
             }
-            Occupied(e) => Some(e.replace_key()),
+            Occupied(e) => (e.index(), Some(e.replace_key())),
         }
     }
 
@@ -532,6 +553,8 @@ where
 
     /// Remove the last value
     ///
+    /// This preserves the order of the remaining elements.
+    ///
     /// Computes in **O(1)** time (average).
     pub fn pop(&mut self) -> Option<T> {
         self.map.pop().map(|(x, ())| x)
@@ -553,7 +576,7 @@ where
 
     /// Sort the set’s values by their default ordering.
     ///
-    /// See `sort_by` for details.
+    /// See [`sort_by`](Self::sort_by) for details.
     pub fn sort(&mut self)
     where
         T: Ord,
@@ -561,17 +584,17 @@ where
         self.map.sort_keys()
     }
 
-    /// Sort the set’s values in place using the comparison function `compare`.
+    /// Sort the set’s values in place using the comparison function `cmp`.
     ///
     /// Computes in **O(n log n)** time and **O(n)** space. The sort is stable.
-    pub fn sort_by<F>(&mut self, mut compare: F)
+    pub fn sort_by<F>(&mut self, mut cmp: F)
     where
         F: FnMut(&T, &T) -> Ordering,
     {
-        self.map.sort_by(move |a, _, b, _| compare(a, b));
+        self.map.sort_by(move |a, _, b, _| cmp(a, b));
     }
 
-    /// Sort the values of the set and return a by value iterator of
+    /// Sort the values of the set and return a by-value iterator of
     /// the values with the result.
     ///
     /// The sort is stable.
@@ -579,8 +602,43 @@ where
     where
         F: FnMut(&T, &T) -> Ordering,
     {
+        let mut entries = self.into_entries();
+        entries.sort_by(move |a, b| cmp(&a.key, &b.key));
         IntoIter {
-            iter: self.map.sorted_by(move |a, &(), b, &()| cmp(a, b)).iter,
+            iter: entries.into_iter(),
+        }
+    }
+
+    /// Sort the set's values by their default ordering.
+    ///
+    /// See [`sort_unstable_by`](Self::sort_unstable_by) for details.
+    pub fn sort_unstable(&mut self)
+    where
+        T: Ord,
+    {
+        self.map.sort_unstable_keys()
+    }
+
+    /// Sort the set's values in place using the comparison funtion `cmp`.
+    ///
+    /// Computes in **O(n log n)** time. The sort is unstable.
+    pub fn sort_unstable_by<F>(&mut self, mut cmp: F)
+    where
+        F: FnMut(&T, &T) -> Ordering,
+    {
+        self.map.sort_unstable_by(move |a, _, b, _| cmp(a, b))
+    }
+
+    /// Sort the values of the set and return a by-value iterator of
+    /// the values with the result.
+    pub fn sorted_unstable_by<F>(self, mut cmp: F) -> IntoIter<T>
+    where
+        F: FnMut(&T, &T) -> Ordering,
+    {
+        let mut entries = self.into_entries();
+        entries.sort_unstable_by(move |a, b| cmp(&a.key, &b.key));
+        IntoIter {
+            iter: entries.into_iter(),
         }
     }
 
@@ -640,6 +698,19 @@ impl<T, S> IndexSet<T, S> {
     /// Computes in **O(n)** time (average).
     pub fn shift_remove_index(&mut self, index: usize) -> Option<T> {
         self.map.shift_remove_index(index).map(|(x, ())| x)
+    }
+
+    /// Moves the position of a value from one index to another
+    /// by shifting all other values in-between.
+    ///
+    /// * If `from < to`, the other values will shift down while the targeted value moves up.
+    /// * If `from > to`, the other values will shift up while the targeted value moves down.
+    ///
+    /// ***Panics*** if `from` or `to` are out of bounds.
+    ///
+    /// Computes in **O(n)** time (average).
+    pub fn move_index(&mut self, from: usize, to: usize) {
+        self.map.move_index(from, to)
     }
 
     /// Swaps the position of two values in the set.
@@ -708,9 +779,7 @@ impl<T> Iterator for IntoIter<T> {
 }
 
 impl<T> DoubleEndedIterator for IntoIter<T> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::key)
-    }
+    double_ended_iterator_methods!(Bucket::key);
 }
 
 impl<T> ExactSizeIterator for IntoIter<T> {
@@ -718,6 +787,8 @@ impl<T> ExactSizeIterator for IntoIter<T> {
         self.iter.len()
     }
 }
+
+impl<T> FusedIterator for IntoIter<T> {}
 
 impl<T: fmt::Debug> fmt::Debug for IntoIter<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -744,9 +815,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
 }
 
 impl<T> DoubleEndedIterator for Iter<'_, T> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::key_ref)
-    }
+    double_ended_iterator_methods!(Bucket::key_ref);
 }
 
 impl<T> ExactSizeIterator for Iter<'_, T> {
@@ -754,6 +823,8 @@ impl<T> ExactSizeIterator for Iter<'_, T> {
         self.iter.len()
     }
 }
+
+impl<T> FusedIterator for Iter<'_, T> {}
 
 impl<T> Clone for Iter<'_, T> {
     fn clone(&self) -> Self {
@@ -790,6 +861,21 @@ impl<T> DoubleEndedIterator for Drain<'_, T> {
     double_ended_iterator_methods!(Bucket::key);
 }
 
+impl<T> ExactSizeIterator for Drain<'_, T> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
+impl<T> FusedIterator for Drain<'_, T> {}
+
+impl<T: fmt::Debug> fmt::Debug for Drain<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.iter.as_slice().iter().map(Bucket::key_ref);
+        f.debug_list().entries(iter).finish()
+    }
+}
+
 impl<'a, T, S> IntoIterator for &'a IndexSet<T, S> {
     type Item = &'a T;
     type IntoIter = Iter<'a, T>;
@@ -805,7 +891,7 @@ impl<T, S> IntoIterator for IndexSet<T, S> {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            iter: self.map.into_iter().iter,
+            iter: self.into_entries().into_iter(),
         }
     }
 }
@@ -820,6 +906,25 @@ where
         IndexSet {
             map: IndexMap::from_iter(iter),
         }
+    }
+}
+
+#[cfg(has_std)]
+impl<T, const N: usize> From<[T; N]> for IndexSet<T, RandomState>
+where
+    T: Eq + Hash,
+{
+    /// # Examples
+    ///
+    /// ```
+    /// use indexmap::IndexSet;
+    ///
+    /// let set1 = IndexSet::from([1, 2, 3, 4]);
+    /// let set2: IndexSet<_> = [1, 2, 3, 4].into();
+    /// assert_eq!(set1, set2);
+    /// ```
+    fn from(arr: [T; N]) -> Self {
+        Self::from_iter(arr)
     }
 }
 
@@ -840,7 +945,7 @@ where
     S: BuildHasher,
 {
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iterable: I) {
-        let iter = iterable.into_iter().cloned(); // FIXME: use `copied` in Rust 1.36
+        let iter = iterable.into_iter().copied();
         self.extend(iter);
     }
 }
@@ -957,6 +1062,13 @@ where
     }
 }
 
+impl<T, S> FusedIterator for Difference<'_, T, S>
+where
+    T: Eq + Hash,
+    S: BuildHasher,
+{
+}
+
 impl<T, S> Clone for Difference<'_, T, S> {
     fn clone(&self) -> Self {
         Difference {
@@ -1024,6 +1136,13 @@ where
     }
 }
 
+impl<T, S> FusedIterator for Intersection<'_, T, S>
+where
+    T: Eq + Hash,
+    S: BuildHasher,
+{
+}
+
 impl<T, S> Clone for Intersection<'_, T, S> {
     fn clone(&self) -> Self {
         Intersection {
@@ -1087,6 +1206,21 @@ where
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back()
     }
+
+    fn rfold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        self.iter.rfold(init, f)
+    }
+}
+
+impl<T, S1, S2> FusedIterator for SymmetricDifference<'_, T, S1, S2>
+where
+    T: Eq + Hash,
+    S1: BuildHasher,
+    S2: BuildHasher,
+{
 }
 
 impl<T, S1, S2> Clone for SymmetricDifference<'_, T, S1, S2> {
@@ -1150,6 +1284,20 @@ where
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back()
     }
+
+    fn rfold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        self.iter.rfold(init, f)
+    }
+}
+
+impl<T, S> FusedIterator for Union<'_, T, S>
+where
+    T: Eq + Hash,
+    S: BuildHasher,
+{
 }
 
 impl<T, S> Clone for Union<'_, T, S> {
@@ -1239,7 +1387,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::enumerate;
     use std::string::String;
 
     #[test]
@@ -1268,7 +1415,7 @@ mod tests {
         let not_present = [1, 3, 6, 9, 10];
         let mut set = IndexSet::with_capacity(insert.len());
 
-        for (i, &elt) in enumerate(&insert) {
+        for (i, &elt) in insert.iter().enumerate() {
             assert_eq!(set.len(), i);
             set.insert(elt);
             assert_eq!(set.len(), i + 1);
@@ -1287,7 +1434,7 @@ mod tests {
         let present = vec![1, 6, 2];
         let mut set = IndexSet::with_capacity(insert.len());
 
-        for (i, &elt) in enumerate(&insert) {
+        for (i, &elt) in insert.iter().enumerate() {
             assert_eq!(set.len(), i);
             let (index, success) = set.insert_full(elt);
             assert!(success);
@@ -1310,7 +1457,7 @@ mod tests {
 
         let mut values = vec![];
         values.extend(0..16);
-        values.extend(128..267);
+        values.extend(if cfg!(miri) { 32..64 } else { 128..267 });
 
         for &i in &values {
             let old_set = set.clone();
@@ -1369,12 +1516,118 @@ mod tests {
     }
 
     #[test]
+    fn replace() {
+        let replace = [0, 4, 2, 12, 8, 7, 11, 5];
+        let not_present = [1, 3, 6, 9, 10];
+        let mut set = IndexSet::with_capacity(replace.len());
+
+        for (i, &elt) in replace.iter().enumerate() {
+            assert_eq!(set.len(), i);
+            set.replace(elt);
+            assert_eq!(set.len(), i + 1);
+            assert_eq!(set.get(&elt), Some(&elt));
+        }
+        println!("{:?}", set);
+
+        for &elt in &not_present {
+            assert!(set.get(&elt).is_none());
+        }
+    }
+
+    #[test]
+    fn replace_full() {
+        let replace = vec![9, 2, 7, 1, 4, 6, 13];
+        let present = vec![1, 6, 2];
+        let mut set = IndexSet::with_capacity(replace.len());
+
+        for (i, &elt) in replace.iter().enumerate() {
+            assert_eq!(set.len(), i);
+            let (index, replaced) = set.replace_full(elt);
+            assert!(replaced.is_none());
+            assert_eq!(Some(index), set.get_full(&elt).map(|x| x.0));
+            assert_eq!(set.len(), i + 1);
+        }
+
+        let len = set.len();
+        for &elt in &present {
+            let (index, replaced) = set.replace_full(elt);
+            assert_eq!(Some(elt), replaced);
+            assert_eq!(Some(index), set.get_full(&elt).map(|x| x.0));
+            assert_eq!(set.len(), len);
+        }
+    }
+
+    #[test]
+    fn replace_2() {
+        let mut set = IndexSet::with_capacity(16);
+
+        let mut values = vec![];
+        values.extend(0..16);
+        values.extend(if cfg!(miri) { 32..64 } else { 128..267 });
+
+        for &i in &values {
+            let old_set = set.clone();
+            set.replace(i);
+            for value in old_set.iter() {
+                if set.get(value).is_none() {
+                    println!("old_set: {:?}", old_set);
+                    println!("set: {:?}", set);
+                    panic!("did not find {} in set", value);
+                }
+            }
+        }
+
+        for &i in &values {
+            assert!(set.get(&i).is_some(), "did not find {}", i);
+        }
+    }
+
+    #[test]
+    fn replace_dup() {
+        let mut elements = vec![0, 2, 4, 6, 8];
+        let mut set: IndexSet<u8> = elements.drain(..).collect();
+        {
+            let (i, v) = set.get_full(&0).unwrap();
+            assert_eq!(set.len(), 5);
+            assert_eq!(i, 0);
+            assert_eq!(*v, 0);
+        }
+        {
+            let replaced = set.replace(0);
+            let (i, v) = set.get_full(&0).unwrap();
+            assert_eq!(set.len(), 5);
+            assert_eq!(replaced, Some(0));
+            assert_eq!(i, 0);
+            assert_eq!(*v, 0);
+        }
+    }
+
+    #[test]
+    fn replace_order() {
+        let replace = [0, 4, 2, 12, 8, 7, 11, 5, 3, 17, 19, 22, 23];
+        let mut set = IndexSet::new();
+
+        for &elt in &replace {
+            set.replace(elt);
+        }
+
+        assert_eq!(set.iter().count(), set.len());
+        assert_eq!(set.iter().count(), replace.len());
+        for (a, b) in replace.iter().zip(set.iter()) {
+            assert_eq!(a, b);
+        }
+        for (i, v) in (0..replace.len()).zip(set.iter()) {
+            assert_eq!(set.get_index(i).unwrap(), v);
+        }
+    }
+
+    #[test]
     fn grow() {
         let insert = [0, 4, 2, 12, 8, 7, 11];
         let not_present = [1, 3, 6, 9, 10];
         let mut set = IndexSet::with_capacity(insert.len());
 
-        for (i, &elt) in enumerate(&insert) {
+        for (i, &elt) in insert.iter().enumerate() {
             assert_eq!(set.len(), i);
             set.insert(elt);
             assert_eq!(set.len(), i + 1);
@@ -1560,7 +1813,7 @@ mod tests {
             I1: Iterator<Item = &'a i32>,
             I2: Iterator<Item = i32>,
         {
-            assert!(iter1.cloned().eq(iter2));
+            assert!(iter1.copied().eq(iter2));
         }
 
         let set_a: IndexSet<_> = (0..3).collect();
@@ -1612,8 +1865,7 @@ mod tests {
         let set_c: IndexSet<_> = (0..6).collect();
         let set_d: IndexSet<_> = (3..9).rev().collect();
 
-        // FIXME: #[allow(clippy::eq_op)] in Rust 1.31
-        #[cfg_attr(feature = "cargo-clippy", allow(renamed_and_removed_lints, eq_op))]
+        #[allow(clippy::eq_op)]
         {
             assert_eq!(&set_a & &set_a, set_a);
             assert_eq!(&set_a | &set_a, set_a);
@@ -1647,5 +1899,14 @@ mod tests {
         assert_eq!(&set_d ^ &set_c, &set_a | &(&set_d - &set_b));
         assert_eq!(&set_c - &set_d, set_a);
         assert_eq!(&set_d - &set_c, &set_d - &set_b);
+    }
+
+    #[test]
+    #[cfg(has_std)]
+    fn from_array() {
+        let set1 = IndexSet::from([1, 2, 3, 4]);
+        let set2: IndexSet<_> = [1, 2, 3, 4].into();
+
+        assert_eq!(set1, set2);
     }
 }

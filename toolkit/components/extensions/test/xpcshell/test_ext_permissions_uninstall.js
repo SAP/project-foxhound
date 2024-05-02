@@ -1,7 +1,7 @@
 "use strict";
 
-const { ExtensionPermissions } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPermissions.jsm"
+const { ExtensionPermissions } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPermissions.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -18,11 +18,6 @@ AddonTestUtils.createAppInfo(
 // permissions that are added automatically to privileged extensions
 // and already covered by other tests.
 AddonTestUtils.usePrivilegedSignatures = false;
-
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
-);
 
 // Look up the cached permissions, if any.
 async function getCachedPermissions(extensionId) {

@@ -59,7 +59,7 @@ macro_rules! simulate {
         #[test]
         fn $n() {
             let fixture = $setup;
-            let mut nodes: Vec<Box<dyn crate::sim::Node>> = Vec::new();
+            let mut nodes: Vec<Box<dyn $crate::sim::Node>> = Vec::new();
             $(
                 let f: Box<dyn FnOnce(&_) -> _> = Box::new($v);
                 nodes.push(Box::new(f(&fixture)));
@@ -149,7 +149,7 @@ impl Simulator {
     /// Though this is convenient, it panics if this isn't a 64 character hex string.
     pub fn seed_str(&mut self, seed: impl AsRef<str>) {
         let seed = Encoder::from_hex(seed);
-        self.seed(<[u8; 32]>::try_from(&seed[..]).unwrap());
+        self.seed(<[u8; 32]>::try_from(seed.as_ref()).unwrap());
     }
 
     fn next_time(&self, now: Instant) -> Instant {
@@ -205,7 +205,7 @@ impl Simulator {
             }
 
             if self.nodes.iter().all(|n| n.node.done()) {
-                let real_elapsed = Instant::now() - real_start;
+                let real_elapsed = real_start.elapsed();
                 println!("{}: real elapsed time: {:?}", self.name, real_elapsed);
                 let elapsed = now - start;
                 println!("{}: simulated elapsed time: {:?}", self.name, elapsed);

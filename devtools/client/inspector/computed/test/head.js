@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../test/head.js */
+
 "use strict";
 
 // Import the inspector's head.js first (which itself imports shared-head.js).
@@ -24,6 +24,21 @@ function fireCopyEvent(element) {
 }
 
 /**
+ * Return all the computed items in the computed view
+ *
+ * @param {CssComputedView} view
+ *        The instance of the computed view panel
+ * @returns {Array<Element>}
+ */
+function getComputedViewProperties(view) {
+  return Array.from(
+    view.styleDocument.querySelectorAll(
+      "#computed-container .computed-property-view"
+    )
+  );
+}
+
+/**
  * Get references to the name and value span nodes corresponding to a given
  * property name in the computed-view
  *
@@ -35,14 +50,12 @@ function fireCopyEvent(element) {
  */
 function getComputedViewProperty(view, name) {
   let prop;
-  for (const property of view.styleDocument.querySelectorAll(
-    "#computed-container .computed-property-view"
-  )) {
+  for (const property of getComputedViewProperties(view)) {
     const nameSpan = property.querySelector(".computed-property-name");
     const valueSpan = property.querySelector(".computed-property-value");
 
     if (nameSpan.firstChild.textContent === name) {
-      prop = { nameSpan: nameSpan, valueSpan: valueSpan };
+      prop = { nameSpan, valueSpan };
       break;
     }
   }
@@ -61,7 +74,7 @@ function getComputedViewProperty(view, name) {
 function getComputedViewPropertyView(view, name) {
   let propView;
   for (const propertyView of view.propertyViews) {
-    if (propertyView._propertyInfo.name === name) {
+    if (propertyView.propertyInfo.name === name) {
       propView = propertyView;
       break;
     }
@@ -70,12 +83,11 @@ function getComputedViewPropertyView(view, name) {
 }
 
 /**
- * Get a reference to the computed-property-content element for a given property name in
+ * Get a reference to the matched rules element for a given property name in
  * the computed-view.
- * A computed-property-content element always follows (nextSibling) the property itself
+ * A matched rule element is inside the property element (<li>) itself
  * and is only shown when the twisty icon is expanded on the property.
- * A computed-property-content element contains matched rules, with selectors,
- * properties, values and stylesheet links
+ * It contains matched rules, with selectors, properties, values and stylesheet links.
  *
  * @param {CssComputedView} view
  *        The instance of the computed view panel
@@ -84,16 +96,17 @@ function getComputedViewPropertyView(view, name) {
  * @return {Promise} A promise that resolves to the property matched rules
  * container
  */
-var getComputedViewMatchedRules = async function(view, name) {
+var getComputedViewMatchedRules = async function (view, name) {
   let expander;
-  let propertyContent;
+  let matchedRulesEl;
   for (const property of view.styleDocument.querySelectorAll(
     "#computed-container .computed-property-view"
   )) {
     const nameSpan = property.querySelector(".computed-property-name");
     if (nameSpan.firstChild.textContent === name) {
       expander = property.querySelector(".computed-expandable");
-      propertyContent = property.nextSibling;
+      matchedRulesEl = property.querySelector(".matchedselectors");
+
       break;
     }
   }
@@ -103,9 +116,11 @@ var getComputedViewMatchedRules = async function(view, name) {
     const onExpand = view.inspector.once("computed-view-property-expanded");
     expander.click();
     await onExpand;
+
+    await waitFor(() => expander.hasAttribute("open"));
   }
 
-  return propertyContent;
+  return matchedRulesEl;
 };
 
 /**
@@ -118,9 +133,8 @@ var getComputedViewMatchedRules = async function(view, name) {
  *        The name of the property to retrieve
  * @return {String} The property value
  */
-function getComputedViewPropertyValue(view, name, propertyName) {
-  return getComputedViewProperty(view, name, propertyName).valueSpan
-    .textContent;
+function getComputedViewPropertyValue(view, name) {
+  return getComputedViewProperty(view, name).valueSpan.textContent;
 }
 
 /**
@@ -237,7 +251,7 @@ async function copySomeTextAndCheckClipboard(view, positions, expectedPattern) {
 }
 
 function checkClipboard(expectedPattern) {
-  const actual = SpecialPowers.getClipboardData("text/unicode");
+  const actual = SpecialPowers.getClipboardData("text/plain");
   const expectedRegExp = new RegExp(expectedPattern, "g");
   return expectedRegExp.test(actual);
 }
@@ -249,7 +263,7 @@ function failClipboardCheck(expectedPattern) {
   expectedPattern = expectedPattern.replace(/\\\(/g, "(");
   expectedPattern = expectedPattern.replace(/\\\)/g, ")");
 
-  let actual = SpecialPowers.getClipboardData("text/unicode");
+  let actual = SpecialPowers.getClipboardData("text/plain");
 
   // Trim the right hand side of our strings. This is because expectedPattern
   // accounts for windows sometimes adding a newline to our copied data.

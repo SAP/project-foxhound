@@ -1,4 +1,4 @@
-# Dominators view 
+# Dominators view
 
 The Dominators view is new in Firefox 46.
 
@@ -13,7 +13,7 @@ are, skip to the Dominators UI section. Otherwise, you might want to
 review the article on [Dominators
 concepts](dominators.md).
 
-## Dominators UI 
+## Dominators UI
 
 To see the Dominators view for a snapshot, select \"Dominators\" in the
 \"View\" drop-down list. It looks something like this:
@@ -23,16 +23,16 @@ To see the Dominators view for a snapshot, select \"Dominators\" in the
 The Dominators view consists of two panels:
 
 -   the [Dominators Tree
-    panel](dominators_view.html#dominators_tree_panel)
+    panel](#dominators-tree-panel)
     shows you which nodes in the snapshot are retaining the most memory
 -   the [Retaining Paths
-    panel](dominators_view.html#retaining_paths_panel)
+    panel](#retaining-paths-panel)
     (new in Firefox 47) shows the 5 shortest retaining paths for a
     single node.
 
 ![](../img/dominators-2.png)
 
-### Dominators Tree panel {#Dominators_Tree_panel}
+### Dominators Tree panel
 
 The Dominators Tree tells you which objects in the snapshot are
 retaining the most memory.
@@ -111,13 +111,13 @@ take you to that spot in the Debugger.
 
 <iframe width="595" height="325" src="https://www.youtube.com/embed/qTF5wCSD124" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
 
-::: 
+:::
 Sometimes you\'ll see \"(no stack available)\" here. In particular,
 allocation stacks are currently only recorded for objects, not for
 arrays, strings, or internal structures.
 :::
 
-### Retaining Paths panel {#Retaining_Paths_panel}
+### Retaining Paths panel
 
 ::: {.geckoVersionNote}
 The Retaining Paths panel is new in Firefox 47.

@@ -16,7 +16,9 @@ class PickleIterator;
 
 namespace IPC {
 class Message;
-}
+class MessageReader;
+class MessageWriter;
+}  // namespace IPC
 
 namespace mozilla {
 
@@ -26,7 +28,9 @@ class MediaPacket {
  public:
   MediaPacket() = default;
   MediaPacket(MediaPacket&& orig) = default;
-  MediaPacket(const MediaPacket& orig);
+  MediaPacket& operator=(MediaPacket&& orig) = default;
+
+  MediaPacket Clone() const;
 
   // Takes ownership of the passed-in data
   void Take(UniquePtr<uint8_t[]>&& data, size_t len, size_t capacity = 0) {
@@ -78,8 +82,8 @@ class MediaPacket {
 
   Type type() const { return type_; }
 
-  void Serialize(IPC::Message* aMsg) const;
-  bool Deserialize(const IPC::Message* aMsg, PickleIterator* aIter);
+  void Serialize(IPC::MessageWriter* aWriter) const;
+  bool Deserialize(IPC::MessageReader* aReader);
 
  private:
   UniquePtr<uint8_t[]> data_;
@@ -100,13 +104,13 @@ struct ParamTraits;
 
 template <>
 struct ParamTraits<mozilla::MediaPacket> {
-  static void Write(Message* aMsg, const mozilla::MediaPacket& aParam) {
-    aParam.Serialize(aMsg);
+  static void Write(MessageWriter* aWriter,
+                    const mozilla::MediaPacket& aParam) {
+    aParam.Serialize(aWriter);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   mozilla::MediaPacket* aResult) {
-    return aResult->Deserialize(aMsg, aIter);
+  static bool Read(MessageReader* aReader, mozilla::MediaPacket* aResult) {
+    return aResult->Deserialize(aReader);
   }
 };
 }  // namespace IPC

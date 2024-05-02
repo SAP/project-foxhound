@@ -11,8 +11,7 @@ class nsIEventTarget;
 class nsIHttpUpgradeListener;
 class nsIInterfaceRequestor;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 class ARefBase;
 class EventTokenBucket;
@@ -22,6 +21,7 @@ class HttpConnectionBase;
 class nsHttpConnectionMgr;
 class HttpConnectionMgrParent;
 class SpeculativeTransaction;
+class ClassOfService;
 
 //----------------------------------------------------------------------------
 // Abstract base class for HTTP connection manager in chrome process
@@ -97,7 +97,7 @@ class HttpConnectionMgrShell : public nsISupports {
   // printed to the javascript console
   virtual void PrintDiagnostics() = 0;
 
-  virtual nsresult UpdateCurrentTopBrowsingContextId(uint64_t aId) = 0;
+  virtual nsresult UpdateCurrentBrowserId(uint64_t aId) = 0;
 
   // adds a transaction to the list of managed transactions.
   [[nodiscard]] virtual nsresult AddTransaction(HttpTransactionShell*,
@@ -113,8 +113,8 @@ class HttpConnectionMgrShell : public nsISupports {
   [[nodiscard]] virtual nsresult RescheduleTransaction(HttpTransactionShell*,
                                                        int32_t priority) = 0;
 
-  void virtual UpdateClassOfServiceOnTransaction(HttpTransactionShell*,
-                                                 uint32_t classOfService) = 0;
+  void virtual UpdateClassOfServiceOnTransaction(
+      HttpTransactionShell*, const ClassOfService& classOfService) = 0;
 
   // cancels a transaction w/ the given reason.
   [[nodiscard]] virtual nsresult CancelTransaction(HttpTransactionShell*,
@@ -195,7 +195,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionMgrShell,
   virtual void AbortAndCloseAllConnections(int32_t, ARefBase*) override;       \
   virtual nsresult UpdateParam(nsParamName name, uint16_t value) override;     \
   virtual void PrintDiagnostics() override;                                    \
-  virtual nsresult UpdateCurrentTopBrowsingContextId(uint64_t aId) override;   \
+  virtual nsresult UpdateCurrentBrowserId(uint64_t aId) override;              \
   virtual nsresult AddTransaction(HttpTransactionShell*, int32_t priority)     \
       override;                                                                \
   virtual nsresult AddTransactionWithStickyConn(                               \
@@ -204,7 +204,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionMgrShell,
   virtual nsresult RescheduleTransaction(HttpTransactionShell*,                \
                                          int32_t priority) override;           \
   void virtual UpdateClassOfServiceOnTransaction(                              \
-      HttpTransactionShell*, uint32_t classOfService) override;                \
+      HttpTransactionShell*, const ClassOfService& classOfService) override;   \
   virtual nsresult CancelTransaction(HttpTransactionShell*, nsresult reason)   \
       override;                                                                \
   virtual nsresult ReclaimConnection(HttpConnectionBase* conn) override;       \
@@ -224,7 +224,6 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionMgrShell,
   nsHttpConnectionMgr* AsHttpConnectionMgr() override;                         \
   HttpConnectionMgrParent* AsHttpConnectionMgrParent() override;
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // HttpConnectionMgrShell_h__

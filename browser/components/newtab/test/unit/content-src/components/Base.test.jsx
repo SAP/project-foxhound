@@ -8,7 +8,7 @@ import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundar
 import React from "react";
 import { Search } from "content-src/components/Search/Search";
 import { shallow } from "enzyme";
-import { actionCreators as ac } from "common/Actions.jsm";
+import { actionCreators as ac } from "common/Actions.sys.mjs";
 
 describe("<Base>", () => {
   let DEFAULT_PROPS = {
@@ -42,10 +42,7 @@ describe("<Base>", () => {
     const wrapper = shallow(<Base {...DEFAULT_PROPS} />);
 
     assert.equal(
-      wrapper
-        .find(ErrorBoundary)
-        .first()
-        .prop("className"),
+      wrapper.find(ErrorBoundary).first().prop("className"),
       "base-content-fallback"
     );
   });
@@ -88,22 +85,23 @@ describe("<BaseContent>", () => {
 
     const wrapper = shallow(<BaseContent {...searchEnabledProps} />);
 
-    assert.isTrue(
-      wrapper
-        .find(Search)
-        .parent()
-        .is(ErrorBoundary)
-    );
+    assert.isTrue(wrapper.find(Search).parent().is(ErrorBoundary));
   });
 
   it("should dispatch a user event when the customize menu is opened or closed", () => {
     const dispatch = sinon.stub();
     const wrapper = shallow(
-      <BaseContent {...DEFAULT_PROPS} dispatch={dispatch} />
+      <BaseContent
+        {...DEFAULT_PROPS}
+        dispatch={dispatch}
+        App={{ customizeMenuVisible: true }}
+      />
     );
     wrapper.instance().openCustomizationMenu();
+    assert.calledWith(dispatch, { type: "SHOW_PERSONALIZE" });
     assert.calledWith(dispatch, ac.UserEvent({ event: "SHOW_PERSONALIZE" }));
     wrapper.instance().closeCustomizationMenu();
+    assert.calledWith(dispatch, { type: "HIDE_PERSONALIZE" });
     assert.calledWith(dispatch, ac.UserEvent({ event: "HIDE_PERSONALIZE" }));
   });
 

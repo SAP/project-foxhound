@@ -6,12 +6,6 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarProviderQuickSuggest:
-    "resource:///modules/UrlbarProviderQuickSuggest.jsm",
-  UrlbarQuickSuggest: "resource:///modules/UrlbarQuickSuggest.jsm",
-});
-
 const SUGGESTIONS_FIRST_PREF = "browser.urlbar.showSearchSuggestionsFirst";
 const SUGGESTIONS_PREF = "browser.urlbar.suggest.searches";
 
@@ -27,7 +21,7 @@ const NON_SPONSORED_SEARCH_STRING = "nonspon";
 
 const TEST_URL = "http://example.com/quicksuggest";
 
-const TEST_DATA = [
+const REMOTE_SETTINGS_RESULTS = [
   {
     id: 1,
     url: `${TEST_URL}?q=${SPONSORED_SEARCH_STRING}`,
@@ -49,26 +43,28 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function init() {
-  // This test intermittently times out on Mac TV WebRender.
-  if (AppConstants.platform == "macosx") {
-    requestLongerTimeout(3);
-  }
+// Trying to avoid timeouts.
+requestLongerTimeout(3);
 
+add_setup(async function () {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
   await UrlbarTestUtils.formHistory.clear();
 
   // Add a mock engine so we don't hit the network.
-  await SearchTestUtils.installSearchExtension();
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(Services.search.getEngineByName("Example"));
+  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
 
-  await QuickSuggestTestUtils.ensureQuickSuggestInit(TEST_DATA);
+  await QuickSuggestTestUtils.ensureQuickSuggestInit({
+    remoteSettingsRecords: [
+      {
+        type: "data",
+        attachment: REMOTE_SETTINGS_RESULTS,
+      },
+    ],
+  });
 
   registerCleanupFunction(async () => {
     await PlacesUtils.history.clear();
-    Services.search.setDefault(oldDefaultEngine);
   });
 });
 
@@ -228,7 +224,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
 /**
  * Does a round of test permutations.
  *
- * @param {function} callback
+ * @param {Function} callback
  *   For each permutation, this will be called with the arguments of `doTest()`,
  *   and it should return an object with the appropriate values of
  *   `expectedResultCount` and `expectedIndex`.
@@ -251,16 +247,18 @@ async function doTestPermutations(callback) {
 /**
  * Does one test run.
  *
- * @param {boolean} isSponsored
+ * @param {object} options
+ *   Options for the test.
+ * @param {boolean} options.isSponsored
  *   True to use a sponsored result, false to use a non-sponsored result.
- * @param {boolean} withHistory
+ * @param {boolean} options.withHistory
  *   True to run with a bunch of history, false to run with no history.
- * @param {number} generalIndex
+ * @param {number} options.generalIndex
  *   The value to set as the relevant index pref, i.e., the index within the
  *   general group of the quick suggest result.
- * @param {number} expectedResultCount
+ * @param {number} options.expectedResultCount
  *   The expected total result count for sanity checking.
- * @param {number} expectedIndex
+ * @param {number} options.expectedIndex
  *   The expected index of the quick suggest result in the whole results list.
  */
 async function doTest({
@@ -337,22 +335,28 @@ async function addHistory() {
  * Adds a search engine that provides suggestions, calls your callback, and then
  * removes the engine.
  *
- * @param {function} callback
+ * @param {Function} callback
  *   Your callback function.
  */
 async function withSuggestions(callback) {
   await SpecialPowers.pushPrefEnv({
     set: [[SUGGESTIONS_PREF, true]],
   });
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
+  let engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+  });
   let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   try {
     await callback(engine);
   } finally {
-    await Services.search.setDefault(oldDefaultEngine);
+    await Services.search.setDefault(
+      oldDefaultEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
     await Services.search.removeEngine(engine);
     await SpecialPowers.popPrefEnv();
   }
@@ -362,7 +366,7 @@ async function withSuggestions(callback) {
  * Registers a test provider that returns a result with a suggestedIndex and
  * resultSpan and asserts the given expected results match the actual results.
  *
- * @param {array} expectedProps
+ * @param {Array} expectedProps
  *   See `checkResults()`.
  */
 async function doSuggestedIndexTest(expectedProps) {
@@ -384,9 +388,9 @@ async function doSuggestedIndexTest(expectedProps) {
 /**
  * Asserts the given actual and expected results match.
  *
- * @param {array} actualResults
+ * @param {Array} actualResults
  *   Array of actual results.
- * @param {array} expectedProps
+ * @param {Array} expectedProps
  *   Array of expected result-like objects. Only the properties defined in each
  *   of these objects are compared against the corresponding actual result.
  */

@@ -16,7 +16,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/ipc/Transport.h"
 
 class PickleIterator;
 
@@ -33,6 +32,8 @@ struct IPDLParamTraits;
 namespace IPC {
 
 class Message;
+class MessageReader;
+class MessageWriter;
 
 template <>
 struct ParamTraits<Channel::Mode>
@@ -48,46 +49,32 @@ template <>
 struct ParamTraits<mozilla::ipc::ActorHandle> {
   typedef mozilla::ipc::ActorHandle paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
-    IPC::WriteParam(aMsg, aParam.mId);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    IPC::WriteParam(aWriter, aParam.mId);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
+  static bool Read(MessageReader* aReader, paramType* aResult) {
     int id;
-    if (IPC::ReadParam(aMsg, aIter, &id)) {
+    if (IPC::ReadParam(aReader, &id)) {
       aResult->mId = id;
       return true;
     }
     return false;
   }
+};
 
-  static void Log(const paramType& aParam, std::wstring* aLog) {
-    aLog->append(StringPrintf(L"(%d)", aParam.mId));
-  }
+template <>
+struct ParamTraits<mozilla::ipc::UntypedEndpoint> {
+  using paramType = mozilla::ipc::UntypedEndpoint;
+
+  static void Write(MessageWriter* aWriter, paramType&& aParam);
+
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
 
 template <class PFooSide>
-struct ParamTraits<mozilla::ipc::Endpoint<PFooSide>> {
-  typedef mozilla::ipc::Endpoint<PFooSide> paramType;
-
-  static void Write(Message* aMsg, paramType&& aParam) {
-    IPC::WriteParam(aMsg, std::move(aParam.mPort));
-    IPC::WriteParam(aMsg, aParam.mMyPid);
-    IPC::WriteParam(aMsg, aParam.mOtherPid);
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return IPC::ReadParam(aMsg, aIter, &aResult->mPort) &&
-           IPC::ReadParam(aMsg, aIter, &aResult->mMyPid) &&
-           IPC::ReadParam(aMsg, aIter, &aResult->mOtherPid);
-  }
-
-  static void Log(const paramType& aParam, std::wstring* aLog) {
-    aLog->append(StringPrintf(L"Endpoint"));
-  }
-};
+struct ParamTraits<mozilla::ipc::Endpoint<PFooSide>>
+    : ParamTraits<mozilla::ipc::UntypedEndpoint> {};
 
 }  // namespace IPC
 
@@ -97,23 +84,25 @@ template <>
 struct IPDLParamTraits<UntypedManagedEndpoint> {
   using paramType = UntypedManagedEndpoint;
 
-  static void Write(IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, paramType* aResult);
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
+                    paramType&& aParam);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   paramType* aResult);
 };
 
 template <class PFooSide>
 struct IPDLParamTraits<ManagedEndpoint<PFooSide>> {
   using paramType = ManagedEndpoint<PFooSide>;
 
-  static void Write(IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam) {
-    IPDLParamTraits<UntypedManagedEndpoint>::Write(aMsg, aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
+                    paramType&& aParam) {
+    IPDLParamTraits<UntypedManagedEndpoint>::Write(aWriter, aActor,
                                                    std::move(aParam));
   }
 
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, paramType* aResult) {
-    return IPDLParamTraits<UntypedManagedEndpoint>::Read(aMsg, aIter, aActor,
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   paramType* aResult) {
+    return IPDLParamTraits<UntypedManagedEndpoint>::Read(aReader, aActor,
                                                          aResult);
   }
 };
@@ -122,10 +111,10 @@ template <>
 struct IPDLParamTraits<FileDescriptor> {
   typedef FileDescriptor paramType;
 
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     const paramType& aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, paramType* aResult);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   paramType* aResult);
 };
 }  // namespace mozilla::ipc
 

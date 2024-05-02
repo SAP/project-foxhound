@@ -17,7 +17,6 @@ class nsXPLookAndFeel : public mozilla::LookAndFeel {
  public:
   using FullLookAndFeel = mozilla::widget::FullLookAndFeel;
   using LookAndFeelFont = mozilla::widget::LookAndFeelFont;
-  using LookAndFeelTheme = mozilla::widget::LookAndFeelTheme;
 
   virtual ~nsXPLookAndFeel();
 
@@ -67,7 +66,6 @@ class nsXPLookAndFeel : public mozilla::LookAndFeel {
 
   virtual void NativeInit() = 0;
 
-  virtual void GetGtkContentTheme(LookAndFeelTheme&) {}
   virtual void GetThemeInfo(nsACString&) {}
 
  protected:
@@ -77,10 +75,8 @@ class nsXPLookAndFeel : public mozilla::LookAndFeel {
 
   // A platform-agnostic dark-color scheme, for platforms where we don't have
   // "native" dark colors, like Windows and Android.
-  //
-  // TODO: In the future we should use this as well for standins (i.e.,
-  // resistFingerprinting, etc).
   static mozilla::Maybe<nscolor> GenericDarkColor(ColorID);
+  mozilla::Maybe<nscolor> GetUncachedColor(ColorID, ColorScheme, UseStandins);
 
   void RecordTelemetry();
   virtual void RecordLookAndFeelSpecificTelemetry() {}

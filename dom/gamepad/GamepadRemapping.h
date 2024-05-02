@@ -12,8 +12,7 @@
 #include "mozilla/dom/GamepadPoseState.h"
 #include "mozilla/dom/GamepadTouchState.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // GamepadId is (vendorId << 16) | productId)
 enum class GamepadId : uint32_t {
@@ -57,6 +56,8 @@ enum class GamepadId : uint32_t {
   kMicrosoftProductXboxAdaptive = 0x045e0b0a,
   // Microsoft Xbox Adaptive Wireless
   kMicrosoftProductXboxAdaptiveWireless = 0x045e0b0c,
+  // Microsoft Xbox Series X Wireless
+  kMicrosoftProductXboxSeriesXWireless = 0x045e0b13,
   // Switch Joy-Con L
   kNintendoProduct2006 = 0x057e2006,
   // Switch Joy-Con R
@@ -136,7 +137,6 @@ already_AddRefed<GamepadRemapper> GetGamepadRemapper(const uint16_t aVendorId,
                                                      const uint16_t aProductId,
                                                      bool& aUsingDefault);
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_GamepadRemapping_h_

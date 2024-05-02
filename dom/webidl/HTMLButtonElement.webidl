@@ -11,12 +11,11 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-button-element
-[Exposed=Window]
+[Exposed=Window,
+ InstrumentedProps=(popoverTargetAction,popoverTargetElement)]
 interface HTMLButtonElement : HTMLElement {
   [HTMLConstructor] constructor();
 
-  [CEReactions, SetterThrows, Pure]
-           attribute boolean autofocus;
   [CEReactions, SetterThrows, Pure]
            attribute boolean disabled;
   [Pure]
@@ -44,7 +43,11 @@ interface HTMLButtonElement : HTMLElement {
   readonly attribute DOMString validationMessage;
   boolean checkValidity();
   boolean reportValidity();
-  void setCustomValidity(DOMString error);
+  undefined setCustomValidity(DOMString error);
 
   readonly attribute NodeList labels;
 };
+
+HTMLButtonElement includes PopoverInvokerElement;
+
+HTMLButtonElement includes InvokerElement;

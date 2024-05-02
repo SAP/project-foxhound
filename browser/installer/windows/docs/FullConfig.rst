@@ -33,7 +33,7 @@ For options that accept ``true`` or ``false``, ``=true`` can be left off to get 
   If this is set, then ``InstallDirectoryPath`` will be ignored.
 
 ``/TaskbarShortcut={true,false}``
-  Set to ``false`` to disable pinning a shortcut to the taskbar. ``true`` by default. This feature only works on Windows 7 and 8; it isn't possible to create taskbar pins from the installer on later Windows versions.
+  Set to ``false`` to disable pinning a shortcut to the taskbar. ``true`` by default.
 
 ``/DesktopShortcut={true,false}``
   Set to ``false`` to disable creating a shortcut on the desktop. ``true`` by default.
@@ -42,6 +42,9 @@ For options that accept ``true`` or ``false``, ``=true`` can be left off to get 
   Set to ``false`` to disable creating a Start menu shortcut. ``true`` by default.
 
   For backwards compatibility, this option can also be spelled ``/StartMenuShortcuts`` (plural), however only one shortcut is ever created in the Start menu per installation.
+
+``/PrivateBrowsingShortcut={true,false}``
+  Set to ``false`` to disable creating a private browsing shortcut in the start menu. ``true`` by default.
 
 ``/MaintenanceService={true,false}``
   Set to ``false`` to disable installing the Mozilla Maintenance Service. This will effectively prevent users from installing Firefox updates if they do not have write permissions to the installation directory. ``true`` by default.

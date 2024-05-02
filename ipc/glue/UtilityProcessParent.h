@@ -29,8 +29,6 @@ class UtilityProcessParent final
 
   explicit UtilityProcessParent(UtilityProcessHost* aHost);
 
-  static UtilityProcessParent* GetSingleton();
-
   mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
 
   bool SendRequestMemoryReport(const uint32_t& aGeneration,
@@ -39,6 +37,27 @@ class UtilityProcessParent final
                                const Maybe<ipc::FileDescriptor>& aDMDFile);
 
   mozilla::ipc::IPCResult RecvFOGData(ByteBuf&& aBuf);
+
+#if defined(XP_WIN)
+  mozilla::ipc::IPCResult RecvGetModulesTrust(
+      ModulePaths&& aModPaths, bool aRunAtNormalPriority,
+      GetModulesTrustResolver&& aResolver);
+#endif  // defined(XP_WIN)
+
+  mozilla::ipc::IPCResult RecvAccumulateChildHistograms(
+      nsTArray<HistogramAccumulation>&& aAccumulations);
+  mozilla::ipc::IPCResult RecvAccumulateChildKeyedHistograms(
+      nsTArray<KeyedHistogramAccumulation>&& aAccumulations);
+  mozilla::ipc::IPCResult RecvUpdateChildScalars(
+      nsTArray<ScalarAction>&& aScalarActions);
+  mozilla::ipc::IPCResult RecvUpdateChildKeyedScalars(
+      nsTArray<KeyedScalarAction>&& aScalarActions);
+  mozilla::ipc::IPCResult RecvRecordChildEvents(
+      nsTArray<ChildEventData>&& events);
+  mozilla::ipc::IPCResult RecvRecordDiscardedData(
+      const DiscardedData& aDiscardedData);
+
+  mozilla::ipc::IPCResult RecvInitCompleted();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

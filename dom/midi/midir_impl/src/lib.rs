@@ -55,6 +55,15 @@ struct MidiPortWrapper {
     open_count: u32,
 }
 
+impl MidiPortWrapper {
+    fn input(self: &MidiPortWrapper) -> bool {
+        match self.port {
+            MidiPort::Input(_) => true,
+            MidiPort::Output(_) => false,
+        }
+    }
+}
+
 pub struct MidirWrapper {
     ports: Vec<MidiPortWrapper>,
     connections: Vec<MidiConnectionWrapper>,
@@ -65,7 +74,72 @@ struct CallbackData {
     open_timestamp: GeckoTimeStamp,
 }
 
+type AddCallback = unsafe extern "C" fn(id: &nsString, name: &nsString, input: bool);
+type RemoveCallback = AddCallback;
+
 impl MidirWrapper {
+    fn refresh(
+        self: &mut MidirWrapper,
+        add_callback: AddCallback,
+        remove_callback: Option<RemoveCallback>,
+    ) {
+        if let Ok(ports) = collect_ports() {
+            if let Some(remove_callback) = remove_callback {
+                self.remove_missing_ports(&ports, remove_callback);
+            }
+
+            self.add_new_ports(ports, add_callback);
+        }
+    }
+
+    fn remove_missing_ports(
+        self: &mut MidirWrapper,
+        ports: &Vec<MidiPortWrapper>,
+        remove_callback: RemoveCallback,
+    ) {
+        let old_ports = &mut self.ports;
+        let mut i = 0;
+        while i < old_ports.len() {
+            if !ports
+                .iter()
+                .any(|p| p.name == old_ports[i].name && p.input() == old_ports[i].input())
+            {
+                let port = old_ports.remove(i);
+                let id = nsString::from(&port.id);
+                let name = nsString::from(&port.name);
+                unsafe { remove_callback(&id, &name, port.input()) };
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    fn add_new_ports(
+        self: &mut MidirWrapper,
+        ports: Vec<MidiPortWrapper>,
+        add_callback: AddCallback,
+    ) {
+        for port in ports {
+            if !self.is_port_present(&port) && !Self::is_microsoft_synth_output(&port) {
+                let id = nsString::from(&port.id);
+                let name = nsString::from(&port.name);
+                unsafe { add_callback(&id, &name, port.input()) };
+                self.ports.push(port);
+            }
+        }
+    }
+
+    fn is_port_present(self: &MidirWrapper, port: &MidiPortWrapper) -> bool {
+        self.ports
+            .iter()
+            .any(|p| p.name == port.name && p.input() == port.input())
+    }
+
+    // We explicitly disable Microsoft's soft synthesizer, see bug 1798097
+    fn is_microsoft_synth_output(port: &MidiPortWrapper) -> bool {
+        (port.input() == false) && (port.name == "Microsoft GS Wavetable Synth")
+    }
+
     fn open_port(
         self: &mut MidirWrapper,
         nsid: &nsString,
@@ -106,22 +180,20 @@ impl MidirWrapper {
                                 data,
                             )
                             .map_err(|_err| ())?;
-                        let connection_wrapper = MidiConnectionWrapper {
+                        MidiConnectionWrapper {
                             id: id.clone(),
                             connection: MidiConnection::Input(connection),
-                        };
-                        connection_wrapper
+                        }
                     }
                     MidiPort::Output(port) => {
                         let output = MidiOutput::new("WebMIDI output").map_err(|_err| ())?;
                         let connection = output
                             .connect(port, "Output connection")
                             .map_err(|_err| ())?;
-                        let connection_wrapper = MidiConnectionWrapper {
+                        MidiConnectionWrapper {
                             connection: MidiConnection::Output(connection),
                             id: id.clone(),
-                        };
-                        connection_wrapper
+                        }
                     }
                 };
 
@@ -159,7 +231,7 @@ impl MidirWrapper {
 
     fn send(self: &mut MidirWrapper, id: &str, data: &[u8]) -> Result<(), ()> {
         let connections = &mut self.connections;
-        let index = connections.iter().position(|e| e.id.eq(id)).unwrap();
+        let index = connections.iter().position(|e| e.id.eq(id)).ok_or(())?;
         let connection_wrapper = connections.get_mut(index).unwrap();
 
         match &mut connection_wrapper.connection {
@@ -175,13 +247,18 @@ impl MidirWrapper {
     }
 }
 
+fn collect_ports() -> Result<Vec<MidiPortWrapper>, InitError> {
+    let input = MidiInput::new("WebMIDI input")?;
+    let output = MidiOutput::new("WebMIDI output")?;
+    let mut ports = Vec::<MidiPortWrapper>::new();
+    collect_input_ports(&input, &mut ports);
+    collect_output_ports(&output, &mut ports);
+    Ok(ports)
+}
+
 impl MidirWrapper {
     fn new() -> Result<MidirWrapper, InitError> {
-        let input = MidiInput::new("WebMIDI input")?;
-        let output = MidiOutput::new("WebMIDI output")?;
-        let mut ports: Vec<MidiPortWrapper> = Vec::new();
-        collect_input_ports(&input, &mut ports);
-        collect_output_ports(&output, &mut ports);
+        let ports = Vec::new();
         let connections: Vec<MidiConnectionWrapper> = Vec::new();
         Ok(MidirWrapper { ports, connections })
     }
@@ -196,11 +273,14 @@ impl MidirWrapper {
 /// This function deliberately leaks the wrapper because ownership is
 /// transfered to the C++ code. Use [midir_impl_shutdown()] to free it.
 #[no_mangle]
-pub unsafe extern "C" fn midir_impl_init(
-    callback: unsafe extern "C" fn(id: &nsString, name: &nsString, input: bool),
-) -> *mut MidirWrapper {
-    if let Ok(midir_impl) = MidirWrapper::new() {
-        iterate_ports(&midir_impl.ports, callback);
+pub unsafe extern "C" fn midir_impl_init(callback: AddCallback) -> *mut MidirWrapper {
+    if let Ok(mut midir_impl) = MidirWrapper::new() {
+        midir_impl.refresh(callback, None);
+
+        // Gecko invokes this initialization on a separate thread from all the
+        // other operations, so make it clear to Rust this needs to be Send.
+        fn assert_send<T: Send>(_: &T) {}
+        assert_send(&midir_impl);
 
         let midir_box = Box::new(midir_impl);
         // Leak the object as it will be owned by the C++ code from now on
@@ -208,6 +288,22 @@ pub unsafe extern "C" fn midir_impl_init(
     } else {
         ptr::null_mut()
     }
+}
+
+/// Refresh the list of ports.
+///
+/// This function will be exposed to C++
+///
+/// # Safety
+///
+/// `wrapper` must be the pointer returned by [midir_impl_init()].
+#[no_mangle]
+pub unsafe extern "C" fn midir_impl_refresh(
+    wrapper: *mut MidirWrapper,
+    add_callback: AddCallback,
+    remove_callback: RemoveCallback,
+) {
+    (*wrapper).refresh(add_callback, Some(remove_callback))
 }
 
 /// Shutdown midir and free the C++ wrapper.
@@ -285,7 +381,7 @@ fn collect_input_ports(input: &MidiInput, wrappers: &mut Vec<MidiPortWrapper>) {
     let ports = input.ports();
     for port in ports {
         let id = Uuid::new_v4()
-            .to_hyphenated()
+            .as_hyphenated()
             .encode_lower(&mut Uuid::encode_buffer())
             .to_owned();
         let name = input
@@ -305,7 +401,7 @@ fn collect_output_ports(output: &MidiOutput, wrappers: &mut Vec<MidiPortWrapper>
     let ports = output.ports();
     for port in ports {
         let id = Uuid::new_v4()
-            .to_hyphenated()
+            .as_hyphenated()
             .encode_lower(&mut Uuid::encode_buffer())
             .to_owned();
         let name = output
@@ -318,20 +414,5 @@ fn collect_output_ports(output: &MidiOutput, wrappers: &mut Vec<MidiPortWrapper>
             open_count: 0,
         };
         wrappers.push(port);
-    }
-}
-
-unsafe fn iterate_ports(
-    ports: &[MidiPortWrapper],
-    callback: unsafe extern "C" fn(id: &nsString, name: &nsString, input: bool),
-) {
-    for port in ports {
-        let id = nsString::from(&port.id);
-        let name = nsString::from(&port.name);
-        let input = match port.port {
-            MidiPort::Input(_) => true,
-            MidiPort::Output(_) => false,
-        };
-        callback(&id, &name, input);
     }
 }

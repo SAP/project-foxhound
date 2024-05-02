@@ -10,11 +10,12 @@
 #include "RemoteDecoderManagerChild.h"
 #include "RemoteDecoderManagerParent.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/StaticPrefs_media.h"
 
 namespace mozilla {
 
-RemoteAudioDecoderChild::RemoteAudioDecoderChild()
-    : RemoteDecoderChild(RemoteDecodeIn::RddProcess) {}
+RemoteAudioDecoderChild::RemoteAudioDecoderChild(RemoteDecodeIn aLocation)
+    : RemoteDecoderChild(aLocation) {}
 
 MediaResult RemoteAudioDecoderChild::ProcessOutput(
     DecodedOutputIPDL&& aDecodedData) {
@@ -36,8 +37,8 @@ MediaResult RemoteAudioDecoderChild::ProcessOutput(
 }
 
 MediaResult RemoteAudioDecoderChild::InitIPDL(
-    const AudioInfo& aAudioInfo,
-    const CreateDecoderParams::OptionSet& aOptions) {
+    const AudioInfo& aAudioInfo, const CreateDecoderParams::OptionSet& aOptions,
+    const Maybe<uint64_t>& aMediaEngineId) {
   RefPtr<RemoteDecoderManagerChild> manager =
       RemoteDecoderManagerChild::GetSingleton(mLocation);
 
@@ -55,22 +56,25 @@ MediaResult RemoteAudioDecoderChild::InitIPDL(
   }
 
   mIPDLSelfRef = this;
-  Unused << manager->SendPRemoteDecoderConstructor(this, aAudioInfo, aOptions,
-                                                   Nothing());
+  Unused << manager->SendPRemoteDecoderConstructor(
+      this, aAudioInfo, aOptions, Nothing(), aMediaEngineId, Nothing());
   return NS_OK;
 }
 
 RemoteAudioDecoderParent::RemoteAudioDecoderParent(
     RemoteDecoderManagerParent* aParent, const AudioInfo& aAudioInfo,
     const CreateDecoderParams::OptionSet& aOptions,
-    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue)
-    : RemoteDecoderParent(aParent, aOptions, aManagerThread, aDecodeTaskQueue),
+    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
+    Maybe<uint64_t> aMediaEngineId)
+    : RemoteDecoderParent(aParent, aOptions, aManagerThread, aDecodeTaskQueue,
+                          aMediaEngineId, Nothing()),
       mAudioInfo(aAudioInfo) {}
 
 IPCResult RemoteAudioDecoderParent::RecvConstruct(
     ConstructResolver&& aResolver) {
   auto params = CreateDecoderParams{mAudioInfo, mOptions,
-                                    CreateDecoderParams::NoWrapper(true)};
+                                    CreateDecoderParams::NoWrapper(true),
+                                    mMediaEngineId, mTrackingId};
 
   mParent->EnsurePDMFactory().CreateDecoder(params)->Then(
       GetCurrentSerialEventTarget(), __func__,

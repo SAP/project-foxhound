@@ -6,7 +6,10 @@
  * Test reloading an original file while the sourcemap is loading.
  * The test passes when the selected source is visible after two reloads.
  */
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-sourcemaps.html");
 
   await waitForSources(dbg, "entry.js");
@@ -19,9 +22,7 @@ add_task(async function() {
   await waitForLoadedSource(dbg, "entry.js");
 
   ok(
-    getCM(dbg)
-      .getValue()
-      .includes("window.keepMeAlive"),
+    getCM(dbg).getValue().includes("window.keepMeAlive"),
     "Original source text loaded correctly"
   );
 });

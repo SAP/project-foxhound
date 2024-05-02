@@ -80,9 +80,11 @@ already_AddRefed<IDirect3DSurface9> DXGID3D9TextureData::GetD3D9Surface()
 }
 
 bool DXGID3D9TextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
-  SurfaceDescriptorD3D10 desc((WindowsHandle)(mHandle), mFormat, GetSize(),
-                              gfx::YUVColorSpace::Identity,
-                              gfx::ColorRange::FULL);
+  SurfaceDescriptorD3D10 desc((WindowsHandle)(mHandle),
+                              /* gpuProcessTextureId */ Nothing(),
+                              /* arrayIndex */ 0, mFormat, GetSize(),
+                              gfx::ColorSpace2::SRGB, gfx::ColorRange::FULL,
+                              /* hasKeyedMutex */ false);
   // In reality, with D3D9 we will only ever deal with RGBA textures.
   bool isYUV = mFormat == gfx::SurfaceFormat::NV12 ||
                mFormat == gfx::SurfaceFormat::P010 ||
@@ -90,7 +92,7 @@ bool DXGID3D9TextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
   if (isYUV) {
     gfxCriticalError() << "Unexpected YUV format for DXGID3D9TextureData: "
                        << mFormat;
-    desc.yUVColorSpace() = gfx::YUVColorSpace::BT601;
+    desc.colorSpace() = gfx::ColorSpace2::BT601_525;
     desc.colorRange() = gfx::ColorRange::LIMITED;
   }
   aOutDescriptor = desc;
@@ -249,6 +251,57 @@ already_AddRefed<gfx::SourceSurface> D3D9SurfaceImage::GetAsSourceSurface() {
   surface->Unmap();
 
   return surface.forget();
+}
+
+nsresult D3D9SurfaceImage::BuildSurfaceDescriptorBuffer(
+    SurfaceDescriptorBuffer& aSdBuffer, BuildSdbFlags aFlags,
+    const std::function<MemoryOrShmem(uint32_t)>& aAllocate) {
+  if (!mTexture) {
+    return NS_ERROR_FAILURE;
+  }
+
+  auto format = gfx::SurfaceFormat::B8G8R8X8;
+  uint8_t* buffer = nullptr;
+  int32_t stride = 0;
+  nsresult rv = AllocateSurfaceDescriptorBufferRgb(
+      mSize, format, buffer, aSdBuffer, stride, aAllocate);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // Readback the texture from GPU memory into system memory, so that
+  // we can copy it into the Cairo image. This is expensive.
+  RefPtr<IDirect3DSurface9> textureSurface = GetD3D9Surface();
+  if (!textureSurface) {
+    return NS_ERROR_FAILURE;
+  }
+
+  RefPtr<IDirect3DDevice9> device;
+  HRESULT hr = textureSurface->GetDevice(getter_AddRefs(device));
+  NS_ENSURE_TRUE(SUCCEEDED(hr), NS_ERROR_FAILURE);
+
+  RefPtr<IDirect3DSurface9> systemMemorySurface;
+  hr = device->CreateOffscreenPlainSurface(
+      mSize.width, mSize.height, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM,
+      getter_AddRefs(systemMemorySurface), 0);
+  NS_ENSURE_TRUE(SUCCEEDED(hr), NS_ERROR_FAILURE);
+
+  hr = device->GetRenderTargetData(textureSurface, systemMemorySurface);
+  NS_ENSURE_TRUE(SUCCEEDED(hr), NS_ERROR_FAILURE);
+
+  D3DLOCKED_RECT rect;
+  hr = systemMemorySurface->LockRect(&rect, nullptr, 0);
+  NS_ENSURE_TRUE(SUCCEEDED(hr), NS_ERROR_FAILURE);
+
+  const unsigned char* src = (const unsigned char*)(rect.pBits);
+  const unsigned srcPitch = rect.Pitch;
+  for (int y = 0; y < mSize.height; y++) {
+    memcpy(buffer + stride * y, (unsigned char*)(src) + srcPitch * y,
+           mSize.width * 4);
+  }
+
+  systemMemorySurface->UnlockRect();
+  return NS_OK;
 }
 
 already_AddRefed<TextureClient> D3D9RecycleAllocator::Allocate(

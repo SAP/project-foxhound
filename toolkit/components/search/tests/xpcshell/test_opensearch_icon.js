@@ -3,7 +3,7 @@
 
 "use strict";
 
-add_task(async function setup() {
+add_setup(async function () {
   let server = useHttpServer();
   server.registerContentType("sjs", "sjs");
   await AddonTestUtils.promiseStartupManager();
@@ -29,7 +29,7 @@ const tests = [
 ];
 
 for (const test of tests) {
-  add_task(async function() {
+  add_task(async function () {
     info(`Testing ${test.name}`);
 
     let promiseEngineAdded = SearchTestUtils.promiseSearchNotification(
@@ -48,9 +48,9 @@ for (const test of tests) {
     };
     // The easiest way to test adding the icon is via a generated xml, otherwise
     // we have to somehow insert the address of the server into it.
-    SearchTestUtils.promiseNewSearchEngine(
-      `${gDataUrl}engineMaker.sjs?${JSON.stringify(engineData)}`
-    );
+    SearchTestUtils.promiseNewSearchEngine({
+      url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(engineData)}`,
+    });
     let engine = await promiseEngineAdded;
     await promiseEngineChanged;
 

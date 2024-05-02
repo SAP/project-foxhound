@@ -18,7 +18,6 @@
 #include "nsGkAtoms.h"
 #include "nsIUserIdleServiceInternal.h"
 #include "nsIWindowsRegKey.h"
-#include "nsMemory.h"
 #include "nsPrintfCString.h"
 #include "nsQuickSort.h"
 #include "nsReadableUtils.h"
@@ -34,16 +33,12 @@
 #include "npapi.h"
 
 #include <windows.h>
+#include <winnls.h>
 #include <winuser.h>
 #include <algorithm>
 
 #ifndef WINABLEAPI
 #  include <winable.h>
-#endif
-
-// In WinUser.h, MAPVK_VK_TO_VSC_EX is defined only when WINVER >= 0x0600
-#ifndef MAPVK_VK_TO_VSC_EX
-#  define MAPVK_VK_TO_VSC_EX (4)
 #endif
 
 // For collecting other people's log, tell them `MOZ_LOG=KeyboardHandler:4,sync`
@@ -419,21 +414,21 @@ static const nsCString GetCharacterCodeName(WPARAM aCharCode) {
       return "ZERO WIDTH NO-BREAK SPACE (0xFEFF)"_ns;
     default: {
       if (aCharCode < ' ' || (aCharCode >= 0x80 && aCharCode < 0xA0)) {
-        return nsPrintfCString("control (0x%04X)", aCharCode);
+        return nsPrintfCString("control (0x%04zX)", aCharCode);
       }
       if (NS_IS_HIGH_SURROGATE(aCharCode)) {
-        return nsPrintfCString("high surrogate (0x%04X)", aCharCode);
+        return nsPrintfCString("high surrogate (0x%04zX)", aCharCode);
       }
       if (NS_IS_LOW_SURROGATE(aCharCode)) {
-        return nsPrintfCString("low surrogate (0x%04X)", aCharCode);
+        return nsPrintfCString("low surrogate (0x%04zX)", aCharCode);
       }
       return IS_IN_BMP(aCharCode)
                  ? nsPrintfCString(
-                       "'%s' (0x%04X)",
+                       "'%s' (0x%04zX)",
                        NS_ConvertUTF16toUTF8(nsAutoString(aCharCode)).get(),
                        aCharCode)
                  : nsPrintfCString(
-                       "'%s' (0x%08X)",
+                       "'%s' (0x%08zX)",
                        NS_ConvertUTF16toUTF8(nsAutoString(aCharCode)).get(),
                        aCharCode);
     }
@@ -555,7 +550,7 @@ static const nsCString GetMessageName(UINT aMessage) {
 
 static const nsCString GetVirtualKeyCodeName(WPARAM aVK) {
   if (aVK >= ArrayLength(kVirtualKeyName)) {
-    return nsPrintfCString("Invalid (0x%08X)", aVK);
+    return nsPrintfCString("Invalid (0x%08zX)", aVK);
   }
   return nsCString(kVirtualKeyName[aVK]);
 }
@@ -667,7 +662,7 @@ static const nsCString GetAppCommandName(WPARAM aCommand) {
     case APPCOMMAND_VOLUME_UP:
       return "APPCOMMAND_VOLUME_UP"_ns;
     default:
-      return nsPrintfCString("Unknown app command (0x%08X)", aCommand);
+      return nsPrintfCString("Unknown app command (0x%08zX)", aCommand);
   }
 }
 
@@ -680,7 +675,8 @@ static const nsCString GetAppCommandDeviceName(LPARAM aDevice) {
     case FAPPCOMMAND_OEM:
       return "FAPPCOMMAND_OEM"_ns;
     default:
-      return nsPrintfCString("Unknown app command device (0x%04X)", aDevice);
+      return nsPrintfCString("Unknown app command device (0x%04" PRIXLPTR ")",
+                             aDevice);
   }
 };
 
@@ -723,7 +719,7 @@ class MOZ_STACK_CLASS GetAppCommandKeysName final : public nsAutoCString {
     }
     if (aKeys) {
       MaybeAppendSeparator();
-      AppendPrintf("Unknown Flags (0x%04X)", aKeys);
+      AppendPrintf("Unknown Flags (0x%04zX)", aKeys);
     }
     if (IsEmpty()) {
       AssignLiteral("none (0x0000)");
@@ -749,7 +745,8 @@ static const nsCString ToString(const MSG& aMSG) {
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP:
       result.AppendPrintf(
-          "virtual keycode=%s, repeat count=%d, "
+          "virtual keycode=%s, repeat count=%" PRIdLPTR
+          ", "
           "scancode=0x%02X, extended key=%s, "
           "context code=%s, previous key state=%s, "
           "transition state=%s",
@@ -765,7 +762,8 @@ static const nsCString ToString(const MSG& aMSG) {
     case WM_SYSCHAR:
     case WM_SYSDEADCHAR:
       result.AppendPrintf(
-          "character code=%s, repeat count=%d, "
+          "character code=%s, repeat count=%" PRIdLPTR
+          ", "
           "scancode=0x%02X, extended key=%s, "
           "context code=%s, previous key state=%s, "
           "transition state=%s",
@@ -778,14 +776,15 @@ static const nsCString ToString(const MSG& aMSG) {
       break;
     case WM_APPCOMMAND:
       result.AppendPrintf(
-          "window handle=0x%p, app command=%s, device=%s, dwKeys=%s",
+          "window handle=0x%zx, app command=%s, device=%s, dwKeys=%s",
           aMSG.wParam,
           GetAppCommandName(GET_APPCOMMAND_LPARAM(aMSG.lParam)).get(),
           GetAppCommandDeviceName(GET_DEVICE_LPARAM(aMSG.lParam)).get(),
           GetAppCommandKeysName(GET_KEYSTATE_LPARAM(aMSG.lParam)).get());
       break;
     default:
-      result.AppendPrintf("wParam=%u, lParam=%u", aMSG.wParam, aMSG.lParam);
+      result.AppendPrintf("wParam=%zu, lParam=%" PRIdLPTR, aMSG.wParam,
+                          aMSG.lParam);
       break;
   }
   result.AppendPrintf(", hwnd=0x%p", aMSG.hwnd);
@@ -863,7 +862,7 @@ void ModifierKeyState::Update() {
     }
   }
   if (IS_VK_DOWN(VK_LWIN) || IS_VK_DOWN(VK_RWIN)) {
-    mModifiers |= MODIFIER_OS;
+    mModifiers |= MODIFIER_META;
   }
   if (::GetKeyState(VK_CAPITAL) & 1) {
     mModifiers |= MODIFIER_CAPSLOCK;
@@ -941,7 +940,9 @@ bool ModifierKeyState::IsAlt() const {
   return (mModifiers & MODIFIER_ALT) != 0;
 }
 
-bool ModifierKeyState::IsWin() const { return (mModifiers & MODIFIER_OS) != 0; }
+bool ModifierKeyState::IsWin() const {
+  return (mModifiers & MODIFIER_META) != 0;
+}
 
 bool ModifierKeyState::MaybeMatchShortcutKey() const {
   // If Windows key is pressed, even if both Ctrl key and Alt key are pressed,
@@ -1239,8 +1240,9 @@ NativeKey* NativeKey::sLatestInstance = nullptr;
 const MSG NativeKey::sEmptyMSG = {};
 MSG NativeKey::sLastKeyOrCharMSG = {};
 MSG NativeKey::sLastKeyMSG = {};
+char16_t NativeKey::sPendingHighSurrogate = 0;
 
-NativeKey::NativeKey(nsWindowBase* aWidget, const MSG& aMessage,
+NativeKey::NativeKey(nsWindow* aWidget, const MSG& aMessage,
                      const ModifierKeyState& aModKeyState,
                      HKL aOverrideKeyboardLayout,
                      nsTArray<FakeCharMsg>* aFakeCharMsgs)
@@ -1297,7 +1299,7 @@ NativeKey::NativeKey(nsWindowBase* aWidget, const MSG& aMessage,
   }
 
   MOZ_LOG(gKeyLog, LogLevel::Info,
-          ("%p   NativeKey::NativeKey(), mKeyboardLayout=0x%08X, "
+          ("%p   NativeKey::NativeKey(), mKeyboardLayout=0x%p, "
            "mFocusedWndBeforeDispatch=0x%p, mDOMKeyCode=%s, "
            "mKeyNameIndex=%s, mCodeNameIndex=%s, mModKeyState=%s, "
            "mVirtualKeyCode=%s, mOriginalVirtualKeyCode=%s, "
@@ -1395,7 +1397,6 @@ void NativeKey::InitIsSkippableForKeyOrChar(const MSG& aLastKeyMSG) {
           // by the auto-repeat feature.
           return;
       }
-      return;
     case WM_APPCOMMAND:
       MOZ_ASSERT_UNREACHABLE(
           "WM_APPCOMMAND should be handled in "
@@ -1409,11 +1410,14 @@ void NativeKey::InitIsSkippableForKeyOrChar(const MSG& aLastKeyMSG) {
 
 void NativeKey::InitWithKeyOrChar() {
   MSG lastKeyMSG = sLastKeyMSG;
+  char16_t pendingHighSurrogate = sPendingHighSurrogate;
   mScanCode = WinUtils::GetScanCode(mMsg.lParam);
   mIsExtended = WinUtils::IsExtendedScanCode(mMsg.lParam);
   switch (mMsg.message) {
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
+      sPendingHighSurrogate = 0;
+      [[fallthrough]];
     case WM_KEYUP:
     case WM_SYSKEYUP: {
       // Modify sLastKeyMSG now since retrieving following char messages may
@@ -1523,6 +1527,7 @@ void NativeKey::InitWithKeyOrChar() {
     case WM_CHAR:
     case WM_UNICHAR:
     case WM_SYSCHAR:
+      sPendingHighSurrogate = 0;
       // If there is another instance and it is trying to remove a char message
       // from the queue, this message should be handled in the old instance.
       if (IsAnotherInstanceRemovingCharMessage()) {
@@ -1597,6 +1602,55 @@ void NativeKey::InitWithKeyOrChar() {
                this, ToString(charMsg).get()));
       Unused << NS_WARN_IF(charMsg.hwnd != mMsg.hwnd);
       mFollowingCharMsgs.AppendElement(charMsg);
+    }
+    if (mFollowingCharMsgs.Length() == 1) {
+      // If we receive a keydown message for a high-surrogate, a low-surrogate
+      // keydown message **will** and should follow it.  We cannot translate the
+      // following WM_KEYDOWN message for the low-surrogate right now since
+      // it's not yet queued into the message queue yet.  Therefore, we need to
+      // wait next one to dispatch keypress event with setting its `.key` value
+      // to a surrogate pair rather than setting it to a lone surrogate.
+      // FYI: This may happen with typing a non-BMP character on the touch
+      // keyboard on Windows 10 or later except when an IME is installed. (If
+      // IME is installed, composition is used instead.)
+      if (IS_HIGH_SURROGATE(mFollowingCharMsgs[0].wParam)) {
+        if (pendingHighSurrogate) {
+          MOZ_LOG(gKeyLog, LogLevel::Warning,
+                  ("%p   NativeKey::InitWithKeyOrChar(), there is pending "
+                   "high surrogate input, but received another high surrogate "
+                   "input.  The previous one is discarded",
+                   this));
+        }
+        sPendingHighSurrogate = mFollowingCharMsgs[0].wParam;
+        mFollowingCharMsgs.Clear();
+      } else if (IS_LOW_SURROGATE(mFollowingCharMsgs[0].wParam)) {
+        // If we stopped dispathing a keypress event for a preceding
+        // high-surrogate, treat this keydown (for a low-surrogate) as
+        // introducing both the high surrogate and the low surrogate.
+        if (pendingHighSurrogate) {
+          MSG charMsg = mFollowingCharMsgs[0];
+          mFollowingCharMsgs[0].wParam = pendingHighSurrogate;
+          mFollowingCharMsgs.AppendElement(std::move(charMsg));
+        } else {
+          MOZ_LOG(
+              gKeyLog, LogLevel::Warning,
+              ("%p   NativeKey::InitWithKeyOrChar(), there is no pending high "
+               "surrogate input, but received lone low surrogate input",
+               this));
+        }
+      } else {
+        MOZ_LOG(gKeyLog, LogLevel::Warning,
+                ("%p   NativeKey::InitWithKeyOrChar(), there is pending "
+                 "high surrogate input, but received non-surrogate input.  "
+                 "The high surrogate input is discarded",
+                 this));
+      }
+    } else {
+      MOZ_LOG(gKeyLog, LogLevel::Warning,
+              ("%p   NativeKey::InitWithKeyOrChar(), there is pending "
+               "high surrogate input, but received 2 or more character input.  "
+               "The high surrogate input is discarded",
+               this));
     }
   }
 
@@ -1969,6 +2023,7 @@ uint32_t NativeKey::GetKeyLocation() const {
     case VK_CONTROL:
     case VK_MENU:
       NS_WARNING("Failed to decide the key location?");
+      [[fallthrough]];
 
     default:
       return eKeyLocationStandard;
@@ -2023,15 +2078,12 @@ nsEventStatus NativeKey::InitKeyEvent(
       if (mCharMessageHasGone) {
         aKeyEvent.PreventDefaultBeforeDispatch(CrossProcessForwarding::eAllow);
       }
-      [[fallthrough]];
-    case eKeyDownOnPlugin:
       aKeyEvent.mKeyCode = mDOMKeyCode;
       // Unique id for this keydown event and its associated keypress.
       sUniqueKeyEventId++;
       aKeyEvent.mUniqueId = sUniqueKeyEventId;
       break;
     case eKeyUp:
-    case eKeyUpOnPlugin:
       aKeyEvent.mKeyCode = mDOMKeyCode;
       // Set defaultPrevented of the key event if the VK_MENU is not a system
       // key release, so that the menu bar does not trigger.  This helps avoid
@@ -2373,7 +2425,7 @@ bool NativeKey::HandleAppCommandMessage() const {
          this));
     if (mWidget->Destroyed()) {
       MOZ_LOG(gKeyLog, LogLevel::Info,
-              ("%p   NativeKey::HandleAppCommandMessage(), %s event caused "
+              ("%p   NativeKey::HandleAppCommandMessage(), keyup event caused "
                "destroying the widget",
                this));
       return true;
@@ -2409,6 +2461,18 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
     MOZ_LOG(gKeyLog, LogLevel::Info,
             ("%p   NativeKey::HandleKeyDownMessage(), doesn't dispatch keydown "
              "event because the key combination is reserved by the system",
+             this));
+    if (RedirectedKeyDownMessageManager::IsRedirectedMessage(mMsg)) {
+      RedirectedKeyDownMessageManager::Forget();
+    }
+    return false;
+  }
+
+  if (sPendingHighSurrogate) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("%p   NativeKey::HandleKeyDownMessage(), doesn't dispatch keydown "
+             "event because the key introduced only a high surrotate, so we "
+             "should wait the following low surrogate input",
              this));
     if (RedirectedKeyDownMessageManager::IsRedirectedMessage(mMsg)) {
       RedirectedKeyDownMessageManager::Forget();
@@ -2776,6 +2840,15 @@ bool NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const {
     return false;
   }
 
+  if (sPendingHighSurrogate) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("%p   NativeKey::HandleKeyUpMessage(), doesn't dispatch keyup "
+             "event because the key introduced only a high surrotate, so we "
+             "should wait the following low surrogate input",
+             this));
+    return false;
+  }
+
   // If the widget has gone, we should do nothing.
   if (mWidget->Destroyed()) {
     MOZ_LOG(
@@ -3101,10 +3174,10 @@ bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
             gKeyLog, LogLevel::Warning,
             ("%p   NativeKey::GetFollowingCharMessage(), WARNING, failed to "
              "remove a char message due to message change, let's retry to "
-             "remove the message with newly found char message, ",
-             "nextKeyMsgInAllWindows=%s, nextKeyMsg=%s, kFoundCharMsg=%s", this,
-             ToString(nextKeyMsgInAllWindows).get(), ToString(nextKeyMsg).get(),
-             ToString(kFoundCharMsg).get()));
+             "remove the message with newly found char message, "
+             "nextKeyMsgInAllWindows=%s, nextKeyMsg=%s, kFoundCharMsg=%s",
+             this, ToString(nextKeyMsgInAllWindows).get(),
+             ToString(nextKeyMsg).get(), ToString(kFoundCharMsg).get()));
         nextKeyMsg = nextKeyMsgInAllWindows;
         continue;
       }
@@ -3153,12 +3226,12 @@ bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
     if (doCrash) {
       nsPrintfCString info(
           "\nPeekMessage() failed to remove char message! "
-          "\nActive keyboard layout=0x%08X (%s), "
+          "\nActive keyboard layout=0x%p (%s), "
           "\nHandling message: %s, InSendMessageEx()=%s, "
           "\nFound message: %s, "
           "\nWM_NULL has been removed: %d, "
           "\nNext key message in all windows: %s, "
-          "time=%d, ",
+          "time=%ld, ",
           KeyboardLayout::GetActiveLayout(),
           KeyboardLayout::GetActiveLayoutName().get(), ToString(mMsg).get(),
           GetResultOfInSendMessageEx().get(), ToString(kFoundCharMsg).get(), i,
@@ -3166,7 +3239,7 @@ bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
       CrashReporter::AppendAppNotesToCrashReport(info);
       MSG nextMsg;
       if (WinUtils::PeekMessage(&nextMsg, 0, 0, 0, PM_NOREMOVE | PM_NOYIELD)) {
-        nsPrintfCString info("\nNext message in all windows: %s, time=%d",
+        nsPrintfCString info("\nNext message in all windows: %s, time=%ld",
                              ToString(nextMsg).get(), nextMsg.time);
         CrashReporter::AppendAppNotesToCrashReport(info);
       } else {
@@ -3185,8 +3258,9 @@ bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
     if (removedMsg.message == WM_NULL) {
       MOZ_LOG(gKeyLog, LogLevel::Warning,
               ("%p   NativeKey::GetFollowingCharMessage(), WARNING, failed to "
-               "remove a char message, instead, removed WM_NULL message, ",
-               "removedMsg=%s", this, ToString(removedMsg).get()));
+               "remove a char message, instead, removed WM_NULL message, "
+               "removedMsg=%s",
+               this, ToString(removedMsg).get()));
       // Check if there is the message which we're trying to remove.
       MSG newNextKeyMsg;
       if (!WinUtils::PeekMessage(&newNextKeyMsg, mMsg.hwnd, WM_KEYFIRST,
@@ -3300,7 +3374,7 @@ bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
          ToString(kFoundCharMsg).get()));
     nsPrintfCString info(
         "\nPeekMessage() removed unexpcted char message! "
-        "\nActive keyboard layout=0x%08X (%s), "
+        "\nActive keyboard layout=0x%p (%s), "
         "\nHandling message: %s, InSendMessageEx()=%s, "
         "\nFound message: %s, "
         "\nRemoved message: %s, ",
@@ -3343,7 +3417,7 @@ bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
        this, ToString(nextKeyMsg).get()));
   nsPrintfCString info(
       "\nWe lost following char message! "
-      "\nActive keyboard layout=0x%08X (%s), "
+      "\nActive keyboard layout=0x%p (%s), "
       "\nHandling message: %s, InSendMessageEx()=%s, \n"
       "Found message: %s, removed a lot of WM_NULL",
       KeyboardLayout::GetActiveLayout(),
@@ -3573,7 +3647,7 @@ void NativeKey::WillDispatchKeyboardEvent(WidgetKeyboardEvent& aKeyboardEvent,
         //     we'd get some bug reports.
         MOZ_LOG(gKeyLog, LogLevel::Warning,
                 ("%p   NativeKey::WillDispatchKeyboardEvent(), WARNING, "
-                 "ignoring %uth message due to non-printable char message, %s",
+                 "ignoring %zuth message due to non-printable char message, %s",
                  this, i + 1, ToString(mFollowingCharMsgs[i]).get()));
         continue;
       }
@@ -4206,9 +4280,9 @@ nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
   // language) or 0xEYYYXXXX (IMM-IME), we can retrieve its name simply.
   if (layout < 0xA000 || (layout & 0xF000) == 0xE000) {
     nsAutoString key(kKeyboardLayouts);
-    key.AppendPrintf("%08X", layout < 0xA000
-                                 ? layout
-                                 : reinterpret_cast<uintptr_t>(aLayout));
+    key.AppendPrintf("%08" PRIXPTR, layout < 0xA000
+                                        ? layout
+                                        : reinterpret_cast<uintptr_t>(aLayout));
     wchar_t buf[256];
     if (NS_WARN_IF(!WinUtils::GetRegistryKey(
             HKEY_LOCAL_MACHINE, key.get(), L"Layout Text", buf, sizeof(buf)))) {
@@ -4219,7 +4293,7 @@ nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
 
   if (NS_WARN_IF((layout & 0xF000) != 0xF000)) {
     nsCString result;
-    result.AppendPrintf("Odd HKL: 0x%08X",
+    result.AppendPrintf("Odd HKL: 0x%08" PRIXPTR,
                         reinterpret_cast<uintptr_t>(aLayout));
     return result;
   }
@@ -4292,7 +4366,7 @@ void KeyboardLayout::LoadLayout(HKL aLayout) {
   mHasAltGr = false;
 
   MOZ_LOG(gKeyLog, LogLevel::Info,
-          ("KeyboardLayout::LoadLayout(aLayout=0x%08X (%s))", aLayout,
+          ("KeyboardLayout::LoadLayout(aLayout=0x%p (%s))", aLayout,
            GetLayoutName(aLayout).get()));
 
   BYTE kbdState[256];
@@ -5083,9 +5157,9 @@ CodeNameIndex KeyboardLayout::ConvertScanCodeToCodeNameIndex(UINT aScanCode) {
 }
 
 nsresult KeyboardLayout::SynthesizeNativeKeyEvent(
-    nsWindowBase* aWidget, int32_t aNativeKeyboardLayout,
-    int32_t aNativeKeyCode, uint32_t aModifierFlags,
-    const nsAString& aCharacters, const nsAString& aUnmodifiedCharacters) {
+    nsWindow* aWidget, int32_t aNativeKeyboardLayout, int32_t aNativeKeyCode,
+    uint32_t aModifierFlags, const nsAString& aCharacters,
+    const nsAString& aUnmodifiedCharacters) {
   UINT keyboardLayoutListCount = ::GetKeyboardLayoutList(0, nullptr);
   NS_ASSERTION(keyboardLayoutListCount > 0,
                "One keyboard layout must be installed at least");

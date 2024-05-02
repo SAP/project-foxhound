@@ -3,14 +3,12 @@
 
 "use strict";
 
-/* import-globals-from helper_addons.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/helper_addons.js",
-  this
-);
-
-var { DevToolsServer } = require("devtools/server/devtools-server");
-var { DevToolsClient } = require("devtools/client/devtools-client");
+var {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+var {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
 
 /**
  * Make sure the listAddons request works as specified.
@@ -20,7 +18,7 @@ const ADDON1_PATH = "addons/test-addon-1/";
 const ADDON2_ID = "test-addon-2@mozilla.org";
 const ADDON2_PATH = "addons/test-addon-2/";
 
-add_task(async function() {
+add_task(async function () {
   DevToolsServer.init();
   DevToolsServer.registerAllActors();
 
@@ -32,13 +30,22 @@ add_task(async function() {
 
   let addonListChangedEvents = 0;
   client.mainRoot.on("addonListChanged", () => addonListChangedEvents++);
+  const addons = await client.mainRoot.getFront("addons");
 
-  const addon1 = await addTemporaryAddon(ADDON1_PATH);
+  const addon1 = await addTemporaryAddon({
+    addons,
+    path: ADDON1_PATH,
+    openDevTools: false,
+  });
   const addonFront1 = await client.mainRoot.getAddon({ id: ADDON1_ID });
   is(addonListChangedEvents, 0, "Should not receive addonListChanged yet.");
   ok(addonFront1, "Should find an addon actor for addon1.");
 
-  const addon2 = await addTemporaryAddon(ADDON2_PATH);
+  const addon2 = await addTemporaryAddon({
+    addons,
+    path: ADDON2_PATH,
+    openDevTools: true,
+  });
   const front1AfterAddingAddon2 = await client.mainRoot.getAddon({
     id: ADDON1_ID,
   });
@@ -74,5 +81,57 @@ add_task(async function() {
   );
   ok(!front2AfterRemove, "Should no longer get a front for addon1");
 
+  // Check behavior when openDevTools is not passed:
+  const addon2again = await addTemporaryAddon({
+    addons,
+    path: ADDON2_PATH,
+    // openDevTools: null,
+  });
+  const addonFront2again = await client.mainRoot.getAddon({ id: ADDON2_ID });
+  ok(addonFront2again, "Should find an addon actor for addon2.");
+  is(addonListChangedEvents, 4, "Should have seen addonListChanged.");
+  await removeAddon(addon2again);
+  is(addonListChangedEvents, 5, "Should have seen addonListChanged.");
+
   await client.close();
 });
+
+async function addTemporaryAddon({ addons, path, openDevTools }) {
+  const addonFilePath = getTestFilePath(path);
+  info("Installing addon: " + addonFilePath);
+
+  const onToolboxReady = gDevTools.once("toolbox-ready");
+  const { id } = await addons.installTemporaryAddon(
+    addonFilePath,
+    openDevTools
+  );
+
+  if (openDevTools) {
+    info("Wait for toolbox to be opened");
+    const toolbox = await onToolboxReady;
+    ok(true, "Toolbox was opened when openDevTools option was true");
+    info("Destroying this toolbox");
+    await toolbox.destroy();
+  }
+
+  return AddonManager.getAddonByID(id);
+}
+
+function removeAddon(addon) {
+  return new Promise(resolve => {
+    info("Removing addon.");
+
+    const listener = {
+      onUninstalled(uninstalledAddon) {
+        if (uninstalledAddon != addon) {
+          return;
+        }
+        AddonManager.removeAddonListener(listener);
+        resolve();
+      },
+    };
+
+    AddonManager.addAddonListener(listener);
+    addon.uninstall();
+  });
+}

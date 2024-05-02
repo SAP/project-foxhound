@@ -8,35 +8,41 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
-module.exports = function(context) {
-  // ---------------------------------------------------------------------------
-  // Public
-  //  --------------------------------------------------------------------------
-
-  return {
-    ExpressionStatement(node) {
-      if (
-        !node.expression ||
-        node.expression.type != "CallExpression" ||
-        !node.expression.callee ||
-        node.expression.callee.type != "MemberExpression" ||
-        !node.expression.callee.property ||
-        node.expression.callee.property.type != "Identifier" ||
-        (node.expression.callee.property.name != "concat" &&
-          node.expression.callee.property.name != "join" &&
-          node.expression.callee.property.name != "slice")
-      ) {
-        return;
-      }
-
-      context.report(
-        node,
-        `{Array/String}.${node.expression.callee.property.name} doesn't modify the instance in-place`
-      );
+module.exports = {
+  meta: {
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/use-returnValue.html",
     },
-  };
+    messages: {
+      useReturnValue:
+        "{Array/String}.{{ property }} doesn't modify the instance in-place",
+    },
+    schema: [],
+    type: "problem",
+  },
+
+  create(context) {
+    return {
+      ExpressionStatement(node) {
+        if (
+          node.expression?.type != "CallExpression" ||
+          node.expression.callee?.type != "MemberExpression" ||
+          node.expression.callee.property?.type != "Identifier" ||
+          !["concat", "join", "slice"].includes(
+            node.expression.callee.property?.name
+          )
+        ) {
+          return;
+        }
+
+        context.report({
+          node,
+          messageId: "useReturnValue",
+          data: {
+            property: node.expression.callee.property.name,
+          },
+        });
+      },
+    };
+  },
 };

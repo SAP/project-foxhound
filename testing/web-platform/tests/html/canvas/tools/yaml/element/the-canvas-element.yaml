@@ -1,14 +1,10 @@
-- name: 2d.getcontext.exists
+- name: 2d.canvas.context.exists
   desc: The 2D context is implemented
-  testing:
-  - context.2d
   code: |
     @assert canvas.getContext('2d') !== null;
 
-- name: 2d.getcontext.invalid.args
+- name: 2d.canvas.context.invalid.args
   desc: Calling getContext with invalid arguments.
-  testing:
-  - context.2d
   code: |
     @assert canvas.getContext('') === null;
     @assert canvas.getContext('2d#') === null;
@@ -20,10 +16,8 @@
     @assert canvas.getContext('null') === null;
     @assert canvas.getContext('undefined') === null;
 
-- name: 2d.getcontext.extraargs.create
+- name: 2d.canvas.context.extraargs.create
   desc: The 2D context doesn't throw with extra getContext arguments (new context)
-  testing:
-  - context.2d.extraargs
   code: |
     @assert document.createElement("canvas").getContext('2d', false, {}, [], 1, "2") !== null;
     @assert document.createElement("canvas").getContext('2d', 123) !== null;
@@ -32,10 +26,8 @@
     @assert document.createElement("canvas").getContext('2d', null) !== null;
     @assert document.createElement("canvas").getContext('2d', Symbol.hasInstance) !== null;
 
-- name: 2d.getcontext.extraargs.cache
+- name: 2d.canvas.context.extraargs.cache
   desc: The 2D context doesn't throw with extra getContext arguments (cached)
-  testing:
-  - context.2d.extraargs
   code: |
     @assert canvas.getContext('2d', false, {}, [], 1, "2") !== null;
     @assert canvas.getContext('2d', 123) !== null;
@@ -44,20 +36,16 @@
     @assert canvas.getContext('2d', null) !== null;
     @assert canvas.getContext('2d', Symbol.hasInstance) !== null;
 
-- name: 2d.type.exists
+- name: 2d.canvas.context.type.exists
   desc: The 2D context interface is a property of 'window'
   notes: &bindings Defined in "Web IDL" (draft)
-  testing:
-  - context.2d.type
   code: |
     @assert window.CanvasRenderingContext2D;
 
-- name: 2d.type.prototype
+- name: 2d.canvas.context.type.prototype
   desc: window.CanvasRenderingContext2D.prototype are not [[Writable]] and not [[Configurable]],
     and its methods are [[Configurable]].
   notes: *bindings
-  testing:
-  - context.2d.type
   code: |
     @assert window.CanvasRenderingContext2D.prototype;
     @assert window.CanvasRenderingContext2D.prototype.fill;
@@ -70,11 +58,9 @@
     delete window.CanvasRenderingContext2D.prototype.fill;
     @assert window.CanvasRenderingContext2D.prototype.fill === undefined;
 
-- name: 2d.type.replace
+- name: 2d.canvas.context.type.replace
   desc: Interface methods can be overridden
   notes: *bindings
-  testing:
-  - context.2d.type
   code: |
     var fillRect = window.CanvasRenderingContext2D.prototype.fillRect;
     window.CanvasRenderingContext2D.prototype.fillRect = function (x, y, w, h)
@@ -87,11 +73,9 @@
     @assert pixel 50,25 == 0,255,0,255;
   expected: green
 
-- name: 2d.type.extend
+- name: 2d.canvas.context.type.extend
   desc: Interface methods can be added
   notes: *bindings
-  testing:
-  - context.2d.type
   code: |
     window.CanvasRenderingContext2D.prototype.fillRectGreen = function (x, y, w, h)
     {
@@ -103,17 +87,13 @@
     @assert pixel 50,25 == 0,255,0,255;
   expected: green
 
-- name: 2d.getcontext.unique
+- name: 2d.canvas.context.unique
   desc: getContext('2d') returns the same object
-  testing:
-  - context.unique
   code: |
     @assert canvas.getContext('2d') === canvas.getContext('2d');
 
-- name: 2d.getcontext.shared
+- name: 2d.canvas.context.shared
   desc: getContext('2d') returns objects which share canvas state
-  testing:
-  - context.unique
   code: |
     var ctx2 = canvas.getContext('2d');
     ctx.fillStyle = '#f00';
@@ -122,9 +102,10 @@
     @assert pixel 50,25 == 0,255,0,255;
   expected: green
 
-- name: 2d.scaled
+- name: 2d.canvas.host.scaled
   desc: CSS-scaled canvases get drawn correctly
-  canvas: 'width="50" height="25" style="width: 100px; height: 50px"'
+  size: 50, 25
+  canvas: 'style="width: 100px; height: 50px"'
   manual:
   code: |
     ctx.fillStyle = '#00f';
@@ -140,17 +121,13 @@
     cr.rectangle(0, 0, 50, 20)
     cr.fill()
 
-- name: 2d.canvas.reference
+- name: 2d.canvas.host.reference
   desc: CanvasRenderingContext2D.canvas refers back to its canvas
-  testing:
-  - 2d.canvas
   code: |
     @assert ctx.canvas === canvas;
 
-- name: 2d.canvas.readonly
+- name: 2d.canvas.host.readonly
   desc: CanvasRenderingContext2D.canvas is readonly
-  testing:
-  - 2d.canvas.attribute
   code: |
     var c = document.createElement('canvas');
     var d = ctx.canvas;
@@ -158,12 +135,9 @@
     ctx.canvas = c;
     @assert ctx.canvas === d;
 
-- name: 2d.canvas.context
+- name: 2d.canvas.context.prototype
   desc: checks CanvasRenderingContext2D prototype
-  testing:
-  - 2d.path.contexttypexxx.basic
   code: |
     @assert Object.getPrototypeOf(CanvasRenderingContext2D.prototype) === Object.prototype;
     @assert Object.getPrototypeOf(ctx) === CanvasRenderingContext2D.prototype;
     t.done();
-

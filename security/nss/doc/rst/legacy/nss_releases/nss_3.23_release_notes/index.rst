@@ -10,7 +10,7 @@ NSS 3.23 release notes
 
    The NSS team has released Network Security Services (NSS) 3.23, which is a minor release.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -29,8 +29,6 @@ NSS 3.23 release notes
 `New in NSS 3.23 <#new_in_nss_3.23>`__
 --------------------------------------
 
-.. container::
-
 .. _new_functionality:
 
 `New Functionality <#new_functionality>`__
@@ -42,7 +40,7 @@ NSS 3.23 release notes
       917571 <https://bugzilla.mozilla.org/show_bug.cgi?id=917571>`__, `bug
       1227905 <https://bugzilla.mozilla.org/show_bug.cgi?id=1227905>`__)
 
-   -  
+   -
 
       .. container::
 
@@ -54,9 +52,9 @@ NSS 3.23 release notes
 
    -  *in ssl.h*
 
-      -  **SSL_SetDowngradeCheckVersion** - Set maximum version for new ServerRandom anti-downgrade
+      -  **SSL_SetDowngradeCheckVersion** - Set maximum version for new ServerRandom anti-downgrade
          mechanism. Clients that perform a version downgrade (which is a dangerous practice) call
-         this with the highest version number that they possibly support.  This gives them access to
+         this with the highest version number that they possibly support.  This gives them access to
          the `version downgrade protection from TLS
          1.3 <https://tlswg.github.io/tls13-spec/#client-hello>`__.
 

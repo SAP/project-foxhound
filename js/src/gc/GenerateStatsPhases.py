@@ -54,8 +54,8 @@
 # NOTE: If you add new phases here the current next phase kind number can be
 # found at the end of js/src/gc/StatsPhasesGenerated.inc
 
-import re
 import collections
+import re
 
 
 class PhaseKind:
@@ -112,7 +112,6 @@ PhaseKindGraphRoots = [
         [
             addPhaseKind("UNMARK", "Unmark", 7),
             addPhaseKind("UNMARK_WEAKMAPS", "Unmark WeakMaps", 76),
-            addPhaseKind("BUFFER_GRAY_ROOTS", "Buffer Gray Roots", 49),
             addPhaseKind("MARK_DISCARD_CODE", "Mark Discard Code", 3),
             addPhaseKind("RELAZIFY_FUNCTIONS", "Relazify Functions", 4),
             addPhaseKind("PURGE", "Purge", 5),
@@ -125,36 +124,42 @@ PhaseKindGraphRoots = [
         "MARK",
         "Mark",
         6,
-        [getPhaseKind("MARK_ROOTS"), addPhaseKind("MARK_DELAYED", "Mark Delayed", 8)],
+        [
+            getPhaseKind("MARK_ROOTS"),
+            addPhaseKind("MARK_DELAYED", "Mark Delayed", 8),
+            addPhaseKind(
+                "MARK_WEAK",
+                "Mark Weak",
+                13,
+                [
+                    getPhaseKind("MARK_DELAYED"),
+                    addPhaseKind("MARK_GRAY_WEAK", "Mark Gray and Weak", 16),
+                ],
+            ),
+            addPhaseKind("MARK_INCOMING_GRAY", "Mark Incoming Gray Pointers", 14),
+            addPhaseKind("MARK_GRAY", "Mark Gray", 15),
+            addPhaseKind(
+                "PARALLEL_MARK",
+                "Parallel marking",
+                78,
+                [
+                    getPhaseKind("JOIN_PARALLEL_TASKS"),
+                    # The following are only used for parallel phase times:
+                    addPhaseKind("PARALLEL_MARK_MARK", "Parallel marking work", 79),
+                    addPhaseKind("PARALLEL_MARK_WAIT", "Waiting for work", 80),
+                    addPhaseKind(
+                        "PARALLEL_MARK_OTHER", "Parallel marking overhead", 82
+                    ),
+                ],
+            ),
+        ],
     ),
     addPhaseKind(
         "SWEEP",
         "Sweep",
         9,
         [
-            addPhaseKind(
-                "SWEEP_MARK",
-                "Mark During Sweeping",
-                10,
-                [
-                    getPhaseKind("MARK_DELAYED"),
-                    addPhaseKind(
-                        "SWEEP_MARK_WEAK",
-                        "Mark Weak",
-                        13,
-                        [
-                            getPhaseKind("MARK_DELAYED"),
-                            addPhaseKind(
-                                "SWEEP_MARK_GRAY_WEAK", "Mark Gray and Weak", 16
-                            ),
-                        ],
-                    ),
-                    addPhaseKind(
-                        "SWEEP_MARK_INCOMING_GRAY", "Mark Incoming Gray Pointers", 14
-                    ),
-                    addPhaseKind("SWEEP_MARK_GRAY", "Mark Gray", 15),
-                ],
-            ),
+            getPhaseKind("MARK"),
             addPhaseKind(
                 "FINALIZE_START",
                 "Finalize Start Callbacks",
@@ -184,12 +189,12 @@ PhaseKindGraphRoots = [
                     addPhaseKind("SWEEP_COMPRESSION", "Sweep Compression Tasks", 62),
                     addPhaseKind("SWEEP_WEAKMAPS", "Sweep WeakMaps", 63),
                     addPhaseKind("SWEEP_UNIQUEIDS", "Sweep Unique IDs", 64),
+                    addPhaseKind("SWEEP_WEAK_POINTERS", "Sweep Weak Pointers", 81),
                     addPhaseKind(
-                        "SWEEP_FINALIZATION_REGISTRIES",
-                        "Sweep FinalizationRegistries",
+                        "SWEEP_FINALIZATION_OBSERVERS",
+                        "Sweep FinalizationRegistries and WeakRefs",
                         74,
                     ),
-                    addPhaseKind("SWEEP_WEAKREFS", "Sweep WeakRefs", 75),
                     addPhaseKind("SWEEP_JIT_DATA", "Sweep JIT Data", 65),
                     addPhaseKind("SWEEP_WEAK_CACHES", "Sweep Weak Caches", 66),
                     addPhaseKind("SWEEP_MISC", "Sweep Miscellaneous", 29),

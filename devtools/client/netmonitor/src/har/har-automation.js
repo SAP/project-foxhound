@@ -4,24 +4,24 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const Services = require("Services");
 const {
   HarCollector,
-} = require("devtools/client/netmonitor/src/har/har-collector");
+} = require("resource://devtools/client/netmonitor/src/har/har-collector.js");
 const {
   HarExporter,
-} = require("devtools/client/netmonitor/src/har/har-exporter");
-const { HarUtils } = require("devtools/client/netmonitor/src/har/har-utils");
+} = require("resource://devtools/client/netmonitor/src/har/har-exporter.js");
+const {
+  HarUtils,
+} = require("resource://devtools/client/netmonitor/src/har/har-utils.js");
 const {
   getLongStringFullText,
-} = require("devtools/client/shared/string-utils");
+} = require("resource://devtools/client/shared/string-utils.js");
 
 const prefDomain = "devtools.netmonitor.har.";
 
 // Helper tracer. Should be generic sharable by other modules (bug 1171927)
 const trace = {
-  log: function(...args) {},
+  log(...args) {},
 };
 
 /**
@@ -43,14 +43,14 @@ function HarAutomation() {}
 HarAutomation.prototype = {
   // Initialization
 
-  initialize: async function(toolbox) {
+  async initialize(toolbox) {
     this.toolbox = toolbox;
     this.commands = toolbox.commands;
 
     await this.startMonitoring();
   },
 
-  destroy: function() {
+  destroy() {
     if (this.collector) {
       this.collector.stop();
     }
@@ -62,7 +62,7 @@ HarAutomation.prototype = {
 
   // Automation
 
-  startMonitoring: async function() {
+  async startMonitoring() {
     await this.toolbox.resourceCommand.watchResources(
       [this.toolbox.resourceCommand.TYPES.DOCUMENT_EVENT],
       {
@@ -88,11 +88,11 @@ HarAutomation.prototype = {
     );
   },
 
-  pageLoadBegin: function(response) {
+  pageLoadBegin(response) {
     this.resetCollector();
   },
 
-  resetCollector: function() {
+  resetCollector() {
     if (this.collector) {
       this.collector.stop();
     }
@@ -116,7 +116,7 @@ HarAutomation.prototype = {
    * The additional traffic can be exported by executing
    * triggerExport on this object.
    */
-  pageLoadDone: function(response) {
+  pageLoadDone(response) {
     trace.log("HarAutomation.pageLoadDone; ", response);
 
     if (this.collector) {
@@ -126,7 +126,7 @@ HarAutomation.prototype = {
     }
   },
 
-  autoExport: function() {
+  autoExport() {
     const autoExport = Services.prefs.getBoolPref(
       prefDomain + "enableAutoExportToFile"
     );
@@ -149,7 +149,7 @@ HarAutomation.prototype = {
   /**
    * Export all what is currently collected.
    */
-  triggerExport: function(data) {
+  triggerExport(data) {
     if (!data.fileName) {
       data.fileName = Services.prefs.getCharPref(
         prefDomain + "defaultFileName"
@@ -162,7 +162,7 @@ HarAutomation.prototype = {
   /**
    * Clear currently collected data.
    */
-  clear: function() {
+  clear() {
     this.resetCollector();
   },
 
@@ -172,7 +172,7 @@ HarAutomation.prototype = {
    * Execute HAR export. This method fetches all data from the
    * Network panel (asynchronously) and saves it into a file.
    */
-  executeExport: async function(data) {
+  async executeExport(data) {
     const items = this.collector.getItems();
     const { title } = this.commands.targetCommand.targetFront;
 
@@ -185,7 +185,7 @@ HarAutomation.prototype = {
       getTimingMarker: null,
       getString: this.getString.bind(this),
       view: this,
-      items: items,
+      items,
     };
 
     options.defaultFileName = data.fileName;
@@ -215,7 +215,7 @@ HarAutomation.prototype = {
   /**
    * Fetches the full text of a string.
    */
-  getString: async function(stringGrip) {
+  async getString(stringGrip) {
     const fullText = await getLongStringFullText(
       this.commands.client,
       stringGrip
@@ -235,8 +235,7 @@ function getDefaultTargetFile(options) {
     Services.prefs.getCharPref("devtools.netmonitor.har.defaultLogDir");
   const folder = HarUtils.getLocalDirectory(path);
 
-  const tabTarget = options.connector.getTabTarget();
-  const host = new URL(tabTarget.url);
+  const host = new URL(options.connector.currentTarget.url);
   const fileName = HarUtils.getHarFileName(
     options.defaultFileName,
     options.jsonp,

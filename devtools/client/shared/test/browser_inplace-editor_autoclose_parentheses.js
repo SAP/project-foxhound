@@ -4,8 +4,10 @@
 
 "use strict";
 
-const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
-const { InplaceEditor } = require("devtools/client/shared/inplace-editor");
+const AutocompletePopup = require("resource://devtools/client/shared/autocomplete-popup.js");
+const {
+  InplaceEditor,
+} = require("resource://devtools/client/shared/inplace-editor.js");
 loadHelperScript("helper_inplace_editor.js");
 
 // Test the inplace-editor closes parentheses automatically.
@@ -33,7 +35,7 @@ const testData = [
   [")", "url(var(--a))", -1, 0],
 ];
 
-add_task(async function() {
+add_task(async function () {
   await addTab(
     "data:text/html;charset=utf-8," + "inplace editor parentheses autoclose"
   );
@@ -50,7 +52,7 @@ add_task(async function() {
         },
         cssVariables: new Map(),
         done: resolve,
-        popup: popup,
+        popup,
       },
       doc
     );
@@ -61,7 +63,7 @@ add_task(async function() {
   gBrowser.removeCurrentTab();
 });
 
-const runPropertyAutocompletionTest = async function(editor) {
+const runPropertyAutocompletionTest = async function (editor) {
   info("Starting to test for css property completion");
 
   // No need to test autocompletion here, return an empty array.

@@ -3,10 +3,12 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 let delay = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -24,9 +26,6 @@ AddonTestUtils.createAppInfo(
   "42",
   "42"
 );
-// Override ExtensionXPCShellUtils.jsm's overriding of the pref as the
-// search service needs it.
-Services.prefs.clearUserPref("services.settings.default_bucket");
 
 add_task(async function setup() {
   await AddonTestUtils.promiseStartupManager();
@@ -37,8 +36,8 @@ add_task(async function test_extension_adding_engine() {
   let ext1 = ExtensionTestUtils.loadExtension({
     manifest: {
       icons: {
-        "16": "foo.ico",
-        "32": "foo32.ico",
+        16: "foo.ico",
+        32: "foo32.ico",
       },
       chrome_settings_overrides: {
         search_provider: {
@@ -136,7 +135,7 @@ add_task(async function test_upgrade_default_position_engine() {
           search_url: "https://example.com/?q={searchTerms}",
         },
       },
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "testengine@mozilla.com",
         },
@@ -150,7 +149,10 @@ add_task(async function test_upgrade_default_position_engine() {
   await AddonTestUtils.waitForSearchProviderStartup(ext1);
 
   let engine = Services.search.getEngineByName("MozSearch");
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await Services.search.moveEngine(engine, 1);
 
   await ext1.upgrade({
@@ -162,7 +164,7 @@ add_task(async function test_upgrade_default_position_engine() {
           search_url: "https://example.com/?q={searchTerms}",
         },
       },
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "testengine@mozilla.com",
         },

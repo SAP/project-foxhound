@@ -1,7 +1,8 @@
 // Should report file not found on non-existent files
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 const path = "data/test_bug333423.zip";
 
 function run_test() {

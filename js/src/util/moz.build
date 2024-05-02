@@ -17,6 +17,7 @@ UNIFIED_SOURCES += [
     "AllocPolicy.cpp",
     "CompleteFile.cpp",
     "DumpFunctions.cpp",
+    "Identifier.cpp",
     "NativeStack.cpp",
     "Printf.cpp",
     "StringBuffer.cpp",
@@ -35,5 +36,4 @@ SOURCES += [
 ]
 
 # Suppress warnings in third-party code.
-if CONFIG["CC_TYPE"] in ("clang", "gcc"):
-    SOURCES["DoubleToString.cpp"].flags += ["-Wno-implicit-fallthrough"]
+SOURCES["DoubleToString.cpp"].flags += ["-Wno-implicit-fallthrough"]

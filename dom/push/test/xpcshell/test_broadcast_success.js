@@ -3,21 +3,21 @@
 
 "use strict";
 
-const { PushDB, PushService, PushServiceWebSocket } = serviceExports;
 // Create the profile directory early to ensure pushBroadcastService
 // is initialized with the correct path
 do_get_profile();
-const { BroadcastService } = ChromeUtils.import(
-  "resource://gre/modules/PushBroadcastService.jsm",
-  null
+const { BroadcastService } = ChromeUtils.importESModule(
+  "resource://gre/modules/PushBroadcastService.sys.mjs"
 );
-const { JSONFile } = ChromeUtils.import("resource://gre/modules/JSONFile.jsm");
+const { JSONFile } = ChromeUtils.importESModule(
+  "resource://gre/modules/JSONFile.sys.mjs"
+);
 
-const { FileTestUtils } = ChromeUtils.import(
-  "resource://testing-common/FileTestUtils.jsm"
+const { FileTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/FileTestUtils.sys.mjs"
 );
-const { broadcastHandler } = ChromeUtils.import(
-  "resource://test/broadcast_handler.jsm"
+const { broadcastHandler } = ChromeUtils.importESModule(
+  "resource://test/broadcast_handler.sys.mjs"
 );
 
 const broadcastService = pushBroadcastService;
@@ -55,7 +55,7 @@ add_task(async function test_register_success() {
   });
 
   await broadcastService.addListener("broadcast-test", "2018-02-01", {
-    moduleURI: "resource://test/broadcast_handler.jsm",
+    moduleURI: "resource://test/broadcast_handler.sys.mjs",
     symbolName: "broadcastHandler",
   });
 
@@ -155,7 +155,7 @@ add_task(async function test_handle_hello_broadcasts() {
   });
 
   await broadcastService.addListener("broadcast-test", "2018-02-01", {
-    moduleURI: "resource://test/broadcast_handler.jsm",
+    moduleURI: "resource://test/broadcast_handler.sys.mjs",
     symbolName: "broadcastHandler",
   });
 
@@ -228,7 +228,7 @@ add_task(async function test_broadcast_context() {
   const serviceId = "broadcast-test";
   const version = "2018-02-01";
   await broadcastService.addListener(serviceId, version, {
-    moduleURI: "resource://test/broadcast_handler.jsm",
+    moduleURI: "resource://test/broadcast_handler.sys.mjs",
     symbolName: "broadcastHandler",
   });
 

@@ -31,14 +31,14 @@ let region = Services.prefs.getCharPref("browser.search.region");
 let code = "";
 switch (region) {
   case "US":
-    if (AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")) {
+    if (SearchUtils.MODIFIED_APP_CHANNEL == "esr") {
       code = "firefox-b-1-e";
     } else {
       code = "firefox-b-1-d";
     }
     break;
   case "DE":
-    if (AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")) {
+    if (SearchUtils.MODIFIED_APP_CHANNEL == "esr") {
       code = "firefox-b-e";
     } else {
       code = "firefox-b-d";
@@ -55,7 +55,7 @@ if (code) {
 }
 
 function promiseContentSearchReady(browser) {
-  return SpecialPowers.spawn(browser, [], async function(args) {
+  return SpecialPowers.spawn(browser, [], async function (args) {
     return new Promise(resolve => {
       SpecialPowers.pushPrefEnv({
         set: [
@@ -72,27 +72,28 @@ function promiseContentSearchReady(browser) {
         }
       }
 
-      content.addEventListener("ContentSearchService", function listener(
-        aEvent
-      ) {
-        if (aEvent.detail.type == "State") {
-          content.removeEventListener("ContentSearchService", listener);
-          resolve();
+      content.addEventListener(
+        "ContentSearchService",
+        function listener(aEvent) {
+          if (aEvent.detail.type == "State") {
+            content.removeEventListener("ContentSearchService", listener);
+            resolve();
+          }
         }
-      });
+      );
     });
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await Services.search.init();
 });
 
 for (let engine of searchEngineDetails) {
-  add_task(async function() {
+  add_task(async function () {
     let previouslySelectedEngine = Services.search.defaultEngine;
 
-    registerCleanupFunction(function() {
+    registerCleanupFunction(function () {
       Services.search.defaultEngine = previouslySelectedEngine;
     });
 
@@ -168,13 +169,13 @@ async function testSearchEngine(engineDetails) {
       code: engineDetails.codes.newTab,
       async preTest(tab) {
         let browser = tab.linkedBrowser;
-        BrowserTestUtils.loadURI(browser, "about:newtab");
+        BrowserTestUtils.startLoadingURIString(browser, "about:newtab");
         await BrowserTestUtils.browserLoaded(browser, false, "about:newtab");
 
         await promiseContentSearchReady(browser);
       },
       async run(tab) {
-        await SpecialPowers.spawn(tab.linkedBrowser, [], async function(args) {
+        await SpecialPowers.spawn(tab.linkedBrowser, [], async function (args) {
           let input = content.document.querySelector("input[id*=search-]");
           input.focus();
           input.value = "foo";

@@ -3,21 +3,18 @@
  */
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { BrowserUsageTelemetry } = ChromeUtils.import(
-  "resource:///modules/BrowserUsageTelemetry.jsm"
+const { BrowserUsageTelemetry } = ChromeUtils.importESModule(
+  "resource:///modules/BrowserUsageTelemetry.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 const TIMESTAMP_PREF = "app.installation.timestamp";
 
@@ -81,7 +78,39 @@ async function runReport(
   }
 }
 
-add_task(async function testInstallationTelemetry() {
+let condition = {
+  skip_if: () =>
+    AppConstants.platform !== "win" ||
+    !Services.sysinfo.getProperty("hasWinPackageId"),
+};
+add_task(condition, async function testInstallationTelemetryMSIX() {
+  // Unfortunately, we have no way to inject different installation ping data
+  // into the system in a way that doesn't just completely override the code
+  // under test - so other than a basic test of the happy path, there's
+  // nothing we can do here.
+  let msixExtra = {
+    version: AppConstants.MOZ_APP_VERSION,
+    build_id: AppConstants.MOZ_BULIDID,
+    admin_user: "false",
+    from_msi: "false",
+    silent: "false",
+    default_path: "true",
+    install_existed: "false",
+    other_inst: "false",
+    other_msix_inst: "false",
+    profdir_existed: "false",
+  };
+
+  await runReport("fake", "msix", {
+    expectExtra: msixExtra,
+  });
+});
+condition = {
+  skip_if: () =>
+    AppConstants.platform === "win" &&
+    Services.sysinfo.getProperty("hasWinPackageId"),
+};
+add_task(condition, async function testInstallationTelemetry() {
   let dataFilePath = await IOUtils.createUniqueFile(
     Services.dirsvc.get("TmpD", Ci.nsIFile).path,
     "installation-telemetry-test-data" + Math.random() + ".json"
@@ -176,8 +205,8 @@ add_task(async function testInstallationTelemetry() {
   // New timestamp and a check to make sure we can find installed MSIX packages
   // by overriding the prefixes a bit further down.
   fullData.install_timestamp = "2";
-  // This check only works on Windows 10 and above
-  if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
+  // This check only works on Windows
+  if (AppConstants.platform == "win") {
     fullExtra.other_msix_inst = "true";
   }
   await writeJsonUtf16(dataFilePath, fullData);
@@ -202,7 +231,4 @@ add_task(async function testInstallationTelemetry() {
   // Missing file, should return with no exception
   await IOUtils.remove(dataFilePath);
   await runReport(dataFile, "stub", { setTS: "3", expectTS: "3" });
-
-  // bug 1750581 tracks testing this when we're able to run tests in
-  // an MSIX package environment
 });

@@ -1,8 +1,11 @@
 use std::{slice, vec};
 
 use proc_macro2::{Span, TokenStream};
-use quote::ToTokens;
+use quote::{quote, quote_spanned, ToTokens};
+use syn::ext::IdentExt;
+use syn::parse::Parser;
 use syn::spanned::Spanned;
+use syn::Token;
 
 use crate::usage::{
     self, IdentRefSet, IdentSet, LifetimeRefSet, LifetimeSet, UsesLifetimes, UsesTypeParams,
@@ -121,20 +124,14 @@ impl<V: FromVariant, F: FromField> Data<V, F> {
     pub fn try_from(body: &syn::Data) -> Result<Self> {
         match *body {
             syn::Data::Enum(ref data) => {
-                let mut items = Vec::with_capacity(data.variants.len());
-                let mut errors = Vec::new();
-                for v_result in data.variants.iter().map(FromVariant::from_variant) {
-                    match v_result {
-                        Ok(val) => items.push(val),
-                        Err(err) => errors.push(err),
-                    }
-                }
+                let mut errors = Error::accumulator();
+                let items = data
+                    .variants
+                    .iter()
+                    .filter_map(|v| errors.handle(FromVariant::from_variant(v)))
+                    .collect();
 
-                if !errors.is_empty() {
-                    Err(Error::multiple(errors))
-                } else {
-                    Ok(Data::Enum(items))
-                }
+                errors.finish_with(Data::Enum(items))
             }
             syn::Data::Struct(ref data) => Ok(Data::Struct(Fields::try_from(&data.fields)?)),
             // This deliberately doesn't set a span on the error message, as the error is most useful if
@@ -264,55 +261,37 @@ impl<T> Fields<T> {
 
 impl<F: FromField> Fields<F> {
     pub fn try_from(fields: &syn::Fields) -> Result<Self> {
-        let (items, errors) = {
+        let mut errors = Error::accumulator();
+        let items = {
             match &fields {
-                syn::Fields::Named(fields) => {
-                    let mut items = Vec::with_capacity(fields.named.len());
-                    let mut errors = Vec::new();
-
-                    for field in &fields.named {
-                        match FromField::from_field(field) {
-                            Ok(val) => items.push(val),
-                            Err(err) => errors.push({
-                                if let Some(ident) = &field.ident {
-                                    err.at(ident)
-                                } else {
-                                    err
-                                }
-                            }),
-                        }
-                    }
-
-                    (items, errors)
-                }
-                syn::Fields::Unnamed(fields) => {
-                    let mut items = Vec::with_capacity(fields.unnamed.len());
-                    let mut errors = Vec::new();
-
-                    for field in &fields.unnamed {
-                        match FromField::from_field(field) {
-                            Ok(val) => items.push(val),
-                            Err(err) => errors.push({
-                                if let Some(ident) = &field.ident {
-                                    err.at(ident)
-                                } else {
-                                    err
-                                }
-                            }),
-                        }
-                    }
-
-                    (items, errors)
-                }
-                syn::Fields::Unit => (vec![], vec![]),
+                syn::Fields::Named(fields) => fields
+                    .named
+                    .iter()
+                    .filter_map(|field| {
+                        errors.handle(FromField::from_field(field).map_err(|err| {
+                            // There should always be an ident here, since this is a collection
+                            // of named fields, but `syn` doesn't prevent someone from manually
+                            // constructing an invalid collection so a guard is still warranted.
+                            if let Some(ident) = &field.ident {
+                                err.at(ident)
+                            } else {
+                                err
+                            }
+                        }))
+                    })
+                    .collect(),
+                syn::Fields::Unnamed(fields) => fields
+                    .unnamed
+                    .iter()
+                    .filter_map(|field| errors.handle(FromField::from_field(field)))
+                    .collect(),
+                syn::Fields::Unit => vec![],
             }
         };
 
-        if !errors.is_empty() {
-            Err(Error::multiple(errors))
-        } else {
-            Ok(Self::new(fields.into(), items).with_span(fields.span()))
-        }
+        errors.finish()?;
+
+        Ok(Self::new(fields.into(), items).with_span(fields.span()))
     }
 }
 
@@ -430,6 +409,43 @@ impl<'a> From<&'a syn::Fields> for Style {
             syn::Fields::Named(_) => Style::Struct,
             syn::Fields::Unnamed(_) => Style::Tuple,
             syn::Fields::Unit => Style::Unit,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum NestedMeta {
+    Meta(syn::Meta),
+    Lit(syn::Lit),
+}
+
+impl NestedMeta {
+    pub fn parse_meta_list(tokens: TokenStream) -> syn::Result<Vec<Self>> {
+        syn::punctuated::Punctuated::<NestedMeta, Token![,]>::parse_terminated
+            .parse2(tokens)
+            .map(|punctuated| punctuated.into_iter().collect())
+    }
+}
+
+impl syn::parse::Parse for NestedMeta {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(syn::Lit) && !(input.peek(syn::LitBool) && input.peek2(Token![=])) {
+            input.parse().map(NestedMeta::Lit)
+        } else if input.peek(syn::Ident::peek_any)
+            || input.peek(Token![::]) && input.peek3(syn::Ident::peek_any)
+        {
+            input.parse().map(NestedMeta::Meta)
+        } else {
+            Err(input.error("expected identifier or literal"))
+        }
+    }
+}
+
+impl ToTokens for NestedMeta {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            NestedMeta::Meta(meta) => meta.to_tokens(tokens),
+            NestedMeta::Lit(lit) => lit.to_tokens(tokens),
         }
     }
 }

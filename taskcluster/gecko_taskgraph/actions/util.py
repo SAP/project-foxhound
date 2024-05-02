@@ -14,21 +14,21 @@ import jsone
 import requests
 from requests.exceptions import HTTPError
 from slugid import nice as slugid
-
-from gecko_taskgraph import create
-from gecko_taskgraph.decision import read_artifact, write_artifact, rename_artifact
-from gecko_taskgraph.taskgraph import TaskGraph
-from gecko_taskgraph.optimize import optimize_task_graph
-from gecko_taskgraph.util.taskcluster import (
+from taskgraph import create
+from taskgraph.optimize.base import optimize_task_graph
+from taskgraph.taskgraph import TaskGraph
+from taskgraph.util.taskcluster import (
+    CONCURRENCY,
     find_task_id,
     get_artifact,
-    get_task_definition,
     get_session,
+    get_task_definition,
     list_tasks,
     parse_time,
-    trigger_hook,
-    CONCURRENCY,
 )
+
+from gecko_taskgraph.decision import read_artifact, rename_artifact, write_artifact
+from gecko_taskgraph.util.taskcluster import trigger_hook
 from gecko_taskgraph.util.taskgraph import find_decision_task
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def _extract_applicable_action(actions_json, action_name, task_group_id, task_id
         # Ensure the task is within the context of the action
         if task_id and tags and _tags_within_context(tags, context):
             return _action
-        elif context == []:
+        if context == []:
             return _action
 
     available_actions = ", ".join(sorted({a["name"] for a in actions_json["actions"]}))
@@ -120,7 +120,7 @@ def get_pushes_from_params_input(parameters, input):
     )
 
 
-def get_pushes(project, end_id, depth):
+def get_pushes(project, end_id, depth, full_response=False):
     pushes = []
     while True:
         start_id = max(end_id - depth, 0)
@@ -138,7 +138,8 @@ def get_pushes(project, end_id, depth):
             break
 
     pushes = sorted(pushes)[-depth:]
-    return pushes
+    push_dict = {push: r.json()["pushes"][push] for push in pushes}
+    return push_dict if full_response else pushes
 
 
 def get_decision_task_id(project, push_id):
@@ -154,20 +155,6 @@ def get_tasks_with_downstream(labels, full_task_graph, label_to_taskid):
     return full_task_graph.graph.transitive_closure(
         set(labels), reverse=True
     ).nodes & set(label_to_taskid.keys())
-
-
-def get_downstream_browsertime_tasks(labels, full_task_graph, label_to_taskid):
-    # Used to gather tasks when downstream tasks need to run as well. This
-    # function is specific to browsertime as it doesn't take an intersection
-    # with existing tasks, making it possible to schedule these without
-    # previously having scheduled them.
-    return full_task_graph.graph.transitive_closure(set(labels), reverse=True).nodes
-
-
-def rename_browsertime_vismet_task(label):
-    # Vismet tasks have labels which are modified from
-    # the task label which created the data so we can undo it here
-    return label.replace("-vismet", "") + "-e10s"
 
 
 def fetch_graph_and_labels(parameters, graph_config):
@@ -234,7 +221,7 @@ def fetch_graph_and_labels(parameters, graph_config):
     return (decision_task_id, full_task_graph, label_to_taskid)
 
 
-def create_task_from_def(task_def, level):
+def create_task_from_def(task_def, level, action_tag=None):
     """Create a new task from a definition rather than from a label
     that is already in the full-task-graph. The task definition will
     have {relative-datestamp': '..'} rendered just like in a decision task.
@@ -246,11 +233,18 @@ def create_task_from_def(task_def, level):
     label = task_def["metadata"]["name"]
     task_id = slugid()
     session = get_session()
+    if action_tag:
+        task_def.setdefault("tags", {}).setdefault("action", action_tag)
     create.create_task(session, task_id, label, task_def)
 
 
 def update_parent(task, graph):
     task.task.setdefault("extra", {})["parent"] = os.environ.get("TASK_ID", "")
+    return task
+
+
+def update_action_tag(task, graph, action_tag):
+    task.task.setdefault("tags", {}).setdefault("action", action_tag)
     return task
 
 
@@ -269,6 +263,7 @@ def create_tasks(
     decision_task_id,
     suffix="",
     modifier=lambda t: t,
+    action_tag=None,
 ):
     """Create new tasks.  The task definition will have {relative-datestamp':
     '..'} rendered just like in a decision task.  Action callbacks should use
@@ -288,6 +283,8 @@ def create_tasks(
     If you wish to create the tasks in a new group, leave out decision_task_id.
 
     Returns an updated label_to_taskid containing the new tasks"""
+    import gecko_taskgraph.optimize  # noqa: triggers registration of strategies
+
     if suffix != "":
         suffix = f"-{suffix}"
     to_run = set(to_run)
@@ -301,6 +298,8 @@ def create_tasks(
         {l: modifier(full_task_graph[l]) for l in target_graph.nodes}, target_graph
     )
     target_task_graph.for_each_task(update_parent)
+    if action_tag:
+        target_task_graph.for_each_task(update_action_tag, action_tag)
     if decision_task_id and decision_task_id != os.environ.get("TASK_ID"):
         target_task_graph.for_each_task(update_dependencies)
     optimized_task_graph, label_to_taskid = optimize_task_graph(

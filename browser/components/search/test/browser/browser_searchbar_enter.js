@@ -5,16 +5,12 @@
 
 // Test the behavior for enter key.
 
-add_task(async function setup() {
+add_setup(async function () {
   await gCUITestUtils.addSearchBar();
 
-  await SearchTestUtils.installSearchExtension();
+  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
 
-  const defaultEngine = Services.search.defaultEngine;
-  Services.search.defaultEngine = Services.search.getEngineByName("Example");
-
-  registerCleanupFunction(async function() {
-    Services.search.defaultEngine = defaultEngine;
+  registerCleanupFunction(async function () {
     gCUITestUtils.removeSearchBar();
   });
 });

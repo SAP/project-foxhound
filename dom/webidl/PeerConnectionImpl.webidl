@@ -15,6 +15,8 @@
 
 interface nsISupports;
 
+callback ChainedOperation = Promise<any> ();
+
 /* Must be created first. Observer events will be dispatched on the thread provided */
 [ChromeOnly,
  Exposed=Window]
@@ -23,19 +25,17 @@ interface PeerConnectionImpl  {
 
   /* Must be called first. Observer events dispatched on the thread provided */
   [Throws]
-  void initialize(PeerConnectionObserver observer, Window window,
-                  RTCConfiguration iceServers,
-                  nsISupports thread);
+  undefined initialize(PeerConnectionObserver observer, Window window);
 
   /* JSEP calls */
   [Throws]
-  void createOffer(optional RTCOfferOptions options = {});
+  undefined createOffer(optional RTCOfferOptions options = {});
   [Throws]
-  void createAnswer();
+  undefined createAnswer();
   [Throws]
-  void setLocalDescription(long action, DOMString sdp);
+  undefined setLocalDescription(long action, DOMString sdp);
   [Throws]
-  void setRemoteDescription(long action, DOMString sdp);
+  undefined setRemoteDescription(long action, DOMString sdp);
 
   Promise<RTCStatsReport> getStats(MediaStreamTrack? selector);
 
@@ -43,26 +43,24 @@ interface PeerConnectionImpl  {
 
   /* Adds the tracks created by GetUserMedia */
   [Throws]
-  TransceiverImpl createTransceiverImpl(DOMString kind,
-                                        MediaStreamTrack? track);
-  [Throws]
-  boolean checkNegotiationNeeded();
+  RTCRtpTransceiver addTransceiver(RTCRtpTransceiverInit init,
+                                   DOMString kind,
+                                   MediaStreamTrack? sendTrack,
+                                   boolean addTrackMagic);
+  sequence<RTCRtpTransceiver> getTransceivers();
 
   [Throws]
-  void replaceTrackNoRenegotiation(TransceiverImpl transceiverImpl,
-                                   MediaStreamTrack? withTrack);
-  [Throws]
-  void closeStreams();
+  undefined closeStreams();
 
   [Throws]
-  void enablePacketDump(unsigned long level,
-                        mozPacketDumpType type,
-                        boolean sending);
+  undefined enablePacketDump(unsigned long level,
+                             mozPacketDumpType type,
+                             boolean sending);
 
   [Throws]
-  void disablePacketDump(unsigned long level,
-                         mozPacketDumpType type,
-                         boolean sending);
+  undefined disablePacketDump(unsigned long level,
+                              mozPacketDumpType type,
+                              boolean sending);
 
   /* As the ICE candidates roll in this one should be called each time
    * in order to keep the candidate list up-to-date for the next SDP-related
@@ -70,17 +68,29 @@ interface PeerConnectionImpl  {
    * into the SDP.
    */
   [Throws]
-  void addIceCandidate(DOMString candidate,
-                       DOMString mid,
-                       DOMString ufrag,
-                       unsigned short? level);
+  undefined addIceCandidate(DOMString candidate,
+                            DOMString mid,
+                            DOMString ufrag,
+                            unsigned short? level);
 
   /* Shuts down threads, deletes state */
   [Throws]
-  void close();
+  undefined close();
+
+  [Throws]
+  undefined setConfiguration(optional RTCConfiguration config = {});
+
+  undefined restartIce();
+  undefined restartIceNoRenegotiationNeeded();
 
   /* Notify DOM window if this plugin crash is ours. */
   boolean pluginCrash(unsigned long long pluginId, DOMString name);
+
+  // Only throws if promise creation fails
+  [Throws]
+  Promise<undefined> onSetDescriptionSuccess(RTCSdpType type, boolean remote);
+
+  undefined onSetDescriptionError();
 
   /* Attributes */
   /* This provides the implementation with the certificate it uses to
@@ -99,6 +109,7 @@ interface PeerConnectionImpl  {
 
   readonly attribute RTCIceConnectionState iceConnectionState;
   readonly attribute RTCIceGatheringState iceGatheringState;
+  readonly attribute RTCPeerConnectionState connectionState;
   readonly attribute RTCSignalingState signalingState;
   attribute DOMString id;
 
@@ -106,10 +117,18 @@ interface PeerConnectionImpl  {
   attribute DOMString peerIdentity;
   readonly attribute boolean privacyRequested;
 
+  readonly attribute RTCSctpTransport? sctp;
+
   /* Data channels */
   [Throws]
   RTCDataChannel createDataChannel(DOMString label, DOMString protocol,
     unsigned short type, boolean ordered,
     unsigned short maxTime, unsigned short maxNum,
     boolean externalNegotiated, unsigned short stream);
+
+  [Throws]
+  Promise<any> chain(ChainedOperation op);
+  undefined updateNegotiationNeeded();
+
+  boolean createdSender(RTCRtpSender sender);
 };

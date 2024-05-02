@@ -5,27 +5,26 @@
 // Test that AnimationPlayerActor.getName returns the right name depending on
 // the type of an animation and the various properties available on it.
 
-const { AnimationPlayerActor } = require("devtools/server/actors/animation");
+const {
+  AnimationPlayerActor,
+} = require("resource://devtools/server/actors/animation.js");
 
 function run_test() {
   // Mock a window with just the properties the AnimationPlayerActor uses.
-  const window = {
-    MutationObserver: function() {
+  const window = {};
+  window.MutationObserver = class {
+    constructor() {
       this.observe = () => {};
-    },
-    Animation: function() {
+    }
+  };
+  window.Animation = class {
+    constructor() {
       this.effect = { target: getMockNode() };
-    },
-    CSSAnimation: function() {
-      this.effect = { target: getMockNode() };
-    },
-    CSSTransition: function() {
-      this.effect = { target: getMockNode() };
-    },
+    }
   };
 
-  window.CSSAnimation.prototype = Object.create(window.Animation.prototype);
-  window.CSSTransition.prototype = Object.create(window.Animation.prototype);
+  window.CSSAnimation = class extends window.Animation {};
+  window.CSSTransition = class extends window.Animation {};
 
   // Helper to get a mock DOM node.
   function getMockNode() {
@@ -88,7 +87,7 @@ function run_test() {
     for (const key in props) {
       animation[key] = props[key];
     }
-    const actor = AnimationPlayerActor({}, animation);
+    const actor = new AnimationPlayerActor({}, animation);
     Assert.equal(actor.getName(), expectedName);
   }
 }

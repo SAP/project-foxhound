@@ -9,10 +9,7 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "ds/BitArray.h"
 #include "gc/AllocKind.h"
-#include "gc/GCEnum.h"
-#include "gc/Memory.h"
 #include "gc/Pretenuring.h"
 #include "js/HeapAPI.h"
 #include "js/TypeDecls.h"
@@ -23,7 +20,6 @@ namespace js {
 class AutoLockGC;
 class AutoLockGCBgAlloc;
 class Nursery;
-class NurseryDecommitTask;
 
 namespace gc {
 
@@ -33,7 +29,6 @@ class ArenaList;
 class GCRuntime;
 class MarkingValidator;
 class SortedArenaList;
-class StoreBuffer;
 class TenuredCell;
 
 // Cells are aligned to CellAlignShift, so the largest tagged null pointer is:
@@ -203,7 +198,7 @@ class alignas(ArenaSize) Arena {
   /*
    * True until the arena is swept for the first time.
    */
-  size_t isNewlyCreated : 1;
+  size_t isNewlyCreated_ : 1;
 
   /*
    * When recursive marking uses too much stack we delay marking of arenas and
@@ -343,28 +338,32 @@ class alignas(ArenaSize) Arena {
   size_t countFreeCells() { return numFreeThings(getThingSize()); }
   size_t countUsedCells() { return getThingsPerArena() - countFreeCells(); }
 
+#ifdef DEBUG
   bool inFreeList(uintptr_t thing) {
     uintptr_t base = address();
     const FreeSpan* span = &firstFreeSpan;
     for (; !span->isEmpty(); span = span->nextSpan(this)) {
-      /* If the thing comes before the current span, it's not free. */
+      // If the thing comes before the current span, it's not free.
       if (thing < base + span->first) {
         return false;
       }
 
-      /* If we find it before the end of the span, it's free. */
+      // If we find it before the end of the span, it's free.
       if (thing <= base + span->last) {
         return true;
       }
     }
     return false;
   }
+#endif
 
   static bool isAligned(uintptr_t thing, size_t thingSize) {
     /* Things ends at the arena end. */
     uintptr_t tailOffset = ArenaSize - (thing & ArenaMask);
     return tailOffset % thingSize == 0;
   }
+
+  bool isNewlyCreated() const { return isNewlyCreated_; }
 
   bool onDelayedMarkingList() const { return onDelayedMarkingList_; }
 
@@ -423,7 +422,7 @@ class alignas(ArenaSize) Arena {
   inline size_t& atomBitmapStart();
 
   template <typename T>
-  size_t finalize(JSFreeOp* fop, AllocKind thingKind, size_t thingSize);
+  size_t finalize(JS::GCContext* gcx, AllocKind thingKind, size_t thingSize);
 
   static void staticAsserts();
   static void checkLookupTables();
@@ -516,6 +515,16 @@ MOZ_ALWAYS_INLINE bool MarkBitmap::isMarkedGray(const TenuredCell* cell) {
          markBit(cell, ColorBit::GrayOrBlackBit);
 }
 
+// The following methods that update the mark bits are not thread safe and must
+// not be called in parallel with each other.
+//
+// They use separate read and write operations to avoid an unnecessarily strict
+// atomic update on the marking bitmap.
+//
+// They may be called in parallel with read operations on the mark bitmap where
+// there is no required ordering between the operations. This happens when gray
+// unmarking occurs in parallel with background sweeping.
+
 // The return value indicates if the cell went from unmarked to marked.
 MOZ_ALWAYS_INLINE bool MarkBitmap::markIfUnmarked(const TenuredCell* cell,
                                                   MarkColor color) {
@@ -526,12 +535,38 @@ MOZ_ALWAYS_INLINE bool MarkBitmap::markIfUnmarked(const TenuredCell* cell,
     return false;
   }
   if (color == MarkColor::Black) {
+    uintptr_t bits = *word;
+    *word = bits | mask;
+  } else {
+    // We use getMarkWordAndMask to recalculate both mask and word as doing just
+    // mask << color may overflow the mask.
+    getMarkWordAndMask(cell, ColorBit::GrayOrBlackBit, &word, &mask);
+    if (*word & mask) {
+      return false;
+    }
+    uintptr_t bits = *word;
+    *word = bits | mask;
+  }
+  return true;
+}
+
+MOZ_ALWAYS_INLINE bool MarkBitmap::markIfUnmarkedAtomic(const TenuredCell* cell,
+                                                        MarkColor color) {
+  // This version of the method is safe in the face of concurrent writes to the
+  // mark bitmap but may return false positives. The extra synchronisation
+  // necessary to avoid this resulted in worse performance overall.
+
+  MarkBitmapWord* word;
+  uintptr_t mask;
+  getMarkWordAndMask(cell, ColorBit::BlackBit, &word, &mask);
+  if (*word & mask) {
+    return false;
+  }
+  if (color == MarkColor::Black) {
     *word |= mask;
   } else {
-    /*
-     * We use getMarkWordAndMask to recalculate both mask and word as
-     * doing just mask << color may overflow the mask.
-     */
+    // We use getMarkWordAndMask to recalculate both mask and word as doing just
+    // mask << color may overflow the mask.
     getMarkWordAndMask(cell, ColorBit::GrayOrBlackBit, &word, &mask);
     if (*word & mask) {
       return false;
@@ -542,6 +577,14 @@ MOZ_ALWAYS_INLINE bool MarkBitmap::markIfUnmarked(const TenuredCell* cell,
 }
 
 MOZ_ALWAYS_INLINE void MarkBitmap::markBlack(const TenuredCell* cell) {
+  MarkBitmapWord* word;
+  uintptr_t mask;
+  getMarkWordAndMask(cell, ColorBit::BlackBit, &word, &mask);
+  uintptr_t bits = *word;
+  *word = bits | mask;
+}
+
+MOZ_ALWAYS_INLINE void MarkBitmap::markBlackAtomic(const TenuredCell* cell) {
   MarkBitmapWord* word;
   uintptr_t mask;
   getMarkWordAndMask(cell, ColorBit::BlackBit, &word, &mask);
@@ -560,19 +603,24 @@ MOZ_ALWAYS_INLINE void MarkBitmap::copyMarkBit(TenuredCell* dst,
   uintptr_t dstMask;
   getMarkWordAndMask(dst, colorBit, &dstWord, &dstMask);
 
-  *dstWord &= ~dstMask;
+  uintptr_t bits = *dstWord;
+  bits &= ~dstMask;
   if (*srcWord & srcMask) {
-    *dstWord |= dstMask;
+    bits |= dstMask;
   }
+  *dstWord = bits;
 }
 
 MOZ_ALWAYS_INLINE void MarkBitmap::unmark(const TenuredCell* cell) {
   MarkBitmapWord* word;
   uintptr_t mask;
+  uintptr_t bits;
   getMarkWordAndMask(cell, ColorBit::BlackBit, &word, &mask);
-  *word &= ~mask;
+  bits = *word;
+  *word = bits & ~mask;
   getMarkWordAndMask(cell, ColorBit::GrayOrBlackBit, &word, &mask);
-  *word &= ~mask;
+  bits = *word;
+  *word = bits & ~mask;
 }
 
 inline MarkBitmapWord* MarkBitmap::arenaBits(Arena* arena) {
@@ -650,8 +698,9 @@ class TenuredChunk : public TenuredChunkBase {
   // system call for each arena but is only used during OOM.
   void decommitFreeArenasWithoutUnlocking(const AutoLockGC& lock);
 
-  static TenuredChunk* allocate(GCRuntime* gc);
-  void init(GCRuntime* gc, bool allMemoryCommitted);
+  static void* allocate(GCRuntime* gc);
+  static TenuredChunk* emplace(void* ptr, GCRuntime* gc,
+                               bool allMemoryCommitted);
 
   /* Unlink and return the freeArenasHead. */
   Arena* fetchNextFreeArena(GCRuntime* gc);
@@ -703,15 +752,6 @@ inline TenuredChunk* Arena::chunk() const {
   return TenuredChunk::fromAddress(address());
 }
 
-inline bool InFreeList(Arena* arena, void* thing) {
-  uintptr_t addr = reinterpret_cast<uintptr_t>(thing);
-  MOZ_ASSERT(Arena::isAligned(addr, arena->getThingSize()));
-  return arena->inFreeList(addr);
-}
-
-static const int32_t ChunkStoreBufferOffsetFromLastByte =
-    int32_t(gc::ChunkStoreBufferOffset) - int32_t(gc::ChunkMask);
-
 // Cell header stored before all nursery cells.
 struct alignas(gc::CellAlignBytes) NurseryCellHeader {
   // Store zone pointer with the trace kind in the lowest three bits.
@@ -727,7 +767,8 @@ struct alignas(gc::CellAlignBytes) NurseryCellHeader {
     return uintptr_t(site) | uintptr_t(kind);
   }
 
-  inline NurseryCellHeader(AllocSite* site, JS::TraceKind kind);
+  inline NurseryCellHeader(AllocSite* site, JS::TraceKind kind)
+      : allocSiteAndTraceKind(MakeValue(site, kind)) {}
 
   AllocSite* allocSite() const {
     return reinterpret_cast<AllocSite*>(allocSiteAndTraceKind & ~TraceKindMask);
@@ -763,10 +804,15 @@ enum class MarkInfo : int {
   GRAY = 1,
   UNMARKED = -1,
   NURSERY = -2,
+  UNKNOWN = -3,
 };
 
-// Get the mark color for a cell, in a way easily usable from a debugger.
-MOZ_NEVER_INLINE MarkInfo GetMarkInfo(js::gc::Cell* cell);
+// For calling from gdb only: given a pointer that is either in the nursery
+// (possibly pointing to a buffer, not necessarily a Cell) or a tenured Cell,
+// return its mark color or NURSERY or UNKNOWN. UNKONWN is only for non-Cell
+// pointers, and means it is not in the nursery (so could be malloced or stack
+// or whatever.)
+MOZ_NEVER_INLINE MarkInfo GetMarkInfo(void* vp);
 
 // Sample usage from gdb:
 //

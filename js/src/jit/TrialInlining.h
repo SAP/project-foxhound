@@ -18,7 +18,6 @@
 
 #include "gc/Barrier.h"
 #include "jit/CacheIR.h"
-#include "jit/ICStubSpace.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
@@ -80,15 +79,14 @@ class InliningRoot {
         inlinedScripts_(cx),
         totalBytecodeSize_(owningScript->length()) {}
 
-  JitScriptICStubSpace* jitScriptStubSpace() { return &jitScriptStubSpace_; }
-
   void trace(JSTracer* trc);
+  bool traceWeak(JSTracer* trc);
 
   bool addInlinedScript(js::UniquePtr<ICScript> icScript);
 
   uint32_t numInlinedScripts() const { return inlinedScripts_.length(); }
 
-  void purgeOptimizedStubs(Zone* zone);
+  void purgeStubs(Zone* zone);
   void resetWarmUpCounts(uint32_t count);
 
   JSScript* owningScript() const { return owningScript_; }
@@ -98,7 +96,6 @@ class InliningRoot {
   void addToTotalBytecodeSize(size_t size) { totalBytecodeSize_ += size; }
 
  private:
-  JitScriptICStubSpace jitScriptStubSpace_ = {};
   HeapPtr<JSScript*> owningScript_;
   js::Vector<js::UniquePtr<ICScript>> inlinedScripts_;
 
@@ -141,11 +138,16 @@ mozilla::Maybe<InlinableGetterData> FindInlinableGetterData(
 mozilla::Maybe<InlinableSetterData> FindInlinableSetterData(
     ICCacheIRStub* stub);
 
+enum class TrialInliningDecision {
+  NoInline,
+  Inline,
+  MonomorphicInline,
+};
+
 class MOZ_RAII TrialInliner {
  public:
-  TrialInliner(JSContext* cx, HandleScript script, ICScript* icScript,
-               InliningRoot* root)
-      : cx_(cx), script_(script), icScript_(icScript), root_(root) {}
+  TrialInliner(JSContext* cx, HandleScript script, ICScript* icScript)
+      : cx_(cx), script_(script), icScript_(icScript) {}
 
   JSContext* cx() { return cx_; }
 
@@ -168,13 +170,17 @@ class MOZ_RAII TrialInliner {
   [[nodiscard]] bool replaceICStub(ICEntry& entry, ICFallbackStub* fallback,
                                    CacheIRWriter& writer, CacheKind kind);
 
-  bool shouldInline(JSFunction* target, ICCacheIRStub* stub,
-                    BytecodeLocation loc);
+  TrialInliningDecision getInliningDecision(JSFunction* target,
+                                            ICCacheIRStub* stub,
+                                            BytecodeLocation loc);
+
+  InliningRoot* getOrCreateInliningRoot();
+  InliningRoot* maybeGetInliningRoot() const;
+  size_t inliningRootTotalBytecodeSize() const;
 
   JSContext* cx_;
   HandleScript script_;
   ICScript* icScript_;
-  InliningRoot* root_;
 };
 
 bool DoTrialInlining(JSContext* cx, BaselineFrame* frame);

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Defines the environment for frame scripts.
+ * @fileoverview Defines the environment for xpcshell test files.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -11,7 +11,24 @@
 var { getScriptGlobals } = require("./utils");
 
 const extraGlobals = [
-  // Assert.jsm globals.
+  // Defined in XPCShellImpl.cpp
+  "print",
+  "readline",
+  "load",
+  "quit",
+  "dumpXPC",
+  "dump",
+  "gc",
+  "gczeal",
+  "options",
+  "sendCommand",
+  "atob",
+  "btoa",
+  "setInterruptCallback",
+  "simulateNoScriptActivity",
+  "registerXPCTestComponents",
+
+  // Assert.sys.mjs globals.
   "setReporter",
   "report",
   "ok",
@@ -30,8 +47,6 @@ const extraGlobals = [
   // TestingFunctions.cpp globals
   "allocationMarker",
   "byteSize",
-  "gc",
-  "gczeal",
   "saveStack",
 ];
 

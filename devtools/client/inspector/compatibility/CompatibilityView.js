@@ -7,13 +7,15 @@
 const {
   createFactory,
   createElement,
-} = require("devtools/client/shared/vendor/react");
-const { Provider } = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const {
+  Provider,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const LocalizationProvider = createFactory(FluentReact.LocalizationProvider);
 
-const compatibilityReducer = require("devtools/client/inspector/compatibility/reducers/compatibility");
+const compatibilityReducer = require("resource://devtools/client/inspector/compatibility/reducers/compatibility.js");
 const {
   appendNode,
   clearDestroyedNodes,
@@ -23,10 +25,10 @@ const {
   updateSelectedNode,
   updateTopLevelTarget,
   updateNode,
-} = require("devtools/client/inspector/compatibility/actions/compatibility");
+} = require("resource://devtools/client/inspector/compatibility/actions/compatibility.js");
 
 const CompatibilityApp = createFactory(
-  require("devtools/client/inspector/compatibility/components/CompatibilityApp")
+  require("resource://devtools/client/inspector/compatibility/components/CompatibilityApp.js")
 );
 
 class CompatibilityView {
@@ -94,7 +96,11 @@ class CompatibilityView {
       )
     );
 
-    this.inspector.store.dispatch(initUserSettings());
+    await this.inspector.store.dispatch(initUserSettings());
+    // awaiting for `initUserSettings` makes us miss the initial "compatibilityview-selected"
+    // event, so we need to manually call _onPanelSelected to fetch compatibility issues
+    // for the selected node (and the whole page).
+    this._onPanelSelected();
 
     this.inspector.on("new-root", this._onTopLevelTargetChanged);
     this.inspector.on("markupmutation", this._onMarkupMutation);
@@ -213,10 +219,8 @@ class CompatibilityView {
   }
 
   _onPanelSelected() {
-    const {
-      selectedNode,
-      topLevelTarget,
-    } = this.inspector.store.getState().compatibility;
+    const { selectedNode, topLevelTarget } =
+      this.inspector.store.getState().compatibility;
 
     // Update if the selected node is changed or new change is added while the panel was hidden.
     if (

@@ -12,8 +12,8 @@
 #include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/Link.h"
 #include "mozilla/WeakPtr.h"
-#include "nsGenericHTMLElement.h"
 #include "nsDOMTokenList.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla {
 class EventChainPostVisitor;
@@ -40,7 +40,6 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   void LinkAdded();
-  void LinkRemoved();
 
   // nsINode
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -50,19 +49,18 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   // nsIContent
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent = true) override;
-  nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                         const nsAttrValueOrString* aValue,
-                         bool aNotify) override;
-  nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
-                        nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
+  void BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
+  void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
   // Element
   bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                       const nsAString& aValue,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
 
-  void CreateAndDispatchEvent(Document* aDoc, const nsAString& aEventName);
+  void CreateAndDispatchEvent(const nsAString& aEventName);
 
   // WebIDL
   bool Disabled() const;
@@ -114,9 +112,6 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   void SetAs(const nsAString& aAs, ErrorResult& aRv) {
     SetAttr(nsGkAtoms::as, aAs, aRv);
   }
-
-  static void ParseAsValue(const nsAString& aValue, nsAttrValue& aResult);
-  static nsContentPolicyType AsValueToContentPolicy(const nsAttrValue& aValue);
 
   nsDOMTokenList* Sizes() {
     if (!mSizes) {
@@ -175,10 +170,6 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
     mCachedURI = nullptr;
     nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
   }
-
-  static bool CheckPreloadAttrs(const nsAttrValue& aAs, const nsAString& aType,
-                                const nsAString& aMedia, Document* aDocument);
-  static void WarnIgnoredPreload(const Document&, nsIURI&);
 
  protected:
   virtual ~HTMLLinkElement();

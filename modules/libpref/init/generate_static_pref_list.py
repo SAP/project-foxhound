@@ -2,15 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
-import buildconfig
-from collections import defaultdict
 import os
-from six import StringIO
 import sys
+from collections import defaultdict
+
+import buildconfig
 import yaml
 from mozbuild.preprocessor import Preprocessor
-from mozbuild.util import ensureParentDir, FileAvoidWrite
+from mozbuild.util import FileAvoidWrite, ensureParentDir
+from six import StringIO
 
 VALID_KEYS = {
     "name",
@@ -46,6 +46,7 @@ VALID_TYPES.update(
         "SequentiallyConsistentAtomicUint32": "uint32_t",
         "AtomicFloat": "float",
         "String": None,
+        "DataMutexString": "nsACString",
     }
 )
 
@@ -55,6 +56,7 @@ RUST_TYPES = {
     "int32_t": "i32",
     "uint32_t": "u32",
     "float": "f32",
+    "DataMutexString": "nsCString",
 }
 
 HEADER_LINE = (
@@ -82,6 +84,14 @@ ALWAYS_PREF(
   {typ}, {value}
 )
 """,
+    "always_datamutex": """\
+ALWAYS_DATAMUTEX_PREF(
+  "{name}",
+   {base_id},
+   {full_id},
+  {typ}, {value}
+)
+""",
 }
 
 STATIC_PREFS_GROUP_H_TEMPLATE1 = """\
@@ -102,6 +112,13 @@ STATIC_PREFS_GROUP_H_TEMPLATE2 = """\
 STATIC_PREFS_C_GETTERS_TEMPLATE = """\
 extern "C" {typ} StaticPrefs_{full_id}() {{
   return mozilla::StaticPrefs::{full_id}();
+}}
+"""
+
+STATIC_PREFS_C_GETTERS_NSSTRING_TEMPLATE = """\
+extern "C" void StaticPrefs_{full_id}(nsACString *result) {{
+  const auto preflock = mozilla::StaticPrefs::{full_id}();
+  result->Append(*preflock);
 }}
 """
 
@@ -165,11 +182,11 @@ def check_pref_list(pref_list):
         if "value" not in pref:
             error("missing `value` key for pref `{}`".format(name))
         value = pref["value"]
-        if typ == "String":
+        if typ == "String" or typ == "DataMutexString":
             if type(value) != str:
                 error(
-                    "non-string `value` value `{}` for `String` pref `{}`; "
-                    "add double quotes".format(value, name)
+                    "non-string `value` value `{}` for `{}` pref `{}`; "
+                    "add double quotes".format(value, typ, name)
                 )
         elif typ in VALID_BOOL_TYPES:
             if value not in (True, False):
@@ -179,6 +196,8 @@ def check_pref_list(pref_list):
         if "mirror" not in pref:
             error("missing `mirror` key for pref `{}`".format(name))
         mirror = pref["mirror"]
+        if typ.startswith("DataMutex"):
+            mirror += "_datamutex"
         if mirror not in MIRROR_TEMPLATES:
             error("invalid `mirror` value `{}` for pref `{}`".format(mirror, name))
 
@@ -261,6 +280,8 @@ def generate_code(pref_list, input_filename):
             full_id += "_AtStartup"
         if do_not_use_directly:
             full_id += "_DoNotUseDirectly"
+        if typ.startswith("DataMutex"):
+            mirror += "_datamutex"
 
         group = mk_group(pref)
 
@@ -273,6 +294,9 @@ def generate_code(pref_list, input_filename):
         if typ == "String":
             # Quote string literals, and escape double-quote chars.
             value = '"{}"'.format(value.replace('"', '\\"'))
+        elif typ == "DataMutexString":
+            # Quote string literals, and escape double-quote chars.
+            value = '"{}"_ns'.format(value.replace('"', '\\"'))
         elif typ in VALID_BOOL_TYPES:
             # Convert Python bools to C++ bools.
             if value is True:
@@ -292,22 +316,40 @@ def generate_code(pref_list, input_filename):
         )
 
         if rust:
-            # Generate the C getter.
-            static_prefs_c_getters_cpp.append(
-                STATIC_PREFS_C_GETTERS_TEMPLATE.format(
-                    typ=VALID_TYPES[typ], full_id=full_id
+            passed_type = VALID_TYPES[typ]
+            if passed_type == "nsACString":
+                # Generate the C getter.
+                static_prefs_c_getters_cpp.append(
+                    STATIC_PREFS_C_GETTERS_NSSTRING_TEMPLATE.format(full_id=full_id)
                 )
-            )
 
-            # Generate the C getter declaration, in Rust.
-            decl = "    pub fn StaticPrefs_{full_id}() -> {typ};"
-            static_prefs_rs_decls.append(
-                decl.format(full_id=full_id, typ=RUST_TYPES[VALID_TYPES[typ]])
-            )
+                # Generate the C getter declaration, in Rust.
+                decl = "    pub fn StaticPrefs_{full_id}(result: *mut nsstring::nsACString);"
+                static_prefs_rs_decls.append(decl.format(full_id=full_id))
 
-            # Generate the Rust macro entry.
-            macro = '    ("{name}") => (unsafe {{ $crate::StaticPrefs_{full_id}() }});'
-            static_prefs_rs_macro.append(macro.format(name=name, full_id=full_id))
+                # Generate the Rust macro entry.
+                macro = '    ("{name}") => (unsafe {{ let mut result = $crate::nsCString::new(); $crate::StaticPrefs_{full_id}(&mut *result); result }});'
+                static_prefs_rs_macro.append(macro.format(name=name, full_id=full_id))
+
+            else:
+                # Generate the C getter.
+                static_prefs_c_getters_cpp.append(
+                    STATIC_PREFS_C_GETTERS_TEMPLATE.format(
+                        typ=passed_type, full_id=full_id
+                    )
+                )
+
+                # Generate the C getter declaration, in Rust.
+                decl = "    pub fn StaticPrefs_{full_id}() -> {typ};"
+                static_prefs_rs_decls.append(
+                    decl.format(full_id=full_id, typ=RUST_TYPES[passed_type])
+                )
+
+                # Generate the Rust macro entry.
+                macro = (
+                    '    ("{name}") => (unsafe {{ $crate::StaticPrefs_{full_id}() }});'
+                )
+                static_prefs_rs_macro.append(macro.format(name=name, full_id=full_id))
 
         # Delete this so that `group` can be reused below without Flake8
         # complaining.
@@ -349,7 +391,7 @@ def generate_code(pref_list, input_filename):
         )
 
     # static_prefs.rs contains the Rust macro getters.
-    static_prefs_rs = [first_line, "", 'extern "C" {']
+    static_prefs_rs = [first_line, "", "pub use nsstring::nsCString;", 'extern "C" {']
     static_prefs_rs.extend(static_prefs_rs_decls)
     static_prefs_rs.extend(["}", "", "#[macro_export]", "macro_rules! pref {"])
     static_prefs_rs.extend(static_prefs_rs_macro)
@@ -380,6 +422,9 @@ def emit_code(fd, pref_list_filename):
 
     if buildconfig.substs.get("CPU_ARCH") == "aarch64":
         pp.context["MOZ_AARCH64"] = True
+
+    if buildconfig.substs.get("MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS"):
+        pp.context["MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS"] = True
 
     pp.out = StringIO()
     pp.do_filter("substitution")

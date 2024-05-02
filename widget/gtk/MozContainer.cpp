@@ -1,5 +1,5 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
+/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:expandtab:shiftwidth=2:tabstop=2:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,14 +9,8 @@
 
 #include <glib.h>
 #include <gtk/gtk.h>
-#include <gdk/gdkx.h>
 #include <stdio.h>
 #include "mozilla/WidgetUtilsGtk.h"
-
-#ifdef ACCESSIBILITY
-#  include <atk/atk.h>
-#  include "maiRedundantObjectFactory.h"
-#endif
 
 #ifdef MOZ_LOGGING
 #  include "mozilla/Logging.h"
@@ -29,15 +23,15 @@ extern mozilla::LazyLogModule gWidgetLog;
 #endif /* MOZ_LOGGING */
 
 /* init methods */
-static void moz_container_class_init(MozContainerClass* klass);
+void moz_container_class_init(MozContainerClass* klass);
 static void moz_container_init(MozContainer* container);
 
 /* widget class methods */
 static void moz_container_map(GtkWidget* widget);
-static void moz_container_unmap(GtkWidget* widget);
+void moz_container_unmap(GtkWidget* widget);
 static void moz_container_size_allocate(GtkWidget* widget,
                                         GtkAllocation* allocation);
-void moz_container_realize(GtkWidget* widget);
+static void moz_container_realize(GtkWidget* widget);
 
 /* container class methods */
 static void moz_container_remove(GtkContainer* container,
@@ -79,23 +73,9 @@ GType moz_container_get_type(void) {
         NULL,                                     /* value_table */
     };
 
-#ifdef MOZ_WAYLAND
-    if (mozilla::widget::GdkIsWaylandDisplay()) {
-      moz_container_info.class_init =
-          (GClassInitFunc)moz_container_wayland_class_init;
-    }
-#endif
-
     moz_container_type =
         g_type_register_static(GTK_TYPE_CONTAINER, "MozContainer",
                                &moz_container_info, static_cast<GTypeFlags>(0));
-#ifdef ACCESSIBILITY
-    /* Set a factory to return accessible object with ROLE_REDUNDANT for
-     * MozContainer, so that gail won't send focus notification for it */
-    atk_registry_set_factory_type(atk_get_default_registry(),
-                                  moz_container_type,
-                                  mai_redundant_object_factory_get_type());
-#endif
   }
 
   return moz_container_type;
@@ -123,11 +103,20 @@ void moz_container_put(MozContainer* container, GtkWidget* child_widget, gint x,
   /*  printf("moz_container_put %p %p %d %d\n", (void *)container,
       (void *)child_widget, x, y); */
 
-  container->children = g_list_append(container->children, child);
+  container->data.children = g_list_append(container->data.children, child);
 
   /* we assume that the caller of this function will have already set
      the parent GdkWindow because we can have many anonymous children. */
   gtk_widget_set_parent(child_widget, GTK_WIDGET(container));
+}
+
+static void moz_container_destroy(GtkWidget* widget) {
+  auto* container = MOZ_CONTAINER(widget);
+  if (container->destroyed) {
+    return;  // The destroy signal may run multiple times.
+  }
+  container->destroyed = TRUE;
+  container->data.~Data();
 }
 
 void moz_container_class_init(MozContainerClass* klass) {
@@ -136,10 +125,21 @@ void moz_container_class_init(MozContainerClass* klass) {
   GtkContainerClass* container_class = GTK_CONTAINER_CLASS(klass);
   GtkWidgetClass* widget_class = GTK_WIDGET_CLASS(klass);
 
-  widget_class->map = moz_container_map;
-  widget_class->unmap = moz_container_unmap;
   widget_class->realize = moz_container_realize;
-  widget_class->size_allocate = moz_container_size_allocate;
+  widget_class->destroy = moz_container_destroy;
+
+#ifdef MOZ_WAYLAND
+  if (mozilla::widget::GdkIsWaylandDisplay()) {
+    widget_class->map = moz_container_wayland_map;
+    widget_class->size_allocate = moz_container_wayland_size_allocate;
+    widget_class->map_event = moz_container_wayland_map_event;
+  } else {
+#endif
+    widget_class->map = moz_container_map;
+    widget_class->size_allocate = moz_container_size_allocate;
+#ifdef MOZ_WAYLAND
+  }
+#endif
 
   container_class->remove = moz_container_remove;
   container_class->forall = moz_container_forall;
@@ -147,13 +147,10 @@ void moz_container_class_init(MozContainerClass* klass) {
 }
 
 void moz_container_init(MozContainer* container) {
+  container->destroyed = FALSE;
+  new (&container->data) MozContainer::Data();
   gtk_widget_set_can_focus(GTK_WIDGET(container), TRUE);
   gtk_widget_set_redraw_on_allocate(GTK_WIDGET(container), FALSE);
-#ifdef MOZ_WAYLAND
-  if (mozilla::widget::GdkIsWaylandDisplay()) {
-    moz_container_wayland_init(&container->wl_container);
-  }
-#endif
   LOGCONTAINER(("%s [%p]\n", __FUNCTION__,
                 (void*)moz_container_get_nsWindow(container)));
 }
@@ -166,9 +163,12 @@ void moz_container_map(GtkWidget* widget) {
   g_return_if_fail(IS_MOZ_CONTAINER(widget));
   container = MOZ_CONTAINER(widget);
 
+  LOGCONTAINER(("moz_container_map() [%p]",
+                (void*)moz_container_get_nsWindow(container)));
+
   gtk_widget_set_mapped(widget, TRUE);
 
-  tmp_list = container->children;
+  tmp_list = container->data.children;
   while (tmp_list) {
     tmp_child = ((MozContainerChild*)tmp_list->data)->widget;
 
@@ -185,6 +185,9 @@ void moz_container_map(GtkWidget* widget) {
 
 void moz_container_unmap(GtkWidget* widget) {
   g_return_if_fail(IS_MOZ_CONTAINER(widget));
+
+  LOGCONTAINER(("moz_container_unmap() [%p]",
+                (void*)moz_container_get_nsWindow(MOZ_CONTAINER(widget))));
 
   gtk_widget_set_mapped(widget, FALSE);
 
@@ -214,7 +217,7 @@ void moz_container_realize(GtkWidget* widget) {
     attributes.window_type = GDK_WINDOW_CHILD;
     MozContainer* container = MOZ_CONTAINER(widget);
     attributes.visual =
-        container->force_default_visual
+        container->data.force_default_visual
             ? gdk_screen_get_system_visual(gtk_widget_get_screen(widget))
             : gtk_widget_get_visual(widget);
 
@@ -247,7 +250,7 @@ void moz_container_size_allocate(GtkWidget* widget, GtkAllocation* allocation) {
   /* short circuit if you can */
   container = MOZ_CONTAINER(widget);
   gtk_widget_get_allocation(widget, &tmp_allocation);
-  if (!container->children && tmp_allocation.x == allocation->x &&
+  if (!container->data.children && tmp_allocation.x == allocation->x &&
       tmp_allocation.y == allocation->y &&
       tmp_allocation.width == allocation->width &&
       tmp_allocation.height == allocation->height) {
@@ -256,7 +259,7 @@ void moz_container_size_allocate(GtkWidget* widget, GtkAllocation* allocation) {
 
   gtk_widget_set_allocation(widget, allocation);
 
-  tmp_list = container->children;
+  tmp_list = container->data.children;
 
   while (tmp_list) {
     MozContainerChild* child = static_cast<MozContainerChild*>(tmp_list->data);
@@ -309,27 +312,26 @@ void moz_container_remove(GtkContainer* container, GtkWidget* child_widget) {
      * the parent_window if the child_widget is placed in another
      * container.
      */
-    if (parent_window != gtk_widget_get_window(GTK_WIDGET(container)))
+    if (parent_window != gtk_widget_get_window(GTK_WIDGET(container))) {
       gtk_widget_set_parent_window(child_widget, parent_window);
+    }
 
     g_object_unref(parent_window);
   }
 
-  moz_container->children = g_list_remove(moz_container->children, child);
+  moz_container->data.children =
+      g_list_remove(moz_container->data.children, child);
   g_free(child);
 }
 
 void moz_container_forall(GtkContainer* container, gboolean include_internals,
                           GtkCallback callback, gpointer callback_data) {
-  MozContainer* moz_container;
-  GList* tmp_list;
-
   g_return_if_fail(IS_MOZ_CONTAINER(container));
-  g_return_if_fail(callback != NULL);
+  g_return_if_fail(callback);
 
-  moz_container = MOZ_CONTAINER(container);
+  MozContainer* moz_container = MOZ_CONTAINER(container);
 
-  tmp_list = moz_container->children;
+  GList* tmp_list = moz_container->data.children;
   while (tmp_list) {
     MozContainerChild* child;
     child = static_cast<MozContainerChild*>(tmp_list->data);
@@ -351,9 +353,7 @@ static void moz_container_allocate_child(MozContainer* container,
 
 MozContainerChild* moz_container_get_child(MozContainer* container,
                                            GtkWidget* child_widget) {
-  GList* tmp_list;
-
-  tmp_list = container->children;
+  GList* tmp_list = container->data.children;
   while (tmp_list) {
     MozContainerChild* child;
 
@@ -362,8 +362,7 @@ MozContainerChild* moz_container_get_child(MozContainer* container,
 
     if (child->widget == child_widget) return child;
   }
-
-  return NULL;
+  return nullptr;
 }
 
 static void moz_container_add(GtkContainer* container, GtkWidget* widget) {
@@ -371,7 +370,7 @@ static void moz_container_add(GtkContainer* container, GtkWidget* widget) {
 }
 
 void moz_container_force_default_visual(MozContainer* container) {
-  container->force_default_visual = true;
+  container->data.force_default_visual = true;
 }
 
 nsWindow* moz_container_get_nsWindow(MozContainer* container) {

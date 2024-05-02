@@ -2,15 +2,50 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { error } = ChromeUtils.import(
-  "chrome://remote/content/shared/webdriver/Errors.jsm"
+const { error } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/webdriver/Errors.sys.mjs"
 );
+
+const errors = [
+  error.WebDriverError,
+
+  error.DetachedShadowRootError,
+  error.ElementClickInterceptedError,
+  error.ElementNotAccessibleError,
+  error.ElementNotInteractableError,
+  error.InsecureCertificateError,
+  error.InvalidArgumentError,
+  error.InvalidCookieDomainError,
+  error.InvalidElementStateError,
+  error.InvalidSelectorError,
+  error.InvalidSessionIDError,
+  error.JavaScriptError,
+  error.MoveTargetOutOfBoundsError,
+  error.NoSuchAlertError,
+  error.NoSuchElementError,
+  error.NoSuchFrameError,
+  error.NoSuchHandleError,
+  error.NoSuchInterceptError,
+  error.NoSuchNodeError,
+  error.NoSuchScriptError,
+  error.NoSuchShadowRootError,
+  error.NoSuchWindowError,
+  error.ScriptTimeoutError,
+  error.SessionNotCreatedError,
+  error.StaleElementReferenceError,
+  error.TimeoutError,
+  error.UnableToSetCookieError,
+  error.UnexpectedAlertOpenError,
+  error.UnknownCommandError,
+  error.UnknownError,
+  error.UnsupportedOperationError,
+];
 
 function notok(condition) {
   ok(!condition);
 }
 
-add_test(function test_isError() {
+add_task(function test_isError() {
   notok(error.isError(null));
   notok(error.isError([]));
   notok(error.isError(new Date()));
@@ -24,13 +59,11 @@ add_test(function test_isError() {
   ok(error.isError(new SyntaxError()));
   ok(error.isError(new TypeError()));
   ok(error.isError(new URIError()));
-  ok(error.isError(new error.WebDriverError()));
-  ok(error.isError(new error.InvalidArgumentError()));
 
-  run_next_test();
+  errors.forEach(err => ok(error.isError(new err())));
 });
 
-add_test(function test_isWebDriverError() {
+add_task(function test_isWebDriverError() {
   notok(error.isWebDriverError(new Components.Exception()));
   notok(error.isWebDriverError(new Error()));
   notok(error.isWebDriverError(new EvalError()));
@@ -41,173 +74,175 @@ add_test(function test_isWebDriverError() {
   notok(error.isWebDriverError(new TypeError()));
   notok(error.isWebDriverError(new URIError()));
 
-  ok(error.isWebDriverError(new error.WebDriverError()));
-  ok(error.isWebDriverError(new error.InvalidArgumentError()));
-  ok(error.isWebDriverError(new error.JavaScriptError()));
-
-  run_next_test();
+  errors.forEach(err => ok(error.isWebDriverError(new err())));
 });
 
-add_test(function test_wrap() {
+add_task(function test_wrap() {
   // webdriver-derived errors should not be wrapped
-  equal(error.wrap(new error.WebDriverError()).name, "WebDriverError");
-  ok(error.wrap(new error.WebDriverError()) instanceof error.WebDriverError);
-  equal(
-    error.wrap(new error.InvalidArgumentError()).name,
-    "InvalidArgumentError"
-  );
-  ok(
-    error.wrap(new error.InvalidArgumentError()) instanceof error.WebDriverError
-  );
-  ok(
-    error.wrap(new error.InvalidArgumentError()) instanceof
-      error.InvalidArgumentError
-  );
+  errors.forEach(err => {
+    const unwrappedError = new err("foo");
+    const wrappedError = error.wrap(unwrappedError);
 
-  // JS errors should be wrapped in UnknownError
-  equal(error.wrap(new Error()).name, "UnknownError");
-  ok(error.wrap(new Error()) instanceof error.UnknownError);
-  equal(error.wrap(new EvalError()).name, "UnknownError");
-  equal(error.wrap(new InternalError()).name, "UnknownError");
-  equal(error.wrap(new RangeError()).name, "UnknownError");
-  equal(error.wrap(new ReferenceError()).name, "UnknownError");
-  equal(error.wrap(new SyntaxError()).name, "UnknownError");
-  equal(error.wrap(new TypeError()).name, "UnknownError");
-  equal(error.wrap(new URIError()).name, "UnknownError");
+    ok(wrappedError instanceof error.WebDriverError);
+    ok(wrappedError instanceof err);
+    equal(wrappedError.name, unwrappedError.name);
+    equal(wrappedError.status, unwrappedError.status);
+    equal(wrappedError.message, "foo");
+  });
 
-  // wrapped JS errors should retain their type
-  // as part of the message field
-  equal(error.wrap(new error.WebDriverError("foo")).message, "foo");
-  equal(error.wrap(new TypeError("foo")).message, "TypeError: foo");
+  // JS errors should be wrapped in UnknownError and retain their type
+  // as part of the message field.
+  const jsErrors = [
+    Error,
+    EvalError,
+    InternalError,
+    RangeError,
+    ReferenceError,
+    SyntaxError,
+    TypeError,
+    URIError,
+  ];
 
-  run_next_test();
+  jsErrors.forEach(err => {
+    const originalError = new err("foo");
+    const wrappedError = error.wrap(originalError);
+
+    ok(wrappedError instanceof error.UnknownError);
+    equal(wrappedError.name, "UnknownError");
+    equal(wrappedError.status, "unknown error");
+    equal(wrappedError.message, `${originalError.name}: foo`);
+  });
 });
 
-add_test(function test_stringify() {
+add_task(function test_stringify() {
   equal("<unprintable error>", error.stringify());
   equal("<unprintable error>", error.stringify("foo"));
   equal("[object Object]", error.stringify({}));
   equal("[object Object]\nfoo", error.stringify({ stack: "foo" }));
   equal("Error: foo", error.stringify(new Error("foo")).split("\n")[0]);
-  equal(
-    "WebDriverError: foo",
-    error.stringify(new error.WebDriverError("foo")).split("\n")[0]
-  );
-  equal(
-    "InvalidArgumentError: foo",
-    error.stringify(new error.InvalidArgumentError("foo")).split("\n")[0]
-  );
 
-  run_next_test();
+  errors.forEach(err => {
+    const e = new err("foo");
+
+    equal(`${e.name}: foo`, error.stringify(e).split("\n")[0]);
+  });
 });
 
-add_test(function test_stack() {
+add_task(function test_constructor_from_error() {
+  const data = { a: 3, b: "bar" };
+  const origError = new error.WebDriverError("foo", data);
+
+  errors.forEach(err => {
+    const newError = new err(origError);
+
+    ok(newError instanceof err);
+    equal(newError.message, origError.message);
+    equal(newError.stack, origError.stack);
+    equal(newError.data, origError.data);
+  });
+});
+
+add_task(function test_stack() {
   equal("string", typeof error.stack());
   ok(error.stack().includes("test_stack"));
-  ok(!error.stack().includes("add_test"));
-
-  run_next_test();
+  ok(!error.stack().includes("add_task"));
 });
 
-add_test(function test_toJSON() {
-  let e0 = new error.WebDriverError();
-  let e0s = e0.toJSON();
-  equal(e0s.error, "webdriver error");
-  equal(e0s.message, "");
-  equal(e0s.stacktrace, e0.stack);
+add_task(function test_toJSON() {
+  errors.forEach(err => {
+    const e0 = new err();
+    const e0_json = e0.toJSON();
+    equal(e0_json.error, e0.status);
+    equal(e0_json.message, "");
+    equal(e0_json.stacktrace, e0.stack);
+    equal(e0_json.data, undefined);
 
-  let e1 = new error.WebDriverError("a");
-  let e1s = e1.toJSON();
-  equal(e1s.message, e1.message);
-  equal(e1s.stacktrace, e1.stack);
+    // message property
+    const e1 = new err("a");
+    const e1_json = e1.toJSON();
 
-  let e2 = new error.JavaScriptError("foo");
-  let e2s = e2.toJSON();
-  equal(e2.status, e2s.error);
-  equal(e2.message, e2s.message);
+    equal(e1_json.message, e1.message);
+    equal(e1_json.stacktrace, e1.stack);
+    equal(e1_json.data, undefined);
 
-  run_next_test();
-});
+    // message and optional data property
+    const data = { a: 3, b: "bar" };
+    const e2 = new err("foo", data);
+    const e2_json = e2.toJSON();
 
-add_test(function test_fromJSON() {
-  Assert.throws(
-    () => error.WebDriverError.fromJSON({ error: "foo" }),
-    /Not of WebDriverError descent/
-  );
-  Assert.throws(
-    () => error.WebDriverError.fromJSON({ error: "Error" }),
-    /Not of WebDriverError descent/
-  );
-  Assert.throws(
-    () => error.WebDriverError.fromJSON({}),
-    /Undeserialisable error type/
-  );
-  Assert.throws(() => error.WebDriverError.fromJSON(undefined), /TypeError/);
-
-  // stacks will be different
-  let e1 = new error.WebDriverError("1");
-  let e1r = error.WebDriverError.fromJSON({
-    error: "webdriver error",
-    message: "1",
+    equal(e2.status, e2_json.error);
+    equal(e2.message, e2_json.message);
+    equal(e2_json.data, data);
   });
-  ok(e1r instanceof error.WebDriverError);
-  equal(e1r.name, e1.name);
-  equal(e1r.status, e1.status);
-  equal(e1r.message, e1.message);
-
-  // stacks will be different
-  let e2 = new error.InvalidArgumentError("2");
-  let e2r = error.WebDriverError.fromJSON({
-    error: "invalid argument",
-    message: "2",
-  });
-  ok(e2r instanceof error.WebDriverError);
-  ok(e2r instanceof error.InvalidArgumentError);
-  equal(e2r.name, e2.name);
-  equal(e2r.status, e2.status);
-  equal(e2r.message, e2.message);
-
-  // test stacks
-  let e3j = { error: "no such element", message: "3", stacktrace: "4" };
-  let e3r = error.WebDriverError.fromJSON(e3j);
-  ok(e3r instanceof error.WebDriverError);
-  ok(e3r instanceof error.NoSuchElementError);
-  equal(e3r.name, "NoSuchElementError");
-  equal(e3r.status, e3j.error);
-  equal(e3r.message, e3j.message);
-  equal(e3r.stack, e3j.stacktrace);
-
-  // parity with toJSON
-  let e4j = new error.JavaScriptError("foo").toJSON();
-  let e4 = error.WebDriverError.fromJSON(e4j);
-  equal(e4j.error, e4.status);
-  equal(e4j.message, e4.message);
-  equal(e4j.stacktrace, e4.stack);
-
-  run_next_test();
 });
 
-add_test(function test_WebDriverError() {
+add_task(function test_fromJSON() {
+  errors.forEach(err => {
+    Assert.throws(
+      () => err.fromJSON({ error: "foo" }),
+      /Not of WebDriverError descent/
+    );
+    Assert.throws(
+      () => err.fromJSON({ error: "Error" }),
+      /Not of WebDriverError descent/
+    );
+    Assert.throws(() => err.fromJSON({}), /Undeserialisable error type/);
+    Assert.throws(() => err.fromJSON(undefined), /TypeError/);
+
+    // message and stack
+    const e1 = new err("1");
+    const e1_json = { error: e1.status, message: "3", stacktrace: "4" };
+    const e1_fromJSON = error.WebDriverError.fromJSON(e1_json);
+
+    ok(e1_fromJSON instanceof error.WebDriverError);
+    ok(e1_fromJSON instanceof err);
+    equal(e1_fromJSON.name, e1.name);
+    equal(e1_fromJSON.status, e1_json.error);
+    equal(e1_fromJSON.message, e1_json.message);
+    equal(e1_fromJSON.stack, e1_json.stacktrace);
+
+    // message and optional data
+    const e2_data = { a: 3, b: "bar" };
+    const e2 = new err("1", e2_data);
+    const e2_json = { error: e1.status, message: "3", data: e2_data };
+    const e2_fromJSON = error.WebDriverError.fromJSON(e2_json);
+
+    ok(e2_fromJSON instanceof error.WebDriverError);
+    ok(e2_fromJSON instanceof err);
+    equal(e2_fromJSON.name, e2.name);
+    equal(e2_fromJSON.status, e2_json.error);
+    equal(e2_fromJSON.message, e2_json.message);
+    equal(e2_fromJSON.data, e2_json.data);
+
+    // parity with toJSON
+    const e3_data = { a: 3, b: "bar" };
+    const e3 = new err("1", e3_data);
+    const e3_json = e3.toJSON();
+    const e3_fromJSON = error.WebDriverError.fromJSON(e3_json);
+
+    equal(e3_json.error, e3_fromJSON.status);
+    equal(e3_json.message, e3_fromJSON.message);
+    equal(e3_json.stacktrace, e3_fromJSON.stack);
+  });
+});
+
+add_task(function test_WebDriverError() {
   let err = new error.WebDriverError("foo");
   equal("WebDriverError", err.name);
   equal("foo", err.message);
   equal("webdriver error", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_DetachedShadowRootError() {
+add_task(function test_DetachedShadowRootError() {
   let err = new error.DetachedShadowRootError("foo");
   equal("DetachedShadowRootError", err.name);
   equal("foo", err.message);
   equal("detached shadow root", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_ElementClickInterceptedError() {
+add_task(function test_ElementClickInterceptedError() {
   let otherEl = {
     hasAttribute: attr => attr in otherEl,
     getAttribute: attr => (attr in otherEl ? otherEl[attr] : null),
@@ -229,7 +264,12 @@ add_test(function test_ElementClickInterceptedError() {
     },
   };
 
-  let err1 = new error.ElementClickInterceptedError(obscuredEl, { x: 1, y: 2 });
+  let err1 = new error.ElementClickInterceptedError(
+    undefined,
+    undefined,
+    obscuredEl,
+    { x: 1, y: 2 }
+  );
   equal("ElementClickInterceptedError", err1.name);
   equal(
     "Element <b> is not clickable at point (1,2) " +
@@ -240,98 +280,85 @@ add_test(function test_ElementClickInterceptedError() {
   ok(err1 instanceof error.WebDriverError);
 
   obscuredEl.style.pointerEvents = "none";
-  let err2 = new error.ElementClickInterceptedError(obscuredEl, { x: 1, y: 2 });
+  let err2 = new error.ElementClickInterceptedError(
+    undefined,
+    undefined,
+    obscuredEl,
+    { x: 1, y: 2 }
+  );
   equal(
     "Element <b> is not clickable at point (1,2) " +
       "because it does not have pointer events enabled, " +
       "and element <a> would receive the click instead",
     err2.message
   );
-
-  run_next_test();
 });
 
-add_test(function test_ElementNotAccessibleError() {
+add_task(function test_ElementNotAccessibleError() {
   let err = new error.ElementNotAccessibleError("foo");
   equal("ElementNotAccessibleError", err.name);
   equal("foo", err.message);
   equal("element not accessible", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_ElementNotInteractableError() {
+add_task(function test_ElementNotInteractableError() {
   let err = new error.ElementNotInteractableError("foo");
   equal("ElementNotInteractableError", err.name);
   equal("foo", err.message);
   equal("element not interactable", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_InsecureCertificateError() {
+add_task(function test_InsecureCertificateError() {
   let err = new error.InsecureCertificateError("foo");
   equal("InsecureCertificateError", err.name);
   equal("foo", err.message);
   equal("insecure certificate", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_InvalidArgumentError() {
+add_task(function test_InvalidArgumentError() {
   let err = new error.InvalidArgumentError("foo");
   equal("InvalidArgumentError", err.name);
   equal("foo", err.message);
   equal("invalid argument", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_InvalidCookieDomainError() {
+add_task(function test_InvalidCookieDomainError() {
   let err = new error.InvalidCookieDomainError("foo");
   equal("InvalidCookieDomainError", err.name);
   equal("foo", err.message);
   equal("invalid cookie domain", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_InvalidElementStateError() {
+add_task(function test_InvalidElementStateError() {
   let err = new error.InvalidElementStateError("foo");
   equal("InvalidElementStateError", err.name);
   equal("foo", err.message);
   equal("invalid element state", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_InvalidSelectorError() {
+add_task(function test_InvalidSelectorError() {
   let err = new error.InvalidSelectorError("foo");
   equal("InvalidSelectorError", err.name);
   equal("foo", err.message);
   equal("invalid selector", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_InvalidSessionIDError() {
+add_task(function test_InvalidSessionIDError() {
   let err = new error.InvalidSessionIDError("foo");
   equal("InvalidSessionIDError", err.name);
   equal("foo", err.message);
   equal("invalid session id", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_JavaScriptError() {
+add_task(function test_JavaScriptError() {
   let err = new error.JavaScriptError("foo");
   equal("JavaScriptError", err.name);
   equal("foo", err.message);
@@ -344,156 +371,156 @@ add_test(function test_JavaScriptError() {
   let inheritedErr = new error.JavaScriptError(superErr);
   equal("RangeError: foo", inheritedErr.message);
   equal(superErr.stack, inheritedErr.stack);
-
-  run_next_test();
 });
 
-add_test(function test_MoveTargetOutOfBoundsError() {
+add_task(function test_MoveTargetOutOfBoundsError() {
   let err = new error.MoveTargetOutOfBoundsError("foo");
   equal("MoveTargetOutOfBoundsError", err.name);
   equal("foo", err.message);
   equal("move target out of bounds", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_NoSuchAlertError() {
+add_task(function test_NoSuchAlertError() {
   let err = new error.NoSuchAlertError("foo");
   equal("NoSuchAlertError", err.name);
   equal("foo", err.message);
   equal("no such alert", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_NoSuchElementError() {
+add_task(function test_NoSuchElementError() {
   let err = new error.NoSuchElementError("foo");
   equal("NoSuchElementError", err.name);
   equal("foo", err.message);
   equal("no such element", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_NoSuchFrameError() {
+add_task(function test_NoSuchFrameError() {
   let err = new error.NoSuchFrameError("foo");
   equal("NoSuchFrameError", err.name);
   equal("foo", err.message);
   equal("no such frame", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_NoSuchShadowRootError() {
+add_task(function test_NoSuchHandleError() {
+  let err = new error.NoSuchHandleError("foo");
+  equal("NoSuchHandleError", err.name);
+  equal("foo", err.message);
+  equal("no such handle", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
+add_task(function test_NoSuchInterceptError() {
+  let err = new error.NoSuchInterceptError("foo");
+  equal("NoSuchInterceptError", err.name);
+  equal("foo", err.message);
+  equal("no such intercept", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
+add_task(function test_NoSuchNodeError() {
+  let err = new error.NoSuchNodeError("foo");
+  equal("NoSuchNodeError", err.name);
+  equal("foo", err.message);
+  equal("no such node", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
+add_task(function test_NoSuchScriptError() {
+  let err = new error.NoSuchScriptError("foo");
+  equal("NoSuchScriptError", err.name);
+  equal("foo", err.message);
+  equal("no such script", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
+add_task(function test_NoSuchShadowRootError() {
   let err = new error.NoSuchShadowRootError("foo");
   equal("NoSuchShadowRootError", err.name);
   equal("foo", err.message);
   equal("no such shadow root", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_NoSuchWindowError() {
+add_task(function test_NoSuchWindowError() {
   let err = new error.NoSuchWindowError("foo");
   equal("NoSuchWindowError", err.name);
   equal("foo", err.message);
   equal("no such window", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_ScriptTimeoutError() {
+add_task(function test_ScriptTimeoutError() {
   let err = new error.ScriptTimeoutError("foo");
   equal("ScriptTimeoutError", err.name);
   equal("foo", err.message);
   equal("script timeout", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_SessionNotCreatedError() {
+add_task(function test_SessionNotCreatedError() {
   let err = new error.SessionNotCreatedError("foo");
   equal("SessionNotCreatedError", err.name);
   equal("foo", err.message);
   equal("session not created", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_StaleElementReferenceError() {
+add_task(function test_StaleElementReferenceError() {
   let err = new error.StaleElementReferenceError("foo");
   equal("StaleElementReferenceError", err.name);
   equal("foo", err.message);
   equal("stale element reference", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_TimeoutError() {
+add_task(function test_TimeoutError() {
   let err = new error.TimeoutError("foo");
   equal("TimeoutError", err.name);
   equal("foo", err.message);
   equal("timeout", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_UnableToSetCookieError() {
+add_task(function test_UnableToSetCookieError() {
   let err = new error.UnableToSetCookieError("foo");
   equal("UnableToSetCookieError", err.name);
   equal("foo", err.message);
   equal("unable to set cookie", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_UnexpectedAlertOpenError() {
+add_task(function test_UnexpectedAlertOpenError() {
   let err = new error.UnexpectedAlertOpenError("foo");
   equal("UnexpectedAlertOpenError", err.name);
   equal("foo", err.message);
   equal("unexpected alert open", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_UnknownCommandError() {
+add_task(function test_UnknownCommandError() {
   let err = new error.UnknownCommandError("foo");
   equal("UnknownCommandError", err.name);
   equal("foo", err.message);
   equal("unknown command", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_UnknownError() {
+add_task(function test_UnknownError() {
   let err = new error.UnknownError("foo");
   equal("UnknownError", err.name);
   equal("foo", err.message);
   equal("unknown error", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });
 
-add_test(function test_UnsupportedOperationError() {
+add_task(function test_UnsupportedOperationError() {
   let err = new error.UnsupportedOperationError("foo");
   equal("UnsupportedOperationError", err.name);
   equal("foo", err.message);
   equal("unsupported operation", err.status);
   ok(err instanceof error.WebDriverError);
-
-  run_next_test();
 });

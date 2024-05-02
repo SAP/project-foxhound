@@ -4,22 +4,22 @@
 
 "use strict";
 
-const { generateUUID } = require("devtools/shared/generate-uuid");
+const { generateUUID } = require("resource://devtools/shared/generate-uuid.js");
 const {
   COMPATIBILITY_TOOLTIP_MESSAGE,
-} = require("devtools/client/inspector/rules/constants");
+} = require("resource://devtools/client/inspector/rules/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "escapeCSSComment",
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "getCSSVariables",
-  "devtools/client/inspector/rules/utils/utils",
+  "resource://devtools/client/inspector/rules/utils/utils.js",
   true
 );
 
@@ -333,6 +333,7 @@ class TextProperty {
       property: rootProperty,
       deprecated,
       experimental,
+      specUrl,
       url,
       unsupportedBrowsers,
     } = compatibilityIssues[indexOfProperty];
@@ -358,6 +359,7 @@ class TextProperty {
       property,
       rootProperty,
       msgId,
+      specUrl,
       url,
       unsupportedBrowsers,
     };

@@ -7,12 +7,11 @@
  * Test the 'Open in debugger' feature
  */
 
-add_task(async function() {
-  const {
-    tab,
-    monitor,
-    toolbox,
-  } = await initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL, { requestCount: 1 });
+add_task(async function () {
+  const { tab, monitor, toolbox } = await initNetMonitor(
+    CONTENT_TYPE_WITHOUT_CACHE_URL,
+    { requestCount: 1 }
+  );
   info("Starting test... ");
 
   const { document, store, windowRequire } = monitor.panelWin;
@@ -31,15 +30,12 @@ add_task(async function() {
     { type: "contextmenu" },
     document.querySelectorAll(".request-list-item")[1]
   );
-  await waitUntil(() =>
-    getContextMenuItem(monitor, "request-list-context-open-in-style-editor")
-  );
 
   const onStyleEditorReady = toolbox.once("styleeditor-ready");
-  getContextMenuItem(
+  await selectContextMenuItem(
     monitor,
     "request-list-context-open-in-style-editor"
-  ).click();
+  );
   await onStyleEditorReady;
 
   ok(true, "Style Editor has been open");

@@ -7,7 +7,6 @@
 #include "AccessCheck.h"
 
 #include "nsJSPrincipals.h"
-#include "nsGlobalWindow.h"
 
 #include "XPCWrapper.h"
 #include "XrayWrapper.h"
@@ -135,7 +134,7 @@ void AccessCheck::reportCrossOriginDenial(JSContext* cx, JS::HandleId id,
   }
 
   nsAutoCString message;
-  if (JSID_IS_VOID(id)) {
+  if (id.isVoid()) {
     message = "Permission denied to access object"_ns;
   } else {
     // We want to use JS_ValueToSource here, because that most closely

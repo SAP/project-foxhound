@@ -7,10 +7,7 @@
  * https://streams.spec.whatwg.org/#ws-class-definition
  */
 
-[Exposed=(Window,Worker,Worklet),
-//Transferable See Bug 1734240
-Pref="dom.streams.writable_streams.enabled"
-]
+[Exposed=*] // [Transferable] - See Bug 1562065
 interface WritableStream {
   [Throws]
   constructor(optional object underlyingSink, optional QueuingStrategy strategy = {});
@@ -18,10 +15,10 @@ interface WritableStream {
   readonly attribute boolean locked;
 
   [Throws]
-  Promise<void> abort(optional any reason);
+  Promise<undefined> abort(optional any reason);
 
-  [Throws]
-  Promise<void> close();
+  [NewObject]
+  Promise<undefined> close();
 
   [Throws]
   WritableStreamDefaultWriter getWriter();

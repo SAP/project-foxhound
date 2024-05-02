@@ -353,6 +353,7 @@ void sdp_free_string(char* string);
 nsresult parse_sdp(StringView sdp, bool fail_on_warning, RustSdpSession** ret,
                    RustSdpError** err);
 RustSdpSession* sdp_new_reference(RustSdpSession* aSess);
+RustSdpSession* create_sdp_clone(const RustSdpSession* aSess);
 void sdp_free_session(RustSdpSession* ret);
 size_t sdp_get_error_line_num(const RustSdpError* err);
 char* sdp_get_error_message(const RustSdpError* err);
@@ -375,7 +376,7 @@ size_t sdp_media_section_count(const RustSdpSession* aSess);
 RustMediaSection* sdp_get_media_section(const RustSdpSession* aSess,
                                         size_t aLevel);
 nsresult sdp_add_media_section(RustSdpSession* aSess, uint32_t aMediaType,
-                               uint32_t aDirection, uint32_t aPort,
+                               uint32_t aDirection, uint16_t aPort,
                                uint32_t aProtocol, uint32_t aAddrType,
                                StringView aAddr);
 RustSdpMediaValue sdp_rust_get_media_type(const RustMediaSection* aMediaSec);

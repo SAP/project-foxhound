@@ -102,7 +102,7 @@
 #endif
 
 #ifdef MOZ_PHC
-#include "replace_malloc_bridge.h"
+#include "PHC.h"
 #endif
 
 #if defined(__ANDROID__)
@@ -458,7 +458,7 @@ static void GetPHCAddrInfo(siginfo_t* siginfo,
                            mozilla::phc::AddrInfo* addr_info) {
   // Is this a crash involving a PHC allocation?
   if (siginfo->si_signo == SIGSEGV || siginfo->si_signo == SIGBUS) {
-    ReplaceMalloc::IsPHCAllocation(siginfo->si_addr, addr_info);
+    mozilla::phc::IsPHCAllocation(siginfo->si_addr, addr_info);
   }
 }
 #endif
@@ -466,9 +466,10 @@ static void GetPHCAddrInfo(siginfo_t* siginfo,
 // This function runs in a compromised context: see the top of the file.
 // Runs on the crashing thread.
 bool ExceptionHandler::HandleSignal(int /*sig*/, siginfo_t* info, void* uc) {
-  mozilla::phc::AddrInfo addr_info;
+  mozilla::phc::AddrInfo* addr_info = nullptr;
 #ifdef MOZ_PHC
-  GetPHCAddrInfo(info, &addr_info);
+  addr_info = &mozilla::phc::gAddrInfo;
+  GetPHCAddrInfo(info, addr_info);
 #endif
 
   if (filter_ && !filter_(callback_context_))
@@ -512,7 +513,7 @@ bool ExceptionHandler::HandleSignal(int /*sig*/, siginfo_t* info, void* uc) {
     }
   }
 
-  return GenerateDump(&g_crash_context_, &addr_info);
+  return GenerateDump(&g_crash_context_, addr_info);
 }
 
 // This is a public interface to HandleSignal that allows the client to

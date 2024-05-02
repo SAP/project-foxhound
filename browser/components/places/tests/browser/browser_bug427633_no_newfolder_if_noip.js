@@ -7,7 +7,7 @@
 
 const TEST_URL = "about:buildconfig";
 
-add_task(async function() {
+add_task(async function () {
   let tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: TEST_URL,
@@ -43,4 +43,8 @@ add_task(async function() {
     document.getElementById("editBMPanel_newFolderButton").disabled,
     "New folder button is disabled if there's no selection"
   );
+
+  let hiddenPromise = promisePopupHidden(bookmarkPanel);
+  document.getElementById("editBookmarkPanelRemoveButton").click();
+  await hiddenPromise;
 });

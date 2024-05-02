@@ -13,7 +13,10 @@
 
 use alloc::vec::Vec;
 
-use super::char_data::{BidiClass::{self, *}, is_rtl};
+use super::char_data::{
+    is_rtl,
+    BidiClass::{self, *},
+};
 use super::level::Level;
 
 /// Compute explicit embedding levels for one paragraph of text (X1-X8).
@@ -40,10 +43,12 @@ pub fn compute(
 
     for (i, c) in text.char_indices() {
         match original_classes[i] {
-
             // Rules X2-X5c
             RLE | LRE | RLO | LRO | RLI | LRI | FSI => {
                 let last_level = stack.last().level;
+
+                // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
+                levels[i] = last_level;
 
                 // X5a-X5c: Isolate initiators get the level of the last entry on the stack.
                 let is_isolate = match original_classes[i] {
@@ -51,7 +56,8 @@ pub fn compute(
                     _ => false,
                 };
                 if is_isolate {
-                    levels[i] = last_level;
+                    // Redundant due to "Retaining explicit formatting characters" step.
+                    // levels[i] = last_level;
                     match stack.last().status {
                         OverrideStatus::RTL => processing_classes[i] = R,
                         OverrideStatus::LTR => processing_classes[i] = L,
@@ -64,8 +70,7 @@ pub fn compute(
                 } else {
                     last_level.new_explicit_next_ltr()
                 };
-                if new_level.is_ok() && overflow_isolate_count == 0 &&
-                    overflow_embedding_count == 0
+                if new_level.is_ok() && overflow_isolate_count == 0 && overflow_embedding_count == 0
                 {
                     let new_level = new_level.unwrap();
                     stack.push(
@@ -89,6 +94,13 @@ pub fn compute(
                 } else if overflow_isolate_count == 0 {
                     overflow_embedding_count += 1;
                 }
+
+                if !is_isolate {
+                    // X9 +
+                    // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
+                    // (PDF handled below)
+                    processing_classes[i] = BN;
+                }
             }
 
             // <http://www.unicode.org/reports/tr9/#X6a>
@@ -100,8 +112,11 @@ pub fn compute(
                     loop {
                         // Pop everything up to and including the last Isolate status.
                         match stack.vec.pop() {
-                            None |
-                            Some(Status { status: OverrideStatus::Isolate, .. }) => break,
+                            None
+                            | Some(Status {
+                                status: OverrideStatus::Isolate,
+                                ..
+                            }) => break,
                             _ => continue,
                         }
                     }
@@ -119,31 +134,34 @@ pub fn compute(
             // <http://www.unicode.org/reports/tr9/#X7>
             PDF => {
                 if overflow_isolate_count > 0 {
-                    continue;
-                }
-                if overflow_embedding_count > 0 {
+                    // do nothing
+                } else if overflow_embedding_count > 0 {
                     overflow_embedding_count -= 1;
-                    continue;
-                }
-                if stack.last().status != OverrideStatus::Isolate && stack.vec.len() >= 2 {
+                } else if stack.last().status != OverrideStatus::Isolate && stack.vec.len() >= 2 {
                     stack.vec.pop();
                 }
-                // The spec doesn't explicitly mention this step, but it is necessary.
-                // See the reference implementations for comparison.
+                // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
                 levels[i] = stack.last().level;
+                // X9 part of retaining explicit formatting characters.
+                processing_classes[i] = BN;
             }
 
-            // Nothing
-            B | BN => {}
+            // Nothing.
+            // BN case moved down to X6, see <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
+            B => {}
 
             // <http://www.unicode.org/reports/tr9/#X6>
             _ => {
                 let last = stack.last();
                 levels[i] = last.level;
-                match last.status {
-                    OverrideStatus::RTL => processing_classes[i] = R,
-                    OverrideStatus::LTR => processing_classes[i] = L,
-                    _ => {}
+                // This condition is not in the spec, but I am pretty sure that is a spec bug.
+                // https://www.unicode.org/L2/L2023/23014-amd-to-uax9.pdf
+                if original_classes[i] != BN {
+                    match last.status {
+                        OverrideStatus::RTL => processing_classes[i] = R,
+                        OverrideStatus::LTR => processing_classes[i] = L,
+                        _ => {}
+                    }
                 }
             }
         }
@@ -176,7 +194,9 @@ struct DirectionalStatusStack {
 
 impl DirectionalStatusStack {
     fn new() -> Self {
-        DirectionalStatusStack { vec: Vec::with_capacity(Level::max_explicit_depth() as usize + 2) }
+        DirectionalStatusStack {
+            vec: Vec::with_capacity(Level::max_explicit_depth() as usize + 2),
+        }
     }
 
     fn push(&mut self, level: Level, status: OverrideStatus) {

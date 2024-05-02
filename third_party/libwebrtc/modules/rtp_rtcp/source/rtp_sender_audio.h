@@ -17,12 +17,10 @@
 #include <memory>
 
 #include "absl/strings/string_view.h"
-#include "api/transport/field_trial_based_config.h"
 #include "modules/audio_coding/include/audio_coding_module_typedefs.h"
 #include "modules/rtp_rtcp/source/absolute_capture_time_sender.h"
 #include "modules/rtp_rtcp/source/dtmf_queue.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/one_time_event.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread_annotations.h"
@@ -33,6 +31,11 @@ namespace webrtc {
 class RTPSenderAudio {
  public:
   RTPSenderAudio(Clock* clock, RTPSender* rtp_sender);
+
+  RTPSenderAudio() = delete;
+  RTPSenderAudio(const RTPSenderAudio&) = delete;
+  RTPSenderAudio& operator=(const RTPSenderAudio&) = delete;
+
   ~RTPSenderAudio();
 
   int32_t RegisterAudioPayload(absl::string_view payload_name,
@@ -58,7 +61,7 @@ class RTPSenderAudio {
 
   // Store the audio level in dBov for
   // header-extension-for-audio-level-indication.
-  // Valid range is [0,100]. Actual value is negative.
+  // Valid range is [0,127]. Actual value is negative.
   int32_t SetAudioLevel(uint8_t level_dbov);
 
   // Send a DTMF tone using RFC 2833 (4733)
@@ -101,18 +104,13 @@ class RTPSenderAudio {
 
   // Audio level indication.
   // (https://datatracker.ietf.org/doc/draft-lennox-avt-rtp-audio-level-exthdr/)
-  uint8_t audio_level_dbov_ RTC_GUARDED_BY(send_audio_mutex_) = 0;
+  uint8_t audio_level_dbov_ RTC_GUARDED_BY(send_audio_mutex_) = 127;
   OneTimeEvent first_packet_sent_;
 
   absl::optional<uint32_t> encoder_rtp_timestamp_frequency_
       RTC_GUARDED_BY(send_audio_mutex_);
 
   AbsoluteCaptureTimeSender absolute_capture_time_sender_;
-
-  const FieldTrialBasedConfig field_trials_;
-  const bool include_capture_clock_offset_;
-
-  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RTPSenderAudio);
 };
 
 }  // namespace webrtc

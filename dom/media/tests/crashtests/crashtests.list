@@ -14,7 +14,6 @@ load 855796.html
 load 860143.html
 load 861958.html
 load 863929.html
-skip-if(OSX) load 1185191.html
 load 1281695.html
 load 1306476.html
 load 1348381.html
@@ -25,7 +24,7 @@ asserts-if(Android,0-1) pref(browser.link.open_newwindow,2) load 1429507_2.html 
 load 1443212.html
 asserts-if(Android,0-2) load 1453030.html
 load 1468451.html
-skip-if(Android) load 1490700.html # No screenshare on Android
+skip-if(wayland) skip-if(Android) load 1490700.html # wayland: bug 1856368, No screenshare on Android
 load 1505957.html
 load 1509442.html
 load 1511130.html
@@ -36,3 +35,10 @@ skip-if(Android) pref(media.getusermedia.audiocapture.enabled,true) load 1573536
 skip-if(!Android) pref(media.getusermedia.audiocapture.enabled,true) pref(media.navigator.permission.device,false) load 1573536.html # media.navigator.permission.device is mobile-only, so other platforms fail to set it (Bug 1350948)
 load 1594136.html
 load 1749308.html
+load 1764915.html
+load 1764933.html
+load 1764940.html
+load 1766668.html
+load 1783765.html
+load 1839270.html
+load 1848460.html

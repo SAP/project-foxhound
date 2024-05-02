@@ -18,13 +18,13 @@ NSS Sample Code
    #. :ref:`mozilla_projects_nss_sample_code_sample5`
    #. :ref:`mozilla_projects_nss_sample_code_sample6`
 
-   | 
+   |
    | These are very old examples in need of replacement. See
      https://bugzilla.mozilla.org/show_bug.cgi?id=490238
 
    You are welcome to download the new samples via:
 
-   .. code:: bz_comment_text
+   .. code:: sh
 
       hg clone https://hg.mozilla.org/projects/nss; cd nss; hg update SAMPLES_BRANCH
 

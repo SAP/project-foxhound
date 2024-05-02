@@ -1,16 +1,13 @@
 #!/usr/bin/env python
 
-from __future__ import absolute_import
-
 import os
-import time
-import unittest
-import proctest
 import signal
 import sys
+import time
+import unittest
 
 import mozunit
-
+import proctest
 from mozprocess import processhandler
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -114,7 +111,7 @@ class ProcTestKill(proctest.ProcTest):
         p.run()
         p.kill()
 
-        self.assertEquals(p.proc.returncode, -signal.SIGTERM)
+        self.assertEqual(p.proc.returncode, -signal.SIGTERM)
 
     @unittest.skipUnless(processhandler.isPosix, "posix only")
     def test_process_kill_with_sigint_if_needed(self):
@@ -125,7 +122,7 @@ class ProcTestKill(proctest.ProcTest):
         time.sleep(1)
         p.kill()
 
-        self.assertEquals(p.proc.returncode, -signal.SIGKILL)
+        self.assertEqual(p.proc.returncode, -signal.SIGKILL)
 
     @unittest.skipUnless(processhandler.isPosix, "posix only")
     def test_process_kill_with_timeout(self):
@@ -136,11 +133,11 @@ class ProcTestKill(proctest.ProcTest):
         time.sleep(1)
         t0 = time.time()
         p.kill(sig=signal.SIGTERM, timeout=2)
-        self.assertEquals(p.proc.returncode, None)
+        self.assertEqual(p.proc.returncode, None)
         self.assertGreaterEqual(time.time(), t0 + 2)
 
         p.kill(sig=signal.SIGKILL)
-        self.assertEquals(p.proc.returncode, -signal.SIGKILL)
+        self.assertEqual(p.proc.returncode, -signal.SIGKILL)
 
 
 if __name__ == "__main__":

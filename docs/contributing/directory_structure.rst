@@ -9,9 +9,9 @@ using Searchfox (start at https://searchfox.org/mozilla-central/source for
 the complete firefox source code of branch HEAD).
 
 In order to modify the source, you have to acquire it either by
-downloading a
-`snapshot <https://developer.mozilla.org/docs/Mozilla/Developer_guide/Source_Code/Downloading_Source_Archives>`__
-of the sources or by checking out the current sources from :ref:`Mercurial <Firefox Contributors' Quick Reference>`.
+downloading a :ref:`snapshot <Mercurial Overview>` of the sources or
+by checking out the current sources from
+:ref:`the repository <Firefox Contributors' Quick Reference>`.
 
 This document describes the directory structure -- i.e., directories that
 are used by at least some of the
@@ -19,11 +19,7 @@ Mozilla project's client products. There are other directories in the
 other Mozilla repository, such as those for Web tools and those for the
 Classic codebase.
 
-See `source code directories
-overview <https://developer.mozilla.org/docs/Archive/Misc_top_level/Source_code_directories_overview>`__ for a
-somewhat different (older) version of the same information. Also see the
-`more detailed overview of the pieces of
-Gecko <https://wiki.mozilla.org/Gecko:Overview>`__.
+See the `more detailed overview of the pieces of Gecko <https://wiki.mozilla.org/Gecko:Overview>`__.
 
 .cargo
 ------
@@ -42,7 +38,7 @@ accessible
 ----------
 
 Files for accessibility (i.e., MSAA (Microsoft Active Accessibility),
-ATK (Accessibility Toolkit, used by GTK+ 2) support files). See
+ATK (Accessibility Toolkit, used by GTK) support files). See
 `Accessibility <https://developer.mozilla.org/docs/Web/Accessibility>`__.
 
 
@@ -50,8 +46,8 @@ browser
 -------
 
 Contains the front end code (in XUL, Javascript, XBL, and C++) for the
-Firefox browser. Many of these files started off as a copy of files in
-`xpfe <https://developer.mozilla.org/docs/Mozilla/Developer_guide/Source_Code/Directory_structure#xpfe>`__/.
+Firefox desktop browser. Many of these files started off as a copy of files in
+`xpfe <#xpfe>`__.
 
 browser/extensions
 ------------------
@@ -68,8 +64,7 @@ Mac and Windows)
 build
 -----
 
-Miscellaneous files used by the build process. See also
-`config <https://developer.mozilla.org/docs/Mozilla/Developer_guide/Source_Code/Directory_structure#config>`__/.
+Miscellaneous files used by the build process. See also `config <#config>`__.
 
 caps
 ----
@@ -82,10 +77,8 @@ Security <https://www.mozilla.org/projects/security/components/>`__ .
 chrome
 ------
 
-Chrome registry (See
-`here <https://developer.mozilla.org/en/docs/Chrome_Registration>`__)
-used with `toolkit <#toolkit>`__/. These files were originally copies of
-files in `rdf/chrome/`.
+:ref:`Chrome registry <Chrome Registration>` used with `toolkit <#toolkit>`__/.
+These files were originally copies of files in `rdf/chrome/`.
 
 config
 ------
@@ -119,10 +112,10 @@ an application.
 dom
 ---
 
--  `IDL definitions <https://developer.mozilla.org/docs/Mozilla/Tech/XPIDL>`__ of the interfaces defined by
+-  :ref:`IDL definitions <XPIDL>` of the interfaces defined by
    the DOM specifications and Mozilla extensions to those interfaces
    (implementations of these interfaces are primarily, but not
-   completely, in `content <https://developer.mozilla.org/docs/Mozilla/Developer_guide/Source_Code/Directory_structure#content>`__).
+   completely, in `content <#content>`__).
 -  The parts of the connection between JavaScript and the
    implementations of DOM objects that are specific both to JavaScript
    and to the DOM.
@@ -244,7 +237,7 @@ js/src
 ------
 
 The JavaScript engine, also known as
-`SpiderMonkey <https://developer.mozilla.org/docs/Mozilla/Projects/SpiderMonkey>`__.
+:ref:`SpiderMonkey <SpiderMonkey>`.
 See also `JavaScript <https://developer.mozilla.org/docs/JavaScript>`__.
 
 js/xpconnect
@@ -316,8 +309,7 @@ mfbt
 ----
 
 Implementations of classes like *WeakPtr*. Multi-platform *assertions*
-etc. `More on
-MFBT <https://developer.mozilla.org/docs/Mozilla/MFBT>`__
+etc.
 
 mobile
 ------
@@ -359,7 +351,7 @@ dynamic linker for Android, a DLL block list for Windows, etc.
 netwerk
 -------
 
-`Networking library <https://developer.mozilla.org/docs/Necko>`__, also known as Necko.
+:ref:`Networking library <Networking>`, also known as Necko.
 Responsible for doing actual transfers from and to servers, as well as
 for URI handling and related stuff.
 
@@ -422,15 +414,14 @@ Cross module python code.
 python/mach
 -----------
 
-The code for the `Mach <https://developer.mozilla.org/docs/Mozilla/Developer_guide/mach>`__ building
-tool.
+The code for the :ref:`Mach` building tool.
 
 security
 --------
 
 Contains NSS and PSM, to support cryptographic functions in mozilla
-(like S/MIME, SSL, etc). See `Network Security Services
-(NSS) <https://www.mozilla.org/projects/security/pki/nss/>`__ and
+(like S/MIME, SSL, etc). See :ref:`Network Security Services (NSS)`
+and
 `Personal Security Manager
 (PSM) <https://www.mozilla.org/projects/security/pki/psm/>`__.
 

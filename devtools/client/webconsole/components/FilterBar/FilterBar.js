@@ -7,46 +7,54 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
 // Actions
-const actions = require("devtools/client/webconsole/actions/index");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
 
 // Selectors
 const {
   getAllFilters,
-} = require("devtools/client/webconsole/selectors/filters");
+} = require("resource://devtools/client/webconsole/selectors/filters.js");
 const {
   getFilteredMessagesCount,
-} = require("devtools/client/webconsole/selectors/messages");
-const { getAllPrefs } = require("devtools/client/webconsole/selectors/prefs");
-const { getAllUi } = require("devtools/client/webconsole/selectors/ui");
+} = require("resource://devtools/client/webconsole/selectors/messages.js");
+const {
+  getAllPrefs,
+} = require("resource://devtools/client/webconsole/selectors/prefs.js");
+const {
+  getAllUi,
+} = require("resource://devtools/client/webconsole/selectors/ui.js");
 
 // Utilities
-const { l10n } = require("devtools/client/webconsole/utils/messages");
-const { PluralForm } = require("devtools/shared/plural-form");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
+const { PluralForm } = require("resource://devtools/shared/plural-form.js");
 
 // Constants
 const {
   FILTERS,
   FILTERBAR_DISPLAY_MODES,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 
 // Additional Components
-const FilterButton = require("devtools/client/webconsole/components/FilterBar/FilterButton");
+const FilterButton = require("resource://devtools/client/webconsole/components/FilterBar/FilterButton.js");
 const ConsoleSettings = createFactory(
-  require("devtools/client/webconsole/components/FilterBar/ConsoleSettings")
+  require("resource://devtools/client/webconsole/components/FilterBar/ConsoleSettings.js")
 );
 const SearchBox = createFactory(
-  require("devtools/client/shared/components/SearchBox")
+  require("resource://devtools/client/shared/components/SearchBox.js")
 );
 
 loader.lazyRequireGetter(
   this,
   "PropTypes",
-  "devtools/client/shared/vendor/react-prop-types"
+  "resource://devtools/client/shared/vendor/react-prop-types.js"
 );
 
 const disabledCssFilterButtonTitle = l10n.getStr(
@@ -61,24 +69,15 @@ class FilterBar extends Component {
       dispatch: PropTypes.func.isRequired,
       displayMode: PropTypes.oneOf([...Object.values(FILTERBAR_DISPLAY_MODES)])
         .isRequired,
+      enableNetworkMonitoring: PropTypes.bool.isRequired,
       filter: PropTypes.object.isRequired,
       filteredMessagesCount: PropTypes.object.isRequired,
       groupWarnings: PropTypes.bool.isRequired,
-      hidePersistLogsCheckbox: PropTypes.bool.isRequired,
-      hideShowContentMessagesCheckbox: PropTypes.bool.isRequired,
       persistLogs: PropTypes.bool.isRequired,
       eagerEvaluation: PropTypes.bool.isRequired,
-      showContentMessages: PropTypes.bool.isRequired,
       timestampsVisible: PropTypes.bool.isRequired,
       webConsoleUI: PropTypes.object.isRequired,
       autocomplete: PropTypes.bool.isRequired,
-    };
-  }
-
-  static get defaultProps() {
-    return {
-      hidePersistLogsCheckbox: false,
-      hideShowContentMessagesCheckbox: true,
     };
   }
 
@@ -110,11 +109,11 @@ class FilterBar extends Component {
     const {
       closeButtonVisible,
       displayMode,
+      enableNetworkMonitoring,
       filter,
       filteredMessagesCount,
       groupWarnings,
       persistLogs,
-      showContentMessages,
       timestampsVisible,
       eagerEvaluation,
       autocomplete,
@@ -123,10 +122,10 @@ class FilterBar extends Component {
     if (
       nextProps.closeButtonVisible !== closeButtonVisible ||
       nextProps.displayMode !== displayMode ||
+      nextProps.enableNetworkMonitoring !== enableNetworkMonitoring ||
       nextProps.filter !== filter ||
       nextProps.groupWarnings !== groupWarnings ||
       nextProps.persistLogs !== persistLogs ||
-      nextProps.showContentMessages !== showContentMessages ||
       nextProps.timestampsVisible !== timestampsVisible ||
       nextProps.eagerEvaluation !== eagerEvaluation ||
       nextProps.autocomplete !== autocomplete
@@ -332,12 +331,10 @@ class FilterBar extends Component {
   renderSettingsButton() {
     const {
       dispatch,
+      enableNetworkMonitoring,
       eagerEvaluation,
       groupWarnings,
-      hidePersistLogsCheckbox,
-      hideShowContentMessagesCheckbox,
       persistLogs,
-      showContentMessages,
       timestampsVisible,
       webConsoleUI,
       autocomplete,
@@ -345,12 +342,10 @@ class FilterBar extends Component {
 
     return ConsoleSettings({
       dispatch,
+      enableNetworkMonitoring,
       eagerEvaluation,
       groupWarnings,
-      hidePersistLogsCheckbox,
-      hideShowContentMessagesCheckbox,
       persistLogs,
-      showContentMessages,
       timestampsVisible,
       webConsoleUI,
       autocomplete,
@@ -437,9 +432,9 @@ function mapStateToProps(state) {
     groupWarnings: prefsState.groupWarnings,
     persistLogs: uiState.persistLogs,
     eagerEvaluation: prefsState.eagerEvaluation,
-    showContentMessages: uiState.showContentMessages,
     timestampsVisible: uiState.timestampsVisible,
     autocomplete: prefsState.autocomplete,
+    enableNetworkMonitoring: uiState.enableNetworkMonitoring,
   };
 }
 

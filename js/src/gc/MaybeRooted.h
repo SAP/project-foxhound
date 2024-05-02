@@ -17,7 +17,7 @@
 
 #include <type_traits>  // std::true_type
 
-#include "gc/Allocator.h"            // js::AllowGC, js::CanGC, js::NoGC
+#include "gc/GCEnum.h"               // js::AllowGC, js::CanGC, js::NoGC
 #include "js/ComparisonOperators.h"  // JS::detail::DefineComparisonOps
 #include "js/RootingAPI.h"  // js::{Rooted,MutableHandle}Base, JS::SafelyInitialized, DECLARE_POINTER_{CONSTREF,ASSIGN}_OPS, DECLARE_NONPOINTER_{,MUTABLE_}ACCESSOR_METHODS, JS::Rooted, JS::{,Mutable}Handle
 
@@ -37,6 +37,8 @@ class MOZ_RAII FakeRooted : public RootedOperations<T, FakeRooted<T>> {
 
   FakeRooted(JSContext* cx, T initial) : ptr(initial) {}
 
+  FakeRooted(const FakeRooted&) = delete;
+
   DECLARE_POINTER_CONSTREF_OPS(T);
   DECLARE_POINTER_ASSIGN_OPS(FakeRooted, T);
   DECLARE_NONPOINTER_ACCESSOR_METHODS(ptr);
@@ -46,24 +48,16 @@ class MOZ_RAII FakeRooted : public RootedOperations<T, FakeRooted<T>> {
   T ptr;
 
   void set(const T& value) { ptr = value; }
-
-  FakeRooted(const FakeRooted&) = delete;
 };
 
 }  // namespace js
 
-namespace JS {
-
-namespace detail {
-
+namespace JS::detail {
 template <typename T>
 struct DefineComparisonOps<js::FakeRooted<T>> : std::true_type {
   static const T& get(const js::FakeRooted<T>& v) { return v.get(); }
 };
-
-}  // namespace detail
-
-}  // namespace JS
+}  // namespace JS::detail
 
 namespace js {
 
@@ -96,18 +90,12 @@ class FakeMutableHandle
 
 }  // namespace js
 
-namespace JS {
-
-namespace detail {
-
+namespace JS::detail {
 template <typename T>
 struct DefineComparisonOps<js::FakeMutableHandle<T>> : std::true_type {
   static const T& get(const js::FakeMutableHandle<T>& v) { return v.get(); }
 };
-
-}  // namespace detail
-
-}  // namespace JS
+}  // namespace JS::detail
 
 namespace js {
 

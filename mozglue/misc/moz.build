@@ -15,8 +15,11 @@ EXPORTS.mozilla += [
     "MmapFaultHandler.h",
     "PlatformConditionVariable.h",
     "PlatformMutex.h",
+    "PlatformRWLock.h",
     "Printf.h",
+    "SIMD.h",
     "Sprintf.h",
+    "SSE.h",
     "StackWalk.h",
     "TimeStamp.h",
     "Uptime.h",
@@ -42,10 +45,29 @@ SOURCES += [
     "AwakeTimeStamp.cpp",
     "MmapFaultHandler.cpp",
     "Printf.cpp",
+    "SIMD.cpp",
     "StackWalk.cpp",
     "TimeStamp.cpp",
     "Uptime.cpp",
 ]
+
+if CONFIG["CPU_ARCH"].startswith("x86"):
+    SOURCES += [
+        "SIMD_avx2.cpp",
+        "SSE.cpp",
+    ]
+    SOURCES["SIMD_avx2.cpp"].flags += ["-mavx2"]
+
+if not CONFIG["JS_STANDALONE"]:
+    EXPORTS.mozilla += [
+        "ProcessType.h",
+        "RuntimeExceptionModule.h",
+    ]
+
+    SOURCES += [
+        "ProcessType.cpp",
+        "RuntimeExceptionModule.cpp",
+    ]
 
 OS_LIBS += CONFIG["REALTIME_LIBS"]
 
@@ -58,6 +80,8 @@ if CONFIG["OS_ARCH"] == "WINNT":
         "WindowsEnumProcessModules.h",
         "WindowsMapRemoteView.h",
         "WindowsProcessMitigations.h",
+        "WindowsStackCookie.h",
+        "WindowsUnwindInfo.h",
     ]
     EXPORTS.mozilla.glue += [
         "WindowsUnicode.h",
@@ -85,11 +109,6 @@ if CONFIG["OS_ARCH"] == "WINNT":
             "PreXULSkeletonUI.cpp",
         ]
 
-    if CONFIG["ACCESSIBILITY"]:
-        SOURCES += [
-            "/ipc/mscom/ActivationContext.cpp",
-        ]
-
 elif CONFIG["HAVE_CLOCK_MONOTONIC"]:
     SOURCES += [
         "TimeStamp_posix.cpp",
@@ -105,6 +124,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
     SOURCES += [
         "ConditionVariable_windows.cpp",
         "Mutex_windows.cpp",
+        "RWLock_windows.cpp",
     ]
 # WASI hasn't supported cond vars and mutexes yet so noop implementation is used.
 elif CONFIG["OS_ARCH"] == "WASI":
@@ -116,6 +136,7 @@ else:
     SOURCES += [
         "ConditionVariable_posix.cpp",
         "Mutex_posix.cpp",
+        "RWLock_posix.cpp",
     ]
 
 if CONFIG["MOZ_LINKER"] and CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
@@ -127,7 +148,7 @@ SOURCES += [
     "decimal/Decimal.cpp",
 ]
 
-if CONFIG["CC_TYPE"] == "clang":
+if CONFIG["CC_TYPE"] in ("clang", "clang-cl"):
     # Suppress warnings from third-party V8 Decimal code.
     SOURCES["decimal/Decimal.cpp"].flags += ["-Wno-implicit-fallthrough"]
 

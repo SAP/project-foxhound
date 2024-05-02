@@ -8,6 +8,7 @@
 #define databuffer_h__
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -33,7 +34,8 @@ class DataBuffer {
     return *this;
   }
   DataBuffer& operator=(DataBuffer&& other) {
-    if (this == &other) {
+    if (this != &other) {
+      delete[] data_;
       data_ = other.data_;
       len_ = other.len_;
       other.data_ = nullptr;

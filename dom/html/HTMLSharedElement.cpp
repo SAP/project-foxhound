@@ -14,10 +14,6 @@
 #include "mozilla/dom/HTMLQuoteElementBinding.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/MappedDeclarations.h"
-#include "nsAttrValueInlines.h"
-#include "nsStyleConsts.h"
-#include "nsMappedAttributes.h"
 #include "nsContentUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIURI.h"
@@ -25,8 +21,6 @@
 NS_IMPL_NS_NEW_HTML_ELEMENT(Shared)
 
 namespace mozilla::dom {
-
-extern nsAttrValue::EnumTable kListTypeTable[];
 
 HTMLSharedElement::~HTMLSharedElement() = default;
 
@@ -36,7 +30,7 @@ void HTMLSharedElement::GetHref(nsAString& aValue) {
   MOZ_ASSERT(mNodeInfo->Equals(nsGkAtoms::base),
              "This should only get called for <base> elements");
   nsAutoString href;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
+  GetAttr(nsGkAtoms::href, href);
 
   nsCOMPtr<nsIURI> uri;
   Document* doc = OwnerDoc();
@@ -55,74 +49,18 @@ void HTMLSharedElement::GetHref(nsAString& aValue) {
 
 void HTMLSharedElement::DoneAddingChildren(bool aHaveNotified) {
   if (mNodeInfo->Equals(nsGkAtoms::head)) {
-    nsCOMPtr<Document> doc = GetUncomposedDoc();
-    if (doc) {
+    if (nsCOMPtr<Document> doc = GetUncomposedDoc()) {
       doc->OnL10nResourceContainerParsed();
-    }
-
-    RefPtr<AsyncEventDispatcher> asyncDispatcher =
-        new AsyncEventDispatcher(this, u"DOMHeadElementParsed"_ns,
-                                 CanBubble::eYes, ChromeOnlyDispatch::eYes);
-    // Always run async in order to avoid running script when the content
-    // sink isn't expecting it.
-    asyncDispatcher->PostDOMEvent();
-  }
-}
-
-bool HTMLSharedElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                                       const nsAString& aValue,
-                                       nsIPrincipal* aMaybeScriptedPrincipal,
-                                       nsAttrValue& aResult) {
-  if (aNamespaceID == kNameSpaceID_None && mNodeInfo->Equals(nsGkAtoms::dir)) {
-    if (aAttribute == nsGkAtoms::type) {
-      return aResult.ParseEnumValue(aValue, mozilla::dom::kListTypeTable,
-                                    false);
-    }
-    if (aAttribute == nsGkAtoms::start) {
-      return aResult.ParseIntWithBounds(aValue, 1);
-    }
-  }
-
-  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aMaybeScriptedPrincipal, aResult);
-}
-
-static void DirectoryMapAttributesIntoRule(
-    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
-  if (!aDecls.PropertyIsSet(eCSSProperty_list_style_type)) {
-    // type: enum
-    const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::type);
-    if (value) {
-      if (value->Type() == nsAttrValue::eEnum) {
-        aDecls.SetKeywordValue(eCSSProperty_list_style_type,
-                               value->GetEnumValue());
-      } else {
-        aDecls.SetKeywordValue(eCSSProperty_list_style_type,
-                               NS_STYLE_LIST_STYLE_DISC);
+      if (!doc->IsLoadedAsData()) {
+        RefPtr<AsyncEventDispatcher> asyncDispatcher =
+            new AsyncEventDispatcher(this, u"DOMHeadElementParsed"_ns,
+                                     CanBubble::eYes, ChromeOnlyDispatch::eYes);
+        // Always run async in order to avoid running script when the content
+        // sink isn't expecting it.
+        asyncDispatcher->PostDOMEvent();
       }
     }
   }
-
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
-}
-
-NS_IMETHODIMP_(bool)
-HTMLSharedElement::IsAttributeMapped(const nsAtom* aAttribute) const {
-  if (mNodeInfo->Equals(nsGkAtoms::dir)) {
-    static const MappedAttributeEntry attributes[] = {
-        {nsGkAtoms::type},
-        // { nsGkAtoms::compact }, // XXX
-        {nullptr}};
-
-    static const MappedAttributeEntry* const map[] = {
-        attributes,
-        sCommonAttributeMap,
-    };
-
-    return FindAttributeDependence(aAttribute, map);
-  }
-
-  return nsGenericHTMLElement::IsAttributeMapped(aAttribute);
 }
 
 static void SetBaseURIUsingFirstBaseWithHref(Document* aDocument,
@@ -132,7 +70,7 @@ static void SetBaseURIUsingFirstBaseWithHref(Document* aDocument,
   for (nsIContent* child = aDocument->GetFirstChild(); child;
        child = child->GetNextNode()) {
     if (child->IsHTMLElement(nsGkAtoms::base) &&
-        child->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
+        child->AsElement()->HasAttr(nsGkAtoms::href)) {
       if (aMustMatch && child != aMustMatch) {
         return;
       }
@@ -140,7 +78,7 @@ static void SetBaseURIUsingFirstBaseWithHref(Document* aDocument,
       // Resolve the <base> element's href relative to our document's
       // fallback base URI.
       nsAutoString href;
-      child->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
+      child->AsElement()->GetAttr(nsGkAtoms::href, href);
 
       nsCOMPtr<nsIURI> newBaseURI;
       nsContentUtils::NewURIWithDocumentCharset(
@@ -155,10 +93,10 @@ static void SetBaseURIUsingFirstBaseWithHref(Document* aDocument,
         // policy - do *not* consult default-src, see:
         // http://www.w3.org/TR/CSP2/#directive-default-src
         bool cspPermitsBaseURI = true;
-        rv = csp->Permits(child->AsElement(), nullptr /* nsICSPEventListener */,
-                          newBaseURI,
-                          nsIContentSecurityPolicy::BASE_URI_DIRECTIVE, true,
-                          &cspPermitsBaseURI);
+        rv = csp->Permits(
+            child->AsElement(), nullptr /* nsICSPEventListener */, newBaseURI,
+            nsIContentSecurityPolicy::BASE_URI_DIRECTIVE, true /* aSpecific */,
+            true /* aSendViolationReports */, &cspPermitsBaseURI);
         if (NS_FAILED(rv) || !cspPermitsBaseURI) {
           newBaseURI = nullptr;
         }
@@ -179,13 +117,13 @@ static void SetBaseTargetUsingFirstBaseWithTarget(Document* aDocument,
   for (nsIContent* child = aDocument->GetFirstChild(); child;
        child = child->GetNextNode()) {
     if (child->IsHTMLElement(nsGkAtoms::base) &&
-        child->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::target)) {
+        child->AsElement()->HasAttr(nsGkAtoms::target)) {
       if (aMustMatch && child != aMustMatch) {
         return;
       }
 
       nsString target;
-      child->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::target, target);
+      child->AsElement()->GetAttr(nsGkAtoms::target, target);
       aDocument->SetBaseTarget(target);
       return;
     }
@@ -194,11 +132,11 @@ static void SetBaseTargetUsingFirstBaseWithTarget(Document* aDocument,
   aDocument->SetBaseTarget(u""_ns);
 }
 
-nsresult HTMLSharedElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                         const nsAttrValue* aValue,
-                                         const nsAttrValue* aOldValue,
-                                         nsIPrincipal* aSubjectPrincipal,
-                                         bool aNotify) {
+void HTMLSharedElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                     const nsAttrValue* aValue,
+                                     const nsAttrValue* aOldValue,
+                                     nsIPrincipal* aSubjectPrincipal,
+                                     bool aNotify) {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::href) {
       // If the href attribute of a <base> tag is changing, we may need to
@@ -232,10 +170,10 @@ nsresult HTMLSharedElement::BindToTree(BindContext& aContext,
   // The document stores a pointer to its base URI and base target, which we may
   // need to update here.
   if (mNodeInfo->Equals(nsGkAtoms::base) && IsInUncomposedDoc()) {
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
+    if (HasAttr(nsGkAtoms::href)) {
       SetBaseURIUsingFirstBaseWithHref(&aContext.OwnerDoc(), this);
     }
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::target)) {
+    if (HasAttr(nsGkAtoms::target)) {
       SetBaseTargetUsingFirstBaseWithTarget(&aContext.OwnerDoc(), this);
     }
   }
@@ -251,22 +189,13 @@ void HTMLSharedElement::UnbindFromTree(bool aNullParent) {
   // If we're removing a <base> from a document, we may need to update the
   // document's base URI and base target
   if (doc && mNodeInfo->Equals(nsGkAtoms::base)) {
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
+    if (HasAttr(nsGkAtoms::href)) {
       SetBaseURIUsingFirstBaseWithHref(doc, nullptr);
     }
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::target)) {
+    if (HasAttr(nsGkAtoms::target)) {
       SetBaseTargetUsingFirstBaseWithTarget(doc, nullptr);
     }
   }
-}
-
-nsMapRuleToAttributesFunc HTMLSharedElement::GetAttributeMappingFunction()
-    const {
-  if (mNodeInfo->Equals(nsGkAtoms::dir)) {
-    return &DirectoryMapAttributesIntoRule;
-  }
-
-  return nsGenericHTMLElement::GetAttributeMappingFunction();
 }
 
 JSObject* HTMLSharedElement::WrapNode(JSContext* aCx,

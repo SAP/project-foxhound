@@ -18,7 +18,7 @@ const attributeTestData = [
     expectation: "none",
   },
   {
-    testValues: ["email", "EmaiL", "loginemail"],
+    testValues: ["email", "EmaiL", "loginemail", "邮箱"],
     expectation: "email",
   },
   {
@@ -182,8 +182,8 @@ const TESTCASES = [
 for (let testcase of TESTCASES) {
   info("Sanity checking the testcase: " + testcase.description);
 
-  (function() {
-    add_task(async function() {
+  (function () {
+    add_task(async function () {
       info("Starting testcase: " + testcase.description);
 
       for (let subtest of testcase.subtests) {

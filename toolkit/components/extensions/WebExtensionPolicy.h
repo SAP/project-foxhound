@@ -6,6 +6,8 @@
 #ifndef mozilla_extensions_WebExtensionPolicy_h
 #define mozilla_extensions_WebExtensionPolicy_h
 
+#include "MainThreadUtils.h"
+#include "mozilla/RWLock.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/Nullable.h"
@@ -19,6 +21,7 @@
 #include "mozilla/WeakPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsGkAtoms.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
 
@@ -36,38 +39,168 @@ using dom::WebExtensionLocalizeCallback;
 class DocInfo;
 class WebExtensionContentScript;
 
-class WebAccessibleResource final : public nsISupports {
+class WebAccessibleResource final {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(WebAccessibleResource)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebAccessibleResource)
 
   WebAccessibleResource(dom::GlobalObject& aGlobal,
                         const WebAccessibleResourceInit& aInit,
                         ErrorResult& aRv);
 
-  bool IsWebAccessiblePath(const nsAString& aPath) const {
+  bool IsWebAccessiblePath(const nsACString& aPath) const {
     return mWebAccessiblePaths.Matches(aPath);
   }
 
-  bool SourceMayAccessPath(const URLInfo& aURI, const nsAString& aPath) {
-    return mWebAccessiblePaths.Matches(aPath) && mMatches &&
-           mMatches->Matches(aURI);
+  bool SourceMayAccessPath(const URLInfo& aURI, const nsACString& aPath) {
+    return mWebAccessiblePaths.Matches(aPath) &&
+           (IsHostMatch(aURI) || IsExtensionMatch(aURI));
   }
 
- protected:
-  virtual ~WebAccessibleResource() = default;
+  bool IsHostMatch(const URLInfo& aURI) {
+    return mMatches && mMatches->Matches(aURI);
+  }
+
+  bool IsExtensionMatch(const URLInfo& aURI);
 
  private:
+  ~WebAccessibleResource() = default;
+
   MatchGlobSet mWebAccessiblePaths;
-  RefPtr<MatchPatternSet> mMatches;
+  RefPtr<MatchPatternSetCore> mMatches;
+  RefPtr<AtomSet> mExtensionIDs;
 };
 
-class WebExtensionPolicy final : public nsISupports,
-                                 public nsWrapperCache,
-                                 public SupportsWeakPtr {
+/// The thread-safe component of the WebExtensionPolicy.
+///
+/// Acts as a weak reference to the base WebExtensionPolicy.
+class WebExtensionPolicyCore final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebExtensionPolicyCore)
+
+  nsAtom* Id() const { return mId; }
+
+  const nsCString& MozExtensionHostname() const { return mHostname; }
+
+  nsIURI* BaseURI() const { return mBaseURI; }
+
+  bool IsPrivileged() { return mIsPrivileged; }
+
+  bool TemporarilyInstalled() { return mTemporarilyInstalled; }
+
+  const nsString& Name() const { return mName; }
+
+  nsAtom* Type() const { return mType; }
+
+  uint32_t ManifestVersion() const { return mManifestVersion; }
+
+  const nsString& ExtensionPageCSP() const { return mExtensionPageCSP; }
+
+  const nsString& BaseCSP() const { return mBaseCSP; }
+
+  const nsString& BackgroundWorkerScript() const {
+    return mBackgroundWorkerScript;
+  }
+
+  bool IsWebAccessiblePath(const nsACString& aPath) const {
+    for (const auto& resource : mWebAccessibleResources) {
+      if (resource->IsWebAccessiblePath(aPath)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool SourceMayAccessPath(const URLInfo& aURI, const nsACString& aPath) const;
+
+  bool HasPermission(const nsAtom* aPermission) const {
+    AutoReadLock lock(mLock);
+    return mPermissions->Contains(aPermission);
+  }
+
+  void GetPermissions(nsTArray<nsString>& aResult) const MOZ_EXCLUDES(mLock) {
+    AutoReadLock lock(mLock);
+    return mPermissions->Get(aResult);
+  }
+
+  void SetPermissions(const nsTArray<nsString>& aPermissions)
+      MOZ_EXCLUDES(mLock) {
+    RefPtr<AtomSet> newPermissions = new AtomSet(aPermissions);
+    AutoWriteLock lock(mLock);
+    mPermissions = std::move(newPermissions);
+  }
+
+  bool CanAccessURI(const URLInfo& aURI, bool aExplicit = false,
+                    bool aCheckRestricted = true,
+                    bool aAllowFilePermission = false) const;
+
+  bool IgnoreQuarantine() const MOZ_EXCLUDES(mLock) {
+    AutoReadLock lock(mLock);
+    return mIgnoreQuarantine;
+  }
+  void SetIgnoreQuarantine(bool aIgnore) MOZ_EXCLUDES(mLock) {
+    AutoWriteLock lock(mLock);
+    mIgnoreQuarantine = aIgnore;
+  }
+
+  bool QuarantinedFromDoc(const DocInfo& aDoc) const;
+  bool QuarantinedFromURI(const URLInfo& aURI) const MOZ_EXCLUDES(mLock);
+
+  // Try to get a reference to the cycle-collected main-thread-only
+  // WebExtensionPolicy instance.
+  //
+  // Will return nullptr if the policy has already been unlinked or destroyed.
+  WebExtensionPolicy* GetMainThreadPolicy() const
+      MOZ_REQUIRES(sMainThreadCapability) {
+    return mPolicy;
+  }
+
+ private:
+  friend class WebExtensionPolicy;
+
+  WebExtensionPolicyCore(dom::GlobalObject& aGlobal,
+                         WebExtensionPolicy* aPolicy,
+                         const WebExtensionInit& aInit, ErrorResult& aRv);
+
+  ~WebExtensionPolicyCore() = default;
+
+  void ClearPolicyWeakRef() MOZ_REQUIRES(sMainThreadCapability) {
+    mPolicy = nullptr;
+  }
+
+  // Unless otherwise guarded by a capability, all members on
+  // WebExtensionPolicyCore should be immutable and threadsafe.
+
+  WebExtensionPolicy* MOZ_NON_OWNING_REF mPolicy
+      MOZ_GUARDED_BY(sMainThreadCapability);
+
+  const RefPtr<nsAtom> mId;
+  /* const */ nsCString mHostname;
+  /* const */ nsCOMPtr<nsIURI> mBaseURI;
+
+  const nsString mName;
+  const RefPtr<nsAtom> mType;
+  const uint32_t mManifestVersion;
+  /* const */ nsString mExtensionPageCSP;
+  /* const */ nsString mBaseCSP;
+
+  const bool mIsPrivileged;
+  const bool mTemporarilyInstalled;
+
+  const nsString mBackgroundWorkerScript;
+
+  /* const */ nsTArray<RefPtr<WebAccessibleResource>> mWebAccessibleResources;
+
+  mutable RWLock mLock{"WebExtensionPolicyCore"};
+
+  bool mIgnoreQuarantine MOZ_GUARDED_BY(mLock);
+  RefPtr<AtomSet> mPermissions MOZ_GUARDED_BY(mLock);
+  RefPtr<MatchPatternSetCore> mHostPermissions MOZ_GUARDED_BY(mLock);
+};
+
+class WebExtensionPolicy final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WebExtensionPolicy)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WebExtensionPolicy)
 
   using ScriptArray = nsTArray<RefPtr<WebExtensionContentScript>>;
 
@@ -75,21 +208,26 @@ class WebExtensionPolicy final : public nsISupports,
       dom::GlobalObject& aGlobal, const WebExtensionInit& aInit,
       ErrorResult& aRv);
 
-  nsAtom* Id() const { return mId; }
-  void GetId(nsAString& aId) const { aId = nsDependentAtomString(mId); };
+  WebExtensionPolicyCore* Core() const { return mCore; }
 
-  const nsCString& MozExtensionHostname() const { return mHostname; }
+  nsAtom* Id() const { return mCore->Id(); }
+  void GetId(nsAString& aId) const { aId = nsDependentAtomString(Id()); };
+
+  const nsCString& MozExtensionHostname() const {
+    return mCore->MozExtensionHostname();
+  }
   void GetMozExtensionHostname(nsACString& aHostname) const {
     aHostname = MozExtensionHostname();
   }
 
+  nsIURI* BaseURI() const { return mCore->BaseURI(); }
   void GetBaseURL(nsACString& aBaseURL) const {
-    MOZ_ALWAYS_SUCCEEDS(mBaseURI->GetSpec(aBaseURL));
+    MOZ_ALWAYS_SUCCEEDS(mCore->BaseURI()->GetSpec(aBaseURL));
   }
 
-  bool IsPrivileged() { return mIsPrivileged; }
+  bool IsPrivileged() { return mCore->IsPrivileged(); }
 
-  bool TemporarilyInstalled() { return mTemporarilyInstalled; }
+  bool TemporarilyInstalled() { return mCore->TemporarilyInstalled(); }
 
   void GetURL(const nsAString& aPath, nsAString& aURL, ErrorResult& aRv) const;
 
@@ -105,68 +243,76 @@ class WebExtensionPolicy final : public nsISupports,
 
   bool CanAccessURI(const URLInfo& aURI, bool aExplicit = false,
                     bool aCheckRestricted = true,
-                    bool aAllowFilePermission = false) const;
-
-  bool IsWebAccessiblePath(const nsAString& aPath) const {
-    for (const auto& resource : mWebAccessibleResources) {
-      if (resource->IsWebAccessiblePath(aPath)) {
-        return true;
-      }
-    }
-    return false;
+                    bool aAllowFilePermission = false) const {
+    return mCore->CanAccessURI(aURI, aExplicit, aCheckRestricted,
+                               aAllowFilePermission);
   }
 
-  bool SourceMayAccessPath(const URLInfo& aURI, const nsAString& aPath) const {
-    if (mManifestVersion < 3) {
-      return IsWebAccessiblePath(aPath);
-    }
-    for (const auto& resource : mWebAccessibleResources) {
-      if (resource->SourceMayAccessPath(aURI, aPath)) {
-        return true;
-      }
-    }
-    return false;
+  bool IsWebAccessiblePath(const nsACString& aPath) const {
+    return mCore->IsWebAccessiblePath(aPath);
+  }
+
+  bool SourceMayAccessPath(const URLInfo& aURI, const nsACString& aPath) const {
+    return mCore->SourceMayAccessPath(aURI, aPath);
   }
 
   bool HasPermission(const nsAtom* aPermission) const {
-    return mPermissions->Contains(aPermission);
+    return mCore->HasPermission(aPermission);
   }
   bool HasPermission(const nsAString& aPermission) const {
-    return mPermissions->Contains(aPermission);
+    RefPtr<nsAtom> atom = NS_AtomizeMainThread(aPermission);
+    return HasPermission(atom);
   }
 
   static bool IsRestrictedDoc(const DocInfo& aDoc);
   static bool IsRestrictedURI(const URLInfo& aURI);
+
+  static bool IsQuarantinedDoc(const DocInfo& aDoc);
+  static bool IsQuarantinedURI(const URLInfo& aURI);
+
+  bool QuarantinedFromDoc(const DocInfo& aDoc) const {
+    return mCore->QuarantinedFromDoc(aDoc);
+  }
+
+  bool QuarantinedFromURI(const URLInfo& aURI) const {
+    return mCore->QuarantinedFromURI(aURI);
+  }
 
   nsCString BackgroundPageHTML() const;
 
   MOZ_CAN_RUN_SCRIPT
   void Localize(const nsAString& aInput, nsString& aResult) const;
 
-  const nsString& Name() const { return mName; }
-  void GetName(nsAString& aName) const { aName = mName; }
+  const nsString& Name() const { return mCore->Name(); }
+  void GetName(nsAString& aName) const { aName = Name(); }
 
-  uint32_t ManifestVersion() const { return mManifestVersion; }
+  nsAtom* Type() const { return mCore->Type(); }
+  void GetType(nsAString& aType) const {
+    aType = nsDependentAtomString(Type());
+  };
 
-  const nsString& ExtensionPageCSP() const { return mExtensionPageCSP; }
-  void GetExtensionPageCSP(nsAString& aCSP) const { aCSP = mExtensionPageCSP; }
+  uint32_t ManifestVersion() const { return mCore->ManifestVersion(); }
 
-  const nsString& BaseCSP() const { return mBaseCSP; }
-  void GetBaseCSP(nsAString& aCSP) const { aCSP = mBaseCSP; }
+  const nsString& ExtensionPageCSP() const { return mCore->ExtensionPageCSP(); }
+  void GetExtensionPageCSP(nsAString& aCSP) const { aCSP = ExtensionPageCSP(); }
+
+  const nsString& BaseCSP() const { return mCore->BaseCSP(); }
+  void GetBaseCSP(nsAString& aCSP) const { aCSP = BaseCSP(); }
 
   already_AddRefed<MatchPatternSet> AllowedOrigins() {
     return do_AddRef(mHostPermissions);
   }
-  void SetAllowedOrigins(MatchPatternSet& aAllowedOrigins) {
-    mHostPermissions = &aAllowedOrigins;
-  }
+  void SetAllowedOrigins(MatchPatternSet& aAllowedOrigins);
 
   void GetPermissions(nsTArray<nsString>& aResult) const {
-    mPermissions->Get(aResult);
+    mCore->GetPermissions(aResult);
   }
   void SetPermissions(const nsTArray<nsString>& aPermissions) {
-    mPermissions = new AtomSet(aPermissions);
+    mCore->SetPermissions(aPermissions);
   }
+
+  bool IgnoreQuarantine() const { return mCore->IgnoreQuarantine(); }
+  void SetIgnoreQuarantine(bool aIgnore);
 
   void GetContentScripts(ScriptArray& aScripts) const;
   const ScriptArray& ContentScripts() const { return mContentScripts; }
@@ -180,15 +326,19 @@ class WebExtensionPolicy final : public nsISupports,
 
   bool CanAccessWindow(const dom::WindowProxyHolder& aWindow) const;
 
-  void GetReadyPromise(JSContext* aCx, JS::MutableHandleObject aResult) const;
+  void GetReadyPromise(JSContext* aCx,
+                       JS::MutableHandle<JSObject*> aResult) const;
   dom::Promise* ReadyPromise() const { return mReadyPromise; }
 
+  const nsString& BackgroundWorkerScript() const {
+    return mCore->BackgroundWorkerScript();
+  }
   void GetBackgroundWorker(nsString& aScriptURL) const {
-    aScriptURL.Assign(mBackgroundWorkerScript);
+    aScriptURL.Assign(BackgroundWorkerScript());
   }
 
   bool IsManifestBackgroundWorker(const nsAString& aWorkerScriptURL) const {
-    return mBackgroundWorkerScript.Equals(aWorkerScriptURL);
+    return BackgroundWorkerScript().Equals(aWorkerScriptURL);
   }
 
   uint64_t GetBrowsingContextGroupId() const;
@@ -211,17 +361,28 @@ class WebExtensionPolicy final : public nsISupports,
     return IsRestrictedURI(aURI);
   }
 
+  static bool IsQuarantinedURI(dom::GlobalObject& aGlobal,
+                               const URLInfo& aURI) {
+    return IsQuarantinedURI(aURI);
+  }
+
+  bool QuarantinedFromURI(dom::GlobalObject& aGlobal,
+                          const URLInfo& aURI) const {
+    return QuarantinedFromURI(aURI);
+  }
+
   static bool UseRemoteWebExtensions(dom::GlobalObject& aGlobal);
   static bool IsExtensionProcess(dom::GlobalObject& aGlobal);
   static bool BackgroundServiceWorkerEnabled(dom::GlobalObject& aGlobal);
+  static bool QuarantinedDomainsEnabled(dom::GlobalObject& aGlobal);
 
   nsISupports* GetParentObject() const { return mParent; }
 
   virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::HandleObject aGivenProto) override;
+                               JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
-  virtual ~WebExtensionPolicy() = default;
+  ~WebExtensionPolicy();
 
  private:
   WebExtensionPolicy(dom::GlobalObject& aGlobal, const WebExtensionInit& aInit,
@@ -229,18 +390,10 @@ class WebExtensionPolicy final : public nsISupports,
 
   bool Enable();
   bool Disable();
-  void InitializeBaseCSP();
 
   nsCOMPtr<nsISupports> mParent;
 
-  RefPtr<nsAtom> mId;
-  nsCString mHostname;
-  nsCOMPtr<nsIURI> mBaseURI;
-
-  nsString mName;
-  uint32_t mManifestVersion = 2;
-  nsString mExtensionPageCSP;
-  nsString mBaseCSP;
+  RefPtr<WebExtensionPolicyCore> mCore;
 
   dom::BrowsingContextGroup::KeepAlivePtr mBrowsingContextGroup;
 
@@ -248,16 +401,14 @@ class WebExtensionPolicy final : public nsISupports,
 
   RefPtr<WebExtensionLocalizeCallback> mLocalizeCallback;
 
-  bool mIsPrivileged;
-  bool mTemporarilyInstalled;
-
-  RefPtr<AtomSet> mPermissions;
+  // NOTE: This is a mirror of the object in `mCore`, except with the
+  // non-threadsafe wrapper.
   RefPtr<MatchPatternSet> mHostPermissions;
 
   dom::Nullable<nsTArray<nsString>> mBackgroundScripts;
-  nsString mBackgroundWorkerScript;
 
-  nsTArray<RefPtr<WebAccessibleResource>> mWebAccessibleResources;
+  bool mBackgroundTypeModule = false;
+
   nsTArray<RefPtr<WebExtensionContentScript>> mContentScripts;
 
   RefPtr<dom::Promise> mReadyPromise;

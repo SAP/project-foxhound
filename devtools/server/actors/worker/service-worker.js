@@ -4,17 +4,16 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const protocol = require("devtools/shared/protocol");
+const { Actor } = require("resource://devtools/shared/protocol.js");
 const {
   serviceWorkerSpec,
-} = require("devtools/shared/specs/worker/service-worker");
+} = require("resource://devtools/shared/specs/worker/service-worker.js");
 
-const ServiceWorkerActor = protocol.ActorClassWithSpec(serviceWorkerSpec, {
-  initialize(conn, worker) {
-    protocol.Actor.prototype.initialize.call(this, conn);
+class ServiceWorkerActor extends Actor {
+  constructor(conn, worker) {
+    super(conn, serviceWorkerSpec);
     this._worker = worker;
-  },
+  }
 
   form() {
     if (!this._worker) {
@@ -34,12 +33,12 @@ const ServiceWorkerActor = protocol.ActorClassWithSpec(serviceWorkerSpec, {
       fetch,
       id: this._worker.id,
     };
-  },
+  }
 
   destroy() {
-    protocol.Actor.prototype.destroy.call(this);
+    super.destroy();
     this._worker = null;
-  },
-});
+  }
+}
 
 exports.ServiceWorkerActor = ServiceWorkerActor;

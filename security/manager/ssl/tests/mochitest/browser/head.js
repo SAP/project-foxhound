@@ -10,7 +10,8 @@ var gCertDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
  * List of certs imported via readCertificate(). Certs in this list are
  * automatically deleted from the cert DB when a test including this head file
  * finishes.
- * @type nsIX509Cert[]
+ *
+ * @type {nsIX509Cert[]}
  */
 var gImportedCerts = [];
 
@@ -36,19 +37,17 @@ function pemToBase64(pem) {
  * Certs imported via this function will automatically be deleted from the cert
  * DB once the calling test finishes.
  *
- * @param {String} filename
+ * @param {string} filename
  *        The filename of the certificate (assumed to be in the same directory).
- * @param {String} trustString
+ * @param {string} trustString
  *        A string describing how the certificate should be trusted (see
  *        `certutil -A --help`).
- * @return {Promise}
+ * @returns {Promise}
  *         A promise that will resolve with a handle to the certificate.
  */
 function readCertificate(filename, trustString) {
-  return OS.File.read(getTestFilePath(filename)).then(
-    data => {
-      let decoder = new TextDecoder();
-      let pem = decoder.decode(data);
+  return IOUtils.readUTF8(getTestFilePath(filename)).then(
+    pem => {
       let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
         Ci.nsIX509CertDB
       );
@@ -67,14 +66,14 @@ function readCertificate(filename, trustString) {
 /**
  * Asynchronously opens the certificate manager.
  *
- * @return {Window} a handle on the opened certificate manager window
+ * @returns {Window} a handle on the opened certificate manager window
  */
 async function openCertManager() {
   let win = window.openDialog("chrome://pippki/content/certManager.xhtml");
   return new Promise((resolve, reject) => {
     win.addEventListener(
       "load",
-      function() {
+      function () {
         executeSoon(() => resolve(win));
       },
       { once: true }

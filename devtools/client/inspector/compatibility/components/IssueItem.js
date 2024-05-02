@@ -4,41 +4,46 @@
 
 "use strict";
 
-const Services = require("Services");
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
 loader.lazyRequireGetter(
   this,
   "openDocLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 
 const UnsupportedBrowserList = createFactory(
-  require("devtools/client/inspector/compatibility/components/UnsupportedBrowserList")
+  require("resource://devtools/client/inspector/compatibility/components/UnsupportedBrowserList.js")
 );
 
-const Types = require("devtools/client/inspector/compatibility/types");
+const Types = require("resource://devtools/client/inspector/compatibility/types.js");
 
 const NodePane = createFactory(
-  require("devtools/client/inspector/compatibility/components/NodePane")
+  require("resource://devtools/client/inspector/compatibility/components/NodePane.js")
 );
 
 // For test
 loader.lazyRequireGetter(
   this,
   "toSnakeCase",
-  "devtools/client/inspector/compatibility/utils/cases",
+  "resource://devtools/client/inspector/compatibility/utils/cases.js",
   true
 );
+
+const MDN_LINK_PARAMS = new URLSearchParams({
+  utm_source: "devtools",
+  utm_medium: "inspector-compatibility",
+  utm_campaign: "default",
+});
 
 class IssueItem extends PureComponent {
   static get propTypes() {
@@ -55,15 +60,15 @@ class IssueItem extends PureComponent {
   }
 
   _onLinkClicked(e) {
-    const { url } = this.props;
-
     e.preventDefault();
     e.stopPropagation();
 
-    openDocLink(
-      url +
-        "?utm_source=devtools&utm_medium=inspector-compatibility&utm_campaign=default"
-    );
+    const isMacOS = Services.appinfo.OS === "Darwin";
+
+    openDocLink(e.target.href, {
+      relatedToCurrent: true,
+      inBackground: isMacOS ? e.metaKey : e.ctrlKey,
+    });
   }
 
   _getTestDataAttributes() {
@@ -149,22 +154,36 @@ class IssueItem extends PureComponent {
     );
   }
 
-  _renderDescription() {
-    const { property, url } = this.props;
+  _renderPropertyEl() {
+    const { property, url, specUrl } = this.props;
+    const baseCls = "compatibility-issue-item__property devtools-monospace";
+    if (!url && !specUrl) {
+      return dom.span({ className: baseCls }, property);
+    }
 
+    const href = url ? `${url}?${MDN_LINK_PARAMS}` : specUrl;
+
+    return dom.a(
+      {
+        className: `${baseCls} ${
+          url
+            ? "compatibility-issue-item__mdn-link"
+            : "compatibility-issue-item__spec-link"
+        }`,
+        href,
+        title: href,
+        onClick: e => this._onLinkClicked(e),
+      },
+      property
+    );
+  }
+
+  _renderDescription() {
     return dom.div(
       {
         className: "compatibility-issue-item__description",
       },
-      dom.a(
-        {
-          className: "compatibility-issue-item__mdn-link devtools-monospace",
-          href: url,
-          title: url,
-          onClick: e => this._onLinkClicked(e),
-        },
-        property
-      ),
+      this._renderPropertyEl(),
       this._renderCauses(),
       this._renderUnsupportedBrowserList()
     );
@@ -193,12 +212,8 @@ class IssueItem extends PureComponent {
   }
 
   render() {
-    const {
-      deprecated,
-      experimental,
-      property,
-      unsupportedBrowsers,
-    } = this.props;
+    const { deprecated, experimental, property, unsupportedBrowsers } =
+      this.props;
 
     const classes = ["compatibility-issue-item"];
 

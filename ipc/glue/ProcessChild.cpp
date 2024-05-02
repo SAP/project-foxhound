@@ -6,16 +6,22 @@
 
 #include "mozilla/ipc/ProcessChild.h"
 
+#include "Endpoint.h"
 #include "nsDebug.h"
 
 #ifdef XP_WIN
 #  include <stdlib.h>  // for _exit()
+#  include <synchapi.h>
 #else
 #  include <unistd.h>  // for _exit()
+#  include <time.h>
+#  include "base/eintr_wrapper.h"
+#  include "prenv.h"
 #endif
 
 #include "nsAppRunner.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/IOThreadChild.h"
 #include "mozilla/GeckoArgs.h"
 
@@ -26,10 +32,11 @@ ProcessChild* ProcessChild::gProcessChild;
 
 static Atomic<bool> sExpectingShutdown(false);
 
-ProcessChild::ProcessChild(ProcessId aParentPid)
-    : ChildProcess(new IOThreadChild()),
+ProcessChild::ProcessChild(ProcessId aParentPid, const nsID& aMessageChannelId)
+    : ChildProcess(new IOThreadChild(aParentPid)),
       mUILoop(MessageLoop::current()),
-      mParentPid(aParentPid) {
+      mParentPid(aParentPid),
+      mMessageChannelId(aMessageChannelId) {
   MOZ_ASSERT(mUILoop, "UILoop should be created by now");
   MOZ_ASSERT(!gProcessChild, "should only be one ProcessChild");
   gProcessChild = this;
@@ -66,16 +73,65 @@ bool ProcessChild::InitPrefs(int aArgc, char* aArgv[]) {
                                                   *prefsLen, *prefMapSize);
 }
 
-ProcessChild::~ProcessChild() { gProcessChild = nullptr; }
+#ifdef ENABLE_TESTS
+// Allow tests to cause a synthetic delay/"hang" during child process
+// shutdown by setting environment variables.
+#  ifdef XP_UNIX
+static void ReallySleep(int aSeconds) {
+  struct ::timespec snooze = {aSeconds, 0};
+  HANDLE_EINTR(nanosleep(&snooze, &snooze));
+}
+#  else
+static void ReallySleep(int aSeconds) { ::Sleep(aSeconds * 1000); }
+#  endif  // Unix/Win
+static void SleepIfEnv(const char* aName) {
+  if (auto* value = PR_GetEnv(aName)) {
+    ReallySleep(atoi(value));
+  }
+}
+#else  // not tests
+static void SleepIfEnv(const char* aName) {}
+#endif
+
+ProcessChild::~ProcessChild() {
+#ifdef NS_FREE_PERMANENT_DATA
+  // In this case, we won't early-exit and we'll wait indefinitely for
+  // child processes to terminate.  This sleep is late enough that, in
+  // content processes, it won't block parent process shutdown, so
+  // we'll get into late IPC shutdown with processes still running.
+  SleepIfEnv("MOZ_TEST_CHILD_EXIT_HANG");
+#endif
+  gProcessChild = nullptr;
+}
 
 /* static */
-void ProcessChild::NotifyImpendingShutdown() { sExpectingShutdown = true; }
+void ProcessChild::NotifiedImpendingShutdown() {
+  sExpectingShutdown = true;
+  CrashReporter::AppendToCrashReportAnnotation(
+      CrashReporter::Annotation::IPCShutdownState,
+      "NotifiedImpendingShutdown"_ns);
+}
 
 /* static */
 bool ProcessChild::ExpectingShutdown() { return sExpectingShutdown; }
 
 /* static */
-void ProcessChild::QuickExit() { AppShutdown::DoImmediateExit(); }
+void ProcessChild::QuickExit() {
+#ifndef NS_FREE_PERMANENT_DATA
+  // In this case, we're going to terminate the child process before
+  // we get to ~ProcessChild above (and terminate the parent process
+  // before the shutdown hook in ProcessWatcher).  Instead, blocking
+  // earlier will let us exercise ProcessWatcher's kill timer.
+  SleepIfEnv("MOZ_TEST_CHILD_EXIT_HANG");
+#endif
+  AppShutdown::DoImmediateExit();
+}
+
+UntypedEndpoint ProcessChild::TakeInitialEndpoint() {
+  return UntypedEndpoint{PrivateIPDLInterface{},
+                         child_thread()->TakeInitialPort(), mMessageChannelId,
+                         base::GetCurrentProcId(), mParentPid};
+}
 
 }  // namespace ipc
 }  // namespace mozilla

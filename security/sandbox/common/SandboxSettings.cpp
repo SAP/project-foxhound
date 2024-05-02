@@ -79,6 +79,11 @@ const char* ContentWin32kLockdownStateToString(
 
     case nsIXULRuntime::ContentWin32kLockdownState::EnabledByDefault:
       return "Win32k Lockdown enabled -- default value is true";
+
+    case nsIXULRuntime::ContentWin32kLockdownState::
+        IncompatibleMitigationPolicy:
+      return "Win32k Lockdown disabled -- Incompatible Windows Exploit "
+             "Protection policies enabled";
   }
 
   MOZ_CRASH("Should never reach here");
@@ -130,6 +135,18 @@ int GetEffectiveContentSandboxLevel() {
   }
 #endif
 #ifdef XP_LINUX
+  // Level 1 was a configuration with default-deny seccomp-bpf but
+  // which allowed direct filesystem access; that required additional
+  // code for the syscall filter which was untested and tended to
+  // bit-rot.  It was trivially escapable and was no longer being used
+  // even for debugging, so it has been removed.
+  //
+  // If the content sandbox is enabled, enforce a minimum level of 2.
+  static constexpr int kMinSupportedLevel = 2;
+
+  if (level > 0 && level <= kMinSupportedLevel) {
+    level = kMinSupportedLevel;
+  }
   // Level 4 and up will break direct access to audio.
   if (level > 3 && !StaticPrefs::media_cubeb_sandbox()) {
     level = 3;
@@ -150,6 +167,10 @@ int GetEffectiveSocketProcessSandboxLevel() {
       StaticPrefs::security_sandbox_socket_process_level_DoNotUseDirectly();
 
   return level;
+}
+
+int GetEffectiveGpuSandboxLevel() {
+  return StaticPrefs::security_sandbox_gpu_level();
 }
 
 #if defined(XP_MACOSX)

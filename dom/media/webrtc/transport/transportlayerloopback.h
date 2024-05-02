@@ -9,11 +9,8 @@
 #ifndef transportlayerloopback_h__
 #define transportlayerloopback_h__
 
-#include "nspr.h"
-#include "prio.h"
 #include "prlock.h"
 
-#include <memory>
 #include <queue>
 
 #include "nsCOMPtr.h"
@@ -21,7 +18,6 @@
 #include "nsITimer.h"
 
 #include "m_cpp_utils.h"
-#include "transportflow.h"
 #include "transportlayer.h"
 
 // A simple loopback transport layer that is used for testing.
@@ -32,7 +28,6 @@ class TransportLayerLoopback : public TransportLayer {
   TransportLayerLoopback()
       : peer_(nullptr),
         timer_(nullptr),
-        packets_(),
         packets_lock_(nullptr),
         deliverer_(nullptr),
         combinePackets_(false) {}

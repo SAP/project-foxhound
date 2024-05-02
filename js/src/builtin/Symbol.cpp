@@ -9,12 +9,10 @@
 
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
-#include "util/StringBuffer.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/SymbolType.h"
 
 #include "vm/JSObject-inl.h"
-#include "vm/NativeObject-inl.h"
 
 using namespace js;
 
@@ -43,8 +41,7 @@ const JSPropertySpec SymbolObject::properties[] = {
     JS_STRING_SYM_PS(toStringTag, "Symbol", JSPROP_READONLY), JS_PS_END};
 
 const JSFunctionSpec SymbolObject::methods[] = {
-    JS_FN(js_toString_str, toString, 0, 0),
-    JS_FN(js_valueOf_str, valueOf, 0, 0),
+    JS_FN("toString", toString, 0, 0), JS_FN("valueOf", valueOf, 0, 0),
     JS_SYM_FN(toPrimitive, toPrimitive, 1, JSPROP_READONLY), JS_FS_END};
 
 const JSFunctionSpec SymbolObject::staticMethods[] = {
@@ -52,10 +49,11 @@ const JSFunctionSpec SymbolObject::staticMethods[] = {
 
 static bool SymbolClassFinish(JSContext* cx, HandleObject ctor,
                               HandleObject proto) {
-  HandleNativeObject nativeCtor = ctor.as<NativeObject>();
+  Handle<NativeObject*> nativeCtor = ctor.as<NativeObject>();
 
   // Define the well-known symbol properties, such as Symbol.iterator.
-  ImmutablePropertyNamePtr* names = cx->names().wellKnownSymbolNames();
+  ImmutableTenuredPtr<PropertyName*>* names =
+      cx->names().wellKnownSymbolNames();
   RootedValue value(cx);
   unsigned attrs = JSPROP_READONLY | JSPROP_PERMANENT;
   WellKnownSymbols* wks = cx->runtime()->wellKnownSymbols;

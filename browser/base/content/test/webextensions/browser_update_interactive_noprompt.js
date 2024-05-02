@@ -1,5 +1,5 @@
 // Set some prefs that apply to all the tests in this file
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       // We don't have pre-pinned certificates for the local mochitest server
@@ -24,7 +24,10 @@ async function testUpdateNoPrompt(
   updateVersion = "2.0"
 ) {
   // Navigate away to ensure that BrowserOpenAddonMgr() opens a new tab
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:mozilla");
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:mozilla"
+  );
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
   // Install initial version of the test extension

@@ -4,7 +4,7 @@
 
 "use strict";
 
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   const { Component } = require("devtools/client/shared/vendor/react");
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const dom = require("devtools/client/shared/vendor/react-dom-factories");
@@ -46,7 +46,7 @@ define(function(require, exports, module) {
       return div(
         { className: "headersPanelBox tab-panel-inner" },
         HeadersToolbar({ actions: this.props.actions }),
-        div({ className: "panelContent" }, Headers({ data: data }))
+        div({ className: "panelContent" }, Headers({ data }))
       );
     }
   }

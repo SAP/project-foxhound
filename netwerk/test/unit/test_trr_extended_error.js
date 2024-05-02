@@ -4,10 +4,6 @@
 
 "use strict";
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
-
 trr_test_setup();
 registerCleanupFunction(async () => {
   trr_clear_prefs();
@@ -37,16 +33,16 @@ add_task(async function setup() {
     await trrServer.stop();
   });
   await trrServer.start();
-  dump(`port = ${trrServer.port}\n`);
-  let chan = makeChan(`https://localhost:${trrServer.port}/test?bla=some`);
+  dump(`port = ${trrServer.port()}\n`);
+  let chan = makeChan(`https://localhost:${trrServer.port()}/test?bla=some`);
   let [, resp] = await channelOpenPromise(chan);
-  equal(resp, "<h1> 404 Path not found: /test?bla=some</h1>");
+  equal(resp, "<h1> 404 Path not found: /test</h1>");
 
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 2);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
 });
 

@@ -9,8 +9,7 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsISupportsImpl.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class WebrtcParents;
 
@@ -20,6 +19,7 @@ class WebrtcGlobalParent : public PWebrtcGlobalParent {
   friend class WebrtcContentParents;
 
   bool mShutdown;
+  nsTHashSet<nsString> mPcids;
 
   MOZ_IMPLICIT WebrtcGlobalParent();
 
@@ -28,7 +28,17 @@ class WebrtcGlobalParent : public PWebrtcGlobalParent {
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
   virtual mozilla::ipc::IPCResult Recv__delete__() override;
-
+  // Notification that a PeerConnection exists, and stats polling can begin
+  // if it hasn't already begun due to a previously created PeerConnection.
+  virtual mozilla::ipc::IPCResult RecvPeerConnectionCreated(
+      const nsAString& aPcId, const bool& aIsLongTermStatsDisabled) override;
+  // Notification that a PeerConnection no longer exists, and stats polling
+  // can end if there are no other PeerConnections.
+  virtual mozilla::ipc::IPCResult RecvPeerConnectionDestroyed(
+      const nsAString& aPcid) override;
+  // Ditto but we have final stats
+  virtual mozilla::ipc::IPCResult RecvPeerConnectionFinalStats(
+      const RTCStatsReportInternal& aFinalStats) override;
   virtual ~WebrtcGlobalParent();
 
  public:
@@ -37,7 +47,6 @@ class WebrtcGlobalParent : public PWebrtcGlobalParent {
   bool IsActive() { return !mShutdown; }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // _WEBRTC_GLOBAL_PARENT_H_

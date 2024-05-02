@@ -34,7 +34,7 @@ add_task(async function test() {
 
   // Mixed Script Test
   var url = HTTPS_TEST_ROOT + "file_bug822367_1.html";
-  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gTestBrowser, url);
   await BrowserTestUtils.browserLoaded(gTestBrowser, false, url);
 });
 
@@ -51,7 +51,7 @@ add_task(async function MixedTest1A() {
 });
 
 add_task(async function MixedTest1B() {
-  await SpecialPowers.spawn(gTestBrowser, [], async function() {
+  await SpecialPowers.spawn(gTestBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(
       () => content.document.getElementById("p1").innerHTML == "hello",
       "Waited too long for mixed script to run in Test 1"
@@ -63,7 +63,7 @@ add_task(async function MixedTest1B() {
 // Mixed Display Test - Doorhanger should not appear
 add_task(async function MixedTest2() {
   var url = HTTPS_TEST_ROOT_2 + "file_bug822367_2.html";
-  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gTestBrowser, url);
   await BrowserTestUtils.browserLoaded(gTestBrowser, false, url);
 
   await assertMixedContentBlockingState(gTestBrowser, {
@@ -76,7 +76,7 @@ add_task(async function MixedTest2() {
 // Mixed Script and Display Test - User Override should cause both the script and the image to load.
 add_task(async function MixedTest3() {
   var url = HTTPS_TEST_ROOT + "file_bug822367_3.html";
-  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gTestBrowser, url);
   await BrowserTestUtils.browserLoaded(gTestBrowser, false, url);
 });
 
@@ -92,7 +92,7 @@ add_task(async function MixedTest3A() {
 });
 
 add_task(async function MixedTest3B() {
-  await SpecialPowers.spawn(gTestBrowser, [], async function() {
+  await SpecialPowers.spawn(gTestBrowser, [], async function () {
     let p1 = ContentTaskUtils.waitForCondition(
       () => content.document.getElementById("p1").innerHTML == "hello",
       "Waited too long for mixed script to run in Test 3"
@@ -115,7 +115,7 @@ add_task(async function MixedTest3B() {
 // Location change - User override on one page doesn't propagate to another page after location change.
 add_task(async function MixedTest4() {
   var url = HTTPS_TEST_ROOT_2 + "file_bug822367_4.html";
-  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gTestBrowser, url);
   await BrowserTestUtils.browserLoaded(gTestBrowser, false, url);
 });
 
@@ -134,7 +134,7 @@ add_task(async function MixedTest4A() {
 
 add_task(async function MixedTest4B() {
   let url = HTTPS_TEST_ROOT + "file_bug822367_4B.html";
-  await SpecialPowers.spawn(gTestBrowser, [url], async function(wantedUrl) {
+  await SpecialPowers.spawn(gTestBrowser, [url], async function (wantedUrl) {
     await ContentTaskUtils.waitForCondition(
       () => content.document.location == wantedUrl,
       "Waited too long for mixed script to run in Test 4"
@@ -149,7 +149,7 @@ add_task(async function MixedTest4C() {
     passiveLoaded: false,
   });
 
-  await SpecialPowers.spawn(gTestBrowser, [], async function() {
+  await SpecialPowers.spawn(gTestBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(
       () => content.document.getElementById("p1").innerHTML == "",
       "Mixed script loaded in test 4 after location change!"
@@ -164,7 +164,7 @@ add_task(async function MixedTest4C() {
 // Mixed script attempts to load in a document.open()
 add_task(async function MixedTest5() {
   var url = HTTPS_TEST_ROOT + "file_bug822367_5.html";
-  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gTestBrowser, url);
   await BrowserTestUtils.browserLoaded(gTestBrowser, false, url);
 });
 
@@ -180,7 +180,7 @@ add_task(async function MixedTest5A() {
 });
 
 add_task(async function MixedTest5B() {
-  await SpecialPowers.spawn(gTestBrowser, [], async function() {
+  await SpecialPowers.spawn(gTestBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(
       () => content.document.getElementById("p1").innerHTML == "hello",
       "Waited too long for mixed script to run in Test 5"
@@ -192,7 +192,7 @@ add_task(async function MixedTest5B() {
 // Mixed script attempts to load in a document.open() that is within an iframe.
 add_task(async function MixedTest6() {
   var url = HTTPS_TEST_ROOT_2 + "file_bug822367_6.html";
-  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gTestBrowser, url);
   await BrowserTestUtils.browserLoaded(gTestBrowser, false, url);
 });
 
@@ -220,7 +220,7 @@ add_task(async function MixedTest6B() {
 });
 
 add_task(async function MixedTest6C() {
-  await SpecialPowers.spawn(gTestBrowser, [], async function() {
+  await SpecialPowers.spawn(gTestBrowser, [], async function () {
     function test() {
       try {
         return (

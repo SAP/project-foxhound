@@ -9,7 +9,7 @@
 
 const TEST_ENGINE_BASENAME = "searchSuggestionEngine.xml";
 
-add_task(async function setup() {
+add_setup(async function () {
   // In order to open the view without any results, we need to be in search mode
   // with an empty search string so that no heuristic result is shown, and the
   // empty search must yield zero additional results.  We'll enter search mode
@@ -236,9 +236,9 @@ add_task(async function backspaceRemainOpen() {
 // Types a search alias and then a space to enter search mode, with no results.
 // The one-offs should be shown.
 add_task(async function spaceToEnterSearchMode() {
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
+  let engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+  });
   engine.alias = "@test";
 
   await withNewWindow(async win => {
@@ -279,7 +279,7 @@ add_task(async function spaceToEnterSearchMode() {
  * window.  We use a new window in each task so that the view starts with a
  * blank slate each time.
  *
- * @param {function} callback
+ * @param {Function} callback
  *   Will be called as: callback(newWindow)
  */
 async function withNewWindow(callback) {

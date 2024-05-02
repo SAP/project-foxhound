@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // Dependencies
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
@@ -16,10 +16,7 @@ define(function(require, exports, module) {
     MODE,
   } = require("devtools/client/shared/components/reps/reps/constants");
 
-  const ModePropType = PropTypes.oneOf(
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    Object.keys(MODE).map(key => MODE[key])
-  );
+  const ModePropType = PropTypes.oneOf(Object.values(MODE));
 
   /**
    * Renders an array. The array is enclosed by left and right bracket
@@ -37,7 +34,7 @@ define(function(require, exports, module) {
 
     let brackets;
     let items;
-    const needSpace = function(space) {
+    const needSpace = function (space) {
       return space ? { left: "[ ", right: " ]" } : { left: "[", right: "]" };
     };
 
@@ -58,7 +55,7 @@ define(function(require, exports, module) {
       brackets = needSpace(false);
     } else {
       items = arrayIterator(props, object, maxLengthMap.get(mode));
-      brackets = needSpace(items.length > 0);
+      brackets = needSpace(!!items.length);
     }
 
     return span(
@@ -140,8 +137,8 @@ define(function(require, exports, module) {
       {},
       Rep({
         ...props,
-        object: object,
-        mode: mode,
+        object,
+        mode,
       }),
       delim
     );
@@ -169,6 +166,5 @@ define(function(require, exports, module) {
     supportsObject,
     maxLengthMap,
     getLength,
-    ModePropType,
   };
 });

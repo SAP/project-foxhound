@@ -6,6 +6,7 @@
 #include "nsDeviceContextSpecWin.h"
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/gfx/PrintPromise.h"
 #include "mozilla/gfx/PrintTargetPDF.h"
 #include "mozilla/gfx/PrintTargetWindows.h"
 #include "mozilla/Logging.h"
@@ -103,15 +104,14 @@ static bool GetDefaultPrinterName(nsAString& aDefaultPrinterName) {
 }
 
 //----------------------------------------------------------------------------------
-NS_IMETHODIMP nsDeviceContextSpecWin::Init(nsIWidget* aWidget,
-                                           nsIPrintSettings* aPrintSettings,
+NS_IMETHODIMP nsDeviceContextSpecWin::Init(nsIPrintSettings* aPrintSettings,
                                            bool aIsPrintPreview) {
   mPrintSettings = aPrintSettings;
 
   // Get the Printer Name to be used and output format.
   nsAutoString printerName;
   if (mPrintSettings) {
-    mPrintSettings->GetOutputFormat(&mOutputFormat);
+    mOutputFormat = mPrintSettings->GetOutputFormat();
     mPrintSettings->GetPrinterName(printerName);
   }
 
@@ -178,9 +178,9 @@ NS_IMETHODIMP nsDeviceContextSpecWin::Init(nsIWidget* aWidget,
     }
 #endif
 
-    // If we're in the child and printing via the parent or we're printing to
-    // PDF we only need information from the print settings.
-    if ((XRE_IsContentProcess() && StaticPrefs::print_print_via_parent()) ||
+    // If we're in the child or we're printing to PDF we only need information
+    // from the print settings.
+    if (XRE_IsContentProcess() ||
         mOutputFormat == nsIPrintSettings::kOutputFormatPDF) {
       return NS_OK;
     }
@@ -250,6 +250,10 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecWin::MakePrintTarget() {
 
     if (mOutputFormat == nsIPrintSettings::kOutputFormatPDF) {
       nsString filename;
+      // TODO(dshin):
+      // - Does this handle bug 1659470?
+      // - Should this code path be enabled, we should use temporary files and
+      // then move the file in `EndDocument()`.
       mPrintSettings->GetToFileName(filename);
 
       nsAutoCString printFile(NS_ConvertUTF16toUTF8(filename).get());
@@ -272,9 +276,6 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecWin::MakePrintTarget() {
 #endif
 
   if (mOutputFormat == nsIPrintSettings::kOutputFormatPDF) {
-    nsString filename;
-    mPrintSettings->GetToFileName(filename);
-
     double width, height;
     mPrintSettings->GetEffectiveSheetSize(&width, &height);
     if (width <= 0 || height <= 0) {
@@ -285,26 +286,31 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecWin::MakePrintTarget() {
     width /= TWIPS_PER_POINT_FLOAT;
     height /= TWIPS_PER_POINT_FLOAT;
 
-    nsCOMPtr<nsIFile> file;
-    nsresult rv;
-    if (!filename.IsEmpty()) {
-      file = do_CreateInstance("@mozilla.org/file/local;1");
-      rv = file->InitWithPath(filename);
-    } else {
-      rv = NS_OpenAnonymousTemporaryNsIFile(getter_AddRefs(mTempFile));
+    auto stream = [&]() -> nsCOMPtr<nsIOutputStream> {
+      if (mPrintSettings->GetOutputDestination() ==
+          nsIPrintSettings::kOutputDestinationStream) {
+        nsCOMPtr<nsIOutputStream> out;
+        mPrintSettings->GetOutputStream(getter_AddRefs(out));
+        return out;
+      }
+
+      // Even if the destination may be a named path, write to a temp file -
+      // this is consistent with behaviour of `PrintTarget` on other platforms.
+      nsCOMPtr<nsIFile> file;
+      nsresult rv = NS_OpenAnonymousTemporaryNsIFile(getter_AddRefs(mTempFile));
       file = mTempFile;
-    }
 
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return nullptr;
-    }
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return nullptr;
+      }
 
-    nsCOMPtr<nsIFileOutputStream> stream =
-        do_CreateInstance("@mozilla.org/network/file-output-stream;1");
-    rv = stream->Init(file, -1, -1, 0);
-    if (NS_FAILED(rv)) {
-      return nullptr;
-    }
+      nsCOMPtr<nsIFileOutputStream> stream =
+          do_CreateInstance("@mozilla.org/network/file-output-stream;1");
+      if (NS_FAILED(stream->Init(file, -1, -1, 0))) {
+        return nullptr;
+      }
+      return stream;
+    }();
 
     return PrintTargetPDF::CreateOrNull(stream, IntSize::Ceil(width, height));
   }
@@ -326,41 +332,51 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecWin::MakePrintTarget() {
   return nullptr;
 }
 
-float nsDeviceContextSpecWin::GetDPI() {
-  if (mOutputFormat == nsIPrintSettings::kOutputFormatPDF || mPrintViaSkPDF) {
-    return nsIDeviceContextSpec::GetDPI();
-  }
-  // To match the previous printing code we need to return 144 when printing to
-  // a Windows surface.
-  return 144.0f;
-}
-
-float nsDeviceContextSpecWin::GetPrintingScale() {
-  MOZ_ASSERT(mPrintSettings);
-  if (mOutputFormat == nsIPrintSettings::kOutputFormatPDF || mPrintViaSkPDF) {
-    return nsIDeviceContextSpec::GetPrintingScale();
+RefPtr<PrintEndDocumentPromise> nsDeviceContextSpecWin::EndDocument() {
+  if (mPrintSettings->GetOutputDestination() !=
+          nsIPrintSettings::kOutputDestinationFile ||
+      mOutputFormat != nsIPrintSettings::kOutputFormatPDF) {
+    return PrintEndDocumentPromise::CreateAndResolve(true, __func__);
   }
 
-  // The print settings will have the resolution stored from the real device.
-  //
-  // FIXME: Shouldn't we use this in GetDPI then instead of hard-coding 144.0?
-  int32_t resolution;
-  mPrintSettings->GetResolution(&resolution);
-  return float(resolution) / GetDPI();
-}
+#ifdef MOZ_ENABLE_SKIA_PDF
+  if (mPrintViaSkPDF) {
+    return PrintEndDocumentPromise::CreateAndResolve(true, __func__);
+  }
+#endif
 
-gfxPoint nsDeviceContextSpecWin::GetPrintingTranslate() {
-  // The underlying surface on windows is the size of the printable region. When
-  // the region is smaller than the actual paper size the (0, 0) coordinate
-  // refers top-left of that unwritable region. To instead have (0, 0) become
-  // the top-left of the actual paper, translate it's coordinate system by the
-  // unprintable region's width.
-  double marginTop, marginLeft;
-  mPrintSettings->GetUnwriteableMarginTop(&marginTop);
-  mPrintSettings->GetUnwriteableMarginLeft(&marginLeft);
-  int32_t resolution;
-  mPrintSettings->GetResolution(&resolution);
-  return gfxPoint(-marginLeft * resolution, -marginTop * resolution);
+  MOZ_ASSERT(mTempFile, "No handle to temporary PDF file.");
+
+  nsAutoString targetPath;
+  mPrintSettings->GetToFileName(targetPath);
+
+  if (targetPath.IsEmpty()) {
+    return PrintEndDocumentPromise::CreateAndResolve(true, __func__);
+  }
+
+  // We still need to move the file to its actual destination.
+  nsCOMPtr<nsIFile> destFile;
+  auto rv = NS_NewLocalFile(targetPath, false, getter_AddRefs(destFile));
+  if (NS_FAILED(rv)) {
+    return PrintEndDocumentPromise::CreateAndReject(rv, __func__);
+  }
+
+  return nsIDeviceContextSpec::EndDocumentAsync(
+      __func__,
+      [destFile = std::move(destFile),
+       tempFile = std::move(mTempFile)]() -> nsresult {
+        nsAutoString destLeafName;
+        MOZ_TRY(destFile->GetLeafName(destLeafName));
+
+        nsCOMPtr<nsIFile> destDir;
+        MOZ_TRY(destFile->GetParent(getter_AddRefs(destDir)));
+
+        // This should be fine - Windows API calls usually prevent moving
+        // between different volumes (See Win32 API's `MOVEFILE_COPY_ALLOWED`
+        // flag), but we handle that down this call.
+        MOZ_TRY(tempFile->MoveTo(destDir, destLeafName));
+        return NS_OK;
+      });
 }
 
 //----------------------------------------------------------------------------------
@@ -413,7 +429,7 @@ nsresult nsDeviceContextSpecWin::GetDataFromPrinter(const nsAString& aName,
       PR_PL(
           ("**** nsDeviceContextSpecWin::GetDataFromPrinter - Couldn't get "
            "size of DEVMODE using DocumentPropertiesW(pDeviceName = \"%s\"). "
-           "GetLastEror() = %08x\n",
+           "GetLastEror() = %08lx\n",
            NS_ConvertUTF16toUTF8(aName).get(), GetLastError()));
       return NS_ERROR_FAILURE;
     }
@@ -456,7 +472,7 @@ nsresult nsDeviceContextSpecWin::GetDataFromPrinter(const nsAString& aName,
       ::HeapFree(::GetProcessHeap(), 0, pDevMode);
       PR_PL(
           ("***** nsDeviceContextSpecWin::GetDataFromPrinter - "
-           "DocumentProperties call failed code: %d/0x%x\n",
+           "DocumentProperties call failed code: %ld/0x%lx\n",
            ret, ret));
       DISPLAY_LAST_ERROR
       return NS_ERROR_FAILURE;
@@ -502,11 +518,13 @@ static unsigned GetPrinterInfo4(nsTArray<BYTE>& aBuffer) {
                             &needed,  // Bytes needed in buffer
                             &count);
   if (needed > 0) {
-    aBuffer.SetLength(needed);
+    if (!aBuffer.SetLength(needed, fallible)) {
+      return 0;
+    }
     ok = ::EnumPrintersW(kFlags, nullptr, kLevel, aBuffer.Elements(),
                          aBuffer.Length(), &needed, &count);
   }
-  if (!ok || !count) {
+  if (!ok) {
     return 0;
   }
   return count;
@@ -552,10 +570,17 @@ nsTArray<nsPrinterListBase::PrinterInfo> nsPrinterListWin::Printers() const {
     }
   }
 
-  if (!count) {
+  if (list.IsEmpty()) {
     PR_PL(("[No usable printers found]\n"));
     return {};
   }
+
+  list.Sort([](const PrinterInfo& a, const PrinterInfo& b) {
+    size_t len = std::min(a.mName.Length(), b.mName.Length());
+    int result = CaseInsensitiveCompare(a.mName.BeginReading(),
+                                        b.mName.BeginReading(), len);
+    return result ? result : int(a.mName.Length()) - int(b.mName.Length());
+  });
 
   return list;
 }
@@ -606,8 +631,7 @@ nsPrinterListWin::InitPrintSettingsFromPrinter(
   }
 
   // When printing to PDF on Windows there is no associated printer driver.
-  int16_t outputFormat;
-  aPrintSettings->GetOutputFormat(&outputFormat);
+  int16_t outputFormat = aPrintSettings->GetOutputFormat();
   if (outputFormat == nsIPrintSettings::kOutputFormatPDF) {
     return NS_OK;
   }

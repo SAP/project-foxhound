@@ -3,6 +3,9 @@
 
 "use strict";
 
+// Chaos mode slowdown causes intermittent failures - See bug 1698240.
+requestLongerTimeout(2);
+
 async function changeMargin(helper, scroll, value) {
   let marginSelect = helper.get("margins-picker");
 
@@ -1068,5 +1071,92 @@ add_task(async function testHonorPageRuleMargins() {
 
     is(marginsPicker.value, "default", "Back to default margins");
     helper.assertSettingsMatch({ honorPageRuleMargins: true });
+  });
+});
+
+add_task(async function testIgnoreUnwriteableMargins() {
+  await PrintHelper.withTestPage(async helper => {
+    await helper.startPrint();
+    await helper.openMoreSettings();
+    let marginsPicker = helper.get("margins-picker");
+
+    is(marginsPicker.value, "default", "Started with default margins");
+    helper.assertSettingsMatch({ ignoreUnwriteableMargins: false });
+
+    await helper.waitForSettingsEvent(() => changeDefaultToCustom(helper));
+
+    is(marginsPicker.value, "custom", "Changed to custom margins");
+    helper.assertSettingsMatch({ ignoreUnwriteableMargins: false });
+
+    await helper.waitForSettingsEvent(() => changeCustomToNone(helper));
+
+    is(marginsPicker.value, "none", "Changed to no margins");
+    helper.assertSettingsMatch({ ignoreUnwriteableMargins: true });
+
+    await helper.waitForSettingsEvent(() => changeCustomToDefault(helper));
+
+    is(marginsPicker.value, "default", "Back to default margins");
+    helper.assertSettingsMatch({ ignoreUnwriteableMargins: false });
+  });
+});
+
+add_task(async function testCustomMarginZeroRespectsUnwriteableMargins() {
+  await PrintHelper.withTestPage(async helper => {
+    await helper.startPrint();
+    await helper.openMoreSettings();
+    let marginsPicker = helper.get("margins-picker");
+
+    await helper.waitForSettingsEvent(() => changeDefaultToCustom(helper));
+    is(marginsPicker.value, "custom", "Changed to custom margins");
+
+    await helper.text(helper.get("custom-margin-top"), "0");
+    await helper.text(helper.get("custom-margin-right"), "0");
+    await helper.text(helper.get("custom-margin-bottom"), "0");
+    await helper.text(helper.get("custom-margin-left"), "0");
+
+    assertPendingMarginsUpdate(helper);
+    await helper.waitForSettingsEvent();
+    helper.assertSettingsMatch({ ignoreUnwriteableMargins: false });
+  });
+});
+
+add_task(async function testDefaultMarginsInvalidStartup() {
+  await PrintHelper.withTestPage(async helper => {
+    let paperList = [
+      PrintHelper.createMockPaper({
+        id: "smallestPaper",
+        name: "Default Margins Invalid",
+        width: 50,
+        height: 50,
+        unwriteableMargin: {
+          top: 10,
+          bottom: 10,
+          left: 10,
+          right: 10,
+          QueryInterface: ChromeUtils.generateQI([Ci.nsIPaperMargin]),
+        },
+      }),
+    ];
+
+    let mockPrinterName = "Mock printer";
+    helper.addMockPrinter({ name: mockPrinterName, paperList });
+    Services.prefs.setStringPref("print_printer", mockPrinterName);
+
+    await helper.startPrint();
+
+    helper.assertSettingsMatch({
+      marginTop: 0,
+      marginRight: 0,
+      marginBottom: 0,
+      marginLeft: 0,
+    });
+
+    let marginSelect = helper.get("margins-picker");
+    is(marginSelect.value, "none", "Margins picker set to 'None'");
+
+    let printForm = helper.get("print");
+    ok(printForm.checkValidity(), "The print form is valid");
+
+    await helper.closeDialog();
   });
 });

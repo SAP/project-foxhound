@@ -19,11 +19,9 @@ class nsIHttpChannel;
 class nsIPrincipal;
 class NS_ConvertUTF8toUTF16;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Document;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using FilenameTypeAndDetails = std::pair<nsCString, mozilla::Maybe<nsString>>;
 
@@ -62,6 +60,11 @@ class nsContentSecurityUtils {
   // * x-frame-options
   // If any of the two disallows framing, the channel will be cancelled.
   static void PerformCSPFrameAncestorAndXFOCheck(nsIChannel* aChannel);
+
+  // Helper function which just checks if the channel violates any:
+  // 1. CSP frame-ancestors properties
+  // 2. x-frame-options
+  static bool CheckCSPFrameAncestorAndXFO(nsIChannel* aChannel);
 
   // Helper function to Check if a Download is allowed;
   static long ClassifyDownload(nsIChannel* aChannel,

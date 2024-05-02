@@ -16,7 +16,14 @@ add_task(async function see_hsts_header() {
       "https://example.com"
     ) + "hsts_headers.sjs";
   Services.obs.addObserver(observer, "http-on-examine-response");
-  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, setHstsUrl);
+
+  let promiseLoaded = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    setHstsUrl
+  );
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, setHstsUrl);
+  await promiseLoaded;
 
   await BrowserTestUtils.waitForCondition(() => readMessage);
   // Clean up
@@ -24,7 +31,7 @@ add_task(async function see_hsts_header() {
 });
 
 // Test that HTTPS_Only is not performed if HSTS host is visited.
-add_task(async function() {
+add_task(async function () {
   // A longer timeout is necessary for this test than the plain mochitests
   // due to opening a new tab with the web console.
   requestLongerTimeout(4);
@@ -33,6 +40,7 @@ add_task(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [["dom.security.https_only_mode", true]],
   });
+
   Services.console.registerListener(onNewMessage);
   const RESOURCE_LINK =
     getRootDirectory(gTestPath).replace(
@@ -41,15 +49,78 @@ add_task(async function() {
     ) + "hsts_headers.sjs";
 
   // 1. Upgrade page to https://
-  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, RESOURCE_LINK);
+  let promiseLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    RESOURCE_LINK
+  );
+  await promiseLoaded;
 
   await BrowserTestUtils.waitForCondition(() => testFinished);
 
   // Clean up
   Services.console.unregisterListener(onNewMessage);
+
+  await SpecialPowers.popPrefEnv();
 });
 
-add_task(async function() {
+// Test that when clicking on #fragment with a different scheme (http vs https)
+// DOES cause an actual navigation with HSTS, even though https-only mode is
+// enabled.
+add_task(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["dom.security.https_only_mode", true],
+      [
+        "dom.security.https_only_mode_break_upgrade_downgrade_endless_loop",
+        false,
+      ],
+    ],
+  });
+
+  const TEST_PAGE =
+    "http://example.com/browser/dom/security/test/https-only/file_fragment_noscript.html";
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_PAGE,
+      waitForLoad: true,
+    },
+    async function (browser) {
+      const UPGRADED_URL = TEST_PAGE.replace("http:", "https:");
+
+      await SpecialPowers.spawn(browser, [UPGRADED_URL], async function (url) {
+        is(content.window.location.href, url);
+
+        content.window.addEventListener("scroll", () => {
+          ok(false, "scroll event should not trigger");
+        });
+
+        let beforeUnload = new Promise(resolve => {
+          content.window.addEventListener("beforeunload", resolve, {
+            once: true,
+          });
+        });
+
+        content.window.document.querySelector("#clickMeButton").click();
+
+        // Wait for unload event.
+        await beforeUnload;
+      });
+
+      await BrowserTestUtils.browserLoaded(browser);
+
+      await SpecialPowers.spawn(browser, [UPGRADED_URL], async function (url) {
+        is(content.window.location.href, url + "#foo");
+      });
+    }
+  );
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function () {
   // Reset HSTS header
   readMessage = false;
   let clearHstsUrl =
@@ -60,7 +131,16 @@ add_task(async function() {
 
   Services.obs.addObserver(observer, "http-on-examine-response");
   // reset hsts header
-  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, clearHstsUrl);
+  let promiseLoaded = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    clearHstsUrl
+  );
+  await BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    clearHstsUrl
+  );
+  await promiseLoaded;
   await BrowserTestUtils.waitForCondition(() => readMessage);
   // Clean up
   Services.obs.removeObserver(observer, "http-on-examine-response");

@@ -28,7 +28,7 @@ class Ping:
         data_reviews: Optional[List[str]] = None,
         include_client_id: bool = False,
         send_if_empty: bool = False,
-        reasons: Dict[str, str] = None,
+        reasons: Optional[Dict[str, str]] = None,
         defined_in: Optional[Dict] = None,
         no_lint: Optional[List[str]] = None,
         _validated: bool = False,
@@ -44,6 +44,7 @@ class Ping:
         if metadata is None:
             metadata = {}
         self.metadata = metadata
+        self.precise_timestamps = self.metadata.get("precise_timestamps", True)
         if data_reviews is None:
             data_reviews = []
         self.data_reviews = data_reviews
@@ -88,6 +89,7 @@ class Ping:
     def _serialize_input(self) -> Dict[str, util.JSONType]:
         d = self.serialize()
         modified_dict = util.remove_output_params(d, "defined_in")
+        modified_dict = util.remove_output_params(modified_dict, "precise_timestamps")
         return modified_dict
 
     def identifier(self) -> str:

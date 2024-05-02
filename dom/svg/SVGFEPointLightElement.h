@@ -13,12 +13,11 @@
 nsresult NS_NewSVGFEPointLightElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using SVGFEPointLightElementBase = SVGFELightElement;
 
-class SVGFEPointLightElement : public SVGFEPointLightElementBase {
+class SVGFEPointLightElement final : public SVGFEPointLightElementBase {
   friend nsresult(::NS_NewSVGFEPointLightElement(
       nsIContent** aResult,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -27,16 +26,15 @@ class SVGFEPointLightElement : public SVGFEPointLightElementBase {
   explicit SVGFEPointLightElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : SVGFEPointLightElementBase(std::move(aNodeInfo)) {}
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
  public:
-  virtual mozilla::gfx::LightType ComputeLightAttributes(
+  mozilla::gfx::LightType ComputeLightAttributes(
       SVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) override;
-  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute) const override;
+  bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                 nsAtom* aAttribute) const override;
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedNumber> X();
@@ -44,14 +42,13 @@ class SVGFEPointLightElement : public SVGFEPointLightElementBase {
   already_AddRefed<DOMSVGAnimatedNumber> Z();
 
  protected:
-  virtual NumberAttributesInfo GetNumberInfo() override;
+  NumberAttributesInfo GetNumberInfo() override;
 
   enum { ATTR_X, ATTR_Y, ATTR_Z };
   SVGAnimatedNumber mNumberAttributes[3];
   static NumberInfo sNumberInfo[3];
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGFEPOINTLIGHTELEMENT_H_

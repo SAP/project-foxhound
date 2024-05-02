@@ -4,8 +4,8 @@
 ---
 job-defaults:
     worker:
-        max-run-time: 36000
-        docker-image: {in-tree: debian11-amd64-build}
+        max-run-time: 10800
+        docker-image: {in-tree: debian12-amd64-build}
         env:
             MOZ_JS_UPLOAD_BINARIES_DEFAULT: "0"
     run:
@@ -31,6 +31,7 @@ sm-package-linux64/opt:
             - linux64-llvm-symbolizer
             - linux64-rust
             - linux64-gcc
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-plain-linux64/debug:
@@ -51,6 +52,7 @@ sm-plain-linux64/debug:
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
             - linux64-rust
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-plain-linux64/opt:
@@ -72,6 +74,7 @@ sm-plain-linux64/opt:
             - linux64-llvm-symbolizer
             - linux64-rust
             - linux64-gcc
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-smoosh-linux64/debug:
@@ -84,7 +87,7 @@ sm-smoosh-linux64/debug:
         tier: 3
     run:
         spidermonkey-variant: smooshdebug
-    run-on-projects: ['mozilla-central']
+    run-on-projects: []
     fetches:
         toolchain:
             - linux64-clang
@@ -94,6 +97,7 @@ sm-smoosh-linux64/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
     when:
         files-changed:
@@ -124,7 +128,7 @@ sm-smoosh-linux64/opt:
         tier: 3
     run:
         spidermonkey-variant: smoosh
-    run-on-projects: ['mozilla-central']
+    run-on-projects: []
     fetches:
         toolchain:
             - linux64-clang
@@ -134,6 +138,7 @@ sm-smoosh-linux64/opt:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
     when:
         files-changed:
@@ -172,6 +177,29 @@ sm-nojit-linux64/opt:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
+sm-pbl-linux64/opt:
+    description: "Spidermonkey PBL"
+    index:
+        job-name: sm-pbl-linux64-opt
+    treeherder:
+        symbol: SM(pbl)
+        platform: linux64/opt
+        tier: 2
+    run:
+        spidermonkey-variant: pbl
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-plain-linux32/debug:
@@ -193,6 +221,7 @@ sm-plain-linux32/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-i686-linux-gnu
             - sysroot-x86_64-linux-gnu
 
@@ -214,6 +243,7 @@ sm-arm-sim-linux32/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-i686-linux-gnu
             - sysroot-x86_64-linux-gnu
 
@@ -238,32 +268,8 @@ sm-arm64-sim-linux64/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
-
-sm-arm64-sim-cranelift-linux64/debug:
-    description: "Spidermonkey ARM64 sim with Cranelift Wasm backend"
-    index:
-        job-name: sm-arm64-sim-cranelift-linux64-debug
-    treeherder:
-        platform: linux64/debug
-        symbol: SM(arm64cl)
-        tier: 3
-    run:
-        spidermonkey-variant: arm64-cranelift-sim
-    # Disable by default but allow try pushes to explicitly request.
-    run-on-projects: []
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-breakpad-injector
-            - linux64-minidump-stackwalk
-            - linux64-llvm-symbolizer
-            - sysroot-x86_64-linux-gnu
-    routes:
-        - "notify.email.jseward@mozilla.com.on-failed"
 
 sm-asan-linux64/opt:
     description: "Spidermonkey Address Sanitizer"
@@ -286,6 +292,7 @@ sm-asan-linux64/opt:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-compacting-linux64/debug:
@@ -306,6 +313,7 @@ sm-compacting-linux64/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-linux64-wasi/opt:
@@ -324,6 +332,71 @@ sm-linux64-wasi/opt:
             - linux64-rust
             - linux64-cbindgen
             - linux64-dump_syms
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+            - sysroot-wasm32-wasi
+
+# Like sm-linux64-wasi/opt but with Intl/ICU enabled.
+sm-linux64-wasi-intl/opt:
+    description: "Spidermonkey WASI Intl opt build"
+    index:
+        job-name: sm-linux64-wasi-intl-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: SM(wasi-intl)
+        tier: 2
+    run:
+        spidermonkey-variant: wasi-intl
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+            - sysroot-wasm32-wasi
+
+sm-wasm-no-experimental-linux64/debug:
+    description: "Spidermonkey WebAssembly No experimental features"
+    index:
+        job-name: sm-wasm-no-experimental-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(wasm-no-experimental)
+        tier: 2
+    run:
+        spidermonkey-variant: wasm-noexperimental
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-rust
+            - linux64-gcc
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
+sm-linux64-wasi-pbl/opt:
+    description: "Spidermonkey WASI opt build with PBL"
+    index:
+        job-name: sm-pbl-linux64-wasi-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: SM(wasi-pbl)
+        tier: 2
+    run:
+        spidermonkey-variant: wasi-pbl
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
 
@@ -351,6 +424,7 @@ sm-msan-linux64/opt:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-tsan-linux64/opt:
@@ -375,6 +449,7 @@ sm-tsan-linux64/opt:
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
             - linux64-rust-dev
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-rootanalysis-linux64/debug:
@@ -395,6 +470,7 @@ sm-rootanalysis-linux64/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-nonunified-linux64/debug:
@@ -415,6 +491,7 @@ sm-nonunified-linux64/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-fuzzing-linux64/opt:
@@ -431,13 +508,14 @@ sm-fuzzing-linux64/opt:
         spidermonkey-variant: fuzzing
     fetches:
         toolchain:
-            - linux64-clang-13
+            - linux64-clang
             - linux64-rust
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-fuzzilli-linux64/debug:
@@ -457,6 +535,7 @@ sm-fuzzilli-linux64/debug:
             - linux64-clang
             - linux64-rust
             - linux64-cbindgen
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
 sm-gdb-linux64/debug:
@@ -481,4 +560,47 @@ sm-gdb-linux64/debug:
             - linux64-breakpad-injector
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
+sm-rt-linux64/debug:
+    description: "SpiderMonkey Records&Tuples"
+    index:
+        job-name: sm-rt-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(rt)
+    run:
+        spidermonkey-variant: rtdebug
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-rust
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
+sm-temporal-linux64/debug:
+    description: "SpiderMonkey Temporal"
+    index:
+        job-name: sm-temporal-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(temporal)
+    run:
+        spidermonkey-variant: temporaldebug
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-rust
+            - linux64-pkgconf
             - sysroot-x86_64-linux-gnu

@@ -67,6 +67,7 @@ METHODDEF(boolean) fill_input_buffer(j_decompress_ptr jd);
 METHODDEF(void) skip_input_data(j_decompress_ptr jd, long num_bytes);
 METHODDEF(void) term_source(j_decompress_ptr jd);
 METHODDEF(void) my_error_exit(j_common_ptr cinfo);
+METHODDEF(void) progress_monitor(j_common_ptr info);
 
 // Normal JFIF markers can't have more bytes than this.
 #define MAX_JPEG_MARKER_LENGTH (((uint32_t)1 << 16) - 1)
@@ -101,6 +102,7 @@ nsJPEGDecoder::nsJPEGDecoder(RasterImage* aImage,
   mBytesToSkip = 0;
   memset(&mInfo, 0, sizeof(jpeg_decompress_struct));
   memset(&mSourceMgr, 0, sizeof(mSourceMgr));
+  memset(&mProgressMgr, 0, sizeof(mProgressMgr));
   mInfo.client_data = (void*)this;
 
   mSegment = nullptr;
@@ -157,6 +159,12 @@ nsresult nsJPEGDecoder::InitInternal() {
   mSourceMgr.resync_to_restart = jpeg_resync_to_restart;
   mSourceMgr.term_source = term_source;
 
+  mInfo.mem->max_memory_to_use = static_cast<long>(
+      std::min<size_t>(SurfaceCache::MaximumCapacity(), LONG_MAX));
+
+  mProgressMgr.progress_monitor = &progress_monitor;
+  mInfo.progress = &mProgressMgr;
+
   // Record app markers for ICC data
   for (uint32_t m = 0; m < 16; m++) {
     jpeg_save_markers(&mInfo, JPEG_APP0 + m, 0xFFFF);
@@ -196,18 +204,44 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
   mSegment = reinterpret_cast<const JOCTET*>(aData);
   mSegmentLen = aLength;
 
-  // Return here if there is a fatal error within libjpeg.
+  // Return here if there is a error within libjpeg.
   nsresult error_code;
   // This cast to nsresult makes sense because setjmp() returns whatever we
-  // passed to longjmp(), which was actually an nsresult.
+  // passed to longjmp(), which was actually an nsresult. These error codes
+  // have been translated from libjpeg error codes, like so:
+  // JERR_OUT_OF_MEMORY => NS_ERROR_OUT_OF_MEMORY
+  // JERR_UNKNOWN_MARKER => NS_ERROR_ILLEGAL_VALUE
+  // JERR_SOF_UNSUPPORTED =>  NS_ERROR_INVALID_CONTENT_ENCODING
+  // <any other error> => NS_ERROR_FAILURE
   if ((error_code = static_cast<nsresult>(setjmp(mErr.setjmp_buffer))) !=
       NS_OK) {
+    bool fatal = true;
     if (error_code == NS_ERROR_FAILURE) {
       // Error due to corrupt data. Make sure that we don't feed any more data
       // to libjpeg-turbo.
       mState = JPEG_SINK_NON_JPEG_TRAILER;
       MOZ_LOG(sJPEGDecoderAccountingLog, LogLevel::Debug,
               ("} (setjmp returned NS_ERROR_FAILURE)"));
+    } else if (error_code == NS_ERROR_ILLEGAL_VALUE) {
+      // This is a recoverable error. Consume the marker and continue.
+      mInfo.unread_marker = 0;
+      fatal = false;
+    } else if (error_code == NS_ERROR_INVALID_CONTENT_ENCODING) {
+      // The content is encoding frames with a format that libjpeg can't handle.
+      MOZ_LOG(sJPEGDecoderAccountingLog, LogLevel::Debug,
+              ("} (setjmp returned NS_ERROR_INVALID_CONTENT_ENCODING)"));
+      // Check to see if we're in the done state, which indicates that we've
+      // already processed the main JPEG data.
+      bool inDoneState = (mState == JPEG_DONE);
+      // Whether we succeed or fail, we shouldn't send any more data.
+      mState = JPEG_SINK_NON_JPEG_TRAILER;
+
+      // If we're in the done state, we exit successfully and attempt to
+      // display the content we've already received. Otherwise, we fallthrough
+      // and treat this as a fatal error.
+      if (inDoneState) {
+        return Transition::TerminateSuccess();
+      }
     } else {
       // Error for another reason. (Possibly OOM.)
       mState = JPEG_ERROR;
@@ -215,7 +249,9 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
               ("} (setjmp returned an error)"));
     }
 
-    return Transition::TerminateFailure();
+    if (fatal) {
+      return Transition::TerminateFailure();
+    }
   }
 
   MOZ_LOG(sJPEGLog, LogLevel::Debug,
@@ -442,11 +478,11 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
       if (mState == JPEG_DECOMPRESS_PROGRESSIVE) {
         LOG_SCOPE((mozilla::LogModule*)sJPEGLog,
                   "nsJPEGDecoder::Write -- JPEG_DECOMPRESS_PROGRESSIVE case");
-        auto AllComponentsSeen = [](jpeg_decompress_struct& mInfo) {
+        auto AllComponentsSeen = [](jpeg_decompress_struct& info) {
           bool all_components_seen = true;
-          if (mInfo.coef_bits) {
-            for (int c = 0; c < mInfo.num_components; ++c) {
-              bool current_component_seen = mInfo.coef_bits[c][0] != -1;
+          if (info.coef_bits) {
+            for (int c = 0; c < info.num_components; ++c) {
+              bool current_component_seen = info.coef_bits[c][0] != -1;
               all_components_seen &= current_component_seen;
             }
           }
@@ -632,7 +668,8 @@ WriteState nsJPEGDecoder::OutputScanlines() {
       [&](uint32_t* aPixelBlock, int32_t aBlockSize) {
         JSAMPROW sampleRow = (JSAMPROW)(mCMSLine ? mCMSLine : aPixelBlock);
         if (jpeg_read_scanlines(&mInfo, &sampleRow, 1) != 1) {
-          return MakeTuple(/* aWritten */ 0, Some(WriteState::NEED_MORE_DATA));
+          return std::make_tuple(/* aWritten */ 0,
+                                 Some(WriteState::NEED_MORE_DATA));
         }
 
         switch (mInfo.out_color_space) {
@@ -656,7 +693,7 @@ WriteState nsJPEGDecoder::OutputScanlines() {
             break;
         }
 
-        return MakeTuple(aBlockSize, Maybe<WriteState>());
+        return std::make_tuple(aBlockSize, Maybe<WriteState>());
       });
 
   Maybe<SurfaceInvalidRect> invalidRect = mPipe.TakeInvalidRect();
@@ -674,9 +711,20 @@ my_error_exit(j_common_ptr cinfo) {
   decoder_error_mgr* err = (decoder_error_mgr*)cinfo->err;
 
   // Convert error to a browser error code
-  nsresult error_code = err->pub.msg_code == JERR_OUT_OF_MEMORY
-                            ? NS_ERROR_OUT_OF_MEMORY
-                            : NS_ERROR_FAILURE;
+  nsresult error_code;
+  switch (err->pub.msg_code) {
+    case JERR_OUT_OF_MEMORY:
+      error_code = NS_ERROR_OUT_OF_MEMORY;
+      break;
+    case JERR_UNKNOWN_MARKER:
+      error_code = NS_ERROR_ILLEGAL_VALUE;
+      break;
+    case JERR_SOF_UNSUPPORTED:
+      error_code = NS_ERROR_INVALID_CONTENT_ENCODING;
+      break;
+    default:
+      error_code = NS_ERROR_FAILURE;
+  }
 
 #ifdef DEBUG
   char buffer[JMSG_LENGTH_MAX];
@@ -690,6 +738,17 @@ my_error_exit(j_common_ptr cinfo) {
   // Return control to the setjmp point.  We pass an nsresult masquerading as
   // an int, which works because the setjmp() caller casts it back.
   longjmp(err->setjmp_buffer, static_cast<int>(error_code));
+}
+
+static void progress_monitor(j_common_ptr info) {
+  int scan = ((j_decompress_ptr)info)->input_scan_number;
+  // Progressive images with a very large number of scans can cause the decoder
+  // to hang. Here we use the progress monitor to abort on a very large number
+  // of scans. 1000 is arbitrary, but much larger than the number of scans we
+  // might expect in a normal image.
+  if (scan >= 1000) {
+    my_error_exit(info);
+  }
 }
 
 /*******************************************************************************

@@ -16,9 +16,13 @@ if (AppConstants.platform == "macosx") {
   requestLongerTimeout(3);
 }
 
-add_task(async function init() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.experimental.hideHeuristic", true]],
+    set: [
+      ["browser.urlbar.experimental.hideHeuristic", true],
+      ["browser.urlbar.suggest.quickactions", false],
+      ["dom.security.https_first_schemeless", false],
+    ],
   });
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesUtils.history.clear();
@@ -369,7 +373,8 @@ add_task(async function pickNonHeuristic() {
  * `maxRichResults` visits to verify that the view correctly contains the
  * maximum number of results when the heuristic is hidden.
  *
- * @param {function} callback
+ * @param {Function} callback
+ *   The callback to call after adding visits. Can be async
  */
 async function withVisits(callback) {
   let urls = [];
@@ -390,11 +395,14 @@ async function withVisits(callback) {
 /**
  * Adds a search engine, calls your callback, and removes the engine.
  *
- * @param {string} options.keyword
+ * @param {object} options
+ *   Options object
+ * @param {string} [options.keyword]
  *   The keyword/alias for the engine.
- * @param {boolean} options.makeDefault
+ * @param {boolean} [options.makeDefault]
  *   Whether to make the engine default.
- * @param {function} callback
+ * @param {Function} callback
+ *   The callback to call after changing the default search engine. Can be async
  */
 async function withEngine(
   { keyword = undefined, makeDefault = false },
@@ -405,11 +413,17 @@ async function withEngine(
   let originalEngine;
   if (makeDefault) {
     originalEngine = await Services.search.getDefault();
-    await Services.search.setDefault(engine);
+    await Services.search.setDefault(
+      engine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   }
   await callback();
   if (originalEngine) {
-    await Services.search.setDefault(originalEngine);
+    await Services.search.setDefault(
+      originalEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   }
   await Services.search.removeEngine(engine);
 }
@@ -417,7 +431,8 @@ async function withEngine(
 /**
  * Asserts the view contains visit results with the given URLs.
  *
- * @param {array} expectedURLs
+ * @param {Array} expectedURLs
+ *   The expected urls.
  */
 async function checkVisitResults(expectedURLs) {
   Assert.equal(
@@ -449,9 +464,11 @@ async function checkVisitResults(expectedURLs) {
  * Performs a search and makes some basic assertions under the assumption that
  * the heuristic should be hidden.
  *
- * @param {string} value
+ * @param {object} options
+ *   Options object
+ * @param {string} options.value
  *   The search string.
- * @param {UrlbarUtils.RESULT_GROUP} expectedGroup
+ * @param {UrlbarUtils.RESULT_GROUP} options.expectedGroup
  *   The expected result group of the hidden heuristic.
  * @returns {UrlbarResult}
  *   The hidden heuristic result.

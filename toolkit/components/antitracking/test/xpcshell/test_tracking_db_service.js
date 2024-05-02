@@ -6,8 +6,9 @@
 
 "use strict";
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
+const { Sqlite } = ChromeUtils.importESModule(
+  "resource://gre/modules/Sqlite.sys.mjs"
+);
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "TrackingDBService",
@@ -15,8 +16,8 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsITrackingDBService"
 );
 
-XPCOMUtils.defineLazyGetter(this, "DB_PATH", function() {
-  return OS.Path.join(OS.Constants.Path.profileDir, "protections.sqlite");
+ChromeUtils.defineLazyGetter(this, "DB_PATH", function () {
+  return PathUtils.join(PathUtils.profileDir, "protections.sqlite");
 });
 
 const SQL = {
@@ -84,6 +85,14 @@ const LOG = {
   "https://14.example.com": [
     [Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT, false, 1],
   ],
+  // Two fingerprinters replaced with a shims script, should be treated as blocked
+  // and increment the counter.
+  "https://15.example.com": [
+    [Ci.nsIWebProgressListener.STATE_REPLACED_FINGERPRINTING_CONTENT, true, 1],
+  ],
+  "https://16.example.com": [
+    [Ci.nsIWebProgressListener.STATE_REPLACED_FINGERPRINTING_CONTENT, true, 1],
+  ],
 };
 
 do_get_profile();
@@ -91,6 +100,10 @@ do_get_profile();
 Services.prefs.setBoolPref("browser.contentblocking.database.enabled", true);
 Services.prefs.setBoolPref(
   "privacy.socialtracking.block_cookies.enabled",
+  true
+);
+Services.prefs.setBoolPref(
+  "privacy.trackingprotection.fingerprinting.enabled",
   true
 );
 Services.prefs.setBoolPref(
@@ -109,6 +122,9 @@ Services.prefs.setStringPref(
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("browser.contentblocking.database.enabled");
   Services.prefs.clearUserPref("privacy.socialtracking.block_cookies.enabled");
+  Services.prefs.clearUserPref(
+    "privacy.trackingprotection.fingerprinting.enabled"
+  );
   Services.prefs.clearUserPref("browser.contentblocking.cfr-milestone.enabled");
   Services.prefs.clearUserPref(
     "browser.contentblocking.cfr-milestone.update-interval"
@@ -171,7 +187,7 @@ add_task(async function test_save_and_delete() {
     "Only one day has had fingerprinters entries, length is 1"
   );
   count = rows[0].getResultByName("count");
-  equal(count, 1, "there is only one fingerprinter entry");
+  equal(count, 3, "there are three fingerprinter entries");
 
   rows = await db.execute(SQL.selectAllEntriesOfType, {
     type: TrackingDBService.SOCIAL_ID,
@@ -287,7 +303,7 @@ add_task(async function test_timestamp_aggragation() {
     if (i == 0) {
       equal(count, 2, "Yesterday's count is 2");
     } else if (i == 1) {
-      equal(count, 3, "Today's count is 3, new entries were aggregated");
+      equal(count, 5, "Today's count is 5, new entries were aggregated");
     }
   }
 

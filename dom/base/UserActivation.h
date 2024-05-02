@@ -4,17 +4,34 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_UserAcitvation_h
-#define mozilla_dom_UserAcitvation_h
+#ifndef mozilla_dom_UserActivation_h
+#define mozilla_dom_UserActivation_h
 
 #include "mozilla/EventForwards.h"
 #include "mozilla/TimeStamp.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
+#include "nsPIDOMWindow.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-class UserActivation final {
+class UserActivation final : public nsISupports, public nsWrapperCache {
  public:
+  // WebIDL UserActivation
+
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(UserActivation)
+
+  explicit UserActivation(nsPIDOMWindowInner* aWindow);
+
+  nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
+
+  bool HasBeenActive() const;
+  bool IsActive() const;
+
+  // End of WebIDL UserActivation
+
   enum class State : uint8_t {
     // Not activated.
     None,
@@ -65,6 +82,11 @@ class UserActivation final {
    * the epoch.
    */
   static TimeStamp LatestUserInputStart();
+
+ private:
+  ~UserActivation() = default;
+
+  nsCOMPtr<nsPIDOMWindowInner> mWindow;
 };
 
 /**
@@ -82,7 +104,6 @@ class MOZ_RAII AutoHandlingUserInputStatePusher final {
   bool mIsHandlingUserInput;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
-#endif  // mozilla_dom_UserAcitvation_h
+#endif  // mozilla_dom_UserActivation_h

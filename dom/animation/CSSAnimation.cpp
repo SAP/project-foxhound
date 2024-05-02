@@ -205,8 +205,10 @@ void CSSAnimation::QueueEvents(const StickyTimeDuration& aActiveTime) {
     uint64_t iterationBoundary = mPreviousIteration > currentIteration
                                      ? currentIteration + 1
                                      : currentIteration;
-    iterationStartTime = computedTiming.mDuration.MultDouble(
-        (iterationBoundary - computedTiming.mIterationStart));
+    double multiplier = iterationBoundary - computedTiming.mIterationStart;
+    if (multiplier != 0.0) {
+      iterationStartTime = computedTiming.mDuration.MultDouble(multiplier);
+    }
   }
 
   TimeStamp startTimeStamp = ElapsedTimeToTimeStamp(intervalStartTime);
@@ -225,8 +227,8 @@ void CSSAnimation::QueueEvents(const StickyTimeDuration& aActiveTime) {
       // That is to say, whenever elapsedTime goes negative (because an
       // animation restarts, something rewinds the animation, or otherwise)
       // a new random value for the mix-in must be generated.
-      elapsedTime =
-          nsRFPService::ReduceTimePrecisionAsSecsRFPOnly(elapsedTime, 0);
+      elapsedTime = nsRFPService::ReduceTimePrecisionAsSecsRFPOnly(
+          elapsedTime, 0, mRTPCallerType);
     }
     events.AppendElement(
         AnimationEventInfo(mAnimationName, mOwningElement.Target(), aMessage,
@@ -348,6 +350,15 @@ void CSSAnimationKeyframeEffect::SetKeyframes(JSContext* aContext,
 
   if (CSSAnimation* cssAnimation = GetOwningCSSAnimation()) {
     cssAnimation->AddOverriddenProperties(CSSAnimationProperties::Keyframes);
+  }
+}
+
+void CSSAnimationKeyframeEffect::SetComposite(
+    const CompositeOperation& aComposite) {
+  KeyframeEffect::SetComposite(aComposite);
+
+  if (CSSAnimation* cssAnimation = GetOwningCSSAnimation()) {
+    cssAnimation->AddOverriddenProperties(CSSAnimationProperties::Composition);
   }
 }
 

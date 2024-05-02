@@ -9,7 +9,7 @@ function makeTest(
   endProcessIsRemote,
   transitionTask
 ) {
-  return async function() {
+  return async function () {
     info("Running test " + name + ", " + transitionTask.name);
     let browser = gBrowser.selectedBrowser;
 
@@ -21,7 +21,7 @@ function makeTest(
 
     // Load the initial URL and make sure we are in the right initial process
     info("Loading initial URL");
-    BrowserTestUtils.loadURI(browser, startURL);
+    BrowserTestUtils.startLoadingURIString(browser, startURL);
     await BrowserTestUtils.browserLoaded(browser, false, startURL);
 
     is(browser.currentURI.spec, startURL, "Shouldn't have been redirected");
@@ -56,7 +56,7 @@ const CHROME = "chrome://mochitests" + PATH;
 const CANREMOTE = "chrome://mochitests-any" + PATH;
 const MUSTREMOTE = "chrome://mochitests-content" + PATH;
 
-add_task(async function init() {
+add_setup(async function () {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
     forceNotRemote: true,
   });
@@ -114,7 +114,7 @@ var TRANSITIONS = [
   // Loads the new page by calling browser.loadURI directly
   async function loadURI(browser, uri) {
     info("Calling browser.loadURI");
-    BrowserTestUtils.loadURI(browser, uri);
+    BrowserTestUtils.startLoadingURIString(browser, uri);
   },
 
   // Loads the new page by finding a link with the right href in the document and

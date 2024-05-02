@@ -9,7 +9,6 @@
 
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/NetworkInformationBinding.h"
-#include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
@@ -28,7 +27,8 @@ class Connection : public DOMEventTargetHelper {
  public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  static Connection* CreateForWindow(nsPIDOMWindowInner* aWindow);
+  static Connection* CreateForWindow(nsPIDOMWindowInner* aWindow,
+                                     bool aShouldResistFingerprinting);
 
   static already_AddRefed<Connection> CreateForWorker(
       WorkerPrivate* aWorkerPrivate, ErrorResult& aRv);
@@ -41,17 +41,17 @@ class Connection : public DOMEventTargetHelper {
                                JS::Handle<JSObject*> aGivenProto) override;
 
   ConnectionType Type() const {
-    return nsContentUtils::ShouldResistFingerprinting()
+    return mShouldResistFingerprinting
                ? static_cast<ConnectionType>(ConnectionType::Unknown)
                : mType;
   }
 
-  bool GetIsWifi() {
+  bool GetIsWifi() const {
     NS_ASSERT_OWNINGTHREAD(Connection);
 
     return mIsWifi;
   }
-  uint32_t GetDhcpGateway() {
+  uint32_t GetDhcpGateway() const {
     NS_ASSERT_OWNINGTHREAD(Connection);
 
     return mDHCPGateway;
@@ -60,7 +60,7 @@ class Connection : public DOMEventTargetHelper {
   IMPL_EVENT_HANDLER(typechange)
 
  protected:
-  Connection(nsPIDOMWindowInner* aWindow);
+  Connection(nsPIDOMWindowInner* aWindow, bool aShouldResistFingerprinting);
   virtual ~Connection();
 
   void Update(ConnectionType aType, bool aIsWifi, uint32_t aDHCPGateway,
@@ -69,6 +69,11 @@ class Connection : public DOMEventTargetHelper {
   virtual void ShutdownInternal() = 0;
 
  private:
+  /**
+   * If ResistFingerprinting is enabled or disabled.
+   */
+  bool mShouldResistFingerprinting;
+
   /**
    * The type of current connection.
    */

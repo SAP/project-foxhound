@@ -2,11 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Union
 
-import attr
 
-
-@attr.s
+@dataclass
 class Task:
     """
     Representation of a task in a TaskGraph.  Each Task has, at creation:
@@ -20,6 +20,8 @@ class Task:
       {'build': 'build-linux64/opt', 'docker-image': 'build-docker-image-desktop-test'}
     - soft_dependencies: tasks this one may depend on if they are available post
       optimisation. They are set as a list of tasks label.
+    - if_dependencies: only run this task if at least one of these dependencies
+      are present.
 
     And later, as the task-graph processing proceeds:
 
@@ -29,25 +31,29 @@ class Task:
     display, comparison, serialization, etc. It has no functionality of its own.
     """
 
-    kind = attr.ib()
-    label = attr.ib()
-    attributes = attr.ib()
-    task = attr.ib()
-    task_id = attr.ib(default=None, init=False)
-    optimization = attr.ib(default=None)
-    dependencies = attr.ib(factory=dict)
-    soft_dependencies = attr.ib(factory=list)
+    kind: str
+    label: str
+    attributes: Dict
+    task: Dict
+    description: str = ""
+    task_id: Union[str, None] = field(default=None, init=False)
+    optimization: Union[Dict[str, Any], None] = field(default=None)
+    dependencies: Dict = field(default_factory=dict)
+    soft_dependencies: List = field(default_factory=list)
+    if_dependencies: List = field(default_factory=list)
 
-    def __attrs_post_init__(self):
+    def __post_init__(self):
         self.attributes["kind"] = self.kind
 
     def to_json(self):
         rv = {
             "kind": self.kind,
             "label": self.label,
+            "description": self.description,
             "attributes": self.attributes,
             "dependencies": self.dependencies,
             "soft_dependencies": self.soft_dependencies,
+            "if_dependencies": self.if_dependencies,
             "optimization": self.optimization,
             "task": self.task,
         }
@@ -65,11 +71,13 @@ class Task:
         rv = cls(
             kind=task_dict["kind"],
             label=task_dict["label"],
+            description=task_dict.get("description", ""),
             attributes=task_dict["attributes"],
             task=task_dict["task"],
             optimization=task_dict["optimization"],
             dependencies=task_dict.get("dependencies"),
             soft_dependencies=task_dict.get("soft_dependencies"),
+            if_dependencies=task_dict.get("if_dependencies"),
         )
         if "task_id" in task_dict:
             rv.task_id = task_dict["task_id"]

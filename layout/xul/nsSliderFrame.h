@@ -8,14 +8,15 @@
 #define nsSliderFrame_h__
 
 #include "mozilla/Attributes.h"
+#include "nsContainerFrame.h"
 #include "nsRepeatService.h"
-#include "nsBoxFrame.h"
 #include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
 #include "nsIDOMEventListener.h"
 
 class nsITimer;
+class nsScrollbarFrame;
 class nsSliderFrame;
 
 namespace mozilla {
@@ -34,7 +35,7 @@ class nsSliderMediator final : public nsIDOMEventListener {
 
   explicit nsSliderMediator(nsSliderFrame* aSlider) { mSlider = aSlider; }
 
-  virtual void SetSlider(nsSliderFrame* aSlider) { mSlider = aSlider; }
+  void SetSlider(nsSliderFrame* aSlider) { mSlider = aSlider; }
 
   NS_DECL_NSIDOMEVENTLISTENER
 
@@ -42,7 +43,7 @@ class nsSliderMediator final : public nsIDOMEventListener {
   virtual ~nsSliderMediator() = default;
 };
 
-class nsSliderFrame final : public nsBoxFrame {
+class nsSliderFrame final : public nsContainerFrame {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsSliderFrame)
   NS_DECL_QUERYFRAME
@@ -53,46 +54,52 @@ class nsSliderFrame final : public nsBoxFrame {
   explicit nsSliderFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
   virtual ~nsSliderFrame();
 
+  // Get the point associated with this event. Returns true if a single valid
+  // point was found. Otherwise false.
+  bool GetEventPoint(mozilla::WidgetGUIEvent* aEvent, nsPoint& aPoint);
+  // Gets the event coordinates relative to the widget associated with this
+  // frame. Return true if a single valid point was found.
+  bool GetEventPoint(mozilla::WidgetGUIEvent* aEvent,
+                     mozilla::LayoutDeviceIntPoint& aPoint);
+
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SliderFrame"_ns, aResult);
   }
 #endif
 
-  virtual nsSize GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) override;
-  virtual nsSize GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) override;
-  virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) override;
-  NS_IMETHOD DoXULLayout(nsBoxLayoutState& aBoxLayoutState) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
 
   // nsIFrame overrides
-  virtual void DestroyFrom(nsIFrame* aDestructRoot,
-                           PostDestroyData& aPostDestroyData) override;
+  void Destroy(DestroyContext&) override;
 
-  virtual void BuildDisplayListForChildren(
-      nsDisplayListBuilder* aBuilder, const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayListForThumb(nsDisplayListBuilder* aBuilder,
+                                nsIFrame* aThumb,
+                                const nsDisplayListSet& aLists);
 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* asPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 
-  virtual nsresult HandleEvent(nsPresContext* aPresContext,
-                               mozilla::WidgetGUIEvent* aEvent,
-                               nsEventStatus* aEventStatus) override;
+  nsresult HandleEvent(nsPresContext* aPresContext,
+                       mozilla::WidgetGUIEvent* aEvent,
+                       nsEventStatus* aEventStatus) override;
 
   // nsContainerFrame overrides
-  virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList) override;
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override;
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override;
-  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
+  void SetInitialChildList(ChildListID aListID,
+                           nsFrameList&& aChildList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override;
+  void RemoveFrame(DestroyContext&, ChildListID, nsIFrame*) override;
 
   nsresult StartDrag(mozilla::dom::Event* aEvent);
   nsresult StopDrag();
@@ -106,7 +113,6 @@ class nsSliderFrame final : public nsBoxFrame {
   static int32_t GetPageIncrement(nsIContent* content);
   static int32_t GetIntegerAttribute(nsIContent* content, nsAtom* atom,
                                      int32_t defaultValue);
-  void EnsureOrient();
 
   NS_IMETHOD HandlePress(nsPresContext* aPresContext,
                          mozilla::WidgetGUIEvent* aEvent,
@@ -151,7 +157,7 @@ class nsSliderFrame final : public nsBoxFrame {
 
  private:
   bool GetScrollToClick();
-  nsIFrame* GetScrollbar();
+  nsScrollbarFrame* Scrollbar();
   bool ShouldScrollForEvent(mozilla::WidgetGUIEvent* aEvent);
   bool ShouldScrollToClickForEvent(mozilla::WidgetGUIEvent* aEvent);
   bool IsEventOverThumb(mozilla::WidgetGUIEvent* aEvent);
@@ -177,14 +183,24 @@ class nsSliderFrame final : public nsBoxFrame {
     nsRepeatService::GetInstance()->Start(Notify, this, mContent->OwnerDoc(),
                                           "nsSliderFrame"_ns);
   }
-  void StopRepeat() { nsRepeatService::GetInstance()->Stop(Notify, this); }
+  void StopRepeat() {
+    nsRepeatService::GetInstance()->Stop(Notify, this);
+    mCurrentClickHoldDestination = Nothing();
+  }
   void Notify();
   static void Notify(void* aData) {
     (static_cast<nsSliderFrame*>(aData))->Notify();
   }
-  void PageScroll(nscoord aChange);
+  void PageScroll(bool aClickAndHold);
+
+  void SetupDrag(mozilla::WidgetGUIEvent* aEvent, nsIFrame* aThumbFrame,
+                 nscoord aPos, bool aIsHorizontal);
 
   nsPoint mDestinationPoint;
+  // If we are in a scrollbar track click-and-hold, this is populated with
+  // the destination of the scroll started at the most recent tick of the
+  // repeat timer.
+  Maybe<nsPoint> mCurrentClickHoldDestination;
   RefPtr<nsSliderMediator> mMediator;
 
   float mRatio;
@@ -194,7 +210,7 @@ class nsSliderFrame final : public nsBoxFrame {
 
   int32_t mCurPos;
 
-  nscoord mChange;
+  nscoord mRepeatDirection;
 
   bool mDragFinished;
 
@@ -220,8 +236,9 @@ class nsSliderFrame final : public nsBoxFrame {
   // been shifted due to async scrollbar drag.
   Maybe<uint64_t> mAPZDragInitiated;
 
+  nscoord mThumbMinLength;
+
   static bool gMiddlePref;
-  static int32_t gSnapMultiplier;
 };  // class nsSliderFrame
 
 #endif

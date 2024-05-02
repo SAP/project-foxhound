@@ -6,8 +6,8 @@
 
 const {
   AutoRefreshHighlighter,
-} = require("devtools/server/actors/highlighters/auto-refresh");
-const { apply } = require("devtools/shared/layout/dom-matrix-2d");
+} = require("resource://devtools/server/actors/highlighters/auto-refresh.js");
+const { apply } = require("resource://devtools/shared/layout/dom-matrix-2d.js");
 const {
   CANVAS_SIZE,
   DEFAULT_COLOR,
@@ -17,11 +17,11 @@ const {
   getCurrentMatrix,
   updateCanvasElement,
   updateCanvasPosition,
-} = require("devtools/server/actors/highlighters/utils/canvas");
+} = require("resource://devtools/server/actors/highlighters/utils/canvas.js");
 const {
   CanvasFrameAnonymousContentHelper,
   getComputedStyle,
-} = require("devtools/server/actors/highlighters/utils/markup");
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
 const {
   getAbsoluteScrollOffsetsForNode,
   getCurrentZoom,
@@ -29,7 +29,7 @@ const {
   getUntransformedQuad,
   getWindowDimensions,
   setIgnoreLayoutChanges,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 
 const FLEXBOX_LINES_PROPERTIES = {
   edge: {
@@ -497,10 +497,8 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
 
     const lineWidth = getDisplayPixelRatio(this.win);
     const options = { matrix: this.currentMatrix };
-    const {
-      width: containerWidth,
-      height: containerHeight,
-    } = getUntransformedQuad(this.container, "content").getBounds();
+    const { width: containerWidth, height: containerHeight } =
+      getUntransformedQuad(this.container, "content").getBounds();
 
     this.setupCanvas({
       useContainerScrollOffsets: true,
@@ -642,10 +640,8 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
       return;
     }
 
-    const {
-      width: containerWidth,
-      height: containerHeight,
-    } = getUntransformedQuad(this.container, "content").getBounds();
+    const { width: containerWidth, height: containerHeight } =
+      getUntransformedQuad(this.container, "content").getBounds();
 
     this.setupCanvas({
       lineDash: FLEXBOX_LINES_PROPERTIES.alignItems.lineDash,

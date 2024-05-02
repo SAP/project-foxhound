@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -66,7 +66,7 @@ function waitForTransitionEnd(...els) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // Ensure prefers-reduced-motion isn't set. Some linux environments will have
   // this enabled by default.
   await SpecialPowers.pushPrefEnv({
@@ -86,7 +86,7 @@ add_task(async function testReordering() {
     ExtensionTestUtils.loadExtension({
       manifest: {
         name: id,
-        applications: { gecko: { id } },
+        browser_specific_settings: { gecko: { id } },
       },
       useAddonManager: "temporary",
     })

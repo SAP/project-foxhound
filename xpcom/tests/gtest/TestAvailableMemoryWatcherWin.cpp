@@ -11,6 +11,7 @@
 
 #include "AvailableMemoryWatcher.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
@@ -480,8 +481,8 @@ class MemoryWatcherTelemetryEvent {
     for (const nsAString& token : eventValues.LastElement().Split(',')) {
       tokens.AppendElement(token);
     }
-    EXPECT_EQ(tokens.Length(), 3);
-    if (tokens.Length() != 3) {
+    EXPECT_EQ(tokens.Length(), 3U);
+    if (tokens.Length() != 3U) {
       const wchar_t* valueStr = eventValues.LastElement().get();
       fprintf(stderr, "Unexpected event value: %S\n", valueStr);
       return;
@@ -495,7 +496,7 @@ class MemoryWatcherTelemetryEvent {
     // The third token should be a valid floating number.
     nsresult rv;
     tokens[2].ToDouble(&rv);
-    EXPECT_TRUE(NS_SUCCEEDED(rv));
+    EXPECT_NS_SUCCEEDED(rv);
   }
 };
 

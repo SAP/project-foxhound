@@ -73,9 +73,9 @@ class RIFFParser {
    private:
     bool Update(uint8_t c);
 
-    uint8_t mRaw[RIFF_CHUNK_SIZE];
+    uint8_t mRaw[RIFF_CHUNK_SIZE] = {};
 
-    int mPos;
+    int mPos = 0;
   };
 
   RIFFHeader mRiffHeader;
@@ -108,49 +108,31 @@ class HeaderParser {
    private:
     void Update(uint8_t c);
 
-    uint8_t mRaw[CHUNK_HEAD_SIZE];
+    uint8_t mRaw[CHUNK_HEAD_SIZE] = {};
 
-    int mPos;
+    int mPos = 0;
   };
 
   ChunkHeader mHeader;
 };
 
-class FormatParser {
- private:
-  class FormatChunk;
-
+class FormatChunk {
  public:
-  const FormatChunk& FmtChunk() const;
+  FormatChunk() = default;
+  void Init(nsTArray<uint8_t>&& aData);
 
-  Result<uint32_t, nsresult> Parse(BufferReader& aReader);
-
-  void Reset();
+  uint16_t WaveFormat() const;
+  uint16_t Channels() const;
+  uint32_t SampleRate() const;
+  uint16_t ExtraFormatInfoSize() const;
+  uint16_t SampleFormat() const;
+  uint16_t AverageBytesPerSec() const;
+  uint16_t BlockAlign() const;
+  uint16_t ValidBitsPerSamples() const;
+  AudioConfig::ChannelLayout::ChannelMap ChannelMap() const;
 
  private:
-  class FormatChunk {
-   public:
-    FormatChunk();
-    void Reset();
-
-    uint16_t WaveFormat() const;
-    uint16_t Channels() const;
-    uint32_t SampleRate() const;
-    uint16_t FrameSize() const;
-    uint16_t SampleFormat() const;
-
-    bool IsValid() const;
-    bool ParseNext(uint8_t c);
-
-   private:
-    void Update(uint8_t c);
-
-    uint8_t mRaw[FMT_CHUNK_MIN_SIZE];
-
-    int mPos;
-  };
-
-  FormatChunk mFmtChunk;
+  nsTArray<uint8_t> mRaw;
 };
 
 class DataParser {
@@ -170,7 +152,7 @@ class DataParser {
     void Reset();
 
    private:
-    int mPos;  // To Check Alignment
+    int mPos = 0;  // To Check Alignment
   };
 
   DataChunk mChunk;
@@ -229,11 +211,10 @@ class WAVTrackDemuxer : public MediaTrackDemuxer,
 
   void UpdateState(const MediaByteRange& aRange);
 
-  int64_t OffsetFromChunkIndex(int64_t aChunkIndex) const;
-  int64_t ChunkIndexFromOffset(int64_t aOffet) const;
-  int64_t ChunkIndexFromTime(const media::TimeUnit& aTime) const;
+  uint64_t OffsetFromChunkIndex(uint32_t aChunkIndex) const;
+  uint64_t ChunkIndexFromTime(const media::TimeUnit& aTime) const;
 
-  int32_t Read(uint8_t* aBuffer, int64_t aOffset, int32_t aSize);
+  int64_t Read(uint8_t* aBuffer, int64_t aOffset, int64_t aSize);
 
   MediaResourceIndex mSource;
 
@@ -241,23 +222,23 @@ class WAVTrackDemuxer : public MediaTrackDemuxer,
   RIFFParser mRIFFParser;
   HeaderParser mHeaderParser;
 
-  FormatParser mFmtParser;
+  FormatChunk mFmtChunk;
   // ListChunkParser mListChunkParser;
 
-  int64_t mOffset;
-  int64_t mFirstChunkOffset;
+  uint64_t mOffset;
+  uint64_t mFirstChunkOffset;
 
   uint32_t mNumParsedChunks;
-  int32_t mChunkIndex;
+  uint32_t mChunkIndex;
 
   uint32_t mDataLength;
   uint64_t mTotalChunkLen;
 
-  int32_t mSamplesPerChunk;
-  int32_t mSamplesPerSecond;
+  uint32_t mSamplesPerChunk;
+  uint32_t mSamplesPerSecond;
 
-  int32_t mChannels;
-  int32_t mSampleFormat;
+  uint32_t mChannels;
+  uint32_t mSampleFormat;
 
   UniquePtr<AudioInfo> mInfo;
 };

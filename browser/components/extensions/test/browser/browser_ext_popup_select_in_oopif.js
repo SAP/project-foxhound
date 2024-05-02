@@ -85,17 +85,22 @@ add_task(async function testPopupSelectPopup() {
     return { left: r.left, bottom: r.bottom };
   });
 
-  const selectPopup = document.getElementById("ContentSelectDropdown")
-    .firstElementChild;
-  const popupPromise = promisePopupShown(selectPopup);
+  const popupPromise = BrowserTestUtils.waitForSelectPopupShown(window);
 
   BrowserTestUtils.synthesizeMouseAtCenter("select", {}, iframe);
 
-  await popupPromise;
+  const selectPopup = await popupPromise;
 
   let popupRect = selectPopup.getOuterScreenRect();
   let popupMarginLeft = parseFloat(getComputedStyle(selectPopup).marginLeft);
   let popupMarginTop = parseFloat(getComputedStyle(selectPopup).marginTop);
+
+  const offsetToSelectedItem =
+    selectPopup.querySelector("menuitem[selected]").getBoundingClientRect()
+      .top - selectPopup.getBoundingClientRect().top;
+  info(
+    `Browser is at ${browserForPopup.screenY}, popup is at ${popupRect.top} with ${offsetToSelectedItem} to the selected item`
+  );
 
   is(
     Math.floor(browserForPopup.screenX + selectRect.left),
@@ -103,9 +108,9 @@ add_task(async function testPopupSelectPopup() {
     "Select popup has the correct x origin"
   );
 
-  // On Mac select popup window appears on the target select element.
+  // On Mac select popup window appears aligned to the selected option.
   let expectedY = navigator.platform.includes("Mac")
-    ? Math.floor(browserForPopup.screenY)
+    ? Math.floor(browserForPopup.screenY - offsetToSelectedItem)
     : Math.floor(browserForPopup.screenY + selectRect.bottom);
   is(
     expectedY,

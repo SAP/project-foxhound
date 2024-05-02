@@ -10,6 +10,7 @@
 #  include <type_traits>
 #  include <utility>
 
+#  include "mozilla/ErrorNames.h"
 #  include "mozilla/Logging.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/Monitor.h"
@@ -466,10 +467,12 @@ class MozPromise : public MozPromiseBase {
     static const uint32_t sMagic = 0xfadece11;
 
    public:
-    class ResolveOrRejectRunnable : public CancelableRunnable {
+    class ResolveOrRejectRunnable final
+        : public PrioritizableCancelableRunnable {
      public:
       ResolveOrRejectRunnable(ThenValueBase* aThenValue, MozPromise* aPromise)
-          : CancelableRunnable(
+          : PrioritizableCancelableRunnable(
+                aPromise->mPriority,
                 "MozPromise::ThenValueBase::ResolveOrRejectRunnable"),
             mThenValue(aThenValue),
             mPromise(aPromise) {
@@ -521,7 +524,16 @@ class MozPromise : public MozPromiseBase {
       if (MozPromiseBase* p = CompletionPromise()) {
         p->AssertIsDead();
       } else {
-        MOZ_DIAGNOSTIC_ASSERT(Request::mDisconnected);
+#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+        if (MOZ_UNLIKELY(!Request::mDisconnected)) {
+          MOZ_CRASH_UNSAFE_PRINTF(
+              "MozPromise::ThenValue created from '%s' destroyed without being "
+              "either disconnected, resolved, or rejected (dispatchRv: %s)",
+              mCallSite,
+              mDispatchRv ? GetStaticErrorName(*mDispatchRv)
+                          : "not dispatched");
+        }
+#  endif
       }
     }
 
@@ -556,7 +568,7 @@ class MozPromise : public MozPromiseBase {
         nsCOMPtr<nsIDirectTaskDispatcher> dispatcher =
             do_QueryInterface(mResponseTarget);
         if (dispatcher) {
-          dispatcher->DispatchDirectTask(r.forget());
+          SetDispatchRv(dispatcher->DispatchDirectTask(r.forget()));
           return;
         }
         NS_WARNING(
@@ -574,7 +586,10 @@ class MozPromise : public MozPromiseBase {
       // then shut down the thread or task queue that the promise result would
       // be dispatched on. So we unfortunately can't assert that promise
       // dispatch succeeds. :-(
-      mResponseTarget->Dispatch(r.forget());
+      // We do record whether or not it succeeds so that if the ThenValueBase is
+      // then destroyed and it was not disconnected, we can include that
+      // information in the assertion message.
+      SetDispatchRv(mResponseTarget->Dispatch(r.forget()));
     }
 
     void Disconnect() override {
@@ -608,6 +623,12 @@ class MozPromise : public MozPromiseBase {
       DoResolveOrRejectInternal(aValue);
     }
 
+    void SetDispatchRv(nsresult aRv) {
+#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+      mDispatchRv = Some(aRv);
+#  endif
+    }
+
     nsCOMPtr<nsISerialEventTarget>
         mResponseTarget;  // May be released on any thread.
 #  ifdef PROMISE_DEBUG
@@ -616,6 +637,9 @@ class MozPromise : public MozPromiseBase {
     const char* mCallSite;
 #  ifdef PROMISE_DEBUG
     uint32_t mMagic2 = sMagic;
+#  endif
+#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    Maybe<nsresult> mDispatchRv;
 #  endif
   };
 
@@ -1071,6 +1095,8 @@ class MozPromise : public MozPromiseBase {
       if (mUseSynchronousTaskDispatch) {
         chainedPromise->UseSynchronousTaskDispatch(aCallSite);
       }
+    } else {
+      chainedPromise->SetTaskPriority(mPriority, aCallSite);
     }
 
     if (!IsPending()) {
@@ -1087,19 +1113,15 @@ class MozPromise : public MozPromiseBase {
     using jni::GeckoResultCallback;
     RefPtr<Private> p = new Private("GeckoResult Glue", false);
     auto resolve = GeckoResultCallback::CreateAndAttach<ResolveValueType>(
-        [p](ResolveValueType aArg) { p->Resolve(aArg, __func__); });
+        [p](ResolveValueType&& aArg) {
+          p->Resolve(MaybeMove(aArg), __func__);
+        });
     auto reject = GeckoResultCallback::CreateAndAttach<RejectValueType>(
-        [p](RejectValueType aArg) { p->Reject(aArg, __func__); });
+        [p](RejectValueType&& aArg) { p->Reject(MaybeMove(aArg), __func__); });
     aGeckoResult->NativeThen(resolve, reject);
     return p;
   }
 #  endif
-
-  // Creates a C++ MozPromise from its JS counterpart, dom::Promise.
-  // FromDomPromise currently only supports primitive types (int8/16/32, float,
-  // double) And the reject value type must be a nsresult.
-  // To use, please include MozPromiseInlines.h
-  static RefPtr<MozPromise> FromDomPromise(dom::Promise* aDOMPromise);
 
   // Note we expose the function AssertIsDead() instead of IsDead() since
   // checking IsDead() is a data race in the situation where the request is not
@@ -1170,10 +1192,11 @@ class MozPromise : public MozPromiseBase {
   };
 
   const char* mCreationSite;  // For logging
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
   ResolveOrRejectValue mValue;
   bool mUseSynchronousTaskDispatch = false;
   bool mUseDirectTaskDispatch = false;
+  uint32_t mPriority = nsIRunnablePriority::PRIORITY_NORMAL;
 #  ifdef PROMISE_DEBUG
   uint32_t mMagic1 = sMagic;
 #  endif
@@ -1291,6 +1314,25 @@ class MozPromise<ResolveValueT, RejectValueT, IsExclusive>::Private
                "Promise already set for synchronous dispatch");
     mUseDirectTaskDispatch = true;
   }
+
+  // If the resolve/reject will be handled on a thread supporting priorities,
+  // one may want to tweak the priority of the task by passing a
+  // nsIRunnablePriority::PRIORITY_* to SetTaskPriority.
+  void SetTaskPriority(uint32_t aPriority, const char* aSite) {
+    PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
+                   mMagic3 == sMagic && mMagic4 == &mMutex);
+    MutexAutoLock lock(mMutex);
+    PROMISE_LOG("%s TaskPriority MozPromise (%p created at %s)", aSite, this,
+                mCreationSite);
+    MOZ_ASSERT(IsPending(),
+               "A Promise must not have been already resolved or rejected to "
+               "set dispatch state");
+    MOZ_ASSERT(!mUseSynchronousTaskDispatch,
+               "Promise already set for synchronous dispatch");
+    MOZ_ASSERT(!mUseDirectTaskDispatch,
+               "Promise already set for direct dispatch");
+    mPriority = aPriority;
+  }
 };
 
 // A generic promise type that does the trick for simple use cases.
@@ -1404,6 +1446,11 @@ class MozPromiseHolderBase {
   void UseDirectTaskDispatch(const char* aSite) {
     MOZ_ASSERT(mPromise);
     mPromise->UseDirectTaskDispatch(aSite);
+  }
+
+  void SetTaskPriority(uint32_t aPriority, const char* aSite) {
+    MOZ_ASSERT(mPromise);
+    mPromise->SetTaskPriority(aPriority, aSite);
   }
 
  private:

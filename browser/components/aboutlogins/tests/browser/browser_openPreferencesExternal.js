@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function setup() {
+add_setup(async function () {
   await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     url: "about:logins",
@@ -58,7 +58,7 @@ add_task(async function test_open_feedback() {
 
     info("waiting for new tab to get opened");
     let newTab = await promiseNewTab;
-    ok(true, "New tab opened to" + urlFinal);
+    Assert.ok(true, "New tab opened to" + urlFinal);
 
     BrowserTestUtils.removeTab(newTab);
   }

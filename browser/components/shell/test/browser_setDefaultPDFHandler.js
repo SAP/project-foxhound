@@ -1,11 +1,20 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
-  ExperimentFakes: "resource://testing-common/NimbusTestUtils.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  sinon: "resource://testing-common/Sinon.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
+});
+
+const setDefaultBrowserUserChoiceStub = sinon.stub();
+const setDefaultExtensionHandlersUserChoiceStub = sinon.stub();
+
+const defaultAgentStub = sinon.stub(ShellService, "defaultAgent").value({
+  setDefaultBrowserUserChoice: setDefaultBrowserUserChoiceStub,
+  setDefaultExtensionHandlersUserChoice:
+    setDefaultExtensionHandlersUserChoiceStub,
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -15,26 +24,21 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIXREDirProvider"
 );
 
-const _callExternalDefaultBrowserAgentStub = sinon
-  .stub(ShellService, "_callExternalDefaultBrowserAgent")
-  .callsFake(async () => ({
-    async wait() {
-      return { exitCode: 0 };
-    },
-  }));
-
 const _userChoiceImpossibleTelemetryResultStub = sinon
   .stub(ShellService, "_userChoiceImpossibleTelemetryResult")
   .callsFake(() => null);
 
 // Ensure we don't fall back to a real implementation.
 const setDefaultStub = sinon.stub();
-const shellStub = sinon
-  .stub(ShellService, "shellService")
-  .value({ setDefaultBrowser: setDefaultStub });
+// We'll dynamically update this as needed during the tests.
+const queryCurrentDefaultHandlerForStub = sinon.stub();
+const shellStub = sinon.stub(ShellService, "shellService").value({
+  setDefaultBrowser: setDefaultStub,
+  queryCurrentDefaultHandlerFor: queryCurrentDefaultHandlerForStub,
+});
 
 registerCleanupFunction(() => {
-  _callExternalDefaultBrowserAgentStub.restore();
+  defaultAgentStub.restore();
   _userChoiceImpossibleTelemetryResultStub.restore();
   shellStub.restore();
 
@@ -45,102 +49,219 @@ add_task(async function ready() {
   await ExperimentAPI.ready();
 });
 
-if (!AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
-  // Everything here is Windows 10+, but there's no way to filter out
-  // Windows 7 test machines using the test manifest at this time...
-  // and the test harness fails test files that make no assertions.
-  // So we add a dummy assertion here.
-  Assert.ok(true, "Skipping test on Windows version before Windows 10");
-} else {
-  // We're on a Windows 10 test machine.
+// Everything here is Windows.
+Assert.ok(AppConstants.platform == "win", "Platform is Windows");
 
-  add_task(async function remoteEnableWithPDF() {
-    let doCleanup = await ExperimentFakes.enrollWithRollout({
-      featureId: NimbusFeatures.shellService.featureId,
-      value: {
-        setDefaultBrowserUserChoice: true,
-        setDefaultPDFHandler: true,
-        enabled: true,
-      },
-    });
-
-    Assert.equal(
-      NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice"),
-      true
-    );
-    Assert.equal(
-      NimbusFeatures.shellService.getVariable("setDefaultPDFHandler"),
-      true
-    );
-
-    _callExternalDefaultBrowserAgentStub.resetHistory();
-    ShellService.setDefaultBrowser();
-
-    const aumi = XreDirProvider.getInstallHash();
-    Assert.ok(_callExternalDefaultBrowserAgentStub.called);
-    Assert.deepEqual(_callExternalDefaultBrowserAgentStub.firstCall.args, [
-      { arguments: ["set-default-browser-user-choice", aumi, ".pdf"] },
-    ]);
-
-    await doCleanup();
+add_task(async function remoteEnableWithPDF() {
+  let doCleanup = await ExperimentFakes.enrollWithRollout({
+    featureId: NimbusFeatures.shellService.featureId,
+    value: {
+      setDefaultBrowserUserChoice: true,
+      setDefaultPDFHandlerOnlyReplaceBrowsers: false,
+      setDefaultPDFHandler: true,
+      enabled: true,
+    },
   });
 
-  add_task(async function remoteEnableWithoutPDF() {
-    let doCleanup = await ExperimentFakes.enrollWithRollout({
-      featureId: NimbusFeatures.shellService.featureId,
-      value: {
-        setDefaultBrowserUserChoice: true,
-        setDefaultPDFHandler: false,
-        enabled: true,
-      },
-    });
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice"),
+    true
+  );
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultPDFHandler"),
+    true
+  );
 
-    Assert.equal(
-      NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice"),
-      true
-    );
-    Assert.equal(
-      NimbusFeatures.shellService.getVariable("setDefaultPDFHandler"),
-      false
-    );
+  setDefaultBrowserUserChoiceStub.resetHistory();
+  ShellService.setDefaultBrowser();
 
-    _callExternalDefaultBrowserAgentStub.resetHistory();
-    ShellService.setDefaultBrowser();
+  const aumi = XreDirProvider.getInstallHash();
+  Assert.ok(setDefaultBrowserUserChoiceStub.called);
+  Assert.deepEqual(setDefaultBrowserUserChoiceStub.firstCall.args, [
+    aumi,
+    [".pdf", "FirefoxPDF"],
+  ]);
 
-    const aumi = XreDirProvider.getInstallHash();
-    Assert.ok(_callExternalDefaultBrowserAgentStub.called);
-    Assert.deepEqual(_callExternalDefaultBrowserAgentStub.firstCall.args, [
-      { arguments: ["set-default-browser-user-choice", aumi] },
-    ]);
+  await doCleanup();
+});
 
-    await doCleanup();
+add_task(async function remoteEnableWithPDF_testOnlyReplaceBrowsers() {
+  let doCleanup = await ExperimentFakes.enrollWithRollout({
+    featureId: NimbusFeatures.shellService.featureId,
+    value: {
+      setDefaultBrowserUserChoice: true,
+      setDefaultPDFHandlerOnlyReplaceBrowsers: true,
+      setDefaultPDFHandler: true,
+      enabled: true,
+    },
   });
 
-  add_task(async function remoteDisable() {
-    let doCleanup = await ExperimentFakes.enrollWithRollout({
-      featureId: NimbusFeatures.shellService.featureId,
-      value: {
-        setDefaultBrowserUserChoice: false,
-        setDefaultPDFHandler: true,
-        enabled: false,
-      },
-    });
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice"),
+    true
+  );
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultPDFHandler"),
+    true
+  );
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable(
+      "setDefaultPDFHandlerOnlyReplaceBrowsers"
+    ),
+    true
+  );
 
-    Assert.equal(
-      NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice"),
-      false
-    );
-    Assert.equal(
-      NimbusFeatures.shellService.getVariable("setDefaultPDFHandler"),
-      true
-    );
+  const aumi = XreDirProvider.getInstallHash();
 
-    _callExternalDefaultBrowserAgentStub.resetHistory();
+  // We'll take the default from a missing association or a known browser.
+  for (let progId of ["", "MSEdgePDF"]) {
+    queryCurrentDefaultHandlerForStub.callsFake(() => progId);
+
+    setDefaultBrowserUserChoiceStub.resetHistory();
     ShellService.setDefaultBrowser();
 
-    Assert.ok(_callExternalDefaultBrowserAgentStub.notCalled);
-    Assert.ok(setDefaultStub.called);
+    Assert.ok(setDefaultBrowserUserChoiceStub.called);
+    Assert.deepEqual(
+      setDefaultBrowserUserChoiceStub.firstCall.args,
+      [aumi, [".pdf", "FirefoxPDF"]],
+      `Will take default from missing association or known browser with ProgID '${progId}'`
+    );
+  }
 
-    await doCleanup();
+  // But not from a non-browser.
+  queryCurrentDefaultHandlerForStub.callsFake(() => "Acrobat.Document.DC");
+
+  setDefaultBrowserUserChoiceStub.resetHistory();
+  ShellService.setDefaultBrowser();
+
+  Assert.ok(setDefaultBrowserUserChoiceStub.called);
+  Assert.deepEqual(
+    setDefaultBrowserUserChoiceStub.firstCall.args,
+    [aumi, []],
+    `Will not take default from non-browser`
+  );
+
+  await doCleanup();
+});
+
+add_task(async function remoteEnableWithoutPDF() {
+  let doCleanup = await ExperimentFakes.enrollWithRollout({
+    featureId: NimbusFeatures.shellService.featureId,
+    value: {
+      setDefaultBrowserUserChoice: true,
+      setDefaultPDFHandler: false,
+      enabled: true,
+    },
   });
-}
+
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice"),
+    true
+  );
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultPDFHandler"),
+    false
+  );
+
+  setDefaultBrowserUserChoiceStub.resetHistory();
+  ShellService.setDefaultBrowser();
+
+  const aumi = XreDirProvider.getInstallHash();
+  Assert.ok(setDefaultBrowserUserChoiceStub.called);
+  Assert.deepEqual(setDefaultBrowserUserChoiceStub.firstCall.args, [aumi, []]);
+
+  await doCleanup();
+});
+
+add_task(async function remoteDisable() {
+  let doCleanup = await ExperimentFakes.enrollWithRollout({
+    featureId: NimbusFeatures.shellService.featureId,
+    value: {
+      setDefaultBrowserUserChoice: false,
+      setDefaultPDFHandler: true,
+      enabled: false,
+    },
+  });
+
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultBrowserUserChoice"),
+    false
+  );
+  Assert.equal(
+    NimbusFeatures.shellService.getVariable("setDefaultPDFHandler"),
+    true
+  );
+
+  setDefaultBrowserUserChoiceStub.resetHistory();
+  ShellService.setDefaultBrowser();
+
+  Assert.ok(setDefaultBrowserUserChoiceStub.notCalled);
+  Assert.ok(setDefaultStub.called);
+
+  await doCleanup();
+});
+
+add_task(async function test_setAsDefaultPDFHandler_knownBrowser() {
+  const sandbox = sinon.createSandbox();
+
+  const aumi = XreDirProvider.getInstallHash();
+  const expectedArguments = [aumi, [".pdf", "FirefoxPDF"]];
+
+  try {
+    const pdfHandlerResult = { registered: true, knownBrowser: true };
+    sandbox
+      .stub(ShellService, "getDefaultPDFHandler")
+      .returns(pdfHandlerResult);
+
+    info("Testing setAsDefaultPDFHandler(true) when knownBrowser = true");
+    ShellService.setAsDefaultPDFHandler(true);
+    Assert.ok(
+      setDefaultExtensionHandlersUserChoiceStub.called,
+      "Called default browser agent"
+    );
+    Assert.deepEqual(
+      setDefaultExtensionHandlersUserChoiceStub.firstCall.args,
+      expectedArguments,
+      "Called default browser agent with expected arguments"
+    );
+    setDefaultExtensionHandlersUserChoiceStub.resetHistory();
+
+    info("Testing setAsDefaultPDFHandler(false) when knownBrowser = true");
+    ShellService.setAsDefaultPDFHandler(false);
+    Assert.ok(
+      setDefaultExtensionHandlersUserChoiceStub.called,
+      "Called default browser agent"
+    );
+    Assert.deepEqual(
+      setDefaultExtensionHandlersUserChoiceStub.firstCall.args,
+      expectedArguments,
+      "Called default browser agent with expected arguments"
+    );
+    setDefaultExtensionHandlersUserChoiceStub.resetHistory();
+
+    pdfHandlerResult.knownBrowser = false;
+
+    info("Testing setAsDefaultPDFHandler(true) when knownBrowser = false");
+    ShellService.setAsDefaultPDFHandler(true);
+    Assert.ok(
+      setDefaultExtensionHandlersUserChoiceStub.notCalled,
+      "Did not call default browser agent"
+    );
+    setDefaultExtensionHandlersUserChoiceStub.resetHistory();
+
+    info("Testing setAsDefaultPDFHandler(false) when knownBrowser = false");
+    ShellService.setAsDefaultPDFHandler(false);
+    Assert.ok(
+      setDefaultExtensionHandlersUserChoiceStub.called,
+      "Called default browser agent"
+    );
+    Assert.deepEqual(
+      setDefaultExtensionHandlersUserChoiceStub.firstCall.args,
+      expectedArguments,
+      "Called default browser agent with expected arguments"
+    );
+    setDefaultExtensionHandlersUserChoiceStub.resetHistory();
+  } finally {
+    sandbox.restore();
+  }
+});

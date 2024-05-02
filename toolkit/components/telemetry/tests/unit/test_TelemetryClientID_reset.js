@@ -2,25 +2,19 @@
    http://creativecommons.org/publicdomain/zero/1.0/
 */
 
-const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { ClientID } = ChromeUtils.importESModule(
+  "resource://gre/modules/ClientID.sys.mjs"
 );
-const { TelemetryStorage } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryStorage.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { TelemetrySend } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySend.jsm"
+const { TelemetryStorage } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryStorage.sys.mjs"
 );
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
-);
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
 
-const PING_FORMAT_VERSION = 4;
 const DELETION_REQUEST_PING_TYPE = "deletion-request";
 const TEST_PING_TYPE = "test-ping-type";
 
@@ -45,7 +39,7 @@ add_task(async function test_setup() {
   );
 
   PingServer.start();
-  Preferences.set(
+  Services.prefs.setStringPref(
     TelemetryUtils.Preferences.Server,
     "http://localhost:" + PingServer.port
   );
@@ -79,7 +73,10 @@ add_task(async function test_clientid_reset_after_reenabling() {
   );
 
   // Disable FHR upload: this should trigger a deletion-request ping.
-  Preferences.set(TelemetryUtils.Preferences.FhrUploadEnabled, false);
+  Services.prefs.setBoolPref(
+    TelemetryUtils.Preferences.FhrUploadEnabled,
+    false
+  );
 
   ping = await PingServer.promiseNextPing();
   Assert.equal(
@@ -96,7 +93,7 @@ add_task(async function test_clientid_reset_after_reenabling() {
   await TelemetryStorage.testClearPendingPings();
 
   // Flip the pref again
-  Preferences.set(TelemetryUtils.Preferences.FhrUploadEnabled, true);
+  Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, true);
 
   // Start the instance
   await TelemetryController.testReset();
@@ -143,7 +140,10 @@ add_task(async function test_clientid_canary_after_disabling() {
   );
 
   // Disable FHR upload: this should trigger a deletion-request ping.
-  Preferences.set(TelemetryUtils.Preferences.FhrUploadEnabled, false);
+  Services.prefs.setBoolPref(
+    TelemetryUtils.Preferences.FhrUploadEnabled,
+    false
+  );
 
   ping = await PingServer.promiseNextPing();
   Assert.equal(
@@ -155,7 +155,7 @@ add_task(async function test_clientid_canary_after_disabling() {
   let clientId = await ClientID.getClientID();
   Assert.equal(TelemetryUtils.knownClientID, clientId);
 
-  Preferences.set(TelemetryUtils.Preferences.FhrUploadEnabled, true);
+  Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, true);
   await sendPing();
   ping = await PingServer.promiseNextPing();
   Assert.equal(ping.type, TEST_PING_TYPE, "The ping must be a test ping");
@@ -170,7 +170,10 @@ add_task(async function test_clientid_canary_after_disabling() {
   await TelemetryStorage.testClearPendingPings();
 
   // Flip the pref again
-  Preferences.set(TelemetryUtils.Preferences.FhrUploadEnabled, false);
+  Services.prefs.setBoolPref(
+    TelemetryUtils.Preferences.FhrUploadEnabled,
+    false
+  );
 
   // Start the instance
   await TelemetryController.testReset();

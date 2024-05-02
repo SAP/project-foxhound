@@ -7,6 +7,9 @@
 #ifndef WMFUtils_h
 #define WMFUtils_h
 
+#include <hstring.h>
+#include <winstring.h>
+
 #include "ImageTypes.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
@@ -17,6 +20,36 @@
 // Various utilities shared by WMF backend files.
 
 namespace mozilla {
+
+static const GUID CLSID_MSOpusDecoder = {
+    0x63e17c10,
+    0x2d43,
+    0x4c42,
+    {0x8f, 0xe3, 0x8d, 0x8b, 0x63, 0xe4, 0x6a, 0x6a}};
+
+// Media types supported by Media Foundation.
+enum class WMFStreamType {
+  Unknown,
+  H264,
+  VP8,
+  VP9,
+  AV1,
+  HEVC,
+  MP3,
+  AAC,
+  OPUS,
+  VORBIS,
+  SENTINEL
+};
+
+bool StreamTypeIsVideo(const WMFStreamType& aType);
+
+bool StreamTypeIsAudio(const WMFStreamType& aType);
+
+// Get a string representation of the stream type. Useful for logging.
+const char* StreamTypeToString(WMFStreamType aStreamType);
+
+WMFStreamType GetStreamTypeFromMimeType(const nsCString& aMimeType);
 
 // Converts from microseconds to hundreds of nanoseconds.
 // We use microseconds for our timestamps, whereas WMF uses
@@ -60,6 +93,30 @@ inline bool IsFlagSet(DWORD flags, DWORD pattern) {
 nsString GetProgramW6432Path();
 
 const char* MFTMessageTypeToStr(MFT_MESSAGE_TYPE aMsg);
+
+GUID AudioMimeTypeToMediaFoundationSubtype(const nsACString& aMimeType);
+
+GUID VideoMimeTypeToMediaFoundationSubtype(const nsACString& aMimeType);
+
+void AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
+                                      const uint8_t* aAudioSpecConfig,
+                                      uint32_t aConfigLength,
+                                      nsTArray<BYTE>& aOutUserData);
+
+class ScopedHString final {
+ public:
+  explicit ScopedHString(const nsAString& aStr) {
+    WindowsCreateString(PromiseFlatString(aStr).get(), aStr.Length(), &mString);
+  }
+  explicit ScopedHString(const WCHAR aCharArray[]) {
+    WindowsCreateString(aCharArray, wcslen(aCharArray), &mString);
+  }
+  ~ScopedHString() { WindowsDeleteString(mString); }
+  const HSTRING& Get() { return mString; }
+
+ private:
+  HSTRING mString;
+};
 
 }  // namespace mozilla
 

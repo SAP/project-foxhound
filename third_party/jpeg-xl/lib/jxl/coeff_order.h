@@ -10,15 +10,15 @@
 #include <stdint.h>
 
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
-#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/frame_dimensions.h"
 
 namespace jxl {
+
+class BitReader;
 
 // Those offsets get multiplied by kDCTBlockSize.
 static constexpr size_t kCoeffOrderOffset[] = {
@@ -52,8 +52,6 @@ static_assert(AcStrategy::kNumValidStrategies ==
 constexpr uint32_t kPermutationContexts = 8;
 
 uint32_t CoeffOrderContext(uint32_t val);
-
-void SetDefaultOrder(AcStrategy acs, coeff_order_t* JXL_RESTRICT order);
 
 Status DecodeCoeffOrders(uint16_t used_orders, uint32_t used_acs,
                          coeff_order_t* order, BitReader* br);

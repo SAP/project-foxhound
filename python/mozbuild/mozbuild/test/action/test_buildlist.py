@@ -2,14 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
-import unittest
-
 import os
 import os.path
-from tempfile import mkdtemp
+import unittest
 from shutil import rmtree
+from tempfile import mkdtemp
+
 import mozunit
 
 from mozbuild.action.buildlist import addEntriesToListFile
@@ -42,14 +40,14 @@ class TestBuildList(unittest.TestCase):
         lines = [line.rstrip() for line in f.readlines()]
         f.close()
         for line in lines:
-            self.assert_(
+            self.assertTrue(
                 len(l) > 0,
                 "ran out of expected lines! (expected '{0}', got '{1}')".format(
                     l, lines
                 ),
             )
             self.assertEqual(line, l.pop(0))
-        self.assert_(
+        self.assertTrue(
             len(l) == 0,
             "not enough lines in file! (expected '{0}'," " got '{1}'".format(l, lines),
         )

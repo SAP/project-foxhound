@@ -5,8 +5,9 @@
 Transform the signing task into an actual task description.
 """
 
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_primary_dependency
 
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.partners import get_partner_config_by_kind
 from gecko_taskgraph.util.signed_artifacts import (
@@ -19,8 +20,10 @@ transforms = TransformSequence()
 @transforms.add
 def set_mac_label(config, jobs):
     for job in jobs:
-        dep_job = job["primary-dependency"]
-        job.setdefault("label", dep_job.label.replace("notarization-part-1", "signing"))
+        dep_job = get_primary_dependency(config, job)
+        if "mac-notarization" in config.kind:
+            default_label = dep_job.label.replace("mac-signing", "mac-notarization")
+            job.setdefault("label", default_label)
         assert job["label"] != dep_job.label, "Unable to determine label for {}".format(
             config.kind
         )
@@ -34,9 +37,10 @@ def define_upstream_artifacts(config, jobs):
         return
 
     for job in jobs:
-        dep_job = job["primary-dependency"]
-        job["depname"] = dep_job.label
-        job["attributes"] = copy_attributes_from_dependent_job(dep_job)
+        dep_job = get_primary_dependency(config, job)
+        job.setdefault("attributes", {}).update(
+            copy_attributes_from_dependent_job(dep_job)
+        )
 
         repack_ids = job["extra"]["repack_ids"]
         artifacts_specifications = generate_specifications_of_artifacts_to_sign(
@@ -46,7 +50,7 @@ def define_upstream_artifacts(config, jobs):
             kind=config.kind,
         )
         task_type = "build"
-        if "notarization" in job["depname"]:
+        if "notarization" in dep_job.label or "mac-signing" in dep_job.label:
             task_type = "scriptworker"
         job["upstream-artifacts"] = [
             {
@@ -61,5 +65,4 @@ def define_upstream_artifacts(config, jobs):
             }
             for spec in artifacts_specifications
         ]
-
         yield job

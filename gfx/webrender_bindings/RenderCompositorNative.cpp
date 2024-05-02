@@ -120,6 +120,14 @@ bool RenderCompositorNative::ShouldUseNativeCompositor() {
   return gfx::gfxVars::UseWebRenderCompositor();
 }
 
+void RenderCompositorNative::GetCompositorCapabilities(
+    CompositorCapabilities* aCaps) {
+  RenderCompositor::GetCompositorCapabilities(aCaps);
+#if defined(XP_MACOSX)
+  aCaps->supports_surface_for_backdrop = !gfx::gfxVars::UseSoftwareWebRender();
+#endif
+}
+
 bool RenderCompositorNative::MaybeReadback(
     const gfx::IntSize& aReadbackSize, const wr::ImageFormat& aReadbackFormat,
     const Range<uint8_t>& aReadbackBuffer, bool* aNeedsYFlip) {
@@ -306,6 +314,20 @@ void RenderCompositorNative::CreateExternalSurface(wr::NativeSurfaceId aId,
   mSurfaces.insert({aId, std::move(surface)});
 }
 
+void RenderCompositorNative::CreateBackdropSurface(wr::NativeSurfaceId aId,
+                                                   wr::ColorF aColor) {
+  MOZ_RELEASE_ASSERT(mSurfaces.find(aId) == mSurfaces.end());
+
+  gfx::DeviceColor color(aColor.r, aColor.g, aColor.b, aColor.a);
+  RefPtr<layers::NativeLayer> layer =
+      mNativeLayerRoot->CreateLayerForColor(color);
+
+  Surface surface{DeviceIntSize{}, (aColor.a >= 1.0f)};
+  surface.mNativeLayers.insert({TileKey(0, 0), layer});
+
+  mSurfaces.insert({aId, std::move(surface)});
+}
+
 void RenderCompositorNative::AttachExternalImage(
     wr::NativeSurfaceId aId, wr::ExternalImageId aExternalImage) {
   RenderTextureHost* image =
@@ -388,11 +410,12 @@ void RenderCompositorNative::AddSurface(
   MOZ_RELEASE_ASSERT(surfaceCursor != mSurfaces.end());
   const Surface& surface = surfaceCursor->second;
 
-  gfx::Matrix4x4 transform(
-      aTransform.m11, aTransform.m12, aTransform.m13, aTransform.m14,
-      aTransform.m21, aTransform.m22, aTransform.m23, aTransform.m24,
-      aTransform.m31, aTransform.m32, aTransform.m33, aTransform.m34,
-      aTransform.m41, aTransform.m42, aTransform.m43, aTransform.m44);
+  float sx = aTransform.scale.x;
+  float sy = aTransform.scale.y;
+  float tx = aTransform.offset.x;
+  float ty = aTransform.offset.y;
+  gfx::Matrix4x4 transform(sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, 1.0,
+                           0.0, tx, ty, 0.0, 1.0);
 
   for (auto it = surface.mNativeLayers.begin();
        it != surface.mNativeLayers.end(); ++it) {

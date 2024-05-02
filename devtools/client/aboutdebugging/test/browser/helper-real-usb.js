@@ -14,10 +14,10 @@ async function getExpectedRuntime() {
 
 async function getExpectedRuntimeAll() {
   const runtimesPath = _getExpectedRuntimesPath();
-  const currentPath = env.get("PWD");
+  const currentPath = Services.env.get("PWD");
   const path = `${currentPath}/${runtimesPath}`;
   info(`Load ${path}`);
-  const buffer = await OS.File.read(path);
+  const buffer = await IOUtils.read(path);
   const data = new TextDecoder().decode(buffer);
   return JSON.parse(data);
 }
@@ -39,7 +39,7 @@ async function openAboutDebuggingWithADB() {
 
   const {
     adbAddon,
-  } = require("devtools/client/shared/remote-debugging/adb/adb-addon");
+  } = require("resource://devtools/client/shared/remote-debugging/adb/adb-addon.js");
   adbAddon.install("internal");
   const usbStatusElement = document.querySelector(".qa-sidebar-usb-status");
   await waitUntil(() => usbStatusElement.textContent.includes("USB enabled"));
@@ -50,8 +50,5 @@ async function openAboutDebuggingWithADB() {
 /* exported openAboutDebuggingWithADB */
 
 function _getExpectedRuntimesPath() {
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  return env.get("USB_RUNTIMES");
+  return Services.env.get("USB_RUNTIMES");
 }

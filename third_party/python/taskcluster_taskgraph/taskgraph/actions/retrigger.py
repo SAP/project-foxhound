@@ -9,15 +9,16 @@ import textwrap
 
 from slugid import nice as slugid
 
+from taskgraph.util import taskcluster
+
+from .registry import register_callback_action
 from .util import (
     combine_task_graph_files,
+    create_task_from_def,
     create_tasks,
     fetch_graph_and_labels,
     relativize_datestamps,
-    create_task_from_def,
 )
-from .registry import register_callback_action
-from taskgraph.util import taskcluster
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ def retrigger_action(parameters, graph_config, input, task_group_id, task_id):
             label_to_taskid,
             parameters,
             decision_task_id,
-            i,
+            f"{i}",
         )
 
         logger.info(f"Scheduled {label}{with_downstream}(time {i + 1}/{times})")
@@ -214,11 +215,11 @@ def rerun_action(parameters, graph_config, input, task_group_id, task_id):
 
 
 def _rerun_task(task_id, label):
-    status = taskcluster.status_task(task_id)
-    if status not in RERUN_STATES:
+    state = taskcluster.state_task(task_id)
+    if state not in RERUN_STATES:
         logger.warning(
             "No need to rerun {}: state '{}' not in {}!".format(
-                label, status, RERUN_STATES
+                label, state, RERUN_STATES
             )
         )
         return

@@ -11,7 +11,7 @@
 // We test that the expected transformation applies, and that the machine code
 // generates the expected result.
 
-var isArm64 = getBuildConfiguration().arm64;
+var isArm64 = getBuildConfiguration("arm64");
 
 // 32-bit permutation that is not a rotation.
 let perm32x4_pattern = [4, 5, 6, 7, 12, 13, 14, 15, 8, 9, 10, 11, 0, 1, 2, 3];
@@ -870,28 +870,6 @@ function set(arr, loc, vals) {
     for ( let i=0; i < vals.length; i++ ) {
         arr[loc+i] = vals[i];
     }
-}
-
-function assertSame(got, expected) {
-    assertEq(got.length, expected.length);
-    for ( let i=0; i < got.length; i++ ) {
-        assertEq(got[i], expected[i]);
-    }
-}
-function iota(len) {
-    let xs = [];
-    for ( let i=0 ; i < len ; i++ )
-        xs.push(i);
-    return xs;
-}
-
-function interleave(xs, ys) {
-    let res = [];
-    for ( let i=0 ; i < xs.length; i++ ) {
-        res.push(xs[i]);
-        res.push(ys[i]);
-    }
-    return res;
 }
 
 function i32ToI8(xs) {

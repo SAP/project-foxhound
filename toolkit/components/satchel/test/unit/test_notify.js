@@ -5,16 +5,10 @@
  *
  */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
 
 const TestObserver = {
   observed: [],
@@ -37,7 +31,7 @@ const entry1 = ["entry1", "value1"];
 const entry2 = ["entry2", "value2"];
 const entry3 = ["entry3", "value3"];
 
-add_task(async function setup() {
+add_setup(async () => {
   await promiseUpdateEntry("remove", null, null);
   const count = await promiseCountEntries(null, null);
   Assert.ok(!count, "Checking initial DB is empty");
@@ -79,25 +73,11 @@ add_task(async function removeEntry() {
   const guid = TestObserver.observed[0].subject;
   TestObserver.reset();
 
-  await new Promise(res => {
-    FormHistory.update(
-      {
-        op: "remove",
-        fieldname: entry1[0],
-        value: entry1[1],
-        guid,
-      },
-      {
-        handleError(error) {
-          do_throw("Error occurred updating form history: " + error);
-        },
-        handleCompletion(reason) {
-          if (!reason) {
-            res();
-          }
-        },
-      }
-    );
+  await FormHistory.update({
+    op: "remove",
+    fieldname: entry1[0],
+    value: entry1[1],
+    guid,
   });
   Assert.equal(TestObserver.observed.length, 1);
   const { subject, data } = TestObserver.observed[0];
@@ -152,7 +132,7 @@ add_task(async function removeEntriesByTimeframe() {
   let timerPrecision = Preferences.get("privacy.reduceTimerPrecision");
   Preferences.set("privacy.reduceTimerPrecision", false);
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Preferences.set("privacy.reduceTimerPrecision", timerPrecision);
   });
 
@@ -166,24 +146,10 @@ add_task(async function removeEntriesByTimeframe() {
   await promiseAddEntry(entry3[0], entry3[1]);
   TestObserver.reset();
 
-  await new Promise(res => {
-    FormHistory.update(
-      {
-        op: "remove",
-        firstUsedStart: 10,
-        firstUsedEnd: cutoffDate * 1000,
-      },
-      {
-        handleCompletion(reason) {
-          if (!reason) {
-            res();
-          }
-        },
-        handleErrors(error) {
-          do_throw("Error occurred updating form history: " + error);
-        },
-      }
-    );
+  await FormHistory.update({
+    op: "remove",
+    firstUsedStart: 10,
+    firstUsedEnd: cutoffDate * 1000,
   });
   Assert.equal(TestObserver.observed.length, 2);
   for (const notification of TestObserver.observed) {

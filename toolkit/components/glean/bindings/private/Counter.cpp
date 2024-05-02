@@ -7,11 +7,10 @@
 #include "mozilla/glean/bindings/Counter.h"
 
 #include "nsString.h"
-#include "mozilla/Components.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/dom/GleanMetricsBinding.h"
 #include "mozilla/glean/bindings/ScalarGIFFTMap.h"
 #include "mozilla/glean/fog_ffi_generated.h"
-#include "nsIClassInfoImpl.h"
 
 namespace mozilla::glean {
 
@@ -23,12 +22,13 @@ void CounterMetric::Add(int32_t aAmount) const {
     if (scalarId) {
       Telemetry::ScalarAdd(scalarId.extract(), aAmount);
     } else if (IsSubmetricId(mId)) {
-      auto lock = GetLabeledMirrorLock();
-      auto tuple = lock.ref()->MaybeGet(mId);
-      if (tuple && aAmount > 0) {
-        Telemetry::ScalarAdd(Get<0>(tuple.ref()), Get<1>(tuple.ref()),
-                             (uint32_t)aAmount);
-      }
+      GetLabeledMirrorLock().apply([&](auto& lock) {
+        auto tuple = lock.ref()->MaybeGet(mId);
+        if (tuple && aAmount > 0) {
+          Telemetry::ScalarAdd(std::get<0>(tuple.ref()),
+                               std::get<1>(tuple.ref()), (uint32_t)aAmount);
+        }
+      });
     }
   }
   fog_counter_add(mId, aAmount);
@@ -37,7 +37,7 @@ void CounterMetric::Add(int32_t aAmount) const {
 Result<Maybe<int32_t>, nsCString> CounterMetric::TestGetValue(
     const nsACString& aPingName) const {
   nsCString err;
-  if (fog_counter_test_get_error(mId, &aPingName, &err)) {
+  if (fog_counter_test_get_error(mId, &err)) {
     return Err(err);
   }
   if (!fog_counter_test_has_value(mId, &aPingName)) {
@@ -48,32 +48,27 @@ Result<Maybe<int32_t>, nsCString> CounterMetric::TestGetValue(
 
 }  // namespace impl
 
-NS_IMPL_CLASSINFO(GleanCounter, nullptr, 0, {0})
-NS_IMPL_ISUPPORTS_CI(GleanCounter, nsIGleanCounter)
-
-NS_IMETHODIMP
-GleanCounter::Add(int32_t aAmount) {
-  mCounter.Add(aAmount);
-  return NS_OK;
+/* virtual */
+JSObject* GleanCounter::WrapObject(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
+  return dom::GleanCounter_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMETHODIMP
-GleanCounter::TestGetValue(const nsACString& aStorageName,
-                           JS::MutableHandleValue aResult) {
-  auto result = mCounter.TestGetValue(aStorageName);
+void GleanCounter::Add(int32_t aAmount) { mCounter.Add(aAmount); }
+
+dom::Nullable<int32_t> GleanCounter::TestGetValue(const nsACString& aPingName,
+                                                  ErrorResult& aRv) {
+  dom::Nullable<int32_t> ret;
+  auto result = mCounter.TestGetValue(aPingName);
   if (result.isErr()) {
-    aResult.set(JS::UndefinedValue());
-    LogToBrowserConsole(nsIScriptError::errorFlag,
-                        NS_ConvertUTF8toUTF16(result.unwrapErr()));
-    return NS_ERROR_LOSS_OF_SIGNIFICANT_DATA;
+    aRv.ThrowDataError(result.unwrapErr());
+    return ret;
   }
   auto optresult = result.unwrap();
-  if (optresult.isNothing()) {
-    aResult.set(JS::UndefinedValue());
-  } else {
-    aResult.set(JS::Int32Value(optresult.value()));
+  if (!optresult.isNothing()) {
+    ret.SetValue(optresult.value());
   }
-  return NS_OK;
+  return ret;
 }
 
 }  // namespace mozilla::glean

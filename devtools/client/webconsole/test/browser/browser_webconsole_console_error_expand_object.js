@@ -7,11 +7,15 @@
 const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html><h1>test console.error with objects</h1>";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const onMessagesLogged = waitForMessage(hud, "myError");
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  const onMessagesLogged = waitForMessageByType(
+    hud,
+    "myError",
+    ".console-api.error"
+  );
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.wrappedJSObject.console.error("myError", { a: "a", b: "b" });
   });
   const { node } = await onMessagesLogged;

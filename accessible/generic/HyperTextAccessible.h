@@ -12,8 +12,6 @@
 #include "nsIAccessibleTypes.h"
 #include "nsIFrame.h"  // only for nsSelectionAmount
 #include "nsISelectionController.h"
-#include "nsDirection.h"
-#include "WordMovementType.h"
 
 class nsFrameSelection;
 class nsIFrame;
@@ -50,7 +48,6 @@ class HyperTextAccessible : public AccessibleWrap,
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HyperTextAccessible, AccessibleWrap)
 
   // LocalAccessible
-  virtual nsAtom* LandmarkRole() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
   virtual mozilla::a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
@@ -59,6 +56,11 @@ class HyperTextAccessible : public AccessibleWrap,
   virtual bool RemoveChild(LocalAccessible* aAccessible) override;
   virtual bool InsertChildAt(uint32_t aIndex, LocalAccessible* aChild) override;
   virtual Relation RelationByType(RelationType aType) const override;
+
+  /**
+   * Return whether the associated content is editable.
+   */
+  bool IsEditable() const;
 
   // HyperTextAccessible (static helper method)
 
@@ -74,14 +76,12 @@ class HyperTextAccessible : public AccessibleWrap,
   // HyperLinkAccessible
 
   /**
-   * Return link count within this hypertext accessible.
-   */
-  uint32_t LinkCount() { return EmbeddedChildCount(); }
-
-  /**
    * Return link accessible at the given index.
    */
-  LocalAccessible* LinkAt(uint32_t aIndex) { return EmbeddedChildAt(aIndex); }
+  LocalAccessible* LinkAt(uint32_t aIndex) {
+    Accessible* child = EmbeddedChildAt(aIndex);
+    return child ? child->AsLocal() : nullptr;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // HyperTextAccessible: DOM point to text offset conversions.
@@ -126,51 +126,10 @@ class HyperTextAccessible : public AccessibleWrap,
   //////////////////////////////////////////////////////////////////////////////
   // TextAccessible
 
-  using HyperTextAccessibleBase::CharAt;
-
-  char16_t CharAt(int32_t aOffset) {
-    nsAutoString charAtOffset;
-    CharAt(aOffset, charAtOffset);
-    return charAtOffset.CharAt(0);
-  }
-
-  /**
-   * Return true if char at the given offset equals to given char.
-   */
-  bool IsCharAt(int32_t aOffset, char16_t aChar) {
-    return CharAt(aOffset) == aChar;
-  }
-
-  /**
-   * Return true if terminal char is at the given offset.
-   */
-  bool IsLineEndCharAt(int32_t aOffset) { return IsCharAt(aOffset, '\n'); }
-
-  virtual void TextBeforeOffset(int32_t aOffset,
-                                AccessibleTextBoundary aBoundaryType,
-                                int32_t* aStartOffset, int32_t* aEndOffset,
-                                nsAString& aText) override;
-  virtual void TextAtOffset(int32_t aOffset,
-                            AccessibleTextBoundary aBoundaryType,
-                            int32_t* aStartOffset, int32_t* aEndOffset,
-                            nsAString& aText) override;
-  virtual void TextAfterOffset(int32_t aOffset,
-                               AccessibleTextBoundary aBoundaryType,
-                               int32_t* aStartOffset, int32_t* aEndOffset,
-                               nsAString& aText) override;
-
-  virtual already_AddRefed<AccAttributes> TextAttributes(
-      bool aIncludeDefAttrs, int32_t aOffset, int32_t* aStartOffset,
-      int32_t* aEndOffset) override;
-
   virtual already_AddRefed<AccAttributes> DefaultTextAttributes() override;
 
   // HyperTextAccessibleBase provides an overload which takes an Accessible.
   using HyperTextAccessibleBase::GetChildOffset;
-  virtual int32_t GetChildOffset(uint32_t aChildIndex,
-                                 bool aInvalidateAfter = false) const override;
-
-  virtual int32_t GetChildIndexAtOffset(uint32_t aOffset) const override;
 
   virtual LocalAccessible* GetChildAtOffset(uint32_t aOffset) const override {
     return LocalChildAt(GetChildIndexAtOffset(aOffset));
@@ -179,39 +138,15 @@ class HyperTextAccessible : public AccessibleWrap,
   /**
    * Return an offset at the given point.
    */
-  int32_t OffsetAtPoint(int32_t aX, int32_t aY, uint32_t aCoordType);
-
-  /**
-   * Return a rect (in dev pixels) of the given text range relative given
-   * coordinate system.
-   */
-  LayoutDeviceIntRect TextBounds(
-      int32_t aStartOffset, int32_t aEndOffset,
-      uint32_t aCoordType =
-          nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE);
-
-  /**
-   * Return a rect (in dev pixels) for character at given offset relative given
-   * coordinate system.
-   */
-  LayoutDeviceIntRect CharBounds(int32_t aOffset, uint32_t aCoordType) {
-    int32_t endOffset = aOffset == static_cast<int32_t>(CharacterCount())
-                            ? aOffset
-                            : aOffset + 1;
-    return TextBounds(aOffset, endOffset, aCoordType);
-  }
+  int32_t OffsetAtPoint(int32_t aX, int32_t aY, uint32_t aCoordType) override;
 
   /**
    * Get/set caret offset, if no caret then -1.
    */
   virtual int32_t CaretOffset() const override;
-  void SetCaretOffset(int32_t aOffset);
+  virtual void SetCaretOffset(int32_t aOffset) override;
 
-  /**
-   * Provide the line number for the caret.
-   * @return 1-based index for the line number with the caret
-   */
-  int32_t CaretLineNumber();
+  virtual int32_t CaretLineNumber() override;
 
   /**
    * Return the caret rect and the widget containing the caret within this
@@ -227,91 +162,34 @@ class HyperTextAccessible : public AccessibleWrap,
    */
   bool IsCaretAtEndOfLine() const;
 
-  /**
-   * Return selected regions count within the accessible.
-   */
-  int32_t SelectionCount();
+  virtual int32_t SelectionCount() override;
 
-  /**
-   * Return the start and end offset of the specified selection.
-   */
-  bool SelectionBoundsAt(int32_t aSelectionNum, int32_t* aStartOffset,
-                         int32_t* aEndOffset);
+  virtual bool SelectionBoundsAt(int32_t aSelectionNum, int32_t* aStartOffset,
+                                 int32_t* aEndOffset) override;
 
-  /*
-   * Changes the start and end offset of the specified selection.
-   * @return true if succeeded
-   */
-  // TODO: annotate this with `MOZ_CAN_RUN_SCRIPT` instead.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool SetSelectionBoundsAt(int32_t aSelectionNum,
-                                                        int32_t aStartOffset,
-                                                        int32_t aEndOffset);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual bool RemoveFromSelection(
+      int32_t aSelectionNum) override;
 
-  /**
-   * Adds a selection bounded by the specified offsets.
-   * @return true if succeeded
-   */
-  bool AddToSelection(int32_t aStartOffset, int32_t aEndOffset);
+  virtual void ScrollSubstringToPoint(int32_t aStartOffset, int32_t aEndOffset,
+                                      uint32_t aCoordinateType, int32_t aX,
+                                      int32_t aY) override;
 
-  /*
-   * Removes the specified selection.
-   * @return true if succeeded
-   */
-  // TODO: annotate this with `MOZ_CAN_RUN_SCRIPT` instead.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool RemoveFromSelection(int32_t aSelectionNum);
-
-  /**
-   * Scroll the given text range into view.
-   */
-  void ScrollSubstringTo(int32_t aStartOffset, int32_t aEndOffset,
-                         uint32_t aScrollType);
-
-  /**
-   * Scroll the given text range to the given point.
-   */
-  void ScrollSubstringToPoint(int32_t aStartOffset, int32_t aEndOffset,
-                              uint32_t aCoordinateType, int32_t aX, int32_t aY);
-
-  /**
-   * Return a range that encloses the text control or the document this
-   * accessible belongs to.
-   */
-  void EnclosingRange(TextRange& aRange) const;
-
-  /**
-   * Return an array of disjoint ranges for selected text within the text
-   * control or the document this accessible belongs to.
-   */
-  void SelectionRanges(nsTArray<TextRange>* aRanges) const;
-
-  /**
-   * Return an array of disjoint ranges of visible text within the text control
-   * or the document this accessible belongs to.
-   */
-  void VisibleRanges(nsTArray<TextRange>* aRanges) const;
-
-  /**
-   * Return a range containing the given accessible.
-   */
-  void RangeByChild(LocalAccessible* aChild, TextRange& aRange) const;
-
-  /**
-   * Return a range containing an accessible at the given point.
-   */
-  void RangeAtPoint(int32_t aX, int32_t aY, TextRange& aRange) const;
+  virtual void SelectionRanges(nsTArray<TextRange>* aRanges) const override;
 
   //////////////////////////////////////////////////////////////////////////////
   // EditableTextAccessible
 
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void ReplaceText(const nsAString& aText);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void InsertText(const nsAString& aText,
-                                              int32_t aPosition);
-  void CopyText(int32_t aStartPos, int32_t aEndPos);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void CutText(int32_t aStartPos, int32_t aEndPos);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void DeleteText(int32_t aStartPos,
-                                              int32_t aEndPos);
-  MOZ_CAN_RUN_SCRIPT
-  void PasteText(int32_t aPosition);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void ReplaceText(
+      const nsAString& aText) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void InsertText(
+      const nsAString& aText, int32_t aPosition) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void CopyText(int32_t aStartPos,
+                                                    int32_t aEndPos) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void CutText(int32_t aStartPos,
+                                                   int32_t aEndPos) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void DeleteText(int32_t aStartPos,
+                                                      int32_t aEndPos) override;
+  MOZ_CAN_RUN_SCRIPT virtual void PasteText(int32_t aPosition) override;
 
   /**
    * Return the editor associated with the accessible.
@@ -332,75 +210,6 @@ class HyperTextAccessible : public AccessibleWrap,
 
   // HyperTextAccessible
 
-  /**
-   * Adjust an offset the caret stays at to get a text by line boundary.
-   */
-  uint32_t AdjustCaretOffset(uint32_t aOffset) const;
-
-  /**
-   * Return true if the given offset points to terminal empty line if any.
-   */
-  bool IsEmptyLastLineOffset(int32_t aOffset) {
-    return aOffset == static_cast<int32_t>(CharacterCount()) &&
-           IsLineEndCharAt(aOffset - 1);
-  }
-
-  /**
-   * Return an offset of the found word boundary.
-   */
-  uint32_t FindWordBoundary(uint32_t aOffset, nsDirection aDirection,
-                            EWordMovementType aWordMovementType);
-
-  /**
-   * Used to get begin/end of previous/this/next line. Note: end of line
-   * is an offset right before '\n' character if any, the offset is right after
-   * '\n' character is begin of line. In case of wrap word breaks these offsets
-   * are equal.
-   */
-  enum EWhichLineBoundary {
-    ePrevLineBegin,
-    ePrevLineEnd,
-    eThisLineBegin,
-    eThisLineEnd,
-    eNextLineBegin,
-    eNextLineEnd
-  };
-
-  /**
-   * Return an offset for requested line boundary. See constants above.
-   */
-  uint32_t FindLineBoundary(uint32_t aOffset,
-                            EWhichLineBoundary aWhichLineBoundary);
-
-  /**
-   * Find the start offset for a paragraph , taking into account
-   * inner block elements and line breaks.
-   */
-  int32_t FindParagraphStartOffset(uint32_t aOffset);
-
-  /**
-   * Find the end offset for a paragraph , taking into account
-   * inner block elements and line breaks.
-   */
-  int32_t FindParagraphEndOffset(uint32_t aOffset);
-
-  /**
-   * Return an offset corresponding to the given direction and selection amount
-   * relative the given offset. A helper used to find word or line boundaries.
-   */
-  uint32_t FindOffset(uint32_t aOffset, nsDirection aDirection,
-                      nsSelectionAmount aAmount,
-                      EWordMovementType aWordMovementType = eDefaultBehavior);
-
-  /**
-   * Return the boundaries (in dev pixels) of the substring in case of textual
-   * frame or frame boundaries in case of non textual frame, offsets are
-   * ignored.
-   */
-  LayoutDeviceIntRect GetBoundsInFrame(nsIFrame* aFrame,
-                                       uint32_t aStartRenderedOffset,
-                                       uint32_t aEndRenderedOffset);
-
   // Selection helpers
 
   /**
@@ -419,26 +228,6 @@ class HyperTextAccessible : public AccessibleWrap,
                                                          int32_t aEndPos);
 
   // Helpers
-  nsresult GetDOMPointByFrameOffset(nsIFrame* aFrame, int32_t aOffset,
-                                    LocalAccessible* aAccessible,
-                                    mozilla::a11y::DOMPoint* aPoint);
-
-  /**
-   * Set 'misspelled' text attribute and return range offsets where the
-   * attibute is stretched. If the text is not misspelled at the given offset
-   * then we expose only range offsets where text is not misspelled. The method
-   * is used by TextAttributes() method.
-   *
-   * @param aIncludeDefAttrs  [in] points whether text attributes having default
-   *                          values of attributes should be included
-   * @param aSourceNode       [in] the node we start to traverse from
-   * @param aStartOffset      [in, out] the start offset
-   * @param aEndOffset        [in, out] the end offset
-   * @param aAttributes       [out, optional] result attributes
-   */
-  void GetSpellTextAttr(nsINode* aNode, uint32_t aNodeOffset,
-                        uint32_t* aStartOffset, uint32_t* aEndOffset,
-                        AccAttributes* aAttributes);
 
   /**
    * Set xml-roles attributes for MathML elements.
@@ -449,11 +238,15 @@ class HyperTextAccessible : public AccessibleWrap,
   // HyperTextAccessibleBase
   virtual const Accessible* Acc() const override { return this; }
 
+  virtual nsTArray<int32_t>& GetCachedHyperTextOffsets() override {
+    return mOffsets;
+  }
+
  private:
   /**
    * End text offsets array.
    */
-  mutable nsTArray<uint32_t> mOffsets;
+  mutable nsTArray<int32_t> mOffsets;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

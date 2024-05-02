@@ -1,14 +1,20 @@
-use clap::{arg, App};
+use clap::{arg, Command};
 
 fn main() {
-    let matches = App::new("MyApp")
+    let matches = Command::new("MyApp")
         .version("1.0")
         .author("Kevin K. <kbknapp@gmail.com>")
         .about("Does awesome things")
-        .arg(arg!(--two <VALUE>))
-        .arg(arg!(--one <VALUE>))
+        .arg(arg!(--two <VALUE>).required(true))
+        .arg(arg!(--one <VALUE>).required(true))
         .get_matches();
 
-    println!("two: {:?}", matches.value_of("two").expect("required"));
-    println!("one: {:?}", matches.value_of("one").expect("required"));
+    println!(
+        "two: {:?}",
+        matches.get_one::<String>("two").expect("required")
+    );
+    println!(
+        "one: {:?}",
+        matches.get_one::<String>("one").expect("required")
+    );
 }

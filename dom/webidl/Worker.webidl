@@ -17,12 +17,12 @@ interface Worker : EventTarget {
   [Throws]
   constructor(USVString scriptURL, optional WorkerOptions options = {});
 
-  void terminate();
+  undefined terminate();
 
   [Throws]
-  void postMessage(any message, sequence<object> transfer);
+  undefined postMessage(any message, sequence<object> transfer);
   [Throws]
-  void postMessage(any message, optional StructuredSerializeOptions aOptions = {});
+  undefined postMessage(any message, optional StructuredSerializeOptions aOptions = {});
 
   attribute EventHandler onmessage;
   attribute EventHandler onmessageerror;
@@ -31,14 +31,18 @@ interface Worker : EventTarget {
 Worker includes AbstractWorker;
 
 dictionary WorkerOptions {
-  // WorkerType type = "classic"; TODO: Bug 1247687
-  // RequestCredentials credentials = "omit"; // credentials is only used if type is "module" TODO: Bug 1247687
+  [Pref="dom.workers.modules.enabled"]
+  WorkerType type = "classic";
+  [Pref="dom.workers.modules.enabled"]
+  RequestCredentials credentials = "same-origin"; // credentials is only used if type is "module"
   DOMString name = "";
 };
+
+enum WorkerType { "classic", "module" };
 
 [Func="mozilla::dom::ChromeWorker::WorkerAvailable",
  Exposed=(Window,DedicatedWorker,SharedWorker)]
 interface ChromeWorker : Worker {
   [Throws]
-  constructor(USVString scriptURL);
+  constructor(USVString scriptURL, optional WorkerOptions options = {});
 };

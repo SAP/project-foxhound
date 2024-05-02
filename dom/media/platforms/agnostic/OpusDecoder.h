@@ -19,11 +19,12 @@ class OpusParser;
 
 DDLoggedTypeDeclNameAndBase(OpusDataDecoder, MediaDataDecoder);
 
-class OpusDataDecoder : public MediaDataDecoder,
-                        public DecoderDoctorLifeLogger<OpusDataDecoder> {
+class OpusDataDecoder final : public MediaDataDecoder,
+                              public DecoderDoctorLifeLogger<OpusDataDecoder> {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(OpusDataDecoder, final);
+
   explicit OpusDataDecoder(const CreateDecoderParams& aParams);
-  ~OpusDataDecoder();
 
   RefPtr<InitPromise> Init() override;
   RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
@@ -33,18 +34,14 @@ class OpusDataDecoder : public MediaDataDecoder,
   nsCString GetDescriptionName() const override {
     return "opus audio decoder"_ns;
   }
+  nsCString GetCodecName() const override { return "opus"_ns; }
 
   // Return true if mimetype is Opus
   static bool IsOpus(const nsACString& aMimeType);
 
-  // Pack pre-skip/CodecDelay, given in microseconds, into a
-  // MediaByteBuffer. The decoder expects this value to come
-  // from the container (if any) and to precede the OpusHead
-  // block in the CodecSpecificConfig buffer to verify the
-  // values match.
-  static void AppendCodecDelay(MediaByteBuffer* config, uint64_t codecDelayUS);
-
  private:
+  ~OpusDataDecoder();
+
   nsresult DecodeHeader(const unsigned char* aData, size_t aLength);
 
   const AudioInfo mInfo;
@@ -62,6 +59,7 @@ class OpusDataDecoder : public MediaDataDecoder,
   // will raise an error so we can indicate that the file is invalid.
   bool mPaddingDiscarded;
   int64_t mFrames;
+  int64_t mTotalFrames = 0;
   Maybe<int64_t> mLastFrameTime;
   AutoTArray<uint8_t, 8> mMappingTable;
   AudioConfig::ChannelLayout::ChannelMap mChannelMap;

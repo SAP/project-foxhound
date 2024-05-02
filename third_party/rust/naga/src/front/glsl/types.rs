@@ -1,45 +1,30 @@
-use super::{constants::ConstantSolver, context::Context, Error, ErrorKind, Parser, Result, Span};
+use super::{context::Context, Error, ErrorKind, Result, Span};
 use crate::{
-    proc::ResolveContext, ArraySize, Bytes, Constant, Expression, Handle, ImageClass,
-    ImageDimension, ScalarKind, Type, TypeInner, VectorSize,
+    proc::ResolveContext, Expression, Handle, ImageClass, ImageDimension, Scalar, ScalarKind, Type,
+    TypeInner, VectorSize,
 };
 
 pub fn parse_type(type_name: &str) -> Option<Type> {
     match type_name {
         "bool" => Some(Type {
             name: None,
-            inner: TypeInner::Scalar {
-                kind: ScalarKind::Bool,
-                width: crate::BOOL_WIDTH,
-            },
+            inner: TypeInner::Scalar(Scalar::BOOL),
         }),
         "float" => Some(Type {
             name: None,
-            inner: TypeInner::Scalar {
-                kind: ScalarKind::Float,
-                width: 4,
-            },
+            inner: TypeInner::Scalar(Scalar::F32),
         }),
         "double" => Some(Type {
             name: None,
-            inner: TypeInner::Scalar {
-                kind: ScalarKind::Float,
-                width: 8,
-            },
+            inner: TypeInner::Scalar(Scalar::F64),
         }),
         "int" => Some(Type {
             name: None,
-            inner: TypeInner::Scalar {
-                kind: ScalarKind::Sint,
-                width: 4,
-            },
+            inner: TypeInner::Scalar(Scalar::I32),
         }),
         "uint" => Some(Type {
             name: None,
-            inner: TypeInner::Scalar {
-                kind: ScalarKind::Uint,
-                width: 4,
-            },
+            inner: TypeInner::Scalar(Scalar::U32),
         }),
         "sampler" | "samplerShadow" => Some(Type {
             name: None,
@@ -48,13 +33,13 @@ pub fn parse_type(type_name: &str) -> Option<Type> {
             },
         }),
         word => {
-            fn kind_width_parse(ty: &str) -> Option<(ScalarKind, u8)> {
+            fn kind_width_parse(ty: &str) -> Option<Scalar> {
                 Some(match ty {
-                    "" => (ScalarKind::Float, 4),
-                    "b" => (ScalarKind::Bool, crate::BOOL_WIDTH),
-                    "i" => (ScalarKind::Sint, 4),
-                    "u" => (ScalarKind::Uint, 4),
-                    "d" => (ScalarKind::Float, 8),
+                    "" => Scalar::F32,
+                    "b" => Scalar::BOOL,
+                    "i" => Scalar::I32,
+                    "u" => Scalar::U32,
+                    "d" => Scalar::F64,
                     _ => return None,
                 })
             }
@@ -73,12 +58,12 @@ pub fn parse_type(type_name: &str) -> Option<Type> {
 
                 let kind = iter.next()?;
                 let size = iter.next()?;
-                let (kind, width) = kind_width_parse(kind)?;
+                let scalar = kind_width_parse(kind)?;
                 let size = size_parse(size)?;
 
                 Some(Type {
                     name: None,
-                    inner: TypeInner::Vector { size, kind, width },
+                    inner: TypeInner::Vector { size, scalar },
                 })
             };
 
@@ -87,7 +72,7 @@ pub fn parse_type(type_name: &str) -> Option<Type> {
 
                 let kind = iter.next()?;
                 let size = iter.next()?;
-                let (_, width) = kind_width_parse(kind)?;
+                let Scalar { width, .. } = kind_width_parse(kind)?;
 
                 let (columns, rows) = if let Some(size) = size_parse(size) {
                     (size, size)
@@ -150,130 +135,226 @@ pub fn parse_type(type_name: &str) -> Option<Type> {
                 })
             };
 
+            let image_parse = |word: &str| {
+                let mut iter = word.split("image");
+
+                let texture_kind = |ty| {
+                    Some(match ty {
+                        "" => ScalarKind::Float,
+                        "i" => ScalarKind::Sint,
+                        "u" => ScalarKind::Uint,
+                        _ => return None,
+                    })
+                };
+
+                let kind = iter.next()?;
+                let size = iter.next()?;
+                // TODO: Check that the texture format and the kind match
+                let _ = texture_kind(kind)?;
+
+                let class = ImageClass::Storage {
+                    format: crate::StorageFormat::R8Uint,
+                    access: crate::StorageAccess::all(),
+                };
+
+                // TODO: glsl support multisampled storage images, naga doesn't
+                let (dim, arrayed) = match size {
+                    "1D" => (ImageDimension::D1, false),
+                    "1DArray" => (ImageDimension::D1, true),
+                    "2D" => (ImageDimension::D2, false),
+                    "2DArray" => (ImageDimension::D2, true),
+                    "3D" => (ImageDimension::D3, false),
+                    // Naga doesn't support cube images and it's usefulness
+                    // is questionable, so they won't be supported for now
+                    // "Cube" => (ImageDimension::Cube, false),
+                    // "CubeArray" => (ImageDimension::Cube, true),
+                    _ => return None,
+                };
+
+                Some(Type {
+                    name: None,
+                    inner: TypeInner::Image {
+                        dim,
+                        arrayed,
+                        class,
+                    },
+                })
+            };
+
             vec_parse(word)
                 .or_else(|| mat_parse(word))
                 .or_else(|| texture_parse(word))
+                .or_else(|| image_parse(word))
         }
     }
 }
 
-pub fn scalar_components(ty: &TypeInner) -> Option<(ScalarKind, Bytes)> {
+pub const fn scalar_components(ty: &TypeInner) -> Option<Scalar> {
     match *ty {
-        TypeInner::Scalar { kind, width } => Some((kind, width)),
-        TypeInner::Vector { kind, width, .. } => Some((kind, width)),
-        TypeInner::Matrix { width, .. } => Some((ScalarKind::Float, width)),
-        TypeInner::ValuePointer { kind, width, .. } => Some((kind, width)),
+        TypeInner::Scalar(scalar)
+        | TypeInner::Vector { scalar, .. }
+        | TypeInner::ValuePointer { scalar, .. } => Some(scalar),
+        TypeInner::Matrix { width, .. } => Some(Scalar::float(width)),
         _ => None,
     }
 }
 
-pub fn type_power(kind: ScalarKind, width: Bytes) -> Option<u32> {
-    Some(match kind {
+pub const fn type_power(scalar: Scalar) -> Option<u32> {
+    Some(match scalar.kind {
         ScalarKind::Sint => 0,
         ScalarKind::Uint => 1,
-        ScalarKind::Float if width == 4 => 2,
+        ScalarKind::Float if scalar.width == 4 => 2,
         ScalarKind::Float => 3,
         ScalarKind::Bool => return None,
     })
 }
 
-impl Parser {
-    pub(crate) fn typifier_grow(
-        &self,
-        ctx: &mut Context,
-        handle: Handle<Expression>,
-        meta: Span,
-    ) -> Result<()> {
-        let resolve_ctx = ResolveContext {
-            constants: &self.module.constants,
-            types: &self.module.types,
-            global_vars: &self.module.global_variables,
-            local_vars: &ctx.locals,
-            functions: &self.module.functions,
-            arguments: &ctx.arguments,
+impl Context<'_> {
+    /// Resolves the types of the expressions until `expr` (inclusive)
+    ///
+    /// This needs to be done before the [`typifier`] can be queried for
+    /// the types of the expressions in the range between the last grow and `expr`.
+    ///
+    /// # Note
+    ///
+    /// The `resolve_type*` methods (like [`resolve_type`]) automatically
+    /// grow the [`typifier`] so calling this method is not necessary when using
+    /// them.
+    ///
+    /// [`typifier`]: Context::typifier
+    /// [`resolve_type`]: Self::resolve_type
+    pub(crate) fn typifier_grow(&mut self, expr: Handle<Expression>, meta: Span) -> Result<()> {
+        let resolve_ctx = ResolveContext::with_locals(self.module, &self.locals, &self.arguments);
+
+        let typifier = if self.is_const {
+            &mut self.const_typifier
+        } else {
+            &mut self.typifier
         };
 
-        ctx.typifier
-            .grow(handle, &ctx.expressions, &resolve_ctx)
+        let expressions = if self.is_const {
+            &self.module.const_expressions
+        } else {
+            &self.expressions
+        };
+
+        typifier
+            .grow(expr, expressions, &resolve_ctx)
             .map_err(|error| Error {
-                kind: ErrorKind::SemanticError(format!("Can't resolve type: {:?}", error).into()),
+                kind: ErrorKind::SemanticError(format!("Can't resolve type: {error:?}").into()),
                 meta,
             })
     }
 
-    pub(crate) fn resolve_type<'b>(
-        &'b self,
-        ctx: &'b mut Context,
-        handle: Handle<Expression>,
-        meta: Span,
-    ) -> Result<&'b TypeInner> {
-        self.typifier_grow(ctx, handle, meta)?;
-        Ok(ctx.typifier.get(handle, &self.module.types))
-    }
-
-    /// Invalidates the cached type resolution for `handle` forcing a recomputation
-    pub(crate) fn invalidate_expression<'b>(
-        &'b self,
-        ctx: &'b mut Context,
-        handle: Handle<Expression>,
-        meta: Span,
-    ) -> Result<()> {
-        let resolve_ctx = ResolveContext {
-            constants: &self.module.constants,
-            types: &self.module.types,
-            global_vars: &self.module.global_variables,
-            local_vars: &ctx.locals,
-            functions: &self.module.functions,
-            arguments: &ctx.arguments,
+    pub(crate) fn get_type(&self, expr: Handle<Expression>) -> &TypeInner {
+        let typifier = if self.is_const {
+            &self.const_typifier
+        } else {
+            &self.typifier
         };
 
-        ctx.typifier
-            .invalidate(handle, &ctx.expressions, &resolve_ctx)
+        typifier.get(expr, &self.module.types)
+    }
+
+    /// Gets the type for the result of the `expr` expression
+    ///
+    /// Automatically grows the [`typifier`] to `expr` so calling
+    /// [`typifier_grow`] is not necessary
+    ///
+    /// [`typifier`]: Context::typifier
+    /// [`typifier_grow`]: Self::typifier_grow
+    pub(crate) fn resolve_type(
+        &mut self,
+        expr: Handle<Expression>,
+        meta: Span,
+    ) -> Result<&TypeInner> {
+        self.typifier_grow(expr, meta)?;
+        Ok(self.get_type(expr))
+    }
+
+    /// Gets the type handle for the result of the `expr` expression
+    ///
+    /// Automatically grows the [`typifier`] to `expr` so calling
+    /// [`typifier_grow`] is not necessary
+    ///
+    /// # Note
+    ///
+    /// Consider using [`resolve_type`] whenever possible
+    /// since it doesn't require adding each type to the [`types`] arena
+    /// and it doesn't need to mutably borrow the [`Parser`][Self]
+    ///
+    /// [`types`]: crate::Module::types
+    /// [`typifier`]: Context::typifier
+    /// [`typifier_grow`]: Self::typifier_grow
+    /// [`resolve_type`]: Self::resolve_type
+    pub(crate) fn resolve_type_handle(
+        &mut self,
+        expr: Handle<Expression>,
+        meta: Span,
+    ) -> Result<Handle<Type>> {
+        self.typifier_grow(expr, meta)?;
+
+        let typifier = if self.is_const {
+            &mut self.const_typifier
+        } else {
+            &mut self.typifier
+        };
+
+        Ok(typifier.register_type(expr, &mut self.module.types))
+    }
+
+    /// Invalidates the cached type resolution for `expr` forcing a recomputation
+    pub(crate) fn invalidate_expression(
+        &mut self,
+        expr: Handle<Expression>,
+        meta: Span,
+    ) -> Result<()> {
+        let resolve_ctx = ResolveContext::with_locals(self.module, &self.locals, &self.arguments);
+
+        let typifier = if self.is_const {
+            &mut self.const_typifier
+        } else {
+            &mut self.typifier
+        };
+
+        typifier
+            .invalidate(expr, &self.expressions, &resolve_ctx)
             .map_err(|error| Error {
-                kind: ErrorKind::SemanticError(format!("Can't resolve type: {:?}", error).into()),
+                kind: ErrorKind::SemanticError(format!("Can't resolve type: {error:?}").into()),
                 meta,
             })
     }
 
-    pub(crate) fn solve_constant(
+    pub(crate) fn lift_up_const_expression(
         &mut self,
-        ctx: &Context,
-        root: Handle<Expression>,
-        meta: Span,
-    ) -> Result<Handle<Constant>> {
-        let mut solver = ConstantSolver {
-            types: &mut self.module.types,
-            expressions: &ctx.expressions,
-            constants: &mut self.module.constants,
-        };
-
-        solver.solve(root).map_err(|e| Error {
-            kind: e.into(),
-            meta,
-        })
-    }
-
-    pub(crate) fn maybe_array(
-        &mut self,
-        base: Handle<Type>,
-        mut meta: Span,
-        array_specifier: Option<(ArraySize, Span)>,
-    ) -> Handle<Type> {
-        array_specifier
-            .map(|(size, size_meta)| {
-                meta.subsume(size_meta);
-                self.module.types.insert(
-                    Type {
-                        name: None,
-                        inner: TypeInner::Array {
-                            base,
-                            size,
-                            stride: self.module.types[base].inner.span(&self.module.constants),
-                        },
-                    },
+        expr: Handle<Expression>,
+    ) -> Result<Handle<Expression>> {
+        let meta = self.expressions.get_span(expr);
+        Ok(match self.expressions[expr] {
+            ref expr @ (Expression::Literal(_)
+            | Expression::Constant(_)
+            | Expression::ZeroValue(_)) => self.module.const_expressions.append(expr.clone(), meta),
+            Expression::Compose { ty, ref components } => {
+                let mut components = components.clone();
+                for component in &mut components {
+                    *component = self.lift_up_const_expression(*component)?;
+                }
+                self.module
+                    .const_expressions
+                    .append(Expression::Compose { ty, components }, meta)
+            }
+            Expression::Splat { size, value } => {
+                let value = self.lift_up_const_expression(value)?;
+                self.module
+                    .const_expressions
+                    .append(Expression::Splat { size, value }, meta)
+            }
+            _ => {
+                return Err(Error {
+                    kind: ErrorKind::SemanticError("Expression is not const-expression".into()),
                     meta,
-                )
-            })
-            .unwrap_or(base)
+                })
+            }
+        })
     }
 }

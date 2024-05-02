@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaDrmProxySupport.h"
+#include "MediaDrmCDMCallbackProxy.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/java/MediaDrmProxyNatives.h"
 #include "mozilla/java/SessionKeyInfoWrappers.h"
@@ -28,9 +29,9 @@ class MediaDrmJavaCallbacksSupport
   using MediaDrmProxyNativeCallbacks::DisposeNative;
 
   explicit MediaDrmJavaCallbacksSupport(
-      DecryptorProxyCallback* aDecryptorProxyCallback)
-      : mDecryptorProxyCallback(aDecryptorProxyCallback) {
-    MOZ_ASSERT(aDecryptorProxyCallback);
+      UniquePtr<MediaDrmCDMCallbackProxy>&& aDecryptorProxyCallback)
+      : mDecryptorProxyCallback(std::move(aDecryptorProxyCallback)) {
+    MOZ_ASSERT(mDecryptorProxyCallback);
   }
   /*
    * Native implementation, called by Java.
@@ -57,7 +58,7 @@ class MediaDrmJavaCallbacksSupport
   void OnRejectPromise(int aPromiseId, jni::String::Param aMessage);
 
  private:
-  DecryptorProxyCallback* mDecryptorProxyCallback;
+  UniquePtr<MediaDrmCDMCallbackProxy> mDecryptorProxyCallback;
 };  // MediaDrmJavaCallbacksSupport
 
 void MediaDrmJavaCallbacksSupport::OnSessionCreated(
@@ -133,17 +134,17 @@ void MediaDrmJavaCallbacksSupport::OnSessionError(
 // dom::MediaKeyStatus::Released and dom::MediaKeyStatus::Output_downscaled.
 // Should keep tracking for this if it will be changed in the future.
 static dom::MediaKeyStatus MediaDrmKeyStatusToMediaKeyStatus(int aStatusCode) {
-  using mozilla::java::sdk::KeyStatus;
+  using mozilla::java::sdk::MediaDrm;
   switch (aStatusCode) {
-    case KeyStatus::STATUS_USABLE:
+    case MediaDrm::KeyStatus::STATUS_USABLE:
       return dom::MediaKeyStatus::Usable;
-    case KeyStatus::STATUS_EXPIRED:
+    case MediaDrm::KeyStatus::STATUS_EXPIRED:
       return dom::MediaKeyStatus::Expired;
-    case KeyStatus::STATUS_OUTPUT_NOT_ALLOWED:
+    case MediaDrm::KeyStatus::STATUS_OUTPUT_NOT_ALLOWED:
       return dom::MediaKeyStatus::Output_restricted;
-    case KeyStatus::STATUS_INTERNAL_ERROR:
+    case MediaDrm::KeyStatus::STATUS_INTERNAL_ERROR:
       return dom::MediaKeyStatus::Internal_error;
-    case KeyStatus::STATUS_PENDING:
+    case MediaDrm::KeyStatus::STATUS_PENDING:
       return dom::MediaKeyStatus::Status_pending;
     default:
       return dom::MediaKeyStatus::Internal_error;
@@ -204,13 +205,13 @@ MediaDrmProxySupport::~MediaDrmProxySupport() {
   MediaDrmJavaCallbacksSupport::DisposeNative(mJavaCallbacks);
 }
 
-nsresult MediaDrmProxySupport::Init(DecryptorProxyCallback* aCallback) {
+nsresult MediaDrmProxySupport::Init(
+    UniquePtr<MediaDrmCDMCallbackProxy>&& aCallback) {
   MOZ_ASSERT(mJavaCallbacks);
 
-  mCallback = aCallback;
   MediaDrmJavaCallbacksSupport::AttachNative(
       mJavaCallbacks,
-      mozilla::MakeUnique<MediaDrmJavaCallbacksSupport>(mCallback));
+      mozilla::MakeUnique<MediaDrmJavaCallbacksSupport>(std::move(aCallback)));
   return mBridgeProxy != nullptr ? NS_OK : NS_ERROR_FAILURE;
 }
 

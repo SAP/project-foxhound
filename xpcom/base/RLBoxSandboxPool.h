@@ -10,6 +10,7 @@
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
 #include "nsTArray.h"
+#include "nsINamed.h"
 
 #include "mozilla/Mutex.h"
 #include "mozilla/rlbox/rlbox_types.hpp"
@@ -56,12 +57,12 @@ class RLBoxSandboxPool : public nsITimerCallback, public nsINamed {
   virtual ~RLBoxSandboxPool() = default;
 
  private:
-  void StartTimer();
-  void CancelTimer();
+  void StartTimer() MOZ_REQUIRES(mMutex);
+  void CancelTimer() MOZ_REQUIRES(mMutex);
 
-  nsTArray<UniquePtr<RLBoxSandboxDataBase>> mPool;
-  const size_t mDelaySeconds;
-  nsCOMPtr<nsITimer> mTimer;
+  nsTArray<UniquePtr<RLBoxSandboxDataBase>> mPool MOZ_GUARDED_BY(mMutex);
+  const size_t mDelaySeconds MOZ_GUARDED_BY(mMutex);
+  nsCOMPtr<nsITimer> mTimer MOZ_GUARDED_BY(mMutex);
   mozilla::Mutex mMutex;
 };
 

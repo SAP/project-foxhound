@@ -7,36 +7,38 @@
 const {
   createFactory,
   createElement,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 
-loader.lazyGetter(this, "REPS", function() {
-  return require("devtools/client/shared/components/reps/index").REPS;
+loader.lazyGetter(this, "REPS", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
+    .REPS;
 });
-loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/index").MODE;
+loader.lazyGetter(this, "MODE", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
+    .MODE;
 });
-loader.lazyGetter(this, "ObjectInspector", function() {
-  const reps = require("devtools/client/shared/components/reps/index");
+loader.lazyGetter(this, "ObjectInspector", function () {
+  const reps = require("resource://devtools/client/shared/components/reps/index.js");
   return createFactory(reps.objectInspector.ObjectInspector);
 });
 
 loader.lazyRequireGetter(
   this,
   "SmartTrace",
-  "devtools/client/shared/components/SmartTrace"
+  "resource://devtools/client/shared/components/SmartTrace.js"
 );
 
 loader.lazyRequireGetter(
   this,
   "LongStringFront",
-  "devtools/client/fronts/string",
+  "resource://devtools/client/fronts/string.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "ObjectFront",
-  "devtools/client/fronts/object",
+  "resource://devtools/client/fronts/object.js",
   true
 );
 
@@ -90,9 +92,13 @@ function getObjectInspector(
     openLink: serviceContainer.openLink,
     sourceMapURLService: serviceContainer.sourceMapURLService,
     customFormat: override.customFormat !== false,
+    setExpanded: override.setExpanded,
+    initiallyExpanded: override.initiallyExpanded,
+    queueActorsForCleanup: override.queueActorsForCleanup,
+    cachedNodes: override.cachedNodes,
     urlCropLimit: 120,
-    renderStacktrace: stacktrace =>
-      createElement(SmartTrace, {
+    renderStacktrace: stacktrace => {
+      const attrs = {
         key: "stacktrace",
         stacktrace,
         onViewSourceInDebugger: serviceContainer
@@ -104,15 +110,21 @@ function getObjectInspector(
         sourceMapURLService: serviceContainer
           ? serviceContainer.sourceMapURLService
           : null,
-      }),
-  };
+      };
 
-  Object.assign(objectInspectorProps, {
+      if (serviceContainer?.preventStacktraceInitialRenderDelay) {
+        attrs.initialRenderDelay = 0;
+      }
+      return createElement(SmartTrace, attrs);
+    },
     onDOMNodeMouseOver,
     onDOMNodeMouseOut,
     onInspectIconClick,
     defaultRep: REPS.Grip,
-  });
+    createElement: serviceContainer?.createElement,
+    mayUseCustomFormatter: true,
+    ...override,
+  };
 
   if (override.autoFocusRoot) {
     Object.assign(objectInspectorProps, {
@@ -120,7 +132,7 @@ function getObjectInspector(
     });
   }
 
-  return ObjectInspector({ ...objectInspectorProps, ...override });
+  return ObjectInspector(objectInspectorProps);
 }
 
 function createRoots(frontOrPrimitiveGrip, pathPrefix = "") {

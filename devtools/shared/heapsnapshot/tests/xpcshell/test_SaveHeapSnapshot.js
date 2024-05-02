@@ -4,10 +4,10 @@
 // Test the ChromeUtils interface.
 // eslint-disable-next-line
 if (typeof Debugger != "function") {
-  const { addDebuggerToGlobal } = ChromeUtils.import(
-    "resource://gre/modules/jsdebugger.jsm"
+  const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+    "resource://gre/modules/jsdebugger.sys.mjs"
   );
-  addDebuggerToGlobal(this);
+  addDebuggerToGlobal(globalThis);
 }
 
 function run_test() {
@@ -103,9 +103,7 @@ function testGoodParameters() {
   ok(true, "Should be able to save a snapshot for a debuggee global.");
 
   dbg = new Debugger();
-  const sandboxes = Array(10)
-    .fill(null)
-    .map(makeNewSandbox);
+  const sandboxes = Array(10).fill(null).map(makeNewSandbox);
   sandboxes.forEach(sb => dbg.addDebuggee(sb));
 
   ChromeUtils.saveHeapSnapshot({ debugger: dbg });

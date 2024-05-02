@@ -21,7 +21,7 @@
   --accessibility-tree-row-height: 21px;
   --accessibility-unfocused-tree-focused-node-background: var(--grey-20);
   --accessibility-unfocused-tree-focused-node-twisty-fill: var(--theme-icon-dimmed-color);
-  --accessibility-link-color: var(--blue-60);
+  --accessibility-link-color: var(--theme-link-color);
   --accessibility-link-color-active: var(--blue-70);
   --accessibility-body-background-a90: rgba(255, 255, 255, 0.9);
   --accessibility-code-background: var(--grey-20);
@@ -30,7 +30,6 @@
 :root.theme-dark {
   --accessibility-unfocused-tree-focused-node-background: var(--grey-70);
   --accessibility-unfocused-tree-focused-node-twisty-fill: var(--theme-selection-color);
-  --accessibility-link-color: var(--theme-highlight-blue);
   --accessibility-link-color-active: var(--blue-40);
   --accessibility-body-background-a90: rgba(42, 42, 46, 0.9);
   --accessibility-code-background: var(--grey-70);
@@ -608,17 +607,17 @@ body {
 
 .accessible .tree:focus .node.focused .open-inspector,
 .accessible .tree .tree-node-active .node.focused .open-inspector {
-  background-color: var(--grey-30);
+  fill: var(--grey-30);
 }
 
 .accessible .tree:focus .node.focused:hover .open-inspector,
 .accessible .tree .tree-node-active .node.focused:hover .open-inspector {
-  background-color: var(--theme-selection-color);
+  fill: var(--theme-selection-color);
 }
 
 .accessible .tree .tree-node-active .node.focused .open-inspector:focus,
 .accessible .tree .tree-node-active .node.focused:hover .open-inspector:focus {
-  background-color: var(--grey-40);
+  fill: var(--grey-40);
 }
 
 .accessible .tree .arrow {
@@ -657,17 +656,17 @@ body {
 
 .accessible .tree:focus .node.focused .open-accessibility-inspector,
 .accessible .tree .tree-node-active .node.focused .open-accessibility-inspector {
-  background-color: var(--grey-30);
+  fill: var(--grey-30);
 }
 
 .accessible .tree:focus .node.focused:hover .open-accessibility-inspector,
 .accessible .tree .tree-node-active .node.focused:hover .open-accessibility-inspector {
-  background-color: var(--theme-selection-color);
+  fill: var(--theme-selection-color);
 }
 
 .accessible .tree .tree-node-active .node.focused .open-accessibility-inspector:focus,
 .accessible .tree .tree-node-active .node.focused:hover .open-accessibility-inspector:focus {
-  background-color: var(--grey-40);
+  fill: var(--grey-40);
 }
 
 .accessible .tree .objectBox-accessible,

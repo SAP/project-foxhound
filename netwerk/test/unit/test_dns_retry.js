@@ -1,6 +1,8 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 trr_test_setup();
 let httpServerIPv4 = new HttpServer();
 let httpServerIPv6 = new HttpServer();
@@ -11,25 +13,25 @@ let CC_IPV4 = "example_cc_ipv4.com";
 let CC_IPV6 = "example_cc_ipv6.com";
 Services.prefs.clearUserPref("network.dns.native-is-localhost");
 
-XPCOMUtils.defineLazyGetter(this, "URL_CC_IPV4", function() {
+ChromeUtils.defineLazyGetter(this, "URL_CC_IPV4", function () {
   return `http://${CC_IPV4}:${httpServerIPv4.identity.primaryPort}${testpath}`;
 });
-XPCOMUtils.defineLazyGetter(this, "URL_CC_IPV6", function() {
+ChromeUtils.defineLazyGetter(this, "URL_CC_IPV6", function () {
   return `http://${CC_IPV6}:${httpServerIPv6.identity.primaryPort}${testpath}`;
 });
-XPCOMUtils.defineLazyGetter(this, "URL6a", function() {
+ChromeUtils.defineLazyGetter(this, "URL6a", function () {
   return `http://example6a.com:${httpServerIPv6.identity.primaryPort}${testpath}`;
 });
-XPCOMUtils.defineLazyGetter(this, "URL6b", function() {
+ChromeUtils.defineLazyGetter(this, "URL6b", function () {
   return `http://example6b.com:${httpServerIPv6.identity.primaryPort}${testpath}`;
 });
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 const ncs = Cc[
   "@mozilla.org/network/network-connectivity-service;1"
 ].getService(Ci.nsINetworkConnectivityService);
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
 
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
@@ -73,10 +75,15 @@ add_task(async function test_setup() {
   trrServer = new TRRServer();
   await trrServer.start();
 
+  if (mozinfo.socketprocess_networking) {
+    Services.dns; // Needed to trigger socket process.
+    await TestUtils.waitForCondition(() => Services.io.socketProcessLaunched);
+  }
+
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
 
   await registerDoHAnswers(true, true);
@@ -119,10 +126,10 @@ async function registerDoHAnswers(ipv4, ipv6) {
     });
   }
 
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 }
 
-let StatusCounter = function() {
+let StatusCounter = function () {
   this._statusCount = {};
 };
 StatusCounter.prototype = {
@@ -141,7 +148,7 @@ StatusCounter.prototype = {
   },
 };
 
-let HttpListener = function(finish, succeeded) {
+let HttpListener = function (finish, succeeded) {
   this.finish = finish;
   this.succeeded = succeeded;
 };
@@ -159,7 +166,7 @@ HttpListener.prototype = {
   },
 };
 
-function promiseObserverNotification(topic, matchFunc) {
+function promiseObserverNotification(aTopic, matchFunc) {
   return new Promise((resolve, reject) => {
     Services.obs.addObserver(function observe(subject, topic, data) {
       let matches = typeof matchFunc != "function" || matchFunc(subject, data);
@@ -168,7 +175,7 @@ function promiseObserverNotification(topic, matchFunc) {
       }
       Services.obs.removeObserver(observe, topic);
       resolve({ subject, data });
-    }, topic);
+    }, aTopic);
   });
 }
 
@@ -182,12 +189,12 @@ async function make_request(uri, check_events, succeeded) {
 
   if (check_events) {
     equal(
-      statusCounter._statusCount[0x804b000b] || 0,
+      statusCounter._statusCount[0x4b000b] || 0,
       1,
       "Expecting only one instance of NS_NET_STATUS_RESOLVED_HOST"
     );
     equal(
-      statusCounter._statusCount[0x804b0007] || 0,
+      statusCounter._statusCount[0x4b0007] || 0,
       1,
       "Expecting only one instance of NS_NET_STATUS_CONNECTING_TO"
     );
@@ -266,7 +273,7 @@ add_task(async function test_prefer_address_version_fail_trr3_1() {
   // Make IPv6 connectivity check fail
   await setup_connectivity(false, true);
 
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   // This will succeed as we query both DNS records
   await make_request(URL6a, true, true);
@@ -298,7 +305,7 @@ add_task(async function test_prefer_address_version_fail_trr3_2() {
   // Make IPv6 connectivity check fail
   await setup_connectivity(false, true);
 
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   // This will succeed as we query both DNS records
   await make_request(URL6b, false, true);

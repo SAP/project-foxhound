@@ -9,14 +9,13 @@
 
 #include "mozilla/CheckedInt.h"
 
-#include "gc/Barrier.h"
 #include "js/Class.h"
-#include "vm/ArrayBufferObject.h"
 #include "vm/ArrayBufferViewObject.h"
 #include "vm/JSObject.h"
-#include "vm/SharedArrayObject.h"
 
 namespace js {
+
+class ArrayBufferObjectMaybeShared;
 
 // In the DataViewObject, the private slot contains a raw pointer into
 // the buffer.  The buffer may be shared memory and the raw pointer
@@ -26,10 +25,6 @@ namespace js {
 class DataViewObject : public ArrayBufferViewObject {
  private:
   static const ClassSpec classSpec_;
-
-  static bool is(HandleValue v) {
-    return v.isObject() && v.toObject().hasClass(&class_);
-  }
 
   template <typename NativeType>
   SharedMem<uint8_t*> getDataPointer(uint64_t offset, bool* isSharedMemory);

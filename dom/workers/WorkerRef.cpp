@@ -10,8 +10,7 @@
 #include "WorkerRunnable.h"
 #include "WorkerPrivate.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -21,7 +20,7 @@ class ReleaseRefControlRunnable final : public WorkerControlRunnable {
  public:
   ReleaseRefControlRunnable(WorkerPrivate* aWorkerPrivate,
                             already_AddRefed<StrongWorkerRef> aRef)
-      : WorkerControlRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount),
+      : WorkerControlRunnable(aWorkerPrivate, WorkerThread),
         mRef(std::move(aRef)) {
     MOZ_ASSERT(mRef);
   }
@@ -66,6 +65,9 @@ void WorkerRef::ReleaseWorker() {
   if (mHolding) {
     MOZ_ASSERT(mWorkerPrivate);
 
+    if (mIsPreventingShutdown) {
+      mWorkerPrivate->AssertIsNotPotentiallyLastGCCCRunning();
+    }
     mWorkerPrivate->RemoveWorkerRef(this);
     mWorkerPrivate = nullptr;
 
@@ -92,7 +94,7 @@ void WorkerRef::Notify() {
     return;
   }
 
-  std::function<void()> callback = std::move(mCallback);
+  MoveOnlyFunction<void()> callback = std::move(mCallback);
   MOZ_ASSERT(!mCallback);
 
   callback();
@@ -103,7 +105,7 @@ void WorkerRef::Notify() {
 
 /* static */
 already_AddRefed<WeakWorkerRef> WeakWorkerRef::Create(
-    WorkerPrivate* aWorkerPrivate, std::function<void()>&& aCallback) {
+    WorkerPrivate* aWorkerPrivate, MoveOnlyFunction<void()>&& aCallback) {
   MOZ_ASSERT(aWorkerPrivate);
   aWorkerPrivate->AssertIsOnWorkerThread();
 
@@ -149,7 +151,7 @@ WorkerPrivate* WeakWorkerRef::GetUnsafePrivate() const {
 /* static */
 already_AddRefed<StrongWorkerRef> StrongWorkerRef::Create(
     WorkerPrivate* const aWorkerPrivate, const char* const aName,
-    std::function<void()>&& aCallback) {
+    MoveOnlyFunction<void()>&& aCallback) {
   if (RefPtr<StrongWorkerRef> ref =
           CreateImpl(aWorkerPrivate, aName, Canceling)) {
     ref->mCallback = std::move(aCallback);
@@ -219,7 +221,7 @@ WorkerPrivate* ThreadSafeWorkerRef::Private() const {
 /* static */
 already_AddRefed<IPCWorkerRef> IPCWorkerRef::Create(
     WorkerPrivate* aWorkerPrivate, const char* aName,
-    std::function<void()>&& aCallback) {
+    MoveOnlyFunction<void()>&& aCallback) {
   MOZ_ASSERT(aWorkerPrivate);
   aWorkerPrivate->AssertIsOnWorkerThread();
 
@@ -227,21 +229,34 @@ already_AddRefed<IPCWorkerRef> IPCWorkerRef::Create(
   if (!ref->HoldWorker(Canceling)) {
     return nullptr;
   }
-
+  ref->mWorkerPrivate->AdjustNonblockingCCBackgroundActorCount(1);
   ref->mCallback = std::move(aCallback);
 
   return ref.forget();
 }
 
 IPCWorkerRef::IPCWorkerRef(WorkerPrivate* aWorkerPrivate, const char* aName)
-    : WorkerRef(aWorkerPrivate, aName, false) {}
+    : WorkerRef(aWorkerPrivate, aName, false), mActorCount(1) {}
 
-IPCWorkerRef::~IPCWorkerRef() = default;
+IPCWorkerRef::~IPCWorkerRef() {
+  NS_ASSERT_OWNINGTHREAD(IPCWorkerRef);
+  // explicit type convertion to avoid undefined behavior of uint32_t overflow.
+  mWorkerPrivate->AdjustNonblockingCCBackgroundActorCount(
+      (int32_t)-mActorCount);
+  ReleaseWorker();
+};
 
 WorkerPrivate* IPCWorkerRef::Private() const {
   NS_ASSERT_OWNINGTHREAD(IPCWorkerRef);
   return mWorkerPrivate;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+void IPCWorkerRef::SetActorCount(uint32_t aCount) {
+  NS_ASSERT_OWNINGTHREAD(IPCWorkerRef);
+  // explicit type convertion to avoid undefined behavior of uint32_t overflow.
+  mWorkerPrivate->AdjustNonblockingCCBackgroundActorCount((int32_t)aCount -
+                                                          (int32_t)mActorCount);
+  mActorCount = aCount;
+}
+
+}  // namespace mozilla::dom

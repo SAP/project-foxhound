@@ -2,7 +2,7 @@
 //!
 //! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
 //! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
-//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logoColor=white&logo=data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDUxMiA1MTIiPjxwYXRoIGZpbGw9IiNmNWY1ZjUiIGQ9Ik00ODguNiAyNTAuMkwzOTIgMjE0VjEwNS41YzAtMTUtOS4zLTI4LjQtMjMuNC0zMy43bC0xMDAtMzcuNWMtOC4xLTMuMS0xNy4xLTMuMS0yNS4zIDBsLTEwMCAzNy41Yy0xNC4xIDUuMy0yMy40IDE4LjctMjMuNCAzMy43VjIxNGwtOTYuNiAzNi4yQzkuMyAyNTUuNSAwIDI2OC45IDAgMjgzLjlWMzk0YzAgMTMuNiA3LjcgMjYuMSAxOS45IDMyLjJsMTAwIDUwYzEwLjEgNS4xIDIyLjEgNS4xIDMyLjIgMGwxMDMuOS01MiAxMDMuOSA1MmMxMC4xIDUuMSAyMi4xIDUuMSAzMi4yIDBsMTAwLTUwYzEyLjItNi4xIDE5LjktMTguNiAxOS45LTMyLjJWMjgzLjljMC0xNS05LjMtMjguNC0yMy40LTMzLjd6TTM1OCAyMTQuOGwtODUgMzEuOXYtNjguMmw4NS0zN3Y3My4zek0xNTQgMTA0LjFsMTAyLTM4LjIgMTAyIDM4LjJ2LjZsLTEwMiA0MS40LTEwMi00MS40di0uNnptODQgMjkxLjFsLTg1IDQyLjV2LTc5LjFsODUtMzguOHY3NS40em0wLTExMmwtMTAyIDQxLjQtMTAyLTQxLjR2LS42bDEwMi0zOC4yIDEwMiAzOC4ydi42em0yNDAgMTEybC04NSA0Mi41di03OS4xbDg1LTM4Ljh2NzUuNHptMC0xMTJsLTEwMiA0MS40LTEwMi00MS40di0uNmwxMDItMzguMiAxMDIgMzguMnYuNnoiPjwvcGF0aD48L3N2Zz4K
+//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
 //!
 //! <br>
 //!
@@ -55,7 +55,7 @@
 //! If parsing with [Syn], you'll use [`parse_macro_input!`] instead to
 //! propagate parse errors correctly back to the compiler when parsing fails.
 //!
-//! [`parse_macro_input!`]: https://docs.rs/syn/1.0/syn/macro.parse_macro_input.html
+//! [`parse_macro_input!`]: https://docs.rs/syn/2.0/syn/macro.parse_macro_input.html
 //!
 //! # Unstable features
 //!
@@ -65,7 +65,7 @@
 //!
 //! To opt into the additional APIs available in the most recent nightly
 //! compiler, the `procmacro2_semver_exempt` config flag must be passed to
-//! rustc. We will polyfill those nightly-only APIs back to Rust 1.31.0. As
+//! rustc. We will polyfill those nightly-only APIs back to Rust 1.56.0. As
 //! these are unstable APIs that track the nightly compiler, minor versions of
 //! proc-macro2 may make breaking changes to them at any time.
 //!
@@ -86,7 +86,7 @@
 //! a different thread.
 
 // Proc-macro2 types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/proc-macro2/1.0.36")]
+#![doc(html_root_url = "https://docs.rs/proc-macro2/1.0.69")]
 #![cfg_attr(any(proc_macro_span, super_unstable), feature(proc_macro_span))]
 #![cfg_attr(super_unstable, feature(proc_macro_def_site))]
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
@@ -95,9 +95,14 @@
     clippy::cast_possible_truncation,
     clippy::doc_markdown,
     clippy::items_after_statements,
+    clippy::iter_without_into_iter,
+    clippy::let_underscore_untyped,
     clippy::manual_assert,
+    clippy::manual_range_contains,
+    clippy::missing_safety_doc,
     clippy::must_use_candidate,
     clippy::needless_doctest_main,
+    clippy::new_without_default,
     clippy::return_self_not_must_use,
     clippy::shadow_unrelated,
     clippy::trivially_copy_pass_by_ref,
@@ -115,11 +120,14 @@ compile_error! {"\
     build script as well.
 "}
 
-#[cfg(use_proc_macro)]
+extern crate alloc;
+
+#[cfg(feature = "proc-macro")]
 extern crate proc_macro;
 
 mod marker;
 mod parse;
+mod rcvec;
 
 #[cfg(wrap_proc_macro)]
 mod detection;
@@ -129,22 +137,30 @@ mod detection;
 #[doc(hidden)]
 pub mod fallback;
 
+pub mod extra;
+
 #[cfg(not(wrap_proc_macro))]
 use crate::fallback as imp;
 #[path = "wrapper.rs"]
 #[cfg(wrap_proc_macro)]
 mod imp;
 
+#[cfg(span_locations)]
+mod location;
+
+use crate::extra::DelimSpan;
 use crate::marker::Marker;
-use std::cmp::Ordering;
+use core::cmp::Ordering;
+use core::fmt::{self, Debug, Display};
+use core::hash::{Hash, Hasher};
+use core::ops::RangeBounds;
+use core::str::FromStr;
 use std::error::Error;
-use std::fmt::{self, Debug, Display};
-use std::hash::{Hash, Hasher};
-use std::iter::FromIterator;
-use std::ops::RangeBounds;
 #[cfg(procmacro2_semver_exempt)]
 use std::path::PathBuf;
-use std::str::FromStr;
+
+#[cfg(span_locations)]
+pub use crate::location::LineColumn;
 
 /// An abstract stream of tokens, or more concretely a sequence of token trees.
 ///
@@ -173,7 +189,7 @@ impl TokenStream {
         }
     }
 
-    fn _new_stable(inner: fallback::TokenStream) -> Self {
+    fn _new_fallback(inner: fallback::TokenStream) -> Self {
         TokenStream {
             inner: inner.into(),
             _marker: Marker,
@@ -219,16 +235,18 @@ impl FromStr for TokenStream {
     }
 }
 
-#[cfg(use_proc_macro)]
+#[cfg(feature = "proc-macro")]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "proc-macro")))]
 impl From<proc_macro::TokenStream> for TokenStream {
-    fn from(inner: proc_macro::TokenStream) -> TokenStream {
+    fn from(inner: proc_macro::TokenStream) -> Self {
         TokenStream::_new(inner.into())
     }
 }
 
-#[cfg(use_proc_macro)]
+#[cfg(feature = "proc-macro")]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "proc-macro")))]
 impl From<TokenStream> for proc_macro::TokenStream {
-    fn from(inner: TokenStream) -> proc_macro::TokenStream {
+    fn from(inner: TokenStream) -> Self {
         inner.inner.into()
     }
 }
@@ -352,37 +370,6 @@ impl Debug for SourceFile {
     }
 }
 
-/// A line-column pair representing the start or end of a `Span`.
-///
-/// This type is semver exempt and not exposed by default.
-#[cfg(span_locations)]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "span-locations")))]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct LineColumn {
-    /// The 1-indexed line in the source file on which the span starts or ends
-    /// (inclusive).
-    pub line: usize,
-    /// The 0-indexed column (in UTF-8 characters) in the source file on which
-    /// the span starts or ends (inclusive).
-    pub column: usize,
-}
-
-#[cfg(span_locations)]
-impl Ord for LineColumn {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.line
-            .cmp(&other.line)
-            .then(self.column.cmp(&other.column))
-    }
-}
-
-#[cfg(span_locations)]
-impl PartialOrd for LineColumn {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 /// A region of source code, along with macro expansion information.
 #[derive(Copy, Clone)]
 pub struct Span {
@@ -398,7 +385,7 @@ impl Span {
         }
     }
 
-    fn _new_stable(inner: fallback::Span) -> Self {
+    fn _new_fallback(inner: fallback::Span) -> Self {
         Span {
             inner: inner.into(),
             _marker: Marker,
@@ -417,9 +404,6 @@ impl Span {
     /// The span located at the invocation of the procedural macro, but with
     /// local variables, labels, and `$crate` resolved at the definition site
     /// of the macro. This is the same hygiene behavior as `macro_rules`.
-    ///
-    /// This function requires Rust 1.45 or later.
-    #[cfg(not(no_hygiene))]
     pub fn mixed_site() -> Self {
         Span::_new(imp::Span::mixed_site())
     }
@@ -488,8 +472,7 @@ impl Span {
     #[cfg(span_locations)]
     #[cfg_attr(doc_cfg, doc(cfg(feature = "span-locations")))]
     pub fn start(&self) -> LineColumn {
-        let imp::LineColumn { line, column } = self.inner.start();
-        LineColumn { line, column }
+        self.inner.start()
     }
 
     /// Get the ending line/column in the source file for this span.
@@ -504,8 +487,7 @@ impl Span {
     #[cfg(span_locations)]
     #[cfg_attr(doc_cfg, doc(cfg(feature = "span-locations")))]
     pub fn end(&self) -> LineColumn {
-        let imp::LineColumn { line, column } = self.inner.end();
-        LineColumn { line, column }
+        self.inner.end()
     }
 
     /// Create a new span encompassing `self` and `other`.
@@ -528,6 +510,17 @@ impl Span {
     #[cfg_attr(doc_cfg, doc(cfg(procmacro2_semver_exempt)))]
     pub fn eq(&self, other: &Span) -> bool {
         self.inner.eq(&other.inner)
+    }
+
+    /// Returns the source text behind a span. This preserves the original
+    /// source code, including spaces and comments. It only returns a result if
+    /// the span corresponds to real source code.
+    ///
+    /// Note: The observable result of a macro should only rely on the tokens
+    /// and not on this source text. The result of this function is a best
+    /// effort to be used for diagnostics only.
+    pub fn source_text(&self) -> Option<String> {
+        self.inner.source_text()
     }
 }
 
@@ -579,25 +572,25 @@ impl TokenTree {
 }
 
 impl From<Group> for TokenTree {
-    fn from(g: Group) -> TokenTree {
+    fn from(g: Group) -> Self {
         TokenTree::Group(g)
     }
 }
 
 impl From<Ident> for TokenTree {
-    fn from(g: Ident) -> TokenTree {
+    fn from(g: Ident) -> Self {
         TokenTree::Ident(g)
     }
 }
 
 impl From<Punct> for TokenTree {
-    fn from(g: Punct) -> TokenTree {
+    fn from(g: Punct) -> Self {
         TokenTree::Punct(g)
     }
 }
 
 impl From<Literal> for TokenTree {
-    fn from(g: Literal) -> TokenTree {
+    fn from(g: Literal) -> Self {
         TokenTree::Literal(g)
     }
 }
@@ -669,7 +662,7 @@ impl Group {
         Group { inner }
     }
 
-    fn _new_stable(inner: fallback::Group) -> Self {
+    fn _new_fallback(inner: fallback::Group) -> Self {
         Group {
             inner: inner.into(),
         }
@@ -686,7 +679,8 @@ impl Group {
         }
     }
 
-    /// Returns the delimiter of this `Group`
+    /// Returns the punctuation used as the delimiter for this group: a set of
+    /// parentheses, square brackets, or curly braces.
     pub fn delimiter(&self) -> Delimiter {
         self.inner.delimiter()
     }
@@ -728,6 +722,13 @@ impl Group {
     /// ```
     pub fn span_close(&self) -> Span {
         Span::_new(self.inner.span_close())
+    }
+
+    /// Returns an object that holds this group's `span_open()` and
+    /// `span_close()` together (in a more compact representation than holding
+    /// those 2 spans individually).
+    pub fn delim_span(&self) -> DelimSpan {
+        DelimSpan::new(&self.inner)
     }
 
     /// Configures the span for this `Group`'s delimiters, but not its internal
@@ -853,7 +854,7 @@ impl Debug for Punct {
 /// Rust keywords. Use `input.call(Ident::parse_any)` when parsing to match the
 /// behaviour of `Ident::new`.
 ///
-/// [`Parse`]: https://docs.rs/syn/1.0/syn/parse/trait.Parse.html
+/// [`Parse`]: https://docs.rs/syn/2.0/syn/parse/trait.Parse.html
 ///
 /// # Examples
 ///
@@ -944,7 +945,7 @@ impl Ident {
     /// Panics if the input string is neither a keyword nor a legal variable
     /// name. If you are not sure whether the string contains an identifier and
     /// need to handle an error case, use
-    /// <a href="https://docs.rs/syn/1.0/syn/fn.parse_str.html"><code
+    /// <a href="https://docs.rs/syn/2.0/syn/fn.parse_str.html"><code
     ///   style="padding-right:0;">syn::parse_str</code></a><code
     ///   style="padding-left:0;">::&lt;Ident&gt;</code>
     /// rather than `Ident::new`.
@@ -952,11 +953,11 @@ impl Ident {
         Ident::_new(imp::Ident::new(string, span.inner))
     }
 
-    /// Same as `Ident::new`, but creates a raw identifier (`r#ident`).
-    ///
-    /// This method is semver exempt and not exposed by default.
-    #[cfg(procmacro2_semver_exempt)]
-    #[cfg_attr(doc_cfg, doc(cfg(procmacro2_semver_exempt)))]
+    /// Same as `Ident::new`, but creates a raw identifier (`r#ident`). The
+    /// `string` argument must be a valid identifier permitted by the language
+    /// (including keywords, e.g. `fn`). Keywords which are usable in path
+    /// segments (e.g. `self`, `super`) are not supported, and will cause a
+    /// panic.
     pub fn new_raw(string: &str, span: Span) -> Self {
         Ident::_new_raw(string, span)
     }
@@ -1086,7 +1087,7 @@ impl Literal {
         }
     }
 
-    fn _new_stable(inner: fallback::Literal) -> Self {
+    fn _new_fallback(inner: fallback::Literal) -> Self {
         Literal {
             inner: inner.into(),
             _marker: Marker,
@@ -1128,9 +1129,9 @@ impl Literal {
     /// This constructor is similar to those like `Literal::i8_unsuffixed` where
     /// the float's value is emitted directly into the token but no suffix is
     /// used, so it may be inferred to be a `f64` later in the compiler.
-    /// Literals created from negative numbers may not survive rountrips through
-    /// `TokenStream` or strings and may be broken into two tokens (`-` and
-    /// positive literal).
+    /// Literals created from negative numbers may not survive round-trips
+    /// through `TokenStream` or strings and may be broken into two tokens (`-`
+    /// and positive literal).
     ///
     /// # Panics
     ///
@@ -1147,7 +1148,7 @@ impl Literal {
     /// specified is the preceding part of the token and `f64` is the suffix of
     /// the token. This token will always be inferred to be an `f64` in the
     /// compiler. Literals created from negative numbers may not survive
-    /// rountrips through `TokenStream` or strings and may be broken into two
+    /// round-trips through `TokenStream` or strings and may be broken into two
     /// tokens (`-` and positive literal).
     ///
     /// # Panics
@@ -1164,9 +1165,9 @@ impl Literal {
     /// This constructor is similar to those like `Literal::i8_unsuffixed` where
     /// the float's value is emitted directly into the token but no suffix is
     /// used, so it may be inferred to be a `f64` later in the compiler.
-    /// Literals created from negative numbers may not survive rountrips through
-    /// `TokenStream` or strings and may be broken into two tokens (`-` and
-    /// positive literal).
+    /// Literals created from negative numbers may not survive round-trips
+    /// through `TokenStream` or strings and may be broken into two tokens (`-`
+    /// and positive literal).
     ///
     /// # Panics
     ///
@@ -1183,7 +1184,7 @@ impl Literal {
     /// specified is the preceding part of the token and `f32` is the suffix of
     /// the token. This token will always be inferred to be an `f32` in the
     /// compiler. Literals created from negative numbers may not survive
-    /// rountrips through `TokenStream` or strings and may be broken into two
+    /// round-trips through `TokenStream` or strings and may be broken into two
     /// tokens (`-` and positive literal).
     ///
     /// # Panics
@@ -1270,7 +1271,7 @@ impl Display for Literal {
 pub mod token_stream {
     use crate::marker::Marker;
     use crate::{imp, TokenTree};
-    use std::fmt::{self, Debug};
+    use core::fmt::{self, Debug};
 
     pub use crate::TokenStream;
 
@@ -1290,11 +1291,16 @@ pub mod token_stream {
         fn next(&mut self) -> Option<TokenTree> {
             self.inner.next()
         }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            self.inner.size_hint()
+        }
     }
 
     impl Debug for IntoIter {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            Debug::fmt(&self.inner, f)
+            f.write_str("TokenStream ")?;
+            f.debug_list().entries(self.clone()).finish()
         }
     }
 

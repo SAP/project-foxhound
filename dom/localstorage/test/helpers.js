@@ -22,7 +22,7 @@ function clearAllDatabases() {
 }
 
 if (!window.runTest) {
-  window.runTest = async function() {
+  window.runTest = async function () {
     SimpleTest.waitForExplicitFinish();
 
     info("Pushing preferences");
@@ -38,22 +38,14 @@ if (!window.runTest) {
 
     await requestFinished(clearAllDatabases());
 
-    ok(typeof testSteps === "function", "There should be a testSteps function");
-    ok(
-      testSteps.constructor.name === "AsyncFunction",
-      "testSteps should be an async function"
-    );
-
-    SimpleTest.registerCleanupFunction(async function() {
+    SimpleTest.registerCleanupFunction(async function () {
       await requestFinished(clearAllDatabases());
     });
-
-    add_task(testSteps);
   };
 }
 
 function returnToEventLoop() {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     executeSoon(resolve);
   });
 }
@@ -72,8 +64,8 @@ class RequestError extends Error {
 }
 
 async function requestFinished(request) {
-  await new Promise(function(resolve) {
-    request.callback = SpecialPowers.wrapCallback(function() {
+  await new Promise(function (resolve) {
+    request.callback = SpecialPowers.wrapCallback(function () {
       resolve();
     });
   });

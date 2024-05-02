@@ -13,11 +13,6 @@ For snippets, you should add the action type in `button_action` and any addition
 }
 ```
 
-## How to update
-
-Make a pull request against [mozilla/nimbus-shared](https://github.com/mozilla/nimbus-shared/) repo with your changes.
-Build and copy over resulting schema from `nimbus-shared/schemas/messaging/` to `toolkit/components/messaging-system/schemas/SpecialMessageActionSchemas.json`.
-
 ## Available Actions
 
 ### `OPEN_APPLICATIONS_MENU`
@@ -25,6 +20,12 @@ Build and copy over resulting schema from `nimbus-shared/schemas/messaging/` to 
 * args: (none)
 
 Opens the applications menu.
+
+### `OPEN_FIREFOX_VIEW`
+
+* args: (none)
+
+Opens the Firefox View pseudo-tab.
 
 ### `OPEN_PRIVATE_BROWSER_WINDOW`
 
@@ -93,6 +94,28 @@ Example:
 * args: (none)
 
 Opens Firefox accounts sign-up page. Encodes some information that the origin was from snippets by default.
+
+### `FXA_SIGNIN_FLOW`
+
+* args:
+
+```ts
+{
+  // a valid `where` value for `openUILinkIn`. Only `tab` and `window` have been tested, and `tabshifted`
+  // is unlikely to do anything different from `tab`.
+  where?: "tab" | "window" = "tab",
+
+  entrypoint?: string // URL search params string to pass along to FxA. Defaults to "activity-stream-firstrun".
+  extraParams?: object // Extra parameters to pass along to FxA. See FxAccountsConfig.promiseConnectAccountURI.
+}
+```
+
+Opens a Firefox accounts sign-up or sign-in page, and does the work of closing the resulting tab or window once
+sign-in completes. Returns a Promise that resolves to `true` if sign-in succeeded, or to `false` if the sign-in
+window or tab closed before sign-in could be completed.
+
+Encodes some information that the origin was from about:welcome by default.
+
 
 ### `SHOW_MIGRATION_WIZARD`
 
@@ -244,15 +267,124 @@ Action for pinning Firefox to the user's taskbar.
 
 ### `SET_DEFAULT_BROWSER`
 
-Action for configuring the default browser to Firefox on the user's system.
+Action for setting the default browser to Firefox on the user's system.
+
+- args: (none)
+
+### `SET_DEFAULT_PDF_HANDLER`
+
+Action for setting the default PDF handler to Firefox on the user's system.
+
+Windows only.
+
+- args:
+```ts
+{
+  // Only set Firefox as the default PDF handler if the current PDF handler is a
+  // known browser.
+  onlyIfKnownBrowser?: boolean;
+}
+```
+
+### `DECLINE_DEFAULT_PDF_HANDLER`
+
+Action for declining to set the default PDF handler to Firefox on the user's
+system. Prevents the user from being asked again about this.
+
+Windows only.
+
+- args: (none)
+
+### `SHOW_SPOTLIGHT`
+
+Action for opening a spotlight tab or window modal using the content passed to the dialog.
+
+### `BLOCK_MESSAGE`
+
+Disable a message by adding to an indexedDb list of blocked messages
+
+* args: `string` id of the message
+
+### `SET_PREF`
+
+Action for setting various browser prefs
+
+Prefs that can be changed with this action are:
+
+- `browser.dataFeatureRecommendations.enabled`
+- `browser.migrate.content-modal.about-welcome-behavior`
+- `browser.migrate.content-modal.import-all.enabled`
+- `browser.migrate.preferences-entrypoint.enabled`
+- `browser.shopping.experience2023.active`
+- `browser.shopping.experience2023.optedIn`
+- `browser.shopping.experience2023.survey.optedInTime`
+- `browser.shopping.experience2023.survey.hasSeen`
+- `browser.shopping.experience2023.survey.pdpVisits`
+- `browser.startup.homepage`
+- `browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt`
+- `browser.privateWindowSeparation.enabled`
+- `browser.firefox-view.feature-tour`
+- `browser.pdfjs.feature-tour`
+- `browser.newtab.feature-tour`
+- `cookiebanners.service.mode`
+- `cookiebanners.service.mode.privateBrowsing`
+- `cookiebanners.service.detectOnly`
+- `messaging-system.askForFeedback`
+
+Any pref that begins with `messaging-system-action.` is also allowed.
+Alternatively, if the pref is not present in the list above and does not begin
+with `messaging-system-action.`, it will be created and prepended with
+`messaging-system-action.`. For example, `example.pref` will be created as
+`messaging-system-action.example.pref`.
+
+* args:
+```ts
+{
+  pref: {
+    name: string;
+    value: string | boolean | number;
+  }
+}
+```
+
+### `MULTI_ACTION`
+
+Action for running multiple actions. Actions should be included in an array of actions.
+
+* args:
+```ts
+{
+  actions: Array<UserAction>
+}
+```
+
+* example:
+```json
+{
+  "button_action": "MULTI_ACTION",
+  "button_action_args": {
+    "actions": [
+      {
+        "type": "OPEN_URL",
+        "args": "https://www.example.com"
+      },
+      {
+        "type": "OPEN_AWESOME_BAR"
+      }
+    ]
+  }
+}
+```
+
+### `CLICK_ELEMENT`
+
+* args: `string` A CSS selector for the HTML element to be clicked
+
+Selects an element in the current Window's document and triggers a click action
+
+
+### `RELOAD_BROWSER`
 
 * args: (none)
 
-### `ENABLE_TOTAL_COOKIE_PROTECTION`
-
-Action for enabling the Total Cookie Protection feature.
-
-### `ENABLE_TOTAL_COOKIE_PROTECTION_SECTION_AND_OPT_OUT`
-
-Action for disabling the Total Cookie Protection feature and enabling an
-additional privacy section in about:preferences.
+Action for reloading the current browser.

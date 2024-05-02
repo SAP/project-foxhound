@@ -41,7 +41,7 @@ class nsDOMTokenList : public nsISupports, public nsWrapperCache {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMTokenList)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsDOMTokenList)
 
   nsDOMTokenList(Element* aElement, nsAtom* aAttrAtom,
                  const mozilla::dom::DOMTokenListSupportedTokenArray = nullptr);
@@ -53,7 +53,6 @@ class nsDOMTokenList : public nsISupports, public nsWrapperCache {
 
   DocGroup* GetDocGroup() const;
 
-  void RemoveDuplicates(const nsAttrValue* aAttr);
   uint32_t Length();
   void Item(uint32_t aIndex, nsAString& aResult) {
     bool found;
@@ -81,8 +80,9 @@ class nsDOMTokenList : public nsISupports, public nsWrapperCache {
  protected:
   virtual ~nsDOMTokenList();
 
-  nsresult CheckToken(const nsAString& aStr);
-  nsresult CheckTokens(const nsTArray<nsString>& aStr);
+  void CheckToken(const nsAString& aToken, mozilla::ErrorResult& aRv);
+  void CheckTokens(const nsTArray<nsString>& aTokens,
+                   mozilla::ErrorResult& aRv);
   void AddInternal(const nsAttrValue* aAttr, const nsTArray<nsString>& aTokens);
   void RemoveInternal(const nsAttrValue* aAttr,
                       const nsTArray<nsString>& aTokens);

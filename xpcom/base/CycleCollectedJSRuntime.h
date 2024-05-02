@@ -281,7 +281,7 @@ class CycleCollectedJSRuntime {
                               const JS::GCDescription& aDesc);
   static void GCNurseryCollectionCallback(JSContext* aContext,
                                           JS::GCNurseryProgress aProgress,
-                                          JS::GCReason aReason);
+                                          JS::GCReason aReason, void* data);
   static void OutOfMemoryCallback(JSContext* aContext, void* aData);
 
   static bool ContextCallback(JSContext* aCx, unsigned aOperation, void* aData);
@@ -301,8 +301,16 @@ class CycleCollectedJSRuntime {
                       js::SliceBudget& aBudget);
 
  public:
-  void FinalizeDeferredThings(
-      CycleCollectedJSContext::DeferredFinalizeType aType);
+  enum DeferredFinalizeType {
+    // Never finalize immediately, because it would be unsafe.
+    FinalizeLater,
+    // Finalize later if we can, but it is okay to do it immediately.
+    FinalizeIncrementally,
+    // Finalize immediately, for shutdown or testing purposes.
+    FinalizeNow,
+  };
+
+  void FinalizeDeferredThings(DeferredFinalizeType aType);
 
   virtual void PrepareForForgetSkippable() = 0;
   virtual void BeginCycleCollectionCallback(mozilla::CCReason aReason) = 0;
@@ -344,6 +352,10 @@ class CycleCollectedJSRuntime {
 
   const char* OOMStateToString(const OOMState aOomState) const;
 
+  // Returns true if OOM was reported and a new successful GC cycle hasn't
+  // occurred since.
+  bool OOMReported();
+
   void SetLargeAllocationFailure(OOMState aNewState);
 
   void AnnotateAndSetOutOfMemory(OOMState* aStatePtr, OOMState aNewState);
@@ -368,14 +380,15 @@ class CycleCollectedJSRuntime {
 
   void RunIdleTimeGCTask() {
     if (HasPendingIdleGCTask()) {
-      JS::RunIdleTimeGCTask(Runtime());
+      JS::MaybeRunNurseryCollection(Runtime(),
+                                    JS::GCReason::EAGER_NURSERY_COLLECTION);
       ClearPendingIdleGCTask();
     }
   }
 
   bool IsIdleGCTaskNeeded() {
     return !HasPendingIdleGCTask() && Runtime() &&
-           JS::IsIdleGCTaskNeeded(Runtime());
+           JS::WantEagerMinorGC(Runtime()) != JS::GCReason::NO_REASON;
   }
 
  public:
@@ -394,14 +407,13 @@ class CycleCollectedJSRuntime {
   void FixWeakMappingGrayBits() const;
   void CheckGrayBits() const;
   bool AreGCGrayBitsValid() const;
-  void GarbageCollect(JS::GCReason aReason) const;
+  void GarbageCollect(JS::GCOptions options, JS::GCReason aReason) const;
 
   // This needs to be an nsWrapperCache, not a JSObject, because we need to know
   // when our object gets moved.  But we can't trace it (and hence update our
   // storage), because we do not want to keep it alive.  nsWrapperCache handles
   // this for us via its "object moved" handling.
   void NurseryWrapperAdded(nsWrapperCache* aCache);
-  void NurseryWrapperPreserved(JSObject* aWrapper);
   void JSObjectsTenured();
 
   void DeferredFinalize(DeferredFinalizeAppendFunction aAppendFunc,
@@ -415,7 +427,7 @@ class CycleCollectedJSRuntime {
     mZonesWaitingForGC.Insert(aZone);
   }
 
-  static void OnZoneDestroyed(JSFreeOp* aFop, JS::Zone* aZone);
+  static void OnZoneDestroyed(JS::GCContext* aGcx, JS::Zone* aZone);
 
   // Prepare any zones for GC that have been passed to AddZoneWaitingForGC()
   // since the last GC or since the last call to PrepareWaitingZonesForGC(),
@@ -446,15 +458,13 @@ class CycleCollectedJSRuntime {
   bool mHasPendingIdleGCTask;
 
   JS::GCSliceCallback mPrevGCSliceCallback;
-  JS::GCNurseryCollectionCallback mPrevGCNurseryCollectionCallback;
 
   mozilla::TimeStamp mLatestNurseryCollectionStart;
 
   JSHolderMap mJSHolders;
   Maybe<JSHolderMap::Iter> mHolderIter;
 
-  typedef nsTHashMap<nsFuncPtrHashKey<DeferredFinalizeFunction>, void*>
-      DeferredFinalizerTable;
+  using DeferredFinalizerTable = nsTHashMap<DeferredFinalizeFunction, void*>;
   DeferredFinalizerTable mDeferredFinalizerTable;
 
   RefPtr<IncrementalFinalizeRunnable> mFinalizeRunnable;
@@ -465,14 +475,11 @@ class CycleCollectedJSRuntime {
   static const size_t kSegmentSize = 512;
   SegmentedVector<nsWrapperCache*, kSegmentSize, InfallibleAllocPolicy>
       mNurseryObjects;
-  SegmentedVector<JS::PersistentRooted<JSObject*>, kSegmentSize,
-                  InfallibleAllocPolicy>
-      mPreservedNurseryObjects;
 
   nsTHashSet<JS::Zone*> mZonesWaitingForGC;
 
   struct EnvironmentPreparer : public js::ScriptEnvironmentPreparer {
-    void invoke(JS::HandleObject global, Closure& closure) override;
+    void invoke(JS::Handle<JSObject*> global, Closure& closure) override;
   };
   EnvironmentPreparer mEnvironmentPreparer;
 
@@ -485,7 +492,8 @@ class CycleCollectedJSRuntime {
   // Built on nightly only to avoid any possible performance impact on release
 
   struct ErrorInterceptor final : public JSErrorInterceptor {
-    virtual void interceptError(JSContext* cx, JS::HandleValue exn) override;
+    virtual void interceptError(JSContext* cx,
+                                JS::Handle<JS::Value> exn) override;
     void Shutdown(JSRuntime* rt);
 
     // Copy of the details of the exception.

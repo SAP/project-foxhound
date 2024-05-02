@@ -42,9 +42,8 @@ async function changeText(browser, id, value, events) {
   );
   // Change text in the subtree.
   await invokeContentTask(browser, [id, value], (contentId, contentValue) => {
-    content.document.getElementById(
-      contentId
-    ).firstChild.textContent = contentValue;
+    content.document.getElementById(contentId).firstChild.textContent =
+      contentValue;
   });
   let resolvedEvents = await onEvents;
 
@@ -74,8 +73,8 @@ async function removeTextFromInput(browser, id, value, start, end) {
     }
   );
   await invokeContentTask(browser, [], () => {
-    const { ContentTaskUtils } = ChromeUtils.import(
-      "resource://testing-common/ContentTaskUtils.jsm"
+    const { ContentTaskUtils } = ChromeUtils.importESModule(
+      "resource://testing-common/ContentTaskUtils.sys.mjs"
     );
     const EventUtils = ContentTaskUtils.getEventUtils(content);
     EventUtils.sendChar("VK_DELETE", content);
@@ -97,14 +96,20 @@ addAccessibleTask(
   `
   <p id="p">abc</p>
   <input id="input" value="input" />`,
-  async function(browser) {
+  async function (browser) {
     let events = [
       { isInserted: false, str: "abc", offset: 0 },
       { isInserted: true, str: "def", offset: 0 },
     ];
     await changeText(browser, "p", "def", events);
 
-    events = [{ isInserted: true, str: "DEF", offset: 2 }];
+    // Adding text should not send events with diffs for non-editable text.
+    // We do this to avoid screen readers reading out confusing diffs for
+    // live regions.
+    events = [
+      { isInserted: false, str: "def", offset: 0 },
+      { isInserted: true, str: "deDEFf", offset: 0 },
+    ];
     await changeText(browser, "p", "deDEFf", events);
 
     // Test isFromUserInput property.

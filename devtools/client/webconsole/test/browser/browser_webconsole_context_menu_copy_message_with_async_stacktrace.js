@@ -7,12 +7,12 @@
 "use strict";
 
 const httpServer = createTestHTTPServer();
-httpServer.registerPathHandler(`/`, function(request, response) {
+httpServer.registerPathHandler(`/`, function (request, response) {
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.write(`<script type="text/javascript" src="test.js"></script>`);
 });
 
-httpServer.registerPathHandler("/test.js", function(_, response) {
+httpServer.registerPathHandler("/test.js", function (_, response) {
   response.setHeader("Content-Type", "application/javascript");
   response.write(`
     function resolveLater() {
@@ -34,12 +34,12 @@ httpServer.registerPathHandler("/test.js", function(_, response) {
 
 const TEST_URI = `http://localhost:${httpServer.identity.primaryPort}/`;
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("javascript.options.asyncstack_capture_debuggee_only", false);
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Call the log function defined in the test page");
-  const onMessage = waitForMessage(hud, "thenTrace");
+  const onMessage = waitForMessageByType(hud, "thenTrace", ".console-api");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.waitForData();
   });

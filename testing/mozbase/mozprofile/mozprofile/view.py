@@ -7,18 +7,16 @@
 """
 script to view mozilla profiles
 """
-from __future__ import absolute_import, print_function
-
-import mozprofile
 import optparse
 import os
 import sys
+
+import mozprofile
 
 __all__ = ["view_profile"]
 
 
 def view_profile(args=sys.argv[1:]):
-
     usage = "%prog [options] profile_path <...>"
     parser = optparse.OptionParser(usage=usage, description=__doc__)
     options, args = parser.parse_args(args)

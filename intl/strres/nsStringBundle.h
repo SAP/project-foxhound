@@ -53,12 +53,9 @@ class nsStringBundleBase : public nsIStringBundle, public nsIMemoryReporter {
   void RegisterMemoryReporter();
 
   nsCString mPropertiesURL;
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex MOZ_UNANNOTATED;
   bool mAttemptedLoad;
   bool mLoaded;
-
-  size_t SizeOfIncludingThisIfUnshared(
-      mozilla::MallocSizeOf aMallocSizeOf) const override;
 
  public:
   static nsresult FormatString(const char16_t* formatStr,
@@ -74,8 +71,7 @@ class nsStringBundle : public nsStringBundleBase {
 
   nsresult LoadProperties() override;
 
-  size_t SizeOfIncludingThis(
-      mozilla::MallocSizeOf aMallocSizeOf) const override;
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) override;
 
  protected:
   friend class nsStringBundleBase;

@@ -51,13 +51,6 @@ const DownloadsButton = {
   _customizing: false,
 
   /**
-   * Indicates whether the button has been torn down.
-   * TODO: This is used for a temporary workaround for bug 1543537 and should be
-   * removed when fixed.
-   */
-  _uninitialized: false,
-
-  /**
    * This function is called asynchronously just after window initialization.
    *
    * NOTE: This function should limit the input/output it performs to improve
@@ -171,9 +164,6 @@ const DownloadsButton = {
   },
 
   checkForAutoHide() {
-    if (this._uninitialized) {
-      return;
-    }
     let button = this._placeholder;
     if (
       !this._customizing &&
@@ -236,7 +226,6 @@ const DownloadsButton = {
   },
 
   uninit() {
-    this._uninitialized = true;
     CustomizableUI.removeListener(this);
   },
 
@@ -286,7 +275,8 @@ const DownloadsIndicatorView = {
     }
     this._initialized = true;
 
-    window.addEventListener("unload", this.onWindowUnload);
+    window.addEventListener("unload", this);
+    window.addEventListener("visibilitychange", this);
     DownloadsCommon.getIndicatorData(window).addView(this);
   },
 
@@ -299,7 +289,8 @@ const DownloadsIndicatorView = {
     }
     this._initialized = false;
 
-    window.removeEventListener("unload", this.onWindowUnload);
+    window.removeEventListener("unload", this);
+    window.removeEventListener("visibilitychange", this);
     DownloadsCommon.getIndicatorData(window).removeView(this);
 
     // Reset the view properties, so that a neutral indicator is displayed if we
@@ -368,10 +359,6 @@ const DownloadsIndicatorView = {
       return;
     }
 
-    if (!DownloadsCommon.animateNotifications) {
-      return;
-    }
-
     // enqueue this notification while the current one is being displayed
     if (this._currentNotificationType) {
       // only queue up the notification if it is different to the current one
@@ -394,6 +381,11 @@ const DownloadsIndicatorView = {
     let anchor = DownloadsButton._placeholder;
     if (!anchor || !isElementVisible(anchor.parentNode)) {
       // Our container isn't visible, so can't show the animation:
+      return;
+    }
+
+    if (anchor.ownerGlobal.matchMedia("(prefers-reduced-motion)").matches) {
+      // User has prefers-reduced-motion enabled, so we shouldn't show the animation.
       return;
     }
 
@@ -474,24 +466,36 @@ const DownloadsIndicatorView = {
       }
       this._percentComplete = aValue;
       this._refreshAttention();
-      if (this._progressRaf) {
-        cancelAnimationFrame(this._progressRaf);
-        delete this._progressRaf;
-      }
+      this._maybeScheduleProgressUpdate();
+    }
+  },
+
+  _maybeScheduleProgressUpdate() {
+    if (
+      this.indicator &&
+      !this._progressRaf &&
+      document.visibilityState == "visible"
+    ) {
       this._progressRaf = requestAnimationFrame(() => {
         // indeterminate downloads (unknown content-length) will show up as aValue = 0
         if (this._percentComplete >= 0) {
-          this.indicator.setAttribute("progress", "true");
+          if (!this.indicator.hasAttribute("progress")) {
+            this.indicator.setAttribute("progress", "true");
+          }
           // For arrow type only: Set the % complete on the pie-chart.
-          // We use a minimum of 5% to ensure something is always visible
-          this.indicator.style.setProperty(
+          // We use a minimum of 10% to ensure something is always visible
+          this._progressIcon.style.setProperty(
             "--download-progress-pcent",
             `${Math.max(10, this._percentComplete)}%`
           );
         } else {
           this.indicator.removeAttribute("progress");
-          this.indicator.style.setProperty("--download-progress-pcent", "0%");
+          this._progressIcon.style.setProperty(
+            "--download-progress-pcent",
+            "0%"
+          );
         }
+        this._progressRaf = null;
       });
     }
   },
@@ -514,7 +518,7 @@ const DownloadsIndicatorView = {
     // Check if the downloads button is in the menu panel, to determine which
     // button needs to get a badge.
     let widgetGroup = CustomizableUI.getWidget("downloads-button");
-    let inMenu = widgetGroup.areaType == CustomizableUI.TYPE_MENU_PANEL;
+    let inMenu = widgetGroup.areaType == CustomizableUI.TYPE_PANEL;
 
     // For arrow-Styled indicator, suppress success attention if we have
     // progress in toolbar
@@ -535,10 +539,16 @@ const DownloadsIndicatorView = {
   _attention: DownloadsCommon.ATTENTION_NONE,
 
   // User interface event functions
+  handleEvent(aEvent) {
+    switch (aEvent.type) {
+      case "unload":
+        this.ensureTerminated();
+        break;
 
-  onWindowUnload() {
-    // This function is registered as an event listener, we can't use "this".
-    DownloadsIndicatorView.ensureTerminated();
+      case "visibilitychange":
+        this._maybeScheduleProgressUpdate();
+        break;
+    }
   },
 
   onCommand(aEvent) {
@@ -584,7 +594,17 @@ const DownloadsIndicatorView = {
       if (link.url.startsWith("about:")) {
         continue;
       }
-      saveURL(link.url, link.name, null, true, true, null, null, sourceDoc);
+      saveURL(
+        link.url,
+        null,
+        link.name,
+        null,
+        true,
+        true,
+        null,
+        null,
+        sourceDoc
+      );
       handled = true;
     }
     if (handled) {
@@ -600,21 +620,16 @@ const DownloadsIndicatorView = {
    * is not present in the browser window yet.
    */
   get indicator() {
-    if (this._indicator) {
-      return this._indicator;
+    if (!this._indicator) {
+      this._indicator = document.getElementById("downloads-button");
     }
 
-    let indicator = document.getElementById("downloads-button");
-    if (!indicator || indicator.getAttribute("indicator") != "true") {
-      return null;
-    }
-
-    return (this._indicator = indicator);
+    return this._indicator;
   },
 
   get indicatorAnchor() {
     let widgetGroup = CustomizableUI.getWidget("downloads-button");
-    if (widgetGroup.areaType == CustomizableUI.TYPE_MENU_PANEL) {
+    if (widgetGroup.areaType == CustomizableUI.TYPE_PANEL) {
       let overflowIcon = widgetGroup.forWindow(window).anchor;
       return overflowIcon.icon;
     }

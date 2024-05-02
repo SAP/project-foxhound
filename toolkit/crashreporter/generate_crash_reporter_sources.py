@@ -5,6 +5,7 @@
 import string
 import sys
 import textwrap
+
 import yaml
 
 ###############################################################################
@@ -20,7 +21,7 @@ template_header = (
 def validate_annotations(annotations):
     """Ensure that the annotations have all the required fields"""
 
-    for (name, data) in sorted(annotations.items()):
+    for name, data in sorted(annotations.items()):
         if "description" not in data:
             print("Annotation " + name + " does not have a description\n")
             sys.exit(1)
@@ -71,8 +72,8 @@ def read_template(template_filename):
     return template
 
 
-def extract_crash_ping_whitelist(annotations):
-    """Extract an array holding the names of the annotations whitelisted for
+def extract_crash_ping_allowlist(annotations):
+    """Extract an array holding the names of the annotations allowlisted for
     inclusion in the crash ping."""
 
     return [
@@ -122,13 +123,13 @@ def generate_header(template, annotations):
     """Generate a header by filling the template with the the list of
     annotations and return it as a string."""
 
-    whitelist = extract_crash_ping_whitelist(annotations)
+    allowlist = extract_crash_ping_allowlist(annotations)
 
     return template_header + string.Template(template).substitute(
         {
             "enum": generate_enum(annotations),
             "strings": generate_strings(annotations),
-            "whitelist": generate_array_initializer(whitelist),
+            "allowlist": generate_array_initializer(allowlist),
         }
     )
 
@@ -167,11 +168,11 @@ def generate_java_array_initializer(contents):
 def generate_class(template, annotations):
     """Fill the class template from the list of annotations."""
 
-    whitelist = extract_crash_ping_whitelist(annotations)
+    allowlist = extract_crash_ping_allowlist(annotations)
 
     return template_header + string.Template(template).substitute(
         {
-            "whitelist": generate_java_array_initializer(whitelist),
+            "allowlist": generate_java_array_initializer(allowlist),
         }
     )
 
@@ -188,8 +189,8 @@ def emit_class(output, annotations_filename):
      * are kept in sync with the other C++ and JS users.
      */
     public class CrashReporterConstants {
-        public static final String[] ANNOTATION_WHITELIST = {
-    ${whitelist}
+        public static final String[] ANNOTATION_ALLOWLIST = {
+    ${allowlist}
         };
     }"""
     )

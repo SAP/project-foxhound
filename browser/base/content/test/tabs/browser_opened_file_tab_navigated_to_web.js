@@ -2,10 +2,11 @@
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 
 const TEST_FILE = "dummy_page.html";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const WEB_ADDRESS = "http://example.org/";
 
 // Test for bug 1321020.
-add_task(async function() {
+add_task(async function () {
   let dir = getChromeDir(getResolvedURI(gTestPath));
   dir.append(TEST_FILE);
 
@@ -18,7 +19,7 @@ add_task(async function() {
 
   // Open first file:// page.
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, uriString);
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     BrowserTestUtils.removeTab(tab);
   });
 
@@ -33,14 +34,15 @@ add_task(async function() {
   });
 
   let openedTab = await promiseTabOpened;
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     BrowserTestUtils.removeTab(openedTab);
   });
 
   let openedBrowser = openedTab.linkedBrowser;
 
   // Ensure that new file:// tab can be navigated to web content.
-  BrowserTestUtils.loadURI(openedBrowser, "http://example.org/");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  BrowserTestUtils.startLoadingURIString(openedBrowser, "http://example.org/");
   let href = await BrowserTestUtils.browserLoaded(
     openedBrowser,
     false,

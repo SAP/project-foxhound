@@ -7,8 +7,8 @@
 
 "use strict";
 
-var { getAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+var { getAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 
 var settingsTemplate;
@@ -16,7 +16,7 @@ var settingsTemplate;
 /**
  * Test reading from search.json.mozlz4
  */
-add_task(async function setup() {
+add_setup(async function () {
   await AddonTestUtils.promiseStartupManager();
 
   await setupRemoteSettings();

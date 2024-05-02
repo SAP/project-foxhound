@@ -10,26 +10,25 @@
 
 package org.webrtc;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.os.Build;
 import android.os.SystemClock;
-import androidx.annotation.Nullable;
-import android.util.AndroidException;
 import android.util.Range;
+import androidx.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.webrtc.CameraEnumerationAndroid.CaptureFormat;
 
-@TargetApi(21)
 public class Camera2Enumerator implements CameraEnumerator {
   private final static String TAG = "Camera2Enumerator";
   private final static double NANO_SECONDS_PER_SECOND = 1.0e9;
@@ -51,11 +50,8 @@ public class Camera2Enumerator implements CameraEnumerator {
   public String[] getDeviceNames() {
     try {
       return cameraManager.getCameraIdList();
-      // On Android OS pre 4.4.2, a class will not load because of VerifyError if it contains a
-      // catch statement with an Exception from a newer API, even if the code is never executed.
-      // https://code.google.com/p/android/issues/detail?id=209129
-    } catch (/* CameraAccessException */ AndroidException e) {
-      Logging.e(TAG, "Camera access exception: " + e);
+    } catch (CameraAccessException e) {
+      Logging.e(TAG, "Camera access exception", e);
       return new String[] {};
     }
   }
@@ -105,11 +101,8 @@ public class Camera2Enumerator implements CameraEnumerator {
   private @Nullable CameraCharacteristics getCameraCharacteristics(String deviceName) {
     try {
       return cameraManager.getCameraCharacteristics(deviceName);
-      // On Android OS pre 4.4.2, a class will not load because of VerifyError if it contains a
-      // catch statement with an Exception from a newer API, even if the code is never executed.
-      // https://code.google.com/p/android/issues/detail?id=209129
-    } catch (/* CameraAccessException */ AndroidException e) {
-      Logging.e(TAG, "Camera access exception: " + e);
+    } catch (CameraAccessException | RuntimeException e) {
+      Logging.e(TAG, "Camera access exception", e);
       return null;
     }
   }
@@ -118,10 +111,6 @@ public class Camera2Enumerator implements CameraEnumerator {
    * Checks if API is supported and all cameras have better than legacy support.
    */
   public static boolean isSupported(Context context) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-      return false;
-    }
-
     CameraManager cameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
     try {
       String[] cameraIds = cameraManager.getCameraIdList();
@@ -132,11 +121,8 @@ public class Camera2Enumerator implements CameraEnumerator {
           return false;
         }
       }
-      // On Android OS pre 4.4.2, a class will not load because of VerifyError if it contains a
-      // catch statement with an Exception from a newer API, even if the code is never executed.
-      // https://code.google.com/p/android/issues/detail?id=209129
-    } catch (/* CameraAccessException */ AndroidException e) {
-      Logging.e(TAG, "Camera access exception: " + e);
+    } catch (CameraAccessException | RuntimeException e) {
+      Logging.e(TAG, "Failed to check if camera2 is supported", e);
       return false;
     }
     return true;
@@ -198,7 +184,7 @@ public class Camera2Enumerator implements CameraEnumerator {
       try {
         cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
       } catch (Exception ex) {
-        Logging.e(TAG, "getCameraCharacteristics(): " + ex);
+        Logging.e(TAG, "getCameraCharacteristics()", ex);
         return new ArrayList<CaptureFormat>();
       }
 
@@ -242,7 +228,10 @@ public class Camera2Enumerator implements CameraEnumerator {
 
   // Convert from android.util.Size to Size.
   private static List<Size> convertSizes(android.util.Size[] cameraSizes) {
-    final List<Size> sizes = new ArrayList<Size>();
+    if (cameraSizes == null || cameraSizes.length == 0) {
+      return Collections.emptyList();
+    }
+    final List<Size> sizes = new ArrayList<>(cameraSizes.length);
     for (android.util.Size size : cameraSizes) {
       sizes.add(new Size(size.getWidth(), size.getHeight()));
     }

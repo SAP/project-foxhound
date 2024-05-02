@@ -34,11 +34,11 @@ HTMLMetaElement::~HTMLMetaElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLMetaElement)
 
-nsresult HTMLMetaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                       const nsAttrValue* aValue,
-                                       const nsAttrValue* aOldValue,
-                                       nsIPrincipal* aSubjectPrincipal,
-                                       bool aNotify) {
+void HTMLMetaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                   const nsAttrValue* aValue,
+                                   const nsAttrValue* aOldValue,
+                                   nsIPrincipal* aSubjectPrincipal,
+                                   bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (Document* document = GetUncomposedDoc()) {
       if (aName == nsGkAtoms::content) {
@@ -131,9 +131,8 @@ void HTMLMetaElement::UnbindFromTree(bool aNullParent) {
 
 void HTMLMetaElement::CreateAndDispatchEvent(Document&,
                                              const nsAString& aEventName) {
-  RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
-      this, aEventName, CanBubble::eYes, ChromeOnlyDispatch::eYes);
-  asyncDispatcher->RunDOMEventWhenSafe();
+  AsyncEventDispatcher::RunDOMEventWhenSafe(*this, aEventName, CanBubble::eYes,
+                                            ChromeOnlyDispatch::eYes);
 }
 
 JSObject* HTMLMetaElement::WrapNode(JSContext* aCx,

@@ -5,7 +5,7 @@ const usernameInputSelector = "#form-basic-username";
 const FORM_URL =
   "https://example.com/browser/toolkit/components/passwordmgr/test/browser/form_basic.html";
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["signon.rememberSignons.visibilityToggle", true]],
   });
@@ -18,7 +18,7 @@ let testCases = [
      */
     name: "test_toggle_password",
     logins: [],
-    enabledMasterPassword: false,
+    enabledPrimaryPassword: false,
     formDefaults: {},
     formChanges: {
       [passwordInputSelector]: "pw",
@@ -53,11 +53,11 @@ let testCases = [
   },
   {
     /* Test that the doorhanger password toggle checkbox is disabled
-     * when the master password is set.
+     * when the primary password is set.
      */
-    name: "test_checkbox_disabled_if_has_master_password",
+    name: "test_checkbox_disabled_if_has_primary_password",
     logins: [],
-    enabledMasterPassword: true,
+    enabledPrimaryPassword: true,
     formDefaults: {},
     formChanges: {
       [passwordInputSelector]: "pass",
@@ -229,15 +229,15 @@ async function testDoorhangerToggles({
   formDefaults = {},
   formChanges = {},
   expected,
-  enabledMasterPassword,
+  enabledPrimaryPassword,
 }) {
   formChanges = Array.isArray(formChanges) ? formChanges : [formChanges];
 
   for (let login of logins) {
     await LoginTestUtils.addLogin(login);
   }
-  if (enabledMasterPassword) {
-    LoginTestUtils.masterPassword.enable();
+  if (enabledPrimaryPassword) {
+    LoginTestUtils.primaryPassword.enable();
   }
   let formProcessedPromise = listenForTestNotification("FormProcessed");
   await BrowserTestUtils.withNewTab(
@@ -245,7 +245,7 @@ async function testDoorhangerToggles({
       gBrowser,
       url: FORM_URL,
     },
-    async function(browser) {
+    async function (browser) {
       info(`Opened tab with url: ${FORM_URL}, waiting for focus`);
       await SimpleTest.promiseFocus(browser.ownerGlobal);
       info("Waiting for form-processed message");
@@ -270,15 +270,15 @@ async function testDoorhangerToggles({
         let expectedDoorhanger = expected.passwordChangedDoorhanger;
         info("Verifying dismissed doorhanger from password change");
         let notif = await waitForDoorhanger(browser, expectedDoorhanger.type);
-        ok(notif, "got notification popup");
-        is(
+        Assert.ok(notif, "got notification popup");
+        Assert.equal(
           notif.dismissed,
           expectedDoorhanger.dismissed,
           "Check notification dismissed property"
         );
         let { panel } = browser.ownerGlobal.PopupNotifications;
         // we will open dismissed doorhanger to check panel contents
-        is(panel.state, "closed", "Panel is initially closed");
+        Assert.equal(panel.state, "closed", "Panel is initially closed");
         let promiseShown = BrowserTestUtils.waitForEvent(panel, "popupshown");
         info("Opening the doorhanger popup");
         // synthesize click on anchor as this also blurs the form field triggering
@@ -286,7 +286,7 @@ async function testDoorhangerToggles({
         EventUtils.synthesizeMouseAtCenter(notif.anchorElement, {});
         await promiseShown;
         await TestUtils.waitForTick();
-        ok(
+        Assert.ok(
           panel.children.length,
           `Check the popup has at least one notification (${panel.children.length})`
         );
@@ -309,13 +309,13 @@ async function testDoorhangerToggles({
         info("Waiting for doorhanger popup to open");
         await promiseShown;
         let notif = await getCaptureDoorhanger(expectedDoorhanger.type);
-        ok(notif, "got notification popup");
-        is(
+        Assert.ok(notif, "got notification popup");
+        Assert.equal(
           notif.dismissed,
           expectedDoorhanger.dismissed,
           "Check notification dismissed property"
         );
-        ok(
+        Assert.ok(
           panel.children.length,
           `Check the popup has at least one notification (${panel.children.length})`
         );
@@ -328,8 +328,8 @@ async function testDoorhangerToggles({
     }
   );
   await LoginTestUtils.clearData();
-  if (enabledMasterPassword) {
-    LoginTestUtils.masterPassword.disable();
+  if (enabledPrimaryPassword) {
+    LoginTestUtils.primaryPassword.disable();
   }
   await cleanupPasswordNotifications();
 }
@@ -348,72 +348,72 @@ async function verifyDoorhangerToggles(browser, notif, expected) {
   let toggleCheckbox = notificationElement.querySelector(
     "#password-notification-visibilityToggle"
   );
-  is(panel.state, "open", "Panel is open");
-  ok(
+  Assert.equal(panel.state, "open", "Panel is open");
+  Assert.ok(
     BrowserTestUtils.is_visible(passwordTextbox),
     "The doorhanger password field is visible"
   );
 
   await checkDoorhangerUsernamePassword(expected.username, expected.password);
   if (expected.toggleVisible) {
-    ok(
+    Assert.ok(
       BrowserTestUtils.is_visible(toggleCheckbox),
       "The visibility checkbox is shown"
     );
   } else {
-    ok(
+    Assert.ok(
       BrowserTestUtils.is_hidden(toggleCheckbox),
       "The visibility checkbox is hidden"
     );
   }
 
   if (initialToggleState) {
-    is(
+    Assert.equal(
       toggleCheckbox.checked,
       initialToggleState.toggleChecked,
       `Initially, toggle is ${
         initialToggleState.toggleChecked ? "checked" : "unchecked"
       }`
     );
-    is(
+    Assert.equal(
       passwordTextbox.type,
       initialToggleState.inputType,
       `Initially, password input has type: ${initialToggleState.inputType}`
     );
   }
   if (afterToggleClick0) {
-    ok(
+    Assert.ok(
       !toggleCheckbox.hidden,
       "The checkbox shouldnt be hidden when clicking on it"
     );
     info("Clicking on the visibility toggle");
     await EventUtils.synthesizeMouseAtCenter(toggleCheckbox, {});
     await TestUtils.waitForTick();
-    is(
+    Assert.equal(
       toggleCheckbox.checked,
       afterToggleClick0.toggleChecked,
       `After 1st click, expect toggle to be checked? ${afterToggleClick0.toggleChecked}, actual: ${toggleCheckbox.checked}`
     );
-    is(
+    Assert.equal(
       passwordTextbox.type,
       afterToggleClick0.inputType,
       `After 1st click, expect password input to have type: ${afterToggleClick0.inputType}`
     );
   }
   if (afterToggleClick1) {
-    ok(
+    Assert.ok(
       !toggleCheckbox.hidden,
       "The checkbox shouldnt be hidden when clicking on it"
     );
     info("Clicking on the visibility toggle again");
     await EventUtils.synthesizeMouseAtCenter(toggleCheckbox, {});
     await TestUtils.waitForTick();
-    is(
+    Assert.equal(
       toggleCheckbox.checked,
       afterToggleClick1.toggleChecked,
       `After 2nd click, expect toggle to be checked? ${afterToggleClick0.toggleChecked}, actual: ${toggleCheckbox.checked}`
     );
-    is(
+    Assert.equal(
       passwordTextbox.type,
       afterToggleClick1.inputType,
       `After 2nd click, expect password input to have type: ${afterToggleClick1.inputType}`
@@ -422,13 +422,15 @@ async function verifyDoorhangerToggles(browser, notif, expected) {
 }
 
 async function initForm(browser, formDefaults) {
-  await ContentTask.spawn(browser, formDefaults, async function(
-    selectorValues = {}
-  ) {
-    for (let [sel, value] of Object.entries(selectorValues)) {
-      content.document.querySelector(sel).value = value;
+  await ContentTask.spawn(
+    browser,
+    formDefaults,
+    async function (selectorValues = {}) {
+      for (let [sel, value] of Object.entries(selectorValues)) {
+        content.document.querySelector(sel).value = value;
+      }
     }
-  });
+  );
 }
 
 async function checkForm(browser, expected) {
@@ -441,7 +443,11 @@ async function checkForm(browser, expected) {
     async function contentCheckForm(selectorValues) {
       for (let [sel, value] of Object.entries(selectorValues)) {
         let field = content.document.querySelector(sel);
-        is(field.value, value, sel + " has the expected initial value");
+        Assert.equal(
+          field.value,
+          value,
+          sel + " has the expected initial value"
+        );
       }
     }
   );
@@ -450,7 +456,7 @@ async function checkForm(browser, expected) {
 async function submitForm(browser, action = "") {
   // Submit the form
   let correctPathNamePromise = BrowserTestUtils.browserLoaded(browser);
-  await SpecialPowers.spawn(browser, [action], async function(actionPathname) {
+  await SpecialPowers.spawn(browser, [action], async function (actionPathname) {
     let form = content.document.querySelector("form");
     if (actionPathname) {
       form.action = actionPathname;

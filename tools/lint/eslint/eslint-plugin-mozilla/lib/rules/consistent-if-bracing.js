@@ -10,9 +10,14 @@
 
 module.exports = {
   meta: {
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/consistent-if-bracing.html",
+    },
     messages: {
       consistentIfBracing: "Bracing of if..else bodies should be consistent.",
     },
+    schema: [],
+    type: "layout",
   },
 
   create(context) {

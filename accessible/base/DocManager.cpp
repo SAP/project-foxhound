@@ -7,9 +7,7 @@
 #include "DocManager.h"
 
 #include "ApplicationAccessible.h"
-#include "ARIAMap.h"
 #include "DocAccessible-inl.h"
-#include "DocAccessibleChild.h"
 #include "DocAccessibleParent.h"
 #include "nsAccessibilityService.h"
 #include "Platform.h"
@@ -28,11 +26,8 @@
 #include "nsIChannel.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebNavigation.h"
-#include "nsServiceManagerUtils.h"
 #include "nsIWebProgress.h"
 #include "nsCoreUtils.h"
-#include "nsXULAppAPI.h"
-#include "mozilla/dom/BrowserChild.h"
 #include "xpcAccessibleDocument.h"
 
 using namespace mozilla;
@@ -450,11 +445,13 @@ DocAccessible* DocManager::CreateDocOrRootAccessible(Document* aDocument) {
   }
 
   nsIWidget* widget = nsContentUtils::WidgetForDocument(aDocument);
-  if (!widget || widget->WindowType() == eWindowType_invisible) {
+  if (!widget || widget->GetWindowType() == widget::WindowType::Invisible) {
     return nullptr;
   }
 
-  // Ignore documents without presshell and not having root frame.
+  // Ignore documents without presshell. We must not ignore documents with no
+  // root frame because DOM focus can hit such documents and ignoring them would
+  // prevent a11y focus.
   PresShell* presShell = aDocument->GetPresShell();
   if (!presShell || presShell->IsDestroying()) {
     return nullptr;

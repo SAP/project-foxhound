@@ -19,6 +19,7 @@
 #include "nsIFile.h"
 
 #include "gtest/gtest.h"
+#include "mozilla/gtest/MozAssertions.h"
 
 using namespace mozilla;
 
@@ -238,7 +239,7 @@ class Object {
 
   bool operator<(const Object& other) const {
     // sort based on mStr only
-    return mStr.Compare(other.mStr.get()) < 0;
+    return Compare(mStr, other.mStr) < 0;
   }
 
   const char* Str() const { return mStr.get(); }
@@ -485,7 +486,7 @@ TEST(TArray, test_move_array)
 template <typename TypeParam>
 class TArray_MoveOnlyTest : public ::testing::Test {};
 
-TYPED_TEST_CASE_P(TArray_MoveOnlyTest);
+TYPED_TEST_SUITE_P(TArray_MoveOnlyTest);
 
 static constexpr size_t kMoveOnlyTestArrayLength = 4;
 
@@ -493,8 +494,8 @@ template <typename ArrayType>
 static auto MakeMoveOnlyArray() {
   ArrayType moveOnlyArray;
   for (size_t i = 0; i < kMoveOnlyTestArrayLength; ++i) {
-    EXPECT_TRUE(
-        moveOnlyArray.AppendElement(typename ArrayType::elem_type(), fallible));
+    EXPECT_TRUE(moveOnlyArray.AppendElement(typename ArrayType::value_type(),
+                                            fallible));
   }
   return moveOnlyArray;
 }
@@ -639,7 +640,7 @@ TYPED_TEST_P(TArray_MoveOnlyTest,
   ASSERT_EQ(kMoveOnlyTestArrayLength, autoMoveOnlyArray.Length());
 }
 
-REGISTER_TYPED_TEST_CASE_P(
+REGISTER_TYPED_TEST_SUITE_P(
     TArray_MoveOnlyTest, nsTArray_MoveConstruct, nsTArray_MoveAssign,
     nsTArray_MoveReAssign, nsTArray_to_FallibleTArray_MoveConstruct,
     nsTArray_to_FallibleTArray_MoveAssign,
@@ -656,8 +657,8 @@ REGISTER_TYPED_TEST_CASE_P(
 using BothMoveOnlyTypes =
     ::testing::Types<MoveOnly_RelocateUsingMemutils,
                      MoveOnly_RelocateUsingMoveConstructor>;
-INSTANTIATE_TYPED_TEST_CASE_P(InstantiationOf, TArray_MoveOnlyTest,
-                              BothMoveOnlyTypes);
+INSTANTIATE_TYPED_TEST_SUITE_P(InstantiationOf, TArray_MoveOnlyTest,
+                               BothMoveOnlyTypes);
 
 //----
 
@@ -731,7 +732,7 @@ TEST(TArray, test_comptr_array)
     FilePointer f;
     tmpDir->Clone(getter_AddRefs(f));
     ASSERT_TRUE(f);
-    ASSERT_FALSE(NS_FAILED(f->AppendNative(nsDependentCString(kNames[i]))));
+    ASSERT_NS_SUCCEEDED(f->AppendNative(nsDependentCString(kNames[i])));
     fileArray.AppendElement(f);
   }
 

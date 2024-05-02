@@ -7,17 +7,15 @@
 
 "use strict";
 
-add_task(async function setup() {
+add_setup(async function () {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
 
   // Add a new mock default engine so we don't hit the network.
-  let oldDefaultEngine = await Services.search.getDefault();
-  await SearchTestUtils.installSearchExtension({ name: "Test" });
-  await Services.search.setDefault(Services.search.getEngineByName("Test"));
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
-  });
+  await SearchTestUtils.installSearchExtension(
+    { name: "Test" },
+    { setAsDefault: true }
+  );
 
   // Add one bookmark we'll use below.
   await PlacesUtils.bookmarks.insert({
@@ -47,10 +45,9 @@ add_task(async function noResults() {
   );
 
   // Press enter.  Nothing should happen.
-  let loadPromise = waitForLoadOrTimeout();
+  let promise = waitForLoadStartOrTimeout();
   EventUtils.synthesizeKey("KEY_Enter");
-  let loadEvent = await loadPromise;
-  Assert.ok(!loadEvent, "Nothing should have loaded");
+  await Assert.rejects(promise, /timed out/, "Nothing should have loaded");
 
   await UrlbarTestUtils.promisePopupClose(window);
 });
@@ -92,10 +89,9 @@ add_task(async function localNoHeuristic() {
   Assert.ok(!result.heuristic, "Result should not be heuristic");
 
   // Press enter.  Nothing should happen.
-  let loadPromise = waitForLoadOrTimeout();
+  let promise = waitForLoadStartOrTimeout();
   EventUtils.synthesizeKey("KEY_Enter");
-  let loadEvent = await loadPromise;
-  Assert.ok(!loadEvent, "Nothing should have loaded");
+  await Assert.rejects(promise, /timed out/, "Nothing should have loaded");
 
   await UrlbarTestUtils.promisePopupClose(window);
 });

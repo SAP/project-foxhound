@@ -5,7 +5,10 @@
 /* globals ContentSearchUIController, ContentSearchHandoffUIController */
 "use strict";
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { connect } from "react-redux";
 import { IS_NEWTAB } from "content-src/lib/constants";
 import React from "react";
@@ -19,9 +22,8 @@ export class _Search extends React.PureComponent {
     this.onSearchHandoffDrop = this.onSearchHandoffDrop.bind(this);
     this.onInputMount = this.onInputMount.bind(this);
     this.onInputMountHandoff = this.onInputMountHandoff.bind(this);
-    this.onSearchHandoffButtonMount = this.onSearchHandoffButtonMount.bind(
-      this
-    );
+    this.onSearchHandoffButtonMount =
+      this.onSearchHandoffButtonMount.bind(this);
   }
 
   handleEvent(event) {
@@ -75,7 +77,7 @@ export class _Search extends React.PureComponent {
   onInputMount(input) {
     if (input) {
       // The "healthReportKey" and needs to be "newtab" or "abouthome" so that
-      // BrowserUsageTelemetry.jsm knows to handle events with this name, and
+      // BrowserUsageTelemetry.sys.mjs knows to handle events with this name, and
       // can add the appropriate telemetry probes for search. Without the correct
       // name, certain tests like browser_UsageTelemetry_content.js will fail
       // (See github ticket #2348 for more details)

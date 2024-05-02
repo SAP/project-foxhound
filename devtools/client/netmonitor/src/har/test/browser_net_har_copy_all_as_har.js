@@ -10,7 +10,7 @@
 const EXPECTED_REQUEST_HEADER_COUNT = 9;
 const EXPECTED_RESPONSE_HEADER_COUNT = 6;
 
-add_task(async function() {
+add_task(async function () {
   // Disable tcp fast open, because it is setting a response header indicator
   // (bug 1352274). TCP Fast Open is not present on all platforms therefore the
   // number of response headers will vary depending on the platform.
@@ -45,7 +45,7 @@ async function testSimpleReload({ tab, monitor, toolbox }) {
 
   const page = har.log.pages[0];
 
-  is(page.title, "Network Monitor test page", "There must be some page title");
+  is(page.title, SIMPLE_URL, "There must be some page title");
   ok("onContentLoad" in page.pageTimings, "There must be onContentLoad time");
   ok("onLoad" in page.pageTimings, "There must be onLoad time");
 
@@ -83,21 +83,25 @@ async function testManyReloads({ tab, monitor, toolbox }) {
     toolbox,
     reloadTwice: true,
   });
-  is(har.log.entries.length, 2, "There must be two requests");
+  // In most cases, we will have two requests, but sometimes,
+  // the first one might be missing as we couldn't fetch any lazy data for it.
+  ok(har.log.entries.length >= 1, "There must be at least one request");
   info(
     "Assert the first navigation request which has been cancelled by the second reload"
   );
   // Requests may come out of order, so try to find the bogus cancelled request
   let entry = har.log.entries.find(e => e.response.status == 0);
-  ok(entry, "Found the cancelled request");
-  is(entry.request.method, "GET", "Method is set");
-  is(entry.request.url, SIMPLE_URL, "URL is set");
-  // We always get the following headers:
-  // "Host", "User-agent", "Accept", "Accept-Language", "Accept-Encoding", "Connection"
-  // but are missing the three last headers:
-  // "Upgrade-Insecure-Requests", "Pragma", "Cache-Control"
-  is(entry.request.headers.length, 6, "But headers are partialy populated");
-  is(entry.response.status, 0, "And status is set to 0");
+  if (entry) {
+    ok(entry, "Found the cancelled request");
+    is(entry.request.method, "GET", "Method is set");
+    is(entry.request.url, SIMPLE_URL, "URL is set");
+    // We always get the following headers:
+    // "Host", "User-agent", "Accept", "Accept-Language", "Accept-Encoding", "Connection"
+    // but are missing the three last headers:
+    // "Upgrade-Insecure-Requests", "Pragma", "Cache-Control"
+    is(entry.request.headers.length, 6, "But headers are partialy populated");
+    is(entry.response.status, 0, "And status is set to 0");
+  }
 
   entry = har.log.entries.find(e => e.response.status != 0);
   assertNavigationRequestEntry(entry);
@@ -112,6 +116,8 @@ async function testClearedRequests({ tab, monitor, toolbox }) {
     encodeURIComponent(
       `iframe<script>fetch("/document-builder.sjs?html=iframe-request")</script>`
     );
+
+  await waitForAllNetworkUpdateEvents();
   await navigateTo(topDocumentURL);
 
   info("Create an iframe doing a request and remove the iframe.");
@@ -119,37 +125,30 @@ async function testClearedRequests({ tab, monitor, toolbox }) {
     "Doing this, should notify a network request that is destroyed on the server side"
   );
   const onNetworkEvents = waitForNetworkEvents(monitor, 2);
-  await SpecialPowers.spawn(tab.linkedBrowser, [iframeURL], async function(
-    _iframeURL
-  ) {
-    const iframe = content.document.createElement("iframe");
-    iframe.setAttribute("src", _iframeURL);
-    content.document.body.appendChild(iframe);
-  });
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [iframeURL],
+    async function (_iframeURL) {
+      const iframe = content.document.createElement("iframe");
+      iframe.setAttribute("src", _iframeURL);
+      content.document.body.appendChild(iframe);
+    }
+  );
   // Wait for the two request to be processed (iframe doc + fetch requests)
   // before removing the iframe so that the netmonitor is able to fetch
   // all lazy data without throwing
   await onNetworkEvents;
+  await waitForAllNetworkUpdateEvents();
 
   info("Remove the iframe so that lazy request data are freed");
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     content.document.querySelector("iframe").remove();
   });
 
-  const { connector, store, windowRequire } = monitor.panelWin;
-  const { HarMenuUtils } = windowRequire(
-    "devtools/client/netmonitor/src/har/har-menu-utils"
-  );
   // HAR will try to re-fetch lazy data and may throw on the iframe fetch request.
   // This subtest is meants to verify we aren't throwing here and HAR export
   // works fine, even if some requests can't be fetched.
-  await HarMenuUtils.copyAllAsHar(
-    getSortedRequests(store.getState()),
-    connector
-  );
-
-  const jsonString = SpecialPowers.getClipboardData("text/unicode");
-  const har = JSON.parse(jsonString);
+  const har = await copyAllAsHARWithContextMenu(monitor);
   is(har.log.entries.length, 2, "There must be two requests");
   is(
     har.log.entries[0].request.url,
@@ -198,18 +197,14 @@ async function reloadAndCopyAllAsHar({
   toolbox,
   reloadTwice = false,
 }) {
-  const { connector, store, windowRequire } = monitor.panelWin;
-  const { HarMenuUtils } = windowRequire(
-    "devtools/client/netmonitor/src/har/har-menu-utils"
-  );
+  const { store, windowRequire } = monitor.panelWin;
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
   store.dispatch(Actions.batchEnable(false));
 
   const onNetworkEvent = waitForNetworkEvents(monitor, 1);
-  const {
-    onDomCompleteResource,
-  } = await waitForNextTopLevelDomCompleteResource(toolbox.commands);
+  const { onDomCompleteResource } =
+    await waitForNextTopLevelDomCompleteResource(toolbox.commands);
 
   if (reloadTwice) {
     reloadBrowser();
@@ -221,11 +216,5 @@ async function reloadAndCopyAllAsHar({
   info("Waiting for DOCUMENT_EVENT dom-complete resource");
   await onDomCompleteResource;
 
-  await HarMenuUtils.copyAllAsHar(
-    getSortedRequests(store.getState()),
-    connector
-  );
-
-  const jsonString = SpecialPowers.getClipboardData("text/unicode");
-  return JSON.parse(jsonString);
+  return copyAllAsHARWithContextMenu(monitor);
 }

@@ -52,7 +52,7 @@
  *   FOR_EACH_TOKEN_KIND(EMIT_TOKEN)
  *   #undef EMIT_TOKEN
  *
- * Note that this list does not contain ERROR and LIMIT.
+ * Note that this list does not contain Limit.
  */
 #define FOR_EACH_TOKEN_KIND_WITH_RANGE(MACRO, RANGE)                   \
   MACRO(Eof, "end of script")                                          \
@@ -82,6 +82,7 @@
   MACRO(Number, "numeric literal")                                     \
   MACRO(String, "string literal")                                      \
   MACRO(BigInt, "bigint literal")                                      \
+  IF_DECORATORS(MACRO(At, "'@'"))                                      \
                                                                        \
   /* start of template literal with substitutions */                   \
   MACRO(TemplateHead, "'${'")                                          \
@@ -128,6 +129,8 @@
   /* contextual keywords */                                            \
   MACRO(As, "'as'")                                                    \
   RANGE(ContextualKeywordFirst, As)                                    \
+  /* TODO: Move to alphabetical order when IF_DECORATORS is removed */ \
+  IF_DECORATORS(MACRO(Accessor, "'accessor'"))                         \
   MACRO(Assert, "'assert'")                                            \
   MACRO(Async, "'async'")                                              \
   MACRO(Await, "'await'")                                              \

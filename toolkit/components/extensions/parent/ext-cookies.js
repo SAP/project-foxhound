@@ -219,7 +219,7 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
  *
  * If allowPattern is true, an OriginAttributesPattern may be returned instead.
  *
- * @param {Object} details
+ * @param {object} details
  *        The details received from the extension.
  * @param {BaseContext} context
  * @param {boolean} allowPattern
@@ -227,12 +227,12 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
  *        OriginAttributes. The get/set/remove cookie methods operate on exact
  *        OriginAttributes, the getAll method allows a partial pattern and may
  *        potentially match cookies with distinct origin attributes.
- * @returns {Object} An object with the following properties:
+ * @returns {object} An object with the following properties:
  *  - originAttributes {OriginAttributes|OriginAttributesPattern}
  *  - isPattern {boolean} Whether originAttributes is a pattern.
  *  - isPrivate {boolean} Whether the cookie belongs to private browsing mode.
  *  - storeId {string} The storeId of the cookie.
- **/
+ */
 const oaFromDetails = (details, context, allowPattern) => {
   // Default values, may be filled in based on details.
   let originAttributes = {
@@ -299,7 +299,8 @@ const oaFromDetails = (details, context, allowPattern) => {
 
 /**
  * Query the cookie store for matching cookies.
- * @param {Object} detailsIn
+ *
+ * @param {object} detailsIn
  * @param {Array} props          Properties the extension is interested in matching against.
  *                               The firstPartyDomain / partitionKey / storeId
  *                               props are always accounted for.
@@ -308,7 +309,7 @@ const oaFromDetails = (details, context, allowPattern) => {
  *                               origin attributes instead of falling back to
  *                               default values. See the oaFromDetails method.
  */
-const query = function*(detailsIn, props, context, allowPattern) {
+const query = function* (detailsIn, props, context, allowPattern) {
   let details = {};
   props.forEach(property => {
     if (detailsIn[property] !== null) {
@@ -450,15 +451,89 @@ const validateFirstPartyDomain = details => {
   }
 };
 
-this.cookies = class extends ExtensionAPI {
+this.cookies = class extends ExtensionAPIPersistent {
+  PERSISTENT_EVENTS = {
+    onChanged({ fire }) {
+      let observer = (subject, topic) => {
+        let notify = (removed, cookie, cause) => {
+          cookie.QueryInterface(Ci.nsICookie);
+
+          if (this.extension.allowedOrigins.matchesCookie(cookie)) {
+            fire.async({
+              removed,
+              cookie: convertCookie({
+                cookie,
+                isPrivate: topic == "private-cookie-changed",
+              }),
+              cause,
+            });
+          }
+        };
+
+        let notification = subject.QueryInterface(Ci.nsICookieNotification);
+        let { cookie } = notification;
+
+        let {
+          COOKIE_DELETED,
+          COOKIE_ADDED,
+          COOKIE_CHANGED,
+          COOKIES_BATCH_DELETED,
+        } = Ci.nsICookieNotification;
+
+        // We do our best effort here to map the incompatible states.
+        switch (notification.action) {
+          case COOKIE_DELETED:
+            notify(true, cookie, "explicit");
+            break;
+          case COOKIE_ADDED:
+            notify(false, cookie, "explicit");
+            break;
+          case COOKIE_CHANGED:
+            notify(true, cookie, "overwrite");
+            notify(false, cookie, "explicit");
+            break;
+          case COOKIES_BATCH_DELETED:
+            let cookieArray = notification.batchDeletedCookies.QueryInterface(
+              Ci.nsIArray
+            );
+            for (let i = 0; i < cookieArray.length; i++) {
+              let cookie = cookieArray.queryElementAt(i, Ci.nsICookie);
+              if (!cookie.isSession && cookie.expiry * 1000 <= Date.now()) {
+                notify(true, cookie, "expired");
+              } else {
+                notify(true, cookie, "evicted");
+              }
+            }
+            break;
+        }
+      };
+
+      const { privateBrowsingAllowed } = this.extension;
+      Services.obs.addObserver(observer, "cookie-changed");
+      if (privateBrowsingAllowed) {
+        Services.obs.addObserver(observer, "private-cookie-changed");
+      }
+      return {
+        unregister() {
+          Services.obs.removeObserver(observer, "cookie-changed");
+          if (privateBrowsingAllowed) {
+            Services.obs.removeObserver(observer, "private-cookie-changed");
+          }
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+  };
   getAPI(context) {
     let { extension } = context;
     let self = {
       cookies: {
-        get: function(details) {
+        get: function (details) {
           validateFirstPartyDomain(details);
 
-          // FIXME: We don't sort by length of path and creation time.
+          // TODO bug 1818968: We don't sort by length of path and creation time.
           let allowed = ["url", "name"];
           for (let cookie of query(details, allowed, context)) {
             return Promise.resolve(convertCookie(cookie));
@@ -468,7 +543,7 @@ this.cookies = class extends ExtensionAPI {
           return Promise.resolve(null);
         },
 
-        getAll: function(details) {
+        getAll: function (details) {
           if (!("firstPartyDomain" in details)) {
             // Check and throw an error if firstPartyDomain is required.
             validateFirstPartyDomain(details);
@@ -483,7 +558,7 @@ this.cookies = class extends ExtensionAPI {
           return Promise.resolve(result);
         },
 
-        set: function(details) {
+        set: function (details) {
           validateFirstPartyDomain(details);
           if (details.firstPartyDomain && details.partitionKey) {
             // FPI and dFPI are mutually exclusive, so it does not make sense
@@ -560,7 +635,7 @@ this.cookies = class extends ExtensionAPI {
           return self.cookies.get(details);
         },
 
-        remove: function(details) {
+        remove: function (details) {
           validateFirstPartyDomain(details);
 
           let allowed = ["url", "name"];
@@ -587,7 +662,7 @@ this.cookies = class extends ExtensionAPI {
           return Promise.resolve(null);
         },
 
-        getAllCookieStores: function() {
+        getAllCookieStores: function () {
           let data = {};
           for (let tab of extension.tabManager.query()) {
             if (!(tab.cookieStoreId in data)) {
@@ -609,64 +684,9 @@ this.cookies = class extends ExtensionAPI {
 
         onChanged: new EventManager({
           context,
-          name: "cookies.onChanged",
-          register: fire => {
-            let observer = (subject, topic, data) => {
-              let notify = (removed, cookie, cause) => {
-                cookie.QueryInterface(Ci.nsICookie);
-
-                if (extension.allowedOrigins.matchesCookie(cookie)) {
-                  fire.async({
-                    removed,
-                    cookie: convertCookie({
-                      cookie,
-                      isPrivate: topic == "private-cookie-changed",
-                    }),
-                    cause,
-                  });
-                }
-              };
-
-              // We do our best effort here to map the incompatible states.
-              switch (data) {
-                case "deleted":
-                  notify(true, subject, "explicit");
-                  break;
-                case "added":
-                  notify(false, subject, "explicit");
-                  break;
-                case "changed":
-                  notify(true, subject, "overwrite");
-                  notify(false, subject, "explicit");
-                  break;
-                case "batch-deleted":
-                  subject.QueryInterface(Ci.nsIArray);
-                  for (let i = 0; i < subject.length; i++) {
-                    let cookie = subject.queryElementAt(i, Ci.nsICookie);
-                    if (
-                      !cookie.isSession &&
-                      cookie.expiry * 1000 <= Date.now()
-                    ) {
-                      notify(true, cookie, "expired");
-                    } else {
-                      notify(true, cookie, "evicted");
-                    }
-                  }
-                  break;
-              }
-            };
-
-            Services.obs.addObserver(observer, "cookie-changed");
-            if (context.privateBrowsingAllowed) {
-              Services.obs.addObserver(observer, "private-cookie-changed");
-            }
-            return () => {
-              Services.obs.removeObserver(observer, "cookie-changed");
-              if (context.privateBrowsingAllowed) {
-                Services.obs.removeObserver(observer, "private-cookie-changed");
-              }
-            };
-          },
+          module: "cookies",
+          event: "onChanged",
+          extensionApi: this,
         }).api(),
       },
     };

@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 from marionette_driver.errors import UnsupportedOperationException
 from marionette_harness import MarionetteTestCase, skip
 
@@ -16,6 +14,7 @@ class TestReftest(MarionetteTestCase):
 
         self.marionette.set_pref("marionette.log.truncate", False)
         self.marionette.set_pref("dom.send_after_paint_to_content", True)
+        self.marionette.set_pref("widget.gtk.overlay-scrollbars.enabled", False)
 
     def tearDown(self):
         try:
@@ -29,6 +28,7 @@ class TestReftest(MarionetteTestCase):
 
         self.marionette.clear_pref("dom.send_after_paint_to_content")
         self.marionette.clear_pref("marionette.log.truncate")
+        self.marionette.clear_pref("widget.gtk.overlay-scrollbars.enabled")
 
         super(TestReftest, self).tearDown()
 
@@ -46,11 +46,11 @@ class TestReftest(MarionetteTestCase):
         )
         self.marionette._send_message("reftest:teardown", {})
         expected = {
-            u"value": {
-                u"extra": {},
-                u"message": u"Testing about:blank == about:blank\n",
-                u"stack": None,
-                u"status": u"PASS",
+            "value": {
+                "extra": {},
+                "message": "Testing about:blank == about:blank\n",
+                "stack": None,
+                "status": "PASS",
             }
         }
         self.assertEqual(expected, rv)
@@ -70,7 +70,7 @@ class TestReftest(MarionetteTestCase):
             },
         )
         self.marionette._send_message("reftest:teardown", {})
-        self.assertEqual(u"PASS", rv[u"value"][u"status"])
+        self.assertEqual("PASS", rv["value"]["status"])
 
     def test_cache_multiple_sizes(self):
         teal = self.fixtures.where_is("reftest/teal-700x700.html")
@@ -88,7 +88,7 @@ class TestReftest(MarionetteTestCase):
                 "height": 600,
             },
         )
-        self.assertEqual(u"PASS", rv[u"value"][u"status"])
+        self.assertEqual("PASS", rv["value"]["status"])
 
         rv = self.marionette._send_message(
             "reftest:run",
@@ -101,5 +101,5 @@ class TestReftest(MarionetteTestCase):
                 "height": 700,
             },
         )
-        self.assertEqual(u"FAIL", rv[u"value"][u"status"])
+        self.assertEqual("FAIL", rv["value"]["status"])
         self.marionette._send_message("reftest:teardown", {})

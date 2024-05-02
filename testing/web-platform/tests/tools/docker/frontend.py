@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 import argparse
 import logging
 import os
@@ -127,6 +129,7 @@ def run(*args, **kwargs):
                  os.path.join(wpt_root, "tools", "docker", "seccomp.json")])
     if kwargs["privileged"]:
         args.append("--privileged")
+        args.extend(["--device", "/dev/kvm"])
     if kwargs["checkout"]:
         args.extend(["--env", "REF==%s" % kwargs["checkout"]])
     else:

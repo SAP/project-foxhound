@@ -4,8 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const nsPK11TokenDB = "@mozilla.org/security/pk11tokendb;1";
 const nsIPK11TokenDB = Ci.nsIPK11TokenDB;
 const nsIDialogParamBlock = Ci.nsIDialogParamBlock;
@@ -117,7 +115,7 @@ function setPassword() {
           if (passok) {
             token.changePassword(oldpw, pw1.value);
             if (pw1.value == "") {
-              createAlert("pw-change-success-title", "pp-erased-ok");
+              createAlert("pw-change-success-title", "settings-pp-erased-ok");
             } else {
               createAlert("pw-change-success-title", "pp-change-ok");
             }
@@ -129,13 +127,13 @@ function setPassword() {
         createAlert("pw-change-failed-title", "incorrect-pp");
       }
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       createAlert("pw-change-failed-title", "failed-pp-change");
     }
   } else {
     token.initPassword(pw1.value);
     if (pw1.value == "") {
-      createAlert("pw-change-success-title", "pp-not-wanted");
+      createAlert("pw-change-success-title", "settings-pp-not-wanted");
     }
   }
 }

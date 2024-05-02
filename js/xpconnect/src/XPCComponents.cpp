@@ -8,18 +8,17 @@
 
 #include "xpcprivate.h"
 #include "xpc_make_class.h"
-#include "JSServices.h"
 #include "XPCJSWeakReference.h"
+#include "AccessCheck.h"
 #include "WrapperFactory.h"
 #include "nsJSUtils.h"
-#include "mozJSComponentLoader.h"
+#include "mozJSModuleLoader.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::IsArrayObject
 #include "js/CallAndConstruct.h"  // JS::IsCallable, JS_CallFunctionName, JS_CallFunctionValue
 #include "js/CharacterEncoding.h"
-#include "js/ContextOptions.h"
 #include "js/friend/WindowProxy.h"  // js::ToWindowProxyIfWindow
 #include "js/Object.h"              // JS::GetClass, JS::GetCompartment
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetProperty, JS_SetPropertyById
@@ -33,9 +32,11 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Try.h"
 #include "mozilla/URLPreloader.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/RemoteObjectProxy.h"
 #include "mozilla/dom/StructuredCloneTags.h"
@@ -46,9 +47,10 @@
 #include "nsIException.h"
 #include "nsIScriptError.h"
 #include "nsPIDOMWindow.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsScriptError.h"
 #include "GeckoProfiler.h"
+#include "ProfilerControl.h"
 #include "mozilla/EditorSpellCheck.h"
 #include "nsCommandLine.h"
 #include "nsCommandParams.h"
@@ -215,11 +217,11 @@ nsXPCComponents_Interfaces::Resolve(nsIXPConnectWrappedNative* wrapper,
   RootedObject obj(cx, objArg);
   RootedId id(cx, idArg);
 
-  if (!JSID_IS_STRING(id)) {
+  if (!id.isString()) {
     return NS_OK;
   }
 
-  RootedString str(cx, JSID_TO_STRING(id));
+  RootedString str(cx, id.toString());
   JS::UniqueChars name = JS_EncodeStringToLatin1(cx, str);
 
   // we only allow interfaces by name here
@@ -369,8 +371,7 @@ nsXPCComponents_Classes::Resolve(nsIXPConnectWrappedNative* wrapper,
   RootedObject obj(cx, objArg);
 
   RootedValue cidv(cx);
-  if (JSID_IS_STRING(id) &&
-      xpc::ContractID2JSValue(cx, JSID_TO_STRING(id), &cidv)) {
+  if (id.isString() && xpc::ContractID2JSValue(cx, id.toString(), &cidv)) {
     *resolvedp = true;
     *_retval = JS_DefinePropertyById(cx, obj, id, cidv,
                                      JSPROP_ENUMERATE | JSPROP_READONLY |
@@ -498,11 +499,11 @@ nsXPCComponents_Results::Resolve(nsIXPConnectWrappedNative* wrapper,
                                  bool* resolvedp, bool* _retval) {
   RootedObject obj(cx, objArg);
   RootedId id(cx, idArg);
-  if (!JSID_IS_STRING(id)) {
+  if (!id.isString()) {
     return NS_OK;
   }
 
-  JS::UniqueChars name = JS_EncodeStringToLatin1(cx, JSID_TO_STRING(id));
+  JS::UniqueChars name = JS_EncodeStringToLatin1(cx, id.toString());
   if (name) {
     const char* rv_name;
     const void* iter = nullptr;
@@ -1308,16 +1309,6 @@ nsXPCComponents_Utils::GetSandbox(nsIXPCComponents_utils_Sandbox** aSandbox) {
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::CreateServicesCache(JSContext* aCx,
-                                           MutableHandleValue aServices) {
-  if (JSObject* services = NewJSServices(aCx)) {
-    aServices.setObject(*services);
-    return NS_OK;
-  }
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
 nsXPCComponents_Utils::PrintStderr(const nsACString& message) {
   printf_stderr("%s", PromiseFlatUTF8String(message).get());
   return NS_OK;
@@ -1419,7 +1410,7 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
   if (err) {
     // It's a proper JS Error
     nsAutoString fileUni;
-    CopyUTF8toUTF16(mozilla::MakeStringSpan(err->filename), fileUni);
+    CopyUTF8toUTF16(mozilla::MakeStringSpan(err->filename.c_str()), fileUni);
 
     uint32_t column = err->tokenOffset();
 
@@ -1550,7 +1541,7 @@ NS_IMETHODIMP
 nsXPCComponents_Utils::Import(const nsACString& registryLocation,
                               HandleValue targetObj, JSContext* cx,
                               uint8_t optionalArgc, MutableHandleValue retval) {
-  RefPtr<mozJSComponentLoader> moduleloader = mozJSComponentLoader::Get();
+  RefPtr moduleloader = mozJSModuleLoader::Get();
   MOZ_ASSERT(moduleloader);
 
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("nsXPCComponents_Utils::Import", OTHER,
@@ -1561,16 +1552,32 @@ nsXPCComponents_Utils::Import(const nsACString& registryLocation,
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::IsModuleLoaded(const nsACString& registryLocation,
+nsXPCComponents_Utils::IsModuleLoaded(const nsACString& aResourceURI,
                                       bool* retval) {
-  RefPtr<mozJSComponentLoader> moduleloader = mozJSComponentLoader::Get();
+  RefPtr moduleloader = mozJSModuleLoader::Get();
   MOZ_ASSERT(moduleloader);
-  return moduleloader->IsModuleLoaded(registryLocation, retval);
+  return moduleloader->IsModuleLoaded(aResourceURI, retval);
+}
+
+NS_IMETHODIMP
+nsXPCComponents_Utils::IsJSModuleLoaded(const nsACString& aResourceURI,
+                                        bool* retval) {
+  RefPtr moduleloader = mozJSModuleLoader::Get();
+  MOZ_ASSERT(moduleloader);
+  return moduleloader->IsJSModuleLoaded(aResourceURI, retval);
+}
+
+NS_IMETHODIMP
+nsXPCComponents_Utils::IsESModuleLoaded(const nsACString& aResourceURI,
+                                        bool* retval) {
+  RefPtr moduleloader = mozJSModuleLoader::Get();
+  MOZ_ASSERT(moduleloader);
+  return moduleloader->IsESModuleLoaded(aResourceURI, retval);
 }
 
 NS_IMETHODIMP
 nsXPCComponents_Utils::Unload(const nsACString& registryLocation) {
-  RefPtr<mozJSComponentLoader> moduleloader = mozJSComponentLoader::Get();
+  RefPtr moduleloader = mozJSModuleLoader::Get();
   MOZ_ASSERT(moduleloader);
   return moduleloader->Unload(registryLocation);
 }
@@ -2044,22 +2051,6 @@ nsXPCComponents_Utils::Dispatch(HandleValue runnableArg, HandleValue scope,
   return NS_DispatchToMainThread(run);
 }
 
-#define GENERATE_JSCONTEXTOPTION_GETTER_SETTER(_attr, _getter, _setter) \
-  NS_IMETHODIMP                                                         \
-  nsXPCComponents_Utils::Get##_attr(JSContext* cx, bool* aValue) {      \
-    *aValue = ContextOptionsRef(cx)._getter();                          \
-    return NS_OK;                                                       \
-  }                                                                     \
-  NS_IMETHODIMP                                                         \
-  nsXPCComponents_Utils::Set##_attr(JSContext* cx, bool aValue) {       \
-    ContextOptionsRef(cx)._setter(aValue);                              \
-    return NS_OK;                                                       \
-  }
-
-GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Strict_mode, strictMode, setStrictMode)
-
-#undef GENERATE_JSCONTEXTOPTION_GETTER_SETTER
-
 NS_IMETHODIMP
 nsXPCComponents_Utils::SetGCZeal(int32_t aValue, JSContext* cx) {
 #ifdef JS_GC_ZEAL
@@ -2227,59 +2218,16 @@ nsXPCComponents_Utils::GetIncumbentGlobal(HandleValue aCallback, JSContext* aCx,
   return NS_OK;
 }
 
-/*
- * Below is a bunch of awkward junk to allow JS test code to trigger the
- * creation of an XPCWrappedJS, such that it ends up in the map. We need to
- * hand the caller some sort of reference to hold onto (to prevent the
- * refcount from dropping to zero as soon as the function returns), but trying
- * to return a bonafide XPCWrappedJS to script causes all sorts of trouble. So
- * we create a benign holder class instead, which acts as an opaque reference
- * that script can use to keep the XPCWrappedJS alive and in the map.
- */
-
-class WrappedJSHolder : public nsISupports {
-  NS_DECL_ISUPPORTS
-  WrappedJSHolder() = default;
-
-  RefPtr<nsXPCWrappedJS> mWrappedJS;
-
- private:
-  virtual ~WrappedJSHolder() = default;
-};
-
-NS_IMPL_ADDREF(WrappedJSHolder)
-NS_IMPL_RELEASE(WrappedJSHolder)
-
-// nsINamed is always supported by nsXPCWrappedJS::DelegatedQueryInterface().
-// We expose this interface only for the identity in telemetry analysis.
-NS_INTERFACE_TABLE_HEAD(WrappedJSHolder)
-  if (aIID.Equals(NS_GET_IID(nsINamed))) {
-    return mWrappedJS->QueryInterface(aIID, aInstancePtr);
-  }
-  NS_INTERFACE_TABLE0(WrappedJSHolder)
-NS_INTERFACE_TABLE_TAIL
-
 NS_IMETHODIMP
-nsXPCComponents_Utils::GenerateXPCWrappedJS(HandleValue aObj,
-                                            HandleValue aScope, JSContext* aCx,
-                                            nsISupports** aOut) {
+nsXPCComponents_Utils::GetDebugName(HandleValue aObj, JSContext* aCx,
+                                    nsACString& aOut) {
   if (!aObj.isObject()) {
     return NS_ERROR_INVALID_ARG;
   }
-  RootedObject obj(aCx, &aObj.toObject());
-  RootedObject scope(aCx, aScope.isObject()
-                              ? js::UncheckedUnwrap(&aScope.toObject())
-                              : CurrentGlobalOrNull(aCx));
-  JSAutoRealm ar(aCx, scope);
-  if (!JS_WrapObject(aCx, &obj)) {
-    return NS_ERROR_FAILURE;
-  }
 
-  RefPtr<WrappedJSHolder> holder = new WrappedJSHolder();
-  nsresult rv = nsXPCWrappedJS::GetNewOrUsed(
-      aCx, obj, NS_GET_IID(nsISupports), getter_AddRefs(holder->mWrappedJS));
-  holder.forget(aOut);
-  return rv;
+  RootedObject obj(aCx, &aObj.toObject());
+  aOut = xpc::GetFunctionName(aCx, obj);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -2522,27 +2470,33 @@ nsXPCComponents_Utils::CreateHTMLCopyEncoder(
 
 NS_IMETHODIMP
 nsXPCComponents_Utils::GetLoadedModules(nsTArray<nsCString>& aLoadedModules) {
-  mozJSComponentLoader::Get()->GetLoadedModules(aLoadedModules);
+  return mozJSModuleLoader::Get()->GetLoadedJSAndESModules(aLoadedModules);
+}
+
+NS_IMETHODIMP
+nsXPCComponents_Utils::GetLoadedJSModules(
+    nsTArray<nsCString>& aLoadedJSModules) {
+  mozJSModuleLoader::Get()->GetLoadedModules(aLoadedJSModules);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::GetLoadedComponents(
-    nsTArray<nsCString>& aLoadedComponents) {
-  mozJSComponentLoader::Get()->GetLoadedComponents(aLoadedComponents);
-  return NS_OK;
+nsXPCComponents_Utils::GetLoadedESModules(
+    nsTArray<nsCString>& aLoadedESModules) {
+  return mozJSModuleLoader::Get()->GetLoadedESModules(aLoadedESModules);
 }
 
 NS_IMETHODIMP
 nsXPCComponents_Utils::GetModuleImportStack(const nsACString& aLocation,
                                             nsACString& aRetval) {
-  return mozJSComponentLoader::Get()->GetModuleImportStack(aLocation, aRetval);
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::GetComponentLoadStack(const nsACString& aLocation,
-                                             nsACString& aRetval) {
-  return mozJSComponentLoader::Get()->GetComponentLoadStack(aLocation, aRetval);
+  nsresult rv =
+      mozJSModuleLoader::Get()->GetModuleImportStack(aLocation, aRetval);
+  // Fallback the query to the DevTools loader if not found in the shared loader
+  if (rv == NS_ERROR_FAILURE && mozJSModuleLoader::GetDevToolsLoader()) {
+    return mozJSModuleLoader::GetDevToolsLoader()->GetModuleImportStack(
+        aLocation, aRetval);
+  }
+  return rv;
 }
 
 /***************************************************************************/

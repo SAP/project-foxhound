@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { SyncedTabs } = ChromeUtils.import(
-  "resource://services-sync/SyncedTabs.jsm"
+const { SyncedTabs } = ChromeUtils.importESModule(
+  "resource://services-sync/SyncedTabs.sys.mjs"
 );
 
 const TEST_ENGINE_BASENAME = "searchSuggestionEngine.xml";
@@ -30,7 +30,7 @@ function assertElementsDisplayed(details, expected) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.suggest.searches", false],
@@ -44,14 +44,9 @@ add_task(async function setup() {
     ],
   });
 
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
-
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
   });
 
   // Move the mouse away from the results panel, because hovering a result may
@@ -174,7 +169,7 @@ add_task(async function test_keyword_result() {
     // Because only the keyword is typed, we show the bookmark url.
     assertElementsDisplayed(details, {
       separator: true,
-      title: TEST_URL + "?q=",
+      title: TEST_URL.substring("https://".length) + "?q=",
       type: UrlbarUtils.RESULT_TYPE.KEYWORD,
     });
 
@@ -294,7 +289,7 @@ add_task(async function test_remote_tab_result() {
   // Reset internal cache in UrlbarProviderRemoteTabs.
   Services.obs.notifyObservers(null, "weave:engine:sync:finish", "tabs");
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     sandbox.restore();
     weaveXPCService.ready = oldWeaveServiceReady;
     SyncedTabs._internal = originalSyncedTabsInternal;

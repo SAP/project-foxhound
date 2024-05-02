@@ -11,6 +11,8 @@
 #include "jit/arm64/Assembler-arm64.h"
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
+#include "wasm/WasmFeatures.h"  // for wasm::ReportSimdAnalysis
+
 #include "jit/shared/Lowering-shared-inl.h"
 
 using namespace js;
@@ -38,6 +40,8 @@ LAllocation LIRGeneratorARM64::useByteOpRegisterOrNonDoubleConstant(
     MDefinition* mir) {
   return useRegisterOrNonDoubleConstant(mir);
 }
+
+LDefinition LIRGeneratorARM64::tempByteOpRegister() { return temp(); }
 
 LDefinition LIRGeneratorARM64::tempToUnbox() { return temp(); }
 
@@ -220,14 +224,14 @@ void LIRGeneratorARM64::lowerWasmBuiltinTruncateToInt32(
 
   if (opd->type() == MIRType::Double) {
     define(new (alloc()) LWasmBuiltinTruncateDToInt32(
-               useRegister(opd), useFixed(ins->tls(), WasmTlsReg),
+               useRegister(opd), useFixed(ins->instance(), InstanceReg),
                LDefinition::BogusTemp()),
            ins);
     return;
   }
 
   define(new (alloc()) LWasmBuiltinTruncateFToInt32(
-             useRegister(opd), useFixed(ins->tls(), WasmTlsReg),
+             useRegister(opd), useFixed(ins->instance(), InstanceReg),
              LDefinition::BogusTemp()),
          ins);
 }
@@ -572,10 +576,11 @@ void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
 void LIRGeneratorARM64::lowerUDiv(MDiv* div) {
   LAllocation lhs = useRegister(div->lhs());
   if (div->rhs()->isConstant()) {
-    int32_t rhs = div->rhs()->toConstant()->toInt32();
-    int32_t shift = mozilla::FloorLog2(mozilla::Abs(rhs));
+    // NOTE: the result of toInt32 is coerced to uint32_t.
+    uint32_t rhs = div->rhs()->toConstant()->toInt32();
+    int32_t shift = mozilla::FloorLog2(rhs);
 
-    if (rhs != 0 && uint32_t(1) << shift == mozilla::Abs(rhs)) {
+    if (rhs != 0 && uint32_t(1) << shift == rhs) {
       LDivPowTwoI* lir = new (alloc()) LDivPowTwoI(lhs, shift, false);
       if (div->fallible()) {
         assignSnapshot(lir, div->bailoutKind());
@@ -678,11 +683,15 @@ void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
 
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
+
   // Note, the access type may be Int64 here.
 
   LWasmCompareExchangeHeap* lir = new (alloc())
       LWasmCompareExchangeHeap(useRegister(base), useRegister(ins->oldValue()),
-                               useRegister(ins->newValue()));
+                               useRegister(ins->newValue()), memoryBase);
 
   define(lir, ins);
 }
@@ -692,10 +701,14 @@ void LIRGenerator::visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins) {
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
 
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
+
   // Note, the access type may be Int64 here.
 
-  LWasmAtomicExchangeHeap* lir = new (alloc())
-      LWasmAtomicExchangeHeap(useRegister(base), useRegister(ins->value()));
+  LWasmAtomicExchangeHeap* lir = new (alloc()) LWasmAtomicExchangeHeap(
+      useRegister(base), useRegister(ins->value()), memoryBase);
   define(lir, ins);
 }
 
@@ -704,13 +717,17 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
 
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
+
   // Note, the access type may be Int64 here.
 
   if (!ins->hasUses()) {
-    LWasmAtomicBinopHeapForEffect* lir =
-        new (alloc()) LWasmAtomicBinopHeapForEffect(useRegister(base),
-                                                    useRegister(ins->value()),
-                                                    /* flagTemp= */ temp());
+    LWasmAtomicBinopHeapForEffect* lir = new (alloc())
+        LWasmAtomicBinopHeapForEffect(useRegister(base),
+                                      useRegister(ins->value()),
+                                      /* flagTemp= */ temp(), memoryBase);
     add(lir, ins);
     return;
   }
@@ -718,7 +735,7 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   LWasmAtomicBinopHeap* lir = new (alloc())
       LWasmAtomicBinopHeap(useRegister(base), useRegister(ins->value()),
                            /* temp= */ LDefinition::BogusTemp(),
-                           /* flagTemp= */ temp());
+                           /* flagTemp= */ temp(), memoryBase);
   define(lir, ins);
 }
 
@@ -916,24 +933,22 @@ void LIRGeneratorARM64::lowerBuiltinInt64ToFloatingPoint(
   MOZ_CRASH("We don't use it for this architecture");
 }
 
-void LIRGenerator::visitWasmHeapBase(MWasmHeapBase* ins) {
-  auto* lir = new (alloc()) LWasmHeapBase(LAllocation());
-  define(lir, ins);
-}
-
 void LIRGenerator::visitWasmLoad(MWasmLoad* ins) {
   MDefinition* base = ins->base();
   // 'base' is a GPR but may be of either type.  If it is 32-bit it is
   // zero-extended and can act as 64-bit.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
 
+  LAllocation memoryBase =
+      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
+                           : LGeneralReg(HeapReg);
   LAllocation ptr = useRegisterOrConstantAtStart(base);
 
   if (ins->type() == MIRType::Int64) {
-    auto* lir = new (alloc()) LWasmLoadI64(ptr);
+    auto* lir = new (alloc()) LWasmLoadI64(ptr, memoryBase);
     defineInt64(lir, ins);
   } else {
-    auto* lir = new (alloc()) LWasmLoad(ptr);
+    auto* lir = new (alloc()) LWasmLoad(ptr, memoryBase);
     define(lir, ins);
   }
 }
@@ -945,17 +960,21 @@ void LIRGenerator::visitWasmStore(MWasmStore* ins) {
 
   MDefinition* value = ins->value();
 
+  LAllocation memoryBase =
+      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
+                           : LGeneralReg(HeapReg);
+
   if (ins->access().type() == Scalar::Int64) {
     LAllocation baseAlloc = useRegisterOrConstantAtStart(base);
     LInt64Allocation valueAlloc = useInt64RegisterAtStart(value);
-    auto* lir = new (alloc()) LWasmStoreI64(baseAlloc, valueAlloc);
+    auto* lir = new (alloc()) LWasmStoreI64(baseAlloc, valueAlloc, memoryBase);
     add(lir, ins);
     return;
   }
 
   LAllocation baseAlloc = useRegisterOrConstantAtStart(base);
   LAllocation valueAlloc = useRegisterAtStart(value);
-  auto* lir = new (alloc()) LWasmStore(baseAlloc, valueAlloc);
+  auto* lir = new (alloc()) LWasmStore(baseAlloc, valueAlloc, memoryBase);
   add(lir, ins);
 }
 
@@ -983,8 +1002,12 @@ void LIRGenerator::visitCopySign(MCopySign* ins) {
   }
 
   lir->setOperand(0, useRegisterAtStart(lhs));
-  lir->setOperand(1, useRegisterAtStart(rhs));
-  define(lir, ins);
+  lir->setOperand(1, willHaveDifferentLIRNodes(lhs, rhs)
+                         ? useRegister(rhs)
+                         : useRegisterAtStart(rhs));
+  // The copySignDouble and copySignFloat32 are optimized for lhs == output.
+  // It also prevents rhs == output when lhs != output, avoids clobbering.
+  defineReuseInput(lir, ins, 0);
 }
 
 void LIRGenerator::visitExtendInt32ToInt64(MExtendInt32ToInt64* ins) {
@@ -1014,20 +1037,27 @@ void LIRGenerator::visitWasmTernarySimd128(MWasmTernarySimd128* ins) {
       defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
       break;
     }
-    case wasm::SimdOp::F32x4RelaxedFma:
-    case wasm::SimdOp::F32x4RelaxedFms:
-    case wasm::SimdOp::F64x2RelaxedFma:
-    case wasm::SimdOp::F64x2RelaxedFms: {
-      auto* lir = new (alloc())
-          LWasmTernarySimd128(ins->simdOp(), useRegisterAtStart(ins->v0()),
-                              useRegister(ins->v1()), useRegister(ins->v2()));
-      defineReuseInput(lir, ins, LWasmTernarySimd128::V0);
+    case wasm::SimdOp::F32x4RelaxedMadd:
+    case wasm::SimdOp::F32x4RelaxedNmadd:
+    case wasm::SimdOp::F64x2RelaxedMadd:
+    case wasm::SimdOp::F64x2RelaxedNmadd: {
+      auto* lir = new (alloc()) LWasmTernarySimd128(
+          ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
+          useRegisterAtStart(ins->v2()));
+      defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
       break;
     }
-    case wasm::SimdOp::I8x16LaneSelect:
-    case wasm::SimdOp::I16x8LaneSelect:
-    case wasm::SimdOp::I32x4LaneSelect:
-    case wasm::SimdOp::I64x2LaneSelect: {
+    case wasm::SimdOp::I32x4DotI8x16I7x16AddS: {
+      auto* lir = new (alloc()) LWasmTernarySimd128(
+          ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
+          useRegisterAtStart(ins->v2()), tempSimd128());
+      defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
+      break;
+    }
+    case wasm::SimdOp::I8x16RelaxedLaneSelect:
+    case wasm::SimdOp::I16x8RelaxedLaneSelect:
+    case wasm::SimdOp::I32x4RelaxedLaneSelect:
+    case wasm::SimdOp::I64x2RelaxedLaneSelect: {
       auto* lir = new (alloc()) LWasmTernarySimd128(
           ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
           useRegisterAtStart(ins->v2()));
@@ -1073,6 +1103,9 @@ bool MWasmTernarySimd128::specializeBitselectConstantMaskAsShuffle(
     int8_t shuffle[16]) {
   return false;
 }
+bool MWasmTernarySimd128::canRelaxBitselect() { return false; }
+
+bool MWasmBinarySimd128::canPmaddubsw() { return false; }
 #endif
 
 bool MWasmBinarySimd128::specializeForConstantRhs() {
@@ -1315,10 +1348,10 @@ void LIRGenerator::visitWasmUnarySimd128(MWasmUnarySimd128* ins) {
     case wasm::SimdOp::I32x4ExtaddPairwiseI16x8S:
     case wasm::SimdOp::I32x4ExtaddPairwiseI16x8U:
     case wasm::SimdOp::I8x16Popcnt:
-    case wasm::SimdOp::I32x4RelaxedTruncSSatF32x4:
-    case wasm::SimdOp::I32x4RelaxedTruncUSatF32x4:
-    case wasm::SimdOp::I32x4RelaxedTruncSatF64x2SZero:
-    case wasm::SimdOp::I32x4RelaxedTruncSatF64x2UZero:
+    case wasm::SimdOp::I32x4RelaxedTruncF32x4S:
+    case wasm::SimdOp::I32x4RelaxedTruncF32x4U:
+    case wasm::SimdOp::I32x4RelaxedTruncF64x2SZero:
+    case wasm::SimdOp::I32x4RelaxedTruncF64x2UZero:
       break;
     case wasm::SimdOp::I32x4TruncSatF64x2SZero:
     case wasm::SimdOp::I32x4TruncSatF64x2UZero:
@@ -1396,9 +1429,11 @@ void LIRGenerator::visitWasmLoadLaneSimd128(MWasmLoadLaneSimd128* ins) {
   // change all of that, so leave it alone for now.
   LUse base = useRegisterAtStart(ins->base());
   LUse inputUse = useRegisterAtStart(ins->value());
-  MOZ_ASSERT(!ins->hasMemoryBase());
+  LAllocation memoryBase =
+      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
+                           : LGeneralReg(HeapReg);
   LWasmLoadLaneSimd128* lir =
-      new (alloc()) LWasmLoadLaneSimd128(base, inputUse, temp(), LAllocation());
+      new (alloc()) LWasmLoadLaneSimd128(base, inputUse, temp(), memoryBase);
   define(lir, ins);
 #else
   MOZ_CRASH("No SIMD");
@@ -1411,9 +1446,11 @@ void LIRGenerator::visitWasmStoreLaneSimd128(MWasmStoreLaneSimd128* ins) {
 
   LUse base = useRegisterAtStart(ins->base());
   LUse input = useRegisterAtStart(ins->value());
-  MOZ_ASSERT(!ins->hasMemoryBase());
+  LAllocation memoryBase =
+      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
+                           : LGeneralReg(HeapReg);
   LWasmStoreLaneSimd128* lir =
-      new (alloc()) LWasmStoreLaneSimd128(base, input, temp(), LAllocation());
+      new (alloc()) LWasmStoreLaneSimd128(base, input, temp(), memoryBase);
   add(lir, ins);
 #else
   MOZ_CRASH("No SIMD");

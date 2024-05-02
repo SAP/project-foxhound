@@ -1,7 +1,7 @@
 # Memory Tools
 
 The Memory tool lets you take a snapshot of the current tab's memory
-[heap](https://en.wikipedia.org/wiki/Memory_management#HEAP). 
+[heap](https://en.wikipedia.org/wiki/Memory_management#HEAP).
 It then provides a number of views of the heap that can
 show you which objects account for memory usage and exactly where in
 your code you are allocating memory.
@@ -10,23 +10,23 @@ your code you are allocating memory.
 
 ------------------------------------------------------------------------
 
-### The basics
+## The basics
 -   Opening [the memory
-    tool](basic_operations.html#opening-the-memory-tool)
+    tool](basic_operations.md#opening-the-memory-tool)
 -   [Taking a heap
-    snapshot](basic_operations.html#saving-and-loading-snapshots)
+    snapshot](basic_operations.md#saving-and-loading-snapshots)
 -   [Comparing two
-    snapshots](basic_operations.html#comparing-snapshots)
+    snapshots](basic_operations.md#comparing-snapshots)
 -   [Deleting
-    snapshots](basic_operations.html#clearing-a-snapshot)
+    snapshots](basic_operations.md#clearing-a-snapshot)
 -   [Saving and loading
-    snapshots](basic_operations.html#saving-and-loading-snapshots)
+    snapshots](basic_operations.md#saving-and-loading-snapshots)
 -   [Recording call
-    stacks](basic_operations.html#recording-call-stacks)
+    stacks](basic_operations.md#recording-call-stacks)
 
 ------------------------------------------------------------------------
 
-### Analyzing snapshots
+## Analyzing snapshots
 
 The Tree map view is new in Firefox 48, and the Dominators view is new
 in Firefox 46.
@@ -50,13 +50,13 @@ allocations are happening.
 
 ------------------------------------------------------------------------
 
-### Concepts
+## Concepts
 
 -   What are [Dominators](dominators.md)?
 
 ------------------------------------------------------------------------
 
-### Example pages
+## Example pages
 
 Examples used in the Memory tool documentation.
 

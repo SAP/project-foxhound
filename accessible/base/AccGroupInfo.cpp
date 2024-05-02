@@ -4,53 +4,82 @@
 
 #include "AccGroupInfo.h"
 #include "mozilla/a11y/Accessible.h"
+#include "mozilla/a11y/TableAccessible.h"
 
 #include "nsAccUtils.h"
-#include "TableAccessible.h"
+#include "nsIAccessiblePivot.h"
 
+#include "Pivot.h"
 #include "States.h"
 
 using namespace mozilla::a11y;
 
+static role BaseRole(role aRole);
+
+// This rule finds candidate siblings for compound widget children.
+class CompoundWidgetSiblingRule : public PivotRule {
+ public:
+  CompoundWidgetSiblingRule() = delete;
+  explicit CompoundWidgetSiblingRule(role aRole) : mRole(aRole) {}
+
+  uint16_t Match(Accessible* aAcc) override {
+    // If the acc has a matching role, that's a valid sibling. If the acc is
+    // separator then the group is ended. Return a match for separators with
+    // the assumption that the caller will check for the role of the returned
+    // accessible.
+    const role accRole = aAcc->Role();
+    if (BaseRole(accRole) == mRole || accRole == role::SEPARATOR) {
+      return nsIAccessibleTraversalRule::FILTER_MATCH |
+             nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+    }
+
+    // Ignore generic accessibles, but keep searching through the subtree for
+    // siblings.
+    if (aAcc->IsGeneric()) {
+      return nsIAccessibleTraversalRule::FILTER_IGNORE;
+    }
+
+    return nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+  }
+
+ private:
+  role mRole = role::NOTHING;
+};
+
 AccGroupInfo::AccGroupInfo(const Accessible* aItem, role aRole)
-    : mPosInSet(0), mSetSize(0), mParent(nullptr), mItem(aItem), mRole(aRole) {
+    : mPosInSet(0), mSetSize(0), mParentId(0), mItem(aItem), mRole(aRole) {
   MOZ_COUNT_CTOR(AccGroupInfo);
   Update();
 }
 
 void AccGroupInfo::Update() {
-  mParent = nullptr;
+  mParentId = 0;
 
-  Accessible* parent = mItem->Parent();
-  if (!parent) return;
-
-  int32_t indexInParent = mItem->IndexInParent();
-  uint32_t siblingCount = parent->ChildCount();
-  if (indexInParent == -1 ||
-      indexInParent >= static_cast<int32_t>(siblingCount)) {
-    NS_ERROR("Wrong index in parent! Tree invalidation problem.");
+  Accessible* parent = mItem->GetNonGenericParent();
+  if (!parent) {
     return;
   }
 
-  int32_t level = GetARIAOrDefaultLevel(mItem);
+  const int32_t level = GetARIAOrDefaultLevel(mItem);
 
   // Compute position in set.
   mPosInSet = 1;
-  for (int32_t idx = indexInParent - 1; idx >= 0; idx--) {
-    Accessible* sibling = parent->ChildAt(idx);
-    roles::Role siblingRole = sibling->Role();
 
+  // Search backwards through the tree for candidate siblings.
+  Accessible* candidateSibling = const_cast<Accessible*>(mItem);
+  Pivot pivot{parent};
+  CompoundWidgetSiblingRule widgetSiblingRule{mRole};
+  while ((candidateSibling = pivot.Prev(candidateSibling, widgetSiblingRule)) &&
+         candidateSibling != parent) {
     // If the sibling is separator then the group is ended.
-    if (siblingRole == roles::SEPARATOR) break;
-
-    if (BaseRole(siblingRole) != mRole) {
-      continue;
+    if (candidateSibling->Role() == roles::SEPARATOR) {
+      break;
     }
 
-    AccGroupInfo* siblingGroupInfo = sibling->GetGroupInfo();
+    const AccGroupInfo* siblingGroupInfo = candidateSibling->GetGroupInfo();
     // Skip invisible siblings.
     // If the sibling has calculated group info, that means it's visible.
-    if (!siblingGroupInfo && sibling->State() & states::INVISIBLE) {
+    if (!siblingGroupInfo && candidateSibling->State() & states::INVISIBLE) {
       continue;
     }
 
@@ -58,20 +87,22 @@ void AccGroupInfo::Update() {
     // level is lesser than this one then group is ended, if the sibling level
     // is greater than this one then the group is split by some child elements
     // (group will be continued).
-    int32_t siblingLevel = GetARIAOrDefaultLevel(sibling);
+    const int32_t siblingLevel = GetARIAOrDefaultLevel(candidateSibling);
     if (siblingLevel < level) {
-      mParent = sibling;
+      mParentId = candidateSibling->ID();
       break;
     }
 
     // Skip subset.
-    if (siblingLevel > level) continue;
+    if (siblingLevel > level) {
+      continue;
+    }
 
     // If the previous item in the group has calculated group information then
     // build group information for this item based on found one.
     if (siblingGroupInfo) {
       mPosInSet += siblingGroupInfo->mPosInSet;
-      mParent = siblingGroupInfo->mParent;
+      mParentId = siblingGroupInfo->mParentId;
       mSetSize = siblingGroupInfo->mSetSize;
       return;
     }
@@ -82,35 +113,36 @@ void AccGroupInfo::Update() {
   // Compute set size.
   mSetSize = mPosInSet;
 
-  for (uint32_t idx = indexInParent + 1; idx < siblingCount; idx++) {
-    Accessible* sibling = parent->ChildAt(idx);
-
-    roles::Role siblingRole = sibling->Role();
-
+  candidateSibling = const_cast<Accessible*>(mItem);
+  while ((candidateSibling = pivot.Next(candidateSibling, widgetSiblingRule)) &&
+         candidateSibling != parent) {
     // If the sibling is separator then the group is ended.
-    if (siblingRole == roles::SEPARATOR) break;
-
-    if (BaseRole(siblingRole) != mRole) {
-      continue;
+    if (candidateSibling->Role() == roles::SEPARATOR) {
+      break;
     }
-    AccGroupInfo* siblingGroupInfo = sibling->GetGroupInfo();
+
+    const AccGroupInfo* siblingGroupInfo = candidateSibling->GetGroupInfo();
     // Skip invisible siblings.
     // If the sibling has calculated group info, that means it's visible.
-    if (!siblingGroupInfo && sibling->State() & states::INVISIBLE) {
+    if (!siblingGroupInfo && candidateSibling->State() & states::INVISIBLE) {
       continue;
     }
 
     // and check if it's hierarchical flatten structure.
-    int32_t siblingLevel = GetARIAOrDefaultLevel(sibling);
-    if (siblingLevel < level) break;
+    const int32_t siblingLevel = GetARIAOrDefaultLevel(candidateSibling);
+    if (siblingLevel < level) {
+      break;
+    }
 
     // Skip subset.
-    if (siblingLevel > level) continue;
+    if (siblingLevel > level) {
+      continue;
+    }
 
     // If the next item in the group has calculated group information then
     // build group information for this item based on found one.
     if (siblingGroupInfo) {
-      mParent = siblingGroupInfo->mParent;
+      mParentId = siblingGroupInfo->mParentId;
       mSetSize = siblingGroupInfo->mSetSize;
       return;
     }
@@ -118,22 +150,34 @@ void AccGroupInfo::Update() {
     mSetSize++;
   }
 
-  if (mParent) return;
+  if (mParentId) {
+    return;
+  }
 
   roles::Role parentRole = parent->Role();
-  if (ShouldReportRelations(mRole, parentRole)) mParent = parent;
+  if (ShouldReportRelations(mRole, parentRole)) {
+    mParentId = parent->ID();
+  }
 
   // ARIA tree and list can be arranged by using ARIA groups to organize levels.
-  if (parentRole != roles::GROUPING) return;
+  if (parentRole != roles::GROUPING) {
+    return;
+  }
 
   // Way #1 for ARIA tree (not ARIA treegrid): previous sibling of a group is a
   // parent. In other words the parent of the tree item will be a group and
   // the previous tree item of the group is a conceptual parent of the tree
   // item.
   if (mRole == roles::OUTLINEITEM) {
-    Accessible* parentPrevSibling = parent->PrevSibling();
+    // Find the relevant grandparent of the item. Use that parent as the root
+    // and find the previous outline item sibling within that root.
+    Accessible* grandParent = parent->GetNonGenericParent();
+    MOZ_ASSERT(grandParent);
+    Pivot pivot{grandParent};
+    CompoundWidgetSiblingRule parentSiblingRule{mRole};
+    Accessible* parentPrevSibling = pivot.Prev(parent, widgetSiblingRule);
     if (parentPrevSibling && parentPrevSibling->Role() == mRole) {
-      mParent = parentPrevSibling;
+      mParentId = parentPrevSibling->ID();
       return;
     }
   }
@@ -142,8 +186,10 @@ void AccGroupInfo::Update() {
   // the parent of the item will be a group and containing item of the group is
   // a conceptual parent of the item.
   if (mRole == roles::LISTITEM || mRole == roles::OUTLINEITEM) {
-    Accessible* grandParent = parent->Parent();
-    if (grandParent && grandParent->Role() == mRole) mParent = grandParent;
+    Accessible* grandParent = parent->GetNonGenericParent();
+    if (grandParent && grandParent->Role() == mRole) {
+      mParentId = grandParent->ID();
+    }
   }
 }
 
@@ -218,37 +264,26 @@ uint32_t AccGroupInfo::TotalItemCount(Accessible* aContainer,
   uint32_t itemCount = 0;
   switch (aContainer->Role()) {
     case roles::TABLE:
-      if (!aContainer->IsLocal()) {
-        break;
+      if (auto val = aContainer->GetIntARIAAttr(nsGkAtoms::aria_rowcount)) {
+        if (*val >= 0) {
+          return *val;
+        }
       }
-      if (nsCoreUtils::GetUIntAttr(aContainer->AsLocal()->GetContent(),
-                                   nsGkAtoms::aria_rowcount,
-                                   (int32_t*)&itemCount)) {
-        break;
-      }
-
-      if (TableAccessible* tableAcc = aContainer->AsLocal()->AsTable()) {
+      if (TableAccessible* tableAcc = aContainer->AsTable()) {
         return tableAcc->RowCount();
       }
-
       break;
     case roles::ROW:
-      if (!aContainer->IsLocal()) {
-        break;
-      }
-      if (LocalAccessible* table =
-              nsAccUtils::TableFor(aContainer->AsLocal())) {
-        if (nsCoreUtils::GetUIntAttr(table->GetContent(),
-                                     nsGkAtoms::aria_colcount,
-                                     (int32_t*)&itemCount)) {
-          break;
+      if (Accessible* table = nsAccUtils::TableFor(aContainer)) {
+        if (auto val = table->GetIntARIAAttr(nsGkAtoms::aria_colcount)) {
+          if (*val >= 0) {
+            return *val;
+          }
         }
-
-        if (TableAccessible* tableAcc = table->AsLocal()->AsTable()) {
+        if (TableAccessible* tableAcc = table->AsTable()) {
           return tableAcc->ColCount();
         }
       }
-
       break;
     case roles::OUTLINE:
     case roles::LIST:
@@ -311,6 +346,12 @@ Accessible* AccGroupInfo::NextItemTo(Accessible* aItem) {
   return nullptr;
 }
 
+size_t AccGroupInfo::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
+  // We don't count mParentId or mItem since they (should be) counted
+  // as part of the document.
+  return aMallocSizeOf(this);
+}
+
 bool AccGroupInfo::ShouldReportRelations(role aRole, role aParentRole) {
   // We only want to report hierarchy-based node relations for items in tree or
   // list form.  ARIA level/owns relations are always reported.
@@ -328,4 +369,29 @@ int32_t AccGroupInfo::GetARIAOrDefaultLevel(const Accessible* aAccessible) {
   if (level != 0) return level;
 
   return aAccessible->GetLevel(true);
+}
+
+Accessible* AccGroupInfo::ConceptualParent() const {
+  if (!mParentId) {
+    // The conceptual parent can never be the document, so id 0 means none.
+    return nullptr;
+  }
+  if (Accessible* doc =
+          nsAccUtils::DocumentFor(const_cast<Accessible*>(mItem))) {
+    return nsAccUtils::GetAccessibleByID(doc, mParentId);
+  }
+  return nullptr;
+}
+
+static role BaseRole(role aRole) {
+  if (aRole == roles::CHECK_MENU_ITEM || aRole == roles::PARENT_MENUITEM ||
+      aRole == roles::RADIO_MENU_ITEM) {
+    return roles::MENUITEM;
+  }
+
+  if (aRole == roles::CHECK_RICH_OPTION) {
+    return roles::RICH_OPTION;
+  }
+
+  return aRole;
 }

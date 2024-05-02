@@ -13,7 +13,6 @@
 #include "jit/MIRGraph.h"
 #include "js/Conversions.h"
 #include "vm/Shape.h"
-#include "vm/TraceLogging.h"
 
 #include "jit/MacroAssembler-inl.h"
 #include "jit/shared/CodeGenerator-shared-inl.h"
@@ -297,17 +296,24 @@ template <typename T>
 void CodeGeneratorMIPS64::emitWasmLoadI64(T* lir) {
   const MWasmLoad* mir = lir->mir();
 
+  Register memoryBase = ToRegister(lir->memoryBase());
   Register ptrScratch = InvalidReg;
   if (!lir->ptrCopy()->isBogusTemp()) {
     ptrScratch = ToRegister(lir->ptrCopy());
   }
 
+  Register ptrReg = ToRegister(lir->ptr());
+  if (mir->base()->type() == MIRType::Int32) {
+    // See comment in visitWasmLoad re the type of 'base'.
+    masm.move32ZeroExtendToPtr(ptrReg, ptrReg);
+  }
+
   if (IsUnaligned(mir->access())) {
-    masm.wasmUnalignedLoadI64(mir->access(), HeapReg, ToRegister(lir->ptr()),
-                              ptrScratch, ToOutRegister64(lir),
+    masm.wasmUnalignedLoadI64(mir->access(), memoryBase, ptrReg, ptrScratch,
+                              ToOutRegister64(lir),
                               ToRegister(lir->getTemp(1)));
   } else {
-    masm.wasmLoadI64(mir->access(), HeapReg, ToRegister(lir->ptr()), ptrScratch,
+    masm.wasmLoadI64(mir->access(), memoryBase, ptrReg, ptrScratch,
                      ToOutRegister64(lir));
   }
 }
@@ -324,18 +330,25 @@ template <typename T>
 void CodeGeneratorMIPS64::emitWasmStoreI64(T* lir) {
   const MWasmStore* mir = lir->mir();
 
+  Register memoryBase = ToRegister(lir->memoryBase());
   Register ptrScratch = InvalidReg;
   if (!lir->ptrCopy()->isBogusTemp()) {
     ptrScratch = ToRegister(lir->ptrCopy());
   }
 
+  Register ptrReg = ToRegister(lir->ptr());
+  if (mir->base()->type() == MIRType::Int32) {
+    // See comment in visitWasmLoad re the type of 'base'.
+    masm.move32ZeroExtendToPtr(ptrReg, ptrReg);
+  }
+
   if (IsUnaligned(mir->access())) {
     masm.wasmUnalignedStoreI64(mir->access(), ToRegister64(lir->value()),
-                               HeapReg, ToRegister(lir->ptr()), ptrScratch,
+                               memoryBase, ptrReg, ptrScratch,
                                ToRegister(lir->getTemp(1)));
   } else {
-    masm.wasmStoreI64(mir->access(), ToRegister64(lir->value()), HeapReg,
-                      ToRegister(lir->ptr()), ptrScratch);
+    masm.wasmStoreI64(mir->access(), ToRegister64(lir->value()), memoryBase,
+                      ptrReg, ptrScratch);
   }
 }
 

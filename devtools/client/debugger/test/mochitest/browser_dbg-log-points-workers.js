@@ -6,7 +6,9 @@
  * Tests that log points in a worker are correctly logged to the console
  */
 
-add_task(async function() {
+"use strict";
+
+add_task(async function () {
   Services.prefs.setBoolPref("devtools.toolbox.splitconsoleEnabled", true);
 
   const dbg = await initDebugger("doc-windowless-workers.html");

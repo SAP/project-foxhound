@@ -8,15 +8,17 @@
 #define mozilla_dom_WebAuthnTransactionParent_h
 
 #include "mozilla/dom/PWebAuthnTransactionParent.h"
+#include "mozilla/dom/WebAuthnPromiseHolder.h"
+#include "nsIWebAuthnService.h"
 
 /*
- * Parent process IPC implementation for WebAuthn and U2F API. Receives
- * authentication data to be either registered or signed by a key, passes
- * information to U2FTokenManager.
+ * Parent process IPC implementation for WebAuthn.
  */
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
+
+class WebAuthnRegisterPromiseHolder;
+class WebAuthnSignPromiseHolder;
 
 class WebAuthnTransactionParent final : public PWebAuthnTransactionParent {
  public:
@@ -34,15 +36,25 @@ class WebAuthnTransactionParent final : public PWebAuthnTransactionParent {
   mozilla::ipc::IPCResult RecvRequestCancel(
       const Tainted<uint64_t>& aTransactionId);
 
+  mozilla::ipc::IPCResult RecvRequestIsUVPAA(
+      RequestIsUVPAAResolver&& aResolver);
+
   mozilla::ipc::IPCResult RecvDestroyMe();
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
   ~WebAuthnTransactionParent() = default;
+
+  void CompleteTransaction();
+  void DisconnectTransaction();
+
+  nsCOMPtr<nsIWebAuthnService> mWebAuthnService;
+  Maybe<uint64_t> mTransactionId;
+  MozPromiseRequestHolder<WebAuthnRegisterPromise> mRegisterPromiseRequest;
+  MozPromiseRequestHolder<WebAuthnSignPromise> mSignPromiseRequest;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_WebAuthnTransactionParent_h

@@ -16,6 +16,23 @@
 #include "js/MemoryFunctions.h"  // JS_FOR_EACH_PUBLIC_MEMORY_USE
 
 namespace js {
+
+// [SMDOC] AllowGC template parameter
+//
+// AllowGC is a template parameter for functions that support both with and
+// without GC operation.
+//
+// The CanGC variant of the function can trigger a garbage collection, and
+// should set a pending exception on failure.
+//
+// The NoGC variant of the function cannot trigger a garbage collection, and
+// should not set any pending exception on failure.  This variant can be called
+// in fast paths where the caller has unrooted pointers.  The failure means we
+// need to perform GC to allocate an object. The caller can fall back to a slow
+// path that roots pointers before calling a CanGC variant of the function,
+// without having to clear a pending exception.
+enum AllowGC { NoGC = 0, CanGC = 1 };
+
 namespace gc {
 
 // The phases of an incremental GC.
@@ -49,7 +66,6 @@ enum class State {
   D(CheckHashTablesOnMinorGC, 13)        \
   D(Compact, 14)                         \
   D(CheckHeapAfterGC, 15)                \
-  D(CheckNursery, 16)                    \
   D(YieldBeforeSweepingAtoms, 17)        \
   D(CheckGrayMarking, 18)                \
   D(YieldBeforeSweepingCaches, 19)       \
@@ -103,6 +119,8 @@ enum class GCAbortReason {
   _(PropMapChildren)                       \
   _(PropMapTable)                          \
   _(ModuleBindingMap)                      \
+  _(ModuleCyclicFields)                    \
+  _(ModuleExports)                         \
   _(BaselineScript)                        \
   _(IonScript)                             \
   _(ArgumentsData)                         \
@@ -126,10 +144,8 @@ enum class GCAbortReason {
   _(WasmResolveResponseClosure)            \
   _(WasmModule)                            \
   _(WasmTableTable)                        \
-  _(WasmTagTag)                            \
+  _(WasmExceptionData)                     \
   _(WasmTagType)                           \
-  _(WasmExceptionTag)                      \
-  _(WasmRttValueChildren)                  \
   _(FileObjectFile)                        \
   _(Debugger)                              \
   _(DebuggerFrameGeneratorInfo)            \
@@ -140,10 +156,12 @@ enum class GCAbortReason {
   _(FinalizationRegistryRecordVector)      \
   _(FinalizationRegistryRegistrations)     \
   _(FinalizationRecordVector)              \
-  _(ZoneAllocPolicy)                       \
+  _(TrackedAllocPolicy)                    \
   _(SharedArrayRawBuffer)                  \
   _(XDRBufferElements)                     \
-  _(GlobalObjectData)
+  _(GlobalObjectData)                      \
+  _(ProxyExternalValueArray)               \
+  _(WasmTrailerBlock)
 
 #define JS_FOR_EACH_MEMORY_USE(_)  \
   JS_FOR_EACH_PUBLIC_MEMORY_USE(_) \

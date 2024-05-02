@@ -4,13 +4,13 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface ArgumentIdentifierConflict {
-              void foo(boolean arg1, boolean arg1);
+              undefined foo(boolean arg1, boolean arg1);
             };
         """
         )
 
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should have thrown.")

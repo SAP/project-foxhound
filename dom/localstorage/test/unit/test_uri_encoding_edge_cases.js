@@ -11,7 +11,7 @@
  * of a null quota object. See bug 1516333.
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   /**
    * The edge cases are specified in this array of origins. Each edge case must
    * contain two properties uri and path (origin directory path relative to the
@@ -30,7 +30,10 @@ async function testSteps() {
 
   info("Setting prefs");
 
-  Services.prefs.setBoolPref("dom.storage.next_gen", true);
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
 
   for (let origin of origins) {
     const principal = getPrincipal(origin.uri);
@@ -63,4 +66,4 @@ async function testSteps() {
 
     ok(originDir.exists(), `The origin directory ${origin.path} should exist`);
   }
-}
+});

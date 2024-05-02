@@ -11,7 +11,6 @@
 
 #include "mozilla/gfx/2D.h"
 
-using std::max;
 using std::swap;
 
 namespace mozilla {
@@ -82,8 +81,9 @@ nsresult Downscaler::BeginFrame(const nsIntSize& aOriginalSize,
                 aHasAlpha);
 
   mOriginalSize = aOriginalSize;
-  mScale = gfxSize(double(mOriginalSize.width) / mTargetSize.width,
-                   double(mOriginalSize.height) / mTargetSize.height);
+  mScale = gfx::MatrixScalesDouble(
+      double(mOriginalSize.width) / mTargetSize.width,
+      double(mOriginalSize.height) / mTargetSize.height);
   mOutputBuffer = aOutputBuffer;
   mHasAlpha = aHasAlpha;
   mFlipVertically = aFlipVertically;
@@ -244,7 +244,7 @@ DownscalerInvalidRect Downscaler::TakeInvalidRect() {
 
   // Compute the original size invalid rect.
   invalidRect.mOriginalSizeRect = invalidRect.mTargetSizeRect;
-  invalidRect.mOriginalSizeRect.ScaleRoundOut(mScale.width, mScale.height);
+  invalidRect.mOriginalSizeRect.ScaleRoundOut(mScale.xScale, mScale.yScale);
 
   return invalidRect;
 }

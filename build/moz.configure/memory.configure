@@ -58,28 +58,23 @@ set_config("MOZ_REPLACE_MALLOC_STATIC", replace_malloc_static)
 # PHC (Probabilistic Heap Checker)
 # ==============================================================
 
+
 # In general, it only makes sense for PHC to run on the platforms that have a
 # crash reporter.
 @depends(
-    milestone,
+    build_project,
     target,
-    replace_malloc_default,
-    "--enable-replace-malloc",
     when="--enable-jemalloc",
 )
-def phc_default(milestone, target, replace_malloc_default, replace_malloc):
-    if not replace_malloc_default or (
-        replace_malloc.origin != "default" and not replace_malloc
-    ):
+def phc_default(build_project, target):
+    if build_project == "js":
         return False
-    # Nightly or early beta only because PHC has a non-negligible performance cost.
-    if not milestone.is_early_beta_or_earlier:
-        return False
+
     # Both Linux32 and Win32 have frequent crashes when stack tracing (for
     # unclear reasons), so PHC is enabled only on 64-bit only in both cases.
-    return (
-        (target.os == "GNU" and target.kernel == "Linux" and target.bitness == 64)
-        or (target.kernel == "WINNT" and target.bitness == 64)
+    return (target.cpu in ("x86_64", "aarch64")) and (
+        (target.os == "GNU" and target.kernel == "Linux")
+        or (target.kernel == "WINNT")
         or (target.os == "OSX")
     )
 
@@ -90,13 +85,33 @@ option(
     default=phc_default,
     when="--enable-jemalloc",
     help="{Enable|Disable} PHC (Probabilistic Memory Checker). "
-    "Also enables replace-malloc and frame pointers",
+    "Also enables frame pointers when needed",
 )
-imply_option("--enable-replace-malloc", True, when="--enable-phc")
-imply_option("--enable-frame-pointers", True, when="--enable-phc")
-
 
 set_config("MOZ_PHC", True, when="--enable-phc")
+
+
+# PHC parses stacks using frame pointers on these systems.
+@depends("--enable-phc", target, have_unwind, when="--enable-jemalloc")
+def phc_implies_frame_pointers(phc, target, have_unwind):
+    if not phc:
+        return False
+
+    # This should be kept in sync with the ifdefs in memory/build/PHC.cpp
+    # that control stack walking.
+    # This is true for the first two options in PHC.cpp
+    if (target.os == "WINNT" and target.cpu == "x86") or target.kernel == "Darwin":
+        return True
+
+    # This should match the #defines in mozglue/misc/StackWalk.cpp
+    if (target.cpu in ("x86", "ppc")) and (target.kernel in ("Darwin", "Linux")):
+        return not have_unwind
+
+    return False
+
+
+imply_option("--enable-frame-pointers", True, when=phc_implies_frame_pointers)
+
 
 with only_when(depends(target.os)(lambda os: os != "WINNT")):
     set_define("HAVE_STRNDUP", check_symbol("strndup"))

@@ -5,30 +5,30 @@
 
 add_task(async function raisesWithoutArguments({ client, tab }) {
   const { Target } = client;
-  let errorThrown = false;
-  try {
-    await Target.attachToTarget();
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "attachToTarget raised error without an argument");
+
+  await Assert.rejects(
+    Target.attachToTarget(),
+    err => err.message.includes(`Unable to find target with id`),
+    "attachToTarget raised error without an argument"
+  );
 });
 
 add_task(async function raisesWithUnknownTargetId({ client, tab }) {
   const { Target } = client;
-  let errorThrown = false;
-  try {
-    await Target.attachToTarget({ targetId: "-1" });
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "attachToTarget raised error with unkown target id");
+
+  await Assert.rejects(
+    Target.attachToTarget({ targetId: "-1" }),
+    err => err.message.includes(`Unable to find target with id`),
+    "attachToTarget raised error with unkown target id"
+  );
 });
 
 add_task(
   async function attachPageTarget({ client }) {
     const { Target } = client;
     const { targetInfo } = await openTab(Target);
+
+    ok(!targetInfo.attached, "New target is not attached");
 
     info("Attach new target");
     const { sessionId } = await Target.attachToTarget({
@@ -40,6 +40,13 @@ add_task(
       "string",
       "attachToTarget returns the session id as string"
     );
+
+    const { targetInfos } = await Target.getTargets();
+    const listedTarget = targetInfos.find(
+      info => info.targetId === targetInfo.targetId
+    );
+
+    ok(listedTarget.attached, "New target is attached");
   },
   { createTab: false }
 );

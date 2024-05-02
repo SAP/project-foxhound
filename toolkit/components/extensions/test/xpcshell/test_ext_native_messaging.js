@@ -4,6 +4,10 @@
 
 /* globals chrome */
 
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+
 const PREF_MAX_READ = "webextensions.native-messaging.max-input-message-bytes";
 const PREF_MAX_WRITE =
   "webextensions.native-messaging.max-output-message-bytes";
@@ -58,6 +62,47 @@ const INFO_BODY = String.raw`
   sys.exit(0)
 `;
 
+const DELAYED_ECHO_BODY = String.raw`
+  import atexit
+  import json
+  import os
+  import struct
+  import sys
+  import time
+
+  stdin = getattr(sys.stdin, 'buffer', sys.stdin)
+  stdout = getattr(sys.stdout, 'buffer', sys.stdout)
+  pid = os.getpid()
+
+  sys.stderr.write("nativeapp with pid %d is running\n" % pid)
+
+  def onexit():
+    sys.stderr.write("nativeapp with pid %d is exiting\n" % pid)
+
+  atexit.register(onexit)
+
+  while True:
+    rawlen = stdin.read(4)
+    if len(rawlen) == 0:
+      sys.exit(0)
+    msglen = struct.unpack('@I', rawlen)[0]
+    msg = stdin.read(msglen)
+
+    sys.stderr.write(
+      "nativeapp with pid %d delaying echoing message '%s'\n" %
+      (pid, str(msg, 'utf-8'))
+    )
+
+    time.sleep(5)
+    stdout.write(struct.pack('@I', msglen))
+    stdout.write(msg)
+
+    sys.stderr.write(
+      "nativeapp with pid %d replied to message '%s'\n" %
+      (pid, str(msg, 'utf-8'))
+    )
+`;
+
 const STDERR_LINES = ["hello stderr", "this should be a separate line"];
 let STDERR_MSG = STDERR_LINES.join("\\n");
 
@@ -66,11 +111,93 @@ const STDERR_BODY = String.raw`
   sys.stderr.write("${STDERR_MSG}")
 `;
 
+const PLATFORM_PATH_SEP = AppConstants.platform == "win" ? "\\" : "/";
+
 let SCRIPTS = [
   {
     name: "echo",
     description: "a native app that echoes back messages it receives",
     script: ECHO_BODY.replace(/^ {2}/gm, ""),
+  },
+  {
+    name: "relative.echo",
+    description: "a native app that echoes; relative path instead of absolute",
+    script: ECHO_BODY.replace(/^ {2}/gm, ""),
+    _hookModifyManifest(manifest) {
+      manifest.path = PathUtils.filename(manifest.path);
+    },
+  },
+  {
+    name: "relative_dotdot.echo",
+    description: "a native app that echos; relative path with dot dot",
+    script: ECHO_BODY.replace(/^ {2}/gm, ""),
+    _hookModifyManifest(manifest) {
+      // Set to ..\NativeMessagingHosts\relative_dotdot.bat (Windows)
+      manifest.path = [
+        "..",
+        ...manifest.path.split(PLATFORM_PATH_SEP).slice(-2),
+      ].join(PLATFORM_PATH_SEP);
+    },
+  },
+  {
+    name: "renamed.echo",
+    description: "invalid manifest due to name mismatch",
+    script: ECHO_BODY.replace(/^ {2}/gm, ""),
+    _hookModifyManifest(manifest) {
+      manifest.name = "renamed_name_mismatch";
+    },
+  },
+  {
+    name: "nonstdio.echo",
+    description: "invalid manifest due to non-stdio type",
+    script: ECHO_BODY.replace(/^ {2}/gm, ""),
+    _hookModifyManifest(manifest) {
+      // schema only permits "stdio" or "pkcs11". Change from "stdio":
+      manifest.type = "pkcs11";
+    },
+  },
+  {
+    name: "forwardslash.echo",
+    description: "a native app that echos; with forward slash in path",
+    script: ECHO_BODY.replace(/^ {2}/gm, ""),
+    _hookModifyManifest(manifest) {
+      // On Linux/macOS, this doesn't change anything.
+      // On Windows, this turns C:\Program Files\... in C:/Program Files/...
+      manifest.path = manifest.path.replaceAll("\\", "/");
+    },
+  },
+  {
+    name: "dot.echo",
+    description: "a native app that echos; with dot slash in path",
+    script: ECHO_BODY.replace(/^ {2}/gm, ""),
+    _hookModifyManifest(manifest) {
+      // Replace / with /./ (or \ with \.\ on Windows).
+      manifest.path = manifest.path.replaceAll(
+        PLATFORM_PATH_SEP,
+        PLATFORM_PATH_SEP + "." + PLATFORM_PATH_SEP
+      );
+    },
+  },
+  {
+    name: "dotdot.echo",
+    description: "a native app that echos; with dot dot slash in path",
+    script: ECHO_BODY.replace(/^ {2}/gm, ""),
+    _hookModifyManifest(manifest) {
+      // The binary is in a directory called "TYPE_SLUG". Turn
+      // /TYPE_SLUG/ in /TYPE_SLUG/../TYPE_SLUG/ to have equivalent directories
+      // that ought to be considered a valid absolute path.
+      const dirWithSlashes = PLATFORM_PATH_SEP + TYPE_SLUG + PLATFORM_PATH_SEP;
+      manifest.path = manifest.path.replace(
+        dirWithSlashes,
+        dirWithSlashes + ".." + dirWithSlashes
+      );
+    },
+  },
+  {
+    name: "delayedecho",
+    description:
+      "a native app that echo messages received with a small artificial delay",
+    script: DELAYED_ECHO_BODY.replace(/^ {2}/gm, ""),
   },
   {
     name: "info",
@@ -93,7 +220,7 @@ if (AppConstants.platform == "win") {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function setup() {
   optionalPermissionsPromptHandler.init();
   optionalPermissionsPromptHandler.acceptPrompt = true;
   await AddonTestUtils.promiseStartupManager();
@@ -129,7 +256,7 @@ add_task(async function test_happy_path() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       optional_permissions: ["nativeMessaging"],
     },
     useAddonManager: "temporary",
@@ -203,7 +330,7 @@ async function simpleTest(app) {
   let extension = ExtensionTestUtils.loadExtension({
     background: `(${background})(${JSON.stringify(app)});`,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -218,17 +345,139 @@ async function simpleTest(app) {
   await exitPromise;
 }
 
+async function testBrokenApp({
+  extensionId = ID,
+  appname,
+  expectedError,
+  expectedConsoleMessages,
+}) {
+  let extension = ExtensionTestUtils.loadExtension({
+    background() {
+      browser.test.onMessage.addListener(async (appname, expectedError) => {
+        await browser.test.assertRejects(
+          browser.runtime.sendNativeMessage(appname, "dummymsg"),
+          expectedError,
+          "Expected sendNativeMessage error"
+        );
+        browser.test.sendMessage("done");
+      });
+    },
+    manifest: {
+      browser_specific_settings: { gecko: { id: extensionId } },
+      permissions: ["nativeMessaging"],
+    },
+  });
+
+  await extension.startup();
+  let { messages } = await promiseConsoleOutput(async () => {
+    extension.sendMessage(appname, expectedError);
+    await extension.awaitMessage("done");
+  });
+  await extension.unload();
+
+  let procCount = await getSubprocessCount();
+  equal(procCount, 0, "No child process was started");
+
+  // Because we're using forbidUnexpected:true below, we have to account for
+  // all logged messages. RemoteSettings may try (and fail) to load remote
+  // settings - ignore the "NetworkError: Network request failed" error.
+  // To avoid having to update this filter all the time, select the specific
+  // modules relevant to native messaging from where we expect errors.
+  messages = messages.filter(m => {
+    return /NativeMessaging|NativeManifests|Subprocess/.test(m.message);
+  });
+
+  // On Linux/macOS, the setupHosts helper registers the same manifest file in
+  // multiple locations, which can result in the same error being printed
+  // multiple times. We de-duplicate that here.
+  let deduplicatedMessages = messages.filter(
+    (msg, i) => i === messages.findIndex(m => m.message === msg.message)
+  );
+
+  // Now check that all the log messages exist, in the expected order too.
+  AddonTestUtils.checkMessages(
+    deduplicatedMessages,
+    {
+      expected: expectedConsoleMessages.map(message => ({ message })),
+      forbidUnexpected: true,
+    },
+    "Expected messages in the console"
+  );
+}
+
 if (AppConstants.platform == "win") {
   // "relative.echo" has a relative path in the host manifest.
   add_task(function test_relative_path() {
+    // Note: relative paths only supported on Windows.
+    // For non-Windows, see test_relative_path_unsupported instead.
     return simpleTest("relative.echo");
+  });
+
+  add_task(function test_relative_dotdot_path() {
+    // Note: relative paths only supported on Windows.
+    // For non-Windows, see test_relative_dotdot_path_unsupported instead.
+    return simpleTest("relative_dotdot.echo");
   });
 
   // "echocmd" uses a .cmd file instead of a .bat file
   add_task(function test_cmd_file() {
     return simpleTest("echocmd");
   });
+} else {
+  // On non-Windows, relative paths are not supported.
+  add_task(function test_relative_path_unsupported() {
+    return testBrokenApp({
+      appname: "relative.echo",
+      expectedError: "An unexpected error occurred",
+      expectedConsoleMessages: [
+        /NativeApp requires absolute path to command on this platform/,
+      ],
+    });
+  });
+  add_task(function test_relative_dotdot_path_unsupported() {
+    return testBrokenApp({
+      appname: "relative_dotdot.echo",
+      expectedError: "An unexpected error occurred",
+      expectedConsoleMessages: [
+        /NativeApp requires absolute path to command on this platform/,
+      ],
+    });
+  });
 }
+
+add_task(async function test_absolute_path_dot_one() {
+  return simpleTest("dot.echo");
+});
+
+add_task(async function test_absolute_path_dotdot() {
+  return simpleTest("dotdot.echo");
+});
+
+add_task(async function test_error_name_mismatch() {
+  await testBrokenApp({
+    appname: "renamed.echo",
+    expectedError: "No such native application renamed.echo",
+    expectedConsoleMessages: [
+      /Native manifest .+ has name property renamed_name_mismatch \(expected renamed\.echo\)/,
+      /No such native application renamed\.echo/,
+    ],
+  });
+});
+
+add_task(async function test_invalid_manifest_type_not_stdio() {
+  await testBrokenApp({
+    appname: "nonstdio.echo",
+    expectedError: "No such native application nonstdio.echo",
+    expectedConsoleMessages: [
+      /Native manifest .+ has type property pkcs11 \(expected stdio\)/,
+      /No such native application nonstdio\.echo/,
+    ],
+  });
+});
+
+add_task(async function test_forward_slashes_in_path_works() {
+  await simpleTest("forwardslash.echo");
+});
 
 // Test sendNativeMessage()
 add_task(async function test_sendNativeMessage() {
@@ -238,7 +487,7 @@ add_task(async function test_sendNativeMessage() {
     // Check error handling
     await browser.test.assertRejects(
       browser.runtime.sendNativeMessage("nonexistent", MSG),
-      /Attempt to postMessage on disconnected port/,
+      "No such native application nonexistent",
       "sendNativeMessage() to a nonexistent app failed"
     );
 
@@ -255,7 +504,7 @@ add_task(async function test_sendNativeMessage() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -315,7 +564,7 @@ add_task(async function test_disconnect() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -368,7 +617,7 @@ add_task(async function test_write_limit() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -420,7 +669,7 @@ add_task(async function test_read_limit() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -480,46 +729,15 @@ add_task(async function test_ext_permission() {
 // Test that an extension that is not listed in allowed_extensions for
 // a native application cannot use that application.
 add_task(async function test_app_permission() {
-  function background() {
-    let port = browser.runtime.connectNative("echo");
-    port.onDisconnect.addListener(msgPort => {
-      browser.test.assertEq(
-        port,
-        msgPort,
-        "onDisconnect handler should receive the port as the first argument"
-      );
-      browser.test.assertEq(
-        "No such native application echo",
-        port.error && port.error.message
-      );
-      browser.test.sendMessage("result", "disconnected");
-    });
-    port.onMessage.addListener(msg => {
-      browser.test.sendMessage("result", "message");
-    });
-    port.postMessage({ test: "test" });
-  }
-
-  let extension = ExtensionTestUtils.loadExtension({
-    background,
-    manifest: {
-      permissions: ["nativeMessaging"],
-    },
+  await testBrokenApp({
+    extensionId: "@id-that-is-not-in-the-allowed_extensions-list",
+    appname: "echo",
+    expectedError: "No such native application echo",
+    expectedConsoleMessages: [
+      /This extension does not have permission to use native manifest .+echo\.json/,
+      /No such native application echo/,
+    ],
   });
-
-  await extension.startup();
-
-  let result = await extension.awaitMessage("result");
-  equal(
-    result,
-    "disconnected",
-    "connectNative() failed without native app permission"
-  );
-
-  await extension.unload();
-
-  let procCount = await getSubprocessCount();
-  equal(procCount, 0, "No child process was started");
 });
 
 // Test that the command-line arguments and working directory for the
@@ -535,7 +753,7 @@ add_task(async function test_child_process() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -556,7 +774,7 @@ add_task(async function test_child_process() {
   );
   equal(
     msg.cwd.replace(/^\/private\//, "/"),
-    OS.Path.join(tmpDir.path, TYPE_SLUG),
+    PathUtils.join(tmpDir.path, TYPE_SLUG),
     "Working directory is the directory containing the native appliation"
   );
 
@@ -583,11 +801,11 @@ add_task(async function test_stderr() {
     });
   }
 
-  let { messages } = await promiseConsoleOutput(async function() {
+  let { messages } = await promiseConsoleOutput(async function () {
     let extension = ExtensionTestUtils.loadExtension({
       background,
       manifest: {
-        applications: { gecko: { id: ID } },
+        browser_specific_settings: { gecko: { id: ID } },
         permissions: ["nativeMessaging"],
       },
     });
@@ -637,7 +855,7 @@ add_task(async function test_multiple_connects() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -678,7 +896,7 @@ add_task(async function test_connect_native_from_content_script() {
           matches: ["http://example.com/dummy"],
         },
       ],
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
     files: {
@@ -701,3 +919,193 @@ add_task(async function test_connect_native_from_content_script() {
   let procCount = await getSubprocessCount();
   equal(procCount, 0, "No child process was started");
 });
+
+// Testing native app messaging against idle timeout.
+async function startupExtensionAndRequestPermission() {
+  const extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      browser_specific_settings: { gecko: { id: ID } },
+      optional_permissions: ["nativeMessaging"],
+      background: { persistent: false },
+    },
+    async background() {
+      browser.runtime.onSuspend.addListener(() => {
+        browser.test.sendMessage("bgpage:suspending");
+      });
+
+      let port;
+      browser.test.onMessage.addListener(async (msg, ...args) => {
+        switch (msg) {
+          case "request-permission": {
+            await browser.permissions.request({
+              permissions: ["nativeMessaging"],
+            });
+            break;
+          }
+          case "delayedecho-sendmessage": {
+            browser.runtime
+              .sendNativeMessage("delayedecho", args[0])
+              .then(msg =>
+                browser.test.sendMessage(
+                  `delayedecho-sendmessage:got-reply`,
+                  msg
+                )
+              );
+            break;
+          }
+          case "connectNative": {
+            if (port) {
+              browser.test.fail(`Unexpected already connected NativeApp port`);
+            } else {
+              port = browser.runtime.connectNative("echo");
+            }
+            break;
+          }
+          case "disconnectNative": {
+            if (!port) {
+              browser.test.fail(`Unexpected undefined NativeApp port`);
+            }
+            port?.disconnect();
+            break;
+          }
+          default:
+            browser.test.fail(`Got an unexpected test message: ${msg}`);
+        }
+
+        browser.test.sendMessage(`${msg}:done`);
+      });
+      browser.test.sendMessage("bg:ready");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("bg:ready");
+  const contextId = extension.extension.backgroundContext.contextId;
+  notEqual(contextId, undefined, "Got a contextId for the background context");
+
+  await withHandlingUserInput(extension, async () => {
+    extension.sendMessage("request-permission");
+    await extension.awaitMessage("request-permission:done");
+  });
+
+  return { extension, contextId };
+}
+
+async function expectTerminateBackgroundToResetIdle({ extension, contextId }) {
+  info("Wait for hasActiveNativeAppPorts to become true");
+  await TestUtils.waitForCondition(
+    () => extension.extension.backgroundContext,
+    "Parent proxy context should be active"
+  );
+
+  await TestUtils.waitForCondition(
+    () => extension.extension.backgroundContext?.hasActiveNativeAppPorts,
+    "Parent proxy context should have active native app ports tracked"
+  );
+
+  clearHistograms();
+  assertHistogramEmpty(WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT);
+  assertKeyedHistogramEmpty(WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT_BY_ADDONID);
+
+  info("Trigger background script idle timeout and expect to be reset");
+  const promiseResetIdle = promiseExtensionEvent(
+    extension,
+    "background-script-reset-idle"
+  );
+  await extension.terminateBackground();
+  info("Wait for 'background-script-reset-idle' event to be emitted");
+  await promiseResetIdle;
+  equal(
+    extension.extension.backgroundContext.contextId,
+    contextId,
+    "Initial background context is still available as expected"
+  );
+
+  assertHistogramCategoryNotEmpty(WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT, {
+    category: "reset_nativeapp",
+    categories: HISTOGRAM_EVENTPAGE_IDLE_RESULT_CATEGORIES,
+  });
+
+  assertHistogramCategoryNotEmpty(
+    WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT_BY_ADDONID,
+    {
+      keyed: true,
+      key: extension.id,
+      category: "reset_nativeapp",
+      categories: HISTOGRAM_EVENTPAGE_IDLE_RESULT_CATEGORIES,
+    }
+  );
+}
+
+async function testSendNativeMessage({ extension, contextId }) {
+  extension.sendMessage("delayedecho-sendmessage", "delayed-echo");
+  await extension.awaitMessage("delayedecho-sendmessage:done");
+
+  await expectTerminateBackgroundToResetIdle({ extension, contextId });
+
+  // We expect exactly two replies (one for the previous queued message
+  // and one more for the last message sent right above).
+  equal(
+    await extension.awaitMessage("delayedecho-sendmessage:got-reply"),
+    "delayed-echo",
+    "Got the expected reply for the first message sent"
+  );
+
+  await TestUtils.waitForCondition(
+    () => !extension.extension.backgroundContext?.hasActiveNativeAppPorts,
+    "Parent proxy context should not have any active native app ports tracked"
+  );
+
+  info("terminating the background script");
+  await extension.terminateBackground();
+  info("wait for runtime.onSuspend listener to have been called");
+  await extension.awaitMessage("bgpage:suspending");
+}
+
+async function testConnectNative({ extension, contextId }) {
+  extension.sendMessage("connectNative");
+  await extension.awaitMessage("connectNative:done");
+
+  await expectTerminateBackgroundToResetIdle({ extension, contextId });
+
+  // Disconnect the NativeApp and confirm that the background page
+  // will be suspending as expected.
+  extension.sendMessage("disconnectNative");
+  await extension.awaitMessage("disconnectNative:done");
+
+  await TestUtils.waitForCondition(
+    () => !extension.extension.backgroundContext?.hasActiveNativeAppPorts,
+    "Parent proxy context should not have any active native app ports tracked"
+  );
+
+  info("terminating the background script");
+  await extension.terminateBackground();
+  info("wait for runtime.onSuspend listener to have been called");
+  await extension.awaitMessage("bgpage:suspending");
+}
+
+add_task(
+  {
+    pref_set: [["extensions.eventPages.enabled", true]],
+  },
+  async function test_pending_sendNativeMessageReply_resets_bgscript_idle_timeout() {
+    const { extension, contextId } =
+      await startupExtensionAndRequestPermission();
+    await testSendNativeMessage({ extension, contextId });
+    await waitForSubprocessExit();
+    await extension.unload();
+  }
+);
+
+add_task(
+  {
+    pref_set: [["extensions.eventPages.enabled", true]],
+  },
+  async function test_open_connectNativePort_resets_bgscript_idle_timeout() {
+    const { extension, contextId } =
+      await startupExtensionAndRequestPermission();
+    await testConnectNative({ extension, contextId });
+    await waitForSubprocessExit();
+    await extension.unload();
+  }
+);

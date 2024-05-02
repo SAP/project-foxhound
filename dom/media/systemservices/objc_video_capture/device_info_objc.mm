@@ -15,59 +15,75 @@
 #import <AVFoundation/AVFoundation.h>
 
 #import "device_info_objc.h"
-#include "modules/video_capture/video_capture_config.h"
 
 @implementation DeviceInfoIosObjC
 
 - (id)init {
   self = [super init];
-
   if (nil != self) {
-    [self configureObservers];
+    _lock = [[NSLock alloc] init];
   }
-
   return self;
 }
 
 - (void)dealloc {
-  NSNotificationCenter* notificationCenter = [NSNotificationCenter defaultCenter];
-  for (id observer in _observers) [notificationCenter removeObserver:observer];
 }
 
-- (void)registerOwner:(DeviceInfoIos*)owner {
+- (void)registerOwner:(webrtc::VideoCaptureModule::DeviceInfo*)owner {
   [_lock lock];
+  if (!_owner && owner) {
+    [self configureObservers];
+  } else if (_owner && !owner) {
+    NSNotificationCenter* notificationCenter =
+        [NSNotificationCenter defaultCenter];
+    for (id observer in _observers) {
+      [notificationCenter removeObserver:observer];
+    }
+    _observers = nil;
+  }
   _owner = owner;
   [_lock unlock];
 }
 
 + (int)captureDeviceCount {
   int cnt = 0;
-  for (AVCaptureDevice* device in [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
-    if ([device isSuspended]) {
-      continue;
+  @try {
+    for (AVCaptureDevice* device in
+         [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
+      if ([device isSuspended]) {
+        continue;
+      }
+      cnt++;
     }
-    cnt++;
+  } @catch (NSException* exception) {
+    cnt = 0;
   }
   return cnt;
 }
 
 + (AVCaptureDevice*)captureDeviceForIndex:(int)index {
   int cnt = 0;
-  for (AVCaptureDevice* device in [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
-    if ([device isSuspended]) {
-      continue;
+  @try {
+    for (AVCaptureDevice* device in
+         [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
+      if ([device isSuspended]) {
+        continue;
+      }
+      if (cnt == index) {
+        return device;
+      }
+      cnt++;
     }
-    if (cnt == index) {
-      return device;
-    }
-    cnt++;
+  } @catch (NSException* exception) {
+    cnt = 0;
   }
 
   return nil;
 }
 
 + (AVCaptureDevice*)captureDeviceForUniqueId:(NSString*)uniqueId {
-  for (AVCaptureDevice* device in [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
+  for (AVCaptureDevice* device in
+       [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
     if ([device isSuspended]) {
       continue;
     }
@@ -121,36 +137,36 @@
 
 - (void)configureObservers {
   // register device connected / disconnected event
-  _lock = [[NSLock alloc] init];
+  NSNotificationCenter* notificationCenter =
+      [NSNotificationCenter defaultCenter];
 
-  NSNotificationCenter* notificationCenter = [NSNotificationCenter defaultCenter];
+  id deviceWasConnectedObserver = [notificationCenter
+      addObserverForName:AVCaptureDeviceWasConnectedNotification
+                  object:nil
+                   queue:[NSOperationQueue mainQueue]
+              usingBlock:^(NSNotification* note) {
+                [_lock lock];
+                AVCaptureDevice* device = [note object];
+                BOOL isVideoDevice = [device hasMediaType:AVMediaTypeVideo];
+                if (isVideoDevice && _owner) _owner->DeviceChange();
+                [_lock unlock];
+              }];
 
-  id deviceWasConnectedObserver =
-      [notificationCenter addObserverForName:AVCaptureDeviceWasConnectedNotification
-                                      object:nil
-                                       queue:[NSOperationQueue mainQueue]
-                                  usingBlock:^(NSNotification* note) {
-                                    [_lock lock];
-                                    AVCaptureDevice* device = [note object];
-                                    BOOL isVideoDevice = [device hasMediaType:AVMediaTypeVideo];
-                                    if (isVideoDevice && _owner) _owner->DeviceChange();
-                                    [_lock unlock];
-                                  }];
+  id deviceWasDisconnectedObserver = [notificationCenter
+      addObserverForName:AVCaptureDeviceWasDisconnectedNotification
+                  object:nil
+                   queue:[NSOperationQueue mainQueue]
+              usingBlock:^(NSNotification* note) {
+                [_lock lock];
+                AVCaptureDevice* device = [note object];
+                BOOL isVideoDevice = [device hasMediaType:AVMediaTypeVideo];
+                if (isVideoDevice && _owner) _owner->DeviceChange();
+                [_lock unlock];
+              }];
 
-  id deviceWasDisconnectedObserver =
-      [notificationCenter addObserverForName:AVCaptureDeviceWasDisconnectedNotification
-                                      object:nil
-                                       queue:[NSOperationQueue mainQueue]
-                                  usingBlock:^(NSNotification* note) {
-                                    [_lock lock];
-                                    AVCaptureDevice* device = [note object];
-                                    BOOL isVideoDevice = [device hasMediaType:AVMediaTypeVideo];
-                                    if (isVideoDevice && _owner) _owner->DeviceChange();
-                                    [_lock unlock];
-                                  }];
-
-  _observers = [[NSArray alloc]
-      initWithObjects:deviceWasConnectedObserver, deviceWasDisconnectedObserver, nil];
+  _observers =
+      [[NSArray alloc] initWithObjects:deviceWasConnectedObserver,
+                                       deviceWasDisconnectedObserver, nil];
 }
 
 @end

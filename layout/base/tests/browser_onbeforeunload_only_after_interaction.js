@@ -1,11 +1,11 @@
-const { PromptTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromptTestUtils.jsm"
+const { PromptTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromptTestUtils.sys.mjs"
 );
 
 function pageScript() {
   window.addEventListener(
     "beforeunload",
-    function(event) {
+    function (event) {
       var str = "Some text that causes the beforeunload dialog to be shown";
       event.returnValue = str;
       return str;
@@ -47,9 +47,9 @@ async function openPage(shouldClick) {
   // Open about:blank in a new tab.
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
-    async function(browser) {
+    async function (browser) {
       // Load the page.
-      BrowserTestUtils.loadURI(browser, PAGE_URL);
+      BrowserTestUtils.startLoadingURIString(browser, PAGE_URL);
       await BrowserTestUtils.browserLoaded(browser);
 
       if (shouldClick) {
@@ -58,7 +58,7 @@ async function openPage(shouldClick) {
       let hasInteractedWith = await SpecialPowers.spawn(
         browser,
         [""],
-        function() {
+        function () {
           return content.document.userHasInteracted;
         }
       );
@@ -68,7 +68,7 @@ async function openPage(shouldClick) {
         "Click should update document interactivity state"
       );
       // And then navigate away.
-      BrowserTestUtils.loadURI(browser, "http://example.com/");
+      BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
       await BrowserTestUtils.browserLoaded(browser);
     }
   );

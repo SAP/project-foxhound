@@ -12,6 +12,7 @@
 #include "WebAudioUtils.h"
 #include "DelayBuffer.h"
 #include "PlayingRefChangeHandler.h"
+#include "Tracing.h"
 
 namespace mozilla::dom {
 
@@ -48,9 +49,9 @@ class DelayNodeEngine final : public AudioNodeEngine {
   enum Parameters {
     DELAY,
   };
-  void RecvTimelineEvent(uint32_t aIndex, AudioTimelineEvent& aEvent) override {
+  void RecvTimelineEvent(uint32_t aIndex, AudioParamEvent& aEvent) override {
     MOZ_ASSERT(mDestination);
-    WebAudioUtils::ConvertAudioTimelineEventToTicks(aEvent, mDestination);
+    aEvent.ConvertToTicks(mDestination);
 
     switch (aIndex) {
       case DELAY:
@@ -65,6 +66,7 @@ class DelayNodeEngine final : public AudioNodeEngine {
                     const AudioBlock& aInput, AudioBlock* aOutput,
                     bool* aFinished) override {
     MOZ_ASSERT(aTrack->mSampleRate == mDestination->mSampleRate);
+    TRACE("DelayNodeEngine::ProcessBlock");
 
     if (!aInput.IsSilentOrSubnormal()) {
       if (mLeftOverData <= 0) {

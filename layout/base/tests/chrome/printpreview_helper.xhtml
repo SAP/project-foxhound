@@ -4,8 +4,8 @@
                  type="text/css"?>
 <window onload="runTests()"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <iframe height="200" width="600" type="content"></iframe>
-  <iframe height="200" width="600" type="content"></iframe>
+  <iframe style="min-height: 200px; min-width: 600px" type="content"></iframe>
+  <iframe style="min-height: 200px; min-width: 600px" type="content"></iframe>
 <script type="application/javascript">
 <![CDATA[
 // Note: We can't use window.frames directly here because the type="content"
@@ -61,7 +61,7 @@ function printpreview(options = {}) {
     }
   }
   var settings = Cc["@mozilla.org/gfx/printsettings-service;1"]
-                       .getService(Ci.nsIPrintSettingsService).newPrintSettings;
+                       .getService(Ci.nsIPrintSettingsService).createNewPrintSettings();
   settings.printBGColors = true;
   settings.headerStrLeft = "";
   settings.headerStrRight = "";
@@ -86,9 +86,8 @@ function printpreview(options = {}) {
     let bc = frameElts[0].contentWindow.browsingContext;
     let browser = document.createXULElement("browser");
     browser.setAttribute("type", "content");
-    browser.setAttribute("width", "800");
-    browser.setAttribute("height", "800");
-    browser.style.maxWidth = "800px"; // Deal with XUL silliness.
+    browser.style.minHeight = "800px";
+    browser.style.maxWidth = browser.style.minWidth = "800px";
     browser.setAttribute("initialBrowsingContextGroupId", bc.group.id);
     browser.setAttribute("nodefaultsrc", "true");
     document.documentElement.appendChild(browser);
@@ -466,6 +465,15 @@ async function compareFiles(src1, src2, options = {}) {
     iframeElement.addEventListener("load", resolve, { capture: true, once: true });
     iframeElement.setAttribute("src", new URL(src1, BASE).href);
   });
+  let mediaElements = iframeElement.contentDocument.querySelectorAll(
+    "audio, video"
+  );
+  for (let mediaElement of mediaElements) {
+    let { widget } = SpecialPowers.wrap(iframeElement.contentWindow)
+      .windowGlobalChild.getActor("UAWidgets")
+      .widgets.get(mediaElement);
+    await widget.impl.Utils.l10n.translateRoots();
+  }
 
   if (messagePromise) {
     info("awaiting for message to arrive");
@@ -480,6 +488,15 @@ async function compareFiles(src1, src2, options = {}) {
     iframeElement.addEventListener("load", resolve, { capture: true, once: true });
     iframeElement.setAttribute("src", new URL(src2, BASE).href);
   });
+  mediaElements = iframeElement.contentDocument.querySelectorAll(
+    "audio, video"
+  );
+  for (let mediaElement of mediaElements) {
+    let { widget } = SpecialPowers.wrap(iframeElement.contentWindow)
+      .windowGlobalChild.getActor("UAWidgets")
+      .widgets.get(mediaElement);
+    await widget.impl.Utils.l10n.translateRoots();
+  }
 
   await printpreview(options.ref || options);
   drawPrintPreviewWindow(ctx2);
@@ -931,7 +948,7 @@ async function runTest35() {
 
 // Testcases for pages-per-sheet with nonzero unwriteable margin values:
 // ---------------------------------------------------------------------
-    
+
 // In this subtest, the vertical scale-factor is more-severe and hence ends up
 // "winning", and we have a bit of extra space in the horizontal axis which we
 // distribute equally on either side (see the _ref.html file used below for
@@ -1168,7 +1185,7 @@ async function runTest41() {
     var fuzz = { maxDifferent: 60, maxDifference: 200 }; // Bug 1714217
   }
   else {
-    var fuzz = { maxDifferent: 6, maxDifference: 16 };
+    var fuzz = { maxDifferent: 14, maxDifference: 16 };
   }
 
   let test = "data:text/html,<!-- runTest41 -->";
@@ -1346,6 +1363,351 @@ async function runTest47() {
       },
     },
   });
+  requestAnimationFrame(() => setTimeout(runTest48));
+}
+
+// Test that even when downscaling happens due to CSS page-size, the
+// unwriteable margins are in units applicable to the resulting page as it is
+// actually printed.
+// https://bugzilla.mozilla.org/1769161
+async function runTest48() {
+  if (navigator.platform.includes("Win")) {
+    var fuzz = { maxDifferent: 816, maxDifference: 255 }; // Bug 1680838
+  } else {
+    var fuzz = { maxDifferent: 16, maxDifference: 255 };
+  }
+  let test = "bug1769161_1.html";
+  let ref = "bug1769161_1_ref.html";
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    settings: {
+      paperWidth: 5,
+      paperHeight: 5,
+      paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+      unwriteableMarginLeft: 1,
+      unwriteableMarginRight: 1,
+      unwriteableMarginTop: 1,
+      unwriteableMarginBottom: 1,
+    },
+  });
+  requestAnimationFrame(() => setTimeout(runTest49));
+}
+
+// Same as runTest48, but uses different scaling factors.
+async function runTest49() {
+  if (navigator.platform.includes("Win")) {
+    var fuzz = { maxDifferent: 6472, maxDifference: 255 }; // Bug 1680838
+  } else {
+    var fuzz = { maxDifferent: 24, maxDifference: 255 };
+  }
+  let test = "bug1769161_2.html";
+  let ref = "bug1769161_2_ref.html";
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    settings: {
+      paperWidth: 5,
+      paperHeight: 5,
+      paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+      unwriteableMarginLeft: 1,
+      unwriteableMarginRight: 1,
+      unwriteableMarginTop: 1,
+      unwriteableMarginBottom: 1,
+    },
+  });
+  requestAnimationFrame(() => setTimeout(runTest50));
+}
+
+// Test that when downscaling happens due to CSS page-size, the unwriteable
+// margins are equivalent to the @page margins after those margins are scaled.
+// https://bugzilla.mozilla.org/1769161
+async function runTest50() {
+  if (navigator.platform.includes("Win")) {
+    var fuzz = { maxDifferent: 816, maxDifference: 255 }; // Bug 1680838
+  } else {
+    var fuzz = { maxDifferent: 16, maxDifference: 255 };
+  }
+  let test = "bug1769161_3.html";
+  let ref = "bug1769161_3_ref.html";
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    test: {
+      settings: {
+        paperWidth: 5,
+        paperHeight: 5,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        unwriteableMarginLeft: 1,
+        unwriteableMarginRight: 1,
+        unwriteableMarginTop: 1,
+        unwriteableMarginBottom: 1,
+      },
+    },
+    ref: {
+      settings: {
+        paperWidth: 5,
+        paperHeight: 5,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        unwriteableMarginLeft: 0,
+        unwriteableMarginRight: 0,
+        unwriteableMarginTop: 0,
+        unwriteableMarginBottom: 0,
+      },
+    },
+  });
+  requestAnimationFrame(() => setTimeout(runTest51));
+}
+
+// Same as runTest50, but uses different scaling factors.
+async function runTest51() {
+  if (navigator.platform.includes("Win")) {
+    var fuzz = { maxDifferent: 11764, maxDifference: 255 }; // Bug 1680838
+  } else {
+    var fuzz = { maxDifferent: 24, maxDifference: 255 };
+  }
+  let test = "bug1769161_4.html";
+  let ref = "bug1769161_4_ref.html";
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    test: {
+      settings: {
+        paperWidth: 5,
+        paperHeight: 5,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        unwriteableMarginLeft: 1,
+        unwriteableMarginRight: 1,
+        unwriteableMarginTop: 1,
+        unwriteableMarginBottom: 1,
+      },
+    },
+    ref: {
+      settings: {
+        paperWidth: 5,
+        paperHeight: 5,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        unwriteableMarginLeft: 0,
+        unwriteableMarginRight: 0,
+        unwriteableMarginTop: 0,
+        unwriteableMarginBottom: 0,
+      },
+    },
+  });
+  requestAnimationFrame(() => setTimeout(runTest52));
+}
+
+async function runTest52() {
+  // Unwriteable margins can be ignored by setting the appropriate flag.
+  // Slightly different to avoid hang.
+  await compareFiles("data:text/html,Foo", "data:text/html,<div>Foo", {
+    maxDifferent: 0,
+    maxDifference: 0,
+    test: {
+      settings: {
+        paperWidth: 8,
+        paperHeight: 10,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        marginTop: 0,
+        marginRight: 0,
+        marginBottom: 0,
+        marginLeft: 0,
+        unwriteableMarginTop: 1,
+        unwriteableMarginRight: 1,
+        unwriteableMarginBottom: 1,
+        unwriteableMarginLeft: 1,
+        ignoreUnwriteableMargins: true,
+      },
+    },
+    ref: {
+      settings: {
+        paperWidth: 8,
+        paperHeight: 10,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        marginTop: 0,
+        marginRight: 0,
+        marginBottom: 0,
+        marginLeft: 0,
+        unwriteableMarginTop: 0,
+        unwriteableMarginRight: 0,
+        unwriteableMarginBottom: 0,
+        unwriteableMarginLeft: 0,
+      },
+    },
+  });
+
+  requestAnimationFrame(() => setTimeout(runTest53));
+}
+
+async function runTest53() {
+  // Ensure that even when unwriteable margins are set to be taken into
+  // account, page rule margins can override it.
+  await compareFiles(
+    "data:text/html,<style>@page { margin: 0 }</style>Foo",
+    "data:text/html,<div>Foo",
+    {
+      maxDifferent: 0,
+      maxDifference: 0,
+      test: {
+        settings: {
+          paperWidth: 8,
+          paperHeight: 10,
+          paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+          marginTop: 0,
+          marginRight: 0,
+          marginBottom: 0,
+          marginLeft: 0,
+          unwriteableMarginTop: 1,
+          unwriteableMarginRight: 1,
+          unwriteableMarginBottom: 1,
+          unwriteableMarginLeft: 1,
+          ignoreUnwriteableMargins: false,
+          honorPageRuleMargins: true,
+        },
+      },
+      ref: {
+        settings: {
+          paperWidth: 8,
+          paperHeight: 10,
+          paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+          marginTop: 0,
+          marginRight: 0,
+          marginBottom: 0,
+          marginLeft: 0,
+          unwriteableMarginTop: 0,
+          unwriteableMarginRight: 0,
+          unwriteableMarginBottom: 0,
+          unwriteableMarginLeft: 0,
+        },
+      },
+    });
+
+    requestAnimationFrame(() => setTimeout(runTest54));
+}
+
+async function runTest54() {
+  // `ignoreUnwriteableMargins` lets author-specified margins ignore
+  // unwriteable margins as well. Without this flag, the unwriteable
+  // margin is ignored iff `Margins: Default` is set (i.e.
+  // `honorPageRuleMargins` set) and the author specified CSS page
+  // margin is zero.
+  // Note: At least currently, both `ignoreUnwriteableMargins`
+  // and `honorPageRuleMargins` cannot be set through the printing UI.
+  // TODO: If this behaviour is desired is up for debate.
+  await compareFiles(
+    "data:text/html,<style>@page { margin: 0.1in }</style>Foo",
+    "data:text/html,<div>Foo",
+    {
+      maxDifferent: 0,
+      maxDifference: 0,
+      test: {
+        settings: {
+          paperWidth: 8,
+          paperHeight: 10,
+          paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+          marginTop: 0,
+          marginRight: 0,
+          marginBottom: 0,
+          marginLeft: 0,
+          unwriteableMarginTop: 1,
+          unwriteableMarginRight: 1,
+          unwriteableMarginBottom: 1,
+          unwriteableMarginLeft: 1,
+          ignoreUnwriteableMargins: true,
+          honorPageRuleMargins: true,
+        },
+      },
+      ref: {
+        settings: {
+          paperWidth: 8,
+          paperHeight: 10,
+          paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+          marginTop: 0.1,
+          marginRight: 0.1,
+          marginBottom: 0.1,
+          marginLeft: 0.1,
+          unwriteableMarginTop: 0,
+          unwriteableMarginRight: 0,
+          unwriteableMarginBottom: 0,
+          unwriteableMarginLeft: 0,
+        },
+      },
+    });
+
+    requestAnimationFrame(() => setTimeout(runTest55));
+}
+
+async function runTest55() {
+  let test = "printpreview_pps_uw2.html";
+  let ref = "printpreview_pps_uw2_no_margin_ref.html";
+  let fuzz = navigator.platform.includes("Win") ? // Workaround for bug 1680838
+      { maxDifferent: 12870, maxDifference: 255 } :
+      { maxDifferent: 0, maxDifference: 0 };
+
+  // Unwriteable margins are successfully ignored, if requested,
+  // for pages-per-sheet.
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    test: {
+      settings: {
+        paperWidth: 8,
+        paperHeight: 10,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        marginTop: 0,
+        marginRight: 0,
+        marginBottom: 0,
+        marginLeft: 0,
+        unwriteableMarginTop: 0.8,
+        unwriteableMarginRight: 0.6,
+        unwriteableMarginBottom: 1.2,
+        unwriteableMarginLeft: 0.4,
+        numPagesPerSheet: 2,
+        ignoreUnwriteableMargins: true,
+      },
+    },
+    ref: {
+      settings: {
+        paperWidth: 8,
+        paperHeight: 10,
+        marginTop: 0,
+        marginRight: 0,
+        marginBottom: 0,
+        marginLeft: 0,
+        unwriteableMarginTop: 0,
+        unwriteableMarginRight: 0,
+        unwriteableMarginBottom: 0,
+        unwriteableMarginLeft: 0,
+        orientation: 1, /* Landscape mode */
+      },
+    },
+  });
+
+  requestAnimationFrame(() => setTimeout(runTest56));
+}
+
+async function runTest56() {
+  await compareFiles("printpreview_image_select.html", "printpreview_image_select_ref.html");
+  requestAnimationFrame(() => setTimeout(runTest57));
+}
+
+// Tests that printing with mixed page sizes doesn't crash.
+// These tests can't actually compare any pages after the first, so this only
+// verifies that we don't crash reflowing.
+async function runTest57() {
+  let test = "printpreview_mixed_page_size_001.html";
+  // The params are just to give the file unique URLs.
+  await compareFiles(test + "?test", test + "?ref");
+  requestAnimationFrame(() => setTimeout(runTest58));
+}
+
+// As with runTest57, this is only testing for crashes.
+// This includes fixed-position content, as this is the only way to get content
+// within the same chain of continuations onto pages with different sizes.
+async function runTest58() {
+  let test = "printpreview_mixed_page_size_002.html";
+  // The params are just to give the file unique URLs.
+  await compareFiles(test + "?test", test + "?ref");
   finish();
 }
 

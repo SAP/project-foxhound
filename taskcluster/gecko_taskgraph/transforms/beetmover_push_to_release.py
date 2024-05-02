@@ -5,19 +5,15 @@
 Transform the beetmover-push-to-release task into a task description.
 """
 
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema, taskref_or_string
+from voluptuous import Optional, Required
 
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.schema import (
-    Schema,
-    taskref_or_string,
-)
-from gecko_taskgraph.util.scriptworker import (
-    get_beetmover_bucket_scope,
-    add_scope_prefix,
-)
 from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import Required, Optional
-
+from gecko_taskgraph.util.scriptworker import (
+    add_scope_prefix,
+    get_beetmover_bucket_scope,
+)
 
 beetmover_push_to_release_description_schema = Schema(
     {
@@ -34,6 +30,9 @@ beetmover_push_to_release_description_schema = Schema(
         Required("shipping-phase"): task_description_schema["shipping-phase"],
         Required("shipping-product"): task_description_schema["shipping-product"],
         Optional("extra"): task_description_schema["extra"],
+        Optional("worker"): {
+            Optional("max-run-time"): int,
+        },
     }
 )
 
@@ -73,6 +72,7 @@ def make_beetmover_push_to_release_description(config, jobs):
             "shipping-product": job.get("shipping-product"),
             "routes": job.get("routes", []),
             "extra": job.get("extra", {}),
+            "worker": job.get("worker", {}),
         }
 
         yield task
@@ -85,6 +85,8 @@ def make_beetmover_push_to_release_worker(config, jobs):
             "implementation": "beetmover-push-to-release",
             "product": job["product"],
         }
+        if job.get("worker", {}).get("max-run-time"):
+            worker["max-run-time"] = job["worker"]["max-run-time"]
         job["worker"] = worker
         del job["product"]
 

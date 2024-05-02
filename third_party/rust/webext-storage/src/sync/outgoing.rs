@@ -8,28 +8,28 @@
 use interrupt_support::Interruptee;
 use rusqlite::{Connection, Row, Transaction};
 use sql_support::ConnExt;
-use sync15_traits::Payload;
+use sync15::bso::OutgoingBso;
 use sync_guid::Guid as SyncGuid;
 
 use crate::error::*;
 
-use super::{Record, RecordData};
+use super::WebextRecord;
 
-fn outgoing_from_row(row: &Row<'_>) -> Result<Payload> {
+fn outgoing_from_row(row: &Row<'_>) -> Result<OutgoingBso> {
     let guid: SyncGuid = row.get("guid")?;
     let ext_id: String = row.get("ext_id")?;
     let raw_data: Option<String> = row.get("data")?;
-    let payload = match raw_data {
-        Some(raw_data) => Payload::from_record(Record {
-            guid,
-            data: RecordData::Data {
+    Ok(match raw_data {
+        Some(raw_data) => {
+            let record = WebextRecord {
+                guid,
                 ext_id,
                 data: raw_data,
-            },
-        })?,
-        None => Payload::new_tombstone(guid),
-    };
-    Ok(payload)
+            };
+            OutgoingBso::from_content_with_id(record)?
+        }
+        None => OutgoingBso::new_tombstone(guid.into()),
+    })
 }
 
 /// Stages info about what should be uploaded in a temp table. This should be
@@ -69,12 +69,12 @@ pub fn stage_outgoing(tx: &Transaction<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Returns a vec of the payloads which should be uploaded.
-pub fn get_outgoing(conn: &Connection, signal: &dyn Interruptee) -> Result<Vec<Payload>> {
+/// Returns a vec of the outgoing records which should be uploaded.
+pub fn get_outgoing(conn: &Connection, signal: &dyn Interruptee) -> Result<Vec<OutgoingBso>> {
     let sql = "SELECT guid, ext_id, data FROM storage_sync_outgoing_staging";
     let elts = conn
         .conn()
-        .query_rows_and_then_named(sql, &[], |row| -> Result<_> {
+        .query_rows_and_then(sql, [], |row| -> Result<_> {
             signal.err_if_interrupted()?;
             outgoing_from_row(row)
         })?;
@@ -101,7 +101,7 @@ pub fn record_uploaded(
     // Updating the `was_uploaded` column fires the `record_uploaded` trigger,
     // which updates the local change counter and writes the uploaded record
     // data back to the mirror.
-    sql_support::each_chunk(&items, |chunk, _| -> Result<()> {
+    sql_support::each_chunk(items, |chunk, _| -> Result<()> {
         signal.err_if_interrupted()?;
         let sql = format!(
             "UPDATE storage_sync_outgoing_staging SET
@@ -109,7 +109,7 @@ pub fn record_uploaded(
              WHERE guid IN ({})",
             sql_support::repeat_sql_vars(chunk.len()),
         );
-        tx.execute(&sql, chunk)?;
+        tx.execute(&sql, rusqlite::params_from_iter(chunk))?;
         Ok(())
     })?;
 
@@ -139,13 +139,16 @@ mod tests {
         stage_outgoing(&tx)?;
         let changes = get_outgoing(&tx, &NeverInterrupts)?;
         assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].data["extId"], "ext_with_changes".to_string());
+        let record: serde_json::Value = serde_json::from_str(&changes[0].payload).unwrap();
+        let ext_id = record.get("extId").unwrap().as_str().unwrap();
+
+        assert_eq!(ext_id, "ext_with_changes");
 
         record_uploaded(
             &tx,
             changes
                 .into_iter()
-                .map(|p| p.id)
+                .map(|p| p.envelope.id)
                 .collect::<Vec<SyncGuid>>()
                 .as_slice(),
             &NeverInterrupts,
@@ -156,5 +159,28 @@ mod tests {
         )?;
         assert_eq!(counter, 0);
         Ok(())
+    }
+
+    #[test]
+    fn test_payload_serialization() {
+        let record = WebextRecord {
+            guid: SyncGuid::new("guid"),
+            ext_id: "ext-id".to_string(),
+            data: "{}".to_string(),
+        };
+
+        let outgoing = OutgoingBso::from_content_with_id(record).unwrap();
+
+        // The envelope should have our ID.
+        assert_eq!(outgoing.envelope.id, "guid");
+
+        let outgoing_payload =
+            serde_json::from_str::<serde_json::Value>(&outgoing.payload).unwrap();
+        let outgoing_map = outgoing_payload.as_object().unwrap();
+
+        assert!(outgoing_map.contains_key("id"));
+        assert!(outgoing_map.contains_key("data"));
+        assert!(outgoing_map.contains_key("extId"));
+        assert_eq!(outgoing_map.len(), 3);
     }
 }

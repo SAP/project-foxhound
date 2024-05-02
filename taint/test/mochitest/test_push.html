@@ -1,0 +1,97 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test Push API</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/taint/test/mochitest/test_utils.js"></script>
+  <script type="text/javascript" src="/tests/taint/test/mochitest/webpush.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+  <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+</head>
+<p id="display"></p>
+<div id="content" style="display: none">
+
+</div>
+<pre id="test">
+</pre>
+
+<script class="testbody" type="text/javascript">
+  function check_tainted(str) {
+      ok(str.taint.length > 0, "Check tainted");
+  }
+
+
+  var userAgentID = "ac44402c-85fc-41e4-a0d0-483316d15351";
+  var channelID = null;
+
+  var mockSocket = new MockWebSocket();
+  mockSocket.onRegister = function(request) {
+    channelID = request.channelID;
+    this.serverSendMsg(JSON.stringify({
+      messageType: "register",
+      uaid: userAgentID,
+      channelID,
+      status: 200,
+      pushEndpoint: "https://example.com/endpoint/1",
+    }));
+  };
+
+  var registration;
+  add_task(async function start() {
+    await setupPrefsAndMockSocket(mockSocket);
+    await setPushPermission(true);
+
+    var url = "worker.js?" + (Math.random());
+    registration = await navigator.serviceWorker.register(url, {scope: "."});
+    await waitForActive(registration);
+  });
+
+  var controlledFrame;
+  add_task(async function createControlledIFrame() {
+    controlledFrame = await injectControlledFrame();
+  });
+
+  var pushSubscription;
+  add_task(async function subscribe() {
+    pushSubscription = await registration.pushManager.subscribe();
+    check_tainted(pushSubscription.endpoint);
+  });
+
+  var version = 0;
+  function sendMessage(pushSub, message) {
+    return mockSocket.serverSendMsg(JSON.stringify({
+          messageType: "notification",
+          version: version++,
+          channelID,
+          data: message,
+          headers: {}
+      }));
+  }
+
+  function waitForMessage(pushSub, message) {
+    return Promise.all([
+      controlledFrame.waitOnWorkerMessage("finished"),
+      sendMessage(pushSub, message),
+    ]).then(([msg]) => msg);
+  }
+
+  add_task(async function sendPushMessageFromPage() {
+    // TODO: Does not receive message, same problem in dom/push/tests/test_data.html
+    var message = await waitForMessage(pushSubscription, "Text message from page");
+
+    check_tainted(message.text);
+    check_tainted(JSON.stringify(message.json));
+  });
+
+  add_task(async function unsubscribe() {
+    controlledFrame.remove();
+    await pushSubscription.unsubscribe();
+  });
+
+  add_task(async function unregister() {
+    await registration.unregister();
+  });
+
+</script>
+</body>
+</html>

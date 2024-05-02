@@ -8,10 +8,10 @@
 
 const {
   CubicBezierWidget,
-} = require("devtools/client/shared/widgets/CubicBezierWidget");
+} = require("resource://devtools/client/shared/widgets/CubicBezierWidget.js");
 const {
   PREDEFINED,
-} = require("devtools/client/shared/widgets/CubicBezierPresets");
+} = require("resource://devtools/client/shared/widgets/CubicBezierPresets.js");
 
 const TEST_URI = CHROME_URL_ROOT + "doc_cubic-bezier-01.html";
 
@@ -19,7 +19,7 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("ui.prefersReducedMotion");
 });
 
-add_task(async function() {
+add_task(async function () {
   const { host, doc } = await createHost("bottom", TEST_URI);
   // Unset "prefers reduced motion", otherwise the dot animation preview won't be created.
   // See Bug 1637842

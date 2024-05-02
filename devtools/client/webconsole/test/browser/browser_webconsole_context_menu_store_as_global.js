@@ -1,12 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Test the "Store as global variable" menu item of the webconsole is enabled only when
-// clicking on messages that are associated with an object actor.
+// Test the "Store as global variable" menu item works even if the page
+// has a global variable conflicts with extra bindings.
 
 "use strict";
 
 const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html><script>
+  /* Verify a conflicting global doesn't break the feature. */
+  var _self = "wrong value";
+
   window.bar = { baz: 1 };
   console.log("foo");
   console.log("foo", window.bar);
@@ -18,10 +21,10 @@ const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html><script>
   console.log("foo", window.symbol);
 </script>`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const messages = await waitFor(() => findMessages(hud, "foo"));
+  const messages = await waitFor(() => findConsoleAPIMessages(hud, "foo"));
   is(messages.length, 5, "Five messages should have appeared");
   const [msgWithText, msgWithObj, msgNested, msgLongStr, msgSymbol] = messages;
   let varIdx = 0;
@@ -64,7 +67,7 @@ add_task(async function() {
   info(
     "Check store as global variable is enabled for invisible-to-debugger objects"
   );
-  const onMessageInvisible = waitForMessage(hud, "foo");
+  const onMessageInvisible = waitForMessageByType(hud, "foo", ".console-api");
   SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     const obj = Cu.Sandbox(Cu.getObjectPrincipal(content), {
       invisibleToDebugger: true,
@@ -83,6 +86,11 @@ add_task(async function() {
 });
 
 async function storeAsVariable(hud, msg, type, varIdx, equalTo) {
+  // Refresh the reference to the message, as it may have been scrolled out of existence.
+  msg = await findMessageVirtualizedById({
+    hud,
+    messageId: msg.getAttribute("data-message-id"),
+  });
   const element = msg.querySelector(".objectBox-" + type);
   const menuPopup = await openContextMenu(hud, element);
   const storeMenuItem = menuPopup.querySelector("#console-menu-store");
@@ -97,7 +105,7 @@ async function storeAsVariable(hud, msg, type, varIdx, equalTo) {
 
   info("Click on store as global variable");
   const onceInputSet = hud.jsterm.once("set-input-value");
-  storeMenuItem.click();
+  menuPopup.activateItem(storeMenuItem);
 
   info("Wait for console input to be updated with the temp variable");
   await onceInputSet;
@@ -107,11 +115,10 @@ async function storeAsVariable(hud, msg, type, varIdx, equalTo) {
 
   is(getInputValue(hud), "temp" + varIdx, "Input was set");
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     `temp${varIdx} === ${equalTo}`,
-    true,
-    ".result"
+    true
   );
   ok(true, "Correct variable assigned into console.");
 }

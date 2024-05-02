@@ -9,8 +9,7 @@
 
 #include "URL.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class URLMainThread final {
  public:
@@ -23,11 +22,10 @@ class URLMainThread final {
   static void RevokeObjectURL(const GlobalObject& aGlobal,
                               const nsAString& aURL, ErrorResult& aRv);
 
-  static bool IsValidURL(const GlobalObject& aGlobal, const nsAString& aURL,
-                         ErrorResult& aRv);
+  static bool IsValidObjectURL(const GlobalObject& aGlobal,
+                               const nsAString& aURL, ErrorResult& aRv);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_URLMainThread_h

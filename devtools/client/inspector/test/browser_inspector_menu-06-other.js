@@ -4,7 +4,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Tests for menuitem functionality that doesn't fit into any specific category
 const TEST_URL = URL_ROOT + "doc_inspector_menu.html";
-add_task(async function() {
+add_task(async function () {
   const { inspector, toolbox } = await openInspectorForURL(TEST_URL);
   await testShowDOMProperties();
   await testDuplicateNode();
@@ -91,7 +91,7 @@ add_task(async function() {
       "#nestedHiddenElement"
     );
     const nodesAfter = (await walker.children(divAfter)).nodes;
-    ok(nodesAfter.length == 0, "the node still had children");
+    ok(!nodesAfter.length, "the node still had children");
   }
 
   async function testDeleteRootNode() {

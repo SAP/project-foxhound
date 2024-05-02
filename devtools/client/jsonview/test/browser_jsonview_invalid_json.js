@@ -5,14 +5,14 @@
 
 const TEST_JSON_URL = URL_ROOT + "invalid_json.json";
 
-add_task(async function() {
+add_task(async function () {
   info("Test invalid JSON started");
 
   await addJsonViewTab(TEST_JSON_URL);
 
-  const count = await getElementCount(".jsonPanelBox .treeTable .treeRow");
-  ok(count == 0, "There must be no row");
+  const count = await getElementCount(".textPanelBox");
+  ok(count == 1, "The raw data panel must be shown");
 
-  const text = await getElementText(".jsonPanelBox .jsonParseError");
+  const text = await getElementText(".textPanelBox .jsonParseError");
   ok(text, "There must be an error description");
 });

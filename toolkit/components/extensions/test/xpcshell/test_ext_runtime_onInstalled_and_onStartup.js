@@ -2,11 +2,11 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const {
@@ -27,16 +27,10 @@ AddonTestUtils.overrideCertDB();
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "42", "42");
 
-// Ensure that the background page is automatically started after using
-// promiseStartupManager.
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
-);
-
 function background() {
   let onInstalledDetails = null;
   let onStartupFired = false;
+  let eventPage = browser.runtime.getManifest().background.persistent === false;
 
   browser.runtime.onInstalled.addListener(details => {
     onInstalledDetails = details;
@@ -61,6 +55,16 @@ function background() {
     browser.test.sendMessage("reloading");
     browser.runtime.reload();
   });
+
+  if (eventPage) {
+    browser.runtime.onSuspend.addListener(() => {
+      browser.test.sendMessage("suspended");
+    });
+    // an event we use to restart the background
+    browser.browserSettings.homepageOverride.onChange.addListener(() => {
+      browser.test.sendMessage("homepageOverride");
+    });
+  }
 }
 
 async function expectEvents(
@@ -130,7 +134,7 @@ add_task(async function test_should_fire_on_addon_update() {
     useAddonManager: "permanent",
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
           update_url: `http://localhost:${port}/test_update.json`,
@@ -158,7 +162,7 @@ add_task(async function test_should_fire_on_addon_update() {
   let webExtensionFile = createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
         },
@@ -224,7 +228,7 @@ add_task(async function test_should_fire_on_browser_update() {
     useAddonManager: "permanent",
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
         },
@@ -244,7 +248,7 @@ add_task(async function test_should_fire_on_browser_update() {
 
   // Restart the browser.
   await promiseRestartManager("1");
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   await expectEvents(extension, {
     onStartupFired: true,
@@ -253,7 +257,7 @@ add_task(async function test_should_fire_on_browser_update() {
 
   // Update the browser.
   await promiseRestartManager("2");
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   await expectEvents(extension, {
     onStartupFired: true,
@@ -264,7 +268,7 @@ add_task(async function test_should_fire_on_browser_update() {
 
   // Restart the browser.
   await promiseRestartManager("2");
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   await expectEvents(extension, {
     onStartupFired: true,
@@ -273,7 +277,7 @@ add_task(async function test_should_fire_on_browser_update() {
 
   // Update the browser again.
   await promiseRestartManager("3");
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   await expectEvents(extension, {
     onStartupFired: true,
@@ -296,7 +300,7 @@ add_task(async function test_should_not_fire_on_reload() {
     useAddonManager: "permanent",
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
         },
@@ -336,7 +340,7 @@ add_task(async function test_should_not_fire_on_restart() {
     useAddonManager: "permanent",
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
         },
@@ -364,7 +368,7 @@ add_task(async function test_should_not_fire_on_restart() {
     onInstalledFired: false,
   });
 
-  await extension.markUnloaded();
+  await extension.unload();
   await promiseShutdownManager();
 });
 
@@ -378,7 +382,7 @@ add_task(async function test_temporary_installation() {
     useAddonManager: "temporary",
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
         },
@@ -399,3 +403,197 @@ add_task(async function test_temporary_installation() {
   await extension.unload();
   await promiseShutdownManager();
 });
+
+add_task(
+  {
+    pref_set: [["extensions.eventPages.enabled", true]],
+  },
+  async function test_runtime_eventpage() {
+    const EXTENSION_ID = "test_runtime_eventpage@tests.mozilla.org";
+
+    await promiseStartupManager("1");
+
+    let extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "permanent",
+      manifest: {
+        version: "1.0",
+        browser_specific_settings: {
+          gecko: {
+            id: EXTENSION_ID,
+          },
+        },
+        permissions: ["browserSettings"],
+        background: {
+          persistent: false,
+        },
+      },
+      background,
+    });
+
+    await extension.startup();
+
+    await expectEvents(extension, {
+      onStartupFired: false,
+      onInstalledFired: true,
+      onInstalledReason: "install",
+      onInstalledTemporary: false,
+    });
+
+    info(`test onInstall does not fire after suspend`);
+    // we do enough here that idle timeout causes intermittent failure.
+    // using terminateBackground results in the same code path tested.
+    extension.terminateBackground();
+    await extension.awaitMessage("suspended");
+    await promiseExtensionEvent(extension, "shutdown-background-script");
+
+    Services.prefs.setStringPref(
+      "browser.startup.homepage",
+      "http://test.example.com"
+    );
+    await extension.awaitMessage("homepageOverride");
+    // onStartup remains persisted, but not primed
+    assertPersistentListeners(extension, "runtime", "onStartup", {
+      primed: false,
+      persisted: true,
+    });
+
+    await expectEvents(extension, {
+      onStartupFired: false,
+      onInstalledFired: false,
+    });
+
+    info("test onStartup is not primed but background starts automatically");
+    await promiseRestartManager();
+    // onStartup is a bit special.  During APP_STARTUP we do not
+    // prime this, we just start since it needs to.
+    assertPersistentListeners(extension, "runtime", "onStartup", {
+      primed: false,
+      persisted: true,
+    });
+    await extension.awaitBackgroundStarted();
+
+    info("test expectEvents");
+    await expectEvents(extension, {
+      onStartupFired: true,
+      onInstalledFired: false,
+    });
+
+    info("test onInstalled fired during browser update");
+    await promiseRestartManager("2");
+    assertPersistentListeners(extension, "runtime", "onStartup", {
+      primed: false,
+      persisted: true,
+    });
+    await extension.awaitBackgroundStarted();
+
+    await expectEvents(extension, {
+      onStartupFired: true,
+      onInstalledFired: true,
+      onInstalledReason: "browser_update",
+      onInstalledTemporary: false,
+    });
+
+    info(`test onStarted does not fire after suspend`);
+    extension.terminateBackground();
+    await extension.awaitMessage("suspended");
+    await promiseExtensionEvent(extension, "shutdown-background-script");
+
+    Services.prefs.setStringPref(
+      "browser.startup.homepage",
+      "http://homepage.example.com"
+    );
+    await extension.awaitMessage("homepageOverride");
+    // onStartup remains persisted, but not primed
+    assertPersistentListeners(extension, "runtime", "onStartup", {
+      primed: false,
+      persisted: true,
+    });
+
+    await expectEvents(extension, {
+      onStartupFired: false,
+      onInstalledFired: false,
+    });
+
+    await extension.unload();
+    await promiseShutdownManager();
+  }
+);
+
+// Verify we don't regress the issue related to runtime.onStartup persistent
+// listener being cleared from the startup data as part of priming all listeners
+// while terminating the event page on idle timeout (Bug 1796586).
+add_task(
+  {
+    pref_set: [["extensions.eventPages.enabled", true]],
+  },
+  async function test_runtime_onStartup_eventpage() {
+    const EXTENSION_ID = "test_eventpage_onStartup@tests.mozilla.org";
+
+    await promiseStartupManager();
+
+    let extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "permanent",
+      manifest: {
+        version: "1.0",
+        browser_specific_settings: {
+          gecko: {
+            id: EXTENSION_ID,
+          },
+        },
+        permissions: ["browserSettings"],
+        background: {
+          persistent: false,
+        },
+      },
+      background,
+    });
+
+    await extension.startup();
+
+    await expectEvents(extension, {
+      onStartupFired: false,
+      onInstalledFired: true,
+      onInstalledReason: "install",
+      onInstalledTemporary: false,
+    });
+
+    info("Simulated idle timeout");
+    extension.terminateBackground();
+    await extension.awaitMessage("suspended");
+    await promiseExtensionEvent(extension, "shutdown-background-script");
+
+    // onStartup remains persisted, but not primed
+    assertPersistentListeners(extension, "runtime", "onStartup", {
+      primed: false,
+      persisted: true,
+    });
+
+    info(`test onStartup after restart`);
+    await promiseRestartManager();
+
+    // onStartup is a bit special.  During APP_STARTUP we do not
+    // prime this, we just start since it needs to.
+    assertPersistentListeners(extension, "runtime", "onStartup", {
+      primed: false,
+      persisted: true,
+    });
+    await extension.awaitBackgroundStarted();
+
+    info("test expectEvents");
+    await expectEvents(extension, {
+      onStartupFired: true,
+      onInstalledFired: false,
+    });
+
+    extension.terminateBackground();
+    await extension.awaitMessage("suspended");
+    await promiseExtensionEvent(extension, "shutdown-background-script");
+    assertPersistentListeners(extension, "runtime", "onStartup", {
+      primed: false,
+      persisted: true,
+    });
+
+    await extension.unload();
+    await promiseShutdownManager();
+  }
+);

@@ -7,6 +7,9 @@
 UNIFIED_SOURCES += [
     "AutoMemMap.cpp",
     "ChromeScriptLoader.cpp",
+    "ComponentModuleLoader.cpp",
+    "JSMEnvironmentProxy.cpp",
+    "ModuleEnvironmentProxy.cpp",
     "mozJSLoaderUtils.cpp",
     "mozJSSubScriptLoader.cpp",
     "nsImportModule.cpp",
@@ -15,10 +18,10 @@ UNIFIED_SOURCES += [
     "URLPreloader.cpp",
 ]
 
-# mozJSComponentLoader.cpp cannot be built in unified mode because it uses
+# mozJSModuleLoader.cpp cannot be built in unified mode because it uses
 # windows.h
 SOURCES += [
-    "mozJSComponentLoader.cpp",
+    "mozJSModuleLoader.cpp",
 ]
 
 IPDL_SOURCES += [
@@ -40,12 +43,14 @@ EXPORTS.mozilla.dom += [
 
 EXPORTS.mozilla.loader += [
     "AutoMemMap.h",
+    "ComponentModuleLoader.h",
     "ScriptCacheActors.h",
+    "SkipCheckForBrokenURLOrZeroSized.h",
 ]
 
 EXTRA_JS_MODULES += [
-    "ComponentUtils.jsm",
-    "XPCOMUtils.jsm",
+    "ComponentUtils.sys.mjs",
+    "XPCOMUtils.sys.mjs",
 ]
 
 FINAL_LIBRARY = "xul"
@@ -54,9 +59,9 @@ LOCAL_INCLUDES += [
     "../src",
     "../wrappers",
     "/dom/base",
+    "/js/loader",
     "/xpcom/base/",
+    "/xpcom/io",  # crc32c.h
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")
-
-REQUIRES_UNIFIED_BUILD = True

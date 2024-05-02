@@ -15,143 +15,135 @@ Awsy tests
 
 
 .. dropdown:: base (FF)
-   :container: + anchor-id-base-Awsy-tests
+   :class-container: anchor-id-base-Awsy-tests
 
    **Owner**: :mccr8 and Perftest Team
 
    * **Test Task**:
       * test-linux1804-64-clang-trunk-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: None
+            * awsy-base: None
+            * awsy-base-dmd: None
 
       * test-linux1804-64-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: None
+            * awsy-base: None
+            * awsy-base-dmd: None
 
       * test-linux1804-64-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: integration, mozilla-beta, mozilla-central, mozilla-release
+            * awsy-base: integration, mozilla-beta, mozilla-central, mozilla-release
+            * awsy-base-dmd: None
 
       * test-macosx1015-64-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: integration, mozilla-beta, mozilla-central, mozilla-release
+            * awsy-base: integration, mozilla-beta, mozilla-central, mozilla-release
+            * awsy-base-dmd: None
 
-      * test-windows10-32-2004-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: None
+      * test-windows11-32-2009-qr/opt
+            * awsy-base: None
+            * awsy-base-dmd: None
 
-      * test-windows10-32-2004-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: None
+      * test-windows11-32-2009-shippable-qr/opt
+            * awsy-base: None
+            * awsy-base-dmd: None
 
-      * test-windows10-64-2004-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: None
+      * test-windows11-64-2009-qr/opt
+            * awsy-base: None
+            * awsy-base-dmd: None
 
-      * test-windows10-64-2004-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-base-fis-e10s: integration, mozilla-beta, mozilla-central, mozilla-release
+      * test-windows11-64-2009-shippable-qr/opt
+            * awsy-base: integration, mozilla-beta, mozilla-central, mozilla-release
+            * awsy-base-dmd: None
 
 
 .. dropdown:: dmd (FF)
-   :container: + anchor-id-dmd-Awsy-tests
+   :class-container: anchor-id-dmd-Awsy-tests
 
    **Owner**: :mccr8 and Perftest Team
 
    * **Test Task**:
       * test-linux1804-64-clang-trunk-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
       * test-linux1804-64-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
       * test-linux1804-64-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
       * test-macosx1015-64-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
-      * test-windows10-32-2004-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+      * test-windows11-32-2009-qr/opt
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
-      * test-windows10-32-2004-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+      * test-windows11-32-2009-shippable-qr/opt
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
-      * test-windows10-64-2004-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+      * test-windows11-64-2009-qr/opt
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
-      * test-windows10-64-2004-shippable-qr/opt
-            * awsy-base-dmd-e10s: None
-            * awsy-dmd-e10s: None
+      * test-windows11-64-2009-shippable-qr/opt
+            * awsy-base-dmd: None
+            * awsy-dmd: None
 
 
 .. dropdown:: tp5 (FF)
-   :container: + anchor-id-tp5-Awsy-tests
+   :class-container: anchor-id-tp5-Awsy-tests
 
    **Owner**: :mccr8 and Perftest Team
 
    * **Test Task**:
       * test-linux1804-64-clang-trunk-qr/opt
-            * awsy-e10s: None
 
       * test-linux1804-64-qr/opt
-            * awsy-e10s: None
 
       * test-linux1804-64-shippable-qr/opt
-            * awsy-e10s: None
 
       * test-macosx1015-64-shippable-qr/opt
-            * awsy-e10s: None
 
-      * test-windows10-32-2004-qr/opt
-            * awsy-e10s: None
+      * test-windows11-32-2009-qr/opt
 
-      * test-windows10-32-2004-shippable-qr/opt
-            * awsy-e10s: None
+      * test-windows11-32-2009-shippable-qr/opt
 
-      * test-windows10-64-2004-qr/opt
-            * awsy-e10s: None
+      * test-windows11-64-2009-qr/opt
 
-      * test-windows10-64-2004-shippable-qr/opt
-            * awsy-e10s: None
+      * test-windows11-64-2009-shippable-qr/opt
 
 
 .. dropdown:: tp6 (FF)
-   :container: + anchor-id-tp6-Awsy-tests
+   :class-container: anchor-id-tp6-Awsy-tests
 
    **Owner**: :mccr8 and Perftest Team
 
    * **Test Task**:
       * test-linux1804-64-clang-trunk-qr/opt
-            * awsy-tp6-fis-e10s: None
+            * awsy-tp6: None
 
       * test-linux1804-64-qr/opt
-            * awsy-tp6-fis-e10s: None
+            * awsy-tp6: None
 
       * test-linux1804-64-shippable-qr/opt
-            * awsy-tp6-fis-e10s: integration, mozilla-beta, mozilla-central, mozilla-release
+            * awsy-tp6: integration, mozilla-beta, mozilla-central, mozilla-release
 
       * test-macosx1015-64-shippable-qr/opt
-            * awsy-tp6-fis-e10s: integration, mozilla-beta, mozilla-central, mozilla-release
+            * awsy-tp6: integration, mozilla-beta, mozilla-central, mozilla-release
 
-      * test-windows10-32-2004-qr/opt
-            * awsy-tp6-fis-e10s: None
+      * test-windows11-32-2009-qr/opt
+            * awsy-tp6: None
 
-      * test-windows10-32-2004-shippable-qr/opt
-            * awsy-tp6-fis-e10s: None
+      * test-windows11-32-2009-shippable-qr/opt
+            * awsy-tp6: None
 
-      * test-windows10-64-2004-qr/opt
-            * awsy-tp6-fis-e10s: None
+      * test-windows11-64-2009-qr/opt
+            * awsy-tp6: None
 
-      * test-windows10-64-2004-shippable-qr/opt
-            * awsy-tp6-fis-e10s: integration, mozilla-beta, mozilla-central, mozilla-release
+      * test-windows11-64-2009-shippable-qr/opt
+            * awsy-tp6: integration, mozilla-beta, mozilla-central, mozilla-release
 
 
 
@@ -187,7 +179,7 @@ Base Memory Usage tests
 
 .. code-block:: bash
 
-    ./mach awsy-test testing/awsy/awsy/test_base_memory_usage.py
+    ./mach awsy-test --base
 
 Running AWSY on Try
 ********************

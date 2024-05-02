@@ -7,6 +7,7 @@ function parseQuery(query, key) {
       return p.substring(key.length + 1);
     }
   }
+  return false;
 }
 
 // Return the first few bytes in a short byte range response. When Firefox
@@ -19,15 +20,13 @@ function handleRequest(request, response) {
   var redirected = parseQuery(query, "redirected") || false;
   var useCors = parseQuery(query, "cors") || false;
 
-  var file = Components.classes["@mozilla.org/file/directory_service;1"]
-    .getService(Components.interfaces.nsIProperties)
-    .get("CurWorkD", Components.interfaces.nsIFile);
-  var fis = Components.classes[
-    "@mozilla.org/network/file-input-stream;1"
-  ].createInstance(Components.interfaces.nsIFileInputStream);
-  var bis = Components.classes[
-    "@mozilla.org/binaryinputstream;1"
-  ].createInstance(Components.interfaces.nsIBinaryInputStream);
+  var file = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+  var fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
+  var bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+    Ci.nsIBinaryInputStream
+  );
   var paths = "tests/dom/media/test/" + resource;
   var split = paths.split("/");
   for (var i = 0; i < split.length; ++i) {
@@ -69,7 +68,7 @@ function handleRequest(request, response) {
 
   // Note: 'to' is the first index *excluded*, so we need (to + 1)
   // in the substring end here.
-  byterange = bytes.substring(from, to + 1);
+  let byterange = bytes.substring(from, to + 1);
 
   let contentRange = "bytes " + from + "-" + to + "/" + bytes.length;
   let contentLength = byterange.length.toString();

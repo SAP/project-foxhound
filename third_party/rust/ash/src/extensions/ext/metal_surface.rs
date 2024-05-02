@@ -20,31 +20,34 @@ impl MetalSurface {
         Self { handle, fp }
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkCreateMetalSurfaceEXT.html>"]
+    /// <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkCreateMetalSurfaceEXT.html>
+    #[inline]
     pub unsafe fn create_metal_surface(
         &self,
         create_info: &vk::MetalSurfaceCreateInfoEXT,
         allocation_callbacks: Option<&vk::AllocationCallbacks>,
     ) -> VkResult<vk::SurfaceKHR> {
         let mut surface = mem::zeroed();
-        self.fp
-            .create_metal_surface_ext(
-                self.handle,
-                create_info,
-                allocation_callbacks.as_raw_ptr(),
-                &mut surface,
-            )
-            .result_with_success(surface)
+        (self.fp.create_metal_surface_ext)(
+            self.handle,
+            create_info,
+            allocation_callbacks.as_raw_ptr(),
+            &mut surface,
+        )
+        .result_with_success(surface)
     }
 
-    pub fn name() -> &'static CStr {
+    #[inline]
+    pub const fn name() -> &'static CStr {
         vk::ExtMetalSurfaceFn::name()
     }
 
+    #[inline]
     pub fn fp(&self) -> &vk::ExtMetalSurfaceFn {
         &self.fp
     }
 
+    #[inline]
     pub fn instance(&self) -> vk::Instance {
         self.handle
     }

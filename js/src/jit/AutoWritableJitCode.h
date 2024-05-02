@@ -16,6 +16,7 @@
 
 #include "jit/ExecutableAllocator.h"
 #include "jit/JitCode.h"
+#include "jit/JitOptions.h"
 #include "jit/ProcessExecutableMemory.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
@@ -33,6 +34,7 @@ class MOZ_RAII AutoWritableJitCodeFallible {
   JSRuntime* rt_;
   void* addr_;
   size_t size_;
+  AutoMarkJitCodeWritableForThread writableForThread_;
 
  public:
   AutoWritableJitCodeFallible(JSRuntime* rt, void* addr, size_t size)
@@ -52,15 +54,20 @@ class MOZ_RAII AutoWritableJitCodeFallible {
   }
 
   ~AutoWritableJitCodeFallible() {
-    mozilla::TimeStamp startTime = mozilla::TimeStamp::Now();
+    // Taking TimeStamps frequently can be expensive, and there's no point
+    // measuring this if write protection is disabled.
+    const bool measuringTime = JitOptions.writeProtectCode;
+    const mozilla::TimeStamp startTime =
+        measuringTime ? mozilla::TimeStamp::Now() : mozilla::TimeStamp();
     auto timer = mozilla::MakeScopeExit([&] {
-      if (Realm* realm = rt_->mainContextFromOwnThread()->realm()) {
-        realm->timers.protectTime += mozilla::TimeStamp::Now() - startTime;
+      if (measuringTime) {
+        if (Realm* realm = rt_->mainContextFromOwnThread()->realm()) {
+          realm->timers.protectTime += mozilla::TimeStamp::Now() - startTime;
+        }
       }
     });
 
-    if (!ExecutableAllocator::makeExecutableAndFlushICache(
-            FlushICacheSpec::LocalThreadOnly, addr_, size_)) {
+    if (!ExecutableAllocator::makeExecutableAndFlushICache(addr_, size_)) {
       MOZ_CRASH();
     }
     rt_->toggleAutoWritableJitCodeActive(false);
@@ -73,7 +80,10 @@ class MOZ_RAII AutoWritableJitCode : private AutoWritableJitCodeFallible {
  public:
   AutoWritableJitCode(JSRuntime* rt, void* addr, size_t size)
       : AutoWritableJitCodeFallible(rt, addr, size) {
-    MOZ_RELEASE_ASSERT(makeWritable());
+    AutoEnterOOMUnsafeRegion oomUnsafe;
+    if (!makeWritable()) {
+      oomUnsafe.crash("Failed to mmap. Likely no mappings available.");
+    }
   }
 
   AutoWritableJitCode(void* addr, size_t size)

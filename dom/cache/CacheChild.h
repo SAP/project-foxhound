@@ -13,8 +13,7 @@
 class nsIAsyncInputStream;
 class nsIGlobalObject;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Promise;
 
@@ -31,7 +30,6 @@ class CacheChild final : public PCacheChild, public ActorChild {
   using AutoLock = mozilla::detail::BaseAutoLock<CacheChild&>;
 
   CacheChild();
-  ~CacheChild();
 
   void SetListener(Cache* aListener);
 
@@ -45,24 +43,26 @@ class CacheChild final : public PCacheChild, public ActorChild {
 
   // Our parent Listener object has gone out of scope and is being destroyed.
   void StartDestroyFromListener();
+  void NoteDeletedActor() override;
+
+  NS_INLINE_DECL_REFCOUNTING(CacheChild, override);
 
  private:
-  // ActorChild methods
+  ~CacheChild();
 
+  void DestroyInternal();
+  // ActorChild methods
   // WorkerRef is trying to destroy due to worker shutdown.
   virtual void StartDestroy() override;
 
   // PCacheChild methods
   virtual void ActorDestroy(ActorDestroyReason aReason) override;
 
-  PCacheOpChild* AllocPCacheOpChild(const CacheOpArgs& aOpArgs);
-
-  bool DeallocPCacheOpChild(PCacheOpChild* aActor);
+  already_AddRefed<PCacheOpChild> AllocPCacheOpChild(
+      const CacheOpArgs& aOpArgs);
 
   // utility methods
-  void NoteDeletedActor();
-
-  void MaybeFlushDelayedDestroy();
+  inline uint32_t NumChildActors() { return ManagedPCacheOpChild().Count(); }
 
   // Methods used to temporarily force the actor alive.  Only called from
   // AutoLock.
@@ -74,15 +74,11 @@ class CacheChild final : public PCacheChild, public ActorChild {
   // The Cache object must call ClearListener() to null this before its
   // destroyed.
   Cache* MOZ_NON_OWNING_REF mListener;
-  uint32_t mNumChildActors;
-  bool mDelayedDestroy;
   bool mLocked;
-
-  NS_DECL_OWNINGTHREAD
+  bool mDelayedDestroy;
 };
 
 }  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_cache_CacheChild_h

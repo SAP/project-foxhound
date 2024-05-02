@@ -26,7 +26,7 @@ add_task(async function check_history_not_persisted() {
   await promiseTabState(tab, state);
 
   if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-    await SpecialPowers.spawn(browser, [], function() {
+    await SpecialPowers.spawn(browser, [], function () {
       let sessionHistory =
         docShell.browsingContext.childSessionHistory.legacySHistory;
 
@@ -49,10 +49,10 @@ add_task(async function check_history_not_persisted() {
   }
 
   // Load a new URL into the tab, it should replace the about:blank history entry
-  BrowserTestUtils.loadURI(browser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(browser, "about:robots");
   await promiseBrowserLoaded(browser, false, "about:robots");
   if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-    await SpecialPowers.spawn(browser, [], function() {
+    await SpecialPowers.spawn(browser, [], function () {
       let sessionHistory =
         docShell.browsingContext.childSessionHistory.legacySHistory;
 
@@ -100,7 +100,7 @@ add_task(async function check_history_default_persisted() {
   browser = tab.linkedBrowser;
   await promiseTabState(tab, state);
   if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-    await SpecialPowers.spawn(browser, [], function() {
+    await SpecialPowers.spawn(browser, [], function () {
       let sessionHistory =
         docShell.browsingContext.childSessionHistory.legacySHistory;
 
@@ -123,10 +123,10 @@ add_task(async function check_history_default_persisted() {
   }
 
   // Load a new URL into the tab, it should replace the about:blank history entry
-  BrowserTestUtils.loadURI(browser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(browser, "about:robots");
   await promiseBrowserLoaded(browser, false, "about:robots");
   if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-    await SpecialPowers.spawn(browser, [], function() {
+    await SpecialPowers.spawn(browser, [], function () {
       let sessionHistory =
         docShell.browsingContext.childSessionHistory.legacySHistory;
 

@@ -7,7 +7,7 @@
 
 const TEST_URL = "data:text/html;charset=utf-8,Actor caching test";
 
-add_task(async function() {
+add_task(async function () {
   info("Setup the test page with workers of all types");
   const tab = await addTab(TEST_URL);
 
@@ -70,4 +70,18 @@ async function testActorGetter(watcherFront, actorGetterFn, typeName) {
   is(actor, otherActor, "Returned the same actor for " + typeName);
 
   checkPoolChildrenSize(watcherFront, typeName, 1);
+}
+
+/**
+ * Assert that a given parent pool has the expected number of children for
+ * a given typeName.
+ */
+function checkPoolChildrenSize(parentPool, typeName, expected) {
+  const children = [...parentPool.poolChildren()];
+  const childrenByType = children.filter(pool => pool.typeName === typeName);
+  is(
+    childrenByType.length,
+    expected,
+    `${parentPool.actorID} should have ${expected} children of type ${typeName}`
+  );
 }

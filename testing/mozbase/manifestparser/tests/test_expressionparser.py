@@ -1,11 +1,8 @@
 #!/usr/bin/env python
 
-from __future__ import absolute_import
-
 import unittest
 
 import mozunit
-
 from manifestparser import parse
 
 
@@ -13,7 +10,6 @@ class ExpressionParserTest(unittest.TestCase):
     """Test the conditional expression parser."""
 
     def test_basic(self):
-
         self.assertEqual(parse("1"), 1)
         self.assertEqual(parse("100"), 100)
         self.assertEqual(parse("true"), True)
@@ -26,7 +22,6 @@ class ExpressionParserTest(unittest.TestCase):
         self.assertEqual(parse("abc123", abc123="xyz"), "xyz")
 
     def test_equality(self):
-
         self.assertTrue(parse("true == true"))
         self.assertTrue(parse("false == false"))
         self.assertTrue(parse("1 == 1"))

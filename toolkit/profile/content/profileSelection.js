@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const C = Cc;
 const I = Ci;
@@ -56,7 +55,7 @@ function startup() {
       try {
         if (profile === gProfileService.defaultProfile) {
           setTimeout(
-            function(a) {
+            function (a) {
               profilesElement.ensureElementIsVisible(a);
               profilesElement.selectItem(a);
             },
@@ -147,9 +146,8 @@ function acceptDialog(event) {
   var profilesElement = document.getElementById("profiles");
   var selectedProfile = profilesElement.selectedItem;
   if (!selectedProfile) {
-    var pleaseSelectTitle = gProfileManagerBundle.getString(
-      "pleaseSelectTitle"
-    );
+    var pleaseSelectTitle =
+      gProfileManagerBundle.getString("pleaseSelectTitle");
     var pleaseSelect = gProfileManagerBundle.getFormattedString(
       "pleaseSelect",
       [appName]

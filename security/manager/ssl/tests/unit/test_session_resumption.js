@@ -14,7 +14,6 @@ const certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
 
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("security.OCSP.enabled");
-  Services.prefs.clearUserPref("network.ssl_tokens_cache_enabled");
 });
 
 Services.prefs.setIntPref("security.OCSP.enabled", 1);
@@ -31,11 +30,7 @@ addCertFromFile(certdb, "bad_certs/ev-test-intermediate.pem", ",,");
 // information object.
 function add_resume_non_ev_with_override_test() {
   // This adds the override and makes one successful connection.
-  add_cert_override_test(
-    "expired.example.com",
-    Ci.nsICertOverrideService.ERROR_TIME,
-    SEC_ERROR_EXPIRED_CERTIFICATE
-  );
+  add_cert_override_test("expired.example.com", SEC_ERROR_EXPIRED_CERTIFICATE);
 
   // This connects again, using session resumption. Note that we don't clear
   // the TLS session cache between these operations (that would defeat the
@@ -45,6 +40,7 @@ function add_resume_non_ev_with_override_test() {
     PRErrorCodeSuccess,
     null,
     transportSecurityInfo => {
+      ok(transportSecurityInfo.resumed, "connection should be resumed");
       ok(
         transportSecurityInfo.securityState &
           Ci.nsIWebProgressListener.STATE_CERT_USER_OVERRIDDEN,
@@ -53,19 +49,17 @@ function add_resume_non_ev_with_override_test() {
       equal(
         transportSecurityInfo.succeededCertChain.length,
         0,
-        "ev-test.example.com should not have succeededCertChain set"
+        "expired.example.com should not have succeededCertChain set"
       );
-      ok(
-        !transportSecurityInfo.isDomainMismatch,
-        "expired.example.com should not have isDomainMismatch set"
+      equal(
+        transportSecurityInfo.failedCertChain.length,
+        2,
+        "expired.example.com should have failedCertChain set"
       );
-      ok(
-        transportSecurityInfo.isNotValidAtThisTime,
-        "expired.example.com should have isNotValidAtThisTime set"
-      );
-      ok(
-        !transportSecurityInfo.isUntrusted,
-        "expired.example.com should not have isUntrusted set"
+      equal(
+        transportSecurityInfo.overridableErrorCategory,
+        Ci.nsITransportSecurityInfo.ERROR_TIME,
+        "expired.example.com should have time overridable error category"
       );
       ok(
         !transportSecurityInfo.isExtendedValidation,
@@ -88,12 +82,17 @@ function add_resume_non_ev_with_override_test() {
 // verifies that it validates as EV (or not, if we're running a non-debug
 // build). This assumes that an appropriate OCSP responder is running or that
 // good responses are cached.
-function add_one_ev_test() {
+function add_one_ev_test(resumed) {
   add_connection_test(
     "ev-test.example.com",
     PRErrorCodeSuccess,
     null,
     transportSecurityInfo => {
+      equal(
+        transportSecurityInfo.resumed,
+        resumed,
+        "connection should be resumed or not resumed as expected"
+      );
       ok(
         !(
           transportSecurityInfo.securityState &
@@ -101,21 +100,20 @@ function add_one_ev_test() {
         ),
         "ev-test.example.com should not have STATE_CERT_USER_OVERRIDDEN flag"
       );
-      ok(
-        transportSecurityInfo.succeededCertChain,
+      equal(
+        transportSecurityInfo.succeededCertChain.length,
+        3,
         "ev-test.example.com should have succeededCertChain set"
       );
-      ok(
-        !transportSecurityInfo.isDomainMismatch,
-        "ev-test.example.com should not have isDomainMismatch set"
+      equal(
+        transportSecurityInfo.failedCertChain.length,
+        0,
+        "ev-test.example.com should not have failedCertChain set"
       );
-      ok(
-        !transportSecurityInfo.isNotValidAtThisTime,
-        "ev-test.example.com should not have isNotValidAtThisTime set"
-      );
-      ok(
-        !transportSecurityInfo.isUntrusted,
-        "ev-test.example.com should not have isUntrusted set"
+      equal(
+        transportSecurityInfo.overridableErrorCategory,
+        Ci.nsITransportSecurityInfo.ERROR_UNSET,
+        "ev-test.example.com should not have an overridable error category"
       );
       ok(
         !gEVExpected || transportSecurityInfo.isExtendedValidation,
@@ -132,10 +130,8 @@ function add_one_ev_test() {
 // with session resumption. The certificate should again be EV in debug builds.
 function add_resume_ev_test() {
   const SERVER_PORT = 8888;
-  let expectedRequestPaths = gEVExpected
-    ? ["ev-test-intermediate", "ev-test"]
-    : ["ev-test"];
-  let responseTypes = gEVExpected ? ["good", "good"] : ["good"];
+  let expectedRequestPaths = ["ev-test"];
+  let responseTypes = ["good"];
   // Since we cache OCSP responses, we only ever actually serve one set.
   let ocspResponder;
   // If we don't wrap this in an `add_test`, the OCSP responder will be running
@@ -154,11 +150,11 @@ function add_resume_ev_test() {
   });
   // We should be able to connect and verify the certificate as EV (in debug
   // builds).
-  add_one_ev_test();
+  add_one_ev_test(false);
   // We should be able to connect again (using session resumption). In debug
   // builds, the certificate should be noted as EV. Again, it's important that
   // nothing clears the TLS cache in between these two operations.
-  add_one_ev_test();
+  add_one_ev_test(true);
 
   add_test(() => {
     ocspResponder.stop(run_next_test);
@@ -187,17 +183,10 @@ function add_one_non_ev_test() {
         transportSecurityInfo.succeededCertChain,
         `${GOOD_DOMAIN} should have succeededCertChain set`
       );
-      ok(
-        !transportSecurityInfo.isDomainMismatch,
-        `${GOOD_DOMAIN} should not have isDomainMismatch set`
-      );
-      ok(
-        !transportSecurityInfo.isNotValidAtThisTime,
-        `${GOOD_DOMAIN} should not have isNotValidAtThisTime set`
-      );
-      ok(
-        !transportSecurityInfo.isUntrusted,
-        `${GOOD_DOMAIN} should not have isUntrusted set`
+      equal(
+        transportSecurityInfo.overridableErrorCategory,
+        0,
+        `${GOOD_DOMAIN} should not have an overridable error category set`
       );
       ok(
         !transportSecurityInfo.isExtendedValidation,
@@ -244,13 +233,13 @@ function add_origin_attributes_test(
   add_connection_test(
     GOOD_DOMAIN,
     PRErrorCodeSuccess,
-    function() {
+    function () {
       // Add the hits and misses before connection.
       let stats = statsPtr.contents;
       hitsBeforeConnect = toInt32(stats.sch_sid_cache_hits);
       missesBeforeConnect = toInt32(stats.sch_sid_cache_misses);
     },
-    function() {
+    function () {
       let stats = statsPtr.contents;
       equal(
         toInt32(stats.sch_sid_cache_hits),
@@ -291,7 +280,7 @@ function run_test() {
   add_tls_server_setup("BadCertAndPinningServer", "bad_certs");
   add_resumption_tests();
   // Enable external session cache and reset the status.
-  add_test(function() {
+  add_test(function () {
     Services.prefs.setBoolPref("network.ssl_tokens_cache_enabled", true);
     certdb.clearOCSPCache();
     run_next_test();

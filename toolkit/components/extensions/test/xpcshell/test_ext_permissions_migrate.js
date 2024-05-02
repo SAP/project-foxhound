@@ -1,7 +1,7 @@
 "use strict";
 
-const { ExtensionPermissions } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPermissions.jsm"
+const { ExtensionPermissions } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPermissions.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -29,12 +29,12 @@ add_task(async function setup() {
   AddonTestUtils.usePrivilegedSignatures = false;
 });
 
-add_task(async function test_migrated_permission_to_optional() {
+async function test_migrated_permission_to_optional({ manifest_version }) {
   let id = "permission-upgrade@test";
   let extensionData = {
     manifest: {
       version: "1.0",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       permissions: [
         "webRequest",
         "tabs",
@@ -67,9 +67,16 @@ add_task(async function test_migrated_permission_to_optional() {
   await extension.startup();
   checkPermissions();
 
+  extensionData.manifest.manifest_version = manifest_version;
+
   // Move to using optional permission
   extensionData.manifest.version = "2.0";
-  extensionData.manifest.permissions = ["tabs", "http://example.net/*"];
+  extensionData.manifest.permissions = ["tabs"];
+
+  // The ExtensionTestCommon.generateFiles() test helper will normalize (move)
+  // host permissions into the `permissions` key for the MV2 test.
+  extensionData.manifest.host_permissions = ["http://example.net/*"];
+
   extensionData.manifest.optional_permissions = [
     "webRequest",
     "http://example.com/*",
@@ -85,6 +92,15 @@ add_task(async function test_migrated_permission_to_optional() {
   checkPermissions();
 
   await extension.unload();
+}
+
+add_task(function test_migrated_permission_to_optional_mv2() {
+  return test_migrated_permission_to_optional({ manifest_version: 2 });
+});
+
+// Test migration of mv2 (required) to mv3 (optional) host permissions.
+add_task(function test_migrated_permission_to_optional_mv3() {
+  return test_migrated_permission_to_optional({ manifest_version: 3 });
 });
 
 // This tests that settings are removed if a required permission is removed.
@@ -106,7 +122,7 @@ add_task(async function test_required_permissions_removed() {
       browser.privacy.services.passwordSavingEnabled.set({ value: false });
     },
     manifest: {
-      applications: { gecko: { id: "pref-test@test" } },
+      browser_specific_settings: { gecko: { id: "pref-test@test" } },
       permissions: ["tabs", "browserSettings", "privacy", "http://test.com/*"],
     },
     useAddonManager: "permanent",
@@ -156,7 +172,7 @@ add_task(async function test_granted_permissions_removed() {
     // "tabs" is never granted, it is included to exercise the removal code
     // that called during the upgrade.
     manifest: {
-      applications: { gecko: { id: "pref-test@test" } },
+      browser_specific_settings: { gecko: { id: "pref-test@test" } },
       optional_permissions: [
         "tabs",
         "browserSettings",
@@ -195,7 +211,7 @@ add_task(async function test_addon_to_theme_update() {
   let id = "theme-test@test";
   let extData = {
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       version: "1.0",
       optional_permissions: ["tabs"],
     },
@@ -220,7 +236,7 @@ add_task(async function test_addon_to_theme_update() {
 
   await extension.upgrade({
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       version: "2.0",
       theme: {
         images: {

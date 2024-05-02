@@ -3,33 +3,33 @@
 
 "use strict";
 
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
 
 SearchTestUtils.init(this);
 
 const kButton = document.getElementById("reload-button");
+const IS_UPGRADING_SCHEMELESS = SpecialPowers.getBoolPref(
+  "dom.security.https_first_schemeless"
+);
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+const DEFAULT_URL_SCHEME = IS_UPGRADING_SCHEMELESS ? "https://" : "http://";
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.fixup.dns_first_for_single_words", true]],
   });
 
   // Create an engine to use for the test.
-  await SearchTestUtils.installSearchExtension({
-    name: "MozSearch",
-    search_url: "https://example.com/",
-    search_url_get_params: "q={searchTerms}",
-  });
-
-  let originalEngine = await Services.search.getDefault();
-  let engineDefault = Services.search.getEngineByName("MozSearch");
-  await Services.search.setDefault(engineDefault);
-
-  registerCleanupFunction(async function() {
-    await Services.search.setDefault(originalEngine);
-  });
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: "MozSearch",
+      search_url: "https://example.com/",
+      search_url_get_params: "q={searchTerms}",
+    },
+    { setAsDefault: true }
+  );
 });
 
 /*
@@ -77,7 +77,7 @@ add_task(async function test_unknown_host_without_search() {
     let searchPromise = BrowserTestUtils.browserLoaded(
       browser,
       false,
-      "http://" + kNonExistingHost + "/",
+      DEFAULT_URL_SCHEME + kNonExistingHost + "/",
       true /* want an error page */
     );
     gURLBar.value = kNonExistingHost;

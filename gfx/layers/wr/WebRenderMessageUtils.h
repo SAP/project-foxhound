@@ -21,16 +21,15 @@ template <>
 struct ParamTraits<mozilla::wr::ByteBuffer> {
   typedef mozilla::wr::ByteBuffer paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.mLength);
-    aMsg->WriteBytes(aParam.mData, aParam.mLength);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mLength);
+    aWriter->WriteBytes(aParam.mData, aParam.mLength);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
+  static bool Read(MessageReader* aReader, paramType* aResult) {
     size_t length;
-    return ReadParam(aMsg, aIter, &length) && aResult->Allocate(length) &&
-           aMsg->ReadBytesInto(aIter, aResult->mData, length);
+    return ReadParam(aReader, &length) && aResult->Allocate(length) &&
+           aReader->ReadBytesInto(aResult->mData, length);
   }
 };
 
@@ -38,21 +37,89 @@ template <>
 struct ParamTraits<mozilla::wr::ImageDescriptor> {
   typedef mozilla::wr::ImageDescriptor paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.format);
-    WriteParam(aMsg, aParam.width);
-    WriteParam(aMsg, aParam.height);
-    WriteParam(aMsg, aParam.stride);
-    WriteParam(aMsg, aParam.opacity);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.format);
+    WriteParam(aWriter, aParam.width);
+    WriteParam(aWriter, aParam.height);
+    WriteParam(aWriter, aParam.stride);
+    WriteParam(aWriter, aParam.opacity);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->format) &&
-           ReadParam(aMsg, aIter, &aResult->width) &&
-           ReadParam(aMsg, aIter, &aResult->height) &&
-           ReadParam(aMsg, aIter, &aResult->stride) &&
-           ReadParam(aMsg, aIter, &aResult->opacity);
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->format) &&
+           ReadParam(aReader, &aResult->width) &&
+           ReadParam(aReader, &aResult->height) &&
+           ReadParam(aReader, &aResult->stride) &&
+           ReadParam(aReader, &aResult->opacity);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::wr::GeckoDisplayListType::Tag>
+    : public ContiguousEnumSerializer<
+          mozilla::wr::GeckoDisplayListType::Tag,
+          mozilla::wr::GeckoDisplayListType::Tag::None,
+          mozilla::wr::GeckoDisplayListType::Tag::Sentinel> {};
+
+template <>
+struct ParamTraits<mozilla::wr::GeckoDisplayListType> {
+  typedef mozilla::wr::GeckoDisplayListType paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.tag);
+    switch (aParam.tag) {
+      case mozilla::wr::GeckoDisplayListType::Tag::None:
+        break;
+      case mozilla::wr::GeckoDisplayListType::Tag::Partial:
+        WriteParam(aWriter, aParam.partial._0);
+        break;
+      case mozilla::wr::GeckoDisplayListType::Tag::Full:
+        WriteParam(aWriter, aParam.full._0);
+        break;
+      default:
+        MOZ_RELEASE_ASSERT(false, "bad enum variant");
+    }
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    if (!ReadParam(aReader, &aResult->tag)) {
+      return false;
+    }
+    switch (aResult->tag) {
+      case mozilla::wr::GeckoDisplayListType::Tag::None:
+        return true;
+      case mozilla::wr::GeckoDisplayListType::Tag::Partial:
+        return ReadParam(aReader, &aResult->partial._0);
+      case mozilla::wr::GeckoDisplayListType::Tag::Full:
+        return ReadParam(aReader, &aResult->full._0);
+      default:
+        MOZ_RELEASE_ASSERT(false, "bad enum variant");
+    }
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::wr::BuiltDisplayListDescriptor> {
+  typedef mozilla::wr::BuiltDisplayListDescriptor paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.gecko_display_list_type);
+    WriteParam(aWriter, aParam.builder_start_time);
+    WriteParam(aWriter, aParam.builder_finish_time);
+    WriteParam(aWriter, aParam.send_start_time);
+    WriteParam(aWriter, aParam.total_clip_nodes);
+    WriteParam(aWriter, aParam.total_spatial_nodes);
+    WriteParam(aWriter, aParam.cache_size);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->gecko_display_list_type) &&
+           ReadParam(aReader, &aResult->builder_start_time) &&
+           ReadParam(aReader, &aResult->builder_finish_time) &&
+           ReadParam(aReader, &aResult->send_start_time) &&
+           ReadParam(aReader, &aResult->total_clip_nodes) &&
+           ReadParam(aReader, &aResult->total_spatial_nodes) &&
+           ReadParam(aReader, &aResult->cache_size);
   }
 };
 
@@ -122,10 +189,6 @@ struct ParamTraits<mozilla::wr::MixBlendMode>
     : public ContiguousEnumSerializer<mozilla::wr::MixBlendMode,
                                       mozilla::wr::MixBlendMode::Normal,
                                       mozilla::wr::MixBlendMode::Sentinel> {};
-
-template <>
-struct ParamTraits<mozilla::wr::BuiltDisplayListDescriptor>
-    : public PlainOldDataSerializer<mozilla::wr::BuiltDisplayListDescriptor> {};
 
 template <>
 struct ParamTraits<mozilla::wr::WebRenderError>

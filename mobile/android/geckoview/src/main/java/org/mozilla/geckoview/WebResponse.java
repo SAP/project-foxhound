@@ -45,11 +45,26 @@ public class WebResponse extends WebMessage {
    */
   public final @Nullable InputStream body;
 
+  /**
+   * Specifies that the contents should request to be opened in another Android application. For
+   * example, provide PDF content and set this to true to request that Android opens the PDF in a
+   * system PDF viewer (if possible and allowed by the user).
+   */
+  public final @Nullable boolean requestExternalApp;
+
+  /**
+   * Specifies that the app may skip requesting the download in the UI. A confirmation of the
+   * download will still be shown.
+   */
+  public final @Nullable boolean skipConfirmation;
+
   protected WebResponse(final @NonNull Builder builder) {
     super(builder);
     this.statusCode = builder.mStatusCode;
     this.redirected = builder.mRedirected;
     this.body = builder.mBody;
+    this.requestExternalApp = builder.mRequestExternalApp;
+    this.skipConfirmation = builder.mSkipConfirmation;
     this.isSecure = builder.mIsSecure;
     this.certificate = builder.mCertificate;
 
@@ -77,6 +92,8 @@ public class WebResponse extends WebMessage {
     /* package */ int mStatusCode;
     /* package */ boolean mRedirected;
     /* package */ InputStream mBody;
+    /* package */ boolean mRequestExternalApp = false;
+    /* package */ boolean mSkipConfirmation = false;
     /* package */ boolean mIsSecure;
     /* package */ X509Certificate mCertificate;
 
@@ -119,6 +136,33 @@ public class WebResponse extends WebMessage {
     }
 
     /**
+     * Requests that the content be passed to an external Android application. The default is false.
+     * For example, set to true to request that the user have the option to open the content in
+     * another Android application.
+     *
+     * @param requestExternalApp request that the content be opened in another application.
+     * @return This Builder instance.
+     */
+    public @NonNull Builder requestExternalApp(final boolean requestExternalApp) {
+      mRequestExternalApp = requestExternalApp;
+      return this;
+    }
+
+    /**
+     * Specifies if a confirmation to begin downloading is necessary or not. (The confirmation that
+     * a download occurred will still be shown.) The default is false, which is to request a
+     * download confirmation. Skipping the confirmation is only advisable if the user has already
+     * opted to download.
+     *
+     * @param skipConfirmation whether to skip or show the confirm download flow
+     * @return This Builder instance.
+     */
+    public @NonNull Builder skipConfirmation(final boolean skipConfirmation) {
+      mSkipConfirmation = skipConfirmation;
+      return this;
+    }
+
+    /**
      * @param isSecure Whether or not this response is secure.
      * @return This Builder instance.
      */
@@ -136,7 +180,9 @@ public class WebResponse extends WebMessage {
       return this;
     }
 
-    /** @param encodedCert The certificate used, encoded via DER. Only used via JNI. */
+    /**
+     * @param encodedCert The certificate used, encoded via DER. Only used via JNI.
+     */
     @WrapForJNI(exceptionMode = "nsresult")
     private void certificateBytes(final @NonNull byte[] encodedCert) {
       try {
@@ -171,7 +217,9 @@ public class WebResponse extends WebMessage {
       return this;
     }
 
-    /** @return A {@link WebResponse} constructed with the values from this Builder instance. */
+    /**
+     * @return A {@link WebResponse} constructed with the values from this Builder instance.
+     */
     public @NonNull WebResponse build() {
       return new WebResponse(this);
     }

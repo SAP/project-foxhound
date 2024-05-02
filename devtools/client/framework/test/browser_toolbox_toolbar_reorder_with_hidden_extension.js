@@ -5,7 +5,7 @@
 
 // Test for reordering with an hidden extension installed.
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 const EXTENSION = "@reorder.test";
 
@@ -138,7 +138,7 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   // Enable the Application panel (atm it's only available on Nightly)
   await pushPref("devtools.application.enabled", true);
 
@@ -150,7 +150,7 @@ add_task(async function() {
     useAddonManager: "temporary",
     manifest: {
       devtools_page: "extension.html",
-      applications: {
+      browser_specific_settings: {
         gecko: { id: EXTENSION },
       },
     },

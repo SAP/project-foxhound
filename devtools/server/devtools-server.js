@@ -4,52 +4,56 @@
 
 "use strict";
 
-var { Ci } = require("chrome");
-var Services = require("Services");
-var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var {
+  ActorRegistry,
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 var { dumpn } = DevToolsUtils;
 
 loader.lazyRequireGetter(
   this,
   "DevToolsServerConnection",
-  "devtools/server/devtools-server-connection",
+  "resource://devtools/server/devtools-server-connection.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "Authentication",
-  "devtools/shared/security/auth"
+  "resource://devtools/shared/security/auth.js"
 );
 loader.lazyRequireGetter(
   this,
   "LocalDebuggerTransport",
-  "devtools/shared/transport/local-transport",
+  "resource://devtools/shared/transport/local-transport.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ChildDebuggerTransport",
-  "devtools/shared/transport/child-transport",
+  "resource://devtools/shared/transport/child-transport.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "JsWindowActorTransport",
-  "devtools/shared/transport/js-window-actor-transport",
+  "resource://devtools/shared/transport/js-window-actor-transport.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WorkerThreadWorkerDebuggerTransport",
-  "devtools/shared/transport/worker-transport",
+  "resource://devtools/shared/transport/worker-transport.js",
   true
 );
 
 const CONTENT_PROCESS_SERVER_STARTUP_SCRIPT =
   "resource://devtools/server/startup/content-process.js";
 
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
+);
 
 /**
  * DevToolsServer is a singleton that has several responsibilities. It will
@@ -134,7 +138,7 @@ var DevToolsServer = {
   },
 
   get protocol() {
-    return require("devtools/shared/protocol");
+    return require("resource://devtools/shared/protocol.js");
   },
 
   get initialized() {
@@ -142,7 +146,7 @@ var DevToolsServer = {
   },
 
   hasConnection() {
-    return this._connections && Object.keys(this._connections).length > 0;
+    return this._connections && !!Object.keys(this._connections).length;
   },
 
   hasConnectionForPrefix(prefix) {
@@ -159,15 +163,14 @@ var DevToolsServer = {
     if (!this._initialized) {
       return;
     }
+    this._initialized = false;
 
     for (const connection of Object.values(this._connections)) {
       connection.close();
     }
 
     ActorRegistry.destroy();
-
     this.closeAllSocketListeners();
-    this._initialized = false;
 
     // Unregister all listeners
     this.off("connectionchange");
@@ -211,7 +214,9 @@ var DevToolsServer = {
     }
 
     if (root) {
-      const { createRootActor } = require("devtools/server/actors/webbrowser");
+      const {
+        createRootActor,
+      } = require("resource://devtools/server/actors/webbrowser.js");
       this.setRootActor(createRootActor);
     }
 
@@ -389,6 +394,12 @@ var DevToolsServer = {
       connID = "server" + loader.id + ".conn" + this._nextConnID++ + ".";
     }
 
+    // Notify the platform code that DevTools is running in the current process
+    // when we are wiring the very first connection
+    if (!this.hasConnection()) {
+      ChromeUtils.notifyDevToolsOpened();
+    }
+
     const conn = new DevToolsServerConnection(
       connID,
       transport,
@@ -419,6 +430,25 @@ var DevToolsServer = {
   _connectionClosed(connection) {
     delete this._connections[connection.prefix];
     this.emit("connectionchange", "closed", connection);
+
+    const hasConnection = this.hasConnection();
+
+    // Notify the platform code that we stopped running DevTools code in the current process
+    if (!hasConnection) {
+      ChromeUtils.notifyDevToolsClosed();
+    }
+
+    // If keepAlive isn't explicitely set to true, destroy the server once its
+    // last connection closes. Multiple JSWindowActor may use the same DevToolsServer
+    // and in this case, let the server destroy itself once the last connection closes.
+    // Otherwise we set keepAlive to true when starting a listening server, receiving
+    // client connections. Typically when running server on phones, or on desktop
+    // via `--start-debugger-server`.
+    if (hasConnection || this.keepAlive) {
+      return;
+    }
+
+    this.destroy();
   },
 
   // DevToolsServer extension API.

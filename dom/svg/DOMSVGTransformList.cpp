@@ -31,8 +31,7 @@ void UpdateListIndicesFromIndex(
 
 }  // namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
 // clear our SVGAnimatedTransformList's weak ref to us to be safe. (The other
@@ -131,7 +130,9 @@ void DOMSVGTransformList::Clear(ErrorResult& error) {
     mAList->InternalBaseValListWillChangeLengthTo(0);
 
     mItems.Clear();
-    InternalList().Clear();
+    auto* alist = Element()->GetAnimatedTransformList();
+    alist->mBaseVal.Clear();
+    alist->mIsBaseSet = false;
   }
 }
 
@@ -387,5 +388,4 @@ void DOMSVGTransformList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex) {
   UpdateListIndicesFromIndex(animVal->mItems, aIndex);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

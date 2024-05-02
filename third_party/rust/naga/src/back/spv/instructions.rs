@@ -1,4 +1,4 @@
-use super::helpers;
+use super::{block::DebugInfoInner, helpers};
 use spirv::{Op, Word};
 
 pub(super) enum Signedness {
@@ -21,10 +21,25 @@ impl super::Instruction {
     //  Debug Instructions
     //
 
-    pub(super) fn source(source_language: spirv::SourceLanguage, version: u32) -> Self {
+    pub(super) fn string(name: &str, id: Word) -> Self {
+        let mut instruction = Self::new(Op::String);
+        instruction.set_result(id);
+        instruction.add_operands(helpers::string_to_words(name));
+        instruction
+    }
+
+    pub(super) fn source(
+        source_language: spirv::SourceLanguage,
+        version: u32,
+        source: &Option<DebugInfoInner>,
+    ) -> Self {
         let mut instruction = Self::new(Op::Source);
         instruction.add_operand(source_language as u32);
         instruction.add_operands(helpers::bytes_to_words(&version.to_le_bytes()));
+        if let Some(source) = source.as_ref() {
+            instruction.add_operand(source.source_file_id);
+            instruction.add_operands(helpers::string_to_words(source.source_code));
+        }
         instruction
     }
 
@@ -41,6 +56,18 @@ impl super::Instruction {
         instruction.add_operand(member);
         instruction.add_operands(helpers::string_to_words(name));
         instruction
+    }
+
+    pub(super) fn line(file: Word, line: Word, column: Word) -> Self {
+        let mut instruction = Self::new(Op::Line);
+        instruction.add_operand(file);
+        instruction.add_operand(line);
+        instruction.add_operand(column);
+        instruction
+    }
+
+    pub(super) const fn no_line() -> Self {
+        Self::new(Op::NoLine)
     }
 
     //
@@ -249,6 +276,18 @@ impl super::Instruction {
         instruction
     }
 
+    pub(super) fn type_acceleration_structure(id: Word) -> Self {
+        let mut instruction = Self::new(Op::TypeAccelerationStructureKHR);
+        instruction.set_result(id);
+        instruction
+    }
+
+    pub(super) fn type_ray_query(id: Word) -> Self {
+        let mut instruction = Self::new(Op::TypeRayQueryKHR);
+        instruction.set_result(id);
+        instruction
+    }
+
     pub(super) fn type_sampled_image(id: Word, image_type_id: Word) -> Self {
         let mut instruction = Self::new(Op::TypeSampledImage);
         instruction.set_result(id);
@@ -329,6 +368,14 @@ impl super::Instruction {
         instruction.set_type(result_type_id);
         instruction.set_result(id);
         instruction
+    }
+
+    pub(super) fn constant_32bit(result_type_id: Word, id: Word, value: Word) -> Self {
+        Self::constant(result_type_id, id, &[value])
+    }
+
+    pub(super) fn constant_64bit(result_type_id: Word, id: Word, low: Word, high: Word) -> Self {
+        Self::constant(result_type_id, id, &[low, high])
     }
 
     pub(super) fn constant(result_type_id: Word, id: Word, values: &[Word]) -> Self {
@@ -502,7 +549,7 @@ impl super::Instruction {
         instruction
     }
 
-    pub(super) fn function_end() -> Self {
+    pub(super) const fn function_end() -> Self {
         Self::new(Op::FunctionEnd)
     }
 
@@ -624,6 +671,55 @@ impl super::Instruction {
         instruction.set_type(result_type_id);
         instruction.set_result(id);
         instruction.add_operand(image);
+        instruction
+    }
+
+    //
+    //  Ray Query Instructions
+    //
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn ray_query_initialize(
+        query: Word,
+        acceleration_structure: Word,
+        ray_flags: Word,
+        cull_mask: Word,
+        ray_origin: Word,
+        ray_tmin: Word,
+        ray_dir: Word,
+        ray_tmax: Word,
+    ) -> Self {
+        let mut instruction = Self::new(Op::RayQueryInitializeKHR);
+        instruction.add_operand(query);
+        instruction.add_operand(acceleration_structure);
+        instruction.add_operand(ray_flags);
+        instruction.add_operand(cull_mask);
+        instruction.add_operand(ray_origin);
+        instruction.add_operand(ray_tmin);
+        instruction.add_operand(ray_dir);
+        instruction.add_operand(ray_tmax);
+        instruction
+    }
+
+    pub(super) fn ray_query_proceed(result_type_id: Word, id: Word, query: Word) -> Self {
+        let mut instruction = Self::new(Op::RayQueryProceedKHR);
+        instruction.set_type(result_type_id);
+        instruction.set_result(id);
+        instruction.add_operand(query);
+        instruction
+    }
+
+    pub(super) fn ray_query_get_intersection(
+        op: Op,
+        result_type_id: Word,
+        id: Word,
+        query: Word,
+        intersection: Word,
+    ) -> Self {
+        let mut instruction = Self::new(op);
+        instruction.set_type(result_type_id);
+        instruction.set_result(id);
+        instruction.add_operand(query);
+        instruction.add_operand(intersection);
         instruction
     }
 
@@ -906,11 +1002,11 @@ impl super::Instruction {
         instruction
     }
 
-    pub(super) fn kill() -> Self {
+    pub(super) const fn kill() -> Self {
         Self::new(Op::Kill)
     }
 
-    pub(super) fn return_void() -> Self {
+    pub(super) const fn return_void() -> Self {
         Self::new(Op::Return)
     }
 
@@ -968,7 +1064,9 @@ impl From<crate::StorageFormat> for spirv::ImageFormat {
             Sf::Rgba8Snorm => Self::Rgba8Snorm,
             Sf::Rgba8Uint => Self::Rgba8ui,
             Sf::Rgba8Sint => Self::Rgba8i,
-            Sf::Rgb10a2Unorm => Self::Rgb10a2ui,
+            Sf::Bgra8Unorm => Self::Unknown,
+            Sf::Rgb10a2Uint => Self::Rgb10a2ui,
+            Sf::Rgb10a2Unorm => Self::Rgb10A2,
             Sf::Rg11b10Float => Self::R11fG11fB10f,
             Sf::Rg32Uint => Self::Rg32ui,
             Sf::Rg32Sint => Self::Rg32i,
@@ -979,6 +1077,12 @@ impl From<crate::StorageFormat> for spirv::ImageFormat {
             Sf::Rgba32Uint => Self::Rgba32ui,
             Sf::Rgba32Sint => Self::Rgba32i,
             Sf::Rgba32Float => Self::Rgba32f,
+            Sf::R16Unorm => Self::R16,
+            Sf::R16Snorm => Self::R16Snorm,
+            Sf::Rg16Unorm => Self::Rg16,
+            Sf::Rg16Snorm => Self::Rg16Snorm,
+            Sf::Rgba16Unorm => Self::Rgba16,
+            Sf::Rgba16Snorm => Self::Rgba16Snorm,
         }
     }
 }

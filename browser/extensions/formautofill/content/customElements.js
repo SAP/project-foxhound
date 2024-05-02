@@ -10,13 +10,9 @@
 
 // Wrap in a block to prevent leaking to window scope.
 (() => {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
-
   function sendMessageToBrowser(msgName, data) {
-    let { AutoCompleteParent } = ChromeUtils.import(
-      "resource://gre/actors/AutoCompleteParent.jsm"
+    let { AutoCompleteParent } = ChromeUtils.importESModule(
+      "resource://gre/actors/AutoCompleteParent.sys.mjs"
     );
 
     let actor = AutoCompleteParent.getCurrentActor();
@@ -80,12 +76,13 @@
     }
   }
 
-  MozElements.MozAutocompleteProfileListitem = class MozAutocompleteProfileListitem extends MozAutocompleteProfileListitemBase {
+  MozElements.MozAutocompleteProfileListitem = class MozAutocompleteProfileListitem extends (
+    MozAutocompleteProfileListitemBase
+  ) {
     static get markup() {
       return `
         <div xmlns="http://www.w3.org/1999/xhtml" class="autofill-item-box">
           <div class="profile-label-col profile-item-col">
-            <span class="profile-label-affix"></span>
             <span class="profile-label"></span>
           </div>
           <div class="profile-comment-col profile-item-col">
@@ -105,7 +102,6 @@
       this.appendChild(this.constructor.fragment);
 
       this._itemBox = this.querySelector(".autofill-item-box");
-      this._labelAffix = this.querySelector(".profile-label-affix");
       this._label = this.querySelector(".profile-label");
       this._comment = this.querySelector(".profile-comment");
 
@@ -141,13 +137,12 @@
         `url(${this.getAttribute("ac-image")})`
       );
 
-      let { primaryAffix, primary, secondary, ariaLabel } = JSON.parse(
+      let { primary, secondary, ariaLabel } = JSON.parse(
         this.getAttribute("ac-value")
       );
 
-      this._labelAffix.textContent = primaryAffix;
-      this._label.textContent = primary;
-      this._comment.textContent = secondary;
+      this._label.textContent = primary.toString().replaceAll("*", "•");
+      this._comment.textContent = secondary.toString().replaceAll("*", "•");
       if (ariaLabel) {
         this.setAttribute("aria-label", ariaLabel);
       }
@@ -209,7 +204,7 @@
        * the exact category that we're going to fill in.
        *
        * @private
-       * @param {Object} data
+       * @param {object} data
        *        Message data
        * @param {string[]} data.categories
        *        The categories of all the fields contained in the selected address.
@@ -241,9 +236,8 @@
               ),
             ];
 
-        let separator = this._stringBundle.GetStringFromName(
-          "fieldNameSeparator"
-        );
+        let separator =
+          this._stringBundle.GetStringFromName("fieldNameSeparator");
         let warningTextTmplKey = hasExtraCategories
           ? "phishingWarningMessage"
           : "phishingWarningMessage2";
@@ -253,10 +247,10 @@
           )
           .join(separator);
 
-        this._warningTextBox.textContent = this._stringBundle.formatStringFromName(
-          warningTextTmplKey,
-          [categoriesText]
-        );
+        this._warningTextBox.textContent =
+          this._stringBundle.formatStringFromName(warningTextTmplKey, [
+            categoriesText,
+          ]);
         this.parentNode.parentNode.adjustHeight();
       };
 
@@ -265,8 +259,8 @@
 
     _onCollapse() {
       if (this.showWarningText) {
-        let { FormAutofillParent } = ChromeUtils.import(
-          "resource://autofill/FormAutofillParent.jsm"
+        let { FormAutofillParent } = ChromeUtils.importESModule(
+          "resource://autofill/FormAutofillParent.sys.mjs"
         );
         FormAutofillParent.removeMessageObserver(this);
       }
@@ -277,29 +271,6 @@
       this._adjustAutofillItemLayout();
       this.setAttribute("formautofillattached", "true");
 
-      let { AppConstants } = ChromeUtils.import(
-        "resource://gre/modules/AppConstants.jsm",
-        {}
-      );
-
-      let buttonTextBundleKey;
-      if (this._itemBox.getAttribute("size") == "small") {
-        buttonTextBundleKey =
-          AppConstants.platform == "macosx"
-            ? "autocompleteFooterOptionOSXShort2"
-            : "autocompleteFooterOptionShort2";
-      } else {
-        buttonTextBundleKey =
-          AppConstants.platform == "macosx"
-            ? "autocompleteFooterOptionOSX2"
-            : "autocompleteFooterOption2";
-      }
-
-      let buttonText = this._stringBundle.GetStringFromName(
-        buttonTextBundleKey
-      );
-      this._optionButton.textContent = buttonText;
-
       let value = JSON.parse(this.getAttribute("ac-value"));
 
       this._allFieldCategories = value.categories;
@@ -307,14 +278,25 @@
       this.showWarningText = this._allFieldCategories && this._focusedCategory;
 
       if (this.showWarningText) {
-        let { FormAutofillParent } = ChromeUtils.import(
-          "resource://autofill/FormAutofillParent.jsm"
+        let { FormAutofillParent } = ChromeUtils.importESModule(
+          "resource://autofill/FormAutofillParent.sys.mjs"
         );
         FormAutofillParent.addMessageObserver(this);
         this.updateWarningNote();
       } else {
         this._itemBox.setAttribute("no-warning", "true");
       }
+
+      // After focusing a field that was previously filled with cc information,
+      // the "ac-image" is falsely set for the listitem-footer. For now it helps us
+      // to distinguish between address and cc footer. In the future this false attribute
+      // setting should be fixed and the "ac-image" check replaced by a different method.
+      const buttonTextBundleKey = !this.getAttribute("ac-image")
+        ? "autocompleteManageAddresses"
+        : "autocompleteManageCreditCards";
+      const buttonText =
+        this._stringBundle.GetStringFromName(buttonTextBundleKey);
+      this._optionButton.textContent = buttonText;
     }
   }
 
@@ -405,9 +387,8 @@
       this._adjustAutofillItemLayout();
       this.setAttribute("formautofillattached", "true");
 
-      let clearFormBtnLabel = this._stringBundle.GetStringFromName(
-        "clearFormBtnLabel2"
-      );
+      let clearFormBtnLabel =
+        this._stringBundle.GetStringFromName("clearFormBtnLabel2");
       this._clearBtn.textContent = clearFormBtnLabel;
     }
   }

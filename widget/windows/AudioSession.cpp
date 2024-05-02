@@ -4,14 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <windows.h>
+#include <atomic>
 #include <audiopolicy.h>
+#include <windows.h>
 #include <mmdeviceapi.h>
 
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPtr.h"
 #include "nsIStringBundle.h"
 
-//#include "AudioSession.h"
 #include "nsCOMPtr.h"
 #include "nsID.h"
 #include "nsServiceManagerUtils.h"
@@ -19,10 +22,10 @@
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/mscom/AgileReference.h"
+#include "mozilla/mscom/Utils.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/WindowsVersion.h"
-
-#include <objbase.h>
 
 namespace mozilla {
 namespace widget {
@@ -33,11 +36,9 @@ namespace widget {
  * and implements IAudioSessionEvents (for callbacks from Windows)
  */
 class AudioSession final : public IAudioSessionEvents {
- private:
-  AudioSession();
-  ~AudioSession();
-
  public:
+  AudioSession();
+
   static AudioSession* GetSingleton();
 
   // COM IUnknown
@@ -53,83 +54,69 @@ class AudioSession final : public IAudioSessionEvents {
   STDMETHODIMP OnGroupingParamChanged(LPCGUID aGroupingParam, LPCGUID aContext);
   STDMETHODIMP OnIconPathChanged(LPCWSTR aIconPath, LPCGUID aContext);
   STDMETHODIMP OnSessionDisconnected(AudioSessionDisconnectReason aReason);
-
- private:
-  nsresult OnSessionDisconnectedInternal();
-  nsresult CommitAudioSessionData();
-
- public:
   STDMETHODIMP OnSimpleVolumeChanged(float aVolume, BOOL aMute,
                                      LPCGUID aContext);
   STDMETHODIMP OnStateChanged(AudioSessionState aState);
 
-  nsresult Start();
-  nsresult Stop();
-  void StopInternal();
+  void Start();
+  void Stop(bool shouldRestart = false);
 
   nsresult GetSessionData(nsID& aID, nsString& aSessionName,
                           nsString& aIconPath);
-
   nsresult SetSessionData(const nsID& aID, const nsString& aSessionName,
                           const nsString& aIconPath);
 
-  enum SessionState {
-    UNINITIALIZED,              // Has not been initialized yet
-    STARTED,                    // Started
-    CLONED,                     // SetSessionInfoCalled, Start not called
-    FAILED,                     // The audio session failed to start
-    STOPPED,                    // Stop called
-    AUDIO_SESSION_DISCONNECTED  // Audio session disconnected
-  };
+ private:
+  ~AudioSession() = default;
+
+  void StopInternal(const MutexAutoLock& aProofOfLock,
+                    bool shouldRestart = false);
 
  protected:
   RefPtr<IAudioSessionControl> mAudioSessionControl;
   nsString mDisplayName;
   nsString mIconPath;
   nsID mSessionGroupingParameter;
-  SessionState mState;
   // Guards the IAudioSessionControl
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex MOZ_UNANNOTATED;
 
   ThreadSafeAutoRefCnt mRefCnt;
   NS_DECL_OWNINGTHREAD
-
-  static AudioSession* sService;
 };
 
-nsresult StartAudioSession() { return AudioSession::GetSingleton()->Start(); }
+StaticRefPtr<AudioSession> sService;
 
-nsresult StopAudioSession() { return AudioSession::GetSingleton()->Stop(); }
+void StartAudioSession() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!sService);
+  sService = new AudioSession();
 
-nsresult GetAudioSessionData(nsID& aID, nsString& aSessionName,
-                             nsString& aIconPath) {
-  return AudioSession::GetSingleton()->GetSessionData(aID, aSessionName,
-                                                      aIconPath);
+  // Destroy AudioSession only after any background task threads have been
+  // stopped or abandoned.
+  ClearOnShutdown(&sService, ShutdownPhase::XPCOMShutdownFinal);
+
+  NS_DispatchBackgroundTask(
+      NS_NewCancelableRunnableFunction("StartAudioSession", []() -> void {
+        MOZ_ASSERT(AudioSession::GetSingleton(),
+                   "AudioSession should outlive background threads");
+        AudioSession::GetSingleton()->Start();
+      }));
 }
 
-nsresult RecvAudioSessionData(const nsID& aID, const nsString& aSessionName,
-                              const nsString& aIconPath) {
-  return AudioSession::GetSingleton()->SetSessionData(aID, aSessionName,
-                                                      aIconPath);
+void StopAudioSession() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(sService);
+  NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction("StopAudioSession", []() -> void {
+        MOZ_ASSERT(AudioSession::GetSingleton(),
+                   "AudioSession should outlive background threads");
+        AudioSession::GetSingleton()->Stop();
+      }));
 }
-
-AudioSession* AudioSession::sService = nullptr;
-
-AudioSession::AudioSession() : mMutex("AudioSessionControl") {
-  mState = UNINITIALIZED;
-}
-
-AudioSession::~AudioSession() {}
 
 AudioSession* AudioSession::GetSingleton() {
-  if (!(AudioSession::sService)) {
-    RefPtr<AudioSession> service = new AudioSession();
-    service.forget(&AudioSession::sService);
-  }
-
-  // We don't refcount AudioSession on the Gecko side, we hold one single ref
-  // as long as the appshell is running.
-  return AudioSession::sService;
+  MOZ_ASSERT(mscom::IsCurrentThreadMTA());
+  return sService;
 }
 
 // It appears Windows will use us on a background thread ...
@@ -148,160 +135,148 @@ AudioSession::QueryInterface(REFIID iid, void** ppv) {
   return E_NOINTERFACE;
 }
 
+AudioSession::AudioSession() : mMutex("AudioSessionControl") {
+  // This func must be run on the main thread as
+  // nsStringBundle is not thread safe otherwise
+  MOZ_ASSERT(NS_IsMainThread());
+
+  MOZ_ASSERT(XRE_IsParentProcess(),
+             "Should only get here in a chrome process!");
+
+  nsCOMPtr<nsIStringBundleService> bundleService =
+      do_GetService(NS_STRINGBUNDLE_CONTRACTID);
+  MOZ_ASSERT(bundleService);
+
+  nsCOMPtr<nsIStringBundle> bundle;
+  bundleService->CreateBundle("chrome://branding/locale/brand.properties",
+                              getter_AddRefs(bundle));
+  MOZ_ASSERT(bundle);
+  bundle->GetStringFromName("brandFullName", mDisplayName);
+
+  wchar_t* buffer;
+  mIconPath.GetMutableData(&buffer, MAX_PATH);
+  ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+
+  [[maybe_unused]] nsresult rv =
+      nsID::GenerateUUIDInPlace(mSessionGroupingParameter);
+  MOZ_ASSERT(rv == NS_OK);
+}
+
 // Once we are started Windows will hold a reference to us through our
 // IAudioSessionEvents interface that will keep us alive until the appshell
 // calls Stop.
-nsresult AudioSession::Start() {
-  MOZ_ASSERT(mState == UNINITIALIZED || mState == CLONED ||
-                 mState == AUDIO_SESSION_DISCONNECTED,
-             "State invariants violated");
+void AudioSession::Start() {
+  MOZ_ASSERT(mscom::IsCurrentThreadMTA());
 
   const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
   const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
   const IID IID_IAudioSessionManager = __uuidof(IAudioSessionManager);
 
-  HRESULT hr;
-
-  // There's a matching CoUninit in Stop() for this tied to a state of
-  // UNINITIALIZED.
-  hr = CoInitialize(nullptr);
-  MOZ_ASSERT(SUCCEEDED(hr),
-             "CoInitialize failure in audio session control, unexpected");
-
-  if (mState == UNINITIALIZED) {
-    mState = FAILED;
-
-    // Content processes should be CLONED
-    if (XRE_IsContentProcess()) {
-      return NS_ERROR_FAILURE;
-    }
-
-    MOZ_ASSERT(XRE_IsParentProcess(),
-               "Should only get here in a chrome process!");
-
-    nsCOMPtr<nsIStringBundleService> bundleService =
-        do_GetService(NS_STRINGBUNDLE_CONTRACTID);
-    NS_ENSURE_TRUE(bundleService, NS_ERROR_FAILURE);
-    nsCOMPtr<nsIStringBundle> bundle;
-    bundleService->CreateBundle("chrome://branding/locale/brand.properties",
-                                getter_AddRefs(bundle));
-    NS_ENSURE_TRUE(bundle, NS_ERROR_FAILURE);
-
-    bundle->GetStringFromName("brandFullName", mDisplayName);
-
-    wchar_t* buffer;
-    mIconPath.GetMutableData(&buffer, MAX_PATH);
-    ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
-
-    nsresult rv = nsID::GenerateUUIDInPlace(mSessionGroupingParameter);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  mState = FAILED;
-
+  MutexAutoLock lock(mMutex);
+  MOZ_ASSERT(!mAudioSessionControl);
   MOZ_ASSERT(!mDisplayName.IsEmpty() || !mIconPath.IsEmpty(),
              "Should never happen ...");
 
+  auto scopeExit = MakeScopeExit([&] { StopInternal(lock); });
+
   RefPtr<IMMDeviceEnumerator> enumerator;
-  hr = ::CoCreateInstance(CLSID_MMDeviceEnumerator, nullptr, CLSCTX_ALL,
-                          IID_IMMDeviceEnumerator, getter_AddRefs(enumerator));
-  if (FAILED(hr)) return NS_ERROR_NOT_AVAILABLE;
+  HRESULT hr =
+      ::CoCreateInstance(CLSID_MMDeviceEnumerator, nullptr, CLSCTX_ALL,
+                         IID_IMMDeviceEnumerator, getter_AddRefs(enumerator));
+  if (FAILED(hr)) {
+    return;
+  }
 
   RefPtr<IMMDevice> device;
   hr = enumerator->GetDefaultAudioEndpoint(
       EDataFlow::eRender, ERole::eMultimedia, getter_AddRefs(device));
   if (FAILED(hr)) {
-    if (hr == E_NOTFOUND) return NS_ERROR_NOT_AVAILABLE;
-    return NS_ERROR_FAILURE;
+    return;
   }
 
   RefPtr<IAudioSessionManager> manager;
   hr = device->Activate(IID_IAudioSessionManager, CLSCTX_ALL, nullptr,
                         getter_AddRefs(manager));
   if (FAILED(hr)) {
-    return NS_ERROR_FAILURE;
+    return;
   }
 
-  MutexAutoLock lock(mMutex);
   hr = manager->GetAudioSessionControl(&GUID_NULL, 0,
                                        getter_AddRefs(mAudioSessionControl));
 
-  if (FAILED(hr)) {
-    return NS_ERROR_FAILURE;
+  if (FAILED(hr) || !mAudioSessionControl) {
+    return;
   }
 
   // Increments refcount of 'this'.
   hr = mAudioSessionControl->RegisterAudioSessionNotification(this);
   if (FAILED(hr)) {
-    StopInternal();
-    return NS_ERROR_FAILURE;
+    return;
   }
 
-  nsCOMPtr<nsIRunnable> runnable =
-      NewRunnableMethod("AudioSession::CommitAudioSessionData", this,
-                        &AudioSession::CommitAudioSessionData);
-  NS_DispatchToMainThread(runnable);
+  hr = mAudioSessionControl->SetGroupingParam(
+      (LPGUID) & (mSessionGroupingParameter), nullptr);
+  if (FAILED(hr)) {
+    return;
+  }
 
-  mState = STARTED;
+  hr = mAudioSessionControl->SetDisplayName(mDisplayName.get(), nullptr);
+  if (FAILED(hr)) {
+    return;
+  }
 
-  return NS_OK;
+  hr = mAudioSessionControl->SetIconPath(mIconPath.get(), nullptr);
+  if (FAILED(hr)) {
+    return;
+  }
+
+  scopeExit.release();
 }
 
-void SpawnASCReleaseThread(RefPtr<IAudioSessionControl>&& aASC) {
-  // Fake moving to the other thread by circumventing the ref count.
-  // (RefPtrs don't play well with C++11 lambdas and we don't want to use
-  // XPCOM here.)
-  IAudioSessionControl* rawPtr = nullptr;
-  aASC.forget(&rawPtr);
-  MOZ_ASSERT(rawPtr);
-  PRThread* thread = PR_CreateThread(
-      PR_USER_THREAD,
-      [](void* aRawPtr) {
-        NS_SetCurrentThreadName("AudioASCReleaser");
-        static_cast<IAudioSessionControl*>(aRawPtr)->Release();
-      },
-      rawPtr, PR_PRIORITY_NORMAL, PR_LOCAL_THREAD, PR_UNJOINABLE_THREAD, 0);
-  if (!thread) {
-    // We can't make a thread so just destroy the IAudioSessionControl here.
-    rawPtr->Release();
-  }
+void AudioSession::Stop(bool shouldRestart) {
+  MOZ_ASSERT(mscom::IsCurrentThreadMTA());
+
+  MutexAutoLock lock(mMutex);
+  StopInternal(lock, shouldRestart);
 }
 
-void AudioSession::StopInternal() {
-  mMutex.AssertCurrentThreadOwns();
-
-  if (mAudioSessionControl && (mState == STARTED || mState == STOPPED)) {
-    // Decrement refcount of 'this'
-    mAudioSessionControl->UnregisterAudioSessionNotification(this);
+void AudioSession::StopInternal(const MutexAutoLock& aProofOfLock,
+                                bool shouldRestart) {
+  if (!mAudioSessionControl) {
+    return;
   }
 
-  if (mAudioSessionControl) {
-    // Avoid hanging when destroying AudioSessionControl.  We do that by
-    // moving the AudioSessionControl to a worker thread (that we never
-    // 'join') for destruction.
-    SpawnASCReleaseThread(std::move(mAudioSessionControl));
-  }
-}
+  // Decrement refcount of 'this'
+  mAudioSessionControl->UnregisterAudioSessionNotification(this);
 
-nsresult AudioSession::Stop() {
-  MOZ_ASSERT(mState == STARTED || mState == UNINITIALIZED ||  // XXXremove this
-                 mState == FAILED,
-             "State invariants violated");
-  SessionState state = mState;
-  mState = STOPPED;
-
-  {
-    RefPtr<AudioSession> kungFuDeathGrip;
-    kungFuDeathGrip.swap(sService);
-
-    MutexAutoLock lock(mMutex);
-    StopInternal();
-  }
-
-  if (state != UNINITIALIZED) {
-    ::CoUninitialize();
-  }
-  return NS_OK;
+  // Deleting the IAudioSessionControl COM object requires the STA/main thread.
+  // Audio code may concurrently be running on the main thread and it may
+  // block waiting for this to complete, creating deadlock.  So we destroy the
+  // IAudioSessionControl on the main thread instead.  In order to do that, we
+  // need to marshall the object to the main thread's apartment with an
+  // AgileReference.
+  const IID IID_IAudioSessionControl = __uuidof(IAudioSessionControl);
+  auto agileAsc = MakeUnique<mozilla::mscom::AgileReference>(
+      IID_IAudioSessionControl, mAudioSessionControl);
+  mAudioSessionControl = nullptr;
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "FreeAudioSession", [agileAsc = std::move(agileAsc),
+                           IID_IAudioSessionControl, shouldRestart] {
+        RefPtr<IAudioSessionControl> toDelete;
+        [[maybe_unused]] HRESULT hr = agileAsc->Resolve(
+            IID_IAudioSessionControl, getter_AddRefs(toDelete));
+        MOZ_ASSERT(SUCCEEDED(hr));
+        // Now release the AgileReference which holds our only reference to the
+        // IAudioSessionControl, then maybe restart.
+        if (shouldRestart) {
+          NS_DispatchBackgroundTask(
+              NS_NewCancelableRunnableFunction("RestartAudioSession", [] {
+                AudioSession* as = AudioSession::GetSingleton();
+                MOZ_ASSERT(as);
+                as->Start();
+              }));
+        }
+      }));
 }
 
 void CopynsID(nsID& lhs, const nsID& rhs) {
@@ -315,14 +290,9 @@ void CopynsID(nsID& lhs, const nsID& rhs) {
 
 nsresult AudioSession::GetSessionData(nsID& aID, nsString& aSessionName,
                                       nsString& aIconPath) {
-  MOZ_ASSERT(mState == FAILED || mState == STARTED || mState == CLONED,
-             "State invariants violated");
-
   CopynsID(aID, mSessionGroupingParameter);
   aSessionName = mDisplayName;
   aIconPath = mIconPath;
-
-  if (mState == FAILED) return NS_ERROR_FAILURE;
 
   return NS_OK;
 }
@@ -330,44 +300,11 @@ nsresult AudioSession::GetSessionData(nsID& aID, nsString& aSessionName,
 nsresult AudioSession::SetSessionData(const nsID& aID,
                                       const nsString& aSessionName,
                                       const nsString& aIconPath) {
-  MOZ_ASSERT(mState == UNINITIALIZED, "State invariants violated");
   MOZ_ASSERT(!XRE_IsParentProcess(),
              "Should never get here in a chrome process!");
-  mState = CLONED;
-
   CopynsID(mSessionGroupingParameter, aID);
   mDisplayName = aSessionName;
   mIconPath = aIconPath;
-  return NS_OK;
-}
-
-nsresult AudioSession::CommitAudioSessionData() {
-  MutexAutoLock lock(mMutex);
-
-  if (!mAudioSessionControl) {
-    // Stop() was called before we had a chance to do this.
-    return NS_OK;
-  }
-
-  HRESULT hr = mAudioSessionControl->SetGroupingParam(
-      (LPGUID)&mSessionGroupingParameter, nullptr);
-  if (FAILED(hr)) {
-    StopInternal();
-    return NS_ERROR_FAILURE;
-  }
-
-  hr = mAudioSessionControl->SetDisplayName(mDisplayName.get(), nullptr);
-  if (FAILED(hr)) {
-    StopInternal();
-    return NS_ERROR_FAILURE;
-  }
-
-  hr = mAudioSessionControl->SetIconPath(mIconPath.get(), nullptr);
-  if (FAILED(hr)) {
-    StopInternal();
-    return NS_ERROR_FAILURE;
-  }
-
   return NS_OK;
 }
 
@@ -395,35 +332,8 @@ AudioSession::OnIconPathChanged(LPCWSTR aIconPath, LPCGUID aContext) {
 
 STDMETHODIMP
 AudioSession::OnSessionDisconnected(AudioSessionDisconnectReason aReason) {
-  // Run our code asynchronously.  Per MSDN we can't do anything interesting
-  // in this callback.
-  nsCOMPtr<nsIRunnable> runnable =
-      NewRunnableMethod("widget::AudioSession::OnSessionDisconnectedInternal",
-                        this, &AudioSession::OnSessionDisconnectedInternal);
-  NS_DispatchToMainThread(runnable);
+  Stop(true /* shouldRestart */);
   return S_OK;
-}
-
-nsresult AudioSession::OnSessionDisconnectedInternal() {
-  // When successful, UnregisterAudioSessionNotification will decrement the
-  // refcount of 'this'.  Start will re-increment it.  In the interim,
-  // we'll need to reference ourselves.
-  RefPtr<AudioSession> kungFuDeathGrip(this);
-
-  {
-    // We need to release the mutex before we call Start().
-    MutexAutoLock lock(mMutex);
-
-    if (!mAudioSessionControl) return NS_OK;
-
-    mAudioSessionControl->UnregisterAudioSessionNotification(this);
-    mAudioSessionControl = nullptr;
-  }
-
-  mState = AUDIO_SESSION_DISCONNECTED;
-  CoUninitialize();
-  Start();  // If it fails there's not much we can do.
-  return NS_OK;
 }
 
 STDMETHODIMP

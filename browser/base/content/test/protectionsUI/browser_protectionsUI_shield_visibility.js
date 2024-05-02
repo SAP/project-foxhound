@@ -8,6 +8,7 @@
 const TEST_CASES = [
   {
     type: "http",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     testURL: "http://example.com",
     hidden: false,
   },
@@ -74,7 +75,7 @@ const TEST_CASES = [
   },
 ];
 
-add_task(async function setup() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       // By default, proxies don't apply to 127.0.0.1. We need them to for this test, though:

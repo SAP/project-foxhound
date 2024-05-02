@@ -1,11 +1,9 @@
 package org.mozilla.geckoview.test.crash
 
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.filters.MediumTest
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.hamcrest.Matchers.equalTo
+import androidx.test.filters.MediumTest
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeThat
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoRuntime
@@ -26,15 +24,16 @@ class ParentCrashTest : BaseSessionTest() {
     @Test
     @ClosedSessionAtStart
     fun crashParent() {
-        // TODO: Bug 1673956
-        assumeThat(sessionRule.env.isFission, equalTo(false))
         val client = TestCrashHandler.Client(targetContext)
 
         assertTrue(client.connect(timeout))
-        client.setEvalNextCrashDump(/* expectFatal */ true, GeckoRuntime.CRASHED_PROCESS_TYPE_MAIN)
+        client.setEvalNextCrashDump(GeckoRuntime.CRASHED_PROCESS_TYPE_MAIN, null)
 
         val runtime = TestRuntimeService.RuntimeInstance.start(
-            targetContext, RuntimeCrashTestService::class.java, temporaryProfile.get())
+            targetContext,
+            RuntimeCrashTestService::class.java,
+            temporaryProfile.get(),
+        )
         runtime.loadUri("about:crashparent")
 
         val evalResult = client.getEvalResult(timeout)

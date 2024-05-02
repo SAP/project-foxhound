@@ -16,7 +16,7 @@ const CONTENT = `
   </body>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + CONTENT);
 
   // const commands = await CommandsFactory.forTab(tab);
@@ -54,7 +54,7 @@ function checkRuleViewContent({ styleDocument }) {
   is(rules.length, 4, "There are 4 rules in the view");
 
   for (const rule of rules) {
-    const selector = rule.querySelector(".ruleview-selectorcontainer");
+    const selector = rule.querySelector(".ruleview-selectors-container");
     is(
       selector.textContent,
       STYLE_INSPECTOR_L10N.getStr("rule.sourceElement"),

@@ -4,11 +4,11 @@
 
 "use strict";
 
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
-const { colorUtils } = require("devtools/shared/css/color.js");
+const { colorUtils } = require("resource://devtools/shared/css/color.js");
 
-const ComputedStylePath = require("devtools/client/inspector/animation/components/keyframes-graph/ComputedStylePath");
+const ComputedStylePath = require("resource://devtools/client/inspector/animation/components/keyframes-graph/ComputedStylePath.js");
 
 const DEFAULT_COLOR = { r: 0, g: 0, b: 0, a: 1 };
 
@@ -22,7 +22,8 @@ class ColorPath extends ComputedStylePath {
     this.state = this.propToState(props);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     this.setState(this.propToState(nextProps));
   }
 
@@ -70,12 +71,8 @@ class ColorPath extends ComputedStylePath {
    * Overide parent's method.
    */
   renderEasingHint() {
-    const {
-      easingHintStrokeWidth,
-      graphHeight,
-      keyframes,
-      totalDuration,
-    } = this.props;
+    const { easingHintStrokeWidth, graphHeight, keyframes, totalDuration } =
+      this.props;
 
     const hints = [];
 

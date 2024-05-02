@@ -12,8 +12,6 @@
 /* globals user_pref */
 // Enable w3c touch events for testing
 user_pref("dom.w3c_touch_events.enabled", 1);
-// Enable CSS Grid 'subgrid' feature for testing
-user_pref("layout.css.grid-template-subgrid-value.enabled", true);
 // Enable CSS initial-letter for testing
 user_pref("layout.css.initial-letter.enabled", true);
 // Enable Media Source Extensions for testing
@@ -22,7 +20,6 @@ user_pref("media.mediasource.webm.enabled", true);
 user_pref("media.av1.enabled", true);
 user_pref("media.eme.enabled", true);
 user_pref("dom.forms.datetime.others", true);
-user_pref("dom.forms.datetime-local", true);
 // Enable Gamepad
 user_pref("dom.gamepad.enabled", true);
 user_pref("dom.gamepad.non_standard_events.enabled", true);

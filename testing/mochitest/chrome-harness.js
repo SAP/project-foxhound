@@ -4,8 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+var { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 /* import-globals-from manifestLibrary.js */
 
@@ -180,7 +181,7 @@ function getTestFilePath(path) {
     file = fileHandler.getFileFromURLSpec(parentURI.spec);
   }
   // Then walk by the given relative path
-  path.split("/").forEach(function(p) {
+  path.split("/").forEach(function (p) {
     if (p == "..") {
       file = file.parent;
     } else if (p != ".") {

@@ -14,8 +14,22 @@
 #include "PerformanceServerTiming.h"
 #include "PerformanceTiming.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
+#define IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(name)                \
+  DOMHighResTimeStamp name(nsIPrincipal& aSubjectPrincipal) const {         \
+    bool allowed = !mTimingData->RedirectCountReal()                        \
+                       ? TimingAllowedForCaller(aSubjectPrincipal)          \
+                       : ReportRedirectForCaller(aSubjectPrincipal, false); \
+    return allowed ? mTimingData->name##HighRes(mPerformance) : 0;          \
+  }
+
+#define IMPL_RESOURCE_TIMING_TAO_PROTECTED_SIZE_PROP(name)                  \
+  uint64_t name(nsIPrincipal& aSubjectPrincipal) const {                    \
+    bool allowed = !mTimingData->RedirectCountReal()                        \
+                       ? TimingAllowedForCaller(aSubjectPrincipal)          \
+                       : ReportRedirectForCaller(aSubjectPrincipal, false); \
+    return allowed ? mTimingData->name() : 0;                               \
+  }
 
 // http://www.w3.org/TR/resource-timing/#performanceresourcetiming
 class PerformanceResourceTiming : public PerformanceEntry {
@@ -49,18 +63,18 @@ class PerformanceResourceTiming : public PerformanceEntry {
   }
 
   void GetNextHopProtocol(nsAString& aNextHopProtocol) const {
-    aNextHopProtocol = mTimingData->NextHopProtocol();
+    if (mTimingData->TimingAllowed()) {
+      aNextHopProtocol = mTimingData->NextHopProtocol();
+    }
   }
 
   DOMHighResTimeStamp WorkerStart() const {
     return mTimingData->WorkerStartHighRes(mPerformance);
   }
 
-  DOMHighResTimeStamp FetchStart() const {
-    return mTimingData->FetchStartHighRes(mPerformance);
-  }
+  DOMHighResTimeStamp FetchStart() const;
 
-  DOMHighResTimeStamp RedirectStart(Maybe<nsIPrincipal*>& aSubjectPrincipal,
+  DOMHighResTimeStamp RedirectStart(nsIPrincipal& aSubjectPrincipal,
                                     bool aEnsureSameOriginAndIgnoreTAO) const {
     // We have to check if all the redirect URIs whether had the same origin or
     // different origins with TAO headers set (since there is no check in
@@ -72,12 +86,12 @@ class PerformanceResourceTiming : public PerformanceEntry {
   }
 
   virtual DOMHighResTimeStamp RedirectStart(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
+      nsIPrincipal& aSubjectPrincipal) const {
     return RedirectStart(aSubjectPrincipal,
                          false /* aEnsureSameOriginAndIgnoreTAO */);
   }
 
-  DOMHighResTimeStamp RedirectEnd(Maybe<nsIPrincipal*>& aSubjectPrincipal,
+  DOMHighResTimeStamp RedirectEnd(nsIPrincipal& aSubjectPrincipal,
                                   bool aEnsureSameOriginAndIgnoreTAO) const {
     // We have to check if all the redirect URIs whether had the same origin or
     // different origins with TAO headers set (since there is no check in
@@ -89,88 +103,41 @@ class PerformanceResourceTiming : public PerformanceEntry {
   }
 
   virtual DOMHighResTimeStamp RedirectEnd(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
+      nsIPrincipal& aSubjectPrincipal) const {
     return RedirectEnd(aSubjectPrincipal,
                        false /* aEnsureSameOriginAndIgnoreTAO */);
   }
 
-  DOMHighResTimeStamp DomainLookupStart(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->DomainLookupStartHighRes(mPerformance)
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(DomainLookupStart)
 
-  DOMHighResTimeStamp DomainLookupEnd(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->DomainLookupEndHighRes(mPerformance)
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(DomainLookupEnd)
 
-  DOMHighResTimeStamp ConnectStart(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->ConnectStartHighRes(mPerformance)
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(ConnectStart)
 
-  DOMHighResTimeStamp ConnectEnd(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->ConnectEndHighRes(mPerformance)
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(ConnectEnd)
 
-  DOMHighResTimeStamp RequestStart(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->RequestStartHighRes(mPerformance)
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(RequestStart)
 
-  DOMHighResTimeStamp ResponseStart(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->ResponseStartHighRes(mPerformance)
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(ResponseStart)
 
   DOMHighResTimeStamp ResponseEnd() const {
     return mTimingData->ResponseEndHighRes(mPerformance);
   }
 
-  DOMHighResTimeStamp SecureConnectionStart(
-      Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->SecureConnectionStartHighRes(mPerformance)
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(SecureConnectionStart)
 
   virtual const PerformanceResourceTiming* ToResourceTiming() const override {
     return this;
   }
 
-  uint64_t TransferSize(Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->TransferSize()
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_SIZE_PROP(TransferSize)
 
-  uint64_t EncodedBodySize(Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->EncodedBodySize()
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_SIZE_PROP(EncodedBodySize)
 
-  uint64_t DecodedBodySize(Maybe<nsIPrincipal*>& aSubjectPrincipal) const {
-    return TimingAllowedForCaller(aSubjectPrincipal)
-               ? mTimingData->DecodedBodySize()
-               : 0;
-  }
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_SIZE_PROP(DecodedBodySize)
 
   void GetServerTiming(nsTArray<RefPtr<PerformanceServerTiming>>& aRetval,
-                       Maybe<nsIPrincipal*>& aSubjectPrincipal);
+                       nsIPrincipal& aSubjectPrincipal);
 
   size_t SizeOfIncludingThis(
       mozilla::MallocSizeOf aMallocSizeOf) const override;
@@ -183,10 +150,10 @@ class PerformanceResourceTiming : public PerformanceEntry {
 
   // Check if caller has access to cross-origin timings, either by the rules
   // from the spec, or based on addon permissions.
-  bool TimingAllowedForCaller(Maybe<nsIPrincipal*>& aCaller) const;
+  bool TimingAllowedForCaller(nsIPrincipal& aCaller) const;
 
   // Check if cross-origin redirects should be reported to the caller.
-  bool ReportRedirectForCaller(Maybe<nsIPrincipal*>& aCaller,
+  bool ReportRedirectForCaller(nsIPrincipal& aCaller,
                                bool aEnsureSameOriginAndIgnoreTAO) const;
 
   nsString mInitiatorType;
@@ -200,7 +167,6 @@ class PerformanceResourceTiming : public PerformanceEntry {
   mutable Maybe<DOMHighResTimeStamp> mCachedStartTime;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_PerformanceResourceTiming_h___ */

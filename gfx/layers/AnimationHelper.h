@@ -8,7 +8,6 @@
 #define mozilla_layers_AnimationHelper_h
 
 #include "mozilla/dom/Nullable.h"
-#include "mozilla/ComputedTimingFunction.h"  // for ComputedTimingFunction
 #include "mozilla/layers/AnimationStorageData.h"
 #include "mozilla/layers/LayersMessages.h"     // for TransformData, etc
 #include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
@@ -18,9 +17,9 @@
 #include "X11UndefineNone.h"
 #include <unordered_map>
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 class Animation;
+class APZSampler;
 class CompositorAnimationStorage;
 struct AnimatedValue;
 
@@ -33,7 +32,22 @@ typedef nsTArray<layers::Animation> AnimationArray;
  */
 class AnimationHelper {
  public:
-  enum class SampleResult { None, Skipped, Sampled };
+  struct SampleResult {
+    enum class Type : uint8_t { None, Skipped, Sampled };
+    enum class Reason : uint8_t { None, ScrollToDelayPhase };
+    Type mType = Type::None;
+    Reason mReason = Reason::None;
+
+    SampleResult() = default;
+    SampleResult(Type aType, Reason aReason) : mType(aType), mReason(aReason) {}
+
+    static SampleResult Skipped() { return {Type::Skipped, Reason::None}; }
+    static SampleResult Sampled() { return {Type::Sampled, Reason::None}; }
+
+    bool IsNone() { return mType == Type::None; }
+    bool IsSkipped() { return mType == Type::Skipped; }
+    bool IsSampled() { return mType == Type::Sampled; }
+  };
 
   /**
    * Sample animations based on a given time stamp for a element(layer) with
@@ -50,6 +64,14 @@ class AnimationHelper {
    * call of this function,
    * SampleResult::Sampled if the animation output was updated.
    *
+   * The only exception is the scroll-driven animation. When the user move the
+   * scrollbar to make the animations go from active phase to delay phase, this
+   * returns SampleResult::None but sets its |mReason| to
+   * Reason::ScrollToDelayPhase. The caller can check this flag so we can store
+   * the base style into the hash table to make sure we have the correct
+   * rendering result. The base style stays in the hash table until we sync with
+   * main thread.
+   *
    * Using the same example from ExtractAnimations (below):
    *
    * Input |aPropertyAnimationGroups| (ignoring the base animation style):
@@ -65,19 +87,20 @@ class AnimationHelper {
    * that it reduces each property group to a single output value:
    *
    * [
-   *   { rotate, RawServoAnimationValue },
-   *   { scale, RawServoAnimationValue },
-   *   { transform, RawServoAnimationValue },
+   *   { rotate, StyleAnimationValue },
+   *   { scale, StyleAnimationValue },
+   *   { transform, StyleAnimationValue },
    * ]
    *
    * For transform animations, the caller (SampleAnimations) will combine the
    * result of the various transform properties into a final matrix.
    */
   static SampleResult SampleAnimationForEachNode(
-      TimeStamp aPreviousFrameTime, TimeStamp aCurrentFrameTime,
-      const AnimatedValue* aPreviousValue,
+      const APZSampler* aAPZSampler, const LayersId& aLayersId,
+      const MutexAutoLock& aProofOfMapLock, TimeStamp aPreviousFrameTime,
+      TimeStamp aCurrentFrameTime, const AnimatedValue* aPreviousValue,
       nsTArray<PropertyAnimationGroup>& aPropertyAnimationGroups,
-      nsTArray<RefPtr<RawServoAnimationValue>>& aAnimationValues);
+      nsTArray<RefPtr<StyleAnimationValue>>& aAnimationValues);
 
   /**
    * Extract organized animation data by property into an array of
@@ -113,6 +136,12 @@ class AnimationHelper {
    * In the process of grouping these animations, we also convert their values
    * from the rather compact representation we use for transferring across the
    * IPC boundary into something we can readily use for sampling.
+   *
+   * Note: the animation groups:
+   * 1. transform-like properties: transfrom, translate, rotate, scale,
+   *                               offset-*.
+   * 2. opacity property: opacity.
+   * 3. background color property: background-color.
    */
   static AnimationStorageData ExtractAnimations(
       const LayersId& aLayersId, const AnimationArray& aAnimations);
@@ -132,7 +161,7 @@ class AnimationHelper {
    * (e.g. transform, translate etc.).
    */
   static gfx::Matrix4x4 ServoAnimationValueToMatrix4x4(
-      const nsTArray<RefPtr<RawServoAnimationValue>>& aValue,
+      const nsTArray<RefPtr<StyleAnimationValue>>& aValue,
       const TransformData& aTransformData, gfx::Path* aCachedMotionPath);
 
   /**
@@ -146,7 +175,6 @@ class AnimationHelper {
                            const ParentLayerRect& aClipRect);
 };
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers
 
 #endif  // mozilla_layers_AnimationHelper_h

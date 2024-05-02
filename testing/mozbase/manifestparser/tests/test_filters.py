@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import absolute_import, print_function
-
 import os
 from copy import deepcopy
 from pprint import pprint
@@ -9,17 +7,16 @@ from pprint import pprint
 import mozpack.path as mozpath
 import mozunit
 import pytest
-
 from manifestparser.filters import (
     enabled,
     fail_if,
+    failures,
     filterlist,
     pathprefix,
     run_if,
     skip_if,
     subsuite,
     tags,
-    failures,
 )
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -125,7 +122,8 @@ def test_filters_run_in_order():
 def create_tests():
     def inner(*paths, **defaults):
         tests = []
-        for path in paths:
+        for p in paths:
+            path = p
             if isinstance(path, tuple):
                 path, kwargs = path
             else:
@@ -286,7 +284,7 @@ def test_pathprefix(create_tests):
         (
             "other/test4",
             {
-                "manifest": "manifest-common.ini",
+                "manifest": "manifest-common.toml",
                 "ancestor_manifest": "other/manifest.ini",
             },
         ),

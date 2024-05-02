@@ -7,7 +7,7 @@
 #include "mozilla/dom/GeolocationCoordinates.h"
 
 #include "mozilla/FloatingPoint.h"
-#include "mozilla/dom/GeolocationPositionBinding.h"
+#include "mozilla/dom/GeolocationPosition.h"
 #include "mozilla/dom/GeolocationCoordinatesBinding.h"
 
 namespace mozilla::dom {
@@ -47,7 +47,7 @@ JSObject* GeolocationCoordinates::WrapObject(
     double value;                                              \
     mCoords->Get##name(&value);                                \
     Nullable<double> rv;                                       \
-    if (!IsNaN(value)) {                                       \
+    if (!std::isnan(value)) {                                  \
       rv.SetValue(value);                                      \
     }                                                          \
     return rv;                                                 \

@@ -3,9 +3,8 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 /* eslint-disable no-shadow */
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { ExtensionTestCommon } = ChromeUtils.import(
-  "resource://testing-common/ExtensionTestCommon.jsm"
+const { ExtensionTestCommon } = ChromeUtils.importESModule(
+  "resource://testing-common/ExtensionTestCommon.sys.mjs"
 );
 
 const HOSTS = new Set(["example.com"]);
@@ -75,8 +74,8 @@ server.registerPathHandler("/lorem.html.gz", async (request, response) => {
   );
   response.setHeader("Content-Encoding", "gzip", false);
 
-  let data = await OS.File.read(do_get_file("data/lorem.html.gz").path);
-  response.write(String.fromCharCode(...new Uint8Array(data)));
+  let data = await IOUtils.read(do_get_file("data/lorem.html.gz").path);
+  response.write(String.fromCharCode(...data));
 
   response.finish();
 });
@@ -268,7 +267,7 @@ const TASKS = [
   {
     url: "slow_response.sjs",
     task(filter, resolve, num) {
-      let encoder = new TextEncoder("utf-8");
+      let encoder = new TextEncoder();
 
       filter.onstop = event => {
         browser.test.fail(
@@ -344,7 +343,7 @@ const TASKS = [
   {
     url: "slow_response.sjs",
     task(filter, resolve, num) {
-      let encoder = new TextEncoder("utf-8");
+      let encoder = new TextEncoder();
       let decoder = new TextDecoder("utf-8");
 
       filter.onstop = event => {
@@ -540,7 +539,7 @@ function serializeTest(test, num) {
   return `{url: ${JSON.stringify(url)}, task: ${task}}`;
 }
 
-add_task(async function() {
+add_task(async function () {
   function background(TASKS) {
     async function runTest(test, num, details) {
       browser.test.log(`Running test #${num}: ${details.url}`);

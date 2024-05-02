@@ -3,9 +3,11 @@ name = "fluent-ffi"
 version = "0.1.0"
 authors = ["Zibi Braniecki <zibi@braniecki.net>"]
 edition = "2018"
+license = "MPL-2.0"
 
 [dependencies]
 fluent = { version = "0.16.0", features = ["fluent-pseudo"] }
+fluent-syntax = "0.11.0"
 fluent-pseudo = "0.3.1"
 intl-memoizer = "0.5.1"
 unic-langid = "0.9"
@@ -13,6 +15,3 @@ nsstring = { path = "../../../../xpcom/rust/nsstring" }
 cstr = "0.2"
 xpcom = { path = "../../../../xpcom/rust/xpcom" }
 thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
-l10nregistry = { git = "https://github.com/mozilla/l10nregistry-rs.git", rev = "9da98c6e5325a5f2997191727eaa82c0ebc2004c" }
-fluent-fallback = "0.6.0"
-futures = "0.3"

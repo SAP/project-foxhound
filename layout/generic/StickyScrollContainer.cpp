@@ -23,7 +23,7 @@ NS_DECLARE_FRAME_PROPERTY_DELETABLE(StickyScrollContainerProperty,
                                     StickyScrollContainer)
 
 StickyScrollContainer::StickyScrollContainer(nsIScrollableFrame* aScrollFrame)
-    : mScrollFrame(aScrollFrame), mScrollPosition() {
+    : mScrollFrame(aScrollFrame) {
   mScrollFrame->AddScrollPositionListener(this);
 }
 
@@ -142,9 +142,10 @@ void StickyScrollContainer::ComputeStickyOffsets(nsIFrame* aFrame) {
   }
 }
 
-static nscoord gUnboundedNegative = nscoord_MIN / 2;
-static nscoord gUnboundedExtent = nscoord_MAX;
-static nscoord gUnboundedPositive = gUnboundedNegative + gUnboundedExtent;
+static constexpr nscoord gUnboundedNegative = nscoord_MIN / 2;
+static constexpr nscoord gUnboundedExtent = nscoord_MAX;
+static constexpr nscoord gUnboundedPositive =
+    gUnboundedNegative + gUnboundedExtent;
 
 void StickyScrollContainer::ComputeStickyLimits(nsIFrame* aFrame,
                                                 nsRect* aStick,
@@ -345,7 +346,16 @@ void StickyScrollContainer::GetScrollRanges(nsIFrame* aFrame,
 void StickyScrollContainer::PositionContinuations(nsIFrame* aFrame) {
   NS_ASSERTION(nsLayoutUtils::IsFirstContinuationOrIBSplitSibling(aFrame),
                "Should be starting from the first continuation");
-  nsPoint translation = ComputePosition(aFrame) - aFrame->GetNormalPosition();
+  bool hadProperty;
+  nsPoint translation =
+      ComputePosition(aFrame) - aFrame->GetNormalPosition(&hadProperty);
+  if (NS_WARN_IF(!hadProperty)) {
+    // If the frame was never relatively positioned, don't move its position
+    // dynamically. There are a variety of frames for which `position` doesn't
+    // really apply like frames inside svg which would get here and be sticky
+    // only in one direction.
+    return;
+  }
 
   // Move all continuation frames by the same amount.
   for (nsIFrame* cont = aFrame; cont;

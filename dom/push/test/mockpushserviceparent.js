@@ -1,4 +1,4 @@
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/chrome-script */
 
 "use strict";
 
@@ -71,12 +71,12 @@ var pushService = Cc["@mozilla.org/push/Service;1"].getService(
 var mockSocket;
 var serverMsgs = [];
 
-addMessageListener("socket-setup", function() {
+addMessageListener("socket-setup", function () {
   pushService.replaceServiceBackend({
     serverURI: "wss://push.example.org/",
     makeWebSocket(uri) {
       mockSocket = new MockWebSocketParent(uri);
-      while (serverMsgs.length > 0) {
+      while (serverMsgs.length) {
         let msg = serverMsgs.shift();
         mockSocket.serverSendMsg(msg);
       }
@@ -85,7 +85,7 @@ addMessageListener("socket-setup", function() {
   });
 });
 
-addMessageListener("socket-teardown", function(msg) {
+addMessageListener("socket-teardown", function (msg) {
   pushService
     .restoreServiceBackend()
     .then(_ => {
@@ -101,7 +101,7 @@ addMessageListener("socket-teardown", function(msg) {
     });
 });
 
-addMessageListener("socket-server-msg", function(msg) {
+addMessageListener("socket-server-msg", function (msg) {
   if (mockSocket) {
     mockSocket.serverSendMsg(msg);
   } else {
@@ -171,12 +171,18 @@ var MockService = {
 };
 
 async function replaceService(service) {
-  await pushService.service.uninit();
+  // `?.` because `service` can be null
+  // (either by calling this function with null, or the push module doesn't have the
+  // field at all e.g. in GeckoView)
+  // Passing null here resets it to the default implementation on desktop
+  // (so `.service` never becomes null there) but not for GeckoView.
+  // XXX(krosylight): we need to remove this deviation.
+  await pushService.service?.uninit();
   pushService.service = service;
-  await pushService.service.init();
+  await pushService.service?.init();
 }
 
-addMessageListener("service-replace", function() {
+addMessageListener("service-replace", function () {
   replaceService(MockService)
     .then(_ => {
       sendAsyncMessage("service-replaced");
@@ -186,7 +192,7 @@ addMessageListener("service-replace", function() {
     });
 });
 
-addMessageListener("service-restore", function() {
+addMessageListener("service-restore", function () {
   replaceService(null)
     .then(_ => {
       sendAsyncMessage("service-restored");
@@ -196,6 +202,6 @@ addMessageListener("service-restore", function() {
     });
 });
 
-addMessageListener("service-response", function(response) {
+addMessageListener("service-response", function (response) {
   MockService.handleResponse(response);
 });

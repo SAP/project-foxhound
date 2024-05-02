@@ -24,15 +24,18 @@
 
 using namespace mozilla;
 
-NS_IMPL_ISUPPORTS(nsMenuGroupOwnerX, nsIMutationObserver)
+NS_IMPL_ISUPPORTS(nsMenuGroupOwnerX, nsIObserver, nsIMutationObserver)
 
-nsMenuGroupOwnerX::nsMenuGroupOwnerX(mozilla::dom::Element* aElement, nsMenuBarX* aMenuBarIfMenuBar)
+nsMenuGroupOwnerX::nsMenuGroupOwnerX(mozilla::dom::Element* aElement,
+                                     nsMenuBarX* aMenuBarIfMenuBar)
     : mContent(aElement), mMenuBar(aMenuBarIfMenuBar) {
-  mRepresentedObject = [[MOZMenuItemRepresentedObject alloc] initWithMenuGroupOwner:this];
+  mRepresentedObject =
+      [[MOZMenuItemRepresentedObject alloc] initWithMenuGroupOwner:this];
 }
 
 nsMenuGroupOwnerX::~nsMenuGroupOwnerX() {
-  MOZ_ASSERT(mContentToObserverTable.Count() == 0, "have outstanding mutation observers!\n");
+  MOZ_ASSERT(mContentToObserverTable.Count() == 0,
+             "have outstanding mutation observers!\n");
   [mRepresentedObject setMenuGroupOwner:nullptr];
   [mRepresentedObject release];
 }
@@ -41,11 +44,11 @@ nsMenuGroupOwnerX::~nsMenuGroupOwnerX() {
 // nsIMutationObserver
 //
 
-void nsMenuGroupOwnerX::CharacterDataWillChange(nsIContent* aContent,
-                                                const CharacterDataChangeInfo&) {}
+void nsMenuGroupOwnerX::CharacterDataWillChange(
+    nsIContent* aContent, const CharacterDataChangeInfo&) {}
 
-void nsMenuGroupOwnerX::CharacterDataChanged(nsIContent* aContent, const CharacterDataChangeInfo&) {
-}
+void nsMenuGroupOwnerX::CharacterDataChanged(nsIContent* aContent,
+                                             const CharacterDataChangeInfo&) {}
 
 void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent) {
   for (nsIContent* cur = aFirstNewContent; cur; cur = cur->GetNextSibling()) {
@@ -53,14 +56,15 @@ void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent) {
   }
 }
 
-void nsMenuGroupOwnerX::NodeWillBeDestroyed(const nsINode* aNode) {}
+void nsMenuGroupOwnerX::NodeWillBeDestroyed(nsINode* aNode) {}
 
-void nsMenuGroupOwnerX::AttributeWillChange(dom::Element* aElement, int32_t aNameSpaceID,
-                                            nsAtom* aAttribute, int32_t aModType) {}
+void nsMenuGroupOwnerX::AttributeWillChange(dom::Element* aElement,
+                                            int32_t aNameSpaceID,
+                                            nsAtom* aAttribute,
+                                            int32_t aModType) {}
 
-void nsMenuGroupOwnerX::NativeAnonymousChildListChange(nsIContent* aContent, bool aIsRemove) {}
-
-void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement, int32_t aNameSpaceID,
+void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement,
+                                         int32_t aNameSpaceID,
                                          nsAtom* aAttribute, int32_t aModType,
                                          const nsAttrValue* aOldValue) {
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
@@ -70,7 +74,8 @@ void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement, int32_t aNameSp
   }
 }
 
-void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
+void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild,
+                                       nsIContent* aPreviousSibling) {
   nsIContent* container = aChild->GetParent();
   if (!container) {
     return;
@@ -79,7 +84,8 @@ void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild, nsIContent* aPrevious
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(container);
   if (obs) {
-    obs->ObserveContentRemoved(aChild->OwnerDoc(), container, aChild, aPreviousSibling);
+    obs->ObserveContentRemoved(aChild->OwnerDoc(), container, aChild,
+                               aPreviousSibling);
   } else if (container != mContent) {
     // We do a lookup on the parent container in case things were removed
     // under a "menupopup" item. That is basically a wrapper for the contents
@@ -88,7 +94,8 @@ void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild, nsIContent* aPrevious
     if (parent) {
       obs = LookupContentChangeObserver(parent);
       if (obs) {
-        obs->ObserveContentRemoved(aChild->OwnerDoc(), container, aChild, aPreviousSibling);
+        obs->ObserveContentRemoved(aChild->OwnerDoc(), container, aChild,
+                                   aPreviousSibling);
       }
     }
   }
@@ -120,12 +127,18 @@ void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild) {
 
 void nsMenuGroupOwnerX::ParentChainChanged(nsIContent* aContent) {}
 
+void nsMenuGroupOwnerX::ARIAAttributeDefaultWillChange(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+
+void nsMenuGroupOwnerX::ARIAAttributeDefaultChanged(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+
 // For change management, we don't use a |nsSupportsHashtable| because
 // we know that the lifetime of all these items is bounded by the
 // lifetime of the menubar. No need to add any more strong refs to the
 // picture because the containment hierarchy already uses strong refs.
-void nsMenuGroupOwnerX::RegisterForContentChanges(nsIContent* aContent,
-                                                  nsChangeObserver* aMenuObject) {
+void nsMenuGroupOwnerX::RegisterForContentChanges(
+    nsIContent* aContent, nsChangeObserver* aMenuObject) {
   if (!mContentToObserverTable.Contains(aContent)) {
     aContent->AddMutationObserver(this);
   }
@@ -139,7 +152,32 @@ void nsMenuGroupOwnerX::UnregisterForContentChanges(nsIContent* aContent) {
   mContentToObserverTable.Remove(aContent);
 }
 
-nsChangeObserver* nsMenuGroupOwnerX::LookupContentChangeObserver(nsIContent* aContent) {
+void nsMenuGroupOwnerX::RegisterForLocaleChanges() {
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->AddObserver(this, "intl:app-locales-changed", false);
+  }
+}
+
+void nsMenuGroupOwnerX::UnregisterForLocaleChanges() {
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->RemoveObserver(this, "intl:app-locales-changed");
+  }
+}
+
+NS_IMETHODIMP
+nsMenuGroupOwnerX::Observe(nsISupports* aSubject, const char* aTopic,
+                           const char16_t* aData) {
+  if (mMenuBar && !strcmp(aTopic, "intl:app-locales-changed")) {
+    // Rebuild the menu with the new locale strings.
+    mMenuBar->SetNeedsRebuild();
+  }
+  return NS_OK;
+}
+
+nsChangeObserver* nsMenuGroupOwnerX::LookupContentChangeObserver(
+    nsIContent* aContent) {
   nsChangeObserver* result;
   if (mContentToObserverTable.Get(aContent, &result)) {
     return result;
@@ -179,7 +217,8 @@ nsMenuItemX* nsMenuGroupOwnerX::GetMenuItemForCommandID(uint32_t aCommandID) {
 }
 
 @implementation MOZMenuItemRepresentedObject {
-  nsMenuGroupOwnerX* mMenuGroupOwner;  // weak, cleared by nsMenuGroupOwnerX's destructor
+  nsMenuGroupOwnerX*
+      mMenuGroupOwner;  // weak, cleared by nsMenuGroupOwnerX's destructor
 }
 
 - (id)initWithMenuGroupOwner:(nsMenuGroupOwnerX*)aMenuGroupOwner {

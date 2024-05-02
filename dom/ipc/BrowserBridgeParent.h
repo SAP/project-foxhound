@@ -81,8 +81,7 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
   mozilla::ipc::IPCResult RecvUpdateEffects(const EffectsInfo& aEffects);
   mozilla::ipc::IPCResult RecvUpdateRemotePrintSettings(
       const embedding::PrintData&);
-  mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled,
-                                           const LayersObserverEpoch& aEpoch);
+  mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled);
 
   mozilla::ipc::IPCResult RecvNavigateByKey(const bool& aForward,
                                             const bool& aForDocumentNavigation);
@@ -98,8 +97,8 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
   mozilla::ipc::IPCResult RecvDeactivate(const bool& aWindowLowering,
                                          uint64_t aActionId);
 
-  mozilla::ipc::IPCResult RecvSetIsUnderHiddenEmbedderElement(
-      const bool& aIsUnderHiddenEmbedderElement);
+  mozilla::ipc::IPCResult RecvUpdateRemoteStyle(
+      const StyleImageRendering& aImageRendering);
 
 #ifdef ACCESSIBILITY
   mozilla::ipc::IPCResult RecvSetEmbedderAccessible(PDocAccessibleParent* aDoc,

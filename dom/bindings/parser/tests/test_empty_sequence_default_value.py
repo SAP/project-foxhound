@@ -13,7 +13,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Constant cannot have [] as a default value")
@@ -23,7 +23,7 @@ def WebIDLTest(parser, harness):
     parser.parse(
         """
         interface X {
-          void foo(optional sequence<long> arg = []);
+          undefined foo(optional sequence<long> arg = []);
         };
     """
     )

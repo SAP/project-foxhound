@@ -3,15 +3,17 @@
 
 "use strict";
 
-const { console, ConsoleAPI } = require("resource://gre/modules/Console.jsm");
+const { console, ConsoleAPI } = ChromeUtils.importESModule(
+  "resource://gre/modules/Console.sys.mjs"
+);
 const {
   ConsoleAPIListener,
-} = require("devtools/server/actors/webconsole/listeners/console-api");
+} = require("resource://devtools/server/actors/webconsole/listeners/console-api.js");
 
 var seenMessages = 0;
 var seenTypes = 0;
 
-var onConsoleAPICall = function(message) {
+var onConsoleAPICall = function (message) {
   if (message.consoleID && message.consoleID == "addon/foo") {
     Assert.equal(message.level, "warn");
     Assert.equal(message.arguments[0], "Warning from foo");
@@ -68,7 +70,7 @@ function createFakeAddonWindow({ addonId } = {}) {
  * through to console messages.
  */
 function run_test() {
-  // console1 Test Console.jsm messages tagged by the Addon SDK
+  // console1 Test Console.sys.mjs messages tagged by the Addon SDK
   // are still filtered correctly.
   const console1 = new ConsoleAPI({
     consoleID: "addon/foo",

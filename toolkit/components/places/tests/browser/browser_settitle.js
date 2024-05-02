@@ -16,14 +16,11 @@ function getColumn(table, column, url) {
   }
 }
 
-add_task(async function() {
+add_task(async function () {
   // Make sure titles are correctly saved for a URI with the proper
   // notifications.
-  const titleChangedPromise = PlacesTestUtils.waitForNotification(
-    "page-title-changed",
-    () => true,
-    "places"
-  );
+  const titleChangedPromise =
+    PlacesTestUtils.waitForNotification("page-title-changed");
 
   const url1 =
     "http://example.com/tests/toolkit/components/places/tests/browser/title1.html";
@@ -32,7 +29,7 @@ add_task(async function() {
   const url2 =
     "http://example.com/tests/toolkit/components/places/tests/browser/title2.html";
   let loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url2);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url2);
   await loadPromise;
 
   const events = await titleChangedPromise;

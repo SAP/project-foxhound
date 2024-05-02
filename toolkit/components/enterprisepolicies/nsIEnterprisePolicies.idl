@@ -51,18 +51,26 @@ interface nsIEnterprisePolicies : nsISupports
   jsval getExtensionSettings(in ACString extensionID);
 
   /**
-   * Uses the whitelist, blacklist and settings to determine if an extension
+   * Uses the allowlist, blocklist and settings to determine if an addon
    * may be installed.
    *
-   * @returns A boolean - true of the extension may be installed.
+   * @returns A boolean - true of the addon may be installed.
    */
   bool mayInstallAddon(in jsval addon);
 
   /**
-   * Uses install_sources to determine if an extension can be installed
+   * Uses install_sources to determine if an addon can be installed
    * from the given URI.
    *
-   * @returns A boolean - true of the extension may be installed.
+   * @returns A boolean - true of the addon may be installed.
    */
   bool allowedInstallSource(in nsIURI uri);
+  /**
+   * Uses ExemptDomainFileTypePairsFromFileTypeDownloadWarnings to determine
+   * if a given file extension is exempted from executable behavior and
+   * warnings based on the URL.
+   *
+   * @returns A boolean - true if the extension should be exempt.
+   */
+  bool isExemptExecutableExtension(in ACString url, in ACString extension);
 };

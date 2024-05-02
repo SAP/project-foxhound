@@ -35,12 +35,6 @@ include border-image/reftest.list
 # border-radius/
 include border-radius/reftest.list
 
-# -moz-box tests
-include box/reftest.list
-
-# box-ordinal/
-include box-ordinal/reftest.list
-
 # box-properties/
 include box-properties/reftest.list
 
@@ -89,6 +83,9 @@ include css-gradients/reftest.list
 
 # css media queries (tests for print mode)
 include css-mediaqueries/reftest.list
+
+# css page
+include css-page/reftest.list
 
 # css parsing
 include css-parsing/reftest.list
@@ -237,12 +234,6 @@ include image/reftest.list
 # image-element/
 include image-element/reftest.list
 
-# image-rect/
-include image-rect/reftest.list
-
-# image-region/
-include image-region/reftest.list
-
 # indic shaping with harfbuzz
 include indic-shaping/reftest.list
 
@@ -380,7 +371,7 @@ include ../../toolkit/themes/osx/reftests/reftest.list
 
 include ../../toolkit/content/tests/reftests/reftest.list
 
-# -moz-transform/
+# transform/
 # skipping on non-e10s windows because of assertion in bug 1401228
 skip-if(winWidget&&!browserIsRemote) include transform/reftest.list
 

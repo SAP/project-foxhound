@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 from ..lint import check_file_contents
 from .base import check_errors
 import io
@@ -229,6 +231,16 @@ def test_no_missing_deps():
             assert errors == [("PARSE-FAILED", "Unable to parse file", filename, 1)]
         else:
             assert errors == []
+
+
+def test_html_invalid_syntax():
+    error_map = check_with_files(b"<!doctype html><div/>")
+
+    for (filename, (errors, kind)) in error_map.items():
+        check_errors(errors)
+
+        if kind == "web-lax":
+            assert errors == [("HTML INVALID SYNTAX", "Test-file line has a non-void HTML tag with /> syntax", filename, 1)]
 
 
 def test_meta_timeout():
@@ -540,16 +552,16 @@ def test_testdriver_vendor_path():
         check_errors(errors)
 
         if kind == "python":
-            expected = set([("PARSE-FAILED", "Unable to parse file", filename, 1)])
+            expected = {("PARSE-FAILED", "Unable to parse file", filename, 1)}
         elif kind in ["web-lax", "web-strict"]:
-            expected = set([
+            expected = {
                 ("MISSING-TESTDRIVER-VENDOR", "Missing `<script src='/resources/testdriver-vendor.js'>`", filename, None),
                 ("TESTDRIVER-VENDOR-PATH", "testdriver-vendor.js script seen with incorrect path", filename, None),
                 ("TESTDRIVER-VENDOR-PATH", "testdriver-vendor.js script seen with incorrect path", filename, None),
                 ("TESTDRIVER-VENDOR-PATH", "testdriver-vendor.js script seen with incorrect path", filename, None),
                 ("TESTDRIVER-VENDOR-PATH", "testdriver-vendor.js script seen with incorrect path", filename, None),
                 ("TESTDRIVER-VENDOR-PATH", "testdriver-vendor.js script seen with incorrect path", filename, None)
-            ])
+            }
         else:
             expected = set()
 
@@ -608,9 +620,8 @@ def test_variant_missing():
 # A corresponding "positive" test cannot be written because the manifest
 # SourceFile implementation raises a runtime exception for the condition this
 # linting rule describes
-@pytest.mark.parametrize("content", ["",
-                                     "?"
-                                     "#"])
+@pytest.mark.parametrize("content", ["?foo"
+                                     "#bar"])
 def test_variant_malformed_negative(content):
     code = """\
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -748,27 +759,6 @@ def test_open_mode():
         ]
 
 
-@pytest.mark.parametrize(
-    "filename,expect_error",
-    [
-        ("foo/bar.html", False),
-        ("css/bar.html", True),
-    ])
-def test_css_support_file(filename, expect_error):
-    errors = check_file_contents("", filename, io.BytesIO(b""))
-    check_errors(errors)
-
-    if expect_error:
-        assert errors == [
-            ('SUPPORT-WRONG-DIR',
-             'Support file not in support directory',
-             filename,
-             None),
-        ]
-    else:
-        assert errors == []
-
-
 def test_css_missing_file_in_css():
     code = b"""\
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -823,7 +813,7 @@ def test_css_missing_file_tentative():
     (b"""// META: timeout=long\n""", None),
     (b"""//  META: timeout=long\n""", None),
     (b"""// META: script=foo.js\n""", None),
-    (b"""// META: variant=\n""", None),
+    (b"""// META: variant=\n""", (1, "MALFORMED-VARIANT")),
     (b"""// META: variant=?wss\n""", None),
     (b"""# META:\n""", None),
     (b"""\n// META: timeout=long\n""", (2, "STRAY-METADATA")),
@@ -848,6 +838,9 @@ def test_script_metadata(filename, input, error):
             "BROKEN-METADATA": "Metadata comment is not formatted correctly",
             "UNKNOWN-TIMEOUT-METADATA": "Unexpected value for timeout metadata",
             "UNKNOWN-METADATA": "Unexpected kind of metadata",
+            "MALFORMED-VARIANT": (
+                f"{filename} `META: variant=...` value must be a non empty "
+                "string and start with '?' or '#'"),
         }
         assert errors == [
             (kind,

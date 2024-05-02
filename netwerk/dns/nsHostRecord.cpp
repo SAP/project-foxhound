@@ -7,7 +7,6 @@
 #include "TRRQuery.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
-#include "TRRSkippedReason.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "TRRService.h"
@@ -30,8 +29,8 @@ using namespace mozilla;
 using namespace mozilla::net;
 
 nsHostKey::nsHostKey(const nsACString& aHost, const nsACString& aTrrServer,
-                     uint16_t aType, uint16_t aFlags, uint16_t aAf, bool aPb,
-                     const nsACString& aOriginsuffix)
+                     uint16_t aType, nsIDNSService::DNSFlags aFlags,
+                     uint16_t aAf, bool aPb, const nsACString& aOriginsuffix)
     : host(aHost),
       mTrrServer(aTrrServer),
       type(aType),
@@ -117,10 +116,11 @@ void nsHostRecord::CopyExpirationTimesAndFlagsFrom(
   mValidEnd = aFromHostRecord->mValidEnd;
   mGraceStart = aFromHostRecord->mGraceStart;
   mDoomed = aFromHostRecord->mDoomed;
+  mTtl = uint32_t(aFromHostRecord->mTtl);
 }
 
 bool nsHostRecord::HasUsableResult(const mozilla::TimeStamp& now,
-                                   uint16_t queryFlags) const {
+                                   nsIDNSService::DNSFlags queryFlags) const {
   if (mDoomed) {
     return false;
   }
@@ -222,8 +222,8 @@ size_t AddrHostRecord::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) const {
   return n;
 }
 
-bool AddrHostRecord::HasUsableResultInternal(const mozilla::TimeStamp& now,
-                                             uint16_t queryFlags) const {
+bool AddrHostRecord::HasUsableResultInternal(
+    const mozilla::TimeStamp& now, nsIDNSService::DNSFlags queryFlags) const {
   // don't use cached negative results for high priority queries.
   if (negative && IsHighPriority(queryFlags)) {
     return false;
@@ -245,7 +245,7 @@ bool AddrHostRecord::HasUsableResultInternal(const mozilla::TimeStamp& now,
 bool AddrHostRecord::RemoveOrRefresh(bool aTrrToo) {
   // no need to flush TRRed names, they're not resolved "locally"
   MutexAutoLock lock(addr_info_lock);
-  if (addr_info && !aTrrToo && addr_info->IsTRROrODoH()) {
+  if (addr_info && !aTrrToo && addr_info->IsTRR()) {
     return false;
   }
   if (LoadNative()) {
@@ -284,23 +284,10 @@ void AddrHostRecord::ResolveComplete() {
                        : Telemetry::LABELS_DNS_LOOKUP_DISPOSITION3::osFail);
   }
 
-  if (mResolverType == DNSResolverType::ODoH) {
-    // XXX(kershaw): Consider adding the failed host name into a blocklist.
-    if (mTRRSuccess) {
-      uint32_t millis = static_cast<uint32_t>(mTrrDuration.ToMilliseconds());
-      Telemetry::Accumulate(Telemetry::DNS_ODOH_LOOKUP_TIME, millis);
-    }
-
-    if (nsHostResolver::Mode() == nsIDNSService::MODE_TRRFIRST) {
-      Telemetry::Accumulate(Telemetry::ODOH_SKIP_REASON_ODOH_FIRST,
-                            static_cast<uint32_t>(mTRRSkippedReason));
-    }
-
-    return;
-  }
-
   if (mResolverType == DNSResolverType::TRR) {
     if (mTRRSuccess) {
+      MOZ_DIAGNOSTIC_ASSERT(mTRRSkippedReason ==
+                            mozilla::net::TRRSkippedReason::TRR_OK);
       uint32_t millis = static_cast<uint32_t>(mTrrDuration.ToMilliseconds());
       Telemetry::Accumulate(Telemetry::DNS_TRR_LOOKUP_TIME3,
                             TRRService::ProviderKey(), millis);
@@ -311,10 +298,36 @@ void AddrHostRecord::ResolveComplete() {
                     : Telemetry::LABELS_DNS_LOOKUP_DISPOSITION3::trrFail);
   }
 
-  if (nsHostResolver::Mode() == nsIDNSService::MODE_TRRFIRST) {
+  if (nsHostResolver::Mode() == nsIDNSService::MODE_TRRFIRST ||
+      nsHostResolver::Mode() == nsIDNSService::MODE_TRRONLY) {
     MOZ_ASSERT(mTRRSkippedReason != mozilla::net::TRRSkippedReason::TRR_UNSET);
 
-    if (StaticPrefs::network_trr_strict_native_fallback()) {
+    Telemetry::Accumulate(Telemetry::TRR_SKIP_REASON_TRR_FIRST2,
+                          TRRService::ProviderKey(),
+                          static_cast<uint32_t>(mTRRSkippedReason));
+    if (!mTRRSuccess && LoadNativeUsed()) {
+      Telemetry::Accumulate(
+          mNativeSuccess ? Telemetry::TRR_SKIP_REASON_NATIVE_SUCCESS
+                         : Telemetry::TRR_SKIP_REASON_NATIVE_FAILED,
+          TRRService::ProviderKey(), static_cast<uint32_t>(mTRRSkippedReason));
+    }
+
+    if (IsRelevantTRRSkipReason(mTRRSkippedReason)) {
+      Telemetry::Accumulate(Telemetry::TRR_RELEVANT_SKIP_REASON_TRR_FIRST,
+                            TRRService::ProviderKey(),
+                            static_cast<uint32_t>(mTRRSkippedReason));
+
+      if (!mTRRSuccess && LoadNativeUsed()) {
+        Telemetry::Accumulate(
+            mNativeSuccess ? Telemetry::TRR_RELEVANT_SKIP_REASON_NATIVE_SUCCESS
+                           : Telemetry::TRR_RELEVANT_SKIP_REASON_NATIVE_FAILED,
+            TRRService::ProviderKey(),
+            static_cast<uint32_t>(mTRRSkippedReason));
+      }
+    }
+
+    if (StaticPrefs::network_trr_retry_on_recoverable_errors() &&
+        nsHostResolver::Mode() == nsIDNSService::MODE_TRRFIRST) {
       nsAutoCString telemetryKey(TRRService::ProviderKey());
 
       if (mFirstTRRSkippedReason != mozilla::net::TRRSkippedReason::TRR_UNSET) {
@@ -335,38 +348,6 @@ void AddrHostRecord::ResolveComplete() {
       if (mTRRSuccess) {
         Telemetry::Accumulate(Telemetry::TRR_ATTEMPT_COUNT,
                               TRRService::ProviderKey(), mTrrAttempts);
-      } else if (LoadNativeUsed()) {
-        Telemetry::Accumulate(mNativeSuccess
-                                  ? Telemetry::TRR_SKIP_REASON_NATIVE_SUCCESS
-                                  : Telemetry::TRR_SKIP_REASON_NATIVE_FAILED,
-                              TRRService::ProviderKey(),
-                              static_cast<uint32_t>(mTRRSkippedReason));
-      }
-    } else {
-      Telemetry::Accumulate(Telemetry::TRR_SKIP_REASON_TRR_FIRST2,
-                            TRRService::ProviderKey(),
-                            static_cast<uint32_t>(mTRRSkippedReason));
-      if (!mTRRSuccess) {
-        Telemetry::Accumulate(mNativeSuccess
-                                  ? Telemetry::TRR_SKIP_REASON_NATIVE_SUCCESS
-                                  : Telemetry::TRR_SKIP_REASON_NATIVE_FAILED,
-                              TRRService::ProviderKey(),
-                              static_cast<uint32_t>(mTRRSkippedReason));
-      }
-
-      if (IsRelevantTRRSkipReason(mTRRSkippedReason)) {
-        Telemetry::Accumulate(Telemetry::TRR_RELEVANT_SKIP_REASON_TRR_FIRST,
-                              TRRService::ProviderKey(),
-                              static_cast<uint32_t>(mTRRSkippedReason));
-
-        if (!mTRRSuccess && LoadNativeUsed()) {
-          Telemetry::Accumulate(
-              mNativeSuccess
-                  ? Telemetry::TRR_RELEVANT_SKIP_REASON_NATIVE_SUCCESS
-                  : Telemetry::TRR_RELEVANT_SKIP_REASON_NATIVE_FAILED,
-              TRRService::ProviderKey(),
-              static_cast<uint32_t>(mTRRSkippedReason));
-        }
       }
     }
   }
@@ -418,7 +399,8 @@ void AddrHostRecord::ResolveComplete() {
   }
 }
 
-AddrHostRecord::DnsPriority AddrHostRecord::GetPriority(uint16_t aFlags) {
+AddrHostRecord::DnsPriority AddrHostRecord::GetPriority(
+    nsIDNSService::DNSFlags aFlags) {
   if (IsHighPriority(aFlags)) {
     return AddrHostRecord::DNS_PRIORITY_HIGH;
   }
@@ -447,8 +429,8 @@ TypeHostRecord::TypeHostRecord(const nsHostKey& key)
 
 TypeHostRecord::~TypeHostRecord() { mCallbacks.clear(); }
 
-bool TypeHostRecord::HasUsableResultInternal(const mozilla::TimeStamp& now,
-                                             uint16_t queryFlags) const {
+bool TypeHostRecord::HasUsableResultInternal(
+    const mozilla::TimeStamp& now, nsIDNSService::DNSFlags queryFlags) const {
   if (CheckExpiration(now) == EXP_EXPIRED) {
     return false;
   }
@@ -598,4 +580,19 @@ TypeHostRecord::GetTtl(uint32_t* aResult) {
   NS_ENSURE_ARG(aResult);
   *aResult = mTtl;
   return NS_OK;
+}
+
+void TypeHostRecord::ResolveComplete() {
+  if (IsRelevantTRRSkipReason(mTRRSkippedReason)) {
+    Telemetry::Accumulate(
+        Telemetry::TRR_RELEVANT_SKIP_REASON_TRR_FIRST_TYPE_REC,
+        TRRService::ProviderKey(), static_cast<uint32_t>(mTRRSkippedReason));
+  }
+
+  uint32_t millis = static_cast<uint32_t>(mTrrDuration.ToMilliseconds());
+  if (mTRRSuccess) {
+    Telemetry::Accumulate(Telemetry::DNS_BY_TYPE_SUCCEEDED_LOOKUP_TIME, millis);
+  } else {
+    Telemetry::Accumulate(Telemetry::DNS_BY_TYPE_FAILED_LOOKUP_TIME, millis);
+  }
 }

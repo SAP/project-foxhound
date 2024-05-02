@@ -125,27 +125,12 @@ namespace mozilla {
 // denied if no broker client is provided by the concrete class.
 class SandboxPolicyCommon : public SandboxPolicyBase {
  protected:
-  enum class ShmemUsage : uint8_t {
-    MAY_CREATE,
-    ONLY_USE,
-  };
-
-  enum class AllowUnsafeSocketPair : uint8_t {
-    NO,
-    YES,
-  };
-
+  // Subclasses can assign these in their constructors to loosen the
+  // default settings.
   SandboxBrokerClient* mBroker = nullptr;
   bool mMayCreateShmem = false;
   bool mAllowUnsafeSocketPair = false;
-
-  explicit SandboxPolicyCommon(SandboxBrokerClient* aBroker,
-                               ShmemUsage aShmemUsage,
-                               AllowUnsafeSocketPair aAllowUnsafeSocketPair)
-      : mBroker(aBroker),
-        mMayCreateShmem(aShmemUsage == ShmemUsage::MAY_CREATE),
-        mAllowUnsafeSocketPair(aAllowUnsafeSocketPair ==
-                               AllowUnsafeSocketPair::YES) {}
+  bool mBrokeredConnect = false;  // Can connect() be brokered?
 
   SandboxPolicyCommon() = default;
 
@@ -162,7 +147,9 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
 
   template <typename... Args>
   static intptr_t DoSyscall(long nr, Args... args) {
-    static_assert(tl::And<(sizeof(Args) <= sizeof(void*))...>::value,
+    static_assert(std::conjunction_v<
+                      std::conditional_t<(sizeof(Args) <= sizeof(void*)),
+                                         std::true_type, std::false_type>...>,
                   "each syscall arg is at most one word");
     return ConvertError(syscall(nr, args...));
   }
@@ -318,8 +305,8 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto path = reinterpret_cast<const char*>(aArgs.args[1]);
     auto flags = static_cast<int>(aArgs.args[2]);
     if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative openat(%d, \"%s\", 0%o)", fd,
-                        path, flags);
+      SANDBOX_LOG("unsupported fd-relative openat(%d, \"%s\", 0%o)", fd, path,
+                  flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Open(path, flags);
@@ -338,8 +325,8 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     // Starting with kernel 5.8+ and glibc 2.33, there is faccessat2 that
     // supports flags, handled below.
     if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative faccessat(%d, \"%s\", %d)", fd,
-                        path, mode);
+      SANDBOX_LOG("unsupported fd-relative faccessat(%d, \"%s\", %d)", fd, path,
+                  mode);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Access(path, mode);
@@ -352,9 +339,8 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto mode = static_cast<int>(aArgs.args[2]);
     auto flags = static_cast<int>(aArgs.args[3]);
     if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR(
-          "unsupported fd-relative faccessat2(%d, \"%s\", %d, %d)", fd, path,
-          mode, flags);
+      SANDBOX_LOG("unsupported fd-relative faccessat2(%d, \"%s\", %d, %d)", fd,
+                  path, mode, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     if ((flags & ~AT_EACCESS) == 0) {
@@ -384,16 +370,15 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     }
 
     if (fd != AT_FDCWD && path && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative fstatat(%d, \"%s\", %p, 0x%x)",
-                        fd, path, buf, flags);
+      SANDBOX_LOG("unsupported fd-relative fstatat(%d, \"%s\", %p, 0x%x)", fd,
+                  path, buf, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
 
     int badFlags = flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT);
     if (badFlags != 0) {
-      SANDBOX_LOG_ERROR(
-          "unsupported flags 0x%x in fstatat(%d, \"%s\", %p, 0x%x)", badFlags,
-          fd, path, buf, flags);
+      SANDBOX_LOG("unsupported flags 0x%x in fstatat(%d, \"%s\", %p, 0x%x)",
+                  badFlags, fd, path, buf, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return (flags & AT_SYMLINK_NOFOLLOW) == 0 ? broker->Stat(path, buf)
@@ -407,13 +392,13 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto mode = static_cast<mode_t>(aArgs.args[2]);
     auto flags = static_cast<int>(aArgs.args[3]);
     if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative chmodat(%d, \"%s\", 0%o, %d)",
-                        fd, path, mode, flags);
+      SANDBOX_LOG("unsupported fd-relative chmodat(%d, \"%s\", 0%o, %d)", fd,
+                  path, mode, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     if (flags != 0) {
-      SANDBOX_LOG_ERROR("unsupported flags in chmodat(%d, \"%s\", 0%o, %d)", fd,
-                        path, mode, flags);
+      SANDBOX_LOG("unsupported flags in chmodat(%d, \"%s\", 0%o, %d)", fd, path,
+                  mode, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Chmod(path, mode);
@@ -428,15 +413,14 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto flags = static_cast<int>(aArgs.args[4]);
     if ((fd != AT_FDCWD && path[0] != '/') ||
         (fd2 != AT_FDCWD && path2[0] != '/')) {
-      SANDBOX_LOG_ERROR(
+      SANDBOX_LOG(
           "unsupported fd-relative linkat(%d, \"%s\", %d, \"%s\", 0x%x)", fd,
           path, fd2, path2, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     if (flags != 0) {
-      SANDBOX_LOG_ERROR(
-          "unsupported flags in linkat(%d, \"%s\", %d, \"%s\", 0x%x)", fd, path,
-          fd2, path2, flags);
+      SANDBOX_LOG("unsupported flags in linkat(%d, \"%s\", %d, \"%s\", 0x%x)",
+                  fd, path, fd2, path2, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Link(path, path2);
@@ -448,8 +432,8 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto fd2 = static_cast<int>(aArgs.args[1]);
     auto path2 = reinterpret_cast<const char*>(aArgs.args[2]);
     if (fd2 != AT_FDCWD && path2[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative symlinkat(\"%s\", %d, \"%s\")",
-                        path, fd2, path2);
+      SANDBOX_LOG("unsupported fd-relative symlinkat(\"%s\", %d, \"%s\")", path,
+                  fd2, path2);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Symlink(path, path2);
@@ -463,9 +447,8 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto path2 = reinterpret_cast<const char*>(aArgs.args[3]);
     if ((fd != AT_FDCWD && path[0] != '/') ||
         (fd2 != AT_FDCWD && path2[0] != '/')) {
-      SANDBOX_LOG_ERROR(
-          "unsupported fd-relative renameat(%d, \"%s\", %d, \"%s\")", fd, path,
-          fd2, path2);
+      SANDBOX_LOG("unsupported fd-relative renameat(%d, \"%s\", %d, \"%s\")",
+                  fd, path, fd2, path2);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Rename(path, path2);
@@ -477,8 +460,8 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto path = reinterpret_cast<const char*>(aArgs.args[1]);
     auto mode = static_cast<mode_t>(aArgs.args[2]);
     if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative mkdirat(%d, \"%s\", 0%o)", fd,
-                        path, mode);
+      SANDBOX_LOG("unsupported fd-relative mkdirat(%d, \"%s\", 0%o)", fd, path,
+                  mode);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Mkdir(path, mode);
@@ -494,14 +477,14 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
       return -ENOENT;
     }
     if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative unlinkat(%d, \"%s\", 0x%x)",
-                        fd, path, flags);
+      SANDBOX_LOG("unsupported fd-relative unlinkat(%d, \"%s\", 0x%x)", fd,
+                  path, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     int badFlags = flags & ~AT_REMOVEDIR;
     if (badFlags != 0) {
-      SANDBOX_LOG_ERROR("unsupported flags 0x%x in unlinkat(%d, \"%s\", 0x%x)",
-                        badFlags, fd, path, flags);
+      SANDBOX_LOG("unsupported flags 0x%x in unlinkat(%d, \"%s\", 0x%x)",
+                  badFlags, fd, path, flags);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return (flags & AT_REMOVEDIR) == 0 ? broker->Unlink(path)
@@ -515,8 +498,8 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto buf = reinterpret_cast<char*>(aArgs.args[2]);
     auto size = static_cast<size_t>(aArgs.args[3]);
     if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative readlinkat(%d, %s, %p, %u)",
-                        fd, path, buf, size);
+      SANDBOX_LOG("unsupported fd-relative readlinkat(%d, %s, %p, %d)", fd,
+                  path, buf, size);
       return BlockedSyscallTrap(aArgs, nullptr);
     }
     return broker->Readlink(path, buf, size);
@@ -549,557 +532,6 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     MOZ_CRASH("unreachable?");
     return -ENOSYS;
 #endif
-  }
-
- public:
-  ResultExpr InvalidSyscall() const override {
-    return Trap(BlockedSyscallTrap, nullptr);
-  }
-
-  virtual ResultExpr ClonePolicy(ResultExpr failPolicy) const {
-    // Allow use for simple thread creation (pthread_create) only.
-
-    // WARNING: s390 and cris pass the flags in the second arg -- see
-    // CLONE_BACKWARDS2 in arch/Kconfig in the kernel source -- but we
-    // don't support seccomp-bpf on those archs yet.
-    Arg<int> flags(0);
-
-    // The exact flags used can vary.  CLONE_DETACHED is used by musl
-    // and by old versions of Android (<= JB 4.2), but it's been
-    // ignored by the kernel since the beginning of the Git history.
-    //
-    // If we ever need to support Android <= KK 4.4 again, SETTLS
-    // and the *TID flags will need to be made optional.
-    static const int flags_required =
-        CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD |
-        CLONE_SYSVSEM | CLONE_SETTLS | CLONE_PARENT_SETTID |
-        CLONE_CHILD_CLEARTID;
-    static const int flags_optional = CLONE_DETACHED;
-
-    return If((flags & ~flags_optional) == flags_required, Allow())
-        .Else(failPolicy);
-  }
-
-  virtual ResultExpr PrctlPolicy() const {
-    // Note: this will probably need PR_SET_VMA if/when it's used on
-    // Android without being overridden by an allow-all policy, and
-    // the constant will need to be defined locally.
-    Arg<int> op(0);
-    return Switch(op)
-        .CASES((PR_GET_SECCOMP,   // BroadcastSetThreadSandbox, etc.
-                PR_SET_NAME,      // Thread creation
-                PR_SET_DUMPABLE,  // Crash reporting
-                PR_SET_PTRACER),  // Debug-mode crash handling
-               Allow())
-        .CASES((PR_CAPBSET_READ),  // libcap.so.2 loaded by libpulse.so.0
-                                   // queries for capabilities
-               Error(EINVAL))
-        .Default(InvalidSyscall());
-  }
-
-  Maybe<ResultExpr> EvaluateSocketCall(int aCall,
-                                       bool aHasArgs) const override {
-    switch (aCall) {
-      case SYS_RECVMSG:
-      case SYS_SENDMSG:
-        return Some(Allow());
-
-      case SYS_SOCKETPAIR: {
-        // We try to allow "safe" (always connected) socketpairs when using the
-        // file broker, or for content processes, but we may need to fall back
-        // and allow all socketpairs in some cases, see bug 1066750.
-        if (!mBroker && !mAllowUnsafeSocketPair) {
-          return Nothing();
-        }
-        // See bug 1066750.
-        if (!aHasArgs) {
-          // If this is a socketcall(2) platform, but the kernel also
-          // supports separate syscalls (>= 4.2.0), we can unpack the
-          // arguments and filter them.
-          if (HasSeparateSocketCalls()) {
-            return Some(Trap(SocketpairUnpackTrap, nullptr));
-          }
-          // Otherwise, we can't filter the args if the platform passes
-          // them by pointer.
-          return Some(Allow());
-        }
-        Arg<int> domain(0), type(1);
-        return Some(
-            If(domain == AF_UNIX,
-               Switch(type & ~(SOCK_CLOEXEC | SOCK_NONBLOCK))
-                   .Case(SOCK_STREAM, Allow())
-                   .Case(SOCK_SEQPACKET, Allow())
-                   // This is used only by content (and only for
-                   // direct PulseAudio, which is deprecated) but it
-                   // doesn't increase attack surface:
-                   .Case(SOCK_DGRAM, Trap(SocketpairDatagramTrap, nullptr))
-                   .Default(InvalidSyscall()))
-                .Else(InvalidSyscall()));
-      }
-
-      case SYS_GETSOCKOPT: {
-        // Best-effort argument filtering as for socketpair(2), above.
-        if (!aHasArgs) {
-          if (HasSeparateSocketCalls()) {
-            return Some(Trap(GetSockOptUnpackTrap, nullptr));
-          }
-          return Some(Allow());
-        }
-        Arg<int> level(1), optname(2);
-        // SO_SNDBUF is used by IPC to avoid constructing
-        // unnecessarily large gather arrays for `sendmsg`.
-        return Some(
-            If(AllOf(level == SOL_SOCKET, optname == SO_SNDBUF), Allow())
-                .Else(InvalidSyscall()));
-      }
-
-      default:
-        return Nothing();
-    }
-  }
-
-  ResultExpr EvaluateSyscall(int sysno) const override {
-    // If a file broker client was provided, route syscalls to it;
-    // otherwise, fall through to the main policy, which will deny
-    // them.
-    if (mBroker) {
-      switch (sysno) {
-#ifdef __NR_open
-        case __NR_open:
-          return Trap(OpenTrap, mBroker);
-        case __NR_access:
-          return Trap(AccessTrap, mBroker);
-        CASES_FOR_stat:
-          return Trap(StatTrap, mBroker);
-        CASES_FOR_lstat:
-          return Trap(LStatTrap, mBroker);
-        case __NR_chmod:
-          return Trap(ChmodTrap, mBroker);
-        case __NR_link:
-          return Trap(LinkTrap, mBroker);
-        case __NR_mkdir:
-          return Trap(MkdirTrap, mBroker);
-        case __NR_symlink:
-          return Trap(SymlinkTrap, mBroker);
-        case __NR_rename:
-          return Trap(RenameTrap, mBroker);
-        case __NR_rmdir:
-          return Trap(RmdirTrap, mBroker);
-        case __NR_unlink:
-          return Trap(UnlinkTrap, mBroker);
-        case __NR_readlink:
-          return Trap(ReadlinkTrap, mBroker);
-#endif
-        case __NR_openat:
-          return Trap(OpenAtTrap, mBroker);
-        case __NR_faccessat:
-          return Trap(AccessAtTrap, mBroker);
-        case __NR_faccessat2:
-          return Trap(AccessAt2Trap, mBroker);
-        CASES_FOR_fstatat:
-          return Trap(StatAtTrap, mBroker);
-        // Used by new libc and Rust's stdlib, if available.
-        // We don't have broker support yet so claim it does not exist.
-        case __NR_statx:
-          return Error(ENOSYS);
-        case __NR_fchmodat:
-          return Trap(ChmodAtTrap, mBroker);
-        case __NR_linkat:
-          return Trap(LinkAtTrap, mBroker);
-        case __NR_mkdirat:
-          return Trap(MkdirAtTrap, mBroker);
-        case __NR_symlinkat:
-          return Trap(SymlinkAtTrap, mBroker);
-        case __NR_renameat:
-          return Trap(RenameAtTrap, mBroker);
-        case __NR_unlinkat:
-          return Trap(UnlinkAtTrap, mBroker);
-        case __NR_readlinkat:
-          return Trap(ReadlinkAtTrap, mBroker);
-      }
-    } else {
-      // In the absence of a broker we still need to handle the
-      // fstat-equivalent subset of fstatat; see bug 1673770.
-      switch (sysno) {
-      CASES_FOR_fstatat:
-        return Trap(StatAtTrap, nullptr);
-      }
-    }
-
-    switch (sysno) {
-        // Timekeeping
-        //
-        // (Note: the switch needs to start with a literal case, not a
-        // macro; otherwise clang-format gets confused.)
-      case __NR_gettimeofday:
-#ifdef __NR_time
-      case __NR_time:
-#endif
-      case __NR_nanosleep:
-        return Allow();
-
-      CASES_FOR_clock_gettime:
-      CASES_FOR_clock_getres:
-      CASES_FOR_clock_nanosleep : {
-        // clockid_t can encode a pid or tid to monitor another
-        // process or thread's CPU usage (see CPUCLOCK_PID and related
-        // definitions in include/linux/posix-timers.h in the kernel
-        // source).  Those values could be detected by bit masking,
-        // but it's simpler to just have a default-deny policy.
-        Arg<clockid_t> clk_id(0);
-        clockid_t this_process =
-            MAKE_PROCESS_CPUCLOCK(getpid(), CPUCLOCK_SCHED);
-        return If(clk_id == CLOCK_MONOTONIC, Allow())
-#ifdef CLOCK_MONOTONIC_COARSE
-            // Used by SandboxReporter, among other things.
-            .ElseIf(clk_id == CLOCK_MONOTONIC_COARSE, Allow())
-#endif
-            .ElseIf(clk_id == CLOCK_PROCESS_CPUTIME_ID, Allow())
-            .ElseIf(clk_id == CLOCK_REALTIME, Allow())
-#ifdef CLOCK_REALTIME_COARSE
-            .ElseIf(clk_id == CLOCK_REALTIME_COARSE, Allow())
-#endif
-            .ElseIf(clk_id == CLOCK_THREAD_CPUTIME_ID, Allow())
-#ifdef MOZ_GECKO_PROFILER
-            // Allow clock_gettime on the same process.
-            .ElseIf(clk_id == this_process, Allow())
-            // Allow clock_gettime on a thread.
-            .ElseIf((clk_id & 7u) == (CPUCLOCK_PERTHREAD_MASK | CPUCLOCK_SCHED),
-                    Allow())
-#endif
-#ifdef CLOCK_BOOTTIME
-            .ElseIf(clk_id == CLOCK_BOOTTIME, Allow())
-#endif
-            .Else(InvalidSyscall());
-      }
-
-        // Thread synchronization
-      CASES_FOR_futex:
-        // FIXME(bug 1441993): This could be more restrictive.
-        return Allow();
-
-        // Asynchronous I/O
-      CASES_FOR_epoll_create:
-      CASES_FOR_epoll_wait:
-      case __NR_epoll_ctl:
-      CASES_FOR_poll:
-        return Allow();
-
-        // Used when requesting a crash dump.
-      CASES_FOR_pipe:
-        return Allow();
-
-        // Metadata of opened files
-      CASES_FOR_fstat:
-        return Allow();
-
-      CASES_FOR_fcntl : {
-        Arg<int> cmd(1);
-        Arg<int> flags(2);
-        // Typical use of F_SETFL is to modify the flags returned by
-        // F_GETFL and write them back, including some flags that
-        // F_SETFL ignores.  This is a default-deny policy in case any
-        // new SETFL-able flags are added.  (In particular we want to
-        // forbid O_ASYNC; see bug 1328896, but also see bug 1408438.)
-        static const int ignored_flags =
-            O_ACCMODE | O_LARGEFILE_REAL | O_CLOEXEC | FMODE_NONOTIFY;
-        static const int allowed_flags = ignored_flags | O_APPEND | O_NONBLOCK;
-        return Switch(cmd)
-            // Close-on-exec is meaningless when execve isn't allowed, but
-            // NSPR reads the bit and asserts that it has the expected value.
-            .Case(F_GETFD, Allow())
-            .Case(
-                F_SETFD,
-                If((flags & ~FD_CLOEXEC) == 0, Allow()).Else(InvalidSyscall()))
-            // F_GETFL is also used by fdopen
-            .Case(F_GETFL, Allow())
-            .Case(F_SETFL, If((flags & ~allowed_flags) == 0, Allow())
-                               .Else(InvalidSyscall()))
-            // Not much different from other forms of dup(), and commonly used.
-            .Case(F_DUPFD_CLOEXEC, Allow())
-            .Default(SandboxPolicyBase::EvaluateSyscall(sysno));
-      }
-
-        // Simple I/O
-      case __NR_pread64:
-      case __NR_write:
-      case __NR_read:
-      case __NR_readv:
-      case __NR_writev:  // see SandboxLogging.cpp
-      CASES_FOR_lseek:
-        return Allow();
-
-      CASES_FOR_getdents:
-        return Allow();
-
-      CASES_FOR_ftruncate:
-      case __NR_fallocate:
-        return mMayCreateShmem ? Allow() : InvalidSyscall();
-
-        // Used by our fd/shm classes
-      case __NR_dup:
-        return Allow();
-
-        // Memory mapping
-      CASES_FOR_mmap:
-      case __NR_munmap:
-        return Allow();
-
-        // Shared memory
-      case __NR_memfd_create:
-        return Allow();
-
-        // ipc::Shmem; also, glibc when creating threads:
-      case __NR_mprotect:
-        return Allow();
-
-#if !defined(MOZ_MEMORY)
-        // No jemalloc means using a system allocator like glibc
-        // that might use brk.
-      case __NR_brk:
-        return Allow();
-#endif
-
-        // madvise hints used by malloc; see bug 1303813 and bug 1364533
-      case __NR_madvise: {
-        Arg<int> advice(2);
-        // The GMP specific sandbox duplicates this logic, so when adding
-        // allowed values here also add them to the GMP sandbox rules.
-        return If(advice == MADV_DONTNEED, Allow())
-            .ElseIf(advice == MADV_FREE, Allow())
-            .ElseIf(advice == MADV_HUGEPAGE, Allow())
-            .ElseIf(advice == MADV_NOHUGEPAGE, Allow())
-#ifdef MOZ_ASAN
-            .ElseIf(advice == MADV_DONTDUMP, Allow())
-#endif
-            .ElseIf(advice == MADV_MERGEABLE, Error(EPERM))  // bug 1705045
-            .Else(InvalidSyscall());
-      }
-
-        // musl libc will set this up in pthreads support.
-      case __NR_membarrier:
-        return Allow();
-
-        // Signal handling
-      case __NR_sigaltstack:
-      CASES_FOR_sigreturn:
-      CASES_FOR_sigprocmask:
-      CASES_FOR_sigaction:
-        return Allow();
-
-        // Send signals within the process (raise(), profiling, etc.)
-      case __NR_tgkill: {
-        Arg<pid_t> tgid(0);
-        return If(tgid == getpid(), Allow()).Else(InvalidSyscall());
-      }
-
-        // Polyfill with tgkill; see above.
-      case __NR_tkill:
-        return Trap(TKillCompatTrap, nullptr);
-
-        // Yield
-      case __NR_sched_yield:
-        return Allow();
-
-        // Thread creation.
-      case __NR_clone:
-        return ClonePolicy(InvalidSyscall());
-
-      case __NR_clone3:
-        return Error(ENOSYS);
-
-        // More thread creation.
-#ifdef __NR_set_robust_list
-      case __NR_set_robust_list:
-        return Allow();
-#endif
-#ifdef ANDROID
-      case __NR_set_tid_address:
-        return Allow();
-#endif
-
-        // prctl
-      case __NR_prctl: {
-        // WARNING: do not handle __NR_prctl directly in subclasses;
-        // override PrctlPolicy instead.  The special handling of
-        // PR_SET_NO_NEW_PRIVS is used to detect that a thread already
-        // has the policy applied; see also bug 1257361.
-
-        if (SandboxInfo::Get().Test(SandboxInfo::kHasSeccompTSync)) {
-          return PrctlPolicy();
-        }
-
-        Arg<int> option(0);
-        return If(option == PR_SET_NO_NEW_PRIVS,
-                  Trap(SetNoNewPrivsTrap, nullptr))
-            .Else(PrctlPolicy());
-      }
-
-        // NSPR can call this when creating a thread, but it will accept a
-        // polite "no".
-      case __NR_getpriority:
-        // But if thread creation races with sandbox startup, that call
-        // could succeed, and then we get one of these:
-      case __NR_setpriority:
-        return Error(EACCES);
-
-        // Stack bounds are obtained via pthread_getattr_np, which calls
-        // this but doesn't actually need it:
-      case __NR_sched_getaffinity:
-        return Error(ENOSYS);
-
-        // Read own pid/tid.
-      case __NR_getpid:
-      case __NR_gettid:
-        return Allow();
-
-        // Discard capabilities
-      case __NR_close:
-        return Allow();
-
-        // Machine-dependent stuff
-#ifdef __arm__
-      case __ARM_NR_breakpoint:
-      case __ARM_NR_cacheflush:
-      case __ARM_NR_usr26:  // FIXME: do we actually need this?
-      case __ARM_NR_usr32:
-      case __ARM_NR_set_tls:
-        return Allow();
-#endif
-
-        // Needed when being debugged:
-      case __NR_restart_syscall:
-        return Allow();
-
-        // Terminate threads or the process
-      case __NR_exit:
-      case __NR_exit_group:
-        return Allow();
-
-      case __NR_getrandom:
-        return Allow();
-
-        // Used by almost every process: GMP needs them for Clearkey
-        // because of bug 1576006 (but may not need them for other
-        // plugin types; see bug 1737092).  Given that fstat is
-        // allowed, the uid/gid are probably available anyway.
-      CASES_FOR_getuid:
-      CASES_FOR_getgid:
-      CASES_FOR_geteuid:
-      CASES_FOR_getegid:
-        return Allow();
-
-#ifdef DESKTOP
-        // Bug 1543858: glibc's qsort calls sysinfo to check the
-        // memory size; it falls back to assuming there's enough RAM.
-      case __NR_sysinfo:
-        return Error(EPERM);
-#endif
-
-        // Bug 1651701: an API for restartable atomic sequences and
-        // per-CPU data; exposing information about CPU numbers and
-        // when threads are migrated or preempted isn't great but the
-        // risk should be relatively low.
-      case __NR_rseq:
-        return Allow();
-
-      case __NR_ioctl: {
-        Arg<unsigned long> request(1);
-        // Make isatty() return false, because none of the terminal
-        // ioctls will be allowed; libraries sometimes call this for
-        // various reasons (e.g., to decide whether to emit ANSI/VT
-        // color codes when logging to stderr).  glibc uses TCGETS and
-        // musl uses TIOCGWINSZ.
-        return If(AnyOf(request == TCGETS, request == TIOCGWINSZ),
-                  Error(ENOTTY))
-            .Else(SandboxPolicyBase::EvaluateSyscall(sysno));
-      }
-
-#ifdef MOZ_ASAN
-        // ASAN's error reporter wants to know if stderr is a tty.
-      case __NR_ioctl: {
-        Arg<int> fd(0);
-        return If(fd == STDERR_FILENO, Error(ENOTTY)).Else(InvalidSyscall());
-      }
-
-        // ...and before compiler-rt r209773, it will call readlink on
-        // /proc/self/exe and use the cached value only if that fails:
-      case __NR_readlink:
-      case __NR_readlinkat:
-        return Error(ENOENT);
-
-        // ...and if it found an external symbolizer, it will try to run it:
-        // (See also bug 1081242 comment #7.)
-      CASES_FOR_stat:
-        return Error(ENOENT);
-#endif
-
-      default:
-        return SandboxPolicyBase::EvaluateSyscall(sysno);
-    }
-  }
-};
-
-// The process-type-specific syscall rules start here:
-
-// The seccomp-bpf filter for content processes is not a true sandbox
-// on its own; its purpose is attack surface reduction and syscall
-// interception in support of a semantic sandboxing layer.  On B2G
-// this is the Android process permission model; on desktop,
-// namespaces and chroot() will be used.
-class ContentSandboxPolicy : public SandboxPolicyCommon {
- private:
-  ContentProcessSandboxParams mParams;
-  bool mAllowSysV;
-  bool mUsingRenderDoc;
-
-  bool BelowLevel(int aLevel) const { return mParams.mLevel < aLevel; }
-  ResultExpr AllowBelowLevel(int aLevel, ResultExpr aOrElse) const {
-    return BelowLevel(aLevel) ? Allow() : std::move(aOrElse);
-  }
-  ResultExpr AllowBelowLevel(int aLevel) const {
-    return AllowBelowLevel(aLevel, InvalidSyscall());
-  }
-
-  static intptr_t GetPPidTrap(ArgsRef aArgs, void* aux) {
-    // In a pid namespace, getppid() will return 0. We will return 0 instead
-    // of the real parent pid to see what breaks when we introduce the
-    // pid namespace (Bug 1151624).
-    return 0;
-  }
-
-  static intptr_t StatFsTrap(ArgsRef aArgs, void* aux) {
-    // Warning: the kernel interface is not the C interface.  The
-    // structs are different (<asm/statfs.h> vs. <sys/statfs.h>), and
-    // the statfs64 version takes an additional size parameter.
-    auto path = reinterpret_cast<const char*>(aArgs.args[0]);
-    int fd = open(path, O_RDONLY | O_LARGEFILE);
-    if (fd < 0) {
-      return -errno;
-    }
-
-    intptr_t rv;
-    switch (aArgs.nr) {
-      case __NR_statfs: {
-        auto buf = reinterpret_cast<void*>(aArgs.args[1]);
-        rv = DoSyscall(__NR_fstatfs, fd, buf);
-        break;
-      }
-#ifdef __NR_statfs64
-      case __NR_statfs64: {
-        auto sz = static_cast<size_t>(aArgs.args[1]);
-        auto buf = reinterpret_cast<void*>(aArgs.args[2]);
-        rv = DoSyscall(__NR_fstatfs64, fd, sz, buf);
-        break;
-      }
-#endif
-      default:
-        MOZ_ASSERT(false);
-        rv = -ENOSYS;
-    }
-
-    close(fd);
-    return rv;
   }
 
   // This just needs to return something to stand in for the
@@ -1216,22 +648,633 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
                              static_cast<socklen_t>(innerArgs[2]));
   }
 
+  static intptr_t StatFsTrap(ArgsRef aArgs, void* aux) {
+    // Warning: the kernel interface is not the C interface.  The
+    // structs are different (<asm/statfs.h> vs. <sys/statfs.h>), and
+    // the statfs64 version takes an additional size parameter.
+    auto path = reinterpret_cast<const char*>(aArgs.args[0]);
+    int fd = open(path, O_RDONLY | O_LARGEFILE);
+    if (fd < 0) {
+      return -errno;
+    }
+
+    intptr_t rv;
+    switch (aArgs.nr) {
+      case __NR_statfs: {
+        auto buf = reinterpret_cast<void*>(aArgs.args[1]);
+        rv = DoSyscall(__NR_fstatfs, fd, buf);
+        break;
+      }
+#ifdef __NR_statfs64
+      case __NR_statfs64: {
+        auto sz = static_cast<size_t>(aArgs.args[1]);
+        auto buf = reinterpret_cast<void*>(aArgs.args[2]);
+        rv = DoSyscall(__NR_fstatfs64, fd, sz, buf);
+        break;
+      }
+#endif
+      default:
+        MOZ_ASSERT(false);
+        rv = -ENOSYS;
+    }
+
+    close(fd);
+    return rv;
+  }
+
+ public:
+  ResultExpr InvalidSyscall() const override {
+    return Trap(BlockedSyscallTrap, nullptr);
+  }
+
+  virtual ResultExpr ClonePolicy(ResultExpr failPolicy) const {
+    // Allow use for simple thread creation (pthread_create) only.
+
+    // WARNING: s390 and cris pass the flags in the second arg -- see
+    // CLONE_BACKWARDS2 in arch/Kconfig in the kernel source -- but we
+    // don't support seccomp-bpf on those archs yet.
+    Arg<int> flags(0);
+
+    // The exact flags used can vary.  CLONE_DETACHED is used by musl
+    // and by old versions of Android (<= JB 4.2), but it's been
+    // ignored by the kernel since the beginning of the Git history.
+    //
+    // If we ever need to support Android <= KK 4.4 again, SETTLS
+    // and the *TID flags will need to be made optional.
+    static const int flags_required =
+        CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD |
+        CLONE_SYSVSEM | CLONE_SETTLS | CLONE_PARENT_SETTID |
+        CLONE_CHILD_CLEARTID;
+    static const int flags_optional = CLONE_DETACHED;
+
+    return If((flags & ~flags_optional) == flags_required, Allow())
+        .Else(failPolicy);
+  }
+
+  virtual ResultExpr PrctlPolicy() const {
+    // Note: this will probably need PR_SET_VMA if/when it's used on
+    // Android without being overridden by an allow-all policy, and
+    // the constant will need to be defined locally.
+    Arg<int> op(0);
+    return Switch(op)
+        .CASES((PR_GET_SECCOMP,   // BroadcastSetThreadSandbox, etc.
+                PR_SET_NAME,      // Thread creation
+                PR_SET_DUMPABLE,  // Crash reporting
+                PR_SET_PTRACER),  // Debug-mode crash handling
+               Allow())
+        .CASES((PR_CAPBSET_READ),  // libcap.so.2 loaded by libpulse.so.0
+                                   // queries for capabilities
+               Error(EINVAL))
+        .Default(InvalidSyscall());
+  }
+
+  Maybe<ResultExpr> EvaluateSocketCall(int aCall,
+                                       bool aHasArgs) const override {
+    switch (aCall) {
+      case SYS_RECVMSG:
+      case SYS_SENDMSG:
+        // These next four aren't needed for IPC or other core
+        // functionality at the time of this writing, but they're
+        // subsets of recvmsg/sendmsg so there's nothing gained by not
+        // allowing them here (and simplifying subclasses).
+      case SYS_RECVFROM:
+      case SYS_SENDTO:
+      case SYS_RECV:
+      case SYS_SEND:
+        return Some(Allow());
+
+      case SYS_SOCKETPAIR: {
+        // We try to allow "safe" (always connected) socketpairs when using the
+        // file broker, or for content processes, but we may need to fall back
+        // and allow all socketpairs in some cases, see bug 1066750.
+        if (!mBroker && !mAllowUnsafeSocketPair) {
+          return Nothing();
+        }
+        // See bug 1066750.
+        if (!aHasArgs) {
+          // If this is a socketcall(2) platform, but the kernel also
+          // supports separate syscalls (>= 4.2.0), we can unpack the
+          // arguments and filter them.
+          if (HasSeparateSocketCalls()) {
+            return Some(Trap(SocketpairUnpackTrap, nullptr));
+          }
+          // Otherwise, we can't filter the args if the platform passes
+          // them by pointer.
+          return Some(Allow());
+        }
+        Arg<int> domain(0), type(1);
+        return Some(
+            If(domain == AF_UNIX,
+               Switch(type & ~(SOCK_CLOEXEC | SOCK_NONBLOCK))
+                   .Case(SOCK_STREAM, Allow())
+                   .Case(SOCK_SEQPACKET, Allow())
+                   // This is used only by content (and only for
+                   // direct PulseAudio, which is deprecated) but it
+                   // doesn't increase attack surface:
+                   .Case(SOCK_DGRAM, Trap(SocketpairDatagramTrap, nullptr))
+                   .Default(InvalidSyscall()))
+                .Else(InvalidSyscall()));
+      }
+
+      case SYS_GETSOCKOPT: {
+        // Best-effort argument filtering as for socketpair(2), above.
+        if (!aHasArgs) {
+          if (HasSeparateSocketCalls()) {
+            return Some(Trap(GetSockOptUnpackTrap, nullptr));
+          }
+          return Some(Allow());
+        }
+        Arg<int> level(1), optname(2);
+        // SO_SNDBUF is used by IPC to avoid constructing
+        // unnecessarily large gather arrays for `sendmsg`.
+        //
+        // SO_DOMAIN and SO_TYPE are needed for connect() brokering,
+        // but they're harmless even when it's not enabled.
+        return Some(If(AllOf(level == SOL_SOCKET,
+                             AnyOf(optname == SO_SNDBUF, optname == SO_DOMAIN,
+                                   optname == SO_TYPE)),
+                       Allow())
+                        .Else(InvalidSyscall()));
+      }
+
+        // These two cases are for connect() brokering, if enabled.
+      case SYS_SOCKET:
+        if (mBrokeredConnect) {
+          const auto trapFn = aHasArgs ? FakeSocketTrap : FakeSocketTrapLegacy;
+          MOZ_ASSERT(mBroker);
+          return Some(Trap(trapFn, mBroker));
+        }
+        return Nothing();
+
+      case SYS_CONNECT:
+        if (mBrokeredConnect) {
+          const auto trapFn = aHasArgs ? ConnectTrap : ConnectTrapLegacy;
+          MOZ_ASSERT(mBroker);
+          return Some(Trap(trapFn, mBroker));
+        }
+        return Nothing();
+
+      default:
+        return Nothing();
+    }
+  }
+
+  ResultExpr EvaluateSyscall(int sysno) const override {
+    // If a file broker client was provided, route syscalls to it;
+    // otherwise, fall through to the main policy, which will deny
+    // them.
+    if (mBroker) {
+      switch (sysno) {
+#ifdef __NR_open
+        case __NR_open:
+          return Trap(OpenTrap, mBroker);
+        case __NR_access:
+          return Trap(AccessTrap, mBroker);
+        CASES_FOR_stat:
+          return Trap(StatTrap, mBroker);
+        CASES_FOR_lstat:
+          return Trap(LStatTrap, mBroker);
+        case __NR_chmod:
+          return Trap(ChmodTrap, mBroker);
+        case __NR_link:
+          return Trap(LinkTrap, mBroker);
+        case __NR_mkdir:
+          return Trap(MkdirTrap, mBroker);
+        case __NR_symlink:
+          return Trap(SymlinkTrap, mBroker);
+        case __NR_rename:
+          return Trap(RenameTrap, mBroker);
+        case __NR_rmdir:
+          return Trap(RmdirTrap, mBroker);
+        case __NR_unlink:
+          return Trap(UnlinkTrap, mBroker);
+        case __NR_readlink:
+          return Trap(ReadlinkTrap, mBroker);
+#endif
+        case __NR_openat:
+          return Trap(OpenAtTrap, mBroker);
+        case __NR_faccessat:
+          return Trap(AccessAtTrap, mBroker);
+        case __NR_faccessat2:
+          return Trap(AccessAt2Trap, mBroker);
+        CASES_FOR_fstatat:
+          return Trap(StatAtTrap, mBroker);
+        // Used by new libc and Rust's stdlib, if available.
+        // We don't have broker support yet so claim it does not exist.
+        case __NR_statx:
+          return Error(ENOSYS);
+        case __NR_fchmodat:
+          return Trap(ChmodAtTrap, mBroker);
+        case __NR_linkat:
+          return Trap(LinkAtTrap, mBroker);
+        case __NR_mkdirat:
+          return Trap(MkdirAtTrap, mBroker);
+        case __NR_symlinkat:
+          return Trap(SymlinkAtTrap, mBroker);
+        case __NR_renameat:
+          return Trap(RenameAtTrap, mBroker);
+        case __NR_unlinkat:
+          return Trap(UnlinkAtTrap, mBroker);
+        case __NR_readlinkat:
+          return Trap(ReadlinkAtTrap, mBroker);
+      }
+    } else {
+      // In the absence of a broker we still need to handle the
+      // fstat-equivalent subset of fstatat; see bug 1673770.
+      switch (sysno) {
+      CASES_FOR_fstatat:
+        return Trap(StatAtTrap, nullptr);
+      }
+    }
+
+    switch (sysno) {
+        // Timekeeping
+        //
+        // (Note: the switch needs to start with a literal case, not a
+        // macro; otherwise clang-format gets confused.)
+      case __NR_gettimeofday:
+#ifdef __NR_time
+      case __NR_time:
+#endif
+      case __NR_nanosleep:
+        return Allow();
+
+      CASES_FOR_clock_gettime:
+      CASES_FOR_clock_getres:
+      CASES_FOR_clock_nanosleep: {
+        // clockid_t can encode a pid or tid to monitor another
+        // process or thread's CPU usage (see CPUCLOCK_PID and related
+        // definitions in include/linux/posix-timers.h in the kernel
+        // source).  For threads, the kernel allows only tids within
+        // the calling process, so it isn't a problem if we don't
+        // filter those; pids do need to be restricted to the current
+        // process in order to not leak information.
+        Arg<clockid_t> clk_id(0);
+        clockid_t this_process =
+            MAKE_PROCESS_CPUCLOCK(getpid(), CPUCLOCK_SCHED);
+        return If(clk_id == CLOCK_MONOTONIC, Allow())
+#ifdef CLOCK_MONOTONIC_COARSE
+            // Used by SandboxReporter, among other things.
+            .ElseIf(clk_id == CLOCK_MONOTONIC_COARSE, Allow())
+#endif
+            .ElseIf(clk_id == CLOCK_PROCESS_CPUTIME_ID, Allow())
+            .ElseIf(clk_id == CLOCK_REALTIME, Allow())
+#ifdef CLOCK_REALTIME_COARSE
+            .ElseIf(clk_id == CLOCK_REALTIME_COARSE, Allow())
+#endif
+            .ElseIf(clk_id == CLOCK_THREAD_CPUTIME_ID, Allow())
+#ifdef MOZ_GECKO_PROFILER
+            // Allow clock_gettime on the same process.
+            .ElseIf(clk_id == this_process, Allow())
+            // Allow clock_gettime on a thread.
+            .ElseIf((clk_id & 7u) == (CPUCLOCK_PERTHREAD_MASK | CPUCLOCK_SCHED),
+                    Allow())
+#endif
+#ifdef CLOCK_BOOTTIME
+            .ElseIf(clk_id == CLOCK_BOOTTIME, Allow())
+#endif
+            .Else(InvalidSyscall());
+      }
+
+        // Thread synchronization
+      CASES_FOR_futex:
+        // FIXME(bug 1441993): This could be more restrictive.
+        return Allow();
+
+        // Asynchronous I/O
+      CASES_FOR_epoll_create:
+      CASES_FOR_epoll_wait:
+      case __NR_epoll_ctl:
+      CASES_FOR_poll:
+        return Allow();
+
+        // Used when requesting a crash dump.
+      CASES_FOR_pipe:
+        return Allow();
+
+        // Metadata of opened files
+      CASES_FOR_fstat:
+        return Allow();
+
+      CASES_FOR_fcntl: {
+        Arg<int> cmd(1);
+        Arg<int> flags(2);
+        // Typical use of F_SETFL is to modify the flags returned by
+        // F_GETFL and write them back, including some flags that
+        // F_SETFL ignores.  This is a default-deny policy in case any
+        // new SETFL-able flags are added.  (In particular we want to
+        // forbid O_ASYNC; see bug 1328896, but also see bug 1408438.)
+        static const int ignored_flags =
+            O_ACCMODE | O_LARGEFILE_REAL | O_CLOEXEC | FMODE_NONOTIFY;
+        static const int allowed_flags = ignored_flags | O_APPEND | O_NONBLOCK;
+        return Switch(cmd)
+            // Close-on-exec is meaningless when execve isn't allowed, but
+            // NSPR reads the bit and asserts that it has the expected value.
+            .Case(F_GETFD, Allow())
+            .Case(
+                F_SETFD,
+                If((flags & ~FD_CLOEXEC) == 0, Allow()).Else(InvalidSyscall()))
+            // F_GETFL is also used by fdopen
+            .Case(F_GETFL, Allow())
+            .Case(F_SETFL, If((flags & ~allowed_flags) == 0, Allow())
+                               .Else(InvalidSyscall()))
+            // Not much different from other forms of dup(), and commonly used.
+            .Case(F_DUPFD_CLOEXEC, Allow())
+            .Default(SandboxPolicyBase::EvaluateSyscall(sysno));
+      }
+
+        // Simple I/O
+      case __NR_pread64:
+      case __NR_write:
+      case __NR_read:
+      case __NR_readv:
+      case __NR_writev:  // see SandboxLogging.cpp
+      CASES_FOR_lseek:
+        return Allow();
+
+      CASES_FOR_getdents:
+        return Allow();
+
+      CASES_FOR_ftruncate:
+      case __NR_fallocate:
+        return mMayCreateShmem ? Allow() : InvalidSyscall();
+
+        // Used by our fd/shm classes
+      case __NR_dup:
+        return Allow();
+
+        // Memory mapping
+      CASES_FOR_mmap:
+      case __NR_munmap:
+        return Allow();
+
+        // Shared memory
+      case __NR_memfd_create:
+        return Allow();
+
+        // ipc::Shmem; also, glibc when creating threads:
+      case __NR_mprotect:
+        return Allow();
+
+#if !defined(MOZ_MEMORY)
+        // No jemalloc means using a system allocator like glibc
+        // that might use brk.
+      case __NR_brk:
+        return Allow();
+
+        // Similarly, mremap (bugs: 1047620, 1286119, 1860267)
+      case __NR_mremap: {
+        Arg<int> flags(3);
+        return If((flags & ~MREMAP_MAYMOVE) == 0, Allow())
+            .Else(SandboxPolicyBase::EvaluateSyscall(sysno));
+      }
+#endif
+
+        // madvise hints used by malloc; see bug 1303813 and bug 1364533
+      case __NR_madvise: {
+        Arg<int> advice(2);
+        // The GMP specific sandbox duplicates this logic, so when adding
+        // allowed values here also add them to the GMP sandbox rules.
+        return If(advice == MADV_DONTNEED, Allow())
+            .ElseIf(advice == MADV_FREE, Allow())
+            .ElseIf(advice == MADV_HUGEPAGE, Allow())
+            .ElseIf(advice == MADV_NOHUGEPAGE, Allow())
+#ifdef MOZ_ASAN
+            .ElseIf(advice == MADV_DONTDUMP, Allow())
+#endif
+            .ElseIf(advice == MADV_MERGEABLE, Error(EPERM))  // bug 1705045
+            .Else(InvalidSyscall());
+      }
+
+        // musl libc will set this up in pthreads support.
+      case __NR_membarrier:
+        return Allow();
+
+        // Signal handling
+      case __NR_sigaltstack:
+      CASES_FOR_sigreturn:
+      CASES_FOR_sigprocmask:
+      CASES_FOR_sigaction:
+        return Allow();
+
+        // Send signals within the process (raise(), profiling, etc.)
+      case __NR_tgkill: {
+        Arg<pid_t> tgid(0);
+        return If(tgid == getpid(), Allow()).Else(InvalidSyscall());
+      }
+
+        // Polyfill with tgkill; see above.
+      case __NR_tkill:
+        return Trap(TKillCompatTrap, nullptr);
+
+        // Yield
+      case __NR_sched_yield:
+        return Allow();
+
+        // Thread creation.
+      case __NR_clone:
+        return ClonePolicy(InvalidSyscall());
+
+      case __NR_clone3:
+        return Error(ENOSYS);
+
+        // More thread creation.
+#ifdef __NR_set_robust_list
+      case __NR_set_robust_list:
+        return Allow();
+#endif
+#ifdef ANDROID
+      case __NR_set_tid_address:
+        return Allow();
+#endif
+
+        // prctl
+      case __NR_prctl: {
+        // WARNING: do not handle __NR_prctl directly in subclasses;
+        // override PrctlPolicy instead.  The special handling of
+        // PR_SET_NO_NEW_PRIVS is used to detect that a thread already
+        // has the policy applied; see also bug 1257361.
+
+        if (SandboxInfo::Get().Test(SandboxInfo::kHasSeccompTSync)) {
+          return PrctlPolicy();
+        }
+
+        Arg<int> option(0);
+        return If(option == PR_SET_NO_NEW_PRIVS,
+                  Trap(SetNoNewPrivsTrap, nullptr))
+            .Else(PrctlPolicy());
+      }
+
+        // NSPR can call this when creating a thread, but it will accept a
+        // polite "no".
+      case __NR_getpriority:
+        // But if thread creation races with sandbox startup, that call
+        // could succeed, and then we get one of these:
+      case __NR_setpriority:
+        return Error(EACCES);
+
+        // Stack bounds are obtained via pthread_getattr_np, which calls
+        // this but doesn't actually need it:
+      case __NR_sched_getaffinity:
+        return Error(ENOSYS);
+
+        // Identifies the processor and node where this thread or process is
+        // running. This is used by "Awake" profiler markers.
+      case __NR_getcpu:
+        return Allow();
+
+        // Read own pid/tid.
+      case __NR_getpid:
+      case __NR_gettid:
+        return Allow();
+
+        // Discard capabilities
+      case __NR_close:
+        return Allow();
+
+        // Machine-dependent stuff
+#ifdef __arm__
+      case __ARM_NR_breakpoint:
+      case __ARM_NR_cacheflush:
+      case __ARM_NR_usr26:  // FIXME: do we actually need this?
+      case __ARM_NR_usr32:
+      case __ARM_NR_set_tls:
+        return Allow();
+#endif
+
+        // Needed when being debugged:
+      case __NR_restart_syscall:
+        return Allow();
+
+        // Terminate threads or the process
+      case __NR_exit:
+      case __NR_exit_group:
+        return Allow();
+
+      case __NR_getrandom:
+        return Allow();
+
+        // Used by almost every process: GMP needs them for Clearkey
+        // because of bug 1576006 (but may not need them for other
+        // plugin types; see bug 1737092).  Given that fstat is
+        // allowed, the uid/gid are probably available anyway.
+      CASES_FOR_getuid:
+      CASES_FOR_getgid:
+      CASES_FOR_geteuid:
+      CASES_FOR_getegid:
+        return Allow();
+
+#ifdef DESKTOP
+        // Bug 1543858: glibc's qsort calls sysinfo to check the
+        // memory size; it falls back to assuming there's enough RAM.
+      case __NR_sysinfo:
+        return Error(EPERM);
+#endif
+
+        // Bug 1651701: an API for restartable atomic sequences and
+        // per-CPU data; exposing information about CPU numbers and
+        // when threads are migrated or preempted isn't great but the
+        // risk should be relatively low.
+      case __NR_rseq:
+        return Allow();
+
+      case __NR_ioctl: {
+        Arg<unsigned long> request(1);
+#ifdef MOZ_ASAN
+        Arg<int> fd(0);
+#endif  // MOZ_ASAN
+        // Make isatty() return false, because none of the terminal
+        // ioctls will be allowed; libraries sometimes call this for
+        // various reasons (e.g., to decide whether to emit ANSI/VT
+        // color codes when logging to stderr).  glibc uses TCGETS and
+        // musl uses TIOCGWINSZ.
+        //
+        // This is required by ffmpeg
+        return If(AnyOf(request == TCGETS, request == TIOCGWINSZ),
+                  Error(ENOTTY))
+#ifdef MOZ_ASAN
+            // ASAN's error reporter wants to know if stderr is a tty.
+            .ElseIf(fd == STDERR_FILENO, Error(ENOTTY))
+#endif  // MOZ_ASAN
+            .Else(SandboxPolicyBase::EvaluateSyscall(sysno));
+      }
+
+      CASES_FOR_dup2:  // See ConnectTrapCommon
+        if (mBrokeredConnect) {
+          return Allow();
+        }
+        return SandboxPolicyBase::EvaluateSyscall(sysno);
+
+#ifdef MOZ_ASAN
+        // ...and before compiler-rt r209773, it will call readlink on
+        // /proc/self/exe and use the cached value only if that fails:
+      case __NR_readlink:
+      case __NR_readlinkat:
+        return Error(ENOENT);
+
+        // ...and if it found an external symbolizer, it will try to run it:
+        // (See also bug 1081242 comment #7.)
+      CASES_FOR_stat:
+        return Error(ENOENT);
+#endif  // MOZ_ASAN
+
+        // Replace statfs with open (which may be brokered) and
+        // fstatfs (which is not allowed in this policy, but may be
+        // allowed by subclasses if they wish to enable statfs).
+      CASES_FOR_statfs:
+        return Trap(StatFsTrap, nullptr);
+
+      default:
+        return SandboxPolicyBase::EvaluateSyscall(sysno);
+    }
+  }
+};
+
+// The process-type-specific syscall rules start here:
+
+// The seccomp-bpf filter for content processes is not a true sandbox
+// on its own; its purpose is attack surface reduction and syscall
+// interception in support of a semantic sandboxing layer.  On B2G
+// this is the Android process permission model; on desktop,
+// namespaces and chroot() will be used.
+class ContentSandboxPolicy : public SandboxPolicyCommon {
+ private:
+  ContentProcessSandboxParams mParams;
+  bool mAllowSysV;
+  bool mUsingRenderDoc;
+
+  bool BelowLevel(int aLevel) const { return mParams.mLevel < aLevel; }
+  ResultExpr AllowBelowLevel(int aLevel, ResultExpr aOrElse) const {
+    return BelowLevel(aLevel) ? Allow() : std::move(aOrElse);
+  }
+  ResultExpr AllowBelowLevel(int aLevel) const {
+    return AllowBelowLevel(aLevel, InvalidSyscall());
+  }
+
+  static intptr_t GetPPidTrap(ArgsRef aArgs, void* aux) {
+    // In a pid namespace, getppid() will return 0. We will return 0 instead
+    // of the real parent pid to see what breaks when we introduce the
+    // pid namespace (Bug 1151624).
+    return 0;
+  }
+
  public:
   ContentSandboxPolicy(SandboxBrokerClient* aBroker,
                        ContentProcessSandboxParams&& aParams)
-      : SandboxPolicyCommon(aBroker, ShmemUsage::MAY_CREATE,
-                            AllowUnsafeSocketPair::YES),
-        mParams(std::move(aParams)),
+      : mParams(std::move(aParams)),
         mAllowSysV(PR_GetEnv("MOZ_SANDBOX_ALLOW_SYSV") != nullptr),
-        mUsingRenderDoc(PR_GetEnv("RENDERDOC_CAPTUREOPTS") != nullptr) {}
+        mUsingRenderDoc(PR_GetEnv("RENDERDOC_CAPTUREOPTS") != nullptr) {
+    mBroker = aBroker;
+    mMayCreateShmem = true;
+    mAllowUnsafeSocketPair = true;
+    mBrokeredConnect = true;
+  }
 
   ~ContentSandboxPolicy() override = default;
 
   Maybe<ResultExpr> EvaluateSocketCall(int aCall,
                                        bool aHasArgs) const override {
     switch (aCall) {
-      case SYS_RECVFROM:
-      case SYS_SENDTO:
       case SYS_SENDMMSG:  // libresolv via libasyncns; see bug 1355274
         return Some(Allow());
 
@@ -1239,22 +1282,23 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
       case SYS_SOCKET:
         return Some(Error(EACCES));
 #else  // #ifdef DESKTOP
-      case SYS_SOCKET: {
-        const auto trapFn = aHasArgs ? FakeSocketTrap : FakeSocketTrapLegacy;
-        return Some(AllowBelowLevel(4, Trap(trapFn, nullptr)));
-      }
-      case SYS_CONNECT: {
-        const auto trapFn = aHasArgs ? ConnectTrap : ConnectTrapLegacy;
-        return Some(AllowBelowLevel(4, Trap(trapFn, mBroker)));
-      }
-      case SYS_RECV:
-      case SYS_SEND:
+      case SYS_SOCKET:
+      case SYS_CONNECT:
+        if (BelowLevel(4)) {
+          return Some(Allow());
+        }
+        return SandboxPolicyCommon::EvaluateSocketCall(aCall, aHasArgs);
+
+        // FIXME (bug 1761134): sockopts should be filtered
       case SYS_GETSOCKOPT:
       case SYS_SETSOCKOPT:
+        // These next 3 were needed for X11; they may not be needed
+        // with X11 lockdown, but there's not much attack surface here.
       case SYS_GETSOCKNAME:
       case SYS_GETPEERNAME:
       case SYS_SHUTDOWN:
         return Some(Allow());
+
       case SYS_ACCEPT:
       case SYS_ACCEPT4:
         if (mUsingRenderDoc) {
@@ -1312,53 +1356,20 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
     if (std::find(whitelist.begin(), whitelist.end(), sysno) !=
         whitelist.end()) {
       if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-        SANDBOX_LOG_ERROR("Allowing syscall nr %d via whitelist", sysno);
+        SANDBOX_LOG("Allowing syscall nr %d via whitelist", sysno);
       }
       return Allow();
     }
 
-    // Level 1 allows direct filesystem access; higher levels use
-    // brokering (by falling through to the main policy and delegating
-    // to SandboxPolicyCommon).
-    if (BelowLevel(2)) {
-      MOZ_ASSERT(mBroker == nullptr);
-      switch (sysno) {
-#ifdef __NR_open
-        case __NR_open:
-        case __NR_access:
-        CASES_FOR_stat:
-        CASES_FOR_lstat:
-        case __NR_chmod:
-        case __NR_link:
-        case __NR_mkdir:
-        case __NR_symlink:
-        case __NR_rename:
-        case __NR_rmdir:
-        case __NR_unlink:
-        case __NR_readlink:
-#endif
-        case __NR_openat:
-        case __NR_faccessat:
-        case __NR_faccessat2:
-        CASES_FOR_fstatat:
-        case __NR_fchmodat:
-        case __NR_linkat:
-        case __NR_mkdirat:
-        case __NR_symlinkat:
-        case __NR_renameat:
-        case __NR_unlinkat:
-        case __NR_readlinkat:
-          return Allow();
-      }
-    }
+    // Level 1 has been removed.  If seccomp-bpf is used, then we're
+    // necessarily at level >= 2 and filesystem access is brokered.
+    MOZ_ASSERT(!BelowLevel(2));
+    MOZ_ASSERT(mBroker);
 
     switch (sysno) {
 #ifdef DESKTOP
       case __NR_getppid:
         return Trap(GetPPidTrap, nullptr);
-
-      CASES_FOR_statfs:
-        return Trap(StatFsTrap, nullptr);
 
         // GTK's theme parsing tries to getcwd() while sandboxed, but
         // only during Talos runs.
@@ -1420,7 +1431,7 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
             .Else(SandboxPolicyCommon::EvaluateSyscall(sysno));
       }
 
-      CASES_FOR_fcntl : {
+      CASES_FOR_fcntl: {
         Arg<int> cmd(1);
         return Switch(cmd)
             // Nvidia GL and fontconfig (newer versions) use fcntl file locking.
@@ -1465,9 +1476,6 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
       case __NR_times:
         return Allow();
 
-      CASES_FOR_dup2:  // See ConnectTrapCommon
-        return Allow();
-
       case __NR_fsync:
       case __NR_msync:
         return Allow();
@@ -1493,8 +1501,17 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
 #endif
 
 #ifdef DESKTOP
-      case __NR_pipe2:
-        return Allow();
+      case __NR_pipe2: {
+        // Restrict the flags; O_NOTIFICATION_PIPE in particular
+        // exposes enough attack surface to be a cause for concern
+        // (bug 1808320).  O_DIRECT isn't known to be used currently
+        // (Try passes with it blocked), but should be low-risk, and
+        // Chromium allows it.
+        static constexpr int allowed_flags = O_CLOEXEC | O_NONBLOCK | O_DIRECT;
+        Arg<int> flags(1);
+        return If((flags & ~allowed_flags) == 0, Allow())
+            .Else(InvalidSyscall());
+      }
 
       CASES_FOR_getrlimit:
       CASES_FOR_getresuid:
@@ -1582,6 +1599,10 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
       case __NR_get_mempolicy:
         return Allow();
 
+      // Required by libnuma for FFmpeg
+      case __NR_set_mempolicy:
+        return Error(ENOSYS);
+
       case __NR_kcmp:
         return KcmpPolicyForMesa();
 
@@ -1640,8 +1661,8 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
     }
 
     if ((flags & O_ACCMODE) != O_RDONLY) {
-      SANDBOX_LOG_ERROR("non-read-only open of file %s attempted (flags=0%o)",
-                        path, flags);
+      SANDBOX_LOG("non-read-only open of file %s attempted (flags=0%o)", path,
+                  flags);
       return -EROFS;
     }
     int fd = files->GetDesc(path);
@@ -1661,7 +1682,7 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
     strcpy(buf->sysname, "Linux");
     strcpy(buf->version, "3");
     return 0;
-  };
+  }
 
   static intptr_t FcntlTrap(const sandbox::arch_seccomp_data& aArgs,
                             void* aux) {
@@ -1681,8 +1702,12 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
   const SandboxOpenedFiles* mFiles;
 
  public:
-  explicit GMPSandboxPolicy(const SandboxOpenedFiles* aFiles)
-      : mFiles(aFiles) {}
+  explicit GMPSandboxPolicy(const SandboxOpenedFiles* aFiles) : mFiles(aFiles) {
+    // Used by the profiler to send data back to the parent process;
+    // we are not enabling the file broker, so this will only work if
+    // memfd_create is available.
+    mMayCreateShmem = true;
+  }
 
   ~GMPSandboxPolicy() override = default;
 
@@ -1735,6 +1760,16 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
             .Else(Error(ENOSYS));
       }
 
+      // The profiler will try to readlink /proc/self/exe for native
+      // stackwalking, but that's broken for several other reasons;
+      // see discussion in bug 1770905.  (That can be emulated by
+      // pre-recording the result if/when we need it.)
+#ifdef __NR_readlink
+      case __NR_readlink:
+#endif
+      case __NR_readlinkat:
+        return Error(EINVAL);
+
       default:
         return SandboxPolicyCommon::EvaluateSyscall(sysno);
     }
@@ -1753,9 +1788,10 @@ UniquePtr<sandbox::bpf_dsl::Policy> GetMediaSandboxPolicy(
 // segments, so it may need file brokering.
 class RDDSandboxPolicy final : public SandboxPolicyCommon {
  public:
-  explicit RDDSandboxPolicy(SandboxBrokerClient* aBroker)
-      : SandboxPolicyCommon(aBroker, ShmemUsage::MAY_CREATE,
-                            AllowUnsafeSocketPair::NO) {}
+  explicit RDDSandboxPolicy(SandboxBrokerClient* aBroker) {
+    mBroker = aBroker;
+    mMayCreateShmem = true;
+  }
 
 #ifndef ANDROID
   Maybe<ResultExpr> EvaluateIpcCall(int aCall, int aArgShift) const override {
@@ -1790,11 +1826,21 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
   Maybe<ResultExpr> EvaluateSocketCall(int aCall,
                                        bool aHasArgs) const override {
     switch (aCall) {
-      // Mesa can call getpwuid_r to get the home dir, which can try
-      // to connect to nscd (or maybe servers like NIS or LDAP); this
-      // can't be safely allowed, but we can quietly deny it.
+      // These are for X11.
+      case SYS_GETSOCKNAME:
+      case SYS_GETPEERNAME:
+      case SYS_SHUTDOWN:
+        return Some(Allow());
+
+#ifdef MOZ_ENABLE_V4L2
       case SYS_SOCKET:
+        // Hardware-accelerated decode uses EGL to manage hardware surfaces.
+        // When initialised it tries to connect to the Wayland server over a
+        // UNIX socket. It still works fine if it can't connect to Wayland, so
+        // don't let it create the socket (but don't kill the process for
+        // trying).
         return Some(Error(EACCES));
+#endif
 
       default:
         return SandboxPolicyCommon::EvaluateSocketCall(aCall, aHasArgs);
@@ -1814,10 +1860,25 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // Note: 'b' is also the Binder device on Android.
         static constexpr unsigned long kDmaBufType =
             static_cast<unsigned long>('b') << _IOC_TYPESHIFT;
+#ifdef MOZ_ENABLE_V4L2
+        // Type 'V' for V4L2, used for hw accelerated decode
+        static constexpr unsigned long kVideoType =
+            static_cast<unsigned long>('V') << _IOC_TYPESHIFT;
+#endif
+        // nvidia uses some ioctls from this range (but not actual
+        // fbdev ioctls; nvidia uses values >= 200 for the NR field
+        // (low 8 bits))
+        static constexpr unsigned long kFbDevType =
+            static_cast<unsigned long>('F') << _IOC_TYPESHIFT;
 
-        // Allow DRI and DMA-Buf for VA-API
+        // Allow DRI and DMA-Buf for VA-API. Also allow V4L2 if enabled
         return If(shifted_type == kDrmType, Allow())
             .ElseIf(shifted_type == kDmaBufType, Allow())
+#ifdef MOZ_ENABLE_V4L2
+            .ElseIf(shifted_type == kVideoType, Allow())
+#endif
+            // Hack for nvidia, which isn't supported yet:
+            .ElseIf(shifted_type == kFbDevType, Error(ENOTTY))
             .Else(SandboxPolicyCommon::EvaluateSyscall(sysno));
       }
 
@@ -1845,8 +1906,28 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         return If(pid == 0, Allow()).Else(Trap(SchedTrap, nullptr));
       }
 
+        // The priority bounds are also used, sometimes (bug 1838675):
+      case __NR_sched_get_priority_min:
+      case __NR_sched_get_priority_max:
+        return Allow();
+
         // Mesa sometimes wants to know the OS version.
       case __NR_uname:
+        return Allow();
+
+        // nvidia tries to mknod(!) its devices; that won't work anyway,
+        // so quietly reject it.
+#ifdef __NR_mknod
+      case __NR_mknod:
+#endif
+      case __NR_mknodat:
+        return Error(EPERM);
+
+        // Used by the nvidia GPU driver, including in multi-GPU
+        // systems when we intend to use a non-nvidia GPU.  (Also used
+        // by Mesa for its shader cache, but we disable that in this
+        // process.)
+      CASES_FOR_fstatfs:
         return Allow();
 
         // Pass through the common policy.
@@ -1866,9 +1947,10 @@ UniquePtr<sandbox::bpf_dsl::Policy> GetDecoderSandboxPolicy(
 // the SocketProcess sandbox looks like.
 class SocketProcessSandboxPolicy final : public SandboxPolicyCommon {
  public:
-  explicit SocketProcessSandboxPolicy(SandboxBrokerClient* aBroker)
-      : SandboxPolicyCommon(aBroker, ShmemUsage::MAY_CREATE,
-                            AllowUnsafeSocketPair::NO) {}
+  explicit SocketProcessSandboxPolicy(SandboxBrokerClient* aBroker) {
+    mBroker = aBroker;
+    mMayCreateShmem = true;
+  }
 
   static intptr_t FcntlTrap(const sandbox::arch_seccomp_data& aArgs,
                             void* aux) {
@@ -1888,22 +1970,15 @@ class SocketProcessSandboxPolicy final : public SandboxPolicyCommon {
   Maybe<ResultExpr> EvaluateSocketCall(int aCall,
                                        bool aHasArgs) const override {
     switch (aCall) {
+      case SYS_SOCKET:
+      case SYS_CONNECT:
       case SYS_BIND:
         return Some(Allow());
 
-      case SYS_SOCKET:
-        return Some(Allow());
-
-      case SYS_CONNECT:
-        return Some(Allow());
-
-      case SYS_RECVFROM:
-      case SYS_SENDTO:
+        // FIXME(bug 1641401) do we really need this?
       case SYS_SENDMMSG:
         return Some(Allow());
 
-      case SYS_RECV:
-      case SYS_SEND:
       case SYS_GETSOCKOPT:
       case SYS_SETSOCKOPT:
       case SYS_GETSOCKNAME:
@@ -1949,7 +2024,7 @@ class SocketProcessSandboxPolicy final : public SandboxPolicyCommon {
             .Else(SandboxPolicyCommon::EvaluateSyscall(sysno));
       }
 
-      CASES_FOR_fcntl : {
+      CASES_FOR_fcntl: {
         Arg<int> cmd(1);
         return Switch(cmd)
             .Case(F_DUPFD_CLOEXEC, Allow())
@@ -2002,18 +2077,21 @@ UniquePtr<sandbox::bpf_dsl::Policy> GetSocketProcessSandboxPolicy(
       new SocketProcessSandboxPolicy(aMaybeBroker));
 }
 
-class UtilitySandboxPolicy final : public SandboxPolicyCommon {
+class UtilitySandboxPolicy : public SandboxPolicyCommon {
  public:
-  explicit UtilitySandboxPolicy(SandboxBrokerClient* aBroker)
-      : SandboxPolicyCommon(aBroker, ShmemUsage::MAY_CREATE,
-                            AllowUnsafeSocketPair::NO) {}
+  explicit UtilitySandboxPolicy(SandboxBrokerClient* aBroker) {
+    mBroker = aBroker;
+    mMayCreateShmem = true;
+  }
 
   ResultExpr PrctlPolicy() const override {
     Arg<int> op(0);
     return Switch(op)
-        .CASES((PR_SET_NAME,      // Thread creation
-                PR_SET_DUMPABLE,  // Crash reporting
-                PR_SET_PTRACER),  // Debug-mode crash handling
+        .CASES((PR_SET_NAME,        // Thread creation
+                PR_SET_DUMPABLE,    // Crash reporting
+                PR_SET_PTRACER,     // Debug-mode crash handling
+                PR_GET_PDEATHSIG),  // PGO profiling, cf
+                                    // https://reviews.llvm.org/D29954
                Allow())
         .Default(InvalidSyscall());
   }
@@ -2022,15 +2100,21 @@ class UtilitySandboxPolicy final : public SandboxPolicyCommon {
     switch (sysno) {
       case __NR_getrusage:
         return Allow();
-      case __NR_ioctl: {
-        Arg<unsigned long> request(1);
-        // ffmpeg, and anything else that calls isatty(), will be told
-        // that nothing is a typewriter:
-        return If(request == TCGETS, Error(ENOTTY)).Else(InvalidSyscall());
-      }
-      case __NR_prctl: {
+
+      // Required by FFmpeg
+      case __NR_get_mempolicy:
         return Allow();
+
+      // Required by libnuma for FFmpeg
+      case __NR_sched_getaffinity: {
+        Arg<pid_t> pid(0);
+        return If(pid == 0, Allow()).Else(Trap(SchedTrap, nullptr));
       }
+
+      // Required by libnuma for FFmpeg
+      case __NR_set_mempolicy:
+        return Error(ENOSYS);
+
       // Pass through the common policy.
       default:
         return SandboxPolicyCommon::EvaluateSyscall(sysno);

@@ -32,7 +32,7 @@ class MIDIPortInfo;
  */
 class MIDIPlatformService {
  public:
-  NS_INLINE_DECL_REFCOUNTING(MIDIPlatformService);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MIDIPlatformService);
   // Adds info about MIDI Port that has been connected.
   void AddPortInfo(MIDIPortInfo& aPortInfo);
 
@@ -54,6 +54,9 @@ class MIDIPlatformService {
   // Platform specific init function.
   virtual void Init() = 0;
 
+  // Forces the implementation to refresh the port list.
+  virtual void Refresh() = 0;
+
   // Platform specific MIDI port opening function.
   virtual void Open(MIDIPortParent* aPort) = 0;
 
@@ -64,6 +67,17 @@ class MIDIPlatformService {
   // Object will only be destroyed if there are no more MIDIManager and MIDIPort
   // protocols left to communicate with.
   void MaybeStop();
+
+  // Initializes statics on startup.
+  static void InitStatics();
+
+  // Returns the MIDI Task Queue.
+  static nsISerialEventTarget* OwnerThread();
+
+  // Asserts that we're on the above task queue.
+  static void AssertThread() {
+    MOZ_DIAGNOSTIC_ASSERT(OwnerThread()->IsOnCurrentThread());
+  }
 
   // True if service is live.
   static bool IsRunning();
@@ -93,6 +107,9 @@ class MIDIPlatformService {
   // Clears all messages later than now, sends all outgoing message scheduled
   // before/at now, and schedules MIDI Port connection closing.
   void Close(MIDIPortParent* aPort);
+
+  // Returns whether there are currently any MIDI devices.
+  bool HasDevice() { return !mPortInfo.IsEmpty(); }
 
  protected:
   MIDIPlatformService();
@@ -149,7 +166,7 @@ class MIDIPlatformService {
   nsClassHashtable<nsStringHashKey, MIDIMessageQueue> mMessageQueues;
 
   // Mutex for managing access to message queue objects.
-  Mutex mMessageQueueMutex;
+  Mutex mMessageQueueMutex MOZ_UNANNOTATED;
 };
 
 }  // namespace mozilla::dom

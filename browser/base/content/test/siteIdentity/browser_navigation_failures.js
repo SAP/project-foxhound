@@ -14,14 +14,14 @@ const kSecureURI =
     "chrome://mochitests/content",
     "https://example.com"
   ) + "dummy_page.html";
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(kSecureURI, async browser => {
     let identityMode = window.document.getElementById("identity-box").className;
     is(identityMode, "verifiedDomain", "identity should be secure before");
 
     const TLS_HANDSHAKE_FAILURE_URI = "https://ssl3.example.com/";
     // Try to connect to a server where the TLS handshake will fail.
-    BrowserTestUtils.loadURI(browser, TLS_HANDSHAKE_FAILURE_URI);
+    BrowserTestUtils.startLoadingURIString(browser, TLS_HANDSHAKE_FAILURE_URI);
     await BrowserTestUtils.browserLoaded(
       browser,
       false,
@@ -29,8 +29,8 @@ add_task(async function() {
       true
     );
 
-    let newIdentityMode = window.document.getElementById("identity-box")
-      .className;
+    let newIdentityMode =
+      window.document.getElementById("identity-box").className;
     is(
       newIdentityMode,
       "certErrorPage notSecureText",
@@ -39,14 +39,14 @@ add_task(async function() {
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(kSecureURI, async browser => {
     let identityMode = window.document.getElementById("identity-box").className;
     is(identityMode, "verifiedDomain", "identity should be secure before");
 
     const BAD_ABOUT_PAGE_URI = "about:somethingthatdoesnotexist";
     // Try to load an about: page that doesn't exist
-    BrowserTestUtils.loadURI(browser, BAD_ABOUT_PAGE_URI);
+    BrowserTestUtils.startLoadingURIString(browser, BAD_ABOUT_PAGE_URI);
     await BrowserTestUtils.browserLoaded(
       browser,
       false,
@@ -54,8 +54,8 @@ add_task(async function() {
       true
     );
 
-    let newIdentityMode = window.document.getElementById("identity-box")
-      .className;
+    let newIdentityMode =
+      window.document.getElementById("identity-box").className;
     is(
       newIdentityMode,
       "unknownIdentity",
@@ -77,7 +77,7 @@ function startServer(cert) {
 
   let listener = {
     onSocketAccepted(socket, transport) {
-      let connectionInfo = transport.securityInfo.QueryInterface(
+      let connectionInfo = transport.securityCallbacks.getInterface(
         Ci.nsITLSServerConnectionInfo
       );
       connectionInfo.setSecurityObserver(listener);
@@ -116,40 +116,24 @@ function startServer(cert) {
 // just after doing so (resulting in a "connection reset" error page), the site
 // identity information gets updated appropriately (it should indicate "not
 // secure").
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     // This test fails on some platforms if we leave IPv6 enabled.
     set: [["network.dns.disableIPv6", true]],
   });
-  let certService = Cc["@mozilla.org/security/local-cert-service;1"].getService(
-    Ci.nsILocalCertService
-  );
+
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
 
-  let cert = await new Promise((resolve, reject) => {
-    certService.getOrCreateCert("broken-tls-server", {
-      handleCert(c, rv) {
-        if (!Components.isSuccessCode(rv)) {
-          reject(rv);
-          return;
-        }
-        resolve(c);
-      },
-    });
-  });
+  let cert = getTestServerCertificate();
   // Start a server and trust its certificate.
   let server = startServer(cert);
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
   certOverrideService.rememberValidityOverride(
     "localhost",
     server.port,
     {},
     cert,
-    overrideBits,
     true
   );
 
@@ -164,7 +148,7 @@ add_task(async function() {
     const TLS_HANDSHAKE_FAILURE_URI = `https://localhost:${server.port}/`;
     // Try to connect to a server where the TLS handshake will succeed, but then
     // the server closes the connection right after.
-    BrowserTestUtils.loadURI(browser, TLS_HANDSHAKE_FAILURE_URI);
+    BrowserTestUtils.startLoadingURIString(browser, TLS_HANDSHAKE_FAILURE_URI);
     await BrowserTestUtils.browserLoaded(
       browser,
       false,

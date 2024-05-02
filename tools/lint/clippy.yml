@@ -13,14 +13,13 @@ clippy:
         - gfx/wr/wr_malloc_size_of/
         - js/src/frontend/smoosh/
         - js/src/rust/shared/
-        - js/src/wasm/cranelift/
         - modules/libpref/init/static_prefs/
         - mozglue/static/rust/
         - netwerk/base/mozurl/
+        - security/manager/ssl/data_storage/
         - servo/components/derive_common/
         - servo/components/selectors/
         - servo/components/servo_arc/
-        - servo/components/size_of_test/
         - servo/components/style/
         - servo/components/style_derive/
         - servo/components/style_traits/
@@ -35,9 +34,10 @@ clippy:
         - testing/webdriver/
         - third_party/rust/mp4parse/
         - third_party/rust/mp4parse_capi/
+        - toolkit/crashreporter/mozannotation_client/
+        - toolkit/crashreporter/mozannotation_server/
         - toolkit/components/kvstore/
         - toolkit/components/glean/
-        - toolkit/components/xulstore/tests/gtest/
         - toolkit/library/rust/
         - tools/fuzzing/rust/
         - tools/profiler/rust-api/
@@ -71,7 +71,6 @@ clippy:
         - storage/rust/
         - storage/variant/
         # nsstring
-        - toolkit/components/xulstore/
         - servo/ports/geckolib/tests/
         - xpcom/rust/xpcom/
         - xpcom/rust/nsstring/
@@ -103,9 +102,9 @@ clippy:
     support-files:
         - 'tools/lint/clippy/**'
     # the version of cargo-clippy is:
-    # clippy 0.1.51 (2fd73fa 2021-03-23)
+    # clippy 0.1.65 (2019147 2022-09-19)
     # we use the date instead to facilitate the check
-    # replacing - by . because Python StrictVersion expects this
-    min_clippy_version: 2021.03.23
+    # replacing - by . because Python packaging.version.Version expects this
+    min_clippy_version: 2022.09.19
     type: external
     payload: clippy:lint

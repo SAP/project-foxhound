@@ -1,23 +1,14 @@
-var { NewTabUtils } = ChromeUtils.import(
-  "resource://gre/modules/NewTabUtils.jsm"
-);
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { NewTabUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/NewTabUtils.sys.mjs"
 );
 Cu.importGlobalProperties(["btoa"]);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
+});
 
 const PREF_NEWTAB_ENHANCED = "browser.newtabpage.enhanced";
 const SEARCH_SHORTCUTS_EXPERIMENT_PREF =
@@ -45,7 +36,7 @@ function isVisitDateOK(timestampMS) {
 
 // a set up function to prep the activity stream provider
 function setUpActivityStreamTest() {
-  return (async function() {
+  return (async function () {
     await PlacesUtils.history.clear();
     await PlacesUtils.bookmarks.eraseEverything();
     let faviconExpiredPromise = new Promise(resolve => {

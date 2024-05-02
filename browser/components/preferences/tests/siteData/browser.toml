@@ -1,0 +1,27 @@
+[DEFAULT]
+support-files = [
+  "head.js",
+  "site_data_test.html",
+  "service_worker_test.html",
+  "service_worker_test.js",
+  "offline/offline.html",
+  "offline/manifest.appcache",
+]
+
+["browser_clearSiteData.js"]
+
+["browser_siteData.js"]
+
+["browser_siteData2.js"]
+skip-if = [
+  "win10_2004 && (!debug && !asan)", # Bug 1669937
+  "win11_2009 && (!debug && !asan)", # Bug 1797751
+  "apple_catalina && debug", # Bug 1775910
+]
+
+["browser_siteData3.js"]
+fail-if = ["a11y_checks"] # Bug 1854636 clicked treecol#usageCol, treecol#hostCol, treecol#cookiesCol may not be focusable
+
+["browser_siteData_multi_select.js"]
+fail-if = ["a11y_checks"] # Bug 1854636 clicked treecol#hostCol may not be focusable
+skip-if = ["tsan"] # Bug 1683730

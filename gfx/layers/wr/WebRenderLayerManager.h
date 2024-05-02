@@ -56,7 +56,6 @@ class TransactionIdAllocator;
 class LayerUserData;
 
 class WebRenderLayerManager final : public WindowRenderer {
-  typedef nsTArray<RefPtr<Layer>> LayerRefArray;
   typedef nsTHashSet<RefPtr<WebRenderUserData>> WebRenderUserDataRefTable;
 
  public:
@@ -95,13 +94,12 @@ class WebRenderLayerManager final : public WindowRenderer {
 
   bool NeedsWidgetInvalidation() override { return false; }
 
-  void SetLayersObserverEpoch(LayersObserverEpoch aEpoch);
-
   void DidComposite(TransactionId aTransactionId,
                     const mozilla::TimeStamp& aCompositeStart,
                     const mozilla::TimeStamp& aCompositeEnd);
 
   void ClearCachedResources();
+  void ClearAnimationResources();
   void UpdateTextureFactoryIdentifier(
       const TextureFactoryIdentifier& aNewIdentifier);
   TextureFactoryIdentifier GetTextureFactoryIdentifier();
@@ -125,7 +123,8 @@ class WebRenderLayerManager final : public WindowRenderer {
   void SetFocusTarget(const FocusTarget& aFocusTarget);
 
   already_AddRefed<PersistentBufferProvider> CreatePersistentBufferProvider(
-      const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat) override;
+      const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat,
+      bool aWillReadFrequently) override;
 
   bool AsyncPanZoomEnabled() const;
 
@@ -212,6 +211,10 @@ class WebRenderLayerManager final : public WindowRenderer {
   std::unordered_set<ScrollableLayerGuid::ViewID>
   ClearPendingScrollInfoUpdate();
 
+#ifdef DEBUG
+  gfxContext* GetTarget() const { return mTarget; }
+#endif
+
  private:
   /**
    * Take a snapshot of the parent context, and copy
@@ -254,7 +257,7 @@ class WebRenderLayerManager final : public WindowRenderer {
   // we send a message to our remote side to capture the actual pixels
   // being drawn to the default target, and then copy those pixels
   // back to mTarget.
-  RefPtr<gfxContext> mTarget;
+  gfxContext* mTarget;
 
   // See equivalent field in ClientLayerManager
   uint32_t mPaintSequenceNumber;

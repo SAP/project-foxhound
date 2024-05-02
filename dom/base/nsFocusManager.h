@@ -61,11 +61,12 @@ class nsFocusManager final : public nsIFocusManager,
   // Simple helper to call SetFocusedWindow on the instance.
   //
   // This raises the window and switches to the tab as needed.
-  static void FocusWindow(nsPIDOMWindowOuter* aWindow,
-                          mozilla::dom::CallerType aCallerType);
+  MOZ_CAN_RUN_SCRIPT static void FocusWindow(
+      nsPIDOMWindowOuter* aWindow, mozilla::dom::CallerType aCallerType);
 
-  static void PrefChanged(const char* aPref, void* aSelf);
-  void PrefChanged(const char* aPref);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY static void PrefChanged(const char* aPref,
+                                                      void* aSelf);
+  MOZ_CAN_RUN_SCRIPT void PrefChanged(const char* aPref);
 
   /**
    * Retrieve the single focus manager.
@@ -78,6 +79,9 @@ class nsFocusManager final : public nsIFocusManager,
    * pointer filled in to an out-parameter).
    */
   mozilla::dom::Element* GetFocusedElement() { return mFocusedElement; }
+  static mozilla::dom::Element* GetFocusedElementStatic() {
+    return sInstance ? sInstance->GetFocusedElement() : nullptr;
+  }
 
   /**
    * Returns true if aContent currently has focus.
@@ -138,7 +142,8 @@ class nsFocusManager final : public nsIFocusManager,
   /**
    * Called when content has been removed.
    */
-  nsresult ContentRemoved(Document* aDocument, nsIContent* aContent);
+  MOZ_CAN_RUN_SCRIPT nsresult ContentRemoved(Document* aDocument,
+                                             nsIContent* aContent);
 
   void NeedsFlushBeforeEventHandling(mozilla::dom::Element* aElement) {
     if (mFocusedElement == aElement) {
@@ -148,7 +153,8 @@ class nsFocusManager final : public nsIFocusManager,
 
   bool CanSkipFocus(nsIContent* aContent);
 
-  void FlushBeforeEventHandlingIfNeeded(nsIContent* aContent) {
+  MOZ_CAN_RUN_SCRIPT void FlushBeforeEventHandlingIfNeeded(
+      nsIContent* aContent) {
     if (mEventHandlingNeedsFlush) {
       nsCOMPtr<Document> doc = aContent->GetComposedDoc();
       if (doc) {
@@ -161,7 +167,7 @@ class nsFocusManager final : public nsIFocusManager,
   /**
    * Update the caret with current mode (whether in caret browsing mode or not).
    */
-  void UpdateCaretForCaretBrowsingMode();
+  MOZ_CAN_RUN_SCRIPT void UpdateCaretForCaretBrowsingMode();
 
   /** @see nsIFocusManager.getLastFocusMethod() */
   uint32_t GetLastFocusMethod(nsPIDOMWindowOuter*) const;
@@ -203,18 +209,15 @@ class nsFocusManager final : public nsIFocusManager,
    * aNavigateByKey to move focus by keyboard as a side effect of computing the
    * next target.
    */
-  nsresult DetermineElementToMoveFocus(nsPIDOMWindowOuter* aWindow,
-                                       nsIContent* aStart, int32_t aType,
-                                       bool aNoParentTraversal,
-                                       bool aNavigateByKey,
-                                       nsIContent** aNextContent);
+  MOZ_CAN_RUN_SCRIPT nsresult DetermineElementToMoveFocus(
+      nsPIDOMWindowOuter* aWindow, nsIContent* aStart, int32_t aType,
+      bool aNoParentTraversal, bool aNavigateByKey, nsIContent** aNextContent);
 
   /**
    * Setter for focusedWindow with CallerType
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult SetFocusedWindowWithCallerType(
-      mozIDOMWindowProxy* aWindowToFocus, mozilla::dom::CallerType aCallerType,
-      uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT nsresult SetFocusedWindowWithCallerType(
+      mozIDOMWindowProxy* aWindowToFocus, mozilla::dom::CallerType aCallerType);
 
   /**
    * Given an element, which must be the focused element, activate the remote
@@ -225,19 +228,21 @@ class nsFocusManager final : public nsIFocusManager,
   /**
    * Raises the top-level window aWindow at the widget level.
    */
-  void RaiseWindow(nsPIDOMWindowOuter* aWindow,
-                   mozilla::dom::CallerType aCallerType, uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT void RaiseWindow(nsPIDOMWindowOuter* aWindow,
+                                      mozilla::dom::CallerType aCallerType,
+                                      uint64_t aActionId);
 
   /**
    * Called when a window has been raised.
    */
-  void WindowRaised(mozIDOMWindowProxy* aWindow, uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT void WindowRaised(mozIDOMWindowProxy* aWindow,
+                                       uint64_t aActionId);
 
   /**
    * Called when a window has been lowered.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void WindowLowered(mozIDOMWindowProxy* aWindow,
-                                                 uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT void WindowLowered(mozIDOMWindowProxy* aWindow,
+                                        uint64_t aActionId);
 
   /**
    * Called when a new document in a window is shown.
@@ -245,43 +250,25 @@ class nsFocusManager final : public nsIFocusManager,
    * If aNeedsFocus is true, then focus events are expected to be fired on the
    * window if this window is in the focused window chain.
    */
-  void WindowShown(mozIDOMWindowProxy* aWindow, bool aNeedsFocus);
+  MOZ_CAN_RUN_SCRIPT void WindowShown(mozIDOMWindowProxy* aWindow,
+                                      bool aNeedsFocus);
 
   /**
    * Called when a document in a window has been hidden or otherwise can no
    * longer accept focus.
    */
-  void WindowHidden(mozIDOMWindowProxy* aWindow, uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT void WindowHidden(mozIDOMWindowProxy* aWindow,
+                                       uint64_t aActionId);
 
   /**
    * Fire any events that have been delayed due to synchronized actions.
    */
-  void FireDelayedEvents(Document* aDocument);
+  MOZ_CAN_RUN_SCRIPT void FireDelayedEvents(Document* aDocument);
 
   void WasNuked(nsPIDOMWindowOuter* aWindow);
 
-  /**
-   * Indicate that a plugin wishes to take the focus. This is similar to a
-   * normal focus except that the widget focus is not changed. Updating the
-   * widget focus state is the responsibility of the caller.
-   */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
-  FocusPlugin(mozilla::dom::Element* aPlugin);
-
   static uint32_t ProgrammaticFocusFlags(
       const mozilla::dom::FocusOptions& aOptions);
-
-  /**
-   * Returns the content node that focus will be redirected to if aContent was
-   * focused. This is used for the special case of certain XUL elements such
-   * as textboxes or input number which redirect focus to an anonymous child.
-   *
-   * aContent must be non-null.
-   *
-   * XXXndeakin this should be removed eventually but I want to do that as
-   * followup work.
-   */
-  static mozilla::dom::Element* GetRedirectedFocus(nsIContent* aContent);
 
   /**
    * Returns an InputContextAction cause for aFlags.
@@ -289,11 +276,11 @@ class nsFocusManager final : public nsIFocusManager,
   static InputContextAction::Cause GetFocusMoveActionCause(uint32_t aFlags);
 
   /**
-   * Notify of re-focus to same content.
+   * Notify of re-focus to same element.
    *
-   * aContent is focused content.
+   * aElement is focused element.
    */
-  void NotifyOfReFocus(nsIContent& aContent);
+  MOZ_CAN_RUN_SCRIPT void NotifyOfReFocus(mozilla::dom::Element& aElement);
 
   static void MarkUncollectableForCCGeneration(uint32_t aGeneration);
 
@@ -329,10 +316,13 @@ class nsFocusManager final : public nsIFocusManager,
    *
    * All actual focus changes must use this method to do so. (as opposed
    * to those that update the focus in an inactive window for instance).
+   *
+   * Returns Nothing() if we end up not trying to focus the element,
+   * otherwise returns the generated action id.
    */
-  MOZ_CAN_RUN_SCRIPT void SetFocusInner(mozilla::dom::Element* aNewContent,
-                                        int32_t aFlags, bool aFocusChanged,
-                                        bool aAdjustWidget, uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT mozilla::Maybe<uint64_t> SetFocusInner(
+      mozilla::dom::Element* aNewContent, int32_t aFlags, bool aFocusChanged,
+      bool aAdjustWidget);
 
   /**
    * Returns true if aPossibleAncestor is the same as aWindow or an
@@ -363,12 +353,12 @@ class nsFocusManager final : public nsIFocusManager,
    * start at the active top-level window and navigate down the currently
    * focused elements for each frame in the tree to get to aBrowsingContext.
    */
-  bool AdjustInProcessWindowFocus(
+  MOZ_CAN_RUN_SCRIPT bool AdjustInProcessWindowFocus(
       mozilla::dom::BrowsingContext* aBrowsingContext, bool aCheckPermission,
       bool aIsVisible, uint64_t aActionId);
-  void AdjustWindowFocus(mozilla::dom::BrowsingContext* aBrowsingContext,
-                         bool aCheckPermission, bool aIsVisible,
-                         uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT void AdjustWindowFocus(
+      mozilla::dom::BrowsingContext* aBrowsingContext, bool aCheckPermission,
+      bool aIsVisible, uint64_t aActionId);
 
   /**
    * Returns true if aWindow is visible.
@@ -398,7 +388,7 @@ class nsFocusManager final : public nsIFocusManager,
    * frame, so only the IsFocusable method on the content node must be
    * true.
    */
-  mozilla::dom::Element* FlushAndCheckIfFocusable(
+  MOZ_CAN_RUN_SCRIPT mozilla::dom::Element* FlushAndCheckIfFocusable(
       mozilla::dom::Element* aElement, uint32_t aFlags);
 
   /**
@@ -422,23 +412,21 @@ class nsFocusManager final : public nsIFocusManager,
    *
    * If aAdjustWidget is false, don't change the widget focus state.
    */
-  // MOZ_CAN_RUN_SCRIPT_BOUNDARY for now, until we annotate callers.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  bool Blur(mozilla::dom::BrowsingContext* aBrowsingContextToClear,
-            mozilla::dom::BrowsingContext* aAncestorBrowsingContextToFocus,
-            bool aIsLeavingDocument, bool aAdjustWidget, uint64_t aActionId,
-            mozilla::dom::Element* aElementToFocus = nullptr);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void BlurFromOtherProcess(
+  MOZ_CAN_RUN_SCRIPT bool Blur(
+      mozilla::dom::BrowsingContext* aBrowsingContextToClear,
+      mozilla::dom::BrowsingContext* aAncestorBrowsingContextToFocus,
+      bool aIsLeavingDocument, bool aAdjustWidget, bool aRemainActive,
+      uint64_t aActionId, mozilla::dom::Element* aElementToFocus = nullptr);
+  MOZ_CAN_RUN_SCRIPT void BlurFromOtherProcess(
       mozilla::dom::BrowsingContext* aFocusedBrowsingContext,
       mozilla::dom::BrowsingContext* aBrowsingContextToClear,
       mozilla::dom::BrowsingContext* aAncestorBrowsingContextToFocus,
       bool aIsLeavingDocument, bool aAdjustWidget, uint64_t aActionId);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  bool BlurImpl(mozilla::dom::BrowsingContext* aBrowsingContextToClear,
-                mozilla::dom::BrowsingContext* aAncestorBrowsingContextToFocus,
-                bool aIsLeavingDocument, bool aAdjustWidget,
-                mozilla::dom::Element* aElementToFocus, uint64_t aActionId);
+  MOZ_CAN_RUN_SCRIPT bool BlurImpl(
+      mozilla::dom::BrowsingContext* aBrowsingContextToClear,
+      mozilla::dom::BrowsingContext* aAncestorBrowsingContextToFocus,
+      bool aIsLeavingDocument, bool aAdjustWidget, bool aRemainActive,
+      mozilla::dom::Element* aElementToFocus, uint64_t aActionId);
 
   /**
    * Focus an element in the active window and child frame.
@@ -466,11 +454,11 @@ class nsFocusManager final : public nsIFocusManager,
    *
    * If aAdjustWidget is false, don't change the widget focus state.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void Focus(nsPIDOMWindowOuter* aWindow, mozilla::dom::Element* aContent,
-             uint32_t aFlags, bool aIsNewDocument, bool aFocusChanged,
-             bool aWindowRaised, bool aAdjustWidget, uint64_t aActionId,
-             const mozilla::Maybe<BlurredElementInfo>& = mozilla::Nothing());
+  MOZ_CAN_RUN_SCRIPT void Focus(
+      nsPIDOMWindowOuter* aWindow, mozilla::dom::Element* aContent,
+      uint32_t aFlags, bool aIsNewDocument, bool aFocusChanged,
+      bool aWindowRaised, bool aAdjustWidget, uint64_t aActionId,
+      const mozilla::Maybe<BlurredElementInfo>& = mozilla::Nothing());
 
   /**
    * Send a focus or blur event at aTarget. It may be added to the delayed
@@ -480,10 +468,10 @@ class nsFocusManager final : public nsIFocusManager,
    *
    * aWindowRaised should only be true if called from WindowRaised.
    */
-  void SendFocusOrBlurEvent(
+  MOZ_CAN_RUN_SCRIPT void SendFocusOrBlurEvent(
       mozilla::EventMessage aEventMessage, mozilla::PresShell* aPresShell,
-      Document* aDocument, nsISupports* aTarget, bool aWindowRaised,
-      bool aIsRefocus = false,
+      Document* aDocument, mozilla::dom::EventTarget* aTarget,
+      bool aWindowRaised, bool aIsRefocus = false,
       mozilla::dom::EventTarget* aRelatedTarget = nullptr);
   /**
    * Fire a focus or blur event at aTarget.
@@ -493,9 +481,10 @@ class nsFocusManager final : public nsIFocusManager,
    *
    * aWindowRaised should only be true if called from WindowRaised.
    */
-  void FireFocusOrBlurEvent(
+  MOZ_CAN_RUN_SCRIPT void FireFocusOrBlurEvent(
       mozilla::EventMessage aEventMessage, mozilla::PresShell* aPresShell,
-      nsISupports* aTarget, bool aWindowRaised, bool aIsRefocus = false,
+      mozilla::dom::EventTarget* aTarget, bool aWindowRaised,
+      bool aIsRefocus = false,
       mozilla::dom::EventTarget* aRelatedTarget = nullptr);
 
   /**
@@ -515,9 +504,10 @@ class nsFocusManager final : public nsIFocusManager,
    *  aRelatedTarget is the content related to the event (the object
    *  losing focus for focusin, the object getting focus for focusout).
    */
-  void FireFocusInOrOutEvent(
+  MOZ_CAN_RUN_SCRIPT void FireFocusInOrOutEvent(
       mozilla::EventMessage aEventMessage, mozilla::PresShell* aPresShell,
-      nsISupports* aTarget, nsPIDOMWindowOuter* aCurrentFocusedWindow,
+      mozilla::dom::EventTarget* aTarget,
+      nsPIDOMWindowOuter* aCurrentFocusedWindow,
       nsIContent* aCurrentFocusedContent,
       mozilla::dom::EventTarget* aRelatedTarget = nullptr);
 
@@ -536,14 +526,15 @@ class nsFocusManager final : public nsIFocusManager,
    * aUpdateVisibility should be true to update whether the caret is
    * visible or not.
    */
-  void UpdateCaret(bool aMoveCaretToFocus, bool aUpdateVisibility,
-                   nsIContent* aContent);
+  MOZ_CAN_RUN_SCRIPT void UpdateCaret(bool aMoveCaretToFocus,
+                                      bool aUpdateVisibility,
+                                      nsIContent* aContent);
 
   /**
    * Helper method to move the caret to the focused element aContent.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void MoveCaretToFocus(
-      mozilla::PresShell* aPresShell, nsIContent* aContent);
+  MOZ_CAN_RUN_SCRIPT void MoveCaretToFocus(mozilla::PresShell* aPresShell,
+                                           nsIContent* aContent);
 
   /**
    * Makes the caret visible or not, depending on aVisible.
@@ -591,7 +582,7 @@ class nsFocusManager final : public nsIFocusManager,
    *   Consider the method searches downwards in flattened subtree
    *   rooted at aOwner.
    */
-  nsIContent* GetNextTabbableContentInScope(
+  MOZ_CAN_RUN_SCRIPT nsIContent* GetNextTabbableContentInScope(
       nsIContent* aOwner, nsIContent* aStartContent,
       nsIContent* aOriginalStartContent, bool aForward,
       int32_t aCurrentTabIndex, bool aIgnoreTabIndex,
@@ -633,10 +624,10 @@ class nsFocusManager final : public nsIFocusManager,
    *   flattened subtrees that contains aStartContent as non-root, except
    *   the flattened subtree rooted at shadow host in light DOM.
    */
-  nsIContent* GetNextTabbableContentInAncestorScopes(
-      nsIContent* aStartOwner, nsIContent** aStartContent,
+  MOZ_CAN_RUN_SCRIPT nsIContent* GetNextTabbableContentInAncestorScopes(
+      nsIContent* aStartOwner, nsCOMPtr<nsIContent>& aStartContent /* inout */,
       nsIContent* aOriginalStartContent, bool aForward,
-      int32_t* aCurrentTabIndex, bool aIgnoreTabIndex,
+      int32_t* aCurrentTabIndex, bool* aIgnoreTabIndex,
       bool aForDocumentNavigation, bool aNavigateByKey);
 
   /**
@@ -667,14 +658,17 @@ class nsFocusManager final : public nsIFocusManager,
    * from where the selection is. Similarly, if the starting element isn't
    * focusable, since it doesn't really have a defined tab index.
    *
+   * aSkipPopover should be true to avoid an invoker triggering to step into
+   * the popover that was already been visited again.
+   *
    * aNavigateByKey to move focus by keyboard as a side effect of computing the
    * next target.
    */
-  nsresult GetNextTabbableContent(
+  MOZ_CAN_RUN_SCRIPT nsresult GetNextTabbableContent(
       mozilla::PresShell* aPresShell, nsIContent* aRootContent,
       nsIContent* aOriginalStartContent, nsIContent* aStartContent,
       bool aForward, int32_t aCurrentTabIndex, bool aIgnoreTabIndex,
-      bool aForDocumentNavigation, bool aNavigateByKey,
+      bool aForDocumentNavigation, bool aNavigateByKey, bool aSkipPopover,
       nsIContent** aResultContent);
 
   /**
@@ -706,8 +700,8 @@ class nsFocusManager final : public nsIFocusManager,
    * aRootContent. For content documents, this will be aRootContent itself, but
    * for chrome documents, this will locate the next focusable content.
    */
-  nsresult FocusFirst(mozilla::dom::Element* aRootContent,
-                      nsIContent** aNextContent);
+  MOZ_CAN_RUN_SCRIPT nsresult FocusFirst(mozilla::dom::Element* aRootContent,
+                                         nsIContent** aNextContent);
 
   /**
    * Retrieves and returns the root node from aDocument to be focused. Will
@@ -760,15 +754,14 @@ class nsFocusManager final : public nsIFocusManager,
   void SetFocusedWindowInternal(nsPIDOMWindowOuter* aWindow, uint64_t aActionId,
                                 bool aSyncBrowsingContext = true);
 
-  bool TryDocumentNavigation(nsIContent* aCurrentContent,
-                             bool* aCheckSubDocument,
-                             nsIContent** aResultContent);
+  MOZ_CAN_RUN_SCRIPT bool TryDocumentNavigation(nsIContent* aCurrentContent,
+                                                bool* aCheckSubDocument,
+                                                nsIContent** aResultContent);
 
-  bool TryToMoveFocusToSubDocument(nsIContent* aCurrentContent,
-                                   nsIContent* aOriginalStartContent,
-                                   bool aForward, bool aForDocumentNavigation,
-                                   bool aNavigateByKey,
-                                   nsIContent** aResultContent);
+  MOZ_CAN_RUN_SCRIPT bool TryToMoveFocusToSubDocument(
+      nsIContent* aCurrentContent, nsIContent* aOriginalStartContent,
+      bool aForward, bool aForDocumentNavigation, bool aNavigateByKey,
+      nsIContent** aResultContent);
 
   // Sets the focused BrowsingContext and, if appropriate, syncs it to
   // other processes.
@@ -869,6 +862,11 @@ class nsFocusManager final : public nsIFocusManager,
   uint64_t GetActionIdForFocusedBrowsingContextInChrome() const;
 
   static uint64_t GenerateFocusActionId();
+
+  // This function works very similar to
+  // https://html.spec.whatwg.org/#get-the-focusable-area
+  static mozilla::dom::Element* GetTheFocusableArea(
+      mozilla::dom::Element* aTarget, uint32_t aFlags);
 
  private:
   // In the chrome process, the currently active and front-most top-most

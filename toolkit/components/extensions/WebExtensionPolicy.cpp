@@ -3,19 +3,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "MainThreadUtils.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/extensions/DocumentObserver.h"
 #include "mozilla/extensions/WebExtensionContentScript.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 
 #include "mozilla/AddonManagerWebAPI.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/Try.h"
 #include "nsContentUtils.h"
 #include "nsEscape.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIObserver.h"
 #include "nsISubstitutingProtocolHandler.h"
+#include "nsLiteralString.h"
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 
@@ -26,6 +31,10 @@ using namespace dom;
 
 static const char kProto[] = "moz-extension";
 
+static const char kBackgroundScriptTypeDefault[] = "text/javascript";
+
+static const char kBackgroundScriptTypeModule[] = "module";
+
 static const char kBackgroundPageHTMLStart[] =
     "<!DOCTYPE html>\n\
 <html>\n\
@@ -34,7 +43,7 @@ static const char kBackgroundPageHTMLStart[] =
 
 static const char kBackgroundPageHTMLScript[] =
     "\n\
-    <script type=\"text/javascript\" src=\"%s\"></script>";
+    <script type=\"%s\" src=\"%s\"></script>";
 
 static const char kBackgroundPageHTMLEnd[] =
     "\n\
@@ -42,19 +51,14 @@ static const char kBackgroundPageHTMLEnd[] =
 </html>";
 
 #define BASE_CSP_PREF_V2 "extensions.webextensions.base-content-security-policy"
-#define DEFAULT_BASE_CSP_V2                                       \
-  "script-src 'self' https://* moz-extension: blob: filesystem: " \
-  "'unsafe-eval' 'unsafe-inline'; "                               \
-  "object-src 'self' https://* moz-extension: blob: filesystem:;"
+#define DEFAULT_BASE_CSP_V2                                            \
+  "script-src 'self' https://* http://localhost:* http://127.0.0.1:* " \
+  "moz-extension: blob: filesystem: 'unsafe-eval' 'wasm-unsafe-eval' " \
+  "'unsafe-inline';"
 
 #define BASE_CSP_PREF_V3 \
   "extensions.webextensions.base-content-security-policy.v3"
-#define DEFAULT_BASE_CSP_V3                \
-  "script-src 'self'; object-src 'self'; " \
-  "style-src 'self'; worker-src 'self';"
-
-static const char kRestrictedDomainPref[] =
-    "extensions.webextensions.restrictedDomains";
+#define DEFAULT_BASE_CSP_V3 "script-src 'self' 'wasm-unsafe-eval';"
 
 static inline ExtensionPolicyService& EPS() {
   return ExtensionPolicyService::GetSingleton();
@@ -79,14 +83,15 @@ static nsISubstitutingProtocolHandler* Proto() {
   return sHandler;
 }
 
-bool ParseGlobs(GlobalObject& aGlobal, Sequence<OwningMatchGlobOrString> aGlobs,
-                nsTArray<RefPtr<MatchGlob>>& aResult, ErrorResult& aRv) {
+bool ParseGlobs(GlobalObject& aGlobal,
+                Sequence<OwningMatchGlobOrUTF8String> aGlobs,
+                nsTArray<RefPtr<MatchGlobCore>>& aResult, ErrorResult& aRv) {
   for (auto& elem : aGlobs) {
     if (elem.IsMatchGlob()) {
-      aResult.AppendElement(elem.GetAsMatchGlob());
+      aResult.AppendElement(elem.GetAsMatchGlob()->Core());
     } else {
-      RefPtr<MatchGlob> glob =
-          MatchGlob::Constructor(aGlobal, elem.GetAsString(), true, aRv);
+      RefPtr<MatchGlobCore> glob =
+          new MatchGlobCore(elem.GetAsUTF8String(), true, false, aRv);
       if (aRv.Failed()) {
         return false;
       }
@@ -143,60 +148,73 @@ WebAccessibleResource::WebAccessibleResource(
     return;
   }
 
-  if (aInit.mMatches.WasPassed()) {
+  if (!aInit.mMatches.IsNull()) {
     MatchPatternOptions options;
     options.mRestrictSchemes = true;
-    mMatches = ParseMatches(aGlobal, aInit.mMatches.Value(), options,
-                            ErrorBehavior::CreateEmptyPattern, aRv);
+    RefPtr<MatchPatternSet> matches =
+        ParseMatches(aGlobal, aInit.mMatches.Value(), options,
+                     ErrorBehavior::CreateEmptyPattern, aRv);
+    MOZ_DIAGNOSTIC_ASSERT(!aRv.Failed());
+    mMatches = matches->Core();
+  }
+
+  if (!aInit.mExtension_ids.IsNull()) {
+    mExtensionIDs = new AtomSet(aInit.mExtension_ids.Value());
   }
 }
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebAccessibleResource)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
-
-NS_IMPL_CYCLE_COLLECTION(WebAccessibleResource)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(WebAccessibleResource)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(WebAccessibleResource)
+bool WebAccessibleResource::IsExtensionMatch(const URLInfo& aURI) {
+  if (!mExtensionIDs) {
+    return false;
+  }
+  RefPtr<WebExtensionPolicyCore> policy =
+      ExtensionPolicyService::GetCoreByHost(aURI.Host());
+  return policy && (mExtensionIDs->Contains(nsGkAtoms::_asterisk) ||
+                    mExtensionIDs->Contains(policy->Id()));
+}
 
 /*****************************************************************************
- * WebExtensionPolicy
+ * WebExtensionPolicyCore
  *****************************************************************************/
 
-WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
-                                       const WebExtensionInit& aInit,
-                                       ErrorResult& aRv)
-    : mId(NS_AtomizeMainThread(aInit.mId)),
-      mHostname(aInit.mMozExtensionHostname),
+WebExtensionPolicyCore::WebExtensionPolicyCore(GlobalObject& aGlobal,
+                                               WebExtensionPolicy* aPolicy,
+                                               const WebExtensionInit& aInit,
+                                               ErrorResult& aRv)
+    : mPolicy(aPolicy),
+      mId(NS_AtomizeMainThread(aInit.mId)),
       mName(aInit.mName),
+      mType(NS_AtomizeMainThread(aInit.mType)),
       mManifestVersion(aInit.mManifestVersion),
       mExtensionPageCSP(aInit.mExtensionPageCSP),
-      mLocalizeCallback(aInit.mLocalizeCallback),
       mIsPrivileged(aInit.mIsPrivileged),
       mTemporarilyInstalled(aInit.mTemporarilyInstalled),
+      mBackgroundWorkerScript(aInit.mBackgroundWorkerScript),
+      mIgnoreQuarantine(aInit.mIsPrivileged || aInit.mIgnoreQuarantine),
       mPermissions(new AtomSet(aInit.mPermissions)) {
-  MatchPatternOptions options;
-  options.mRestrictSchemes = !HasPermission(nsGkAtoms::mozillaAddons);
+  // In practice this is not necessary, but in tests where the uuid
+  // passed in is not lowercased various tests can fail.
+  ToLowerCase(aInit.mMozExtensionHostname, mHostname);
 
-  mHostPermissions = ParseMatches(aGlobal, aInit.mAllowedOrigins, options,
-                                  ErrorBehavior::CreateEmptyPattern, aRv);
-  if (aRv.Failed()) {
-    return;
+  // Initialize the base CSP and extension page CSP
+  if (mManifestVersion < 3) {
+    nsresult rv = Preferences::GetString(BASE_CSP_PREF_V2, mBaseCSP);
+    if (NS_FAILED(rv)) {
+      mBaseCSP = NS_LITERAL_STRING_FROM_CSTRING(DEFAULT_BASE_CSP_V2);
+    }
+  } else {
+    nsresult rv = Preferences::GetString(BASE_CSP_PREF_V3, mBaseCSP);
+    if (NS_FAILED(rv)) {
+      mBaseCSP = NS_LITERAL_STRING_FROM_CSTRING(DEFAULT_BASE_CSP_V3);
+    }
   }
-
-  if (!aInit.mBackgroundScripts.IsNull()) {
-    mBackgroundScripts.SetValue().AppendElements(
-        aInit.mBackgroundScripts.Value());
-  }
-
-  if (!aInit.mBackgroundWorkerScript.IsEmpty()) {
-    mBackgroundWorkerScript.Assign(aInit.mBackgroundWorkerScript);
-  }
-
-  InitializeBaseCSP();
 
   if (mExtensionPageCSP.IsVoid()) {
-    EPS().GetDefaultCSP(mExtensionPageCSP);
+    if (mManifestVersion < 3) {
+      EPS().GetDefaultCSP(mExtensionPageCSP);
+    } else {
+      EPS().GetDefaultCSPV3(mExtensionPageCSP);
+    }
   }
 
   mWebAccessibleResources.SetCapacity(aInit.mWebAccessibleResources.Length());
@@ -208,6 +226,95 @@ WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
     }
     mWebAccessibleResources.AppendElement(std::move(resource));
   }
+
+  nsresult rv = NS_NewURI(getter_AddRefs(mBaseURI), aInit.mBaseURL);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
+}
+
+bool WebExtensionPolicyCore::SourceMayAccessPath(
+    const URLInfo& aURI, const nsACString& aPath) const {
+  if (aURI.Scheme() == nsGkAtoms::moz_extension &&
+      MozExtensionHostname().Equals(aURI.Host())) {
+    // An extension can always access it's own paths.
+    return true;
+  }
+  // Bug 1786564 Static themes need to allow access to theme resources.
+  if (Type() == nsGkAtoms::theme) {
+    RefPtr<WebExtensionPolicyCore> policyCore =
+        ExtensionPolicyService::GetCoreByHost(aURI.Host());
+    return policyCore != nullptr;
+  }
+
+  if (ManifestVersion() < 3) {
+    return IsWebAccessiblePath(aPath);
+  }
+  for (const auto& resource : mWebAccessibleResources) {
+    if (resource->SourceMayAccessPath(aURI, aPath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool WebExtensionPolicyCore::CanAccessURI(const URLInfo& aURI, bool aExplicit,
+                                          bool aCheckRestricted,
+                                          bool aAllowFilePermission) const {
+  if (aCheckRestricted && WebExtensionPolicy::IsRestrictedURI(aURI)) {
+    return false;
+  }
+  if (aCheckRestricted && QuarantinedFromURI(aURI)) {
+    return false;
+  }
+  if (!aAllowFilePermission && aURI.Scheme() == nsGkAtoms::file) {
+    return false;
+  }
+
+  AutoReadLock lock(mLock);
+  return mHostPermissions && mHostPermissions->Matches(aURI, aExplicit);
+}
+
+bool WebExtensionPolicyCore::QuarantinedFromDoc(const DocInfo& aDoc) const {
+  return QuarantinedFromURI(aDoc.PrincipalURL());
+}
+
+bool WebExtensionPolicyCore::QuarantinedFromURI(const URLInfo& aURI) const {
+  return !IgnoreQuarantine() && WebExtensionPolicy::IsQuarantinedURI(aURI);
+}
+
+/*****************************************************************************
+ * WebExtensionPolicy
+ *****************************************************************************/
+
+WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
+                                       const WebExtensionInit& aInit,
+                                       ErrorResult& aRv)
+    : mCore(new WebExtensionPolicyCore(aGlobal, this, aInit, aRv)),
+      mLocalizeCallback(aInit.mLocalizeCallback) {
+  if (aRv.Failed()) {
+    return;
+  }
+
+  MatchPatternOptions options;
+  options.mRestrictSchemes = !HasPermission(nsGkAtoms::mozillaAddons);
+
+  // Set host permissions with SetAllowedOrigins to make sure the copy in core
+  // and WebExtensionPolicy stay in sync.
+  RefPtr<MatchPatternSet> hostPermissions =
+      ParseMatches(aGlobal, aInit.mAllowedOrigins, options,
+                   ErrorBehavior::CreateEmptyPattern, aRv);
+  if (aRv.Failed()) {
+    return;
+  }
+  SetAllowedOrigins(*hostPermissions);
+
+  if (!aInit.mBackgroundScripts.IsNull()) {
+    mBackgroundScripts.SetValue().AppendElements(
+        aInit.mBackgroundScripts.Value());
+  }
+
+  mBackgroundTypeModule = aInit.mBackgroundTypeModule;
 
   mContentScripts.SetCapacity(aInit.mContentScripts.Length());
   for (const auto& scriptInit : aInit.mContentScripts) {
@@ -229,11 +336,6 @@ WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
   if (aInit.mReadyPromise.WasPassed()) {
     mReadyPromise = &aInit.mReadyPromise.Value();
   }
-
-  nsresult rv = NS_NewURI(getter_AddRefs(mBaseURI), aInit.mBaseURL);
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-  }
 }
 
 already_AddRefed<WebExtensionPolicy> WebExtensionPolicy::Constructor(
@@ -244,21 +346,6 @@ already_AddRefed<WebExtensionPolicy> WebExtensionPolicy::Constructor(
     return nullptr;
   }
   return policy.forget();
-}
-
-void WebExtensionPolicy::InitializeBaseCSP() {
-  if (mManifestVersion < 3) {
-    nsresult rv = Preferences::GetString(BASE_CSP_PREF_V2, mBaseCSP);
-    if (NS_FAILED(rv)) {
-      mBaseCSP.AssignLiteral(DEFAULT_BASE_CSP_V2);
-    }
-    return;
-  }
-  // Version 3 or higher.
-  nsresult rv = Preferences::GetString(BASE_CSP_PREF_V3, mBaseCSP);
-  if (NS_FAILED(rv)) {
-    mBaseCSP.AssignLiteral(DEFAULT_BASE_CSP_V3);
-  }
 }
 
 /* static */
@@ -311,7 +398,7 @@ bool WebExtensionPolicy::Enable() {
     mBrowsingContextGroup = group->MakeKeepAlivePtr();
   }
 
-  Unused << Proto()->SetSubstitution(MozExtensionHostname(), mBaseURI);
+  Unused << Proto()->SetSubstitution(MozExtensionHostname(), BaseURI());
 
   mActive = true;
   return true;
@@ -349,7 +436,7 @@ void WebExtensionPolicy::GetURL(const nsAString& aPath, nsAString& aResult,
 
 Result<nsString, nsresult> WebExtensionPolicy::GetURL(
     const nsAString& aPath) const {
-  nsPrintfCString spec("%s://%s/", kProto, mHostname.get());
+  nsPrintfCString spec("%s://%s/", kProto, MozExtensionHostname().get());
 
   nsCOMPtr<nsIURI> uri;
   MOZ_TRY(NS_NewURI(getter_AddRefs(uri), spec));
@@ -357,6 +444,11 @@ Result<nsString, nsresult> WebExtensionPolicy::GetURL(
   MOZ_TRY(uri->Resolve(NS_ConvertUTF16toUTF8(aPath), spec));
 
   return NS_ConvertUTF8toUTF16(spec);
+}
+
+void WebExtensionPolicy::SetIgnoreQuarantine(bool aIgnore) {
+  WebExtensionPolicy_Binding::ClearCachedIgnoreQuarantineValue(this);
+  mCore->SetIgnoreQuarantine(aIgnore);
 }
 
 void WebExtensionPolicy::RegisterContentScript(
@@ -388,12 +480,13 @@ void WebExtensionPolicy::UnregisterContentScript(
   WebExtensionPolicy_Binding::ClearCachedContentScriptsValue(this);
 }
 
-bool WebExtensionPolicy::CanAccessURI(const URLInfo& aURI, bool aExplicit,
-                                      bool aCheckRestricted,
-                                      bool aAllowFilePermission) const {
-  return (!aCheckRestricted || !IsRestrictedURI(aURI)) && mHostPermissions &&
-         mHostPermissions->Matches(aURI, aExplicit) &&
-         (aURI.Scheme() != nsGkAtoms::file || aAllowFilePermission);
+void WebExtensionPolicy::SetAllowedOrigins(MatchPatternSet& aAllowedOrigins) {
+  // Make sure to keep the version in `WebExtensionPolicy` (which can be exposed
+  // back to script using AllowedOrigins()), and the version in
+  // `WebExtensionPolicyCore` (which is threadsafe) in sync.
+  AutoWriteLock lock(mCore->mLock);
+  mHostPermissions = &aAllowedOrigins;
+  mCore->mHostPermissions = aAllowedOrigins.Core();
 }
 
 void WebExtensionPolicy::InjectContentScripts(ErrorResult& aRv) {
@@ -418,61 +511,10 @@ bool WebExtensionPolicy::BackgroundServiceWorkerEnabled(GlobalObject& aGlobal) {
   return StaticPrefs::extensions_backgroundServiceWorker_enabled_AtStartup();
 }
 
-namespace {
-/**
- * Maintains a dynamically updated AtomSet based on the comma-separated
- * values in the given string pref.
- */
-class AtomSetPref : public nsIObserver, public nsSupportsWeakReference {
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIOBSERVER
-
-  static already_AddRefed<AtomSetPref> Create(const nsCString& aPref) {
-    RefPtr<AtomSetPref> self = new AtomSetPref(aPref.get());
-    Preferences::AddWeakObserver(self, aPref);
-    return self.forget();
-  }
-
-  const AtomSet& Get() const;
-
-  bool Contains(const nsAtom* aAtom) const { return Get().Contains(aAtom); }
-
- protected:
-  virtual ~AtomSetPref() = default;
-
-  explicit AtomSetPref(const char* aPref) : mPref(aPref) {}
-
- private:
-  mutable RefPtr<AtomSet> mAtomSet;
-  const char* mPref;
-};
-
-const AtomSet& AtomSetPref::Get() const {
-  if (!mAtomSet) {
-    nsAutoCString eltsString;
-    Unused << Preferences::GetCString(mPref, eltsString);
-
-    AutoTArray<nsString, 32> elts;
-    for (const nsACString& elt : eltsString.Split(',')) {
-      elts.AppendElement(NS_ConvertUTF8toUTF16(elt));
-      elts.LastElement().StripWhitespace();
-    }
-    mAtomSet = new AtomSet(elts);
-  }
-
-  return *mAtomSet;
+/* static */
+bool WebExtensionPolicy::QuarantinedDomainsEnabled(GlobalObject& aGlobal) {
+  return EPS().GetQuarantinedDomainsEnabled();
 }
-
-NS_IMETHODIMP
-AtomSetPref::Observe(nsISupports* aSubject, const char* aTopic,
-                     const char16_t* aData) {
-  mAtomSet = nullptr;
-  return NS_OK;
-}
-
-NS_IMPL_ISUPPORTS(AtomSetPref, nsIObserver, nsISupportsWeakReference)
-};  // namespace
 
 /* static */
 bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
@@ -488,13 +530,10 @@ bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
 
 /* static */
 bool WebExtensionPolicy::IsRestrictedURI(const URLInfo& aURI) {
-  static RefPtr<AtomSetPref> domains;
-  if (!domains) {
-    domains = AtomSetPref::Create(nsLiteralCString(kRestrictedDomainPref));
-    ClearOnShutdown(&domains);
-  }
+  RefPtr<AtomSet> restrictedDomains =
+      ExtensionPolicyService::RestrictedDomains();
 
-  if (domains->Contains(aURI.HostAtom())) {
+  if (restrictedDomains && restrictedDomains->Contains(aURI.HostAtom())) {
     return true;
   }
 
@@ -503,6 +542,22 @@ bool WebExtensionPolicy::IsRestrictedURI(const URLInfo& aURI) {
   }
 
   return false;
+}
+
+/* static */
+bool WebExtensionPolicy::IsQuarantinedDoc(const DocInfo& aDoc) {
+  return IsQuarantinedURI(aDoc.PrincipalURL());
+}
+
+/* static */
+bool WebExtensionPolicy::IsQuarantinedURI(const URLInfo& aURI) {
+  // Ensure EPS is initialized before asking it about quarantined domains.
+  Unused << EPS();
+
+  RefPtr<AtomSet> quarantinedDomains =
+      ExtensionPolicyService::QuarantinedDomains();
+
+  return quarantinedDomains && quarantinedDomains->Contains(aURI.HostAtom());
 }
 
 nsCString WebExtensionPolicy::BackgroundPageHTML() const {
@@ -515,11 +570,13 @@ nsCString WebExtensionPolicy::BackgroundPageHTML() const {
 
   result.AppendLiteral(kBackgroundPageHTMLStart);
 
+  const char* scriptType = mBackgroundTypeModule ? kBackgroundScriptTypeModule
+                                                 : kBackgroundScriptTypeDefault;
+
   for (auto& script : mBackgroundScripts.Value()) {
     nsCString escaped;
     nsAppendEscapedHTML(NS_ConvertUTF16toUTF8(script), escaped);
-
-    result.AppendPrintf(kBackgroundPageHTMLScript, escaped.get());
+    result.AppendPrintf(kBackgroundPageHTMLScript, scriptType, escaped.get());
   }
 
   result.AppendLiteral(kBackgroundPageHTMLEnd);
@@ -533,7 +590,7 @@ void WebExtensionPolicy::Localize(const nsAString& aInput,
 }
 
 JSObject* WebExtensionPolicy::WrapObject(JSContext* aCx,
-                                         JS::HandleObject aGivenProto) {
+                                         JS::Handle<JSObject*> aGivenProto) {
   return WebExtensionPolicy_Binding::Wrap(aCx, this, aGivenProto);
 }
 
@@ -563,7 +620,7 @@ bool WebExtensionPolicy::CanAccessWindow(
 }
 
 void WebExtensionPolicy::GetReadyPromise(
-    JSContext* aCx, JS::MutableHandleObject aResult) const {
+    JSContext* aCx, JS::MutableHandle<JSObject*> aResult) const {
   if (mReadyPromise) {
     aResult.set(mReadyPromise->PromiseObj());
   } else {
@@ -586,9 +643,26 @@ uint64_t WebExtensionPolicy::GetBrowsingContextGroupId(ErrorResult& aRv) {
   return 0;
 }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK_PTR(
-    WebExtensionPolicy, mParent, mBrowsingContextGroup, mLocalizeCallback,
-    mHostPermissions, mWebAccessibleResources, mContentScripts)
+WebExtensionPolicy::~WebExtensionPolicy() { mCore->ClearPolicyWeakRef(); }
+
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WebExtensionPolicy)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WebExtensionPolicy)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowsingContextGroup)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mLocalizeCallback)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mHostPermissions)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mContentScripts)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+  AssertIsOnMainThread();
+  tmp->mCore->ClearPolicyWeakRef();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WebExtensionPolicy)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowsingContextGroup)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocalizeCallback)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHostPermissions)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mContentScripts)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebExtensionPolicy)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -634,6 +708,7 @@ MozDocumentMatcher::MozDocumentMatcher(GlobalObject& aGlobal,
     : mHasActiveTabPermission(aInit.mHasActiveTabPermission),
       mRestricted(aRestricted),
       mAllFrames(aInit.mAllFrames),
+      mCheckPermissions(aInit.mCheckPermissions),
       mFrameID(aInit.mFrameID),
       mMatchAboutBlank(aInit.mMatchAboutBlank) {
   MatchPatternOptions options;
@@ -690,9 +765,15 @@ WebExtensionContentScript::WebExtensionContentScript(
   mCssPaths.Assign(aInit.mCssPaths);
   mJsPaths.Assign(aInit.mJsPaths);
   mExtension = &aExtension;
+
+  // Origin permissions are optional in mv3, so always check them at runtime.
+  if (mExtension->ManifestVersion() >= 3) {
+    mCheckPermissions = true;
+  }
 }
 
-bool MozDocumentMatcher::Matches(const DocInfo& aDoc) const {
+bool MozDocumentMatcher::Matches(const DocInfo& aDoc,
+                                 bool aIgnorePermissions) const {
   if (!mFrameID.IsNull()) {
     if (aDoc.FrameID() != mFrameID.Value()) {
       return false;
@@ -724,34 +805,66 @@ bool MozDocumentMatcher::Matches(const DocInfo& aDoc) const {
     }
   }
 
+  // TODO bug 1411641: we should account for precursorPrincipal if
+  // match_origin_as_fallback is specified (see also bug 1853411).
   if (!mMatchAboutBlank && aDoc.URL().InheritsPrincipal()) {
     return false;
   }
 
-  // Top-level about:blank is a special case. We treat it as a match if
-  // matchAboutBlank is true and it has the null principal. In all other
-  // cases, we test the URL of the principal that it inherits.
+  // Top-level about:blank is a special case. Unlike about:blank frames/windows
+  // opened by web pages, these do not have an origin that could be matched by
+  // a match pattern (they have a null principal instead). To allow extensions
+  // that intend to run scripts "everywhere", consider the document matched if
+  // the match pattern describe a very broad pattern (such as "<all_urls>").
   if (mMatchAboutBlank && aDoc.IsTopLevel() &&
       (aDoc.URL().Spec().EqualsLiteral("about:blank") ||
        aDoc.URL().Scheme() == nsGkAtoms::data) &&
       aDoc.Principal() && aDoc.Principal()->GetIsNullPrincipal()) {
-    return true;
+    if (StaticPrefs::extensions_script_about_blank_without_permission()) {
+      return true;
+    }
+    if (mHasActiveTabPermission) {
+      return true;
+    }
+    if (mMatches->MatchesAllWebUrls() && mIncludeGlobs.IsNull()) {
+      // When mIncludeGlobs is present, mMatches does not necessarily match
+      // everything (except possibly if include_globs is just ["*"]). So we
+      // only match if mMatches is present without mIncludeGlobs.
+      return true;
+    }
+    // Null principal is never going to match, so we may as well return now.
+    return false;
   }
 
-  if (mRestricted && mExtension->IsRestrictedDoc(aDoc)) {
+  if (mRestricted && WebExtensionPolicy::IsRestrictedDoc(aDoc)) {
+    return false;
+  }
+
+  if (mRestricted && mExtension && mExtension->QuarantinedFromDoc(aDoc)) {
     return false;
   }
 
   auto& urlinfo = aDoc.PrincipalURL();
-  if (mHasActiveTabPermission && aDoc.ShouldMatchActiveTabPermission() &&
-      MatchPattern::MatchesAllURLs(urlinfo)) {
-    return true;
+  if (mExtension && mExtension->ManifestVersion() >= 3) {
+    // In MV3, activeTab only allows access to same-origin iframes.
+    if (mHasActiveTabPermission && aDoc.IsSameOriginWithTop() &&
+        MatchPattern::MatchesAllURLs(urlinfo)) {
+      return true;
+    }
+  } else {
+    if (mHasActiveTabPermission && aDoc.ShouldMatchActiveTabPermission() &&
+        MatchPattern::MatchesAllURLs(urlinfo)) {
+      return true;
+    }
   }
 
-  return MatchesURI(urlinfo);
+  return MatchesURI(urlinfo, aIgnorePermissions);
 }
 
-bool MozDocumentMatcher::MatchesURI(const URLInfo& aURL) const {
+bool MozDocumentMatcher::MatchesURI(const URLInfo& aURL,
+                                    bool aIgnorePermissions) const {
+  MOZ_ASSERT((!mRestricted && !mCheckPermissions) || mExtension);
+
   if (!mMatches->Matches(aURL)) {
     return false;
   }
@@ -760,22 +873,32 @@ bool MozDocumentMatcher::MatchesURI(const URLInfo& aURL) const {
     return false;
   }
 
-  if (!mIncludeGlobs.IsNull() && !mIncludeGlobs.Value().Matches(aURL.Spec())) {
+  if (!mIncludeGlobs.IsNull() && !mIncludeGlobs.Value().Matches(aURL.CSpec())) {
     return false;
   }
 
-  if (!mExcludeGlobs.IsNull() && mExcludeGlobs.Value().Matches(aURL.Spec())) {
+  if (!mExcludeGlobs.IsNull() && mExcludeGlobs.Value().Matches(aURL.CSpec())) {
     return false;
   }
 
-  if (mRestricted && mExtension->IsRestrictedURI(aURL)) {
+  if (mRestricted && WebExtensionPolicy::IsRestrictedURI(aURL)) {
+    return false;
+  }
+
+  if (mRestricted && mExtension->QuarantinedFromURI(aURL)) {
+    return false;
+  }
+
+  if (mCheckPermissions && !aIgnorePermissions &&
+      !mExtension->CanAccessURI(aURL, false, false, true)) {
     return false;
   }
 
   return true;
 }
 
-bool MozDocumentMatcher::MatchesWindowGlobal(WindowGlobalChild& aWindow) const {
+bool MozDocumentMatcher::MatchesWindowGlobal(WindowGlobalChild& aWindow,
+                                             bool aIgnorePermissions) const {
   if (aWindow.IsClosed() || !aWindow.IsCurrentGlobal()) {
     return false;
   }
@@ -783,7 +906,7 @@ bool MozDocumentMatcher::MatchesWindowGlobal(WindowGlobalChild& aWindow) const {
   if (!inner || !inner->GetDocShell()) {
     return false;
   }
-  return Matches(inner->GetOuterWindow());
+  return Matches(inner->GetOuterWindow(), aIgnorePermissions);
 }
 
 void MozDocumentMatcher::GetOriginAttributesPatterns(
@@ -795,18 +918,17 @@ void MozDocumentMatcher::GetOriginAttributesPatterns(
 }
 
 JSObject* MozDocumentMatcher::WrapObject(JSContext* aCx,
-                                         JS::HandleObject aGivenProto) {
+                                         JS::Handle<JSObject*> aGivenProto) {
   return MozDocumentMatcher_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-JSObject* WebExtensionContentScript::WrapObject(JSContext* aCx,
-                                                JS::HandleObject aGivenProto) {
+JSObject* WebExtensionContentScript::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
   return WebExtensionContentScript_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(MozDocumentMatcher, mMatches,
-                                      mExcludeMatches, mIncludeGlobs,
-                                      mExcludeGlobs, mExtension)
+                                      mExcludeMatches, mExtension)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MozDocumentMatcher)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -862,7 +984,7 @@ void DocumentObserver::NotifyMatch(MozDocumentMatcher& aMatcher,
 }
 
 JSObject* DocumentObserver::WrapObject(JSContext* aCx,
-                                       JS::HandleObject aGivenProto) {
+                                       JS::Handle<JSObject*> aGivenProto) {
   return MozDocumentObserver_Binding::Wrap(aCx, this, aGivenProto);
 }
 
@@ -903,8 +1025,13 @@ bool DocInfo::IsTopLevel() const {
 }
 
 bool WindowShouldMatchActiveTab(nsPIDOMWindowOuter* aWin) {
-  for (WindowContext* wc = aWin->GetCurrentInnerWindow()->GetWindowContext();
-       wc; wc = wc->GetParentWindowContext()) {
+  WindowContext* wc = aWin->GetCurrentInnerWindow()->GetWindowContext();
+  if (wc && wc->SameOriginWithTop()) {
+    // If the frame is same-origin to top, accept the match regardless of
+    // whether the frame was populated dynamically.
+    return true;
+  }
+  for (; wc; wc = wc->GetParentWindowContext()) {
     BrowsingContext* bc = wc->GetBrowsingContext();
     if (bc->IsTopContent()) {
       return true;
@@ -921,6 +1048,17 @@ bool WindowShouldMatchActiveTab(nsPIDOMWindowOuter* aWin) {
 bool DocInfo::ShouldMatchActiveTabPermission() const {
   struct Matcher {
     bool operator()(Window aWin) { return WindowShouldMatchActiveTab(aWin); }
+    bool operator()(LoadInfo aLoadInfo) { return false; }
+  };
+  return mObj.match(Matcher());
+}
+
+bool DocInfo::IsSameOriginWithTop() const {
+  struct Matcher {
+    bool operator()(Window aWin) {
+      WindowContext* wc = aWin->GetCurrentInnerWindow()->GetWindowContext();
+      return wc && wc->SameOriginWithTop();
+    }
     bool operator()(LoadInfo aLoadInfo) { return false; }
   };
   return mObj.match(Matcher());

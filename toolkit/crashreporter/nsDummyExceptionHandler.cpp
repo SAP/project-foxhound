@@ -8,7 +8,6 @@
 
 #include "nsExceptionHandler.h"
 #include "nsExceptionHandlerUtils.h"
-#include "prio.h"
 
 namespace CrashReporter {
 
@@ -52,6 +51,10 @@ nsresult AnnotateCrashReport(Annotation key, unsigned int data) {
 }
 
 nsresult AnnotateCrashReport(Annotation key, const nsACString& data) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+nsresult AppendToCrashReportAnnotation(Annotation key, const nsACString& data) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -111,21 +114,6 @@ nsresult SetRestartArgs(int argc, char** argv) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-#if !defined(XP_WIN)
-int GetAnnotationTimeCrashFd() { return 7; }
-#endif
-
-void RegisterChildCrashAnnotationFileDescriptor(ProcessId aProcess,
-                                                PRFileDesc* aFd) {
-  // The real implementation of this function takes ownership of aFd
-  // and closes it when the process exits; if we don't close it, it
-  // causes a leak.  With no crash reporter we'll never write to the
-  // pipe, so it's safe to close the read end immediately.
-  PR_Close(aFd);
-}
-
-void DeregisterChildCrashAnnotationFileDescriptor(ProcessId aProcess) {}
-
 #ifdef XP_WIN
 nsresult WriteMinidumpForException(EXCEPTION_POINTERS* aExceptionInfo) {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -166,9 +154,13 @@ nsresult GetDefaultMemoryReportFile(nsIFile** aFile) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-void DeleteMinidumpFilesForID(const nsAString& id) {}
+void DeleteMinidumpFilesForID(const nsAString& aId,
+                              const Maybe<nsString>& aAdditionalMinidump) {}
 
-bool GetMinidumpForID(const nsAString& id, nsIFile** minidump) { return false; }
+bool GetMinidumpForID(const nsAString& id, nsIFile** minidump,
+                      const Maybe<nsString>& aAdditionalMinidump) {
+  return false;
+}
 
 bool GetIDFromMinidump(nsIFile* minidump, nsAString& id) { return false; }
 
@@ -208,10 +200,7 @@ bool CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd) {
 
 #endif  // !defined(XP_WIN) && !defined(XP_MACOSX)
 
-bool SetRemoteExceptionHandler(const char* aCrashPipe,
-                               FileHandle aCrashTimeAnnotationFile) {
-  return false;
-}
+bool SetRemoteExceptionHandler(const char* aCrashPipe) { return false; }
 
 bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
                           AnnotationTable& aAnnotations, uint32_t* aSequence) {
@@ -236,39 +225,18 @@ bool TakeMinidump(nsIFile** aResult, bool aMoveToPending) { return false; }
 bool CreateMinidumpsAndPair(ProcessHandle aTargetPid,
                             ThreadId aTargetBlamedThread,
                             const nsACString& aIncomingPairName,
-                            nsIFile* aIncomingDumpToPair,
                             AnnotationTable& aTargetAnnotations,
                             nsIFile** aTargetDumpOut) {
   return false;
 }
 
-bool CreateAdditionalChildMinidump(ProcessHandle childPid,
-                                   ThreadId childBlamedThread,
-                                   nsIFile* parentMinidump,
-                                   const nsACString& name) {
-  return false;
-}
-
-bool UnsetRemoteExceptionHandler() { return false; }
+bool UnsetRemoteExceptionHandler(bool wasSet) { return false; }
 
 #if defined(MOZ_WIDGET_ANDROID)
 void SetNotificationPipeForChild(FileHandle childCrashFd) {}
 
-void SetCrashAnnotationPipeForChild(FileHandle childCrashAnnotationFd) {}
-
 void AddLibraryMapping(const char* library_name, uintptr_t start_address,
                        size_t mapping_length, size_t file_offset) {}
 #endif
-
-// From ThreadAnnotation.cpp
-
-void InitThreadAnnotation() {}
-
-void SetCurrentThreadName(const char* aName) {}
-
-void GetFlatThreadAnnotation(
-    const std::function<void(const char*)>& aCallback) {}
-
-void ShutdownThreadAnnotation() {}
 
 }  // namespace CrashReporter

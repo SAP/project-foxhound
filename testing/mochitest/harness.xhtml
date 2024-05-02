@@ -9,43 +9,37 @@
 
   <script src="chrome://mochikit/content/tests/SimpleTest/LogController.js"/>
   <script src="chrome://mochikit/content/tests/SimpleTest/MemoryStats.js"/>
-  <script src="chrome://mochikit/content/tests/SimpleTest/StructuredLog.jsm"/>
   <script src="chrome://mochikit/content/tests/SimpleTest/TestRunner.js"/>
   <script src="chrome://mochikit/content/tests/SimpleTest/MozillaLogger.js"/>
   <script src="chrome://mochikit/content/chrome-harness.js" />
   <script src="chrome://mochikit/content/chunkifyTests.js" />
   <script src="chrome://mochikit/content/manifestLibrary.js" />
+  <script src="chrome://mochikit/content/mochitestListingsUtils.js" />
   <script src="chrome://mochikit/content/tests/SimpleTest/setup.js" />
   <script type="application/javascript"><![CDATA[
 
 function loadTests()
 {
-  window.removeEventListener("load", loadTests, false);
+  window.removeEventListener("load", loadTests);
   getTestList({}, linkAndHookup);
 }
 
 function linkAndHookup(links) {
-  // load server.js in so we can share template functions
-  var scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                       getService(Ci.mozIJSSubScriptLoader);
-  var srvScope = {};
-  scriptLoader.loadSubScript('chrome://mochikit/content/server.js',
-                             srvScope);
-
   // generate our test list
-  srvScope.makeTags();
-  var tableContent = srvScope.linksToTableRows(links, 0);
+  makeTags();
+  var tableContent = linksToTableRows(links, 0);
 
   function populate() {
+    // eslint-disable-next-line no-unsanitized/property
     document.getElementById("test-table").innerHTML += tableContent;
   }
-  gTestList = JSON.parse(srvScope.jsonArrayOfTestFiles(links));
+  gTestList = JSON.parse(jsonArrayOfTestFiles(links));
   populate();
 
   hookup();
 }
 
-    window.addEventListener("load", loadTests, false);
+    window.addEventListener("load", loadTests);
   ]]>
   </script>
 

@@ -126,7 +126,7 @@
                             } catch (e) {}
                         }
                     }
-                    if (supports_post_message(w) && w !== self) {
+                    if (w !== self) {
                         w.postMessage(message_arg, "*");
                     }
                 });
@@ -425,6 +425,53 @@
     };
 
     /*
+     * Shadow realms.
+     * https://github.com/tc39/proposal-shadowrealm
+     *
+     * This class is used as the test_environment when testharness is running
+     * inside a shadow realm.
+     */
+    function ShadowRealmTestEnvironment() {
+        WorkerTestEnvironment.call(this);
+        this.all_loaded = false;
+        this.on_loaded_callback = null;
+    }
+
+    ShadowRealmTestEnvironment.prototype = Object.create(WorkerTestEnvironment.prototype);
+
+    /**
+     * Signal to the test environment that the tests are ready and the on-loaded
+     * callback should be run.
+     *
+     * Shadow realms are not *really* a DOM context: they have no `onload` or similar
+     * event for us to use to set up the test environment; so, instead, this method
+     * is manually triggered from the incubating realm
+     *
+     * @param {Function} message_destination - a function that receives JSON-serializable
+     * data to send to the incubating realm, in the same format as used by RemoteContext
+     */
+    ShadowRealmTestEnvironment.prototype.begin = function(message_destination) {
+        if (this.all_loaded) {
+            throw new Error("Tried to start a shadow realm test environment after it has already started");
+        }
+        var fakeMessagePort = {};
+        fakeMessagePort.postMessage = message_destination;
+        this._add_message_port(fakeMessagePort);
+        this.all_loaded = true;
+        if (this.on_loaded_callback) {
+            this.on_loaded_callback();
+        }
+    };
+
+    ShadowRealmTestEnvironment.prototype.add_on_loaded_callback = function(callback) {
+        if (this.all_loaded) {
+            callback();
+        } else {
+            this.on_loaded_callback = callback;
+        }
+    };
+
+    /*
      * JavaScript shells.
      *
      * This class is used as the test_environment when testharness is running
@@ -447,7 +494,7 @@
     ShellTestEnvironment.prototype.next_default_test_name = function() {
         var suffix = this.name_counter > 0 ? " " + this.name_counter : "";
         this.name_counter++;
-        return "Untitled" + suffix;
+        return get_title() + suffix;
     };
 
     ShellTestEnvironment.prototype.on_new_harness_properties = function() {};
@@ -487,6 +534,15 @@
         if ('WorkerGlobalScope' in global_scope &&
             global_scope instanceof WorkerGlobalScope) {
             return new DedicatedWorkerTestEnvironment();
+        }
+        /* Shadow realm global objects are _ordinary_ objects (i.e. their prototype is
+         * Object) so we don't have a nice `instanceof` test to use; instead, we
+         * check if the there is a GLOBAL.isShadowRealm() property
+         * on the global object. that was set by the test harness when it
+         * created the ShadowRealm.
+         */
+        if (global_scope.GLOBAL && global_scope.GLOBAL.isShadowRealm()) {
+            return new ShadowRealmTestEnvironment();
         }
 
         return new ShellTestEnvironment();
@@ -648,7 +704,7 @@
     /**
      * Create a promise test.
      *
-     * Promise tests are tests which are represeted by a promise
+     * Promise tests are tests which are represented by a promise
      * object. If the promise is fulfilled the test passes, if it's
      * rejected the test fails, otherwise the test passes.
      *
@@ -1071,7 +1127,7 @@
      *
      * Typically this function is called implicitly on page load; it's
      * only necessary for users to call this when either the
-     * ``explict_done`` or ``single_page`` properties have been set
+     * ``explicit_done`` or ``single_page`` properties have been set
      * via the :js:func:`setup` function.
      *
      * For single page tests this marks the test as complete and sets its status.
@@ -1370,12 +1426,16 @@
         function assert_wrapper(...args) {
             let status = Test.statuses.TIMEOUT;
             let stack = null;
+            let new_assert_index = null;
             try {
                 if (settings.debug) {
                     console.debug("ASSERT", name, tests.current_test && tests.current_test.name, args);
                 }
                 if (tests.output) {
                     tests.set_assert(name, args);
+                    // Remember the newly pushed assert's index, because `apply`
+                    // below might push new asserts.
+                    new_assert_index = tests.asserts_run.length - 1;
                 }
                 const rv = f.apply(undefined, args);
                 status = Test.statuses.PASS;
@@ -1389,7 +1449,7 @@
                     stack = get_stack();
                 }
                 if (tests.output) {
-                    tests.set_assert_status(status, stack);
+                    tests.set_assert_status(new_assert_index, status, stack);
                 }
             }
         }
@@ -1437,7 +1497,7 @@
     /**
      * Assert that ``actual`` is the same value as ``expected``.
      *
-     * For objects this compares by cobject identity; for primitives
+     * For objects this compares by object identity; for primitives
      * this distinguishes between 0 and -0, and has correct handling
      * of NaN.
      *
@@ -2190,7 +2250,8 @@
                 ReadOnlyError: 0,
                 VersionError: 0,
                 OperationError: 0,
-                NotAllowedError: 0
+                NotAllowedError: 0,
+                OptOutError: 0
             };
 
             var code_name_map = {};
@@ -2420,6 +2481,10 @@
         this.cleanup_callbacks = [];
         this._user_defined_cleanup_count = 0;
         this._done_callbacks = [];
+
+        if (typeof AbortController === "function") {
+            this._abortController = new AbortController();
+        }
 
         // Tests declared following harness completion are likely an indication
         // of a programming error, but they cannot be reported
@@ -2663,22 +2728,10 @@
      * to reduce intermittents without compromising test execution
      * speed when the condition is quickly met.
      *
-     * @example
-     * async_test(t => {
-     *  const popup = window.open("resources/coop-coep.py?coop=same-origin&coep=&navigate=about:blank");
-     *  t.add_cleanup(() => popup.close());
-     *  assert_equals(window, popup.opener);
-     *
-     *  popup.onload = t.step_func(() => {
-     *    assert_true(popup.location.href.endsWith("&navigate=about:blank"));
-     *    // Use step_wait_func_done as about:blank cannot message back.
-     *    t.step_wait_func_done(() => popup.location.href === "about:blank");
-     *  });
-     * }, "Navigating a popup to about:blank");
-     *
      * @param {Function} cond A function taking no arguments and
-     *                        returning a boolean. The callback is called
-     *                        when this function returns true.
+     *                        returning a boolean or a Promise. The callback is
+     *                        called when this function returns true, or the
+     *                        returned Promise is resolved with true.
      * @param {Function} func A function taking no arguments to call once
      *                        the condition is met.
      * @param {string} [description] Error message to add to assert in case of
@@ -2694,17 +2747,23 @@
         var remaining = Math.ceil(timeout_full / interval);
         var test_this = this;
 
-        var wait_for_inner = test_this.step_func(() => {
-            if (cond()) {
+        const step = test_this.step_func((result) => {
+            if (result) {
                 func();
             } else {
-                if(remaining === 0) {
+                if (remaining === 0) {
                     assert(false, "step_wait_func", description,
                            "Timed out waiting on condition");
                 }
                 remaining--;
                 setTimeout(wait_for_inner, interval);
             }
+        });
+
+        var wait_for_inner = test_this.step_func(() => {
+            Promise.resolve(cond()).then(
+                step,
+                test_this.unreached_func("step_wait_func"));
         });
 
         wait_for_inner();
@@ -2718,9 +2777,23 @@
      * to reduce intermittents without compromising test execution speed
      * when the condition is quickly met.
      *
+     * @example
+     * async_test(t => {
+     *  const popup = window.open("resources/coop-coep.py?coop=same-origin&coep=&navigate=about:blank");
+     *  t.add_cleanup(() => popup.close());
+     *  assert_equals(window, popup.opener);
+     *
+     *  popup.onload = t.step_func(() => {
+     *    assert_true(popup.location.href.endsWith("&navigate=about:blank"));
+     *    // Use step_wait_func_done as about:blank cannot message back.
+     *    t.step_wait_func_done(() => popup.location.href === "about:blank");
+     *  });
+     * }, "Navigating a popup to about:blank");
+     *
      * @param {Function} cond A function taking no arguments and
-     *                        returning a boolean. The callback is called
-     *                        when this function returns true.
+     *                        returning a boolean or a Promise. The callback is
+     *                        called when this function returns true, or the
+     *                        returned Promise is resolved with true.
      * @param {Function} func A function taking no arguments to call once
      *                        the condition is met.
      * @param {string} [description] Error message to add to assert in case of
@@ -2756,7 +2829,7 @@
      * }, "");
      *
      * @param {Function} cond A function taking no arguments and
-     *                        returning a boolean.
+     *                        returning a boolean or a Promise.
      * @param {string} [description] Error message to add to assert in case of
      *                              failure.
      * @param {number} timeout Timeout in ms. This is multiplied by the global
@@ -2897,6 +2970,10 @@
 
         this.phase = this.phases.CLEANING;
 
+        if (this._abortController) {
+            this._abortController.abort("Test cleanup");
+        }
+
         forEach(this.cleanup_callbacks,
                 function(cleanup_callback) {
                     var result;
@@ -2988,6 +3065,16 @@
                     callback();
                 });
         test._done_callbacks.length = 0;
+    }
+
+    /**
+     * Gives an AbortSignal that will be aborted when the test finishes.
+     */
+    Test.prototype.get_signal = function() {
+        if (!this._abortController) {
+            throw new Error("AbortController is not supported in this browser");
+        }
+        return this._abortController.signal;
     }
 
     /**
@@ -3598,8 +3685,8 @@
         this.asserts_run.push(new AssertRecord(this.current_test, assert_name, args))
     }
 
-    Tests.prototype.set_assert_status = function(status, stack) {
-        let assert_record = this.asserts_run[this.asserts_run.length - 1];
+    Tests.prototype.set_assert_status = function(index, status, stack) {
+        let assert_record = this.asserts_run[index];
         assert_record.status = status;
         assert_record.stack = stack;
     }
@@ -3766,7 +3853,9 @@
             return;
         }
 
-        this.pending_remotes.push(this.create_remote_window(remote));
+        var remoteContext = this.create_remote_window(remote);
+        this.pending_remotes.push(remoteContext);
+        return remoteContext.done;
     };
 
     /**
@@ -3781,14 +3870,53 @@
      * @param {Window} window - The window to fetch tests from.
      */
     function fetch_tests_from_window(window) {
-        tests.fetch_tests_from_window(window);
+        return tests.fetch_tests_from_window(window);
     }
     expose(fetch_tests_from_window, 'fetch_tests_from_window');
 
     /**
+     * Get test results from a shadow realm and include them in the current test.
+     *
+     * @param {ShadowRealm} realm - A shadow realm also running the test harness
+     * @returns {Promise} - A promise that's resolved once all the remote tests are complete.
+     */
+    function fetch_tests_from_shadow_realm(realm) {
+        var chan = new MessageChannel();
+        function receiveMessage(msg_json) {
+            chan.port1.postMessage(JSON.parse(msg_json));
+        }
+        var done = tests.fetch_tests_from_worker(chan.port2);
+        realm.evaluate("begin_shadow_realm_tests")(receiveMessage);
+        chan.port2.start();
+        return done;
+    }
+    expose(fetch_tests_from_shadow_realm, 'fetch_tests_from_shadow_realm');
+
+    /**
+     * Begin running tests in this shadow realm test harness.
+     *
+     * To be called after all tests have been loaded; it is an error to call
+     * this more than once or in a non-Shadow Realm environment
+     *
+     * @param {Function} postMessage - A function to send test updates to the
+     * incubating realm-- accepts JSON-encoded messages in the format used by
+     * RemoteContext
+     */
+    function begin_shadow_realm_tests(postMessage) {
+        if (!(test_environment instanceof ShadowRealmTestEnvironment)) {
+            throw new Error("begin_shadow_realm_tests called in non-Shadow Realm environment");
+        }
+
+        test_environment.begin(function (msg) {
+            postMessage(JSON.stringify(msg));
+        });
+    }
+    expose(begin_shadow_realm_tests, 'begin_shadow_realm_tests');
+
+    /**
      * Timeout the tests.
      *
-     * This only has an effect when ``explict_timeout`` has been set
+     * This only has an effect when ``explicit_timeout`` has been set
      * in :js:func:`setup`. In other cases any call is a no-op.
      *
      */
@@ -3963,7 +4091,7 @@
 
     Output.prototype.show_status = function() {
         if (this.phase < this.STARTED) {
-            this.init();
+            this.init({});
         }
         if (!this.enabled || this.phase === this.COMPLETE) {
             return;
@@ -4416,14 +4544,6 @@
 
     const get_stack = function() {
         var stack = new Error().stack;
-        // IE11 does not initialize 'Error.stack' until the object is thrown.
-        if (!stack) {
-            try {
-                throw new Error();
-            } catch (e) {
-                stack = e.stack;
-            }
-        }
 
         // 'Error.stack' is not supported in all browsers/versions
         if (!stack) {
@@ -4646,47 +4766,10 @@
         if ('META_TITLE' in global_scope && META_TITLE) {
             return META_TITLE;
         }
-        if ('location' in global_scope) {
+        if ('location' in global_scope && 'pathname' in location) {
             return location.pathname.substring(location.pathname.lastIndexOf('/') + 1, location.pathname.indexOf('.'));
         }
         return "Untitled";
-    }
-
-    function supports_post_message(w)
-    {
-        var supports;
-        var type;
-        // Given IE implements postMessage across nested iframes but not across
-        // windows or tabs, you can't infer cross-origin communication from the presence
-        // of postMessage on the current window object only.
-        //
-        // Touching the postMessage prop on a window can throw if the window is
-        // not from the same origin AND post message is not supported in that
-        // browser. So just doing an existence test here won't do, you also need
-        // to wrap it in a try..catch block.
-        try {
-            type = typeof w.postMessage;
-            if (type === "function") {
-                supports = true;
-            }
-
-            // IE8 supports postMessage, but implements it as a host object which
-            // returns "object" as its `typeof`.
-            else if (type === "object") {
-                supports = true;
-            }
-
-            // This is the case where postMessage isn't supported AND accessing a
-            // window property across origins does NOT throw (e.g. old Safari browser).
-            else {
-                supports = false;
-            }
-        } catch (e) {
-            // This is the case where postMessage isn't supported AND accessing a
-            // window property across origins throws (e.g. old Firefox browser).
-            supports = false;
-        }
-        return supports;
     }
 
     /**

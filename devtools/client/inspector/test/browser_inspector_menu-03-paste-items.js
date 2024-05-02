@@ -28,12 +28,12 @@ const PASTE_ADJACENT_HTML_DATA = [
   },
 ];
 
-var clipboard = require("devtools/shared/platform/clipboard");
+var clipboard = require("resource://devtools/shared/platform/clipboard.js");
 registerCleanupFunction(() => {
   clipboard = null;
 });
 
-add_task(async function() {
+add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URL);
 
   await testPasteOuterHTMLMenu();
@@ -122,8 +122,10 @@ add_task(async function() {
     const adjacentNodeSelector = "#paste-area .adjacent";
     const nodeFront = await getNodeFront(refSelector, inspector);
     await selectNode(nodeFront, inspector);
-    const markupTagLine = getContainerForNodeFront(nodeFront, inspector)
-      .tagLine;
+    const markupTagLine = getContainerForNodeFront(
+      nodeFront,
+      inspector
+    ).tagLine;
 
     for (const { clipboardData, menuId } of PASTE_ADJACENT_HTML_DATA) {
       const allMenuItems = openContextMenuAndGetAllItems(inspector, {

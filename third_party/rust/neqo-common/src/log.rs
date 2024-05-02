@@ -4,6 +4,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(clippy::module_name_repetitions)]
+
+use env_logger::Builder;
+use lazy_static::lazy_static;
 use std::io::Write;
 use std::sync::Once;
 use std::time::Instant;
@@ -13,14 +17,19 @@ macro_rules! do_log {
     (target: $target:expr, $lvl:expr, $($arg:tt)+) => ({
         let lvl = $lvl;
         if lvl <= ::log::max_level() {
-            ::log::__private_api_log(
-                ::log::__log_format_args!($($arg)+),
-                lvl,
-                &($target, ::log::__log_module_path!(), ::log::__log_file!(), ::log::__log_line!()),
+            ::log::logger().log(
+                &::log::Record::builder()
+                    .args(format_args!($($arg)+))
+                    .level(lvl)
+                    .target($target)
+                    .module_path_static(Some(module_path!()))
+                    .file_static(Some(file!()))
+                    .line(Some(line!()))
+                    .build()
             );
         }
     });
-    ($lvl:expr, $($arg:tt)+) => ($crate::do_log!(target: ::log::__log_module_path!(), $lvl, $($arg)+))
+    ($lvl:expr, $($arg:tt)+) => ($crate::do_log!(target: module_path!(), $lvl, $($arg)+))
 }
 
 #[macro_export]
@@ -33,8 +42,6 @@ macro_rules! log_subject {
         }
     }};
 }
-
-use env_logger::Builder;
 
 static INIT_ONCE: Once = Once::new();
 

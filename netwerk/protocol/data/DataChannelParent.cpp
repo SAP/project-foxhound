@@ -11,6 +11,12 @@
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
 
+#ifdef FUZZING_SNAPSHOT
+#  define MOZ_ALWAYS_SUCCEEDS_FUZZING(...) (void)__VA_ARGS__
+#else
+#  define MOZ_ALWAYS_SUCCEEDS_FUZZING(...) MOZ_ALWAYS_SUCCEEDS(__VA_ARGS__)
+#endif
+
 namespace mozilla {
 namespace net {
 
@@ -18,7 +24,8 @@ NS_IMPL_ISUPPORTS(DataChannelParent, nsIParentChannel, nsIStreamListener)
 
 bool DataChannelParent::Init(const uint64_t& aChannelId) {
   nsCOMPtr<nsIChannel> channel;
-  MOZ_ALWAYS_SUCCEEDS(
+
+  MOZ_ALWAYS_SUCCEEDS_FUZZING(
       NS_LinkRedirectChannels(aChannelId, this, getter_AddRefs(channel)));
 
   return true;
@@ -33,13 +40,6 @@ DataChannelParent::SetParentListener(ParentChannelListener* aListener) {
 NS_IMETHODIMP
 DataChannelParent::NotifyClassificationFlags(uint32_t aClassificationFlags,
                                              bool aIsThirdParty) {
-  // Nothing to do.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DataChannelParent::NotifyFlashPluginStateChanged(
-    nsIHttpChannel::FlashPluginState aState) {
   // Nothing to do.
   return NS_OK;
 }

@@ -28,26 +28,29 @@ async function test_autocomplete(data) {
   gURLBar.blur();
 }
 
-add_task(async function() {
-  registerCleanupFunction(async function() {
-    Services.prefs.clearUserPref("browser.urlbar.autoFill");
+add_task(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.autoFill", true]],
+  });
+  registerCleanupFunction(async function () {
     gURLBar.handleRevert();
+    await PlacesUtils.bookmarks.eraseEverything();
     await PlacesUtils.history.clear();
   });
-  Services.prefs.setBoolPref("browser.urlbar.autoFill", true);
 
   // Add a typed visit, so it will be autofilled.
   await PlacesTestUtils.addVisits({
-    uri: "http://example.com/",
+    uri: "https://example.com/",
     transition: Ci.nsINavHistoryService.TRANSITION_TYPED,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   await test_autocomplete({
-    desc: "CTRL+ENTER on the autofilled part should use autofill",
+    desc: "ENTER on the autofilled part should use autofill",
     typed: "exam",
     autofilled: "example.com/",
-    modified: "example.com",
-    waitForUrl: "http://example.com/",
+    modified: UrlbarTestUtils.trimURL("https://example.com"),
+    waitForUrl: "https://example.com/",
     keys: [["KEY_Enter"]],
   });
 
@@ -55,7 +58,7 @@ add_task(async function() {
     desc: "CTRL+ENTER on the autofilled part should bypass autofill",
     typed: "exam",
     autofilled: "example.com/",
-    modified: "https://www.exam.com",
+    modified: UrlbarTestUtils.trimURL("https://www.exam.com"),
     waitForUrl: "https://www.exam.com/",
     keys: [["KEY_Enter", { ctrlKey: true }]],
   });

@@ -2,15 +2,21 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+// TODO(Bug 1789718): adapt to synthetic addon type implemented by the SitePermAddonProvider
+// or remove if redundant, after the deprecated XPIProvider-based implementation is also removed.
+
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
+);
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -22,18 +28,19 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
-const BROWSER_PROPERTIES =
-  AppConstants.MOZ_APP_NAME == "thunderbird"
-    ? "chrome://messenger/locale/addons.properties"
-    : "chrome://browser/locale/browser.properties";
+const l10n = new Localization([
+  "toolkit/global/extensions.ftl",
+  "toolkit/global/extensionPermissions.ftl",
+  "branding/brand.ftl",
+]);
+// Localization resources need to be first iterated outside a test
+l10n.formatValue("webext-perms-sideload-text");
 
 // Lazily import ExtensionParent to allow AddonTestUtils.createAppInfo to
 // override Services.appinfo.
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionParent",
-  "resource://gre/modules/ExtensionParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
+});
 
 async function _test_manifest(manifest, expectedError) {
   ExtensionTestUtils.failOnSchemaWarnings(false);
@@ -55,6 +62,21 @@ async function _test_manifest(manifest, expectedError) {
   }
   equal(normalized.errors.length, 0, "Should have no warning");
 }
+
+add_setup(async () => {
+  // Telemetry test setup needed to ensure that the builtin events are defined
+  // and they can be collected and verified.
+  await TelemetryController.testSetup();
+
+  // This is actually only needed on Android, because it does not properly support unified telemetry
+  // and so, if not enabled explicitly here, it would make these tests to fail when running on
+  // release builds.
+  const oldCanRecordBase = Services.telemetry.canRecordBase;
+  Services.telemetry.canRecordBase = true;
+  registerCleanupFunction(() => {
+    Services.telemetry.canRecordBase = oldCanRecordBase;
+  });
+});
 
 add_task(async function test_manifest_site_permissions() {
   await _test_manifest({
@@ -136,7 +158,7 @@ add_task(async function test_sitepermission_telemetry() {
       [
         "addonsManager",
         "install",
-        "sitepermission",
+        "siteperm_deprecated",
         /.*/,
         {
           step: "started",
@@ -146,14 +168,14 @@ add_task(async function test_sitepermission_telemetry() {
       [
         "addonsManager",
         "install",
-        "sitepermission",
+        "siteperm_deprecated",
         /.*/,
         {
           step: "completed",
           addon_id,
         },
       ],
-      ["addonsManager", "uninstall", "sitepermission", addon_id],
+      ["addonsManager", "uninstall", "siteperm_deprecated", addon_id],
     ],
     {
       category: "addonsManager",
@@ -350,13 +372,10 @@ add_task(async function test_site_permissions_have_localization_strings() {
   ]);
   ok(SCHEMA_SITE_PERMISSIONS.length, "we have site permissions");
 
-  const bundle = Services.strings.createBundle(BROWSER_PROPERTIES);
-
   for (const perm of SCHEMA_SITE_PERMISSIONS) {
+    const l10nId = `webext-site-perms-${perm}`;
     try {
-      const str = bundle.GetStringFromName(
-        `webextSitePerms.description.${perm}`
-      );
+      const str = await l10n.formatValue(l10nId);
 
       ok(str.length, `Found localization string for '${perm}' site permission`);
     } catch (e) {

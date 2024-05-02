@@ -9,12 +9,15 @@
 #include "CompositorThread.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/Endpoint.h"
+#include "mozilla/StaticMutex.h"
 #include "transport/runnable_utils.h"
 #include "SynchronousTask.h"
 
 namespace mozilla {
 namespace layers {
 
+// Singleton
+static StaticMutex sVideoBridgeLock MOZ_UNANNOTATED;
 StaticRefPtr<VideoBridgeChild> sVideoBridge;
 
 /* static */
@@ -30,7 +33,9 @@ void VideoBridgeChild::StartupForGPUProcess() {
   VideoBridgeParent::Open(std::move(parentPipe), VideoBridgeSource::GpuProcess);
 }
 
+/* static */
 void VideoBridgeChild::Open(Endpoint<PVideoBridgeChild>&& aEndpoint) {
+  StaticMutexAutoLock lock(sVideoBridgeLock);
   MOZ_ASSERT(!sVideoBridge || !sVideoBridge->CanSend());
   sVideoBridge = new VideoBridgeChild();
 
@@ -42,6 +47,7 @@ void VideoBridgeChild::Open(Endpoint<PVideoBridgeChild>&& aEndpoint) {
 
 /* static */
 void VideoBridgeChild::Shutdown() {
+  StaticMutexAutoLock lock(sVideoBridgeLock);
   if (sVideoBridge) {
     sVideoBridge->Close();
     sVideoBridge = nullptr;
@@ -49,38 +55,33 @@ void VideoBridgeChild::Shutdown() {
 }
 
 VideoBridgeChild::VideoBridgeChild()
-    : mIPDLSelfRef(this),
-      mThread(GetCurrentSerialEventTarget()),
-      mCanSend(true) {}
+    : mThread(GetCurrentSerialEventTarget()), mCanSend(true) {}
 
 VideoBridgeChild::~VideoBridgeChild() = default;
 
-VideoBridgeChild* VideoBridgeChild::GetSingleton() { return sVideoBridge; }
+VideoBridgeChild* VideoBridgeChild::GetSingleton() {
+  StaticMutexAutoLock lock(sVideoBridgeLock);
+  return sVideoBridge;
+}
 
-bool VideoBridgeChild::AllocUnsafeShmem(
-    size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-    ipc::Shmem* aShmem) {
+bool VideoBridgeChild::AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) {
   if (!mThread->IsOnCurrentThread()) {
-    return DispatchAllocShmemInternal(aSize, aType, aShmem,
-                                      true);  // true: unsafe
+    return DispatchAllocShmemInternal(aSize, aShmem, true);  // true: unsafe
   }
 
   if (!CanSend()) {
     return false;
   }
 
-  return PVideoBridgeChild::AllocUnsafeShmem(aSize, aType, aShmem);
+  return PVideoBridgeChild::AllocUnsafeShmem(aSize, aShmem);
 }
 
-bool VideoBridgeChild::AllocShmem(size_t aSize,
-                                  ipc::SharedMemory::SharedMemoryType aType,
-                                  ipc::Shmem* aShmem) {
+bool VideoBridgeChild::AllocShmem(size_t aSize, ipc::Shmem* aShmem) {
   MOZ_ASSERT(CanSend());
-  return PVideoBridgeChild::AllocShmem(aSize, aType, aShmem);
+  return PVideoBridgeChild::AllocShmem(aSize, aShmem);
 }
 
 void VideoBridgeChild::ProxyAllocShmemNow(SynchronousTask* aTask, size_t aSize,
-                                          SharedMemory::SharedMemoryType aType,
                                           ipc::Shmem* aShmem, bool aUnsafe,
                                           bool* aSuccess) {
   AutoCompleteTask complete(aTask);
@@ -91,22 +92,22 @@ void VideoBridgeChild::ProxyAllocShmemNow(SynchronousTask* aTask, size_t aSize,
 
   bool ok = false;
   if (aUnsafe) {
-    ok = AllocUnsafeShmem(aSize, aType, aShmem);
+    ok = AllocUnsafeShmem(aSize, aShmem);
   } else {
-    ok = AllocShmem(aSize, aType, aShmem);
+    ok = AllocShmem(aSize, aShmem);
   }
   *aSuccess = ok;
 }
 
-bool VideoBridgeChild::DispatchAllocShmemInternal(
-    size_t aSize, SharedMemory::SharedMemoryType aType, ipc::Shmem* aShmem,
-    bool aUnsafe) {
+bool VideoBridgeChild::DispatchAllocShmemInternal(size_t aSize,
+                                                  ipc::Shmem* aShmem,
+                                                  bool aUnsafe) {
   SynchronousTask task("AllocatorProxy alloc");
 
   bool success = false;
   RefPtr<Runnable> runnable = WrapRunnable(
       RefPtr<VideoBridgeChild>(this), &VideoBridgeChild::ProxyAllocShmemNow,
-      &task, aSize, aType, aShmem, aUnsafe, &success);
+      &task, aSize, aShmem, aUnsafe, &success);
   GetThread()->Dispatch(runnable.forget());
 
   task.Wait();
@@ -144,11 +145,10 @@ bool VideoBridgeChild::DeallocShmem(ipc::Shmem& aShmem) {
   return result;
 }
 
-PTextureChild* VideoBridgeChild::AllocPTextureChild(const SurfaceDescriptor&,
-                                                    ReadLockDescriptor&,
-                                                    const LayersBackend&,
-                                                    const TextureFlags&,
-                                                    const uint64_t& aSerial) {
+PTextureChild* VideoBridgeChild::AllocPTextureChild(
+    const SurfaceDescriptor&, ReadLockDescriptor&, const LayersBackend&,
+    const TextureFlags&, const dom::ContentParentId& aContentId,
+    const uint64_t& aSerial) {
   MOZ_ASSERT(CanSend());
   return TextureClient::CreateIPDLActor();
 }
@@ -161,22 +161,21 @@ void VideoBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
   mCanSend = false;
 }
 
-void VideoBridgeChild::ActorDealloc() { mIPDLSelfRef = nullptr; }
-
 PTextureChild* VideoBridgeChild::CreateTexture(
     const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
-    LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
+    LayersBackend aLayersBackend, TextureFlags aFlags,
+    const dom::ContentParentId& aContentId, uint64_t aSerial,
     wr::MaybeExternalImageId& aExternalImageId) {
   MOZ_ASSERT(CanSend());
   return SendPTextureConstructor(aSharedData, std::move(aReadLock),
-                                 aLayersBackend, aFlags, aSerial);
+                                 aLayersBackend, aFlags, aContentId, aSerial);
 }
 
 bool VideoBridgeChild::IsSameProcess() const {
   return OtherPid() == base::GetCurrentProcId();
 }
 
-void VideoBridgeChild::HandleFatalError(const char* aMsg) const {
+void VideoBridgeChild::HandleFatalError(const char* aMsg) {
   dom::ContentChild::FatalErrorIfNotUsingGPUProcess(aMsg, OtherPid());
 }
 

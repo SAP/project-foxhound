@@ -18,8 +18,7 @@
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/SharedIntlData.h"
-#include "gc/FreeOp.h"
-#include "js/CharacterEncoding.h"
+#include "gc/GCContext.h"
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
 #include "js/TypeDecls.h"
@@ -28,8 +27,8 @@
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Runtime.h"
 #include "vm/StringType.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
+#include "vm/GeckoProfiler-inl.h"
 #include "vm/JSObject-inl.h"
 
 using namespace js;
@@ -38,7 +37,6 @@ using JS::AutoStableStringChars;
 
 using js::intl::ReportInternalError;
 using js::intl::SharedIntlData;
-using js::intl::StringsAreEqual;
 
 const JSClassOps CollatorObject::classOps_ = {
     nullptr,                   // addProperty
@@ -49,7 +47,6 @@ const JSClassOps CollatorObject::classOps_ = {
     nullptr,                   // mayResolve
     CollatorObject::finalize,  // finalize
     nullptr,                   // call
-    nullptr,                   // hasInstance
     nullptr,                   // construct
     nullptr,                   // trace
 };
@@ -76,7 +73,7 @@ static const JSFunctionSpec collator_static_methods[] = {
 
 static const JSFunctionSpec collator_methods[] = {
     JS_SELF_HOSTED_FN("resolvedOptions", "Intl_Collator_resolvedOptions", 0, 0),
-    JS_FN(js_toSource_str, collator_toSource, 0, 0), JS_FS_END};
+    JS_FN("toSource", collator_toSource, 0, 0), JS_FS_END};
 
 static const JSPropertySpec collator_properties[] = {
     JS_SELF_HOSTED_GET("compare", "$Intl_Collator_compare_get", 0),
@@ -100,6 +97,8 @@ const ClassSpec CollatorObject::classSpec_ = {
  * ES2017 Intl draft rev 94045d234762ad107a3d09bb6f7381a65f1a2f9b
  */
 static bool Collator(JSContext* cx, const CallArgs& args) {
+  AutoJSConstructorProfilerEntry pseudoFrame(cx, "Intl.Collator");
+
   // Step 1 (Handled by OrdinaryCreateFromConstructor fallback code).
 
   // Steps 2-5 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
@@ -140,11 +139,11 @@ bool js::intl_Collator(JSContext* cx, unsigned argc, Value* vp) {
   return Collator(cx, args);
 }
 
-void js::CollatorObject::finalize(JSFreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+void js::CollatorObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  MOZ_ASSERT(gcx->onMainThread());
 
   if (mozilla::intl::Collator* coll = obj->as<CollatorObject>().getCollator()) {
-    intl::RemoveICUCellMemory(fop, obj, CollatorObject::EstimatedMemoryUse);
+    intl::RemoveICUCellMemory(gcx, obj, CollatorObject::EstimatedMemoryUse);
     delete coll;
   }
 }
@@ -187,8 +186,9 @@ bool js::intl_availableCollations(JSContext* cx, unsigned argc, Value* vp) {
     // "The values 'standard' and 'search' must not be used as elements in
     // any [[sortLocaleData]][locale].co and [[searchLocaleData]][locale].co
     // array."
-    if (StringsAreEqual(collation.data(), "standard") ||
-        StringsAreEqual(collation.data(), "search")) {
+    static constexpr auto standard = mozilla::MakeStringSpan("standard");
+    static constexpr auto search = mozilla::MakeStringSpan("search");
+    if (collation == standard || collation == search) {
       continue;
     }
 
@@ -221,9 +221,17 @@ static mozilla::intl::Collator* NewIntlCollator(
   if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
     return nullptr;
   }
-  UniqueChars locale = intl::EncodeLocale(cx, value.toString());
-  if (!locale) {
-    return nullptr;
+
+  mozilla::intl::Locale tag;
+  {
+    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
+    if (!locale) {
+      return nullptr;
+    }
+
+    if (!intl::ParseLocale(cx, locale, tag)) {
+      return nullptr;
+    }
   }
 
   using mozilla::intl::Collator;
@@ -234,54 +242,81 @@ static mozilla::intl::Collator* NewIntlCollator(
     return nullptr;
   }
 
+  enum class Usage { Search, Sort };
+
+  Usage usage;
   {
-    JSLinearString* usage = value.toString()->ensureLinear(cx);
-    if (!usage) {
+    JSLinearString* str = value.toString()->ensureLinear(cx);
+    if (!str) {
       return nullptr;
     }
-    if (StringEqualsLiteral(usage, "search")) {
-      // ICU expects search as a Unicode locale extension on locale.
-      mozilla::intl::Locale tag;
-      if (mozilla::intl::LocaleParser::TryParse(
-              mozilla::MakeStringSpan(locale.get()), tag)
-              .isErr()) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_INVALID_LANGUAGE_TAG, locale.get());
-        return nullptr;
-      }
 
-      JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
-
-      if (!keywords.emplaceBack("co", cx->names().search)) {
-        return nullptr;
-      }
-
-      // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of
-      // the Unicode extension subtag. We're then relying on ICU to follow RFC
-      // 6067, which states that any trailing keywords using the same key
-      // should be ignored.
-      if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
-        return nullptr;
-      }
-
-      intl::FormatBuffer<char> buffer(cx);
-      if (auto result = tag.ToString(buffer); result.isErr()) {
-        intl::ReportInternalError(cx, result.unwrapErr());
-        return nullptr;
-      }
-
-      locale = buffer.extractStringZ();
-      if (!locale) {
-        return nullptr;
-      }
+    if (StringEqualsLiteral(str, "search")) {
+      usage = Usage::Search;
     } else {
-      MOZ_ASSERT(StringEqualsLiteral(usage, "sort"));
+      MOZ_ASSERT(StringEqualsLiteral(str, "sort"));
+      usage = Usage::Sort;
     }
   }
 
-  // We don't need to look at the collation property - it can only be set
-  // via the Unicode locale extension and is therefore already set on
-  // locale.
+  JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
+
+  // ICU expects collation as Unicode locale extensions on locale.
+  if (usage == Usage::Search) {
+    if (!keywords.emplaceBack("co", cx->names().search)) {
+      return nullptr;
+    }
+
+    // Search collations can't select a different collation, so the collation
+    // property is guaranteed to be "default".
+#ifdef DEBUG
+    if (!GetProperty(cx, internals, internals, cx->names().collation, &value)) {
+      return nullptr;
+    }
+
+    JSLinearString* collation = value.toString()->ensureLinear(cx);
+    if (!collation) {
+      return nullptr;
+    }
+
+    MOZ_ASSERT(StringEqualsLiteral(collation, "default"));
+#endif
+  } else {
+    if (!GetProperty(cx, internals, internals, cx->names().collation, &value)) {
+      return nullptr;
+    }
+
+    JSLinearString* collation = value.toString()->ensureLinear(cx);
+    if (!collation) {
+      return nullptr;
+    }
+
+    // Set collation as a Unicode locale extension when it was specified.
+    if (!StringEqualsLiteral(collation, "default")) {
+      if (!keywords.emplaceBack("co", collation)) {
+        return nullptr;
+      }
+    }
+  }
+
+  // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of the
+  // Unicode extension subtag. We're then relying on ICU to follow RFC 6067,
+  // which states that any trailing keywords using the same key should be
+  // ignored.
+  if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
+    return nullptr;
+  }
+
+  intl::FormatBuffer<char> buffer(cx);
+  if (auto result = tag.ToString(buffer); result.isErr()) {
+    intl::ReportInternalError(cx, result.unwrapErr());
+    return nullptr;
+  }
+
+  UniqueChars locale = buffer.extractStringZ();
+  if (!locale) {
+    return nullptr;
+  }
 
   if (!GetProperty(cx, internals, internals, cx->names().sensitivity, &value)) {
     return nullptr;
@@ -432,5 +467,22 @@ bool js::intl_isUpperCaseFirst(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   args.rval().setBoolean(isUpperFirst);
+  return true;
+}
+
+bool js::intl_isIgnorePunctuation(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  MOZ_ASSERT(args.length() == 1);
+  MOZ_ASSERT(args[0].isString());
+
+  SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
+
+  RootedString locale(cx, args[0].toString());
+  bool isIgnorePunctuation;
+  if (!sharedIntlData.isIgnorePunctuation(cx, locale, &isIgnorePunctuation)) {
+    return false;
+  }
+
+  args.rval().setBoolean(isIgnorePunctuation);
   return true;
 }

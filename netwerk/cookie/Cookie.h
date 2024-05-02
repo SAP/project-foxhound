@@ -44,9 +44,13 @@ class Cookie final : public nsICookie {
          const OriginAttributes& aOriginAttributes)
       : mData(aCookieData), mOriginAttributes(aOriginAttributes) {}
 
+  static already_AddRefed<Cookie> FromCookieStruct(
+      const CookieStruct& aCookieData,
+      const OriginAttributes& aOriginAttributes);
+
  public:
   // Returns false if rawSameSite has an invalid value, compared to sameSite.
-  static bool ValidateRawSame(const CookieStruct& aCookieData);
+  static bool ValidateSameSite(const CookieStruct& aCookieData);
 
   // Generate a unique and monotonically increasing creation time. See comment
   // in Cookie.cpp.
@@ -54,6 +58,13 @@ class Cookie final : public nsICookie {
 
   // public helper to create an Cookie object.
   static already_AddRefed<Cookie> Create(
+      const CookieStruct& aCookieData,
+      const OriginAttributes& aOriginAttributes);
+
+  // Same as Cookie::Create but fixes the lastAccessed and creationDates
+  // if they are set in the future.
+  // Should only get called from CookiePersistentStorage::InitDBConn
+  static already_AddRefed<Cookie> CreateValidated(
       const CookieStruct& aCookieData,
       const OriginAttributes& aOriginAttributes);
 
@@ -84,6 +95,10 @@ class Cookie final : public nsICookie {
   }
   inline int32_t SameSite() const { return mData.sameSite(); }
   inline int32_t RawSameSite() const { return mData.rawSameSite(); }
+  inline bool IsDefaultSameSite() const {
+    return SameSite() == nsICookie::SAMESITE_LAX &&
+           RawSameSite() == nsICookie::SAMESITE_NONE;
+  }
   inline uint8_t SchemeMap() const { return mData.schemeMap(); }
 
   // setters
@@ -99,6 +114,7 @@ class Cookie final : public nsICookie {
   inline void SetSchemeMap(uint8_t aSchemeMap) {
     mData.schemeMap() = aSchemeMap;
   }
+  inline void SetHost(const nsACString& aHost) { mData.host() = aHost; }
 
   bool IsStale() const;
 

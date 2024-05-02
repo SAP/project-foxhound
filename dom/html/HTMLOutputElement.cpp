@@ -7,7 +7,6 @@
 #include "mozilla/dom/HTMLOutputElement.h"
 
 #include "mozAutoDocUpdate.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLOutputElementBinding.h"
 #include "nsContentUtils.h"
@@ -46,14 +45,15 @@ NS_IMPL_ELEMENT_CLONE(HTMLOutputElement)
 
 void HTMLOutputElement::SetCustomValidity(const nsAString& aError) {
   ConstraintValidation::SetCustomValidity(aError);
-
-  UpdateState(true);
 }
 
 NS_IMETHODIMP
 HTMLOutputElement::Reset() {
   mValueModeFlag = eModeDefault;
-  return nsContentUtils::SetNodeTextContent(this, mDefaultValue, true);
+  // We can't pass mDefaultValue, because it'll be truncated when
+  // the element's descendants are changed, so pass a copy instead.
+  const nsAutoString currentDefaultValue(mDefaultValue);
+  return nsContentUtils::SetNodeTextContent(this, currentDefaultValue, true);
 }
 
 bool HTMLOutputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -77,22 +77,7 @@ void HTMLOutputElement::DoneAddingChildren(bool aHaveNotified) {
   DescendantsChanged();
 }
 
-nsresult HTMLOutputElement::BindToTree(BindContext& aContext,
-                                       nsINode& aParent) {
-  nsresult rv = nsGenericHTMLFormControlElement::BindToTree(aContext, aParent);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Unfortunately, we can actually end up having to change our state
-  // as a result of being bound to a tree even from the parser: we
-  // might end up a in a novalidate form, and unlike other form
-  // controls that on its own is enough to make change ui-valid state.
-  // So just go ahead and update our state now.
-  UpdateState(false);
-
-  return rv;
-}
-
-void HTMLOutputElement::GetValue(nsAString& aValue) {
+void HTMLOutputElement::GetValue(nsAString& aValue) const {
   nsContentUtils::GetNodeTextContent(this, true, aValue);
 }
 

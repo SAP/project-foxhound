@@ -6,10 +6,11 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpserver.identity.primaryPort;
 });
 
@@ -67,7 +68,7 @@ function makeChan(url, loadingUrl) {
 }
 
 function TestListener() {}
-TestListener.prototype.onStartRequest = function(request, context) {
+TestListener.prototype.onStartRequest = function (request, context) {
   // Need to do the instanceof to allow request.responseStatus
   // to be read.
   if (!(request instanceof Ci.nsIHttpChannel)) {
@@ -76,7 +77,7 @@ TestListener.prototype.onStartRequest = function(request, context) {
 
   Assert.equal(expectedResponse, request.responseStatus, "HTTP Status code");
 };
-TestListener.prototype.onStopRequest = function(request, context, status) {
+TestListener.prototype.onStopRequest = function (request, context, status) {
   Assert.equal(expectedRequests, requestsMade, "Number of requests made ");
 
   if (current_test < tests.length - 1) {
@@ -89,7 +90,7 @@ TestListener.prototype.onStopRequest = function(request, context, status) {
 
   do_test_finished();
 };
-TestListener.prototype.onDataAvaiable = function(
+TestListener.prototype.onDataAvaiable = function (
   request,
   context,
   stream,
@@ -117,6 +118,8 @@ const NTLM_CHALLENGE =
 // i.e. successful web server auth
 //
 function successfulAuth(metadata, response) {
+  let authorization;
+  let authPrefix;
   switch (requestsMade) {
     case 0:
       // Web Server - Initial request
@@ -126,22 +129,22 @@ function successfulAuth(metadata, response) {
       break;
     case 1:
       // Web Server - Expecting a type 1 negotiate message from the client
-      var authorization = metadata.getHeader("Authorization");
-      var authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
+      authorization = metadata.getHeader("Authorization");
+      authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
       Assert.equal(NTLM_TYPE1_PREFIX, authPrefix, "Expecting a Type 1 message");
       response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
       response.setHeader("WWW-Authenticate", NTLM_CHALLENGE, false);
       break;
     case 2:
       // Web Server - Expecting a type 3 Authenticate message from the client
-      var authorization = metadata.getHeader("Authorization");
-      var authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
+      authorization = metadata.getHeader("Authorization");
+      authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
       Assert.equal(NTLM_TYPE3_PREFIX, authPrefix, "Expecting a Type 3 message");
       response.setStatusLine(metadata.httpVersion, 200, "Successful");
       break;
     default:
       // We should be authenticated and further requests are permitted
-      var authorization = metadata.getHeader("Authorization");
+      authorization = metadata.getHeader("Authorization");
       Assert.isnull(authorization);
       response.setStatusLine(metadata.httpVersion, 200, "Successful");
   }
@@ -150,6 +153,8 @@ function successfulAuth(metadata, response) {
 
 // web server responses simulating an unsuccessful web server auth
 function failedAuth(metadata, response) {
+  let authorization;
+  let authPrefix;
   switch (requestsMade) {
     case 0:
       // Web Server - First request return a 401 to start auth sequence
@@ -158,8 +163,8 @@ function failedAuth(metadata, response) {
       break;
     case 1:
       // Web Server - Expecting a type 1 negotiate message from the client
-      var authorization = metadata.getHeader("Authorization");
-      var authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
+      authorization = metadata.getHeader("Authorization");
+      authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
       Assert.equal(NTLM_TYPE1_PREFIX, authPrefix, "Expecting a Type 1 message");
       response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
       response.setHeader("WWW-Authenticate", NTLM_CHALLENGE, false);
@@ -167,8 +172,8 @@ function failedAuth(metadata, response) {
     case 2:
       // Web Server - Expecting a type 3 Authenticate message from the client
       // Respond with a 401 to restart the auth sequence.
-      var authorization = metadata.getHeader("Authorization");
-      var authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
+      authorization = metadata.getHeader("Authorization");
+      authPrefix = authorization.substring(0, NTLM_PREFIX_LEN);
       Assert.equal(NTLM_TYPE3_PREFIX, authPrefix, "Expecting a Type 1 message");
       response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
       break;

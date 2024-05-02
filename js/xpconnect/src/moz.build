@@ -6,6 +6,8 @@
 
 EXPORTS += [
     "BackstagePass.h",
+    "JSServices.h",
+    "nsIXPConnect.h",
     "XPCJSMemoryReporter.h",
     "xpcObjectHelper.h",
     "xpcpublic.h",
@@ -75,5 +77,3 @@ LOCAL_INCLUDES += [
 
 if CONFIG["CC_TYPE"] in ("clang", "gcc"):
     CXXFLAGS += ["-Werror=format"]
-
-REQUIRES_UNIFIED_BUILD = True

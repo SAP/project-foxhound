@@ -12,7 +12,7 @@ add_task(async () => {
 
   const {
     getFormattedSize,
-  } = require("devtools/client/netmonitor/src/utils/format-utils");
+  } = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
 
   const { tab, monitor } = await initNetMonitor(STATUS_CODES_URL, {
     enableCache: true,
@@ -69,7 +69,7 @@ add_task(async () => {
 
   async function performRequestsAndWait() {
     const wait = waitForNetworkEvents(monitor, 2);
-    await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
       content.wrappedJSObject.performOneCachedRequest();
     });
     await wait;

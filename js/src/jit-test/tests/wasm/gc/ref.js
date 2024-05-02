@@ -3,17 +3,19 @@
 // Parsing and resolving.
 
 var text = `(module
-      (type $cons (struct
-                   (field $car i32)
-                   (field $cdr (ref null $cons))))
+      (rec
+        (type $cons (struct
+                     (field $car i32)
+                     (field $cdr (ref null $cons))))
 
-      (type $odd (struct
-                  (field $odd.x i32)
-                  (field $to_even (ref null $even))))
+        (type $odd (struct
+                    (field $odd.x i32)
+                    (field $to_even (ref null $even))))
 
-      (type $even (struct
-                   (field $even.x i32)
-                   (field $to_odd (ref null $odd))))
+        (type $even (struct
+                     (field $even.x i32)
+                     (field $to_odd (ref null $odd))))
+      )
 
       ;; Use eqref on the API since struct types cannot be exposed outside the module yet.
 
@@ -87,7 +89,7 @@ assertErrorMessage(() => wasmEvalText(`
 (module
  (func (param (ref null $odd)) (unreachable)))
 `),
-SyntaxError, /failed to find type/);
+SyntaxError, /failed to find name/);
 
 // Ref type mismatch in parameter is allowed through the prefix rule
 // but not if the structs are incompatible.
@@ -171,21 +173,23 @@ assertErrorMessage(() => wasmEvalText(`
 `),
 WebAssembly.CompileError, /expression has type \(ref null.*\) but expected \(ref null.*\)/);
 
-// Ref type can't reference a function type
+if (!wasmFunctionReferencesEnabled()) {
+  // Ref type can't reference a function type
 
-assertErrorMessage(() => wasmEvalText(`
+  assertErrorMessage(() => wasmEvalText(`
 (module
  (type $x (func (param i32)))
  (func $f (param (ref null $x)) (unreachable)))
 `),
-WebAssembly.CompileError, /does not reference a gc type/);
+  WebAssembly.CompileError, /does not reference a gc type/);
 
-assertErrorMessage(() => wasmEvalText(`
+  assertErrorMessage(() => wasmEvalText(`
 (module
  (type (func (param i32)))
  (func $f (param (ref null 0)) (unreachable)))
 `),
-WebAssembly.CompileError, /does not reference a gc type/);
+  WebAssembly.CompileError, /does not reference a gc type/);
+}
 
 // No automatic downcast from eqref
 

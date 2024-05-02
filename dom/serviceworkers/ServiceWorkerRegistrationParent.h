@@ -9,8 +9,7 @@
 
 #include "mozilla/dom/PServiceWorkerRegistrationParent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class IPCServiceWorkerRegistrationDescriptor;
 class ServiceWorkerRegistrationProxy;
@@ -30,7 +29,7 @@ class ServiceWorkerRegistrationParent final
   mozilla::ipc::IPCResult RecvUnregister(
       UnregisterResolver&& aResolver) override;
 
-  mozilla::ipc::IPCResult RecvUpdate(const nsCString& aNewestWorkerScriptUrl,
+  mozilla::ipc::IPCResult RecvUpdate(const nsACString& aNewestWorkerScriptUrl,
                                      UpdateResolver&& aResolver) override;
 
   mozilla::ipc::IPCResult RecvSetNavigationPreloadEnabled(
@@ -38,7 +37,7 @@ class ServiceWorkerRegistrationParent final
       SetNavigationPreloadEnabledResolver&& aResolver) override;
 
   mozilla::ipc::IPCResult RecvSetNavigationPreloadHeader(
-      const nsCString& aHeader,
+      const nsACString& aHeader,
       SetNavigationPreloadHeaderResolver&& aResolver) override;
 
   mozilla::ipc::IPCResult RecvGetNavigationPreloadState(
@@ -54,7 +53,6 @@ class ServiceWorkerRegistrationParent final
   void MaybeSendDelete();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_serviceworkerregistrationparent_h__

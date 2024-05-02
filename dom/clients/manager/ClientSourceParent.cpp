@@ -32,20 +32,21 @@ namespace {
 // move capture in lambdas yet and ContentParent cannot be AddRef'd off
 // the main thread.
 class KillContentParentRunnable final : public Runnable {
-  RefPtr<ContentParent> mContentParent;
+  RefPtr<ThreadsafeContentParentHandle> mHandle;
 
  public:
-  explicit KillContentParentRunnable(RefPtr<ContentParent>&& aContentParent)
-      : Runnable("KillContentParentRunnable"),
-        mContentParent(std::move(aContentParent)) {
-    MOZ_ASSERT(mContentParent);
+  explicit KillContentParentRunnable(
+      RefPtr<ThreadsafeContentParentHandle>&& aHandle)
+      : Runnable("KillContentParentRunnable"), mHandle(std::move(aHandle)) {
+    MOZ_ASSERT(mHandle);
   }
 
   NS_IMETHOD
   Run() override {
-    MOZ_ASSERT(NS_IsMainThread());
-    mContentParent->KillHard("invalid ClientSourceParent actor");
-    mContentParent = nullptr;
+    AssertIsOnMainThread();
+    if (RefPtr<ContentParent> contentParent = mHandle->GetContentParent()) {
+      contentParent->KillHard("invalid ClientSourceParent actor");
+    }
     return NS_OK;
   }
 };
@@ -54,8 +55,8 @@ class KillContentParentRunnable final : public Runnable {
 
 void ClientSourceParent::KillInvalidChild() {
   // Try to get the content process before we destroy the actor below.
-  RefPtr<ContentParent> process =
-      BackgroundParent::GetContentParent(Manager()->Manager());
+  RefPtr<ThreadsafeContentParentHandle> process =
+      BackgroundParent::GetContentParentHandle(Manager()->Manager());
 
   // First, immediately teardown the ClientSource actor.  No matter what
   // we want to start this process as soon as possible.
@@ -76,8 +77,7 @@ void ClientSourceParent::KillInvalidChild() {
   // there is a small window of time before we kill the process.  This is why
   // we start the actor destruction immediately above.
   nsCOMPtr<nsIRunnable> r = new KillContentParentRunnable(std::move(process));
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 }
 
 mozilla::ipc::IPCResult ClientSourceParent::RecvWorkerSyncPing() {
@@ -116,19 +116,23 @@ IPCResult ClientSourceParent::RecvExecutionReady(
 };
 
 IPCResult ClientSourceParent::RecvFreeze() {
+#ifdef FUZZING_SNAPSHOT
+  if (mFrozen) {
+    return IPC_FAIL(this, "Freezing when already frozen");
+  }
+#endif
   MOZ_DIAGNOSTIC_ASSERT(!mFrozen);
   mFrozen = true;
-
-  // Frozen clients should not be observable.  Act as if the client has
-  // been destroyed.
-  for (ClientHandleParent* handle : mHandleList.Clone()) {
-    Unused << ClientHandleParent::Send__delete__(handle);
-  }
 
   return IPC_OK();
 }
 
 IPCResult ClientSourceParent::RecvThaw() {
+#ifdef FUZZING_SNAPSHOT
+  if (!mFrozen) {
+    return IPC_FAIL(this, "Thawing when not already frozen");
+  }
+#endif
   MOZ_DIAGNOSTIC_ASSERT(mFrozen);
   mFrozen = false;
   return IPC_OK();
@@ -149,8 +153,7 @@ IPCResult ClientSourceParent::RecvInheritController(
         swm->NoteInheritedController(clientInfo, controller);
       });
 
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 
   return IPC_OK();
 }
@@ -167,8 +170,7 @@ IPCResult ClientSourceParent::RecvNoteDOMContentLoaded() {
                                  swm->MaybeCheckNavigationUpdate(clientInfo);
                                });
 
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
   }
   return IPC_OK();
 }
@@ -255,7 +257,6 @@ void ClientSourceParent::ClearController() { mController.reset(); }
 
 void ClientSourceParent::AttachHandle(ClientHandleParent* aClientHandle) {
   MOZ_DIAGNOSTIC_ASSERT(aClientHandle);
-  MOZ_DIAGNOSTIC_ASSERT(!mFrozen);
   MOZ_ASSERT(!mHandleList.Contains(aClientHandle));
   mHandleList.AppendElement(aClientHandle);
 }

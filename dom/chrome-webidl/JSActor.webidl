@@ -7,10 +7,14 @@
 
 interface mixin JSActor {
     [Throws]
-    void sendAsyncMessage(DOMString messageName,
-                          optional any obj);
+    undefined sendAsyncMessage(DOMString messageName,
+                               optional any obj,
+                               optional any transferables);
 
-    [Throws]
+    /**
+     * Note that transfers are currently not supported by sendQuery. See Bug 1579536.
+     */
+    [NewObject]
     Promise<any> sendQuery(DOMString messageName,
                            optional any obj);
 
@@ -26,7 +30,7 @@ interface mixin JSActor {
  */
 [Exposed=Window]
 callback interface MozObserverCallback {
-  void observe(nsISupports subject, ByteString topic, DOMString? data);
+  undefined observe(nsISupports subject, ByteString topic, DOMString? data);
 };
 
 /**
@@ -34,7 +38,7 @@ callback interface MozObserverCallback {
  * `actorCreated` methods on JSActors.
  */
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback MozJSActorCallback = void();
+callback MozJSActorCallback = undefined();
 
 /**
  * The didDestroy method, if present, will be called after the actor is no

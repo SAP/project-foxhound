@@ -1,7 +1,7 @@
 /* eslint max-len: ["error", 80] */
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -13,7 +13,7 @@ registerCleanupFunction(() => {
   AddonManager.autoUpdateDefault = initialAutoUpdate;
 });
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.checkUpdateSecurity", false]],
   });
@@ -37,7 +37,7 @@ add_task(async function testChangeAutoUpdates() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Test",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     // Use permanent so the add-on can be updated.
     useAddonManager: "permanent",
@@ -119,53 +119,6 @@ add_task(async function testChangeAutoUpdates() {
 
   await closeView(win);
   await extension.unload();
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "enabled",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "default",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "enabled",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-  ]);
 });
 
 async function setupExtensionWithUpdate(
@@ -177,8 +130,8 @@ async function setupExtensionWithUpdate(
 
   let baseManifest = {
     name: "Updates",
-    icons: { "48": "an-icon.png" },
-    applications: {
+    icons: { 48: "an-icon.png" },
+    browser_specific_settings: {
       gecko: {
         id,
         update_url: serverHost + updatesPath,
@@ -453,45 +406,6 @@ add_task(async function testReleaseNotesLoad() {
 
   await closeView(win);
   await extension.unload();
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "checkForUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "releaseNotes" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "releaseNotes" },
-    ],
-  ]);
 });
 
 add_task(async function testReleaseNotesError() {
@@ -796,7 +710,7 @@ add_task(async function testNoUpdateAvailableOnUnrelatedAddonCards() {
     useAddonManager: "temporary",
     manifest: {
       name: "TestAddonNoUpdate",
-      applications: { gecko: { id: idNoUpdate } },
+      browser_specific_settings: { gecko: { id: idNoUpdate } },
     },
   });
   await extensionNoUpdate.startup();

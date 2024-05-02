@@ -35,6 +35,7 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Unused.h"
+#include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsIGfxInfo.h"
@@ -130,10 +131,10 @@ static bool IsGraphicsOkWithoutNetwork() {
       accessFlags = R_OK | W_OK;
     }
     if (access(socketPath.get(), accessFlags) != 0) {
-      SANDBOX_LOG_ERROR(
-          "%s is inaccessible (%s); can't isolate network namespace in"
+      SANDBOX_LOG_ERRNO(
+          "%s is inaccessible; can't isolate network namespace in"
           " content processes",
-          socketPath.get(), strerror(errno));
+          socketPath.get());
       return false;
     }
   }
@@ -238,7 +239,8 @@ class SandboxFork : public base::LaunchOptions::ForkDelegate {
   SandboxFork& operator=(const SandboxFork&) = delete;
 };
 
-static int GetEffectiveSandboxLevel(GeckoProcessType aType) {
+static int GetEffectiveSandboxLevel(GeckoProcessType aType,
+                                    ipc::SandboxingKind aKind) {
   auto info = SandboxInfo::Get();
   switch (aType) {
     case GeckoProcessType_GMPlugin:
@@ -266,14 +268,14 @@ static int GetEffectiveSandboxLevel(GeckoProcessType aType) {
       MOZ_ASSERT(NS_IsMainThread());
       return GetEffectiveSocketProcessSandboxLevel();
     case GeckoProcessType_Utility:
-      return PR_GetEnv("MOZ_DISABLE_UTILITY_SANDBOX") == nullptr ? 1 : 0;
+      return IsUtilitySandboxEnabled(aKind);
     default:
       return 0;
   }
 }
 
-void SandboxLaunchPrepare(GeckoProcessType aType,
-                          base::LaunchOptions* aOptions) {
+void SandboxLaunchPrepare(GeckoProcessType aType, base::LaunchOptions* aOptions,
+                          ipc::SandboxingKind aKind) {
   auto info = SandboxInfo::Get();
 
   // We won't try any kind of sandboxing without seccomp-bpf.
@@ -282,7 +284,7 @@ void SandboxLaunchPrepare(GeckoProcessType aType,
   }
 
   // Check prefs (and env vars) controlling sandbox use.
-  int level = GetEffectiveSandboxLevel(aType);
+  int level = GetEffectiveSandboxLevel(aType, aKind);
   if (level == 0) {
     return;
   }
@@ -417,7 +419,7 @@ SandboxFork::SandboxFork(int aFlags, bool aChroot, int aServerFd, int aClientFd)
     int fds[2];
     int rv = socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds);
     if (rv != 0) {
-      SANDBOX_LOG_ERROR("socketpair: %s", strerror(errno));
+      SANDBOX_LOG_ERRNO("socketpair");
       MOZ_CRASH("socketpair failed");
     }
     mChrootClient = fds[0];
@@ -452,7 +454,7 @@ static void BlockAllSignals(sigset_t* aOldSigs) {
   MOZ_RELEASE_ASSERT(rv == 0);
   rv = pthread_sigmask(SIG_BLOCK, &allSigs, aOldSigs);
   if (rv != 0) {
-    SANDBOX_LOG_ERROR("pthread_sigmask (block all): %s", strerror(rv));
+    SANDBOX_LOG_WITH_ERROR(rv, "pthread_sigmask (block all)");
     MOZ_CRASH("pthread_sigmask");
   }
 }
@@ -463,13 +465,28 @@ static void RestoreSignals(const sigset_t* aOldSigs) {
   // state right now:
   int rv = pthread_sigmask(SIG_SETMASK, aOldSigs, nullptr);
   if (rv != 0) {
-    SANDBOX_LOG_ERROR("pthread_sigmask (restore): %s", strerror(-rv));
+    SANDBOX_LOG_WITH_ERROR(rv, "pthread_sigmask (restore)");
     MOZ_CRASH("pthread_sigmask");
   }
 }
 
+static bool IsSignalIgnored(int aSig) {
+  struct sigaction sa {};
+
+  if (sigaction(aSig, nullptr, &sa) != 0) {
+    if (errno != EINVAL) {
+      SANDBOX_LOG_ERRNO("sigaction(%d)", aSig);
+    }
+    return false;
+  }
+  return sa.sa_handler == SIG_IGN;
+}
+
 static void ResetSignalHandlers() {
   for (int signum = 1; signum <= SIGRTMAX; ++signum) {
+    if (IsSignalIgnored(signum)) {
+      continue;
+    }
     if (signal(signum, SIG_DFL) == SIG_ERR) {
       MOZ_DIAGNOSTIC_ASSERT(errno == EINVAL);
     }
@@ -509,8 +526,8 @@ static int CloneCallee(void* aPtr) {
 // Valgrind would disapprove of using clone() without CLONE_VM;
 // Chromium uses the raw syscall as a workaround in that case, but
 // we don't currently support sandboxing under valgrind.
-MOZ_NEVER_INLINE MOZ_ASAN_BLACKLIST static pid_t DoClone(int aFlags,
-                                                         jmp_buf* aCtx) {
+MOZ_NEVER_INLINE MOZ_ASAN_IGNORE static pid_t DoClone(int aFlags,
+                                                      jmp_buf* aCtx) {
   static constexpr size_t kStackAlignment = 16;
   uint8_t miniStack[4096] __attribute__((aligned(kStackAlignment)));
 #ifdef __hppa__
@@ -592,7 +609,7 @@ static void ConfigureUserNamespace(uid_t uid, gid_t gid) {
 
 static void DropAllCaps() {
   if (!LinuxCapabilities().SetCurrent()) {
-    SANDBOX_LOG_ERROR("capset (drop all): %s", strerror(errno));
+    SANDBOX_LOG_ERRNO("capset (drop all)");
   }
 }
 
@@ -656,7 +673,7 @@ void SandboxFork::StartChrootServer() {
   LinuxCapabilities caps;
   caps.Effective(CAP_SYS_CHROOT) = true;
   if (!caps.SetCurrent()) {
-    SANDBOX_LOG_ERROR("capset (chroot helper): %s", strerror(errno));
+    SANDBOX_LOG_ERRNO("capset (chroot helper)");
     MOZ_DIAGNOSTIC_ASSERT(false);
   }
 

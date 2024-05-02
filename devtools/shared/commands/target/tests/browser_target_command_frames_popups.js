@@ -10,7 +10,7 @@ const POPUP_URL = "https://example.com/document-builder.sjs?html=popup";
 const POPUP_SECOND_URL =
   "https://example.com/document-builder.sjs?html=popup-navigated";
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.popups.debug", true);
   // We expect to create a target for a same-process iframe
   // in the test against window.open to load a document in an iframe.
@@ -132,11 +132,7 @@ add_task(async function() {
 
   info("Select the original tab and reload it");
   gBrowser.selectedTab = tab;
-  const onBrowserLoaded = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser
-  );
-  gBrowser.reloadTab(tab);
-  await onBrowserLoaded;
+  await BrowserTestUtils.reloadTab(tab);
 
   await waitFor(() => targets.length === 5);
   is(targets[4], targetCommand.targetFront, "We get a new top level target");

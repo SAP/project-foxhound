@@ -2,10 +2,10 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   function promiseWaitForFocus(window) {
     return new Promise(resolve => {
-      waitForFocus(function() {
+      waitForFocus(function () {
         ok(Services.focus.activeWindow === window, "correct window focused");
         resolve();
       }, window);
@@ -19,12 +19,12 @@ add_task(async function() {
   await promiseWaitForFocus(window2);
 
   let extension = ExtensionTestUtils.loadExtension({
-    background: function() {
-      browser.windows.getAll(undefined, function(wins) {
+    background: function () {
+      browser.windows.getAll(undefined, function (wins) {
         browser.test.assertEq(wins.length, 2, "should have two windows");
 
         // Sort the unfocused window to the lower index.
-        wins.sort(function(win1, win2) {
+        wins.sort(function (win1, win2) {
           if (win1.focused === win2.focused) {
             return 0;
           }
@@ -32,7 +32,7 @@ add_task(async function() {
           return win1.focused ? 1 : -1;
         });
 
-        browser.windows.update(wins[0].id, { focused: true }, function() {
+        browser.windows.update(wins[0].id, { focused: true }, function () {
           browser.test.sendMessage("check");
         });
       });
@@ -68,7 +68,7 @@ add_task(async function testWindowUpdate() {
       }
 
       let currentWindowId;
-      async function updateWindow(windowId, params, expected) {
+      async function updateWindow(windowId, params, expected, otherChecks) {
         let window = await browser.windows.update(windowId, params);
 
         browser.test.assertEq(
@@ -92,6 +92,15 @@ add_task(async function testWindowUpdate() {
             );
           }
         }
+        if (otherChecks) {
+          for (let key of Object.keys(otherChecks)) {
+            browser.test.assertEq(
+              otherChecks[key],
+              window[key],
+              `Got expected value for window.${key}`
+            );
+          }
+        }
 
         return checkWindow(expected);
       }
@@ -104,10 +113,21 @@ add_task(async function testWindowUpdate() {
         let window = await browser.windows.getCurrent();
         currentWindowId = window.id;
 
+        // Store current, "normal" width and height to compare against
+        // window width and height after updating to "normal" state.
+        let normalWidth = window.width;
+        let normalHeight = window.height;
+
         await updateWindow(
           windowId,
           { state: "maximized" },
           { state: "STATE_MAXIMIZED" }
+        );
+        await updateWindow(
+          windowId,
+          { state: "normal" },
+          { state: "STATE_NORMAL" },
+          { width: normalWidth, height: normalHeight }
         );
         await updateWindow(
           windowId,
@@ -117,7 +137,8 @@ add_task(async function testWindowUpdate() {
         await updateWindow(
           windowId,
           { state: "normal" },
-          { state: "STATE_NORMAL" }
+          { state: "STATE_NORMAL" },
+          { width: normalWidth, height: normalHeight }
         );
         await updateWindow(
           windowId,
@@ -127,7 +148,8 @@ add_task(async function testWindowUpdate() {
         await updateWindow(
           windowId,
           { state: "normal" },
-          { state: "STATE_NORMAL" }
+          { state: "STATE_NORMAL" },
+          { width: normalWidth, height: normalHeight }
         );
 
         browser.test.notifyPass("window-update");
@@ -172,19 +194,19 @@ add_task(async function testWindowUpdate() {
   await extension.unload();
 });
 
-add_task(async function() {
+add_task(async function () {
   let window2 = await BrowserTestUtils.openNewBrowserWindow();
 
   let extension = ExtensionTestUtils.loadExtension({
-    background: function() {
-      browser.windows.getAll(undefined, function(wins) {
+    background: function () {
+      browser.windows.getAll(undefined, function (wins) {
         browser.test.assertEq(wins.length, 2, "should have two windows");
 
         let unfocused = wins.find(win => !win.focused);
         browser.windows.update(
           unfocused.id,
           { drawAttention: true },
-          function() {
+          function () {
             browser.test.sendMessage("check");
           }
         );
@@ -228,4 +250,137 @@ add_task(async function testWindowUpdateParams() {
   await extension.startup();
   await extension.awaitFinish("window-update-params");
   await extension.unload();
+});
+
+add_task(async function testPositionBoundaryCheck() {
+  const extension = ExtensionTestUtils.loadExtension({
+    async background() {
+      function waitMessage() {
+        return new Promise((resolve, reject) => {
+          const onMessage = message => {
+            if (message == "continue") {
+              browser.test.onMessage.removeListener(onMessage);
+              resolve();
+            }
+          };
+          browser.test.onMessage.addListener(onMessage);
+        });
+      }
+      const win = await browser.windows.create({
+        type: "popup",
+        left: 50,
+        top: 50,
+        width: 150,
+        height: 150,
+      });
+      await browser.test.sendMessage("ready");
+      await waitMessage();
+      await browser.windows.update(win.id, {
+        left: 123,
+        top: 123,
+      });
+      await browser.test.sendMessage("regular");
+      await waitMessage();
+      await browser.windows.update(win.id, {
+        left: 123,
+      });
+      await browser.test.sendMessage("only-left");
+      await waitMessage();
+      await browser.windows.update(win.id, {
+        top: 123,
+      });
+      await browser.test.sendMessage("only-top");
+      await waitMessage();
+      await browser.windows.update(win.id, {
+        left: screen.availWidth * 100,
+        top: screen.availHeight * 100,
+      });
+      await browser.test.sendMessage("too-large");
+      await waitMessage();
+      await browser.windows.update(win.id, {
+        left: -screen.availWidth * 100,
+        top: -screen.availHeight * 100,
+      });
+      await browser.test.sendMessage("too-small");
+    },
+  });
+
+  const promisedWin = new Promise((resolve, reject) => {
+    const windowListener = (window, topic) => {
+      if (topic == "domwindowopened") {
+        Services.ww.unregisterNotification(windowListener);
+        resolve(window);
+      }
+    };
+    Services.ww.registerNotification(windowListener);
+  });
+
+  await extension.startup();
+
+  const win = await promisedWin;
+
+  const regularScreen = getScreenAt(0, 0, 150, 150);
+  const roundedX = roundCssPixcel(123, regularScreen);
+  const roundedY = roundCssPixcel(123, regularScreen);
+
+  const availRectLarge = getCssAvailRect(
+    getScreenAt(screen.width * 100, screen.height * 100, 150, 150)
+  );
+  const maxRight = availRectLarge.right;
+  const maxBottom = availRectLarge.bottom;
+
+  const availRectSmall = getCssAvailRect(
+    getScreenAt(-screen.width * 100, -screen.height * 100, 150, 150)
+  );
+  const minLeft = availRectSmall.left;
+  const minTop = availRectSmall.top;
+
+  const expectedCoordinates = [
+    `${roundedX},${roundedY}`,
+    `${roundedX},${win.screenY}`,
+    `${win.screenX},${roundedY}`,
+  ];
+
+  await extension.awaitMessage("ready");
+
+  const actualCoordinates = [];
+  extension.sendMessage("continue");
+  await extension.awaitMessage("regular");
+  actualCoordinates.push(`${win.screenX},${win.screenY}`);
+  win.moveTo(50, 50);
+  extension.sendMessage("continue");
+  await extension.awaitMessage("only-left");
+  actualCoordinates.push(`${win.screenX},${win.screenY}`);
+  win.moveTo(50, 50);
+  extension.sendMessage("continue");
+  await extension.awaitMessage("only-top");
+  actualCoordinates.push(`${win.screenX},${win.screenY}`);
+  is(
+    actualCoordinates.join(" / "),
+    expectedCoordinates.join(" / "),
+    "expected window is placed at given coordinates"
+  );
+
+  const actualRect = {};
+  const maxRect = {
+    top: minTop,
+    bottom: maxBottom,
+    left: minLeft,
+    right: maxRight,
+  };
+
+  extension.sendMessage("continue");
+  await extension.awaitMessage("too-large");
+  actualRect.right = win.screenX + win.outerWidth;
+  actualRect.bottom = win.screenY + win.outerHeight;
+
+  extension.sendMessage("continue");
+  await extension.awaitMessage("too-small");
+  actualRect.top = win.screenY;
+  actualRect.left = win.screenX;
+
+  isRectContained(actualRect, maxRect);
+
+  await extension.unload();
+  await BrowserTestUtils.closeWindow(win);
 });

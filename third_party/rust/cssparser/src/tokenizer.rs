@@ -7,10 +7,22 @@
 use self::Token::*;
 use crate::cow_rc_str::CowRcStr;
 use crate::parser::ParserState;
-use matches::matches;
 use std::char;
-use std::i32;
 use std::ops::Range;
+
+#[cfg(not(feature = "dummy_match_byte"))]
+use cssparser_macros::match_byte;
+
+#[cfg(feature = "dummy_match_byte")]
+macro_rules! match_byte {
+    ($value:expr, $($rest:tt)* ) => {
+        match $value {
+            $(
+                $rest
+            )+
+        }
+    };
+}
 
 /// One of the pieces the CSS input is broken into.
 ///
@@ -218,16 +230,11 @@ enum SeenStatus {
 impl<'a> Tokenizer<'a> {
     #[inline]
     pub fn new(input: &str) -> Tokenizer {
-        Tokenizer::with_first_line_number(input, 0)
-    }
-
-    #[inline]
-    pub fn with_first_line_number(input: &str, first_line_number: u32) -> Tokenizer {
         Tokenizer {
-            input: input,
+            input,
             position: 0,
             current_line_start_position: 0,
-            current_line_number: first_line_number,
+            current_line_number: 0,
             var_or_env_functions: SeenStatus::DontCare,
             source_map_url: None,
             source_url: None,
@@ -262,6 +269,7 @@ impl<'a> Tokenizer<'a> {
 
     #[inline]
     pub fn position(&self) -> SourcePosition {
+        debug_assert!(self.input.is_char_boundary(self.position));
         SourcePosition(self.position)
     }
 
@@ -301,24 +309,26 @@ impl<'a> Tokenizer<'a> {
     }
 
     #[inline]
-    pub fn slice_from(&self, start_pos: SourcePosition) -> &'a str {
-        &self.input[start_pos.0..self.position]
+    pub(crate) fn slice_from(&self, start_pos: SourcePosition) -> &'a str {
+        self.slice(start_pos..self.position())
     }
 
     #[inline]
-    pub fn slice(&self, range: Range<SourcePosition>) -> &'a str {
-        &self.input[range.start.0..range.end.0]
+    pub(crate) fn slice(&self, range: Range<SourcePosition>) -> &'a str {
+        debug_assert!(self.input.is_char_boundary(range.start.0));
+        debug_assert!(self.input.is_char_boundary(range.end.0));
+        unsafe { self.input.get_unchecked(range.start.0..range.end.0) }
     }
 
     pub fn current_source_line(&self) -> &'a str {
-        let current = self.position;
-        let start = self.input[0..current]
+        let current = self.position();
+        let start = self.slice(SourcePosition(0)..current)
             .rfind(|c| matches!(c, '\r' | '\n' | '\x0C'))
             .map_or(0, |start| start + 1);
-        let end = self.input[current..]
+        let end = self.slice(current..SourcePosition(self.input.len()))
             .find(|c| matches!(c, '\r' | '\n' | '\x0C'))
-            .map_or(self.input.len(), |end| current + end);
-        &self.input[start..end]
+            .map_or(self.input.len(), |end| current.0 + end);
+        self.slice(SourcePosition(start)..SourcePosition(end))
     }
 
     #[inline]
@@ -414,7 +424,7 @@ impl<'a> Tokenizer<'a> {
 
     #[inline]
     fn next_char(&self) -> char {
-        self.input[self.position..].chars().next().unwrap()
+        unsafe { self.input.get_unchecked(self.position().0..) }.chars().next().unwrap()
     }
 
     // Given that a newline has been seen, advance over the newline
@@ -471,9 +481,7 @@ impl<'a> Tokenizer<'a> {
                         return
                     }
                 }
-                _ => {
-                    return
-                }
+                _ => return,
             }
         }
     }
@@ -531,7 +539,7 @@ impl SourcePosition {
 /// The line and column number for a given position within the input.
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct SourceLocation {
-    /// The line number, starting at 0 for the first line, unless `with_first_line_number` was used.
+    /// The line number, starting at 0 for the first line.
     pub line: u32,
 
     /// The column number within a line, starting at 1 for first the character of the line.
@@ -548,10 +556,8 @@ fn next_token<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Token<'a>, ()> {
         b' ' | b'\t' => {
             consume_whitespace(tokenizer, false)
         },
-        b'\n' | b'\x0C' | b'\r' => {
-            consume_whitespace(tokenizer, true)
-        },
-        b'"' => { consume_string(tokenizer, false) },
+        b'\n' | b'\x0C' | b'\r' => consume_whitespace(tokenizer, true),
+        b'"' => consume_string(tokenizer, false),
         b'#' => {
             tokenizer.advance(1);
             if is_ident_start(tokenizer) { IDHash(consume_name(tokenizer)) }
@@ -566,7 +572,7 @@ fn next_token<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Token<'a>, ()> {
             if tokenizer.starts_with(b"$=") { tokenizer.advance(2); SuffixMatch }
             else { tokenizer.advance(1); Delim('$') }
         },
-        b'\'' => { consume_string(tokenizer, true) },
+        b'\'' => consume_string(tokenizer, true),
         b'(' => { tokenizer.advance(1); ParenthesisBlock },
         b')' => { tokenizer.advance(1); CloseParenthesis },
         b'*' => {
@@ -627,7 +633,7 @@ fn next_token<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Token<'a>, ()> {
                 Delim('/')
             }
         }
-        b'0'..=b'9' => { consume_numeric(tokenizer) },
+        b'0'..=b'9' => consume_numeric(tokenizer),
         b':' => { tokenizer.advance(1); Colon },
         b';' => { tokenizer.advance(1); Semicolon },
         b'<' => {
@@ -644,7 +650,7 @@ fn next_token<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Token<'a>, ()> {
             if is_ident_start(tokenizer) { AtKeyword(consume_name(tokenizer)) }
             else { Delim('@') }
         },
-        b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'\0' => { consume_ident_like(tokenizer) },
+        b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'\0' => consume_ident_like(tokenizer),
         b'[' => { tokenizer.advance(1); SquareBracketBlock },
         b'\\' => {
             if !tokenizer.has_newline_at(1) { consume_ident_like(tokenizer) }
@@ -882,18 +888,18 @@ fn consume_quoted_string<'a>(
 fn is_ident_start(tokenizer: &mut Tokenizer) -> bool {
     !tokenizer.is_eof()
         && match_byte! { tokenizer.next_byte_unchecked(),
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'\0' => { true },
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'\0' => true,
             b'-' => {
                 tokenizer.has_at_least(1) && match_byte! { tokenizer.byte_at(1),
                     b'a'..=b'z' | b'A'..=b'Z' | b'-' | b'_' | b'\0' => {
                         true
                     }
-                    b'\\' => { !tokenizer.has_newline_at(1) }
-                    b => { !b.is_ascii() },
+                    b'\\' => !tokenizer.has_newline_at(1),
+                    b => !b.is_ascii(),
                 }
             },
-            b'\\' => { !tokenizer.has_newline_at(1) },
-            b => { !b.is_ascii() },
+            b'\\' => !tokenizer.has_newline_at(1),
+            b => !b.is_ascii(),
         }
 }
 
@@ -921,7 +927,7 @@ fn consume_name<'a>(tokenizer: &mut Tokenizer<'a>) -> CowRcStr<'a> {
             return tokenizer.slice_from(start_pos).into();
         }
         match_byte! { tokenizer.next_byte_unchecked(),
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' => { tokenizer.advance(1) },
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' => tokenizer.advance(1),
             b'\\' | b'\0' => {
                 // * The tokenizer’s input is UTF-8 since it’s `&str`.
                 // * start_pos is at a code point boundary
@@ -985,9 +991,9 @@ fn consume_name<'a>(tokenizer: &mut Tokenizer<'a>) -> CowRcStr<'a> {
 
 fn byte_to_hex_digit(b: u8) -> Option<u32> {
     Some(match_byte! { b,
-        b'0' ..= b'9' => { b - b'0' },
-        b'a' ..= b'f' => { b - b'a' + 10 },
-        b'A' ..= b'F' => { b - b'A' + 10 },
+        b'0' ..= b'9' => b - b'0',
+        b'a' ..= b'f' => b - b'a' + 10,
+        b'A' ..= b'F' => b - b'A' + 10,
         _ => {
             return None
         }
@@ -1093,24 +1099,24 @@ fn consume_numeric<'a>(tokenizer: &mut Tokenizer<'a>) -> Token<'a> {
         tokenizer.advance(1);
         return Percentage {
             unit_value: (value / 100.) as f32,
-            int_value: int_value,
-            has_sign: has_sign,
+            int_value,
+            has_sign,
         };
     }
     let value = value as f32;
     if is_ident_start(tokenizer) {
         let unit = consume_name(tokenizer);
         Dimension {
-            value: value,
-            int_value: int_value,
-            has_sign: has_sign,
-            unit: unit,
+            value,
+            int_value,
+            has_sign,
+            unit,
         }
     } else {
         Number {
-            value: value,
-            int_value: int_value,
-            has_sign: has_sign,
+            value,
+            int_value,
+            has_sign,
         }
     }
 }
@@ -1152,7 +1158,7 @@ fn consume_unquoted_url<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Token<'a>, 
                     last_newline = offset;
                 }
             }
-            b'"' | b'\'' => { return Err(()) },  // Do not advance
+            b'"' | b'\'' => return Err(()),  // Do not advance
             b')' => {
                 // Don't use advance, because we may be skipping
                 // newlines here, and we want to avoid the assert.
@@ -1392,6 +1398,6 @@ fn consume_escape(tokenizer: &mut Tokenizer) -> char {
             tokenizer.advance(1);
             '\u{FFFD}'
         }
-        _ => { tokenizer.consume_char() }
+        _ => tokenizer.consume_char(),
     }
 }

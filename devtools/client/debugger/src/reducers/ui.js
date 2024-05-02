@@ -10,15 +10,23 @@
  */
 
 import { prefs, features } from "../utils/prefs";
+import { searchKeys } from "../constants";
 
-export const initialUIState = () => ({
+export const initialUIState = ({ supportsDebuggerStatementIgnore } = {}) => ({
   selectedPrimaryPaneTab: "sources",
   activeSearch: null,
-  shownSource: null,
   startPanelCollapsed: prefs.startPanelCollapsed,
   endPanelCollapsed: prefs.endPanelCollapsed,
   frameworkGroupingOn: prefs.frameworkGroupingOn,
-  highlightedLineRange: undefined,
+
+  // This is used from Outline's copy to clipboard context menu
+  // and QuickOpen to highlight lines temporarily.
+  // If defined, it will be an object with following attributes:
+  // - sourceId, String
+  // - start, Number, start line to highlight, 1-based
+  // - end, Number, end line to highlight, 1-based
+  highlightedLineRange: null,
+
   conditionalPanelLocation: null,
   isLogPoint: false,
   orientation: "horizontal",
@@ -26,8 +34,33 @@ export const initialUIState = () => ({
   cursorPosition: null,
   inlinePreviewEnabled: features.inlinePreview,
   editorWrappingEnabled: prefs.editorWrapping,
-  sourceMapsEnabled: prefs.clientSourceMapsEnabled,
   javascriptEnabled: true,
+  javascriptTracingLogMethod: prefs.javascriptTracingLogMethod,
+  mutableSearchOptions: prefs.searchOptions || {
+    [searchKeys.FILE_SEARCH]: {
+      regexMatch: false,
+      wholeWord: false,
+      caseSensitive: false,
+      excludePatterns: "",
+    },
+    [searchKeys.PROJECT_SEARCH]: {
+      regexMatch: false,
+      wholeWord: false,
+      caseSensitive: false,
+      excludePatterns: "",
+    },
+    [searchKeys.QUICKOPEN_SEARCH]: {
+      regexMatch: false,
+      wholeWord: false,
+      caseSensitive: false,
+      excludePatterns: "",
+    },
+  },
+  projectSearchQuery: "",
+  hideIgnoredSources: prefs.hideIgnoredSources,
+  sourceMapIgnoreListEnabled: prefs.sourceMapIgnoreListEnabled,
+  // A server side trait to know if ignoring debugger statement is supported
+  supportsDebuggerStatementIgnore,
 });
 
 function update(state = initialUIState(), action) {
@@ -57,15 +90,11 @@ function update(state = initialUIState(), action) {
 
     case "TOGGLE_SOURCE_MAPS_ENABLED": {
       prefs.clientSourceMapsEnabled = action.value;
-      return { ...state, sourceMapsEnabled: action.value };
+      return { ...state };
     }
 
     case "SET_ORIENTATION": {
       return { ...state, orientation: action.orientation };
-    }
-
-    case "SHOW_SOURCE": {
-      return { ...state, shownSource: action.source };
     }
 
     case "TOGGLE_PANE": {
@@ -78,20 +107,16 @@ function update(state = initialUIState(), action) {
       return { ...state, endPanelCollapsed: action.paneCollapsed };
     }
 
-    case "HIGHLIGHT_LINES":
-      const { start, end, sourceId } = action.location;
-      let lineRange;
-
-      // Lines are one-based so the check below is fine.
-      if (start && end && sourceId) {
-        lineRange = { start, end, sourceId };
-      }
-
-      return { ...state, highlightedLineRange: lineRange };
+    case "HIGHLIGHT_LINES": {
+      return { ...state, highlightedLineRange: action.location };
+    }
 
     case "CLOSE_QUICK_OPEN":
     case "CLEAR_HIGHLIGHT_LINES":
-      return { ...state, highlightedLineRange: undefined };
+      if (!state.highlightedLineRange) {
+        return state;
+      }
+      return { ...state, highlightedLineRange: null };
 
     case "OPEN_CONDITIONAL_PANEL":
       return {
@@ -122,7 +147,56 @@ function update(state = initialUIState(), action) {
     }
 
     case "NAVIGATE": {
-      return { ...state, activeSearch: null, highlightedLineRange: {} };
+      return { ...state, highlightedLineRange: null };
+    }
+
+    case "REMOVE_THREAD": {
+      // Reset the highlighted range if the related source has been removed
+      const sourceId = state.highlightedLineRange?.sourceId;
+      if (sourceId && action.sources.some(s => s.id == sourceId)) {
+        return { ...state, highlightedLineRange: null };
+      }
+      return state;
+    }
+
+    case "SET_JAVASCRIPT_TRACING_LOG_METHOD": {
+      prefs.javascriptTracingLogMethod = action.value;
+      return { ...state, javascriptTracingLogMethod: action.value };
+    }
+
+    case "SET_SEARCH_OPTIONS": {
+      state.mutableSearchOptions[action.searchKey] = {
+        ...state.mutableSearchOptions[action.searchKey],
+        ...action.searchOptions,
+      };
+      prefs.searchOptions = state.mutableSearchOptions;
+      return { ...state };
+    }
+
+    case "SET_PROJECT_SEARCH_QUERY": {
+      if (action.query != state.projectSearchQuery) {
+        state.projectSearchQuery = action.query;
+        return { ...state };
+      }
+      return state;
+    }
+
+    case "HIDE_IGNORED_SOURCES": {
+      const { shouldHide } = action;
+      if (shouldHide !== state.hideIgnoredSources) {
+        prefs.hideIgnoredSources = shouldHide;
+        return { ...state, hideIgnoredSources: shouldHide };
+      }
+      return state;
+    }
+
+    case "ENABLE_SOURCEMAP_IGNORELIST": {
+      const { shouldEnable } = action;
+      if (shouldEnable !== state.sourceMapIgnoreListEnabled) {
+        prefs.sourceMapIgnoreListEnabled = shouldEnable;
+        return { ...state, sourceMapIgnoreListEnabled: shouldEnable };
+      }
+      return state;
     }
 
     default: {

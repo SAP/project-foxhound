@@ -13,16 +13,12 @@
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //----------------------------------------------------------------------
 // nsISupports methods:
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(SVGRect, mParent)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(SVGRect, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(SVGRect, Release)
 
 //----------------------------------------------------------------------
 // implementation:
@@ -151,5 +147,4 @@ void SVGRect::SetHeight(float aHeight, ErrorResult& aRv) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

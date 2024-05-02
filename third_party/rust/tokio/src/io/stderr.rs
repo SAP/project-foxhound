@@ -1,4 +1,5 @@
 use crate::io::blocking::Blocking;
+use crate::io::stdio_common::SplitByUtf8BoundaryIfWindows;
 use crate::io::AsyncWrite;
 
 use std::io;
@@ -35,7 +36,7 @@ cfg_io_std! {
     /// ```
     #[derive(Debug)]
     pub struct Stderr {
-        std: Blocking<std::io::Stderr>,
+        std: SplitByUtf8BoundaryIfWindows<Blocking<std::io::Stderr>>,
     }
 
     /// Constructs a new handle to the standard error of the current process.
@@ -59,7 +60,7 @@ cfg_io_std! {
     ///
     /// #[tokio::main]
     /// async fn main() -> io::Result<()> {
-    ///     let mut stderr = io::stdout();
+    ///     let mut stderr = io::stderr();
     ///     stderr.write_all(b"Print some error here.").await?;
     ///     Ok(())
     /// }
@@ -67,22 +68,49 @@ cfg_io_std! {
     pub fn stderr() -> Stderr {
         let std = io::stderr();
         Stderr {
-            std: Blocking::new(std),
+            std: SplitByUtf8BoundaryIfWindows::new(Blocking::new(std)),
         }
     }
 }
 
 #[cfg(unix)]
-impl std::os::unix::io::AsRawFd for Stderr {
-    fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
-        std::io::stderr().as_raw_fd()
+mod sys {
+    #[cfg(not(tokio_no_as_fd))]
+    use std::os::unix::io::{AsFd, BorrowedFd};
+    use std::os::unix::io::{AsRawFd, RawFd};
+
+    use super::Stderr;
+
+    impl AsRawFd for Stderr {
+        fn as_raw_fd(&self) -> RawFd {
+            std::io::stderr().as_raw_fd()
+        }
+    }
+
+    #[cfg(not(tokio_no_as_fd))]
+    impl AsFd for Stderr {
+        fn as_fd(&self) -> BorrowedFd<'_> {
+            unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+        }
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::AsRawHandle for Stderr {
-    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
-        std::io::stderr().as_raw_handle()
+cfg_windows! {
+    #[cfg(not(tokio_no_as_fd))]
+    use crate::os::windows::io::{AsHandle, BorrowedHandle};
+    use crate::os::windows::io::{AsRawHandle, RawHandle};
+
+    impl AsRawHandle for Stderr {
+        fn as_raw_handle(&self) -> RawHandle {
+            std::io::stderr().as_raw_handle()
+        }
+    }
+
+    #[cfg(not(tokio_no_as_fd))]
+    impl AsHandle for Stderr {
+        fn as_handle(&self) -> BorrowedHandle<'_> {
+            unsafe { BorrowedHandle::borrow_raw(self.as_raw_handle()) }
+        }
     }
 }
 

@@ -4,27 +4,29 @@
 
 "use strict";
 
-const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
-const { manifestSpec } = require("devtools/shared/specs/manifest");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  manifestSpec,
+} = require("resource://devtools/shared/specs/manifest.js");
 
-loader.lazyImporter(
-  this,
-  "ManifestObtainer",
-  "resource://gre/modules/ManifestObtainer.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  ManifestObtainer: "resource://gre/modules/ManifestObtainer.sys.mjs",
+});
 
 /**
  * An actor for a Web Manifest
  */
-const ManifestActor = ActorClassWithSpec(manifestSpec, {
-  initialize: function(conn, targetActor) {
-    Actor.prototype.initialize.call(this, conn);
+class ManifestActor extends Actor {
+  constructor(conn, targetActor) {
+    super(conn, manifestSpec);
     this.targetActor = targetActor;
-  },
+  }
 
-  fetchCanonicalManifest: async function() {
+  async fetchCanonicalManifest() {
     try {
-      const manifest = await ManifestObtainer.contentObtainManifest(
+      const manifest = await lazy.ManifestObtainer.contentObtainManifest(
         this.targetActor.window,
         { checkConformance: true }
       );
@@ -32,7 +34,7 @@ const ManifestActor = ActorClassWithSpec(manifestSpec, {
     } catch (error) {
       return { manifest: null, errorMessage: error.message };
     }
-  },
-});
+  }
+}
 
 exports.ManifestActor = ManifestActor;

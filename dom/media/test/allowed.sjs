@@ -8,7 +8,7 @@ function parseQuery(request, key) {
     if (p.indexOf(key + "=") == 0) {
       return p.substring(key.length + 1);
     }
-    if (p.indexOf("=") < 0 && key == "") {
+    if (!p.includes("=") && key == "") {
       return p;
     }
   }
@@ -31,15 +31,13 @@ var types = {
 function handleRequest(request, response) {
   var resource = parseQuery(request, "");
 
-  var file = Components.classes["@mozilla.org/file/directory_service;1"]
-    .getService(Components.interfaces.nsIProperties)
-    .get("CurWorkD", Components.interfaces.nsIFile);
-  var fis = Components.classes[
-    "@mozilla.org/network/file-input-stream;1"
-  ].createInstance(Components.interfaces.nsIFileInputStream);
-  var bis = Components.classes[
-    "@mozilla.org/binaryinputstream;1"
-  ].createInstance(Components.interfaces.nsIBinaryInputStream);
+  var file = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+  var fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
+  var bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+    Ci.nsIBinaryInputStream
+  );
   var paths = "tests/dom/media/test/" + resource;
   var split = paths.split("/");
   for (var i = 0; i < split.length; ++i) {

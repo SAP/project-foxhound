@@ -6,7 +6,7 @@
 
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   const TEST_URI =
     "data:text/html;charset=utf8,<!DOCTYPE html><title>bug871156</title>\n" +
     "<p>hello world";
@@ -14,7 +14,7 @@ add_task(async function() {
 
   let hud = await openNewTabAndConsole(TEST_URI);
 
-  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
+  const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   const tabClosed = once(gBrowser.tabContainer, "TabClose");
   tabClosed.then(() => info("tab closed"));
@@ -22,7 +22,7 @@ add_task(async function() {
   const tabSelected = new Promise(resolve => {
     gBrowser.tabContainer.addEventListener(
       "TabSelect",
-      function() {
+      function () {
         if (gBrowser.selectedTab == firstTab) {
           info("tab selected");
           resolve(null);

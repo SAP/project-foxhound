@@ -6,7 +6,7 @@
 
 const {
   UPDATE_FONTS,
-} = require("devtools/client/inspector/fonts/actions/index");
+} = require("resource://devtools/client/inspector/fonts/actions/index.js");
 
 const INITIAL_FONT_DATA = {
   // All fonts on the current page.
@@ -19,7 +19,7 @@ const reducers = {
   },
 };
 
-module.exports = function(fontData = INITIAL_FONT_DATA, action) {
+module.exports = function (fontData = INITIAL_FONT_DATA, action) {
   const reducer = reducers[action.type];
   if (!reducer) {
     return fontData;

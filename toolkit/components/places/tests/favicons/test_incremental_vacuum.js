@@ -3,11 +3,11 @@
 
 // Tests incremental vacuum of the favicons database.
 
-const { PlacesDBUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesDBUtils.jsm"
+const { PlacesDBUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesDBUtils.sys.mjs"
 );
 
-add_task(async function() {
+add_task(async function () {
   let icon = {
     file: do_get_file("noise.png"),
     mimetype: "image/png",

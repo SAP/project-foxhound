@@ -12,7 +12,7 @@ transforms:
 job-defaults:
     name: bouncer-check
     description: bouncer check
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         max-run-time: 1200
         docker-image: {in-tree: "update-verify"}
@@ -53,7 +53,8 @@ jobs:
                     mozilla-central: FIREFOX_NIGHTLY
                     mozilla-beta: LATEST_FIREFOX_RELEASED_DEVEL_VERSION
                     mozilla-release: LATEST_FIREFOX_VERSION
-                    mozilla-esr91: FIREFOX_ESR
+                    mozilla-esr115: FIREFOX_ESR
+                    # mozilla-esrXX: FIREFOX_ESR_NEXT
                     default: LATEST_FIREFOX_DEVEL_VERSION
             products-url: https://product-details.mozilla.org/1.0/firefox_versions.json
         treeherder:

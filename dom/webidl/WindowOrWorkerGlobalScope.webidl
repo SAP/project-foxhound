@@ -17,7 +17,7 @@ interface mixin WindowOrWorkerGlobalScope {
   readonly attribute boolean crossOriginIsolated;
 
   [Throws, NeedsCallerType]
-  void reportError(any e);
+  undefined reportError(any e);
 
   // base64 utility methods
   [Throws]
@@ -32,15 +32,15 @@ interface mixin WindowOrWorkerGlobalScope {
   long setTimeout(Function handler, optional long timeout = 0, any... arguments);
   [Throws]
   long setTimeout(DOMString handler, optional long timeout = 0, any... unused);
-  void clearTimeout(optional long handle = 0);
+  undefined clearTimeout(optional long handle = 0);
   [Throws]
   long setInterval(Function handler, optional long timeout = 0, any... arguments);
   [Throws]
   long setInterval(DOMString handler, optional long timeout = 0, any... unused);
-  void clearInterval(optional long handle = 0);
+  undefined clearInterval(optional long handle = 0);
 
   // microtask queuing
-  void queueMicrotask(VoidFunction callback);
+  undefined queueMicrotask(VoidFunction callback);
 
   // ImageBitmap
   [Throws]
@@ -69,13 +69,19 @@ partial interface mixin WindowOrWorkerGlobalScope {
 
 // http://w3c.github.io/IndexedDB/#factory-interface
 partial interface mixin WindowOrWorkerGlobalScope {
-   // readonly attribute IDBFactory indexedDB;
-   [Throws]
-   readonly attribute IDBFactory? indexedDB;
+  // readonly attribute IDBFactory indexedDB; // bug 1776789
+  [Throws]
+  readonly attribute IDBFactory? indexedDB;
 };
 
 // https://w3c.github.io/ServiceWorker/#self-caches
 partial interface mixin WindowOrWorkerGlobalScope {
-  [Throws, Pref="dom.caches.enabled", SameObject]
+  [Throws, Func="nsGlobalWindowInner::CachesEnabled", SameObject]
   readonly attribute CacheStorage caches;
+};
+
+// https://wicg.github.io/scheduling-apis/#ref-for-windoworworkerglobalscope-scheduler
+partial interface mixin WindowOrWorkerGlobalScope {
+  [Replaceable, Pref="dom.enable_web_task_scheduling", SameObject]
+  readonly attribute Scheduler scheduler;
 };

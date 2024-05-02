@@ -7,11 +7,8 @@
 #ifndef mozilla_ipc_backgroundchildimpl_h__
 #define mozilla_ipc_backgroundchildimpl_h__
 
-#include "mozilla/Attributes.h"
-#include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/UniquePtr.h"
-#include "nsRefPtrHashtable.h"
 
 namespace mozilla {
 namespace dom {
@@ -29,8 +26,7 @@ namespace ipc {
 
 // Instances of this class should never be created directly. This class is meant
 // to be inherited in BackgroundImpl.
-class BackgroundChildImpl : public PBackgroundChild,
-                            public ChildToParentStreamActorManager {
+class BackgroundChildImpl : public PBackgroundChild {
  public:
   class ThreadLocal;
 
@@ -41,11 +37,6 @@ class BackgroundChildImpl : public PBackgroundChild,
   // This functions is implemented in BackgroundImpl.cpp.
   static ThreadLocal* GetThreadLocalForCurrentThread();
 
-  PChildToParentStreamChild* SendPChildToParentStreamConstructor(
-      PChildToParentStreamChild* aActor) override;
-  PFileDescriptorSetChild* SendPFileDescriptorSetConstructor(
-      const FileDescriptor& aFD) override;
-
  protected:
   BackgroundChildImpl();
   virtual ~BackgroundChildImpl();
@@ -55,7 +46,7 @@ class BackgroundChildImpl : public PBackgroundChild,
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   virtual PBackgroundTestChild* AllocPBackgroundTestChild(
-      const nsCString& aTestArg) override;
+      const nsACString& aTestArg) override;
 
   virtual bool DeallocPBackgroundTestChild(
       PBackgroundTestChild* aActor) override;
@@ -100,22 +91,18 @@ class BackgroundChildImpl : public PBackgroundChild,
 
   virtual PBackgroundLocalStorageCacheChild*
   AllocPBackgroundLocalStorageCacheChild(
-      const PrincipalInfo& aPrincipalInfo, const nsCString& aOriginKey,
+      const PrincipalInfo& aPrincipalInfo, const nsACString& aOriginKey,
       const uint32_t& aPrivateBrowsingId) override;
 
   virtual bool DeallocPBackgroundLocalStorageCacheChild(
       PBackgroundLocalStorageCacheChild* aActor) override;
 
   virtual PBackgroundStorageChild* AllocPBackgroundStorageChild(
-      const nsString& aProfilePath,
+      const nsAString& aProfilePath,
       const uint32_t& aPrivateBrowsingId) override;
 
   virtual bool DeallocPBackgroundStorageChild(
       PBackgroundStorageChild* aActor) override;
-
-  virtual already_AddRefed<PRemoteLazyInputStreamChild>
-  AllocPRemoteLazyInputStreamChild(const nsID& aID,
-                                   const uint64_t& aSize) override;
 
   virtual PTemporaryIPCBlobChild* AllocPTemporaryIPCBlobChild() override;
 
@@ -123,20 +110,17 @@ class BackgroundChildImpl : public PBackgroundChild,
       PTemporaryIPCBlobChild* aActor) override;
 
   virtual PFileCreatorChild* AllocPFileCreatorChild(
-      const nsString& aFullPath, const nsString& aType, const nsString& aName,
-      const Maybe<int64_t>& aLastModified, const bool& aExistenceCheck,
-      const bool& aIsFromNsIFile) override;
+      const nsAString& aFullPath, const nsAString& aType,
+      const nsAString& aName, const Maybe<int64_t>& aLastModified,
+      const bool& aExistenceCheck, const bool& aIsFromNsIFile) override;
 
   virtual bool DeallocPFileCreatorChild(PFileCreatorChild* aActor) override;
 
-  virtual mozilla::dom::PRemoteWorkerChild* AllocPRemoteWorkerChild(
+  already_AddRefed<mozilla::dom::PRemoteWorkerChild> AllocPRemoteWorkerChild(
       const RemoteWorkerData& aData) override;
 
   virtual mozilla::ipc::IPCResult RecvPRemoteWorkerConstructor(
       PRemoteWorkerChild* aActor, const RemoteWorkerData& aData) override;
-
-  virtual bool DeallocPRemoteWorkerChild(
-      mozilla::dom::PRemoteWorkerChild* aActor) override;
 
   virtual mozilla::dom::PRemoteWorkerControllerChild*
   AllocPRemoteWorkerControllerChild(
@@ -145,12 +129,6 @@ class BackgroundChildImpl : public PBackgroundChild,
   virtual bool DeallocPRemoteWorkerControllerChild(
       mozilla::dom::PRemoteWorkerControllerChild* aActor) override;
 
-  virtual mozilla::dom::PRemoteWorkerServiceChild*
-  AllocPRemoteWorkerServiceChild() override;
-
-  virtual bool DeallocPRemoteWorkerServiceChild(
-      mozilla::dom::PRemoteWorkerServiceChild* aActor) override;
-
   virtual mozilla::dom::PSharedWorkerChild* AllocPSharedWorkerChild(
       const mozilla::dom::RemoteWorkerData& aData, const uint64_t& aWindowID,
       const mozilla::dom::MessagePortIdentifier& aPortIdentifier) override;
@@ -158,24 +136,18 @@ class BackgroundChildImpl : public PBackgroundChild,
   virtual bool DeallocPSharedWorkerChild(
       mozilla::dom::PSharedWorkerChild* aActor) override;
 
-  virtual PFileDescriptorSetChild* AllocPFileDescriptorSetChild(
-      const FileDescriptor& aFileDescriptor) override;
-
-  virtual bool DeallocPFileDescriptorSetChild(
-      PFileDescriptorSetChild* aActor) override;
-
   virtual PCamerasChild* AllocPCamerasChild() override;
 
   virtual bool DeallocPCamerasChild(PCamerasChild* aActor) override;
 
   virtual PUDPSocketChild* AllocPUDPSocketChild(
       const Maybe<PrincipalInfo>& aPrincipalInfo,
-      const nsCString& aFilter) override;
+      const nsACString& aFilter) override;
   virtual bool DeallocPUDPSocketChild(PUDPSocketChild* aActor) override;
 
   virtual PBroadcastChannelChild* AllocPBroadcastChannelChild(
-      const PrincipalInfo& aPrincipalInfo, const nsCString& aOrigin,
-      const nsString& aChannel) override;
+      const PrincipalInfo& aPrincipalInfo, const nsACString& aOrigin,
+      const nsAString& aChannel) override;
 
   virtual bool DeallocPBroadcastChannelChild(
       PBroadcastChannelChild* aActor) override;
@@ -186,16 +158,7 @@ class BackgroundChildImpl : public PBackgroundChild,
   virtual bool DeallocPServiceWorkerManagerChild(
       PServiceWorkerManagerChild* aActor) override;
 
-  virtual dom::cache::PCacheStorageChild* AllocPCacheStorageChild(
-      const dom::cache::Namespace& aNamespace,
-      const PrincipalInfo& aPrincipalInfo) override;
-
-  virtual bool DeallocPCacheStorageChild(
-      dom::cache::PCacheStorageChild* aActor) override;
-
-  virtual dom::cache::PCacheChild* AllocPCacheChild() override;
-
-  virtual bool DeallocPCacheChild(dom::cache::PCacheChild* aActor) override;
+  virtual already_AddRefed<dom::cache::PCacheChild> AllocPCacheChild() override;
 
   virtual already_AddRefed<dom::cache::PCacheStreamControlChild>
   AllocPCacheStreamControlChild() override;
@@ -206,16 +169,6 @@ class BackgroundChildImpl : public PBackgroundChild,
 
   virtual bool DeallocPMessagePortChild(PMessagePortChild* aActor) override;
 
-  virtual PChildToParentStreamChild* AllocPChildToParentStreamChild() override;
-
-  virtual bool DeallocPChildToParentStreamChild(
-      PChildToParentStreamChild* aActor) override;
-
-  virtual PParentToChildStreamChild* AllocPParentToChildStreamChild() override;
-
-  virtual bool DeallocPParentToChildStreamChild(
-      PParentToChildStreamChild* aActor) override;
-
   virtual PQuotaChild* AllocPQuotaChild() override;
 
   virtual bool DeallocPQuotaChild(PQuotaChild* aActor) override;
@@ -224,21 +177,10 @@ class BackgroundChildImpl : public PBackgroundChild,
 
   virtual bool DeallocPClientManagerChild(PClientManagerChild* aActor) override;
 
-#ifdef EARLY_BETA_OR_EARLIER
-  virtual void OnChannelReceivedMessage(const Message& aMsg) override;
-#endif
-
   virtual PWebAuthnTransactionChild* AllocPWebAuthnTransactionChild() override;
 
   virtual bool DeallocPWebAuthnTransactionChild(
       PWebAuthnTransactionChild* aActor) override;
-
-  virtual PMIDIPortChild* AllocPMIDIPortChild(
-      const MIDIPortInfo& aPortInfo, const bool& aSysexEnabled) override;
-  virtual bool DeallocPMIDIPortChild(PMIDIPortChild*) override;
-
-  virtual PMIDIManagerChild* AllocPMIDIManagerChild() override;
-  virtual bool DeallocPMIDIManagerChild(PMIDIManagerChild*) override;
 
   already_AddRefed<PServiceWorkerChild> AllocPServiceWorkerChild(
       const IPCServiceWorkerDescriptor&);
@@ -251,15 +193,11 @@ class BackgroundChildImpl : public PBackgroundChild,
       const IPCServiceWorkerRegistrationDescriptor&);
 
   virtual PEndpointForReportChild* AllocPEndpointForReportChild(
-      const nsString& aGroupName, const PrincipalInfo& aPrincipalInfo) override;
+      const nsAString& aGroupName,
+      const PrincipalInfo& aPrincipalInfo) override;
 
   virtual bool DeallocPEndpointForReportChild(
       PEndpointForReportChild* aActor) override;
-
-  virtual dom::PMediaTransportChild* AllocPMediaTransportChild() override;
-
-  virtual bool DeallocPMediaTransportChild(
-      dom::PMediaTransportChild* aActor) override;
 };
 
 class BackgroundChildImpl::ThreadLocal final {

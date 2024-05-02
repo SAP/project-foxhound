@@ -35,7 +35,7 @@ class nsPartChannel final : public nsIChannel,
                             public nsIMultiPartChannel {
  public:
   nsPartChannel(nsIChannel* aMultipartChannel, uint32_t aPartID,
-                nsIStreamListener* aListener);
+                bool aIsFirstPart, nsIStreamListener* aListener);
 
   void InitializeByteRange(int64_t aStart, int64_t aEnd);
   void SetIsLastPart() { mIsLastPart = true; }
@@ -83,6 +83,7 @@ class nsPartChannel final : public nsIChannel,
 
   uint32_t mPartID;  // unique ID that can be used to identify
                      // this part of the multipart document
+  bool mIsFirstPart;
   bool mIsLastPart{false};
 };
 
@@ -131,6 +132,7 @@ class nsMultiMixedConv : public nsIStreamConverter {
   NS_DECL_ISUPPORTS
   NS_DECL_NSISTREAMCONVERTER
   NS_DECL_NSISTREAMLISTENER
+  NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
   NS_DECL_NSIREQUESTOBSERVER
 
   explicit nsMultiMixedConv();

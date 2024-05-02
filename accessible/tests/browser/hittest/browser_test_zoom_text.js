@@ -4,25 +4,13 @@
 
 "use strict";
 
-/**
- * Test if getOffsetAtPoint returns the given text offset at given coordinates.
- */
-function testOffsetAtPoint(hyperText, x, y, coordType, expectedOffset) {
-  is(
-    hyperText.getOffsetAtPoint(x, y, coordType),
-    expectedOffset,
-    `Wrong offset at given point (${x}, ${y}) for ${prettyName(hyperText)}`
-  );
-}
-
 async function runTests(browser, accDoc) {
   const expectedLength = await invokeContentTask(browser, [], () => {
-    const { CommonUtils } = ChromeUtils.import(
-      "chrome://mochitests/content/browser/accessible/tests/browser/Common.jsm"
+    const { CommonUtils } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Common.sys.mjs"
     );
     const hyperText = CommonUtils.getNode("paragraph", content.document);
-
-    return hyperText.textContent.length / 2;
+    return Math.floor(hyperText.textContent.length / 2);
   });
   const hyperText = findAccessibleChildByID(accDoc, "paragraph", [
     Ci.nsIAccessibleText,
@@ -34,7 +22,7 @@ async function runTests(browser, accDoc) {
     await getContentDPR(browser)
   );
 
-  testOffsetAtPoint(
+  await testOffsetAtPoint(
     hyperText,
     x + width / 2,
     y + height / 2,
@@ -43,8 +31,8 @@ async function runTests(browser, accDoc) {
   );
 
   await invokeContentTask(browser, [], () => {
-    const { Layout } = ChromeUtils.import(
-      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
+    const { Layout } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
     );
 
     Layout.zoomDocument(content.document, 2.0);
@@ -56,7 +44,7 @@ async function runTests(browser, accDoc) {
     await getContentDPR(browser)
   );
 
-  testOffsetAtPoint(
+  await testOffsetAtPoint(
     hyperText,
     x + width / 2,
     y + height / 2,
@@ -66,7 +54,7 @@ async function runTests(browser, accDoc) {
 }
 
 addAccessibleTask(
-  `<p id="paragraph" style="font-family: monospace;">Болтали две сороки</p>`,
+  `<p id="paragraph" style="font-family: monospace;">hello world hello world</p>`,
   runTests,
   {
     iframe: true,

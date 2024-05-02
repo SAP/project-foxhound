@@ -24,7 +24,6 @@ ManifestDPIAware true
 
 !addplugindir ./
 
-Var CheckboxSetAsDefault
 Var CheckboxShortcuts
 Var CheckboxSendPing
 Var CheckboxInstallMaintSvc
@@ -41,7 +40,6 @@ Var ExistingTopDir
 Var SpaceAvailableBytes
 Var InitialInstallDir
 Var HandleDownload
-Var CanSetAsDefault
 Var InstallCounterStep
 Var InstallTotalSteps
 Var ProgressCompleted
@@ -154,11 +152,11 @@ Var ArchToInstall
 ; This might not be enough when installing on a slow network drive so it will
 ; fallback to downloading the full installer if it reaches this number.
 
-; Approximately 150 seconds with a 100 millisecond timer.
-!define InstallCleanTotalSteps 1500
+; Approximately 240 seconds with a 100 millisecond timer.
+!define InstallCleanTotalSteps 2400
 
-; Approximately 165 seconds with a 100 millisecond timer.
-!define InstallPaveOverTotalSteps 1650
+; Approximately 255 seconds with a 100 millisecond timer.
+!define InstallPaveOverTotalSteps 2550
 
 ; Blurb duty cycle
 !define BlurbDisplayMS 19500
@@ -294,8 +292,8 @@ Function .onInit
   ; SSE2 instruction set is available.
   System::Call "kernel32::IsProcessorFeaturePresent(i 10)i .R7"
 
-  ; Windows NT 6.0 (Vista/Server 2008) and lower are not supported.
-  ${Unless} ${AtLeastWin7}
+  ; Windows 8.1/Server 2012 R2 and lower are not supported.
+  ${Unless} ${AtLeastWin10}
     ${If} "$R7" == "0"
       strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
     ${Else}
@@ -351,21 +349,6 @@ Function .onInit
 
   ; Used to determine if the default installation directory was used.
   StrCpy $InitialInstallDir "$INSTDIR"
-
-  ClearErrors
-  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" \
-                   "Write Test"
-
-  ; Only display set as default when there is write access to HKLM and on Win7
-  ; and below.
-  ${If} ${Errors}
-  ${OrIf} ${AtLeastWin8}
-    StrCpy $CanSetAsDefault "false"
-  ${Else}
-    DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
-    StrCpy $CanSetAsDefault "true"
-  ${EndIf}
-  StrCpy $CheckboxSetAsDefault "0"
 
   ; Initialize the majority of variables except those that need to be reset
   ; when a page is displayed.
@@ -907,8 +890,6 @@ Function LaunchFullInstaller
   ; install in case it needs to perform operations that the stub doesn't
   ; know about.
   WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "InstallDirectoryPath" "$INSTDIR"
-  ; Don't create the QuickLaunch or Taskbar shortcut from the launched installer
-  WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "QuickLaunchShortcut" "false"
 
   ; Always create a start menu shortcut, so the user always has some way
   ; to access the application.
@@ -1127,19 +1108,7 @@ Function SendPing
       ${EndIf}
     ${EndIf}
 
-    ${If} $CanSetAsDefault == "true"
-      ${If} $CheckboxSetAsDefault == "1"
-        StrCpy $R3 "2"
-      ${Else}
-        StrCpy $R3 "3"
-      ${EndIf}
-    ${Else}
-      ${If} ${AtLeastWin8}
-        StrCpy $R3 "1"
-      ${Else}
-        StrCpy $R3 "0"
-      ${EndIf}
-    ${EndIf}
+    StrCpy $R3 "1"
 
 !ifdef STUB_DEBUG
     MessageBox MB_OK "${BaseURLStubPing} \

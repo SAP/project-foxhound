@@ -4,19 +4,23 @@
 "use strict";
 
 // React & Redux
-const React = require("devtools/client/shared/vendor/react");
-const ReactDOM = require("devtools/client/shared/vendor/react-dom");
-const { Provider } = require("devtools/client/shared/vendor/react-redux");
+const React = require("resource://devtools/client/shared/vendor/react.js");
+const ReactDOM = require("resource://devtools/client/shared/vendor/react-dom.js");
+const {
+  Provider,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
 // DOM Panel
 const MainFrame = React.createFactory(
-  require("devtools/client/dom/content/components/MainFrame")
+  require("resource://devtools/client/dom/content/components/MainFrame.js")
 );
 
 // Store
-const createStore = require("devtools/client/shared/redux/create-store");
+const createStore = require("resource://devtools/client/shared/redux/create-store.js");
 
-const { reducers } = require("devtools/client/dom/content/reducers/index");
+const {
+  reducers,
+} = require("resource://devtools/client/dom/content/reducers/index.js");
 const store = createStore(reducers);
 
 /**
@@ -32,7 +36,7 @@ function DomView(localStore) {
 }
 
 DomView.prototype = {
-  initialize: function(rootGrip) {
+  initialize(rootGrip) {
     const content = document.querySelector("#content");
     const mainFrame = MainFrame({
       object: rootGrip,
@@ -50,7 +54,7 @@ DomView.prototype = {
     this.mainFrame = ReactDOM.render(provider, content);
   },
 
-  onMessage: function(event) {
+  onMessage(event) {
     const data = event.data;
     const method = data.type;
 

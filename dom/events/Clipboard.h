@@ -8,17 +8,14 @@
 #define mozilla_dom_Clipboard_h_
 
 #include "nsString.h"
+#include "nsStringFwd.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Logging.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/DataTransfer.h"
 
-namespace mozilla {
-namespace dom {
-
-enum ClipboardReadType {
-  eRead,
-  eReadText,
-};
+namespace mozilla::dom {
 
 class Promise;
 class ClipboardItem;
@@ -44,6 +41,9 @@ class Clipboard : public DOMEventTargetHelper {
                                       nsIPrincipal& aSubjectPrincipal,
                                       ErrorResult& aRv);
 
+  // See documentation of the corresponding .webidl file.
+  void OnUserReactedToPasteMenuPopup(bool aAllowed);
+
   static LogModule* GetClipboardLog();
 
   // Check if the Clipboard.readText API should be enabled for this context.
@@ -57,19 +57,77 @@ class Clipboard : public DOMEventTargetHelper {
                                JS::Handle<JSObject*> aGivenProto) override;
 
  private:
+  enum class ReadRequestType {
+    eRead,
+    eReadText,
+  };
+
   // Checks if dom.events.testing.asyncClipboard pref is enabled.
   // The aforementioned pref allows automated tests to bypass the security
   // checks when writing to
   //  or reading from the clipboard.
   static bool IsTestingPrefEnabled();
 
+  static bool IsTestingPrefEnabledOrHasReadPermission(
+      nsIPrincipal& aSubjectPrincipal);
+
+  void CheckReadPermissionAndHandleRequest(Promise& aPromise,
+                                           nsIPrincipal& aSubjectPrincipal,
+                                           ReadRequestType aType);
+
+  void HandleReadRequestWhichRequiresPasteButton(Promise& aPromise,
+                                                 ReadRequestType aType);
+
   already_AddRefed<Promise> ReadHelper(nsIPrincipal& aSubjectPrincipal,
-                                       ClipboardReadType aClipboardReadType,
-                                       ErrorResult& aRv);
+                                       ReadRequestType aType, ErrorResult& aRv);
 
   ~Clipboard();
+
+  class ReadRequest final {
+   public:
+    ReadRequest(Promise& aPromise, ReadRequestType aType,
+                nsPIDOMWindowInner& aOwner)
+        : mType(aType), mPromise(&aPromise), mOwner(&aOwner) {}
+
+    // Clears the request too.
+    void Answer();
+
+    void MaybeRejectWithNotAllowedError(const nsACString& aMessage);
+
+   private:
+    ReadRequestType mType;
+    // Not cycle-collected, because it's nulled when the request is answered or
+    // destructed.
+    RefPtr<Promise> mPromise;
+    RefPtr<nsPIDOMWindowInner> mOwner;
+  };
+
+  AutoTArray<UniquePtr<ReadRequest>, 1> mReadRequests;
+
+  class TransientUserPasteState final {
+   public:
+    enum class Value {
+      Initial,
+      WaitingForUserReactionToPasteMenuPopup,
+      TransientlyForbiddenByUser,
+      TransientlyAllowedByUser,
+    };
+
+    // @param aWindowContext requires valid transient user gesture activation.
+    Value RefreshAndGet(WindowContext& aWindowContext);
+
+    void OnStartWaitingForUserReactionToPasteMenuPopup(
+        const TimeStamp& aUserGestureStart);
+    void OnUserReactedToPasteMenuPopup(bool aAllowed);
+
+   private:
+    TimeStamp mUserGestureStart;
+
+    Value mValue = Value::Initial;
+  };
+
+  TransientUserPasteState mTransientUserPasteState;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 #endif  // mozilla_dom_Clipboard_h_

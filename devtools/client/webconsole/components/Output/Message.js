@@ -9,42 +9,44 @@ const {
   Component,
   createFactory,
   createElement,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
-const actions = require("devtools/client/webconsole/actions/index");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
 const {
   MESSAGE_LEVEL,
   MESSAGE_SOURCE,
   MESSAGE_TYPE,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 const {
   MessageIndent,
-} = require("devtools/client/webconsole/components/Output/MessageIndent");
-const MessageIcon = require("devtools/client/webconsole/components/Output/MessageIcon");
+} = require("resource://devtools/client/webconsole/components/Output/MessageIndent.js");
+const MessageIcon = require("resource://devtools/client/webconsole/components/Output/MessageIcon.js");
 const FrameView = createFactory(
-  require("devtools/client/shared/components/Frame")
+  require("resource://devtools/client/shared/components/Frame.js")
 );
 
 loader.lazyRequireGetter(
   this,
   "CollapseButton",
-  "devtools/client/webconsole/components/Output/CollapseButton"
+  "resource://devtools/client/webconsole/components/Output/CollapseButton.js"
 );
 loader.lazyRequireGetter(
   this,
   "MessageRepeat",
-  "devtools/client/webconsole/components/Output/MessageRepeat"
+  "resource://devtools/client/webconsole/components/Output/MessageRepeat.js"
 );
 loader.lazyRequireGetter(
   this,
   "PropTypes",
-  "devtools/client/shared/vendor/react-prop-types"
+  "resource://devtools/client/shared/vendor/react-prop-types.js"
 );
 loader.lazyRequireGetter(
   this,
   "SmartTrace",
-  "devtools/client/shared/components/SmartTrace"
+  "resource://devtools/client/shared/components/SmartTrace.js"
 );
 
 class Message extends Component {
@@ -53,6 +55,7 @@ class Message extends Component {
       open: PropTypes.bool,
       collapsible: PropTypes.bool,
       collapseTitle: PropTypes.string,
+      disabled: PropTypes.bool,
       onToggle: PropTypes.func,
       source: PropTypes.string.isRequired,
       type: PropTypes.string.isRequired,
@@ -81,6 +84,7 @@ class Message extends Component {
         openContextMenu: PropTypes.func.isRequired,
         openLink: PropTypes.func.isRequired,
         sourceMapURLService: PropTypes.any,
+        preventStacktraceInitialRenderDelay: PropTypes.bool,
       }),
       notes: PropTypes.arrayOf(
         PropTypes.shape({
@@ -141,7 +145,11 @@ class Message extends Component {
     // Don't bubble up to the main App component, which  redirects focus to input,
     // making difficult for screen reader users to review output
     e.stopPropagation();
-    const { open, dispatch, messageId, onToggle } = this.props;
+    const { open, dispatch, messageId, onToggle, disabled } = this.props;
+
+    if (disabled) {
+      return;
+    }
 
     // Early exit the function to avoid the message to collapse if the user is
     // selecting a range in the toggle message.
@@ -174,10 +182,19 @@ class Message extends Component {
   }
 
   renderIcon() {
-    const { level, inWarningGroup, isBlockedNetworkMessage, type } = this.props;
+    const { level, inWarningGroup, isBlockedNetworkMessage, type, disabled } =
+      this.props;
 
     if (inWarningGroup) {
       return undefined;
+    }
+
+    if (disabled) {
+      return MessageIcon({
+        level: MESSAGE_LEVEL.INFO,
+        type,
+        title: l10n.getStr("webconsole.disableIcon.title"),
+      });
     }
 
     if (isBlockedNetworkMessage) {
@@ -237,7 +254,7 @@ class Message extends Component {
                   navigator.clipboard.writeText(
                     JSON.stringify(
                       this.props.message,
-                      function(key, value) {
+                      function (key, value) {
                         // The message can hold one or multiple fronts that we need to serialize
                         if (value?.getGrip) {
                           return value.getGrip();
@@ -269,6 +286,7 @@ class Message extends Component {
       open,
       collapsible,
       collapseTitle,
+      disabled,
       source,
       type,
       level,
@@ -289,6 +307,10 @@ class Message extends Component {
       topLevelClasses.push("open");
     }
 
+    if (disabled) {
+      topLevelClasses.push("disabled");
+    }
+
     const timestampEl = this.renderTimestamp();
     const icon = this.renderIcon();
 
@@ -297,25 +319,31 @@ class Message extends Component {
     if (this.props.attachment) {
       attachment = this.props.attachment;
     } else if (stacktrace && open) {
+      const smartTraceAttributes = {
+        stacktrace,
+        onViewSourceInDebugger:
+          serviceContainer.onViewSourceInDebugger ||
+          serviceContainer.onViewSource,
+        onViewSource: serviceContainer.onViewSource,
+        onReady: this.props.maybeScrollToBottom,
+        sourceMapURLService: serviceContainer.sourceMapURLService,
+      };
+
+      if (serviceContainer.preventStacktraceInitialRenderDelay) {
+        smartTraceAttributes.initialRenderDelay = 0;
+      }
+
       attachment = dom.div(
         {
           className: "stacktrace devtools-monospace",
         },
-        createElement(SmartTrace, {
-          stacktrace,
-          onViewSourceInDebugger:
-            serviceContainer.onViewSourceInDebugger ||
-            serviceContainer.onViewSource,
-          onViewSource: serviceContainer.onViewSource,
-          onReady: this.props.maybeScrollToBottom,
-          sourceMapURLService: serviceContainer.sourceMapURLService,
-        })
+        createElement(SmartTrace, smartTraceAttributes)
       );
     }
 
     // If there is an expandable part, make it collapsible.
     let collapse = null;
-    if (collapsible) {
+    if (collapsible && !disabled) {
       collapse = createElement(CollapseButton, {
         open,
         title: collapseTitle,
@@ -375,20 +403,18 @@ class Message extends Component {
     }
 
     // Configure the location.
-    const location = dom.span(
-      { className: "message-location devtools-monospace" },
-      frame
-        ? FrameView({
-            frame,
-            onClick: onFrameClick,
-            showEmptyPathAsHost: true,
-            sourceMapURLService: serviceContainer
-              ? serviceContainer.sourceMapURLService
-              : undefined,
-            messageSource: source,
-          })
-        : null
-    );
+    const location = frame
+      ? FrameView({
+          className: "message-location devtools-monospace",
+          frame,
+          onClick: onFrameClick,
+          showEmptyPathAsHost: true,
+          sourceMapURLService: serviceContainer
+            ? serviceContainer.sourceMapURLService
+            : undefined,
+          messageSource: source,
+        })
+      : null;
 
     let learnMore;
     if (exceptionDocURL) {
@@ -415,6 +441,7 @@ class Message extends Component {
           this.messageNode = node;
         },
         "data-message-id": messageId,
+        "data-indent": indent || 0,
         "aria-live": type === MESSAGE_TYPE.COMMAND ? "off" : "polite",
       },
       timestampEl,

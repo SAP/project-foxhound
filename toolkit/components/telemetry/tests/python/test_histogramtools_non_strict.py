@@ -3,10 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import json
-import mozunit
 import sys
 import unittest
 from os import path
+
+import mozunit
 
 TELEMETRY_ROOT_PATH = path.abspath(
     path.join(path.dirname(__file__), path.pardir, path.pardir)
@@ -74,38 +75,6 @@ class TestParser(unittest.TestCase):
         # expected values come off parse_histograms.py
         self.assertEqual(hist.n_buckets(), 101)
         self.assertEqual(hist.high(), 12)
-
-    def test_devtools_database_parsing(self):
-        db = path.join(
-            TELEMETRY_ROOT_PATH,
-            path.pardir,
-            path.pardir,
-            path.pardir,
-            "devtools",
-            "shared",
-            "css",
-            "generated",
-            "properties-db.js",
-        )
-
-        histograms = list(parse_histograms.from_files([db], strict_type_checks=False))
-        histograms = [h.name() for h in histograms]
-
-        # Test a shorthand (animation)
-        self.assertTrue("USE_COUNTER2_CSS_PROPERTY_Animation_DOCUMENT" in histograms)
-
-        # Test a shorthand alias (-moz-animation).
-        self.assertTrue("USE_COUNTER2_CSS_PROPERTY_MozAnimation_DOCUMENT" in histograms)
-
-        # Test a longhand (animation-name)
-        self.assertTrue(
-            "USE_COUNTER2_CSS_PROPERTY_AnimationName_DOCUMENT" in histograms
-        )
-
-        # Test a longhand alias (-moz-animation-name)
-        self.assertTrue(
-            "USE_COUNTER2_CSS_PROPERTY_MozAnimationName_DOCUMENT" in histograms
-        )
 
     def test_current_histogram(self):
         HISTOGRAMS_PATH = path.join(TELEMETRY_ROOT_PATH, "Histograms.json")

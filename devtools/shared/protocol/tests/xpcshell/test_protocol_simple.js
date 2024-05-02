@@ -7,17 +7,9 @@
  * Test simple requests using the protocol helpers.
  */
 
-var protocol = require("devtools/shared/protocol");
+var protocol = require("resource://devtools/shared/protocol.js");
 var { Arg, Option, RetVal } = protocol;
-var EventEmitter = require("devtools/shared/event-emitter");
-
-function simpleHello() {
-  return {
-    from: "root",
-    applicationType: "xpcshell-tests",
-    traits: [],
-  };
-}
+var EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 const rootSpec = protocol.generateActorSpec({
   typeName: "root",
@@ -91,64 +83,71 @@ const rootSpec = protocol.generateActorSpec({
   },
 });
 
-var RootActor = protocol.ActorClassWithSpec(rootSpec, {
-  initialize: function(conn) {
-    protocol.Actor.prototype.initialize.call(this, conn);
+class RootActor extends protocol.Actor {
+  constructor(conn) {
+    super(conn, rootSpec);
+
     // Root actor owns itself.
     this.manage(this);
     this.actorID = "root";
-  },
+  }
 
-  sayHello: simpleHello,
+  sayHello() {
+    return {
+      from: "root",
+      applicationType: "xpcshell-tests",
+      traits: [],
+    };
+  }
 
-  simpleReturn: function() {
+  simpleReturn() {
     return 1;
-  },
+  }
 
-  promiseReturn: function() {
+  promiseReturn() {
     return Promise.resolve(1);
-  },
+  }
 
-  simpleArgs: function(a, b) {
+  simpleArgs(a, b) {
     return { firstResponse: a + 1, secondResponse: b + 1 };
-  },
+  }
 
-  optionArgs: function(options) {
+  optionArgs(options) {
     return { option1: options.option1, option2: options.option2 };
-  },
+  }
 
-  optionalArgs: function(a, b = 200) {
+  optionalArgs(a, b = 200) {
     return b;
-  },
+  }
 
-  arrayArgs: function(a) {
+  arrayArgs(a) {
     return a;
-  },
+  }
 
-  nestedArrayArgs: function(a) {
+  nestedArrayArgs(a) {
     return a;
-  },
+  }
 
   /**
    * Test that the 'type' part of the request packet works
    * correctly when the type isn't the same as the method name
    */
-  renamedEcho: function(a) {
+  renamedEcho(a) {
     if (this.conn.currentPacket.type != "echo") {
       return "goodbye";
     }
     return a;
-  },
+  }
 
-  testOneWay: function(a) {
+  testOneWay(a) {
     // Emit to show that we got this message, because there won't be a response.
     EventEmitter.emit(this, "oneway", a);
-  },
+  }
 
-  emitFalsyOptions: function() {
+  emitFalsyOptions() {
     EventEmitter.emit(this, "falsyOptions", { zero: 0, farce: false });
-  },
-});
+  }
+}
 
 class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
   constructor(client) {
@@ -160,16 +159,11 @@ class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
 }
 protocol.registerFront(RootFront);
 
-add_task(async function() {
+add_task(async function () {
   DevToolsServer.createRootActor = conn => {
-    return RootActor(conn);
+    return new RootActor(conn);
   };
   DevToolsServer.init();
-
-  Assert.throws(() => {
-    const badActor = protocol.ActorClassWithSpec({}, {});
-    void badActor;
-  }, /Actor specification must have a typeName member/);
 
   protocol.types.getType("array:array:array:number");
   protocol.types.getType("array:array:array:number");

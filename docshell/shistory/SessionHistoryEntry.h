@@ -15,6 +15,7 @@
 #include "nsSHEntryShared.h"
 #include "nsStructuredCloneContainer.h"
 #include "nsTHashMap.h"
+#include "nsWeakReference.h"
 
 class nsDocShellLoadState;
 class nsIChannel;
@@ -48,8 +49,7 @@ class SessionHistoryInfo {
                      nsIPrincipal* aPartitionedPrincipalToInherit,
                      nsIContentSecurityPolicy* aCsp,
                      const nsACString& aContentType);
-  SessionHistoryInfo(nsIChannel* aOldChannel, nsIChannel* aNewChannel,
-                     uint32_t aLoadType,
+  SessionHistoryInfo(nsIChannel* aChannel, uint32_t aLoadType,
                      nsIPrincipal* aPartitionedPrincipalToInherit,
                      nsIContentSecurityPolicy* aCsp);
 
@@ -66,14 +66,27 @@ class SessionHistoryInfo {
   nsIURI* GetURI() const { return mURI; }
   void SetURI(nsIURI* aURI) { mURI = aURI; }
 
+  nsIURI* GetOriginalURI() const { return mOriginalURI; }
   void SetOriginalURI(nsIURI* aOriginalURI) { mOriginalURI = aOriginalURI; }
 
+  nsIURI* GetUnstrippedURI() const { return mUnstrippedURI; }
+  void SetUnstrippedURI(nsIURI* aUnstrippedURI) {
+    mUnstrippedURI = aUnstrippedURI;
+  }
+
+  nsIURI* GetResultPrincipalURI() const { return mResultPrincipalURI; }
   void SetResultPrincipalURI(nsIURI* aResultPrincipalURI) {
     mResultPrincipalURI = aResultPrincipalURI;
   }
 
-  nsIInputStream* GetPostData() const { return mPostData; }
-  void SetPostData(nsIInputStream* aPostData) { mPostData = aPostData; }
+  nsIReferrerInfo* GetReferrerInfo() { return mReferrerInfo; }
+  void SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
+    mReferrerInfo = aReferrerInfo;
+  }
+
+  bool HasPostData() const { return mPostData; }
+  already_AddRefed<nsIInputStream> GetPostData() const;
+  void SetPostData(nsIInputStream* aPostData);
 
   void GetScrollPosition(int32_t* aScrollPositionX, int32_t* aScrollPositionY) {
     *aScrollPositionX = mScrollPositionX;
@@ -146,6 +159,8 @@ class SessionHistoryInfo {
 
   void SetSaveLayoutStateFlag(bool aSaveLayoutStateFlag);
 
+  bool GetPersist() const { return mPersist; }
+
  private:
   friend class SessionHistoryEntry;
   friend struct mozilla::ipc::IPDLParamTraits<SessionHistoryInfo>;
@@ -155,6 +170,7 @@ class SessionHistoryInfo {
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsIURI> mOriginalURI;
   nsCOMPtr<nsIURI> mResultPrincipalURI;
+  nsCOMPtr<nsIURI> mUnstrippedURI;
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   nsString mTitle;
   nsString mName;
@@ -217,7 +233,9 @@ struct LoadingSessionHistoryInfo {
   explicit LoadingSessionHistoryInfo(SessionHistoryEntry* aEntry);
   // Initializes mInfo using aEntry and otherwise copies the values from aInfo.
   LoadingSessionHistoryInfo(SessionHistoryEntry* aEntry,
-                            LoadingSessionHistoryInfo* aInfo);
+                            const LoadingSessionHistoryInfo* aInfo);
+  // For about:blank only.
+  explicit LoadingSessionHistoryInfo(const SessionHistoryInfo& aInfo);
 
   already_AddRefed<nsDocShellLoadState> CreateLoadInfo() const;
 
@@ -342,7 +360,7 @@ class HistoryEntryCounterForBrowsingContext {
     }                                                \
   }
 
-class SessionHistoryEntry : public nsISHEntry {
+class SessionHistoryEntry : public nsISHEntry, public nsSupportsWeakReference {
  public:
   SessionHistoryEntry(nsDocShellLoadState* aLoadState, nsIChannel* aChannel);
   SessionHistoryEntry();
@@ -352,6 +370,16 @@ class SessionHistoryEntry : public nsISHEntry {
   NS_DECL_ISUPPORTS
   NS_DECL_NSISHENTRY
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_SESSIONHISTORYENTRY_IID)
+
+  bool IsInSessionHistory() {
+    SessionHistoryEntry* entry = this;
+    while (nsCOMPtr<SessionHistoryEntry> parent =
+               do_QueryReferent(entry->mParent)) {
+      entry = parent;
+    }
+    return entry->SharedInfo()->mSHistory &&
+           entry->SharedInfo()->mSHistory->IsAlive();
+  }
 
   void ReplaceWith(const SessionHistoryEntry& aSource);
 
@@ -393,9 +421,18 @@ class SessionHistoryEntry : public nsISHEntry {
 
   void SetWireframe(const Maybe<Wireframe>& aWireframe);
 
+  struct LoadingEntry {
+    // A pointer to the entry being loaded. Will be cleared by the
+    // SessionHistoryEntry destructor, at latest.
+    SessionHistoryEntry* mEntry;
+    // Snapshot of the entry's SessionHistoryInfo when the load started, to be
+    // used for validation purposes only.
+    UniquePtr<SessionHistoryInfo> mInfoSnapshotForValidation;
+  };
+
   // Get an entry based on LoadingSessionHistoryInfo's mLoadId. Parent process
   // only.
-  static SessionHistoryEntry* GetByLoadId(uint64_t aLoadId);
+  static LoadingEntry* GetByLoadId(uint64_t aLoadId);
   static void SetByLoadId(uint64_t aLoadId, SessionHistoryEntry* aEntry);
   static void RemoveLoadId(uint64_t aLoadId);
 
@@ -406,7 +443,7 @@ class SessionHistoryEntry : public nsISHEntry {
   virtual ~SessionHistoryEntry();
 
   UniquePtr<SessionHistoryInfo> mInfo;
-  nsISHEntry* mParent = nullptr;
+  nsWeakPtr mParent;
   uint32_t mID;
   nsTArray<RefPtr<SessionHistoryEntry>> mChildren;
   Maybe<Wireframe> mWireframe;
@@ -415,7 +452,7 @@ class SessionHistoryEntry : public nsISHEntry {
 
   HistoryEntryCounterForBrowsingContext mBCHistoryLength;
 
-  static nsTHashMap<nsUint64HashKey, SessionHistoryEntry*>* sLoadIdToEntry;
+  static nsTHashMap<nsUint64HashKey, LoadingEntry>* sLoadIdToEntry;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(SessionHistoryEntry, NS_SESSIONHISTORYENTRY_IID)
@@ -429,41 +466,45 @@ class IProtocol;
 // Allow sending SessionHistoryInfo objects over IPC.
 template <>
 struct IPDLParamTraits<dom::SessionHistoryInfo> {
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     const dom::SessionHistoryInfo& aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, dom::SessionHistoryInfo* aResult);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   dom::SessionHistoryInfo* aResult);
 };
 
 // Allow sending LoadingSessionHistoryInfo objects over IPC.
 template <>
 struct IPDLParamTraits<dom::LoadingSessionHistoryInfo> {
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     const dom::LoadingSessionHistoryInfo& aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, dom::LoadingSessionHistoryInfo* aResult);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   dom::LoadingSessionHistoryInfo* aResult);
 };
 
 // Allow sending nsILayoutHistoryState objects over IPC.
 template <>
 struct IPDLParamTraits<nsILayoutHistoryState*> {
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     nsILayoutHistoryState* aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, RefPtr<nsILayoutHistoryState>* aResult);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   RefPtr<nsILayoutHistoryState>* aResult);
 };
 
 // Allow sending dom::Wireframe objects over IPC.
 template <>
 struct IPDLParamTraits<mozilla::dom::Wireframe> {
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     const mozilla::dom::Wireframe& aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, mozilla::dom::Wireframe* aResult);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   mozilla::dom::Wireframe* aResult);
 };
 
 }  // namespace ipc
 
 }  // namespace mozilla
+
+inline nsISupports* ToSupports(mozilla::dom::SessionHistoryEntry* aEntry) {
+  return static_cast<nsISHEntry*>(aEntry);
+}
 
 #endif /* mozilla_dom_SessionHistoryEntry_h */

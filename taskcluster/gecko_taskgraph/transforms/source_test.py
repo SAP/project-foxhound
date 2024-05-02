@@ -10,24 +10,15 @@ treeherder configuration and attributes for that platform.
 import copy
 import os
 
-import gecko_taskgraph
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.transforms.job import job_description_schema
-from gecko_taskgraph.util.attributes import keymatch
-from gecko_taskgraph.util.hg import get_json_automationrelevance
-from gecko_taskgraph.util.schema import (
-    resolve_keyed_by,
-    optionally_keyed_by,
-    Schema,
-)
-from gecko_taskgraph.util.treeherder import join_symbol, split_symbol
+import taskgraph
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.attributes import keymatch
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.treeherder import join_symbol, split_symbol
+from voluptuous import Any, Extra, Optional, Required
 
-from voluptuous import (
-    Any,
-    Extra,
-    Optional,
-    Required,
-)
+from gecko_taskgraph.transforms.job import job_description_schema
+from gecko_taskgraph.util.hg import get_json_automationrelevance
 
 source_test_description_schema = Schema(
     {
@@ -251,7 +242,7 @@ def set_code_review_env(config, jobs):
 def set_base_revision_in_tgdiff(config, jobs):
     # Don't attempt to download 'json-automation' locally as the revision may
     # not exist in the repository.
-    if not os.environ.get("MOZ_AUTOMATION") or gecko_taskgraph.fast:
+    if not os.environ.get("MOZ_AUTOMATION") or taskgraph.fast:
         yield from jobs
         return
 
@@ -263,7 +254,47 @@ def set_base_revision_in_tgdiff(config, jobs):
             yield job
             continue
 
-        job["run"]["command-context"] = {
-            "base_rev": data["changesets"][0]["parents"][0]
+        job["task-context"] = {
+            "from-object": {
+                "base_rev": data["changesets"][0]["parents"][0],
+            },
+            "substitution-fields": [
+                "run.command",
+            ],
         }
+        yield job
+
+
+@transforms.add
+def set_worker_exit_code(config, jobs):
+    for job in jobs:
+        worker = job["worker"]
+        worker.setdefault("retry-exit-status", [])
+        if 137 not in worker["retry-exit-status"]:
+            worker["retry-exit-status"].append(137)
+        yield job
+
+
+@transforms.add
+def remove_optimization_on_central(config, jobs):
+    """
+    For pushes to mozilla-central run all source-test tasks that are enabled for
+    code-review in order to have the code-review bot populate the DB according
+    with the push hash.
+    """
+    if (
+        config.params["project"] != "mozilla-central"
+        or config.params["tasks_for"] != "hg-push"
+    ):
+        yield from jobs
+        return
+
+    for job in jobs:
+        if not job.get("attributes", {}).get("code-review", False):
+            yield job
+            continue
+        if "when" not in job:
+            yield job
+            continue
+        del job["when"]
         yield job

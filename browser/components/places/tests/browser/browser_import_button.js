@@ -10,9 +10,9 @@ const kPref = "browser.bookmarks.addedImportButton";
  * in the toolbar.
  */
 add_task(async function test_bookmark_import_button() {
-  let bookmarkCount = PlacesUtils.getChildCountForFolder(
-    PlacesUtils.bookmarks.toolbarGuid
-  );
+  let bookmarkCount = (
+    await PlacesUtils.bookmarks.fetch(PlacesUtils.bookmarks.toolbarGuid)
+  ).childCount;
   Assert.less(bookmarkCount, 3, "we should start with less than 3 bookmarks");
 
   ok(
@@ -62,9 +62,9 @@ add_task(async function test_bookmark_import_button() {
  * Verify the button gets removed when we import bookmarks successfully.
  */
 add_task(async function test_bookmark_import_button_removal() {
-  let bookmarkCount = PlacesUtils.getChildCountForFolder(
-    PlacesUtils.bookmarks.toolbarGuid
-  );
+  let bookmarkCount = (
+    await PlacesUtils.bookmarks.fetch(PlacesUtils.bookmarks.toolbarGuid)
+  ).childCount;
   Assert.less(bookmarkCount, 3, "we should start with less than 3 bookmarks");
 
   ok(
@@ -80,7 +80,7 @@ add_task(async function test_bookmark_import_button_removal() {
   Services.obs.notifyObservers(
     null,
     "Migration:ItemAfterMigrate",
-    Ci.nsIBrowserProfileMigrator.BOOKMARKS
+    MigrationUtils.resourceTypes.BOOKMARKS
   );
 
   is(
@@ -95,7 +95,7 @@ add_task(async function test_bookmark_import_button_removal() {
   Services.obs.notifyObservers(
     null,
     "Migration:ItemAfterMigrate",
-    Ci.nsIBrowserProfileMigrator.BOOKMARKS
+    MigrationUtils.resourceTypes.BOOKMARKS
   );
 
   is(Services.prefs.prefHasUserValue(kPref), false, "Pref should be removed.");
@@ -113,9 +113,9 @@ add_task(async function test_bookmark_import_button_removal() {
  * we clear the pref and stop monitoring to remove the item.
  */
 add_task(async function test_bookmark_import_button_removal_cleanup() {
-  let bookmarkCount = PlacesUtils.getChildCountForFolder(
-    PlacesUtils.bookmarks.toolbarGuid
-  );
+  let bookmarkCount = (
+    await PlacesUtils.bookmarks.fetch(PlacesUtils.bookmarks.toolbarGuid)
+  ).childCount;
   Assert.less(bookmarkCount, 3, "we should start with less than 3 bookmarks");
 
   ok(
@@ -141,9 +141,9 @@ add_task(async function test_bookmark_import_button_removal_cleanup() {
  * _if_ we imported any bookmarks.
  */
 add_task(async function test_bookmark_import_button_errors() {
-  let bookmarkCount = PlacesUtils.getChildCountForFolder(
-    PlacesUtils.bookmarks.toolbarGuid
-  );
+  let bookmarkCount = (
+    await PlacesUtils.bookmarks.fetch(PlacesUtils.bookmarks.toolbarGuid)
+  ).childCount;
   Assert.less(bookmarkCount, 3, "we should start with less than 3 bookmarks");
 
   ok(
@@ -159,7 +159,7 @@ add_task(async function test_bookmark_import_button_errors() {
   Services.obs.notifyObservers(
     null,
     "Migration:ItemError",
-    Ci.nsIBrowserProfileMigrator.BOOKMARKS
+    MigrationUtils.resourceTypes.BOOKMARKS
   );
 
   is(
@@ -174,7 +174,7 @@ add_task(async function test_bookmark_import_button_errors() {
   Services.obs.notifyObservers(
     null,
     "Migration:ItemError",
-    Ci.nsIBrowserProfileMigrator.BOOKMARKS
+    MigrationUtils.resourceTypes.BOOKMARKS
   );
 
   is(Services.prefs.prefHasUserValue(kPref), false, "Pref should be removed.");

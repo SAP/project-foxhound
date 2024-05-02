@@ -4,9 +4,10 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const Services = require("Services");
-const { preferenceSpec } = require("devtools/shared/specs/preference");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  preferenceSpec,
+} = require("resource://devtools/shared/specs/preference.js");
 
 const { PREF_STRING, PREF_INT, PREF_BOOL } = Services.prefs;
 
@@ -27,33 +28,36 @@ function ensurePrefType(name, expectedType) {
  * This actor is used as a global-scoped actor, targeting the entire browser, not an
  * individual tab.
  */
-var PreferenceActor = protocol.ActorClassWithSpec(preferenceSpec, {
-  getTraits: function() {
+class PreferenceActor extends Actor {
+  constructor(conn) {
+    super(conn, preferenceSpec);
+  }
+  getTraits() {
     // The *Pref traits are used to know if remote-debugging bugs related to
     // specific preferences are fixed on the server or if the client should set
     // default values for them. See the about:debugging module
     // runtime-default-preferences.js
     return {};
-  },
+  }
 
-  getBoolPref: function(name) {
+  getBoolPref(name) {
     ensurePrefType(name, PREF_BOOL);
     return Services.prefs.getBoolPref(name);
-  },
+  }
 
-  getCharPref: function(name) {
+  getCharPref(name) {
     ensurePrefType(name, PREF_STRING);
     return Services.prefs.getCharPref(name);
-  },
+  }
 
-  getIntPref: function(name) {
+  getIntPref(name) {
     ensurePrefType(name, PREF_INT);
     return Services.prefs.getIntPref(name);
-  },
+  }
 
-  getAllPrefs: function() {
+  getAllPrefs() {
     const prefs = {};
-    Services.prefs.getChildList("").forEach(function(name, index) {
+    Services.prefs.getChildList("").forEach(function (name, index) {
       // append all key/value pairs into a huge json object.
       try {
         let value;
@@ -70,7 +74,7 @@ var PreferenceActor = protocol.ActorClassWithSpec(preferenceSpec, {
           default:
         }
         prefs[name] = {
-          value: value,
+          value,
           hasUserValue: Services.prefs.prefHasUserValue(name),
         };
       } catch (e) {
@@ -78,27 +82,27 @@ var PreferenceActor = protocol.ActorClassWithSpec(preferenceSpec, {
       }
     });
     return prefs;
-  },
+  }
 
-  setBoolPref: function(name, value) {
+  setBoolPref(name, value) {
     Services.prefs.setBoolPref(name, value);
     Services.prefs.savePrefFile(null);
-  },
+  }
 
-  setCharPref: function(name, value) {
+  setCharPref(name, value) {
     Services.prefs.setCharPref(name, value);
     Services.prefs.savePrefFile(null);
-  },
+  }
 
-  setIntPref: function(name, value) {
+  setIntPref(name, value) {
     Services.prefs.setIntPref(name, value);
     Services.prefs.savePrefFile(null);
-  },
+  }
 
-  clearUserPref: function(name) {
+  clearUserPref(name) {
     Services.prefs.clearUserPref(name);
     Services.prefs.savePrefFile(null);
-  },
-});
+  }
+}
 
 exports.PreferenceActor = PreferenceActor;

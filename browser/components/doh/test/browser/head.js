@@ -1,22 +1,20 @@
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
-  DoHController: "resource:///modules/DoHController.jsm",
-  DoHConfigController: "resource:///modules/DoHConfig.jsm",
-  DoHTestUtils: "resource://testing-common/DoHTestUtils.jsm",
-  Preferences: "resource://gre/modules/Preferences.jsm",
-  Region: "resource://gre/modules/Region.jsm",
-  RegionTestUtils: "resource://testing-common/RegionTestUtils.jsm",
-  RemoteSettings: "resource://services-settings/remote-settings.js",
+ChromeUtils.defineESModuleGetters(this, {
+  DoHConfigController: "resource:///modules/DoHConfig.sys.mjs",
+  DoHController: "resource:///modules/DoHController.sys.mjs",
+  DoHTestUtils: "resource://testing-common/DoHTestUtils.sys.mjs",
+  Heuristics: "resource:///modules/DoHHeuristics.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
+  RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
 });
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "gDNSService",
-  "@mozilla.org/network/dns-service;1",
-  "nsIDNSService"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
+});
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -25,8 +23,8 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsINativeDNSResolverOverride"
 );
 
-const { CommonUtils } = ChromeUtils.import(
-  "resource://services-common/utils.js"
+const { CommonUtils } = ChromeUtils.importESModule(
+  "resource://services-common/utils.sys.mjs"
 );
 
 const EXAMPLE_URL = "https://example.com/";
@@ -43,8 +41,6 @@ const prefs = {
   SKIP_HEURISTICS_PREF: "doh-rollout.skipHeuristicsCheck",
   CLEAR_ON_SHUTDOWN_PREF: "doh-rollout.clearModeOnShutdown",
   FIRST_RUN_PREF: "doh-rollout.doneFirstRun",
-  BALROG_MIGRATION_PREF: "doh-rollout.balrog-migration-done",
-  PREVIOUS_TRR_MODE_PREF: "doh-rollout.previous.trr.mode",
   PROVIDER_LIST_PREF: "doh-rollout.provider-list",
   TRR_SELECT_ENABLED_PREF: "doh-rollout.trr-selection.enabled",
   TRR_SELECT_URI_PREF: "doh-rollout.uri",
@@ -76,6 +72,7 @@ async function setup() {
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
   Services.telemetry.clearEvents();
+  Services.telemetry.clearScalars();
 
   // Enable the CFR.
   Preferences.set(CFR_PREF, JSON.stringify(CFR_JSON));
@@ -231,6 +228,49 @@ async function checkHeuristicsTelemetry(
   Services.telemetry.clearEvents();
 }
 
+// Generates an array of expectations for the ever_tripped scalar
+// containing false and key, except for the keyes contained in
+// the `except` parameter.
+function falseExpectations(except) {
+  return Heuristics.Telemetry.heuristicNames()
+    .map(e => [
+      "networking.doh_heuristic_ever_tripped",
+      { value: false, key: e },
+    ])
+    .filter(e => except && !except.includes(e[1].key));
+}
+
+function checkScalars(expectations) {
+  // expectations: [[scalarname: expectationObject]]
+  // expectationObject: {value, key}
+  let snapshot = TelemetryTestUtils.getProcessScalars("parent", false, false);
+  let keyedSnapshot = TelemetryTestUtils.getProcessScalars(
+    "parent",
+    true,
+    false
+  );
+  for (let ex of expectations) {
+    let scalarName = ex[0];
+    let exObject = ex[1];
+    if (exObject.key) {
+      TelemetryTestUtils.assertKeyedScalar(
+        keyedSnapshot,
+        scalarName,
+        exObject.key,
+        exObject.value,
+        `${scalarName} expected to have ${exObject.value}, key: ${exObject.key}`
+      );
+    } else {
+      TelemetryTestUtils.assertScalar(
+        snapshot,
+        scalarName,
+        exObject.value,
+        `${scalarName} expected to have ${exObject.value}`
+      );
+    }
+  }
+}
+
 async function checkHeuristicsTelemetryMultiple(expectedEvaluateReasons) {
   let events;
   await TestUtils.waitForCondition(() => {
@@ -282,6 +322,7 @@ async function waitForStateTelemetry(expectedStates) {
     return events;
   });
   events = events.filter(e => e[1] == "doh" && e[2] == "state");
+  info(events);
   is(events.length, expectedStates.length, "Found the expected state events.");
   for (let state of expectedStates) {
     let event = events.find(e => e[3] == state);

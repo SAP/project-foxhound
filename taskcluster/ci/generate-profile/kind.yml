@@ -22,6 +22,7 @@ job-defaults:
         kind: build
         tier: 1
     run-on-projects: ['release']
+    use-system-python: false
 
 jobs:
     linux-shippable/opt:
@@ -33,7 +34,7 @@ jobs:
             job-name: linux-profile
         treeherder:
             platform: linux32-shippable/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             chain-of-trust: true
             env:
@@ -64,7 +65,7 @@ jobs:
             job-name: linux64-profile
         treeherder:
             platform: linux64-shippable/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             chain-of-trust: true
             env:
@@ -108,7 +109,6 @@ jobs:
                   path: /builds/worker/artifacts/
         run:
             using: mozharness
-            need-xvfb: true
             job-script: taskcluster/scripts/tester/test-linux.sh
             script: android_emulator_pgo.py
             tooltool-downloads: internal
@@ -148,7 +148,6 @@ jobs:
                   path: /builds/worker/artifacts/
         run:
             using: mozharness
-            need-xvfb: true
             job-script: taskcluster/scripts/tester/test-linux.sh
             script: android_emulator_pgo.py
             tooltool-downloads: internal
@@ -174,10 +173,10 @@ jobs:
             job-name: win32-profile
         treeherder:
             platform: windows2012-32-shippable/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             chain-of-trust: true
-            max-run-time: 1200
+            max-run-time: 2400
             env:
                 UPLOAD_PATH: "artifacts"
             artifacts:
@@ -203,10 +202,10 @@ jobs:
             job-name: win64-profile
         treeherder:
             platform: windows2012-64-shippable/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             chain-of-trust: true
-            max-run-time: 1200
+            max-run-time: 2400
             env:
                 UPLOAD_PATH: "artifacts"
             artifacts:
@@ -231,7 +230,7 @@ jobs:
             product: firefox
             job-name: macosx64-profile
         treeherder:
-            platform: macosx1014-64-shippable/opt
+            platform: macosx1015-64-shippable/opt
         worker-type: b-osx-1015
         worker:
             chain-of-trust: true

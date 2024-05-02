@@ -15,8 +15,7 @@ class nsIFrame;
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Switch)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGSwitchElement::WrapNode(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
@@ -88,24 +87,6 @@ void SVGSwitchElement::RemoveChildNode(nsIContent* aKid, bool aNotify) {
 }
 
 //----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGSwitchElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sFEFloodMap,
-                                                    sFiltersMap,
-                                                    sFontSpecificationMap,
-                                                    sGradientStopMap,
-                                                    sLightingEffectsMap,
-                                                    sMarkersMap,
-                                                    sTextContentElementsMap,
-                                                    sViewportsMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGSwitchElementBase::IsAttributeMapped(name);
-}
-
-//----------------------------------------------------------------------
 // Implementation Helpers:
 
 nsIContent* SVGSwitchElement::FindActiveChild() const {
@@ -155,5 +136,4 @@ nsIContent* SVGSwitchElement::FindActiveChild() const {
   return bestChild ? bestChild : defaultChild;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

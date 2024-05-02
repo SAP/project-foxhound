@@ -12,8 +12,7 @@
 
 class nsPIDOMWindowInner;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 enum class RTCDtlsTransportState : uint8_t;
 
@@ -32,6 +31,7 @@ class RTCDtlsTransport : public DOMEventTargetHelper {
   IMPL_EVENT_HANDLER(statechange)
   RTCDtlsTransportState State() const { return mState; }
 
+  void UpdateStateNoEvent(TransportLayer::State aState);
   void UpdateState(TransportLayer::State aState);
 
  private:
@@ -40,6 +40,5 @@ class RTCDtlsTransport : public DOMEventTargetHelper {
   RTCDtlsTransportState mState;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 #endif  // _RTCDtlsTransport_h_

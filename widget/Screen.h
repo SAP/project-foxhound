@@ -10,17 +10,13 @@
 #include "nsIScreen.h"
 
 #include "Units.h"
+#include "mozilla/HalScreenConfiguration.h"  // For hal::ScreenOrientation
 
 namespace mozilla {
 namespace dom {
 class ScreenDetails;
 }  // namespace dom
-namespace hal {
-class ScreenConfiguration;
-}
-}  // namespace mozilla
 
-namespace mozilla {
 namespace widget {
 
 class Screen final : public nsIScreen {
@@ -28,32 +24,58 @@ class Screen final : public nsIScreen {
   NS_DECL_ISUPPORTS
   NS_DECL_NSISCREEN
 
+  using OrientationAngle = uint16_t;
+  enum class IsPseudoDisplay : bool { No, Yes };
+
   Screen(LayoutDeviceIntRect aRect, LayoutDeviceIntRect aAvailRect,
-         uint32_t aPixelDepth, uint32_t aColorDepth,
+         uint32_t aPixelDepth, uint32_t aColorDepth, uint32_t aRefreshRate,
          DesktopToLayoutDeviceScale aContentsScale,
-         CSSToLayoutDeviceScale aDefaultCssScale, float dpi);
-  explicit Screen(const mozilla::dom::ScreenDetails& aScreenDetails);
+         CSSToLayoutDeviceScale aDefaultCssScale, float aDpi, IsPseudoDisplay,
+         hal::ScreenOrientation = hal::ScreenOrientation::None,
+         OrientationAngle = 0);
+  explicit Screen(const dom::ScreenDetails& aScreenDetails);
   Screen(const Screen& aOther);
 
-  mozilla::dom::ScreenDetails ToScreenDetails();
+  dom::ScreenDetails ToScreenDetails() const;
 
-  // Convert to hal's ScreenConfiguration.
-  // NOTE: Since Screen doesn't have orientation and angle information,
-  //       these can't be set.
-  mozilla::hal::ScreenConfiguration ToScreenConfiguration();
+  OrientationAngle GetOrientationAngle() const { return mOrientationAngle; }
+  hal::ScreenOrientation GetOrientationType() const {
+    return mScreenOrientation;
+  }
+
+  /**
+   * Return default orientation type that angle is 0.
+   * This returns LandscapePrimary or PortraitPrimary.
+   */
+  hal::ScreenOrientation GetDefaultOrientationType() const;
+
+  float GetDPI() const { return mDPI; }
+
+  const LayoutDeviceIntRect& GetRect() const { return mRect; }
+  const LayoutDeviceIntRect& GetAvailRect() const { return mAvailRect; }
+  const DesktopToLayoutDeviceScale& GetContentsScaleFactor() const {
+    return mContentsScale;
+  }
+
+  enum class IncludeOSZoom : bool { No, Yes };
+  CSSToLayoutDeviceScale GetCSSToLayoutDeviceScale(IncludeOSZoom) const;
 
  private:
   virtual ~Screen() = default;
 
-  LayoutDeviceIntRect mRect;
-  LayoutDeviceIntRect mAvailRect;
-  DesktopIntRect mRectDisplayPix;
-  DesktopIntRect mAvailRectDisplayPix;
-  uint32_t mPixelDepth;
-  uint32_t mColorDepth;
-  DesktopToLayoutDeviceScale mContentsScale;
-  CSSToLayoutDeviceScale mDefaultCssScale;
-  float mDPI;
+  const LayoutDeviceIntRect mRect;
+  const LayoutDeviceIntRect mAvailRect;
+  const DesktopIntRect mRectDisplayPix;
+  const DesktopIntRect mAvailRectDisplayPix;
+  const uint32_t mPixelDepth;
+  const uint32_t mColorDepth;
+  const uint32_t mRefreshRate;
+  const DesktopToLayoutDeviceScale mContentsScale;
+  const CSSToLayoutDeviceScale mDefaultCssScale;
+  const float mDPI;
+  const hal::ScreenOrientation mScreenOrientation;
+  const OrientationAngle mOrientationAngle;
+  const bool mIsPseudoDisplay;
 };
 
 }  // namespace widget

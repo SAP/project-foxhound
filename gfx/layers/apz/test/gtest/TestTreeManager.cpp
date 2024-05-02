@@ -7,13 +7,14 @@
 #include "APZCTreeManagerTester.h"
 #include "APZTestCommon.h"
 #include "InputUtils.h"
+#include "Units.h"
 
 class APZCTreeManagerGenericTester : public APZCTreeManagerTester {
  protected:
   void CreateSimpleScrollingLayer() {
     const char* treeShape = "x";
-    nsIntRegion layerVisibleRegion[] = {
-        nsIntRegion(IntRect(0, 0, 200, 200)),
+    LayerIntRegion layerVisibleRegion[] = {
+        LayerIntRect(0, 0, 200, 200),
     };
     CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(layers[0], ScrollableLayerGuid::START_SCROLL_ID,
@@ -23,10 +24,10 @@ class APZCTreeManagerGenericTester : public APZCTreeManagerTester {
   void CreateSimpleMultiLayerTree() {
     const char* treeShape = "x(xx)";
     // LayerID               0 12
-    nsIntRegion layerVisibleRegion[] = {
-        nsIntRegion(IntRect(0, 0, 100, 100)),
-        nsIntRegion(IntRect(0, 0, 100, 50)),
-        nsIntRegion(IntRect(0, 50, 100, 50)),
+    LayerIntRegion layerVisibleRegion[] = {
+        LayerIntRect(0, 0, 100, 100),
+        LayerIntRect(0, 0, 100, 50),
+        LayerIntRect(0, 50, 100, 50),
     };
     CreateScrollData(treeShape, layerVisibleRegion);
   }
@@ -49,9 +50,9 @@ class APZCTreeManagerGenericTester : public APZCTreeManagerTester {
   void CreateTwoLayerTree(int32_t aRootContentLayerIndex) {
     const char* treeShape = "x(x)";
     // LayerID               0 1
-    nsIntRegion layerVisibleRegion[] = {
-        nsIntRegion(IntRect(0, 0, 100, 100)),
-        nsIntRegion(IntRect(0, 0, 100, 100)),
+    LayerIntRegion layerVisibleRegion[] = {
+        LayerIntRect(0, 0, 100, 100),
+        LayerIntRect(0, 0, 100, 100),
     };
     CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(layers[0], ScrollableLayerGuid::START_SCROLL_ID);
@@ -218,8 +219,7 @@ TEST_F(APZCTreeManagerGenericTesterMock, Bug1198900) {
   UpdateHitTestingTree();
 
   ScreenPoint origin(100, 50);
-  ScrollWheelInput swi(MillisecondsSinceStartup(mcc->Time()), mcc->Time(), 0,
-                       ScrollWheelInput::SCROLLMODE_INSTANT,
+  ScrollWheelInput swi(mcc->Time(), 0, ScrollWheelInput::SCROLLMODE_INSTANT,
                        ScrollWheelInput::SCROLLDELTA_PIXEL, origin, 0, 10,
                        false, WheelDeltaAdjustmentStrategy::eNone);
   uint64_t blockId;
@@ -303,4 +303,45 @@ TEST_F(APZCTreeManagerTester, Bug1557424) {
   // Check that APZ has clamped the scroll offset to (200,200) for us.
   compositedScrollOffset = apzc->GetCompositedScrollOffset();
   EXPECT_EQ(CSSPoint(200, 200), compositedScrollOffset);
+}
+
+TEST_F(APZCTreeManagerTester, Bug1805601) {
+  // The simple layer tree has a scrollable rect of 500x500 and a composition
+  // bounds of 200x200, leading to a scroll range of (0,0,300,300) at unit zoom.
+  CreateSimpleScrollingLayer();
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
+  UpdateHitTestingTree();
+  RefPtr<TestAsyncPanZoomController> apzc = ApzcOf(root);
+  FrameMetrics& compositorMetrics = apzc->GetFrameMetrics();
+  EXPECT_EQ(CSSRect(0, 0, 300, 300), compositorMetrics.CalculateScrollRange());
+
+  // Zoom the page in by 2x. This needs to be reflected in each of the pres
+  // shell resolution, cumulative resolution, and zoom. This makes the scroll
+  // range (0,0,400,400).
+  compositorMetrics.SetZoom(CSSToParentLayerScale(2.0));
+  EXPECT_EQ(CSSRect(0, 0, 400, 400), compositorMetrics.CalculateScrollRange());
+
+  // Scroll to an area inside the 2x scroll range but outside the original one.
+  compositorMetrics.ClampAndSetVisualScrollOffset(CSSPoint(350, 350));
+  EXPECT_EQ(CSSPoint(350, 350), compositorMetrics.GetVisualScrollOffset());
+
+  // Simulate a main-thread update where the zoom is reset to 1x but the visual
+  // scroll offset is unmodified.
+  ModifyFrameMetrics(root, [](ScrollMetadata& aSm, FrameMetrics& aMetrics) {
+    // Changes to |compositorMetrics| are not reflected in |aMetrics|, which
+    // is the "layer tree" copy, so we don't need to explicitly set the zoom to
+    // 1.0 (it still has that as the initial value), but we do need to set
+    // the visual scroll offset to the same value the APZ copy has.
+    aMetrics.SetVisualScrollOffset(CSSPoint(350, 350));
+
+    // Needed to get APZ to accept the 1.0 zoom in |aMetrics|, otherwise
+    // it will act as though its zoom is newer (e.g. an async zoom that hasn't
+    // been repainted yet) and ignore ours.
+    aSm.SetResolutionUpdated(true);
+  });
+  UpdateHitTestingTree();
+
+  // Check that APZ clamped the scroll offset.
+  EXPECT_EQ(CSSRect(0, 0, 300, 300), compositorMetrics.CalculateScrollRange());
+  EXPECT_EQ(CSSPoint(300, 300), compositorMetrics.GetVisualScrollOffset());
 }

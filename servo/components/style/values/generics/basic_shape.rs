@@ -5,10 +5,10 @@
 //! CSS handling for the [`basic-shape`](https://drafts.csswg.org/css-shapes/#typedef-basic-shape)
 //! types that are generic over their `ToCss` implementations.
 
-use crate::values::animated::{Animate, Procedure, ToAnimatedZero};
+use crate::values::animated::{lists, Animate, Procedure, ToAnimatedZero};
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::generics::border::GenericBorderRadius;
-use crate::values::generics::position::GenericPosition;
+use crate::values::generics::position::GenericPositionOrAuto;
 use crate::values::generics::rect::Rect;
 use crate::values::specified::SVGPathData;
 use crate::Zero;
@@ -53,6 +53,15 @@ impl Default for ShapeGeometryBox {
     fn default() -> Self {
         Self::ElementDependent
     }
+}
+
+/// Skip the serialization if the author omits the box or specifies border-box.
+#[inline]
+fn is_default_box_for_clip_path(b: &ShapeGeometryBox) -> bool {
+    // Note: for clip-path, ElementDependent is always border-box, so we have to check both of them
+    // for serialization.
+    matches!(b, ShapeGeometryBox::ElementDependent)
+        || matches!(b, ShapeGeometryBox::ShapeBox(ShapeBox::BorderBox))
 }
 
 /// https://drafts.csswg.org/css-shapes-1/#typedef-shape-box
@@ -112,11 +121,9 @@ pub enum GenericClipPath<BasicShape, U> {
     None,
     #[animation(error)]
     Url(U),
-    #[css(function)]
-    Path(Path),
     Shape(
         Box<BasicShape>,
-        #[css(skip_if = "is_default")] ShapeGeometryBox,
+        #[css(skip_if = "is_default_box_for_clip_path")] ShapeGeometryBox,
     ),
     #[animation(error)]
     Box(ShapeGeometryBox),
@@ -154,14 +161,18 @@ pub enum GenericShapeOutside<BasicShape, I> {
 
 pub use self::GenericShapeOutside as ShapeOutside;
 
-#[allow(missing_docs)]
+/// The <basic-shape>.
+///
+/// https://drafts.csswg.org/css-shapes-1/#supported-basic-shapes
 #[derive(
     Animate,
     Clone,
     ComputeSquaredDistance,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -170,23 +181,28 @@ pub use self::GenericShapeOutside as ShapeOutside;
     ToShmem,
 )]
 #[repr(C, u8)]
-pub enum GenericBasicShape<H, V, LengthPercentage, NonNegativeLengthPercentage> {
-    Inset(
-        #[css(field_bound)]
-        #[shmem(field_bound)]
-        InsetRect<LengthPercentage, NonNegativeLengthPercentage>,
-    ),
+pub enum GenericBasicShape<Position, LengthPercentage, NonNegativeLengthPercentage, BasicShapeRect>
+{
+    /// The <basic-shape-rect>.
+    Rect(BasicShapeRect),
+    /// Defines a circle with a center and a radius.
     Circle(
         #[css(field_bound)]
         #[shmem(field_bound)]
-        Circle<H, V, NonNegativeLengthPercentage>,
+        Circle<Position, NonNegativeLengthPercentage>,
     ),
+    /// Defines an ellipse with a center and x-axis/y-axis radii.
     Ellipse(
         #[css(field_bound)]
         #[shmem(field_bound)]
-        Ellipse<H, V, NonNegativeLengthPercentage>,
+        Ellipse<Position, NonNegativeLengthPercentage>,
     ),
+    /// Defines a polygon with pair arguments.
     Polygon(GenericPolygon<LengthPercentage>),
+    /// Defines a path with SVG path syntax.
+    Path(Path),
+    // TODO: Bug 1823463. Add shape().
+    // https://drafts.csswg.org/css-shapes-2/#shape-function
 }
 
 pub use self::GenericBasicShape as BasicShape;
@@ -198,8 +214,10 @@ pub use self::GenericBasicShape as BasicShape;
     Clone,
     ComputeSquaredDistance,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -208,11 +226,13 @@ pub use self::GenericBasicShape as BasicShape;
 )]
 #[css(function = "inset")]
 #[repr(C)]
-pub struct InsetRect<LengthPercentage, NonNegativeLengthPercentage> {
+pub struct GenericInsetRect<LengthPercentage, NonNegativeLengthPercentage> {
     pub rect: Rect<LengthPercentage>,
     #[shmem(field_bound)]
     pub round: GenericBorderRadius<NonNegativeLengthPercentage>,
 }
+
+pub use self::GenericInsetRect as InsetRect;
 
 /// <https://drafts.csswg.org/css-shapes/#funcdef-circle>
 #[allow(missing_docs)]
@@ -222,8 +242,10 @@ pub struct InsetRect<LengthPercentage, NonNegativeLengthPercentage> {
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -232,8 +254,8 @@ pub struct InsetRect<LengthPercentage, NonNegativeLengthPercentage> {
 )]
 #[css(function)]
 #[repr(C)]
-pub struct Circle<H, V, NonNegativeLengthPercentage> {
-    pub position: GenericPosition<H, V>,
+pub struct Circle<Position, NonNegativeLengthPercentage> {
+    pub position: GenericPositionOrAuto<Position>,
     pub radius: GenericShapeRadius<NonNegativeLengthPercentage>,
 }
 
@@ -245,8 +267,10 @@ pub struct Circle<H, V, NonNegativeLengthPercentage> {
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -255,8 +279,8 @@ pub struct Circle<H, V, NonNegativeLengthPercentage> {
 )]
 #[css(function)]
 #[repr(C)]
-pub struct Ellipse<H, V, NonNegativeLengthPercentage> {
-    pub position: GenericPosition<H, V>,
+pub struct Ellipse<Position, NonNegativeLengthPercentage> {
+    pub position: GenericPositionOrAuto<Position>,
     pub semiaxis_x: GenericShapeRadius<NonNegativeLengthPercentage>,
     pub semiaxis_y: GenericShapeRadius<NonNegativeLengthPercentage>,
 }
@@ -269,9 +293,11 @@ pub struct Ellipse<H, V, NonNegativeLengthPercentage> {
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     Parse,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -296,8 +322,10 @@ pub use self::GenericShapeRadius as ShapeRadius;
 #[derive(
     Clone,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -320,10 +348,14 @@ pub use self::GenericPolygon as Polygon;
 
 /// Coordinates for Polygon.
 #[derive(
+    Animate,
     Clone,
+    ComputeSquaredDistance,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -341,13 +373,17 @@ pub struct PolygonCoord<LengthPercentage>(pub LengthPercentage, pub LengthPercen
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[derive(
+    Animate,
     Clone,
+    ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     Eq,
     MallocSizeOf,
     Parse,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -369,8 +405,10 @@ pub enum FillRule {
     Clone,
     ComputeSquaredDistance,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
@@ -378,12 +416,11 @@ pub enum FillRule {
     ToResolvedValue,
     ToShmem,
 )]
-#[css(comma)]
+#[css(comma, function = "path")]
 #[repr(C)]
 pub struct Path {
     /// The filling rule for the svg path.
     #[css(skip_if = "is_default")]
-    #[animation(constant)]
     pub fill: FillRule,
     /// The svg path data.
     pub path: SVGPathData,
@@ -416,49 +453,68 @@ where
             dest.write_str(" round ")?;
             self.round.to_css(dest)?;
         }
-        dest.write_str(")")
+        dest.write_char(')')
     }
 }
 
-impl<H, V, NonNegativeLengthPercentage> ToCss for Circle<H, V, NonNegativeLengthPercentage>
+impl<Position, NonNegativeLengthPercentage> ToCss for Circle<Position, NonNegativeLengthPercentage>
 where
-    GenericPosition<H, V>: ToCss,
+    Position: ToCss,
     NonNegativeLengthPercentage: ToCss + PartialEq,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
     {
+        let has_radius = self.radius != Default::default();
+
         dest.write_str("circle(")?;
-        if self.radius != Default::default() {
+        if has_radius {
             self.radius.to_css(dest)?;
-            dest.write_str(" ")?;
         }
-        dest.write_str("at ")?;
-        self.position.to_css(dest)?;
-        dest.write_str(")")
+
+        // Preserve the `at <position>` even if it specified the default value.
+        // https://github.com/w3c/csswg-drafts/issues/8695
+        if !matches!(self.position, GenericPositionOrAuto::Auto) {
+            if has_radius {
+                dest.write_char(' ')?;
+            }
+            dest.write_str("at ")?;
+            self.position.to_css(dest)?;
+        }
+        dest.write_char(')')
     }
 }
 
-impl<H, V, NonNegativeLengthPercentage> ToCss for Ellipse<H, V, NonNegativeLengthPercentage>
+impl<Position, NonNegativeLengthPercentage> ToCss for Ellipse<Position, NonNegativeLengthPercentage>
 where
-    GenericPosition<H, V>: ToCss,
+    Position: ToCss,
     NonNegativeLengthPercentage: ToCss + PartialEq,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
     {
+        let has_radii =
+            self.semiaxis_x != Default::default() || self.semiaxis_y != Default::default();
+
         dest.write_str("ellipse(")?;
-        if self.semiaxis_x != Default::default() || self.semiaxis_y != Default::default() {
+        if has_radii {
             self.semiaxis_x.to_css(dest)?;
-            dest.write_str(" ")?;
+            dest.write_char(' ')?;
             self.semiaxis_y.to_css(dest)?;
-            dest.write_str(" ")?;
         }
-        dest.write_str("at ")?;
-        self.position.to_css(dest)?;
-        dest.write_str(")")
+
+        // Preserve the `at <position>` even if it specified the default value.
+        // https://github.com/w3c/csswg-drafts/issues/8695
+        if !matches!(self.position, GenericPositionOrAuto::Auto) {
+            if has_radii {
+                dest.write_char(' ')?;
+            }
+            dest.write_str("at ")?;
+            self.position.to_css(dest)?;
+        }
+        dest.write_char(')')
     }
 }
 
@@ -477,21 +533,8 @@ where
         if self.fill != other.fill {
             return Err(());
         }
-        if self.coordinates.len() != other.coordinates.len() {
-            return Err(());
-        }
-        let coordinates = self
-            .coordinates
-            .iter()
-            .zip(other.coordinates.iter())
-            .map(|(this, other)| {
-                Ok(PolygonCoord(
-                    this.0.animate(&other.0, procedure)?,
-                    this.1.animate(&other.1, procedure)?,
-                ))
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into();
+        let coordinates =
+            lists::by_computed_value::animate(&self.coordinates, &other.coordinates, procedure)?;
         Ok(Polygon {
             fill: self.fill,
             coordinates,
@@ -507,18 +550,7 @@ where
         if self.fill != other.fill {
             return Err(());
         }
-        if self.coordinates.len() != other.coordinates.len() {
-            return Err(());
-        }
-        self.coordinates
-            .iter()
-            .zip(other.coordinates.iter())
-            .map(|(this, other)| {
-                let d1 = this.0.compute_squared_distance(&other.0)?;
-                let d2 = this.1.compute_squared_distance(&other.1)?;
-                Ok(d1 + d2)
-            })
-            .sum()
+        lists::by_computed_value::squared_distance(&self.coordinates, &other.coordinates)
     }
 }
 

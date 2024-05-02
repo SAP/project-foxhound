@@ -8,12 +8,12 @@
 
 const TEST_URI = "http://example.com/";
 
-add_task(async function() {
+add_task(async function () {
   // Start a listener on the console service.
   let good = true;
   const listener = {
     QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
-    observe: function(subject) {
+    observe(subject) {
       if (
         subject instanceof Ci.nsIScriptError &&
         subject.category === "XPConnect JavaScript" &&

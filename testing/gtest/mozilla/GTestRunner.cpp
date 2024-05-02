@@ -6,7 +6,10 @@
 #include "GTestRunner.h"
 #include "gtest/gtest.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/FOG.h"
+#include "mozilla/Preferences.h"
 #include "nsICrashReporter.h"
+#include "nsString.h"
 #include "testing/TestHarness.h"
 #include "prenv.h"
 #ifdef ANDROID
@@ -75,7 +78,7 @@ class MozillaPrinter : public EmptyTestEventListener {
               aTestPartResult.file_name(), aTestPartResult.line_number());
   }
   virtual void OnTestEnd(const TestInfo& aTestInfo) override {
-    MOZ_PRINT("TEST-%s | %s.%s | test completed (time: %llims)\n",
+    MOZ_PRINT("TEST-%s | %s.%s | test completed (time: %" PRIi64 "ms)\n",
               aTestInfo.result()->Passed() ? "PASS" : "UNEXPECTED-FAIL",
               aTestInfo.test_case_name(), aTestInfo.name(),
               aTestInfo.result()->elapsed_time());
@@ -152,6 +155,14 @@ int RunGTestFunc(int* argc, char** argv) {
       crashreporter->SetMinidumpPath(file);
     }
   }
+
+  // FOG should init exactly once, as early into running as possible, to enable
+  // instrumentation tests to work properly.
+  // However, at init, Glean may decide to send a ping. So let's first tell FOG
+  // that these pings shouldn't actually be uploaded.
+  Preferences::SetInt("telemetry.fog.test.localhost_port", -1);
+  const nsCString empty;
+  RefPtr<FOG>(FOG::GetSingleton())->InitializeFOG(empty, empty);
 
   return RUN_ALL_TESTS();
 }

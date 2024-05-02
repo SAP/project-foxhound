@@ -5,9 +5,10 @@
 
 const TEST_URL = "about:buildconfig";
 const TEST_URI = Services.io.newURI(TEST_URL);
+const TEST_TAG = "tag";
 
 // Setup.
-add_task(async function setup() {
+add_setup(async function () {
   let toolbar = document.getElementById("PersonalToolbar");
   let wasCollapsed = toolbar.collapsed;
 
@@ -32,7 +33,7 @@ add_task(async function test_remove_tags_from_BookmarkStar() {
     url: TEST_URL,
     title: TEST_URL,
   });
-  PlacesUtils.tagging.tagURI(TEST_URI, ["tag1, tag2, tag3, tag4"]);
+  PlacesUtils.tagging.tagURI(TEST_URI, ["tag1", "tag2", "tag3", "tag4"]);
 
   let tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
@@ -56,9 +57,7 @@ add_task(async function test_remove_tags_from_BookmarkStar() {
   );
 
   let promiseTagsChange = PlacesTestUtils.waitForNotification(
-    "bookmark-tags-changed",
-    () => true,
-    "places"
+    "bookmark-tags-changed"
   );
 
   // Update the "tags" field.
@@ -120,9 +119,7 @@ add_task(async function test_remove_tags_from_Toolbar() {
       );
 
       let promiseTagsChange = PlacesTestUtils.waitForNotification(
-        "bookmark-tags-changed",
-        () => true,
-        "places"
+        "bookmark-tags-changed"
       );
 
       // Update the "tags" field.
@@ -157,7 +154,7 @@ add_task(async function test_remove_tags_from_Sidebar() {
     bookmarks.push(bm)
   );
 
-  await withSidebarTree("bookmarks", async function(tree) {
+  await withSidebarTree("bookmarks", async function (tree) {
     tree.selectItems([bookmarks[0].guid]);
 
     await withBookmarksDialog(
@@ -176,9 +173,7 @@ add_task(async function test_remove_tags_from_Sidebar() {
         );
 
         let promiseTagsChange = PlacesTestUtils.waitForNotification(
-          "bookmark-tags-changed",
-          () => true,
-          "places"
+          "bookmark-tags-changed"
         );
 
         // Update the "tags" field.
@@ -206,4 +201,56 @@ add_task(async function test_remove_tags_from_Sidebar() {
       }
     );
   });
+});
+
+add_task(async function test_remove_tags_from_Library() {
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url: TEST_URL,
+    title: TEST_URL,
+  });
+  PlacesUtils.tagging.tagURI(TEST_URI, [TEST_TAG]);
+  const getTags = () => PlacesUtils.tagging.getTagsForURI(TEST_URI);
+
+  // Open the Library and select the tag.
+  const library = await promiseLibrary("place:tag=" + TEST_TAG);
+
+  registerCleanupFunction(async function () {
+    await promiseLibraryClosed(library);
+  });
+
+  const contextMenu = library.document.getElementById("placesContext");
+  const contextMenuDeleteTag = library.document.getElementById(
+    "placesContext_removeTag"
+  );
+
+  let firstColumn = library.ContentTree.view.columns[0];
+  let firstBookmarkRect = library.ContentTree.view.getCoordsForCellItem(
+    0,
+    firstColumn,
+    "bm0"
+  );
+
+  EventUtils.synthesizeMouse(
+    library.ContentTree.view.body,
+    firstBookmarkRect.x,
+    firstBookmarkRect.y,
+    { type: "contextmenu", button: 2 },
+    library
+  );
+
+  await BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
+
+  ok(getTags().includes(TEST_TAG), "Test tag exists before delete.");
+
+  contextMenu.activateItem(contextMenuDeleteTag, {});
+
+  await PlacesTestUtils.waitForNotification("bookmark-tags-changed");
+  await promiseLibraryClosed(library);
+
+  ok(
+    await PlacesUtils.bookmarks.fetch({ url: TEST_URL }),
+    "Bookmark still exists after removing tag."
+  );
+  ok(!getTags().includes(TEST_TAG), "Test tag is removed after delete.");
 });

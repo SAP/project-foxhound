@@ -3,7 +3,7 @@ use crate::*;
 
 // FIXME: 64-bit 1 element mul_adde
 
-crate trait MulAddE {
+pub(crate) trait MulAddE {
     fn mul_adde(self, y: Self, z: Self) -> Self;
 }
 
@@ -38,13 +38,7 @@ macro_rules! impl_mul_adde {
                 #[cfg(not(target_arch = "s390x"))]
                 {
                     use crate::mem::transmute;
-                    unsafe {
-                        transmute($fn(
-                            transmute(self),
-                            transmute(y),
-                            transmute(z),
-                        ))
-                    }
+                    unsafe { transmute($fn(transmute(self), transmute(y), transmute(z))) }
                 }
                 #[cfg(target_arch = "s390x")]
                 {

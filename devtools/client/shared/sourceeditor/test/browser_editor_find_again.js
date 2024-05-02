@@ -3,7 +3,6 @@
 
 "use strict";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/sourceeditor.properties"
 );
@@ -32,7 +31,7 @@ const dispatchAndWaitForFocus = target =>
   new Promise(resolve => {
     target.addEventListener(
       "focus",
-      function() {
+      function () {
         resolve(target);
       },
       { once: true }
@@ -80,7 +79,7 @@ function testFindAgain(ed, inputLine, expectCursor, isFindPrev = false) {
   );
 }
 
-const testSearchBoxTextIsSelected = async function(ed) {
+const testSearchBoxTextIsSelected = async function (ed) {
   const edDoc = ed.container.contentDocument;
   const edWin = edDoc.defaultView;
 
@@ -128,7 +127,7 @@ const testSearchBoxTextIsSelected = async function(ed) {
   EventUtils.synthesizeKey("VK_ESCAPE", {}, edWin);
 };
 
-const testReplaceBoxTextIsSelected = async function(ed) {
+const testReplaceBoxTextIsSelected = async function (ed) {
   const edDoc = ed.container.contentDocument;
   const edWin = edDoc.defaultView;
 
@@ -171,7 +170,7 @@ const testReplaceBoxTextIsSelected = async function(ed) {
   EventUtils.synthesizeKey("VK_ESCAPE", {}, edWin);
 };
 
-add_task(async function() {
+add_task(async function () {
   const { ed, win } = await setup();
 
   ed.setText(

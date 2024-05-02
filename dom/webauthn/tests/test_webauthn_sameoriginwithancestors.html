@@ -18,8 +18,9 @@
   <script class="testbody" type="text/javascript">
     "use strict";
 
-    // Execute the full-scope test
-    SimpleTest.waitForExplicitFinish();
+    add_task(async () => {
+      await addVirtualAuthenticator();
+    });
 
     var gTrackedCredential = {};
 
@@ -46,7 +47,7 @@
       }
     }
 
-    async function runTests() {
+    add_task(async function runTests() {
       let iframe = document.createElement("iframe");
       iframe.src = "https://example.org";
       document.body.appendChild(iframe);
@@ -62,7 +63,7 @@
       let chall = new Uint8Array(16);
       window.crypto.getRandomValues(chall);
 
-      let user = {id: new Uint8Array(16), name: "none", icon: "none", displayName: "none"};
+      let user = {id: new Uint8Array(16), name: "none", displayName: "none"};
       let param = {type: "public-key", alg: cose_alg_ECDSA_w_SHA256};
 
       let rp = {id: document.domain, name: "none"};
@@ -100,15 +101,7 @@
           .then(arrivingHereIsBad)
           .catch(expectNotAllowedError);
       }
-      SimpleTest.finish();
-    };
-
-    SpecialPowers.pushPrefEnv({"set": [["security.webauth.webauthn", true],
-                                       ["security.webauth.webauthn_enable_softtoken", true],
-                                       ["security.webauth.webauthn_enable_android_fido2", false],
-                                       ["security.webauth.webauthn_enable_usbtoken", false]]},
-                              runTests);
-
+    });
   </script>
 
 </body>

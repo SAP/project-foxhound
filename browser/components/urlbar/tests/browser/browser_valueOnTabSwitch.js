@@ -11,7 +11,7 @@
 
 const TEST_URL = `${TEST_BASE_URL}dummy_page.html`;
 
-add_task(async function() {
+add_task(async function () {
   // autofill may conflict with the test scope, by filling missing parts of
   // the url due to autoOpen.
   await SpecialPowers.pushPrefEnv({
@@ -46,9 +46,9 @@ add_task(async function() {
     false,
     testURL
   );
-  BrowserTestUtils.loadURI(deletedURLTab.linkedBrowser, testURL);
-  BrowserTestUtils.loadURI(fullURLTab.linkedBrowser, testURL);
-  BrowserTestUtils.loadURI(partialURLTab.linkedBrowser, testURL);
+  BrowserTestUtils.startLoadingURIString(deletedURLTab.linkedBrowser, testURL);
+  BrowserTestUtils.startLoadingURIString(fullURLTab.linkedBrowser, testURL);
+  BrowserTestUtils.startLoadingURIString(partialURLTab.linkedBrowser, testURL);
   await Promise.all([loaded1, loaded2, loaded3]);
 
   testURL = BrowserUIUtils.trimURL(testURL);
@@ -94,7 +94,7 @@ add_task(async function() {
       gBrowser.selectedBrowser.focus();
       gURLBar.addEventListener(
         "input",
-        function() {
+        function () {
           resolve();
         },
         { once: true }

@@ -20,6 +20,7 @@
 #include "nsProxyRelease.h"
 #include "nsIContentPolicy.h"
 #include "nsContentUtils.h"
+#include "mozilla/dom/ContentParent.h"
 
 #include "nsIFileURL.h"
 #include "nsIURIMutator.h"
@@ -292,9 +293,6 @@ nsresult nsFileChannel::MakeFileInputStream(nsIFile* file,
   bool isDir;
   nsresult rv = file->IsDirectory(&isDir);
   if (NS_FAILED(rv)) {
-    // canonicalize error message
-    if (rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) rv = NS_ERROR_FILE_NOT_FOUND;
-
     if (rv == NS_ERROR_FILE_NOT_FOUND) {
       CheckForBrokenChromeURL(mLoadInfo, OriginalURI());
     }
@@ -409,6 +407,9 @@ nsresult nsFileChannel::OpenContentStream(bool async, nsIInputStream** result,
     }
   }
 
+  // notify "file-channel-opened" observers
+  MaybeSendFileOpenNotification();
+
   *result = nullptr;
   stream.swap(*result);
   return NS_OK;
@@ -428,7 +429,7 @@ nsresult nsFileChannel::ListenerBlockingPromise(BlockingPromise** aPromise) {
     return FixupContentLength(true);
   }
 
-  RefPtr<TaskQueue> taskQueue = new TaskQueue(sts.forget(), "FileChannel");
+  RefPtr<TaskQueue> taskQueue = TaskQueue::Create(sts.forget(), "FileChannel");
   RefPtr<nsFileChannel> self = this;
   RefPtr<BlockingPromise> promise =
       mozilla::InvokeAsync(taskQueue, __func__, [self{std::move(self)}]() {
@@ -455,8 +456,7 @@ nsresult nsFileChannel::FixupContentLength(bool async) {
   int64_t size;
   rv = file->GetFileSize(&size);
   if (NS_FAILED(rv)) {
-    if (async && (NS_ERROR_FILE_NOT_FOUND == rv ||
-                  NS_ERROR_FILE_TARGET_DOES_NOT_EXIST == rv)) {
+    if (async && NS_ERROR_FILE_NOT_FOUND == rv) {
       size = 0;
     } else {
       return rv;
@@ -483,6 +483,38 @@ nsFileChannel::GetFile(nsIFile** file) {
 
   // This returns a cloned nsIFile
   return fileURL->GetFile(file);
+}
+
+nsresult nsFileChannel::MaybeSendFileOpenNotification() {
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (!obsService) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  nsresult rv = GetLoadInfo(getter_AddRefs(loadInfo));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  bool isTopLevel;
+  rv = loadInfo->GetIsTopLevelLoad(&isTopLevel);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  uint64_t browsingContextID;
+  rv = loadInfo->GetBrowsingContextID(&browsingContextID);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if ((browsingContextID != 0 && isTopLevel) ||
+      !loadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {
+    obsService->NotifyObservers(static_cast<nsIChannel*>(this),
+                                "file-channel-opened", nullptr);
+  }
+  return NS_OK;
 }
 
 //-----------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpserver = new HttpServer();
 var index = 0;
@@ -10,42 +12,9 @@ var tests = [
     flags: CL_EXPECT_GZIP,
     ce: "gzip",
     body: [
-      0x1f,
-      0x8b,
-      0x08,
-      0x08,
-      0x5a,
-      0xa0,
-      0x31,
-      0x4f,
-      0x00,
-      0x03,
-      0x74,
-      0x78,
-      0x74,
-      0x00,
-      0x2b,
-      0xc9,
-      0xc8,
-      0x2c,
-      0x56,
-      0x00,
-      0xa2,
-      0x92,
-      0xd4,
-      0xe2,
-      0x12,
-      0x43,
-      0x2e,
-      0x00,
-      0xb9,
-      0x23,
-      0xd7,
-      0x3b,
-      0x0e,
-      0x00,
-      0x00,
-      0x00,
+      0x1f, 0x8b, 0x08, 0x08, 0x5a, 0xa0, 0x31, 0x4f, 0x00, 0x03, 0x74, 0x78,
+      0x74, 0x00, 0x2b, 0xc9, 0xc8, 0x2c, 0x56, 0x00, 0xa2, 0x92, 0xd4, 0xe2,
+      0x12, 0x43, 0x2e, 0x00, 0xb9, 0x23, 0xd7, 0x3b, 0x0e, 0x00, 0x00, 0x00,
     ],
     datalen: 14, // the data length of the uncompressed document
   },
@@ -55,63 +24,11 @@ var tests = [
     flags: CL_EXPECT_GZIP,
     ce: "gzip, gzip",
     body: [
-      0x1f,
-      0x8b,
-      0x08,
-      0x00,
-      0x72,
-      0xa1,
-      0x31,
-      0x4f,
-      0x00,
-      0x03,
-      0x93,
-      0xef,
-      0xe6,
-      0xe0,
-      0x88,
-      0x5a,
-      0x60,
-      0xe8,
-      0xcf,
-      0xc0,
-      0x5c,
-      0x52,
-      0x51,
-      0xc2,
-      0xa0,
-      0x7d,
-      0xf2,
-      0x84,
-      0x4e,
-      0x18,
-      0xc3,
-      0xa2,
-      0x49,
-      0x57,
-      0x1e,
-      0x09,
-      0x39,
-      0xeb,
-      0x31,
-      0xec,
-      0x54,
-      0xbe,
-      0x6e,
-      0xcd,
-      0xc7,
-      0xc0,
-      0xc0,
-      0x00,
-      0x00,
-      0x6e,
-      0x90,
-      0x7a,
-      0x85,
-      0x24,
-      0x00,
-      0x00,
-      0x00,
+      0x1f, 0x8b, 0x08, 0x00, 0x72, 0xa1, 0x31, 0x4f, 0x00, 0x03, 0x93, 0xef,
+      0xe6, 0xe0, 0x88, 0x5a, 0x60, 0xe8, 0xcf, 0xc0, 0x5c, 0x52, 0x51, 0xc2,
+      0xa0, 0x7d, 0xf2, 0x84, 0x4e, 0x18, 0xc3, 0xa2, 0x49, 0x57, 0x1e, 0x09,
+      0x39, 0xeb, 0x31, 0xec, 0x54, 0xbe, 0x6e, 0xcd, 0xc7, 0xc0, 0xc0, 0x00,
+      0x00, 0x6e, 0x90, 0x7a, 0x85, 0x24, 0x00, 0x00, 0x00,
     ],
     datalen: 14, // the data length of the uncompressed document
   },
@@ -125,13 +42,13 @@ var tests = [
     datalen: 5, // the data length of the uncompressed document
   },
 
-  // this is not a brotli document
+  // this is a truncated brotli document, producing no output bytes
   {
     url: "/test/cebrotli2",
-    flags: CL_EXPECT_GZIP | CL_EXPECT_FAILURE,
+    flags: CL_EXPECT_GZIP,
     ce: "br",
     body: [0x0b, 0x0a, 0x09],
-    datalen: 3,
+    datalen: 0,
   },
 
   // this is brotli but should come through as identity due to prefs
@@ -142,6 +59,37 @@ var tests = [
     body: [0x0b, 0x02, 0x80, 0x74, 0x65, 0x73, 0x74, 0x0a, 0x03],
 
     datalen: 9,
+  },
+
+  // this is not a brotli document
+  {
+    url: "/test/cebrotli4",
+    flags: CL_EXPECT_GZIP | CL_EXPECT_FAILURE,
+    ce: "br",
+    body: [
+      0x01, 0xe6, 0x00, 0x76, 0x42, 0x10, 0x01, 0x1c, 0x24, 0x24, 0x3c, 0xd7,
+      0xd7, 0xd7, 0x01, 0x1c,
+    ],
+    datalen: 16,
+  },
+
+  // this is a brotli document
+  {
+    url: "/test/cebrotli5",
+    flags: CL_EXPECT_GZIP,
+    ce: "br",
+    body: [0x0b, 0x00, 0x80, 0x4e, 0x03],
+    datalen: 1,
+  },
+
+  // this a truncated brotli document (missing the end marker)
+  // producing one output byte
+  {
+    url: "/test/cebrotli6",
+    flags: CL_EXPECT_GZIP,
+    ce: "br",
+    body: [0x0b, 0x00, 0x80, 0x4e],
+    datalen: 1,
   },
 ];
 
@@ -156,6 +104,8 @@ function startIter() {
   if (tests[index].url === "/test/cebrotli3") {
     // this test wants to make sure we don't do brotli when not in a-e
     prefs.setCharPref("network.http.accept-encoding", "gzip, deflate");
+  } else {
+    prefs.setCharPref("network.http.accept-encoding", "gzip, deflate, br");
   }
   var channel = setupChannel(tests[index].url);
   channel.asyncOpen(
@@ -165,7 +115,7 @@ function startIter() {
 
 function completeIter(request, data, ctx) {
   if (!(tests[index].flags & CL_EXPECT_FAILURE)) {
-    Assert.equal(data.length, tests[index].datalen);
+    Assert.equal(data.length, tests[index].datalen, "test " + index);
   }
   if (++index < tests.length) {
     startIter();
@@ -180,13 +130,16 @@ var cePref;
 function run_test() {
   prefs = Services.prefs;
   cePref = prefs.getCharPref("network.http.accept-encoding");
-  prefs.setCharPref("network.http.accept-encoding", "gzip, deflate, br");
+  prefs.setBoolPref("network.http.encoding.trustworthy_is_https", false);
 
   httpserver.registerPathHandler("/test/cegzip1", handler);
   httpserver.registerPathHandler("/test/cegzip2", handler);
   httpserver.registerPathHandler("/test/cebrotli1", handler);
   httpserver.registerPathHandler("/test/cebrotli2", handler);
   httpserver.registerPathHandler("/test/cebrotli3", handler);
+  httpserver.registerPathHandler("/test/cebrotli4", handler);
+  httpserver.registerPathHandler("/test/cebrotli5", handler);
+  httpserver.registerPathHandler("/test/cebrotli6", handler);
   httpserver.start(-1);
 
   startIter();

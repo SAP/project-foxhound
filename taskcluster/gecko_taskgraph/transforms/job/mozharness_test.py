@@ -7,18 +7,14 @@ import json
 import os
 import re
 
+from taskgraph.util.schema import Schema
+from taskgraph.util.taskcluster import get_artifact_path, get_artifact_url
 from voluptuous import Extra, Optional, Required
 
-from gecko_taskgraph.util.taskcluster import get_artifact_url
-from gecko_taskgraph.transforms.job import (
-    configure_taskdesc_for_run,
-    run_job_using,
-)
+from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
+from gecko_taskgraph.transforms.job.common import get_expiration, support_vcs_checkout
+from gecko_taskgraph.transforms.test import normpath, test_description_schema
 from gecko_taskgraph.util.attributes import is_try
-from gecko_taskgraph.util.schema import Schema
-from gecko_taskgraph.util.taskcluster import get_artifact_path
-from gecko_taskgraph.transforms.test import test_description_schema, normpath
-from gecko_taskgraph.transforms.job.common import support_vcs_checkout
 
 VARIANTS = [
     "shippable",
@@ -133,6 +129,7 @@ def mozharness_test_on_docker(config, job, taskdesc):
                 "name": prefix,
                 "path": os.path.join("{workdir}/workspace".format(**run), path),
                 "type": "directory",
+                "expires-after": get_expiration(config, "default"),
             }
             for (prefix, path) in artifacts
         ]
@@ -265,7 +262,12 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
     assert is_macosx or is_windows or is_linux
 
     artifacts = [
-        {"name": "public/logs", "path": "logs", "type": "directory"},
+        {
+            "name": "public/logs",
+            "path": "logs",
+            "type": "directory",
+            "expires-after": get_expiration(config, "default"),
+        }
     ]
 
     # jittest doesn't have blob_upload_dir
@@ -275,17 +277,29 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
                 "name": "public/test_info",
                 "path": "build/blobber_upload_dir",
                 "type": "directory",
+                "expires-after": get_expiration(config, "default"),
             }
         )
 
     if is_bitbar:
         artifacts = [
-            {"name": "public/test/", "path": "artifacts/public", "type": "directory"},
-            {"name": "public/logs/", "path": "workspace/logs", "type": "directory"},
+            {
+                "name": "public/test/",
+                "path": "artifacts/public",
+                "type": "directory",
+                "expires-after": get_expiration(config, "default"),
+            },
+            {
+                "name": "public/logs/",
+                "path": "workspace/logs",
+                "type": "directory",
+                "expires-after": get_expiration(config, "default"),
+            },
             {
                 "name": "public/test_info/",
                 "path": "workspace/build/blobber_upload_dir",
                 "type": "directory",
+                "expires-after": get_expiration(config, "default"),
             },
         ]
 
@@ -300,7 +314,9 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
     # See https://docs.microsoft.com/en-us/windows/desktop/secauthz/user-account-control
     # for more information about UAC.
     if test.get("run-as-administrator", False):
-        if job["worker-type"].startswith("win10-64"):
+        if job["worker-type"].startswith("win10-64") or job["worker-type"].startswith(
+            "win11-64"
+        ):
             worker["run-as-administrator"] = True
         else:
             raise Exception(

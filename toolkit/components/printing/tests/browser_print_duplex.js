@@ -4,18 +4,13 @@
 "use strict";
 
 function changeToOption(helper, index) {
-  return helper.waitForSettingsEvent(async function() {
+  return helper.waitForSettingsEvent(async function () {
     let select = helper.get("duplex-select");
     select.focus();
     select.scrollIntoView({ block: "center" });
 
-    let popupOpen = BrowserTestUtils.waitForEvent(
-      document.getElementById("ContentSelectDropdown"),
-      "popupshown"
-    );
-
+    let popupOpen = BrowserTestUtils.waitForSelectPopupShown(window);
     EventUtils.sendKey("space", helper.win);
-
     await popupOpen;
 
     let selectedIndex = select.selectedIndex;

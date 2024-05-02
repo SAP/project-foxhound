@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 
 from talos import filter
@@ -47,6 +45,10 @@ class Test(object):
     perfherder_framework = "talos"
     subtest_alerts = False
     suite_should_alert = True
+    # Default number of entries for the gecko profiler which is 128MiB.
+    # This value is calculated by dividing the 128MiB of memory by 8 because
+    # the profiler uses 8 bytes per entry.
+    gecko_profile_entries = int(128 * 1024 * 1024 / 8)
 
     @classmethod
     def name(cls):
@@ -110,6 +112,7 @@ class TsBase(Test):
         "gecko_profile_entries",
         "gecko_profile_features",
         "gecko_profile_threads",
+        "gecko_profile_extra_threads",
         "gecko_profile_startup",
         "preferences",
         "xperf_counters",
@@ -129,6 +132,8 @@ class TsBase(Test):
         "filters",
         "setup",
         "cleanup",
+        "pine",
+        "skip_reason",
         "webextensions",
         "webextensions_folder",
         "reinstall",  # A list of files from the profile directory that
@@ -166,7 +171,6 @@ class ts_paint(TsBase):
     cycles = 20
     timeout = 150
     gecko_profile_startup = True
-    gecko_profile_entries = 10000000
     url = "startup_test/tspaint_test.html"
     xperf_counters = []
     win7_counters = []
@@ -193,11 +197,6 @@ class ts_paint_heavy(ts_paint):
 
 
 @register_test()
-class ts_paint_flex(ts_paint):
-    preferences = {"layout.css.emulate-moz-box-with-flex": True}
-
-
-@register_test()
 class startup_about_home_paint(ts_paint):
     """
     Tests loading about:home on startup with the about:home startup cache
@@ -213,6 +212,7 @@ class startup_about_home_paint(ts_paint):
     preferences = {
         "browser.startup.homepage.abouthome_cache.enabled": False,
     }
+    pine = False
 
 
 @register_test()
@@ -229,6 +229,7 @@ class startup_about_home_paint_cached(ts_paint):
     preferences = {
         "browser.startup.homepage.abouthome_cache.enabled": True,
     }
+    pine = False
 
 
 @register_test()
@@ -244,6 +245,7 @@ class startup_about_home_paint_realworld_webextensions(ts_paint):
     preferences = {
         "browser.startup.homepage.abouthome_cache.enabled": False,
     }
+    pine = False
 
 
 @register_test()
@@ -260,7 +262,6 @@ class sessionrestore(TsBase):
     cycles = 10
     timeout = 900
     gecko_profile_startup = True
-    gecko_profile_entries = 10000000
     profile_path = "${talos}/startup_test/sessionrestore/profile"
     reinstall = ["sessionstore.jsonlz4", "sessionstore.js", "sessionCheckpoints.json"]
     # Restore the session. We have to provide a URL, otherwise Talos
@@ -268,6 +269,7 @@ class sessionrestore(TsBase):
     url = "about:home"
     preferences = {"browser.startup.page": 3}
     unit = "ms"
+    pine = False
 
 
 @register_test()
@@ -340,6 +342,7 @@ class PageloaderTest(Test):
         "gecko_profile_entries",
         "gecko_profile_features",
         "gecko_profile_threads",
+        "gecko_profile_extra_threads",
         "tptimeout",
         "win_counters",
         "w7_counters",
@@ -359,6 +362,8 @@ class PageloaderTest(Test):
         "extensions",
         "setup",
         "cleanup",
+        "pine",
+        "skip_reason",
         "lower_is_better",
         "alert_threshold",
         "unit",
@@ -381,7 +386,6 @@ class QuantumPageloadTest(PageloaderTest):
     tpcycles = 1
     tppagecycles = 25
     gecko_profile_interval = 1
-    gecko_profile_entries = 2000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
     lower_is_better = True
@@ -402,7 +406,6 @@ class twinopen(PageloaderTest):
     tppagecycles = 20
     timeout = 300
     gecko_profile_interval = 1
-    gecko_profile_entries = 2000000
     tpmozafterpaint = True
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
@@ -419,10 +422,8 @@ class pdfpaint(PageloaderTest):
     tpmanifest = "${talos}/tests/pdfpaint/pdfpaint.manifest"
     tppagecycles = 20
     timeout = 600
-    gecko_profile_entries = 1000000
     pdfpaint = True
     unit = "ms"
-    preferences = {"pdfjs.eventBusDispatchToDOM": True}
 
 
 @register_test()
@@ -437,7 +438,6 @@ class cpstartup(PageloaderTest):
     tpmanifest = "${talos}/tests/cpstartup/cpstartup.manifest"
     tppagecycles = 20
     timeout = 600
-    gecko_profile_entries = 1000000
     tploadnocache = True
     unit = "ms"
     preferences = {
@@ -462,7 +462,6 @@ class tabpaint(PageloaderTest):
     tpmanifest = "${talos}/tests/tabpaint/tabpaint.manifest"
     tppagecycles = 20
     timeout = 600
-    gecko_profile_entries = 1000000
     tploadnocache = True
     unit = "ms"
     preferences = {
@@ -487,15 +486,11 @@ class tabswitch(PageloaderTest):
     tpmanifest = "${talos}/tests/tabswitch/tabswitch.manifest"
     tppagecycles = 5
     timeout = 900
-    gecko_profile_entries = 5000000
     tploadnocache = True
     preferences = {
         "addon.test.tabswitch.urlfile": os.path.join("${talos}", "tests", "tp5o.html"),
         "addon.test.tabswitch.webserver": "${webserver}",
         "addon.test.tabswitch.maxurls": -1,
-        # Avoid the bookmarks toolbar interfering with our measurements.
-        # See bug 1674053 and bug 1675809 for context.
-        "browser.toolbars.bookmarks.visibility": "never",
     }
     unit = "ms"
 
@@ -547,7 +542,6 @@ class tart(PageloaderTest):
     tploadnocache = True
     tpmozafterpaint = False
     gecko_profile_interval = 10
-    gecko_profile_entries = 1000000
     win_counters = w7_counters = linux_counters = mac_counters = None
     """
     ASAP mode
@@ -563,11 +557,7 @@ class tart(PageloaderTest):
     }
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     unit = "ms"
-
-
-@register_test()
-class tart_flex(tart):
-    preferences = {"layout.css.emulate-moz-box-with-flex": True}
+    pine = False
 
 
 @register_test()
@@ -586,7 +576,7 @@ class damp(PageloaderTest):
     tploadnocache = True
     tpmozafterpaint = False
     gecko_profile_interval = 10
-    gecko_profile_entries = 10000000
+    gecko_profile_extra_threads = "DOM Worker"
     win_counters = w7_counters = linux_counters = mac_counters = None
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     preferences = {"devtools.memory.enabled": True}
@@ -614,7 +604,6 @@ class glterrain(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 10
-    gecko_profile_entries = 2000000
     win_counters = w7_counters = linux_counters = mac_counters = None
     """ ASAP mode """
     preferences = {
@@ -642,7 +631,6 @@ class glvideo(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 2
-    gecko_profile_entries = 2000000
     win_counters = w7_counters = linux_counters = mac_counters = None
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     unit = "ms"
@@ -727,7 +715,6 @@ class tp5o(PageloaderTest):
     mac_counters = []
     responsiveness = True
     gecko_profile_interval = 2
-    gecko_profile_entries = 4000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     timeout = 1800
     unit = "ms"
@@ -749,7 +736,6 @@ class tp5o_scroll(PageloaderTest):
     tpcycles = 1
     tppagecycles = 12
     gecko_profile_interval = 2
-    gecko_profile_entries = 2000000
     tpscrolltest = True
     """ASAP mode"""
     tpmozafterpaint = False
@@ -777,7 +763,6 @@ class v8_7(PageloaderTest):
 
     tpmanifest = "${talos}/tests/v8_7/v8.manifest"
     gecko_profile_interval = 1
-    gecko_profile_entries = 1000000
     tpcycles = 1
     resolution = 20
     tpmozafterpaint = False
@@ -798,7 +783,6 @@ class kraken(PageloaderTest):
     tpcycles = 1
     tppagecycles = 1
     gecko_profile_interval = 1
-    gecko_profile_entries = 5000000
     tpmozafterpaint = False
     tpchrome = False
     preferences = {"dom.send_after_paint_to_content": False}
@@ -818,7 +802,6 @@ class basic_compositor_video(PageloaderTest):
     tpchrome = False
     timeout = 10000
     gecko_profile_interval = 1
-    gecko_profile_entries = 2000000
     preferences = {
         "full-screen-api.allow-trusted-requests-only": False,
         "layers.acceleration.force-enabled": False,
@@ -854,7 +837,6 @@ class dromaeo_css(dromaeo):
     """
 
     gecko_profile_interval = 2
-    gecko_profile_entries = 10000000
     tpmanifest = "${talos}/tests/dromaeo/css.manifest"
     unit = "score"
 
@@ -870,7 +852,6 @@ class dromaeo_dom(dromaeo):
     """
 
     gecko_profile_interval = 2
-    gecko_profile_entries = 10000000
     tpmanifest = "${talos}/tests/dromaeo/dom.manifest"
     unit = "score"
 
@@ -886,7 +867,6 @@ class tresize(PageloaderTest):
     tppagecycles = 20
     timeout = 900
     gecko_profile_interval = 2
-    gecko_profile_entries = 1000000
     tpmozafterpaint = True
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
@@ -905,7 +885,6 @@ class tsvgm(PageloaderTest):
     tpmozafterpaint = False
     tpchrome = False
     gecko_profile_interval = 10
-    gecko_profile_entries = 1000000
     """ASAP mode"""
     preferences = {
         "layout.frame_rate": 0,
@@ -930,12 +909,12 @@ class tsvgx(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 10
-    gecko_profile_entries = 1000000
     """ASAP mode"""
     preferences = {
         "layout.frame_rate": 0,
         "docshell.event_starvation_delay_hint": 1,
         "dom.send_after_paint_to_content": False,
+        "places.history.enabled": False,
     }
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
@@ -955,7 +934,6 @@ class tsvg_static(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 1
-    gecko_profile_entries = 10000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
 
@@ -973,7 +951,6 @@ class tsvgr_opacity(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 1
-    gecko_profile_entries = 10000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
 
@@ -991,7 +968,6 @@ class tscrollx(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 1
-    gecko_profile_entries = 1000000
     """ ASAP mode """
     preferences = {
         "layout.frame_rate": 0,
@@ -1003,6 +979,7 @@ class tscrollx(PageloaderTest):
     }
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
+    pine = False
 
 
 @register_test()
@@ -1089,7 +1066,6 @@ class perf_reftest(PageloaderTest):
     tppagecycles = 10
     tptimeout = 30000
     gecko_profile_interval = 1
-    gecko_profile_entries = 2000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
     lower_is_better = True
@@ -1110,7 +1086,6 @@ class perf_reftest_singletons(PageloaderTest):
     tppagecycles = 15
     tptimeout = 30000
     gecko_profile_interval = 1
-    gecko_profile_entries = 2000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
     lower_is_better = True
@@ -1134,7 +1109,6 @@ class displaylist_mutate(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 2
-    gecko_profile_entries = 2000000
     win_counters = w7_counters = linux_counters = mac_counters = None
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     """ASAP mode"""
@@ -1161,7 +1135,6 @@ class rasterflood_svg(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 2
-    gecko_profile_entries = 2000000
     win_counters = w7_counters = linux_counters = mac_counters = None
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     """ASAP mode"""
@@ -1187,7 +1160,6 @@ class rasterflood_gradient(PageloaderTest):
     tpchrome = False
     timeout = 600
     gecko_profile_interval = 2
-    gecko_profile_entries = 2000000
     win_counters = w7_counters = linux_counters = mac_counters = None
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     """ASAP mode"""
@@ -1213,8 +1185,8 @@ class about_preferences_basic(PageloaderTest):
     tpcycles = 25
     tppagecycles = 1
     gecko_profile_interval = 1
-    gecko_profile_entries = 2000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     unit = "ms"
     lower_is_better = True
     fnbpaint = True
+    pine = False

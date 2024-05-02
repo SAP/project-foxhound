@@ -13,8 +13,7 @@
 
 // See the architecture comment in DOMSVGPathSegList.h.
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace dom::SVGPathSeg_Binding;
 
@@ -40,9 +39,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(DOMSVGPathSeg)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMSVGPathSeg, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGPathSeg, Release)
 
 DOMSVGPathSeg::DOMSVGPathSeg(DOMSVGPathSegList* aList, uint32_t aListIndex,
                              bool aIsAnimValItem)
@@ -315,5 +311,4 @@ DOMSVGPathSeg* DOMSVGPathSeg::CreateFor(DOMSVGPathSegList* aList,
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

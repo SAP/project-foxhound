@@ -20,96 +20,6 @@
 
 namespace mozilla {
 
-static constexpr uint16_t STYLE_DISPLAY_LIST_ITEM_BIT = 0x8000;
-static constexpr uint8_t STYLE_DISPLAY_OUTSIDE_BITS = 7;
-static constexpr uint8_t STYLE_DISPLAY_INSIDE_BITS = 8;
-
-// The `display` longhand.
-uint16_t constexpr StyleDisplayFrom(StyleDisplayOutside aOuter,
-                                    StyleDisplayInside aInner) {
-  return uint16_t(uint16_t(aOuter) << STYLE_DISPLAY_INSIDE_BITS) |
-         uint16_t(aInner);
-}
-
-enum class StyleDisplay : uint16_t {
-  // These MUST be in sync with the Rust enum values in
-  // servo/components/style/values/specified/box.rs
-  /// https://drafts.csswg.org/css-display/#the-display-properties
-  None = StyleDisplayFrom(StyleDisplayOutside::None, StyleDisplayInside::None),
-  Contents =
-      StyleDisplayFrom(StyleDisplayOutside::None, StyleDisplayInside::Contents),
-  Inline =
-      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Flow),
-  Block =
-      StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Flow),
-  FlowRoot = StyleDisplayFrom(StyleDisplayOutside::Block,
-                              StyleDisplayInside::FlowRoot),
-  Flex = StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Flex),
-  Grid = StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Grid),
-  Table =
-      StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Table),
-  InlineTable =
-      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Table),
-  TableCaption = StyleDisplayFrom(StyleDisplayOutside::TableCaption,
-                                  StyleDisplayInside::Flow),
-  Ruby =
-      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Ruby),
-  WebkitBox = StyleDisplayFrom(StyleDisplayOutside::Block,
-                               StyleDisplayInside::WebkitBox),
-  WebkitInlineBox = StyleDisplayFrom(StyleDisplayOutside::Inline,
-                                     StyleDisplayInside::WebkitBox),
-  ListItem = Block | STYLE_DISPLAY_LIST_ITEM_BIT,
-
-  /// Internal table boxes.
-  TableRowGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
-                                   StyleDisplayInside::TableRowGroup),
-  TableHeaderGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
-                                      StyleDisplayInside::TableHeaderGroup),
-  TableFooterGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
-                                      StyleDisplayInside::TableFooterGroup),
-  TableColumn = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
-                                 StyleDisplayInside::TableColumn),
-  TableColumnGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
-                                      StyleDisplayInside::TableColumnGroup),
-  TableRow = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
-                              StyleDisplayInside::TableRow),
-  TableCell = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
-                               StyleDisplayInside::TableCell),
-
-  /// Internal ruby boxes.
-  RubyBase = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
-                              StyleDisplayInside::RubyBase),
-  RubyBaseContainer = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
-                                       StyleDisplayInside::RubyBaseContainer),
-  RubyText = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
-                              StyleDisplayInside::RubyText),
-  RubyTextContainer = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
-                                       StyleDisplayInside::RubyTextContainer),
-
-  /// XUL boxes.
-  MozBox =
-      StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::MozBox),
-  MozInlineBox =
-      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::MozBox),
-  MozDeck =
-      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozDeck),
-  MozPopup =
-      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozPopup),
-};
-// The order of the StyleDisplay values isn't meaningful.
-bool operator<(const StyleDisplay&, const StyleDisplay&) = delete;
-bool operator<=(const StyleDisplay&, const StyleDisplay&) = delete;
-bool operator>(const StyleDisplay&, const StyleDisplay&) = delete;
-bool operator>=(const StyleDisplay&, const StyleDisplay&) = delete;
-
-// Basic shapes
-enum class StyleBasicShapeType : uint8_t {
-  Polygon,
-  Circle,
-  Ellipse,
-  Inset,
-};
-
 // box-align
 enum class StyleBoxAlign : uint8_t {
   Stretch,
@@ -151,21 +61,6 @@ enum class StyleBoxSizing : uint8_t { Content, Border };
 // box-shadow
 enum class StyleBoxShadowType : uint8_t {
   Inset,
-};
-
-// clear
-enum class StyleClear : uint8_t {
-  None = 0,
-  Left,
-  Right,
-  Both,
-  // StyleClear::Line can be added to one of the other values in layout
-  // so it needs to use a bit value that none of the other values can have.
-  //
-  // FIXME(emilio): Doesn't look like we do that anymore, so probably can be
-  // made a single value instead, and Max removed.
-  Line = 8,
-  Max = 13  // Max = (Both | Line)
 };
 
 enum class StyleColumnFill : uint8_t {
@@ -359,29 +254,15 @@ enum class StyleFlexWrap : uint8_t {
   WrapReverse,
 };
 
-// See nsStylePosition
-// NOTE: This is the initial value of the integer-valued 'order' property
-// (rather than an internal numerical representation of some keyword).
-#define NS_STYLE_ORDER_INITIAL 0
-
-#define NS_STYLE_MASONRY_PLACEMENT_PACK (1 << 0)
-#define NS_STYLE_MASONRY_ORDER_DEFINITE_FIRST (1 << 1)
-#define NS_STYLE_MASONRY_AUTO_FLOW_INITIAL_VALUE \
-  (NS_STYLE_MASONRY_PLACEMENT_PACK | NS_STYLE_MASONRY_ORDER_DEFINITE_FIRST)
-
-// 'subgrid' keyword in grid-template-{columns,rows}
-#define NS_STYLE_GRID_TEMPLATE_SUBGRID 0
-
 // CSS Grid <track-breadth> keywords
-// Should not overlap with NS_STYLE_GRID_TEMPLATE_SUBGRID
 enum class StyleGridTrackBreadth : uint8_t {
   MaxContent = 1,
   MinContent = 2,
 };
 
 // defaults per MathML spec
-#define NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER 0.71f
-#define NS_MATHML_DEFAULT_SCRIPT_MIN_SIZE_PT 8
+static constexpr float kMathMLDefaultScriptSizeMultiplier{0.71f};
+static constexpr float kMathMLDefaultScriptMinSizePt{8.f};
 
 // See nsStyleFont
 enum class StyleMathVariant : uint8_t {
@@ -407,8 +288,7 @@ enum class StyleMathVariant : uint8_t {
 };
 
 // See nsStyleFont::mMathStyle
-#define NS_STYLE_MATH_STYLE_COMPACT 0
-#define NS_STYLE_MATH_STYLE_NORMAL 1
+enum class StyleMathStyle : uint8_t { Compact = 0, Normal = 1 };
 
 // See nsStyleDisplay.mPosition
 enum class StylePositionProperty : uint8_t {
@@ -419,58 +299,49 @@ enum class StylePositionProperty : uint8_t {
   Sticky,
 };
 
-// See nsStyleEffects.mClip, mClipFlags
-#define NS_STYLE_CLIP_AUTO 0x00
-#define NS_STYLE_CLIP_RECT 0x01
-#define NS_STYLE_CLIP_TYPE_MASK 0x0F
-#define NS_STYLE_CLIP_LEFT_AUTO 0x10
-#define NS_STYLE_CLIP_TOP_AUTO 0x20
-#define NS_STYLE_CLIP_RIGHT_AUTO 0x40
-#define NS_STYLE_CLIP_BOTTOM_AUTO 0x80
+enum class FrameBorderProperty : uint8_t { Yes, No, One, Zero };
 
-// FRAME/FRAMESET/IFRAME specific values including backward compatibility.
-// Boolean values with the same meaning (e.g. 1 & yes) may need to be
-// distinguished for correct mode processing
-#define NS_STYLE_FRAME_YES 0
-#define NS_STYLE_FRAME_NO 1
-#define NS_STYLE_FRAME_0 2
-#define NS_STYLE_FRAME_1 3
-#define NS_STYLE_FRAME_ON 4
-#define NS_STYLE_FRAME_OFF 5
-#define NS_STYLE_FRAME_AUTO 6
-#define NS_STYLE_FRAME_SCROLL 7
-#define NS_STYLE_FRAME_NOSCROLL 8
+enum class ScrollingAttribute : uint8_t {
+  Yes,
+  No,
+  On,
+  Off,
+  Scroll,
+  Noscroll,
+  Auto
+};
 
 // See nsStyleList
-#define NS_STYLE_LIST_STYLE_CUSTOM -1  // for @counter-style
-#define NS_STYLE_LIST_STYLE_NONE 0
-#define NS_STYLE_LIST_STYLE_DECIMAL 1
-#define NS_STYLE_LIST_STYLE_DISC 2
-#define NS_STYLE_LIST_STYLE_CIRCLE 3
-#define NS_STYLE_LIST_STYLE_SQUARE 4
-#define NS_STYLE_LIST_STYLE_DISCLOSURE_CLOSED 5
-#define NS_STYLE_LIST_STYLE_DISCLOSURE_OPEN 6
-#define NS_STYLE_LIST_STYLE_HEBREW 7
-#define NS_STYLE_LIST_STYLE_JAPANESE_INFORMAL 8
-#define NS_STYLE_LIST_STYLE_JAPANESE_FORMAL 9
-#define NS_STYLE_LIST_STYLE_KOREAN_HANGUL_FORMAL 10
-#define NS_STYLE_LIST_STYLE_KOREAN_HANJA_INFORMAL 11
-#define NS_STYLE_LIST_STYLE_KOREAN_HANJA_FORMAL 12
-#define NS_STYLE_LIST_STYLE_SIMP_CHINESE_INFORMAL 13
-#define NS_STYLE_LIST_STYLE_SIMP_CHINESE_FORMAL 14
-#define NS_STYLE_LIST_STYLE_TRAD_CHINESE_INFORMAL 15
-#define NS_STYLE_LIST_STYLE_TRAD_CHINESE_FORMAL 16
-#define NS_STYLE_LIST_STYLE_ETHIOPIC_NUMERIC 17
-// These styles are handled as custom styles defined in counterstyles.css.
-// They are preserved here only for html attribute map.
-#define NS_STYLE_LIST_STYLE_LOWER_ROMAN 100
-#define NS_STYLE_LIST_STYLE_UPPER_ROMAN 101
-#define NS_STYLE_LIST_STYLE_LOWER_ALPHA 102
-#define NS_STYLE_LIST_STYLE_UPPER_ALPHA 103
+enum class ListStyle : uint8_t {
+  Custom = 255,  // for @counter-style
+  None = 0,
+  Decimal,
+  Disc,
+  Circle,
+  Square,
+  DisclosureClosed,
+  DisclosureOpen,
+  Hebrew,
+  JapaneseInformal,
+  JapaneseFormal,
+  KoreanHangulFormal,
+  KoreanHanjaInformal,
+  KoreanHanjaFormal,
+  SimpChineseInformal,
+  SimpChineseFormal,
+  TradChineseInformal,
+  TradChineseFormal,
+  EthiopicNumeric,
+  // These styles are handled as custom styles defined in counterstyles.css.
+  // They are preserved here only for html attribute map.
+  LowerRoman = 100,
+  UpperRoman,
+  LowerAlpha,
+  UpperAlpha
+};
 
 // See nsStyleList
-#define NS_STYLE_LIST_STYLE_POSITION_INSIDE 0
-#define NS_STYLE_LIST_STYLE_POSITION_OUTSIDE 1
+enum class StyleListStylePosition : uint8_t { Inside, Outside };
 
 // See nsStyleVisibility
 enum class StylePointerEvents : uint8_t {
@@ -501,22 +372,23 @@ enum class StyleObjectFit : uint8_t {
 };
 
 // See nsStyleText
-#define NS_STYLE_TEXT_DECORATION_STYLE_NONE \
-  0  // not in CSS spec, mapped to -moz-none
-#define NS_STYLE_TEXT_DECORATION_STYLE_DOTTED 1
-#define NS_STYLE_TEXT_DECORATION_STYLE_DASHED 2
-#define NS_STYLE_TEXT_DECORATION_STYLE_SOLID 3
-#define NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE 4
-#define NS_STYLE_TEXT_DECORATION_STYLE_WAVY 5
-#define NS_STYLE_TEXT_DECORATION_STYLE_MAX NS_STYLE_TEXT_DECORATION_STYLE_WAVY
+enum class StyleTextDecorationStyle : uint8_t {
+  None,  // not in CSS spec, mapped to -moz-none
+  Dotted,
+  Dashed,
+  Solid,
+  Double,
+  Wavy,
+  Sentinel = Wavy
+};
 
 // See nsStyleText
-#define NS_STYLE_TEXT_TRANSFORM_NONE 0
-#define NS_STYLE_TEXT_TRANSFORM_CAPITALIZE 1
-#define NS_STYLE_TEXT_TRANSFORM_LOWERCASE 2
-#define NS_STYLE_TEXT_TRANSFORM_UPPERCASE 3
-#define NS_STYLE_TEXT_TRANSFORM_FULL_WIDTH 4
-#define NS_STYLE_TEXT_TRANSFORM_FULL_SIZE_KANA 5
+enum class StyleTextSecurity : uint8_t {
+  None,
+  Circle,
+  Disc,
+  Square,
+};
 
 // See nsStyleDisplay
 enum class StyleTopLayer : uint8_t {
@@ -532,9 +404,6 @@ enum class StyleVisibility : uint8_t {
 };
 
 // See nsStyleText
-#define NS_STYLE_TABSIZE_INITIAL 8
-
-// See nsStyleText
 enum class StyleWhiteSpace : uint8_t {
   Normal = 0,
   Pre,
@@ -543,6 +412,17 @@ enum class StyleWhiteSpace : uint8_t {
   PreLine,
   PreSpace,
   BreakSpaces,
+};
+
+// See nsStyleText
+// TODO: this will become StyleTextWrapStyle when we turn text-wrap
+// (see https://bugzilla.mozilla.org/show_bug.cgi?id=1758391) and
+// white-space (https://bugzilla.mozilla.org/show_bug.cgi?id=1852478)
+// into shorthands.
+enum class StyleTextWrap : uint8_t {
+  Auto = 0,
+  Stable,
+  Balance,
 };
 
 // ruby-align, see nsStyleText
@@ -559,24 +439,35 @@ enum class StyleTextSizeAdjust : uint8_t {
   Auto,
 };
 
-// See nsStyleText
+// See nsStyleVisibility
 enum class StyleTextOrientation : uint8_t {
   Mixed,
   Upright,
   Sideways,
 };
 
-// See nsStyleText
-#define NS_STYLE_TEXT_COMBINE_UPRIGHT_NONE 0
-#define NS_STYLE_TEXT_COMBINE_UPRIGHT_ALL 1
+// Whether flexbox visibility: collapse items use legacy -moz-box behavior or
+// not.
+enum class StyleMozBoxCollapse : uint8_t {
+  Flex,
+  Legacy,
+};
 
 // See nsStyleText
-#define NS_STYLE_UNICODE_BIDI_NORMAL 0x0
-#define NS_STYLE_UNICODE_BIDI_EMBED 0x1
-#define NS_STYLE_UNICODE_BIDI_ISOLATE 0x2
-#define NS_STYLE_UNICODE_BIDI_BIDI_OVERRIDE 0x4
-#define NS_STYLE_UNICODE_BIDI_ISOLATE_OVERRIDE 0x6
-#define NS_STYLE_UNICODE_BIDI_PLAINTEXT 0x8
+enum class StyleTextCombineUpright : uint8_t {
+  None,
+  All,
+};
+
+// See nsStyleText
+enum class StyleUnicodeBidi : uint8_t {
+  Normal,
+  Embed,
+  Isolate,
+  BidiOverride,
+  IsolateOverride,
+  Plaintext
+};
 
 enum class StyleTableLayout : uint8_t {
   Auto,
@@ -587,29 +478,6 @@ enum class StyleEmptyCells : uint8_t {
   Hide,
   Show,
 };
-
-// constants for cell "scope" attribute
-#define NS_STYLE_CELL_SCOPE_ROW 0
-#define NS_STYLE_CELL_SCOPE_COL 1
-#define NS_STYLE_CELL_SCOPE_ROWGROUP 2
-#define NS_STYLE_CELL_SCOPE_COLGROUP 3
-
-// See nsStylePage
-#define NS_STYLE_PAGE_MARKS_NONE 0x00
-#define NS_STYLE_PAGE_MARKS_CROP 0x01
-#define NS_STYLE_PAGE_MARKS_REGISTER 0x02
-
-// See nsStylePage
-#define NS_STYLE_PAGE_SIZE_AUTO 0
-#define NS_STYLE_PAGE_SIZE_PORTRAIT 1
-#define NS_STYLE_PAGE_SIZE_LANDSCAPE 2
-
-// See nsStyleBreaks
-#define NS_STYLE_PAGE_BREAK_AUTO 0
-#define NS_STYLE_PAGE_BREAK_ALWAYS 1
-#define NS_STYLE_PAGE_BREAK_AVOID 2
-#define NS_STYLE_PAGE_BREAK_LEFT 3
-#define NS_STYLE_PAGE_BREAK_RIGHT 4
 
 // See nsStyleUIReset
 enum class StyleImeMode : uint8_t {
@@ -629,10 +497,11 @@ enum class StyleImeMode : uint8_t {
 enum class StyleWindowShadow : uint8_t {
   None,
   Default,
+
+  // These can't be specified in CSS, they get computed from the "default"
+  // value.
   Menu,
   Tooltip,
-  Sheet,
-  Cliprounded,  // clip border to popup border-radius
 };
 
 // dominant-baseline
@@ -683,17 +552,6 @@ enum class StyleTextAnchor : uint8_t {
   End,
 };
 
-// text-emphasis-position
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_OVER (1 << 0)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_UNDER (1 << 1)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_LEFT (1 << 2)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT (1 << 3)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT \
-  (NS_STYLE_TEXT_EMPHASIS_POSITION_OVER | NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT_ZH \
-  (NS_STYLE_TEXT_EMPHASIS_POSITION_UNDER |         \
-   NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT)
-
 // text-rendering
 enum class StyleTextRendering : uint8_t {
   Auto,
@@ -733,6 +591,7 @@ enum class StyleBlend : uint8_t {
   Saturation,
   Color,
   Luminosity,
+  PlusLighter,
 };
 
 // composite

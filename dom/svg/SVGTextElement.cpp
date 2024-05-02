@@ -9,8 +9,7 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Text)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGTextElement::WrapNode(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
@@ -38,21 +37,4 @@ SVGElement::LengthAttributesInfo SVGTextElement::GetLengthInfo() {
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGTextElement)
 
-bool SVGTextElement::IsNodeOfType(uint32_t aFlags) const {
-  return !(aFlags & ~eUSE_TARGET);
-}
-
-//----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGTextElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sTextContentElementsMap,
-                                                    sFontSpecificationMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGTextElementBase::IsAttributeMapped(name);
-}
-
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

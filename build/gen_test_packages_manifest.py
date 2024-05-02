@@ -5,7 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import json
-
 from argparse import ArgumentParser
 
 ALL_HARNESSES = [
@@ -109,11 +108,13 @@ def generate_package_data(args):
     harness_requirements = dict([(k, [tests_common]) for k in ALL_HARNESSES])
     harness_requirements["jittest"].append(jsshell)
     harness_requirements["jsreftest"].append(args.reftest)
+    harness_requirements["common"].append("target.condprof.tests.tar.gz")
     for harness in PACKAGE_SPECIFIED_HARNESSES + OPTIONAL_PACKAGES:
         pkg_name = getattr(args, harness, None)
         if pkg_name is None:
             continue
         harness_requirements[harness].append(pkg_name)
+        harness_requirements[harness].append("target.condprof.tests.tar.gz")
     return harness_requirements
 
 

@@ -3,8 +3,8 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -22,7 +22,7 @@ Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
 Services.prefs.setBoolPref("extensions.postDownloadThirdPartyPrompt", true);
 
 let server = AddonTestUtils.createHttpServer({
-  hosts: ["example.com", "example.org", "amo.example.com"],
+  hosts: ["example.com", "example.org", "amo.example.com", "github.io"],
 });
 
 server.registerFile(
@@ -32,12 +32,48 @@ server.registerFile(
       manifest_version: 2,
       name: "Install Origins test",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "origins@example.com",
         },
       },
       install_origins: ["http://example.com"],
+    },
+  })
+);
+
+server.registerFile(
+  `/addons/sitepermission.xpi`,
+  AddonTestUtils.createTempXPIFile({
+    "manifest.json": {
+      manifest_version: 2,
+      name: "Install Origins sitepermission test",
+      version: "1.0",
+      browser_specific_settings: {
+        gecko: {
+          id: "sitepermission@example.com",
+        },
+      },
+      install_origins: ["http://example.com"],
+      site_permissions: ["midi"],
+    },
+  })
+);
+
+server.registerFile(
+  `/addons/sitepermission-suffix.xpi`,
+  AddonTestUtils.createTempXPIFile({
+    "manifest.json": {
+      manifest_version: 2,
+      name: "Install Origins sitepermission public suffix test",
+      version: "1.0",
+      browser_specific_settings: {
+        gecko: {
+          id: "sitepermission-suffix@github.io",
+        },
+      },
+      install_origins: ["http://github.io"],
+      site_permissions: ["midi"],
     },
   })
 );
@@ -49,7 +85,7 @@ server.registerFile(
       manifest_version: 2,
       name: "Install Origins test",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "two_origins@example.com",
         },
@@ -66,7 +102,7 @@ server.registerFile(
       manifest_version: 2,
       name: "Install Origins test",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "no_origins@example.com",
         },
@@ -82,7 +118,7 @@ server.registerFile(
       manifest_version: 2,
       name: "Install Origins test",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "no_origins@example.com",
         },
@@ -99,7 +135,7 @@ server.registerFile(
       manifest_version: 3,
       name: "Install Origins test",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "v3_origins@example.com",
         },
@@ -116,7 +152,7 @@ server.registerFile(
       manifest_version: 3,
       name: "Install Origins test",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "v3_no_origins@example.com",
         },
@@ -124,6 +160,11 @@ server.registerFile(
     },
   })
 );
+
+add_setup(() => {
+  do_get_profile();
+  Services.fog.initializeFOG();
+});
 
 function testInstallEvent(expectTelemetry) {
   const snapshot = Services.telemetry.snapshotEvents(
@@ -146,6 +187,15 @@ function testInstallEvent(expectTelemetry) {
     .map(event => event[5]);
   equal(events.length, 1, "one event for install completion");
   Assert.deepEqual(events[0], expectTelemetry, "telemetry matches");
+
+  let gleanEvents = AddonTestUtils.getAMGleanEvents("install", {
+    step: expectTelemetry.step,
+  });
+  Services.fog.testResetFOG();
+
+  equal(gleanEvents.length, 1, "One glean event for install completion.");
+  delete gleanEvents[0].addon_type;
+  Assert.deepEqual(gleanEvents[0], expectTelemetry, "Glean telemetry matches.");
 }
 
 function promiseCompleteWebInstall(
@@ -207,6 +257,7 @@ function promiseCompleteWebInstall(
 
 async function testAddonInstall(test) {
   let { name, xpiUrl, installPrincipal, expectState, expectTelemetry } = test;
+  info(`testAddonInstall: ${name}`);
   let expectInstall = expectState == AddonManager.STATE_INSTALLED;
   let install = await AddonManager.getInstallForURL(xpiUrl, {
     triggeringPrincipal: installPrincipal,
@@ -239,12 +290,17 @@ let ssm = Services.scriptSecurityManager;
 const PRINCIPAL_AMO = ssm.createContentPrincipalFromOrigin(
   "https://amo.example.com"
 );
-const PRINCIPAL_COM = ssm.createContentPrincipalFromOrigin(
-  "http://example.com"
+const PRINCIPAL_COM =
+  ssm.createContentPrincipalFromOrigin("http://example.com");
+const SUB_PRINCIPAL_COM = ssm.createContentPrincipalFromOrigin(
+  "http://abc.example.com"
 );
-const PRINCIPAL_ORG = ssm.createContentPrincipalFromOrigin(
-  "http://example.org"
+const THIRDPARTY_PRINCIPAL_COM = ssm.createContentPrincipalFromOrigin(
+  "http://fake-example.com"
 );
+const PRINCIPAL_ORG =
+  ssm.createContentPrincipalFromOrigin("http://example.org");
+const PRINCIPAL_ETLD = ssm.createContentPrincipalFromOrigin("http://github.io");
 
 const TESTS = [
   {
@@ -401,6 +457,64 @@ const TESTS = [
     expectTelemetry: {
       step: "completed",
       addon_id: "no_origins@example.com",
+      install_origins: "1",
+    },
+  },
+  {
+    name: "Install sitepermission from domain",
+    xpiUrl: "http://example.com/addons/sitepermission.xpi",
+    installPrincipal: PRINCIPAL_COM,
+    expectState: AddonManager.STATE_INSTALLED,
+    expectTelemetry: {
+      step: "completed",
+      addon_id: "sitepermission@example.com",
+      install_origins: "1",
+    },
+  },
+  {
+    name: "Install sitepermission from subdomain",
+    xpiUrl: "http://example.com/addons/sitepermission.xpi",
+    installPrincipal: SUB_PRINCIPAL_COM,
+    expectState: AddonManager.STATE_INSTALLED,
+    expectTelemetry: {
+      step: "completed",
+      addon_id: "sitepermission@example.com",
+      install_origins: "1",
+    },
+  },
+  {
+    name: "Install sitepermission from thirdparty domain should fail",
+    xpiUrl: "http://example.com/addons/sitepermission.xpi",
+    installPrincipal: THIRDPARTY_PRINCIPAL_COM,
+    expectState: AddonManager.STATE_INSTALL_FAILED,
+    expectTelemetry: {
+      step: "failed",
+      addon_id: "sitepermission@example.com",
+      error: "ERROR_INVALID_DOMAIN",
+      install_origins: "1",
+    },
+  },
+  {
+    name: "Install sitepermission from different domain",
+    xpiUrl: "http://example.com/addons/sitepermission.xpi",
+    installPrincipal: PRINCIPAL_ORG,
+    expectState: AddonManager.STATE_INSTALL_FAILED,
+    expectTelemetry: {
+      step: "failed",
+      addon_id: "sitepermission@example.com",
+      error: "ERROR_INVALID_DOMAIN",
+      install_origins: "1",
+    },
+  },
+  {
+    name: "Install sitepermission from public suffix domain",
+    xpiUrl: "http://github.io/addons/sitepermission-suffix.xpi",
+    installPrincipal: PRINCIPAL_ETLD,
+    expectState: AddonManager.STATE_INSTALL_FAILED,
+    expectTelemetry: {
+      step: "failed",
+      addon_id: "sitepermission-suffix@github.io",
+      error: "ERROR_INVALID_DOMAIN",
       install_origins: "1",
     },
   },

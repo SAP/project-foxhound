@@ -2,17 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from mozpack.errors import (
-    errors,
-    ErrorMessage,
-    AccumulatedErrors,
-)
+import sys
 import unittest
+
 import mozunit
 import six
-import sys
+
+from mozpack.errors import AccumulatedErrors, ErrorMessage, errors
 
 
 class TestErrors(object):
@@ -32,14 +28,14 @@ class TestErrorsImpl(TestErrors, unittest.TestCase):
         errors.warn("foo")
         self.assertRaises(ErrorMessage, errors.error, "foo")
         self.assertRaises(ErrorMessage, errors.fatal, "foo")
-        self.assertEquals(self.get_output(), ["Warning: foo"])
+        self.assertEqual(self.get_output(), ["warning: foo"])
 
     def test_ignore_errors(self):
         errors.ignore_errors()
         errors.warn("foo")
         errors.error("bar")
         self.assertRaises(ErrorMessage, errors.fatal, "foo")
-        self.assertEquals(self.get_output(), ["Warning: foo", "Warning: bar"])
+        self.assertEqual(self.get_output(), ["warning: foo", "warning: bar"])
 
     def test_no_error(self):
         with errors.accumulate():
@@ -49,14 +45,14 @@ class TestErrorsImpl(TestErrors, unittest.TestCase):
         with self.assertRaises(AccumulatedErrors):
             with errors.accumulate():
                 errors.error("1")
-        self.assertEquals(self.get_output(), ["Error: 1"])
+        self.assertEqual(self.get_output(), ["error: 1"])
 
     def test_error_loop(self):
         with self.assertRaises(AccumulatedErrors):
             with errors.accumulate():
                 for i in range(3):
                     errors.error("%d" % i)
-        self.assertEquals(self.get_output(), ["Error: 0", "Error: 1", "Error: 2"])
+        self.assertEqual(self.get_output(), ["error: 0", "error: 1", "error: 2"])
 
     def test_multiple_errors(self):
         with self.assertRaises(AccumulatedErrors):
@@ -68,9 +64,9 @@ class TestErrorsImpl(TestErrors, unittest.TestCase):
                     else:
                         errors.error("%d" % i)
                 errors.error("bar")
-        self.assertEquals(
+        self.assertEqual(
             self.get_output(),
-            ["Error: foo", "Error: 0", "Error: 1", "Warning: 2", "Error: bar"],
+            ["error: foo", "error: 0", "error: 1", "warning: 2", "error: bar"],
         )
 
     def test_errors_context(self):
@@ -88,9 +84,9 @@ class TestErrorsImpl(TestErrors, unittest.TestCase):
         self.assertEqual(
             self.get_output(),
             [
-                "Error: foo:1: a",
-                "Error: bar:2: b",
-                "Error: foo:1: c",
+                "error: foo:1: a",
+                "error: bar:2: b",
+                "error: foo:1: c",
             ],
         )
 

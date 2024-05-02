@@ -12,8 +12,7 @@
 #include "nsThreadUtils.h"
 #include "ServiceWorkerManager.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ServiceWorkerUnregisterJob::PushUnsubscribeCallback final
     : public nsIUnsubscribeResultCallback {
@@ -44,11 +43,9 @@ NS_IMPL_ISUPPORTS(ServiceWorkerUnregisterJob::PushUnsubscribeCallback,
                   nsIUnsubscribeResultCallback)
 
 ServiceWorkerUnregisterJob::ServiceWorkerUnregisterJob(nsIPrincipal* aPrincipal,
-                                                       const nsACString& aScope,
-                                                       bool aSendToParent)
+                                                       const nsACString& aScope)
     : ServiceWorkerJob(Type::Unregister, aPrincipal, aScope, ""_ns),
-      mResult(false),
-      mSendToParent(aSendToParent) {}
+      mResult(false) {}
 
 bool ServiceWorkerUnregisterJob::GetResult() const {
   MOZ_ASSERT(NS_IsMainThread());
@@ -111,9 +108,9 @@ void ServiceWorkerUnregisterJob::Unregister() {
   // Note, we send the message to remove the registration from disk now. This is
   // necessary to ensure the registration is removed if the controlled
   // clients are closed by shutting down the browser.
-  if (mSendToParent) {
-    swm->MaybeSendUnregister(mPrincipal, mScope);
-  }
+  swm->MaybeSendUnregister(mPrincipal, mScope);
+
+  swm->EvictFromBFCache(registration);
 
   // "Remove scope to registration map[job's scope url]."
   swm->RemoveRegistration(registration);
@@ -135,5 +132,4 @@ void ServiceWorkerUnregisterJob::Unregister() {
   Finish(NS_OK);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

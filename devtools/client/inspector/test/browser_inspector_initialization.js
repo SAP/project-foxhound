@@ -22,7 +22,7 @@ const HTML = `
 
 const TEST_URI = "data:text/html;charset=utf-8," + encodeURI(HTML);
 
-add_task(async function() {
+add_task(async function () {
   const tab = await addTab(TEST_URI);
   await testToolboxInitialization(tab);
   await testContextMenuInitialization();
@@ -38,7 +38,6 @@ async function testToolboxInitialization(tab) {
 
   ok(true, "Inspector started, and notification received.");
   ok(inspector, "Inspector instance is accessible.");
-  is(inspector.currentTarget.localTab, tab, "Valid target.");
 
   await selectNode("p", inspector);
   await testMarkupView("p", inspector);
@@ -54,7 +53,7 @@ async function testToolboxInitialization(tab) {
   await toolbox.destroy();
 
   ok(true, "'destroyed' notification received.");
-  const toolboxForTab = await gDevTools.getToolboxForTab(tab);
+  const toolboxForTab = gDevTools.getToolboxForTab(tab);
   ok(!toolboxForTab, "Toolbox destroyed.");
 }
 
@@ -70,7 +69,7 @@ async function testContextMenuInitialization() {
 async function testContextMenuInspectorAlreadyOpen() {
   info("Changing node by clicking on 'Inspect Element' context menu item");
 
-  const inspector = await getActiveInspector();
+  const inspector = getActiveInspector();
   ok(inspector, "Inspector is active");
 
   await clickOnInspectMenuItem("#closing");
@@ -82,7 +81,7 @@ async function testContextMenuInspectorAlreadyOpen() {
 
 async function testMarkupView(selector, inspector) {
   if (!inspector) {
-    inspector = await getActiveInspector();
+    inspector = getActiveInspector();
   }
   const nodeFront = await getNodeFront(selector, inspector);
   try {
@@ -99,7 +98,7 @@ async function testMarkupView(selector, inspector) {
 
 async function testBreadcrumbs(selector, inspector) {
   if (!inspector) {
-    inspector = await getActiveInspector();
+    inspector = getActiveInspector();
   }
   const nodeFront = await getNodeFront(selector, inspector);
 

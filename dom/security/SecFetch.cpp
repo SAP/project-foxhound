@@ -31,6 +31,7 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_SCRIPT:
       return "script"_ns;
     case nsIContentPolicy::TYPE_INTERNAL_WORKER:
+    case nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE:
       return "worker"_ns;
     case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
       return "sharedworker"_ns;
@@ -88,7 +89,7 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_TRACK:
       return "track"_ns;
     case nsIContentPolicy::TYPE_WEBSOCKET:
-      return "websocket"_ns;
+      return "empty"_ns;
     case nsIContentPolicy::TYPE_CSP_REPORT:
       return "report"_ns;
     case nsIContentPolicy::TYPE_XSLT:
@@ -106,6 +107,11 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
       return "empty"_ns;
     case nsIContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA:
       return "empty"_ns;
+    case nsIContentPolicy::TYPE_WEB_IDENTITY:
+      return "webidentity"_ns;
+    case nsIContentPolicy::TYPE_WEB_TRANSPORT:
+      return "webtransport"_ns;
+    case nsIContentPolicy::TYPE_END:
     case nsIContentPolicy::TYPE_INVALID:
       break;
       // Do not add default: so that compilers can catch the missing case.
@@ -118,7 +124,7 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
 // a URI in the sec-fetch context.
 void IsExpandedPrincipalSameOrigin(
     nsCOMPtr<nsIExpandedPrincipal> aExpandedPrincipal, nsIURI* aURI,
-    bool aIsPrivateWin, bool* aRes) {
+    bool* aRes) {
   *aRes = false;
   for (const auto& principal : aExpandedPrincipal->AllowList()) {
     // Ignore extension principals to continue treating
@@ -126,8 +132,7 @@ void IsExpandedPrincipalSameOrigin(
     if (!mozilla::BasePrincipal::Cast(principal)->AddonPolicy()) {
       // A ExpandedPrincipal usually has at most one ContentPrincipal, so we can
       // check IsSameOrigin on it here and return early.
-      mozilla::BasePrincipal::Cast(principal)->IsSameOrigin(aURI, aIsPrivateWin,
-                                                            aRes);
+      mozilla::BasePrincipal::Cast(principal)->IsSameOrigin(aURI, aRes);
       return;
     }
   }
@@ -149,16 +154,13 @@ bool IsSameOrigin(nsIHttpChannel* aHTTPChannel) {
         ->AddonAllowsLoad(channelURI);
   }
 
-  bool isPrivateWin = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
   bool isSameOrigin = false;
   if (nsContentUtils::IsExpandedPrincipal(loadInfo->TriggeringPrincipal())) {
     nsCOMPtr<nsIExpandedPrincipal> ep =
         do_QueryInterface(loadInfo->TriggeringPrincipal());
-    IsExpandedPrincipalSameOrigin(ep, channelURI, isPrivateWin, &isSameOrigin);
+    IsExpandedPrincipalSameOrigin(ep, channelURI, &isSameOrigin);
   } else {
-    nsresult rv = loadInfo->TriggeringPrincipal()->IsSameOrigin(
-        channelURI, isPrivateWin, &isSameOrigin);
-    mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+    isSameOrigin = loadInfo->TriggeringPrincipal()->IsSameOrigin(channelURI);
   }
 
   // if the initial request is not same-origin, we can return here
@@ -172,13 +174,8 @@ bool IsSameOrigin(nsIHttpChannel* aHTTPChannel) {
   nsCOMPtr<nsIPrincipal> redirectPrincipal;
   for (nsIRedirectHistoryEntry* entry : loadInfo->RedirectChain()) {
     entry->GetPrincipal(getter_AddRefs(redirectPrincipal));
-    if (redirectPrincipal) {
-      nsresult rv = redirectPrincipal->IsSameOrigin(channelURI, isPrivateWin,
-                                                    &isSameOrigin);
-      mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
-      if (!isSameOrigin) {
-        return false;
-      }
+    if (redirectPrincipal && !redirectPrincipal->IsSameOrigin(channelURI)) {
+      return false;
     }
   }
 
@@ -384,11 +381,6 @@ void mozilla::dom::SecFetch::AddSecFetchUser(nsIHttpChannel* aHTTPChannel) {
 }
 
 void mozilla::dom::SecFetch::AddSecFetchHeader(nsIHttpChannel* aHTTPChannel) {
-  // if sec-fetch-* is prefed off, then there is nothing to do
-  if (!StaticPrefs::dom_security_secFetch_enabled()) {
-    return;
-  }
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = aHTTPChannel->GetURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -399,6 +391,17 @@ void mozilla::dom::SecFetch::AddSecFetchHeader(nsIHttpChannel* aHTTPChannel) {
   // there is nothing to do here
   if (!nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(uri)) {
     return;
+  }
+
+  // If we're dealing with a system XMLHttpRequest or fetch, don't add
+  // Sec- headers.
+  nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
+  if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {
+    ExtContentPolicy extType = loadInfo->GetExternalContentPolicyType();
+    if (extType == ExtContentPolicy::TYPE_FETCH ||
+        extType == ExtContentPolicy::TYPE_XMLHTTPREQUEST) {
+      return;
+    }
   }
 
   AddSecFetchDest(aHTTPChannel);

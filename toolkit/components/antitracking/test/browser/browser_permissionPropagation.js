@@ -14,7 +14,7 @@ async function createTab(topUrl, iframeCount, opener, params) {
   let browser;
   if (opener) {
     let promise = BrowserTestUtils.waitForNewTab(gBrowser, topUrl);
-    await SpecialPowers.spawn(opener, [topUrl], function(url) {
+    await SpecialPowers.spawn(opener, [topUrl], function (url) {
       content.window.open(url, "_blank");
     });
     newTab = await promise;
@@ -29,7 +29,7 @@ async function createTab(topUrl, iframeCount, opener, params) {
   await SpecialPowers.spawn(
     browser,
     [params, iframeCount, createTrackerFrame.toString()],
-    async function(params, count, fn) {
+    async function (params, count, fn) {
       // eslint-disable-next-line no-eval
       let fnCreateTrackerFrame = eval(`(() => (${fn}))()`);
       await fnCreateTrackerFrame(params, count, ifr => {
@@ -81,52 +81,53 @@ async function createTrackerFrame(params, count, callback) {
   }
 }
 
-async function testPermission(browser, block, params) {
-  await SpecialPowers.spawn(browser, [block, params], async function(
-    block,
-    params
-  ) {
-    for (let i = 0; ; i++) {
-      let ifr = content.document.getElementById("ifr" + i);
-      if (!ifr) {
-        break;
-      }
-
-      await new content.Promise(resolve => {
-        content.addEventListener("message", function msg(event) {
-          if (event.data.type == "finish") {
-            content.removeEventListener("message", msg);
-            resolve();
-            return;
-          }
-
-          if (event.data.type == "ok") {
-            ok(event.data.what, event.data.msg);
-            return;
-          }
-
-          if (event.data.type == "info") {
-            info(event.data.msg);
-            return;
-          }
-
-          ok(false, "Unknown message");
-        });
-
-        if (block) {
-          ifr.contentWindow.postMessage(
-            { callback: params.msg.blockingCallback },
-            "*"
-          );
-        } else {
-          ifr.contentWindow.postMessage(
-            { callback: params.msg.nonBlockingCallback },
-            "*"
-          );
+async function testPermission(browser, block, params, frameNumber) {
+  await SpecialPowers.spawn(
+    browser,
+    [block, params, frameNumber],
+    async function (block, params, frameNumber) {
+      for (let i = 0; ; i++) {
+        let ifr = content.document.getElementById("ifr" + i);
+        if (!ifr || (frameNumber !== undefined && i != frameNumber)) {
+          break;
         }
-      });
+
+        await new content.Promise(resolve => {
+          content.addEventListener("message", function msg(event) {
+            if (event.data.type == "finish") {
+              content.removeEventListener("message", msg);
+              resolve();
+              return;
+            }
+
+            if (event.data.type == "ok") {
+              ok(event.data.what, event.data.msg);
+              return;
+            }
+
+            if (event.data.type == "info") {
+              info(event.data.msg);
+              return;
+            }
+
+            ok(false, "Unknown message");
+          });
+
+          if (block) {
+            ifr.contentWindow.postMessage(
+              { callback: params.msg.blockingCallback },
+              "*"
+            );
+          } else {
+            ifr.contentWindow.postMessage(
+              { callback: params.msg.nonBlockingCallback },
+              "*"
+            );
+          }
+        });
+      }
     }
-  });
+  );
 }
 
 add_task(async function testPermissionGrantedOn3rdParty() {
@@ -208,8 +209,8 @@ add_task(async function testPermissionGrantedOn3rdParty() {
   // 4. The fourth tab is opened by the first tab but with a different top-level url).
   //    The tab has one tracker iframe, said E.
   //
-  // This test grants permission on iframe A, which then should propagate storage
-  // permission to iframe B & C, but not D, E
+  // This test grants permission on iframe A, which then should not propagate storage
+  // permission to iframe B, C, D, E
 
   info("Creating the first tab");
   let tab1 = await createTab(top, 2, null, params);
@@ -228,7 +229,7 @@ add_task(async function testPermissionGrantedOn3rdParty() {
   let browser4 = gBrowser.getBrowserForTab(tab4);
 
   info("Grant storage permission to the first iframe in the first tab");
-  await SpecialPowers.spawn(browser1, [page, msg], async function(page, msg) {
+  await SpecialPowers.spawn(browser1, [page, msg], async function (page, msg) {
     await new content.Promise(resolve => {
       content.addEventListener("message", function msg(event) {
         if (event.data.type == "finish") {
@@ -263,11 +264,12 @@ add_task(async function testPermissionGrantedOn3rdParty() {
     });
   });
 
-  info("Both iframs of the first tab should have stroage permission");
-  await testPermission(browser1, false /* block */, params);
+  info("Second iframe of the first tab should not have stroage permission");
+  await testPermission(browser1, false /* block */, params, 0);
+  await testPermission(browser1, true /* block */, params, 1);
 
-  info("The iframe of the second tab should have storage permission");
-  await testPermission(browser2, false /* block */, params);
+  info("The iframe of the second tab should not have storage permission");
+  await testPermission(browser2, true /* block */, params);
 
   info("The iframe of the third tab should not have storage permission");
   await testPermission(browser3, true /* block */, params);
@@ -284,7 +286,7 @@ add_task(async function testPermissionGrantedOn3rdParty() {
   UrlClassifierTestUtils.cleanupTestTrackers();
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Cleaning up.");
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
@@ -387,7 +389,7 @@ add_task(async function testPermissionGrantedOnFirstParty() {
 
   info("Grant storage permission to the first iframe in the first tab");
   let promise = BrowserTestUtils.waitForNewTab(gBrowser, page);
-  await SpecialPowers.spawn(browser1, [page], async function(page) {
+  await SpecialPowers.spawn(browser1, [page], async function (page) {
     content.window.open(page, "_blank");
   });
   let tab = await promise;
@@ -414,7 +416,7 @@ add_task(async function testPermissionGrantedOnFirstParty() {
   UrlClassifierTestUtils.cleanupTestTrackers();
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Cleaning up.");
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>

@@ -11,7 +11,7 @@ Starting in Firefox 68, CFR messages will be defined using [Remote Settings](htt
 
 Until [Bug 1630651](https://bugzilla.mozilla.org/show_bug.cgi?id=1630651) happens, the easiest way to obtain your OpenID credentials is to use the admin interface.
 
-1. [Login on the Admin UI](https://settings.dev.mozaws.net/v1/admin/) using your LDAP identity
+1. [Login on the Admin UI](https://remote-settings-dev.allizom.org/v1/admin/) using your LDAP identity
 2. Copy the authentication header (📋 icon in the top bar)
 3. Test your credentials with ``curl``. When reaching out the server root URL with this bearer token you should see a ``user`` entry whose ``id`` field is ``ldap:<you>@mozilla.com``.
 
@@ -59,18 +59,14 @@ Until [support for the DEV environment](https://github.com/mozilla-extensions/re
 ```javascript
   Services.prefs.setCharPref("services.settings.loglevel", "debug");
   Services.prefs.setCharPref("services.settings.server", "https://settings.dev.mozaws.net/v1");
-  // Dev collections are signed with the STAGE infrastructure, use STAGE's hash:
-  Services.prefs.setCharPref("security.content.signature.root_hash" "3C:01:44:6A:BE:90:36:CE:A9:A0:9A:CA:A3:A5:20:AC:62:8F:20:A7:AE:32:CE:86:1C:B2:EF:B7:0F:A0:C7:45");
-  // Prevent packaged dumps to interfere.
-  Services.prefs.setBoolPref("services.settings.load_dump", false);
-  // The changes are not approved yet, point the client to «preview»
-  Services.prefs.setCharPref("services.settings.default_bucket", "main-preview");
+  // Pull data from the preview bucket.
+  RemoteSettings.enablePreviewMode(true);
 ```
 
 **3. Set ASRouter CFR pref to use Remote Settings provider and enable asrouter devtools.**
 
 ```javascript
-Services.prefs.setStringPref("browser.newtabpage.activity-stream.asrouter.providers.cfr", JSON.stringify({"id":"cfr-remote","enabled":true,"type":"remote-settings","bucket":"cfr"}));
+Services.prefs.setStringPref("browser.newtabpage.activity-stream.asrouter.providers.cfr", JSON.stringify({"id":"cfr-remote","enabled":true,"type":"remote-settings","collection":"cfr"}));
 Services.prefs.setBoolPref("browser.newtabpage.activity-stream.asrouter.devtoolsEnabled", true);
 ```
 

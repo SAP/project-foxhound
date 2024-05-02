@@ -1,10 +1,9 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-
 import json
 import re
+
 import six
 from mozlog import get_proxy_logger
 
@@ -20,10 +19,10 @@ MAX_FORWARDED_REQUESTS = 3
 
 if six.PY2:
     # Import for Python 2
-    from urllib2 import urlopen, Request
+    from urllib2 import Request, urlopen
 else:
     # Import for Python 3
-    from urllib.request import urlopen, Request
+    from urllib.request import Request, urlopen
 
     # Symbolication is broken when using type 'str' in python 2.7, so we use 'basestring'.
     # But for python 3.0 compatibility, 'basestring' isn't defined, but the 'str' type works.
@@ -123,23 +122,30 @@ class SymbolicationRequest:
                 return
 
             # Check memory map is well-formatted
+            # We try to be more permissive here with the modules. If a module is not
+            # well-formatted, we ignore that one by adding a None to the clean memory map. We have
+            # to add a None instead of simply omitting that module because the indexes of the
+            # modules in the memory map has to match the indexes of the shared libraries in the
+            # profile data.
             cleanMemoryMap = []
             for module in memoryMap:
                 if not isinstance(module, list):
                     LOG.debug("Entry in memory map is not a list: " + str(module))
-                    return
+                    cleanMemoryMap.append(None)
+                    continue
 
                 if len(module) != 2:
                     LOG.debug(
                         "Entry in memory map is not a 2 item list: " + str(module)
                     )
-                    return
-                module = getModuleV3(*module)
+                    cleanMemoryMap.append(None)
+                    continue
+                moduleV3 = getModuleV3(*module)
 
-                if module is None:
-                    return
+                if moduleV3 is None:
+                    LOG.debug("Failed to get Module V3.")
 
-                cleanMemoryMap.append(module)
+                cleanMemoryMap.append(moduleV3)
 
             self.combinedMemoryMap = cleanMemoryMap
             self.knownModules = [False] * len(self.combinedMemoryMap)
@@ -185,6 +191,8 @@ class SymbolicationRequest:
                 moduleIndex = entry[0]
                 offset = entry[1]
                 module = self.combinedMemoryMap[moduleIndex]
+                if module is None:
+                    continue
                 newIndex = moduleToIndex[module]
                 rawStack.append([newIndex, offset])
 
@@ -274,6 +282,9 @@ class SymbolicationRequest:
         stack = self.stacks[stackNum]
 
         for moduleIndex, module in enumerate(self.combinedMemoryMap):
+            if module is None:
+                continue
+
             if not self.symFileManager.GetLibSymbolMap(
                 module.libName, module.breakpadId, self.symbolSources
             ):
@@ -291,6 +302,8 @@ class SymbolicationRequest:
                 symbolicatedStack.append(hex(offset))
                 continue
             module = self.combinedMemoryMap[moduleIndex]
+            if module is None:
+                continue
 
             if (module.libName, module.breakpadId) in missingSymFiles:
                 if shouldForwardRequests:

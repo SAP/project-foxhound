@@ -1,18 +1,18 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-// The ext-* files are imported into the same scopes.
-/* import-globals-from ext-android.js */
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  GeckoViewWebExtension: "resource://gre/modules/GeckoViewWebExtension.jsm",
-  ExtensionActionHelper: "resource://gre/modules/GeckoViewWebExtension.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  GeckoViewWebExtension: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
+  ExtensionActionHelper: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
 });
 
-const { PageActionBase } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionActions.jsm"
+const { PageActionBase } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionActions.sys.mjs"
 );
 
 const PAGE_ACTION_PROPERTIES = [
@@ -75,7 +75,11 @@ class PageAction extends PageActionBase {
   }
 }
 
-this.pageAction = class extends ExtensionAPI {
+this.pageAction = class extends ExtensionAPIPersistent {
+  static for(extension) {
+    return GeckoViewWebExtension.pageActions.get(extension);
+  }
+
   async onManifestEntry(entryName) {
     const { extension } = this;
     const action = new PageAction(extension, this);
@@ -98,9 +102,33 @@ this.pageAction = class extends ExtensionAPI {
     GeckoViewWebExtension.pageActions.delete(extension);
   }
 
+  PERSISTENT_EVENTS = {
+    onClicked({ fire }) {
+      const { extension } = this;
+      const { tabManager } = extension;
+
+      const listener = async (_event, tab) => {
+        if (fire.wakeup) {
+          await fire.wakeup();
+        }
+        // TODO: we should double-check if the tab is already being closed by the time
+        // the background script got started and we converted the primed listener.
+        fire.async(tabManager.convert(tab));
+      };
+
+      this.on("click", listener);
+      return {
+        unregister: () => {
+          this.off("click", listener);
+        },
+        convert(newFire, _extContext) {
+          fire = newFire;
+        },
+      };
+    },
+  };
+
   getAPI(context) {
-    const { extension } = context;
-    const { tabManager } = extension;
     const { action } = this;
 
     return {
@@ -109,16 +137,10 @@ this.pageAction = class extends ExtensionAPI {
 
         onClicked: new EventManager({
           context,
-          name: "pageAction.onClicked",
-          register: fire => {
-            const listener = (event, tab) => {
-              fire.async(tabManager.convert(tab));
-            };
-            this.on("click", listener);
-            return () => {
-              this.off("click", listener);
-            };
-          },
+          module: "pageAction",
+          event: "onClicked",
+          inputHandling: true,
+          extensionApi: this,
         }).api(),
 
         openPopup() {
@@ -128,3 +150,5 @@ this.pageAction = class extends ExtensionAPI {
     };
   }
 };
+
+global.pageActionFor = this.pageAction.for;

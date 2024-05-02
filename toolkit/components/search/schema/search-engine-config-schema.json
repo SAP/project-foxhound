@@ -1,8 +1,6 @@
 {
   "type": "object",
-  "required": [
-    "webExtension"
-  ],
+  "required": ["webExtension"],
   "properties": {
     "default": {
       "$ref": "#/definitions/default"
@@ -27,10 +25,13 @@
     "telemetryId": {
       "type": "string",
       "title": "Telemetry Id",
-      "description": "The telemetry Id as used for some of SEARCH_COUNTS telemetry."
+      "description": "The telemetry Id as used for search telemetry."
     },
     "webExtension": {
       "$ref": "#/definitions/webExtension"
+    },
+    "urls": {
+      "$ref": "#/definitions/urls"
     },
     "params": {
       "$ref": "#/definitions/params"
@@ -38,8 +39,8 @@
     "extraParams": {
       "$ref": "#/definitions/extraParams"
     },
-    "regionParams": {
-      "$ref": "#/definitions/regionParams"
+    "suggestExtraParams": {
+      "$ref": "#/definitions/extraParams"
     }
   },
   "definitions": {
@@ -48,14 +49,15 @@
       "title": "Application Details",
       "properties": {
         "name": {
-          "type": "string",
+          "type": "array",
           "title": "Name",
-          "pattern": "^[a-z]{0,100}$",
-          "description": "The application this applies to (default/not specified is everywhere)",
-          "enum": [
-            "",
-            "firefox"
-          ]
+          "description": "The application(s) this applies to (default/not specified is everywhere)",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]{0,100}$",
+            "enum": ["", "firefox"]
+          },
+          "uniqueItems": true
         },
         "channel": {
           "type": "array",
@@ -64,14 +66,7 @@
           "items": {
             "type": "string",
             "pattern": "^[a-z]{0,100}$",
-            "enum": [
-              "default",
-              "nightly",
-              "aurora",
-              "beta",
-              "release",
-              "esr"
-            ]
+            "enum": ["default", "nightly", "aurora", "beta", "release", "esr"]
           },
           "uniqueItems": true
         },
@@ -103,7 +98,7 @@
         },
         "maxVersion": {
           "type": "string",
-          "title": "Maxium Version",
+          "title": "Maximum Version",
           "pattern": "^[0-9a-z.]{0,20}$",
           "description": "The maximum version this applies to (less-than comparison)"
         }
@@ -114,22 +109,14 @@
       "title": "Default Status",
       "pattern": "^[a-z-]{0,20}$",
       "description": "Whether or not this engine should be default.",
-      "enum": [
-        "yes",
-        "yes-if-no-other",
-        "no"
-      ]
+      "enum": ["yes", "yes-if-no-other", "no"]
     },
     "defaultPrivate": {
       "type": "string",
       "title": "Default Status (PBM)",
       "pattern": "^[a-z-]{0,20}$",
       "description": "Whether or not this engine should be default in private browsing mode.",
-      "enum": [
-        "yes",
-        "yes-if-no-other",
-        "no"
-      ]
+      "enum": ["yes", "yes-if-no-other", "no"]
     },
     "extraParams": {
       "type": "array",
@@ -149,10 +136,7 @@
             "title": "Condition",
             "pattern": "^[a-z]{0,10}$",
             "description": "The type of parameter (pref or purpose)",
-            "enum": [
-              "pref",
-              "purpose"
-            ]
+            "enum": ["pref", "purpose"]
           },
           "purpose": {
             "type": "string",
@@ -185,50 +169,7 @@
     "orderHint": {
       "type": "number",
       "title": "Order Hint",
-      "description": "A hint to the display order (higher is a higer rank)"
-    },
-    "sapCodes": {
-      "type": "object",
-      "title": "Search Access Point Codes",
-      "description": "Codes for the search access points.",
-      "properties": {
-        "any": {
-          "type": "string",
-          "title": "Any",
-          "pattern": "^[a-z0-9]{0,100}$",
-          "description": "SAP code that is used for all access points (overrides the others)."
-        },
-        "contextMenu": {
-          "type": "string",
-          "title": "Context Menu",
-          "pattern": "^[a-z0-9]{0,100}$",
-          "description": "SAP code for searches from the context menu."
-        },
-        "homePage": {
-          "type": "string",
-          "title": "Home page",
-          "pattern": "^[a-z0-9]{0,100}$",
-          "description": "SAP code for searches from the home page."
-        },
-        "keyword": {
-          "type": "string",
-          "title": "Keyword",
-          "pattern": "^[a-z0-9]{0,100}$",
-          "description": "SAP code for searches via keywords."
-        },
-        "newTab": {
-          "type": "string",
-          "title": "New Tab",
-          "pattern": "^[a-z0-9]{0,100}$",
-          "description": "SAP code for searches from the new tab page."
-        },
-        "searchBar": {
-          "type": "string",
-          "title": "Search Bar",
-          "pattern": "^[a-z0-9]{0,100}$",
-          "description": "SAP code for searches from the search bar."
-        }
-      }
+      "description": "A hint to the display order (higher is a higher rank)"
     },
     "searchUrlCodes": {
       "type": "array",
@@ -276,38 +217,6 @@
           "title": "Suggestion URL POST Parameters",
           "description": "Extra parameters for search suggestion URLs (e.g. 'pc=foo').",
           "$ref": "#/definitions/searchUrlCodes"
-        },
-        "sapCodes": {
-          "$ref": "#/definitions/sapCodes"
-        }
-      }
-    },
-    "regionParams": {
-      "type": "object",
-      "title": "Region Parameters",
-      "description": "A map of regions to an array of parameter overrides",
-      "patternProperties": {
-        "^([a-z][a-z]|default)$": {
-          "type": "array",
-          "title": "Parameter Overrides",
-          "description": "A array of objects - map of parameter name to the parameter value.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "title": "Name",
-                "pattern": "^[a-zA-Z0-9.-]{0,100}$",
-                "description": "Name of the parameter to override"
-              },
-              "value": {
-                "type": "string",
-                "title": "Value",
-                "pattern": "^[a-zA-Z0-9_{}:/.-]{0,100}$",
-                "description": "The value to override with"
-              }
-            }
-          }
         }
       }
     },
@@ -320,7 +229,7 @@
       "type": "string",
       "title": "Telemetry Id",
       "pattern": "^[a-zA-Z0-9-$_]{0,100}$",
-      "description": "The telemetry Id as used for some of SEARCH_COUNTS telemetry."
+      "description": "The telemetry Id as used for search telemetry."
     },
     "webExtension": {
       "type": "object",
@@ -332,11 +241,38 @@
           "description": "The identifier (local part) of the associated WebExtension should be of the format example@search.mozilla.org",
           "pattern": "^[a-zA-Z0-9-._]*@search.mozilla.org$"
         },
-        "locale": {
-          "type": "string",
-          "title": "WebExtension Locale",
-          "pattern": "^[a-zA-Z0-9-$_]{0,100}$",
-          "description": "Overrides the WebExtension locales and specifies to use a particular one. Ideally this should only be used when really necessary, otherwise considered deprecated."
+        "locales": {
+          "type": "array",
+          "title": "WebExtension Locales",
+          "description": "Overrides the WebExtension locales and specifies to use a particular one. Ideally this should only be used when really necessary, otherwise considered deprecated.",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9-$_]{0,100}$"
+          }
+        }
+      }
+    },
+    "urls": {
+      "type": "object",
+      "description": "Urls pertaining to this engine",
+      "properties": {
+        "trending": {
+          "type": "object",
+          "description": "Details of the url used to fetch trending suggestions",
+          "properties": {
+            "fullPath": {
+              "type": "string",
+              "title": "fullPath",
+              "format": "uri",
+              "description": "The url used to retrieve trending suggestions"
+            },
+            "query": {
+              "type": "string",
+              "title": "query",
+              "description": "The query parameters to send in a trending suggestions request",
+              "pattern": "^[a-zA-Z0-9.={}&-]{0,100}$"
+            }
+          }
         }
       }
     },
@@ -388,7 +324,7 @@
           "description": "Set to true to signify that this is included everywhere."
         },
         "regions": {
-          "$ref" : "#/definitions/regionDetails"
+          "$ref": "#/definitions/regionDetails"
         },
         "locales": {
           "$ref": "#/definitions/localeDetails"
@@ -401,7 +337,7 @@
       "description": "The locations to which this section applies. Note: Regions and Locales are 'and'ed together.",
       "properties": {
         "regions": {
-          "$ref" : "#/definitions/regionDetails"
+          "$ref": "#/definitions/regionDetails"
         },
         "locales": {
           "$ref": "#/definitions/localeDetails"
@@ -429,8 +365,11 @@
         "application": {
           "$ref": "#/definitions/application"
         },
-        "webextension": {
+        "webExtension": {
           "$ref": "#/definitions/webExtension"
+        },
+        "urls": {
+          "$ref": "#/definitions/urls"
         },
         "sendAttributionRequest": {
           "$ref": "#/definitions/sendAttributionRequest"
@@ -441,9 +380,6 @@
         "params": {
           "$ref": "#/definitions/params"
         },
-        "regionParams": {
-          "$ref": "#/definitions/regionParams"
-        },
         "extraParams": {
           "$ref": "#/definitions/extraParams"
         },
@@ -452,6 +388,14 @@
           "title": "Experiment",
           "pattern": "^[a-zA-Z0-9-]{0,100}$",
           "description": "The experiment this section is associated with, if blank it is associated with any configuration."
+        },
+        "override": {
+          "type": "boolean",
+          "title": "Override",
+          "description": "This section will override previous appliesTo sections, but not add new locations where this engine is deployed to."
+        },
+        "suggestExtraParams": {
+          "$ref": "#/definitions/extraParams"
         }
       }
     }

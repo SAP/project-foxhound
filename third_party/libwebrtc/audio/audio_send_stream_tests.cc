@@ -19,6 +19,7 @@
 #include "test/field_trial.h"
 #include "test/gtest.h"
 #include "test/rtcp_packet_parser.h"
+#include "test/video_test_constants.h"
 
 namespace webrtc {
 namespace test {
@@ -31,7 +32,7 @@ enum : int {  // The first valid value is 1.
 
 class AudioSendTest : public SendTest {
  public:
-  AudioSendTest() : SendTest(CallTest::kDefaultTimeoutMs) {}
+  AudioSendTest() : SendTest(VideoTestConstants::kDefaultTimeout) {}
 
   size_t GetNumVideoStreams() const override { return 0; }
   size_t GetNumAudioStreams() const override { return 1; }
@@ -61,9 +62,9 @@ TEST_F(AudioSendStreamCallTest, SupportsCName) {
       return SEND_PACKET;
     }
 
-    void ModifyAudioConfigs(
-        AudioSendStream::Config* send_config,
-        std::vector<AudioReceiveStream::Config>* receive_configs) override {
+    void ModifyAudioConfigs(AudioSendStream::Config* send_config,
+                            std::vector<AudioReceiveStreamInterface::Config>*
+                                receive_configs) override {
       send_config->rtp.c_name = kCName;
     }
 
@@ -90,9 +91,9 @@ TEST_F(AudioSendStreamCallTest, NoExtensionsByDefault) {
       return SEND_PACKET;
     }
 
-    void ModifyAudioConfigs(
-        AudioSendStream::Config* send_config,
-        std::vector<AudioReceiveStream::Config>* receive_configs) override {
+    void ModifyAudioConfigs(AudioSendStream::Config* send_config,
+                            std::vector<AudioReceiveStreamInterface::Config>*
+                                receive_configs) override {
       send_config->rtp.extensions.clear();
     }
 
@@ -129,9 +130,9 @@ TEST_F(AudioSendStreamCallTest, SupportsAudioLevel) {
       return SEND_PACKET;
     }
 
-    void ModifyAudioConfigs(
-        AudioSendStream::Config* send_config,
-        std::vector<AudioReceiveStream::Config>* receive_configs) override {
+    void ModifyAudioConfigs(AudioSendStream::Config* send_config,
+                            std::vector<AudioReceiveStreamInterface::Config>*
+                                receive_configs) override {
       send_config->rtp.extensions.clear();
       send_config->rtp.extensions.push_back(
           RtpExtension(RtpExtension::kAudioLevelUri, kAudioLevelExtensionId));
@@ -171,9 +172,9 @@ class TransportWideSequenceNumberObserver : public AudioSendTest {
     return SEND_PACKET;
   }
 
-  void ModifyAudioConfigs(
-      AudioSendStream::Config* send_config,
-      std::vector<AudioReceiveStream::Config>* receive_configs) override {
+  void ModifyAudioConfigs(AudioSendStream::Config* send_config,
+                          std::vector<AudioReceiveStreamInterface::Config>*
+                              receive_configs) override {
     send_config->rtp.extensions.clear();
     send_config->rtp.extensions.push_back(
         RtpExtension(RtpExtension::kTransportSequenceNumberUri,
@@ -188,14 +189,7 @@ class TransportWideSequenceNumberObserver : public AudioSendTest {
 };
 
 TEST_F(AudioSendStreamCallTest, SendsTransportWideSequenceNumbersInFieldTrial) {
-  ScopedFieldTrials field_trials("WebRTC-Audio-SendSideBwe/Enabled/");
   TransportWideSequenceNumberObserver test(/*expect_sequence_number=*/true);
-  RunBaseTest(&test);
-}
-
-TEST_F(AudioSendStreamCallTest,
-       DoesNotSendTransportWideSequenceNumbersPerDefault) {
-  TransportWideSequenceNumberObserver test(/*expect_sequence_number=*/false);
   RunBaseTest(&test);
 }
 
@@ -230,9 +224,9 @@ TEST_F(AudioSendStreamCallTest, SendDtmf) {
       return SEND_PACKET;
     }
 
-    void OnAudioStreamsCreated(
-        AudioSendStream* send_stream,
-        const std::vector<AudioReceiveStream*>& receive_streams) override {
+    void OnAudioStreamsCreated(AudioSendStream* send_stream,
+                               const std::vector<AudioReceiveStreamInterface*>&
+                                   receive_streams) override {
       // Need to start stream here, else DTMF events are dropped.
       send_stream->Start();
       for (int event = kDtmfEventFirst; event <= kDtmfEventLast; ++event) {

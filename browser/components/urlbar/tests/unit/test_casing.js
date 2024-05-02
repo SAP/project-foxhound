@@ -3,7 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const AUTOFILL_PROVIDERNAME = "Autofill";
-const HEURISTIC_FALLBACK_PROVIDERNAME = "HeuristicFallback";
 const PLACES_PROVIDERNAME = "Places";
 
 testEngine_setup();
@@ -21,7 +20,7 @@ add_task(async function test_casing_1() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        title: "mozilla.org",
+        fallbackTitle: "mozilla.org",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -48,7 +47,7 @@ add_task(async function test_casing_2() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://mozilla.org/test/",
-        title: "mozilla.org/test/",
+        title: "test visit for http://mozilla.org/test/",
         iconUri: "page-icon:http://mozilla.org/test/",
         heuristic: true,
         providerName: AUTOFILL_PROVIDERNAME,
@@ -71,7 +70,7 @@ add_task(async function test_casing_3() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/Test/",
-        title: "mozilla.org/Test/",
+        title: "test visit for http://mozilla.org/Test/",
         heuristic: true,
       }),
     ],
@@ -93,7 +92,7 @@ add_task(async function test_casing_4() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://mozilla.org/Test/",
-        title: "mozilla.org/Test/",
+        title: "test visit for http://mozilla.org/Test/",
         iconUri: "page-icon:http://mozilla.org/Test/",
         heuristic: true,
         providerName: AUTOFILL_PROVIDERNAME,
@@ -116,7 +115,7 @@ add_task(async function test_casing_5() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/Test/",
-        title: "mozilla.org/Test/",
+        title: "test visit for http://mozilla.org/Test/",
         heuristic: true,
       }),
     ],
@@ -137,7 +136,7 @@ add_task(async function test_untrimmed_casing() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        title: "mozilla.org",
+        fallbackTitle: "mozilla.org",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -163,7 +162,7 @@ add_task(async function test_untrimmed_www_casing() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www.mozilla.org/",
-        title: "www.mozilla.org",
+        fallbackTitle: "www.mozilla.org",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -190,7 +189,7 @@ add_task(async function test_untrimmed_path_casing() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://mozilla.org/Test/",
-        title: "mozilla.org/Test/",
+        title: "test visit for http://mozilla.org/Test/",
         iconUri: "page-icon:http://mozilla.org/Test/",
         heuristic: true,
         providerName: AUTOFILL_PROVIDERNAME,
@@ -213,7 +212,7 @@ add_task(async function test_untrimmed_path_casing_2() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/Test/",
-        title: "mozilla.org/Test/",
+        title: "test visit for http://mozilla.org/Test/",
         heuristic: true,
       }),
     ],
@@ -235,7 +234,7 @@ add_task(async function test_untrimmed_path_www_casing() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://www.mozilla.org/Test/",
-        title: "www.mozilla.org/Test/",
+        title: "test visit for http://www.mozilla.org/Test/",
         iconUri: "page-icon:http://www.mozilla.org/Test/",
         heuristic: true,
         providerName: AUTOFILL_PROVIDERNAME,
@@ -258,7 +257,7 @@ add_task(async function test_untrimmed_path_www_casing_2() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www.mozilla.org/Test/",
-        title: "www.mozilla.org/Test/",
+        title: "test visit for http://www.mozilla.org/Test/",
         heuristic: true,
       }),
     ],
@@ -352,6 +351,7 @@ add_task(async function test_searching() {
   });
 
   info("Search for uppercase k");
+
   context = createContext("K", { isPrivate: false });
   await check_results({
     context,

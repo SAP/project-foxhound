@@ -8,10 +8,11 @@
 #define DOM_SVG_SVGIMAGEELEMENT_H_
 
 #include "nsImageLoadingContent.h"
-#include "SVGAnimatedLength.h"
-#include "SVGAnimatedString.h"
-#include "SVGGeometryElement.h"
-#include "SVGAnimatedPreserveAspectRatio.h"
+#include "mozilla/dom/SVGAnimatedLength.h"
+#include "mozilla/dom/SVGAnimatedString.h"
+#include "mozilla/dom/SVGGeometryElement.h"
+#include "mozilla/dom/SVGAnimatedPreserveAspectRatio.h"
+#include "mozilla/gfx/2D.h"
 
 nsresult NS_NewSVGImageElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -22,18 +23,18 @@ class SVGImageFrame;
 namespace dom {
 class DOMSVGAnimatedPreserveAspectRatio;
 
-using SVGImageElementBase = SVGGeometryElement;
+using SVGImageElementBase = SVGGraphicsElement;
 
-class SVGImageElement : public SVGImageElementBase,
-                        public nsImageLoadingContent {
+class SVGImageElement final : public SVGImageElementBase,
+                              public nsImageLoadingContent {
   friend class mozilla::SVGImageFrame;
 
  protected:
   explicit SVGImageElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual ~SVGImageElement();
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
   friend nsresult(::NS_NewSVGImageElement(
       nsIContent** aResult,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -44,44 +45,31 @@ class SVGImageElement : public SVGImageElementBase,
   NS_DECL_ISUPPORTS_INHERITED
 
   // EventTarget
-  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+  void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+
+  // nsImageLoadingContent interface
+  CORSMode GetCORSMode() override;
 
   // nsIContent interface
   bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                       const nsAString& aValue,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-  bool IsNodeOfType(uint32_t aFlags) const override {
-    // <image> is not really a SVGGeometryElement, we should
-    // ignore eSHAPE flag accepted by SVGGeometryElement.
-    return !(aFlags & ~eUSE_TARGET);
-  }
+  void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent) override;
 
-  virtual EventStates IntrinsicState() const override;
-
-  virtual void DestroyContent() override;
+  void DestroyContent() override;
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
 
-  // SVGGeometryElement methods:
-  virtual bool GetGeometryBounds(
-      Rect* aBounds, const StrokeOptions& aStrokeOptions,
-      const Matrix& aToBoundsSpace,
-      const Matrix* aToNonScalingStrokeSpace = nullptr) override;
-  virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
-
   // SVGSVGElement methods:
-  virtual bool HasValidDimensions() const override;
+  bool HasValidDimensions() const override;
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   void MaybeLoadSVGImage();
 
@@ -92,6 +80,15 @@ class SVGImageElement : public SVGImageElementBase,
   already_AddRefed<DOMSVGAnimatedLength> Height();
   already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
   already_AddRefed<DOMSVGAnimatedString> Href();
+  void GetCrossOrigin(nsAString& aCrossOrigin) {
+    // Null for both missing and invalid defaults is ok, since we
+    // always parse to an enum value, so we don't need an invalid
+    // default, and we _want_ the missing default to be null.
+    GetEnumAttr(nsGkAtoms::crossorigin, nullptr, aCrossOrigin);
+  }
+  void SetCrossOrigin(const nsAString& aCrossOrigin, ErrorResult& aError) {
+    SetOrRemoveNullableStringAttr(nsGkAtoms::crossorigin, aCrossOrigin, aError);
+  }
 
   void SetDecoding(const nsAString& aDecoding, ErrorResult& aError) {
     SetAttr(nsGkAtoms::decoding, aDecoding, aError);
@@ -102,14 +99,15 @@ class SVGImageElement : public SVGImageElementBase,
 
   static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
+  gfx::Rect GeometryBounds(const gfx::Matrix& aToBoundsSpace);
+
  protected:
   nsresult LoadSVGImage(bool aForce, bool aNotify);
   bool ShouldLoadImage() const;
 
-  virtual LengthAttributesInfo GetLengthInfo() override;
-  virtual SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio()
-      override;
-  virtual StringAttributesInfo GetStringInfo() override;
+  LengthAttributesInfo GetLengthInfo() override;
+  SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio() override;
+  StringAttributesInfo GetStringInfo() override;
 
   // Override for nsImageLoadingContent.
   nsIContent* AsContent() override { return this; }

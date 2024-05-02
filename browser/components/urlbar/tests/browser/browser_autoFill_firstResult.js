@@ -6,10 +6,11 @@
 
 "use strict";
 
-add_task(async function init() {
+add_setup(async function () {
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesUtils.history.clear();
   await PlacesTestUtils.addVisits(["http://example.com/"]);
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // Disable placeholder completion.  The point of this test is to make sure the
   // first result is autofilled (or not) correctly.  Autofilling the placeholder
@@ -79,6 +80,7 @@ add_task(async function caretNotAtEndOfSearchString() {
     value: "exam",
     selectionStart: "exa".length,
     selectionEnd: "exa".length,
+    fireInputEvent: false,
   });
 
   // The first result should be an autofill result, but it should not have been

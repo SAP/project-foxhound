@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko;
 
 import androidx.annotation.NonNull;
@@ -39,17 +43,23 @@ public class MultiMap<K, T> {
     }
   }
 
-  /** @return A map of key to the list of values associated to it */
+  /**
+   * @return A map of key to the list of values associated to it
+   */
   public Map<K, List<T>> asMap() {
     return mMap;
   }
 
-  /** @return The number of keys present in this map */
+  /**
+   * @return The number of keys present in this map
+   */
   public int size() {
     return mMap.size();
   }
 
-  /** @return whether this map is empty or not */
+  /**
+   * @return whether this map is empty or not
+   */
   public boolean isEmpty() {
     return mMap.isEmpty();
   }
@@ -166,7 +176,9 @@ public class MultiMap<K, T> {
     mMap.clear();
   }
 
-  /** @return a set with all the keys for this map. */
+  /**
+   * @return a set with all the keys for this map.
+   */
   @NonNull
   public Set<K> keySet() {
     return mMap.keySet();

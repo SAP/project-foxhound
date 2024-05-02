@@ -11,7 +11,7 @@ const ID3 = "addon3@tests.mozilla.org";
 async function createWebExtension(details) {
   let options = {
     manifest: {
-      applications: { gecko: { id: details.id } },
+      browser_specific_settings: { gecko: { id: details.id } },
 
       name: details.name,
 
@@ -20,7 +20,7 @@ async function createWebExtension(details) {
   };
 
   if (details.iconURL) {
-    options.manifest.icons = { "64": details.iconURL };
+    options.manifest.icons = { 64: details.iconURL };
   }
 
   let xpi = AddonTestUtils.createTempWebExtensionFile(options);
@@ -76,16 +76,16 @@ add_task(async function test_getNewSideload_on_invalid_extension() {
 
   let xpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
-      applications: { gecko: { id: "@invalid-extension" } },
+      browser_specific_settings: { gecko: { id: "@invalid-extension" } },
       name: "Invalid Extension",
     },
   });
 
   // Create an invalid sideload by creating a file name that doesn't match the
   // actual extension id.
-  await OS.File.copy(
+  await IOUtils.copy(
     xpi.path,
-    OS.Path.join(destDir.path, "@wrong-extension-filename.xpi")
+    PathUtils.join(destDir.path, "@wrong-extension-filename.xpi")
   );
 
   // Verify that getNewSideloads does not reject or throw when one of the sideloaded extensions

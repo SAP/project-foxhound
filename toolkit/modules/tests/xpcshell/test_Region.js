@@ -1,17 +1,23 @@
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { Region } = ChromeUtils.import("resource://gre/modules/Region.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+const { Region } = ChromeUtils.importESModule(
+  "resource://gre/modules/Region.sys.mjs"
+);
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  RegionTestUtils: "resource://testing-common/RegionTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
 });
 
 const INTERVAL_PREF = "browser.region.update.interval";
@@ -23,7 +29,7 @@ const histogram = Services.telemetry.getHistogramById(
   "SEARCH_SERVICE_COUNTRY_FETCH_RESULT"
 );
 
-// Region.jsm will call init() on startup and sent a background
+// Region.sys.mjs will call init() on startup and sent a background
 // task to fetch the region, ensure we have completed this before
 // running the rest of the tests.
 add_task(async function test_startup() {

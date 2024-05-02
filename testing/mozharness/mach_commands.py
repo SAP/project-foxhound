@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import os
 import re
@@ -86,6 +84,16 @@ class MozharnessRunner(MozbuildObject):
                 "config": desktop_unittest_config
                 + ["--mochitest-suite", "browser-chrome"],
             },
+            "mochitest-browser-a11y": {
+                "script": "desktop_unittest.py",
+                "config": desktop_unittest_config
+                + ["--mochitest-suite", "mochitest-browser-a11y"],
+            },
+            "mochitest-browser-media": {
+                "script": "desktop_unittest.py",
+                "config": desktop_unittest_config
+                + ["--mochitest-suite", "mochitest-browser-media"],
+            },
             "mochitest-devtools-chrome": {
                 "script": "desktop_unittest.py",
                 "config": desktop_unittest_config
@@ -152,9 +160,9 @@ class MozharnessRunner(MozbuildObject):
 
     def _installer_url(self):
         package_re = {
-            "linux": re.compile("^firefox-\d+\..+\.tar\.bz2$"),
-            "win": re.compile("^firefox-\d+\..+\.installer\.exe$"),
-            "mac": re.compile("^firefox-\d+\..+\.mac(?:64)?\.dmg$"),
+            "linux": re.compile(r"^firefox-\d+\..+\.tar\.bz2$"),
+            "win": re.compile(r"^firefox-\d+\..+\.installer\.exe$"),
+            "mac": re.compile(r"^firefox-\d+\..+\.mac(?:64)?\.dmg$"),
         }[mozinfo.info["os"]]
         dist_path = os.path.join(self.topobjdir, "dist")
         filenames = [item for item in os.listdir(dist_path) if package_re.match(item)]

@@ -2,12 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { DeferredTask } = ChromeUtils.import(
-  "resource://gre/modules/DeferredTask.jsm"
+const { DeferredTask } = ChromeUtils.importESModule(
+  "resource://gre/modules/DeferredTask.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const SEARCH_TIMEOUT_MS = 100;
@@ -439,10 +438,10 @@ if (!Preferences.get("browser.aboutConfig.showWarning")) {
     { once: true }
   );
 } else {
-  document.addEventListener("DOMContentLoaded", function() {
+  document.addEventListener("DOMContentLoaded", function () {
     let warningButton = document.getElementById("warningButton");
     warningButton.addEventListener("click", onWarningButtonClick);
-    warningButton.focus({ preventFocusRing: true });
+    warningButton.focus({ focusVisible: false });
   });
 }
 

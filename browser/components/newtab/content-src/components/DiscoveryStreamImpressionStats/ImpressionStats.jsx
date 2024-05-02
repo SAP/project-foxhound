@@ -2,7 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
+import { TOP_SITES_SOURCE } from "../TopSites/TopSitesConstants";
 import React from "react";
 
 const VISIBLE = "visible";
@@ -62,16 +66,40 @@ export class ImpressionStats extends React.PureComponent {
           data: { flightId: this.props.flightId },
         })
       );
+
+      // Record sponsored topsites impressions if the source is `TOP_SITES_SOURCE`.
+      if (this.props.source === TOP_SITES_SOURCE) {
+        for (const card of cards) {
+          this.props.dispatch(
+            ac.OnlyToMain({
+              type: at.TOP_SITES_SPONSORED_IMPRESSION_STATS,
+              data: {
+                type: "impression",
+                tile_id: card.id,
+                source: "newtab",
+                advertiser: card.advertiser,
+                // Keep the 0-based position, can be adjusted by the telemetry
+                // sender if necessary.
+                position: card.pos,
+              },
+            })
+          );
+        }
+      }
     }
 
     if (this._needsImpressionStats(cards)) {
       props.dispatch(
         ac.DiscoveryStreamImpressionStats({
           source: props.source.toUpperCase(),
+          window_inner_width: window.innerWidth,
+          window_inner_height: window.innerHeight,
           tiles: cards.map(link => ({
             id: link.id,
             pos: link.pos,
+            type: this.props.flightId ? "spoc" : "organic",
             ...(link.shim ? { shim: link.shim } : {}),
+            recommendation_id: link.recommendation_id,
           })),
         })
       );

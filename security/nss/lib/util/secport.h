@@ -13,7 +13,7 @@
 #include "prlink.h"
 
 /*
- * define XP_WIN, XP_BEOS, or XP_UNIX, in case they are not defined
+ * define XP_WIN, or XP_UNIX, in case they are not defined
  * by anyone else
  */
 #ifdef _WINDOWS
@@ -24,12 +24,6 @@
 #ifndef XP_WIN32
 #define XP_WIN32
 #endif
-#endif
-#endif
-
-#ifdef __BEOS__
-#ifndef XP_BEOS
-#define XP_BEOS
 #endif
 #endif
 
@@ -267,6 +261,8 @@ extern int NSS_PutEnv(const char *envVarName, const char *envValue);
 
 extern int NSS_SecureMemcmp(const void *a, const void *b, size_t n);
 extern unsigned int NSS_SecureMemcmpZero(const void *mem, size_t n);
+extern void NSS_SecureSelect(void *dest, const void *src0, const void *src1, size_t n, unsigned char b);
+extern PRBool NSS_GetSystemFIPSEnabled(void);
 
 /*
  * Load a shared library called "newShLibName" in the same directory as

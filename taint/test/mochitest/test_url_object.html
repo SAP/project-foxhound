@@ -1,0 +1,52 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Taint URL Object propagation</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+      }
+
+      SimpleTest.waitForExplicitFinish();
+      function startTest() {
+        const url = new URL("https://untainted.com");
+        check_untainted(url.toString());
+
+        const tainted_url = new URL(String.tainted("https://tainted_url.com"));
+        check_tainted(tainted_url.toString());
+        check_tainted(tainted_url.hostname);
+        check_tainted(tainted_url.protocol);
+
+        const partially_tainted = new URL("https://" + String.tainted("hostname") + ".com/" + String.tainted("path/to/file"));
+
+        check_untainted(partially_tainted.protocol);
+        check_tainted(partially_tainted.hostname);
+        check_tainted(partially_tainted.pathname);
+
+        const taint_overwritten = new URL("../untainted", "https://something.org/" + String.tainted("tainted"));
+
+        check_untainted(taint_overwritten.toString());
+
+        const taint_appended = new URL(String.tainted("tainted_path"), "https://something.org");
+        check_tainted(taint_appended.toString());
+        check_untainted(taint_appended.hostname);
+
+        SimpleTest.finish();
+      }
+
+    </script>
+  </head>
+  <body onload="startTest()">
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

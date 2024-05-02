@@ -1,7 +1,11 @@
-#[macro_use]
-extern crate bitflags;
+#![cfg(windows)]
+#![allow(
+    clippy::missing_safety_doc,
+    clippy::too_many_arguments,
+    clippy::not_unsafe_ptr_arg_deref
+)]
 
-use std::ffi::CStr;
+use std::{convert::TryFrom, ffi::CStr};
 use winapi::{
     shared::dxgiformat,
     um::{d3d12, d3dcommon},
@@ -64,6 +68,7 @@ pub struct SampleDesc {
 }
 
 #[repr(u32)]
+#[non_exhaustive]
 pub enum FeatureLevel {
     L9_1 = d3dcommon::D3D_FEATURE_LEVEL_9_1,
     L9_2 = d3dcommon::D3D_FEATURE_LEVEL_9_2,
@@ -76,9 +81,28 @@ pub enum FeatureLevel {
     L12_1 = d3dcommon::D3D_FEATURE_LEVEL_12_1,
 }
 
-pub type Blob = WeakPtr<d3dcommon::ID3DBlob>;
+impl TryFrom<u32> for FeatureLevel {
+    type Error = ();
 
-pub type Error = WeakPtr<d3dcommon::ID3DBlob>;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            d3dcommon::D3D_FEATURE_LEVEL_9_1 => Self::L9_1,
+            d3dcommon::D3D_FEATURE_LEVEL_9_2 => Self::L9_2,
+            d3dcommon::D3D_FEATURE_LEVEL_9_3 => Self::L9_3,
+            d3dcommon::D3D_FEATURE_LEVEL_10_0 => Self::L10_0,
+            d3dcommon::D3D_FEATURE_LEVEL_10_1 => Self::L10_1,
+            d3dcommon::D3D_FEATURE_LEVEL_11_0 => Self::L11_0,
+            d3dcommon::D3D_FEATURE_LEVEL_11_1 => Self::L11_1,
+            d3dcommon::D3D_FEATURE_LEVEL_12_0 => Self::L12_0,
+            d3dcommon::D3D_FEATURE_LEVEL_12_1 => Self::L12_1,
+            _ => return Err(()),
+        })
+    }
+}
+
+pub type Blob = ComPtr<d3dcommon::ID3DBlob>;
+
+pub type Error = ComPtr<d3dcommon::ID3DBlob>;
 impl Error {
     pub unsafe fn as_c_str(&self) -> &CStr {
         debug_assert!(!self.is_null());

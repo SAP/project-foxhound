@@ -10,11 +10,15 @@
 #include "ImageContainer.h"
 #include "FFmpegDataDecoder.h"
 #include "FFmpegLibWrapper.h"
+#include "PerformanceRecorder.h"
 #include "SimpleMap.h"
 #include "mozilla/ScopeExit.h"
 #include "nsTHashSet.h"
 #if LIBAVCODEC_VERSION_MAJOR >= 57 && LIBAVUTIL_VERSION_MAJOR >= 56
 #  include "mozilla/layers/TextureClient.h"
+#endif
+#ifdef MOZ_USE_HWDECODE
+#  include "FFmpegVideoFramePool.h"
 #endif
 
 struct _VADRMPRIMESurfaceDescriptor;
@@ -23,7 +27,6 @@ typedef struct _VADRMPRIMESurfaceDescriptor VADRMPRIMESurfaceDescriptor;
 namespace mozilla {
 
 class ImageBufferWrapper;
-class VideoFramePool;
 
 template <int V>
 class FFmpegVideoDecoder : public FFmpegDataDecoder<V> {};
@@ -46,12 +49,13 @@ class FFmpegVideoDecoder<LIBAV_VER>
   FFmpegVideoDecoder(FFmpegLibWrapper* aLib, const VideoInfo& aConfig,
                      KnowsCompositor* aAllocator,
                      ImageContainer* aImageContainer, bool aLowLatency,
-                     bool aDisableHardwareDecoding);
+                     bool aDisableHardwareDecoding,
+                     Maybe<TrackingId> aTrackingId);
 
   ~FFmpegVideoDecoder();
 
   RefPtr<InitPromise> Init() override;
-  void InitCodecContext() override;
+  void InitCodecContext() MOZ_REQUIRES(sMutex) override;
   nsCString GetDescriptionName() const override {
 #ifdef USING_MOZFFVPX
     return "ffvpx video decoder"_ns;
@@ -59,6 +63,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
     return "ffmpeg video decoder"_ns;
 #endif
   }
+  nsCString GetCodecName() const override;
   ConversionRequired NeedsConversion() const override {
     return ConversionRequired::kNeedAVCC;
   }
@@ -96,6 +101,8 @@ class FFmpegVideoDecoder<LIBAV_VER>
 #endif
   }
   gfx::YUVColorSpace GetFrameColorSpace() const;
+  gfx::ColorSpace2 GetFrameColorPrimaries() const;
+  gfx::ColorRange GetFrameColorRange() const;
 
   MediaResult CreateImage(int64_t aOffset, int64_t aPts, int64_t aDuration,
                           MediaDataDecoder::DecodedData& aResults) const;
@@ -107,22 +114,20 @@ class FFmpegVideoDecoder<LIBAV_VER>
   }
 
 #if LIBAVCODEC_VERSION_MAJOR >= 57 && LIBAVUTIL_VERSION_MAJOR >= 56
-  layers::TextureClient* AllocateTextueClientForImage(
+  layers::TextureClient* AllocateTextureClientForImage(
       struct AVCodecContext* aCodecContext, layers::PlanarYCbCrImage* aImage);
-
-  layers::PlanarYCbCrData CreateEmptyPlanarYCbCrData(
-      struct AVCodecContext* aCodecContext, const VideoInfo& aInfo);
 
   gfx::IntSize GetAlignmentVideoFrameSize(struct AVCodecContext* aCodecContext,
                                           int32_t aWidth,
                                           int32_t aHeight) const;
 #endif
 
-#ifdef MOZ_WAYLAND_USE_VAAPI
+#ifdef MOZ_USE_HWDECODE
   void InitHWDecodingPrefs();
   MediaResult InitVAAPIDecoder();
+  MediaResult InitV4L2Decoder();
   bool CreateVAAPIDeviceContext();
-  void InitVAAPICodecContext();
+  void InitHWCodecContext(bool aUsingV4L2);
   AVCodec* FindVAAPICodec();
   bool GetVAAPISurfaceDescriptor(VADRMPRIMESurfaceDescriptor* aVaDesc);
   void AddAcceleratedFormats(nsTArray<AVCodecID>& aCodecList,
@@ -132,19 +137,53 @@ class FFmpegVideoDecoder<LIBAV_VER>
 
   MediaResult CreateImageVAAPI(int64_t aOffset, int64_t aPts, int64_t aDuration,
                                MediaDataDecoder::DecodedData& aResults);
+  MediaResult CreateImageV4L2(int64_t aOffset, int64_t aPts, int64_t aDuration,
+                              MediaDataDecoder::DecodedData& aResults);
+  void AdjustHWDecodeLogging();
 #endif
 
-#ifdef MOZ_WAYLAND_USE_VAAPI
+#ifdef MOZ_USE_HWDECODE
   AVBufferRef* mVAAPIDeviceContext;
+  bool mUsingV4L2;
   bool mEnableHardwareDecoding;
   VADisplay mDisplay;
-  UniquePtr<VideoFramePool> mVideoFramePool;
+  UniquePtr<VideoFramePool<LIBAV_VER>> mVideoFramePool;
   static nsTArray<AVCodecID> mAcceleratedFormats;
 #endif
   RefPtr<KnowsCompositor> mImageAllocator;
   RefPtr<ImageContainer> mImageContainer;
   VideoInfo mInfo;
 
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+  class DecodeStats {
+   public:
+    void DecodeStart();
+    void UpdateDecodeTimes(const AVFrame* aFrame);
+    bool IsDecodingSlow() const;
+
+   private:
+    uint32_t mDecodedFrames = 0;
+
+    float mAverageFrameDecodeTime = 0;
+    float mAverageFrameDuration = 0;
+
+    // Number of delayed frames until we consider decoding as slow.
+    const uint32_t mMaxLateDecodedFrames = 15;
+    // How many frames is decoded behind its pts time, i.e. video decode lags.
+    uint32_t mDecodedFramesLate = 0;
+
+    // Reset mDecodedFramesLate every 3 seconds of correct playback.
+    const uint32_t mDelayedFrameReset = 3000;
+
+    uint32_t mLastDelayedFrameNum = 0;
+
+    TimeStamp mDecodeStart;
+  };
+
+  DecodeStats mDecodeStats;
+#endif
+
+#if LIBAVCODEC_VERSION_MAJOR < 58
   class PtsCorrectionContext {
    public:
     PtsCorrectionContext();
@@ -160,9 +199,12 @@ class FFmpegVideoDecoder<LIBAV_VER>
   };
 
   PtsCorrectionContext mPtsContext;
-
   DurationMap mDurationMap;
+#endif
+
   const bool mLowLatency;
+  const Maybe<TrackingId> mTrackingId;
+  PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
 
   // True if we're allocating shmem for ffmpeg decode buffer.
   Maybe<Atomic<bool>> mIsUsingShmemBufferForDecode;
@@ -171,6 +213,14 @@ class FFmpegVideoDecoder<LIBAV_VER>
   // These images are buffers for ffmpeg in order to store decoded data when
   // using custom allocator for decoding. We want to explictly track all images
   // we allocate to ensure that we won't leak any of them.
+  //
+  // All images tracked by mAllocatedImages are used by ffmpeg,
+  // i.e. ffmpeg holds a reference to them and uses them in
+  // its internal decoding queue.
+  //
+  // When an image is removed from mAllocatedImages it's recycled
+  // for a new frame by AllocateTextureClientForImage() in
+  // FFmpegVideoDecoder::GetVideoBuffer().
   nsTHashSet<RefPtr<ImageBufferWrapper>> mAllocatedImages;
 #endif
 };
@@ -189,30 +239,11 @@ class ImageBufferWrapper final {
     MOZ_ASSERT(mDecoder);
   }
 
-  PlanarYCbCrImage* AsPlanarYCbCrImage() {
-    return mImage->AsPlanarYCbCrImage();
-  }
+  Image* AsImage() { return mImage; }
 
   void ReleaseBuffer() {
-    auto clear = MakeScopeExit([&]() {
-      auto* decoder = static_cast<FFmpegVideoDecoder<LIBAV_VER>*>(mDecoder);
-      decoder->ReleaseAllocatedImage(this);
-    });
-    if (!mImage) {
-      return;
-    }
-    PlanarYCbCrImage* image = mImage->AsPlanarYCbCrImage();
-    RefPtr<layers::TextureClient> texture = image->GetTextureClient(nullptr);
-    // Usually the decoded video buffer would be locked when it is allocated,
-    // and gets unlocked when we create the video data via `DoDecode`. However,
-    // sometime the buffer won't be used for the decoded data (maybe just as
-    // an internal temporary usage?) so we will need to unlock the texture here
-    // before sending it back to recycle.
-    if (!texture) {
-      NS_WARNING("Failed to get the texture client during release!");
-    } else if (texture->IsLocked()) {
-      texture->Unlock();
-    }
+    auto* decoder = static_cast<FFmpegVideoDecoder<LIBAV_VER>*>(mDecoder);
+    decoder->ReleaseAllocatedImage(this);
   }
 
  private:

@@ -12,8 +12,7 @@
 
 #include "gfxVR.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class XRFrameOfReference;
 class XRInputPose;
@@ -27,7 +26,7 @@ class XRViewerPose;
 class XRFrame final : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(XRFrame)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(XRFrame)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(XRFrame)
 
   explicit XRFrame(nsISupports* aParent, XRSession* aXRSession);
 
@@ -59,7 +58,6 @@ class XRFrame final : public nsWrapperCache {
   bool mAnimationFrame;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_XRFrame_h_

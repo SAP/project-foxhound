@@ -26,14 +26,20 @@ pub enum WebTransportEvent {
     Session {
         stream_id: StreamId,
         status: u16,
+        headers: Vec<Header>,
     },
     SessionClosed {
         stream_id: StreamId,
         reason: SessionCloseReason,
+        headers: Option<Vec<Header>>,
     },
     NewStream {
         stream_id: StreamId,
         session_id: StreamId,
+    },
+    Datagram {
+        session_id: StreamId,
+        datagram: Vec<u8>,
     },
 }
 
@@ -177,11 +183,18 @@ impl SendStreamEvents for Http3ClientEvents {
 }
 
 impl ExtendedConnectEvents for Http3ClientEvents {
-    fn session_start(&self, connect_type: ExtendedConnectType, stream_id: StreamId, status: u16) {
+    fn session_start(
+        &self,
+        connect_type: ExtendedConnectType,
+        stream_id: StreamId,
+        status: u16,
+        headers: Vec<Header>,
+    ) {
         if connect_type == ExtendedConnectType::WebTransport {
             self.insert(Http3ClientEvent::WebTransport(WebTransportEvent::Session {
                 stream_id,
                 status,
+                headers,
             }));
         } else {
             unreachable!("There is only ExtendedConnectType::WebTransport.");
@@ -193,10 +206,15 @@ impl ExtendedConnectEvents for Http3ClientEvents {
         connect_type: ExtendedConnectType,
         stream_id: StreamId,
         reason: SessionCloseReason,
+        headers: Option<Vec<Header>>,
     ) {
         if connect_type == ExtendedConnectType::WebTransport {
             self.insert(Http3ClientEvent::WebTransport(
-                WebTransportEvent::SessionClosed { stream_id, reason },
+                WebTransportEvent::SessionClosed {
+                    stream_id,
+                    reason,
+                    headers,
+                },
             ));
         } else {
             unreachable!("There are no other types.");
@@ -208,6 +226,15 @@ impl ExtendedConnectEvents for Http3ClientEvents {
             WebTransportEvent::NewStream {
                 stream_id: stream_info.stream_id(),
                 session_id: stream_info.session_id().unwrap(),
+            },
+        ));
+    }
+
+    fn new_datagram(&self, session_id: StreamId, datagram: Vec<u8>) {
+        self.insert(Http3ClientEvent::WebTransport(
+            WebTransportEvent::Datagram {
+                session_id,
+                datagram,
             },
         ));
     }
@@ -311,7 +338,7 @@ impl Http3ClientEvents {
     }
 
     pub fn has_push(&self, push_id: u64) -> bool {
-        for iter in self.events.borrow().iter() {
+        for iter in &*self.events.borrow() {
             if matches!(iter, Http3ClientEvent::PushPromise{push_id:x, ..} if *x == push_id) {
                 return true;
             }

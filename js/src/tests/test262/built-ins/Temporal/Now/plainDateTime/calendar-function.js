@@ -1,37 +1,49 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2020 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
 esid: sec-temporal.now.plaindatetime
 description: Behavior when provided calendar value is a function
-includes: [compareArray.js]
+includes: [compareArray.js, temporalHelpers.js]
 features: [BigInt, Proxy, Temporal]
 ---*/
 const actual = [];
 
 const expected = [
-  'has timeZone.timeZone',
+  'has timeZone.getOffsetNanosecondsFor',
+  'has timeZone.getPossibleInstantsFor',
+  'has timeZone.id',
   'get timeZone.getOffsetNanosecondsFor',
   'call timeZone.getOffsetNanosecondsFor'
 ];
 
 const calendar = function() {};
+calendar.dateAdd = () => {};
+calendar.dateFromFields = () => {};
+calendar.dateUntil = () => {};
+calendar.day = () => {};
+calendar.dayOfWeek = () => {};
+calendar.dayOfYear = () => {};
+calendar.daysInMonth = () => {};
+calendar.daysInWeek = () => {};
+calendar.daysInYear = () => {};
+calendar.fields = () => {};
+calendar.id = "test-calendar";
+calendar.inLeapYear = () => {};
+calendar.mergeFields = () => {};
+calendar.month = () => {};
+calendar.monthCode = () => {};
+calendar.monthDayFromFields = () => {};
+calendar.monthsInYear = () => {};
+calendar.weekOfYear = () => {};
+calendar.year = () => {};
+calendar.yearMonthFromFields = () => {};
+calendar.yearOfWeek = () => {};
 
-const timeZone = new Proxy({
+const timeZone = TemporalHelpers.timeZoneObserver(actual, "timeZone", {
   getOffsetNanosecondsFor(instant) {
-    actual.push('call timeZone.getOffsetNanosecondsFor');
     return -Number(instant.epochNanoseconds % 86400000000000n);
-  }
-}, {
-  has(target, property) {
-    actual.push(`has timeZone.${property}`);
-    return property in target;
   },
-
-  get(target, property) {
-    actual.push(`get timeZone.${property}`);
-    return target[property];
-  }
 });
 
 Object.defineProperty(Temporal.Calendar, 'from', {

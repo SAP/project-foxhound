@@ -3,9 +3,12 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { PureComponent } from "react";
-import classnames from "classnames";
+import PropTypes from "prop-types";
 import AccessibleImage from "../AccessibleImage";
 import { CommandBarButton } from "./";
+
+const classnames = require("devtools/client/shared/classnames.js");
+
 import "./styles/PaneToggleButton.css";
 
 class PaneToggleButton extends PureComponent {
@@ -13,6 +16,15 @@ class PaneToggleButton extends PureComponent {
     horizontal: false,
     position: "start",
   };
+
+  static get propTypes() {
+    return {
+      collapsed: PropTypes.bool.isRequired,
+      handleClick: PropTypes.func.isRequired,
+      horizontal: PropTypes.bool.isRequired,
+      position: PropTypes.oneOf(["start", "end"]).isRequired,
+    };
+  }
 
   label(position, collapsed) {
     switch (position) {
@@ -23,24 +35,24 @@ class PaneToggleButton extends PureComponent {
           collapsed ? "expandBreakpoints" : "collapseBreakpoints"
         );
     }
+    return null;
   }
 
   render() {
     const { position, collapsed, horizontal, handleClick } = this.props;
-
-    return (
-      <CommandBarButton
-        className={classnames("toggle-button", position, {
+    return React.createElement(
+      CommandBarButton,
+      {
+        className: classnames("toggle-button", position, {
           collapsed,
           vertical: !horizontal,
-        })}
-        onClick={() => handleClick(position, !collapsed)}
-        title={this.label(position, collapsed)}
-      >
-        <AccessibleImage
-          className={collapsed ? "pane-expand" : "pane-collapse"}
-        />
-      </CommandBarButton>
+        }),
+        onClick: () => handleClick(position, !collapsed),
+        title: this.label(position, collapsed),
+      },
+      React.createElement(AccessibleImage, {
+        className: collapsed ? "pane-expand" : "pane-collapse",
+      })
     );
   }
 }

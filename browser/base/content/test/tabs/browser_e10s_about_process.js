@@ -60,21 +60,14 @@ AboutModule.prototype = {
 };
 
 var AboutModuleFactory = {
-  createInstance(aOuter, aIID) {
-    if (aOuter) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance(aIID) {
     return new AboutModule().QueryInterface(aIID);
-  },
-
-  lockFactory(aLock) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
 
   QueryInterface: ChromeUtils.generateQI(["nsIFactory"]),
 };
 
-add_task(async function init() {
+add_setup(async function () {
   SpecialPowers.setBoolPref(
     "browser.tabs.remote.separatePrivilegedMozillaWebContentProcess",
     true

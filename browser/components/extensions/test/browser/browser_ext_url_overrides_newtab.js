@@ -3,21 +3,15 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AboutNewTab",
-  "resource:///modules/AboutNewTab.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionControlledPopup",
-  "resource:///modules/ExtensionControlledPopup.jsm"
-);
+requestLongerTimeout(4);
+
+ChromeUtils.defineESModuleGetters(this, {
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  ExtensionControlledPopup:
+    "resource:///modules/ExtensionControlledPopup.sys.mjs",
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+});
 
 function getNotificationSetting(extensionId) {
   return ExtensionSettingsStore.getSetting("newTabNotification", extensionId);
@@ -96,7 +90,7 @@ function waitForAddonEnabled(addon) {
 // Default test extension data for newtab.
 const extensionData = {
   manifest: {
-    applications: {
+    browser_specific_settings: {
       gecko: {
         id: "newtaburl@mochi.test",
       },
@@ -139,8 +133,11 @@ add_task(async function test_new_tab_ignore_settings() {
   let extensionId = "newtabignore@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: extensionId } },
-      browser_action: { default_popup: "ignore.html" },
+      browser_specific_settings: { gecko: { id: extensionId } },
+      browser_action: {
+        default_popup: "ignore.html",
+        default_area: "navbar",
+      },
       chrome_url_overrides: { newtab: "ignore.html" },
     },
     files: { "ignore.html": '<h1 id="extension-new-tab">New Tab!</h1>' },
@@ -173,7 +170,7 @@ add_task(async function test_new_tab_ignore_settings() {
   );
   is(
     panel.anchorNode.closest("toolbarbutton").id,
-    "newtabignore_mochi_test-browser-action",
+    "newtabignore_mochi_test-BAP",
     "The doorhanger is anchored to the browser action"
   );
 
@@ -216,7 +213,7 @@ add_task(async function test_new_tab_keep_settings() {
   let manifest = {
     version: "1.0",
     name: "New Tab Add-on",
-    applications: { gecko: { id: extensionId } },
+    browser_specific_settings: { gecko: { id: extensionId } },
     chrome_url_overrides: { newtab: "newtab.html" },
   };
   let extension = ExtensionTestUtils.loadExtension({
@@ -336,7 +333,7 @@ add_task(async function test_new_tab_restore_settings() {
   let extensionId = "newtabrestore@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: extensionId } },
+      browser_specific_settings: { gecko: { id: extensionId } },
       chrome_url_overrides: { newtab: "restore.html" },
     },
     files: { "restore.html": '<h1 id="extension-new-tab">New Tab!</h1>' },
@@ -417,7 +414,7 @@ add_task(async function test_new_tab_restore_settings_multiple() {
   let extensionOneId = "newtabrestoreone@mochi.test";
   let extensionOne = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: extensionOneId } },
+      browser_specific_settings: { gecko: { id: extensionOneId } },
       chrome_url_overrides: { newtab: "restore-one.html" },
     },
     files: {
@@ -430,7 +427,7 @@ add_task(async function test_new_tab_restore_settings_multiple() {
   let extensionTwoId = "newtabrestoretwo@mochi.test";
   let extensionTwo = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: extensionTwoId } },
+      browser_specific_settings: { gecko: { id: extensionTwoId } },
       chrome_url_overrides: { newtab: "restore-two.html" },
     },
     files: { "restore-two.html": '<h1 id="extension-new-tab">New Tab!</h1>' },
@@ -608,7 +605,7 @@ add_task(async function dontTemporarilyShowAboutExtensionPath() {
 
   gBrowser.removeProgressListener(wpl);
   is(gURLBar.value, "", "URL bar value should be empty.");
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     is(
       content.document.body.textContent,
       "New tab!",
@@ -712,4 +709,73 @@ add_task(async function testNewTabPrefsReset() {
     isUndefinedPref("browser.newtab.privateAllowed"),
     "privateAllowed pref is not set"
   );
+});
+
+// This test ensures that an extension provided newtab
+// can be opened by another extension (e.g. tab manager)
+// regardless of whether the newtab url is made available
+// in web_accessible_resources.
+add_task(async function test_newtab_from_extension() {
+  let panel = getNewTabDoorhanger().closest("panel");
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      browser_specific_settings: {
+        gecko: {
+          id: "newtaburl@mochi.test",
+        },
+      },
+      chrome_url_overrides: {
+        newtab: "newtab.html",
+      },
+    },
+    files: {
+      "newtab.html": `<h1>New tab!</h1><script src="newtab.js"></script>`,
+      "newtab.js": () => {
+        browser.test.sendMessage("newtab-loaded");
+      },
+    },
+    useAddonManager: "temporary",
+  });
+
+  await extension.startup();
+  let extensionNewTabUrl = `moz-extension://${extension.uuid}/newtab.html`;
+
+  let popupShown = promisePopupShown(panel);
+  let tab = await promiseNewTab(extensionNewTabUrl);
+  await popupShown;
+
+  // This will show a confirmation doorhanger, make sure we don't leave it open.
+  let popupHidden = promisePopupHidden(panel);
+  panel.hidePopup();
+  await popupHidden;
+
+  BrowserTestUtils.removeTab(tab);
+
+  // extension to open the newtab
+  let opener = ExtensionTestUtils.loadExtension({
+    async background() {
+      let newtab = await browser.tabs.create({});
+      browser.test.assertTrue(
+        newtab.id !== browser.tabs.TAB_ID_NONE,
+        "New tab was created."
+      );
+      await browser.tabs.remove(newtab.id);
+      browser.test.sendMessage("complete");
+    },
+  });
+
+  function listener(msg) {
+    Assert.ok(!/may not load or link to moz-extension/.test(msg.message));
+  }
+  Services.console.registerListener(listener);
+  registerCleanupFunction(() => {
+    Services.console.unregisterListener(listener);
+  });
+
+  await opener.startup();
+  await opener.awaitMessage("complete");
+  await extension.awaitMessage("newtab-loaded");
+  await opener.unload();
+  await extension.unload();
 });

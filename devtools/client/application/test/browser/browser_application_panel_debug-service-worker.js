@@ -3,21 +3,14 @@
 
 "use strict";
 
-/* import-globals-from ../../../debugger/test/mochitest/helpers.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers.js",
-  this
-);
-
-/* import-globals-from ../../../debugger/test/mochitest/helpers/context.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers/context.js",
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
   this
 );
 
 const TAB_URL = URL_ROOT + "resources/service-workers/debug.html";
 
-add_task(async function() {
+add_task(async function () {
   await enableApplicationPanel();
 
   const { panel, tab, toolbox, commands } = await openNewTabAndApplicationPanel(
@@ -49,15 +42,15 @@ add_task(async function() {
 
   // force a pause at the breakpoint
   info("Invoke fetch, expect the service worker script to pause on line 11");
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await ContentTask.spawn(tab.linkedBrowser, {}, async function () {
     content.wrappedJSObject.fetchFromWorker();
   });
   await waitForPaused(debuggerContext);
-  assertPausedLocation(debuggerContext);
+  const workerScript = findSource(debuggerContext, "debug-sw.js");
+  assertPausedAtSourceAndLine(debuggerContext, workerScript.id, 11);
   await resume(debuggerContext);
 
   // remove breakpoint
-  const workerScript = findSource(debuggerContext, "debug-sw.js");
   await removeBreakpoint(debuggerContext, workerScript.id, 11);
 
   await unregisterAllWorkers(commands.client, doc);

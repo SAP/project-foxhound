@@ -5,12 +5,14 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   module.exports = {
     MODE: {
       TINY: Symbol("TINY"),
       SHORT: Symbol("SHORT"),
       LONG: Symbol("LONG"),
+      // Used by Debugger Preview popup
+      HEADER: Symbol("HEADER"),
     },
   };
 });

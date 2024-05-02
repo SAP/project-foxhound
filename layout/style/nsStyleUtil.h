@@ -24,7 +24,6 @@ struct nsCSSValueList;
 struct nsStylePosition;
 
 namespace mozilla {
-class FontSlantStyle;
 namespace dom {
 class Document;
 class Element;
@@ -37,6 +36,9 @@ class nsStyleUtil {
   static bool DashMatchCompare(const nsAString& aAttributeValue,
                                const nsAString& aSelectorValue,
                                const nsStringComparator& aComparator);
+
+  static bool LangTagCompare(const nsACString& aAttributeValue,
+                             const nsACString& aSelectorValue);
 
   static bool ValueIncludes(const nsAString& aValueList,
                             const nsAString& aValue,
@@ -54,9 +56,6 @@ class nsStyleUtil {
   // will be escaped as U+FFFD and then reparsed back to U+FFFD.
   static void AppendEscapedCSSIdent(const nsAString& aIdent,
                                     nsAString& aResult);
-
-  static void AppendFontSlantStyle(const mozilla::FontSlantStyle&,
-                                   nsAString& aResult);
 
  public:
   static void AppendCSSNumber(float aNumber, nsAString& aResult) {

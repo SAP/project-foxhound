@@ -10,6 +10,7 @@
 #include "nsGkAtoms.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGGradientFrame.h"
 #include "mozilla/SVGObserverUtils.h"
 
 // This is a very simple frame whose only purpose is to capture style change
@@ -36,17 +37,17 @@ class SVGStopFrame : public nsIFrame {
 
   // nsIFrame interface:
 #ifdef DEBUG
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 #endif
 
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override {}
 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+  bool IsFrameOfType(uint32_t aFlags) const override {
     if (aFlags & eSupportsContainLayoutAndPaint) {
       return false;
     }
@@ -55,7 +56,7 @@ class SVGStopFrame : public nsIFrame {
   }
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SVGStop"_ns, aResult);
   }
 #endif
@@ -85,7 +86,7 @@ nsresult SVGStopFrame::AttributeChanged(int32_t aNameSpaceID,
     MOZ_ASSERT(
         static_cast<SVGGradientFrame*>(do_QueryFrame(GetParent())),
         "Observers observe the gradient, so that's what we must invalidate");
-    SVGObserverUtils::InvalidateDirectRenderingObservers(GetParent());
+    SVGObserverUtils::InvalidateRenderingObservers(GetParent());
   }
 
   return nsIFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);

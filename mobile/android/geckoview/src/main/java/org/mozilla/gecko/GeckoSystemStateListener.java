@@ -11,13 +11,11 @@ import android.content.res.Configuration;
 import android.database.ContentObserver;
 import android.hardware.input.InputManager;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.InputDevice;
-import androidx.annotation.RequiresApi;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.util.InputDeviceUtils;
 import org.mozilla.gecko.util.ThreadUtils;
@@ -59,6 +57,15 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
         };
     contentResolver.registerContentObserver(animationSetting, false, mContentObserver);
 
+    final Uri invertSetting =
+        Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED);
+    contentResolver.registerContentObserver(invertSetting, false, mContentObserver);
+
+    final Uri textContrastSetting =
+        Settings.Secure.getUriFor(
+            /*Settings.Secure.ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED*/ "high_text_contrast_enabled");
+    contentResolver.registerContentObserver(textContrastSetting, false, mContentObserver);
+
     mIsNightMode =
         (sApplicationContext.getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK)
@@ -73,7 +80,7 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
       return;
     }
 
-    if (mInputManager != null) {
+    if (mInputManager == null) {
       Log.e(LOGTAG, "mInputManager should be valid!");
       return;
     }
@@ -88,7 +95,6 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
     mContentObserver = null;
   }
 
-  @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
   @WrapForJNI(calledFrom = "gecko")
   /**
    * For prefers-reduced-motion media queries feature.
@@ -96,14 +102,42 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
    * <p>Uses `Settings.Global` which was introduced in API version 17.
    */
   private static boolean prefersReducedMotion() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) {
-      return false;
-    }
-
     final ContentResolver contentResolver = sApplicationContext.getContentResolver();
 
     return Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1)
         == 0.0f;
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  /**
+   * For inverted-colors queries feature.
+   *
+   * <p>Uses `Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED` which was introduced in API
+   * version 21.
+   */
+  private static boolean isInvertedColors() {
+    final ContentResolver contentResolver = sApplicationContext.getContentResolver();
+
+    return Settings.Secure.getInt(
+            contentResolver, Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, 0)
+        == 1;
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  /**
+   * For prefers-contrast queries feature.
+   *
+   * <p>Uses `Settings.Secure.ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED` which was introduced in API
+   * version 21.
+   */
+  private static boolean prefersContrast() {
+    final ContentResolver contentResolver = sApplicationContext.getContentResolver();
+
+    return Settings.Secure.getInt(
+            contentResolver, /*Settings.Secure.ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED*/
+            "high_text_contrast_enabled",
+            0)
+        == 1;
   }
 
   /** For prefers-color-scheme media queries feature. */

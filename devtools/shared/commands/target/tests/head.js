@@ -5,15 +5,18 @@
 "use strict";
 
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../../../client/shared/test/shared-head.js */
 
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
   this
 );
 
-const { DevToolsClient } = require("devtools/client/devtools-client");
-const { DevToolsServer } = require("devtools/server/devtools-server");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 
 async function createLocalClient() {
   // Instantiate a minimal server

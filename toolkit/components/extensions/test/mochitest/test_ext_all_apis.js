@@ -41,6 +41,7 @@ let expectedCommonApis = [
   "runtime.sendMessage",
   // browser.test is only available in xpcshell or when
   // Cu.isInAutomation is true.
+  "test.assertDeepEq",
   "test.assertEq",
   "test.assertFalse",
   "test.assertRejects",
@@ -95,6 +96,8 @@ let expectedBackgroundApis = [
   "runtime.onInstalled",
   "runtime.onMessageExternal",
   "runtime.onStartup",
+  "runtime.onSuspend",
+  "runtime.onSuspendCanceled",
   "runtime.onUpdateAvailable",
   "runtime.openOptionsPage",
   "runtime.reload",
@@ -104,6 +107,19 @@ let expectedBackgroundApis = [
   "types.LevelOfControl",
   "types.SettingScope",
 ];
+
+// APIs that are exposed to MV2 by default, but not to MV3.
+const mv2onlyBackgroundApis = new Set([
+  "extension.getURL",
+  "extension.lastError",
+  "contentScripts.register",
+  "tabs.executeScript",
+  "tabs.insertCSS",
+  "tabs.removeCSS",
+]);
+let expectedBackgroundApisMV3 = expectedBackgroundApis.filter(
+  path => !mv2onlyBackgroundApis.has(path)
+);
 
 function sendAllApis() {
   function isEvent(key, val) {
@@ -117,6 +133,12 @@ function sendAllApis() {
     eventKeys = eventKeys.sort().join();
     return eventKeys === "addListener,hasListener,removeListener";
   }
+  // Some items are removed from the namespaces in the lazy getters after the first get.  This
+  // in one case, the events namespace, leaves a namespace that is empty.  Make sure we don't
+  // consider those as a part of our testing.
+  function isEmptyObject(val) {
+    return val !== null && typeof val == "object" && !Object.keys(val).length;
+  }
   function mayRecurse(key, val) {
     if (Object.keys(val).filter(k => !/^[A-Z\-0-9_]+$/.test(k)).length === 0) {
       // Don't recurse on constants and empty objects.
@@ -127,11 +149,10 @@ function sendAllApis() {
 
   let results = [];
   function diveDeeper(path, obj) {
-    for (let key in obj) {
-      let val = obj[key];
+    for (const [key, val] of Object.entries(obj)) {
       if (typeof val == "object" && val !== null && mayRecurse(key, val)) {
         diveDeeper(`${path}.${key}`, val);
-      } else if (val !== undefined) {
+      } else if (val !== undefined && !isEmptyObject(val)) {
         results.push(`${path}.${key}`);
       }
     }
@@ -139,7 +160,14 @@ function sendAllApis() {
   diveDeeper("browser", browser);
   diveDeeper("chrome", chrome);
   browser.test.sendMessage("allApis", results.sort());
+  browser.test.sendMessage("namespaces", browser === chrome);
 }
+
+add_task(async function setup() {
+  // This test enumerates all APIs and may access a deprecated API. Just log a
+  // warning instead of throwing.
+  await ExtensionTestUtils.failOnSchemaWarnings(false);
+});
 
 add_task(async function test_enumerate_content_script_apis() {
   let extensionData = {
@@ -156,8 +184,6 @@ add_task(async function test_enumerate_content_script_apis() {
       "contentscript.js": sendAllApis,
     },
   };
-  // Turn off warning as errors to pass for deprecated APIs
-  ExtensionTestUtils.failOnSchemaWarnings(false);
   let extension = ExtensionTestUtils.loadExtension(extensionData);
   await extension.startup();
 
@@ -167,16 +193,16 @@ add_task(async function test_enumerate_content_script_apis() {
   let expectedApis = generateExpectations(expectedContentApis);
   isDeeply(actualApis, expectedApis, "content script APIs");
 
+  let sameness = await extension.awaitMessage("namespaces");
+  ok(sameness, "namespaces are same object");
+
   await extension.unload();
-  ExtensionTestUtils.failOnSchemaWarnings(true);
 });
 
 add_task(async function test_enumerate_background_script_apis() {
   let extensionData = {
     background: sendAllApis,
   };
-  // Turn off warning as errors to pass for deprecated APIs
-  ExtensionTestUtils.failOnSchemaWarnings(false);
   let extension = ExtensionTestUtils.loadExtension(extensionData);
   await extension.startup();
 
@@ -184,6 +210,36 @@ add_task(async function test_enumerate_background_script_apis() {
   let expectedApis = generateExpectations(expectedBackgroundApis);
   isDeeply(actualApis, expectedApis, "background script APIs");
 
+  let sameness = await extension.awaitMessage("namespaces");
+  ok(!sameness, "namespaces are different objects");
+
   await extension.unload();
-  ExtensionTestUtils.failOnSchemaWarnings(true);
+});
+
+add_task(async function test_enumerate_background_script_apis_mv3() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.manifestV3.enabled", true]],
+  });
+  let extensionData = {
+    background: sendAllApis,
+    manifest: {
+      manifest_version: 3,
+
+      // Features that expose APIs in MV2, but should not do anything with MV3.
+      browser_action: {},
+      user_scripts: {},
+    },
+  };
+  let extension = ExtensionTestUtils.loadExtension(extensionData);
+  await extension.startup();
+
+  let actualApis = await extension.awaitMessage("allApis");
+  let expectedApis = generateExpectations(expectedBackgroundApisMV3);
+  isDeeply(actualApis, expectedApis, "background script APIs in MV3");
+
+  let sameness = await extension.awaitMessage("namespaces");
+  ok(sameness, "namespaces are same object");
+
+  await extension.unload();
+  await SpecialPowers.popPrefEnv();
 });

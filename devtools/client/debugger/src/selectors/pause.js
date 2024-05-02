@@ -3,42 +3,30 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { getThreadPauseState } from "../reducers/pause";
-import { getSelectedSourceId, getSelectedLocation } from "../selectors/sources";
-
-import { isGeneratedId } from "devtools-source-map";
+import { getSelectedSource, getSelectedLocation } from "./sources";
+import { getBlackBoxRanges } from "./source-blackbox";
 
 // eslint-disable-next-line
 import { getSelectedLocation as _getSelectedLocation } from "../utils/selected-location";
+import { isFrameBlackBoxed } from "../utils/source";
 import { createSelector } from "reselect";
 
-const getSelectedFrames = createSelector(
-  state => state.pause.threads,
+export const getSelectedFrame = createSelector(
+  (state, thread) => state.pause.threads[thread],
   threadPauseState => {
-    const selectedFrames = {};
-    for (const thread in threadPauseState) {
-      const pausedThread = threadPauseState[thread];
-      const { selectedFrameId, frames } = pausedThread;
-      if (frames) {
-        selectedFrames[thread] = frames.find(
-          frame => frame.id == selectedFrameId
-        );
-      }
+    if (!threadPauseState) return null;
+    const { selectedFrameId, frames } = threadPauseState;
+    if (frames) {
+      return frames.find(frame => frame.id == selectedFrameId);
     }
-    return selectedFrames;
+    return null;
   }
 );
 
-export function getSelectedFrame(state, thread) {
-  const selectedFrames = getSelectedFrames(state);
-  return selectedFrames[thread];
-}
-
 export const getVisibleSelectedFrame = createSelector(
   getSelectedLocation,
-  getSelectedFrames,
-  getCurrentThread,
-  (selectedLocation, selectedFrames, thread) => {
-    const selectedFrame = selectedFrames[thread];
+  state => getSelectedFrame(state, getCurrentThread(state)),
+  (selectedLocation, selectedFrame) => {
     if (!selectedFrame) {
       return null;
     }
@@ -61,8 +49,17 @@ export function getThreadContext(state) {
   return state.pause.threadcx;
 }
 
+export function getNavigateCounter(state) {
+  return state.pause.threadcx.navigateCounter;
+}
+
 export function getPauseReason(state, thread) {
   return getThreadPauseState(state.pause, thread).why;
+}
+
+export function getShouldBreakpointsPaneOpenOnPause(state, thread) {
+  return getThreadPauseState(state.pause, thread)
+    .shouldBreakpointsPaneOpenOnPause;
 }
 
 export function getPauseCommand(state, thread) {
@@ -95,6 +92,10 @@ export function getIsWaitingOnBreak(state, thread) {
   return getThreadPauseState(state.pause, thread).isWaitingOnBreak;
 }
 
+export function getShouldPauseOnDebuggerStatement(state) {
+  return state.pause.shouldPauseOnDebuggerStatement;
+}
+
 export function getShouldPauseOnExceptions(state) {
   return state.pause.shouldPauseOnExceptions;
 }
@@ -108,13 +109,22 @@ export function getFrames(state, thread) {
   return framesLoading ? null : frames;
 }
 
-export function getCurrentThreadFrames(state) {
-  const { frames, framesLoading } = getThreadPauseState(
-    state.pause,
-    getCurrentThread(state)
-  );
-  return framesLoading ? null : frames;
-}
+export const getCurrentThreadFrames = createSelector(
+  state => {
+    const { frames, framesLoading } = getThreadPauseState(
+      state.pause,
+      getCurrentThread(state)
+    );
+    if (framesLoading) {
+      return [];
+    }
+    return frames;
+  },
+  getBlackBoxRanges,
+  (frames, blackboxedRanges) => {
+    return frames.filter(frame => !isFrameBlackBoxed(frame, blackboxedRanges));
+  }
+);
 
 function getGeneratedFrameId(frameId) {
   if (frameId.includes("-originalFrame")) {
@@ -124,25 +134,30 @@ function getGeneratedFrameId(frameId) {
   return frameId;
 }
 
-export function getGeneratedFrameScope(state, thread, frameId) {
-  if (!frameId) {
+export function getGeneratedFrameScope(state, frame) {
+  if (!frame) {
     return null;
   }
-
-  return getFrameScopes(state, thread).generated[getGeneratedFrameId(frameId)];
+  return getFrameScopes(state, frame.thread).generated[
+    getGeneratedFrameId(frame.id)
+  ];
 }
 
-export function getOriginalFrameScope(state, thread, sourceId, frameId) {
-  if (!frameId || !sourceId) {
+export function getOriginalFrameScope(state, frame) {
+  if (!frame) {
+    return null;
+  }
+  // Only compute original scope if we are currently showing an original source.
+  const source = getSelectedSource(state);
+  if (!source || !source.isOriginal) {
     return null;
   }
 
-  const isGenerated = isGeneratedId(sourceId);
-  const original = getFrameScopes(state, thread).original[
-    getGeneratedFrameId(frameId)
+  const original = getFrameScopes(state, frame.thread).original[
+    getGeneratedFrameId(frame.id)
   ];
 
-  if (!isGenerated && original && (original.pending || original.scope)) {
+  if (original && (original.pending || original.scope)) {
     return original;
   }
 
@@ -163,7 +178,7 @@ export function getSelectedFrameBindings(state, thread) {
 
   const frameScope = scopes.generated[selectedFrameId];
   if (!frameScope || frameScope.pending) {
-    return;
+    return null;
   }
 
   let currentScope = frameScope.scope;
@@ -185,19 +200,17 @@ export function getSelectedFrameBindings(state, thread) {
   return frameBindings;
 }
 
-function getFrameScope(state, thread, sourceId, frameId) {
+function getFrameScope(state, frame) {
   return (
-    getOriginalFrameScope(state, thread, sourceId, frameId) ||
-    getGeneratedFrameScope(state, thread, frameId)
+    getOriginalFrameScope(state, frame) || getGeneratedFrameScope(state, frame)
   );
 }
 
 // This is only used by tests
 export function getSelectedScope(state, thread) {
-  const sourceId = getSelectedSourceId(state);
-  const frameId = getSelectedFrameId(state, thread);
+  const frame = getSelectedFrame(state, thread);
 
-  const frameScope = getFrameScope(state, thread, sourceId, frameId);
+  const frameScope = getFrameScope(state, frame);
   if (!frameScope) {
     return null;
   }
@@ -206,14 +219,8 @@ export function getSelectedScope(state, thread) {
 }
 
 export function getSelectedOriginalScope(state, thread) {
-  const sourceId = getSelectedSourceId(state);
-  const frameId = getSelectedFrameId(state, thread);
-  return getOriginalFrameScope(state, thread, sourceId, frameId);
-}
-
-export function getSelectedGeneratedScope(state, thread) {
-  const frameId = getSelectedFrameId(state, thread);
-  return getGeneratedFrameScope(state, thread, frameId);
+  const frame = getSelectedFrame(state, thread);
+  return getOriginalFrameScope(state, frame);
 }
 
 export function getSelectedScopeMappings(state, thread) {
@@ -240,12 +247,24 @@ export function getTopFrame(state, thread) {
   return frames?.[0];
 }
 
-export function getSkipPausing(state) {
-  return state.pause.skipPausing;
+// getTopFrame wouldn't return the top frame if the frames are still being fetched
+export function getCurrentlyFetchedTopFrame(state, thread) {
+  const { frames } = getThreadPauseState(state.pause, thread);
+  return frames?.[0];
 }
 
-export function getHighlightedCalls(state, thread) {
-  return getThreadPauseState(state.pause, thread).highlightedCalls;
+export function hasFrame(state, frame) {
+  // Don't use getFrames as it returns null when the frames are still loading
+  const { frames } = getThreadPauseState(state.pause, frame.thread);
+  if (!frames) {
+    return false;
+  }
+  // Compare IDs and not frame objects as they get cloned during mapping
+  return frames.some(f => f.id == frame.id);
+}
+
+export function getSkipPausing(state) {
+  return state.pause.skipPausing;
 }
 
 export function isMapScopesEnabled(state) {
@@ -271,8 +290,4 @@ export function getSelectedInlinePreviews(state) {
 
 export function getLastExpandedScopes(state, thread) {
   return getThreadPauseState(state.pause, thread).lastExpandedScopes;
-}
-
-export function getPausePreviewLocation(state) {
-  return state.pause.previewLocation;
 }

@@ -5,7 +5,7 @@
 /**
  * Test for bug 406358 to make sure frecency works for empty input/search, but
  * this also tests for non-empty inputs as well. Because the interactions among
- * *DIFFERENT* visit counts and visit dates is not well defined, this test
+ * DIFFERENT* visit counts and visit dates is not well defined, this test
  * holds one of the two values constant when modifying the other.
  *
  * Also test bug 419068 to make sure tagged pages don't necessarily have to be
@@ -49,12 +49,6 @@ async function tagURI(uri, tags) {
   PlacesUtils.tagging.tagURI(uri, tags);
 }
 
-async function preSearch() {
-  await PlacesTestUtils.promiseAsyncUpdates();
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesUtils.history.clear();
-}
-
 var uri1 = Services.io.newURI("http://site.tld/1");
 var uri2 = Services.io.newURI("http://site.tld/2");
 var uri3 = Services.io.newURI("http://aaaaaaaaaa/1");
@@ -70,7 +64,7 @@ var c2 = 1;
 
 var tests = [
   // test things without a search term
-  async function() {
+  async function () {
     info("Test 0: same count, different date");
     await task_setCountDate(uri1, c1, d1);
     await task_setCountDate(uri2, c1, d2);
@@ -99,7 +93,7 @@ var tests = [
       ],
     });
   },
-  async function() {
+  async function () {
     info("Test 1: same count, different date");
     await task_setCountDate(uri1, c1, d2);
     await task_setCountDate(uri2, c1, d1);
@@ -124,7 +118,7 @@ var tests = [
       ],
     });
   },
-  async function() {
+  async function () {
     info("Test 2: different count, same date");
     await task_setCountDate(uri1, c1, d1);
     await task_setCountDate(uri2, c2, d1);
@@ -149,7 +143,7 @@ var tests = [
       ],
     });
   },
-  async function() {
+  async function () {
     info("Test 3: different count, same date");
     await task_setCountDate(uri1, c2, d1);
     await task_setCountDate(uri2, c1, d1);
@@ -176,7 +170,7 @@ var tests = [
   },
 
   // test things with a search term
-  async function() {
+  async function () {
     info("Test 4: same count, different date");
     await task_setCountDate(uri1, c1, d1);
     await task_setCountDate(uri2, c1, d2);
@@ -201,7 +195,7 @@ var tests = [
       ],
     });
   },
-  async function() {
+  async function () {
     info("Test 5: same count, different date");
     await task_setCountDate(uri1, c1, d2);
     await task_setCountDate(uri2, c1, d1);
@@ -226,7 +220,7 @@ var tests = [
       ],
     });
   },
-  async function() {
+  async function () {
     info("Test 6: different count, same date");
     await task_setCountDate(uri1, c1, d1);
     await task_setCountDate(uri2, c2, d1);
@@ -251,7 +245,7 @@ var tests = [
       ],
     });
   },
-  async function() {
+  async function () {
     info("Test 7: different count, same date");
     await task_setCountDate(uri1, c2, d1);
     await task_setCountDate(uri2, c1, d1);
@@ -278,7 +272,7 @@ var tests = [
   },
   // There are multiple tests for 8, hence the multiple functions
   // Bug 426166 section
-  async function() {
+  async function () {
     info("Test 8.1a: same count, same date");
     await setBookmark(uri3);
     await setBookmark(uri4);
@@ -388,13 +382,21 @@ add_task(async function test_frecency() {
   Services.prefs.setBoolPref("browser.urlbar.suggest.openpage", false);
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
   Services.prefs.setBoolPref("browser.urlbar.suggest.engines", false);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
   for (let test of tests) {
     await PlacesUtils.bookmarks.eraseEverything();
     await PlacesUtils.history.clear();
 
     await test();
   }
-  for (let type of ["history", "bookmark", "openpage", "searches", "engines"]) {
+  for (let type of [
+    "history",
+    "bookmark",
+    "openpage",
+    "searches",
+    "engines",
+    "quickactions",
+  ]) {
     Services.prefs.clearUserPref("browser.urlbar.suggest." + type);
     Services.prefs.clearUserPref("browser.urlbar.autoFill");
   }

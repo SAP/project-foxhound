@@ -15,7 +15,7 @@ NSS 3.19.2.4 release notes
    :ref:`mozilla_projects_nss_nss_3_21_1_release_notes`,
    :ref:`mozilla_projects_nss_nss_3_22_2_release_notes` or a later release.)
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -33,8 +33,6 @@ NSS 3.19.2.4 release notes
 
 `New in NSS 3.19.2.4 <#new_in_nss_3.19.2.4>`__
 ----------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

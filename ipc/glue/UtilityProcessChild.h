@@ -7,8 +7,21 @@
 #define _include_ipc_glue_UtilityProcessChild_h_
 #include "mozilla/ipc/PUtilityProcessChild.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
+#include "mozilla/ipc/UtilityAudioDecoderParent.h"
 #include "mozilla/UniquePtr.h"
 #include "ChildProfilerController.h"
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+#  include "mozilla/PSandboxTestingChild.h"
+#endif
+#include "mozilla/PRemoteDecoderManagerParent.h"
+#include "mozilla/ipc/AsyncBlockers.h"
+#include "mozilla/dom/JSOracleChild.h"
+#include "mozilla/ProfilerMarkers.h"
+
+namespace mozilla::dom {
+class PJSOracleChild;
+}  // namespace mozilla::dom
 
 namespace mozilla::ipc {
 
@@ -25,11 +38,12 @@ class UtilityProcessChild final : public PUtilityProcessChild {
 
   SandboxingKind mSandbox{};
 
-  bool Init(base::ProcessId aParentPid, const nsCString& aParentBuildID,
-            uint64_t aSandboxingKind, mozilla::ipc::ScopedPort aPort);
+  bool Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+            const nsCString& aParentBuildID, uint64_t aSandboxingKind);
 
   mozilla::ipc::IPCResult RecvInit(const Maybe<ipc::FileDescriptor>& aBrokerFd,
-                                   const bool& aCanRecordReleaseTelemetry);
+                                   const bool& aCanRecordReleaseTelemetry,
+                                   const bool& aIsReadyForBackgroundProcessing);
   mozilla::ipc::IPCResult RecvInitProfiler(
       Endpoint<PProfilerChild>&& aEndpoint);
 
@@ -46,6 +60,28 @@ class UtilityProcessChild final : public PUtilityProcessChild {
   mozilla::ipc::IPCResult RecvTestTriggerMetrics(
       TestTriggerMetricsResolver&& aResolve);
 
+  mozilla::ipc::IPCResult RecvTestTelemetryProbes();
+
+  mozilla::ipc::IPCResult RecvStartUtilityAudioDecoderService(
+      Endpoint<PUtilityAudioDecoderParent>&& aEndpoint);
+
+  mozilla::ipc::IPCResult RecvStartJSOracleService(
+      Endpoint<dom::PJSOracleChild>&& aEndpoint);
+
+#if defined(XP_WIN)
+  mozilla::ipc::IPCResult RecvStartWindowsUtilsService(
+      Endpoint<PWindowsUtilsChild>&& aEndpoint);
+
+  mozilla::ipc::IPCResult RecvStartWinFileDialogService(
+      Endpoint<PWinFileDialogChild>&& aEndpoint);
+
+  mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
+      GetUntrustedModulesDataResolver&& aResolver);
+  mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();
+#endif  // defined(XP_WIN)
+
+  AsyncBlockers& AsyncShutdownService() { return mShutdownBlockers; }
+
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
@@ -58,7 +94,15 @@ class UtilityProcessChild final : public PUtilityProcessChild {
   ~UtilityProcessChild();
 
  private:
+  TimeStamp mChildStartTime;
   RefPtr<ChildProfilerController> mProfilerController;
+  RefPtr<UtilityAudioDecoderParent> mUtilityAudioDecoderInstance{};
+  RefPtr<dom::JSOracleChild> mJSOracleInstance{};
+#ifdef XP_WIN
+  RefPtr<PWindowsUtilsChild> mWindowsUtilsInstance;
+#endif
+
+  AsyncBlockers mShutdownBlockers;
 };
 
 }  // namespace mozilla::ipc

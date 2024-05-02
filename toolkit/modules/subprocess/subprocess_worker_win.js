@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+/* eslint-env mozilla/chrome-worker */
 /* exported Process */
 
 /* import-globals-from subprocess_shared.js */
@@ -224,7 +225,7 @@ class InputPipe extends Pipe {
       if (read == buffer.byteLength) {
         resolve(buffer);
       } else {
-        resolve(ArrayBuffer.transfer(buffer, read));
+        resolve(ArrayBuffer_transfer(buffer, read));
       }
 
       if (this.pending.length) {
@@ -509,10 +510,6 @@ class Process extends BaseProcess {
       win32.CREATE_SUSPENDED |
       win32.CREATE_UNICODE_ENVIRONMENT;
 
-    if (io.breakAwayFromJob) {
-      processFlags |= win32.CREATE_BREAKAWAY_FROM_JOB;
-    }
-
     let startupInfoEx = new win32.STARTUPINFOEXW();
     let startupInfo = startupInfoEx.StartupInfo;
 
@@ -680,8 +677,6 @@ io = {
     );
     this.signal = new Signal(signalEvent);
     this.updatePollEvents();
-
-    this.breakAwayFromJob = details.breakAwayFromJob;
 
     setTimeout(this.loop.bind(this), 0);
   },

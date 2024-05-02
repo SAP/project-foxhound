@@ -22,6 +22,7 @@
 #include "mozilla/layers/TextureClientPool.h"  // for TextureClientPool
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/SyncObject.h"  // for SyncObjectClient
+#include "mozilla/gfx/CanvasManagerChild.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/Logging.h"
@@ -47,10 +48,6 @@
 #  include "mozilla/widget/CompositorWidgetChild.h"
 #endif
 #include "VsyncSource.h"
-
-#ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/layers/AndroidHardwareBuffer.h"
-#endif
 
 using mozilla::Unused;
 using mozilla::gfx::GPUProcessManager;
@@ -82,6 +79,7 @@ CompositorBridgeChild::CompositorBridgeChild(CompositorManagerChild* aManager)
       mResourceId(0),
       mCanSend(false),
       mActorDestroyed(false),
+      mPaused(false),
       mFwdTransactionId(0),
       mThread(NS_GetCurrentThread()),
       mProcessToken(0),
@@ -116,12 +114,12 @@ void CompositorBridgeChild::AfterDestroy() {
   // The only time we should not issue Send__delete__ is if the actor is already
   // destroyed, e.g. the compositor process crashed.
   if (!mActorDestroyed) {
-    Send__delete__(this);
+    // We saw this send fail quite often with "Channel closing", probably a race
+    // with the other side closing or some event scheduling order.
+    if (GetIPCChannel()->CanSend()) {
+      Send__delete__(this);
+    }
     mActorDestroyed = true;
-  }
-
-  if (mCanvasChild) {
-    mCanvasChild->Destroy();
   }
 
   if (sCompositorBridge == this) {
@@ -275,18 +273,6 @@ bool CompositorBridgeChild::CompositorIsInGPUProcess() {
   return bridge->OtherPid() != dom::ContentChild::GetSingleton()->OtherPid();
 }
 
-mozilla::ipc::IPCResult CompositorBridgeChild::RecvInvalidateLayers(
-    const LayersId& aLayersId) {
-  if (mLayerManager) {
-    MOZ_ASSERT(!aLayersId.IsValid());
-  } else if (aLayersId.IsValid()) {
-    if (dom::BrowserChild* child = dom::BrowserChild::GetFrom(aLayersId)) {
-      child->InvalidateLayers();
-    }
-  }
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult CompositorBridgeChild::RecvDidComposite(
     const LayersId& aId, const nsTArray<TransactionId>& aTransactionIds,
     const TimeStamp& aCompositeStart, const TimeStamp& aCompositeEnd) {
@@ -326,7 +312,8 @@ void CompositorBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
     // If the parent side runs into a problem then the actor will be destroyed.
     // There is nothing we can do in the child side, here sets mCanSend as
     // false.
-    gfxCriticalNote << "Receive IPC close with reason=AbnormalShutdown";
+    gfxCriticalNote << "CompositorBridgeChild receives IPC close with "
+                       "reason=AbnormalShutdown";
   }
 
   mCanSend = false;
@@ -346,6 +333,7 @@ bool CompositorBridgeChild::SendPause() {
   if (!mCanSend) {
     return false;
   }
+  mPaused = true;
   return PCompositorBridgeChild::SendPause();
 }
 
@@ -353,6 +341,7 @@ bool CompositorBridgeChild::SendResume() {
   if (!mCanSend) {
     return false;
   }
+  mPaused = false;
   return PCompositorBridgeChild::SendResume();
 }
 
@@ -360,6 +349,7 @@ bool CompositorBridgeChild::SendResumeAsync() {
   if (!mCanSend) {
     return false;
   }
+  mPaused = false;
   return PCompositorBridgeChild::SendResumeAsync();
 }
 
@@ -418,12 +408,6 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvParentAsyncMessages(
         NotifyNotUsed(op.TextureId(), op.fwdTransactionId());
         break;
       }
-      case AsyncParentMessageData::TOpDeliverReleaseFence: {
-        // Release fences are delivered via ImageBridge.
-        // Since some TextureClients are recycled without recycle callback.
-        MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-        break;
-      }
       default:
         NS_ERROR("unknown AsyncParentMessageData type");
         return IPC_FAIL_NO_REASON(this);
@@ -433,8 +417,7 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvParentAsyncMessages(
 }
 
 mozilla::ipc::IPCResult CompositorBridgeChild::RecvObserveLayersUpdate(
-    const LayersId& aLayersId, const LayersObserverEpoch& aEpoch,
-    const bool& aActive) {
+    const LayersId& aLayersId, const bool& aActive) {
   // This message is sent via the window compositor, not the tab compositor -
   // however it still has a layers id.
   MOZ_ASSERT(aLayersId.IsValid());
@@ -442,7 +425,7 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvObserveLayersUpdate(
 
   if (RefPtr<dom::BrowserParent> tab =
           dom::BrowserParent::GetBrowserParentFromLayersId(aLayersId)) {
-    tab->LayerTreeUpdate(aEpoch, aActive);
+    tab->LayerTreeUpdate(aActive);
   }
   return IPC_OK();
 }
@@ -479,15 +462,6 @@ void CompositorBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
   if (!aClient) {
     return;
   }
-
-#ifdef MOZ_WIDGET_ANDROID
-  auto bufferId = aClient->GetInternalData()->GetBufferId();
-  if (bufferId.isSome()) {
-    MOZ_ASSERT(aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END);
-    AndroidHardwareBufferManager::Get()->HoldUntilNotifyNotUsed(
-        bufferId.ref(), GetFwdTransactionId(), /* aUsesImageBridge */ false);
-  }
-#endif
 
   bool waitNotifyNotUsed =
       aClient->GetFlags() & TextureFlags::RECYCLE ||
@@ -530,7 +504,8 @@ CompositorBridgeChild::GetTileLockAllocator() {
 
 PTextureChild* CompositorBridgeChild::CreateTexture(
     const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
-    LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
+    LayersBackend aLayersBackend, TextureFlags aFlags,
+    const dom::ContentParentId& aContentId, uint64_t aSerial,
     wr::MaybeExternalImageId& aExternalImageId) {
   PTextureChild* textureChild =
       AllocPTextureChild(aSharedData, aReadLock, aLayersBackend, aFlags,
@@ -543,48 +518,30 @@ PTextureChild* CompositorBridgeChild::CreateTexture(
 
 already_AddRefed<CanvasChild> CompositorBridgeChild::GetCanvasChild() {
   MOZ_ASSERT(gfx::gfxVars::RemoteCanvasEnabled());
-
-  if (CanvasChild::Deactivated()) {
-    return nullptr;
+  if (auto* cm = gfx::CanvasManagerChild::Get()) {
+    return cm->GetCanvasChild().forget();
   }
-
-  if (!mCanvasChild) {
-    ipc::Endpoint<PCanvasParent> parentEndpoint;
-    ipc::Endpoint<PCanvasChild> childEndpoint;
-    nsresult rv = PCanvas::CreateEndpoints(OtherPid(), base::GetCurrentProcId(),
-                                           &parentEndpoint, &childEndpoint);
-    if (NS_SUCCEEDED(rv)) {
-      Unused << SendInitPCanvasParent(std::move(parentEndpoint));
-      mCanvasChild = new CanvasChild(std::move(childEndpoint));
-    }
-  }
-
-  return do_AddRef(mCanvasChild);
+  return nullptr;
 }
 
 void CompositorBridgeChild::EndCanvasTransaction() {
-  if (mCanvasChild) {
-    mCanvasChild->EndTransaction();
-    if (mCanvasChild->ShouldBeCleanedUp()) {
-      mCanvasChild->Destroy();
-      Unused << SendReleasePCanvasParent();
-      mCanvasChild = nullptr;
-    }
+  if (auto* cm = gfx::CanvasManagerChild::Get()) {
+    cm->EndCanvasTransaction();
   }
 }
 
-bool CompositorBridgeChild::AllocUnsafeShmem(
-    size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-    ipc::Shmem* aShmem) {
-  ShmemAllocated(this);
-  return PCompositorBridgeChild::AllocUnsafeShmem(aSize, aType, aShmem);
+void CompositorBridgeChild::ClearCachedResources() {
+  CanvasChild::ClearCachedResources();
 }
 
-bool CompositorBridgeChild::AllocShmem(
-    size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-    ipc::Shmem* aShmem) {
+bool CompositorBridgeChild::AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) {
   ShmemAllocated(this);
-  return PCompositorBridgeChild::AllocShmem(aSize, aType, aShmem);
+  return PCompositorBridgeChild::AllocUnsafeShmem(aSize, aShmem);
+}
+
+bool CompositorBridgeChild::AllocShmem(size_t aSize, ipc::Shmem* aShmem) {
+  ShmemAllocated(this);
+  return PCompositorBridgeChild::AllocShmem(aSize, aShmem);
 }
 
 bool CompositorBridgeChild::DeallocShmem(ipc::Shmem& aShmem) {

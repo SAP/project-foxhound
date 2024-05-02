@@ -1,3 +1,4 @@
+/* stylelint-disable max-nesting-depth */
 
 .below-search-snippet {
   margin: 0 auto 16px;
@@ -50,7 +51,7 @@
     text-align: center;
     width: 100%;
 
-    @mixin full-width-styles {
+    @media (min-width: $break-point-medium) {
       align-items: flex-start;
       background-color: transparent;
       border-radius: 4px;
@@ -61,11 +62,7 @@
       width: 696px;
     }
 
-    @media (min-width: $break-point-medium) {
-      @include full-width-styles;
-    }
-
-    @media (max-width: 865px) {
+    @media (width <= 865px) {
       margin-inline-start: 0;
     }
 
@@ -108,13 +105,9 @@
     height: 32px;
     width: 32px;
 
-    @mixin full-width-styles {
+    @media (min-width: $break-point-medium) {
       height: 24px;
       width: 24px;
-    }
-
-    @media (min-width: $break-point-medium) {
-      @include full-width-styles;
     }
 
     @media (max-width: $break-point-medium) {

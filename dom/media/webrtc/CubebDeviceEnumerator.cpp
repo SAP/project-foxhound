@@ -23,7 +23,7 @@ using AudioDeviceSet = CubebDeviceEnumerator::AudioDeviceSet;
 
 /* static */
 static StaticRefPtr<CubebDeviceEnumerator> sInstance;
-static StaticMutex sInstanceMutex;
+static StaticMutex sInstanceMutex MOZ_UNANNOTATED;
 
 /* static */
 CubebDeviceEnumerator* CubebDeviceEnumerator::GetInstance() {
@@ -38,7 +38,6 @@ CubebDeviceEnumerator* CubebDeviceEnumerator::GetInstance() {
         setClearOnShutdown();
       } else {
         SchedulerGroup::Dispatch(
-            TaskCategory::Other,
             NS_NewRunnableFunction("CubebDeviceEnumerator::::GetInstance()",
                                    std::move(setClearOnShutdown)));
       }

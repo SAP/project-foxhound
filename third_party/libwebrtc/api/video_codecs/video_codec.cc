@@ -21,28 +21,25 @@ namespace webrtc {
 namespace {
 constexpr char kPayloadNameVp8[] = "VP8";
 constexpr char kPayloadNameVp9[] = "VP9";
-// TODO(bugs.webrtc.org/11042): Rename to AV1 when rtp payload format for av1 is
-// frozen.
-constexpr char kPayloadNameAv1[] = "AV1X";
+constexpr char kPayloadNameAv1[] = "AV1";
+// TODO(bugs.webrtc.org/13166): Remove AV1X when backwards compatibility is not
+// needed.
+constexpr char kPayloadNameAv1x[] = "AV1X";
 constexpr char kPayloadNameH264[] = "H264";
 constexpr char kPayloadNameGeneric[] = "Generic";
 constexpr char kPayloadNameMultiplex[] = "Multiplex";
 }  // namespace
 
 bool VideoCodecVP8::operator==(const VideoCodecVP8& other) const {
-  return (complexity == other.complexity &&
-          numberOfTemporalLayers == other.numberOfTemporalLayers &&
+  return (numberOfTemporalLayers == other.numberOfTemporalLayers &&
           denoisingOn == other.denoisingOn &&
           automaticResizeOn == other.automaticResizeOn &&
-          frameDroppingOn == other.frameDroppingOn &&
           keyFrameInterval == other.keyFrameInterval);
 }
 
 bool VideoCodecVP9::operator==(const VideoCodecVP9& other) const {
-  return (complexity == other.complexity &&
-          numberOfTemporalLayers == other.numberOfTemporalLayers &&
+  return (numberOfTemporalLayers == other.numberOfTemporalLayers &&
           denoisingOn == other.denoisingOn &&
-          frameDroppingOn == other.frameDroppingOn &&
           keyFrameInterval == other.keyFrameInterval &&
           adaptiveQpMode == other.adaptiveQpMode &&
           automaticResizeOn == other.automaticResizeOn &&
@@ -51,8 +48,7 @@ bool VideoCodecVP9::operator==(const VideoCodecVP9& other) const {
 }
 
 bool VideoCodecH264::operator==(const VideoCodecH264& other) const {
-  return (frameDroppingOn == other.frameDroppingOn &&
-          keyFrameInterval == other.keyFrameInterval &&
+  return (keyFrameInterval == other.keyFrameInterval &&
           numberOfTemporalLayers == other.numberOfTemporalLayers);
 }
 
@@ -73,7 +69,8 @@ VideoCodec::VideoCodec()
       expect_encode_from_texture(false),
       timing_frame_thresholds({0, 0}),
       legacy_conference_mode(false),
-      codec_specific_() {}
+      codec_specific_(),
+      complexity_(VideoCodecComplexity::kComplexityNormal) {}
 
 VideoCodecVP8* VideoCodec::VP8() {
   RTC_DCHECK_EQ(codecType, kVideoCodecVP8);
@@ -120,6 +117,7 @@ const char* CodecTypeToPayloadString(VideoCodecType type) {
     case kVideoCodecGeneric:
       return kPayloadNameGeneric;
   }
+  RTC_CHECK_NOTREACHED();
 }
 
 VideoCodecType PayloadStringToCodecType(const std::string& name) {
@@ -127,13 +125,31 @@ VideoCodecType PayloadStringToCodecType(const std::string& name) {
     return kVideoCodecVP8;
   if (absl::EqualsIgnoreCase(name, kPayloadNameVp9))
     return kVideoCodecVP9;
-  if (absl::EqualsIgnoreCase(name, kPayloadNameAv1))
+  if (absl::EqualsIgnoreCase(name, kPayloadNameAv1) ||
+      absl::EqualsIgnoreCase(name, kPayloadNameAv1x))
     return kVideoCodecAV1;
   if (absl::EqualsIgnoreCase(name, kPayloadNameH264))
     return kVideoCodecH264;
   if (absl::EqualsIgnoreCase(name, kPayloadNameMultiplex))
     return kVideoCodecMultiplex;
   return kVideoCodecGeneric;
+}
+
+VideoCodecComplexity VideoCodec::GetVideoEncoderComplexity() const {
+  return complexity_;
+}
+
+void VideoCodec::SetVideoEncoderComplexity(
+    VideoCodecComplexity complexity_setting) {
+  complexity_ = complexity_setting;
+}
+
+bool VideoCodec::GetFrameDropEnabled() const {
+  return frame_drop_enabled_;
+}
+
+void VideoCodec::SetFrameDropEnabled(bool enabled) {
+  frame_drop_enabled_ = enabled;
 }
 
 }  // namespace webrtc

@@ -10,6 +10,7 @@
 #include "nsDeviceContext.h"
 #include "mozilla/gfx/RecordedEvent.h"
 #include "mozilla/gfx/RecordingTypes.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/UniquePtr.h"
 #include "InlineTranslator.h"
 
@@ -20,12 +21,15 @@ namespace layout {
 
 PrintTranslator::PrintTranslator(nsDeviceContext* aDeviceContext)
     : mDeviceContext(aDeviceContext) {
-  RefPtr<gfxContext> context =
+  UniquePtr<gfxContext> context =
       mDeviceContext->CreateReferenceRenderingContext();
   mBaseDT = context->GetDrawTarget();
 }
 
 bool PrintTranslator::TranslateRecording(PRFileDescStream& aRecording) {
+  AUTO_PROFILER_MARKER_TEXT("PrintTranslator", LAYOUT_Printing, {},
+                            "PrintTranslator::TranslateRecording"_ns);
+
   uint32_t magicInt;
   ReadElement(aRecording, magicInt);
   if (magicInt != mozilla::gfx::kMagicInt) {
@@ -44,7 +48,7 @@ bool PrintTranslator::TranslateRecording(PRFileDescStream& aRecording) {
     return false;
   }
 
-  int32_t eventType;
+  uint8_t eventType;
   ReadElement(aRecording, eventType);
   while (aRecording.good()) {
     bool success = RecordedEvent::DoWithEventFromStream(
@@ -71,7 +75,7 @@ bool PrintTranslator::TranslateRecording(PRFileDescStream& aRecording) {
 already_AddRefed<DrawTarget> PrintTranslator::CreateDrawTarget(
     ReferencePtr aRefPtr, const gfx::IntSize& aSize,
     gfx::SurfaceFormat aFormat) {
-  RefPtr<gfxContext> context = mDeviceContext->CreateRenderingContext();
+  UniquePtr<gfxContext> context = mDeviceContext->CreateRenderingContext();
   if (!context) {
     NS_WARNING("Failed to create rendering context for print.");
     return nullptr;

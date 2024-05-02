@@ -1,3 +1,6 @@
+/* eslint-env mozilla/chrome-script */
+
+// eslint-disable-next-line mozilla/reject-importGlobalProperties
 Cu.importGlobalProperties(["File"]);
 
 function createFileWithData(fileData) {
@@ -34,7 +37,7 @@ function createFileWithData(fileData) {
   });
 }
 
-addMessageListener("files.open", function(message) {
+addMessageListener("files.open", function (message) {
   let promises = [];
   let list = [];
 

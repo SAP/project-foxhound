@@ -33,17 +33,14 @@ class nsClipboard : public nsBaseClipboard, public nsIObserver {
   // nsIObserver
   NS_DECL_NSIOBSERVER
 
-  // nsIClipboard
-  NS_IMETHOD HasDataMatchingFlavors(const nsTArray<nsCString>& aFlavorList,
-                                    int32_t aWhichClipboard,
-                                    bool* _retval) override;
-  NS_IMETHOD EmptyClipboard(int32_t aWhichClipboard) override;
-
   // Internal Native Routines
+  enum class MightNeedToFlush : bool { No, Yes };
   static nsresult CreateNativeDataObject(nsITransferable* aTransferable,
-                                         IDataObject** aDataObj, nsIURI* uri);
+                                         IDataObject** aDataObj, nsIURI* aUri,
+                                         MightNeedToFlush* = nullptr);
   static nsresult SetupNativeDataObject(nsITransferable* aTransferable,
-                                        IDataObject* aDataObj);
+                                        IDataObject* aDataObj,
+                                        MightNeedToFlush* = nullptr);
   static nsresult GetDataFromDataObject(IDataObject* aDataObject, UINT anIndex,
                                         nsIWidget* aWindow,
                                         nsITransferable* aTransferable);
@@ -63,6 +60,8 @@ class nsClipboard : public nsBaseClipboard, public nsIObserver {
   // of Gecko.
   static UINT GetFormat(const char* aMimeStr, bool aMapHTMLMime = true);
 
+  static UINT GetClipboardFileDescriptorFormatA();
+  static UINT GetClipboardFileDescriptorFormatW();
   static UINT GetHtmlClipboardFormat();
   static UINT GetCustomClipboardFormat();
 
@@ -71,9 +70,16 @@ class nsClipboard : public nsBaseClipboard, public nsIObserver {
   static HRESULT FillSTGMedium(IDataObject* aDataObject, UINT aFormat,
                                LPFORMATETC pFE, LPSTGMEDIUM pSTM, DWORD aTymed);
 
-  NS_IMETHOD SetNativeClipboardData(int32_t aWhichClipboard) override;
+  // Implement the native clipboard behavior.
+  NS_IMETHOD SetNativeClipboardData(nsITransferable* aTransferable,
+                                    int32_t aWhichClipboard) override;
   NS_IMETHOD GetNativeClipboardData(nsITransferable* aTransferable,
                                     int32_t aWhichClipboard) override;
+  nsresult EmptyNativeClipboardData(int32_t aWhichClipboard) override;
+  mozilla::Result<int32_t, nsresult> GetNativeClipboardSequenceNumber(
+      int32_t aWhichClipboard) override;
+  mozilla::Result<bool, nsresult> HasNativeClipboardDataMatchingFlavors(
+      const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard) override;
 
   static bool IsInternetShortcut(const nsAString& inFileName);
   static bool FindURLFromLocalFile(IDataObject* inDataObject, UINT inIndex,
@@ -87,6 +93,10 @@ class nsClipboard : public nsBaseClipboard, public nsIObserver {
                                uint32_t* outDataLen);
 
   static void ResolveShortcut(nsIFile* inFileName, nsACString& outURL);
+  static nsresult GetTempFilePath(const nsAString& aFileName,
+                                  nsAString& aFilePath);
+  static nsresult SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
+                                      const nsAString& aFileName);
 
   nsIWidget* mWindow;
 };

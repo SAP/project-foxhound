@@ -39,9 +39,15 @@ extern "C" {
 
 ## MSRV
 
-The minimum supported Rust version is **1.40**.
+The `bindgen` minimum supported Rust version is **1.60.0**.
+
+The `bindgen-cli` minimum supported Rust version is **1.64.0**.
 
 No MSRV bump policy has been established yet, so MSRV may increase in any release.
+
+The MSRV is the minimum Rust version that can be used to *compile* each crate. However, `bindgen` and `bindgen-cli` can generate bindings that are compatible with Rust versions below the current MSRV.
+
+Most of the time, the `bindgen-cli` crate will have a more recent MSRV than `bindgen` as crates such as `clap` require it. 
 
 ## API Reference
 
@@ -60,6 +66,10 @@ End-users should set these environment variables to modify `bindgen`'s behavior 
     - Examples:
         - Specify alternate sysroot: `--sysroot=/path/to/sysroot`
         - Add include search path with spaces: `-I"/path/with spaces"`
+- `BINDGEN_EXTRA_CLANG_ARGS_<TARGET>`: similar to `BINDGEN_EXTRA_CLANG_ARGS`,
+   but used to set per-target arguments to pass to clang. Useful to set system include
+   directories in a target-specific way in cross-compilation environments with multiple targets.
+   Has precedence over `BINDGEN_EXTRA_CLANG_ARGS`.
 
 Additionally, `bindgen` uses `libclang` to parse C and C++ header files.
 To modify how `bindgen` searches for `libclang`, see the [`clang-sys` documentation][clang-sys-env].

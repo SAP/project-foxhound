@@ -10,6 +10,7 @@
 #include "mozilla/FlushType.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/dom/SimpleGestureEventBinding.h"
@@ -21,11 +22,7 @@
 // These values were tweaked to make the physics feel similar to the native
 // swipe.
 static const double kSpringForce = 250.0;
-static const double kVelocityTwitchTolerance = 0.0000001;
-static const double kWholePagePixelSize = 550.0;
-static const double kRubberBandResistanceFactor = 4.0;
 static const double kSwipeSuccessThreshold = 0.25;
-static const double kSwipeSuccessVelocityContribution = 0.05;
 
 namespace mozilla {
 
@@ -52,25 +49,20 @@ SwipeTracker::SwipeTracker(nsIWidget& aWidget,
           PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent))),
       mLastEventTimeStamp(aSwipeStartEvent.mTimeStamp),
       mAllowedDirections(aAllowedDirections),
-      mSwipeDirection(aSwipeDirection),
-      mGestureAmount(0.0),
-      mCurrentVelocity(0.0),
-      mEventsAreControllingSwipe(true),
-      mEventsHaveStartedNewGesture(false),
-      mRegisteredWithRefreshDriver(false) {
+      mSwipeDirection(aSwipeDirection) {
   SendSwipeEvent(eSwipeGestureStart, 0, 0.0, aSwipeStartEvent.mTimeStamp);
-  ProcessEvent(aSwipeStartEvent);
+  ProcessEvent(aSwipeStartEvent, /* aProcessingFirstEvent = */ true);
 }
 
 void SwipeTracker::Destroy() { UnregisterFromRefreshDriver(); }
 
 SwipeTracker::~SwipeTracker() {
-  MOZ_ASSERT(!mRegisteredWithRefreshDriver,
-             "Destroy needs to be called before deallocating");
+  MOZ_RELEASE_ASSERT(!mRegisteredWithRefreshDriver,
+                     "Destroy needs to be called before deallocating");
 }
 
 double SwipeTracker::SwipeSuccessTargetValue() const {
-  return (mSwipeDirection == dom::SimpleGestureEvent_Binding::DIRECTION_RIGHT)
+  return mSwipeDirection == dom::SimpleGestureEvent_Binding::DIRECTION_RIGHT
              ? -1.0
              : 1.0;
 }
@@ -79,13 +71,11 @@ double SwipeTracker::ClampToAllowedRange(double aGestureAmount) const {
   // gestureAmount needs to stay between -1 and 0 when swiping right and
   // between 0 and 1 when swiping left.
   double min =
-      (mSwipeDirection == dom::SimpleGestureEvent_Binding::DIRECTION_RIGHT)
-          ? -1.0
-          : 0.0;
+      mSwipeDirection == dom::SimpleGestureEvent_Binding::DIRECTION_RIGHT ? -1.0
+                                                                          : 0.0;
   double max =
-      (mSwipeDirection == dom::SimpleGestureEvent_Binding::DIRECTION_LEFT)
-          ? 1.0
-          : 0.0;
+      mSwipeDirection == dom::SimpleGestureEvent_Binding::DIRECTION_LEFT ? 1.0
+                                                                         : 0.0;
   return clamped(aGestureAmount, min, max);
 }
 
@@ -94,16 +84,19 @@ bool SwipeTracker::ComputeSwipeSuccess() const {
 
   // If the fingers were moving away from the target direction when they were
   // lifted from the touchpad, abort the swipe.
-  if (mCurrentVelocity * targetValue < -kVelocityTwitchTolerance) {
+  if (mCurrentVelocity * targetValue <
+      -StaticPrefs::widget_swipe_velocity_twitch_tolerance()) {
     return false;
   }
 
   return (mGestureAmount * targetValue +
-          mCurrentVelocity * targetValue * kSwipeSuccessVelocityContribution) >=
+          mCurrentVelocity * targetValue *
+              StaticPrefs::widget_swipe_success_velocity_contribution()) >=
          kSwipeSuccessThreshold;
 }
 
-nsEventStatus SwipeTracker::ProcessEvent(const PanGestureInput& aEvent) {
+nsEventStatus SwipeTracker::ProcessEvent(
+    const PanGestureInput& aEvent, bool aProcessingFirstEvent /* = false */) {
   // If the fingers have already been lifted or the swipe direction is where
   // navigation is impossible, don't process this event for swiping.
   if (!mEventsAreControllingSwipe || !SwipingInAllowedDirection()) {
@@ -117,33 +110,64 @@ nsEventStatus SwipeTracker::ProcessEvent(const PanGestureInput& aEvent) {
                                         : nsEventStatus_eConsumeNoDefault;
   }
 
-  double delta = -aEvent.mPanDisplacement.x /
-                 mWidget.GetDefaultScaleInternal() / kWholePagePixelSize;
-  mGestureAmount = ClampToAllowedRange(mGestureAmount + delta);
-  SendSwipeEvent(eSwipeGestureUpdate, 0, mGestureAmount, aEvent.mTimeStamp);
+  mDeltaTypeIsPage = aEvent.mDeltaType == PanGestureInput::PANDELTA_PAGE;
+  double delta = [&]() -> double {
+    if (mDeltaTypeIsPage) {
+      return -aEvent.mPanDisplacement.x / StaticPrefs::widget_swipe_page_size();
+    }
+    return -aEvent.mPanDisplacement.x / mWidget.GetDefaultScaleInternal() /
+           StaticPrefs::widget_swipe_pixel_size();
+  }();
 
+  mGestureAmount = ClampToAllowedRange(mGestureAmount + delta);
   if (aEvent.mType != PanGestureInput::PANGESTURE_END) {
-    double elapsedSeconds =
-        std::max(0.008, (aEvent.mTimeStamp - mLastEventTimeStamp).ToSeconds());
-    mCurrentVelocity = delta / elapsedSeconds;
+    if (!aProcessingFirstEvent) {
+      double elapsedSeconds = std::max(
+          0.008, (aEvent.mTimeStamp - mLastEventTimeStamp).ToSeconds());
+      mCurrentVelocity = delta / elapsedSeconds;
+    }
     mLastEventTimeStamp = aEvent.mTimeStamp;
-  } else {
+  }
+
+  const bool computedSwipeSuccess = ComputeSwipeSuccess();
+  double eventAmount = mGestureAmount;
+  // If ComputeSwipeSuccess returned false because the users fingers were
+  // moving slightly away from the target direction then we do not want to
+  // display the UI as if we were at the success threshold as that would
+  // give a false indication that navigation would happen.
+  if (!computedSwipeSuccess && (eventAmount >= kSwipeSuccessThreshold ||
+                                eventAmount <= -kSwipeSuccessThreshold)) {
+    eventAmount = 0.999 * kSwipeSuccessThreshold;
+    if (mGestureAmount < 0.f) {
+      eventAmount = -eventAmount;
+    }
+  }
+
+  SendSwipeEvent(eSwipeGestureUpdate, 0, eventAmount, aEvent.mTimeStamp);
+
+  if (aEvent.mType == PanGestureInput::PANGESTURE_END) {
     mEventsAreControllingSwipe = false;
-    double targetValue = 0.0;
-    if (ComputeSwipeSuccess()) {
+    if (computedSwipeSuccess) {
       // Let's use same timestamp as previous event because this is caused by
       // the preceding event.
       SendSwipeEvent(eSwipeGesture, mSwipeDirection, 0.0, aEvent.mTimeStamp);
-      targetValue = SwipeSuccessTargetValue();
+      UnregisterFromRefreshDriver();
+      NS_DispatchToMainThread(
+          NS_NewRunnableFunction("SwipeTracker::SwipeFinished",
+                                 [swipeTracker = RefPtr<SwipeTracker>(this),
+                                  timeStamp = aEvent.mTimeStamp] {
+                                   swipeTracker->SwipeFinished(timeStamp);
+                                 }));
+    } else {
+      StartAnimating(eventAmount, 0.0);
     }
-    StartAnimating(targetValue);
   }
 
   return nsEventStatus_eConsumeNoDefault;
 }
 
-void SwipeTracker::StartAnimating(double aTargetValue) {
-  mAxis.SetPosition(mGestureAmount);
+void SwipeTracker::StartAnimating(double aStartValue, double aTargetValue) {
+  mAxis.SetPosition(aStartValue);
   mAxis.SetDestination(aTargetValue);
   mAxis.SetVelocity(mCurrentVelocity);
 
@@ -152,7 +176,8 @@ void SwipeTracker::StartAnimating(double aTargetValue) {
   // Add ourselves as a refresh driver observer. The refresh driver
   // will call WillRefresh for each animation frame until we
   // unregister ourselves.
-  MOZ_ASSERT(!mRegisteredWithRefreshDriver);
+  MOZ_RELEASE_ASSERT(!mRegisteredWithRefreshDriver,
+                     "We only want a single refresh driver registration");
   if (mRefreshDriver) {
     mRefreshDriver->AddRefreshObserver(this, FlushType::Style,
                                        "Swipe animation");
@@ -160,13 +185,22 @@ void SwipeTracker::StartAnimating(double aTargetValue) {
   }
 }
 
-void SwipeTracker::WillRefresh(mozilla::TimeStamp aTime) {
+void SwipeTracker::WillRefresh(TimeStamp aTime) {
+  // FIXME(emilio): shouldn't we be using `aTime`?
   TimeStamp now = TimeStamp::Now();
   mAxis.Simulate(now - mLastAnimationFrameTime);
   mLastAnimationFrameTime = now;
 
-  bool isFinished = mAxis.IsFinished(1.0 / kWholePagePixelSize);
-  mGestureAmount = (isFinished ? mAxis.GetDestination() : mAxis.GetPosition());
+  const double wholeSize = mDeltaTypeIsPage
+                               ? StaticPrefs::widget_swipe_page_size()
+                               : StaticPrefs::widget_swipe_pixel_size();
+  // NOTE(emilio): It's unclear this makes sense for page-based swiping, but
+  // this preserves behavior and all platforms probably will end up converging
+  // in pixel-based pan input, so...
+  const double minIncrement = 1.0 / wholeSize;
+  const bool isFinished = mAxis.IsFinished(minIncrement);
+
+  mGestureAmount = isFinished ? mAxis.GetDestination() : mAxis.GetPosition();
   SendSwipeEvent(eSwipeGestureUpdate, 0, mGestureAmount, now);
 
   if (isFinished) {
@@ -188,8 +222,8 @@ void SwipeTracker::UnregisterFromRefreshDriver() {
   if (mRegisteredWithRefreshDriver) {
     MOZ_ASSERT(mRefreshDriver, "How were we able to register, then?");
     mRefreshDriver->RemoveRefreshObserver(this, FlushType::Style);
+    mRegisteredWithRefreshDriver = false;
   }
-  mRegisteredWithRefreshDriver = false;
 }
 
 /* static */ WidgetSimpleGestureEvent SwipeTracker::CreateSwipeGestureEvent(

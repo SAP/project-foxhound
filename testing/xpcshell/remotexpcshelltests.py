@@ -4,28 +4,25 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
-from argparse import Namespace
 import datetime
 import os
 import posixpath
-import mozdevice
 import shutil
-import six
 import sys
-import runxpcshelltests as xpcshell
 import tempfile
 import time
 import uuid
+from argparse import Namespace
 from zipfile import ZipFile
 
 import mozcrash
-from mozdevice import ADBDevice, ADBDeviceFactory, ADBTimeoutError
+import mozdevice
 import mozfile
 import mozinfo
+import runxpcshelltests as xpcshell
+import six
+from mozdevice import ADBDevice, ADBDeviceFactory, ADBTimeoutError
 from mozlog import commandline
-
 from xpcshellcommandline import parser_remote
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -215,20 +212,6 @@ class RemoteXPCShellTestThread(xpcshell.XPCShellTestThread):
         self.env["XPCSHELL_TEST_TEMP_DIR"] = self.remoteTmpDir
         return self.remoteTmpDir
 
-    def setupPluginsDir(self):
-        if not os.path.isdir(self.pluginsPath):
-            return None
-
-        # making sure tmp dir is set up
-        self.setupTempDir()
-
-        pluginsDir = posixpath.join(self.remoteTmpDir, "plugins")
-        self.device.push(self.pluginsPath, pluginsDir)
-        self.device.chmod(pluginsDir)
-        if self.interactive:
-            self.log.info("plugins dir is %s" % pluginsDir)
-        return pluginsDir
-
     def setupProfileDir(self):
         profileId = str(uuid.uuid4())
         self.profileDir = posixpath.join(self.profileDir, profileId)
@@ -290,7 +273,6 @@ class RemoteXPCShellTestThread(xpcshell.XPCShellTestThread):
         # change base class' paths to remote paths and use base class to build command
         self.xpcshell = posixpath.join(self.remoteBinDir, "xpcw")
         self.headJSPath = posixpath.join(self.remoteScriptsDir, "head.js")
-        self.httpdJSPath = posixpath.join(self.remoteComponentsDir, "httpd.js")
         self.testingModulesDir = self.remoteModulesDir
         self.testharnessdir = self.remoteScriptsDir
         xpcsCmd = xpcshell.XPCShellTestThread.buildXpcsCmd(self)
@@ -479,6 +461,14 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         self.initDir(self.remoteMinidumpRootDir)
         self.initDir(self.remoteLogFolder)
 
+        eprefs = options.get("extraPrefs") or []
+        if options.get("disableFission"):
+            eprefs.append("fission.autostart=false")
+        else:
+            # should be by default, just in case
+            eprefs.append("fission.autostart=true")
+        options["extraPrefs"] = eprefs
+
         # data that needs to be passed to the RemoteXPCShellTestThread
         self.mobileArgs = {
             "device": self.device,
@@ -630,6 +620,7 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
             "BadCertAndPinningServer",
             "DelegatedCredentialsServer",
             "EncryptedClientHelloServer",
+            "FaultyServer",
             "OCSPStaplingServer",
             "GenerateOCSPResponse",
             "SanctionsTestServer",
@@ -647,8 +638,8 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
                     file=sys.stderr,
                 )
 
-        local = os.path.join(self.localBin, "components/httpd.js")
-        remoteFile = posixpath.join(self.remoteComponentsDir, "httpd.js")
+        local = os.path.join(self.localBin, "components/httpd.sys.mjs")
+        remoteFile = posixpath.join(self.remoteComponentsDir, "httpd.sys.mjs")
         self.device.push(local, remoteFile)
         self.device.chmod(remoteFile)
 

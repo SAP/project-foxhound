@@ -12,7 +12,7 @@ const BASE_64_URL =
   "0AAAAUElEQVRYR+3UsQkAQAhD0TjJ7T+Wk3gbxMIizbcVITwwJWlkZtptpXp+v94TAAEE4gLTvgfOf770RB" +
   "EAAQTiAvEiIgACCMQF4kVEAAQQSAt8xsyeAW6R8eIAAAAASUVORK5CYII=";
 
-add_task(async function() {
+add_task(async function () {
   await addTab(
     "data:text/html;charset=utf-8," +
       encodeURIComponent(`
@@ -23,7 +23,7 @@ add_task(async function() {
           --test-var-wider-than-image: red;
         }
 
-        div {
+        #target {
           color: var(--test-var-wider-than-image);
           background: url(${BASE_64_URL});
         }
@@ -34,18 +34,27 @@ add_task(async function() {
   const { inspector, view } = await openRuleView();
   await selectNode("#target", inspector);
 
-  // Retrieve the element for `--test-var` on which the CSS variable tooltip will appear.
-  const colorPropertySpan = getRuleViewProperty(view, "div", "color").valueSpan;
-  const colorVariableElement = colorPropertySpan.querySelector(
-    ".ruleview-variable"
+  // Note: See intermittent Bug 1721743.
+  // On linux webrender opt, the inspector might open the ruleview before it has
+  // been populated with the rules for the div.
+  info("Wait until the rule view property is rendered");
+  const colorPropertyElement = await waitFor(() =>
+    getRuleViewProperty(view, "#target", "color")
   );
 
+  // Retrieve the element for `--test-var` on which the CSS variable tooltip will appear.
+  const colorPropertySpan = colorPropertyElement.valueSpan;
+  const colorVariableElement =
+    colorPropertySpan.querySelector(".ruleview-variable");
+
   // Retrieve the element for the background url on which the image preview will appear.
-  const backgroundPropertySpan = getRuleViewProperty(view, "div", "background")
-    .valueSpan;
-  const backgroundUrlElement = backgroundPropertySpan.querySelector(
-    ".theme-link"
-  );
+  const backgroundPropertySpan = getRuleViewProperty(
+    view,
+    "#target",
+    "background"
+  ).valueSpan;
+  const backgroundUrlElement =
+    backgroundPropertySpan.querySelector(".theme-link");
 
   info("Show preview tooltip for CSS variable");
   let previewTooltip = await assertShowPreviewTooltip(

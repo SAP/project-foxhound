@@ -6,13 +6,11 @@
 // Check evaluating and expanding getters in the Browser Console.
 const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html><h1>Object Inspector on Getters</h1>";
-const { ELLIPSIS } = require("devtools/shared/l10n");
+const { ELLIPSIS } = require("resource://devtools/shared/l10n.js");
 
-add_task(async function() {
+add_task(async function () {
   // Show the content messages
-  await pushPref("devtools.browserconsole.contentMessages", true);
-  // Enable Fission browser console to see the logged content object
-  await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
   await addTab(TEST_URI);
 
@@ -21,12 +19,11 @@ add_task(async function() {
 
   const LONGSTRING = "ab ".repeat(1e5);
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [LONGSTRING], function(
-    longString
-  ) {
-    content.wrappedJSObject.console.log(
-      "oi-test",
-      Object.create(
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [LONGSTRING],
+    function (longString) {
+      const obj = Object.create(
         null,
         Object.getOwnPropertyDescriptors({
           get myStringGetter() {
@@ -64,7 +61,7 @@ add_task(async function() {
           },
           get myProxyGetter() {
             const handler = {
-              get: function(target, name) {
+              get(target, name) {
                 return name in target ? target[name] : 37;
               },
             };
@@ -77,11 +74,24 @@ add_task(async function() {
             return longString;
           },
         })
-      )
-    );
-  });
+      );
+      Object.defineProperty(obj, "MyPrint", { get: content.print });
+      Object.defineProperty(obj, "MyElement", { get: content.Element });
+      Object.defineProperty(obj, "MySetAttribute", {
+        get: content.Element.prototype.setAttribute,
+      });
+      Object.defineProperty(obj, "MySetClassName", {
+        get: Object.getOwnPropertyDescriptor(
+          content.Element.prototype,
+          "className"
+        ).set,
+      });
 
-  const node = await waitFor(() => findMessage(hud, "oi-test"));
+      content.wrappedJSObject.console.log("oi-test", obj);
+    }
+  );
+
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "oi-test"));
   const oi = node.querySelector(".tree");
 
   expandObjectInspectorNode(oi);
@@ -101,6 +111,7 @@ add_task(async function() {
   await testProxyGetter(oi);
   await testThrowingGetter(oi);
   await testLongStringGetter(oi, LONGSTRING);
+  await testUnsafeGetters(oi);
 });
 
 async function testStringGetter(oi) {
@@ -369,7 +380,7 @@ async function testObjectGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [`foo: "bar"`, `<prototype>`]);
 }
 
@@ -401,7 +412,7 @@ async function testArrayGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   const children = getObjectInspectorChildrenNodes(node);
 
   const firstBucket = children[0];
@@ -413,7 +424,7 @@ async function testArrayGetter(oi) {
     "The bucket can be expanded"
   );
   expandObjectInspectorNode(firstBucket);
-  await waitFor(() => getObjectInspectorChildrenNodes(firstBucket).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(firstBucket).length);
   checkChildren(
     firstBucket,
     Array.from({ length: 100 }, (_, i) => `${i}: ${i}`)
@@ -446,17 +457,17 @@ async function testMapGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [`size`, `<entries>`, `<prototype>`]);
 
   const entriesNode = findObjectInspectorNode(oi, "<entries>");
   expandObjectInspectorNode(entriesNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(entriesNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(entriesNode).length);
   checkChildren(entriesNode, [`foo → Object { bar: "baz" }`]);
 
   const entryNode = getObjectInspectorChildrenNodes(entriesNode)[0];
   expandObjectInspectorNode(entryNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(entryNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(entryNode).length);
   checkChildren(entryNode, [`<key>: "foo"`, `<value>: Object { bar: "baz" }`]);
 }
 
@@ -486,17 +497,17 @@ async function testProxyGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [`<target>`, `<handler>`]);
 
   const targetNode = findObjectInspectorNode(oi, "<target>");
   expandObjectInspectorNode(targetNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(targetNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(targetNode).length);
   checkChildren(targetNode, [`a: 1`, `<prototype>`]);
 
   const handlerNode = findObjectInspectorNode(oi, "<handler>");
   expandObjectInspectorNode(handlerNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(handlerNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(handlerNode).length);
   checkChildren(handlerNode, [`get:`, `<prototype>`]);
 }
 
@@ -526,7 +537,7 @@ async function testThrowingGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [
     `columnNumber`,
     `fileName`,
@@ -567,6 +578,39 @@ async function testLongStringGetter(oi, longString) {
     )
   );
   ok(true, "the longstring was expanded");
+}
+
+async function testUnsafeGetters(oi) {
+  const props = [
+    [
+      "MyPrint",
+      "MyPrint: TypeError: 'print' called on an object that does not implement interface Window.",
+    ],
+    ["MyElement", "MyElement: TypeError: Illegal constructor."],
+    [
+      "MySetAttribute",
+      "MySetAttribute: TypeError: 'setAttribute' called on an object that does not implement interface Element.",
+    ],
+    [
+      "MySetClassName",
+      "MySetClassName: TypeError: 'set className' called on an object that does not implement interface Element.",
+    ],
+  ];
+
+  for (const [name, text] of props) {
+    const getNode = () => findObjectInspectorNode(oi, name);
+    is(
+      isObjectInspectorNodeExpandable(getNode()),
+      false,
+      `The ${name} node can't be expanded`
+    );
+    const invokeButton = getObjectInspectorInvokeGetterButton(getNode());
+    ok(invokeButton, `There is an invoke button for ${name} as expected`);
+
+    invokeButton.click();
+    await waitFor(() => getNode().textContent.includes(text));
+    ok(true, `${name} getter shows the error message ${text}`);
+  }
 }
 
 function checkChildren(node, expectedChildren) {

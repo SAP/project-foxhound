@@ -5,30 +5,45 @@
 Transform the repackage signing task into an actual task description.
 """
 
-
-from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.scriptworker import get_signing_cert_scope_per_platform
-from gecko_taskgraph.transforms.task import task_description_schema
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_primary_dependency
+from taskgraph.util.schema import Schema
 from voluptuous import Optional
 
-repackage_signing_description_schema = schema.extend(
+from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
+from gecko_taskgraph.util.scriptworker import get_signing_cert_scope_per_platform
+
+repackage_signing_description_schema = Schema(
     {
         Optional("label"): str,
+        Optional("attributes"): task_description_schema["attributes"],
+        Optional("dependencies"): task_description_schema["dependencies"],
         Optional("treeherder"): task_description_schema["treeherder"],
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
+        Optional("job-from"): task_description_schema["job-from"],
     }
 )
 
 transforms = TransformSequence()
+
+
+@transforms.add
+def remove_name(config, jobs):
+    for job in jobs:
+        if "name" in job:
+            del job["name"]
+        yield job
+
+
 transforms.add_validate(repackage_signing_description_schema)
 
 
 @transforms.add
 def make_signing_description(config, jobs):
     for job in jobs:
-        dep_job = job["primary-dependency"]
+        dep_job = get_primary_dependency(config, job)
+        assert dep_job
 
         attributes = copy_attributes_from_dependent_job(dep_job)
         attributes["repackage_type"] = "repackage-signing"
@@ -106,7 +121,7 @@ def make_signing_description(config, jobs):
 
 def _craft_upstream_artifacts(dep_job, dependency_kind, build_platform):
     if build_platform.startswith("win"):
-        signing_format = "autograph_authenticode"
+        signing_format = "autograph_authenticode_sha2"
     elif build_platform.startswith("linux"):
         signing_format = "autograph_gpg"
     elif build_platform.startswith("macosx"):

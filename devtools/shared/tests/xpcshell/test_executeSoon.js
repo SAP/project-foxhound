@@ -10,9 +10,9 @@
  * device.
  */
 
-var { executeSoon } = require("devtools/shared/DevToolsUtils");
+var { executeSoon } = require("resource://devtools/shared/DevToolsUtils.js");
 
-add_task(async function() {
+add_task(async function () {
   await waitForTick();
 
   let stack = Components.stack;

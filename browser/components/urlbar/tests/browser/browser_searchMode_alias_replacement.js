@@ -18,21 +18,16 @@ const TEST_SPACES = [" ", "\u3000", " \u3000", "\u3000 "];
 
 let defaultEngine, aliasEngine;
 
-add_task(async function setup() {
-  defaultEngine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
+add_setup(async function () {
+  defaultEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
+  });
   defaultEngine.alias = "@default";
-  let oldDefaultEngine = await Services.search.getDefault();
-  Services.search.setDefault(defaultEngine);
   await SearchTestUtils.installSearchExtension({
     keyword: ALIAS,
   });
   aliasEngine = Services.search.getEngineByName("Example");
-
-  registerCleanupFunction(async function() {
-    Services.search.setDefault(oldDefaultEngine);
-  });
 });
 
 // An incomplete alias should not be replaced.
@@ -172,7 +167,7 @@ add_task(async function trailingSpace_query() {
   }
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Test search mode when typing an alias after selecting one-off button");
 
   info("Open the result popup");
@@ -222,7 +217,7 @@ add_task(async function() {
   await UrlbarTestUtils.promisePopupClose(window);
 });
 
-add_task(async function() {
+add_task(async function () {
   info(
     "Test search mode after removing current search mode when multiple aliases are written"
   );
@@ -271,7 +266,7 @@ add_task(async function() {
  *
  * @param {string} str
  *   The code points of this string will be returned.
- * @returns {array}
+ * @returns {Array}
  *   Array of code points in the string, where each is a hexidecimal string.
  */
 function codePoints(str) {

@@ -12,26 +12,10 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/VsyncDispatcher.h"
 
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
-
-// Direct Manipulation is only defined for Win8 and newer.
-#  if defined(_WIN32_WINNT)
-#    undef _WIN32_WINNT
-#    define _WIN32_WINNT _WIN32_WINNT_WIN8
-#  endif  // defined(_WIN32_WINNT)
-#  if defined(NTDDI_VERSION)
-#    undef NTDDI_VERSION
-#    define NTDDI_VERSION NTDDI_WIN8
-#  endif  // defined(NTDDI_VERSION)
-
-#  include "directmanipulation.h"
-
-#endif  // !defined(__MINGW32__) && !defined(__MINGW64__)
+#include "directmanipulation.h"
 
 namespace mozilla {
 namespace widget {
-
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
 
 class DManipEventHandler : public IDirectManipulationViewportEventHandler,
                            public IDirectManipulationInteractionEventHandler {
@@ -72,11 +56,10 @@ class DManipEventHandler : public IDirectManipulationViewportEventHandler,
                                           override)
 
    public:
-    bool NotifyVsync(const mozilla::VsyncEvent& aVsync) override {
+    void NotifyVsync(const mozilla::VsyncEvent& aVsync) override {
       if (mOwner) {
         mOwner->Update();
       }
-      return true;
     }
     explicit VObserver(DManipEventHandler* aOwner) : mOwner(aOwner) {}
 
@@ -216,11 +199,8 @@ void DManipEventHandler::TransitionToState(State aNewState) {
   // End the previous sequence.
   switch (prevState) {
     case State::ePanning: {
-      // ePanning -> eNone, ePinching: PanEnd
-      // ePanning -> eInertia: we don't want to end the current scroll sequence.
-      if (aNewState != State::eInertia) {
-        SendPan(Phase::eEnd, 0.f, 0.f, false);
-      }
+      // ePanning -> *: PanEnd
+      SendPan(Phase::eEnd, 0.f, 0.f, false);
       break;
     }
     case State::eInertia: {
@@ -304,7 +284,7 @@ DManipEventHandler::OnContentUpdated(IDirectManipulationViewport* viewport,
 
   // Consider this is a Scroll when scale factor equals 1.0.
   if (FuzzyEqualsMultiplicative(scale, 1.f)) {
-    if (mState == State::eNone || mState == State::eInertia) {
+    if (mState == State::eNone) {
       TransitionToState(State::ePanning);
     }
   } else {
@@ -366,14 +346,15 @@ DManipEventHandler::OnInteraction(
       mObserver = new VObserver(this);
     }
 
-    gfxWindowsPlatform::GetPlatform()->GetHardwareVsync()->AddGenericObserver(
-        mObserver);
+    gfxWindowsPlatform::GetPlatform()
+        ->GetGlobalVsyncDispatcher()
+        ->AddMainThreadObserver(mObserver);
   }
 
   if (mObserver && interaction == DIRECTMANIPULATION_INTERACTION_END) {
     gfxWindowsPlatform::GetPlatform()
-        ->GetHardwareVsync()
-        ->RemoveGenericObserver(mObserver);
+        ->GetGlobalVsyncDispatcher()
+        ->RemoveMainThreadObserver(mObserver);
   }
 
   return S_OK;
@@ -385,22 +366,16 @@ void DManipEventHandler::Update() {
   }
 }
 
-#endif  // !defined(__MINGW32__) && !defined(__MINGW64__)
-
 void DirectManipulationOwner::Update() {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
   if (mDmUpdateManager) {
     mDmUpdateManager->Update(nullptr);
   }
-#endif
 }
 
 DirectManipulationOwner::DirectManipulationOwner(nsWindow* aWindow)
     : mWindow(aWindow) {}
 
 DirectManipulationOwner::~DirectManipulationOwner() { Destroy(); }
-
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
 
 bool DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
   if (!mWindow) {
@@ -427,7 +402,6 @@ bool DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
       MOZ_ASSERT_UNREACHABLE("handle all enum values");
   }
 
-  PRIntervalTime eventIntervalTime = PR_IntervalNow();
   TimeStamp eventTimeStamp = TimeStamp::Now();
 
   ModifierKeyState modifierKeyState;
@@ -445,7 +419,6 @@ bool DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
 
   PinchGestureInput event{pinchGestureType,
                           PinchGestureInput::TRACKPAD,
-                          eventIntervalTime,
                           eventTimeStamp,
                           screenOffset,
                           position,
@@ -521,29 +494,15 @@ void DManipEventHandler::SendPanCommon(nsWindow* aWindow, Phase aPhase,
     }
   }
 
-  PRIntervalTime eventIntervalTime = PR_IntervalNow();
   TimeStamp eventTimeStamp = TimeStamp::Now();
 
-  PanGestureInput event{panGestureType,
-                        eventIntervalTime,
-                        eventTimeStamp,
-                        aPosition,
-                        ScreenPoint(aDeltaX, aDeltaY),
-                        aMods};
-
-  // This `SendPanCommon` gets called only if the Windows setting, "Drag two
-  // fingers to scroll" option, is enabled (or it gets called in tests), so we
-  // don't need to explicitly check whether the option is enabled or not here.
-  event.mRequiresContentResponseIfCannotScrollHorizontallyInStartDirection =
-      SwipeTracker::CanTriggerSwipe(event);
+  PanGestureInput event{panGestureType, eventTimeStamp, aPosition,
+                        ScreenPoint(aDeltaX, aDeltaY), aMods};
 
   aWindow->SendAnAPZEvent(event);
 }
 
-#endif  // !defined(__MINGW32__) && !defined(__MINGW64__)
-
 void DirectManipulationOwner::Init(const LayoutDeviceIntRect& aBounds) {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
   HRESULT hr = CoCreateInstance(
       CLSID_DirectManipulationManager, nullptr, CLSCTX_INPROC_SERVER,
       IID_IDirectManipulationManager, getter_AddRefs(mDmManager));
@@ -657,12 +616,10 @@ void DirectManipulationOwner::Init(const LayoutDeviceIntRect& aBounds) {
     mDmHandler = nullptr;
     return;
   }
-#endif  // !defined(__MINGW32__) && !defined(__MINGW64__)
 }
 
 void DirectManipulationOwner::ResizeViewport(
     const LayoutDeviceIntRect& aBounds) {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
   if (mDmHandler) {
     mDmHandler->mBounds = aBounds;
   }
@@ -674,18 +631,16 @@ void DirectManipulationOwner::ResizeViewport(
       NS_WARNING("SetViewportRect failed");
     }
   }
-#endif
 }
 
 void DirectManipulationOwner::Destroy() {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
   if (mDmHandler) {
     mDmHandler->mWindow = nullptr;
     mDmHandler->mOwner = nullptr;
     if (mDmHandler->mObserver) {
       gfxWindowsPlatform::GetPlatform()
-          ->GetHardwareVsync()
-          ->RemoveGenericObserver(mDmHandler->mObserver);
+          ->GetGlobalVsyncDispatcher()
+          ->RemoveMainThreadObserver(mDmHandler->mObserver);
       mDmHandler->mObserver->ClearOwner();
       mDmHandler->mObserver = nullptr;
     }
@@ -729,29 +684,23 @@ void DirectManipulationOwner::Destroy() {
   mDmViewport = nullptr;
   mDmUpdateManager = nullptr;
   mDmManager = nullptr;
-#endif  // !defined(__MINGW32__) && !defined(__MINGW64__)
   mWindow = nullptr;
 }
 
 void DirectManipulationOwner::SetContact(UINT aContactId) {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
   if (mDmViewport) {
     mDmViewport->SetContact(aContactId);
   }
-#endif
 }
 
 /*static  */ void DirectManipulationOwner::SynthesizeNativeTouchpadPan(
     nsWindow* aWindow, nsIWidget::TouchpadGesturePhase aEventPhase,
     LayoutDeviceIntPoint aPoint, double aDeltaX, double aDeltaY,
     int32_t aModifierFlags) {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
   DManipEventHandler::SynthesizeNativeTouchpadPan(
       aWindow, aEventPhase, aPoint, aDeltaX, aDeltaY, aModifierFlags);
-#endif
 }
 
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
 /*static  */ void DManipEventHandler::SynthesizeNativeTouchpadPan(
     nsWindow* aWindow, nsIWidget::TouchpadGesturePhase aEventPhase,
     LayoutDeviceIntPoint aPoint, double aDeltaX, double aDeltaY,
@@ -768,7 +717,6 @@ void DirectManipulationOwner::SetContact(UINT aContactId) {
   SendPanCommon(aWindow, phase, position, aDeltaX, aDeltaY, aModifierFlags,
                 /* aIsInertia = */ false);
 }
-#endif
 
 }  // namespace widget
 }  // namespace mozilla

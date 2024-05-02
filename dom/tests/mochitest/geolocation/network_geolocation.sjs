@@ -67,11 +67,9 @@ function handleRequest(request, response) {
     response.setStatusLine("1.0", 404, "Not Found");
     position = "";
   }
-  timer = Components.classes["@mozilla.org/timer;1"].createInstance(
-    Components.interfaces.nsITimer
-  );
+  timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.initWithCallback(
-    function() {
+    function () {
       response.write(position);
       response.finish();
     },

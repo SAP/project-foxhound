@@ -40,29 +40,43 @@ class EncodedVideoFrameProducer {
 
   // Number of the input frames to pass to the encoder.
   EncodedVideoFrameProducer& SetNumInputFrames(int value);
+  // Encode next frame as key frame.
+  EncodedVideoFrameProducer& ForceKeyFrame();
   // Resolution of the input frames.
   EncodedVideoFrameProducer& SetResolution(RenderResolution value);
 
   EncodedVideoFrameProducer& SetFramerateFps(int value);
 
-  // Generates input video frames and encodes them with `encoder` provided in
-  // the constructor. Returns frame passed to the `OnEncodedImage` by wraping
-  // `EncodedImageCallback` underneath.
+  EncodedVideoFrameProducer& SetRtpTimestamp(uint32_t value);
+
+  EncodedVideoFrameProducer& SetCaptureTimeIdentifier(Timestamp value);
+
+  // Generates input video frames and encodes them with `encoder` provided
+  // in the constructor. Returns frame passed to the `OnEncodedImage` by
+  // wraping `EncodedImageCallback` underneath.
   std::vector<EncodedFrame> Encode();
 
  private:
   VideoEncoder& encoder_;
 
   uint32_t rtp_timestamp_ = 1000;
+  Timestamp capture_time_identifier_ = Timestamp::Micros(1000);
   int num_input_frames_ = 1;
   int framerate_fps_ = 30;
   RenderResolution resolution_ = {320, 180};
+  std::vector<VideoFrameType> next_frame_type_ = {
+      VideoFrameType::kVideoFrameKey};
 };
 
 inline EncodedVideoFrameProducer& EncodedVideoFrameProducer::SetNumInputFrames(
     int value) {
   RTC_DCHECK_GT(value, 0);
   num_input_frames_ = value;
+  return *this;
+}
+
+inline EncodedVideoFrameProducer& EncodedVideoFrameProducer::ForceKeyFrame() {
+  next_frame_type_ = {VideoFrameType::kVideoFrameKey};
   return *this;
 }
 
@@ -79,5 +93,16 @@ inline EncodedVideoFrameProducer& EncodedVideoFrameProducer::SetFramerateFps(
   return *this;
 }
 
+inline EncodedVideoFrameProducer& EncodedVideoFrameProducer::SetRtpTimestamp(
+    uint32_t value) {
+  rtp_timestamp_ = value;
+  return *this;
+}
+
+inline EncodedVideoFrameProducer&
+EncodedVideoFrameProducer::SetCaptureTimeIdentifier(Timestamp value) {
+  capture_time_identifier_ = value;
+  return *this;
+}
 }  // namespace webrtc
 #endif  // MODULES_VIDEO_CODING_CODECS_TEST_ENCODED_VIDEO_FRAME_PRODUCER_H_

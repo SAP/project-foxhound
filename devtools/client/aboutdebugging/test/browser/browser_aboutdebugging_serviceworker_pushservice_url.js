@@ -9,14 +9,14 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const SERVICE_WORKER = URL_ROOT + "resources/service-workers/push-sw.js";
-const TAB_URL = URL_ROOT + "resources/service-workers/push-sw.html";
+const SERVICE_WORKER = URL_ROOT_SSL + "resources/service-workers/push-sw.js";
+const TAB_URL = URL_ROOT_SSL + "resources/service-workers/push-sw.html";
 
 const FAKE_ENDPOINT = "https://fake/endpoint";
 
 // Test that the push service url is displayed for service workers subscribed to a push
 // service.
-add_task(async function() {
+add_task(async function () {
   await enableServiceWorkerDebugging();
 
   info("Mock the push service");

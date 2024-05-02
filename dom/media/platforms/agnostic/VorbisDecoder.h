@@ -10,21 +10,19 @@
 #  include "PlatformDecoderModule.h"
 #  include "mozilla/Maybe.h"
 
-#  ifdef MOZ_TREMOR
-#    include "tremor/ivorbiscodec.h"
-#  else
-#    include "vorbis/codec.h"
-#  endif
+#  include <vorbis/codec.h>
 
 namespace mozilla {
 
 DDLoggedTypeDeclNameAndBase(VorbisDataDecoder, MediaDataDecoder);
 
-class VorbisDataDecoder : public MediaDataDecoder,
-                          public DecoderDoctorLifeLogger<VorbisDataDecoder> {
+class VorbisDataDecoder final
+    : public MediaDataDecoder,
+      public DecoderDoctorLifeLogger<VorbisDataDecoder> {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VorbisDataDecoder, final);
+
   explicit VorbisDataDecoder(const CreateDecoderParams& aParams);
-  ~VorbisDataDecoder();
 
   RefPtr<InitPromise> Init() override;
   RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
@@ -34,12 +32,15 @@ class VorbisDataDecoder : public MediaDataDecoder,
   nsCString GetDescriptionName() const override {
     return "vorbis audio decoder"_ns;
   }
+  nsCString GetCodecName() const override { return "vorbis"_ns; }
 
   // Return true if mimetype is Vorbis
   static bool IsVorbis(const nsACString& aMimeType);
   static const AudioConfig::Channel* VorbisLayout(uint32_t aChannels);
 
  private:
+  ~VorbisDataDecoder();
+
   nsresult DecodeHeader(const unsigned char* aData, size_t aLength);
 
   const AudioInfo mInfo;

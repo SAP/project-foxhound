@@ -11,13 +11,9 @@ const BAD_LISTENER =
 const eventListeners = Symbol("EventEmitter/listeners");
 const onceOriginalListener = Symbol("EventEmitter/once-original-listener");
 const handler = Symbol("EventEmitter/event-handler");
-loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
+loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
 
 class EventEmitter {
-  constructor() {
-    this[eventListeners] = new Map();
-  }
-
   /**
    * Registers an event `listener` that is called every time events of
    * specified `type` is emitted on the given event `target`.
@@ -187,11 +183,11 @@ class EventEmitter {
   }
 
   static emit(target, type, ...rest) {
-    EventEmitter._emit(target, type, false, ...rest);
+    EventEmitter._emit(target, type, false, rest);
   }
 
   static emitAsync(target, type, ...rest) {
-    return EventEmitter._emit(target, type, true, ...rest);
+    return EventEmitter._emit(target, type, true, rest);
   }
 
   /**
@@ -204,73 +200,65 @@ class EventEmitter {
    * @param {Boolean} async
    *    If true, this function will wait for each listener completion.
    *    Each listener has to return a promise, which will be awaited for.
-   * @param {any} ...rest
+   * @param {Array} args
    *    The arguments to pass to each listener function.
    * @return {Promise|undefined}
    *    If `async` argument is true, returns the promise resolved once all listeners have resolved.
    *    Otherwise, this function returns undefined;
    */
-  static _emit(target, type, async, ...rest) {
-    logEvent(type, rest);
+  static _emit(target, type, async, args) {
+    if (loggingEnabled) {
+      logEvent(type, args);
+    }
 
-    if (!(eventListeners in target)) {
+    const targetEventListeners = target[eventListeners];
+    if (!targetEventListeners) {
+      return undefined;
+    }
+
+    const listeners = targetEventListeners.get(type);
+    if (!listeners?.size) {
       return undefined;
     }
 
     const promises = async ? [] : null;
 
-    if (target[eventListeners].has(type)) {
-      // Creating a temporary Set with the original listeners, to avoiding side effects
-      // in emit.
-      const listenersForType = new Set(target[eventListeners].get(type));
+    // Creating a temporary Set with the original listeners, to avoiding side effects
+    // in emit.
+    for (const listener of new Set(listeners)) {
+      // If the object was destroyed during event emission, stop emitting.
+      if (!(eventListeners in target)) {
+        break;
+      }
 
-      const events = target[eventListeners];
-      const listeners = events.get(type);
-
-      for (const listener of listenersForType) {
-        // If the object was destroyed during event emission, stop emitting.
-        if (!(eventListeners in target)) {
-          break;
-        }
-
-        // If listeners were removed during emission, make sure the
-        // event handler we're going to fire wasn't removed.
-        if (listeners && listeners.has(listener)) {
-          try {
-            let promise;
-            if (isEventHandler(listener)) {
-              promise = listener[handler](type, ...rest);
-            } else {
-              promise = listener.call(target, ...rest);
-            }
-            if (async) {
-              // Assert the name instead of `constructor != Promise` in order
-              // to avoid cross compartment issues where Promise can be multiple.
-              if (!promise || promise.constructor.name != "Promise") {
-                console.warn(
-                  `Listener for event '${type}' did not return a promise.`
-                );
-              } else {
-                promises.push(promise);
-              }
-            }
-          } catch (ex) {
-            // Prevent a bad listener from interfering with the others.
-            console.error(ex);
-            const msg = ex + ": " + ex.stack;
-            dump(msg + "\n");
+      // If listeners were removed during emission, make sure the
+      // event handler we're going to fire wasn't removed.
+      if (listeners && listeners.has(listener)) {
+        try {
+          let promise;
+          if (isEventHandler(listener)) {
+            promise = listener[handler](type, ...args);
+          } else {
+            promise = listener.apply(target, args);
           }
+          if (async) {
+            // Assert the name instead of `constructor != Promise` in order
+            // to avoid cross compartment issues where Promise can be multiple.
+            if (!promise || promise.constructor.name != "Promise") {
+              console.warn(
+                `Listener for event '${type}' did not return a promise.`
+              );
+            } else {
+              promises.push(promise);
+            }
+          }
+        } catch (ex) {
+          // Prevent a bad listener from interfering with the others.
+          console.error(ex);
+          const msg = ex + ": " + ex.stack;
+          dump(msg + "\n");
         }
       }
-    }
-
-    // Backward compatibility with the SDK event-emitter: support wildcard listeners that
-    // will be called for any event. The arguments passed to the listener are the event
-    // type followed by the actual arguments.
-    // !!! This API will be removed by Bug 1391261.
-    const hasWildcardListeners = target[eventListeners].has("*");
-    if (type !== "*" && hasWildcardListeners) {
-      EventEmitter.emit(target, "*", type, ...rest);
     }
 
     if (async) {
@@ -362,8 +350,9 @@ module.exports = EventEmitter;
 const isEventHandler = listener =>
   listener && handler in listener && typeof listener[handler] === "function";
 
-const Services = require("Services");
-const { getNthPathExcluding } = require("devtools/shared/platform/stack");
+const {
+  getNthPathExcluding,
+} = require("resource://devtools/shared/platform/stack.js");
 let loggingEnabled = false;
 
 if (!isWorker) {
@@ -377,7 +366,7 @@ if (!isWorker) {
 
   // Also listen for Loader unload to unregister the pref observer and
   // prevent leaking
-  const unloadObserver = function(subject) {
+  const unloadObserver = function (subject) {
     if (subject.wrappedJSObject == require("@loader/unload")) {
       Services.prefs.removeObserver("devtools.dump.emit", observer);
       Services.obs.removeObserver(unloadObserver, "devtools:loader:destroy");
@@ -461,10 +450,6 @@ function truncate(value, maxLen) {
 }
 
 function logEvent(type, args) {
-  if (!loggingEnabled) {
-    return;
-  }
-
   let argsOut = "";
 
   // We need this try / catch to prevent any dead object errors.
@@ -477,7 +462,7 @@ function logEvent(type, args) {
 
   const path = getNthPathExcluding(0, "devtools/shared/event-emitter.js");
 
-  if (args.length > 0) {
+  if (args.length) {
     dump(`EMITTING: emit(${type}, ${argsOut}) from ${path}\n`);
   } else {
     dump(`EMITTING: emit(${type}) from ${path}\n`);

@@ -404,7 +404,7 @@ assertErrorMessage(() => wasmEvalText(
       (func $f (result i32)
        (table.init $t0 (i32.const 0) (i32.const 0) (i32.const 0))))`), // no segment
                    SyntaxError,
-                   /failed to find elem/);
+                   /failed to find name/);
 
 assertErrorMessage(() => wasmEvalText(
     `(module
@@ -413,16 +413,7 @@ assertErrorMessage(() => wasmEvalText(
       (func $f
        (table.copy 0 (i32.const 0) (i32.const 0) (i32.const 2))))`), // target without source
                    SyntaxError,
-                   /expected keyword `table`/);
-
-assertErrorMessage(() => wasmEvalText(
-    `(module
-      (table $t0 2 funcref)
-      (table $t1 2 funcref)
-      (func $f
-       (table.copy (i32.const 0) 0 (i32.const 0) (i32.const 2))))`), // source without target
-                   SyntaxError,
-                   /wasm text error/);
+                   /unexpected token, expected an index or an identifier/);
 
 // Make sure that dead code doesn't prevent compilation.
 wasmEvalText(
@@ -430,7 +421,7 @@ wasmEvalText(
        (table (export "t") 10 externref)
        (func (param i32)
          (return)
-         (table.get (get_local 0))
+         (table.get (local.get 0))
          (drop)
         )
     )`);
@@ -440,7 +431,7 @@ wasmEvalText(
        (table (export "t") 10 externref)
        (func (param i32) (param i32)
          (return)
-         (table.grow (get_local 1))
+         (table.grow (local.get 1))
          (drop)
         )
     )`);
@@ -450,7 +441,7 @@ wasmEvalText(
        (table (export "t") 10 externref)
        (func (param i32) (param externref)
          (return)
-         (table.set (get_local 0) (get_local 1))
+         (table.set (local.get 0) (local.get 1))
         )
     )`);
 

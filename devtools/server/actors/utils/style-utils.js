@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { getCSSLexer } = require("devtools/shared/css/lexer");
+const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const FONT_PREVIEW_TEXT = "Abc";
@@ -88,7 +88,7 @@ function getFontPreviewData(font, doc, options) {
   const dataURL = canvas.toDataURL("image/png");
 
   return {
-    dataURL: dataURL,
+    dataURL,
     size: textWidth + FONT_PREVIEW_OFFSET * 2,
   };
 }
@@ -205,7 +205,7 @@ function getTextAtLineColumn(text, line, column) {
     offset = 0;
   }
   offset += column - 1;
-  return { offset: offset, text: text.substr(offset) };
+  return { offset, text: text.substr(offset) };
 }
 
 exports.getTextAtLineColumn = getTextAtLineColumn;

@@ -10,13 +10,17 @@
 #include "mozilla/dom/PColorPickerParent.h"
 #include "nsIColorPicker.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ColorPickerParent : public PColorPickerParent {
  public:
-  ColorPickerParent(const nsString& aTitle, const nsString& aInitialColor)
-      : mTitle(aTitle), mInitialColor(aInitialColor) {}
+  ColorPickerParent(const nsString& aTitle, const nsString& aInitialColor,
+                    const nsTArray<nsString>& aDefaultColors)
+      : mTitle(aTitle),
+        mInitialColor(aInitialColor),
+        mDefaultColors(aDefaultColors.Clone()) {}
+
+  NS_INLINE_DECL_REFCOUNTING(ColorPickerParent, final)
 
   virtual mozilla::ipc::IPCResult RecvOpen() override;
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -33,7 +37,7 @@ class ColorPickerParent : public PColorPickerParent {
 
    private:
     ~ColorPickerShownCallback() = default;
-    ColorPickerParent* mColorPickerParent;
+    RefPtr<ColorPickerParent> mColorPickerParent;
   };
 
  private:
@@ -46,9 +50,9 @@ class ColorPickerParent : public PColorPickerParent {
 
   nsString mTitle;
   nsString mInitialColor;
+  nsTArray<nsString> mDefaultColors;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ColorPickerParent_h

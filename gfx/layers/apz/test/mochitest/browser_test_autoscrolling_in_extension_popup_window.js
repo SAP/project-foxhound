@@ -74,7 +74,7 @@ add_task(async () => {
             </ul>
           </body>
         </html>`,
-      "popup.js": function() {
+      "popup.js": function () {
         window.addEventListener(
           "mousemove",
           () => {
@@ -126,8 +126,8 @@ add_task(async () => {
     () => {
       const winUtils = SpecialPowers.getDOMWindowUtils(content.window);
       return {
-        screenX: content.window.mozInnerScreenX,
-        screenY: content.window.mozInnerScreenY,
+        screenX: content.window.mozInnerScreenX * content.devicePixelRatio,
+        screenY: content.window.mozInnerScreenY * content.devicePixelRatio,
         viewId: winUtils.getViewId(content.document.documentElement),
         presShellId: winUtils.getPresShellId(),
       };

@@ -9,22 +9,9 @@
 /* import-globals-from permissions.js */
 /* import-globals-from security.js */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
 });
-
-// Inherit color scheme overrides from parent window. This is to inherit the
-// color scheme of dark themed PBM windows.
-{
-  let openerColorSchemeOverride =
-    window.opener?.browsingContext?.top.prefersColorSchemeOverride;
-  if (
-    openerColorSchemeOverride &&
-    window.browsingContext == window.browsingContext.top
-  ) {
-    window.browsingContext.prefersColorSchemeOverride = openerColorSchemeOverride;
-  }
-}
 
 // define a js object to implement nsITreeView
 function pageInfoTreeView(treeid, copycol) {
@@ -197,14 +184,14 @@ const COPYCOL_IMAGE = COL_IMAGE_ADDRESS;
 var gMetaView = new pageInfoTreeView("metatree", COPYCOL_META_CONTENT);
 var gImageView = new pageInfoTreeView("imagetree", COPYCOL_IMAGE);
 
-gImageView.getCellProperties = function(row, col) {
+gImageView.getCellProperties = function (row, col) {
   var data = gImageView.data[row];
   var item = gImageView.data[row][COL_IMAGE_NODE];
   var props = "";
   if (
     !checkProtocol(data) ||
-    item instanceof HTMLEmbedElement ||
-    (item instanceof HTMLObjectElement && !item.type.startsWith("image/"))
+    HTMLEmbedElement.isInstance(item) ||
+    (HTMLObjectElement.isInstance(item) && !item.type.startsWith("image/"))
   ) {
     props += "broken";
   }
@@ -216,7 +203,7 @@ gImageView.getCellProperties = function(row, col) {
   return props;
 };
 
-gImageView.onPageMediaSort = function(columnname) {
+gImageView.onPageMediaSort = function (columnname) {
   var tree = document.getElementById(this.treeid);
   var treecol = tree.columns.getNamedColumn(columnname);
 
@@ -270,11 +257,7 @@ const cacheService = Cc[
   "@mozilla.org/netwerk/cache-storage-service;1"
 ].getService(nsICacheStorageService);
 
-var loadContextInfo = Services.loadContextInfo.fromLoadContext(
-  window.docShell.QueryInterface(Ci.nsILoadContext),
-  false
-);
-var diskStorage = cacheService.diskCacheStorage(loadContextInfo);
+var diskStorage = null;
 
 const nsICookiePermission = Ci.nsICookiePermission;
 
@@ -463,6 +446,20 @@ async function loadTab(args) {
   let browsingContext = args?.browsingContext;
   let browser = args?.browser;
 
+  // Check if diskStorage has not be created yet if it has not been, get
+  // partitionKey from content process and create diskStorage with said partitionKey
+  if (!diskStorage) {
+    let oaWithPartitionKey = await getOaWithPartitionKey(
+      browsingContext,
+      browser
+    );
+    let loadContextInfo = Services.loadContextInfo.custom(
+      false,
+      oaWithPartitionKey
+    );
+    diskStorage = cacheService.diskCacheStorage(loadContextInfo);
+  }
+
   /* Load the page info */
   await loadPageInfo(browsingContext, imageElement, browser);
 
@@ -473,7 +470,7 @@ async function loadTab(args) {
     document.getElementById("generalTab");
   radioGroup.selectedItem = initialTab;
   radioGroup.selectedItem.doCommand();
-  radioGroup.focus();
+  radioGroup.focus({ focusVisible: false });
 }
 
 function openCacheEntry(key, cb) {
@@ -551,7 +548,7 @@ async function makeGeneralTab(metaViewRows, docInfo) {
 
   // get cache info
   var cacheKey = url.replace(/#.*$/, "");
-  openCacheEntry(cacheKey, function(cacheEntry) {
+  openCacheEntry(cacheKey, function (cacheEntry) {
     if (cacheEntry) {
       var pageSize = cacheEntry.dataSize;
       var kbSize = formatNumber(Math.round((pageSize / 1024) * 100) / 100);
@@ -587,7 +584,7 @@ async function addImage({ url, type, alt, altNotProvided, element, isBg }) {
     gImageView.addRow(row);
 
     // Fill in cache data asynchronously
-    openCacheEntry(url, function(cacheEntry) {
+    openCacheEntry(url, function (cacheEntry) {
       // The data at row[2] corresponds to the data size.
       if (cacheEntry) {
         let value = cacheEntry.dataSize;
@@ -596,7 +593,7 @@ async function addImage({ url, type, alt, altNotProvided, element, isBg }) {
           let kbSize = Number(Math.round((value / 1024) * 100) / 100);
           document.l10n
             .formatValue("media-file-size", { size: kbSize })
-            .then(function(response) {
+            .then(function (response) {
               row[2] = response;
               // Invalidate the row to trigger a repaint.
               gImageView.tree.invalidateRow(gImageView.data.indexOf(row));
@@ -720,9 +717,9 @@ function saveMedia() {
     if (url) {
       var titleKey = "SaveImageTitle";
 
-      if (item instanceof HTMLVideoElement) {
+      if (HTMLVideoElement.isInstance(item)) {
         titleKey = "SaveVideoTitle";
-      } else if (item instanceof HTMLAudioElement) {
+      } else if (HTMLAudioElement.isInstance(item)) {
         titleKey = "SaveAudioTitle";
       }
 
@@ -735,23 +732,29 @@ function saveMedia() {
       let cookieJarSettings = E10SUtils.deserializeCookieJarSettings(
         gDocInfo.cookieJarSettings
       );
-      saveURL(
+      internalSave(
         url,
         null,
+        null,
+        null,
+        null,
+        item.mimeType,
+        false,
         titleKey,
-        false,
-        false,
+        null,
         referrerInfo,
         cookieJarSettings,
+        null,
+        false,
         null,
         gDocInfo.isContentWindowPrivate,
         gDocInfo.principal
       );
     }
   } else {
-    selectSaveFolder(function(aDirectory) {
+    selectSaveFolder(function (aDirectory) {
       if (aDirectory) {
-        var saveAnImage = function(aURIString, aChosenData, aBaseURI) {
+        var saveAnImage = function (aURIString, aChosenData, aBaseURI) {
           uniqueFile(aChosenData.file);
 
           let referrerInfo = new ReferrerInfo(
@@ -764,6 +767,7 @@ function saveMedia() {
           );
           internalSave(
             aURIString,
+            null,
             null,
             null,
             null,
@@ -831,17 +835,17 @@ function onImageSelect() {
     previewBox.collapsed = true;
     mediaSaveBox.collapsed = true;
     splitter.collapsed = true;
-    tree.flex = 1;
+    tree.setAttribute("flex", "1");
   } else if (count > 1) {
     splitter.collapsed = true;
     previewBox.collapsed = true;
     mediaSaveBox.collapsed = false;
-    tree.flex = 1;
+    tree.setAttribute("flex", "1");
   } else {
     mediaSaveBox.collapsed = true;
     splitter.collapsed = false;
     previewBox.collapsed = false;
-    tree.flex = 0;
+    tree.setAttribute("flex", "0");
     makePreview(getSelectedRows(tree)[0]);
   }
 }
@@ -859,7 +863,7 @@ function makePreview(row) {
 
   // get cache info
   var cacheKey = url.replace(/#.*$/, "");
-  openCacheEntry(cacheKey, function(cacheEntry) {
+  openCacheEntry(cacheKey, function (cacheEntry) {
     // find out the file size
     if (cacheEntry) {
       let imageSize = cacheEntry.dataSize;
@@ -929,70 +933,71 @@ function makePreview(row) {
         isBG) &&
       isProtocolAllowed
     ) {
-      // We need to wait for the image to finish loading before using width & height
-      newImage.addEventListener(
-        "loadend",
-        function() {
-          physWidth = newImage.width || 0;
-          physHeight = newImage.height || 0;
+      function loadOrErrorListener() {
+        newImage.removeEventListener("load", loadOrErrorListener);
+        newImage.removeEventListener("error", loadOrErrorListener);
+        physWidth = newImage.width || 0;
+        physHeight = newImage.height || 0;
 
-          // "width" and "height" attributes must be set to newImage,
-          // even if there is no "width" or "height attribute in item;
-          // otherwise, the preview image cannot be displayed correctly.
-          // Since the image might have been loaded out-of-process, we expect
-          // the item to tell us its width / height dimensions. Failing that
-          // the item should tell us the natural dimensions of the image. Finally
-          // failing that, we'll assume that the image was never loaded in the
-          // other process (this can be true for favicons, for example), and so
-          // we'll assume that we can use the natural dimensions of the newImage
-          // we just created. If the natural dimensions of newImage are not known
-          // then the image is probably broken.
-          if (!isBG) {
-            newImage.width =
-              ("width" in item && item.width) || newImage.naturalWidth;
-            newImage.height =
-              ("height" in item && item.height) || newImage.naturalHeight;
+        // "width" and "height" attributes must be set to newImage,
+        // even if there is no "width" or "height attribute in item;
+        // otherwise, the preview image cannot be displayed correctly.
+        // Since the image might have been loaded out-of-process, we expect
+        // the item to tell us its width / height dimensions. Failing that
+        // the item should tell us the natural dimensions of the image. Finally
+        // failing that, we'll assume that the image was never loaded in the
+        // other process (this can be true for favicons, for example), and so
+        // we'll assume that we can use the natural dimensions of the newImage
+        // we just created. If the natural dimensions of newImage are not known
+        // then the image is probably broken.
+        if (!isBG) {
+          newImage.width =
+            ("width" in item && item.width) || newImage.naturalWidth;
+          newImage.height =
+            ("height" in item && item.height) || newImage.naturalHeight;
+        } else {
+          // the Width and Height of an HTML tag should not be used for its background image
+          // (for example, "table" can have "width" or "height" attributes)
+          newImage.width = item.naturalWidth || newImage.naturalWidth;
+          newImage.height = item.naturalHeight || newImage.naturalHeight;
+        }
+
+        if (item.SVGImageElement) {
+          newImage.width = item.SVGImageElementWidth;
+          newImage.height = item.SVGImageElementHeight;
+        }
+
+        width = newImage.width;
+        height = newImage.height;
+
+        document.getElementById("theimagecontainer").collapsed = false;
+        document.getElementById("brokenimagecontainer").collapsed = true;
+
+        if (url) {
+          if (width != physWidth || height != physHeight) {
+            document.l10n.setAttributes(
+              document.getElementById("imagedimensiontext"),
+              "media-dimensions-scaled",
+              {
+                dimx: formatNumber(physWidth),
+                dimy: formatNumber(physHeight),
+                scaledx: formatNumber(width),
+                scaledy: formatNumber(height),
+              }
+            );
           } else {
-            // the Width and Height of an HTML tag should not be used for its background image
-            // (for example, "table" can have "width" or "height" attributes)
-            newImage.width = item.naturalWidth || newImage.naturalWidth;
-            newImage.height = item.naturalHeight || newImage.naturalHeight;
+            document.l10n.setAttributes(
+              document.getElementById("imagedimensiontext"),
+              "media-dimensions",
+              { dimx: formatNumber(width), dimy: formatNumber(height) }
+            );
           }
+        }
+      }
 
-          if (item.SVGImageElement) {
-            newImage.width = item.SVGImageElementWidth;
-            newImage.height = item.SVGImageElementHeight;
-          }
-
-          width = newImage.width;
-          height = newImage.height;
-
-          document.getElementById("theimagecontainer").collapsed = false;
-          document.getElementById("brokenimagecontainer").collapsed = true;
-
-          if (url) {
-            if (width != physWidth || height != physHeight) {
-              document.l10n.setAttributes(
-                document.getElementById("imagedimensiontext"),
-                "media-dimensions-scaled",
-                {
-                  dimx: formatNumber(physWidth),
-                  dimy: formatNumber(physHeight),
-                  scaledx: formatNumber(width),
-                  scaledy: formatNumber(height),
-                }
-              );
-            } else {
-              document.l10n.setAttributes(
-                document.getElementById("imagedimensiontext"),
-                "media-dimensions",
-                { dimx: formatNumber(width), dimy: formatNumber(height) }
-              );
-            }
-          }
-        },
-        { once: true }
-      );
+      // We need to wait for the image to finish loading before using width & height
+      newImage.addEventListener("load", loadOrErrorListener);
+      newImage.addEventListener("error", loadOrErrorListener);
 
       newImage.setAttribute("triggeringprincipal", triggeringPrinStr);
       newImage.setAttribute("src", url);
@@ -1165,4 +1170,17 @@ function checkProtocol(img) {
     /^data:image\//i.test(url) ||
     /^(https?|file|about|chrome|resource):/.test(url)
   );
+}
+
+async function getOaWithPartitionKey(browsingContext, browser) {
+  browser = browser || window.opener.gBrowser.selectedBrowser;
+  browsingContext = browsingContext || browser.browsingContext;
+
+  let actor = browsingContext.currentWindowGlobal.getActor("PageInfo");
+  let partitionKeyFromChild = await actor.sendQuery("PageInfo:getPartitionKey");
+
+  let oa = browser.contentPrincipal.originAttributes;
+  oa.partitionKey = partitionKeyFromChild.partitionKey;
+
+  return oa;
 }

@@ -9,19 +9,18 @@
 
 #include "vm/ArrayObject.h"
 
-#include "gc/Allocator.h"
 #include "gc/GCProbes.h"
-#include "vm/StringType.h"
 
+#include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/ObjectOperations-inl.h"  // js::GetElement
+#include "vm/NativeObject-inl.h"
 
 namespace js {
 
 /* static */ MOZ_ALWAYS_INLINE ArrayObject* ArrayObject::create(
-    JSContext* cx, gc::AllocKind kind, gc::InitialHeap heap, HandleShape shape,
-    uint32_t length, uint32_t slotSpan, AutoSetNewObjectMetadata& metadata,
-    gc::AllocSite* site) {
+    JSContext* cx, gc::AllocKind kind, gc::Heap heap,
+    Handle<SharedShape*> shape, uint32_t length, uint32_t slotSpan,
+    AutoSetNewObjectMetadata& metadata, gc::AllocSite* site) {
   debugCheckNewObject(shape, kind, heap);
 
   const JSClass* clasp = &ArrayObject::class_;
@@ -39,27 +38,22 @@ namespace js {
   MOZ_ASSERT(shape->numFixedSlots() == 0);
 
   size_t nDynamicSlots = calculateDynamicSlots(0, slotSpan, clasp);
-  JSObject* obj =
-      js::AllocateObject(cx, kind, nDynamicSlots, heap, clasp, site);
-  if (!obj) {
+  ArrayObject* aobj = cx->newCell<ArrayObject>(kind, heap, clasp, site);
+  if (!aobj) {
     return nullptr;
   }
 
-  ArrayObject* aobj = static_cast<ArrayObject*>(obj);
   aobj->initShape(shape);
-  // NOTE: Dynamic slots are created internally by Allocate<JSObject>.
+  aobj->initFixedElements(kind, length);
+
   if (!nDynamicSlots) {
     aobj->initEmptyDynamicSlots();
+  } else if (!aobj->allocateInitialSlots(cx, nDynamicSlots)) {
+    return nullptr;
   }
 
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());
-  cx->realm()->setObjectPendingMetadata(cx, aobj);
-
-  uint32_t capacity =
-      gc::GetGCKindSlots(kind) - ObjectElements::VALUES_PER_HEADER;
-
-  aobj->setFixedElements();
-  new (aobj->getElementsHeader()) ObjectElements(capacity, length);
+  cx->realm()->setObjectPendingMetadata(aobj);
 
   if (slotSpan > 0) {
     aobj->initDynamicSlots(slotSpan);
@@ -67,6 +61,25 @@ namespace js {
 
   gc::gcprobes::CreateObject(aobj);
   return aobj;
+}
+
+inline DenseElementResult ArrayObject::addDenseElementNoLengthChange(
+    JSContext* cx, uint32_t index, const Value& val) {
+  MOZ_ASSERT(isExtensible());
+
+  // Only support the `index < length` case so that we don't have to increase
+  // the array's .length value below.
+  if (index >= length() || containsDenseElement(index) || isIndexed()) {
+    return DenseElementResult::Incomplete;
+  }
+
+  DenseElementResult res = ensureDenseElements(cx, index, 1);
+  if (MOZ_UNLIKELY(res != DenseElementResult::Success)) {
+    return res;
+  }
+
+  initDenseElement(index, val);
+  return DenseElementResult::Success;
 }
 
 }  // namespace js

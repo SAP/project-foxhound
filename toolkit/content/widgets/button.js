@@ -38,7 +38,7 @@
           if (this.open) {
             return;
           }
-        } else {
+        } else if (!this.inRichListItem) {
           if (
             event.keyCode == KeyEvent.DOM_VK_UP ||
             (event.keyCode == KeyEvent.DOM_VK_LEFT &&
@@ -106,7 +106,7 @@
         }
 
         // Test dialog buttons
-        let buttonBox = window.top.document.documentElement.buttonBox;
+        let buttonBox = window.top.document.querySelector("dialog")?.buttonBox;
         if (buttonBox) {
           this.fireAccessKeyButton(buttonBox, charPressedLower);
         }
@@ -182,7 +182,7 @@
         return NodeFilter.FILTER_REJECT;
       }
       // but it may be a popup element, in which case we look at "state"...
-      if (cs.display == "-moz-popup" && node.state != "open") {
+      if (XULPopupElement.isInstance(node) && node.state != "open") {
         return NodeFilter.FILTER_REJECT;
       }
       // OK - the node seems visible, so it is a candidate.
@@ -304,6 +304,7 @@
 
       this.appendChild(fragment.cloneNode(true));
       this.initializeAttributeInheritance();
+      this.inRichListItem = !!this.closest("richlistitem");
     }
   }
 

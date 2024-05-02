@@ -1,8 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { setInterval, clearInterval } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 // stolen from file_blocked_script.sjs
 function setGlobalState(data, key) {
@@ -18,7 +19,7 @@ function setGlobalState(data, key) {
 
 function getGlobalState(key) {
   var data;
-  getObjectState(key, function(x) {
+  getObjectState(key, function (x) {
     data = x && x.wrappedJSObject.data;
   });
   return data;
@@ -114,7 +115,6 @@ function handleStreamRequest(request, response) {
   intervalId = setInterval(tick, TICK_INTERVAL);
 }
 
-Components.utils.importGlobalProperties(["URLSearchParams"]);
 function handleRequest(request, response) {
   dump(
     "server-stream-download.js: processing request for " +

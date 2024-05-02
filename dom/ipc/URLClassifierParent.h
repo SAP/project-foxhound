@@ -12,10 +12,8 @@
 #include "mozilla/dom/PURLClassifierLocalParent.h"
 #include "nsIURIClassifier.h"
 #include "nsIUrlClassifierFeature.h"
-#include "mozilla/dom/PContent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class IPCURLClassifierFeature;
 
@@ -84,7 +82,6 @@ class URLClassifierLocalParent : public nsIUrlClassifierFeatureCallback,
   bool mIPCOpen = true;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_URLClassifierParent_h

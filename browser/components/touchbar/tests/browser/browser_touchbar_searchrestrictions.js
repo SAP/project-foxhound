@@ -2,14 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+});
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
+ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
+  const { UrlbarTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/UrlbarTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -24,9 +27,10 @@ XPCOMUtils.defineLazyServiceGetter(
  */
 
 /**
- * @param {string} input
+ * @param {object} options
+ * @param {string} options.input
  *   The value to be inserted in the Urlbar.
- * @param {UrlbarTokenizer.RESTRICT} token
+ * @param {UrlbarTokenizer.RESTRICT} options.token
  *   A restriction token corresponding to a Touch Bar button.
  */
 async function searchAndCheckState({ input, token }) {
@@ -54,13 +58,6 @@ async function searchAndCheckState({ input, token }) {
 
   await UrlbarTestUtils.promisePopupClose(window);
 }
-
-add_task(async function init() {
-  UrlbarTestUtils.init(this);
-  registerCleanupFunction(() => {
-    UrlbarTestUtils.uninit();
-  });
-});
 
 add_task(async function insertTokens() {
   const tests = [
@@ -146,7 +143,7 @@ add_task(async function clearURLs() {
   for (let { loadUrl, token } of tests) {
     let browser = win.gBrowser.selectedBrowser;
     let loadedPromise = BrowserTestUtils.browserLoaded(browser, false, loadUrl);
-    BrowserTestUtils.loadURI(browser, loadUrl);
+    BrowserTestUtils.startLoadingURIString(browser, loadUrl);
     await loadedPromise;
     if (win.gURLBar.getAttribute("pageproxystate") != "valid") {
       await TestUtils.waitForCondition(

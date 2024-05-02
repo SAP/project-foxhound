@@ -186,13 +186,13 @@ class nsStandardURL : public nsIFileURL,
     // if and only if encoding is required.
     int32_t EncodeSegmentCount(const char* str, const StringTaint& taint,
                                const URLSegment& segment,
-                               int16_t mask, nsCString& buf, bool& appended,
+                               uint32_t mask, nsCString& buf, bool& appended,
                                uint32_t extraLen = 0);
 
     // Encode the given string if necessary, and return a reference to
     // the encoded string.  Returns a reference to |result| if encoding
     // is required.  Otherwise, a reference to |str| is returned.
-    const nsACString& EncodeSegment(const nsACString& str, int16_t mask,
+    const nsACString& EncodeSegment(const nsACString& str, uint32_t mask,
                                     nsCString& result);
 
    private:

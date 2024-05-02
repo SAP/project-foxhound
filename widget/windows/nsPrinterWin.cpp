@@ -161,8 +161,7 @@ static void DevmodeToSettingsInitializer(
   if (aDevmode->dmFields & DM_DUPLEX) {
     switch (aDevmode->dmDuplex) {
       default:
-        MOZ_ASSERT_UNREACHABLE("bad value for dmDuplex field");
-        [[fallthrough]];
+        MOZ_FALLTHROUGH_ASSERT("bad value for dmDuplex field");
       case DMDUP_SIMPLEX:
         aSettingsInitializer.mDuplex = nsPrintSettings::kDuplexNone;
         break;
@@ -325,13 +324,22 @@ nsTArray<uint8_t> nsPrinterWin::CopyDefaultDevmodeW() const {
     // Allocate extra space in case of bad drivers that return a too-small
     // result from DocumentProperties.
     // (See https://bugzilla.mozilla.org/show_bug.cgi?id=1664530#c5)
-    devmodeStorageWLock->SetLength(bytesNeeded * 2);
+    if (!devmodeStorageWLock->SetLength(bytesNeeded * 2, fallible)) {
+      return devmodeStorageW;
+    }
+
+    memset(devmodeStorageWLock->Elements(), 0, devmodeStorageWLock->Length());
     auto* devmode =
         reinterpret_cast<DEVMODEW*>(devmodeStorageWLock->Elements());
     LONG ret = ::DocumentPropertiesW(nullptr, autoPrinter.get(), mName.get(),
                                      devmode, nullptr, DM_OUT_BUFFER);
     MOZ_ASSERT(ret == IDOK, "DocumentPropertiesW failed");
-    if (ret != IDOK) {
+    // Make sure that the lengths in the DEVMODEW make sense.
+    if (ret != IDOK || devmode->dmSize != sizeof(DEVMODEW) ||
+        devmode->dmSize + devmode->dmDriverExtra >
+            devmodeStorageWLock->Length()) {
+      // Clear mDefaultDevmodeWStorage to make sure we try again next time.
+      devmodeStorageWLock->Clear();
       return devmodeStorageW;
     }
   }

@@ -15,7 +15,7 @@ function synthesizeKeyAndWaitForTabToGetKeyboardFocus(tab, keyCode, options) {
   return focused;
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // The DevEdition has the DevTools button in the toolbar by default. Remove it
   // to prevent branch-specific rules what button should be focused.
   CustomizableUI.removeWidgetFromArea("developer-button");
@@ -55,6 +55,11 @@ add_task(async function changeSelectionUsingKeyboard() {
   );
   await synthesizeKeyAndWaitForFocus(
     document.getElementById("reload-button"),
+    "VK_TAB",
+    { shiftKey: true }
+  );
+  await synthesizeKeyAndWaitForFocus(
+    document.getElementById("tabs-newtab-button"),
     "VK_TAB",
     { shiftKey: true }
   );

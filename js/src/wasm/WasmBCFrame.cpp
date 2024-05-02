@@ -76,7 +76,7 @@ void BaseLocalIter::settle() {
       case MIRType::Int64:
       case MIRType::Double:
       case MIRType::Float32:
-      case MIRType::RefOrNull:
+      case MIRType::WasmAnyRef:
 #ifdef ENABLE_WASM_SIMD
       case MIRType::Simd128:
 #endif
@@ -111,10 +111,7 @@ void BaseLocalIter::settle() {
       case ValType::V128:
 #endif
       case ValType::Ref:
-        // TODO/AnyRef-boxing: With boxed immediates and strings, the
-        // debugger must be made aware that AnyRef != Pointer.
-        ASSERT_ANYREF_IS_JSOBJECT;
-        mirType_ = ToMIRType(locals_[index_]);
+        mirType_ = locals_[index_].toMIRType();
         frameOffset_ = pushLocal(MIRTypeToSize(mirType_));
         break;
       default:
@@ -378,9 +375,20 @@ bool StackMapGenerator::createStackMap(
       i++;
     }
   }
-  // Followed by the "main" part of the map.
-  for (uint32_t i = 0; i < augmentedMstWords; i++) {
-    if (augmentedMst.isGCPointer(i)) {
+  {
+    // Followed by the "main" part of the map.
+    //
+    // This is really just a bit-array copy, so it is reasonable to ask
+    // whether the representation of MachineStackTracker could be made more
+    // similar to that of StackMap, so that the copy could be done with
+    // `memcpy`.  Unfortunately it's not so simple; see comment on `class
+    // MachineStackTracker` for details.
+    MachineStackTracker::Iter iter(augmentedMst);
+    while (true) {
+      size_t i = iter.get();
+      if (i == MachineStackTracker::Iter::FINISHED) {
+        break;
+      }
       stackMap->setBit(extraWords + i);
     }
   }
@@ -394,8 +402,8 @@ bool StackMapGenerator::createStackMap(
                                   sizeof(Frame) / sizeof(void*));
 #ifdef DEBUG
   for (uint32_t i = 0; i < sizeof(Frame) / sizeof(void*); i++) {
-    MOZ_ASSERT(stackMap->getBit(stackMap->numMappedWords -
-                                stackMap->frameOffsetFromTop + i) == 0);
+    MOZ_ASSERT(stackMap->getBit(stackMap->header.numMappedWords -
+                                stackMap->header.frameOffsetFromTop + i) == 0);
   }
 #endif
 
@@ -413,7 +421,7 @@ bool StackMapGenerator::createStackMap(
 #ifdef DEBUG
   {
     // Crosscheck the map pointer counting.
-    uint32_t nw = stackMap->numMappedWords;
+    uint32_t nw = stackMap->header.numMappedWords;
     uint32_t np = 0;
     for (uint32_t i = 0; i < nw; i++) {
       np += stackMap->getBit(i);

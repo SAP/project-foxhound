@@ -17,13 +17,10 @@ function run_next_test() {
 }
 
 function run_test() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
-  let h3Port = env.get("MOZHTTP3_PORT");
+  let h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
   h3AltSvc = ":" + h3Port;
@@ -59,7 +56,7 @@ function makeChan(uri) {
   return chan;
 }
 
-let Http3Listener = function() {};
+let Http3Listener = function () {};
 
 Http3Listener.prototype = {
   onDataAvailableFired: false,
@@ -95,7 +92,7 @@ Http3Listener.prototype = {
   },
 };
 
-let WaitForHttp3Listener = function() {};
+let WaitForHttp3Listener = function () {};
 
 WaitForHttp3Listener.prototype = new Http3Listener();
 
@@ -138,7 +135,7 @@ function test_https_alt_svc() {
   doTest(httpsOrigin + "http3-test");
 }
 
-let Resp421Listener = function() {};
+let Resp421Listener = function () {};
 
 Resp421Listener.prototype = new Http3Listener();
 

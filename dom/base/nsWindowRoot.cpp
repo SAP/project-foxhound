@@ -19,7 +19,7 @@
 #include "nsFrameLoaderOwner.h"
 #include "nsFrameLoader.h"
 #include "nsQueryActor.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsFocusManager.h"
 #include "nsIContent.h"
 #include "nsIControllers.h"
@@ -40,8 +40,8 @@ using namespace mozilla;
 using namespace mozilla::dom;
 
 nsWindowRoot::nsWindowRoot(nsPIDOMWindowOuter* aWindow) {
+  SetIsOnMainThread();
   mWindow = aWindow;
-  mShowFocusRings = StaticPrefs::browser_display_show_focus_rings();
 }
 
 nsWindowRoot::~nsWindowRoot() {
@@ -52,7 +52,7 @@ nsWindowRoot::~nsWindowRoot() {
   JSActorService::UnregisterChromeEventTarget(this);
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsWindowRoot)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsWindowRoot)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsWindowRoot)
   JSActorService::UnregisterChromeEventTarget(tmp);
@@ -68,8 +68,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsWindowRoot)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mListenerManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(nsWindowRoot)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsWindowRoot)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY

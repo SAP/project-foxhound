@@ -6,9 +6,9 @@
 
 let FormAutofillStatus;
 
-add_task(async function setup() {
-  ({ FormAutofillStatus } = ChromeUtils.import(
-    "resource://autofill/FormAutofillParent.jsm"
+add_setup(async () => {
+  ({ FormAutofillStatus } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillParent.sys.mjs"
   ));
 });
 
@@ -143,7 +143,6 @@ add_task(async function test_activeStatus_computeStatus() {
   await FormAutofillStatus.observe(null, "formautofill-storage-changed", "add");
 
   // pref is enabled and profile is not empty.
-  Services.prefs.setBoolPref("extensions.formautofill.addresses.enabled", true);
   Services.prefs.setBoolPref("extensions.formautofill.addresses.enabled", true);
   Assert.equal(FormAutofillStatus.computeStatus(), true);
 

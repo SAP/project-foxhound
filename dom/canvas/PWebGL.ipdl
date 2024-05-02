@@ -6,12 +6,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PCanvasManager;
+include "mozilla/layers/LayersMessageUtils.h";
 
-using mozilla::layers::CompositableHandle from "mozilla/layers/LayersTypes.h";
+[MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
 using mozilla::layers::SurfaceDescriptor from "mozilla/layers/LayersTypes.h";
 using std::string from "string";
 using mozilla::uvec2 from "mozilla/dom/WebGLIpdl.h";
 using mozilla::uvec3 from "mozilla/dom/WebGLIpdl.h";
+using mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using mozilla::webgl::CompileResult from "mozilla/dom/WebGLIpdl.h";
 using mozilla::webgl::ContextLossReason from "mozilla/dom/WebGLIpdl.h";
 using mozilla::webgl::FrontBufferSnapshotIpc from "mozilla/dom/WebGLIpdl.h";
@@ -30,12 +32,19 @@ using mozilla::webgl::ShaderPrecisionFormat from "mozilla/dom/WebGLIpdl.h";
 namespace mozilla {
 namespace dom {
 
+union ReadPixelsBuffer {
+  // The buffer needs to be allocated, and the value specifies the maximum size.
+  uint64_t;
+  // The buffer is a pre-allocated Shmem.
+  Shmem;
+};
+
 /**
  * Represents the connection between a WebGLChild actor that issues WebGL
  * command from the content process, and a WebGLParent in the compositor
  * process that runs the commands.
  */
-[RefCounted] sync protocol PWebGL
+sync protocol PWebGL
 {
   manager PCanvasManager;
 
@@ -47,8 +56,9 @@ parent:
 
   // -
 
-  async DispatchCommands(Shmem commands, uint64_t size);
-
+  async DispatchCommands(BigBuffer commands, uint64_t size);
+  async Ping() returns (void_t ok);
+  sync SyncPing();
   async TexImage(uint32_t level, uint32_t respecFormat, uvec3 offset,
                  PackingInfo pi, TexUnpackBlobDesc src);
 
@@ -56,7 +66,7 @@ parent:
 
   sync GetBufferSubData(uint32_t target, uint64_t srcByteOffset, uint64_t byteSize) returns (Shmem ret);
   sync GetFrontBufferSnapshot() returns (FrontBufferSnapshotIpc ret);
-  sync ReadPixels(ReadPixelsDesc desc, uint64_t maxBytes) returns (ReadPixelsResultIpc ret);
+  sync ReadPixels(ReadPixelsDesc desc, ReadPixelsBuffer buffer) returns (ReadPixelsResultIpc ret);
 
   // -
 

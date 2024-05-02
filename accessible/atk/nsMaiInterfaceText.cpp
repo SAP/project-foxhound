@@ -6,6 +6,7 @@
 
 #include "InterfaceInitFuncs.h"
 #include "mozilla/a11y/PDocAccessible.h"
+#include "nsAccessibilityService.h"
 #include "LocalAccessible-inl.h"
 #include "HyperTextAccessible-inl.h"
 #include "nsMai.h"
@@ -25,48 +26,6 @@ using namespace mozilla::a11y;
 
 static const char* sAtkTextAttrNames[ATK_TEXT_ATTR_LAST_DEFINED];
 
-void ConvertTextAttributeToAtkAttribute(const nsACString& aName,
-                                        const nsAString& aValue,
-                                        AtkAttributeSet** aAttributeSet) {
-  // Handle attributes where atk has its own name.
-  const char* atkName = nullptr;
-  nsAutoString atkValue;
-  if (aName.EqualsLiteral("color")) {
-    // The format of the atk attribute is r,g,b and the gecko one is
-    // rgb(r, g, b).
-    atkValue = Substring(aValue, 4, aValue.Length() - 5);
-    atkValue.StripWhitespace();
-    atkName = sAtkTextAttrNames[ATK_TEXT_ATTR_FG_COLOR];
-  } else if (aName.EqualsLiteral("background-color")) {
-    // The format of the atk attribute is r,g,b and the gecko one is
-    // rgb(r, g, b).
-    atkValue = Substring(aValue, 4, aValue.Length() - 5);
-    atkValue.StripWhitespace();
-    atkName = sAtkTextAttrNames[ATK_TEXT_ATTR_BG_COLOR];
-  } else if (aName.EqualsLiteral("font-family")) {
-    atkValue = aValue;
-    atkName = sAtkTextAttrNames[ATK_TEXT_ATTR_FAMILY_NAME];
-  } else if (aName.EqualsLiteral("font-size")) {
-    // ATK wants the number of pixels without px at the end.
-    atkValue = StringHead(aValue, aValue.Length() - 2);
-    atkName = sAtkTextAttrNames[ATK_TEXT_ATTR_SIZE];
-  } else if (aName.EqualsLiteral("font-weight")) {
-    atkValue = aValue;
-    atkName = sAtkTextAttrNames[ATK_TEXT_ATTR_WEIGHT];
-  } else if (aName.EqualsLiteral("invalid")) {
-    atkValue = aValue;
-    atkName = sAtkTextAttrNames[ATK_TEXT_ATTR_INVALID];
-  }
-
-  if (atkName) {
-    AtkAttribute* objAttr =
-        static_cast<AtkAttribute*>(g_malloc(sizeof(AtkAttribute)));
-    objAttr->name = g_strdup(atkName);
-    objAttr->value = g_strdup(NS_ConvertUTF16toUTF8(atkValue).get());
-    *aAttributeSet = g_slist_prepend(*aAttributeSet, objAttr);
-  }
-}
-
 static AtkAttributeSet* ConvertToAtkTextAttributeSet(
     AccAttributes* aAttributes) {
   if (!aAttributes) {
@@ -75,53 +34,81 @@ static AtkAttributeSet* ConvertToAtkTextAttributeSet(
     return nullptr;
   }
 
-  AtkAttributeSet* objAttributeSet = nullptr;
+  AtkAttributeSet* atkAttributeSet = nullptr;
 
   for (auto iter : *aAttributes) {
-    nsAutoString name;
-    iter.NameAsString(name);
-
+    AtkAttribute* atkAttr = (AtkAttribute*)g_malloc(sizeof(AtkAttribute));
     nsAutoString value;
-    iter.ValueAsString(value);
+    // We set atkAttr->name directly for each case. For the value, we set the
+    // value string for each case. atkAttr->value is set at the end based on the
+    // value string.
 
-    AtkAttribute* objAttr = (AtkAttribute*)g_malloc(sizeof(AtkAttribute));
-    objAttr->name = g_strdup(NS_ConvertUTF16toUTF8(name).get());
-    objAttr->value = g_strdup(NS_ConvertUTF16toUTF8(value).get());
-    objAttributeSet = g_slist_prepend(objAttributeSet, objAttr);
+    // Set atkAttr->name to a specific ATK attribute name.
+    auto atkName = [&atkAttr](AtkTextAttribute aAttrNum) {
+      atkAttr->name = g_strdup(sAtkTextAttrNames[aAttrNum]);
+    };
+    // Set value to a formatted ATK color value.
+    auto colorValue = [&iter, &value] {
+      // The format of the atk attribute is r,g,b and the gecko one is
+      // rgb(r, g, b).
+      auto color = iter.Value<Color>();
+      MOZ_ASSERT(color);
+      value.AppendInt(NS_GET_R(color->mValue));
+      value.Append(',');
+      value.AppendInt(NS_GET_G(color->mValue));
+      value.Append(',');
+      value.AppendInt(NS_GET_B(color->mValue));
+    };
+
+    nsAtom* name = iter.Name();
+    if (name == nsGkAtoms::color) {
+      atkName(ATK_TEXT_ATTR_FG_COLOR);
+      colorValue();
+    } else if (name == nsGkAtoms::backgroundColor) {
+      atkName(ATK_TEXT_ATTR_BG_COLOR);
+      colorValue();
+    } else if (name == nsGkAtoms::font_family) {
+      atkName(ATK_TEXT_ATTR_FAMILY_NAME);
+      iter.ValueAsString(value);
+    } else if (name == nsGkAtoms::font_size) {
+      atkName(ATK_TEXT_ATTR_SIZE);
+      // ATK wants the number of points without pt at the end.
+      auto fontSize = iter.Value<FontSize>();
+      MOZ_ASSERT(fontSize);
+      value.AppendInt(fontSize->mValue);
+    } else if (name == nsGkAtoms::fontWeight) {
+      atkName(ATK_TEXT_ATTR_WEIGHT);
+      iter.ValueAsString(value);
+    } else if (name == nsGkAtoms::invalid) {
+      atkName(ATK_TEXT_ATTR_INVALID);
+      iter.ValueAsString(value);
+    } else {
+      nsAutoString nameStr;
+      iter.NameAsString(nameStr);
+      atkAttr->name = g_strdup(NS_ConvertUTF16toUTF8(nameStr).get());
+      iter.ValueAsString(value);
+    }
+
+    atkAttr->value = g_strdup(NS_ConvertUTF16toUTF8(value).get());
+    atkAttributeSet = g_slist_prepend(atkAttributeSet, atkAttr);
   }
 
   // libatk-adaptor will free it
-  return objAttributeSet;
-}
-
-static void ConvertTexttoAsterisks(Accessible* aAcc, nsAString& aString) {
-  // convert each char to "*" when it's "password text"
-  if (aAcc->IsPassword()) {
-    DOMtoATK::ConvertTexttoAsterisks(aString);
-  }
+  return atkAttributeSet;
 }
 
 extern "C" {
 
 static gchar* getTextCB(AtkText* aText, gint aStartOffset, gint aEndOffset) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  nsAutoString autoStr;
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole() || text->IsDefunct()) return nullptr;
-
-    return DOMtoATK::NewATKString(
-        text, aStartOffset, aEndOffset,
-        accWrap->IsPassword()
-            ? DOMtoATK::AtkStringConvertFlags::ConvertTextToAsterisks
-            : DOMtoATK::AtkStringConvertFlags::None);
-
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return DOMtoATK::NewATKString(proxy, aStartOffset, aEndOffset,
-                                  DOMtoATK::AtkStringConvertFlags::None);
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc || !acc->IsTextRole()) {
+    return nullptr;
   }
-
-  return nullptr;
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text) {
+    return nullptr;
+  }
+  return DOMtoATK::NewATKString(text, aStartOffset, aEndOffset);
 }
 
 static gint getCharacterCountCB(AtkText* aText);
@@ -172,11 +159,6 @@ static gchar* getTextAfterOffsetCB(AtkText* aText, gint aOffset,
   int32_t startOffset = 0, endOffset = 0;
   text->TextAfterOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
                         autoStr);
-  if (acc->IsLocal()) {
-    // XXX Is this needed any more? Masking of passwords is handled in
-    // cross-platform code.
-    ConvertTexttoAsterisks(acc, autoStr);
-  }
 
   *aStartOffset = startOffset;
   *aEndOffset = endOffset;
@@ -205,11 +187,6 @@ static gchar* getTextAtOffsetCB(AtkText* aText, gint aOffset,
   nsAutoString autoStr;
   int32_t startOffset = 0, endOffset = 0;
   text->TextAtOffset(aOffset, aBoundaryType, &startOffset, &endOffset, autoStr);
-  if (acc->IsLocal()) {
-    // XXX Is this needed any more? Masking of passwords is handled in
-    // cross-platform code.
-    ConvertTexttoAsterisks(acc, autoStr);
-  }
 
   *aStartOffset = startOffset;
   *aEndOffset = endOffset;
@@ -219,17 +196,14 @@ static gchar* getTextAtOffsetCB(AtkText* aText, gint aOffset,
 }
 
 static gunichar getCharacterAtOffsetCB(AtkText* aText, gint aOffset) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return 0;
-    }
-    return DOMtoATK::ATKCharacter(text, aOffset);
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return 0;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return DOMtoATK::ATKCharacter(proxy, aOffset);
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (text) {
+    return DOMtoATK::ATKCharacter(text, aOffset);
   }
 
   return 0;
@@ -256,11 +230,6 @@ static gchar* getTextBeforeOffsetCB(AtkText* aText, gint aOffset,
   int32_t startOffset = 0, endOffset = 0;
   text->TextBeforeOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
                          autoStr);
-  if (acc->IsLocal()) {
-    // XXX Is this needed any more? Masking of passwords is handled in
-    // cross-platform code.
-    ConvertTexttoAsterisks(acc, autoStr);
-  }
 
   *aStartOffset = startOffset;
   *aEndOffset = endOffset;
@@ -270,21 +239,17 @@ static gchar* getTextBeforeOffsetCB(AtkText* aText, gint aOffset,
 }
 
 static gint getCaretOffsetCB(AtkText* aText) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return -1;
-    }
-
-    return static_cast<gint>(text->CaretOffset());
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return -1;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return static_cast<gint>(proxy->CaretOffset());
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return -1;
   }
 
-  return -1;
+  return static_cast<gint>(text->CaretOffset());
 }
 
 static AtkAttributeSet* getRunAttributesCB(AtkText* aText, gint aOffset,
@@ -336,7 +301,6 @@ static void getCharacterExtentsCB(AtkText* aText, gint aOffset, gint* aX,
   }
   *aX = *aY = *aWidth = *aHeight = -1;
 
-  LayoutDeviceIntRect rect;
   uint32_t geckoCoordType;
   if (aCoords == ATK_XY_SCREEN) {
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE;
@@ -344,19 +308,17 @@ static void getCharacterExtentsCB(AtkText* aText, gint aOffset, gint* aX,
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE;
   }
 
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return;
-    }
-
-    rect = text->CharBounds(aOffset, geckoCoordType);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    rect = proxy->CharBounds(aOffset, geckoCoordType);
-  } else {
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
     return;
   }
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return;
+  }
+
+  LayoutDeviceIntRect rect = text->CharBounds(aOffset, geckoCoordType);
 
   *aX = rect.x;
   *aY = rect.y;
@@ -372,7 +334,6 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
   }
   aRect->x = aRect->y = aRect->width = aRect->height = -1;
 
-  LayoutDeviceIntRect rect;
   uint32_t geckoCoordType;
   if (aCoords == ATK_XY_SCREEN) {
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE;
@@ -380,19 +341,18 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE;
   }
 
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return;
-    }
-
-    rect = text->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    rect = proxy->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
-  } else {
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
     return;
   }
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return;
+  }
+
+  LayoutDeviceIntRect rect =
+      text->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
 
   aRect->x = rect.x;
   aRect->y = rect.y;
@@ -401,92 +361,63 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
 }
 
 static gint getCharacterCountCB(AtkText* aText) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* textAcc = accWrap->AsHyperText();
-    return !textAcc || textAcc->IsDefunct()
-               ? 0
-               : static_cast<gint>(textAcc->CharacterCount());
+  if (Accessible* acc = GetInternalObj(ATK_OBJECT(aText))) {
+    if (HyperTextAccessibleBase* text = acc->AsHyperTextBase()) {
+      return static_cast<gint>(text->CharacterCount());
+    }
   }
-
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return proxy->CharacterCount();
-  }
-
   return 0;
 }
 
 static gint getOffsetAtPointCB(AtkText* aText, gint aX, gint aY,
                                AtkCoordType aCoords) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return -1;
-    }
-
-    return static_cast<gint>(text->OffsetAtPoint(
-        aX, aY,
-        (aCoords == ATK_XY_SCREEN
-             ? nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE
-             : nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE)));
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return -1;
   }
-
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return static_cast<gint>(proxy->OffsetAtPoint(
-        aX, aY,
-        (aCoords == ATK_XY_SCREEN
-             ? nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE
-             : nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE)));
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return -1;
   }
-
-  return -1;
+  return static_cast<gint>(text->OffsetAtPoint(
+      aX, aY,
+      (aCoords == ATK_XY_SCREEN
+           ? nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE
+           : nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE)));
 }
 
 static gint getTextSelectionCountCB(AtkText* aText) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return 0;
-    }
-
-    return text->SelectionCount();
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return 0;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return proxy->SelectionCount();
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return 0;
   }
 
-  return 0;
+  return text->SelectionCount();
 }
 
 static gchar* getTextSelectionCB(AtkText* aText, gint aSelectionNum,
                                  gint* aStartOffset, gint* aEndOffset) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return nullptr;
+  }
+
   int32_t startOffset = 0, endOffset = 0;
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return nullptr;
-    }
-
-    text->SelectionBoundsAt(aSelectionNum, &startOffset, &endOffset);
-    *aStartOffset = startOffset;
-    *aEndOffset = endOffset;
-
-    return getTextCB(aText, *aStartOffset, *aEndOffset);
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return nullptr;
   }
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    nsString data;
-    proxy->SelectionBoundsAt(aSelectionNum, data, &startOffset, &endOffset);
-    *aStartOffset = startOffset;
-    *aEndOffset = endOffset;
 
-    NS_ConvertUTF16toUTF8 dataAsUTF8(data);
-    return (dataAsUTF8.get()) ? g_strdup(dataAsUTF8.get()) : nullptr;
-  }
-  return nullptr;
+  text->SelectionBoundsAt(aSelectionNum, &startOffset, &endOffset);
+  *aStartOffset = startOffset;
+  *aEndOffset = endOffset;
+
+  return getTextCB(aText, *aStartOffset, *aEndOffset);
 }
 
 // set methods
@@ -527,87 +458,64 @@ static gboolean removeTextSelectionCB(AtkText* aText, gint aSelectionNum) {
 
 static gboolean setTextSelectionCB(AtkText* aText, gint aSelectionNum,
                                    gint aStartOffset, gint aEndOffset) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return FALSE;
-    }
-
-    return text->SetSelectionBoundsAt(aSelectionNum, aStartOffset, aEndOffset);
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc || !acc->IsTextRole()) {
+    return FALSE;
   }
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    return proxy->SetSelectionBoundsAt(aSelectionNum, aStartOffset, aEndOffset);
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text) {
+    return FALSE;
   }
-
-  return FALSE;
+  return text->SetSelectionBoundsAt(aSelectionNum, aStartOffset, aEndOffset);
 }
 
 static gboolean setCaretOffsetCB(AtkText* aText, gint aOffset) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole() || !text->IsValidOffset(aOffset)) {
-      return FALSE;
-    }
-
-    text->SetCaretOffset(aOffset);
-    return TRUE;
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return FALSE;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    proxy->SetCaretOffset(aOffset);
-    return TRUE;
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return FALSE;
   }
 
-  return FALSE;
+  text->SetCaretOffset(aOffset);
+  return TRUE;
 }
 
 static gboolean scrollSubstringToCB(AtkText* aText, gint aStartOffset,
                                     gint aEndOffset, AtkScrollType aType) {
-  AtkObject* atkObject = ATK_OBJECT(aText);
-  AccessibleWrap* accWrap = GetAccessibleWrap(atkObject);
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole() ||
-        !text->IsValidRange(aStartOffset, aEndOffset)) {
-      return FALSE;
-    }
-    text->ScrollSubstringTo(aStartOffset, aEndOffset, aType);
-    return TRUE;
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return FALSE;
   }
 
-  RemoteAccessible* proxy = GetProxy(atkObject);
-  if (proxy) {
-    proxy->ScrollSubstringTo(aStartOffset, aEndOffset, aType);
-    return TRUE;
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text) {
+    return FALSE;
   }
 
-  return FALSE;
+  text->ScrollSubstringTo(aStartOffset, aEndOffset, aType);
+
+  return TRUE;
 }
 
 static gboolean scrollSubstringToPointCB(AtkText* aText, gint aStartOffset,
                                          gint aEndOffset, AtkCoordType aCoords,
                                          gint aX, gint aY) {
-  AtkObject* atkObject = ATK_OBJECT(aText);
-  AccessibleWrap* accWrap = GetAccessibleWrap(atkObject);
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole() ||
-        !text->IsValidRange(aStartOffset, aEndOffset)) {
-      return FALSE;
-    }
-    text->ScrollSubstringToPoint(aStartOffset, aEndOffset, aCoords, aX, aY);
-    return TRUE;
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return FALSE;
   }
 
-  RemoteAccessible* proxy = GetProxy(atkObject);
-  if (proxy) {
-    proxy->ScrollSubstringToPoint(aStartOffset, aEndOffset, aCoords, aX, aY);
-    return TRUE;
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text) {
+    return FALSE;
   }
 
-  return FALSE;
+  text->ScrollSubstringToPoint(aStartOffset, aEndOffset, aCoords, aX, aY);
+  return TRUE;
 }
 }
 

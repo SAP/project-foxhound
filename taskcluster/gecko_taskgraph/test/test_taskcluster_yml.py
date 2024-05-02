@@ -3,14 +3,14 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import pprint
+import unittest
 
 import jsone
 import slugid
-import unittest
 from mozunit import main
+from taskgraph.util.time import current_json_time
 from taskgraph.util.yaml import load_yaml
 
-from gecko_taskgraph.util.time import current_json_time
 from gecko_taskgraph import GECKO
 
 
@@ -24,6 +24,7 @@ class TestTaskclusterYml(unittest.TestCase):
             "tasks_for": "hg-push",
             "push": {
                 "revision": "e8d2d9aff5026ef1f1777b781b47fdcbdb9d8f20",
+                "base_revision": "e8aebe488b2f2e567940577de25013d00e818f7c",
                 "owner": "dustin@mozilla.com",
                 "pushlog_id": 1556565286,
                 "pushdate": 112957,
@@ -40,6 +41,31 @@ class TestTaskclusterYml(unittest.TestCase):
         self.assertEqual(
             rendered["tasks"][0]["metadata"]["name"], "Gecko Decision Task"
         )
+        self.assertIn("matrixBody", rendered["tasks"][0]["extra"]["notify"])
+
+    def test_push_non_mc(self):
+        context = {
+            "tasks_for": "hg-push",
+            "push": {
+                "revision": "e8d2d9aff5026ef1f1777b781b47fdcbdb9d8f20",
+                "base_revision": "e8aebe488b2f2e567940577de25013d00e818f7c",
+                "owner": "dustin@mozilla.com",
+                "pushlog_id": 1556565286,
+                "pushdate": 112957,
+            },
+            "repository": {
+                "url": "https://hg.mozilla.org/releases/mozilla-beta",
+                "project": "mozilla-beta",
+                "level": "3",
+            },
+            "ownTaskId": slugid.nice(),
+        }
+        rendered = jsone.render(self.taskcluster_yml, context)
+        pprint.pprint(rendered)
+        self.assertEqual(
+            rendered["tasks"][0]["metadata"]["name"], "Gecko Decision Task"
+        )
+        self.assertNotIn("matrixBody", rendered["tasks"][0]["extra"]["notify"])
 
     def test_cron(self):
         context = {
@@ -51,6 +77,7 @@ class TestTaskclusterYml(unittest.TestCase):
             },
             "push": {
                 "revision": "e8aebe488b2f2e567940577de25013d00e818f7c",
+                "base_revision": "54cbb3745cdb9a8aa0a4428d405b3b2e1c7d13c2",
                 "pushlog_id": -1,
                 "pushdate": 0,
                 "owner": "cron",
@@ -80,6 +107,7 @@ class TestTaskclusterYml(unittest.TestCase):
             },
             "push": {
                 "revision": "e8d2d9aff5026ef1f1777b781b47fdcbdb9d8f20",
+                "base_revision": "e8aebe488b2f2e567940577de25013d00e818f7c",
                 "owner": "dustin@mozilla.com",
                 "pushlog_id": 1556565286,
                 "pushdate": 112957,

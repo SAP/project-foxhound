@@ -7,7 +7,6 @@
 #include "mozilla/dom/HTMLMarqueeElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStyleConsts.h"
-#include "nsMappedAttributes.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/dom/HTMLMarqueeElementBinding.h"
 #include "mozilla/dom/CustomEvent.h"
@@ -113,11 +112,11 @@ bool HTMLMarqueeElement::ParseAttribute(int32_t aNamespaceID,
                                               aMaybeScriptedPrincipal, aResult);
 }
 
-nsresult HTMLMarqueeElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                          const nsAttrValue* aValue,
-                                          const nsAttrValue* aOldValue,
-                                          nsIPrincipal* aMaybeScriptedPrincipal,
-                                          bool aNotify) {
+void HTMLMarqueeElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                      const nsAttrValue* aValue,
+                                      const nsAttrValue* aOldValue,
+                                      nsIPrincipal* aMaybeScriptedPrincipal,
+                                      bool aNotify) {
   if (IsInComposedDoc() && aNameSpaceID == kNameSpaceID_None &&
       aName == nsGkAtoms::direction) {
     NotifyUAWidgetSetupOrChange();
@@ -127,11 +126,11 @@ nsresult HTMLMarqueeElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
 }
 
 void HTMLMarqueeElement::MapAttributesIntoRule(
-    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
-  nsGenericHTMLElement::MapImageMarginAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapImageSizeAttributesInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapBGColorInto(aAttributes, aDecls);
+    MappedDeclarationsBuilder& aBuilder) {
+  nsGenericHTMLElement::MapImageMarginAttributeInto(aBuilder);
+  nsGenericHTMLElement::MapImageSizeAttributesInto(aBuilder);
+  nsGenericHTMLElement::MapCommonAttributesInto(aBuilder);
+  nsGenericHTMLElement::MapBGColorInto(aBuilder);
 }
 
 NS_IMETHODIMP_(bool)

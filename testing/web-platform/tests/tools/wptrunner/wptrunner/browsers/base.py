@@ -1,8 +1,11 @@
+# mypy: allow-untyped-defs
+
 import enum
 import errno
 import os
 import platform
 import socket
+import time
 import traceback
 from abc import ABCMeta, abstractmethod
 
@@ -81,13 +84,11 @@ class BrowserError(Exception):
     pass
 
 
-class Browser(object):
+class Browser:
     """Abstract class serving as the basis for Browser implementations.
 
     The Browser is used in the TestRunnerManager to start and stop the browser
-    process, and to check the state of that process. This class also acts as a
-    context manager, enabling it to do browser-specific setup at the start of
-    the testrun and cleanup after the run is complete.
+    process, and to check the state of that process.
 
     :param logger: Structured logger to use for output.
     """
@@ -98,13 +99,6 @@ class Browser(object):
 
     def __init__(self, logger):
         self.logger = logger
-
-    def __enter__(self):
-        self.setup()
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        self.cleanup()
 
     def setup(self):
         """Used for browser-specific setup that happens at the start of a test run"""
@@ -157,10 +151,13 @@ class Browser(object):
         log. Returns a boolean indicating whether a crash occured."""
         return False
 
+    @property
+    def pac(self):
+        return None
 
 class NullBrowser(Browser):
     def __init__(self, logger, **kwargs):
-        super(NullBrowser, self).__init__(logger)
+        super().__init__(logger)
 
     def start(self, **kwargs):
         """No-op browser to use in scenarios where the TestRunnerManager shouldn't
@@ -285,8 +282,9 @@ class OutputHandler:
 class WebDriverBrowser(Browser):
     __metaclass__ = ABCMeta
 
-    def __init__(self, logger, binary, webdriver_binary, webdriver_args=None,
-                 host="127.0.0.1", port=None, base_path="/", env=None, **kwargs):
+    def __init__(self, logger, binary=None, webdriver_binary=None,
+                 webdriver_args=None, host="127.0.0.1", port=None, base_path="/",
+                 env=None, supports_pac=True, **kwargs):
         super().__init__(logger)
 
         if webdriver_binary is None:
@@ -299,26 +297,29 @@ class WebDriverBrowser(Browser):
 
         self.host = host
         self._port = port
+        self._supports_pac = supports_pac
 
         self.base_path = base_path
         self.env = os.environ.copy() if env is None else env
         self.webdriver_args = webdriver_args if webdriver_args is not None else []
 
-        self.url = f"http://{self.host}:{self.port}{self.base_path}"
-
+        self.init_deadline = None
         self._output_handler = None
         self._cmd = None
         self._proc = None
+        self._pac = None
 
     def make_command(self):
         """Returns the full command for starting the server process as a list."""
         return [self.webdriver_binary] + self.webdriver_args
 
     def start(self, group_metadata, **kwargs):
+        self.init_deadline = time.time() + self.init_timeout
         try:
             self._run_server(group_metadata, **kwargs)
         except KeyboardInterrupt:
             self.stop()
+            raise
 
     def create_output_handler(self, cmd):
         """Return an instance of the class used to handle application output.
@@ -342,29 +343,39 @@ class WebDriverBrowser(Browser):
             self._proc.run()
         except OSError as e:
             if e.errno == errno.ENOENT:
-                raise IOError(
-                    "WebDriver executable not found: %s" % self.webdriver_binary)
+                raise OSError(
+                    "WebDriver executable not found: %s" % self.webdriver_binary) from e
             raise
         self._output_handler.after_process_start(self._proc.pid)
 
         try:
-            wait_for_service(self.logger, self.host, self.port)
+            wait_for_service(
+                self.logger,
+                self.host,
+                self.port,
+                timeout=self.init_deadline - time.time(),
+                server_process=self._proc,
+            )
         except Exception:
             self.logger.error(
                 "WebDriver was not accessible "
                 f"within the timeout:\n{traceback.format_exc()}")
             raise
-        self._output_handler.start(group_metadata=group_metadata, **kwargs)
+        finally:
+            self._output_handler.start(group_metadata=group_metadata, **kwargs)
         self.logger.debug("_run complete")
 
     def stop(self, force=False):
         self.logger.debug("Stopping WebDriver")
         clean = True
         if self.is_alive():
-            kill_result = self._proc.kill()
+            # Pass a timeout value to mozprocess Processhandler.kill()
+            # to ensure it always returns within it.
+            # See https://bugzilla.mozilla.org/show_bug.cgi?id=1760080
+            kill_result = self._proc.kill(timeout=5)
             if force and kill_result != 0:
                 clean = False
-                self._proc.kill(9)
+                self._proc.kill(9, timeout=5)
         success = not self.is_alive()
         if success and self._output_handler is not None:
             # Only try to do output post-processing if we managed to shut down
@@ -374,6 +385,12 @@ class WebDriverBrowser(Browser):
 
     def is_alive(self):
         return hasattr(self._proc, "proc") and self._proc.poll() is None
+
+    @property
+    def url(self):
+        if self.port is not None:
+            return f"http://{self.host}:{self.port}{self.base_path}"
+        raise ValueError("Can't get WebDriver URL before port is assigned")
 
     @property
     def pid(self):
@@ -394,4 +411,14 @@ class WebDriverBrowser(Browser):
     def executor_browser(self):
         return ExecutorBrowser, {"webdriver_url": self.url,
                                  "host": self.host,
-                                 "port": self.port}
+                                 "port": self.port,
+                                 "pac": self.pac,
+                                 "env": self.env}
+
+    def settings(self, test):
+        self._pac = test.environment.get("pac", None) if self._supports_pac else None
+        return {"pac": self._pac}
+
+    @property
+    def pac(self):
+        return self._pac

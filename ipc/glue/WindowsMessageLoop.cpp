@@ -85,7 +85,6 @@ extern UINT sAppShellGeckoMsgId;
 namespace {
 
 const wchar_t kOldWndProcProp[] = L"MozillaIPCOldWndProc";
-const wchar_t k3rdPartyWindowProp[] = L"Mozilla3rdPartyWindow";
 
 // This isn't defined before Windows XP.
 enum { WM_XP_THEMECHANGED = 0x031A };
@@ -212,14 +211,9 @@ static void DumpNeuteredMessage(HWND hwnd, UINT uMsg) {
   nsAutoCString log("Received \"nonqueued\" ");
   // classify messages
   if (uMsg < WM_USER) {
-    int idx = 0;
-    while (mozilla::widget::gAllEvents[idx].mId != uMsg &&
-           mozilla::widget::gAllEvents[idx].mStr != nullptr) {
-      idx++;
-    }
-    if (mozilla::widget::gAllEvents[idx].mStr) {
-      log.AppendPrintf("ui message \"%s\"",
-                       mozilla::widget::gAllEvents[idx].mStr);
+    const char* msgText = mozilla::widget::WinUtils::WinEventToEventName(uMsg);
+    if (msgText) {
+      log.AppendPrintf("ui message \"%s\"", msgText);
     } else {
       log.AppendPrintf("ui message (0x%X)", uMsg);
     }
@@ -234,7 +228,7 @@ static void DumpNeuteredMessage(HWND hwnd, UINT uMsg) {
   }
 
   log.AppendLiteral(" during a synchronous IPC message for window ");
-  log.AppendPrintf("0x%X", hwnd);
+  log.AppendPrintf("0x%p", hwnd);
 
   wchar_t className[256] = {0};
   if (GetClassNameW(hwnd, className, sizeof(className) - 1) > 0) {
@@ -378,13 +372,11 @@ ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
       // This should be safe, and needs to be sync.
 #if defined(ACCESSIBILITY)
     case WM_GETOBJECT: {
-      if (!::GetPropW(hwnd, k3rdPartyWindowProp)) {
-        DWORD objId = static_cast<DWORD>(lParam);
-        if (objId == OBJID_CLIENT || objId == MOZOBJID_UIAROOT) {
-          WNDPROC oldWndProc = (WNDPROC)GetProp(hwnd, kOldWndProcProp);
-          if (oldWndProc) {
-            return CallWindowProcW(oldWndProc, hwnd, uMsg, wParam, lParam);
-          }
+      LONG objId = static_cast<LONG>(lParam);
+      if (objId == OBJID_CLIENT || objId == MOZOBJID_UIAROOT) {
+        WNDPROC oldWndProc = (WNDPROC)GetProp(hwnd, kOldWndProcProp);
+        if (oldWndProc) {
+          return CallWindowProcW(oldWndProc, hwnd, uMsg, wParam, lParam);
         }
       }
       return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -466,13 +458,6 @@ static bool WindowIsDeferredWindow(HWND hWnd) {
     return true;
   }
 
-  // Plugin windows that can trigger ipc calls in child:
-  // 'ShockwaveFlashFullScreen' - flash fullscreen window
-  if (className.EqualsLiteral("ShockwaveFlashFullScreen")) {
-    SetPropW(hWnd, k3rdPartyWindowProp, (HANDLE)1);
-    return true;
-  }
-
   return false;
 }
 
@@ -507,7 +492,6 @@ bool NeuterWindowProcedure(HWND hWnd) {
     NS_WARNING("SetProp failed!");
     SetWindowLongPtr(hWnd, GWLP_WNDPROC, currentWndProc);
     RemovePropW(hWnd, kOldWndProcProp);
-    RemovePropW(hWnd, k3rdPartyWindowProp);
     return false;
   }
 
@@ -528,7 +512,6 @@ void RestoreWindowProcedure(HWND hWnd) {
                  "This should never be switched out from under us!");
   }
   RemovePropW(hWnd, kOldWndProcProp);
-  RemovePropW(hWnd, k3rdPartyWindowProp);
 }
 
 LRESULT CALLBACK CallWindowProcedureHook(int nCode, WPARAM wParam,
@@ -855,106 +838,16 @@ SuppressedNeuteringRegion::~SuppressedNeuteringRegion() {
 
 bool SuppressedNeuteringRegion::sSuppressNeutering = false;
 
-#if defined(ACCESSIBILITY)
-static DWORD WaitForSingleObjectExWrapper(HANDLE aEvent, DWORD aTimeout) {
-  return ::WaitForSingleObjectEx(aEvent, aTimeout, TRUE);
-}
-
-static DWORD CoWaitForMultipleHandlesWrapper(HANDLE aEvent, DWORD aTimeout) {
-  DWORD waitResult = 0;
-  ::SetLastError(ERROR_SUCCESS);
-  HRESULT hr = ::CoWaitForMultipleHandles(COWAIT_ALERTABLE, aTimeout, 1,
-                                          &aEvent, &waitResult);
-  if (hr == S_OK) {
-    return waitResult;
-  }
-  if (hr == RPC_S_CALLPENDING) {
-    return WAIT_TIMEOUT;
-  }
-  return WAIT_FAILED;
-}
-
-bool MessageChannel::WaitForSyncNotifyWithA11yReentry() {
-  mMonitor->AssertCurrentThreadOwns();
-  MonitorAutoUnlock unlock(*mMonitor);
-
-  static auto* sWaitForEvent = IsWin32kLockedDown()
-                                   ? WaitForSingleObjectExWrapper
-                                   : CoWaitForMultipleHandlesWrapper;
-
-  const DWORD waitStart = ::GetTickCount();
-  DWORD elapsed = 0;
-  DWORD timeout =
-      mTimeoutMs == kNoTimeout ? INFINITE : static_cast<DWORD>(mTimeoutMs);
-  bool timedOut = false;
-
-  while (true) {
-    {  // Scope for lock
-      MonitorAutoLock lock(*mMonitor);
-      if (!Connected()) {
-        break;
-      }
-    }
-
-    if (timeout != static_cast<DWORD>(kNoTimeout)) {
-      elapsed = ::GetTickCount() - waitStart;
-    }
-
-    if (elapsed >= timeout) {
-      timedOut = true;
-      break;
-    }
-
-    DWORD waitResult = sWaitForEvent(mEvent, timeout - elapsed);
-
-    if (waitResult == WAIT_OBJECT_0) {
-      // mEvent is signaled
-      BOOL success = ::ResetEvent(mEvent);
-      if (!success) {
-        gfxDevCrash(mozilla::gfx::LogReason::MessageChannelInvalidHandle)
-            << "WindowsMessageChannel::WaitForSyncNotifyWithA11yReentry "
-               "failed to reset event. GetLastError: "
-            << GetLastError();
-      }
-      break;
-    }
-
-    if (waitResult == WAIT_IO_COMPLETION) {
-      // APC fired, keep waiting
-      continue;
-    }
-
-    if (waitResult == WAIT_TIMEOUT) {
-      timeout = true;
-      break;
-    }
-
-    NS_ERROR("WaitForSyncNotifyWithA11yReentry failed");
-    break;
-  }
-
-  return WaitResponse(timedOut);
-}
-#endif
-
-bool MessageChannel::WaitForSyncNotify(bool aHandleWindowsMessages) {
+bool MessageChannel::WaitForSyncNotify() {
   mMonitor->AssertCurrentThreadOwns();
 
   if (!gUIThreadId) {
     mozilla::ipc::windows::InitUIThread();
   }
 
-#if defined(ACCESSIBILITY)
-  if (mFlags & REQUIRE_A11Y_REENTRY) {
-    MOZ_ASSERT(!(mFlags & REQUIRE_DEFERRED_MESSAGE_PROTECTION));
-    return WaitForSyncNotifyWithA11yReentry();
-  }
-#endif
-
   // Use a blocking wait if this channel does not require
   // Windows message deferral behavior.
-  if (!(mFlags & REQUIRE_DEFERRED_MESSAGE_PROTECTION) ||
-      !aHandleWindowsMessages) {
+  if (!(mFlags & REQUIRE_DEFERRED_MESSAGE_PROTECTION)) {
     TimeDuration timeout = (kNoTimeout == mTimeoutMs)
                                ? TimeDuration::Forever()
                                : TimeDuration::FromMilliseconds(mTimeoutMs);

@@ -4,10 +4,15 @@
 
 # flake8: noqa
 
-from Atom import Atom, InheritingAnonBoxAtom, NonInheritingAnonBoxAtom
-from Atom import PseudoElementAtom
-from HTMLAtoms import HTML_PARSER_ATOMS
 import sys
+
+from Atom import (
+    Atom,
+    InheritingAnonBoxAtom,
+    NonInheritingAnonBoxAtom,
+    PseudoElementAtom,
+)
+from HTMLAtoms import HTML_PARSER_ATOMS
 
 # Static atom definitions, used to generate nsGkAtomList.h.
 #
@@ -77,7 +82,6 @@ STATIC_ATOMS = [
     Atom("alink", "alink"),
     Atom("all", "all"),
     Atom("allow", "allow"),
-    Atom("allowdirs", "allowdirs"),
     Atom("allowdownloads", "allow-downloads"),
     Atom("allowevents", "allowevents"),
     Atom("allowforms", "allow-forms"),
@@ -94,6 +98,7 @@ STATIC_ATOMS = [
     Atom("allowscriptstoclose", "allowscriptstoclose"),
     Atom("allowtopnavigation", "allow-top-navigation"),
     Atom("allowtopnavigationbyuseractivation", "allow-top-navigation-by-user-activation"),
+    Atom("allowtopnavigationcustomprotocols", "allow-top-navigation-to-custom-protocols"),
     Atom("allowuntrusted", "allowuntrusted"),
     Atom("alt", "alt"),
     Atom("alternate", "alternate"),
@@ -113,6 +118,7 @@ STATIC_ATOMS = [
     Atom("applyTemplates", "apply-templates"),
     Atom("archive", "archive"),
     Atom("area", "area"),
+    Atom("aria", "aria"),
     Atom("aria_activedescendant", "aria-activedescendant"),
     Atom("aria_atomic", "aria-atomic"),
     Atom("aria_autocomplete", "aria-autocomplete"),
@@ -183,6 +189,7 @@ STATIC_ATOMS = [
     Atom("bindToUntrustedContent", "bindToUntrustedContent"),
     Atom("black", "black"),
     Atom("block", "block"),
+    Atom("block_size", "block-size"),
     Atom("blockquote", "blockquote"),
     Atom("blur", "blur"),
     Atom("body", "body"),
@@ -237,7 +244,6 @@ STATIC_ATOMS = [
     Atom("clear", "clear"),
     Atom("click", "click"),
     Atom("clickcount", "clickcount"),
-    Atom("clickthrough", "clickthrough"),
     Atom("movetoclick", "movetoclick"),
     Atom("clip", "clip"),
     Atom("close", "close"),
@@ -251,6 +257,7 @@ STATIC_ATOMS = [
     Atom("collapse", "collapse"),
     Atom("collapsed", "collapsed"),
     Atom("color", "color"),
+    Atom("color_gamut", "color-gamut"),
     Atom("color_index", "color-index"),
     Atom("color_scheme", "color-scheme"),
     Atom("cols", "cols"),
@@ -303,7 +310,6 @@ STATIC_ATOMS = [
     Atom("datetime", "datetime"),
     Atom("datetime_local", "datetime-local"),
     Atom("datetimeInputBoxWrapper", "datetime-input-box-wrapper"),
-    Atom("datetimeResetButton", "datetime-reset-button"),
     Atom("dd", "dd"),
     Atom("decimal", "decimal"),
     Atom("decimalFormat", "decimal-format"),
@@ -316,6 +322,7 @@ STATIC_ATOMS = [
     Atom("headerDefaultStyle", "default-style"),
     Atom("defer", "defer"),
     Atom("del", "del"),
+    Atom("delegatesanchor", "delegatesanchor"),
     Atom("deletion", "deletion"),
     Atom("deprecation", "deprecation"),
     Atom("descendant", "descendant"),
@@ -335,6 +342,7 @@ STATIC_ATOMS = [
     Atom("dir", "dir"),
     Atom("dirAutoSetBy", "dirAutoSetBy"),
     Atom("directory", "directory"),
+    Atom("dirname", "dirname"),
     Atom("disableOutputEscaping", "disable-output-escaping"),
     Atom("disabled", "disabled"),
     Atom("disableglobalhistory", "disableglobalhistory"),
@@ -395,7 +403,6 @@ STATIC_ATOMS = [
     Atom("draggable", "draggable"),
     Atom("dragging", "dragging"),
     Atom("dragSession", "dragSession"),
-    Atom("drawintitlebar", "drawintitlebar"),
     Atom("drawtitle", "drawtitle"),
     Atom("dropAfter", "dropAfter"),
     Atom("dropBefore", "dropBefore"),
@@ -417,7 +424,6 @@ STATIC_ATOMS = [
     Atom("end", "end"),
     Atom("endEvent", "endEvent"),
     Atom("enterkeyhint", "enterkeyhint"),
-    Atom("equalsize", "equalsize"),
     Atom("error", "error"),
     Atom("ethiopic_numeric", "ethiopic-numeric"),
     Atom("even", "even"),
@@ -433,6 +439,7 @@ STATIC_ATOMS = [
     Atom("_false", "false"),
     Atom("farthest", "farthest"),
     Atom("featurePolicyViolation", "feature-policy-violation"),
+    Atom("fetchpriority", "fetchpriority"),
     Atom("field", "field"),
     Atom("fieldset", "fieldset"),
     Atom("file", "file"),
@@ -458,6 +465,7 @@ STATIC_ATOMS = [
     Atom("_for", "for"),
     Atom("forEach", "for-each"),
     Atom("forcedColors", "forced-colors"),
+    Atom("invertedColors", "inverted-colors"),
     Atom("forceOwnRefreshDriver", "forceOwnRefreshDriver"),
     Atom("form", "form"),
     Atom("formaction", "formaction"),
@@ -475,6 +483,7 @@ STATIC_ATOMS = [
     Atom("fullscreenerror", "fullscreenerror"),
     Atom("functionAvailable", "function-available"),
     Atom("generateId", "generate-id"),
+    Atom("generic", "generic"),
     Atom("getter", "getter"),
     Atom("graphicsDocument", "graphics-document"),
     Atom("graphicsObject", "graphics-object"),
@@ -558,6 +567,8 @@ STATIC_ATOMS = [
     Atom("internals", "internals"),
     Atom("intersection", "intersection"),
     Atom("intersectionobserverlist", "intersectionobserverlist"),
+    Atom("invoketarget", "invoketarget"),
+    Atom("invokeaction", "invokeaction"),
     Atom("is", "is"),
     Atom("ismap", "ismap"),
     Atom("itemid", "itemid"),
@@ -622,7 +633,6 @@ STATIC_ATOMS = [
     Atom("lowsrc", "lowsrc"),
     Atom("ltr", "ltr"),
     Atom("lwtheme", "lwtheme"),
-    Atom("lwthemetextcolor", "lwthemetextcolor"),
     Atom("main", "main"),
     Atom("map", "map"),
     Atom("manifest", "manifest"),
@@ -672,6 +682,7 @@ STATIC_ATOMS = [
     Atom("mixed", "mixed"),
     Atom("messagemanagergroup", "messagemanagergroup"),
     Atom("mod", "mod"),
+    Atom("_module", "module"),
     Atom("mode", "mode"),
     Atom("modifiers", "modifiers"),
     Atom("monochrome", "monochrome"),
@@ -691,7 +702,6 @@ STATIC_ATOMS = [
     Atom("mozTableRemoveRow", "mozTableRemoveRow"),
     Atom("mozTableRemoveColumn", "mozTableRemoveColumn"),
     Atom("moz_opaque", "moz-opaque"),
-    Atom("moz_action_hint", "mozactionhint"),
     Atom("multicol", "multicol"),
     Atom("multiple", "multiple"),
     Atom("muted", "muted"),
@@ -701,7 +711,6 @@ STATIC_ATOMS = [
     Atom("namespaceUri", "namespace-uri"),
     Atom("NaN", "NaN"),
     Atom("n", "n"),
-    Atom("nativeAnonymousChildList", "nativeAnonymousChildList"),
     Atom("nav", "nav"),
     Atom("ne", "ne"),
     Atom("never", "never"),
@@ -881,6 +890,7 @@ STATIC_ATOMS = [
     Atom("onpopupshowing", "onpopupshowing"),
     Atom("onpopupshown", "onpopupshown"),
     Atom("onprocessorerror", "onprocessorerror"),
+    Atom("onprioritychange", "onprioritychange"),
     Atom("onpush", "onpush"),
     Atom("onpushsubscriptionchange", "onpushsubscriptionchange"),
     Atom("onRadioStateChange", "onRadioStateChange"),
@@ -958,6 +968,7 @@ STATIC_ATOMS = [
     Atom("order", "order"),
     Atom("orient", "orient"),
     Atom("orientation", "orientation"),
+    Atom("origin_trial", "origin-trial"),
     Atom("otherwise", "otherwise"),
     Atom("output", "output"),
     Atom("overflow", "overflow"),
@@ -975,7 +986,6 @@ STATIC_ATOMS = [
     Atom("param", "param"),
     Atom("parameter", "parameter"),
     Atom("parent", "parent"),
-    Atom("parentfocused", "parentfocused"),
     Atom("parsererror", "parsererror"),
     Atom("part", "part"),
     Atom("password", "password"),
@@ -994,21 +1004,30 @@ STATIC_ATOMS = [
     Atom("pointSize", "point-size"),
     Atom("poly", "poly"),
     Atom("polygon", "polygon"),
+    Atom("popover", "popover"),
+    Atom("popovertarget", "popovertarget"),
+    Atom("popovertargetaction", "popovertargetaction"),
     Atom("popup", "popup"),
     Atom("popupalign", "popupalign"),
     Atom("popupanchor", "popupanchor"),
     Atom("popupgroup", "popupgroup"),
     Atom("popupset", "popupset"),
     Atom("popupsinherittooltip", "popupsinherittooltip"),
+    Atom("portal", "portal"),
     Atom("position", "position"),
     Atom("poster", "poster"),
     Atom("pre", "pre"),
     Atom("preceding", "preceding"),
     Atom("precedingSibling", "preceding-sibling"),
     Atom("prefersReducedMotion", "prefers-reduced-motion"),
+    Atom("prefersReducedTransparency", "prefers-reduced-transparency"),
     Atom("prefersColorScheme", "prefers-color-scheme"),
     Atom("prefersContrast", "prefers-contrast"),
     Atom("prefix", "prefix"),
+    Atom("prefwidth", "prefwidth"),
+    Atom("dynamicRange", "dynamic-range"),
+    Atom("videoDynamicRange", "video-dynamic-range"),
+    Atom("scripting", "scripting"),
     Atom("preload", "preload"),
     Atom("preserve", "preserve"),
     Atom("preserveSpace", "preserve-space"),
@@ -1016,6 +1035,7 @@ STATIC_ATOMS = [
     Atom("previewDiv", "preview-div"),
     Atom("primary", "primary"),
     Atom("print", "print"),
+    Atom("printisfocuseddoc", "printisfocuseddoc"),
     Atom("printselectionranges", "printselectionranges"),
     Atom("priority", "priority"),
     Atom("processingInstruction", "processing-instruction"),
@@ -1094,7 +1114,9 @@ STATIC_ATOMS = [
     Atom("scoped", "scoped"),
     Atom("screen", "screen"),
     Atom("screenX", "screenX"),
+    Atom("screenx", "screenx"),
     Atom("screenY", "screenY"),
+    Atom("screeny", "screeny"),
     Atom("script", "script"),
     Atom("scrollbar", "scrollbar"),
     Atom("scrollbarThumb", "scrollbar-thumb"),
@@ -1102,6 +1124,7 @@ STATIC_ATOMS = [
     Atom("scrollbarbutton", "scrollbarbutton"),
     Atom("scrollbarDownBottom", "scrollbar-down-bottom"),
     Atom("scrollbarDownTop", "scrollbar-down-top"),
+    Atom("scrollbarInlineSize", "scrollbar-inline-size"),
     Atom("scrollbarUpBottom", "scrollbar-up-bottom"),
     Atom("scrollbarUpTop", "scrollbar-up-top"),
     Atom("scrollbox", "scrollbox"),
@@ -1115,6 +1138,7 @@ STATIC_ATOMS = [
     Atom("selected", "selected"),
     Atom("selectedIndex", "selectedIndex"),
     Atom("selectedindex", "selectedindex"),
+    Atom("selectmenu", "selectmenu"),
     Atom("self", "self"),
     Atom("seltype", "seltype"),
     Atom("setcookie", "set-cookie"),
@@ -1123,6 +1147,7 @@ STATIC_ATOMS = [
     Atom("shape", "shape"),
     Atom("show", "show"),
     Atom("showcaret", "showcaret"),
+    Atom("sibling", "sibling"),
     Atom("simple", "simple"),
     Atom("simp_chinese_formal", "simp-chinese-formal"),
     Atom("simp_chinese_informal", "simp-chinese-informal"),
@@ -1194,6 +1219,7 @@ STATIC_ATOMS = [
     Atom("targets", "targets"),
     Atom("tbody", "tbody"),
     Atom("td", "td"),
+    Atom("tel", "tel"),
     Atom("_template", "template"),
     Atom("text_decoration", "text-decoration"),
     Atom("terminate", "terminate"),
@@ -1213,8 +1239,8 @@ STATIC_ATOMS = [
     Atom("time", "time"),
     Atom("title", "title"),
     Atom("titlebar", "titlebar"),
-    Atom("titlebar_button","titlebar-btn"),
     Atom("titletip", "titletip"),
+    Atom("toggle", "toggle"),
     Atom("token", "token"),
     Atom("tokenize", "tokenize"),
     Atom("toolbar", "toolbar"),
@@ -1255,6 +1281,7 @@ STATIC_ATOMS = [
     Atom("ul", "ul"),
     Atom("unparsedEntityUri", "unparsed-entity-uri"),
     Atom("up", "up"),
+    Atom("update", "update"),
     Atom("upperFirst", "upper-first"),
     Atom("use", "use"),
     Atom("useAttributeSets", "use-attribute-sets"),
@@ -1869,6 +1896,7 @@ STATIC_ATOMS = [
     Atom("countNonEmpty", "count-non-empty"),
     Atom("daysFromDate", "days-from-date"),
     Atom("secondsFromDateTime", "seconds-from-dateTime"),
+    Atom("tabbrowser_arrowscrollbox", "tabbrowser-arrowscrollbox"),
     # Simple gestures support
     Atom("onMozSwipeGestureMayStart", "onMozSwipeGestureMayStart"),
     Atom("onMozSwipeGestureStart", "onMozSwipeGestureStart"),
@@ -1900,13 +1928,15 @@ STATIC_ATOMS = [
     # orientation support
     Atom("ondevicemotion", "ondevicemotion"),
     Atom("ondeviceorientation", "ondeviceorientation"),
-    Atom("onabsolutedeviceorientation", "onabsolutedeviceorientation"),
+    Atom("ondeviceorientationabsolute", "ondeviceorientationabsolute"),
     Atom("onmozorientationchange", "onmozorientationchange"),
     Atom("onuserproximity", "onuserproximity"),
     # light sensor support
     Atom("ondevicelight", "ondevicelight"),
     # MediaDevices device change event
     Atom("ondevicechange", "ondevicechange"),
+    # WebRTC events
+    Atom("onrtctransform", "onrtctransform"),
     # Internal Visual Viewport events
     Atom("onmozvisualresize", "onmozvisualresize"),
     Atom("onmozvisualscroll", "onmozvisualscroll"),
@@ -1931,7 +1961,6 @@ STATIC_ATOMS = [
     Atom("onDOMWindowFocus", "onDOMWindowFocus"),
     Atom("onFullZoomChange", "onFullZoomChange"),
     Atom("onGloballyAutoplayBlocked", "onGloballyAutoplayBlocked"),
-    Atom("onMozApplicationManifest", "onMozApplicationManifest"),
     Atom("onMozDOMFullscreen_Entered", "onMozDOMFullscreen:Entered"),
     Atom("onMozDOMFullscreen_Exit", "onMozDOMFullscreen:Exit"),
     Atom("onMozDOMFullscreen_Exited", "onMozDOMFullscreen:Exited"),
@@ -1955,6 +1984,7 @@ STATIC_ATOMS = [
     Atom("onmozshowdropdown_sourcetouch", "onmozshowdropdown-sourcetouch"),
     Atom("onprintPreviewUpdate", "onprintPreviewUpdate"),
     Atom("onscrollend", "onscrollend"),
+    Atom("onbeforetoggle", "onbeforetoggle"),
     # WebExtensions
     Atom("moz_extension", "moz-extension"),
     Atom("all_urlsPermission", "<all_urls>"),
@@ -1967,9 +1997,17 @@ STATIC_ATOMS = [
     Atom("webRequestFilterResponse_serviceWorkerScript", "webRequestFilterResponse.serviceWorkerScript"),
     Atom("http", "http"),
     Atom("https", "https"),
+    Atom("ws", "ws"),
+    Atom("wss", "wss"),
+    Atom("ftp", "ftp"),
+    Atom("chrome", "chrome"),
+    Atom("moz", "moz"),
+    Atom("moz_icon", "moz-icon"),
+    Atom("moz_gio", "moz-gio"),
     Atom("proxy", "proxy"),
     Atom("privateBrowsingAllowedPermission", "internal:privateBrowsingAllowed"),
     Atom("svgContextPropertiesAllowedPermission", "internal:svgContextPropertiesAllowed"),
+    Atom("theme", "theme"),
     # CSS Counter Styles
     Atom("decimal_leading_zero", "decimal-leading-zero"),
     Atom("arabic_indic", "arabic-indic"),
@@ -2113,22 +2151,10 @@ STATIC_ATOMS = [
     Atom("onfetch", "onfetch"),
     # Content property names
     Atom("afterPseudoProperty", "afterPseudoProperty"),  # nsXMLElement*
-    Atom("animationsProperty", "AnimationsProperty"),  # FrameAnimations*
-    Atom("animationsOfBeforeProperty", "AnimationsOfBeforeProperty"),  # FrameAnimations*
-    Atom("animationsOfAfterProperty", "AnimationsOfAfterProperty"),  # FrameAnimations*
-    Atom("animationsOfMarkerProperty", "AnimationsOfMarkerProperty"),  # FrameAnimations*
-    Atom("animationEffectsProperty", "AnimationEffectsProperty"),  # EffectSet*
-    Atom("animationEffectsForBeforeProperty", "AnimationsEffectsForBeforeProperty"),  # EffectSet*
-    Atom("animationEffectsForAfterProperty", "AnimationsEffectsForAfterProperty"),  # EffectSet*
-    Atom("animationEffectsForMarkerProperty", "AnimationsEffectsForMarkerProperty"),  # EffectSet*
     Atom("beforePseudoProperty", "beforePseudoProperty"),  # nsXMLElement*
     Atom("cssPseudoElementBeforeProperty", "CSSPseudoElementBeforeProperty"),  # CSSPseudoElement*
     Atom("cssPseudoElementAfterProperty", "CSSPseudoElementAfterProperty"),  # CSSPseudoElement*
     Atom("cssPseudoElementMarkerProperty", "CSSPseudoElementMarkerProperty"),  # CSSPseudoElement*
-    Atom("transitionsProperty", "TransitionsProperty"),  # FrameTransitions*
-    Atom("transitionsOfBeforeProperty", "TransitionsOfBeforeProperty"),  # FrameTransitions*
-    Atom("transitionsOfAfterProperty", "TransitionsOfAfterProperty"),  # FrameTransitions*
-    Atom("transitionsOfMarkerProperty", "TransitionsOfMarkerProperty"),  # FrameTransitions*
     Atom("genConInitializerProperty", "QuoteNodeProperty"),
     Atom("labelMouseDownPtProperty", "LabelMouseDownPtProperty"),
     Atom("lockedStyleStates", "lockedStyleStates"),
@@ -2138,7 +2164,6 @@ STATIC_ATOMS = [
     Atom("docLevelNativeAnonymousContent", "docLevelNativeAnonymousContent"),  # bool
     Atom("paintRequestTime", "PaintRequestTime"),
     Atom("pseudoProperty", "PseudoProperty"),  # PseudoStyleType
-    Atom("scrollTimelinesProperty", "SrollTimelinesProperty"),  # ScrollTimelineSet*
     Atom("manualNACProperty", "ManualNACProperty"),  # ManualNAC*
     Atom("markerPseudoProperty", "markerPseudoProperty"),  # nsXMLElement*
     # Languages for lang-specific transforms
@@ -2194,6 +2219,10 @@ STATIC_ATOMS = [
     Atom("fantasy", "fantasy"),
     Atom("monospace", "monospace"),
     Atom("mozfixed", "-moz-fixed"),
+    Atom("moz_fixed_pos_containing_block", "-moz-fixed-pos-containing-block"),
+    # Standard font-palette identifiers
+    Atom("light", "light"),
+    Atom("dark", "dark"),
     # IPC stuff
     # Atom("Remote", "remote"),  # "remote" is present above
     Atom("RemoteId", "_remote_id"),
@@ -2207,27 +2236,18 @@ STATIC_ATOMS = [
     Atom("forcemessagemanager", "forcemessagemanager"),
     Atom("initialBrowsingContextGroupId", "initialBrowsingContextGroupId"),
     Atom("initiallyactive", "initiallyactive"),
-    # windows media query names
-    Atom("windows_win7", "windows-win7"),
-    Atom("windows_win8", "windows-win8"),
-    Atom("windows_win10", "windows-win10"),
     # Names for system metrics.
+    Atom("_moz_bool_pref", "-moz-bool-pref"),
     Atom("_moz_scrollbar_start_backward", "-moz-scrollbar-start-backward"),
     Atom("_moz_scrollbar_start_forward", "-moz-scrollbar-start-forward"),
     Atom("_moz_scrollbar_end_backward", "-moz-scrollbar-end-backward"),
     Atom("_moz_scrollbar_end_forward", "-moz-scrollbar-end-forward"),
-    Atom("_moz_scrollbar_thumb_proportional", "-moz-scrollbar-thumb-proportional"),
     Atom("_moz_overlay_scrollbars", "-moz-overlay-scrollbars"),
     Atom("_moz_windows_accent_color_in_titlebar", "-moz-windows-accent-color-in-titlebar"),
-    Atom("_moz_windows_default_theme", "-moz-windows-default-theme"),
-    Atom("_moz_mac_graphite_theme", "-moz-mac-graphite-theme"),
+    Atom("_moz_windows_accent_color_in_tabs", "-moz-windows-accent-color-in-tabs"),
     Atom("_moz_mac_big_sur_theme", "-moz-mac-big-sur-theme"),
     Atom("_moz_mac_rtl", "-moz-mac-rtl"),
-    Atom("_moz_windows_compositor", "-moz-windows-compositor"),
-    Atom("_moz_windows_classic", "-moz-windows-classic"),
-    Atom("_moz_windows_glass", "-moz-windows-glass"),
-    Atom("_moz_windows_non_native_menus", "-moz-windows-non-native-menus"),
-    Atom("_moz_os_version", "-moz-os-version"),
+    Atom("_moz_platform", "-moz-platform"),
     Atom("_moz_menubar_drag", "-moz-menubar-drag"),
     Atom("_moz_device_pixel_ratio", "-moz-device-pixel-ratio"),
     Atom("_moz_device_orientation", "-moz-device-orientation"),
@@ -2242,10 +2262,11 @@ STATIC_ATOMS = [
     Atom("_moz_gtk_csd_close_button", "-moz-gtk-csd-close-button"),
     Atom("_moz_gtk_csd_close_button_position", "-moz-gtk-csd-close-button-position"),
     Atom("_moz_gtk_csd_reversed_placement", "-moz-gtk-csd-reversed-placement"),
-    Atom("_moz_gtk_csd_menu_radius", "-moz-gtk-csd-menu-radius"),
+    Atom("_moz_gtk_csd_rounded_bottom_corners", "-moz-gtk-csd-rounded-bottom-corners"),
     Atom("_moz_content_prefers_color_scheme", "-moz-content-prefers-color-scheme"),
-    Atom("_moz_proton_places_tooltip", "-moz-proton-places-tooltip"),
+    Atom("_moz_content_preferred_color_scheme", "-moz-content-preferred-color-scheme"),
     Atom("_moz_system_dark_theme", "-moz-system-dark-theme"),
+    Atom("_moz_panel_animations", "-moz-panel-animations"),
     # application commands
     Atom("Back", "Back"),
     Atom("Forward", "Forward"),
@@ -2308,8 +2329,8 @@ STATIC_ATOMS = [
     Atom("grammar", "grammar"),
     Atom("gridcell", "gridcell"),
     Atom("heading", "heading"),
-    Atom("hitregion", "hitregion"),
     Atom("inlinevalue", "inline"),
+    Atom("inline_size", "inline-size"),
     Atom("invalid", "invalid"),
     Atom("lineNumber", "line-number"),
     Atom("menuitemcheckbox", "menuitemcheckbox"),
@@ -2376,6 +2397,11 @@ STATIC_ATOMS = [
     Atom("onplaybackstatechange", "onplaybackstatechange"),
     Atom("onpositionstatechange", "onpositionstatechange"),
     Atom("onsupportedkeyschange", "onsupportedkeyschange"),
+    # Media query prefs for UA sheets.
+    Atom("dom_element_popover_enabled", "dom.element.popover.enabled"),
+    Atom("mathml_legacy_mathvariant_attribute_disabled", "mathml.legacy_mathvariant_attribute.disabled"),
+    Atom("layout_css_always_underline_links", "layout.css.always_underline_links"),
+    Atom("layout_css_cached_scrollbar_styles_enabled", "layout.css.cached-scrollbar-styles.enabled"),
     # Contextual Identity / Containers
     Atom("usercontextid", "usercontextid"),
     Atom("geckoViewSessionContextId", "geckoViewSessionContextId"),
@@ -2399,6 +2425,8 @@ STATIC_ATOMS = [
     Atom("onupdateend", "onupdateend"),
     Atom("onaddsourcebuffer", "onaddsourcebuffer"),
     Atom("onremovesourcebuffer", "onremovesourcebuffer"),
+    # WebCodecs
+    Atom("ondequeue", "ondequeue"),
     # RDF (not used by mozilla-central, but still used by comm-central)
     Atom("about", "about"),
     Atom("ID", "ID"),
@@ -2420,6 +2448,7 @@ STATIC_ATOMS = [
     Atom("DirectoryService_OS_TemporaryDirectory", "TmpD"),
     Atom("DirectoryService_OS_CurrentProcessDirectory", "CurProcD"),
     Atom("DirectoryService_OS_CurrentWorkingDirectory", "CurWorkD"),
+    Atom("DirectoryService_OS_SystemConfigDir", "SysConfD"),
     # Atom("DirectoryService_OS_HomeDirectory", "Home"),  # "Home" is present above
     Atom("DirectoryService_OS_DesktopDirectory", "Desk"),
     Atom("DirectoryService_InitCurrentProcess_dummy", "MozBinD"),
@@ -2429,14 +2458,13 @@ STATIC_ATOMS = [
     Atom("DirectoryService_LocalApplicationsDirectory", "LocApp"),
     Atom("DirectoryService_UserPreferencesDirectory", "UsrPrfs"),
     Atom("DirectoryService_PictureDocumentsDirectory", "Pct"),
+    Atom("DirectoryService_DefaultScreenshotDirectory", "Scrnshts"),
     Atom("DirectoryService_WindowsDirectory", "WinD"),
     Atom("DirectoryService_WindowsProgramFiles", "ProgF"),
     Atom("DirectoryService_Programs", "Progs"),
     Atom("DirectoryService_Favorites", "Favs"),
     Atom("DirectoryService_Appdata", "AppData"),
     Atom("DirectoryService_LocalAppdata", "LocalAppData"),
-    Atom("DirectoryService_LocalAppdataLow", "LocalAppDataLow"),
-    Atom("DirectoryService_LowIntegrityTempBase", "LowTmpDBase"),
     Atom("DirectoryService_WinCookiesDirectory", "CookD"),
     # CSS pseudo-elements -- these must appear in the same order as
     # in nsCSSPseudoElementList.h
@@ -2447,6 +2475,7 @@ STATIC_ATOMS = [
     PseudoElementAtom("PseudoElement_cue", ":cue"),
     PseudoElementAtom("PseudoElement_firstLetter", ":first-letter"),
     PseudoElementAtom("PseudoElement_firstLine", ":first-line"),
+    PseudoElementAtom("PseudoElement_highlight", ":highlight"),
     PseudoElementAtom("PseudoElement_selection", ":selection"),
     PseudoElementAtom("PseudoElement_mozFocusInner", ":-moz-focus-inner"),
     PseudoElementAtom("PseudoElement_mozNumberSpinBox", ":-moz-number-spin-box"),
@@ -2464,6 +2493,9 @@ STATIC_ATOMS = [
     PseudoElementAtom("PseudoElement_mozTextControlPreview", ":-moz-text-control-preview"),
     PseudoElementAtom("PseudoElement_mozReveal", ":-moz-reveal"),
     PseudoElementAtom("PseudoElement_fileSelectorButton", ":file-selector-button"),
+    PseudoElementAtom("PseudoElement_sliderTrack", ":slider-track"),
+    PseudoElementAtom("PseudoElement_sliderThumb", ":slider-thumb"),
+    PseudoElementAtom("PseudoElement_sliderFill", ":slider-fill"),
     # CSS anonymous boxes -- these must appear in the same order as
     # in nsCSSAnonBoxList.h
     NonInheritingAnonBoxAtom("AnonBox_oofPlaceholder", ":-moz-oof-placeholder"),
@@ -2481,7 +2513,6 @@ STATIC_ATOMS = [
     InheritingAnonBoxAtom("AnonBox_firstLetterContinuation", ":-moz-first-letter-continuation"),
     InheritingAnonBoxAtom("AnonBox_mozBlockInsideInlineWrapper", ":-moz-block-inside-inline-wrapper"),
     InheritingAnonBoxAtom("AnonBox_mozMathMLAnonymousBlock", ":-moz-mathml-anonymous-block"),
-    InheritingAnonBoxAtom("AnonBox_mozXULAnonymousBlock", ":-moz-xul-anonymous-block"),
     InheritingAnonBoxAtom("AnonBox_mozLineFrame", ":-moz-line-frame"),
     InheritingAnonBoxAtom("AnonBox_buttonContent", ":-moz-button-content"),
     InheritingAnonBoxAtom("AnonBox_cellContent", ":-moz-cell-content"),
@@ -2503,8 +2534,7 @@ STATIC_ATOMS = [
     InheritingAnonBoxAtom("AnonBox_columnContent", ":-moz-column-content"),
     InheritingAnonBoxAtom("AnonBox_viewport", ":-moz-viewport"),
     InheritingAnonBoxAtom("AnonBox_viewportScroll", ":-moz-viewport-scroll"),
-    InheritingAnonBoxAtom("AnonBox_anonymousFlexItem", ":-moz-anonymous-flex-item"),
-    InheritingAnonBoxAtom("AnonBox_anonymousGridItem", ":-moz-anonymous-grid-item"),
+    InheritingAnonBoxAtom("AnonBox_anonymousItem", ":-moz-anonymous-item"),
     InheritingAnonBoxAtom("AnonBox_blockRubyContent", ":-moz-block-ruby-content"),
     InheritingAnonBoxAtom("AnonBox_ruby", ":-moz-ruby"),
     InheritingAnonBoxAtom("AnonBox_rubyBase", ":-moz-ruby-base"),

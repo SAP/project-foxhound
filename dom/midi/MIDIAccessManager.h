@@ -50,10 +50,13 @@ class MIDIAccessManager final {
   bool AddObserver(Observer<MIDIPortList>* aObserver);
   // Removes a device update observer (usually a MIDIAccess object)
   void RemoveObserver(Observer<MIDIPortList>* aObserver);
+  // Requests the service to update the list of devices
+  void SendRefresh();
 
  private:
   MIDIAccessManager();
   ~MIDIAccessManager();
+  void StartActor();
   // True if object has received a device list from the MIDI platform service.
   bool mHasPortList;
   // List of known ports for the system.

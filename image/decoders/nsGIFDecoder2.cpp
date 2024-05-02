@@ -91,8 +91,10 @@ nsGIFDecoder2::nsGIFDecoder2(RasterImage* aImage)
       mGIFOpen(false),
       mSawTransparency(false),
       mSwizzleFn(nullptr) {
-  // Clear out the structure, excluding the arrays.
+  // Clear out the structure, excluding the arrays. Ensure that the global
+  // colormap is initialized as opaque.
   memset(&mGIFStruct, 0, sizeof(mGIFStruct));
+  memset(mGIFStruct.global_colormap, 0xFF, sizeof(mGIFStruct.global_colormap));
 
   // Each color table will need to be unpacked.
   mSwizzleFn = SwizzleRow(SurfaceFormat::R8G8B8, SurfaceFormat::OS_RGBA);
@@ -144,6 +146,22 @@ void nsGIFDecoder2::BeginGIF() {
 bool nsGIFDecoder2::CheckForTransparency(const OrientedIntRect& aFrameRect) {
   // Check if the image has a transparent color in its palette.
   if (mGIFStruct.is_transparent) {
+    PostHasTransparency();
+    return true;
+  }
+
+  // This is a bit of a hack. Some sites will use a 1x1 gif that includes no
+  // header information indicating it is transparent, no palette, and no image
+  // data at all (so no pixels get written) to represent a transparent pixel
+  // using the absolute least number of bytes. Generally things are setup to
+  // detect transparency without decoding the image data. So to detect this kind
+  // of transparency without decoing the image data we would have to assume
+  // every gif is transparent, which we would like to avoid. Changing things so
+  // that we can detect transparency at any point of decoding is a bigger change
+  // and not worth it for one questionable 1x1 gif. Using this "trick" for
+  // anything but 1x1 transparent spacer gifs doesn't make sense, so it's
+  // reasonable to target 1x1 gifs just for this.
+  if (mGIFStruct.screen_width == 1 && mGIFStruct.screen_height == 1) {
     PostHasTransparency();
     return true;
   }
@@ -277,7 +295,7 @@ uint8_t nsGIFDecoder2::ColormapIndexToPixel<uint8_t>(uint8_t aIndex) {
 }
 
 template <typename PixelSize>
-Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
+std::tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
     const uint8_t* aData, size_t aLength, size_t* aBytesReadOut,
     PixelSize* aPixelBlock, int32_t aBlockSize) {
   MOZ_ASSERT(aData);
@@ -302,7 +320,7 @@ Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
       }
 
       if (mGIFStruct.bits < mGIFStruct.codesize) {
-        return MakeTuple(written, Some(WriteState::NEED_MORE_DATA));
+        return std::make_tuple(written, Some(WriteState::NEED_MORE_DATA));
       }
 
       // Get the leading variable-length symbol from the data stream.
@@ -318,20 +336,20 @@ Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
         mGIFStruct.codemask = (1 << mGIFStruct.codesize) - 1;
         mGIFStruct.avail = clearCode + 2;
         mGIFStruct.oldcode = -1;
-        return MakeTuple(written, Some(WriteState::NEED_MORE_DATA));
+        return std::make_tuple(written, Some(WriteState::NEED_MORE_DATA));
       }
 
       // Check for explicit end-of-stream code. It should only appear after all
       // image data, but if that was the case we wouldn't be in this function,
       // so this is always an error condition.
       if (code == (clearCode + 1)) {
-        return MakeTuple(written, Some(WriteState::FAILURE));
+        return std::make_tuple(written, Some(WriteState::FAILURE));
       }
 
       if (mGIFStruct.oldcode == -1) {
         if (code >= MAX_BITS) {
           // The code's too big; something's wrong.
-          return MakeTuple(written, Some(WriteState::FAILURE));
+          return std::make_tuple(written, Some(WriteState::FAILURE));
         }
 
         mGIFStruct.firstchar = mGIFStruct.oldcode = code;
@@ -350,13 +368,13 @@ Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
 
         if (mGIFStruct.stackp >= mGIFStruct.stack + MAX_BITS) {
           // Stack overflow; something's wrong.
-          return MakeTuple(written, Some(WriteState::FAILURE));
+          return std::make_tuple(written, Some(WriteState::FAILURE));
         }
       }
 
       while (code >= clearCode) {
         if ((code >= MAX_BITS) || (code == mGIFStruct.prefix[code])) {
-          return MakeTuple(written, Some(WriteState::FAILURE));
+          return std::make_tuple(written, Some(WriteState::FAILURE));
         }
 
         *mGIFStruct.stackp++ = mGIFStruct.suffix[code];
@@ -364,7 +382,7 @@ Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
 
         if (mGIFStruct.stackp >= mGIFStruct.stack + MAX_BITS) {
           // Stack overflow; something's wrong.
-          return MakeTuple(written, Some(WriteState::FAILURE));
+          return std::make_tuple(written, Some(WriteState::FAILURE));
         }
       }
 
@@ -391,7 +409,7 @@ Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
 
     if (MOZ_UNLIKELY(mGIFStruct.stackp <= mGIFStruct.stack)) {
       MOZ_ASSERT_UNREACHABLE("No decoded data but we didn't return early?");
-      return MakeTuple(written, Some(WriteState::FAILURE));
+      return std::make_tuple(written, Some(WriteState::FAILURE));
     }
 
     // Yield a pixel at the appropriate index in the colormap.
@@ -400,7 +418,7 @@ Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
         ColormapIndexToPixel<PixelSize>(*--mGIFStruct.stackp);
   }
 
-  return MakeTuple(written, Maybe<WriteState>());
+  return std::make_tuple(written, Maybe<WriteState>());
 }
 
 /// Expand the colormap from RGB to Packed ARGB as needed by Cairo.
@@ -855,6 +873,8 @@ LexerTransition<nsGIFDecoder2::State> nsGIFDecoder2::FinishImageDescriptor(
         mGIFStruct.local_colormap_buffer_size = mColormapSize;
         mGIFStruct.local_colormap =
             static_cast<uint32_t*>(moz_xmalloc(mColormapSize));
+        // Ensure the local colormap is initialized as opaque.
+        memset(mGIFStruct.local_colormap, 0xFF, mColormapSize);
       } else {
         mColormapSize = mGIFStruct.local_colormap_buffer_size;
       }

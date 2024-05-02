@@ -36,7 +36,7 @@
           "browser_style": {
             "type": "boolean",
             "optional": true,
-            "default": false
+            "description": "Deprecated in Manifest V3."
           },
           "default_area": {
             "description": "Defines the location the browserAction will appear by default.  The default location is navbar.",
@@ -116,9 +116,9 @@
         "id": "ColorValue",
         "description": "An array of four integers in the range [0,255] that make up the RGBA color of the badge. For example, opaque red is <code>[255, 0, 0, 255]</code>. Can also be a string with a CSS value, with opaque red being <code>#FF0000</code> or <code>#F00</code>.",
         "choices": [
-          {"type": "string"},
-          {"$ref": "ColorArray"},
-          {"type": "null"}
+          { "type": "string" },
+          { "$ref": "ColorArray" },
+          { "type": "null" }
         ]
       },
       {
@@ -155,10 +155,7 @@
             "$import": "Details",
             "properties": {
               "title": {
-                "choices": [
-                  {"type": "string"},
-                  {"type": "null"}
-                ],
+                "choices": [{ "type": "string" }, { "type": "null" }],
                 "description": "The string the browser action should display when moused over."
               }
             }
@@ -194,6 +191,32 @@
         ]
       },
       {
+        "name": "getUserSettings",
+        "type": "function",
+        "description": "Returns the user-specified settings relating to an extension's action.",
+        "async": "callback",
+        "parameters": [
+          {
+            "type": "function",
+            "name": "callback",
+            "parameters": [
+              {
+                "name": "userSettings",
+                "type": "object",
+                "properties": {
+                  "isOnToolbar": {
+                    "type": "boolean",
+                    "optional": true,
+                    "description": "Whether the extension's action icon is visible on browser windows' top-level toolbar (i.e., whether the extension has been 'pinned' by the user)."
+                  }
+                },
+                "description": "The collection of user-specified settings relating to an extension's action."
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "setIcon",
         "type": "function",
         "description": "Sets the icon for the browser action. The icon can be specified either as the path to an image file or as the pixel data from a canvas element, or as dictionary of either one of those. Either the <b>path</b> or the <b>imageData</b> property must be specified.",
@@ -210,7 +233,7 @@
                   {
                     "type": "object",
                     "patternProperties": {
-                      "^[1-9]\\d*$": {"$ref": "ImageDataType"}
+                      "^[1-9]\\d*$": { "$ref": "ImageDataType" }
                     }
                   }
                 ],
@@ -252,10 +275,7 @@
             "$import": "Details",
             "properties": {
               "popup": {
-                "choices": [
-                  {"type": "string"},
-                  {"type": "null"}
-                ],
+                "choices": [{ "type": "string" }, { "type": "null" }],
                 "description": "The html file to show in a popup.  If set to the empty string (''), no popup is shown."
               }
             }
@@ -302,10 +322,7 @@
             "$import": "Details",
             "properties": {
               "text": {
-                "choices": [
-                  {"type": "string"},
-                  {"type": "null"}
-                ],
+                "choices": [{ "type": "string" }, { "type": "null" }],
                 "description": "Any number of characters can be passed, but only about four can fit in the space."
               }
             }
@@ -469,10 +486,24 @@
       {
         "name": "openPopup",
         "type": "function",
-        "requireUserInput": true,
-        "description": "Opens the extension popup window in the active window.",
+        "description": "Opens the extension popup window in the specified window.",
         "async": true,
-        "parameters": []
+        "parameters": [
+          {
+            "name": "options",
+            "optional": true,
+            "type": "object",
+            "description": "An object with information about the popup to open.",
+            "properties": {
+              "windowId": {
+                "type": "integer",
+                "minimum": -2,
+                "optional": true,
+                "description": "Defaults to the $(topic:current-window)[current window]."
+              }
+            }
+          }
+        ]
       }
     ],
     "events": [

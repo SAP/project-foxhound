@@ -46,6 +46,7 @@ XPIDL_SOURCES += [
     "nsIIncrementalStreamLoader.idl",
     "nsIInputStreamChannel.idl",
     "nsIInputStreamPump.idl",
+    "nsIInterceptionInfo.idl",
     "nsIIOService.idl",
     "nsILoadContextInfo.idl",
     "nsILoadGroup.idl",
@@ -159,12 +160,13 @@ EXPORTS.mozilla.net += [
     "Dashboard.h",
     "DashboardTypes.h",
     "DefaultURI.h",
+    "InterceptionInfo.h",
     "IOActivityMonitor.h",
     "MemoryDownloader.h",
     "NetworkConnectivityService.h",
-    "PartiallySeekableInputStream.h",
     "Predictor.h",
     "PrivateBrowsingChannel.h",
+    "ProtocolHandlerInfo.h",
     "RedirectChannelRegistrar.h",
     "RequestContextService.h",
     "SimpleChannelParent.h",
@@ -179,6 +181,7 @@ UNIFIED_SOURCES += [
     "Dashboard.cpp",
     "DefaultURI.cpp",
     "EventTokenBucket.cpp",
+    "InterceptionInfo.cpp",
     "IOActivityMonitor.cpp",
     "LoadContextInfo.cpp",
     "LoadInfo.cpp",
@@ -227,9 +230,9 @@ UNIFIED_SOURCES += [
     "nsSyncStreamListener.cpp",
     "nsTransportUtils.cpp",
     "nsUDPSocket.cpp",
-    "PartiallySeekableInputStream.cpp",
     "PollableEvent.cpp",
     "Predictor.cpp",
+    "ProtocolHandlerInfo.cpp",
     "ProxyAutoConfig.cpp",
     "RedirectChannelRegistrar.cpp",
     "RequestContextService.cpp",
@@ -247,6 +250,7 @@ if CONFIG["FUZZING"]:
     SOURCES += [
         "FuzzyLayer.cpp",
         "FuzzySecurityInfo.cpp",
+        "FuzzySocketControl.cpp",
     ]
 
 if CONFIG["FUZZING_INTERFACES"] and CONFIG["LIBFUZZER"]:
@@ -281,25 +285,8 @@ else:
         "nsURLHelperUnix.cpp",
     ]
 
-# nsINetworkInfoService support.
-if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
-    SOURCES += [
-        "NetworkInfoServiceWindows.cpp",
-        "nsNetworkInfoService.cpp",
-    ]
-elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
-    SOURCES += [
-        "NetworkInfoServiceCocoa.cpp",
-        "nsNetworkInfoService.cpp",
-    ]
-elif CONFIG["OS_ARCH"] == "Linux":
-    SOURCES += [
-        "NetworkInfoServiceLinux.cpp",
-        "nsNetworkInfoService.cpp",
-    ]
-
 EXTRA_JS_MODULES += [
-    "NetUtil.jsm",
+    "NetUtil.sys.mjs",
 ]
 
 DIRS += ["mozurl", "rust-helper", "http-sfv"]
@@ -309,13 +296,17 @@ include("/ipc/chromium/chromium-config.mozbuild")
 FINAL_LIBRARY = "xul"
 
 LOCAL_INCLUDES += [
+    "!/xpcom/components",
     "/docshell/base",
     "/dom/base",
+    "/js/xpconnect/src",
     "/netwerk/dns",
     "/netwerk/protocol/http",
+    "/netwerk/protocol/webtransport",
     "/netwerk/socket",
     "/netwerk/url-classifier",
     "/security/manager/ssl",
+    "/xpcom/components",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
@@ -326,5 +317,3 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
 GeneratedFile(
     "ascii_pac_utils.inc", script="makecppstring.py", inputs=["ascii_pac_utils.js"]
 )
-
-REQUIRES_UNIFIED_BUILD = True

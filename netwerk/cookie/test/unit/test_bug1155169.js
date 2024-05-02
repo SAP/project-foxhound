@@ -1,9 +1,10 @@
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 const URI = Services.io.newURI("http://example.org/");
 
-const cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
+const { COOKIE_CHANGED, COOKIE_ADDED } = Ci.nsICookieNotification;
 
 function run_test() {
   // Allow all cookies.
@@ -14,7 +15,7 @@ function run_test() {
 
   // Add a new cookie.
   setCookie("foo=bar", {
-    type: "added",
+    type: COOKIE_ADDED,
     isSession: true,
     isSecure: false,
     isHttpOnly: false,
@@ -22,7 +23,7 @@ function run_test() {
 
   // Update cookie with isHttpOnly=true.
   setCookie("foo=bar; HttpOnly", {
-    type: "changed",
+    type: COOKIE_CHANGED,
     isSession: true,
     isSecure: false,
     isHttpOnly: true,
@@ -30,7 +31,7 @@ function run_test() {
 
   // Update cookie with isSecure=true.
   setCookie("foo=bar; Secure", {
-    type: "changed",
+    type: COOKIE_CHANGED,
     isSession: true,
     isSecure: true,
     isHttpOnly: false,
@@ -40,7 +41,7 @@ function run_test() {
   let expiry = new Date();
   expiry.setUTCFullYear(expiry.getUTCFullYear() + 2);
   setCookie(`foo=bar; Expires=${expiry.toGMTString()}`, {
-    type: "changed",
+    type: COOKIE_CHANGED,
     isSession: false,
     isSecure: false,
     isHttpOnly: false,
@@ -48,7 +49,7 @@ function run_test() {
 
   // Reset cookie.
   setCookie("foo=bar", {
-    type: "changed",
+    type: COOKIE_CHANGED,
     isSession: true,
     isSecure: false,
     isHttpOnly: false,
@@ -57,17 +58,19 @@ function run_test() {
 
 function setCookie(value, expected) {
   function setCookieInternal(valueInternal, expectedInternal = null) {
-    function observer(subject, topic, data) {
+    function observer(subject) {
       if (!expectedInternal) {
         do_throw("no notification expected");
         return;
       }
 
+      let notification = subject.QueryInterface(Ci.nsICookieNotification);
+
       // Check we saw the right notification.
-      Assert.equal(data, expectedInternal.type);
+      Assert.equal(notification.action, expectedInternal.type);
 
       // Check cookie details.
-      let cookie = subject.QueryInterface(Ci.nsICookie);
+      let cookie = notification.cookie.QueryInterface(Ci.nsICookie);
       Assert.equal(cookie.isSession, expectedInternal.isSession);
       Assert.equal(cookie.isSecure, expectedInternal.isSecure);
       Assert.equal(cookie.isHttpOnly, expectedInternal.isHttpOnly);
@@ -81,7 +84,7 @@ function setCookie(value, expected) {
       contentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
     });
 
-    cs.setCookieStringFromHttp(URI, valueInternal, channel);
+    Services.cookies.setCookieStringFromHttp(URI, valueInternal, channel);
     Services.obs.removeObserver(observer, "cookie-changed");
   }
 

@@ -6,8 +6,8 @@
 
 const URL = "http://example.com";
 
-const { LoginTestUtils } = ChromeUtils.import(
-  "resource://testing-common/LoginTestUtils.jsm"
+const { LoginTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/LoginTestUtils.sys.mjs"
 );
 
 add_task(async function test_principal_downloads() {
@@ -20,9 +20,9 @@ add_task(async function test_principal_downloads() {
     usernameField: "field_username",
     passwordField: "field_password",
   });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
 
-  Assert.equal(countLogins(URL), 1);
+  Assert.equal(await countLogins(URL), 1);
 
   let uri = Services.io.newURI(URL);
   let principal = Services.scriptSecurityManager.createContentPrincipal(
@@ -42,7 +42,7 @@ add_task(async function test_principal_downloads() {
     );
   });
 
-  Assert.equal(countLogins(URL), 0);
+  Assert.equal(await countLogins(URL), 0);
 
   LoginTestUtils.clearData();
 });
@@ -57,9 +57,9 @@ add_task(async function test_all() {
     usernameField: "field_username",
     passwordField: "field_password",
   });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
 
-  Assert.equal(countLogins(URL), 1);
+  Assert.equal(await countLogins(URL), 1);
 
   await new Promise(resolve => {
     Services.clearData.deleteData(
@@ -71,14 +71,14 @@ add_task(async function test_all() {
     );
   });
 
-  Assert.equal(countLogins(URL), 0);
+  Assert.equal(await countLogins(URL), 0);
 
   LoginTestUtils.clearData();
 });
 
-function countLogins(origin) {
+async function countLogins(origin) {
   let count = 0;
-  const logins = Services.logins.getAllLogins();
+  const logins = await Services.logins.getAllLogins();
   for (const login of logins) {
     if (login.origin == origin) {
       ++count;

@@ -26,7 +26,7 @@ const REQUESTS = [
 ];
 
 function testAutocompleteContents(expected, document) {
-  expected.forEach(function(item, i) {
+  expected.forEach(function (item, i) {
     is(
       document.querySelector(
         `.devtools-autocomplete-listbox .autocomplete-item:nth-child(${i + 1})`
@@ -37,7 +37,7 @@ function testAutocompleteContents(expected, document) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   const { monitor } = await initNetMonitor(FILTERING_URL, { requestCount: 1 });
   const { document, store, windowRequire } = monitor.panelWin;
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
@@ -136,7 +136,7 @@ add_task(async function() {
 
   // Space separated tokens
   // The last token where autocomplete is available shall generate the popup
-  EventUtils.sendString(" p");
+  EventUtils.sendString(" pro");
   testAutocompleteContents(["protocol:"], document);
 
   // The new value of the text box should be previousTokens + latest value selected
@@ -180,6 +180,7 @@ add_task(async function() {
       "-larger-than:",
       "-method:",
       "-mime-type:",
+      "-priority:",
       "-protocol:",
       "-regexp:",
       "-remote-ip:",

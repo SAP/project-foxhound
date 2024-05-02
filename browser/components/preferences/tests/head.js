@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const kDefaultWait = 2000;
@@ -22,7 +22,7 @@ function open_preferences(aCallback) {
   let newTabBrowser = gBrowser.getBrowserForTab(gBrowser.selectedTab);
   newTabBrowser.addEventListener(
     "Initialized",
-    function() {
+    function () {
       aCallback(gBrowser.contentWindow);
     },
     { capture: true, once: true }
@@ -69,9 +69,8 @@ function promiseLoadSubDialog(aURL) {
         is_element_visible(aEvent.detail.dialog._overlay, "Overlay is visible");
 
         // Check that stylesheets were injected
-        let expectedStyleSheetURLs = aEvent.detail.dialog._injectedStyleSheets.slice(
-          0
-        );
+        let expectedStyleSheetURLs =
+          aEvent.detail.dialog._injectedStyleSheets.slice(0);
         for (let styleSheet of aEvent.detail.dialog._frame.contentDocument
           .styleSheets) {
           let i = expectedStyleSheetURLs.indexOf(styleSheet.href);
@@ -131,11 +130,13 @@ async function runSearchInput(input) {
 
 async function evaluateSearchResults(
   keyword,
-  searchReults,
+  searchResults,
   includeExperiments = false
 ) {
-  searchReults = Array.isArray(searchReults) ? searchReults : [searchReults];
-  searchReults.push("header-searchResults");
+  searchResults = Array.isArray(searchResults)
+    ? searchResults
+    : [searchResults];
+  searchResults.push("header-searchResults");
 
   await runSearchInput(keyword);
 
@@ -145,7 +146,7 @@ async function evaluateSearchResults(
     if (!includeExperiments && child.id?.startsWith("pane-experimental")) {
       continue;
     }
-    if (searchReults.includes(child.id)) {
+    if (searchResults.includes(child.id)) {
       is_element_visible(child, `${child.id} should be in search results`);
     } else if (child.id) {
       is_element_hidden(child, `${child.id} should not be in search results`);
@@ -169,8 +170,8 @@ function waitForMutation(target, opts, cb) {
 // a DefinitionServer, then call addDefinition as needed.
 class DefinitionServer {
   constructor(definitionOverrides = []) {
-    let { HttpServer } = ChromeUtils.import(
-      "resource://testing-common/httpd.js"
+    let { HttpServer } = ChromeUtils.importESModule(
+      "resource://testing-common/httpd.sys.mjs"
     );
 
     this.server = new HttpServer();
@@ -272,4 +273,62 @@ function createObserveAllPromise(observances) {
     };
     Services.obs.addObserver(permObserver, "perm-changed");
   });
+}
+
+/**
+ * Waits for preference to be set and asserts the value.
+ * @param {string} pref - Preference key.
+ * @param {*} expectedValue - Expected value of the preference.
+ * @param {string} message - Assertion message.
+ */
+async function waitForAndAssertPrefState(pref, expectedValue, message) {
+  await TestUtils.waitForPrefChange(pref, value => {
+    if (value != expectedValue) {
+      return false;
+    }
+    is(value, expectedValue, message);
+    return true;
+  });
+}
+
+/**
+ * The Relay promo is not shown for distributions with a custom FxA instance,
+ * since Relay requires an account on our own server. These prefs are set to a
+ * dummy address by the test harness, filling the prefs with a "user value."
+ * This temporarily sets the default value equal to the dummy value, so that
+ * Firefox thinks we've configured the correct FxA server.
+ * @returns {Promise<MockFxAUtilityFunctions>} { mock, unmock }
+ */
+async function mockDefaultFxAInstance() {
+  /**
+   * @typedef {Object} MockFxAUtilityFunctions
+   * @property {function():void} mock - Makes the dummy values default, creating
+   *                             the illusion of a production FxA instance.
+   * @property {function():void} unmock - Restores the true defaults, creating
+   *                             the illusion of a custom FxA instance.
+   */
+
+  const defaultPrefs = Services.prefs.getDefaultBranch("");
+  const userPrefs = Services.prefs.getBranch("");
+  const realAuth = defaultPrefs.getCharPref("identity.fxaccounts.auth.uri");
+  const realRoot = defaultPrefs.getCharPref("identity.fxaccounts.remote.root");
+  const mockAuth = userPrefs.getCharPref("identity.fxaccounts.auth.uri");
+  const mockRoot = userPrefs.getCharPref("identity.fxaccounts.remote.root");
+  const mock = () => {
+    defaultPrefs.setCharPref("identity.fxaccounts.auth.uri", mockAuth);
+    defaultPrefs.setCharPref("identity.fxaccounts.remote.root", mockRoot);
+    userPrefs.clearUserPref("identity.fxaccounts.auth.uri");
+    userPrefs.clearUserPref("identity.fxaccounts.remote.root");
+  };
+  const unmock = () => {
+    defaultPrefs.setCharPref("identity.fxaccounts.auth.uri", realAuth);
+    defaultPrefs.setCharPref("identity.fxaccounts.remote.root", realRoot);
+    userPrefs.setCharPref("identity.fxaccounts.auth.uri", mockAuth);
+    userPrefs.setCharPref("identity.fxaccounts.remote.root", mockRoot);
+  };
+
+  mock();
+  registerCleanupFunction(unmock);
+
+  return { mock, unmock };
 }

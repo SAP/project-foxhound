@@ -15,7 +15,7 @@
 const startTime = Date.now();
 
 // Set up to be able to use fluent:
-(function() {
+(function () {
   let link = document.createElement("link");
   link.setAttribute("rel", "localization");
   link.setAttribute("href", "browser/screenshots.ftl");
@@ -23,11 +23,11 @@ const startTime = Date.now();
 
   link = document.createElement("link");
   link.setAttribute("rel", "localization");
-  link.setAttribute("href", "browser/branding/brandings.ftl");
+  link.setAttribute("href", "toolkit/branding/brandings.ftl");
   document.head.appendChild(link);
 })();
 
-this.getStrings = async function(ids) {
+this.getStrings = async function (ids) {
   if (document.readyState != "complete") {
     await new Promise(resolve =>
       window.addEventListener("load", resolve, { once: true })
@@ -38,11 +38,11 @@ this.getStrings = async function(ids) {
 };
 
 let zoomFactor = 1;
-this.getZoomFactor = function() {
+this.getZoomFactor = function () {
   return zoomFactor;
 };
 
-this.startBackground = (function() {
+this.startBackground = (function () {
   const exports = { startTime };
 
   const backgroundScripts = [
@@ -51,9 +51,7 @@ this.startBackground = (function() {
     "blobConverters.js",
     "background/selectorLoader.js",
     "background/communication.js",
-    "background/auth.js",
     "background/senderror.js",
-    "build/raven.js",
     "build/shot.js",
     "build/thumbnailGenerator.js",
     "background/analytics.js",
@@ -72,7 +70,7 @@ this.startBackground = (function() {
         zoomFactor = await browser.tabs.getZoom(tab.id);
         if (type === "contextMenu") {
           main.onClickedContextMenu(tab);
-        } else if (type === "toolbar") {
+        } else if (type === "toolbar" || type === "quickaction") {
           main.onClicked(tab);
         } else if (type === "shortcut") {
           main.onShortcut(tab);

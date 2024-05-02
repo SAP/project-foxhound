@@ -10,7 +10,7 @@ function tearDown() {
   }
 }
 
-add_task(async function() {
+add_task(async function () {
   // Don't cache removed tabs, so "clear console cache on tab close" triggers.
   await SpecialPowers.pushPrefEnv({ set: [["browser.tabs.max_tabs_undo", 0]] });
 
@@ -28,30 +28,27 @@ add_task(async function() {
   var tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URI);
   var browser = gBrowser.selectedBrowser;
 
-  const windowId = await ContentTask.spawn(browser, null, async function(opt) {
+  const windowId = await ContentTask.spawn(browser, null, async function (opt) {
     let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"].getService(
       Ci.nsIConsoleAPIStorage
     );
 
     let observerPromise = new Promise(resolve => {
       let apiCallCount = 0;
-      let ConsoleObserver = {
-        QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
-
-        observe(aSubject, aTopic, aData) {
-          if (aTopic == "console-storage-cache-event") {
-            apiCallCount++;
-            info(`Received ${apiCallCount} "console-storage-cache-event"`);
-            if (apiCallCount == 4) {
-              Services.obs.removeObserver(this, "console-storage-cache-event");
-              resolve();
-            }
-          }
-        },
-      };
+      function observe(aSubject) {
+        apiCallCount++;
+        info(`Received ${apiCallCount} console log events`);
+        if (apiCallCount == 4) {
+          ConsoleAPIStorage.removeLogEventListener(observe);
+          resolve();
+        }
+      }
 
       info("Setting up observer");
-      Services.obs.addObserver(ConsoleObserver, "console-storage-cache-event");
+      ConsoleAPIStorage.addLogEventListener(
+        observe,
+        Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal)
+      );
     });
 
     info("Emit a few console API logs");
@@ -60,7 +57,7 @@ add_task(async function() {
     content.console.warn("this", "is", "a", "warn", "message");
     content.console.error("this", "is", "a", "error", "message");
 
-    info("Wait for the corresponding console-storage-cache-event");
+    info("Wait for the corresponding log event");
     await observerPromise;
 
     const innerWindowId = content.windowGlobalChild.innerWindowId;
@@ -80,7 +77,7 @@ add_task(async function() {
     return content.windowGlobalChild.innerWindowId;
   });
 
-  await SpecialPowers.spawn(browser, [], function() {
+  await SpecialPowers.spawn(browser, [], function () {
     // make sure a closed window's events are in fact removed from
     // the storage cache
     content.console.log("adding a new event");
@@ -98,7 +95,7 @@ add_task(async function() {
   // Spin the event loop to make sure everything is cleared.
   await SpecialPowers.spawn(browser, [], () => {});
 
-  await SpecialPowers.spawn(browser, [windowId], function(windowId) {
+  await SpecialPowers.spawn(browser, [windowId], function (windowId) {
     var ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"].getService(
       Ci.nsIConsoleAPIStorage
     );

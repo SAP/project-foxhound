@@ -2074,6 +2074,10 @@ void nsCSSBorderRenderer::DrawDottedSideSlow(mozilla::Side aSide) {
   // Extend dirty rect to avoid clipping pixel for anti-aliasing.
   const Float AA_MARGIN = 2.0f;
 
+  // The following algorithm assumes the border's rect and the dirty rect
+  // intersect.
+  MOZ_ASSERT(mDirtyRect.Intersects(mOuterRect));
+
   if (aSide == eSideTop) {
     // Tweak |from| and |to| to fit into |mDirtyRect + radius margin|,
     // to render only paths that may overlap mDirtyRect.
@@ -2745,8 +2749,10 @@ static void DrawBorderRadius(
 
   if (aFirstColor != aSecondColor) {
     // Start and end angles of corner quadrant
-    Float startAngle = (c * M_PI) / 2.0f - M_PI,
-          endAngle = startAngle + M_PI / 2.0f, outerSplitAngle, innerSplitAngle;
+    constexpr float PIf = M_PI;
+    Float startAngle = (static_cast<float>(c) * PIf) / 2.0f - PIf;
+    Float endAngle = startAngle + PIf / 2.0f;
+    Float outerSplitAngle, innerSplitAngle;
     Point outerSplit, innerSplit;
 
     // Outer half-way point
@@ -2971,6 +2977,10 @@ void nsCSSBorderRenderer::DrawSolidBorder() {
 }
 
 void nsCSSBorderRenderer::DrawBorders() {
+  if (MOZ_UNLIKELY(!mDirtyRect.Intersects(mOuterRect))) {
+    return;
+  }
+
   if (mAllBordersSameStyle && (mBorderStyles[0] == StyleBorderStyle::None ||
                                mBorderStyles[0] == StyleBorderStyle::Hidden ||
                                mBorderColors[0] == NS_RGBA(0, 0, 0, 0))) {
@@ -3089,6 +3099,10 @@ void nsCSSBorderRenderer::DrawBorders() {
       return;
     }
     mOuterRect = ToRect(outerRect);
+
+    if (MOZ_UNLIKELY(!mDirtyRect.Intersects(mOuterRect))) {
+      return;
+    }
 
     gfxRect innerRect = ThebesRect(mInnerRect);
     gfxUtils::ConditionRect(innerRect);
@@ -3415,8 +3429,6 @@ ImgDrawResult nsCSSBorderImageRenderer::DrawBorderImage(
   Maybe<nsSize> svgViewportSize =
       intrinsicSize.CanComputeConcreteSize() ? Nothing() : Some(mImageSize);
   bool hasIntrinsicRatio = intrinsicSize.HasRatio();
-  mImageRenderer.PurgeCacheForViewportChange(svgViewportSize,
-                                             hasIntrinsicRatio);
 
   // These helper tables recharacterize the 'slice' and 'width' margins
   // in a more convenient form: they are the x/y/width/height coords
@@ -3575,17 +3587,11 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
 
   float widths[4];
   float slice[4];
-  float outset[4];
   const int32_t appUnitsPerDevPixel =
       aForFrame->PresContext()->AppUnitsPerDevPixel();
   for (const auto i : mozilla::AllPhysicalSides()) {
     slice[i] = (float)(mSlice.Side(i)) / appUnitsPerDevPixel;
     widths[i] = (float)(mWidths.Side(i)) / appUnitsPerDevPixel;
-
-    // The outset is already taken into account by the adjustments to mArea
-    // in our constructor. We use mArea as our dest rect so we can just supply
-    // zero outsets to WebRender.
-    outset[i] = 0.0f;
   }
 
   LayoutDeviceRect destRect =
@@ -3602,7 +3608,6 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
 
   ImgDrawResult drawResult = ImgDrawResult::SUCCESS;
   switch (mImageRenderer.GetType()) {
-    case StyleImage::Tag::Rect:
     case StyleImage::Tag::Url: {
       RefPtr<imgIContainer> img = mImageRenderer.GetImage();
       if (!img || img->GetType() == imgIContainer::TYPE_VECTOR) {
@@ -3622,7 +3627,7 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
       LayoutDeviceRect imageRect = LayoutDeviceRect::FromAppUnits(
           nsRect(nsPoint(), mImageRenderer.GetSize()), appUnitsPerDevPixel);
 
-      Maybe<SVGImageContext> svgContext;
+      SVGImageContext svgContext;
       Maybe<ImageIntRegion> region;
       gfx::IntSize decodeSize =
           nsLayoutUtils::ComputeImageContainerDrawingParameters(
@@ -3653,8 +3658,8 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
         // but there are reftests that are sensible to the test going through a
         // blob while the reference doesn't.
         if (noVerticalBorders && noHorizontalBorders) {
-          aBuilder.PushImage(dest, clip, !aItem->BackfaceIsHidden(), rendering,
-                             key.value());
+          aBuilder.PushImage(dest, clip, !aItem->BackfaceIsHidden(), false,
+                             rendering, key.value());
           break;
         }
 
@@ -3676,7 +3681,6 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
           mImageSize.height / appUnitsPerDevPixel,
           mFill,
           wr::ToDeviceIntSideOffsets(slice[0], slice[1], slice[2], slice[3]),
-          wr::ToLayoutSideOffsets(outset[0], outset[1], outset[2], outset[3]),
           wr::ToRepeatMode(mRepeatModeHorizontal),
           wr::ToRepeatMode(mRepeatModeVertical)};
 
@@ -3712,26 +3716,20 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
             (float)(mImageSize.height) / appUnitsPerDevPixel, mFill,
             wr::ToDeviceIntSideOffsets(slice[0], slice[1], slice[2], slice[3]),
             wr::ToLayoutPoint(startPoint), wr::ToLayoutPoint(endPoint), stops,
-            extendMode,
-            wr::ToLayoutSideOffsets(outset[0], outset[1], outset[2],
-                                    outset[3]));
+            extendMode);
       } else if (gradient.IsRadial()) {
         aBuilder.PushBorderRadialGradient(
             dest, clip, !aItem->BackfaceIsHidden(),
             wr::ToBorderWidths(widths[0], widths[1], widths[2], widths[3]),
             mFill, wr::ToLayoutPoint(lineStart),
-            wr::ToLayoutSize(gradientRadius), stops, extendMode,
-            wr::ToLayoutSideOffsets(outset[0], outset[1], outset[2],
-                                    outset[3]));
+            wr::ToLayoutSize(gradientRadius), stops, extendMode);
       } else {
         MOZ_ASSERT(gradient.IsConic());
         aBuilder.PushBorderConicGradient(
             dest, clip, !aItem->BackfaceIsHidden(),
             wr::ToBorderWidths(widths[0], widths[1], widths[2], widths[3]),
             mFill, wr::ToLayoutPoint(gradientCenter), gradientAngle, stops,
-            extendMode,
-            wr::ToLayoutSideOffsets(outset[0], outset[1], outset[2],
-                                    outset[3]));
+            extendMode);
       }
       break;
     }
@@ -3833,7 +3831,7 @@ nsCSSBorderImageRenderer::nsCSSBorderImageRenderer(
     if (value < 0) {
       value = 0;
     }
-    if (value > imgDimension) {
+    if (value > imgDimension && imgDimension > 0) {
       value = imgDimension;
     }
     mSlice.Side(s) = value;

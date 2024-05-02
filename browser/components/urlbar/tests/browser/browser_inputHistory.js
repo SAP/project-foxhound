@@ -7,8 +7,6 @@
 
 "use strict";
 
-let win;
-
 async function bumpScore(
   uri,
   searchString,
@@ -23,24 +21,24 @@ async function bumpScore(
   if (counts.picks) {
     for (let i = 0; i < counts.picks; ++i) {
       await UrlbarTestUtils.promiseAutocompleteResultPopup({
-        window: win,
+        window,
         value: searchString,
       });
       let promise = needToLoad
-        ? BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser)
+        ? BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser)
         : BrowserTestUtils.waitForDocLoadAndStopIt(
             uri,
-            win.gBrowser.selectedBrowser
+            gBrowser.selectedBrowser
           );
       // Look for the expected uri.
-      while (win.gURLBar.untrimmedValue != uri) {
-        EventUtils.synthesizeKey("KEY_ArrowDown", {}, win);
+      while (gURLBar.untrimmedValue != uri) {
+        EventUtils.synthesizeKey("KEY_ArrowDown", {});
       }
       if (useMouseClick) {
-        let element = UrlbarTestUtils.getSelectedRow(win);
-        EventUtils.synthesizeMouseAtCenter(element, {}, win);
+        let element = UrlbarTestUtils.getSelectedRow(window);
+        EventUtils.synthesizeMouseAtCenter(element, {});
       } else {
-        EventUtils.synthesizeKey("KEY_Enter", {}, win);
+        EventUtils.synthesizeKey("KEY_Enter", {});
       }
       await promise;
     }
@@ -49,14 +47,36 @@ async function bumpScore(
 }
 
 async function decayInputHistory() {
-  PlacesUtils.history.decayFrecency();
-  await PlacesTestUtils.promiseAsyncUpdates();
+  await Cc["@mozilla.org/places/frecency-recalculator;1"]
+    .getService(Ci.nsIObserver)
+    .wrappedJSObject.decay();
 }
 
-add_task(async function setup() {
-  // Use new window to avoid timeout failure for autocomplete popup happens on Linux TV.
-  win = await BrowserTestUtils.openNewBrowserWindow();
+async function isPageInInputHistory(url) {
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.executeCached(
+    `SELECT 1
+       FROM moz_inputhistory i
+       JOIN moz_places h ON h.id = i.place_id
+       WHERE h.url = :url`,
+    { url }
+  );
+  return rows?.length > 0;
+}
 
+async function isInputHistoryUrlInResults(url) {
+  for (let i = 0; i < UrlbarTestUtils.getResultCount(window); ++i) {
+    const result = await UrlbarTestUtils.getRowAt(window, i).result;
+    if (result.providerName == "InputHistory") {
+      if (result.payload.url == url) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       // We don't want autofill to influence this test.
@@ -64,9 +84,6 @@ add_task(async function setup() {
     ],
   });
   registerCleanupFunction(async () => {
-    await BrowserTestUtils.closeWindow(win);
-    // Avoid memory leaking, need to set null explicitly.
-    win = null;
     await PlacesUtils.history.clear();
     await PlacesUtils.bookmarks.eraseEverything();
   });
@@ -81,12 +98,12 @@ add_task(async function test_adaptive_with_search_terms() {
   await bumpScore(url1, "si", { visits: 3, picks: 3 });
   await bumpScore(url2, "site", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  let result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url1, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url2, "Check second result");
 
   info(
@@ -96,12 +113,12 @@ add_task(async function test_adaptive_with_search_terms() {
   await bumpScore(url1, "site", { visits: 3, picks: 3 });
   await bumpScore(url2, "si", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url2, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url1, "Check second result");
 
   info("Same visit count, different picks, both exact match");
@@ -109,12 +126,12 @@ add_task(async function test_adaptive_with_search_terms() {
   await bumpScore(url1, "si", { visits: 3, picks: 3 });
   await bumpScore(url2, "si", { visits: 3, picks: 1 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url1, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url2, "Check second result");
 
   info("Same visit count, different picks, both exact match, invert");
@@ -122,12 +139,12 @@ add_task(async function test_adaptive_with_search_terms() {
   await bumpScore(url1, "si", { visits: 3, picks: 1 });
   await bumpScore(url2, "si", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url2, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url1, "Check second result");
 
   info("Same visit count, different picks, both partial match");
@@ -135,12 +152,12 @@ add_task(async function test_adaptive_with_search_terms() {
   await bumpScore(url1, "site", { visits: 3, picks: 3 });
   await bumpScore(url2, "site", { visits: 3, picks: 1 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url1, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url2, "Check second result");
 
   info("Same visit count, different picks, both partial match, invert");
@@ -148,12 +165,12 @@ add_task(async function test_adaptive_with_search_terms() {
   await bumpScore(url1, "site", { visits: 3, picks: 1 });
   await bumpScore(url2, "site", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url2, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url1, "Check second result");
 });
 
@@ -167,12 +184,12 @@ add_task(async function test_adaptive_with_decay() {
   await decayInputHistory();
   await bumpScore(url2, "si", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  let result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url2, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url1, "Check second result");
 
   info("Same visit count, same picks, both exact match, decay second");
@@ -181,12 +198,12 @@ add_task(async function test_adaptive_with_decay() {
   await decayInputHistory();
   await bumpScore(url1, "si", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url1, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url2, "Check second result");
 });
 
@@ -200,12 +217,12 @@ add_task(async function test_adaptive_limited() {
   await decayInputHistory();
   await bumpScore(url2, "si", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  let result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url2, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url1, "Check second result");
 
   info("Same visit count, same picks, both exact match, decay second");
@@ -214,12 +231,12 @@ add_task(async function test_adaptive_limited() {
   await decayInputHistory();
   await bumpScore(url1, "si", { visits: 3, picks: 3 });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url1, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url2, "Check second result");
 });
 
@@ -249,17 +266,17 @@ add_task(async function test_adaptive_limited() {
   // After 1 heuristic and 3 input history results.
   let expectedBookmarkIndex = 4;
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "site",
   });
   let result = await UrlbarTestUtils.getDetailsOfResultAt(
-    win,
+    window,
     expectedBookmarkIndex
   );
   Assert.equal(result.url, url, "Check bookmarked result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, n - 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, n - 1);
   Assert.equal(
-    UrlbarTestUtils.getResultCount(win),
+    UrlbarTestUtils.getResultCount(window),
     n,
     "Check all the results are filled"
   );
@@ -297,10 +314,10 @@ add_task(async function test_adaptive_behaviors() {
     ],
   });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "site",
   });
-  let result = (await UrlbarTestUtils.waitForAutocompleteResultAt(win, 1))
+  let result = (await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1))
     .result;
   Assert.equal(result.payload.url, bookmarkURL, "Check bookmarked result");
   Assert.notEqual(
@@ -309,7 +326,7 @@ add_task(async function test_adaptive_behaviors() {
     "The bookmarked result is not from InputHistory."
   );
   Assert.equal(
-    UrlbarTestUtils.getResultCount(win),
+    UrlbarTestUtils.getResultCount(window),
     2,
     "Check there are no unexpected results"
   );
@@ -323,10 +340,11 @@ add_task(async function test_adaptive_behaviors() {
     url: historyUrl,
   });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "sit",
   });
-  result = (await UrlbarTestUtils.waitForAutocompleteResultAt(win, 1)).result;
+  result = (await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1))
+    .result;
   Assert.equal(result.payload.url, historyUrl, "Check bookmarked result");
   Assert.equal(
     result.providerName,
@@ -340,7 +358,7 @@ add_task(async function test_adaptive_behaviors() {
   );
 
   Assert.equal(
-    UrlbarTestUtils.getResultCount(win),
+    UrlbarTestUtils.getResultCount(window),
     2,
     "Check there are no unexpected results"
   );
@@ -358,11 +376,11 @@ add_task(async function test_adaptive_behaviors() {
   });
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "site",
   });
   Assert.equal(
-    UrlbarTestUtils.getResultCount(win),
+    UrlbarTestUtils.getResultCount(window),
     1,
     "There is no adaptive history result because it is not an open page."
   );
@@ -380,10 +398,11 @@ add_task(async function test_adaptive_behaviors() {
     ],
   });
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "sit",
   });
-  result = (await UrlbarTestUtils.waitForAutocompleteResultAt(win, 1)).result;
+  result = (await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1))
+    .result;
   Assert.equal(result.payload.url, historyUrl, "Check bookmarked result");
   Assert.equal(
     result.providerName,
@@ -397,7 +416,7 @@ add_task(async function test_adaptive_behaviors() {
   );
 
   Assert.equal(
-    UrlbarTestUtils.getResultCount(win),
+    UrlbarTestUtils.getResultCount(window),
     2,
     "Check there are no unexpected results"
   );
@@ -416,12 +435,12 @@ add_task(async function test_adaptive_mouse() {
   await bumpScore(url1, "site", { visits: 3, picks: 3 }, true);
   await bumpScore(url2, "site", { visits: 3, picks: 1 }, true);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  let result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url1, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url2, "Check second result");
 
   info("Same visit count, different picks, invert");
@@ -429,21 +448,21 @@ add_task(async function test_adaptive_mouse() {
   await bumpScore(url1, "site", { visits: 3, picks: 1 }, true);
   await bumpScore(url2, "site", { visits: 3, picks: 3 }, true);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url2, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url1, "Check second result");
 });
 
 add_task(async function test_adaptive_searchmode() {
   info("Check adaptive history is not shown in search mode.");
 
-  let suggestionsEngine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
-  );
+  let suggestionsEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine.xml",
+  });
 
   let url1 = "http://site.tld/1";
   let url2 = "http://site.tld/2";
@@ -453,21 +472,46 @@ add_task(async function test_adaptive_searchmode() {
   await bumpScore(url1, "site", { visits: 3, picks: 3 }, true);
   await bumpScore(url2, "site", { visits: 3, picks: 1 }, true);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
+    window,
     value: "si",
   });
-  let result = await UrlbarTestUtils.getDetailsOfResultAt(win, 1);
+  let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(result.url, url1, "Check first result");
-  result = await UrlbarTestUtils.getDetailsOfResultAt(win, 2);
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 2);
   Assert.equal(result.url, url2, "Check second result");
 
   info("Entering search mode.");
   // enterSearchMode checks internally that our site.tld URLs are not shown.
-  await UrlbarTestUtils.enterSearchMode(win, {
+  await UrlbarTestUtils.enterSearchMode(window, {
     engineName: suggestionsEngine.name,
   });
 
   await Services.search.removeEngine(suggestionsEngine);
+});
+
+add_task(async function test_ignore_case() {
+  const url1 = "http://example.com/yes";
+  const url2 = "http://example.com/no";
+  await PlacesUtils.history.clear();
+  await PlacesTestUtils.addVisits([url1, url2]);
+  await UrlbarUtils.addToInputHistory(url1, "SampLE");
+  await UrlbarUtils.addToInputHistory(url1, "SaMpLE");
+  await UrlbarUtils.addToInputHistory(url1, "SAMPLE");
+  await UrlbarUtils.addToInputHistory(url1, "sample");
+  await UrlbarUtils.addToInputHistory(url2, "sample");
+  await UrlbarUtils.addToInputHistory(url2, "sample");
+  await UrlbarUtils.addToInputHistory(url2, "sample");
+  await UrlbarUtils.addToInputHistory(url2, "sample");
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "sAM",
+  });
+  const result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
+  Assert.equal(
+    result.url,
+    url1,
+    "Seaching for input history is case-insensitive"
+  );
 });
 
 add_task(async function test_adaptive_history_in_privatewindow() {
@@ -525,4 +569,108 @@ add_task(async function test_adaptive_history_in_privatewindow() {
   Assert.ok(hasResult, "Popup has a result for the url.");
 
   await BrowserTestUtils.closeWindow(privateWindow);
+});
+
+add_task(async function test_adaptive_dismiss() {
+  info("Check dismissing an adaptive history result");
+
+  let url1 = "http://site.tld/1";
+  let url2 = "http://site.tld/2";
+
+  info("Sanity check: adaptive history is shown for a normal search.");
+  await PlacesUtils.history.clear();
+  await bumpScore(url1, "site", { visits: 3, picks: 3 }, true);
+  await bumpScore(url2, "site", { visits: 3, picks: 1 }, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "si",
+  });
+  let result = UrlbarTestUtils.getRowAt(window, 1).result;
+  Assert.equal(result.payload.url, url1, "Check result #1 URL");
+  Assert.equal(result.providerName, "InputHistory", "Check result #1 provider");
+  result = UrlbarTestUtils.getRowAt(window, 2).result;
+  Assert.equal(result.payload.url, url2, "Check result #2 URL");
+  Assert.equal(result.providerName, "InputHistory", "Check result #2 provider");
+  let waitForHistoryRemoval =
+    PlacesTestUtils.waitForNotification("page-removed");
+  await UrlbarTestUtils.openResultMenuAndClickItem(window, "dismiss", {
+    resultIndex: 1,
+  });
+  await waitForHistoryRemoval;
+  Assert.ok(
+    gURLBar.view.isOpen,
+    "The view should remain open after clicking the command"
+  );
+
+  Assert.ok(
+    !(await isInputHistoryUrlInResults(url1)),
+    "Check result has been removed"
+  );
+  Assert.strictEqual(
+    await PlacesUtils.history.fetch(url1),
+    null,
+    "The removed page should not be in browsing history"
+  );
+  Assert.ok(
+    !(await isPageInInputHistory(url1)),
+    "The removed page should not be in input history"
+  );
+
+  Assert.ok(
+    await isInputHistoryUrlInResults(url2),
+    "Check result has been retained"
+  );
+  Assert.notStrictEqual(
+    await PlacesUtils.history.fetch(url2),
+    null,
+    "The non removed page should still be in history"
+  );
+  Assert.ok(
+    await isPageInInputHistory(url2),
+    "The non removed page should still be in input history"
+  );
+});
+
+add_task(async function test_bookmarked_adaptive_dismiss() {
+  info("Check dismissing a bookmarked adaptive history result");
+
+  let url = "http://mysite.tld/";
+
+  info("Sanity check: adaptive history is shown for a normal search.");
+  await PlacesUtils.history.clear();
+  await bumpScore(url, "site", { visits: 3, picks: 3 }, true);
+  await PlacesUtils.bookmarks.insert({
+    url,
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+  });
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "si",
+  });
+  let result = UrlbarTestUtils.getRowAt(window, 1).result;
+  Assert.equal(result.payload.url, url, "Check result #1 URL");
+  Assert.equal(result.providerName, "InputHistory", "Check result #1 provider");
+
+  let waitForHistoryRemoval =
+    PlacesTestUtils.waitForNotification("page-removed");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
+  await waitForHistoryRemoval;
+  Assert.ok(
+    gURLBar.view.isOpen,
+    "The view should remain open after removing history"
+  );
+
+  Assert.ok(
+    !(await isInputHistoryUrlInResults(url)),
+    "Check result has been removed"
+  );
+  Assert.ok(
+    !(await PlacesUtils.history.hasVisits(url)),
+    "The removed page should not be in browsing history"
+  );
+  Assert.ok(
+    !(await isPageInInputHistory(url)),
+    "The removed page should be in input history"
+  );
 });

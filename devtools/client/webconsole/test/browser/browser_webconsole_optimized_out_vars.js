@@ -11,7 +11,7 @@ const TEST_URI =
   "test/browser/" +
   "test-closure-optimized-out.html";
 
-add_task(async function() {
+add_task(async function () {
   const breakpointLine = 18;
   const hud = await openNewTabAndConsole(TEST_URI);
   await openDebugger();
@@ -29,7 +29,7 @@ add_task(async function() {
 
   // This is the meat of the test: evaluate the optimized out variable.
   info("Waiting for optimized out message");
-  await executeAndWaitForMessage(hud, "upvar", "optimized out", ".result");
+  await executeAndWaitForResultMessage(hud, "upvar", "optimized out");
   ok(true, "Optimized out message logged");
 
   info("Open the debugger");
@@ -46,7 +46,7 @@ add_task(async function() {
 async function pauseDebugger(dbg) {
   info("Waiting for debugger to pause");
   const onPaused = waitForPaused(dbg);
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     const button = content.document.querySelector("button");
     button.click();
   });

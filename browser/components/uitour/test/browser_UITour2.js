@@ -77,7 +77,7 @@ var tests = [
           waitForPopupAtAnchor(
             popup,
             customizeTarget.node,
-            function() {
+            function () {
               isnot(
                 PanelUI.panel.state,
                 "closed",
@@ -98,7 +98,7 @@ var tests = [
                 waitForPopupAtAnchor(
                   popup,
                   target.node,
-                  function() {
+                  function () {
                     isnot(
                       PanelUI.panel.state,
                       "closed",
@@ -121,7 +121,7 @@ var tests = [
           );
         });
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   },
   taskify(async function test_bookmarks_menu() {
     CustomizableUI.addWidgetToArea(

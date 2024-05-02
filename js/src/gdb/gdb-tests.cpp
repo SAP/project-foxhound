@@ -23,7 +23,7 @@ static const JSClass global_class = {"global", JSCLASS_GLOBAL_FLAGS,
 
 static volatile int dontOptimizeMeAway = 0;
 
-void usePointer(const void* ptr) { dontOptimizeMeAway++; }
+void usePointer(const void* ptr) { dontOptimizeMeAway = 1; }
 
 template <typename T>
 static inline T* checkPtr(T* ptr) {
@@ -42,7 +42,7 @@ static void checkBool(bool success) {
 /* The warning reporter callback. */
 void reportWarning(JSContext* cx, JSErrorReport* report) {
   fprintf(stderr, "%s:%u: %s\n",
-          report->filename ? report->filename : "<no filename>",
+          report->filename ? report->filename.c_str() : "<no filename>",
           (unsigned int)report->lineno, report->message().c_str());
 }
 

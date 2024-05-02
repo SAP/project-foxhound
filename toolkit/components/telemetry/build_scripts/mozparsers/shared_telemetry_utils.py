@@ -5,11 +5,10 @@
 # This file contains utility functions shared by the scalars and the histogram generation
 # scripts.
 
-from __future__ import print_function
-
 import os
 import re
 import sys
+
 import yaml
 
 # This is a list of flags that determine which process a measurement is allowed
@@ -20,7 +19,9 @@ KNOWN_PROCESS_FLAGS = {
     "main": "Main",
     "content": "Content",
     "gpu": "Gpu",
+    "rdd": "Rdd",
     "socket": "Socket",
+    "utility": "Utility",
     # Historical Values
     "all_childs": "AllChildren",  # Supporting files from before bug 1363725
 }

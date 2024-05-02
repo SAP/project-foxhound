@@ -4,13 +4,27 @@
 "use strict";
 
 const RELATIVE_DIR = "toolkit/components/pdfjs/test/";
-const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
+const TESTROOT = "https://example.com/browser/" + RELATIVE_DIR;
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
 MockFilePicker.init(window);
 MockFilePicker.returnValue = MockFilePicker.returnOK;
 
 var tempDir;
+
+async function promiseDownloadFinished(list) {
+  return new Promise(resolve => {
+    list.addView({
+      onDownloadChanged(download) {
+        download.launchWhenSucceeded = false;
+        if (download.succeeded || download.error) {
+          list.removeView(this);
+          resolve(download);
+        }
+      },
+    });
+  });
+}
 
 function createPromiseForFilePicker() {
   return new Promise(resolve => {
@@ -27,32 +41,16 @@ function createPromiseForFilePicker() {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   tempDir = createTemporarySaveDirectory();
   MockFilePicker.displayDirectory = tempDir;
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     MockFilePicker.cleanup();
     await cleanupDownloads();
     tempDir.remove(true);
   });
 });
-
-async function closeDownloadsPanel() {
-  if (DownloadsPanel.panel.state !== "closed") {
-    let hiddenPromise = BrowserTestUtils.waitForEvent(
-      DownloadsPanel.panel,
-      "popuphidden"
-    );
-    DownloadsPanel.hidePanel();
-    await hiddenPromise;
-  }
-  is(
-    DownloadsPanel.panel.state,
-    "closed",
-    "Check that the download panel is closed"
-  );
-}
 
 /**
  * Check clicking the download button saves the file and doesn't open a new viewer
@@ -61,26 +59,22 @@ add_task(async function test_downloading_pdf_nonprivate_window() {
   const pdfUrl = TESTROOT + "file_pdfjs_test.pdf";
 
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.download.improvements_to_download_panel", true]],
+    set: [["browser.download.always_ask_before_handling_new_types", false]],
   });
 
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
-    async function(browser) {
+    async function (browser) {
       await waitForPdfJS(browser, pdfUrl);
 
       const tabCount = gBrowser.tabs.length;
       info(`${tabCount} tabs are open at the start of the test`);
 
       let downloadList = await Downloads.getList(Downloads.PUBLIC);
-      const initialDownloadCount = (await downloadList.getAll()).length;
 
       let filePickerShown = createPromiseForFilePicker();
 
-      let downloadsPanelPromise = BrowserTestUtils.waitForEvent(
-        DownloadsPanel.panel,
-        "popupshown"
-      );
+      let downloadFinishedPromise = promiseDownloadFinished(downloadList);
 
       info("Clicking on the download button...");
       await SpecialPowers.spawn(browser, [], () => {
@@ -89,29 +83,43 @@ add_task(async function test_downloading_pdf_nonprivate_window() {
       info("Waiting for a filename to be picked from the file picker");
       await filePickerShown;
 
-      // check that resulted in a download being added to the list
-      // and the dl panel opened
-      info("Waiting for download panel to open when the download is complete");
-      await downloadsPanelPromise;
-      is(
-        DownloadsPanel.panel.state,
-        "open",
-        "Check the download panel state is 'open'"
+      await downloadFinishedPromise;
+      ok(true, "A download was added when we clicked download");
+
+      // See bug 1739348 - don't show panel for downloads that opened dialogs
+      ok(
+        !DownloadsPanel.isPanelShowing,
+        "The download panel did not open, since the file picker was shown already"
       );
-      downloadList = await Downloads.getList(Downloads.PUBLIC);
-      let currentDownloadCount = (await downloadList.getAll()).length;
-      is(
-        currentDownloadCount,
-        initialDownloadCount + 1,
-        "A download was added when we clicked download"
-      );
+
+      const allDownloads = await downloadList.getAll();
+      const dl = allDownloads.find(dl => dl.source.originalUrl === pdfUrl);
+      ok(!!dl, "The pdf download has the correct url in source.originalUrl");
+
+      SpecialPowers.clipboardCopyString("");
+      DownloadsCommon.copyDownloadLink(dl);
+      const copiedUrl = SpecialPowers.getClipboardData("text/plain");
+      is(copiedUrl, pdfUrl, "The copied url must be the original one");
 
       is(
         gBrowser.tabs.length,
         tabCount,
         "No new tab was opened to view the downloaded PDF"
       );
-      await closeDownloadsPanel();
+
+      SpecialPowers.clipboardCopyString("");
+      const downloadsLoaded = BrowserTestUtils.waitForEvent(
+        browser,
+        "InitialDownloadsLoaded",
+        true
+      );
+      BrowserTestUtils.startLoadingURIString(browser, "about:downloads");
+      await downloadsLoaded;
+
+      info("Wait for the clipboard to contain the url of the pdf");
+      await SimpleTest.promiseClipboardChange(pdfUrl, () => {
+        goDoCommand("cmd_copy");
+      });
     }
   );
 });

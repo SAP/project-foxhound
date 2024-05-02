@@ -18,8 +18,7 @@
 #include "nsDOMString.h"
 #include "nsAtom.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * A class for representing string return values.  This can be either passed to
@@ -117,7 +116,7 @@ class MOZ_STACK_CLASS DOMString {
       // Just hand that ref over.
       mState = State::UnownedStringBuffer;
       // Also store the taint
-      mTaint = mStringBuffer->Taint().safeCopy().subtaint(0, mLength);
+      mTaint = mStringBuffer->Taint().safeSubTaint(0, mLength);
     } else {
       // Caller should end up holding a ref.
       mStringBuffer->AddRef();
@@ -170,7 +169,7 @@ class MOZ_STACK_CLASS DOMString {
       SetStringBufferInternal(aStringBuffer, aLength);
       mState = State::UnownedStringBuffer;
       // Create a copy of the taint information
-      mTaint = aStringBuffer->Taint().safeCopy().subtaint(0, aLength);
+      mTaint = aStringBuffer->Taint().safeSubTaint(0, aLength);
     }
     // else nothing to do
   }
@@ -395,7 +394,6 @@ class MOZ_STACK_CLASS DOMString {
 
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_DOMString_h

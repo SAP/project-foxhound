@@ -7,7 +7,7 @@
 const TEST_DOCUMENT = "target_configuration_test_doc.sjs";
 const TEST_URI = URL_ROOT_COM_SSL + TEST_DOCUMENT;
 
-add_task(async function() {
+add_task(async function () {
   const tab = await addTab(TEST_URI);
 
   info("Create commands for the tab");
@@ -38,12 +38,7 @@ add_task(async function() {
   );
 
   info("Reload the page");
-  let onPageLoaded = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    true
-  );
-  gBrowser.reloadTab(tab);
-  await onPageLoaded;
+  await BrowserTestUtils.reloadTab(tab, /* includeSubFrames */ true);
 
   is(
     await getTopLevelDocumentDevicePixelRatioAtStartup(),
@@ -71,8 +66,11 @@ add_task(async function() {
     "Check that navigating to a page that forces the creation of a new browsing context keep the simulation enabled"
   );
 
-  onPageLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, true);
-  BrowserTestUtils.loadURI(
+  const onPageLoaded = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    /* includeSubFrames */ true
+  );
+  BrowserTestUtils.startLoadingURIString(
     gBrowser.selectedBrowser,
     URL_ROOT_ORG_SSL + TEST_DOCUMENT + "?crossOriginIsolated=true"
   );
@@ -150,7 +148,7 @@ function getDevicePixelRatio(browserOrBrowsingContext) {
   return SpecialPowers.spawn(
     browserOrBrowsingContext,
     [],
-    () => content.devicePixelRatio
+    () => content.browsingContext.top.overrideDPPX || content.devicePixelRatio
   );
 }
 

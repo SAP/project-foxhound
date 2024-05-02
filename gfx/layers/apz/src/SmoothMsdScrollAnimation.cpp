@@ -13,12 +13,14 @@ SmoothMsdScrollAnimation::SmoothMsdScrollAnimation(
     AsyncPanZoomController& aApzc, const CSSPoint& aInitialPosition,
     const CSSPoint& aInitialVelocity, const CSSPoint& aDestination,
     double aSpringConstant, double aDampingRatio,
+    ScrollSnapTargetIds&& aSnapTargetIds,
     ScrollTriggeredByScript aTriggeredByScript)
     : mApzc(aApzc),
       mXAxisModel(aInitialPosition.x, aDestination.x, aInitialVelocity.x,
                   aSpringConstant, aDampingRatio),
       mYAxisModel(aInitialPosition.y, aDestination.y, aInitialVelocity.y,
                   aSpringConstant, aDampingRatio),
+      mSnapTargetIds(std::move(aSnapTargetIds)),
       mTriggeredByScript(aTriggeredByScript) {}
 
 bool SmoothMsdScrollAnimation::DoSample(FrameMetrics& aFrameMetrics,
@@ -79,16 +81,16 @@ bool SmoothMsdScrollAnimation::DoSample(FrameMetrics& aFrameMetrics,
   // layout.css.scroll-behavior.damping-ratio preference is set to less than 1
   // (underdamped) or if a smooth scroll inherits velocity from a fling
   // gesture.
-  if (!IsZero(overscroll)) {
+  if (!IsZero(overscroll / zoom)) {
     // Hand off a fling with the remaining momentum to the next APZC in the
     // overscroll handoff chain.
 
     // We may have reached the end of the scroll range along one axis but
     // not the other. In such a case we only want to hand off the relevant
     // component of the fling.
-    if (FuzzyEqualsAdditive(overscroll.x, 0.0f, COORDINATE_EPSILON)) {
+    if (mApzc.IsZero(overscroll.x)) {
       velocity.x = 0;
-    } else if (FuzzyEqualsAdditive(overscroll.y, 0.0f, COORDINATE_EPSILON)) {
+    } else if (mApzc.IsZero(overscroll.y)) {
       velocity.y = 0;
     }
 
@@ -116,10 +118,11 @@ bool SmoothMsdScrollAnimation::DoSample(FrameMetrics& aFrameMetrics,
 }
 
 void SmoothMsdScrollAnimation::SetDestination(
-    const CSSPoint& aNewDestination,
+    const CSSPoint& aNewDestination, ScrollSnapTargetIds&& aSnapTargetIds,
     ScrollTriggeredByScript aTriggeredByScript) {
   mXAxisModel.SetDestination(aNewDestination.x);
   mYAxisModel.SetDestination(aNewDestination.y);
+  mSnapTargetIds = std::move(aSnapTargetIds);
   mTriggeredByScript = aTriggeredByScript;
 }
 

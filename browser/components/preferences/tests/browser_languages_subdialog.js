@@ -1,4 +1,4 @@
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("general", { leaveOpen: true });
   const contentDocument = gBrowser.contentDocument;
   let dialogOverlay = content.gSubDialog._preloadDialog._overlay;
@@ -9,15 +9,14 @@ add_task(async function() {
     );
     contentDocument.getElementById("chooseLanguage").click();
     const win = await promiseSubDialogLoaded;
-    win.Preferences.forceEnableInstantApply();
     dialogOverlay = content.gSubDialog._topDialog._overlay;
     ok(!BrowserTestUtils.is_hidden(dialogOverlay), "The dialog is visible.");
     return win;
   }
 
-  function closeLanguagesSubdialog() {
-    const closeBtn = dialogOverlay.querySelector(".dialogClose");
-    closeBtn.doCommand();
+  function acceptLanguagesSubdialog(win) {
+    const button = win.document.querySelector("dialog").getButton("accept");
+    button.doCommand();
   }
 
   ok(BrowserTestUtils.is_hidden(dialogOverlay), "The dialog is invisible.");
@@ -26,8 +25,36 @@ add_task(async function() {
     win.document.getElementById("spoofEnglish").hidden,
     "The 'Request English' checkbox is hidden."
   );
-  closeLanguagesSubdialog();
+  acceptLanguagesSubdialog(win);
   ok(BrowserTestUtils.is_hidden(dialogOverlay), "The dialog is invisible.");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["intl.accept_languages", "en-US,en-XX,foo"]],
+  });
+  win = await languagesSubdialogOpened();
+  let activeLanguages = win.document.getElementById("activeLanguages").children;
+  ok(
+    activeLanguages[0].id == "en-us",
+    "The ID for 'en-US' locale code is correctly set."
+  );
+  ok(
+    activeLanguages[0].firstChild.value == "English (United States) [en-us]",
+    "The name for known 'en-US' locale code is correctly resolved."
+  );
+  ok(
+    activeLanguages[1].id == "en-xx",
+    "The ID for 'en-XX' locale code is correctly set."
+  );
+  ok(
+    activeLanguages[1].firstChild.value == "English [en-xx]",
+    "The name for unknown 'en-XX' locale code is resolved using 'en'."
+  );
+  ok(
+    activeLanguages[2].firstChild.value == " [foo]",
+    "The name for unknown 'foo' locale code is empty."
+  );
+  acceptLanguagesSubdialog(win);
+  await SpecialPowers.popPrefEnv();
 
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -62,7 +89,7 @@ add_task(async function() {
     2,
     "The privacy.spoof_english pref is set to 2."
   );
-  closeLanguagesSubdialog();
+  acceptLanguagesSubdialog(win);
 
   win = await languagesSubdialogOpened();
   ok(
@@ -90,7 +117,7 @@ add_task(async function() {
     1,
     "The privacy.spoof_english pref is set to 1."
   );
-  closeLanguagesSubdialog();
+  acceptLanguagesSubdialog(win);
 
   win = await languagesSubdialogOpened();
   ok(
@@ -106,7 +133,7 @@ add_task(async function() {
     1,
     "The privacy.spoof_english pref is set to 1."
   );
-  closeLanguagesSubdialog();
+  acceptLanguagesSubdialog(win);
 
   gBrowser.removeCurrentTab();
 });

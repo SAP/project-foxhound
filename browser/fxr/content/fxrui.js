@@ -31,15 +31,14 @@ let forwardButton = null;
 let refreshButton = null;
 let stopButton = null;
 
-let { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // Note: FxR UI uses a fork of browser-fullScreenAndPointerLock.js which removes
@@ -50,7 +49,7 @@ XPCOMUtils.defineLazyScriptGetter(
   "FullScreen",
   "chrome://fxr/content/fxr-fullScreen.js"
 );
-XPCOMUtils.defineLazyGetter(this, "gSystemPrincipal", () =>
+ChromeUtils.defineLazyGetter(this, "gSystemPrincipal", () =>
   Services.scriptSecurityManager.getSystemPrincipal()
 );
 
@@ -82,7 +81,7 @@ function setupBrowser() {
     browser.classList.add("browser_instance");
     document.getElementById("eBrowserContainer").appendChild(browser);
 
-    browser.loadUrlWithSystemPrincipal = function(url) {
+    browser.loadUrlWithSystemPrincipal = function (url) {
       this.loadURI(url, { triggeringPrincipal: gSystemPrincipal });
     };
 
@@ -192,7 +191,7 @@ function setupNavButtons() {
 
 function setupUrlBar() {
   // Navigate to new value when the user presses "Enter"
-  urlInput.addEventListener("keypress", async function(e) {
+  urlInput.addEventListener("keypress", async function (e) {
     if (e.key == "Enter") {
       // Use the URL Fixup Service in case the user wants to search instead
       // of directly navigating to a location.
@@ -216,7 +215,7 @@ function setupUrlBar() {
   });
 
   // Upon focus, highlight the whole URL
-  urlInput.addEventListener("focus", function() {
+  urlInput.addEventListener("focus", function () {
     urlInput.select();
   });
 }

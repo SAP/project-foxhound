@@ -4,8 +4,6 @@ DOM Workers & Storage C++ Code Style
 
 This page describes the code style for the components maintained by the DOM Workers & Storage team. They live in-tree under the 'dom/docs/indexedDB' directory.
 
-This document is currently owned by Simon Giesecke <sgiesecke@mozilla.com>.
-
 .. contents::
    :depth: 4
 
@@ -61,8 +59,8 @@ Deviations from the Mozilla C++ Coding Style
 +--------------------------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------+-----------------+-------------------------------------------------------------------------------------+
 |                                             Mozilla style                                              |                                    Prevalent WAS style                                     | Deviation scope |                                      Evolution                                      |
 +========================================================================================================+============================================================================================+=================+=====================================================================================+
-| We prefer using "static", instead of anonymous C++ namespaces.                                        | Place all symbols that should have internal linkage in a single anonymous                  | All files       | Unclear. The recommendation in the Mozilla code style says this might change in the |
-|                                                                                                        | namespace block at the top of an implementation file, rather than declarating them static. |                 | future depending on debugger support, so this deviation might become obsolete.      |
+| We prefer using "static", instead of anonymous C++ namespaces.                                         | Place all symbols that should have internal linkage in a single anonymous                  | All files       | Unclear. The recommendation in the Mozilla code style says this might change in the |
+|                                                                                                        | namespace block at the top of an implementation file, rather than declaring them static.   |                 | future depending on debugger support, so this deviation might become obsolete.      |
 |                                                                                                        |                                                                                            |                 |                                                                                     |
 +--------------------------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------+-----------------+-------------------------------------------------------------------------------------+
 | `All parameters passed by lvalue reference must be labeled const. [...] Input parameters may be const  | Non-const reference parameters may be used.                                                | All files       | Unclear. Maybe at least restrict the use of non-const reference parameters to       |

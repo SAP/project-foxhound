@@ -6,12 +6,16 @@
 
 #include "LauncherRegistryInfo.h"
 
-#include "mozilla/UniquePtr.h"
+#include "commonupdatedir.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/NativeNt.h"
+#include "mozilla/UniquePtr.h"
 
+#include <cwctype>
+#include <shlobj.h>
 #include <string>
+#include <type_traits>
 
 #define EXPAND_STRING_MACRO2(t) t
 #define EXPAND_STRING_MACRO(t) EXPAND_STRING_MACRO2(t)
@@ -44,7 +48,7 @@ static mozilla::LauncherResult<DWORD> GetCurrentImageTimestamp() {
 template <typename T>
 static mozilla::LauncherResult<mozilla::Maybe<T>> ReadRegistryValueData(
     const nsAutoRegKey& key, const std::wstring& name, DWORD expectedType) {
-  static_assert(mozilla::IsPod<T>::value,
+  static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>,
                 "Registry value type must be primitive.");
   T data;
   DWORD dataLen = sizeof(data);
@@ -66,10 +70,49 @@ static mozilla::LauncherResult<mozilla::Maybe<T>> ReadRegistryValueData(
   return mozilla::Some(data);
 }
 
+static mozilla::LauncherResult<mozilla::UniquePtr<wchar_t[]>>
+ReadRegistryValueString(const nsAutoRegKey& aKey, const std::wstring& aName) {
+  mozilla::UniquePtr<wchar_t[]> buf;
+  DWORD dataLen;
+  LSTATUS status = ::RegGetValueW(aKey.get(), nullptr, aName.c_str(),
+                                  RRF_RT_REG_SZ, nullptr, nullptr, &dataLen);
+  if (status == ERROR_FILE_NOT_FOUND) {
+    return buf;
+  }
+
+  if (status != ERROR_SUCCESS) {
+    return LAUNCHER_ERROR_FROM_WIN32(status);
+  }
+
+  buf = mozilla::MakeUnique<wchar_t[]>(dataLen / sizeof(wchar_t));
+
+  status = ::RegGetValueW(aKey.get(), nullptr, aName.c_str(), RRF_RT_REG_SZ,
+                          nullptr, buf.get(), &dataLen);
+  if (status != ERROR_SUCCESS) {
+    return LAUNCHER_ERROR_FROM_WIN32(status);
+  }
+
+  return buf;
+}
+
+static mozilla::LauncherVoidResult WriteRegistryValueString(
+    const nsAutoRegKey& aKey, const std::wstring& aName,
+    const std::wstring& aValue) {
+  DWORD dataBytes = (aValue.size() + 1) * sizeof(wchar_t);
+  LSTATUS status = ::RegSetValueExW(
+      aKey.get(), aName.c_str(), /*Reserved*/ 0, REG_SZ,
+      reinterpret_cast<const BYTE*>(aValue.c_str()), dataBytes);
+  if (status != ERROR_SUCCESS) {
+    return LAUNCHER_ERROR_FROM_WIN32(status);
+  }
+
+  return mozilla::Ok();
+}
+
 template <typename T>
 static mozilla::LauncherVoidResult WriteRegistryValueData(
     const nsAutoRegKey& key, const std::wstring& name, DWORD type, T data) {
-  static_assert(mozilla::IsPod<T>::value,
+  static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>,
                 "Registry value type must be primitive.");
   LSTATUS status =
       ::RegSetValueExW(key.get(), name.c_str(), 0, type,
@@ -104,6 +147,7 @@ const wchar_t LauncherRegistryInfo::kLauncherSuffix[] = L"|Launcher";
 const wchar_t LauncherRegistryInfo::kBrowserSuffix[] = L"|Browser";
 const wchar_t LauncherRegistryInfo::kImageTimestampSuffix[] = L"|Image";
 const wchar_t LauncherRegistryInfo::kTelemetrySuffix[] = L"|Telemetry";
+const wchar_t LauncherRegistryInfo::kBlocklistSuffix[] = L"|Blocklist";
 
 bool LauncherRegistryInfo::sAllowCommit = true;
 
@@ -461,6 +505,16 @@ const std::wstring& LauncherRegistryInfo::ResolveTelemetryValueName() {
   return mTelemetryValueName;
 }
 
+const std::wstring& LauncherRegistryInfo::ResolveBlocklistValueName() {
+  if (mBlocklistValueName.empty()) {
+    mBlocklistValueName.assign(mBinPath);
+    mBlocklistValueName.append(kBlocklistSuffix,
+                               ArrayLength(kBlocklistSuffix) - 1);
+  }
+
+  return mBlocklistValueName;
+}
+
 LauncherVoidResult LauncherRegistryInfo::WriteLauncherStartTimestamp(
     uint64_t aValue) {
   return WriteRegistryValueData(mRegKey, ResolveLauncherValueName(), REG_QWORD,
@@ -528,6 +582,71 @@ LauncherResult<Maybe<uint64_t>>
 LauncherRegistryInfo::GetBrowserStartTimestamp() {
   return ReadRegistryValueData<uint64_t>(mRegKey, ResolveBrowserValueName(),
                                          REG_QWORD);
+}
+
+LauncherResult<std::wstring>
+LauncherRegistryInfo::BuildDefaultBlocklistFilename() {
+  // These flags are chosen to avoid I/O, see bug 1363398.
+  const DWORD flags =
+      KF_FLAG_SIMPLE_IDLIST | KF_FLAG_DONT_VERIFY | KF_FLAG_NO_ALIAS;
+  PWSTR rawPath = nullptr;
+  HRESULT hr =
+      ::SHGetKnownFolderPath(FOLDERID_RoamingAppData, flags, nullptr, &rawPath);
+  if (FAILED(hr)) {
+    ::CoTaskMemFree(rawPath);
+    return LAUNCHER_ERROR_FROM_HRESULT(hr);
+  }
+
+  UniquePtr<wchar_t, CoTaskMemFreeDeleter> appDataPath(rawPath);
+  std::wstring defaultBlocklistPath(appDataPath.get());
+
+  UniquePtr<NS_tchar[]> hash;
+  std::wstring binPathLower;
+  binPathLower.reserve(mBinPath.size());
+  std::transform(mBinPath.begin(), mBinPath.end(),
+                 std::back_inserter(binPathLower), std::towlower);
+  if (!::GetInstallHash(reinterpret_cast<const char16_t*>(binPathLower.c_str()),
+                        hash)) {
+    return LAUNCHER_ERROR_FROM_WIN32(ERROR_INVALID_DATA);
+  }
+
+  defaultBlocklistPath.append(
+      L"\\" MOZ_APP_VENDOR L"\\" MOZ_APP_BASENAME L"\\blocklist-");
+  defaultBlocklistPath.append(hash.get());
+
+  return defaultBlocklistPath;
+}
+
+LauncherResult<std::wstring> LauncherRegistryInfo::GetBlocklistFileName() {
+  LauncherResult<Disposition> disposition = Open();
+  if (disposition.isErr()) {
+    return disposition.propagateErr();
+  }
+
+  LauncherResult<UniquePtr<wchar_t[]>> readResult =
+      ReadRegistryValueString(mRegKey, ResolveBlocklistValueName());
+  if (readResult.isErr()) {
+    return readResult.propagateErr();
+  }
+
+  if (readResult.inspect()) {
+    UniquePtr<wchar_t[]> buf = readResult.unwrap();
+    return std::wstring(buf.get());
+  }
+
+  LauncherResult<std::wstring> defaultBlocklistPath =
+      BuildDefaultBlocklistFilename();
+  if (defaultBlocklistPath.isErr()) {
+    return defaultBlocklistPath.propagateErr();
+  }
+
+  LauncherVoidResult writeResult = WriteRegistryValueString(
+      mRegKey, ResolveBlocklistValueName(), defaultBlocklistPath.inspect());
+  if (writeResult.isErr()) {
+    return writeResult.propagateErr();
+  }
+
+  return defaultBlocklistPath;
 }
 
 }  // namespace mozilla

@@ -35,6 +35,9 @@
 #define CREATE_IDX_MOZ_PLACES_ORIGIN_ID \
   CREATE_PLACES_IDX("originidindex", "moz_places", "origin_id", "")
 
+#define CREATE_IDX_MOZ_PLACES_ALT_FRECENCY \
+  CREATE_PLACES_IDX("altfrecencyindex", "moz_places", "alt_frecency", "")
+
 /**
  * moz_historyvisits
  */
@@ -111,15 +114,5 @@
 #define CREATE_IDX_MOZ_PLACES_METADATA_REFERRER             \
   CREATE_PLACES_IDX("referrerindex", "moz_places_metadata", \
                     "referrer_place_id", "")
-
-// moz_places_metadata_snapshots
-#define CREATE_IDX_MOZ_PLACES_METADATA_SNAPSHOTS_PINNNED            \
-  CREATE_PLACES_IDX("pinnedindex", "moz_places_metadata_snapshots", \
-                    "user_persisted, last_interaction_at", "")
-
-// moz_places_metadata_snapshots_extra
-#define CREATE_IDX_MOZ_PLACES_METADATA_SNAPSHOTS_EXTRA_TYPE             \
-  CREATE_PLACES_IDX("typeindex", "moz_places_metadata_snapshots_extra", \
-                    "type", "")
 
 #endif  // nsPlacesIndexes_h__

@@ -4,13 +4,11 @@
 
 "use strict";
 
-const Services = require("Services");
-
 const {
   UPDATE_GRID_COLOR,
   UPDATE_GRID_HIGHLIGHTED,
   UPDATE_GRIDS,
-} = require("devtools/client/inspector/grids/actions/index");
+} = require("resource://devtools/client/inspector/grids/actions/index.js");
 
 const INITIAL_GRIDS = [];
 
@@ -80,7 +78,7 @@ const reducers = {
   },
 };
 
-module.exports = function(grids = INITIAL_GRIDS, action) {
+module.exports = function (grids = INITIAL_GRIDS, action) {
   const reducer = reducers[action.type];
   if (!reducer) {
     return grids;

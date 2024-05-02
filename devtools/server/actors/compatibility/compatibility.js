@@ -4,16 +4,18 @@
 
 "use strict";
 
-var protocol = require("devtools/shared/protocol");
-const { compatibilitySpec } = require("devtools/shared/specs/compatibility");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  compatibilitySpec,
+} = require("resource://devtools/shared/specs/compatibility.js");
 
 loader.lazyGetter(this, "mdnCompatibility", () => {
-  const MDNCompatibility = require("devtools/server/actors/compatibility/lib/MDNCompatibility");
-  const cssPropertiesCompatData = require("devtools/shared/compatibility/dataset/css-properties.json");
+  const MDNCompatibility = require("resource://devtools/server/actors/compatibility/lib/MDNCompatibility.js");
+  const cssPropertiesCompatData = require("resource://devtools/shared/compatibility/dataset/css-properties.json");
   return new MDNCompatibility(cssPropertiesCompatData);
 });
 
-const CompatibilityActor = protocol.ActorClassWithSpec(compatibilitySpec, {
+class CompatibilityActor extends Actor {
   /**
    * Create a CompatibilityActor.
    * CompatibilityActor is responsible for providing the compatibility information
@@ -30,50 +32,41 @@ const CompatibilityActor = protocol.ActorClassWithSpec(compatibilitySpec, {
    *
    * @constructor
    */
-  initialize: function(inspector) {
-    protocol.Actor.prototype.initialize.call(this, inspector.conn);
+  constructor(inspector) {
+    super(inspector.conn, compatibilitySpec);
     this.inspector = inspector;
-  },
+  }
 
-  destroy: function() {
-    protocol.Actor.prototype.destroy.call(this);
+  destroy() {
+    super.destroy();
     this.inspector = null;
-  },
+  }
 
   form() {
     return {
       actor: this.actorID,
     };
-  },
+  }
 
   getTraits() {
     return {
       traits: {},
     };
-  },
+  }
 
   /**
-   * Responsible for computing the compatibility issues for a given CSS declaration block
-   * @param Array
-   *  Array of CSS declaration object of the form:
-   *    {
-   *      // Declaration name
-   *      name: <string>,
-   *      // Declaration value
-   *      value: <string>,
-   *    }
-   * @param array targetBrowsers
-   *  Array of target browsers to be used to check CSS compatibility against.
-   *  It is an Array of the following form
-   *     {
-   *       // Browser id as specified in `devtools/shared/compatibility/datasets/browser.json`
-   *       id: <string>,
-   *       name: <string>,
-   *       version: <string>,
-   *       // Browser status - esr, current, beta, nightly
-   *       status: <string>,
-   *     }
-   * @returns An Array of JSON objects with compatibility information in following form:
+   * Responsible for computing the compatibility issues for a list of CSS declaration blocks
+   *
+   * @param {Array<Array<Object>>} domRulesDeclarations: An array of arrays of CSS declaration object
+   * @param {string} domRulesDeclarations[][].name: Declaration name
+   * @param {string} domRulesDeclarations[][].value: Declaration value
+   * @param {Array<Object>} targetBrowsers: Array of target browsers () to be used to check CSS compatibility against
+   * @param {string} targetBrowsers[].id: Browser id as specified in `devtools/shared/compatibility/datasets/browser.json`
+   * @param {string} targetBrowsers[].name
+   * @param {string} targetBrowsers[].version
+   * @param {string} targetBrowsers[].status: Browser status - esr, current, beta, nightly
+   * @returns {Array<Array<Object>>} An Array of arrays of JSON objects with compatibility
+   *                                 information in following form:
    *    {
    *      // Type of compatibility issue
    *      type: <string>,
@@ -89,12 +82,14 @@ const CompatibilityActor = protocol.ActorClassWithSpec(compatibilitySpec, {
    *      unsupportedBrowsers: <Array>,
    *    }
    */
-  getCSSDeclarationBlockIssues: function(declarationBlock, targetBrowsers) {
-    return mdnCompatibility.getCSSDeclarationBlockIssues(
-      declarationBlock,
-      targetBrowsers
+  getCSSDeclarationBlockIssues(domRulesDeclarations, targetBrowsers) {
+    return domRulesDeclarations.map(declarationBlock =>
+      mdnCompatibility.getCSSDeclarationBlockIssues(
+        declarationBlock,
+        targetBrowsers
+      )
     );
-  },
+  }
 
   /**
    * Responsible for computing the compatibility issues in the
@@ -161,9 +156,7 @@ const CompatibilityActor = protocol.ActorClassWithSpec(compatibilitySpec, {
           ? issues
           : [...issues, issue];
       }, []);
-  },
-});
+  }
+}
 
-module.exports = {
-  CompatibilityActor,
-};
+exports.CompatibilityActor = CompatibilityActor;

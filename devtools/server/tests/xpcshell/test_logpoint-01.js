@@ -7,7 +7,7 @@
  * Check that logpoints generate console messages.
  */
 
-const Resources = require("devtools/server/actors/resources/index");
+const Resources = require("resource://devtools/server/actors/resources/index.js");
 
 add_task(
   threadFrontTest(async ({ threadActor, threadFront, debuggee, client }) => {
@@ -60,6 +60,7 @@ add_task(
     if (lastMessage) {
       Assert.equal(lastMessage.level, "logPoint");
       Assert.equal(lastMessage.arguments[0], "three");
+      Assert.ok(/\d+\.\d+/.test(lastMessage.timeStamp));
     } else {
       Assert.equal(lastExpression.text, "console.log(...[a])");
       Assert.equal(lastExpression.lineNumber, 3);
@@ -71,7 +72,7 @@ function evalCode(debuggee) {
   /* eslint-disable */
   Cu.evalInSandbox(
     "debugger;\n" + // 1
-    "var a = 'three';\n" + // 2
+      "var a = 'three';\n" + // 2
       "var b = 2;\n", // 3
     debuggee,
     "1.8",

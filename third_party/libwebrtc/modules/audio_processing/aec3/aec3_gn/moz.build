@@ -10,18 +10,21 @@ COMPILE_FLAGS["OS_INCLUDES"] = []
 AllowCompilerWarnings()
 
 DEFINES["ABSL_ALLOCATOR_NOTHROW"] = "1"
+DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
-DEFINES["WEBRTC_APM_DEBUG_DUMP"] = "0"
+DEFINES["WEBRTC_APM_DEBUG_DUMP"] = "1"
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
 DEFINES["WEBRTC_MOZILLA_BUILD"] = True
 DEFINES["WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS"] = "0"
+DEFINES["WEBRTC_STRICT_FIELD_TRIALS"] = "0"
 
 FINAL_LIBRARY = "webrtc"
 
 
 LOCAL_INCLUDES += [
     "!/ipc/ipdl/_ipdlheaders",
+    "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
     "/third_party/libwebrtc/",
     "/third_party/libwebrtc/third_party/abseil-cpp/",
@@ -44,6 +47,7 @@ UNIFIED_SOURCES += [
     "/third_party/libwebrtc/modules/audio_processing/aec3/clockdrift_detector.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/coarse_filter_update_gain.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/comfort_noise_generator.cc",
+    "/third_party/libwebrtc/modules/audio_processing/aec3/config_selector.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/decimator.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/dominant_nearend_detector.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/downsampled_render_buffer.cc",
@@ -62,6 +66,7 @@ UNIFIED_SOURCES += [
     "/third_party/libwebrtc/modules/audio_processing/aec3/matched_filter.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/matched_filter_lag_aggregator.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/moving_average.cc",
+    "/third_party/libwebrtc/modules/audio_processing/aec3/multi_channel_content_detector.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/refined_filter_update_gain.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/render_buffer.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/render_delay_buffer.cc",
@@ -82,7 +87,8 @@ UNIFIED_SOURCES += [
     "/third_party/libwebrtc/modules/audio_processing/aec3/subtractor_output.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/subtractor_output_analyzer.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/suppression_filter.cc",
-    "/third_party/libwebrtc/modules/audio_processing/aec3/suppression_gain.cc"
+    "/third_party/libwebrtc/modules/audio_processing/aec3/suppression_gain.cc",
+    "/third_party/libwebrtc/modules/audio_processing/aec3/transparent_mode.cc"
 ]
 
 if not CONFIG["MOZ_DEBUG"]:
@@ -98,7 +104,7 @@ if CONFIG["MOZ_DEBUG"] == "1":
 if CONFIG["OS_TARGET"] == "Android":
 
     DEFINES["ANDROID"] = True
-    DEFINES["ANDROID_NDK_VERSION_ROLL"] = "r20_1"
+    DEFINES["ANDROID_NDK_VERSION_ROLL"] = "r22_1"
     DEFINES["HAVE_SYS_UIO_H"] = True
     DEFINES["WEBRTC_ANDROID"] = True
     DEFINES["WEBRTC_ANDROID_OPENSLES"] = True
@@ -128,11 +134,9 @@ if CONFIG["OS_TARGET"] == "Linux":
     DEFINES["USE_NSS_CERTS"] = "1"
     DEFINES["USE_OZONE"] = "1"
     DEFINES["USE_UDEV"] = True
-    DEFINES["USE_X11"] = "1"
     DEFINES["WEBRTC_LINUX"] = True
     DEFINES["WEBRTC_POSIX"] = True
     DEFINES["_FILE_OFFSET_BITS"] = "64"
-    DEFINES["_GNU_SOURCE"] = True
     DEFINES["_LARGEFILE64_SOURCE"] = True
     DEFINES["_LARGEFILE_SOURCE"] = True
     DEFINES["__STDC_CONSTANT_MACROS"] = True
@@ -145,6 +149,8 @@ if CONFIG["OS_TARGET"] == "Linux":
 if CONFIG["OS_TARGET"] == "OpenBSD":
 
     DEFINES["USE_GLIB"] = "1"
+    DEFINES["USE_OZONE"] = "1"
+    DEFINES["USE_X11"] = "1"
     DEFINES["WEBRTC_BSD"] = True
     DEFINES["WEBRTC_POSIX"] = True
     DEFINES["_FILE_OFFSET_BITS"] = "64"
@@ -159,6 +165,7 @@ if CONFIG["OS_TARGET"] == "WINNT":
     DEFINES["NOMINMAX"] = True
     DEFINES["NTDDI_VERSION"] = "0x0A000000"
     DEFINES["PSAPI_VERSION"] = "2"
+    DEFINES["RTC_ENABLE_WIN_WGC"] = True
     DEFINES["UNICODE"] = True
     DEFINES["USE_AURA"] = "1"
     DEFINES["WEBRTC_WIN"] = True
@@ -201,26 +208,23 @@ if CONFIG["CPU_ARCH"] == "arm":
     DEFINES["WEBRTC_ARCH_ARM_V7"] = True
     DEFINES["WEBRTC_HAS_NEON"] = True
 
-    OS_LIBS += [
-        "android_support",
-        "unwind"
-    ]
+if CONFIG["CPU_ARCH"] == "mips32":
 
-if not CONFIG["MOZ_DEBUG"] and CONFIG["OS_TARGET"] == "Android":
+    DEFINES["MIPS32_LE"] = True
+    DEFINES["MIPS_FPU_LE"] = True
+    DEFINES["_GNU_SOURCE"] = True
 
-    DEFINES["_FORTIFY_SOURCE"] = "2"
+if CONFIG["CPU_ARCH"] == "mips64":
 
-if not CONFIG["MOZ_DEBUG"] and CONFIG["OS_TARGET"] == "Darwin":
+    DEFINES["_GNU_SOURCE"] = True
 
-    DEFINES["_FORTIFY_SOURCE"] = "2"
+if CONFIG["CPU_ARCH"] == "x86":
 
-if not CONFIG["MOZ_DEBUG"] and CONFIG["OS_TARGET"] == "Linux":
+    DEFINES["WEBRTC_ENABLE_AVX2"] = True
 
-    DEFINES["_FORTIFY_SOURCE"] = "2"
+if CONFIG["CPU_ARCH"] == "x86_64":
 
-if not CONFIG["MOZ_DEBUG"] and CONFIG["OS_TARGET"] == "OpenBSD":
-
-    DEFINES["_FORTIFY_SOURCE"] = "2"
+    DEFINES["WEBRTC_ENABLE_AVX2"] = True
 
 if CONFIG["MOZ_DEBUG"] == "1" and CONFIG["OS_TARGET"] == "Android":
 
@@ -242,6 +246,17 @@ if CONFIG["MOZ_DEBUG"] == "1" and CONFIG["OS_TARGET"] == "WINNT":
 
     DEFINES["_HAS_ITERATOR_DEBUGGING"] = "0"
 
+if CONFIG["MOZ_X11"] == "1" and CONFIG["OS_TARGET"] == "Linux":
+
+    DEFINES["USE_X11"] = "1"
+
+if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] == "Android":
+
+    OS_LIBS += [
+        "android_support",
+        "unwind"
+    ]
+
 if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Android":
 
     CXXFLAGS += [
@@ -254,7 +269,11 @@ if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Android":
 
 if CONFIG["CPU_ARCH"] == "aarch64" and CONFIG["OS_TARGET"] == "Linux":
 
-    DEFINES["CR_SYSROOT_HASH"] = "ef67b6ca8fd6e2e51515a243d043d1ea4caf45e6"
+    DEFINES["_GNU_SOURCE"] = True
+
+if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] == "Linux":
+
+    DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Linux":
 
@@ -262,10 +281,10 @@ if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Linux":
         "-msse2"
     ]
 
-    DEFINES["CR_SYSROOT_HASH"] = "d967bcef40477dbc39acef141ff22bf73f3e7cdb"
+    DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Linux":
 
-    DEFINES["CR_SYSROOT_HASH"] = "5f64b417e1018dcf8fcc81dc2714e0f264b9b911"
+    DEFINES["_GNU_SOURCE"] = True
 
 Library("aec3_gn")

@@ -9,7 +9,7 @@ const {
   RetVal,
   generateActorSpec,
   types,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
 types.addDictType("dommutation", {});
 
@@ -28,7 +28,6 @@ var nodeArrayMethod = {
     maxNodes: Option(1),
     center: Option(1, "domnode"),
     start: Option(1, "domnode"),
-    whatToShow: Option(1),
   },
   response: RetVal(
     types.addDictType("domtraversalarray", {
@@ -40,7 +39,6 @@ var nodeArrayMethod = {
 var traversalMethod = {
   request: {
     node: Arg(0, "domnode"),
-    whatToShow: Option(1),
   },
   response: {
     node: RetVal("nullable:domnode"),
@@ -87,6 +85,10 @@ const walkerSpec = generateActorSpec({
     },
     "overflow-change": {
       type: "overflow-change",
+      nodes: Arg(0, "array:domnode"),
+    },
+    "container-type-change": {
+      type: "container-type-change",
       nodes: Arg(0, "array:domnode"),
     },
     // The walker actor emits a useful "resize" event to its front to let

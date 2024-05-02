@@ -7,8 +7,6 @@
 #ifndef builtin_intl_NumberFormat_h
 #define builtin_intl_NumberFormat_h
 
-#include "mozilla/Attributes.h"
-
 #include <stdint.h>
 
 #include "builtin/SelfHostingDefines.h"
@@ -42,7 +40,7 @@ class NumberFormatObject : public NativeObject {
 
   // Estimated memory use for UNumberRangeFormatter and UFormattedNumberRange
   // (see IcuMemoryUsage).
-  static constexpr size_t EstimatedRangeFormatterMemoryUse = 14143;
+  static constexpr size_t EstimatedRangeFormatterMemoryUse = 19894;
 
   mozilla::intl::NumberFormat* getNumberFormatter() const {
     const auto& slot = getFixedSlot(UNUMBER_FORMATTER_SLOT);
@@ -72,13 +70,11 @@ class NumberFormatObject : public NativeObject {
   static const JSClassOps classOps_;
   static const ClassSpec classSpec_;
 
-  static void finalize(JSFreeOp* fop, JSObject* obj);
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
 };
 
 /**
  * Returns a new instance of the standard built-in NumberFormat constructor.
- * Self-hosted code cannot cache this constructor (as it does for others in
- * Utilities.js) because it is initialized after self-hosted code is compiled.
  *
  * Usage: numberFormat = intl_NumberFormat(locales, options)
  */

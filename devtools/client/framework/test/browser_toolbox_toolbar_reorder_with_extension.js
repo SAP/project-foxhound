@@ -5,7 +5,7 @@
 
 // Test for reordering with an extension installed.
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 const EXTENSION = "@reorder.test";
 
@@ -23,7 +23,7 @@ const TEST_STARTING_ORDER = [
   EXTENSION,
 ];
 
-add_task(async function() {
+add_task(async function () {
   // Enable the Application panel (atm it's only available on Nightly)
   await pushPref("devtools.application.enabled", true);
 
@@ -31,7 +31,7 @@ add_task(async function() {
     useAddonManager: "temporary",
     manifest: {
       devtools_page: "extension.html",
-      applications: {
+      browser_specific_settings: {
         gecko: { id: EXTENSION },
       },
     },
@@ -46,9 +46,13 @@ add_task(async function() {
                            </body>
                          </html>`,
       "extension.js": async () => {
-        // eslint-disable-next-line
-        await browser.devtools.panels.create("extension", "fake-icon.png", "empty.html");
-        // eslint-disable-next-line
+        // eslint-disable-next-line no-undef
+        await browser.devtools.panels.create(
+          "extension",
+          "fake-icon.png",
+          "empty.html"
+        );
+        // eslint-disable-next-line no-undef
         browser.test.sendMessage("devtools-page-ready");
       },
       "empty.html": "",
@@ -69,10 +73,8 @@ add_task(async function() {
     "devtools.toolbox.tabsOrder"
   );
   const win = getWindow(toolbox);
-  const {
-    outerWidth: originalWindowWidth,
-    outerHeight: originalWindowHeight,
-  } = win;
+  const { outerWidth: originalWindowWidth, outerHeight: originalWindowHeight } =
+    win;
   registerCleanupFunction(() => {
     Services.prefs.setCharPref(
       "devtools.toolbox.tabsOrder",

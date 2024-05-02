@@ -7,18 +7,15 @@ const IMG_BYTES = atob(
 
 function handleRequest(request, response) {
   response.processAsync();
-  getObjectState("context", function(obj) {
+  getObjectState("context", function (obj) {
     let ctx;
     if (obj == null) {
       ctx = {
-        QueryInterface: function(iid) {
-          if (iid.equals(Components.interfaces.nsISupports)) {
+        QueryInterface: function (iid) {
+          if (iid.equals(Ci.nsISupports)) {
             return this;
           }
-          throw Components.Exception(
-            "",
-            Components.results.NS_ERROR_NO_INTERFACE
-          );
+          throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
         },
       };
       ctx.wrappedJSObject = ctx;

@@ -258,6 +258,9 @@ or{
         "America:Chihuahua"{
             ec{"ଚିହୁଆହୁଆ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"ସିଉଡାଡ୍ ଜୁଆରେଜ୍"}
+        }
         "America:Coral_Harbour"{
             ec{"ଆଟିକୋକାନ୍"}
         }
@@ -1219,6 +1222,9 @@ or{
         }
         "Pacific:Johnston"{
             ec{"ଜନଷ୍ଟନ୍"}
+        }
+        "Pacific:Kanton"{
+            ec{"କ୍ୟାଣ୍ଟନ"}
         }
         "Pacific:Kiritimati"{
             ec{"କିରିତିମାଟି"}

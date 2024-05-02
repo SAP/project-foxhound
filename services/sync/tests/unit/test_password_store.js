@@ -1,8 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://services-sync/engines/passwords.js");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { LoginRec } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/passwords.sys.mjs"
+);
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { SyncedRecordsTelemetry } = ChromeUtils.importESModule(
+  "resource://services-sync/telemetry.sys.mjs"
+);
 
 async function checkRecord(
   name,
@@ -17,11 +24,10 @@ async function checkRecord(
   let engine = Service.engineManager.get("passwords");
   let store = engine._store;
 
-  let logins = Services.logins.findLogins(
-    record.hostname,
-    record.formSubmitURL,
-    null
-  );
+  let logins = await Services.logins.searchLoginsAsync({
+    origin: record.hostname,
+    formActionOrigin: record.formSubmitURL,
+  });
 
   _("Record" + name + ":" + JSON.stringify(logins));
   _("Count" + name + ":" + logins.length);
@@ -68,8 +74,8 @@ async function changePassword(
   recordIsUpdated
 ) {
   const BOGUS_GUID = "zzzzzz" + hostname;
-
-  let record = {
+  let record = new LoginRec("passwords", BOGUS_GUID);
+  record.cleartext = {
     id: BOGUS_GUID,
     hostname,
     formSubmitURL: hostname,
@@ -91,7 +97,11 @@ async function changePassword(
   let store = engine._store;
 
   if (insert) {
-    Assert.equal((await store.applyIncomingBatch([record])).length, 0);
+    let countTelemetry = new SyncedRecordsTelemetry();
+    Assert.equal(
+      (await store.applyIncomingBatch([record], countTelemetry)).length,
+      0
+    );
   }
 
   return checkRecord(
@@ -304,7 +314,9 @@ async function test_LoginRec_toString(store, recordData) {
 add_task(async function run_test() {
   const BOGUS_GUID_A = "zzzzzzzzzzzz";
   const BOGUS_GUID_B = "yyyyyyyyyyyy";
-  let recordA = {
+  let recordA = new LoginRec("passwords", BOGUS_GUID_A);
+  let recordB = new LoginRec("passwords", BOGUS_GUID_B);
+  recordA.cleartext = {
     id: BOGUS_GUID_A,
     hostname: "http://foo.bar.com",
     formSubmitURL: "http://foo.bar.com",
@@ -314,7 +326,7 @@ add_task(async function run_test() {
     usernameField: "username",
     passwordField: "password",
   };
-  let recordB = {
+  recordB.cleartext = {
     id: BOGUS_GUID_B,
     hostname: "http://foo.baz.com",
     formSubmitURL: "http://foo.baz.com",
@@ -322,28 +334,30 @@ add_task(async function run_test() {
     password: "smith",
     usernameField: "username",
     passwordField: "password",
+    unknownStr: "an unknown string from another field",
   };
 
   let engine = Service.engineManager.get("passwords");
   let store = engine._store;
 
   try {
+    let countTelemetry = new SyncedRecordsTelemetry();
     Assert.equal(
-      (await store.applyIncomingBatch([recordA, recordB])).length,
+      (await store.applyIncomingBatch([recordA, recordB], countTelemetry))
+        .length,
       0
     );
 
     // Only the good record makes it to Services.logins.
-    let badLogins = Services.logins.findLogins(
-      recordA.hostname,
-      recordA.formSubmitURL,
-      recordA.httpRealm
-    );
-    let goodLogins = Services.logins.findLogins(
-      recordB.hostname,
-      recordB.formSubmitURL,
-      null
-    );
+    let badLogins = await Services.logins.searchLoginsAsync({
+      origin: recordA.hostname,
+      formActionOrigin: recordA.formSubmitURL,
+      httpRealm: recordA.httpRealm,
+    });
+    let goodLogins = await Services.logins.searchLoginsAsync({
+      origin: recordB.hostname,
+      formActionOrigin: recordB.formSubmitURL,
+    });
 
     _("Bad: " + JSON.stringify(badLogins));
     _("Good: " + JSON.stringify(goodLogins));
@@ -351,6 +365,15 @@ add_task(async function run_test() {
 
     Assert.equal(goodLogins.length, 1);
     Assert.equal(badLogins.length, 0);
+
+    // applyIncoming should've put any unknown fields from the server
+    // into a catch-all unknownFields field
+    Assert.equal(
+      goodLogins[0].unknownFields,
+      JSON.stringify({
+        unknownStr: "an unknown string from another field",
+      })
+    );
 
     Assert.ok(!!(await store.getAllIDs())[BOGUS_GUID_B]);
     Assert.ok(!(await store.getAllIDs())[BOGUS_GUID_A]);

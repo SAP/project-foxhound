@@ -3,9 +3,11 @@
 
 "use strict";
 
-const { drawBox } = require("devtools/client/memory/components/tree-map/draw");
+const {
+  drawBox,
+} = require("resource://devtools/client/memory/components/tree-map/draw.js");
 
-add_task(async function() {
+add_task(async function () {
   let fillRectValues, strokeRectValues;
   const ctx = {
     fillRect: (...args) => {

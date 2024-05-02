@@ -2,9 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
+
 from setuptools import setup
 
 try:
@@ -13,7 +12,7 @@ try:
 except IOError:
     description = None
 
-PACKAGE_VERSION = "2.0.1"
+PACKAGE_VERSION = "2.1.0"
 
 deps = [
     "mozinfo >= 0.7",

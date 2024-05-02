@@ -66,6 +66,11 @@ interface nsISHEntry : nsISupports
     [infallible] attribute nsIURI resultPrincipalURI;
 
     /**
+     * If non-null, the URI as it was before query stripping was performed.
+     */
+    [infallible] attribute nsIURI unstrippedURI;
+
+    /**
      *  This flag remembers whether channel has LOAD_REPLACE set.
      */
     [infallible] attribute boolean loadReplace;
@@ -123,6 +128,7 @@ interface nsISHEntry : nsISupports
 
     /** Post Data for the document */
     [infallible] attribute nsIInputStream postData;
+    [infallible] readonly attribute boolean hasPostData;
 
     /** LayoutHistoryState for scroll position and form values */
     [infallible] attribute nsILayoutHistoryState layoutHistoryState;
@@ -324,6 +330,7 @@ interface nsISHEntry : nsISupports
                            in boolean dynamicCreation,
                            in nsIURI originalURI,
                            in nsIURI resultPrincipalURI,
+                           in nsIURI unstrippedURI,
                            in bool loadReplace,
                            in nsIReferrerInfo referrerInfo,
                            in AString srcdoc,
@@ -465,5 +472,5 @@ interface nsISHEntry : nsISupports
      * sessionHistoryInParent enabled. See Document.webidl for more details on
      * what a Wireframe is.
      */
-    [implicit_jscontext] readonly attribute jsval wireframe;
+    [implicit_jscontext] attribute jsval wireframe;
 };

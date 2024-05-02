@@ -10,9 +10,9 @@ import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.util.Log;
-import android.util.SparseArray;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
@@ -27,8 +27,6 @@ import android.view.accessibility.AccessibilityNodeProvider;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
-import java.util.Iterator;
-import java.util.LinkedList;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.annotation.WrapForJNI;
@@ -175,10 +173,7 @@ public class SessionAccessibility {
     public AccessibilityNodeInfo createAccessibilityNodeInfo(final int virtualDescendantId) {
       AccessibilityNodeInfo node = null;
       if (mAttached) {
-        node =
-            mSession.getSettings().getFullAccessibilityTree()
-                ? getNodeFromGecko(virtualDescendantId)
-                : getNodeFromCache(virtualDescendantId);
+        node = getNodeFromGecko(virtualDescendantId);
       }
 
       if (node == null) {
@@ -189,7 +184,7 @@ public class SessionAccessibility {
                 + " mAttached="
                 + mAttached);
         node = AccessibilityNodeInfo.obtain(mView, View.NO_ID);
-        if (Build.VERSION.SDK_INT < 17 || mView.getDisplay() != null) {
+        if (mView.getDisplay() != null) {
           // When running junit tests we don't have a display
           mView.onInitializeAccessibilityNodeInfo(node);
         }
@@ -223,17 +218,6 @@ public class SessionAccessibility {
         case AccessibilityNodeInfo.ACTION_EXPAND:
         case AccessibilityNodeInfo.ACTION_COLLAPSE:
           nativeProvider.click(virtualViewId);
-          final GeckoBundle nodeInfo = getMostRecentBundle(virtualViewId);
-          if (nodeInfo != null) {
-            if ((nodeInfo.getInt("flags") & (FLAG_SELECTABLE | FLAG_CHECKABLE | FLAG_EXPANDABLE))
-                == 0) {
-              sendEvent(
-                  AccessibilityEvent.TYPE_VIEW_CLICKED,
-                  virtualViewId,
-                  nodeInfo.getInt("className"),
-                  null);
-            }
-          }
           return true;
         case AccessibilityNodeInfo.ACTION_LONG_CLICK:
           // XXX: Implement long press.
@@ -313,18 +297,7 @@ public class SessionAccessibility {
                     AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN);
             final boolean next =
                 action == AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY;
-            // We must return false if we're already at the edge.
-            if (next) {
-              if (mAtEndOfText) {
-                return false;
-              }
-              if (granularity == AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD && mAtLastWord) {
-                return false;
-              }
-            } else if (mAtStartOfText) {
-              return false;
-            }
-            nativeProvider.navigateText(
+            return nativeProvider.navigateText(
                 virtualViewId, granularity, mStartOffset, mEndOffset, next, extendSelection);
           }
           return true;
@@ -352,10 +325,7 @@ public class SessionAccessibility {
             return false;
           }
           final String value =
-              arguments.getString(
-                  Build.VERSION.SDK_INT >= 21
-                      ? AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE
-                      : ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE);
+              arguments.getString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE);
           if (mAttached) {
             nativeProvider.setText(virtualViewId, value);
           }
@@ -384,237 +354,23 @@ public class SessionAccessibility {
     }
 
     private AccessibilityNodeInfo getNodeFromGecko(final int virtualViewId) {
+      ThreadUtils.assertOnUiThread();
       final AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain(mView, virtualViewId);
-      populateNodeFromBundle(node, nativeProvider.getNodeInfo(virtualViewId), false);
+      nativeProvider.getNodeInfo(virtualViewId, node);
+
+      // We set the bounds in parent here because we need to use the client-to-screen matrix
+      // and it is only available in the UI thread.
+      final Rect bounds = new Rect();
+      node.getBoundsInParent(bounds);
+
+      final Matrix matrix = new Matrix();
+      mSession.getClientToScreenMatrix(matrix);
+      final float[] origin = new float[2];
+      matrix.mapPoints(origin);
+      bounds.offset((int) origin[0], (int) origin[1]);
+      node.setBoundsInScreen(bounds);
+
       return node;
-    }
-
-    private AccessibilityNodeInfo getNodeFromCache(final int virtualViewId) {
-      synchronized (SessionAccessibility.this) {
-        AccessibilityNodeInfo node = null;
-        for (final SparseArray<GeckoBundle> cache : mCaches) {
-          final GeckoBundle bundle = cache.get(virtualViewId);
-          if (bundle == null) {
-            continue;
-          }
-
-          if (node == null) {
-            node = AccessibilityNodeInfo.obtain(mView, virtualViewId);
-          }
-          populateNodeFromBundle(node, bundle, true);
-        }
-
-        if (node == null) {
-          Log.e(LOGTAG, "No cached node for " + virtualViewId);
-        }
-
-        return node;
-      }
-    }
-
-    private void populateNodeFromBundle(
-        final AccessibilityNodeInfo node, final GeckoBundle nodeInfo, final boolean fromCache) {
-      if (mView == null || nodeInfo == null) {
-        return;
-      }
-
-      final int id = nodeInfo.getInt("id");
-      final boolean isRoot = id == View.NO_ID;
-      if (isRoot) {
-        if (Build.VERSION.SDK_INT < 17 || mView.getDisplay() != null) {
-          // When running junit tests we don't have a display
-          mView.onInitializeAccessibilityNodeInfo(node);
-        }
-        node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
-        node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
-      } else {
-        node.setParent(mView, nodeInfo.getInt("parentId", View.NO_ID));
-      }
-
-      final int flags = nodeInfo.getInt("flags");
-
-      // The basics
-      node.setPackageName(GeckoAppShell.getApplicationContext().getPackageName());
-      node.setClassName(getClassName(nodeInfo.getInt("className")));
-
-      if (nodeInfo.containsKey("text")) {
-        node.setText(nodeInfo.getString("text"));
-      }
-
-      if (nodeInfo.containsKey("description")) {
-        node.setContentDescription(nodeInfo.getString("description"));
-      }
-
-      // Add actions
-      node.addAction(AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT);
-      node.addAction(AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT);
-      node.addAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY);
-      node.addAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY);
-      node.setMovementGranularities(
-          AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
-              | AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD
-              | AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
-              | AccessibilityNodeInfo.MOVEMENT_GRANULARITY_PARAGRAPH);
-      if ((flags & FLAG_CLICKABLE) != 0) {
-        node.addAction(AccessibilityNodeInfo.ACTION_CLICK);
-      }
-
-      // Set boolean properties
-      node.setCheckable((flags & FLAG_CHECKABLE) != 0);
-      node.setChecked((flags & FLAG_CHECKED) != 0);
-      node.setClickable((flags & FLAG_CLICKABLE) != 0);
-      node.setEnabled((flags & FLAG_ENABLED) != 0);
-      node.setFocusable((flags & FLAG_FOCUSABLE) != 0);
-      node.setLongClickable((flags & FLAG_LONG_CLICKABLE) != 0);
-      node.setPassword((flags & FLAG_PASSWORD) != 0);
-      node.setScrollable((flags & FLAG_SCROLLABLE) != 0);
-      node.setSelected((flags & FLAG_SELECTED) != 0);
-      node.setVisibleToUser((flags & FLAG_VISIBLE_TO_USER) != 0);
-      // Other boolean properties to consider later:
-      // setHeading, setImportantForAccessibility, setScreenReaderFocusable, setShowingHintText,
-      // setDismissable
-
-      if (mAccessibilityFocusedNode == id) {
-        node.addAction(AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS);
-        node.setAccessibilityFocused(true);
-      } else {
-        node.addAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
-      }
-      node.setFocused(mFocusedNode == id);
-
-      // Bounds
-      final int[] b = nodeInfo.getIntArray("bounds");
-      if (b != null) {
-        final Rect screenBounds = new Rect(b[0], b[1], b[2], b[3]);
-        node.setBoundsInScreen(screenBounds);
-
-        final Matrix matrix = new Matrix();
-        mSession.getClientToScreenMatrix(matrix);
-        final float[] origin = new float[2];
-        matrix.mapPoints(origin);
-        final Rect parentBounds =
-            new Rect(b[0] - (int) origin[0], b[1] - (int) origin[1], b[2], b[3]);
-        node.setBoundsInParent(parentBounds);
-      }
-
-      // Children
-      final int[] children = nodeInfo.getIntArray("children");
-      if (node.getChildCount() == 0 && children != null) {
-        for (final int childId : children) {
-          final GeckoBundle childBundle = getMostRecentBundle(childId);
-          if (!fromCache || (childBundle != null && childBundle.getInt("parentId") == id)) {
-            // If this node is from cache, only populate with children that are cached as well.
-            node.addChild(mView, childId);
-          }
-        }
-      }
-
-      // SDK 18 and above
-      if (Build.VERSION.SDK_INT >= 18) {
-        node.setViewIdResourceName(nodeInfo.getString("viewIdResourceName"));
-
-        if ((flags & FLAG_EDITABLE) != 0) {
-          node.addAction(AccessibilityNodeInfo.ACTION_SET_SELECTION);
-          node.addAction(AccessibilityNodeInfo.ACTION_CUT);
-          node.addAction(AccessibilityNodeInfo.ACTION_COPY);
-          node.addAction(AccessibilityNodeInfo.ACTION_PASTE);
-          node.setEditable(true);
-        }
-      }
-
-      // SDK 19 and above
-      if (Build.VERSION.SDK_INT >= 19) {
-        node.setMultiLine((flags & FLAG_MULTI_LINE) != 0);
-        node.setContentInvalid((flags & FLAG_CONTENT_INVALID) != 0);
-
-        // Set bundle keys like role and hint
-        final Bundle bundle = node.getExtras();
-        if (nodeInfo.containsKey("hint")) {
-          final String hint = nodeInfo.getString("hint");
-          bundle.putCharSequence("AccessibilityNodeInfo.hint", hint);
-          if (Build.VERSION.SDK_INT >= 26) {
-            node.setHintText(hint);
-          }
-        }
-        if (nodeInfo.containsKey("geckoRole")) {
-          bundle.putCharSequence(
-              "AccessibilityNodeInfo.geckoRole", nodeInfo.getString("geckoRole"));
-        }
-        if (nodeInfo.containsKey("roleDescription")) {
-          bundle.putCharSequence(
-              "AccessibilityNodeInfo.roleDescription", nodeInfo.getString("roleDescription"));
-        }
-        if (isRoot) {
-          // Argument values for ACTION_NEXT_HTML_ELEMENT/ACTION_PREVIOUS_HTML_ELEMENT.
-          // This is mostly here to let TalkBack know we are a legit "WebView".
-          bundle.putCharSequence(
-              "ACTION_ARGUMENT_HTML_ELEMENT_STRING_VALUES",
-              TextUtils.join(",", sHtmlGranularities));
-        }
-
-        // Set RangeInfo
-        final GeckoBundle rangeBundle = nodeInfo.getBundle("rangeInfo");
-        if (rangeBundle != null) {
-          final RangeInfo rangeInfo =
-              RangeInfo.obtain(
-                  rangeBundle.getInt("type"),
-                  (float) rangeBundle.getDouble("min", Float.NEGATIVE_INFINITY),
-                  (float) rangeBundle.getDouble("max", Float.POSITIVE_INFINITY),
-                  (float) rangeBundle.getDouble("current", 0));
-          node.setRangeInfo(rangeInfo);
-        }
-
-        // Set CollectionItemInfo
-        final GeckoBundle collectionItemBundle = nodeInfo.getBundle("collectionItemInfo");
-        if (collectionItemBundle != null) {
-          final CollectionItemInfo collectionItemInfo =
-              CollectionItemInfo.obtain(
-                  collectionItemBundle.getInt("rowIndex"),
-                  collectionItemBundle.getInt("rowSpan"),
-                  collectionItemBundle.getInt("columnIndex"),
-                  collectionItemBundle.getInt("columnSpan"),
-                  false);
-          node.setCollectionItemInfo(collectionItemInfo);
-        }
-
-        // Set CollectionInfo
-        final GeckoBundle collectionBundle = nodeInfo.getBundle("collectionInfo");
-        if (collectionBundle != null) {
-          // selectionMode is only supported in SDK >= 21.
-          final CollectionInfo collectionInfo =
-              Build.VERSION.SDK_INT >= 21
-                  ? CollectionInfo.obtain(
-                      collectionBundle.getInt("rowCount"),
-                      collectionBundle.getInt("columnCount"),
-                      collectionBundle.getBoolean("isHierarchical", false),
-                      collectionBundle.getInt("selectionMode", 0))
-                  : CollectionInfo.obtain(
-                      collectionBundle.getInt("rowCount"),
-                      collectionBundle.getInt("columnCount"),
-                      collectionBundle.getBoolean("isHierarchical", false));
-          node.setCollectionInfo(collectionInfo);
-        }
-
-        node.setInputType(nodeInfo.getInt("inputType"));
-      }
-
-      // SDK 21 and above
-      if (Build.VERSION.SDK_INT >= 21) {
-        if ((flags & FLAG_EXPANDABLE) != 0) {
-          if ((flags & FLAG_EXPANDED) != 0) {
-            node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
-            node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE);
-          } else {
-            node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE);
-            node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
-          }
-        }
-      }
-
-      // SDK 23 and above
-      if (Build.VERSION.SDK_INT >= 23) {
-        node.setContextClickable((flags & FLAG_CONTEXT_CLICKABLE) != 0);
-      }
     }
   }
 
@@ -627,23 +383,10 @@ public class SessionAccessibility {
   private boolean mAttached = false;
   // The current node with accessibility focus
   private int mAccessibilityFocusedNode = 0;
-  // The first accessibility focusable node
-  private int mFirstAccessibilityFocusable = 0;
-  // The last accessibility focusable node
-  private int mLastAccessibilityFocusable = 0;
   // The current node with focus
   private int mFocusedNode = 0;
   private int mStartOffset = -1;
   private int mEndOffset = -1;
-  private boolean mAtStartOfText = false;
-  private boolean mAtEndOfText = false;
-  private boolean mAtLastWord = false;
-  // Viewport cache
-  final SparseArray<GeckoBundle> mViewportCache = new SparseArray<>();
-  // Focus cache
-  final SparseArray<GeckoBundle> mFocusPathCache = new SparseArray<>();
-  // List of caches in descending order from last updated.
-  LinkedList<SparseArray<GeckoBundle>> mCaches = new LinkedList<>();
   private boolean mViewFocusRequested = false;
 
   /* package */ SessionAccessibility(final GeckoSession session) {
@@ -713,7 +456,7 @@ public class SessionAccessibility {
   }
 
   private boolean isInTest() {
-    return Build.VERSION.SDK_INT >= 17 && mView != null && mView.getDisplay() == null;
+    return mView != null && mView.getDisplay() == null;
   }
 
   private void requestViewFocus() {
@@ -741,10 +484,8 @@ public class SessionAccessibility {
       accessibilityManager.addAccessibilityStateChangeListener(
           enabled -> updateAccessibilitySettings());
 
-      if (Build.VERSION.SDK_INT >= 19) {
-        accessibilityManager.addTouchExplorationStateChangeListener(
-            enabled -> updateAccessibilitySettings());
-      }
+      accessibilityManager.addTouchExplorationStateChangeListener(
+          enabled -> updateAccessibilitySettings());
     }
 
     public static boolean isEnabled() {
@@ -812,7 +553,7 @@ public class SessionAccessibility {
   /* package */ void sendEvent(
       final int eventType, final int sourceId, final int className, final GeckoBundle eventData) {
     ThreadUtils.assertOnUiThread();
-    if (mView == null) {
+    if (mView == null || !mAttached) {
       return;
     }
 
@@ -823,21 +564,16 @@ public class SessionAccessibility {
       return;
     }
 
-    final GeckoBundle cachedBundle = getMostRecentBundle(sourceId);
-    if (cachedBundle == null && sourceId != View.NO_ID) {
-      // Suppress events from non cached nodes.
-      return;
-    }
-
     final AccessibilityEvent event = AccessibilityEvent.obtain(eventType);
     event.setPackageName(GeckoAppShell.getApplicationContext().getPackageName());
     event.setSource(mView, sourceId);
     event.setEnabled(true);
-    if (className == CLASSNAME_UNKNOWN && cachedBundle != null) {
-      event.setClassName(getClassName(cachedBundle.getInt("className")));
-    } else {
-      event.setClassName(getClassName(className));
+
+    int eventClassName = className;
+    if (eventClassName == CLASSNAME_UNKNOWN) {
+      eventClassName = nativeProvider.getNodeClassName(sourceId);
     }
+    event.setClassName(getClassName(eventClassName));
 
     if (eventData != null) {
       if (eventData.containsKey("text")) {
@@ -858,37 +594,8 @@ public class SessionAccessibility {
       event.setChecked((eventData.getInt("flags") & FLAG_CHECKED) != 0);
     }
 
-    // Update cache and stored state from this event.
+    // Update stored state from this event.
     switch (eventType) {
-      case AccessibilityEvent.TYPE_VIEW_CLICKED:
-        if (cachedBundle != null && eventData != null && eventData.containsKey("flags")) {
-          final int flags = eventData.getInt("flags");
-          if ((flags & FLAG_CHECKABLE) != 0) {
-            if ((flags & FLAG_CHECKED) != 0) {
-              cachedBundle.putInt("flags", cachedBundle.getInt("flags") | FLAG_CHECKED);
-            } else {
-              cachedBundle.putInt("flags", cachedBundle.getInt("flags") & ~FLAG_CHECKED);
-            }
-          }
-
-          if ((flags & FLAG_EXPANDABLE) != 0) {
-            if ((flags & FLAG_EXPANDED) != 0) {
-              cachedBundle.putInt("flags", cachedBundle.getInt("flags") | FLAG_EXPANDED);
-            } else {
-              cachedBundle.putInt("flags", cachedBundle.getInt("flags") & ~FLAG_EXPANDED);
-            }
-          }
-        }
-        break;
-      case AccessibilityEvent.TYPE_VIEW_SELECTED:
-        if (cachedBundle != null && eventData != null && eventData.containsKey("selected")) {
-          if (eventData.getInt("selected") != 0) {
-            cachedBundle.putInt("flags", cachedBundle.getInt("flags") | FLAG_SELECTED);
-          } else {
-            cachedBundle.putInt("flags", cachedBundle.getInt("flags") & ~FLAG_SELECTED);
-          }
-        }
-        break;
       case AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED:
         if (mAccessibilityFocusedNode == sourceId) {
           mAccessibilityFocusedNode = 0;
@@ -897,9 +604,6 @@ public class SessionAccessibility {
       case AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED:
         mStartOffset = -1;
         mEndOffset = -1;
-        mAtStartOfText = false;
-        mAtEndOfText = false;
-        mAtLastWord = false;
         mAccessibilityFocusedNode = sourceId;
         break;
       case AccessibilityEvent.TYPE_VIEW_FOCUSED:
@@ -912,24 +616,6 @@ public class SessionAccessibility {
       case AccessibilityEvent.TYPE_VIEW_TEXT_TRAVERSED_AT_MOVEMENT_GRANULARITY:
         mStartOffset = event.getFromIndex();
         mEndOffset = event.getToIndex();
-        // We must synchronously return false for text navigation
-        // actions if the user attempts to navigate past the edge.
-        // Because we do navigation async, we can't query this
-        // on demand when the action is performed. Therefore, we cache
-        // whether we're at either edge here.
-        mAtStartOfText = mStartOffset == 0;
-        final CharSequence text = event.getText().get(0);
-        mAtEndOfText = mEndOffset >= text.length();
-        mAtLastWord = mAtEndOfText;
-        if (!mAtLastWord) {
-          // Words exclude trailing spaces. To figure out whether
-          // we're at the last word, we need to get the text after
-          // our end offset and check if it's just spaces.
-          final CharSequence afterText = text.subSequence(mEndOffset, text.length());
-          if (TextUtils.getTrimmedLength(afterText) == 0) {
-            mAtLastWord = true;
-          }
-        }
         break;
     }
 
@@ -941,42 +627,23 @@ public class SessionAccessibility {
     }
   }
 
-  private synchronized GeckoBundle getMostRecentBundle(final int virtualViewId) {
-    final Iterator<SparseArray<GeckoBundle>> iter = mCaches.descendingIterator();
-    while (iter.hasNext()) {
-      final GeckoBundle bundle = iter.next().get(virtualViewId);
-      if (bundle != null) {
-        return bundle;
-      }
-    }
-
-    return null;
-  }
-
   private boolean pivot(
       final int id, final String granularity, final boolean forward, final boolean inclusive) {
-    final int gran = java.util.Arrays.asList(sHtmlGranularities).indexOf(granularity);
-    if (forward && id == mLastAccessibilityFocusable) {
+    if (!forward && id == View.NO_ID) {
+      // If attempting to pivot backwards from the root view, return false.
       return false;
     }
 
-    if (!forward) {
-      if (id == View.NO_ID) {
-        return false;
-      }
-
-      if (id == mFirstAccessibilityFocusable) {
-        sendEvent(
-            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED,
-            View.NO_ID,
-            CLASSNAME_WEBVIEW,
-            null);
-        return true;
-      }
+    final int gran = java.util.Arrays.asList(sHtmlGranularities).indexOf(granularity);
+    final boolean success = nativeProvider.pivotNative(id, gran, forward, inclusive);
+    if (!success && !forward) {
+      // If we failed to pivot backwards set the root view as the a11y focus.
+      sendEvent(
+          AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED, View.NO_ID, CLASSNAME_WEBVIEW, null);
+      return true;
     }
 
-    nativeProvider.pivotNative(id, gran, forward, inclusive);
-    return true;
+    return success;
   }
 
   /* package */ final class NativeProvider extends JNIObject {
@@ -992,7 +659,10 @@ public class SessionAccessibility {
     }
 
     @WrapForJNI(dispatchTo = "current")
-    public native GeckoBundle getNodeInfo(int id);
+    public native void getNodeInfo(int id, AccessibilityNodeInfo nodeInfo);
+
+    @WrapForJNI(dispatchTo = "current")
+    public native int getNodeClassName(int id);
 
     @WrapForJNI(dispatchTo = "gecko")
     public native void setText(int id, String text);
@@ -1000,14 +670,14 @@ public class SessionAccessibility {
     @WrapForJNI(dispatchTo = "gecko")
     public native void click(int id);
 
-    @WrapForJNI(dispatchTo = "gecko", stubName = "Pivot")
-    public native void pivotNative(int id, int granularity, boolean forward, boolean inclusive);
+    @WrapForJNI(dispatchTo = "current", stubName = "Pivot")
+    public native boolean pivotNative(int id, int granularity, boolean forward, boolean inclusive);
 
     @WrapForJNI(dispatchTo = "gecko")
     public native void exploreByTouch(int id, float x, float y);
 
-    @WrapForJNI(dispatchTo = "gecko")
-    public native void navigateText(
+    @WrapForJNI(dispatchTo = "current")
+    public native boolean navigateText(
         int id, int granularity, int startOffset, int endOffset, boolean forward, boolean select);
 
     @WrapForJNI(dispatchTo = "gecko")
@@ -1034,56 +704,181 @@ public class SessionAccessibility {
           });
     }
 
-    @WrapForJNI(calledFrom = "gecko")
-    private void replaceViewportCache(final GeckoBundle[] bundles) {
-      synchronized (SessionAccessibility.this) {
-        mViewportCache.clear();
-        for (final GeckoBundle bundle : bundles) {
-          if (bundle == null) {
-            continue;
-          }
-          mViewportCache.append(bundle.getInt("id"), bundle);
+    @WrapForJNI
+    private void populateNodeInfo(
+        final AccessibilityNodeInfo node,
+        final int id,
+        final int parentId,
+        final int[] children,
+        final int flags,
+        final int className,
+        final int[] bounds,
+        @Nullable final String text,
+        @Nullable final String description,
+        @Nullable final String hint,
+        @Nullable final String geckoRole,
+        @Nullable final String roleDescription,
+        @Nullable final String viewIdResourceName,
+        final int inputType) {
+      if (mView == null) {
+        return;
+      }
+
+      final boolean isRoot = id == View.NO_ID;
+      if (isRoot) {
+        if (mView.getDisplay() != null) {
+          // When running junit tests we don't have a display
+          mView.onInitializeAccessibilityNodeInfo(node);
         }
-        mCaches.remove(mViewportCache);
-        mCaches.add(mViewportCache);
+        node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
+        node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+      } else {
+        node.setParent(mView, parentId);
+      }
+
+      // The basics
+      node.setPackageName(GeckoAppShell.getApplicationContext().getPackageName());
+      node.setClassName(getClassName(className));
+
+      if (text != null) {
+        node.setText(text);
+      }
+
+      if (description != null) {
+        node.setContentDescription(description);
+      }
+
+      // Add actions
+      node.addAction(AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT);
+      node.addAction(AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT);
+      node.addAction(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY);
+      node.addAction(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY);
+      node.setMovementGranularities(
+          AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
+              | AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD
+              | AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
+              | AccessibilityNodeInfo.MOVEMENT_GRANULARITY_PARAGRAPH);
+      if ((flags & FLAG_CLICKABLE) != 0) {
+        node.addAction(AccessibilityNodeInfo.ACTION_CLICK);
+      }
+
+      // Set boolean properties
+      node.setCheckable((flags & FLAG_CHECKABLE) != 0);
+      node.setChecked((flags & FLAG_CHECKED) != 0);
+      node.setClickable((flags & FLAG_CLICKABLE) != 0);
+      node.setEnabled((flags & FLAG_ENABLED) != 0);
+      node.setFocusable((flags & FLAG_FOCUSABLE) != 0);
+      node.setLongClickable((flags & FLAG_LONG_CLICKABLE) != 0);
+      node.setPassword((flags & FLAG_PASSWORD) != 0);
+      node.setScrollable((flags & FLAG_SCROLLABLE) != 0);
+      node.setSelected((flags & FLAG_SELECTED) != 0);
+      node.setVisibleToUser((flags & FLAG_VISIBLE_TO_USER) != 0);
+      // Other boolean properties to consider later:
+      // setHeading, setImportantForAccessibility, setScreenReaderFocusable, setShowingHintText,
+      // setDismissable
+
+      if (mAccessibilityFocusedNode == id) {
+        node.addAction(AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS);
+        node.setAccessibilityFocused(true);
+      } else {
+        node.addAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
+      }
+      node.setFocused(mFocusedNode == id);
+
+      final Rect parentBounds = new Rect(bounds[0], bounds[1], bounds[2], bounds[3]);
+      node.setBoundsInParent(parentBounds);
+
+      for (final int childId : children) {
+        node.addChild(mView, childId);
+      }
+
+      node.setViewIdResourceName(viewIdResourceName);
+
+      if ((flags & FLAG_EDITABLE) != 0) {
+        node.addAction(AccessibilityNodeInfo.ACTION_SET_SELECTION);
+        node.addAction(AccessibilityNodeInfo.ACTION_CUT);
+        node.addAction(AccessibilityNodeInfo.ACTION_COPY);
+        node.addAction(AccessibilityNodeInfo.ACTION_PASTE);
+        node.setEditable(true);
+      }
+
+      node.setMultiLine((flags & FLAG_MULTI_LINE) != 0);
+      node.setContentInvalid((flags & FLAG_CONTENT_INVALID) != 0);
+
+      // Set bundle keys like role and hint
+      final Bundle bundle = node.getExtras();
+      if (hint != null) {
+        bundle.putCharSequence("AccessibilityNodeInfo.hint", hint);
+        if (Build.VERSION.SDK_INT >= 26) {
+          node.setHintText(hint);
+        }
+      }
+      if (geckoRole != null) {
+        bundle.putCharSequence("AccessibilityNodeInfo.geckoRole", geckoRole);
+      }
+      if (roleDescription != null) {
+        bundle.putCharSequence("AccessibilityNodeInfo.roleDescription", roleDescription);
+      }
+      if (isRoot) {
+        // Argument values for ACTION_NEXT_HTML_ELEMENT/ACTION_PREVIOUS_HTML_ELEMENT.
+        // This is mostly here to let TalkBack know we are a legit "WebView".
+        bundle.putCharSequence(
+            "ACTION_ARGUMENT_HTML_ELEMENT_STRING_VALUES", TextUtils.join(",", sHtmlGranularities));
+      }
+
+      if (inputType != InputType.TYPE_NULL) {
+        node.setInputType(inputType);
+      }
+
+      if ((flags & FLAG_EXPANDABLE) != 0) {
+        if ((flags & FLAG_EXPANDED) != 0) {
+          node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
+          node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE);
+        } else {
+          node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE);
+          node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
+        }
+      }
+
+      // SDK 23 and above
+      if (Build.VERSION.SDK_INT >= 23) {
+        node.setContextClickable((flags & FLAG_CONTEXT_CLICKABLE) != 0);
       }
     }
 
-    @WrapForJNI(calledFrom = "gecko")
-    private void replaceFocusPathCache(final GeckoBundle[] bundles) {
-      synchronized (SessionAccessibility.this) {
-        mFocusPathCache.clear();
-        for (final GeckoBundle bundle : bundles) {
-          if (bundle == null) {
-            continue;
-          }
-          mFocusPathCache.append(bundle.getInt("id"), bundle);
-        }
-        mCaches.remove(mFocusPathCache);
-        mCaches.add(mFocusPathCache);
-      }
+    @WrapForJNI
+    private void populateNodeCollectionItemInfo(
+        final AccessibilityNodeInfo node,
+        final int rowIndex,
+        final int rowSpan,
+        final int columnIndex,
+        final int columnSpan) {
+      final CollectionItemInfo collectionItemInfo =
+          CollectionItemInfo.obtain(rowIndex, rowSpan, columnIndex, columnSpan, false);
+      node.setCollectionItemInfo(collectionItemInfo);
     }
 
-    @WrapForJNI(calledFrom = "gecko")
-    private void updateCachedBounds(final GeckoBundle[] bundles) {
-      synchronized (SessionAccessibility.this) {
-        for (final GeckoBundle bundle : bundles) {
-          final GeckoBundle cachedBundle = getMostRecentBundle(bundle.getInt("id"));
-          if (cachedBundle == null) {
-            Log.e(LOGTAG, "Can't update bounds of uncached node " + bundle.getInt("id"));
-            continue;
-          }
-          cachedBundle.putIntArray("bounds", bundle.getIntArray("bounds"));
-        }
-      }
+    @WrapForJNI
+    private void populateNodeCollectionInfo(
+        final AccessibilityNodeInfo node,
+        final int rowCount,
+        final int columnCount,
+        final int selectionMode,
+        final boolean isHierarchical) {
+      final CollectionInfo collectionInfo =
+          CollectionInfo.obtain(rowCount, columnCount, isHierarchical, selectionMode);
+      node.setCollectionInfo(collectionInfo);
     }
 
-    @WrapForJNI(calledFrom = "gecko")
-    private void updateAccessibleFocusBoundaries(final int firstNode, final int lastNode) {
-      synchronized (SessionAccessibility.this) {
-        mFirstAccessibilityFocusable = firstNode;
-        mLastAccessibilityFocusable = lastNode;
-      }
+    @WrapForJNI
+    private void populateNodeRangeInfo(
+        final AccessibilityNodeInfo node,
+        final int rangeType,
+        final float min,
+        final float max,
+        final float current) {
+      final RangeInfo rangeInfo = RangeInfo.obtain(rangeType, min, max, current);
+      node.setRangeInfo(rangeInfo);
     }
   }
 }

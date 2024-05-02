@@ -6,23 +6,33 @@
 
 #include "EditorEventListener.h"
 
+#include "EditorBase.h"   // for EditorBase, etc.
+#include "EditorUtils.h"  // for EditorUtils
+#include "HTMLEditor.h"   // for HTMLEditor
+#include "TextEditor.h"   // for TextEditor
+
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc.
 #include "mozilla/AutoRestore.h"
-#include "mozilla/ContentEvents.h"         // for InternalFocusEvent
-#include "mozilla/EditorBase.h"            // for EditorBase, etc.
-#include "mozilla/EventListenerManager.h"  // for EventListenerManager
-#include "mozilla/EventStateManager.h"     // for EventStateManager
-#include "mozilla/HTMLEditor.h"            // for HTMLEditor
-#include "mozilla/IMEStateManager.h"       // for IMEStateManager
-#include "mozilla/Preferences.h"           // for Preferences
-#include "mozilla/PresShell.h"             // for PresShell
-#include "mozilla/TextEditor.h"            // for TextEditor
-#include "mozilla/TextEvents.h"            // for WidgetCompositionEvent
-#include "mozilla/dom/Element.h"           // for Element
-#include "mozilla/dom/Event.h"             // for Event
-#include "mozilla/dom/EventTarget.h"       // for EventTarget
-#include "mozilla/dom/MouseEvent.h"        // for MouseEvent
+#include "mozilla/ContentEvents.h"          // for InternalFocusEvent
+#include "mozilla/EventListenerManager.h"   // for EventListenerManager
+#include "mozilla/EventStateManager.h"      // for EventStateManager
+#include "mozilla/IMEStateManager.h"        // for IMEStateManager
+#include "mozilla/LookAndFeel.h"            // for LookAndFeel
+#include "mozilla/NativeKeyBindingsType.h"  // for NativeKeyBindingsType
+#include "mozilla/Preferences.h"            // for Preferences
+#include "mozilla/PresShell.h"              // for PresShell
+#include "mozilla/TextEvents.h"             // for WidgetCompositionEvent
+#include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/Document.h"  // for Document
+#include "mozilla/dom/DOMStringList.h"
+#include "mozilla/dom/DragEvent.h"
+#include "mozilla/dom/Element.h"      // for Element
+#include "mozilla/dom/Event.h"        // for Event
+#include "mozilla/dom/EventTarget.h"  // for EventTarget
+#include "mozilla/dom/HTMLTextAreaElement.h"
+#include "mozilla/dom/MouseEvent.h"  // for MouseEvent
 #include "mozilla/dom/Selection.h"
+
 #include "nsAString.h"
 #include "nsCaret.h"            // for nsCaret
 #include "nsDebug.h"            // for NS_WARNING, etc.
@@ -32,16 +42,12 @@
 #include "nsIContentInlines.h"  // for nsINode::IsInDesignMode()
 #include "nsIController.h"      // for nsIController
 #include "nsID.h"
-#include "mozilla/dom/DOMStringList.h"
-#include "mozilla/dom/DataTransfer.h"
-#include "mozilla/dom/DragEvent.h"
-#include "mozilla/dom/Document.h"  // for Document
-#include "nsIFormControl.h"        // for nsIFormControl, etc.
-#include "nsINode.h"               // for nsINode, etc.
-#include "nsIWidget.h"             // for nsIWidget
-#include "nsLiteralString.h"       // for NS_LITERAL_STRING
-#include "nsPIWindowRoot.h"        // for nsPIWindowRoot
-#include "nsPrintfCString.h"       // for nsPrintfCString
+#include "nsIFormControl.h"   // for nsIFormControl, etc.
+#include "nsINode.h"          // for nsINode, etc.
+#include "nsIWidget.h"        // for nsIWidget
+#include "nsLiteralString.h"  // for NS_LITERAL_STRING
+#include "nsPIWindowRoot.h"   // for nsPIWindowRoot
+#include "nsPrintfCString.h"  // for nsPrintfCString
 #include "nsRange.h"
 #include "nsServiceManagerUtils.h"  // for do_GetService
 #include "nsString.h"               // for nsAutoString
@@ -150,20 +156,21 @@ nsresult EditorEventListener::InstallToEditor() {
     return NS_ERROR_FAILURE;
   }
 
+  // For non-html editor, ie.TextEditor, we want to preserve
+  // the event handling order to ensure listeners that are
+  // added to <input> and <texarea> still working as expected.
+  EventListenerFlags flags = mEditorBase->IsHTMLEditor()
+                                 ? TrustedEventsAtSystemGroupCapture()
+                                 : TrustedEventsAtSystemGroupBubble();
 #ifdef HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
-  eventListenerManager->AddEventListenerByType(
-      this, u"keydown"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->AddEventListenerByType(
-      this, u"keyup"_ns, TrustedEventsAtSystemGroupBubble());
+  eventListenerManager->AddEventListenerByType(this, u"keydown"_ns, flags);
+  eventListenerManager->AddEventListenerByType(this, u"keyup"_ns, flags);
 #endif
-  eventListenerManager->AddEventListenerByType(
-      this, u"keypress"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->AddEventListenerByType(
-      this, u"dragover"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->AddEventListenerByType(
-      this, u"dragleave"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->AddEventListenerByType(
-      this, u"drop"_ns, TrustedEventsAtSystemGroupBubble());
+
+  eventListenerManager->AddEventListenerByType(this, u"keypress"_ns, flags);
+  eventListenerManager->AddEventListenerByType(this, u"dragover"_ns, flags);
+  eventListenerManager->AddEventListenerByType(this, u"dragleave"_ns, flags);
+  eventListenerManager->AddEventListenerByType(this, u"drop"_ns, flags);
   // XXX We should add the mouse event listeners as system event group.
   //     E.g., web applications cannot prevent middle mouse paste by
   //     preventDefault() of click event at bubble phase.
@@ -199,22 +206,23 @@ void EditorEventListener::Disconnect() {
   }
   UninstallFromEditor();
 
+  const OwningNonNull<EditorBase> editorBase = *mEditorBase;
+  mEditorBase = nullptr;
+
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
     nsIContent* focusedContent = fm->GetFocusedElement();
-    mozilla::dom::Element* root = mEditorBase->GetRoot();
+    mozilla::dom::Element* root = editorBase->GetRoot();
     if (focusedContent && root &&
         focusedContent->IsInclusiveDescendantOf(root)) {
       // Reset the Selection ancestor limiter and SelectionController state
       // that EditorBase::InitializeSelection set up.
-      DebugOnly<nsresult> rvIgnored = mEditorBase->FinalizeSelection();
+      DebugOnly<nsresult> rvIgnored = editorBase->FinalizeSelection();
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rvIgnored),
           "EditorBase::FinalizeSelection() failed, but ignored");
     }
   }
-
-  mEditorBase = nullptr;
 }
 
 void EditorEventListener::UninstallFromEditor() {
@@ -231,20 +239,17 @@ void EditorEventListener::UninstallFromEditor() {
     return;
   }
 
+  EventListenerFlags flags = mEditorBase->IsHTMLEditor()
+                                 ? TrustedEventsAtSystemGroupCapture()
+                                 : TrustedEventsAtSystemGroupBubble();
 #ifdef HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
-  eventListenerManager->RemoveEventListenerByType(
-      this, u"keydown"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->RemoveEventListenerByType(
-      this, u"keyup"_ns, TrustedEventsAtSystemGroupBubble());
+  eventListenerManager->RemoveEventListenerByType(this, u"keydown"_ns, flags);
+  eventListenerManager->RemoveEventListenerByType(this, u"keyup"_ns, flags);
 #endif
-  eventListenerManager->RemoveEventListenerByType(
-      this, u"keypress"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->RemoveEventListenerByType(
-      this, u"dragover"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->RemoveEventListenerByType(
-      this, u"dragleave"_ns, TrustedEventsAtSystemGroupBubble());
-  eventListenerManager->RemoveEventListenerByType(
-      this, u"drop"_ns, TrustedEventsAtSystemGroupBubble());
+  eventListenerManager->RemoveEventListenerByType(this, u"keypress"_ns, flags);
+  eventListenerManager->RemoveEventListenerByType(this, u"dragover"_ns, flags);
+  eventListenerManager->RemoveEventListenerByType(this, u"dragleave"_ns, flags);
+  eventListenerManager->RemoveEventListenerByType(this, u"drop"_ns, flags);
   eventListenerManager->RemoveEventListenerByType(this, u"mousedown"_ns,
                                                   TrustedEventsAtCapture());
   eventListenerManager->RemoveEventListenerByType(this, u"mouseup"_ns,
@@ -277,11 +282,8 @@ nsPresContext* EditorEventListener::GetPresContext() const {
 
 bool EditorEventListener::EditorHasFocus() {
   MOZ_ASSERT(!DetachedFromEditor());
-  nsCOMPtr<nsIContent> focusedContent = mEditorBase->GetFocusedContent();
-  if (!focusedContent) {
-    return false;
-  }
-  return !!focusedContent->GetComposedDoc();
+  const Element* focusedElement = mEditorBase->GetFocusedElement();
+  return focusedElement && focusedElement->IsInComposedDoc();
 }
 
 NS_IMPL_ISUPPORTS(EditorEventListener, nsIDOMEventListener)
@@ -313,10 +315,40 @@ NS_IMETHODIMP EditorEventListener::HandleEvent(Event* aEvent) {
   //       each event handler would just ignore the event.  So, in this method,
   //       you don't need to check if the QI succeeded before each call.
   WidgetEvent* internalEvent = aEvent->WidgetEventPtr();
+
+  if (DetachedFromEditor()) {
+    return NS_OK;
+  }
+
+  // For nested documents with multiple HTMLEditor registered on different
+  // nsWindowRoot, make sure the HTMLEditor for the original event target
+  // handles the events.
+  if (mEditorBase->IsHTMLEditor()) {
+    nsCOMPtr<nsINode> originalEventTargetNode =
+        nsINode::FromEventTargetOrNull(aEvent->GetOriginalTarget());
+
+    if (originalEventTargetNode &&
+        mEditorBase != originalEventTargetNode->OwnerDoc()->GetHTMLEditor()) {
+      return NS_OK;
+    }
+    if (!originalEventTargetNode && internalEvent->mMessage == eFocus &&
+        aEvent->GetCurrentTarget()->IsRootWindow()) {
+      return NS_OK;
+    }
+  }
+
   switch (internalEvent->mMessage) {
     // dragover and drop
     case eDragOver:
     case eDrop: {
+      // The editor which is registered on nsWindowRoot shouldn't handle
+      // drop events when it can be handled by Input or TextArea element on
+      // the chain.
+      if (aEvent->GetCurrentTarget()->IsRootWindow() &&
+          TextControlElement::FromEventTargetOrNull(
+              internalEvent->GetDOMEventTarget())) {
+        return NS_OK;
+      }
       // aEvent should be grabbed by the caller since this is
       // nsIDOMEventListener method.  However, our clang plugin cannot check it
       // if we use Event::As*Event().  So, we need to grab it by ourselves.
@@ -436,14 +468,22 @@ NS_IMETHODIMP EditorEventListener::HandleEvent(Event* aEvent) {
     }
     // focus
     case eFocus: {
-      nsresult rv = Focus(internalEvent->AsFocusEvent());
+      const InternalFocusEvent* focusEvent = internalEvent->AsFocusEvent();
+      if (NS_WARN_IF(!focusEvent)) {
+        return NS_ERROR_FAILURE;
+      }
+      nsresult rv = Focus(*focusEvent);
       NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                            "EditorEventListener::Focus() failed");
       return rv;
     }
     // blur
     case eBlur: {
-      nsresult rv = Blur(internalEvent->AsFocusEvent());
+      const InternalFocusEvent* blurEvent = internalEvent->AsFocusEvent();
+      if (NS_WARN_IF(!blurEvent)) {
+        return NS_ERROR_FAILURE;
+      }
+      nsresult rv = Blur(*blurEvent);
       NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                            "EditorEventListener::Blur() failed");
       return rv;
@@ -519,11 +559,7 @@ bool IsCtrlShiftPressed(const WidgetKeyboardEvent* aKeyboardEvent,
 
   // Scan the key status to find pressed keys. We should abandon changing the
   // text direction when there are other pressed keys.
-  if (aKeyboardEvent->IsAlt() || aKeyboardEvent->IsOS()) {
-    return false;
-  }
-
-  return true;
+  return !aKeyboardEvent->IsAlt() && !aKeyboardEvent->IsMeta();
 }
 
 // This logic is mostly borrowed from Chromium's
@@ -542,7 +578,9 @@ nsresult EditorEventListener::KeyUp(const WidgetKeyboardEvent* aKeyboardEvent) {
   RefPtr<EditorBase> editorBase(mEditorBase);
   if ((aKeyboardEvent->mKeyCode == NS_VK_SHIFT ||
        aKeyboardEvent->mKeyCode == NS_VK_CONTROL) &&
-      mShouldSwitchTextDirection && editorBase->IsInPlaintextMode()) {
+      mShouldSwitchTextDirection &&
+      (editorBase->IsTextEditor() ||
+       editorBase->AsHTMLEditor()->IsPlaintextMailComposer())) {
     editorBase->SwitchTextDirectionTo(mSwitchToRTL
                                           ? EditorBase::TextDirection::eRTL
                                           : EditorBase::TextDirection::eLTR);
@@ -608,7 +646,32 @@ nsresult EditorEventListener::KeyPress(WidgetKeyboardEvent* aKeyboardEvent) {
     NS_WARNING("EditorBase::HandleKeyPressEvent() failed");
     return rv;
   }
-  if (DetachedFromEditorOrDefaultPrevented(aKeyboardEvent)) {
+
+  auto GetWidget = [&]() -> nsIWidget* {
+    if (aKeyboardEvent->mWidget) {
+      return aKeyboardEvent->mWidget;
+    }
+    // If the event is created by chrome script, the widget is always nullptr.
+    nsPresContext* presContext = GetPresContext();
+    if (NS_WARN_IF(!presContext)) {
+      return nullptr;
+    }
+    return presContext->GetTextInputHandlingWidget();
+  };
+
+  if (DetachedFromEditor()) {
+    return NS_OK;
+  }
+
+  if (LookAndFeel::GetInt(LookAndFeel::IntID::HideCursorWhileTyping)) {
+    if (nsPresContext* pc = GetPresContext()) {
+      if (nsIWidget* widget = GetWidget()) {
+        pc->EventStateManager()->StartHidingCursorWhileTyping(widget);
+      }
+    }
+  }
+
+  if (aKeyboardEvent->DefaultPrevented()) {
     return NS_OK;
   }
 
@@ -617,17 +680,10 @@ nsresult EditorEventListener::KeyPress(WidgetKeyboardEvent* aKeyboardEvent) {
   }
 
   // Now, ask the native key bindings to handle the event.
-  nsIWidget* widget = aKeyboardEvent->mWidget;
-  // If the event is created by chrome script, the widget is always nullptr.
-  if (!widget) {
-    nsPresContext* presContext = GetPresContext();
-    if (NS_WARN_IF(!presContext)) {
-      return NS_OK;
-    }
-    widget = presContext->GetNearestWidget();
-    if (NS_WARN_IF(!widget)) {
-      return NS_OK;
-    }
+
+  nsIWidget* widget = GetWidget();
+  if (NS_WARN_IF(!widget)) {
+    return NS_OK;
   }
 
   RefPtr<Document> doc = editorBase->GetDocument();
@@ -638,9 +694,8 @@ nsresult EditorEventListener::KeyPress(WidgetKeyboardEvent* aKeyboardEvent) {
   // WidgetEvent::mWidget temporarily.
   AutoRestore<nsCOMPtr<nsIWidget>> saveWidget(aKeyboardEvent->mWidget);
   aKeyboardEvent->mWidget = widget;
-  if (aKeyboardEvent->ExecuteEditCommands(
-          nsIWidget::NativeKeyBindingsForRichTextEditor, DoCommandCallback,
-          doc)) {
+  if (aKeyboardEvent->ExecuteEditCommands(NativeKeyBindingsType::RichTextEditor,
+                                          DoCommandCallback, doc)) {
     aKeyboardEvent->PreventDefault();
   }
   return NS_OK;
@@ -660,11 +715,10 @@ nsresult EditorEventListener::MouseClick(WidgetMouseEvent* aMouseClickEvent) {
   // Notifies clicking on editor to IMEStateManager even when the event was
   // consumed.
   if (EditorHasFocus()) {
-    RefPtr<nsPresContext> presContext = GetPresContext();
-    if (presContext) {
-      nsCOMPtr<nsIContent> focusedContent = mEditorBase->GetFocusedContent();
-      IMEStateManager::OnClickInEditor(presContext, focusedContent,
-                                       aMouseClickEvent);
+    if (RefPtr<nsPresContext> presContext = GetPresContext()) {
+      RefPtr<Element> focusedElement = mEditorBase->GetFocusedElement();
+      IMEStateManager::OnClickInEditor(*presContext, focusedElement,
+                                       *aMouseClickEvent);
       if (DetachedFromEditor()) {
         return NS_OK;
       }
@@ -715,7 +769,7 @@ nsresult EditorEventListener::MouseClick(WidgetMouseEvent* aMouseClickEvent) {
       "EventStateManager::HandleMiddleClickPaste() failed, but ignored");
   if (status == nsEventStatus_eConsumeNoDefault) {
     // We no longer need to StopImmediatePropagation here since
-    // ClickHandlerChild.jsm checks for and ignores editables, so won't
+    // ClickHandlerChild.sys.mjs checks for and ignores editables, so won't
     // re-handle the event
     aMouseClickEvent->PreventDefault();
   }
@@ -734,9 +788,9 @@ bool EditorEventListener::NotifyIMEOfMouseButtonEvent(
   if (NS_WARN_IF(!presContext)) {
     return false;
   }
-  nsCOMPtr<nsIContent> focusedContent = mEditorBase->GetFocusedContent();
+  RefPtr<Element> focusedElement = mEditorBase->GetFocusedElement();
   return IMEStateManager::OnMouseButtonEventInEditor(
-      presContext, focusedContent, aMouseEvent);
+      *presContext, focusedElement, *aMouseEvent);
 }
 
 nsresult EditorEventListener::MouseDown(MouseEvent* aMouseEvent) {
@@ -844,10 +898,17 @@ nsresult EditorEventListener::DragOverOrDrop(DragEvent* aDragEvent) {
     return NS_OK;
   }
 
+  WidgetDragEvent* asWidgetEvent = aDragEvent->WidgetEventPtr()->AsDragEvent();
+  AutoRestore<bool> inHTMLEditorEventListener(
+      asWidgetEvent->mInHTMLEditorEventListener);
+  if (mEditorBase->IsHTMLEditor()) {
+    asWidgetEvent->mInHTMLEditorEventListener = true;
+  }
   aDragEvent->PreventDefault();
+
   aDragEvent->StopImmediatePropagation();
 
-  if (aDragEvent->WidgetEventPtr()->mMessage == eDrop) {
+  if (asWidgetEvent->mMessage == eDrop) {
     RefPtr<EditorBase> editorBase = mEditorBase;
     nsresult rv = editorBase->HandleDropEvent(aDragEvent);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -855,7 +916,7 @@ nsresult EditorEventListener::DragOverOrDrop(DragEvent* aDragEvent) {
     return rv;
   }
 
-  MOZ_ASSERT(aDragEvent->WidgetEventPtr()->mMessage == eDragOver);
+  MOZ_ASSERT(asWidgetEvent->mMessage == eDragOver);
 
   // If we handle the dragged item, we need to adjust drop effect here
   // because once DataTransfer is retrieved, DragEvent has initialized it
@@ -954,7 +1015,8 @@ bool EditorEventListener::DragEventHasSupportingData(
   return dataTransfer->HasType(NS_LITERAL_STRING_FROM_CSTRING(kTextMime)) ||
          dataTransfer->HasType(
              NS_LITERAL_STRING_FROM_CSTRING(kMozTextInternal)) ||
-         (!mEditorBase->IsInPlaintextMode() &&
+         (mEditorBase->IsHTMLEditor() &&
+          !mEditorBase->AsHTMLEditor()->IsPlaintextMailComposer() &&
           (dataTransfer->HasType(NS_LITERAL_STRING_FROM_CSTRING(kHTMLMime)) ||
            dataTransfer->HasType(NS_LITERAL_STRING_FROM_CSTRING(kFileMime))));
 }
@@ -1017,8 +1079,8 @@ bool EditorEventListener::CanInsertAtDropPosition(DragEvent* aDragEvent) {
     return false;
   }
 
-  return !EditorUtils::IsPointInSelection(*selection, *dropParentContent,
-                                          dropOffset);
+  return !nsContentUtils::IsPointInSelection(*selection, *dropParentContent,
+                                             dropOffset);
 }
 
 nsresult EditorEventListener::HandleStartComposition(
@@ -1084,127 +1146,44 @@ void EditorEventListener::HandleEndComposition(
   editorBase->OnCompositionEnd(*aCompositionEndEvent);
 }
 
-nsresult EditorEventListener::Focus(InternalFocusEvent* aFocusEvent) {
-  if (NS_WARN_IF(!aFocusEvent) || DetachedFromEditor()) {
-    return NS_OK;
-  }
-
-  RefPtr<EditorBase> editorBase(mEditorBase);
-
-  // Spell check a textarea the first time that it is focused.
-  SpellCheckIfNeeded();
+nsresult EditorEventListener::Focus(const InternalFocusEvent& aFocusEvent) {
   if (DetachedFromEditor()) {
     return NS_OK;
   }
 
-  nsCOMPtr<nsINode> eventTargetNode =
-      nsINode::FromEventTargetOrNull(aFocusEvent->GetOriginalDOMEventTarget());
-  if (NS_WARN_IF(!eventTargetNode)) {
+  nsCOMPtr<nsINode> originalEventTargetNode =
+      nsINode::FromEventTargetOrNull(aFocusEvent.GetOriginalDOMEventTarget());
+  if (NS_WARN_IF(!originalEventTargetNode)) {
     return NS_ERROR_UNEXPECTED;
   }
 
-  // If the target is a document node but it's not editable, we should ignore
-  // it because actual focused element's event is going to come.
-  if (eventTargetNode->IsDocument() && !eventTargetNode->IsInDesignMode()) {
-    return NS_OK;
-  }
-
-  if (eventTargetNode->IsContent()) {
-    nsIContent* content =
-        eventTargetNode->AsContent()->FindFirstNonChromeOnlyAccessContent();
-    // XXX If the focus event target is a form control in contenteditable
-    // element, perhaps, the parent HTML editor should do nothing by this
-    // handler.  However, FindSelectionRoot() returns the root element of the
-    // contenteditable editor.  So, the editableRoot value is invalid for
-    // the plain text editor, and it will be set to the wrong limiter of
-    // the selection.  However, fortunately, actual bugs are not found yet.
-    nsCOMPtr<nsIContent> editableRoot = editorBase->FindSelectionRoot(content);
-
-    // make sure that the element is really focused in case an earlier
-    // listener in the chain changed the focus.
-    if (editableRoot) {
-      nsFocusManager* focusManager = nsFocusManager::GetFocusManager();
-      if (NS_WARN_IF(!focusManager)) {
-        return NS_OK;
-      }
-
-      nsIContent* focusedContent = focusManager->GetFocusedElement();
-      if (!focusedContent) {
-        return NS_OK;
-      }
-
-      nsCOMPtr<nsIContent> originalTargetAsContent =
-          do_QueryInterface(aFocusEvent->GetOriginalDOMEventTarget());
-
-      if (!SameCOMIdentity(
-              focusedContent->FindFirstNonChromeOnlyAccessContent(),
-              originalTargetAsContent->FindFirstNonChromeOnlyAccessContent())) {
-        return NS_OK;
-      }
+  // If the target is a document node but it's not editable, we should
+  // ignore it because actual focused element's event is going to come.
+  if (originalEventTargetNode->IsDocument()) {
+    if (!originalEventTargetNode->IsInDesignMode()) {
+      return NS_OK;
     }
   }
-
-  editorBase->OnFocus(*eventTargetNode);
-  if (DetachedFromEditorOrDefaultPrevented(aFocusEvent)) {
+  // We should not receive focus events whose target is not a content node
+  // unless the node is a document node.
+  else if (NS_WARN_IF(!originalEventTargetNode->IsContent())) {
     return NS_OK;
   }
 
-  RefPtr<nsPresContext> presContext = GetPresContext();
-  if (NS_WARN_IF(!presContext)) {
-    return NS_OK;
-  }
-  nsCOMPtr<nsIContent> focusedContent = editorBase->GetFocusedContent();
-  IMEStateManager::OnFocusInEditor(presContext, focusedContent, *editorBase);
-
-  return NS_OK;
+  const OwningNonNull<EditorBase> editorBase(*mEditorBase);
+  DebugOnly<nsresult> rvIgnored = editorBase->OnFocus(*originalEventTargetNode);
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored), "EditorBase::OnFocus() failed");
+  return NS_OK;  // Don't return error code to the event listener manager.
 }
 
-nsresult EditorEventListener::Blur(InternalFocusEvent* aBlurEvent) {
-  if (NS_WARN_IF(!aBlurEvent) || DetachedFromEditor()) {
+nsresult EditorEventListener::Blur(const InternalFocusEvent& aBlurEvent) {
+  if (DetachedFromEditor()) {
     return NS_OK;
   }
 
-  // check if something else is focused. If another element is focused, then
-  // we should not change the selection.
-  nsFocusManager* focusManager = nsFocusManager::GetFocusManager();
-  if (NS_WARN_IF(!focusManager)) {
-    return NS_OK;
-  }
-
-  Element* focusedElement = focusManager->GetFocusedElement();
-  if (!focusedElement) {
-    // If it's in the designMode, and blur occurs, the target must be the
-    // window.  If a blur event is fired and the target is an element, it
-    // must be delayed blur event at initializing the `HTMLEditor`.
-    // TODO: Add automated tests for checking the case that the target node
-    //       is in a shadow DOM tree whose host is in design mode.
-    if (mEditorBase->IsHTMLEditor() &&
-        mEditorBase->AsHTMLEditor()->IsInDesignMode()) {
-      if (Element::FromEventTargetOrNull(aBlurEvent->mTarget)) {
-        return NS_OK;
-      }
-    }
-    RefPtr<EditorBase> editorBase(mEditorBase);
-    DebugOnly<nsresult> rvIgnored = editorBase->FinalizeSelection();
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                         "EditorBase::FinalizeSelection() failed, but ignored");
-  }
-  return NS_OK;
-}
-
-void EditorEventListener::SpellCheckIfNeeded() {
-  MOZ_ASSERT(!DetachedFromEditor());
-
-  // If the spell check skip flag is still enabled from creation time,
-  // disable it because focused editors are allowed to spell check.
-  RefPtr<EditorBase> editorBase(mEditorBase);
-  if (!editorBase->ShouldSkipSpellCheck()) {
-    return;
-  }
-  DebugOnly<nsresult> rvIgnored =
-      editorBase->RemoveFlags(nsIEditor::eEditorSkipSpellCheck);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                       "EditorBase::RemoveFlags() failed, but ignored");
+  DebugOnly<nsresult> rvIgnored = mEditorBase->OnBlur(aBlurEvent.mTarget);
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored), "EditorBase::OnBlur() failed");
+  return NS_OK;  // Don't return error code to the event listener manager.
 }
 
 bool EditorEventListener::IsFileControlTextBox() {
@@ -1251,7 +1230,7 @@ bool EditorEventListener::ShouldHandleNativeKeyBindings(
     return true;
   }
 
-  nsIContent* editingHost = htmlEditor->GetActiveEditingHost();
+  nsIContent* editingHost = htmlEditor->ComputeEditingHost();
   if (!editingHost) {
     return false;
   }

@@ -20,6 +20,7 @@ UNIFIED_SOURCES += [
     "TestFindFullHash.cpp",
     "TestLookupCacheV4.cpp",
     "TestPerProviderDirectory.cpp",
+    "TestPrefixSet.cpp",
     "TestProtocolParser.cpp",
     "TestRiceDeltaDecoder.cpp",
     "TestSafebrowsingHash.cpp",
@@ -37,5 +38,3 @@ if CONFIG["NIGHTLY_BUILD"] or CONFIG["MOZ_DEBUG"]:
     DEFINES["MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES"] = True
 
 FINAL_LIBRARY = "xul-gtest"
-
-REQUIRES_UNIFIED_BUILD = True

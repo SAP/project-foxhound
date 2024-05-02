@@ -1,0 +1,45 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test Function.ctor sink</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      let string_content = "hello";
+      let sink_names = [
+          "Function.ctor",
+          "Function.ctor",
+      ];
+
+      let i = 0;
+      
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+          SimpleTest.is(report.detail.str, "function anonymous(a\n) {\nreturn hello\n}", "Check sink string content");
+
+          let flow = report.detail.str.taint[0].flow;
+          SimpleTest.is(flow[2].operation, sink_names[i]);
+
+          i += 1;
+          if (i >= sink_names.length) {
+              SimpleTest.finish();
+          }
+      }, false);
+
+      function startTest() {
+          let tainted = String.tainted("return hello");
+          Function("a", tainted);
+          Function(String.tainted("a"), "return hello");
+      }
+      
+    </script>
+    <script id="emptyScript">
+    </script>
+  </head>
+
+  <body onload="startTest();">
+  </body>
+
+</html>

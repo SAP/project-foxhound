@@ -7,17 +7,17 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
-const Types = require("devtools/client/inspector/compatibility/types");
+const Types = require("resource://devtools/client/inspector/compatibility/types.js");
 
 const NodeList = createFactory(
-  require("devtools/client/inspector/compatibility/components/NodeList")
+  require("resource://devtools/client/inspector/compatibility/components/NodeList.js")
 );
 
 class NodePane extends PureComponent {
@@ -32,22 +32,23 @@ class NodePane extends PureComponent {
   render() {
     const { nodes } = this.props;
 
-    return nodes.length > 1
-      ? dom.details(
-          { className: "compatibility-node-pane" },
-          Localized(
-            {
-              id: "compatibility-issue-occurrences",
-              $number: nodes.length,
-            },
-            dom.summary(
-              { className: "compatibility-node-pane__summary" },
-              "compatibility-issue-occurrences"
-            )
-          ),
-          NodeList(this.props)
+    return dom.details(
+      {
+        className: "compatibility-node-pane",
+        open: nodes.length <= 1,
+      },
+      Localized(
+        {
+          id: "compatibility-issue-occurrences",
+          $number: nodes.length,
+        },
+        dom.summary(
+          { className: "compatibility-node-pane__summary" },
+          "compatibility-issue-occurrences"
         )
-      : dom.div({ className: "compatibility-node-pane" }, NodeList(this.props));
+      ),
+      NodeList(this.props)
+    );
   }
 }
 

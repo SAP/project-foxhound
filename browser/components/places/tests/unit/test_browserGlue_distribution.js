@@ -34,7 +34,7 @@ function run_test() {
   run_next_test();
 }
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   // Remove the distribution file, even if the test failed, otherwise all
   // next tests will import it.
   let iniFile = gProfD.clone();
@@ -46,9 +46,9 @@ registerCleanupFunction(function() {
   Assert.ok(!iniFile.exists());
 });
 
-add_task(async function() {
-  let { DistributionCustomizer } = ChromeUtils.import(
-    "resource:///modules/distribution.js"
+add_task(async function () {
+  let { DistributionCustomizer } = ChromeUtils.importESModule(
+    "resource:///modules/distribution.sys.mjs"
   );
   let distribution = new DistributionCustomizer();
 

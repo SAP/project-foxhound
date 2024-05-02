@@ -10,7 +10,6 @@
 #include "HttpTransactionChild.h"
 
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/net/BackgroundDataBridgeParent.h"
 #include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/net/InputChannelThrottleQueueChild.h"
@@ -27,10 +26,7 @@
 #include "nsSerializationHelper.h"
 #include "OpaqueResponseUtils.h"
 
-using mozilla::ipc::BackgroundParent;
-
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 NS_IMPL_ISUPPORTS(HttpTransactionChild, nsIRequestObserver, nsIStreamListener,
                   nsITransportEventSink, nsIThrottledInputChannel,
@@ -69,8 +65,8 @@ nsresult HttpTransactionChild::InitInternal(
     uint32_t caps, const HttpConnectionInfoCloneArgs& infoArgs,
     nsHttpRequestHead* requestHead, nsIInputStream* requestBody,
     uint64_t requestContentLength, bool requestBodyHasHeaders,
-    uint64_t topLevelOuterContentWindowId, uint8_t httpTrafficCategory,
-    uint64_t requestContextID, uint32_t classOfService, uint32_t initialRwin,
+    uint64_t browserId, uint8_t httpTrafficCategory, uint64_t requestContextID,
+    ClassOfService classOfService, uint32_t initialRwin,
     bool responseTimeoutEnabled, uint64_t channelId,
     bool aHasTransactionObserver,
     const Maybe<H2PushedStreamArg>& aPushedStreamArg) {
@@ -96,7 +92,7 @@ nsresult HttpTransactionChild::InitInternal(
     };
   }
 
-  std::function<void(TransactionObserverResult &&)> observer;
+  std::function<void(TransactionObserverResult&&)> observer;
   if (aHasTransactionObserver) {
     nsMainThreadPtrHandle<HttpTransactionChild> handle(
         new nsMainThreadPtrHolder<HttpTransactionChild>(
@@ -110,19 +106,19 @@ nsresult HttpTransactionChild::InitInternal(
   uint32_t pushedStreamId = 0;
   if (aPushedStreamArg) {
     HttpTransactionChild* transChild = static_cast<HttpTransactionChild*>(
-        aPushedStreamArg.ref().transWithPushedStreamChild());
+        aPushedStreamArg.ref().transWithPushedStream().AsChild().get());
     transWithPushedStream = transChild->GetHttpTransaction();
     pushedStreamId = aPushedStreamArg.ref().pushedStreamId();
   }
 
   nsresult rv = mTransaction->Init(
       caps, cinfo, requestHead, requestBody, requestContentLength,
-      requestBodyHasHeaders, GetCurrentEventTarget(),
+      requestBodyHasHeaders, GetCurrentSerialEventTarget(),
       nullptr,  // TODO: security callback, fix in bug 1512479.
-      this, topLevelOuterContentWindowId,
-      static_cast<HttpTrafficCategory>(httpTrafficCategory), rc, classOfService,
-      initialRwin, responseTimeoutEnabled, channelId, std::move(observer),
-      std::move(pushCallback), transWithPushedStream, pushedStreamId);
+      this, browserId, static_cast<HttpTrafficCategory>(httpTrafficCategory),
+      rc, classOfService, initialRwin, responseTimeoutEnabled, channelId,
+      std::move(observer), std::move(pushCallback), transWithPushedStream,
+      pushedStreamId);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mTransaction = nullptr;
     return rv;
@@ -173,7 +169,7 @@ mozilla::ipc::IPCResult HttpTransactionChild::RecvInit(
     const uint64_t& aReqContentLength, const bool& aReqBodyIncludesHeaders,
     const uint64_t& aTopLevelOuterContentWindowId,
     const uint8_t& aHttpTrafficCategory, const uint64_t& aRequestContextID,
-    const uint32_t& aClassOfService, const uint32_t& aInitialRwin,
+    const ClassOfService& aClassOfService, const uint32_t& aInitialRwin,
     const bool& aResponseTimeoutEnabled, const uint64_t& aChannelId,
     const bool& aHasTransactionObserver,
     const Maybe<H2PushedStreamArg>& aPushedStreamArg,
@@ -279,7 +275,8 @@ HttpTransactionChild::OnDataAvailable(nsIRequest* aRequest,
     nsHttp::SendFunc<nsCString> sendFunc =
         [self = UnsafePtr<HttpTransactionChild>(this)](
             const nsCString& aData, uint64_t aOffset, uint32_t aCount) {
-          return self->SendOnDataAvailable(aData, aOffset, aCount);
+          return self->SendOnDataAvailable(aData, aOffset, aCount,
+                                           TimeStamp::Now());
         };
 
     LOG(("  ODA to parent process"));
@@ -289,7 +286,6 @@ HttpTransactionChild::OnDataAvailable(nsIRequest* aRequest,
     return NS_OK;
   }
 
-  ipc::AssertIsOnBackgroundThread();
   MOZ_ASSERT(mDataBridgeParent);
 
   if (!mDataBridgeParent->CanSend()) {
@@ -300,8 +296,8 @@ HttpTransactionChild::OnDataAvailable(nsIRequest* aRequest,
       [self = UnsafePtr<HttpTransactionChild>(this)](
           const nsDependentCSubstring& aData, uint64_t aOffset,
           uint32_t aCount) {
-        return self->mDataBridgeParent->SendOnTransportAndData(aOffset, aCount,
-                                                               aData);
+        return self->mDataBridgeParent->SendOnTransportAndData(
+            aOffset, aCount, aData, TimeStamp::Now());
       };
 
   LOG(("  ODA to content process"));
@@ -311,7 +307,7 @@ HttpTransactionChild::OnDataAvailable(nsIRequest* aRequest,
   }
 
   // We still need to send ODA to parent process, because the data needs to be
-  // saved in cache. Note that we set dataSentToChildProcess to true, to this
+  // saved in cache. Note that we set dataSentToChildProcess to true, so this
   // ODA will not be sent to child process.
   RefPtr<HttpTransactionChild> self = this;
   rv = NS_DispatchToMainThread(
@@ -321,7 +317,8 @@ HttpTransactionChild::OnDataAvailable(nsIRequest* aRequest,
             nsHttp::SendFunc<nsCString> sendFunc =
                 [self](const nsCString& aData, uint64_t aOffset,
                        uint32_t aCount) {
-                  return self->SendOnDataAvailable(aData, aOffset, aCount);
+                  return self->SendOnDataAvailable(aData, aOffset, aCount,
+                                                   TimeStamp::Now());
                 };
 
             if (!nsHttp::SendDataInChunks(data, offset, count, sendFunc)) {
@@ -345,6 +342,7 @@ static TimingStructArgs ToTimingStructArgs(TimingStruct aTiming) {
   args.requestStart() = aTiming.requestStart;
   args.responseStart() = aTiming.responseStart;
   args.responseEnd() = aTiming.responseEnd;
+  args.transactionPending() = aTiming.transactionPending;
   return args;
 }
 
@@ -409,21 +407,12 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
 
   mProtocolVersion.Truncate();
 
-  nsCString serializedSecurityInfoOut;
-  nsCOMPtr<nsISupports> secInfoSupp = mTransaction->SecurityInfo();
-  if (secInfoSupp) {
-    nsCOMPtr<nsITransportSecurityInfo> info = do_QueryInterface(secInfoSupp);
+  nsCOMPtr<nsITransportSecurityInfo> securityInfo(mTransaction->SecurityInfo());
+  if (securityInfo) {
     nsAutoCString protocol;
-    if (info && NS_SUCCEEDED(info->GetNegotiatedNPN(protocol)) &&
+    if (NS_SUCCEEDED(securityInfo->GetNegotiatedNPN(protocol)) &&
         !protocol.IsEmpty()) {
       mProtocolVersion.Assign(protocol);
-    }
-    // Make sure peerId is generated.
-    nsAutoCString unused;
-    info->GetPeerId(unused);
-    nsCOMPtr<nsISerializable> secInfoSer = do_QueryInterface(secInfoSupp);
-    if (secInfoSer) {
-      NS_SerializeToString(secInfoSer, serializedSecurityInfoOut);
     }
   }
 
@@ -459,7 +448,7 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
     if (dataBridgeParent) {
       mDataBridgeParent = std::move(dataBridgeParent.ref());
 
-      nsCOMPtr<nsIThread> backgroundThread =
+      nsCOMPtr<nsISerialEventTarget> backgroundThread =
           mDataBridgeParent->GetBackgroundThread();
       nsCOMPtr<nsIThreadRetargetableRequest> retargetableTransactionPump;
       retargetableTransactionPump = do_QueryObject(mTransactionPump);
@@ -480,13 +469,26 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
   int32_t proxyConnectResponseCode =
       mTransaction->GetProxyConnectResponseCode();
 
+  nsIRequest::TRRMode mode = nsIRequest::TRR_DEFAULT_MODE;
+  TRRSkippedReason reason = nsITRRSkipReason::TRR_UNSET;
+  {
+    NetAddr selfAddr;
+    NetAddr peerAddr;
+    bool isTrr = false;
+    bool echConfigUsed = false;
+    if (mTransaction) {
+      mTransaction->GetNetworkAddresses(selfAddr, peerAddr, isTrr, mode, reason,
+                                        echConfigUsed);
+    }
+  }
+
   Unused << SendOnStartRequest(
-      status, optionalHead, serializedSecurityInfoOut,
-      mTransaction->ProxyConnectFailed(),
+      status, optionalHead, securityInfo, mTransaction->ProxyConnectFailed(),
       ToTimingStructArgs(mTransaction->Timings()), proxyConnectResponseCode,
       dataForSniffer, optionalAltSvcUsed, !!mDataBridgeParent,
       mTransaction->TakeRestartedState(), mTransaction->HTTPSSVCReceivedStage(),
-      mTransaction->GetSupportsHTTP3());
+      mTransaction->GetSupportsHTTP3(), mode, reason, mTransaction->Caps(),
+      TimeStamp::Now());
   return NS_OK;
 }
 
@@ -507,7 +509,8 @@ ResourceTimingStructArgs HttpTransactionChild::GetTimingAttributes() {
   args.encodedBodySize() = mLogicalOffset;
   args.redirectStart() = mRedirectStart;
   args.redirectEnd() = mRedirectEnd;
-  args.protocolVersion() = mProtocolVersion;
+  args.transferSize() = mTransaction->GetTransferSize();
+  args.transactionPending() = mTransaction->GetPendingTime();
   return args;
 }
 
@@ -523,7 +526,8 @@ HttpTransactionChild::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     MOZ_ASSERT(NS_FAILED(mStatus), "This shoule be only called when failure");
     if (mDataBridgeParent) {
       mDataBridgeParent->OnStopRequest(mStatus, ResourceTimingStructArgs(),
-                                       TimeStamp(), nsHttpHeaderArray());
+                                       TimeStamp(), nsHttpHeaderArray(),
+                                       TimeStamp::Now());
       mDataBridgeParent = nullptr;
     }
   });
@@ -554,7 +558,8 @@ HttpTransactionChild::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   if (mDataBridgeParent) {
     mDataBridgeParent->OnStopRequest(
         aStatus, GetTimingAttributes(), lastActTabOpt,
-        responseTrailers ? *responseTrailers : nsHttpHeaderArray());
+        responseTrailers ? *responseTrailers : nsHttpHeaderArray(),
+        TimeStamp::Now());
     mDataBridgeParent = nullptr;
   }
 
@@ -565,7 +570,7 @@ HttpTransactionChild::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
                               mTransaction->GetTransferSize(),
                               ToTimingStructArgs(mTransaction->Timings()),
                               responseTrailers, mTransactionObserverResult,
-                              lastActTabOpt, mTransaction->Caps(), infoArgs);
+                              lastActTabOpt, infoArgs, TimeStamp::Now());
 
   return NS_OK;
 }
@@ -593,8 +598,10 @@ HttpTransactionChild::OnTransportStatus(nsITransport* aTransport,
     NetAddr peerAddr;
     bool isTrr = false;
     bool echConfigUsed = false;
+    nsIRequest::TRRMode mode = nsIRequest::TRR_DEFAULT_MODE;
+    TRRSkippedReason reason = nsITRRSkipReason::TRR_UNSET;
     if (mTransaction) {
-      mTransaction->GetNetworkAddresses(selfAddr, peerAddr, isTrr,
+      mTransaction->GetNetworkAddresses(selfAddr, peerAddr, isTrr, mode, reason,
                                         echConfigUsed);
     } else {
       nsCOMPtr<nsISocketTransport> socketTransport =
@@ -603,10 +610,12 @@ HttpTransactionChild::OnTransportStatus(nsITransport* aTransport,
         socketTransport->GetSelfAddr(&selfAddr);
         socketTransport->GetPeerAddr(&peerAddr);
         socketTransport->ResolvedByTRR(&isTrr);
+        socketTransport->GetEffectiveTRRMode(&mode);
+        socketTransport->GetTrrSkipReason(&reason);
         socketTransport->GetEchConfigUsed(&echConfigUsed);
       }
     }
-    arg.emplace(selfAddr, peerAddr, isTrr, echConfigUsed);
+    arg.emplace(selfAddr, peerAddr, isTrr, mode, reason, echConfigUsed);
   }
 
   Unused << SendOnTransportStatus(aStatus, aProgress, aProgressMax, arg);
@@ -640,13 +649,17 @@ HttpTransactionChild::CheckListenerChain() {
 }
 
 NS_IMETHODIMP
-HttpTransactionChild::EarlyHint(const nsACString& value) {
+HttpTransactionChild::OnDataFinished(nsresult aStatus) { return NS_OK; }
+
+NS_IMETHODIMP
+HttpTransactionChild::EarlyHint(const nsACString& aValue,
+                                const nsACString& aReferrerPolicy,
+                                const nsACString& aCSPHeader) {
   LOG(("HttpTransactionChild::EarlyHint"));
   if (CanSend()) {
-    Unused << SendEarlyHint(PromiseFlatCString(value));
+    Unused << SendEarlyHint(aValue, aReferrerPolicy, aCSPHeader);
   }
   return NS_OK;
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

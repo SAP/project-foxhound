@@ -1,5 +1,5 @@
 [package]
-authors = ["nobody <nobody@mozilla.org>"]
+authors = ["The Mozilla Project Developers"]
 name = "testing"
 version = "0.0.1"
 
@@ -8,3 +8,6 @@ name = "target"
 
 [[bin]]
 name = "host"
+
+[dependencies]
+mozilla-central-workspace-hack = { version = "0.1", features = ["testing"], optional = true }

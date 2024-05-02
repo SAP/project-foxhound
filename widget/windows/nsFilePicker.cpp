@@ -9,23 +9,33 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <cderr.h>
+#include <winerror.h>
+#include <winuser.h>
+#include <utility>
 
+#include "mozilla/Assertions.h"
 #include "mozilla/BackgroundHangMonitor.h"
+#include "mozilla/Logging.h"
+#include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsVersion.h"
-#include "nsReadableUtils.h"
-#include "nsNetUtil.h"
-#include "nsWindow.h"
-#include "nsEnumeratorUtils.h"
 #include "nsCRT.h"
+#include "nsEnumeratorUtils.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsToolkit.h"
+#include "nsWindow.h"
 #include "WinUtils.h"
-#include "nsPIDOMWindow.h"
 
-using mozilla::IsWin8OrLater;
-using mozilla::MakeUnique;
+#include "mozilla/widget/filedialog/WinFileDialogCommands.h"
+#include "mozilla/widget/filedialog/WinFileDialogParent.h"
+
+using mozilla::Maybe;
+using mozilla::Result;
 using mozilla::UniquePtr;
 
 using namespace mozilla::widget;
@@ -33,30 +43,13 @@ using namespace mozilla::widget;
 UniquePtr<char16_t[], nsFilePicker::FreeDeleter>
     nsFilePicker::sLastUsedUnicodeDirectory;
 
-#define MAX_EXTENSION_LENGTH 10
-#define FILE_BUFFER_SIZE 4096
+using mozilla::LogLevel;
+static mozilla::LazyLogModule sLogFileDialog("FileDialog");
 
-typedef DWORD FILEOPENDIALOGOPTIONS;
+#define MAX_EXTENSION_LENGTH 10
 
 ///////////////////////////////////////////////////////////////////////////////
 // Helper classes
-
-// Manages NS_NATIVE_TMP_WINDOW child windows. NS_NATIVE_TMP_WINDOWs are
-// temporary child windows of mParentWidget created to address RTL issues
-// in picker dialogs. We are responsible for destroying these.
-class AutoDestroyTmpWindow {
- public:
-  explicit AutoDestroyTmpWindow(HWND aTmpWnd) : mWnd(aTmpWnd) {}
-
-  ~AutoDestroyTmpWindow() {
-    if (mWnd) DestroyWindow(mWnd);
-  }
-
-  inline HWND get() const { return mWnd; }
-
- private:
-  HWND mWnd;
-};
 
 // Manages matching PickerOpen/PickerClosed calls on the parent widget.
 class AutoWidgetPickerState {
@@ -88,12 +81,263 @@ nsFilePicker::nsFilePicker() : mSelectedType(1) {}
 NS_IMPL_ISUPPORTS(nsFilePicker, nsIFilePicker)
 
 NS_IMETHODIMP nsFilePicker::Init(mozIDOMWindowProxy* aParent,
-                                 const nsAString& aTitle, int16_t aMode) {
+                                 const nsAString& aTitle,
+                                 nsIFilePicker::Mode aMode) {
+  // Don't attempt to open a real file-picker in headless mode.
+  if (gfxPlatform::IsHeadless()) {
+    return nsresult::NS_ERROR_NOT_AVAILABLE;
+  }
+
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryInterface(aParent);
   nsIDocShell* docShell = window ? window->GetDocShell() : nullptr;
   mLoadContext = do_QueryInterface(docShell);
 
   return nsBaseFilePicker::Init(aParent, aTitle, aMode);
+}
+
+namespace mozilla::detail {
+namespace {
+// Commit crimes against asynchrony.
+//
+// More specifically, drive a MozPromise to completion (resolution or rejection)
+// on the main thread. This is only even vaguely acceptable in the context of
+// the Windows file picker because a) this is essentially what `IFileDialog`'s
+// `ShowModal()` will do if we open it in-process anyway, and b) there exist
+// concrete plans [0] to remove this, making the Windows file picker fully
+// asynchronous.
+//
+// Do not take this as a model for use in other contexts; SpinEventLoopUntil
+// alone is bad enough.
+//
+// [0] Although see, _e.g._, http://www.thecodelesscode.com/case/234.
+//
+template <typename T, typename E, bool B>
+static auto ImmorallyDrivePromiseToCompletion(
+    RefPtr<MozPromise<T, E, B>>&& promise) -> Result<T, E> {
+  Maybe<Result<T, E>> val = Nothing();
+
+  AssertIsOnMainThread();
+  promise->Then(
+      mozilla::GetMainThreadSerialEventTarget(), "DrivePromiseToCompletion",
+      [&](T ret) { val = Some(std::move(ret)); },
+      [&](E error) { val = Some(Err(error)); });
+
+  SpinEventLoopUntil("DrivePromiseToCompletion"_ns,
+                     [&]() -> bool { return val.isSome(); });
+
+  MOZ_RELEASE_ASSERT(val.isSome());
+  return val.extract();
+}
+
+// Boilerplate for remotely showing a file dialog.
+template <typename ActionType,
+          typename ReturnType = typename decltype(std::declval<ActionType>()(
+              nullptr))::element_type::ResolveValueType>
+static auto ShowRemote(HWND parent, ActionType&& action)
+    -> RefPtr<MozPromise<ReturnType, HRESULT, false>> {
+  using RetPromise = MozPromise<ReturnType, HRESULT, false>;
+
+  constexpr static const auto fail = []() {
+    return RetPromise::CreateAndReject(E_FAIL, __PRETTY_FUNCTION__);
+  };
+
+  auto mgr = mozilla::ipc::UtilityProcessManager::GetSingleton();
+  if (!mgr) {
+    MOZ_ASSERT(false);
+    return fail();
+  }
+
+  auto wfda = mgr->CreateWinFileDialogAsync();
+  if (!wfda) {
+    return fail();
+  }
+
+  // WORKAROUND FOR UNDOCUMENTED BEHAVIOR: `IFileDialog::Show` disables the
+  // top-level ancestor of its provided owner-window. If the modal window's
+  // container process crashes, it will never get a chance to undo that, so
+  // we have to do it manually.
+  struct WindowEnabler {
+    HWND hwnd;
+    BOOL enabled;
+    explicit WindowEnabler(HWND hwnd)
+        : hwnd(hwnd), enabled(::IsWindowEnabled(hwnd)) {
+      MOZ_LOG(sLogFileDialog, LogLevel::Info,
+              ("ShowRemote: HWND %08zX enabled=%u", uintptr_t(hwnd), enabled));
+    }
+    WindowEnabler(WindowEnabler const&) = default;
+
+    void restore() const {
+      MOZ_LOG(sLogFileDialog, LogLevel::Info,
+              ("ShowRemote: HWND %08zX enabled=%u (restoring to %u)",
+               uintptr_t(hwnd), ::IsWindowEnabled(hwnd), enabled));
+      ::EnableWindow(hwnd, enabled);
+    }
+  };
+  HWND const rootWindow = ::GetAncestor(parent, GA_ROOT);
+
+  return wfda->Then(
+      mozilla::GetMainThreadSerialEventTarget(),
+      "nsFilePicker ShowRemote acquire",
+      [action = std::forward<ActionType>(action),
+       rootWindow](filedialog::ProcessProxy const& p) -> RefPtr<RetPromise> {
+        MOZ_LOG(sLogFileDialog, LogLevel::Info,
+                ("nsFilePicker ShowRemote first callback: p = [%p]", p.get()));
+        WindowEnabler enabledState(rootWindow);
+
+        // false positive: not actually redundant
+        // NOLINTNEXTLINE(readability-redundant-smartptr-get)
+        return action(p.get())
+            ->Then(
+                mozilla::GetMainThreadSerialEventTarget(),
+                "nsFilePicker ShowRemote call",
+                [p](ReturnType ret) {
+                  return RetPromise::CreateAndResolve(std::move(ret),
+                                                      __PRETTY_FUNCTION__);
+                },
+                [](mozilla::ipc::ResponseRejectReason error) {
+                  MOZ_LOG(sLogFileDialog, LogLevel::Error,
+                          ("IPC call rejected: %zu", size_t(error)));
+                  return fail();
+                })
+            // Unconditionally restore the disabled state.
+            ->Then(mozilla::GetMainThreadSerialEventTarget(),
+                   "nsFilePicker ShowRemote cleanup",
+                   [enabledState](
+                       typename RetPromise::ResolveOrRejectValue const& val) {
+                     enabledState.restore();
+                     return RetPromise::CreateAndResolveOrReject(
+                         val, "nsFilePicker ShowRemote cleanup fmap");
+                   });
+      },
+      [](nsresult error) -> RefPtr<RetPromise> {
+        MOZ_LOG(sLogFileDialog, LogLevel::Error,
+                ("could not acquire WinFileDialog: %zu", size_t(error)));
+        return fail();
+      });
+}
+
+template <typename Fn1, typename Fn2, typename... Args>
+auto ShowLocalAndOrRemote(Fn1 local, Fn2 remote, Args const&... args)
+    -> std::invoke_result_t<Fn1, Args...> {
+  static_assert(std::is_same_v<std::invoke_result_t<Fn1, Args...>,
+                               std::invoke_result_t<Fn2, Args...>>);
+
+  int32_t const pref =
+      mozilla::StaticPrefs::widget_windows_utility_process_file_picker();
+
+  switch (pref) {
+#ifndef NIGHTLY_BUILD
+    default:  // remain local-only on release and beta, for now
+#endif
+    case -1:
+      return local(args...);
+    case 2:
+      return remote(args...);
+#ifdef NIGHTLY_BUILD
+    default:  // fall back to local on failure on Nightly builds
+#endif
+    case 1:
+      return remote(args...).orElse([&](auto err) { return local(args...); });
+  }
+}
+
+}  // namespace
+}  // namespace mozilla::detail
+
+Result<Maybe<filedialog::Results>, HRESULT> nsFilePicker::ShowFilePickerImpl(
+    HWND parent, filedialog::FileDialogType type,
+    nsTArray<filedialog::Command> const& commands) {
+  return mozilla::detail::ShowLocalAndOrRemote(
+      &ShowFilePickerLocal, &ShowFilePickerRemote, parent, type, commands);
+}
+
+Result<Maybe<nsString>, HRESULT> nsFilePicker::ShowFolderPickerImpl(
+    HWND parent, nsTArray<filedialog::Command> const& commands) {
+  return mozilla::detail::ShowLocalAndOrRemote(
+      &ShowFolderPickerLocal, &ShowFolderPickerRemote, parent, commands);
+}
+
+/* static */
+Result<Maybe<filedialog::Results>, HRESULT> nsFilePicker::ShowFilePickerRemote(
+    HWND parent, filedialog::FileDialogType type,
+    nsTArray<filedialog::Command> const& commands) {
+  auto promise = mozilla::detail::ShowRemote(
+      parent, [parent, type, commands = commands.Clone()](
+                  filedialog::WinFileDialogParent* p) {
+        MOZ_LOG(sLogFileDialog, LogLevel::Info,
+                ("%s: p = [%p]", __PRETTY_FUNCTION__, p));
+        return p->SendShowFileDialog((uintptr_t)parent, type, commands);
+      });
+
+  return mozilla::detail::ImmorallyDrivePromiseToCompletion(std::move(promise));
+}
+
+/* static */
+Result<Maybe<nsString>, HRESULT> nsFilePicker::ShowFolderPickerRemote(
+    HWND parent, nsTArray<filedialog::Command> const& commands) {
+  auto promise = mozilla::detail::ShowRemote(
+      parent, [parent, commands = commands.Clone()](
+                  filedialog::WinFileDialogParent* p) {
+        return p->SendShowFolderDialog((uintptr_t)parent, commands);
+      });
+
+  return mozilla::detail::ImmorallyDrivePromiseToCompletion(std::move(promise));
+}
+
+/* static */
+Result<Maybe<filedialog::Results>, HRESULT> nsFilePicker::ShowFilePickerLocal(
+    HWND parent, filedialog::FileDialogType type,
+    nsTArray<filedialog::Command> const& commands) {
+  using mozilla::Err;
+  using mozilla::Nothing;
+  using mozilla::Some;
+
+  namespace fd = filedialog;
+
+  RefPtr<IFileDialog> dialog;
+  MOZ_TRY_VAR(dialog, fd::MakeFileDialog(type));
+
+  if (auto const res = fd::ApplyCommands(dialog.get(), commands); FAILED(res)) {
+    return Err(res);
+  }
+
+  // synchronously show the dialog
+  auto const ret = dialog->Show(parent);
+  if (ret == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+    return Maybe<fd::Results>(Nothing());
+  }
+  if (FAILED(ret)) {
+    return Err(ret);
+  }
+
+  return fd::GetFileResults(dialog.get()).map(mozilla::Some<fd::Results>);
+}
+
+/* static */
+Result<Maybe<nsString>, HRESULT> nsFilePicker::ShowFolderPickerLocal(
+    HWND parent, nsTArray<filedialog::Command> const& commands) {
+  using mozilla::Err;
+  using mozilla::Nothing;
+  using mozilla::Some;
+  namespace fd = filedialog;
+
+  RefPtr<IFileDialog> dialog;
+  MOZ_TRY_VAR(dialog, fd::MakeFileDialog(fd::FileDialogType::Open));
+
+  if (auto const res = fd::ApplyCommands(dialog.get(), commands); FAILED(res)) {
+    return Err(res);
+  }
+
+  // synchronously show the dialog
+  auto const ret = dialog->Show(parent);
+  if (ret == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+    return Maybe<nsString>(Nothing());
+  }
+  if (FAILED(ret)) {
+    return Err(ret);
+  }
+
+  return fd::GetFolderResults(dialog.get()).map(mozilla::Some<nsString>);
 }
 
 /*
@@ -108,77 +352,43 @@ NS_IMETHODIMP nsFilePicker::Init(mozIDOMWindowProxy* aParent,
  * @return true if a file was selected successfully.
  */
 bool nsFilePicker::ShowFolderPicker(const nsString& aInitialDir) {
-  RefPtr<IFileOpenDialog> dialog;
-  if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
-                              CLSCTX_INPROC_SERVER, IID_IFileOpenDialog,
-                              getter_AddRefs(dialog)))) {
-    return false;
-  }
-
-  // options
-  FILEOPENDIALOGOPTIONS fos = FOS_PICKFOLDERS;
-  HRESULT hr = dialog->SetOptions(fos);
-  if (FAILED(hr)) {
-    return false;
-  }
-
-  // initial strings
-  hr = dialog->SetTitle(mTitle.get());
-  if (FAILED(hr)) {
-    return false;
-  }
+  namespace fd = ::mozilla::widget::filedialog;
+  nsTArray<fd::Command> commands = {
+      fd::SetOptions(FOS_PICKFOLDERS),
+      fd::SetTitle(mTitle),
+  };
 
   if (!mOkButtonLabel.IsEmpty()) {
-    hr = dialog->SetOkButtonLabel(mOkButtonLabel.get());
-    if (FAILED(hr)) {
-      return false;
-    }
+    commands.AppendElement(fd::SetOkButtonLabel(mOkButtonLabel));
   }
 
   if (!aInitialDir.IsEmpty()) {
-    RefPtr<IShellItem> folder;
-    if (SUCCEEDED(SHCreateItemFromParsingName(aInitialDir.get(), nullptr,
-                                              IID_IShellItem,
-                                              getter_AddRefs(folder)))) {
-      hr = dialog->SetFolder(folder);
-      if (FAILED(hr)) {
-        return false;
-      }
+    commands.AppendElement(fd::SetFolder(aInitialDir));
+  }
+
+  nsString result;
+  {
+    ScopedRtlShimWindow shim(mParentWidget.get());
+    AutoWidgetPickerState awps(mParentWidget);
+
+    mozilla::BackgroundHangMonitor().NotifyWait();
+    auto res = ShowFolderPickerImpl(shim.get(), commands);
+    if (res.isErr()) {
+      NS_WARNING("ShowFolderPickerImpl failed");
+      return false;
     }
+
+    auto optResults = res.unwrap();
+    if (!optResults) {
+      // cancellation, not error
+      return false;
+    }
+
+    result = optResults.extract();
   }
 
-  AutoDestroyTmpWindow adtw(
-      (HWND)(mParentWidget.get()
-                 ? mParentWidget->GetNativeData(NS_NATIVE_TMP_WINDOW)
-                 : nullptr));
-
-  // display
-  mozilla::BackgroundHangMonitor().NotifyWait();
-  RefPtr<IShellItem> item;
-  if (FAILED(dialog->Show(adtw.get())) ||
-      FAILED(dialog->GetResult(getter_AddRefs(item))) || !item) {
-    return false;
-  }
-
-  // results
-
-  // If the user chose a Win7 Library, resolve to the library's
-  // default save folder.
-  RefPtr<IShellItem> folderPath;
-  RefPtr<IShellLibrary> shellLib;
-  if (FAILED(CoCreateInstance(CLSID_ShellLibrary, nullptr, CLSCTX_INPROC_SERVER,
-                              IID_IShellLibrary, getter_AddRefs(shellLib)))) {
-    return false;
-  }
-
-  if (shellLib && SUCCEEDED(shellLib->LoadLibraryFromItem(item, STGM_READ)) &&
-      SUCCEEDED(shellLib->GetDefaultSaveFolder(DSFT_DETECT, IID_IShellItem,
-                                               getter_AddRefs(folderPath)))) {
-    item.swap(folderPath);
-  }
-
-  // get the folder's file system path
-  return WinUtils::GetShellItemPath(item, mUnicodeFile);
+  mUnicodeFile = result;
+  return true;
 }
 
 /*
@@ -195,163 +405,130 @@ bool nsFilePicker::ShowFolderPicker(const nsString& aInitialDir) {
 bool nsFilePicker::ShowFilePicker(const nsString& aInitialDir) {
   AUTO_PROFILER_LABEL("nsFilePicker::ShowFilePicker", OTHER);
 
-  RefPtr<IFileDialog> dialog;
-  if (mMode != modeSave) {
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
-                                CLSCTX_INPROC_SERVER, IID_IFileOpenDialog,
-                                getter_AddRefs(dialog)))) {
-      return false;
-    }
-  } else {
-    if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr,
-                                CLSCTX_INPROC_SERVER, IID_IFileSaveDialog,
-                                getter_AddRefs(dialog)))) {
-      return false;
-    }
-  }
-
+  namespace fd = ::mozilla::widget::filedialog;
+  nsTArray<fd::Command> commands;
   // options
+  {
+    FILEOPENDIALOGOPTIONS fos = 0;
+    fos |= FOS_SHAREAWARE | FOS_OVERWRITEPROMPT | FOS_FORCEFILESYSTEM;
 
-  FILEOPENDIALOGOPTIONS fos = 0;
-  fos |= FOS_SHAREAWARE | FOS_OVERWRITEPROMPT | FOS_FORCEFILESYSTEM;
+    // Handle add to recent docs settings
+    if (IsPrivacyModeEnabled() || !mAddToRecentDocs) {
+      fos |= FOS_DONTADDTORECENT;
+    }
 
-  // Handle add to recent docs settings
-  if (IsPrivacyModeEnabled() || !mAddToRecentDocs) {
-    fos |= FOS_DONTADDTORECENT;
-  }
+    // mode specific
+    switch (mMode) {
+      case modeOpen:
+        fos |= FOS_FILEMUSTEXIST;
+        break;
 
-  // mode specific
-  switch (mMode) {
-    case modeOpen:
-      fos |= FOS_FILEMUSTEXIST;
-      break;
+      case modeOpenMultiple:
+        fos |= FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT;
+        break;
 
-    case modeOpenMultiple:
-      fos |= FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT;
-      break;
+      case modeSave:
+        fos |= FOS_NOREADONLYRETURN;
+        // Don't follow shortcuts when saving a shortcut, this can be used
+        // to trick users (bug 271732)
+        if (IsDefaultPathLink()) fos |= FOS_NODEREFERENCELINKS;
+        break;
 
-    case modeSave:
-      fos |= FOS_NOREADONLYRETURN;
-      // Don't follow shortcuts when saving a shortcut, this can be used
-      // to trick users (bug 271732)
-      if (IsDefaultPathLink()) fos |= FOS_NODEREFERENCELINKS;
-      break;
-  }
+      case modeGetFolder:
+        MOZ_ASSERT(false, "file-picker opened in directory-picker mode");
+        return false;
+    }
 
-  HRESULT hr = dialog->SetOptions(fos);
-  if (FAILED(hr)) {
-    return false;
+    commands.AppendElement(fd::SetOptions(fos));
   }
 
   // initial strings
 
   // title
-  hr = dialog->SetTitle(mTitle.get());
-  if (FAILED(hr)) {
-    return false;
-  }
+  commands.AppendElement(fd::SetTitle(mTitle));
 
   // default filename
   if (!mDefaultFilename.IsEmpty()) {
-    hr = dialog->SetFileName(mDefaultFilename.get());
-    if (FAILED(hr)) {
-      return false;
-    }
+    // Prevent the shell from expanding environment variables by removing
+    // the % characters that are used to delimit them.
+    nsAutoString sanitizedFilename(mDefaultFilename);
+    sanitizedFilename.ReplaceChar('%', '_');
+
+    commands.AppendElement(fd::SetFileName(sanitizedFilename));
   }
 
   // default extension to append to new files
   if (!mDefaultExtension.IsEmpty()) {
-    hr = dialog->SetDefaultExtension(mDefaultExtension.get());
-    if (FAILED(hr)) {
-      return false;
-    }
+    // We don't want environment variables expanded in the extension either.
+    nsAutoString sanitizedExtension(mDefaultExtension);
+    sanitizedExtension.ReplaceChar('%', '_');
+
+    commands.AppendElement(fd::SetDefaultExtension(sanitizedExtension));
   } else if (IsDefaultPathHtml()) {
-    hr = dialog->SetDefaultExtension(L"html");
-    if (FAILED(hr)) {
-      return false;
-    }
+    commands.AppendElement(fd::SetDefaultExtension(u"html"_ns));
   }
 
   // initial location
   if (!aInitialDir.IsEmpty()) {
-    RefPtr<IShellItem> folder;
-    if (SUCCEEDED(SHCreateItemFromParsingName(aInitialDir.get(), nullptr,
-                                              IID_IShellItem,
-                                              getter_AddRefs(folder)))) {
-      hr = dialog->SetFolder(folder);
-      if (FAILED(hr)) {
-        return false;
-      }
-    }
+    commands.AppendElement(fd::SetFolder(aInitialDir));
   }
 
   // filter types and the default index
-  if (!mComFilterList.IsEmpty()) {
-    hr = dialog->SetFileTypes(mComFilterList.Length(), mComFilterList.get());
-    if (FAILED(hr)) {
-      return false;
+  if (!mFilterList.IsEmpty()) {
+    nsTArray<fd::ComDlgFilterSpec> fileTypes;
+    for (auto const& filter : mFilterList) {
+      fileTypes.EmplaceBack(filter.title, filter.filter);
     }
-
-    hr = dialog->SetFileTypeIndex(mSelectedType);
-    if (FAILED(hr)) {
-      return false;
-    }
+    commands.AppendElement(fd::SetFileTypes(std::move(fileTypes)));
+    commands.AppendElement(fd::SetFileTypeIndex(mSelectedType));
   }
 
   // display
-
+  fd::Results result;
   {
-    AutoDestroyTmpWindow adtw(
-        (HWND)(mParentWidget.get()
-                   ? mParentWidget->GetNativeData(NS_NATIVE_TMP_WINDOW)
-                   : nullptr));
+    ScopedRtlShimWindow shim(mParentWidget.get());
     AutoWidgetPickerState awps(mParentWidget);
 
     mozilla::BackgroundHangMonitor().NotifyWait();
-    if (FAILED(dialog->Show(adtw.get()))) {
+    auto res = ShowFilePickerImpl(
+        shim.get(),
+        mMode == modeSave ? FileDialogType::Save : FileDialogType::Open,
+        commands);
+
+    if (res.isErr()) {
+      NS_WARNING("ShowFilePickerImpl failed");
       return false;
     }
-  }
 
-  // results
+    auto optResults = res.unwrap();
+    if (!optResults) {
+      // cancellation, not error
+      return false;
+    }
+
+    result = optResults.extract();
+  }
 
   // Remember what filter type the user selected
-  UINT filterIdxResult;
-  if (SUCCEEDED(dialog->GetFileTypeIndex(&filterIdxResult))) {
-    mSelectedType = (int16_t)filterIdxResult;
-  }
+  mSelectedType = int32_t(result.selectedFileTypeIndex());
+
+  auto const& paths = result.paths();
 
   // single selection
   if (mMode != modeOpenMultiple) {
-    RefPtr<IShellItem> item;
-    if (FAILED(dialog->GetResult(getter_AddRefs(item))) || !item) return false;
-    return WinUtils::GetShellItemPath(item, mUnicodeFile);
+    if (!paths.IsEmpty()) {
+      MOZ_ASSERT(paths.Length() == 1);
+      mUnicodeFile = paths[0];
+      return true;
+    }
+    return false;
   }
 
   // multiple selection
-  RefPtr<IFileOpenDialog> openDlg;
-  dialog->QueryInterface(IID_IFileOpenDialog, getter_AddRefs(openDlg));
-  if (!openDlg) {
-    // should not happen
-    return false;
-  }
-
-  RefPtr<IShellItemArray> items;
-  if (FAILED(openDlg->GetResults(getter_AddRefs(items))) || !items) {
-    return false;
-  }
-
-  DWORD count = 0;
-  items->GetCount(&count);
-  for (unsigned int idx = 0; idx < count; idx++) {
-    RefPtr<IShellItem> item;
-    nsAutoString str;
-    if (SUCCEEDED(items->GetItemAt(idx, getter_AddRefs(item)))) {
-      if (!WinUtils::GetShellItemPath(item, str)) continue;
-      nsCOMPtr<nsIFile> file;
-      if (NS_SUCCEEDED(NS_NewLocalFile(str, false, getter_AddRefs(file)))) {
-        mFiles.AppendObject(file);
-      }
+  for (auto const& str : paths) {
+    nsCOMPtr<nsIFile> file;
+    if (NS_SUCCEEDED(NS_NewLocalFile(str, false, getter_AddRefs(file)))) {
+      mFiles.AppendObject(file);
     }
   }
   return true;
@@ -360,7 +537,12 @@ bool nsFilePicker::ShowFilePicker(const nsString& aInitialDir) {
 ///////////////////////////////////////////////////////////////////////////////
 // nsIFilePicker impl.
 
-nsresult nsFilePicker::ShowW(int16_t* aReturnVal) {
+nsresult nsFilePicker::ShowW(nsIFilePicker::ResultCode* aReturnVal) {
+  // Don't attempt to open a real file-picker in headless mode.
+  if (gfxPlatform::IsHeadless()) {
+    return nsresult::NS_ERROR_NOT_AVAILABLE;
+  }
+
   NS_ENSURE_ARG_POINTER(aReturnVal);
 
   *aReturnVal = returnCancel;
@@ -394,7 +576,7 @@ nsresult nsFilePicker::ShowW(int16_t* aReturnVal) {
 
   RememberLastUsedDirectory();
 
-  int16_t retValue = returnOK;
+  nsIFilePicker::ResultCode retValue = returnOK;
   if (mMode == modeSave) {
     // Windows does not return resultReplace, we must check if file
     // already exists.
@@ -411,7 +593,9 @@ nsresult nsFilePicker::ShowW(int16_t* aReturnVal) {
   return NS_OK;
 }
 
-nsresult nsFilePicker::Show(int16_t* aReturnVal) { return ShowW(aReturnVal); }
+nsresult nsFilePicker::Show(nsIFilePicker::ResultCode* aReturnVal) {
+  return ShowW(aReturnVal);
+}
 
 NS_IMETHODIMP
 nsFilePicker::GetFile(nsIFile** aFile) {
@@ -453,7 +637,7 @@ nsBaseWinFilePicker::SetDefaultString(const nsAString& aString) {
 
   // First, make sure the file name is not too long.
   int32_t nameLength;
-  int32_t nameIndex = mDefaultFilePath.RFind("\\");
+  int32_t nameIndex = mDefaultFilePath.RFind(u"\\");
   if (nameIndex == kNotFound)
     nameIndex = 0;
   else
@@ -462,7 +646,7 @@ nsBaseWinFilePicker::SetDefaultString(const nsAString& aString) {
   mDefaultFilename.Assign(Substring(mDefaultFilePath, nameIndex));
 
   if (nameLength > MAX_PATH) {
-    int32_t extIndex = mDefaultFilePath.RFind(".");
+    int32_t extIndex = mDefaultFilePath.RFind(u".");
     if (extIndex == kNotFound) extIndex = mDefaultFilePath.Length();
 
     // Let's try to shave the needed characters from the name part.
@@ -474,8 +658,8 @@ nsBaseWinFilePicker::SetDefaultString(const nsAString& aString) {
 
   // Then, we need to replace illegal characters. At this stage, we cannot
   // replace the backslash as the string might represent a file path.
-  mDefaultFilePath.ReplaceChar(FILE_ILLEGAL_CHARACTERS, '-');
-  mDefaultFilename.ReplaceChar(FILE_ILLEGAL_CHARACTERS, '-');
+  mDefaultFilePath.ReplaceChar(u"" FILE_ILLEGAL_CHARACTERS, u'-');
+  mDefaultFilename.ReplaceChar(u"" FILE_ILLEGAL_CHARACTERS, u'-');
 
   return NS_OK;
 }
@@ -520,7 +704,19 @@ void nsFilePicker::InitNative(nsIWidget* aParent, const nsAString& aTitle) {
 
 NS_IMETHODIMP
 nsFilePicker::AppendFilter(const nsAString& aTitle, const nsAString& aFilter) {
-  mComFilterList.Append(aTitle, aFilter);
+  nsString sanitizedFilter(aFilter);
+  sanitizedFilter.ReplaceChar('%', '_');
+
+  if (sanitizedFilter == u"..apps"_ns) {
+    sanitizedFilter = u"*.exe;*.com"_ns;
+  } else {
+    sanitizedFilter.StripWhitespace();
+    if (sanitizedFilter == u"*"_ns) {
+      sanitizedFilter = u"*.*"_ns;
+    }
+  }
+  mFilterList.AppendElement(
+      Filter{.title = nsString(aTitle), .filter = std::move(sanitizedFilter)});
   return NS_OK;
 }
 
@@ -556,14 +752,12 @@ bool nsFilePicker::IsDefaultPathLink() {
   NS_ConvertUTF16toUTF8 ext(mDefaultFilePath);
   ext.Trim(" .", false, true);  // watch out for trailing space and dots
   ToLowerCase(ext);
-  if (StringEndsWith(ext, ".lnk"_ns) || StringEndsWith(ext, ".pif"_ns) ||
-      StringEndsWith(ext, ".url"_ns))
-    return true;
-  return false;
+  return StringEndsWith(ext, ".lnk"_ns) || StringEndsWith(ext, ".pif"_ns) ||
+         StringEndsWith(ext, ".url"_ns);
 }
 
 bool nsFilePicker::IsDefaultPathHtml() {
-  int32_t extIndex = mDefaultFilePath.RFind(".");
+  int32_t extIndex = mDefaultFilePath.RFind(u".");
   if (extIndex >= 0) {
     nsAutoString ext;
     mDefaultFilePath.Right(ext, mDefaultFilePath.Length() - extIndex);
@@ -573,32 +767,4 @@ bool nsFilePicker::IsDefaultPathHtml() {
       return true;
   }
   return false;
-}
-
-void nsFilePicker::ComDlgFilterSpec::Append(const nsAString& aTitle,
-                                            const nsAString& aFilter) {
-  COMDLG_FILTERSPEC* pSpecForward = mSpecList.AppendElement();
-  if (!pSpecForward) {
-    NS_WARNING("mSpecList realloc failed.");
-    return;
-  }
-  memset(pSpecForward, 0, sizeof(*pSpecForward));
-  nsString* pStr = mStrings.AppendElement(aTitle);
-  if (!pStr) {
-    NS_WARNING("mStrings.AppendElement failed.");
-    return;
-  }
-  pSpecForward->pszName = pStr->get();
-  pStr = mStrings.AppendElement(aFilter);
-  if (!pStr) {
-    NS_WARNING("mStrings.AppendElement failed.");
-    return;
-  }
-  if (aFilter.EqualsLiteral("..apps"))
-    pStr->AssignLiteral("*.exe;*.com");
-  else {
-    pStr->StripWhitespace();
-    if (pStr->EqualsLiteral("*")) pStr->AppendLiteral(".*");
-  }
-  pSpecForward->pszSpec = pStr->get();
 }

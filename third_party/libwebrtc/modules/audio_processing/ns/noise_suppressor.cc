@@ -13,6 +13,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include <algorithm>
 
 #include "modules/audio_processing/ns/fast_math.h"
@@ -446,6 +447,12 @@ void NoiseSuppressor::Process(AudioBuffer* audio) {
           channels_[ch]->speech_probability_estimator.get_probability(),
           channels_[ch]->prev_analysis_signal_spectrum, signal_spectrum);
     }
+  }
+
+  // Only do the below processing if the output of the audio processing module
+  // is used.
+  if (!capture_output_used_) {
+    return;
   }
 
   // Aggregate the Wiener filters for all channels.

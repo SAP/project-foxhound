@@ -16,24 +16,19 @@ const {
       [KEYBOARD]: {
         FOCUSABLE_NO_SEMANTICS,
         FOCUSABLE_POSITIVE_TABINDEX,
-        INTERACTIVE_NO_ACTION,
         INTERACTIVE_NOT_FOCUSABLE,
         MOUSE_INTERACTIVE_ONLY,
         NO_FOCUS_VISIBLE,
       },
     },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
-add_task(async function() {
-  const {
-    target,
-    walker,
-    parentAccessibility,
-    a11yWalker,
-  } = await initAccessibilityFrontsForUrl(
-    `${MAIN_DOMAIN}doc_accessibility_keyboard_audit.html`
-  );
+add_task(async function () {
+  const { target, walker, parentAccessibility, a11yWalker } =
+    await initAccessibilityFrontsForUrl(
+      `${MAIN_DOMAIN}doc_accessibility_keyboard_audit.html`
+    );
 
   const tests = [
     [
@@ -65,10 +60,7 @@ add_task(async function() {
     [
       "Interactive accesible (link with no attributes) with no accessible actions.",
       "#link-1",
-      {
-        score: FAIL,
-        issue: INTERACTIVE_NO_ACTION,
-      },
+      null,
     ],
     ["Interactive accessible (link with valid href).", "#link-2", null],
     ["Interactive accessible (link with # as href).", "#link-3", null],

@@ -10,7 +10,6 @@
 
 #include "gfxWindowsPlatform.h"
 #include "nsIWidget.h"
-#include "Layers.h"
 #include "mozilla/gfx/D3D11Checks.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/GPUParent.h"
@@ -34,9 +33,6 @@
 #include "D3D11ShareHandleImage.h"
 #include "DeviceAttachmentsD3D11.h"
 #include "BlendShaderConstants.h"
-
-#include <versionhelpers.h>  // For IsWindows8OrGreater
-#include <winsdkver.h>
 
 namespace mozilla {
 
@@ -165,15 +161,13 @@ bool CompositorD3D11::Initialize(nsCString* const out_failureReason) {
     hr = dxgiFactory->QueryInterface(
         (IDXGIFactory2**)getter_AddRefs(dxgiFactory2));
 
-#if (_WIN32_WINDOWS_MAXVER >= 0x0A00)
     if (gfxVars::UseDoubleBufferingWithCompositor() && SUCCEEDED(hr) &&
         dxgiFactory2) {
       // DXGI_SCALING_NONE is not available on Windows 7 with Platform Update.
       // This looks awful for things like the awesome bar and browser window
       // resizing so we don't use a flip buffer chain here. When using
       // EFFECT_SEQUENTIAL it looks like windows doesn't stretch the surface
-      // when resizing. We chose not to run this before Windows 10 because it
-      // appears sometimes this breaks our ability to test ASAP compositing.
+      // when resizing.
       RefPtr<IDXGISwapChain1> swapChain;
 
       DXGI_SWAP_CHAIN_DESC1 swapDesc;
@@ -212,9 +206,7 @@ bool CompositorD3D11::Initialize(nsCString* const out_failureReason) {
 
     // In some configurations double buffering may have failed with an
     // ACCESS_DENIED error.
-    if (!mSwapChain)
-#endif
-    {
+    if (!mSwapChain) {
       if (mWidget->AsWindows()->GetCompositorHwnd()) {
         // Destroy compositor window.
         mWidget->AsWindows()->DestroyCompositorWindow();
@@ -929,9 +921,6 @@ void CompositorD3D11::EndFrame() {
 
   if (oldSize == mSize) {
     Present();
-    if (StaticPrefs::gfx_compositor_clearstate()) {
-      mContext->ClearState();
-    }
   }
 
   // Block until the previous frame's work has been completed.
@@ -1092,8 +1081,8 @@ bool CompositorD3D11::VerifyBufferSize() {
     return false;
   }
 
-  if (((swapDesc.BufferDesc.Width == mSize.width &&
-        swapDesc.BufferDesc.Height == mSize.height) ||
+  if (((static_cast<int32_t>(swapDesc.BufferDesc.Width) == mSize.width &&
+        static_cast<int32_t>(swapDesc.BufferDesc.Height) == mSize.height) ||
        mSize.width <= 0 || mSize.height <= 0) &&
       !mVerifyBuffersFailed) {
     return true;

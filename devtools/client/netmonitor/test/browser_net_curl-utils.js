@@ -7,9 +7,12 @@
  * Tests Curl Utils functionality.
  */
 
-const { Curl, CurlUtils } = require("devtools/client/shared/curl");
+const {
+  Curl,
+  CurlUtils,
+} = require("resource://devtools/client/shared/curl.js");
 
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(HTTPS_CURL_UTILS_URL, {
     requestCount: 1,
   });
@@ -28,7 +31,7 @@ add_task(async function() {
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [HTTPS_SIMPLE_SJS],
-    async function(url) {
+    async function (url) {
       content.wrappedJSObject.performRequests(url);
     }
   );
@@ -240,7 +243,7 @@ function testGetHeadersFromMultipartText(data) {
   const headers = CurlUtils.getHeadersFromMultipartText(data.postDataText);
 
   ok(Array.isArray(headers), "Should return an array.");
-  ok(headers.length > 0, "There should exist at least one request header.");
+  ok(!!headers.length, "There should exist at least one request header.");
   is(
     headers[0].name,
     "Content-Type",
@@ -309,10 +312,10 @@ function testEscapeStringWin() {
     "Double quotes should be escaped."
   );
 
-  const percentSigns = "%AppData%";
+  const percentSigns = "%TEMP% %@foo% %2XX% %_XX% %?XX%";
   is(
     CurlUtils.escapeStringWin(percentSigns),
-    '""%"AppData"%""',
+    '"^%^TEMP^% ^%^@foo^% ^%^2XX^% ^%^_XX^% ^%?XX^%"',
     "Percent signs should be escaped."
   );
 
@@ -323,25 +326,32 @@ function testEscapeStringWin() {
     "Backslashes should be escaped."
   );
 
-  const newLines = "line1\r\nline2\r\nline3";
+  const newLines = "line1\r\nline2\r\rline3\n\nline4";
   is(
     CurlUtils.escapeStringWin(newLines),
-    '"line1"^\u000d\u000A\u000d\u000A"line2"^\u000d\u000A\u000d\u000A"line3"',
+    '"line1"^\r\n\r\n"line2"^\r\n\r\n""^\r\n\r\n"line3"^\r\n\r\n""^\r\n\r\n"line4"',
     "Newlines should be escaped."
   );
 
   const dollarSignCommand = "$(calc.exe)";
   is(
     CurlUtils.escapeStringWin(dollarSignCommand),
-    '"`$(calc.exe)"',
+    '"\\$(calc.exe)"',
     "Dollar sign should be escaped."
   );
 
   const tickSignCommand = "`$(calc.exe)";
   is(
     CurlUtils.escapeStringWin(tickSignCommand),
-    '"```$(calc.exe)"',
+    '"\\`\\$(calc.exe)"',
     "Both the tick and dollar signs should be escaped."
+  );
+
+  const evilCommand = `query=evil\r\rcmd" /c timeout /t 3 & calc.exe\r\r`;
+  is(
+    CurlUtils.escapeStringWin(evilCommand),
+    '"query=evil"^\r\n\r\n""^\r\n\r\n"cmd"" /c timeout /t 3 & calc.exe"^\r\n\r\n""^\r\n\r\n""',
+    "The evil command is escaped properly"
   );
 }
 
@@ -361,7 +371,7 @@ async function createCurlData(selected, getLongString, requestData) {
   // Fetch header values.
   for (const { name, value } of requestHeaders.headers) {
     const text = await getLongString(value);
-    data.headers.push({ name: name, value: text });
+    data.headers.push({ name, value: text });
   }
 
   const requestPostData = await requestData(id, "requestPostData");

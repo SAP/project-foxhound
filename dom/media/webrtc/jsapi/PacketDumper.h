@@ -9,23 +9,45 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
 
+#include <vector>
+
 namespace mozilla {
 class PeerConnectionImpl;
 
 class PacketDumper {
  public:
-  explicit PacketDumper(PeerConnectionImpl* aPc);
-  explicit PacketDumper(const std::string& aPcHandle);
-  PacketDumper(const PacketDumper&) = delete;
-  ~PacketDumper();
+  static RefPtr<PacketDumper> GetPacketDumper(const std::string& aPcHandle);
 
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PacketDumper)
+
+  PacketDumper(const PacketDumper&) = delete;
   PacketDumper& operator=(const PacketDumper&) = delete;
 
-  void Dump(size_t level, dom::mozPacketDumpType type, bool sending,
-            const void* data, size_t size);
+  void Dump(size_t aLevel, dom::mozPacketDumpType aType, bool aSending,
+            const void* aData, size_t aSize);
+
+  nsresult EnablePacketDump(unsigned long aLevel, dom::mozPacketDumpType aType,
+                            bool aSending);
+
+  nsresult DisablePacketDump(unsigned long aLevel, dom::mozPacketDumpType aType,
+                             bool aSending);
 
  private:
-  RefPtr<PeerConnectionImpl> mPc;
+  friend class PeerConnectionImpl;
+  explicit PacketDumper(const std::string& aPcHandle);
+  ~PacketDumper() = default;
+  bool ShouldDumpPacket(size_t aLevel, dom::mozPacketDumpType aType,
+                        bool aSending) const;
+
+  // This class is not cycle-collected, so it cannot hold onto a strong ref
+  const std::string mPcHandle;
+  std::vector<unsigned> mSendPacketDumpFlags
+      MOZ_GUARDED_BY(mPacketDumpFlagsMutex);
+  std::vector<unsigned> mRecvPacketDumpFlags
+      MOZ_GUARDED_BY(mPacketDumpFlagsMutex);
+  Atomic<bool> mPacketDumpEnabled{false};
+  Atomic<int> mPacketDumpRtcpRecvCount{0};
+  mutable Mutex mPacketDumpFlagsMutex;
 };
 
 }  // namespace mozilla

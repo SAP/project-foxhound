@@ -7,7 +7,11 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
+
 #include <limits.h>
+
+#include <memory>
+
 #include "./vpx_config.h"
 #include "./vpx_dsp_rtcd.h"
 #include "test/acm_random.h"
@@ -47,10 +51,10 @@ class VpxPostProcDownAndAcrossMbRowTest
  public:
   VpxPostProcDownAndAcrossMbRowTest()
       : mb_post_proc_down_and_across_(GetParam()) {}
-  virtual void TearDown() { libvpx_test::ClearSystemState(); }
+  void TearDown() override { libvpx_test::ClearSystemState(); }
 
  protected:
-  virtual void Run();
+  void Run() override;
 
   const VpxPostProcDownAndAcrossMbRowFunc mb_post_proc_down_and_across_;
   // Size of the underlying data block that will be filtered.
@@ -115,7 +119,7 @@ TEST_P(VpxPostProcDownAndAcrossMbRowTest, CheckFilterOutput) {
   }
 
   vpx_free(flimits_);
-};
+}
 
 TEST_P(VpxPostProcDownAndAcrossMbRowTest, CheckCvsAssembly) {
   // Size of the underlying data block that will be filtered.
@@ -214,7 +218,7 @@ TEST_P(VpxPostProcDownAndAcrossMbRowTest, DISABLED_Speed) {
   PrintMedian("16x16");
 
   vpx_free(flimits_);
-};
+}
 
 class VpxMbPostProcAcrossIpTest
     : public AbstractBench,
@@ -223,10 +227,10 @@ class VpxMbPostProcAcrossIpTest
   VpxMbPostProcAcrossIpTest()
       : rows_(16), cols_(16), mb_post_proc_across_ip_(GetParam()),
         src_(Buffer<uint8_t>(rows_, cols_, 8, 8, 17, 8)) {}
-  virtual void TearDown() { libvpx_test::ClearSystemState(); }
+  void TearDown() override { libvpx_test::ClearSystemState(); }
 
  protected:
-  virtual void Run();
+  void Run() override;
 
   void SetCols(unsigned char *s, int rows, int cols, int src_width) {
     for (int r = 0; r < rows; r++) {
@@ -352,10 +356,10 @@ class VpxMbPostProcDownTest
       : rows_(16), cols_(16), mb_post_proc_down_(GetParam()),
         src_c_(Buffer<uint8_t>(rows_, cols_, 8, 8, 8, 17)) {}
 
-  virtual void TearDown() { libvpx_test::ClearSystemState(); }
+  void TearDown() override { libvpx_test::ClearSystemState(); }
 
  protected:
-  virtual void Run();
+  void Run() override;
 
   void SetRows(unsigned char *src_c, int rows, int cols, int src_width) {
     for (int r = 0; r < rows; r++) {
@@ -458,14 +462,13 @@ TEST_P(VpxMbPostProcDownTest, CheckLowFilterOutput) {
 
   SetRows(src_c_.TopLeftPixel(), rows_, cols_, src_c_.stride());
 
-  unsigned char *expected_output = new unsigned char[rows_ * cols_];
-  ASSERT_TRUE(expected_output != NULL);
-  SetRows(expected_output, rows_, cols_, cols_);
+  std::unique_ptr<unsigned char[]> expected_output(
+      new unsigned char[rows_ * cols_]);
+  ASSERT_NE(expected_output, nullptr);
+  SetRows(expected_output.get(), rows_, cols_, cols_);
 
   RunFilterLevel(src_c_.TopLeftPixel(), rows_, cols_, src_c_.stride(), q2mbl(0),
-                 expected_output);
-
-  delete[] expected_output;
+                 expected_output.get());
 }
 
 TEST_P(VpxMbPostProcDownTest, CheckCvsAssembly) {
@@ -511,62 +514,62 @@ TEST_P(VpxMbPostProcDownTest, DISABLED_Speed) {
   PrintMedian("16x16");
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     C, VpxPostProcDownAndAcrossMbRowTest,
     ::testing::Values(vpx_post_proc_down_and_across_mb_row_c));
 
-INSTANTIATE_TEST_CASE_P(C, VpxMbPostProcAcrossIpTest,
-                        ::testing::Values(vpx_mbpost_proc_across_ip_c));
+INSTANTIATE_TEST_SUITE_P(C, VpxMbPostProcAcrossIpTest,
+                         ::testing::Values(vpx_mbpost_proc_across_ip_c));
 
-INSTANTIATE_TEST_CASE_P(C, VpxMbPostProcDownTest,
-                        ::testing::Values(vpx_mbpost_proc_down_c));
+INSTANTIATE_TEST_SUITE_P(C, VpxMbPostProcDownTest,
+                         ::testing::Values(vpx_mbpost_proc_down_c));
 
 #if HAVE_SSE2
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SSE2, VpxPostProcDownAndAcrossMbRowTest,
     ::testing::Values(vpx_post_proc_down_and_across_mb_row_sse2));
 
-INSTANTIATE_TEST_CASE_P(SSE2, VpxMbPostProcAcrossIpTest,
-                        ::testing::Values(vpx_mbpost_proc_across_ip_sse2));
+INSTANTIATE_TEST_SUITE_P(SSE2, VpxMbPostProcAcrossIpTest,
+                         ::testing::Values(vpx_mbpost_proc_across_ip_sse2));
 
-INSTANTIATE_TEST_CASE_P(SSE2, VpxMbPostProcDownTest,
-                        ::testing::Values(vpx_mbpost_proc_down_sse2));
+INSTANTIATE_TEST_SUITE_P(SSE2, VpxMbPostProcDownTest,
+                         ::testing::Values(vpx_mbpost_proc_down_sse2));
 #endif  // HAVE_SSE2
 
 #if HAVE_NEON
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     NEON, VpxPostProcDownAndAcrossMbRowTest,
     ::testing::Values(vpx_post_proc_down_and_across_mb_row_neon));
 
-INSTANTIATE_TEST_CASE_P(NEON, VpxMbPostProcAcrossIpTest,
-                        ::testing::Values(vpx_mbpost_proc_across_ip_neon));
+INSTANTIATE_TEST_SUITE_P(NEON, VpxMbPostProcAcrossIpTest,
+                         ::testing::Values(vpx_mbpost_proc_across_ip_neon));
 
-INSTANTIATE_TEST_CASE_P(NEON, VpxMbPostProcDownTest,
-                        ::testing::Values(vpx_mbpost_proc_down_neon));
+INSTANTIATE_TEST_SUITE_P(NEON, VpxMbPostProcDownTest,
+                         ::testing::Values(vpx_mbpost_proc_down_neon));
 #endif  // HAVE_NEON
 
 #if HAVE_MSA
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     MSA, VpxPostProcDownAndAcrossMbRowTest,
     ::testing::Values(vpx_post_proc_down_and_across_mb_row_msa));
 
-INSTANTIATE_TEST_CASE_P(MSA, VpxMbPostProcAcrossIpTest,
-                        ::testing::Values(vpx_mbpost_proc_across_ip_msa));
+INSTANTIATE_TEST_SUITE_P(MSA, VpxMbPostProcAcrossIpTest,
+                         ::testing::Values(vpx_mbpost_proc_across_ip_msa));
 
-INSTANTIATE_TEST_CASE_P(MSA, VpxMbPostProcDownTest,
-                        ::testing::Values(vpx_mbpost_proc_down_msa));
+INSTANTIATE_TEST_SUITE_P(MSA, VpxMbPostProcDownTest,
+                         ::testing::Values(vpx_mbpost_proc_down_msa));
 #endif  // HAVE_MSA
 
 #if HAVE_VSX
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     VSX, VpxPostProcDownAndAcrossMbRowTest,
     ::testing::Values(vpx_post_proc_down_and_across_mb_row_vsx));
 
-INSTANTIATE_TEST_CASE_P(VSX, VpxMbPostProcAcrossIpTest,
-                        ::testing::Values(vpx_mbpost_proc_across_ip_vsx));
+INSTANTIATE_TEST_SUITE_P(VSX, VpxMbPostProcAcrossIpTest,
+                         ::testing::Values(vpx_mbpost_proc_across_ip_vsx));
 
-INSTANTIATE_TEST_CASE_P(VSX, VpxMbPostProcDownTest,
-                        ::testing::Values(vpx_mbpost_proc_down_vsx));
+INSTANTIATE_TEST_SUITE_P(VSX, VpxMbPostProcDownTest,
+                         ::testing::Values(vpx_mbpost_proc_down_vsx));
 #endif  // HAVE_VSX
 
 }  // namespace

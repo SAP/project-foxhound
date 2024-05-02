@@ -7,27 +7,21 @@ const URL_OVERRIDES_TYPE = "url_overrides";
 const NEW_TAB_KEY = "newTabURL";
 const PREF_SETTING_TYPE = "prefs";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "AboutNewTab",
-  "resource:///modules/AboutNewTab.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+});
 
 XPCOMUtils.defineLazyPreferenceGetter(this, "proxyType", PROXY_PREF);
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 AddonTestUtils.initMochitest(this);
 
-const { ExtensionPreferencesManager } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPreferencesManager.jsm"
+const { ExtensionPreferencesManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPreferencesManager.sys.mjs"
 );
 
 const TEST_DIR = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
@@ -90,7 +84,7 @@ function waitForMessageContent(messageId, l10nId, doc) {
 async function openNotificationsPermissionDialog() {
   let dialogOpened = promiseLoadSubDialog(PERMISSIONS_URL);
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     let doc = content.document;
     let settingsButton = doc.getElementById("notificationSettingsButton");
     settingsButton.click();
@@ -153,7 +147,7 @@ add_task(async function testExtensionControlledHomepage() {
     manifest: {
       version: "1.0",
       name: "set_homepage",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ADDON_ID,
         },
@@ -237,7 +231,7 @@ add_task(async function testExtensionControlledHomepage() {
     manifest: {
       version: "1.0",
       name: "second_set_homepage",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: SECOND_ADDON_ID,
         },
@@ -411,7 +405,7 @@ add_task(async function testPrefLockedHomepage() {
     manifest: {
       version: "1.0",
       name: "set_homepage",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ADDON_ID,
         },
@@ -625,7 +619,7 @@ add_task(async function testExtensionControlledNewTab() {
     manifest: {
       version: "1.0",
       name: "set_newtab",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ADDON_ID,
         },
@@ -699,7 +693,7 @@ add_task(async function testExtensionControlledNewTab() {
     manifest: {
       version: "1.0",
       name: "second_set_newtab",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: SECOND_ADDON_ID,
         },
@@ -787,7 +781,7 @@ add_task(async function testExtensionControlledWebNotificationsPermission() {
     name: "TestExtension",
     version: "1.0",
     description: "Testing WebNotificationsDisable",
-    applications: { gecko: { id: "@web_notifications_disable" } },
+    browser_specific_settings: { gecko: { id: "@web_notifications_disable" } },
     permissions: ["browserSettings"],
     browser_action: {
       default_title: "Testing",
@@ -829,7 +823,7 @@ add_task(async function testExtensionControlledWebNotificationsPermission() {
   Assert.deepEqual(
     doc.l10n.getAttributes(controlledDesc),
     {
-      id: "extension-controlled-web-notifications",
+      id: "extension-controlling-web-notifications",
       args: {
         name: "TestExtension",
       },
@@ -918,7 +912,7 @@ add_task(async function testExtensionControlledHomepageUninstalledAddon() {
     },
   };
   let jsonFileName = "extension-settings.json";
-  let storePath = PathUtils.join(await PathUtils.getProfileDir(), jsonFileName);
+  let storePath = PathUtils.join(PathUtils.profileDir, jsonFileName);
 
   await IOUtils.writeUTF8(storePath, JSON.stringify(storeData));
 
@@ -987,7 +981,7 @@ add_task(async function testExtensionControlledTrackingProtection() {
       Assert.deepEqual(
         doc.l10n.getAttributes(controlledDesc),
         {
-          id: "extension-controlled-websites-content-blocking-all-trackers",
+          id: "extension-controlling-websites-content-blocking-all-trackers",
           args: {
             name: "set_tp",
           },
@@ -1021,7 +1015,7 @@ add_task(async function testExtensionControlledTrackingProtection() {
     useAddonManager: "permanent",
     manifest: {
       name: "set_tp",
-      applications: { gecko: { id: EXTENSION_ID } },
+      browser_specific_settings: { gecko: { id: EXTENSION_ID } },
       permissions: ["privacy"],
     },
     background,
@@ -1063,7 +1057,7 @@ add_task(async function testExtensionControlledPasswordManager() {
     name: "testPasswordManagerExtension",
     version: "1.0",
     description: "Testing rememberSignons",
-    applications: { gecko: { id: EXTENSION_ID } },
+    browser_specific_settings: { gecko: { id: EXTENSION_ID } },
     permissions: ["privacy"],
     browser_action: {
       default_title: "Testing rememberSignons",
@@ -1088,12 +1082,10 @@ add_task(async function testExtensionControlledPasswordManager() {
       !isControlled,
       "Password manager pref is set to the expected value."
     );
-    let controlledLabel = gBrowser.contentDocument.getElementById(
-      CONTROLLED_LABEL_ID
-    );
-    let controlledButton = gBrowser.contentDocument.getElementById(
-      CONTROLLED_BUTTON_ID
-    );
+    let controlledLabel =
+      gBrowser.contentDocument.getElementById(CONTROLLED_LABEL_ID);
+    let controlledButton =
+      gBrowser.contentDocument.getElementById(CONTROLLED_BUTTON_ID);
     is(
       controlledLabel.hidden,
       !isControlled,
@@ -1109,7 +1101,7 @@ add_task(async function testExtensionControlledPasswordManager() {
       Assert.deepEqual(
         gBrowser.contentDocument.l10n.getAttributes(controlledDesc),
         {
-          id: "extension-controlled-password-saving",
+          id: "extension-controlling-password-saving",
           args: {
             name: "testPasswordManagerExtension",
           },
@@ -1183,7 +1175,7 @@ add_task(async function testExtensionControlledProxyConfig() {
 
   function expectedConnectionSettingsMessage(doc, isControlled) {
     return isControlled
-      ? "extension-controlled-proxy-config"
+      ? "extension-controlling-proxy-config"
       : "network-proxy-connection-description";
   }
 
@@ -1223,7 +1215,7 @@ add_task(async function testExtensionControlledProxyConfig() {
         Assert.deepEqual(
           doc.l10n.getAttributes(controlledDesc),
           {
-            id: "extension-controlled-proxy-config",
+            id: "extension-controlling-proxy-config",
             args: {
               name: "set_proxy",
             },
@@ -1342,7 +1334,7 @@ add_task(async function testExtensionControlledProxyConfig() {
     useAddonManager: "permanent",
     manifest: {
       name: "set_proxy",
-      applications: { gecko: { id: EXTENSION_ID } },
+      browser_specific_settings: { gecko: { id: EXTENSION_ID } },
       permissions: ["proxy"],
     },
     background,

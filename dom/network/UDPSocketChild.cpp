@@ -142,13 +142,15 @@ nsresult UDPSocketChild::SendBinaryStream(const nsACString& aHost,
                                           nsIInputStream* aStream) {
   NS_ENSURE_ARG(aStream);
 
-  mozilla::ipc::AutoIPCStream autoStream;
-  autoStream.Serialize(aStream, static_cast<mozilla::dom::ContentChild*>(
-                                    gNeckoChild->Manager()));
+  mozilla::ipc::IPCStream stream;
+  if (NS_WARN_IF(!mozilla::ipc::SerializeIPCStream(do_AddRef(aStream), stream,
+                                                   /* aAllowLazy */ false))) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
   UDPSOCKET_LOG(
       ("%s: %s:%u", __FUNCTION__, PromiseFlatCString(aHost).get(), aPort));
-  SendOutgoingData(UDPData(autoStream.TakeValue()),
+  SendOutgoingData(UDPData(stream),
                    UDPSocketAddr(UDPAddressInfo(nsCString(aHost), aPort)));
 
   return NS_OK;
@@ -156,12 +158,12 @@ nsresult UDPSocketChild::SendBinaryStream(const nsACString& aHost,
 
 void UDPSocketChild::JoinMulticast(const nsACString& aMulticastAddress,
                                    const nsACString& aInterface) {
-  SendJoinMulticast(nsCString(aMulticastAddress), nsCString(aInterface));
+  SendJoinMulticast(aMulticastAddress, aInterface);
 }
 
 void UDPSocketChild::LeaveMulticast(const nsACString& aMulticastAddress,
                                     const nsACString& aInterface) {
-  SendLeaveMulticast(nsCString(aMulticastAddress), nsCString(aInterface));
+  SendLeaveMulticast(aMulticastAddress, aInterface);
 }
 
 nsresult UDPSocketChild::SetFilterName(const nsACString& aFilterName) {

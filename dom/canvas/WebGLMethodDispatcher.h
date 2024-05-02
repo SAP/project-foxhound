@@ -89,6 +89,7 @@ DEFINE_ASYNC(HostWebGLContext::Hint)
 DEFINE_ASYNC(HostWebGLContext::LineWidth)
 DEFINE_ASYNC(HostWebGLContext::LinkProgram)
 DEFINE_ASYNC(HostWebGLContext::PolygonOffset)
+DEFINE_ASYNC(HostWebGLContext::ProvokingVertex)
 DEFINE_ASYNC(HostWebGLContext::Present)
 DEFINE_ASYNC(HostWebGLContext::SampleCoverage)
 DEFINE_ASYNC(HostWebGLContext::Scissor)
@@ -144,6 +145,8 @@ DEFINE_ASYNC(HostWebGLContext::EndQuery)
 DEFINE_ASYNC(HostWebGLContext::QueryCounter)
 DEFINE_ASYNC(HostWebGLContext::SetFramebufferIsInOpaqueRAF)
 DEFINE_ASYNC(HostWebGLContext::ClearVRSwapChain)
+DEFINE_ASYNC(HostWebGLContext::CopyToSwapChain)
+DEFINE_ASYNC(HostWebGLContext::EndOfFrame)
 
 #undef DEFINE_ASYNC
 #undef DEFINE_METHOD_DISPATCHER

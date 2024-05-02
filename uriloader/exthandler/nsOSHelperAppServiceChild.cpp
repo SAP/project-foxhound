@@ -9,7 +9,6 @@
 #include "mozilla/Logging.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "nsOSHelperAppServiceChild.h"
-#include "nsMIMEInfoChild.h"
 #include "nsISupports.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -17,19 +16,21 @@
 #include "nsIHandlerService.h"
 #include "nsMimeTypes.h"
 #include "nsMIMEInfoImpl.h"
-#include "nsMemory.h"
+#include "nsCExternalHandlerService.h"
 #include "nsCRT.h"
 #include "nsEmbedCID.h"
 
 #undef LOG
-#define LOG(args) \
-  MOZ_LOG(nsExternalHelperAppService::mLog, mozilla::LogLevel::Info, args)
+#define LOG(...)                                                     \
+  MOZ_LOG(nsExternalHelperAppService::sLog, mozilla::LogLevel::Info, \
+          (__VA_ARGS__))
 #undef LOG_ERR
-#define LOG_ERR(args) \
-  MOZ_LOG(nsExternalHelperAppService::mLog, mozilla::LogLevel::Error, args)
+#define LOG_ERR(...)                                                  \
+  MOZ_LOG(nsExternalHelperAppService::sLog, mozilla::LogLevel::Error, \
+          (__VA_ARGS__))
 #undef LOG_ENABLED
 #define LOG_ENABLED() \
-  MOZ_LOG_TEST(nsExternalHelperAppService::mLog, mozilla::LogLevel::Info)
+  MOZ_LOG_TEST(nsExternalHelperAppService::sLog, mozilla::LogLevel::Info)
 
 nsresult nsOSHelperAppServiceChild::ExternalProtocolHandlerExists(
     const char* aProtocolScheme, bool* aHandlerExists) {
@@ -37,17 +38,16 @@ nsresult nsOSHelperAppServiceChild::ExternalProtocolHandlerExists(
   nsCOMPtr<nsIHandlerService> handlerSvc =
       do_GetService(NS_HANDLERSERVICE_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG_ERR(("nsOSHelperAppServiceChild error: no handler service"));
+    LOG_ERR("nsOSHelperAppServiceChild error: no handler service");
     return rv;
   }
 
   nsAutoCString scheme(aProtocolScheme);
   *aHandlerExists = false;
   rv = handlerSvc->ExistsForProtocol(scheme, aHandlerExists);
-  LOG(
-      ("nsOSHelperAppServiceChild::ExternalProtocolHandlerExists(): "
-       "protocol: %s, result: %" PRId32,
-       aProtocolScheme, static_cast<uint32_t>(rv)));
+  LOG("nsOSHelperAppServiceChild::ExternalProtocolHandlerExists(): "
+      "protocol: %s, result: %" PRId32,
+      aProtocolScheme, static_cast<uint32_t>(rv));
   mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
   return rv;
 }
@@ -66,16 +66,15 @@ nsOSHelperAppServiceChild::GetApplicationDescription(const nsACString& aScheme,
   nsCOMPtr<nsIHandlerService> handlerSvc =
       do_GetService(NS_HANDLERSERVICE_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG_ERR(("nsOSHelperAppServiceChild error: no handler service"));
+    LOG_ERR("nsOSHelperAppServiceChild error: no handler service");
     return rv;
   }
 
   rv = handlerSvc->GetApplicationDescription(aScheme, aRetVal);
-  LOG(
-      ("nsOSHelperAppServiceChild::GetApplicationDescription(): "
-       "scheme: %s, result: %" PRId32 ", description: %s",
-       PromiseFlatCString(aScheme).get(), static_cast<uint32_t>(rv),
-       NS_ConvertUTF16toUTF8(aRetVal).get()));
+  LOG("nsOSHelperAppServiceChild::GetApplicationDescription(): "
+      "scheme: %s, result: %" PRId32 ", description: %s",
+      PromiseFlatCString(aScheme).get(), static_cast<uint32_t>(rv),
+      NS_ConvertUTF16toUTF8(aRetVal).get());
   mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
   return rv;
 }
@@ -85,30 +84,21 @@ nsOSHelperAppServiceChild::GetMIMEInfoFromOS(const nsACString& aMIMEType,
                                              const nsACString& aFileExt,
                                              bool* aFound,
                                              nsIMIMEInfo** aMIMEInfo) {
-  RefPtr<nsChildProcessMIMEInfo> mimeInfo =
-      new nsChildProcessMIMEInfo(aMIMEType);
-
+  nsresult rv;
   nsCOMPtr<nsIHandlerService> handlerSvc =
-      do_GetService(NS_HANDLERSERVICE_CONTRACTID);
-  if (handlerSvc) {
-    nsresult rv =
-        handlerSvc->GetMIMEInfoFromOS(mimeInfo, aMIMEType, aFileExt, aFound);
-    LOG(
-        ("nsOSHelperAppServiceChild::GetMIMEInfoFromOS(): "
-         "MIME type: %s, extension: %s, result: %" PRId32,
-         PromiseFlatCString(aMIMEType).get(),
-         PromiseFlatCString(aFileExt).get(), static_cast<uint32_t>(rv)));
-    mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-  } else {
-    LOG_ERR(("nsOSHelperAppServiceChild error: no handler service"));
-    *aFound = false;
+      do_GetService(NS_HANDLERSERVICE_CONTRACTID, &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    LOG_ERR("nsOSHelperAppServiceChild error: no handler service");
+    return rv;
   }
 
-  mimeInfo.forget(aMIMEInfo);
-  return NS_OK;
+  rv = handlerSvc->GetMIMEInfoFromOS(aMIMEType, aFileExt, aFound, aMIMEInfo);
+  LOG("nsOSHelperAppServiceChild::GetMIMEInfoFromOS(): "
+      "MIME type: %s, extension: %s, result: %" PRId32,
+      PromiseFlatCString(aMIMEType).get(), PromiseFlatCString(aFileExt).get(),
+      static_cast<uint32_t>(rv));
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  return rv;
 }
 
 NS_IMETHODIMP

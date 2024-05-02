@@ -5,11 +5,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser.ini",
+    "test/browser.toml",
     "test/browser_bug1717599_XDG-CONFIG-DIRS.ini",
     "test/browser_bug1717599_XDG-CONFIG-HOME.ini",
-    "test/browser_snap.ini",
-    "test/browser_xdg.ini",
+    "test/browser_snap.toml",
+    "test/browser_xdg.toml",
 ]
 
 with Files("**"):
@@ -28,14 +28,12 @@ elif CONFIG["OS_ARCH"] == "WINNT":
     DIRS += [
         "win/src/remotesandboxbroker",
         "win/src/sandboxbroker",
-        "win/src/sandboxpermissions",
         "win/src/sandboxtarget",
     ]
 
     EXPORTS.mozilla.sandboxing += [
         "chromium-shim/sandbox/win/loggingCallbacks.h",
         "chromium-shim/sandbox/win/loggingTypes.h",
-        "chromium-shim/sandbox/win/permissionsService.h",
         "chromium-shim/sandbox/win/sandboxLogging.h",
         "win/SandboxInitialization.h",
     ]
@@ -47,7 +45,6 @@ elif CONFIG["OS_ARCH"] == "WINNT":
         "chromium-shim/base/logging.cpp",
         "chromium-shim/base/process/memory_win.cpp",
         "chromium-shim/base/win/win_util.cpp",
-        "chromium-shim/sandbox/win/permissionsService.cpp",
         "chromium-shim/sandbox/win/sandboxLogging.cpp",
         "chromium-shim/sandbox/win/src/line_break_dispatcher.cc",
         "chromium-shim/sandbox/win/src/line_break_interception.cc",
@@ -84,10 +81,6 @@ elif CONFIG["OS_ARCH"] == "WINNT":
         "chromium/base/synchronization/lock.cc",
         "chromium/base/synchronization/lock_impl_win.cc",
         "chromium/base/third_party/cityhash/city.cc",
-        "chromium/base/third_party/double_conversion/double-conversion/bignum.cc",
-        "chromium/base/third_party/double_conversion/double-conversion/cached-powers.cc",
-        "chromium/base/third_party/double_conversion/double-conversion/string-to-double.cc",
-        "chromium/base/third_party/double_conversion/double-conversion/strtod.cc",
         "chromium/base/third_party/icu/icu_utf.cc",
         "chromium/base/third_party/superfasthash/superfasthash.c",
         "chromium/base/threading/platform_thread.cc",

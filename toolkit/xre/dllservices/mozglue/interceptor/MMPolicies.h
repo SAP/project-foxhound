@@ -16,14 +16,17 @@
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/Types.h"
 #include "mozilla/WindowsMapRemoteView.h"
+#include "mozilla/WindowsUnwindInfo.h"
 
 #include <windows.h>
 
 #if (NTDDI_VERSION < NTDDI_WIN10_RS4) || defined(__MINGW32__)
+WINBASEAPI
 PVOID WINAPI VirtualAlloc2(HANDLE Process, PVOID BaseAddress, SIZE_T Size,
                            ULONG AllocationType, ULONG PageProtection,
                            MEM_EXTENDED_PARAMETER* ExtendedParameters,
                            ULONG ParameterCount);
+WINBASEAPI
 PVOID WINAPI MapViewOfFile3(HANDLE FileMapping, HANDLE Process,
                             PVOID BaseAddress, ULONG64 Offset, SIZE_T ViewSize,
                             ULONG AllocationType, ULONG PageProtection,
@@ -510,6 +513,41 @@ class MOZ_TRIVIAL_CTOR_DTOR MMPolicyInProcess
     return (mBase + mReservationSize) <=
            reinterpret_cast<uint8_t*>(0x0000000080000000ULL);
   }
+
+  static constexpr bool kSupportsUnwindInfo = true;
+
+  mozilla::UniquePtr<uint8_t[]> LookupUnwindInfo(
+      uintptr_t aOrigFuncAddr, uint32_t* aOffsetFromBeginAddr,
+      uint32_t* aOffsetToEndAddr, uintptr_t* aOrigImageBase) const {
+    DWORD64 origImageBase = 0;
+    auto origFuncEntry =
+        RtlLookupFunctionEntry(aOrigFuncAddr, &origImageBase, nullptr);
+    if (!origFuncEntry) {
+      return nullptr;
+    }
+
+    if (aOffsetFromBeginAddr) {
+      *aOffsetFromBeginAddr =
+          aOrigFuncAddr - (origImageBase + origFuncEntry->BeginAddress);
+    }
+    if (aOffsetToEndAddr) {
+      *aOffsetToEndAddr =
+          (origImageBase + origFuncEntry->EndAddress) - aOrigFuncAddr;
+    }
+    if (aOrigImageBase) {
+      *aOrigImageBase = origImageBase;
+    }
+    return reinterpret_cast<const UnwindInfo*>(origImageBase +
+                                               origFuncEntry->UnwindData)
+        ->Copy();
+  }
+
+  bool AddFunctionTable(uintptr_t aFunctionTable, uint32_t aEntryCount,
+                        uintptr_t aBaseAddress) const {
+    return bool(
+        RtlAddFunctionTable(reinterpret_cast<PRUNTIME_FUNCTION>(aFunctionTable),
+                            aEntryCount, aBaseAddress));
+  }
 #endif  // defined(_M_X64)
 
  protected:
@@ -827,6 +865,20 @@ class MMPolicyOutOfProcess : public MMPolicyBase {
 #if defined(_M_X64)
   bool IsTrampolineSpaceInLowest2GB() const {
     return (GetRemoteView() + mReservationSize) <= 0x0000000080000000ULL;
+  }
+
+  // TODO: We should also implement unwind info for our out-of-process policy.
+  static constexpr bool kSupportsUnwindInfo = false;
+
+  inline mozilla::UniquePtr<uint8_t[]> LookupUnwindInfo(
+      uintptr_t aOrigFuncAddr, uint32_t* aOffsetFromBeginAddr,
+      uint32_t* aOffsetToEndAddr, uintptr_t* aOrigImageBase) const {
+    return nullptr;
+  }
+
+  inline bool AddFunctionTable(uintptr_t aNewTable, uint32_t aEntryCount,
+                               uintptr_t aBaseAddress) const {
+    return false;
   }
 #endif  // defined(_M_X64)
 

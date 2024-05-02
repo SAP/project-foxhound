@@ -55,8 +55,7 @@ class GfxInfoBase : public nsIGfxInfo,
                                               nsAString& _retval) override;
 
   NS_IMETHOD GetMonitors(JSContext* cx,
-                         JS::MutableHandleValue _retval) override;
-  NS_IMETHOD RefreshMonitors() override;
+                         JS::MutableHandle<JS::Value> _retval) override;
   NS_IMETHOD GetFailures(nsTArray<int32_t>& indices,
                          nsTArray<nsCString>& failures) override;
   NS_IMETHOD_(void) LogFailure(const nsACString& failure) override;
@@ -69,9 +68,9 @@ class GfxInfoBase : public nsIGfxInfo,
   NS_IMETHOD GetAzureCanvasBackend(nsAString& aBackend) override;
   NS_IMETHOD GetAzureContentBackend(nsAString& aBackend) override;
   NS_IMETHOD GetUsingGPUProcess(bool* aOutValue) override;
-  NS_IMETHOD GetWebRenderEnabled(bool* aWebRenderEnabled) override;
   NS_IMETHOD GetIsHeadless(bool* aIsHeadless) override;
   NS_IMETHOD GetTargetFrameRate(uint32_t* aTargetFrameRate) override;
+  NS_IMETHOD GetCodecSupportInfo(nsACString& aCodecSupportInfo) override;
 
   // Non-XPCOM method to get IPC data:
   nsTArray<mozilla::gfx::GfxInfoFeatureStatus> GetAllFeatures();
@@ -86,12 +85,7 @@ class GfxInfoBase : public nsIGfxInfo,
   virtual nsresult Init();
 
   NS_IMETHOD_(void) GetData() override;
-  NS_IMETHOD_(int32_t) GetMaxRefreshRate(bool* aMixed) override {
-    if (aMixed) {
-      *aMixed = false;
-    }
-    return -1;
-  }
+  NS_IMETHOD_(int32_t) GetMaxRefreshRate(bool* aMixed) override;
 
   static void AddCollector(GfxInfoCollectorBase* collector);
   static void RemoveCollector(GfxInfoCollectorBase* collector);
@@ -112,13 +106,15 @@ class GfxInfoBase : public nsIGfxInfo,
   // Convenience to get the application version
   static const nsCString& GetApplicationVersion();
 
-  virtual nsresult FindMonitors(JSContext* cx, JS::HandleObject array);
+  virtual nsresult FindMonitors(JSContext* cx, JS::Handle<JSObject*> array);
 
   static void SetFeatureStatus(
       nsTArray<mozilla::gfx::GfxInfoFeatureStatus>&& aFS);
 
  protected:
   virtual ~GfxInfoBase();
+
+  virtual OperatingSystem GetOperatingSystem() = 0;
 
   virtual nsresult GetFeatureStatusImpl(
       int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedDriverVersion,
@@ -130,9 +126,6 @@ class GfxInfoBase : public nsIGfxInfo,
   virtual const nsTArray<GfxDriverInfo>& GetGfxDriverInfo() = 0;
 
   virtual void DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> obj);
-
-  bool DoesDesktopEnvironmentMatch(const nsAString& aBlocklistDesktop,
-                                   const nsAString& aDesktopEnv);
 
   virtual bool DoesWindowProtocolMatch(
       const nsAString& aBlocklistWindowProtocol,
@@ -151,8 +144,6 @@ class GfxInfoBase : public nsIGfxInfo,
 
   NS_IMETHOD ControlGPUProcessForXPCShell(bool aEnable, bool* _retval) override;
 
-  NS_IMETHOD EnsureGPUProcessReadyForTests(JSContext* cx,
-                                           dom::Promise** aPromise) override;
   NS_IMETHOD KillGPUProcessForTests() override;
   NS_IMETHOD CrashGPUProcessForTests() override;
 
@@ -172,7 +163,7 @@ class GfxInfoBase : public nsIGfxInfo,
   bool BuildFeatureStateLog(JSContext* aCx, const gfx::FeatureState& aFeature,
                             JS::MutableHandle<JS::Value> aOut);
 
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
 };
 
 }  // namespace widget

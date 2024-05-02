@@ -13,9 +13,7 @@
 #include "AudioContext.h"
 #include "AudioNodeEngine.h"
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 class AudioContext;
 struct PeriodicWaveOptions;
@@ -28,7 +26,7 @@ class PeriodicWave final : public nsWrapperCache {
                ErrorResult& aRv);
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(PeriodicWave)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(PeriodicWave)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(PeriodicWave)
 
   static already_AddRefed<PeriodicWave> Constructor(
       const GlobalObject& aGlobal, AudioContext& aAudioContext,
@@ -56,7 +54,6 @@ class PeriodicWave final : public nsWrapperCache {
   bool mDisableNormalization;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

@@ -174,7 +174,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
   static const int32_t DIV_OR_BLOCKQUOTE_OR_CENTER_OR_MENU = 50;
 
   static const int32_t
-      ADDRESS_OR_ARTICLE_OR_ASIDE_OR_DETAILS_OR_DIALOG_OR_DIR_OR_FIGCAPTION_OR_FIGURE_OR_FOOTER_OR_HEADER_OR_HGROUP_OR_MAIN_OR_NAV_OR_SECTION_OR_SUMMARY =
+      ADDRESS_OR_ARTICLE_OR_ASIDE_OR_DETAILS_OR_DIALOG_OR_DIR_OR_FIGCAPTION_OR_FIGURE_OR_FOOTER_OR_HEADER_OR_HGROUP_OR_MAIN_OR_NAV_OR_SEARCH_OR_SECTION_OR_SUMMARY =
           51;
 
   static const int32_t RUBY_OR_SPAN_OR_SUB_OR_SUP_OR_VAR = 52;
@@ -203,11 +203,9 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
 
   static const int32_t KEYGEN = 65;
 
-  static const int32_t MENUITEM = 66;
+  static const int32_t TEMPLATE = 66;
 
-  static const int32_t TEMPLATE = 67;
-
-  static const int32_t IMG = 68;
+  static const int32_t IMG = 67;
 
  private:
   static const int32_t IN_ROW = 0;
@@ -311,7 +309,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
 
  protected:
   autoJArray<char16_t, int32_t> charBuffer;
-  StringTaint charTaint;
+  SafeStringTaint charTaint;
   int32_t charBufferLen;
 
  private:

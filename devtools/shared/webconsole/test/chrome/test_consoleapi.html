@@ -48,14 +48,13 @@ function doConsoleCalls(aState)
     function inAsmJS2() { foreign.fromAsmJS() }
     function inAsmJS1() { inAsmJS2() }
     return inAsmJS1
-  })(null, { fromAsmJS:fromAsmJS })();
+  })(null, { fromAsmJS })();
 
   expectedConsoleCalls = [
     {
       level: "log",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: ["foobarBaz-log", { type: "undefined" }],
     },
     {
@@ -73,29 +72,25 @@ function doConsoleCalls(aState)
     {
       level: "info",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: ["foobarBaz-info", { type: "null" }],
     },
     {
       level: "warn",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: ["foobarBaz-warn", { type: "object", actor: /[a-z]/ }],
     },
     {
       level: "debug",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: [{ type: "null" }],
     },
     {
       level: "trace",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       stacktrace: [
         {
           filename: /test_consoleapi/,
@@ -110,8 +105,7 @@ function doConsoleCalls(aState)
     {
       level: "dir",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: [
         {
           type: "object",
@@ -128,8 +122,7 @@ function doConsoleCalls(aState)
     {
       level: "log",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: [
         "foo",
         {
@@ -144,8 +137,7 @@ function doConsoleCalls(aState)
     {
       level: "log",
       filename: /test_consoleapi/,
-      functionName: "doConsoleCalls",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: [
         {
           type: "object",
@@ -157,8 +149,7 @@ function doConsoleCalls(aState)
     {
       level: "error",
       filename: /test_consoleapi/,
-      functionName: "fromAsmJS",
-      timeStamp: /^\d+$/,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       arguments: ["foobarBaz-asmjs-error", { type: "undefined" }],
 
       stacktrace: [

@@ -7,21 +7,22 @@
 // context menu item for stylesheets (bug 992947).
 const TESTCASE_URI = TEST_BASE_HTTPS + "simple.html";
 
-add_task(async function() {
-  const { ui } = await openStyleEditorForURL(TESTCASE_URI);
+add_task(async function () {
+  const { panel, ui } = await openStyleEditorForURL(TESTCASE_URI);
 
-  await rightClickStyleSheet(ui, ui.editors[0]);
+  const openLinkNewTabItem = panel.panelWindow.document.getElementById(
+    "context-openlinknewtab"
+  );
+
+  let menu = await rightClickStyleSheet(panel, ui.editors[0]);
   is(
-    ui._openLinkNewTabItem.getAttribute("disabled"),
+    openLinkNewTabItem.getAttribute("disabled"),
     "false",
     "The menu item is not disabled"
   );
-  ok(!ui._openLinkNewTabItem.hidden, "The menu item is not hidden");
+  ok(!openLinkNewTabItem.hidden, "The menu item is not hidden");
 
-  const url =
-    "https://example.com/browser/devtools/client/styleeditor/test/" +
-    "simple.css";
-  is(ui._contextMenuStyleSheet.href, url, "Correct URL for sheet");
+  const url = TEST_BASE_HTTPS + "simple.css";
 
   const browserWindow = Services.wm.getMostRecentWindow(
     gDevTools.chromeWindowType
@@ -37,28 +38,34 @@ add_task(async function() {
     };
   });
 
-  ui._openLinkNewTabItem.click();
+  const hidden = onPopupHide(menu);
+
+  menu.activateItem(openLinkNewTabItem);
 
   info(`Waiting for a tab to open - ${url}`);
   await tabOpenedDefer;
 
-  await rightClickInlineStyleSheet(ui, ui.editors[1]);
+  await hidden;
+
+  menu = await rightClickInlineStyleSheet(panel, ui.editors[1]);
   is(
-    ui._openLinkNewTabItem.getAttribute("disabled"),
+    openLinkNewTabItem.getAttribute("disabled"),
     "true",
     "The menu item is disabled"
   );
-  ok(!ui._openLinkNewTabItem.hidden, "The menu item should not be hidden");
+  ok(!openLinkNewTabItem.hidden, "The menu item should not be hidden");
+  menu.hidePopup();
 
-  await rightClickNoStyleSheet(ui);
-  ok(ui._openLinkNewTabItem.hidden, "The menu item should be hidden");
+  menu = await rightClickNoStyleSheet(panel);
+  ok(openLinkNewTabItem.hidden, "The menu item should be hidden");
+  menu.hidePopup();
 });
 
 function onPopupShow(contextMenu) {
   return new Promise(resolve => {
     contextMenu.addEventListener(
       "popupshown",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -70,7 +77,7 @@ function onPopupHide(contextMenu) {
   return new Promise(resolve => {
     contextMenu.addEventListener(
       "popuphidden",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -78,53 +85,49 @@ function onPopupHide(contextMenu) {
   });
 }
 
-function rightClickStyleSheet(ui, editor) {
+function rightClickStyleSheet(panel, editor) {
+  const contextMenu = getContextMenuElement(panel);
   return new Promise(resolve => {
-    onPopupShow(ui._contextMenu).then(() => {
-      onPopupHide(ui._contextMenu).then(() => {
-        resolve();
-      });
-      ui._contextMenu.hidePopup();
+    onPopupShow(contextMenu).then(() => {
+      resolve(contextMenu);
     });
 
     EventUtils.synthesizeMouseAtCenter(
       editor.summary.querySelector(".stylesheet-name"),
       { button: 2, type: "contextmenu" },
-      ui._window
+      panel.panelWindow
     );
   });
 }
 
-function rightClickInlineStyleSheet(ui, editor) {
+function rightClickInlineStyleSheet(panel, editor) {
+  const contextMenu = getContextMenuElement(panel);
   return new Promise(resolve => {
-    onPopupShow(ui._contextMenu).then(() => {
-      onPopupHide(ui._contextMenu).then(() => {
-        resolve();
-      });
-      ui._contextMenu.hidePopup();
+    onPopupShow(contextMenu).then(() => {
+      resolve(contextMenu);
     });
 
     EventUtils.synthesizeMouseAtCenter(
       editor.summary.querySelector(".stylesheet-name"),
       { button: 2, type: "contextmenu" },
-      ui._window
+      panel.panelWindow
     );
   });
 }
 
-function rightClickNoStyleSheet(ui) {
+function rightClickNoStyleSheet(panel) {
+  const contextMenu = getContextMenuElement(panel);
   return new Promise(resolve => {
-    onPopupShow(ui._contextMenu).then(() => {
-      onPopupHide(ui._contextMenu).then(() => {
-        resolve();
-      });
-      ui._contextMenu.hidePopup();
+    onPopupShow(contextMenu).then(() => {
+      resolve(contextMenu);
     });
 
     EventUtils.synthesizeMouseAtCenter(
-      ui._panelDoc.querySelector("#splitview-tpl-summary-stylesheet"),
+      panel.panelWindow.document.querySelector(
+        "#splitview-tpl-summary-stylesheet"
+      ),
       { button: 2, type: "contextmenu" },
-      ui._window
+      panel.panelWindow
     );
   });
 }

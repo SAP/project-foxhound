@@ -5,28 +5,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PBrowser;
-include protocol PChildToParentStream;
-include protocol PFileDescriptorSet;
-include protocol PParentToChildStream;
-include protocol PRemoteLazyInputStream;
 
 include IPCBlob;
 
+include "mozilla/dom/FilePickerMessageUtils.h";
+
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
+using nsIFilePicker::CaptureTarget from "nsIFilePicker.h";
+using nsIFilePicker::ResultCode from "nsIFilePicker.h";
 
 namespace mozilla {
 namespace dom {
 
-struct InputBlobs
-{
-  IPCBlob[] blobs;
-};
-
-struct InputDirectory
-{
-  nsString directoryPath;
-};
-
+struct InputBlobs { IPCBlob[] blobs; };
+struct InputDirectory { nsString directoryPath; };
 union MaybeInputData
 {
   InputBlobs;
@@ -34,6 +26,7 @@ union MaybeInputData
   void_t;
 };
 
+[ChildImpl=virtual]
 protocol PFilePicker
 {
   manager PBrowser;
@@ -43,10 +36,10 @@ parent:
                nsString defaultExtension, nsString[] filters, nsString[] filterNames,
                nsString[] rawFilters, nsString displayDirectory,
                nsString displaySpecialDirectory, nsString okButtonLabel,
-               int16_t capture);
+               CaptureTarget capture);
 
 child:
-    async __delete__(MaybeInputData data, int16_t result);
+    async __delete__(MaybeInputData data, ResultCode result);
 };
 
 } // namespace dom

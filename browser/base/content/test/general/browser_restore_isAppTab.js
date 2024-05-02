@@ -1,23 +1,19 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env mozilla/frame-script */
-
-const { TabStateFlusher } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
+const { TabStateFlusher } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 
 const DUMMY =
-  "http://example.com/browser/browser/base/content/test/general/dummy_page.html";
+  "https://example.com/browser/browser/base/content/test/general/dummy_page.html";
 
 function isBrowserAppTab(browser) {
-  return SpecialPowers.spawn(browser, [], async () => {
-    return content.docShell.isAppTab;
-  });
+  return browser.browsingContext.isAppTab;
 }
 
 // Restarts the child process by crashing it then reloading the tab
-var restart = async function(browser) {
+var restart = async function (browser) {
   // If the tab isn't remote this would crash the main process so skip it
   if (!browser.isRemoteBrowser) {
     return;
@@ -39,29 +35,29 @@ add_task(async function navigate() {
   let browser = tab.linkedBrowser;
   gBrowser.selectedTab = tab;
   await BrowserTestUtils.browserStopped(gBrowser);
-  let isAppTab = await isBrowserAppTab(browser);
+  let isAppTab = isBrowserAppTab(browser);
   ok(!isAppTab, "Docshell shouldn't think it is an app tab");
 
   gBrowser.pinTab(tab);
-  isAppTab = await isBrowserAppTab(browser);
+  isAppTab = isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
-  BrowserTestUtils.loadURI(gBrowser, DUMMY);
+  BrowserTestUtils.startLoadingURIString(gBrowser, DUMMY);
   await BrowserTestUtils.browserStopped(gBrowser);
-  isAppTab = await isBrowserAppTab(browser);
+  isAppTab = isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
   gBrowser.unpinTab(tab);
-  isAppTab = await isBrowserAppTab(browser);
+  isAppTab = isBrowserAppTab(browser);
   ok(!isAppTab, "Docshell shouldn't think it is an app tab");
 
   gBrowser.pinTab(tab);
-  isAppTab = await isBrowserAppTab(browser);
+  isAppTab = isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
-  BrowserTestUtils.loadURI(gBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(gBrowser, "about:robots");
   await BrowserTestUtils.browserStopped(gBrowser);
-  isAppTab = await isBrowserAppTab(browser);
+  isAppTab = isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
   gBrowser.removeCurrentTab();
@@ -76,15 +72,15 @@ add_task(async function crash() {
   let browser = tab.linkedBrowser;
   gBrowser.selectedTab = tab;
   await BrowserTestUtils.browserStopped(gBrowser);
-  let isAppTab = await isBrowserAppTab(browser);
+  let isAppTab = isBrowserAppTab(browser);
   ok(!isAppTab, "Docshell shouldn't think it is an app tab");
 
   gBrowser.pinTab(tab);
-  isAppTab = await isBrowserAppTab(browser);
+  isAppTab = isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
   await restart(browser);
-  isAppTab = await isBrowserAppTab(browser);
+  isAppTab = isBrowserAppTab(browser);
   ok(isAppTab, "Docshell should think it is an app tab");
 
   gBrowser.removeCurrentTab();

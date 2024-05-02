@@ -3,7 +3,7 @@
 
 "use strict";
 
-const defer = require("devtools/shared/defer");
+const defer = require("resource://devtools/shared/defer.js");
 
 function testResolve() {
   const deferred = defer();
@@ -17,7 +17,7 @@ function testReject() {
   return deferred.promise;
 }
 
-add_task(async function() {
+add_task(async function () {
   const success = await testResolve();
   equal(success, "success");
 

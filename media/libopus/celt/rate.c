@@ -356,6 +356,8 @@ static OPUS_INLINE int interp_bits2pulses(const CELTMode *m, int start, int end,
             else
                depth_threshold = 0;
 #ifdef FUZZING
+            (void)signalBandwidth;
+            (void)depth_threshold;
             if ((rand()&0x1) == 0)
 #else
             if (codedBands<=start+2 || (band_bits > (depth_threshold*band_width<<LM<<BITRES)>>4 && j<=signalBandwidth))
@@ -529,7 +531,7 @@ static OPUS_INLINE int interp_bits2pulses(const CELTMode *m, int start, int end,
    return codedBands;
 }
 
-int compute_allocation(const CELTMode *m, int start, int end, const int *offsets, const int *cap, int alloc_trim, int *intensity, int *dual_stereo,
+int clt_compute_allocation(const CELTMode *m, int start, int end, const int *offsets, const int *cap, int alloc_trim, int *intensity, int *dual_stereo,
       opus_int32 total, opus_int32 *balance, int *pulses, int *ebits, int *fine_priority, int C, int LM, ec_ctx *ec, int encode, int prev, int signalBandwidth)
 {
    int lo, hi, len, j;

@@ -22,14 +22,8 @@ class nsChildView;
 namespace mozilla {
 
 enum class VibrancyType {
-  TITLEBAR_LIGHT,
-  TITLEBAR_DARK,
   TOOLTIP,
   MENU,
-  HIGHLIGHTED_MENUITEM,
-  SOURCE_LIST,
-  SOURCE_LIST_SELECTION,
-  ACTIVE_SOURCE_LIST_SELECTION
 };
 
 /**
@@ -55,8 +49,10 @@ class VibrancyManager {
    * @param aContainerView  The view that's going to be the superview of the
    *   NSVisualEffectViews which will be created for vibrant regions.
    */
-  VibrancyManager(const nsChildView& aCoordinateConverter, NSView* aContainerView)
-      : mCoordinateConverter(aCoordinateConverter), mContainerView(aContainerView) {}
+  VibrancyManager(const nsChildView& aCoordinateConverter,
+                  NSView* aContainerView)
+      : mCoordinateConverter(aCoordinateConverter),
+        mContainerView(aContainerView) {}
 
   /**
    * Update the placement of the NSVisualEffectViews inside the container
@@ -66,7 +62,8 @@ class VibrancyManager {
    * @param aRegion The vibrant area, in device pixels.
    * @return Whether the region changed.
    */
-  bool UpdateVibrantRegion(VibrancyType aType, const LayoutDeviceIntRegion& aRegion);
+  bool UpdateVibrantRegion(VibrancyType aType,
+                           const LayoutDeviceIntRegion& aRegion);
 
   bool HasVibrantRegions() { return !mVibrantRegions.IsEmpty(); }
 

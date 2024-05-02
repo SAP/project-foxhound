@@ -32,7 +32,7 @@ struct DevTools : public ::testing::Test {
   JSContext* cx;
   JS::Compartment* compartment;
   JS::Zone* zone;
-  JS::PersistentRootedObject global;
+  JS::PersistentRooted<JSObject*> global;
 
   DevTools() : _initialized(false), cx(nullptr) {}
 
@@ -57,7 +57,7 @@ struct DevTools : public ::testing::Test {
   static void reportError(JSContext* cx, const char* message,
                           JSErrorReport* report) {
     fprintf(stderr, "%s:%u:%s\n",
-            report->filename ? report->filename : "<no filename>",
+            report->filename ? report->filename.c_str() : "<no filename>",
             (unsigned int)report->lineno, message);
   }
 
@@ -70,6 +70,9 @@ struct DevTools : public ::testing::Test {
   JSObject* createGlobal() {
     /* Create the global object. */
     JS::RealmOptions options;
+    // dummy
+    options.behaviors().setReduceTimerPrecisionCallerType(
+        JS::RTPCallerTypeToken{0});
     return JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
                               JS::FireOnNewGlobalHook, options);
   }
@@ -99,7 +102,7 @@ class MOZ_STACK_CLASS FakeNode {
   JS::Zone* zone;
   size_t size;
 
-  explicit FakeNode() : edges(), compartment(nullptr), zone(nullptr), size(1) {}
+  explicit FakeNode() : compartment(nullptr), zone(nullptr), size(1) {}
 };
 
 namespace JS {
@@ -130,13 +133,11 @@ class Concrete<FakeNode> : public Base {
   }
 };
 
-const char16_t Concrete<FakeNode>::concreteTypeName[] = u"FakeNode";
-
 }  // namespace ubi
 }  // namespace JS
 
-void AddEdge(FakeNode& node, FakeNode& referent,
-             const char16_t* edgeName = nullptr) {
+inline void AddEdge(FakeNode& node, FakeNode& referent,
+                    const char16_t* edgeName = nullptr) {
   char16_t* ownedEdgeName = nullptr;
   if (edgeName) {
     ownedEdgeName = NS_xstrdup(edgeName);
@@ -201,13 +202,13 @@ MATCHER_P(EdgeTo, id, "") {
 // A mock `Writer` class to be used with testing `WriteHeapGraph`.
 class MockWriter : public CoreDumpWriter {
  public:
-  virtual ~MockWriter() override {}
+  virtual ~MockWriter() override = default;
   MOCK_METHOD2(writeNode,
                bool(const JS::ubi::Node&, CoreDumpWriter::EdgePolicy));
   MOCK_METHOD1(writeMetadata, bool(uint64_t));
 };
 
-void ExpectWriteNode(MockWriter& writer, FakeNode& node) {
+inline void ExpectWriteNode(MockWriter& writer, FakeNode& node) {
   EXPECT_CALL(writer, writeNode(Eq(JS::ubi::Node(&node)), _))
       .Times(1)
       .WillOnce(Return(true));

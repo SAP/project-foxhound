@@ -13,8 +13,7 @@
 #include "mozilla/dom/PrototypeList.h"
 #include "xpcpublic.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BrowsingContext;
 
@@ -69,6 +68,10 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
   const char* className(JSContext* aCx,
                         JS::Handle<JSObject*> aProxy) const final;
 
+  // Cross origin objects like RemoteWindowProxy should not participate in
+  // private fields.
+  virtual bool throwOnPrivateField() const override { return true; }
+
   bool isCallable(JSObject* aObj) const final { return false; }
   bool isConstructor(JSObject* aObj) const final { return false; }
 
@@ -108,6 +111,9 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
    * object was created, callers probably need to addref the native in that
    * case. aNewObjectCreated can be true even if aProxy is null, if something
    * failed after creating the object.
+   *
+   * If aTransplantTo is non-null, failure is assumed to be unrecoverable, so
+   * this will crash.
    */
   void GetOrCreateProxyObject(JSContext* aCx, void* aNative,
                               const JSClass* aClasp,
@@ -138,7 +144,7 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
 template <class Native, const CrossOriginProperties& P>
 class RemoteObjectProxy : public RemoteObjectProxyBase {
  public:
-  void finalize(JSFreeOp* aFop, JSObject* aProxy) const final {
+  void finalize(JS::GCContext* aGcx, JSObject* aProxy) const final {
     auto native = static_cast<Native*>(GetNative(aProxy));
     RefPtr<Native> self(dont_AddRef(native));
   }
@@ -196,7 +202,6 @@ inline bool IsRemoteObjectProxy(JSObject* aObj) {
  */
 BrowsingContext* GetBrowsingContext(JSObject* aProxy);
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_RemoteObjectProxy_h */

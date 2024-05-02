@@ -10,9 +10,11 @@
 const { shallow } = require("enzyme");
 const React = require("react");
 
-const { COMPATIBILITY_ISSUE_TYPE } = require("devtools/shared/constants");
+const {
+  COMPATIBILITY_ISSUE_TYPE,
+} = require("resource://devtools/shared/constants.js");
 const IssueList = React.createFactory(
-  require("devtools/client/inspector/compatibility/components/IssueList")
+  require("resource://devtools/client/inspector/compatibility/components/IssueList.js")
 );
 
 describe("IssueList component", () => {
@@ -23,8 +25,7 @@ describe("IssueList component", () => {
           {
             type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
             property: "border-block-color",
-            url:
-              "https://developer.mozilla.org/docs/Web/CSS/border-block-color",
+            url: "https://developer.mozilla.org/docs/Web/CSS/border-block-color",
             deprecated: false,
             experimental: true,
             unsupportedBrowsers: [],

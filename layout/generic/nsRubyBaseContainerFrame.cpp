@@ -20,6 +20,7 @@
 #include "nsPresContext.h"
 #include "nsStyleStructInlines.h"
 #include "nsTextFrame.h"
+#include "gfxContext.h"
 #include "RubyUtils.h"
 
 using namespace mozilla;
@@ -260,10 +261,13 @@ nsIFrame::SizeComputationResult nsRubyBaseContainerFrame::ComputeSize(
           AspectRatioUsage::None};
 }
 
-/* virtual */
-nscoord nsRubyBaseContainerFrame::GetLogicalBaseline(
-    WritingMode aWritingMode) const {
-  return mBaseline;
+Maybe<nscoord> nsRubyBaseContainerFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+    BaselineExportContext) const {
+  if (aBaselineGroup == BaselineSharingGroup::Last) {
+    return Nothing{};
+  }
+  return Some(mBaseline);
 }
 
 struct nsRubyBaseContainerFrame::RubyReflowInput {
@@ -333,7 +337,7 @@ void nsRubyBaseContainerFrame::Reflow(nsPresContext* aPresContext,
         availSize.ConvertTo(textContainer->GetWritingMode(), lineWM));
     reflowInputs.AppendElement(reflowInput);
     nsLineLayout* lineLayout =
-        new nsLineLayout(aPresContext, reflowInput->mFloatManager, reflowInput,
+        new nsLineLayout(aPresContext, reflowInput->mFloatManager, *reflowInput,
                          nullptr, aReflowInput.mLineLayout);
     lineLayout->SetSuppressLineWrap(true);
     lineLayouts.AppendElement(lineLayout);

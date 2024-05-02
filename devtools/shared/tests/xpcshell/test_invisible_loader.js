@@ -3,10 +3,10 @@
 
 "use strict";
 
-const { addDebuggerToGlobal } = ChromeUtils.import(
-  "resource://gre/modules/jsdebugger.jsm"
+const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
 );
-addDebuggerToGlobal(this);
+addDebuggerToGlobal(globalThis);
 
 /**
  * Ensure that sandboxes created via the Dev Tools loader respect the
@@ -15,16 +15,20 @@ addDebuggerToGlobal(this);
 function run_test() {
   visible_loader();
   invisible_loader();
+  // TODO: invisibleToDebugger should be deprecated in favor of
+  // useDistinctSystemPrincipalLoader, but we might move out from the loader
+  // to using only standard imports instead.
+  distinct_system_principal_loader();
 }
 
 function visible_loader() {
   const loader = new DevToolsLoader({
     invisibleToDebugger: false,
   });
-  loader.require("devtools/shared/indentation");
+  loader.require("resource://devtools/shared/indentation.js");
 
   const dbg = new Debugger();
-  const sandbox = loader.loader.sharedGlobalSandbox;
+  const sandbox = loader.loader.sharedGlobal;
 
   try {
     dbg.addDebuggee(sandbox);
@@ -38,10 +42,10 @@ function invisible_loader() {
   const loader = new DevToolsLoader({
     invisibleToDebugger: true,
   });
-  loader.require("devtools/shared/indentation");
+  loader.require("resource://devtools/shared/indentation.js");
 
   const dbg = new Debugger();
-  const sandbox = loader.loader.sharedGlobalSandbox;
+  const sandbox = loader.loader.sharedGlobal;
 
   try {
     dbg.addDebuggee(sandbox);
@@ -49,4 +53,28 @@ function invisible_loader() {
   } catch (e) {
     Assert.ok(true);
   }
+}
+
+function distinct_system_principal_loader() {
+  const {
+    useDistinctSystemPrincipalLoader,
+    releaseDistinctSystemPrincipalLoader,
+  } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
+  );
+
+  const requester = {};
+  const loader = useDistinctSystemPrincipalLoader(requester);
+  loader.require("resource://devtools/shared/indentation.js");
+
+  const dbg = new Debugger();
+  const sandbox = loader.loader.sharedGlobal;
+
+  try {
+    dbg.addDebuggee(sandbox);
+    do_throw("debugger added invisible value");
+  } catch (e) {
+    Assert.ok(true);
+  }
+  releaseDistinctSystemPrincipalLoader(requester);
 }

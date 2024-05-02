@@ -14,8 +14,7 @@
 #include "nsTArray.h"
 #include "nsWeakReference.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class PermissionStatus;
 
@@ -36,12 +35,9 @@ class PermissionObserver final : public nsIObserver,
   PermissionObserver();
   virtual ~PermissionObserver();
 
-  void Notify(PermissionName aName, nsIPrincipal& aPrincipal);
-
   nsTArray<PermissionStatus*> mSinks;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

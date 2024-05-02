@@ -8,6 +8,7 @@
 #ifndef mozilla_net_HttpChannelParent_h
 #define mozilla_net_HttpChannelParent_h
 
+#include "HttpBaseChannel.h"
 #include "nsHttp.h"
 #include "mozilla/net/PHttpChannelParent.h"
 #include "mozilla/net/NeckoCommon.h"
@@ -20,6 +21,7 @@
 #include "nsHttpChannel.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "nsIMultiPartChannel.h"
+#include "nsIURI.h"
 
 class nsICacheEntry;
 
@@ -41,10 +43,6 @@ namespace net {
 class HttpBackgroundChannelParent;
 class ParentChannelListener;
 class ChannelEventQueue;
-
-// Note: nsIInterfaceRequestor must be the first base so that do_QueryObject()
-// works correctly on this object, as it's needed to compute a void* pointing to
-// the beginning of this object.
 
 class HttpChannelParent final : public nsIInterfaceRequestor,
                                 public PHttpChannelParent,
@@ -97,6 +95,8 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
 
   void InvokeAsyncOpen(nsresult rv);
 
+  void InvokeEarlyHintPreloader(nsresult rv, uint64_t aEarlyHintPreloaderId);
+
   // Calls SendSetPriority if mIPCClosed is false.
   void DoSendSetPriority(int16_t aValue);
 
@@ -125,6 +125,13 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   [[nodiscard]] RefPtr<ChildEndpointPromise> AttachStreamFilter(
       Endpoint<extensions::PStreamFilterParent>&& aParentEndpoint,
       Endpoint<extensions::PStreamFilterChild>&& aChildEndpoint);
+  [[nodiscard]] RefPtr<GenericPromise> DetachStreamFilters();
+
+  // Should only be called from EarlyHintPreloader. mChannel should be null at
+  // the point of calling. Sets mChannel to aChannel. Used by the
+  // EarlyHintPreloader to redirect the channel to this parent as soon as the
+  // final channel becomes available after all http redirects.
+  void SetHttpChannelFromEarlyHintPreloader(HttpBaseChannel* aChannel);
 
  protected:
   // used to connect redirected-to channel in parent with just created
@@ -132,60 +139,66 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   [[nodiscard]] bool ConnectChannel(const uint32_t& registrarId);
 
   [[nodiscard]] bool DoAsyncOpen(
-      const URIParams& uri, const Maybe<URIParams>& originalUri,
-      const Maybe<URIParams>& docUri, nsIReferrerInfo* aReferrerInfo,
-      const Maybe<URIParams>& aAPIRedirectToURI,
-      const Maybe<URIParams>& topWindowUri, const uint32_t& loadFlags,
+      nsIURI* uri, nsIURI* originalUri, nsIURI* docUri,
+      nsIReferrerInfo* aReferrerInfo, nsIURI* aAPIRedirectToURI,
+      nsIURI* topWindowUri, const uint32_t& loadFlags,
       const RequestHeaderTuples& requestHeaders, const nsCString& requestMethod,
       const Maybe<IPCStream>& uploadStream, const bool& uploadStreamHasHeaders,
-      const int16_t& priority, const uint32_t& classOfService,
+      const int16_t& priority, const ClassOfService& classOfService,
       const uint8_t& redirectionLimit, const bool& allowSTS,
       const uint32_t& thirdPartyFlags, const bool& doResumeAt,
       const uint64_t& startPos, const nsCString& entityID,
       const bool& allowSpdy, const bool& allowHttp3, const bool& allowAltSvc,
       const bool& beConservative, const bool& bypassProxy,
-      const uint32_t& tlsFlags, const Maybe<LoadInfoArgs>& aLoadInfoArgs,
+      const uint32_t& tlsFlags, const LoadInfoArgs& aLoadInfoArgs,
       const uint32_t& aCacheKey, const uint64_t& aRequestContextID,
       const Maybe<CorsPreflightArgs>& aCorsPreflightArgs,
       const uint32_t& aInitialRwin, const bool& aBlockAuthPrompt,
       const bool& aAllowStaleCacheContent,
       const bool& aPreferCacheLoadOverBypass, const nsCString& aContentTypeHint,
-      const uint32_t& aCorsMode, const uint32_t& aRedirectMode,
+      const dom::RequestMode& aRequestMode, const uint32_t& aRedirectMode,
       const uint64_t& aChannelId, const nsString& aIntegrityMetadata,
       const uint64_t& aContentWindowId,
       const nsTArray<PreferredAlternativeDataTypeParams>&
           aPreferredAlternativeTypes,
-      const uint64_t& aTopBrowsingContextId,
-      const TimeStamp& aLaunchServiceWorkerStart,
+      const uint64_t& aBrowserId, const TimeStamp& aLaunchServiceWorkerStart,
       const TimeStamp& aLaunchServiceWorkerEnd,
       const TimeStamp& aDispatchFetchEventStart,
       const TimeStamp& aDispatchFetchEventEnd,
       const TimeStamp& aHandleFetchEventStart,
       const TimeStamp& aHandleFetchEventEnd,
       const bool& aForceMainDocumentChannel,
-      const TimeStamp& aNavigationStartTimeStamp);
+      const TimeStamp& aNavigationStartTimeStamp,
+      const uint64_t& aEarlyHintPreloaderId,
+      const nsAString& aClassicScriptHintCharset,
+      const nsAString& aDocumentCharacterSet);
 
   virtual mozilla::ipc::IPCResult RecvSetPriority(
       const int16_t& priority) override;
   virtual mozilla::ipc::IPCResult RecvSetClassOfService(
-      const uint32_t& cos) override;
+      const ClassOfService& cos) override;
   virtual mozilla::ipc::IPCResult RecvSuspend() override;
   virtual mozilla::ipc::IPCResult RecvResume() override;
   virtual mozilla::ipc::IPCResult RecvCancel(
-      const nsresult& status, const uint32_t& requestBlockingReason) override;
+      const nsresult& status, const uint32_t& requestBlockingReason,
+      const nsACString& reason,
+      const mozilla::Maybe<nsCString>& logString) override;
   virtual mozilla::ipc::IPCResult RecvRedirect2Verify(
       const nsresult& result, const RequestHeaderTuples& changedHeaders,
       const uint32_t& aSourceRequestBlockingReason,
       const Maybe<ChildLoadInfoForwarderArgs>& aTargetLoadInfoForwarder,
       const uint32_t& loadFlags, nsIReferrerInfo* aReferrerInfo,
-      const Maybe<URIParams>& apiRedirectUri,
+      nsIURI* apiRedirectUri,
       const Maybe<CorsPreflightArgs>& aCorsPreflightArgs) override;
   virtual mozilla::ipc::IPCResult RecvDocumentChannelCleanup(
       const bool& clearCacheEntry) override;
   virtual mozilla::ipc::IPCResult RecvRemoveCorsPreflightCacheEntry(
-      const URIParams& uri,
-      const mozilla::ipc::PrincipalInfo& requestingPrincipal,
+      nsIURI* uri, const mozilla::ipc::PrincipalInfo& requestingPrincipal,
       const OriginAttributes& originAttributes) override;
+  virtual mozilla::ipc::IPCResult RecvSetCookies(
+      const nsACString& aBaseDomain, const OriginAttributes& aOriginAttributes,
+      nsIURI* aHost, const bool& aFromHttp,
+      nsTArray<CookieStruct>&& aCookies) override;
   virtual mozilla::ipc::IPCResult RecvBytesRead(const int32_t& aCount) override;
   virtual mozilla::ipc::IPCResult RecvOpenOriginalCacheInputStream() override;
   virtual void ActorDestroy(ActorDestroyReason why) override;
@@ -196,7 +209,8 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   [[nodiscard]] nsresult ReportSecurityMessage(
       const nsAString& aMessageTag, const nsAString& aMessageCategory) override;
   nsresult LogBlockedCORSRequest(const nsAString& aMessage,
-                                 const nsACString& aCategory) override;
+                                 const nsACString& aCategory,
+                                 bool aIsWarning = false) override;
   nsresult LogMimeTypeMismatch(const nsACString& aMessageName, bool aWarning,
                                const nsAString& aURL,
                                const nsAString& aContentType) override;
@@ -208,7 +222,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   virtual mozilla::ipc::IPCResult RecvDeletingChannel() override;
 
  private:
-  void UpdateAndSerializeSecurityInfo(nsACString& aSerializedSecurityInfoOut);
+  already_AddRefed<nsITransportSecurityInfo> SecurityInfo();
 
   // final step for Redirect2Verify procedure, will be invoked while both
   // redirecting and redirected channel are ready or any error happened.
@@ -222,7 +236,8 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // id, a promise will be returned so the caller can append callbacks on it.
   // If called multiple times before mBgParent is available, the same promise
   // will be returned and the callbacks will be invoked in order.
-  [[nodiscard]] RefPtr<GenericNonExclusivePromise> WaitForBgParent();
+  [[nodiscard]] RefPtr<GenericNonExclusivePromise> WaitForBgParent(
+      uint64_t aChannelId);
 
   // Remove the association with background channel after main-thread IPC
   // is about to be destroyed or no further event is going to be sent, i.e.,
@@ -233,9 +248,14 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // That is, we may suspend the channel if the ODA-s to child process are not
   // consumed quickly enough. Otherwise, memory explosion could happen.
   bool NeedFlowControl();
+
+  bool IsRedirectDueToAuthRetry(uint32_t redirectFlags);
+
   int32_t mSendWindowSize;
 
   friend class HttpBackgroundChannelParent;
+
+  uint64_t mEarlyHintPreloaderId{};
 
   RefPtr<HttpBaseChannel> mChannel;
   nsCOMPtr<nsICacheEntry> mCacheEntry;
@@ -282,8 +302,6 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // since the information can be recontructed from ODA.
   uint8_t mIgnoreProgress : 1;
 
-  uint8_t mSentRedirect1BeginFailed : 1;
-  uint8_t mReceivedRedirect2Verify : 1;
   uint8_t mHasSuspendedByBackPressure : 1;
 
   // Set if we get the result of and cache |mNeedFlowControl|

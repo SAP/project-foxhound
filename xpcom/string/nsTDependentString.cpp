@@ -7,6 +7,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
+#include "nsTDependentString.h"
+
 template <typename T>
 nsTDependentString<T>::nsTDependentString(const char_type* aStart,
                                           const char_type* aEnd)
@@ -39,7 +41,7 @@ void nsTDependentString<T>::Rebind(const string_type& str,
       str.GetDataFlags() & (DataFlags::TERMINATED | DataFlags::LITERAL);
   this->SetData(newData, newLen, newDataFlags);
   // TaintFox: propagate taint.
-  this->AssignTaint(str.Taint().safeCopy().subtaint(startPos, str.Length()));
+  this->AssignTaint(str.Taint().safeSubTaint(startPos, str.Length()));
 }
 
 template <typename T>
@@ -48,3 +50,6 @@ void nsTDependentString<T>::Rebind(const char_type* aStart,
   MOZ_RELEASE_ASSERT(aStart <= aEnd, "Overflow!");
   this->Rebind(aStart, aEnd - aStart);
 }
+
+template class nsTDependentString<char>;
+template class nsTDependentString<char16_t>;

@@ -1,7 +1,6 @@
-use crate::runtime::task::harness::Harness;
-use crate::runtime::task::{Header, Schedule};
+use crate::future::Future;
+use crate::runtime::task::{Header, RawTask, Schedule};
 
-use std::future::Future;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops;
@@ -13,9 +12,9 @@ pub(super) struct WakerRef<'a, S: 'static> {
     _p: PhantomData<(&'a Header, S)>,
 }
 
-/// Returns a `WakerRef` which avoids having to pre-emptively increase the
+/// Returns a `WakerRef` which avoids having to preemptively increase the
 /// refcount if there is no need to do so.
-pub(super) fn waker_ref<T, S>(header: &Header) -> WakerRef<'_, S>
+pub(super) fn waker_ref<T, S>(header: &NonNull<Header>) -> WakerRef<'_, S>
 where
     T: Future,
     S: Schedule,
@@ -28,7 +27,7 @@ where
     // point and not an *owned* waker, we must ensure that `drop` is never
     // called on this waker instance. This is done by wrapping it with
     // `ManuallyDrop` and then never calling drop.
-    let waker = unsafe { ManuallyDrop::new(Waker::from_raw(raw_waker::<T, S>(header))) };
+    let waker = unsafe { ManuallyDrop::new(Waker::from_raw(raw_waker(*header))) };
 
     WakerRef {
         waker,
@@ -44,58 +43,62 @@ impl<S> ops::Deref for WakerRef<'_, S> {
     }
 }
 
-unsafe fn clone_waker<T, S>(ptr: *const ()) -> RawWaker
-where
-    T: Future,
-    S: Schedule,
-{
-    let header = ptr as *const Header;
-    (*header).state.ref_inc();
-    raw_waker::<T, S>(header)
+cfg_trace! {
+    macro_rules! trace {
+        ($header:expr, $op:expr) => {
+            if let Some(id) = Header::get_tracing_id(&$header) {
+                tracing::trace!(
+                    target: "tokio::task::waker",
+                    op = $op,
+                    task.id = id.into_u64(),
+                );
+            }
+        }
+    }
 }
 
-unsafe fn drop_waker<T, S>(ptr: *const ())
-where
-    T: Future,
-    S: Schedule,
-{
-    let ptr = NonNull::new_unchecked(ptr as *mut Header);
-    let harness = Harness::<T, S>::from_raw(ptr);
-    harness.drop_reference();
+cfg_not_trace! {
+    macro_rules! trace {
+        ($header:expr, $op:expr) => {
+            // noop
+            let _ = &$header;
+        }
+    }
 }
 
-unsafe fn wake_by_val<T, S>(ptr: *const ())
-where
-    T: Future,
-    S: Schedule,
-{
+unsafe fn clone_waker(ptr: *const ()) -> RawWaker {
+    let header = NonNull::new_unchecked(ptr as *mut Header);
+    trace!(header, "waker.clone");
+    header.as_ref().state.ref_inc();
+    raw_waker(header)
+}
+
+unsafe fn drop_waker(ptr: *const ()) {
     let ptr = NonNull::new_unchecked(ptr as *mut Header);
-    let harness = Harness::<T, S>::from_raw(ptr);
-    harness.wake_by_val();
+    trace!(ptr, "waker.drop");
+    let raw = RawTask::from_raw(ptr);
+    raw.drop_reference();
+}
+
+unsafe fn wake_by_val(ptr: *const ()) {
+    let ptr = NonNull::new_unchecked(ptr as *mut Header);
+    trace!(ptr, "waker.wake");
+    let raw = RawTask::from_raw(ptr);
+    raw.wake_by_val();
 }
 
 // Wake without consuming the waker
-unsafe fn wake_by_ref<T, S>(ptr: *const ())
-where
-    T: Future,
-    S: Schedule,
-{
+unsafe fn wake_by_ref(ptr: *const ()) {
     let ptr = NonNull::new_unchecked(ptr as *mut Header);
-    let harness = Harness::<T, S>::from_raw(ptr);
-    harness.wake_by_ref();
+    trace!(ptr, "waker.wake_by_ref");
+    let raw = RawTask::from_raw(ptr);
+    raw.wake_by_ref();
 }
 
-fn raw_waker<T, S>(header: *const Header) -> RawWaker
-where
-    T: Future,
-    S: Schedule,
-{
-    let ptr = header as *const ();
-    let vtable = &RawWakerVTable::new(
-        clone_waker::<T, S>,
-        wake_by_val::<T, S>,
-        wake_by_ref::<T, S>,
-        drop_waker::<T, S>,
-    );
-    RawWaker::new(ptr, vtable)
+static WAKER_VTABLE: RawWakerVTable =
+    RawWakerVTable::new(clone_waker, wake_by_val, wake_by_ref, drop_waker);
+
+fn raw_waker(header: NonNull<Header>) -> RawWaker {
+    let ptr = header.as_ptr() as *const ();
+    RawWaker::new(ptr, &WAKER_VTABLE)
 }

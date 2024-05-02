@@ -7,7 +7,6 @@ import { ContentSection } from "content-src/components/CustomizeMenu/ContentSect
 import { connect } from "react-redux";
 import React from "react";
 import { CSSTransition } from "react-transition-group";
-import { ColorwayCloset } from "content-src/components/CustomizeMenu/ColorwayCloset/ColorwayCloset";
 
 export class _CustomizeMenu extends React.PureComponent {
   constructor(props) {
@@ -63,11 +62,6 @@ export class _CustomizeMenu extends React.PureComponent {
               data-l10n-id="newtab-custom-close-button"
               ref={c => (this.closeButton = c)}
             />
-            {this.props.showColorwayCloset ? (
-              <ColorwayCloset dispatch={this.props.dispatch} />
-            ) : (
-              <React.Fragment />
-            )}
             <BackgroundsSection />
             <ContentSection
               openPreferences={this.props.openPreferences}
@@ -75,9 +69,8 @@ export class _CustomizeMenu extends React.PureComponent {
               enabledSections={this.props.enabledSections}
               pocketRegion={this.props.pocketRegion}
               mayHaveSponsoredTopSites={this.props.mayHaveSponsoredTopSites}
-              mayHaveSponsoredStories={
-                this.props.DiscoveryStream.config.show_spocs
-              }
+              mayHaveSponsoredStories={this.props.mayHaveSponsoredStories}
+              mayHaveRecentSaves={this.props.DiscoveryStream.recentSavesEnabled}
               dispatch={this.props.dispatch}
             />
           </div>

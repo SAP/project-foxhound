@@ -20,7 +20,7 @@ class VideoBridgeParent final : public PVideoBridgeParent,
                                 public HostIPCAllocator,
                                 public mozilla::ipc::IShmemAllocator {
  public:
-  ~VideoBridgeParent();
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(VideoBridgeParent, HostIPCAllocator)
 
   static VideoBridgeParent* GetSingleton(
       const Maybe<VideoBridgeSource>& aSource);
@@ -28,8 +28,10 @@ class VideoBridgeParent final : public PVideoBridgeParent,
   static void Open(Endpoint<PVideoBridgeParent>&& aEndpoint,
                    VideoBridgeSource aSource);
   static void Shutdown();
+  static void UnregisterExternalImages();
 
-  TextureHost* LookupTexture(uint64_t aSerial);
+  TextureHost* LookupTexture(const dom::ContentParentId& aContentId,
+                             uint64_t aSerial);
 
   // PVideoBridgeParent
   void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -37,6 +39,7 @@ class VideoBridgeParent final : public PVideoBridgeParent,
                                       ReadLockDescriptor& aReadLock,
                                       const LayersBackend& aLayersBackend,
                                       const TextureFlags& aFlags,
+                                      const dom::ContentParentId& aContentId,
                                       const uint64_t& aSerial);
   bool DeallocPTextureParent(PTextureParent* actor);
 
@@ -53,24 +56,23 @@ class VideoBridgeParent final : public PVideoBridgeParent,
   bool IPCOpen() const override { return !mClosed; }
 
   // IShmemAllocator
-  bool AllocShmem(size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-                  ipc::Shmem* aShmem) override;
+  bool AllocShmem(size_t aSize, ipc::Shmem* aShmem) override;
 
-  bool AllocUnsafeShmem(size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-                        ipc::Shmem* aShmem) override;
+  bool AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) override;
 
   bool DeallocShmem(ipc::Shmem& aShmem) override;
 
+  void OnChannelError() override;
+
  private:
+  ~VideoBridgeParent();
+
   explicit VideoBridgeParent(VideoBridgeSource aSource);
   void Bind(Endpoint<PVideoBridgeParent>&& aEndpoint);
 
-  void ActorDealloc() override;
   void ReleaseCompositorThread();
+  void DoUnregisterExternalImages();
 
-  // This keeps us alive until ActorDestroy(), at which point we do a
-  // deferred destruction of ourselves.
-  RefPtr<VideoBridgeParent> mSelfRef;
   RefPtr<CompositorThreadHolder> mCompositorThreadHolder;
 
   std::map<uint64_t, PTextureParent*> mTextureMap;

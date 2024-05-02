@@ -41,7 +41,7 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace JS;
 
-//#define STRICT_CHECK_OF_UNICODE
+// #define STRICT_CHECK_OF_UNICODE
 #ifdef STRICT_CHECK_OF_UNICODE
 #  define ILLEGAL_RANGE(c) (0 != ((c)&0xFF80))
 #else  // STRICT_CHECK_OF_UNICODE
@@ -104,7 +104,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       d.setNumber(*static_cast<const float*>(s));
       return true;
     case nsXPTType::T_DOUBLE:
-      d.setNumber(*static_cast<const double*>(s));
+      d.set(JS_NumberValue(*static_cast<const double*>(s)));
       return true;
     case nsXPTType::T_BOOL:
       d.setBoolean(*static_cast<const bool*>(s));
@@ -392,7 +392,6 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       NS_ERROR("bad type");
       return false;
   }
-  return true;
 }
 
 /***************************************************************************/
@@ -1017,7 +1016,7 @@ bool XPCConvert::JSObject2NativeInterface(JSContext* cx, void** dest,
 
     // Is this really a native xpcom object with a wrapper?
     XPCWrappedNative* wrappedNative = nullptr;
-    if (IS_WN_REFLECTOR(inner)) {
+    if (IsWrappedNativeReflector(inner)) {
       wrappedNative = XPCWrappedNative::Get(inner);
     }
     if (wrappedNative) {
@@ -1160,7 +1159,7 @@ static nsresult JSErrorToXPCException(JSContext* cx, const char* toStringResult,
 
     data = new nsScriptError();
     data->nsIScriptError::InitWithWindowID(
-        bestMessage, NS_ConvertASCIItoUTF16(report->filename),
+        bestMessage, NS_ConvertUTF8toUTF16(report->filename.c_str()),
         linebuf ? nsDependentString(linebuf, report->linebufLength())
                 : EmptyString(),
         report->lineno, report->tokenOffset(), flags, "XPConnect JavaScript"_ns,
@@ -1300,9 +1299,10 @@ nsresult XPCConvert::JSValToXPCException(JSContext* cx, MutableHandleValue s,
       nsCOMPtr<nsIComponentManager> cm;
       if (NS_FAILED(NS_GetComponentManager(getter_AddRefs(cm))) || !cm ||
           NS_FAILED(cm->CreateInstanceByContractID(
-              NS_SUPPORTS_DOUBLE_CONTRACTID, nullptr,
-              NS_GET_IID(nsISupportsDouble), getter_AddRefs(data))))
+              NS_SUPPORTS_DOUBLE_CONTRACTID, NS_GET_IID(nsISupportsDouble),
+              getter_AddRefs(data)))) {
         return NS_ERROR_FAILURE;
+      }
       data->SetData(number);
       rv = ConstructException(NS_ERROR_XPC_JS_THREW_NUMBER, nullptr, ifaceName,
                               methodName, data, exceptn, cx, s.address());

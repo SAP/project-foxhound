@@ -4,18 +4,15 @@
 
 "use strict";
 
-const { SitePermissions } = ChromeUtils.import(
-  "resource:///modules/SitePermissions.jsm"
-);
-
 // This function applies combinations of different permissions and
 // checks how they override each other.
 async function checkPermissionCombinations(combinations) {
-  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-    "https://example.com"
-  );
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      "https://example.com"
+    );
 
-  await BrowserTestUtils.withNewTab(principal.spec, function(browser) {
+  await BrowserTestUtils.withNewTab(principal.spec, function (browser) {
     let id = "geo";
     for (let { reverse, states, result } of combinations) {
       let loop = () => {

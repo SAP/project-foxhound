@@ -7,7 +7,9 @@
 
 #include "nsBaseAppShell.h"
 #include "nsExceptionHandler.h"
+#include "nsJSUtils.h"
 #include "nsThreadUtils.h"
+#include "nsIAppShell.h"
 #include "nsIObserverService.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/Services.h"
@@ -24,10 +26,8 @@ nsBaseAppShell::nsBaseAppShell()
     : mSuspendNativeCount(0),
       mEventloopNestingLevel(0),
       mBlockedWait(nullptr),
-      mFavorPerf(0),
       mNativeEventPending(false),
-      mStarvationDelay(0),
-      mSwitchTime(0),
+      mGeckoTaskBurstStartTime(0),
       mLastNativeEventTime(0),
       mEventloopNestingState(eEventloopNone),
       mRunning(false),
@@ -96,6 +96,17 @@ void nsBaseAppShell::NativeEventCallback() {
   DecrementEventloopNestingLevel();
 }
 
+void nsBaseAppShell::OnSystemTimezoneChange() {
+  nsJSUtils::ResetTimeZone();
+
+  nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+  if (obsSvc) {
+    // Timezone changed notification
+    obsSvc->NotifyObservers(nullptr, DEFAULT_TIMEZONE_CHANGED_OBSERVER_TOPIC,
+                            nullptr);
+  }
+}
+
 // Note, this is currently overidden on windows, see comments in nsAppShell for
 // details.
 void nsBaseAppShell::DoProcessMoreGeckoEvents() { OnDispatchedEvent(); }
@@ -152,14 +163,9 @@ nsBaseAppShell::Exit(void) {
 }
 
 NS_IMETHODIMP
-nsBaseAppShell::FavorPerformanceHint(bool favorPerfOverStarvation,
-                                     uint32_t starvationDelay) {
-  mStarvationDelay = PR_MillisecondsToInterval(starvationDelay);
-  if (favorPerfOverStarvation) {
-    ++mFavorPerf;
-  } else {
-    --mFavorPerf;
-    mSwitchTime = PR_IntervalNow();
+nsBaseAppShell::GeckoTaskBurst() {
+  if (mGeckoTaskBurstStartTime == 0) {
+    mGeckoTaskBurstStartTime = PR_IntervalNow();
   }
   return NS_OK;
 }
@@ -233,7 +239,9 @@ nsBaseAppShell::OnProcessNextEvent(nsIThreadInternal* thr, bool mayWait) {
   // NativeEventCallback to process gecko events.
   mProcessedGeckoEvents = false;
 
-  if (mFavorPerf <= 0 && start > mSwitchTime + mStarvationDelay) {
+  // Content processes always priorize gecko events.
+  if (!XRE_IsContentProcess() && (start > (mGeckoTaskBurstStartTime + limit))) {
+    mGeckoTaskBurstStartTime = 0;
     // Favor pending native events
     PRIntervalTime now = start;
     bool keepGoing;

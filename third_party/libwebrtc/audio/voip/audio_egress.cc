@@ -22,7 +22,7 @@ AudioEgress::AudioEgress(RtpRtcpInterface* rtp_rtcp,
                          TaskQueueFactory* task_queue_factory)
     : rtp_rtcp_(rtp_rtcp),
       rtp_sender_audio_(clock, rtp_rtcp_->RtpSender()),
-      audio_coding_(AudioCodingModule::Create(AudioCodingModule::Config())),
+      audio_coding_(AudioCodingModule::Create()),
       encoder_queue_(task_queue_factory->CreateTaskQueue(
           "AudioEncoder",
           TaskQueueFactory::Priority::NORMAL)) {
@@ -79,6 +79,12 @@ void AudioEgress::SendAudioData(std::unique_ptr<AudioFrame> audio_frame) {
         if (!rtp_rtcp_->SendingMedia()) {
           return;
         }
+
+        double duration_seconds =
+            static_cast<double>(audio_frame->samples_per_channel_) /
+            audio_frame->sample_rate_hz_;
+
+        input_audio_level_.ComputeLevel(*audio_frame, duration_seconds);
 
         AudioFrameOperations::Mute(audio_frame.get(),
                                    encoder_context_.previously_muted_,

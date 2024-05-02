@@ -8,6 +8,7 @@
 
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
+#include "mozilla/GeckoArgs.h"
 #include "nsIFile.h"
 #include "nsZipArchive.h"
 #include "nsNetUtil.h"
@@ -26,11 +27,9 @@ static const char* sProp[2] = {NS_GRE_DIR, NS_XPCOM_CURRENT_PROCESS_DIR};
 
 void Omnijar::CleanUpOne(Type aType) {
   if (sReader[aType]) {
-    sReader[aType]->CloseArchive();
     sReader[aType] = nullptr;
   }
   if (sOuterReader[aType]) {
-    sOuterReader[aType]->CloseArchive();
     sOuterReader[aType] = nullptr;
   }
   sPath[aType] = nullptr;
@@ -77,8 +76,8 @@ void Omnijar::InitOne(nsIFile* aPath, Type aType) {
     return;
   }
 
-  RefPtr<nsZipArchive> zipReader = new nsZipArchive();
-  if (NS_FAILED(zipReader->OpenArchive(file))) {
+  RefPtr<nsZipArchive> zipReader = nsZipArchive::OpenArchive(file);
+  if (!zipReader) {
     return;
   }
 
@@ -87,8 +86,8 @@ void Omnijar::InitOne(nsIFile* aPath, Type aType) {
   if (NS_SUCCEEDED(nsZipHandle::Init(zipReader, MOZ_STRINGIFY(OMNIJAR_NAME),
                                      getter_AddRefs(handle)))) {
     outerReader = zipReader;
-    zipReader = new nsZipArchive();
-    if (NS_FAILED(zipReader->OpenArchive(handle))) {
+    zipReader = nsZipArchive::OpenArchive(handle);
+    if (!zipReader) {
       return;
     }
   }
@@ -195,6 +194,38 @@ nsresult Omnijar::GetURIString(Type aType, nsACString& aResult) {
   }
   aResult += "/";
   return NS_OK;
+}
+
+void Omnijar::ChildProcessInit(int& aArgc, char** aArgv) {
+  nsCOMPtr<nsIFile> greOmni, appOmni;
+
+  if (auto greOmniStr = geckoargs::sGREOmni.Get(aArgc, aArgv)) {
+    if (NS_WARN_IF(NS_FAILED(
+            XRE_GetFileFromPath(*greOmniStr, getter_AddRefs(greOmni))))) {
+      greOmni = nullptr;
+    }
+  }
+  if (auto appOmniStr = geckoargs::sAppOmni.Get(aArgc, aArgv)) {
+    if (NS_WARN_IF(NS_FAILED(
+            XRE_GetFileFromPath(*appOmniStr, getter_AddRefs(appOmni))))) {
+      appOmni = nullptr;
+    }
+  }
+
+  // If we're unified, then only the -greomni flag is present
+  // (reflecting the state of sPath in the parent process) but that
+  // path should be used for both (not nullptr, which will try to
+  // invoke the directory service, which probably isn't up yet.)
+  if (!appOmni) {
+    appOmni = greOmni;
+  }
+
+  if (greOmni) {
+    Init(greOmni, appOmni);
+  } else {
+    // We should never have an appOmni without a greOmni.
+    MOZ_ASSERT(!appOmni);
+  }
 }
 
 } /* namespace mozilla */

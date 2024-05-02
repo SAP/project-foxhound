@@ -13,6 +13,7 @@
 #include "nsIContent.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 using namespace mozilla;
 
@@ -49,7 +50,7 @@ nsTableColFrame::nsTableColFrame(ComputedStyle* aStyle,
 nsTableColFrame::~nsTableColFrame() = default;
 
 nsTableColType nsTableColFrame::GetColType() const {
-  return (nsTableColType)((mState & COL_TYPE_BITS) >> COL_TYPE_OFFSET);
+  return (nsTableColType)((GetStateBits() & COL_TYPE_BITS) >> COL_TYPE_OFFSET);
 }
 
 void nsTableColFrame::SetColType(nsTableColType aType) {
@@ -109,7 +110,6 @@ void nsTableColFrame::Reflow(nsPresContext* aPresContext,
   if (collapseCol) {
     GetTableFrame()->SetNeedToCollapse(true);
   }
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 void nsTableColFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,

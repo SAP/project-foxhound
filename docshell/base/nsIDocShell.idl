@@ -102,11 +102,10 @@ interface nsIDocShell : nsIDocShellTreeItem
   void prepareForNewContentModel();
 
   /**
-   * For editors and suchlike who wish to change the URI associated with the
-   * document. Note if you want to get the current URI, use the read-only
-   * property on nsIWebNavigation.
+   * Helper for the session store to change the URI associated with the
+   * document.
    */
-  void setCurrentURI(in nsIURI aURI);
+  void setCurrentURIForSessionStore(in nsIURI aURI);
 
   /**
    * Notify the associated content viewer and all child docshells that they are
@@ -449,13 +448,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   [noscript, notxpcom] nsIDRef HistoryID();
 
   /**
-   * Sets whether a docshell is an app tab. An app tab docshell may behave
-   * differently than a non-app tab docshell in some cases, such as when
-   * handling link clicks. Docshells are not app tabs unless told otherwise.
-   */
-  attribute boolean isAppTab;
-
-  /**
    * Create a new about:blank document and content viewer.
    * @param aPrincipal the principal to use for the new document.
    * @param aPartitionedPrincipal the partitioned principal to use for the new
@@ -487,23 +479,12 @@ interface nsIDocShell : nsIDocShellTreeItem
     out nsIPrincipal parentCharsetPrincipal);
 
   /**
-   * Whether the docShell records profile timeline markers at the moment
-   */
-  [infallible] attribute boolean recordProfileTimelineMarkers;
-
-  /**
    * Return a DOMHighResTimeStamp representing the number of
    * milliseconds from an arbitrary point in time.  The reference
    * point is shared by all DocShells and is also used by timestamps
    * on markers.
    */
   DOMHighResTimeStamp now();
-
-  /**
-   * Returns and flushes the profile timeline markers gathered by the docShell
-   */
-  [implicit_jscontext]
-  jsval popProfileTimelineMarkers();
 
   /**
    * Add an observer to the list of parties to be notified when this docshell's
@@ -631,31 +612,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   [noscript,notxpcom,nostdcall] Document getExtantDocument();
 
   /**
-   * If deviceSizeIsPageSize is set to true, device-width/height media queries
-   * will be calculated from the page size, not the device size.
-   *
-   * Used by the Responsive Design Mode and B2G Simulator.
-   *
-   * Default is False.
-   * Default value can be overriden with
-   * docshell.device_size_is_page_size pref.
-   */
-  [infallible] attribute boolean deviceSizeIsPageSize;
-
-  /**
-   * Notify DocShell when the browser is about to start executing JS, and after
-   * that execution has stopped.  This only occurs when the Timeline devtool
-   * is collecting information.
-   */
-  [noscript,notxpcom,nostdcall] void notifyJSRunToCompletionStart(in string aReason,
-                                                                  in AString functionName,
-                                                                  in AString fileName,
-                                                                  in unsigned long lineNumber,
-                                                                  in jsval asyncStack,
-                                                                  in string asyncCause);
-  [noscript,notxpcom,nostdcall] void notifyJSRunToCompletionStop();
-
-  /**
    * This attribute determines whether a document which is not about:blank has
    * already be loaded by this docShell.
    */
@@ -719,7 +675,7 @@ interface nsIDocShell : nsIDocShellTreeItem
    * <meta name="viewport"> tag is respected in a specific docshell.
    * Possible values are listed above.
    */
-  [infallible] attribute nsIDocShell_MetaViewportOverride metaViewportOverride;
+  [infallible, setter_can_run_script] attribute nsIDocShell_MetaViewportOverride metaViewportOverride;
 
   /**
    * Attribute that determines whether tracking protection is enabled.

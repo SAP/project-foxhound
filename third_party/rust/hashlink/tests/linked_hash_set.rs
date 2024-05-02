@@ -424,6 +424,22 @@ fn test_retain() {
 }
 
 #[test]
+fn test_retain_with_order() {
+    let xs = [1, 2, 3, 4, 5, 6];
+    let mut set: LinkedHashSet<i32> = xs.iter().cloned().collect();
+    let mut vec = Vec::new();
+    set.retain_with_order(|&k| {
+        if k % 2 == 0 {
+            true
+        } else {
+            vec.push(k);
+            false
+        }
+    });
+    assert_eq!(vec![1, 3, 5], vec);
+}
+
+#[test]
 fn insert_order() {
     let mut set = LinkedHashSet::new();
     set.insert(1);
@@ -509,4 +525,19 @@ fn to_back_front_order() {
     assert_eq!(set.back().copied(), Some(2));
     set.to_front(&3);
     assert_eq!(set.front().copied(), Some(3));
+}
+
+#[test]
+fn test_order_equality() {
+    let xs = [1, 2, 3, 4, 5, 6];
+    let mut set1: LinkedHashSet<i32> = xs.iter().copied().collect();
+    let mut set2: LinkedHashSet<i32> = xs.iter().copied().collect();
+
+    assert_eq!(set1, set2);
+
+    set1.to_front(&4);
+    assert_ne!(set1, set2);
+
+    set2.to_front(&4);
+    assert_eq!(set1, set2);
 }

@@ -14,13 +14,16 @@ const TEST_URI = `
   <div id='testid'>Styled Node</div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
   info("Test creating a new property and escaping");
-  await addProperty(view, 1, "color", "red", "VK_ESCAPE", false);
+  await addProperty(view, 1, "color", "red", {
+    commitValueWith: "VK_ESCAPE",
+    blurNewProperty: false,
+  });
 
   is(
     view.styleDocument.activeElement,

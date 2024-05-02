@@ -5,9 +5,8 @@
 Transform the update generation task into an actual task description.
 """
 
-
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.schema import resolve_keyed_by
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import resolve_keyed_by
 
 transforms = TransformSequence()
 
@@ -22,7 +21,12 @@ def handle_keyed_by(config, tasks):
     ]
     for task in tasks:
         fields = default_fields[:]
-        for additional_field in ("l10n-bump-info", "source-repo", "dontbuild"):
+        for additional_field in (
+            "l10n-bump-info",
+            "source-repo",
+            "dontbuild",
+            "ignore-closed-tree",
+        ):
             if additional_field in task["worker"]:
                 fields.append(f"worker.{additional_field}")
         for field in fields:

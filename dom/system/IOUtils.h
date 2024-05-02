@@ -19,6 +19,7 @@
 #include "mozilla/dom/IOUtilsBinding.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsIAsyncShutdown.h"
+#include "nsIFile.h"
 #include "nsISerialEventTarget.h"
 #include "nsPrintfCString.h"
 #include "nsProxyRelease.h"
@@ -27,7 +28,7 @@
 #include "nsTArray.h"
 #include "prio.h"
 
-class nsFileStream;
+class nsFileRandomAccessStream;
 
 namespace mozilla {
 
@@ -60,76 +61,118 @@ class IOUtils final {
  public:
   class IOError;
 
+  enum class ShutdownPhase : uint8_t {
+    ProfileBeforeChange,
+    SendTelemetry,
+    XpcomWillShutdown,
+    Count,
+  };
+
+  template <typename T>
+  using PhaseArray =
+      EnumeratedArray<IOUtils::ShutdownPhase, IOUtils::ShutdownPhase::Count, T>;
+
   static already_AddRefed<Promise> Read(GlobalObject& aGlobal,
                                         const nsAString& aPath,
-                                        const ReadOptions& aOptions);
+                                        const ReadOptions& aOptions,
+                                        ErrorResult& aError);
 
   static already_AddRefed<Promise> ReadUTF8(GlobalObject& aGlobal,
                                             const nsAString& aPath,
-                                            const ReadUTF8Options& aOptions);
+                                            const ReadUTF8Options& aOptions,
+                                            ErrorResult& aError);
 
   static already_AddRefed<Promise> ReadJSON(GlobalObject& aGlobal,
                                             const nsAString& aPath,
-                                            const ReadUTF8Options& aOptions);
+                                            const ReadUTF8Options& aOptions,
+                                            ErrorResult& aError);
 
   static already_AddRefed<Promise> Write(GlobalObject& aGlobal,
                                          const nsAString& aPath,
                                          const Uint8Array& aData,
-                                         const WriteOptions& aOptions);
+                                         const WriteOptions& aOptions,
+                                         ErrorResult& aError);
 
   static already_AddRefed<Promise> WriteUTF8(GlobalObject& aGlobal,
                                              const nsAString& aPath,
                                              const nsACString& aString,
-                                             const WriteOptions& aOptions);
+                                             const WriteOptions& aOptions,
+                                             ErrorResult& aError);
 
   static already_AddRefed<Promise> WriteJSON(GlobalObject& aGlobal,
                                              const nsAString& aPath,
                                              JS::Handle<JS::Value> aValue,
-                                             const WriteOptions& aOptions);
+                                             const WriteOptions& aOptions,
+                                             ErrorResult& aError);
 
   static already_AddRefed<Promise> Move(GlobalObject& aGlobal,
                                         const nsAString& aSourcePath,
                                         const nsAString& aDestPath,
-                                        const MoveOptions& aOptions);
+                                        const MoveOptions& aOptions,
+                                        ErrorResult& aError);
 
   static already_AddRefed<Promise> Remove(GlobalObject& aGlobal,
                                           const nsAString& aPath,
-                                          const RemoveOptions& aOptions);
+                                          const RemoveOptions& aOptions,
+                                          ErrorResult& aError);
 
   static already_AddRefed<Promise> MakeDirectory(
       GlobalObject& aGlobal, const nsAString& aPath,
-      const MakeDirectoryOptions& aOptions);
+      const MakeDirectoryOptions& aOptions, ErrorResult& aError);
 
   static already_AddRefed<Promise> Stat(GlobalObject& aGlobal,
-                                        const nsAString& aPath);
+                                        const nsAString& aPath,
+                                        ErrorResult& aError);
 
   static already_AddRefed<Promise> Copy(GlobalObject& aGlobal,
                                         const nsAString& aSourcePath,
                                         const nsAString& aDestPath,
-                                        const CopyOptions& aOptions);
+                                        const CopyOptions& aOptions,
+                                        ErrorResult& aError);
+
+  static already_AddRefed<Promise> SetAccessTime(
+      GlobalObject& aGlobal, const nsAString& aPath,
+      const Optional<int64_t>& aAccess, ErrorResult& aError);
 
   static already_AddRefed<Promise> SetModificationTime(
       GlobalObject& aGlobal, const nsAString& aPath,
-      const Optional<int64_t>& aModification);
+      const Optional<int64_t>& aModification, ErrorResult& aError);
 
+ private:
+  using SetTimeFn = decltype(&nsIFile::SetLastAccessedTime);
+
+  static_assert(
+      std::is_same_v<SetTimeFn, decltype(&nsIFile::SetLastModifiedTime)>);
+
+  static already_AddRefed<Promise> SetTime(GlobalObject& aGlobal,
+                                           const nsAString& aPath,
+                                           const Optional<int64_t>& aNewTime,
+                                           SetTimeFn aSetTimeFn,
+                                           ErrorResult& aError);
+
+ public:
   static already_AddRefed<Promise> GetChildren(
       GlobalObject& aGlobal, const nsAString& aPath,
-      const GetChildrenOptions& aOptions);
+      const GetChildrenOptions& aOptions, ErrorResult& aError);
 
   static already_AddRefed<Promise> SetPermissions(GlobalObject& aGlobal,
                                                   const nsAString& aPath,
                                                   uint32_t aPermissions,
-                                                  const bool aHonorUmask);
+                                                  const bool aHonorUmask,
+                                                  ErrorResult& aError);
 
   static already_AddRefed<Promise> Exists(GlobalObject& aGlobal,
-                                          const nsAString& aPath);
+                                          const nsAString& aPath,
+                                          ErrorResult& aError);
 
-  static already_AddRefed<Promise> CreateUniqueFile(
-      GlobalObject& aGlobal, const nsAString& aParent, const nsAString& aPrefix,
-      const uint32_t aPermissions);
+  static already_AddRefed<Promise> CreateUniqueFile(GlobalObject& aGlobal,
+                                                    const nsAString& aParent,
+                                                    const nsAString& aPrefix,
+                                                    const uint32_t aPermissions,
+                                                    ErrorResult& aError);
   static already_AddRefed<Promise> CreateUniqueDirectory(
       GlobalObject& aGlobal, const nsAString& aParent, const nsAString& aPrefix,
-      const uint32_t aPermissions);
+      const uint32_t aPermissions, ErrorResult& aError);
 
  private:
   /**
@@ -139,35 +182,64 @@ class IOUtils final {
                                                 const nsAString& aParent,
                                                 const nsAString& aPrefix,
                                                 const uint32_t aFileType,
-                                                const uint32_t aPermissions);
+                                                const uint32_t aPermissions,
+                                                ErrorResult& aError);
 
  public:
+  static already_AddRefed<Promise> ComputeHexDigest(
+      GlobalObject& aGlobal, const nsAString& aPath,
+      const HashAlgorithm aAlgorithm, ErrorResult& aError);
+
 #if defined(XP_WIN)
   static already_AddRefed<Promise> GetWindowsAttributes(GlobalObject& aGlobal,
-                                                        const nsAString& aPath);
+                                                        const nsAString& aPath,
+                                                        ErrorResult& aError);
 
   static already_AddRefed<Promise> SetWindowsAttributes(
       GlobalObject& aGlobal, const nsAString& aPath,
-      const mozilla::dom::WindowsFileAttributes& aAttrs);
+      const mozilla::dom::WindowsFileAttributes& aAttrs, ErrorResult& aError);
 #elif defined(XP_MACOSX)
   static already_AddRefed<Promise> HasMacXAttr(GlobalObject& aGlobal,
                                                const nsAString& aPath,
-                                               const nsACString& aAttr);
+                                               const nsACString& aAttr,
+                                               ErrorResult& aError);
   static already_AddRefed<Promise> GetMacXAttr(GlobalObject& aGlobal,
                                                const nsAString& aPath,
-                                               const nsACString& aAttr);
+                                               const nsACString& aAttr,
+                                               ErrorResult& aError);
   static already_AddRefed<Promise> SetMacXAttr(GlobalObject& aGlobal,
                                                const nsAString& aPath,
                                                const nsACString& aAttr,
-                                               const Uint8Array& aValue);
+                                               const Uint8Array& aValue,
+                                               ErrorResult& aError);
   static already_AddRefed<Promise> DelMacXAttr(GlobalObject& aGlobal,
                                                const nsAString& aPath,
-                                               const nsACString& aAttr);
+                                               const nsACString& aAttr,
+                                               ErrorResult& aError);
 #endif
+
+#ifdef XP_UNIX
+  using UnixString = OwningUTF8StringOrUint8Array;
+  static uint32_t LaunchProcess(GlobalObject& aGlobal,
+                                const Sequence<UnixString>& aArgv,
+                                const LaunchOptions& aOptions,
+                                ErrorResult& aRv);
+#endif
+
+  static already_AddRefed<Promise> GetFile(
+      GlobalObject& aGlobal, const Sequence<nsString>& aComponents,
+      ErrorResult& aError);
+
+  static already_AddRefed<Promise> GetDirectory(
+      GlobalObject& aGlobal, const Sequence<nsString>& aComponents,
+      ErrorResult& aError);
 
   static void GetProfileBeforeChange(GlobalObject& aGlobal,
                                      JS::MutableHandle<JS::Value>,
                                      ErrorResult& aRv);
+
+  static void GetSendTelemetry(GlobalObject& aGlobal,
+                               JS::MutableHandle<JS::Value>, ErrorResult& aRv);
 
   static RefPtr<SyncReadFile> OpenFileForSyncReading(GlobalObject& aGlobal,
                                                      const nsAString& aPath,
@@ -201,6 +273,7 @@ class IOUtils final {
 
   template <typename Fn>
   static already_AddRefed<Promise> WithPromiseAndState(GlobalObject& aGlobal,
+                                                       ErrorResult& aError,
                                                        Fn aFn);
 
   /**
@@ -223,7 +296,8 @@ class IOUtils final {
    *
    * @return The new promise, or |nullptr| on failure.
    */
-  static already_AddRefed<Promise> CreateJSPromise(GlobalObject& aGlobal);
+  static already_AddRefed<Promise> CreateJSPromise(GlobalObject& aGlobal,
+                                                   ErrorResult& aError);
 
   // Allow conversion of |InternalFileInfo| with |ToJSValue|.
   friend bool ToJSValue(JSContext* aCx,
@@ -250,7 +324,7 @@ class IOUtils final {
                                             const bool aDecompress,
                                             BufferKind aBufferKind);
 
-  /*
+  /**
    * Attempts to read the entire file at |aPath| as a UTF-8 string.
    *
    * @param aFile       The location of the file.
@@ -327,16 +401,20 @@ class IOUtils final {
   /**
    * Attempts to remove the file located at |aFile|.
    *
-   * @param aFile         The location of the file.
-   * @param aIgnoreAbsent If true, suppress errors due to an absent target file.
-   * @param aRecursive    If true, attempt to recursively remove descendant
-   *                      files. This option is safe to use even if the target
-   *                      is not a directory.
+   * @param aFile          The location of the file.
+   * @param aIgnoreAbsent  If true, suppress errors due to an absent target
+   * file.
+   * @param aRecursive     If true, attempt to recursively remove descendant
+   *                       files. This option is safe to use even if the target
+   *                       is not a directory.
+   * @param aRetryReadonly Retry a delete that failed with a NotAllowedError by
+   *                       first removing the readonly attribute. Only has an
+   *                       effect on Windows.
    *
    * @return Ok if the file was removed successfully, or an error.
    */
   static Result<Ok, IOError> RemoveSync(nsIFile* aFile, bool aIgnoreAbsent,
-                                        bool aRecursive);
+                                        bool aRecursive, bool aRetryReadonly);
 
   /**
    * Attempts to create a new directory at |aFile|.
@@ -369,16 +447,20 @@ class IOUtils final {
   static Result<IOUtils::InternalFileInfo, IOError> StatSync(nsIFile* aFile);
 
   /**
-   * Attempts to update the last modification time of the file at |aFile|.
+   * Attempts to update the last access or modification time of the file at
+   * |aFile|.
    *
-   * @param aFile       The location of the file.
-   * @param aNewModTime Some value in milliseconds since Epoch. For the current
-   *                    system time, use |Nothing|.
+   * @param aFile     The location of the file.
+   * @param SetTimeFn A member function pointer to either
+   *                  nsIFile::SetLastAccessedTime or
+   *                  nsIFile::SetLastModifiedTime.
+   * @param aNewTime  Some value in milliseconds since Epoch.
    *
    * @return Timestamp of the file if the operation was successful, or an error.
    */
-  static Result<int64_t, IOError> SetModificationTimeSync(
-      nsIFile* aFile, const Maybe<int64_t>& aNewModTime);
+  static Result<int64_t, IOError> SetTimeSync(nsIFile* aFile,
+                                              SetTimeFn aSetTimeFn,
+                                              int64_t aNewTime);
 
   /**
    * Returns the immediate children of the directory at |aFile|, if any.
@@ -429,6 +511,17 @@ class IOUtils final {
   static Result<nsString, IOError> CreateUniqueSync(
       nsIFile* aFile, const uint32_t aFileType, const uint32_t aPermissions);
 
+  /**
+   * Compute the hash of a file.
+   *
+   * @param aFile      The file to hash.
+   * @param aAlgorithm The hashing algorithm to use.
+   *
+   * @return The hash of the file, as a hex digest.
+   */
+  static Result<nsCString, IOError> ComputeHexDigestSync(
+      nsIFile* aFile, const HashAlgorithm aAlgorithm);
+
 #if defined(XP_WIN)
   /**
    * Return the Windows-specific attributes of the file.
@@ -460,6 +553,10 @@ class IOUtils final {
   static Result<Ok, IOError> DelMacXAttrSync(nsIFile* aFile,
                                              const nsCString& aAttr);
 #endif
+
+  static void GetShutdownClient(GlobalObject& aGlobal,
+                                JS::MutableHandle<JS::Value> aClient,
+                                ErrorResult& aRv, const ShutdownPhase aPhase);
 
   enum class EventQueueStatus {
     Uninitialized,
@@ -538,17 +635,16 @@ class IOUtils::EventQueue final {
   template <typename OkT, typename Fn>
   RefPtr<IOPromise<OkT>> Dispatch(Fn aFunc);
 
-  Result<already_AddRefed<nsIAsyncShutdownClient>, nsresult>
-  GetProfileBeforeChangeClient();
-
   Result<already_AddRefed<nsIAsyncShutdownBarrier>, nsresult>
-  GetProfileBeforeChangeBarrier();
+  GetShutdownBarrier(const ShutdownPhase aPhase);
+  Result<already_AddRefed<nsIAsyncShutdownClient>, nsresult> GetShutdownClient(
+      const ShutdownPhase aPhase);
 
  private:
   nsresult SetShutdownHooks();
 
   nsCOMPtr<nsISerialEventTarget> mBackgroundEventTarget;
-  nsCOMPtr<nsIAsyncShutdownBarrier> mProfileBeforeChangeBarrier;
+  IOUtils::PhaseArray<nsCOMPtr<nsIAsyncShutdownBarrier>> mBarriers;
 };
 
 /**
@@ -603,8 +699,9 @@ struct IOUtils::InternalFileInfo {
   nsString mPath;
   FileType mType = FileType::Other;
   uint64_t mSize = 0;
-  uint64_t mLastModified = 0;
-  Maybe<uint64_t> mCreationTime;
+  Maybe<PRTime> mCreationTime;  // In ms since epoch.
+  PRTime mLastAccessed = 0;     // In ms since epoch.
+  PRTime mLastModified = 0;     // In ms since epoch.
   uint32_t mPermissions = 0;
 };
 
@@ -668,18 +765,28 @@ class IOUtilsShutdownBlocker : public nsIAsyncShutdownBlocker,
   NS_DECL_NSIASYNCSHUTDOWNBLOCKER
   NS_DECL_NSIASYNCSHUTDOWNCOMPLETIONCALLBACK
 
-  enum Phase {
-    ProfileBeforeChange,
-    XpcomWillShutdown,
-  };
-
-  explicit IOUtilsShutdownBlocker(Phase aPhase) : mPhase(aPhase) {}
+  explicit IOUtilsShutdownBlocker(const IOUtils::ShutdownPhase aPhase)
+      : mPhase(aPhase) {}
 
  private:
   virtual ~IOUtilsShutdownBlocker() = default;
 
-  Phase mPhase;
-  RefPtr<nsIAsyncShutdownClient> mParentClient;
+  /**
+   * Called on the main thread after the event queue has been flushed.
+   */
+  void OnFlush();
+
+  static constexpr IOUtils::PhaseArray<const char16_t*> PHASE_NAMES{
+      u"profile-before-change",
+      u"profile-before-change-telemetry",
+      u"xpcom-will-shutdown",
+  };
+
+  // The last shutdown phase before we should shut down the event loop.
+  static constexpr auto LAST_IO_PHASE = IOUtils::ShutdownPhase::SendTelemetry;
+
+  IOUtils::ShutdownPhase mPhase;
+  nsCOMPtr<nsIAsyncShutdownClient> mParentClient;
 };
 
 /**
@@ -789,11 +896,11 @@ class IOUtils::JsBuffer final {
 
 class SyncReadFile : public nsISupports, public nsWrapperCache {
  public:
-  SyncReadFile(nsISupports* aParent, RefPtr<nsFileStream>&& aStream,
+  SyncReadFile(nsISupports* aParent, RefPtr<nsFileRandomAccessStream>&& aStream,
                int64_t aSize);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(SyncReadFile)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(SyncReadFile)
 
   nsISupports* GetParentObject() const { return mParent; }
 
@@ -808,7 +915,7 @@ class SyncReadFile : public nsISupports, public nsWrapperCache {
   virtual ~SyncReadFile();
 
   nsCOMPtr<nsISupports> mParent;
-  RefPtr<nsFileStream> mStream;
+  RefPtr<nsFileRandomAccessStream> mStream;
   int64_t mSize = 0;
 };
 

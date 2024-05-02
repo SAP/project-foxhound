@@ -19,6 +19,7 @@ class SimulcastTestFixture {
   virtual ~SimulcastTestFixture() = default;
 
   virtual void TestKeyFrameRequestsOnAllStreams() = 0;
+  virtual void TestKeyFrameRequestsOnSpecificStreams() = 0;
   virtual void TestPaddingAllStreams() = 0;
   virtual void TestPaddingTwoStreams() = 0;
   virtual void TestPaddingTwoStreamsOneMaxedOut() = 0;
@@ -34,6 +35,8 @@ class SimulcastTestFixture {
   virtual void TestSpatioTemporalLayers321PatternEncoder() = 0;
   virtual void TestStrideEncodeDecode() = 0;
   virtual void TestDecodeWidthHeightSet() = 0;
+  virtual void
+  TestEncoderInfoForDefaultTemporalLayerProfileHasFpsAllocation() = 0;
 };
 
 }  // namespace test

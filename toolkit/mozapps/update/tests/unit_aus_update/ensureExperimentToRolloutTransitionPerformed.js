@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.sys.mjs",
 });
 
 const transitionPerformedPref = "app.update.background.rolledout";
@@ -63,9 +63,8 @@ async function run_test() {
   // that system to disable update.
   Services.prefs.setBoolPref(PREF_APP_UPDATE_DISABLEDFORTESTING, true);
 
-  const originalBackgroundUpdateEnabled = await UpdateUtils.readUpdateConfigSetting(
-    backgroundUpdateEnabledPref
-  );
+  const originalBackgroundUpdateEnabled =
+    await UpdateUtils.readUpdateConfigSetting(backgroundUpdateEnabledPref);
 
   registerCleanupFunction(async () => {
     Services.prefs.clearUserPref(transitionPerformedPref);

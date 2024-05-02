@@ -336,7 +336,11 @@ interface nsIContentPolicy : nsISupports
 
     /**
      * Indicates an internal constant for ES6 module scripts
-     * loaded through script elements or an import statement.
+     * loaded through script elements or an import statement (static import) or
+     * an import expression (dynamic import).
+     * It also indicates the load for dynamic import in workers.
+     * For static import in module workers,
+     * please check TYPE_INTERNAL_WORKER_STATIC_MODULE.
      *
      * This will be mapped to TYPE_SCRIPT before being passed
      * to content policy implementations.
@@ -426,6 +430,31 @@ interface nsIContentPolicy : nsISupports
      * any sort of content policy.
      */
     TYPE_PROXIED_WEBRTC_MEDIA = 56,
+
+    /**
+     * Indicates the load of data via the Federated Credential Management API
+     * with data destined for a browser context.
+     */
+     TYPE_WEB_IDENTITY = 57,
+
+    /**
+     * Indicates the load of a static module on workers.
+     */
+    TYPE_INTERNAL_WORKER_STATIC_MODULE = 58,
+
+    /**
+     * Indicates Webtransport request
+     */
+    TYPE_WEB_TRANSPORT = 59,
+
+    /**
+     * Used to indicate the end of this list, not a content policy. If you want
+     * to add a new content policy type, place it before this sentinel value
+     * TYPE_END, have it use TYPE_END's current value, and increment TYPE_END by
+     * one. (TYPE_END should always have the highest numerical value.)
+     */
+    TYPE_END = 60,
+
 
     /* When adding new content types, please update
      * NS_CP_ContentTypeName, nsCSPContext, CSP_ContentTypeToDirective,
@@ -585,6 +614,7 @@ enum class ExtContentPolicyType : uint8_t {
   TYPE_SPECULATIVE = nsIContentPolicy::TYPE_SPECULATIVE,
   TYPE_UA_FONT = nsIContentPolicy::TYPE_UA_FONT,
   TYPE_PROXIED_WEBRTC_MEDIA = nsIContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA,
+  TYPE_WEB_TRANSPORT = nsIContentPolicy::TYPE_WEB_TRANSPORT,
 };
 
 typedef ExtContentPolicyType ExtContentPolicy;

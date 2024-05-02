@@ -8,7 +8,7 @@
  * Tests for correct behavior of asynchronous responses.
  */
 
-XPCOMUtils.defineLazyGetter(this, "PREPATH", function() {
+ChromeUtils.defineLazyGetter(this, "PREPATH", function () {
   return "http://localhost:" + srv.identity.primaryPort;
 });
 
@@ -28,7 +28,7 @@ function run_test() {
  * BEGIN TESTS *
  ***************/
 
-XPCOMUtils.defineLazyGetter(this, "tests", function() {
+ChromeUtils.defineLazyGetter(this, "tests", function () {
   return [
     new Test(PREPATH + "/handleSync", null, start_handleSync, null),
     new Test(
@@ -133,7 +133,7 @@ function handleAsync2(request, response) {
   response.setStatusLine(request.httpVersion, 200, "Status line");
   response.setHeader("X-Custom-Header", "value", false);
 
-  callLater(startToHeaderDelay, function() {
+  callLater(startToHeaderDelay, function () {
     var preBody = "BO";
     response.bodyOutputStream.write(preBody, preBody.length);
 
@@ -150,7 +150,7 @@ function handleAsync2(request, response) {
       isException(e, Cr.NS_ERROR_NOT_AVAILABLE);
     }
 
-    callLater(startToFinishedDelay - startToHeaderDelay, function() {
+    callLater(startToFinishedDelay - startToHeaderDelay, function () {
       var postBody = "DY";
       response.bodyOutputStream.write(postBody, postBody.length);
 
@@ -255,7 +255,7 @@ function handleAsyncOrdering(request, response) {
     // Use gThreadManager here because it's expedient, *not* because it's
     // intended for public use!  If you do this in client code, expect me to
     // knowingly break your code by changing the variable name.  :-P
-    gThreadManager.dispatchToMainThread(writeData);
+    Services.tm.dispatchToMainThread(writeData);
   }
   step();
   response.processAsync();
@@ -264,7 +264,7 @@ handlers["/handleAsyncOrdering"] = handleAsyncOrdering;
 
 function stop_handleAsyncOrdering(ch, status, data) {
   Assert.equal(data.length, 20 * 65536);
-  data.forEach(function(v, index) {
+  data.forEach(function (v, index) {
     if (v !== 0) {
       do_throw("value " + v + " at index " + index + " should be zero");
     }

@@ -4,40 +4,45 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub use crate::agentio::{as_c_void, Record, RecordList};
-use crate::agentio::{AgentIo, METHODS};
-use crate::assert_initialized;
-use crate::auth::AuthenticationStatus;
-pub use crate::cert::CertificateInfo;
-use crate::constants::{
-    Alert, Cipher, Epoch, Extension, Group, SignatureScheme, Version, TLS_VERSION_1_3,
+pub use crate::{
+    agentio::{as_c_void, Record, RecordList},
+    cert::CertificateInfo,
 };
-use crate::ech;
-use crate::err::{is_blocked, secstatus_to_res, Error, PRErrorCode, Res};
-use crate::ext::{ExtensionHandler, ExtensionTracker};
-use crate::p11::{self, PrivateKey, PublicKey};
-use crate::prio;
-use crate::replay::AntiReplay;
-use crate::secrets::SecretHolder;
-use crate::ssl::{self, PRBool};
-use crate::time::{Time, TimeHolder};
-
+use crate::{
+    agentio::{AgentIo, METHODS},
+    assert_initialized,
+    auth::AuthenticationStatus,
+    constants::{
+        Alert, Cipher, Epoch, Extension, Group, SignatureScheme, Version, TLS_VERSION_1_3,
+    },
+    ech,
+    err::{is_blocked, secstatus_to_res, Error, PRErrorCode, Res},
+    ext::{ExtensionHandler, ExtensionTracker},
+    p11::{self, PrivateKey, PublicKey},
+    prio,
+    replay::AntiReplay,
+    secrets::SecretHolder,
+    ssl::{self, PRBool},
+    time::{Time, TimeHolder},
+};
 use neqo_common::{hex_snip_middle, hex_with_len, qdebug, qinfo, qtrace, qwarn};
-use std::cell::RefCell;
-use std::convert::TryFrom;
-use std::ffi::{CStr, CString};
-use std::mem::{self, MaybeUninit};
-use std::ops::{Deref, DerefMut};
-use std::os::raw::{c_uint, c_void};
-use std::pin::Pin;
-use std::ptr::{null, null_mut};
-use std::rc::Rc;
-use std::time::Instant;
+use std::{
+    cell::RefCell,
+    convert::TryFrom,
+    ffi::{CStr, CString},
+    mem::{self, MaybeUninit},
+    ops::{Deref, DerefMut},
+    os::raw::{c_uint, c_void},
+    pin::Pin,
+    ptr::{null, null_mut},
+    rc::Rc,
+    time::Instant,
+};
 
 /// The maximum number of tickets to remember for a given connection.
 const MAX_TICKETS: usize = 4;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HandshakeState {
     New,
     InProgress,
@@ -87,8 +92,11 @@ fn get_alpn(fd: *mut ssl::PRFileDesc, pre: bool) -> Res<Option<String>> {
 
     let alpn = match (pre, alpn_state) {
         (true, ssl::SSLNextProtoState::SSL_NEXT_PROTO_EARLY_VALUE)
-        | (false, ssl::SSLNextProtoState::SSL_NEXT_PROTO_NEGOTIATED)
-        | (false, ssl::SSLNextProtoState::SSL_NEXT_PROTO_SELECTED) => {
+        | (
+            false,
+            ssl::SSLNextProtoState::SSL_NEXT_PROTO_NEGOTIATED
+            | ssl::SSLNextProtoState::SSL_NEXT_PROTO_SELECTED,
+        ) => {
             chosen.truncate(usize::try_from(chosen_len)?);
             Some(match String::from_utf8(chosen) {
                 Ok(a) => a,
@@ -97,7 +105,7 @@ fn get_alpn(fd: *mut ssl::PRFileDesc, pre: bool) -> Res<Option<String>> {
         }
         _ => None,
     };
-    qtrace!([format!("{:p}", fd)], "got ALPN {:?}", alpn);
+    qtrace!([format!("{fd:p}")], "got ALPN {:?}", alpn);
     Ok(alpn)
 }
 
@@ -191,7 +199,7 @@ impl SecretAgentPreInfo {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecretAgentInfo {
     version: Version,
     cipher: Cipher,
@@ -356,17 +364,13 @@ impl SecretAgent {
             if st.is_none() {
                 *st = Some(alert.description);
             } else {
-                qwarn!(
-                    [format!("{:p}", fd)],
-                    "duplicate alert {}",
-                    alert.description
-                );
+                qwarn!([format!("{fd:p}")], "duplicate alert {}", alert.description);
             }
         }
     }
 
     // Ready this for connecting.
-    fn ready(&mut self, is_server: bool) -> Res<()> {
+    fn ready(&mut self, is_server: bool, grease: bool) -> Res<()> {
         secstatus_to_res(unsafe {
             ssl::SSL_AuthCertificateHook(
                 self.fd,
@@ -384,7 +388,7 @@ impl SecretAgent {
         })?;
 
         self.now.bind(self.fd)?;
-        self.configure()?;
+        self.configure(grease)?;
         secstatus_to_res(unsafe { ssl::SSL_ResetHandshake(self.fd, ssl::PRBool::from(is_server)) })
     }
 
@@ -392,11 +396,15 @@ impl SecretAgent {
     ///
     /// # Errors
     /// If `set_version_range` fails.
-    fn configure(&mut self) -> Res<()> {
+    fn configure(&mut self, grease: bool) -> Res<()> {
         self.set_version_range(TLS_VERSION_1_3, TLS_VERSION_1_3)?;
         self.set_option(ssl::Opt::Locking, false)?;
         self.set_option(ssl::Opt::Tickets, false)?;
         self.set_option(ssl::Opt::OcspStapling, true)?;
+        if let Err(e) = self.set_option(ssl::Opt::Grease, grease) {
+            // Until NSS supports greasing, it's OK to fail here.
+            qinfo!([self], "Failed to enable greasing {:?}", e);
+        }
         Ok(())
     }
 
@@ -593,7 +601,7 @@ impl SecretAgent {
     /// Return any fatal alert that the TLS stack might have sent.
     #[must_use]
     pub fn alert(&self) -> Option<&Alert> {
-        (&*self.alert).as_ref()
+        (*self.alert).as_ref()
     }
 
     /// Call this function to mark the peer as authenticated.
@@ -708,6 +716,8 @@ impl SecretAgent {
         Ok(*Pin::into_inner(records))
     }
 
+    /// # Panics
+    /// If setup fails.
     #[allow(unknown_lints, clippy::branches_sharing_code)]
     pub fn close(&mut self) {
         // It should be safe to close multiple times.
@@ -802,6 +812,8 @@ impl ResumptionToken {
 pub struct Client {
     agent: SecretAgent,
 
+    /// The name of the server we're attempting a connection to.
+    server_name: String,
     /// Records the resumption tokens we've received.
     resumption: Pin<Box<Vec<ResumptionToken>>>,
 }
@@ -811,13 +823,15 @@ impl Client {
     ///
     /// # Errors
     /// Errors returned if the socket can't be created or configured.
-    pub fn new(server_name: &str) -> Res<Self> {
+    pub fn new(server_name: impl Into<String>, grease: bool) -> Res<Self> {
+        let server_name = server_name.into();
         let mut agent = SecretAgent::new()?;
-        let url = CString::new(server_name)?;
+        let url = CString::new(server_name.as_bytes())?;
         secstatus_to_res(unsafe { ssl::SSL_SetURL(agent.fd, url.as_ptr()) })?;
-        agent.ready(false)?;
+        agent.ready(false, grease)?;
         let mut client = Self {
             agent,
+            server_name,
             resumption: Box::pin(Vec::new()),
         };
         client.ready()?;
@@ -852,7 +866,7 @@ impl Client {
         let mut v = Vec::with_capacity(len);
         v.extend_from_slice(std::slice::from_raw_parts(token, len));
         qinfo!(
-            [format!("{:p}", fd)],
+            [format!("{fd:p}")],
             "Got resumption token {}",
             hex_snip_middle(&v)
         );
@@ -864,6 +878,11 @@ impl Client {
             resumption.push(ResumptionToken::new(v, *t));
         }
         ssl::SECSuccess
+    }
+
+    #[must_use]
+    pub fn server_name(&self) -> &str {
+        &self.server_name
     }
 
     fn ready(&mut self) -> Res<()> {
@@ -918,7 +937,7 @@ impl Client {
     /// Error returned when the configuration is invalid.
     pub fn enable_ech(&mut self, ech_config_list: impl AsRef<[u8]>) -> Res<()> {
         let config = ech_config_list.as_ref();
-        qdebug!([self], "Enable ECH for a server: {}", hex_with_len(&config));
+        qdebug!([self], "Enable ECH for a server: {}", hex_with_len(config));
         self.ech_config = Vec::from(config);
         if config.is_empty() {
             unsafe { ech::SSL_EnableTls13GreaseEch(self.agent.fd, PRBool::from(true)) }
@@ -955,7 +974,7 @@ impl ::std::fmt::Display for Client {
 }
 
 /// `ZeroRttCheckResult` encapsulates the options for handling a `ClientHello`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZeroRttCheckResult {
     /// Accept 0-RTT.
     Accept,
@@ -1015,23 +1034,19 @@ impl Server {
         for n in certificates {
             let c = CString::new(n.as_ref())?;
             let cert_ptr = unsafe { p11::PK11_FindCertFromNickname(c.as_ptr(), null_mut()) };
-            let cert = if let Ok(c) = p11::Certificate::from_ptr(cert_ptr) {
-                c
-            } else {
+            let Ok(cert) = p11::Certificate::from_ptr(cert_ptr) else {
                 return Err(Error::CertificateLoading);
             };
-            let key_ptr = unsafe { p11::PK11_FindKeyByAnyCert(*cert.deref(), null_mut()) };
-            let key = if let Ok(k) = p11::PrivateKey::from_ptr(key_ptr) {
-                k
-            } else {
+            let key_ptr = unsafe { p11::PK11_FindKeyByAnyCert(*cert, null_mut()) };
+            let Ok(key) = p11::PrivateKey::from_ptr(key_ptr) else {
                 return Err(Error::CertificateLoading);
             };
             secstatus_to_res(unsafe {
-                ssl::SSL_ConfigServerCert(agent.fd, *cert.deref(), *key.deref(), null(), 0)
+                ssl::SSL_ConfigServerCert(agent.fd, *cert, *key, null(), 0)
             })?;
         }
 
-        agent.ready(true)?;
+        agent.ready(true, true)?;
         Ok(Self {
             agent,
             zero_rtt_check: None,
@@ -1177,8 +1192,8 @@ impl Deref for Agent {
     #[must_use]
     fn deref(&self) -> &SecretAgent {
         match self {
-            Self::Client(c) => &*c,
-            Self::Server(s) => &*s,
+            Self::Client(c) => c,
+            Self::Server(s) => s,
         }
     }
 }
@@ -1186,8 +1201,8 @@ impl Deref for Agent {
 impl DerefMut for Agent {
     fn deref_mut(&mut self) -> &mut SecretAgent {
         match self {
-            Self::Client(c) => &mut *c,
-            Self::Server(s) => &mut *s,
+            Self::Client(c) => c,
+            Self::Server(s) => s,
         }
     }
 }

@@ -8,7 +8,7 @@
 #include "ARIAMap.h"
 #include "nsAccUtils.h"
 #include "Relation.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "States.h"
 
 // NOTE: alphabetically ordered
@@ -26,12 +26,12 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 XULTabAccessible::XULTabAccessible(nsIContent* aContent, DocAccessible* aDoc)
-    : HyperTextAccessibleWrap(aContent, aDoc) {}
+    : HyperTextAccessible(aContent, aDoc) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // XULTabAccessible: LocalAccessible
 
-uint8_t XULTabAccessible::ActionCount() const { return 1; }
+bool XULTabAccessible::HasPrimaryAction() const { return true; }
 
 void XULTabAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Switch) aName.AssignLiteral("switch");
@@ -105,7 +105,7 @@ Relation XULTabAccessible::RelationByType(RelationType aType) const {
 }
 
 void XULTabAccessible::ApplyARIAState(uint64_t* aState) const {
-  HyperTextAccessibleWrap::ApplyARIAState(aState);
+  HyperTextAccessible::ApplyARIAState(aState);
   // XUL tab has an implicit ARIA role of tab, so support aria-selected.
   // Don't use aria::MapToState because that will set the SELECTABLE state
   // even if the tab is disabled.
@@ -123,7 +123,7 @@ XULTabsAccessible::XULTabsAccessible(nsIContent* aContent, DocAccessible* aDoc)
 
 role XULTabsAccessible::NativeRole() const { return roles::PAGETABLIST; }
 
-uint8_t XULTabsAccessible::ActionCount() const { return 0; }
+bool XULTabsAccessible::HasPrimaryAction() const { return false; }
 
 void XULTabsAccessible::Value(nsString& aValue) const { aValue.Truncate(); }
 
@@ -150,7 +150,7 @@ void XULTabsAccessible::ApplyARIAState(uint64_t* aState) const {
 //  aria-selected by the a11y engine and we still want to be able to set the
 // primary selected item according to XUL.
 
-void XULTabsAccessible::SelectedItems(nsTArray<LocalAccessible*>* aItems) {
+void XULTabsAccessible::SelectedItems(nsTArray<Accessible*>* aItems) {
   if (nsAccUtils::IsARIAMultiSelectable(this)) {
     AccessibleWrap::SelectedItems(aItems);
   } else {
@@ -158,7 +158,7 @@ void XULTabsAccessible::SelectedItems(nsTArray<LocalAccessible*>* aItems) {
   }
 }
 
-LocalAccessible* XULTabsAccessible::GetSelectedItem(uint32_t aIndex) {
+Accessible* XULTabsAccessible::GetSelectedItem(uint32_t aIndex) {
   if (nsAccUtils::IsARIAMultiSelectable(this)) {
     return AccessibleWrap::GetSelectedItem(aIndex);
   }

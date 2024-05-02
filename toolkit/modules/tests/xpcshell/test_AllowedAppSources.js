@@ -3,11 +3,11 @@
  */
 "use strict";
 
-const { OsEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/OsEnvironment.jsm"
+const { OsEnvironment } = ChromeUtils.importESModule(
+  "resource://gre/modules/OsEnvironment.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 // Valid values that telemetry might report. Except for "Error" and

@@ -15,7 +15,7 @@ function is(a, b, msg) {
 }
 
 // eslint-disable-next-line complexity
-onmessage = function() {
+onmessage = function () {
   let status = false;
   try {
     if (URL instanceof Object) {
@@ -167,8 +167,7 @@ onmessage = function() {
       search: "",
     },
     {
-      url:
-        "http://auser:apassword@www.abc.com:90/apath/afile.txt?asearch#ahash",
+      url: "http://auser:apassword@www.abc.com:90/apath/afile.txt?asearch#ahash",
       base: undefined,
       error: false,
       protocol: "http:",
@@ -203,6 +202,7 @@ onmessage = function() {
       base: undefined,
       error: false,
       protocol: "gopher:",
+      expectedChangedProtocol: "https:",
     },
     {
       url: "ws://ws.something.net",
@@ -221,6 +221,7 @@ onmessage = function() {
       base: undefined,
       error: false,
       protocol: "foo:",
+      expectedChangedProtocol: "https:",
     },
   ];
 
@@ -318,7 +319,9 @@ onmessage = function() {
     if ("origin" in test) {
       is(url.origin, test.origin, "origin");
     }
-    if ("protocol" in test) {
+    if ("expectedChangedProtocol" in test) {
+      is(url.protocol, test.expectedChangedProtocol, "protocol");
+    } else if ("protocol" in test) {
       is(url.protocol, test.protocol, "protocol");
     }
     if ("username" in test) {

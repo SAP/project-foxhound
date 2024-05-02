@@ -4,10 +4,23 @@
 
 "use strict";
 
-const Services = require("Services");
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-const BROWSERTOOLBOX_FISSION_ENABLED = "devtools.browsertoolbox.fission";
+const BROWSERTOOLBOX_SCOPE_PREF = "devtools.browsertoolbox.scope";
+// Possible values of the previous pref:
+const BROWSERTOOLBOX_SCOPE_EVERYTHING = "everything";
+const BROWSERTOOLBOX_SCOPE_PARENTPROCESS = "parent-process";
+
+// eslint-disable-next-line mozilla/reject-some-requires
+const createStore = require("resource://devtools/client/shared/redux/create-store.js");
+const reducer = require("resource://devtools/shared/commands/target/reducers/targets.js");
+
+loader.lazyRequireGetter(
+  this,
+  ["refreshTargets", "registerTarget", "unregisterTarget"],
+  "resource://devtools/shared/commands/target/actions/targets.js",
+  true
+);
 
 class TargetCommand extends EventEmitter {
   #selectedTargetFront;
@@ -28,21 +41,34 @@ class TargetCommand extends EventEmitter {
    *
    * @param {DescriptorFront} descriptorFront
    *        The context to inspector identified by this descriptor.
+   * @param {WatcherFront} watcherFront
+   *        If available, a reference to the related Watcher Front.
    * @param {Object} commands
    *        The commands object with all interfaces defined from devtools/shared/commands/
    */
-  constructor({ descriptorFront, commands }) {
+  constructor({ descriptorFront, watcherFront, commands }) {
     super();
 
     this.commands = commands;
     this.descriptorFront = descriptorFront;
+    this.watcherFront = watcherFront;
     this.rootFront = descriptorFront.client.mainRoot;
 
+    this.store = createStore(reducer);
+    // Name of the store used when calling createProvider.
+    this.storeId = "target-store";
+
+    this._updateBrowserToolboxScope =
+      this._updateBrowserToolboxScope.bind(this);
+
+    Services.prefs.addObserver(
+      BROWSERTOOLBOX_SCOPE_PREF,
+      this._updateBrowserToolboxScope
+    );
     // Until Watcher actor notify about new top level target when navigating to another process
     // we have to manually switch to a new target from the client side
-    this.onLocalTabRemotenessChange = this.onLocalTabRemotenessChange.bind(
-      this
-    );
+    this.onLocalTabRemotenessChange =
+      this.onLocalTabRemotenessChange.bind(this);
     if (this.descriptorFront.isTabDescriptor) {
       this.descriptorFront.on(
         "remoteness-change",
@@ -74,6 +100,11 @@ class TargetCommand extends EventEmitter {
     this._onTargetAvailable = this._onTargetAvailable.bind(this);
     this._onTargetDestroyed = this._onTargetDestroyed.bind(this);
     this._onTargetSelected = this._onTargetSelected.bind(this);
+    // Bug 1675763: Watcher actor is not available in all situations yet.
+    if (this.watcherFront) {
+      this.watcherFront.on("target-available", this._onTargetAvailable);
+      this.watcherFront.on("target-destroyed", this._onTargetDestroyed);
+    }
 
     this.legacyImplementation = {};
 
@@ -99,6 +130,37 @@ class TargetCommand extends EventEmitter {
 
   get selectedTargetFront() {
     return this.#selectedTargetFront || this.targetFront;
+  }
+
+  /**
+   * Called fired when BROWSERTOOLBOX_SCOPE_PREF pref changes.
+   * This will enable/disable the full multiprocess debugging.
+   * When enabled we will watch for content process targets and debug all the processes.
+   * When disabled we will only watch for FRAME and WORKER and restrict ourself to parent process resources.
+   */
+  _updateBrowserToolboxScope() {
+    const browserToolboxScope = Services.prefs.getCharPref(
+      BROWSERTOOLBOX_SCOPE_PREF
+    );
+    if (browserToolboxScope == BROWSERTOOLBOX_SCOPE_EVERYTHING) {
+      // Force listening to new additional target types
+      this.startListening();
+    } else if (browserToolboxScope == BROWSERTOOLBOX_SCOPE_PARENTPROCESS) {
+      const disabledTargetTypes = [
+        TargetCommand.TYPES.FRAME,
+        TargetCommand.TYPES.PROCESS,
+      ];
+      // Force unwatching for additional targets types
+      // (we keep listening to workers)
+      // The related targets will be destroyed by the server
+      // and reported as destroyed to the frontend.
+      for (const type of disabledTargetTypes) {
+        this.stopListeningForType(type, {
+          isTargetSwitching: false,
+          isModeSwitching: true,
+        });
+      }
+    }
   }
 
   // Called whenever a new Target front is available.
@@ -175,6 +237,8 @@ class TargetCommand extends EventEmitter {
     if (this.isDestroyed() || targetFront.isDestroyedOrBeingDestroyed()) {
       return;
     }
+
+    this.store.dispatch(registerTarget(targetFront));
 
     // Then, once the target is attached, notify the target front creation listeners
     await this._createListeners.emitAsync(targetType, {
@@ -253,19 +317,26 @@ class TargetCommand extends EventEmitter {
    *
    * @param {TargetFront} targetFront
    *        The target that just got destroyed.
-   * @param Object options
-   *        Dictionary object with:
-   *        - `isTargetSwitching` optional boolean. To be set to true when this
-   *           is about the top level target which is being replaced by a new one.
-   *           The passed target should be still the one store in TargetCommand.targetFront
-   *           and will be replaced via a call to onTargetAvailable with a new target front.
-   *        - `shouldDestroyTargetFront` optional boolean. By default, the passed target
-   *           front will be destroyed. But in some cases like legacy listeners for service workers
-   *           we want to keep the front alive.
+   * @param {Object} options
+   * @param {Boolean} [options.isTargetSwitching]
+   *        To be set to true when this is about the top level target which is being replaced
+   *        by a new one.
+   *        The passed target should be still the one store in TargetCommand.targetFront
+   *        and will be replaced via a call to onTargetAvailable with a new target front.
+   * @param {Boolean} [options.isModeSwitching]
+   *        To be set to true when the target was destroyed was called as the result of a
+   *        change to the devtools.browsertoolbox.scope pref.
+   * @param {Boolean} [options.shouldDestroyTargetFront]
+   *        By default, the passed target front will be destroyed. But in some cases like
+   *        legacy listeners for service workers we want to keep the front alive.
    */
   _onTargetDestroyed(
     targetFront,
-    { isTargetSwitching = false, shouldDestroyTargetFront = true } = {}
+    {
+      isModeSwitching = false,
+      isTargetSwitching = false,
+      shouldDestroyTargetFront = true,
+    } = {}
   ) {
     // The watcher actor may notify us about the destruction of the top level target.
     // But second argument to this method, isTargetSwitching is only passed from the frontend.
@@ -277,8 +348,11 @@ class TargetCommand extends EventEmitter {
     this._destroyListeners.emit(targetFront.targetType, {
       targetFront,
       isTargetSwitching,
+      isModeSwitching,
     });
     this._targets.delete(targetFront);
+
+    this.store.dispatch(unregisterTarget(targetFront));
 
     // If the destroyed target was the selected one, we need to do some cleanup
     if (this.#selectedTargetFront == targetFront) {
@@ -354,16 +428,6 @@ class TargetCommand extends EventEmitter {
    *          optional targetTypeOrTrait
    */
   hasTargetWatcherSupport(targetTypeOrTrait) {
-    // If we're in the browser console or browser toolbox and the browser
-    // toolbox fission pref is disabled, we don't want to use watchers
-    // (even if traits on the server are enabled).
-    if (
-      this.descriptorFront.isBrowserProcessDescriptor &&
-      !Services.prefs.getBoolPref(BROWSERTOOLBOX_FISSION_ENABLED, false)
-    ) {
-      return false;
-    }
-
     if (targetTypeOrTrait) {
       // Target types are also exposed as traits, where resource types are
       // exposed under traits.resources (cf hasResourceWatcherSupport
@@ -397,18 +461,6 @@ class TargetCommand extends EventEmitter {
       !this._gotFirstTopLevelTarget
     ) {
       await this._createFirstTarget();
-    }
-
-    // Cache the Watcher once for all, the first time we call `startListening()`.
-    // This `watcherFront` attribute may be then used in any function in TargetCommand or ResourceCommand after this.
-    if (!this.watcherFront) {
-      // Bug 1675763: Watcher actor is not available in all situations yet.
-      const supportsWatcher = this.descriptorFront.traits?.watcher;
-      if (supportsWatcher) {
-        this.watcherFront = await this.descriptorFront.getWatcher();
-        this.watcherFront.on("target-available", this._onTargetAvailable);
-        this.watcherFront.on("target-destroyed", this._onTargetDestroyed);
-      }
     }
 
     // If no pref are set to true, nor is listenForWorkers set to true,
@@ -481,6 +533,7 @@ class TargetCommand extends EventEmitter {
 
     // Add the top-level target to the list of targets.
     this._targets.add(this.targetFront);
+    this.store.dispatch(registerTarget(this.targetFront));
   }
 
   _computeTargetTypes() {
@@ -493,10 +546,10 @@ class TargetCommand extends EventEmitter {
     ) {
       types = [TargetCommand.TYPES.FRAME];
     } else if (this.descriptorFront.isBrowserProcessDescriptor) {
-      const fissionBrowserToolboxEnabled = Services.prefs.getBoolPref(
-        BROWSERTOOLBOX_FISSION_ENABLED
+      const browserToolboxScope = Services.prefs.getCharPref(
+        BROWSERTOOLBOX_SCOPE_PREF
       );
-      if (fissionBrowserToolboxEnabled) {
+      if (browserToolboxScope == BROWSERTOOLBOX_SCOPE_EVERYTHING) {
         types = TargetCommand.ALL_TYPES;
       }
     }
@@ -542,25 +595,48 @@ class TargetCommand extends EventEmitter {
     }
 
     for (const type of TargetCommand.ALL_TYPES) {
-      if (!this._isListening(type)) {
-        continue;
-      }
-      this._setListening(type, false);
+      this.stopListeningForType(type, { isTargetSwitching });
+    }
+  }
 
-      // Only a few top level targets support the watcher actor at the moment (see WatcherActor
-      // traits in the _form method). Bug 1675763 tracks watcher actor support for all targets.
-      if (this.hasTargetWatcherSupport(type)) {
-        // When we switch to a new top level target, we don't have to stop and restart
-        // Watcher listener as it is independant from the top level target.
-        // This isn't the case for some Legacy Listeners, which fetch targets from the top level target
-        if (!isTargetSwitching) {
-          this.watcherFront.unwatchTargets(type);
-        }
-      } else if (this.legacyImplementation[type]) {
-        this.legacyImplementation[type].unlisten({ isTargetSwitching });
-      } else {
-        throw new Error(`Unsupported target type '${type}'`);
+  /**
+   * Stop listening for targets of a given type from the server
+   *
+   * @param String type
+   *        target type we want to stop listening for
+   * @param Object options
+   * @param Boolean options.isTargetSwitching
+   *        Set to true when this is called while a target switching happens. In such case,
+   *        we won't unregister listener set on the Watcher Actor, but still unregister
+   *        listeners set via Legacy Listeners.
+   * @param Boolean options.isModeSwitching
+   *        Set to true when this is called as the result of a change to the
+   *        devtools.browsertoolbox.scope pref.
+   */
+  stopListeningForType(type, { isTargetSwitching, isModeSwitching }) {
+    if (!this._isListening(type)) {
+      return;
+    }
+    this._setListening(type, false);
+
+    // Only a few top level targets support the watcher actor at the moment (see WatcherActor
+    // traits in the _form method). Bug 1675763 tracks watcher actor support for all targets.
+    if (this.hasTargetWatcherSupport(type)) {
+      // When we switch to a new top level target, we don't have to stop and restart
+      // Watcher listener as it is independant from the top level target.
+      // This isn't the case for some Legacy Listeners, which fetch targets from the top level target
+      // Also, TargetCommand.destroy may be called after the client is closed.
+      // So avoid calling the RDP method in that situation.
+      if (!isTargetSwitching && !this.watcherFront.isDestroyed()) {
+        this.watcherFront.unwatchTargets(type, { isModeSwitching });
       }
+    } else if (this.legacyImplementation[type]) {
+      this.legacyImplementation[type].unlisten({
+        isTargetSwitching,
+        isModeSwitching,
+      });
+    } else {
+      throw new Error(`Unsupported target type '${type}'`);
     }
   }
 
@@ -609,6 +685,17 @@ class TargetCommand extends EventEmitter {
         if (resource.url !== undefined && targetFront?.setUrl) {
           targetFront.setUrl(resource.url);
         }
+        if (
+          !resource.isFrameSwitching &&
+          // `url` is set on the targetFront when we receive dom-loading, and `title` when
+          // `dom-interactive` is received. Here we're only updating the window title in
+          // the "newer" event.
+          resource.name === "dom-interactive"
+        ) {
+          // We just updated the targetFront title and url, force a refresh
+          // so that the EvaluationContext selector update them.
+          this.store.dispatch(refreshTargets());
+        }
       }
     }
   }
@@ -643,7 +730,7 @@ class TargetCommand extends EventEmitter {
     const unsupportedKeys = Object.keys(options).filter(
       key => !availableOptions.includes(key)
     );
-    if (unsupportedKeys.length > 0) {
+    if (unsupportedKeys.length) {
       throw new Error(
         `TargetCommand.watchTargets does not expect the following options: ${unsupportedKeys.join(
           ", "
@@ -744,7 +831,7 @@ class TargetCommand extends EventEmitter {
     const unsupportedKeys = Object.keys(options).filter(
       key => !availableOptions.includes(key)
     );
-    if (unsupportedKeys.length > 0) {
+    if (unsupportedKeys.length) {
       throw new Error(
         `TargetCommand.unwatchTargets does not expect the following options: ${unsupportedKeys.join(
           ", "
@@ -849,9 +936,15 @@ class TargetCommand extends EventEmitter {
       ? this.getAllTargets(targetTypes)
       : await this.getAllTargetsInSelectedTargetTree(targetTypes);
     for (const target of targets) {
-      // For still-attaching worker targets, the threadFront may not yet be available,
+      // For still-attaching worker targets, the thread or console front may not yet be available,
       // whereas TargetMixin.getFront will throw if the actorID isn't available in targetForm.
-      if (frontType == "thread" && !target.targetForm.threadActor) {
+      // Also ignore destroyed targets. For some reason the previous methods fetching targets
+      // can sometime return destroyed targets.
+      if (
+        (frontType == "thread" && !target.targetForm.threadActor) ||
+        (frontType == "console" && !target.targetForm.consoleActor) ||
+        target.isDestroyed()
+      ) {
         continue;
       }
 
@@ -877,7 +970,7 @@ class TargetCommand extends EventEmitter {
     // TabDescriptor may emit the event with a null targetFront, interpret that as if the previous target
     // has already been destroyed
     if (targetFront) {
-      // Wait for the target to be destroyed so that TabDescriptorFactory clears its memoized target for this tab
+      // Wait for the target to be destroyed so that LocalTabCommandsFactory clears its memoized target for this tab
       await targetFront.once("target-destroyed");
     }
 
@@ -913,17 +1006,16 @@ class TargetCommand extends EventEmitter {
     // Wait for waitForNextResource completion before reloading, otherwise we might miss the dom-complete event.
     // This can happen if `ResourceCommand.watchResources` made by `waitForNextResource` is still pending
     // while the reload already started and finished loading the document early.
-    const {
-      onResource: onReloaded,
-    } = await this.commands.resourceCommand.waitForNextResource(
-      this.commands.resourceCommand.TYPES.DOCUMENT_EVENT,
-      {
-        ignoreExistingResources: true,
-        predicate(resource) {
-          return resource.name == "dom-complete";
-        },
-      }
-    );
+    const { onResource: onReloaded } =
+      await this.commands.resourceCommand.waitForNextResource(
+        this.commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+        {
+          ignoreExistingResources: true,
+          predicate(resource) {
+            return resource.name == "dom-complete";
+          },
+        }
+      );
 
     await this.descriptorFront.reloadDescriptor({ bypassCache });
 
@@ -1034,6 +1126,11 @@ class TargetCommand extends EventEmitter {
 
     this.#selectedTargetFront = null;
     this._isDestroyed = true;
+
+    Services.prefs.removeObserver(
+      BROWSERTOOLBOX_SCOPE_PREF,
+      this._updateBrowserToolboxScope
+    );
   }
 }
 
@@ -1055,22 +1152,22 @@ const LegacyTargetWatchers = {};
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.PROCESS,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-processes-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-processes-watcher.js"
 );
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.WORKER,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-workers-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-workers-watcher.js"
 );
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.SHARED_WORKER,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-sharedworkers-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-sharedworkers-watcher.js"
 );
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.SERVICE_WORKER,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-serviceworkers-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-serviceworkers-watcher.js"
 );
 
 module.exports = TargetCommand;

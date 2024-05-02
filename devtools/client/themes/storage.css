@@ -6,7 +6,7 @@
  * Global styles
  */
 a {
-  color: var(--theme-highlight-blue);
+  color: var(--theme-link-color);
   text-decoration: none;
   cursor: pointer;
 }
@@ -17,14 +17,9 @@ a {
   min-width: 220px;
   max-width: 500px;
   overflow: auto;
-}
-
-#storage-tree {
+  min-height: 0;
   background: var(--theme-sidebar-background);
-}
-
-/* Let the component gain focus when a click hits an empty area */
-#storage-tree {
+  /* Let the component gain focus when a click hits an empty area */
   -moz-user-focus: normal;
 }
 
@@ -46,12 +41,18 @@ a {
   outline: 0;
 }
 
-/* The minimum column width needs to be determined by the header width */
 .table-widget-cell {
+  /* The minimum column width needs to be determined by the header width */
   min-width: unset;
+  outline-offset: -2px;
+}
+
+.table-widget-column {
+  flex-grow: 1;
 }
 
 /* Set minimum column widths */
+
 #name {
   min-width: 65px;
 }
@@ -66,6 +67,8 @@ a {
 
 #value {
   min-width: 95px;
+  /* Prevent all columns except for value from shrinking with the panel */
+  flex-shrink: 1;
 }
 
 #hostOnly,
@@ -74,6 +77,7 @@ a {
   min-width: 58px;
 }
 
+#size,
 #isSecure {
   min-width: 48px;
 }
@@ -84,15 +88,10 @@ a {
   min-width: 115px;
 }
 
-/* Prevent all columns except for value from resizing with the panel */
-#storage-table .table-widget-column:not(#value) {
-  width: 0;
-}
-
 /* Text input in storage table */
 #storage-table input {
   appearance: none;
-  -moz-box-flex: 1;
+  flex: 1;
   /* make sure the outline is not cut off */
   position: relative;
   box-sizing: border-box;
@@ -124,13 +123,14 @@ a {
   properly with XUL. Force XUL flexbox instead.
 */
 #storage-toolbar {
-  display: -moz-box;
+  display: flex;
 }
 
 #storage-searchbox {
-  -moz-box-flex: 1;
+  flex: 1;
   margin-inline-start: -3px;
   margin-inline-end: 1px;
+  outline-offset: -2px;
 }
 
 #storage-toolbar .add-button::before {
@@ -153,9 +153,19 @@ a {
 }
 
 /* Responsive sidebar */
-@media (max-width: 700px) {
+@media (width < 700px) {
   #storage-tree,
   #storage-sidebar {
-    max-width: 100%;
+    max-width: none;
+    /* Override potential splitter-set width */
+    width: auto !important;
+  }
+}
+
+@media (width >= 700px) {
+  #storage-tree,
+  #storage-sidebar {
+    /* Override potential splitter-set height */
+    height: auto !important;
   }
 }

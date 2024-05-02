@@ -65,6 +65,7 @@ SpeechSynthesis::SpeechSynthesis(nsPIDOMWindowInner* aParent)
   if (obs) {
     obs->AddObserver(this, "inner-window-destroyed", true);
     obs->AddObserver(this, "synth-voices-changed", true);
+    obs->AddObserver(this, "synth-voices-error", true);
   }
 }
 
@@ -146,12 +147,8 @@ void SpeechSynthesis::AdvanceQueue() {
 
   nsAutoString docLang;
   nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
-  Document* doc = window ? window->GetExtantDoc() : nullptr;
-
-  if (doc) {
-    Element* elm = doc->GetHtmlElement();
-
-    if (elm) {
+  if (Document* doc = window ? window->GetExtantDoc() : nullptr) {
+    if (Element* elm = doc->GetHtmlElement()) {
       elm->GetLang(docLang);
     }
   }
@@ -229,7 +226,8 @@ void SpeechSynthesis::GetVoices(
   nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
   nsCOMPtr<nsIDocShell> docShell = window ? window->GetDocShell() : nullptr;
 
-  if (nsContentUtils::ShouldResistFingerprinting(docShell)) {
+  if (nsContentUtils::ShouldResistFingerprinting(docShell,
+                                                 RFPTarget::SpeechSynthesis)) {
     return;
   }
 
@@ -302,12 +300,30 @@ SpeechSynthesis::Observe(nsISupports* aSubject, const char* aTopic,
     nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
     nsCOMPtr<nsIDocShell> docShell = window ? window->GetDocShell() : nullptr;
 
-    if (!nsContentUtils::ShouldResistFingerprinting(docShell)) {
+    if (!nsContentUtils::ShouldResistFingerprinting(
+            docShell, RFPTarget::SpeechSynthesis)) {
       DispatchTrustedEvent(u"voiceschanged"_ns);
       // If we have a pending item, and voices become available, speak it.
       if (!mCurrentTask && !mHoldQueue && HasVoices()) {
         AdvanceQueue();
       }
+    }
+  } else if (strcmp(aTopic, "synth-voices-error") == 0) {
+    NS_WARNING("SpeechSynthesis::Observe: synth-voices-error");
+    LOG(LogLevel::Debug, ("SpeechSynthesis::onvoiceserror"));
+    nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
+
+    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+    if (obs) {
+      obs->NotifyObservers(window, "chrome-synth-voices-error", aData);
+    }
+
+    if (!mSpeechQueue.IsEmpty()) {
+      for (RefPtr<SpeechSynthesisUtterance>& utterance : mSpeechQueue) {
+        utterance->DispatchSpeechSynthesisEvent(u"error"_ns, 0, nullptr, 0,
+                                                u""_ns);
+      }
+      mSpeechQueue.Clear();
     }
   }
 

@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator, disableWorkerTest */
 var disableWorkerTest = "This test uses SpecialPowers";
 
 var testGenerator = testSteps();
@@ -19,7 +20,7 @@ function* testSteps() {
 
   SpecialPowers.createFiles(
     [{ data: fileData, options: { type: fileType } }],
-    function(files) {
+    function (files) {
       testGenerator.next(files[0]);
     }
   );

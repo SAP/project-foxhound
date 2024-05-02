@@ -13,7 +13,7 @@ const kSearchEngineURL2 =
 const kSearchEngineURL3 = "https://example.com/?search={searchTerms}";
 const kExtensionID = "searchignore@mozilla.com";
 
-add_task(async function setup() {
+add_setup(async function () {
   await AddonTestUtils.promiseStartupManager();
 });
 
@@ -63,7 +63,7 @@ add_task(async function test_ignoreList() {
           id: "load-paths",
           schema: 1553857697843,
           last_modified: 1553859483588,
-          matches: ["[other]addEngineWithDetails:searchignore@mozilla.com"],
+          matches: ["[addon]searchignore@mozilla.com"],
         },
         {
           id: "submission-urls",

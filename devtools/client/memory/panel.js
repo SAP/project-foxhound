@@ -4,16 +4,15 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const { Cu } = require("chrome");
-const HeapAnalysesClient = require("devtools/shared/heapsnapshot/HeapAnalysesClient");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const HeapAnalysesClient = require("resource://devtools/shared/heapsnapshot/HeapAnalysesClient.js");
 
 function MemoryPanel(iframeWindow, toolbox, commands) {
   this.panelWin = iframeWindow;
   this._toolbox = toolbox;
   this._commands = commands;
 
-  const { BrowserLoader } = Cu.import(
+  const { BrowserLoader } = ChromeUtils.import(
     "resource://devtools/shared/loader/browser-loader.js"
   );
   const browserRequire = BrowserLoader({

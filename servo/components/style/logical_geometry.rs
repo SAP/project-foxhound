@@ -24,10 +24,11 @@ pub enum InlineBaseDirection {
 }
 
 // TODO: improve the readability of the WritingMode serialization, refer to the Debug:fmt()
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, Serialize)]
+#[repr(C)]
+pub struct WritingMode(u8);
 bitflags!(
-    #[cfg_attr(feature = "servo", derive(MallocSizeOf, Serialize))]
-    #[repr(C)]
-    pub struct WritingMode: u8 {
+    impl WritingMode: u8 {
         /// A vertical writing mode; writing-mode is vertical-rl,
         /// vertical-lr, sideways-lr, or sideways-rl.
         const VERTICAL = 1 << 0;
@@ -166,6 +167,11 @@ impl WritingMode {
         }
 
         flags
+    }
+
+    /// Returns the `horizontal-tb` value.
+    pub fn horizontal_tb() -> Self {
+        Self::empty()
     }
 
     #[inline]
@@ -339,6 +345,12 @@ impl WritingMode {
             bidi::Level::rtl()
         }
     }
+
+    #[inline]
+    /// Is the text layout vertical?
+    pub fn is_text_vertical(&self) -> bool {
+        self.is_vertical() && !self.is_sideways()
+    }
 }
 
 impl fmt::Display for WritingMode {
@@ -413,7 +425,7 @@ impl DebugWritingMode {
 
     #[inline]
     fn new(mode: WritingMode) -> DebugWritingMode {
-        DebugWritingMode { mode: mode }
+        DebugWritingMode { mode }
     }
 }
 
@@ -872,10 +884,10 @@ impl<T> LogicalMargin<T> {
         inline_start: T,
     ) -> LogicalMargin<T> {
         LogicalMargin {
-            block_start: block_start,
-            inline_end: inline_end,
-            block_end: block_end,
-            inline_start: inline_start,
+            block_start,
+            inline_end,
+            block_end,
+            inline_start,
             debug_writing_mode: DebugWritingMode::new(mode),
         }
     }

@@ -1,8 +1,8 @@
 /* eslint max-len: ["error", 80] */
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -36,7 +36,7 @@ server.registerPathHandler("/discoapi", (request, response) => {
   response.write(JSON.stringify(results));
 });
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.getAddons.discovery.api_url", TEST_API_URL]],
   });
@@ -124,8 +124,9 @@ function assertNonZeroScrollOffsets(offsets) {
 
 function checkScrollOffset(win, expected, msg = "") {
   let actual = getScrollOffset(win);
-  is(actual.top, expected.top, `Top scroll offset - ${msg}`);
-  is(actual.left, expected.left, `Left scroll offset - ${msg}`);
+  let fuzz = AppConstants.platform == "macosx" ? 3 : 1;
+  isfuzzy(actual.top, expected.top, fuzz, `Top scroll offset - ${msg}`);
+  isfuzzy(actual.left, expected.left, fuzz, `Left scroll offset - ${msg}`);
 }
 
 add_task(async function test_scroll_restoration() {
@@ -135,10 +136,10 @@ add_task(async function test_scroll_restoration() {
   // the first load, so we only need to wait once, at the start of the test.
   await win.document.querySelector("recommended-addon-list").cardsReady;
 
-  // Force scrollbar to appear, by adding enough space at the top and left.
-  win.document.body.style.paddingTop = "200vh";
-  win.document.body.style.paddingLeft = "100vw";
-  win.document.body.style.width = "200vw";
+  // Force scrollbar to appear, by adding enough space around the content.
+  win.document.body.style.paddingBlock = "100vh";
+  win.document.body.style.paddingInline = "100vw";
+  win.document.body.style.width = "300vw";
 
   checkScrollOffset(win, { top: 0, left: 0 }, "initial page load");
 
@@ -218,5 +219,7 @@ add_task(async function test_scroll_restoration() {
   await switchToView(win, "list", "theme");
   checkScrollOffset(win, { top: 0, left: 0 }, "initial theme list");
 
+  let tabClosed = BrowserTestUtils.waitForTabClosing(gBrowser.selectedTab);
   await closeView(win);
+  await tabClosed;
 });

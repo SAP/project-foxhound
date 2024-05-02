@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 import logging
 import os
 import subprocess
@@ -13,13 +15,16 @@ scripts = {
                              "conformance-checkers/tools/ins-del-datetime.py",
                              "conformance-checkers/tools/picture.py",
                              "conformance-checkers/tools/url.py"],
+    "css-images": ["css/css-images/tools/generate_object_view_box_tests.py"],
     "css-ui": ["css/css-ui/tools/appearance-build-webkit-reftests.py"],
+    "css-writing-modes": ["css/css-writing-modes/tools/generators/generate.py"],
     # FIXME: https://github.com/web-platform-tests/wpt/issues/32060
     # "css-text": ["css/css-text/line-breaking/tools/generate-segment-break-transformation-rules-tests.py"],
     # "css-text-decor": ["css/css-text-decor/tools/generate-text-emphasis-line-height-tests.py",
     #                    "css/css-text-decor/tools/generate-text-emphasis-position-property-tests.py",
     #                    "css/css-text-decor/tools/generate-text-emphasis-ruby-tests.py",
     #                    "css/css-text-decor/tools/generate-text-emphasis-style-property-tests.py"],
+    "fetch": ["fetch/metadata/tools/generate.py"],
     "html5lib": ["html/tools/update_html5lib_tests.py"],
     "infrastructure": ["infrastructure/assumptions/tools/ahem-generate-table.py"],
     "mimesniff": ["mimesniff/mime-types/resources/generated-mime-types.py"],

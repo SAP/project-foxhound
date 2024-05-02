@@ -11,10 +11,10 @@ updater.app/Contents/MacOS/org.mozilla.updater
 
 plugin-container.app/Contents/PkgInfo
 updater.app/Contents/PkgInfo
+media-plugin-helper.app/Contents/PkgInfo
 
-# Duplicated for XUL persistence, see PlacesUIUtils.jsm
-browser/chrome/browser/content/browser/places/bookmarkProperties.xhtml
-browser/chrome/browser/content/browser/places/bookmarkProperties2.xhtml
+media-plugin-helper.app/Contents/MacOS/@MOZ_APP_DISPLAYNAME@ Media Plugin Helper
+plugin-container.app/Contents/MacOS/plugin-container
 
 # Duplicated on Linux by browser/branding/branding-common.mozbuild
 #ifdef XP_LINUX
@@ -71,11 +71,6 @@ browser/features/webcompat@mozilla.org/shims/empty-shim.txt
 removed-files
 #endif
 
-#ifdef MOZ_EME_WIN32_ARTIFACT
-gmp-clearkey/0.1/manifest.json
-i686/gmp-clearkey/0.1/manifest.json
-#endif
-
 # Bug 1496075 - Switch searchplugins to Web Extensions
 browser/chrome/browser/search-extensions/amazon/favicon.ico
 browser/chrome/browser/search-extensions/amazondotcn/favicon.ico
@@ -114,7 +109,8 @@ browser/chrome/browser/skin/classic/browser/customize.svg
 browser/features/webcompat-reporter@mozilla.org/icons/lightbulb.svg
 chrome/toolkit/skin/classic/global/icons/lightbulb.svg
 
-# Bug 1710546 - Bundle Firefox extension as a builtin addon Nighly only
-# We plan to remove this duplicity after Firefox Translations become pref'd on
-browser/chrome/browser/builtin-addons/translations/wasm/cld-worker.js.mem
-browser/modules/translation/cld-worker.js.mem
+# Bug 1861662 - These will be removed with new search config changes
+browser/chrome/browser/search-extensions/amazondotcn/_locales/default/messages.json
+browser/chrome/browser/search-extensions/amazondotcn/_locales/mozillaonline/messages.json
+browser/chrome/browser/search-extensions/amazondotcom/_locales/en/messages.json
+browser/chrome/browser/search-extensions/amazondotcom/_locales/us/messages.json

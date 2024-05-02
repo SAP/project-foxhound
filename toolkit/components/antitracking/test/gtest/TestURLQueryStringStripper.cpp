@@ -5,6 +5,8 @@
 
 #include "gtest/gtest.h"
 
+#include "mozilla/Components.h"
+#include "nsIURLQueryStringStripper.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsStringFwd.h"
@@ -17,58 +19,52 @@ using namespace mozilla;
 
 static const char kPrefQueryStrippingEnabled[] =
     "privacy.query_stripping.enabled";
+static const char kPrefQueryStrippingEnabledPBM[] =
+    "privacy.query_stripping.enabled.pbmode";
 static const char kPrefQueryStrippingList[] =
     "privacy.query_stripping.strip_list";
 
-void DoTest(const nsACString& aTestURL, const nsACString& aExpectedURL,
-            bool aExpectedResult) {
+/**
+ * Waits for the strip list in the URLQueryStringStripper to match aExpected.
+ */
+void waitForStripListChange(const nsACString& aExpected) {
+  nsresult rv;
+  nsCOMPtr<nsIURLQueryStringStripper> queryStripper =
+      components::URLQueryStringStripper::Service(&rv);
+  EXPECT_TRUE(NS_SUCCEEDED(rv));
+
+  MOZ_ALWAYS_TRUE(mozilla::SpinEventLoopUntil(
+      "TestURLQueryStringStripper waitForStripListChange"_ns, [&]() -> bool {
+        nsAutoCString stripList;
+        rv = queryStripper->TestGetStripList(stripList);
+        return NS_SUCCEEDED(rv) && stripList.Equals(aExpected);
+      }));
+}
+
+void DoTest(const nsACString& aTestURL, const bool aIsPBM,
+            const nsACString& aExpectedURL, uint32_t aExpectedResult) {
   nsCOMPtr<nsIURI> testURI;
 
   NS_NewURI(getter_AddRefs(testURI), aTestURL);
 
-  bool result;
+  nsresult rv;
+  nsCOMPtr<nsIURLQueryStringStripper> queryStripper =
+      components::URLQueryStringStripper::Service(&rv);
+  EXPECT_TRUE(NS_SUCCEEDED(rv));
+
   nsCOMPtr<nsIURI> strippedURI;
-  result = URLQueryStringStripper::Strip(testURI, strippedURI);
+  uint32_t numStripped;
+  rv = queryStripper->Strip(testURI, aIsPBM, getter_AddRefs(strippedURI),
+                            &numStripped);
+  EXPECT_TRUE(NS_SUCCEEDED(rv));
 
-  EXPECT_TRUE(result == aExpectedResult);
+  EXPECT_TRUE(numStripped == aExpectedResult);
 
-  if (!result) {
+  if (!numStripped) {
     EXPECT_TRUE(!strippedURI);
   } else {
     EXPECT_TRUE(strippedURI->GetSpecOrDefault().Equals(aExpectedURL));
   }
-}
-
-class StripListObserver final : public nsIURLQueryStrippingListObserver {
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIURLQUERYSTRIPPINGLISTOBSERVER
-
-  bool IsStillWaiting() { return mWaitingObserver; }
-  void StartWaitingObserver() { mWaitingObserver = true; }
-
-  StripListObserver() : mWaitingObserver(false) {
-    mService = do_GetService("@mozilla.org/query-stripping-list-service;1");
-    mService->RegisterAndRunObserver(this);
-  }
-
- private:
-  ~StripListObserver() {
-    mService->UnregisterObserver(this);
-    mService = nullptr;
-  }
-
-  bool mWaitingObserver;
-  nsCOMPtr<nsIURLQueryStrippingListService> mService;
-};
-
-NS_IMPL_ISUPPORTS(StripListObserver, nsIURLQueryStrippingListObserver)
-
-NS_IMETHODIMP
-StripListObserver::OnQueryStrippingListUpdate(const nsAString& aStripList,
-                                              const nsACString& aAllowList) {
-  mWaitingObserver = false;
-  return NS_OK;
 }
 
 TEST(TestURLQueryStringStripper, TestPrefDisabled)
@@ -80,81 +76,101 @@ TEST(TestURLQueryStringStripper, TestPrefDisabled)
   // the query stripping is disabled.
   Preferences::SetCString(kPrefQueryStrippingList, "fooBar foobaz");
   Preferences::SetBool(kPrefQueryStrippingEnabled, false);
+  Preferences::SetBool(kPrefQueryStrippingEnabledPBM, false);
 
-  DoTest("https://example.com/"_ns, ""_ns, false);
-  DoTest("https://example.com/?Barfoo=123"_ns, ""_ns, false);
-  DoTest("https://example.com/?fooBar=123&foobaz"_ns, ""_ns, false);
+  for (bool isPBM : {false, true}) {
+    DoTest("https://example.com/"_ns, isPBM, ""_ns, 0);
+    DoTest("https://example.com/?Barfoo=123"_ns, isPBM, ""_ns, 0);
+    DoTest("https://example.com/?fooBar=123&foobaz"_ns, isPBM, ""_ns, 0);
+  }
 }
 
 TEST(TestURLQueryStringStripper, TestEmptyStripList)
 {
   // Make sure there is no error if the strip list is empty.
   Preferences::SetBool(kPrefQueryStrippingEnabled, true);
+  Preferences::SetBool(kPrefQueryStrippingEnabledPBM, true);
 
   // To create the URLQueryStringStripper, we need to run a dummy test after
   // the query stripping is enabled. By doing this, the stripper will be
   // initiated and we are good to test.
-  DoTest("https://example.com/"_ns, ""_ns, false);
+  DoTest("https://example.com/"_ns, false, ""_ns, 0);
 
   // Set the strip list to empty and wait until the pref setting is set to the
   // stripper.
-  RefPtr<StripListObserver> observer = new StripListObserver();
-  observer->StartWaitingObserver();
   Preferences::SetCString(kPrefQueryStrippingList, "");
-  MOZ_ALWAYS_TRUE(mozilla::SpinEventLoopUntil(
-      "TEST(TestURLQueryStringStripper, TestEmptyStripList)"_ns,
-      [&]() -> bool { return !observer->IsStillWaiting(); }));
 
-  DoTest("https://example.com/"_ns, ""_ns, false);
-  DoTest("https://example.com/?Barfoo=123"_ns, ""_ns, false);
-  DoTest("https://example.com/?fooBar=123&foobaz"_ns, ""_ns, false);
+  waitForStripListChange(""_ns);
+
+  for (bool isPBM : {false, true}) {
+    DoTest("https://example.com/"_ns, isPBM, ""_ns, 0);
+    DoTest("https://example.com/?Barfoo=123"_ns, isPBM, ""_ns, 0);
+    DoTest("https://example.com/?fooBar=123&foobaz"_ns, isPBM, ""_ns, 0);
+  }
 }
 
 TEST(TestURLQueryStringStripper, TestStripping)
 {
   Preferences::SetBool(kPrefQueryStrippingEnabled, true);
+  Preferences::SetBool(kPrefQueryStrippingEnabledPBM, true);
+  DoTest("https://example.com/"_ns, false, ""_ns, 0);
 
-  // A dummy test to initiate the URLQueryStringStripper.
-  DoTest("https://example.com/"_ns, ""_ns, false);
-
-  // Set the pref and create an observer to wait the pref setting is set to the
-  // stripper.
-  RefPtr<StripListObserver> observer = new StripListObserver();
-  observer->StartWaitingObserver();
   Preferences::SetCString(kPrefQueryStrippingList, "fooBar foobaz");
-  MOZ_ALWAYS_TRUE(mozilla::SpinEventLoopUntil(
-      "TEST(TestURLQueryStringStripper, TestStripping)"_ns,
-      [&]() -> bool { return !observer->IsStillWaiting(); }));
+  waitForStripListChange("foobar foobaz"_ns);
 
-  // Test the stripping.
-  DoTest("https://example.com/"_ns, ""_ns, false);
-  DoTest("https://example.com/?Barfoo=123"_ns, ""_ns, false);
+  // Test all pref combinations.
+  for (bool pref : {false, true}) {
+    for (bool prefPBM : {false, true}) {
+      Preferences::SetBool(kPrefQueryStrippingEnabled, pref);
+      Preferences::SetBool(kPrefQueryStrippingEnabledPBM, prefPBM);
 
-  DoTest("https://example.com/?fooBar=123"_ns, "https://example.com/"_ns, true);
-  DoTest("https://example.com/?fooBar=123&foobaz"_ns, "https://example.com/"_ns,
-         true);
-  DoTest("https://example.com/?fooBar=123&Barfoo=456&foobaz"_ns,
-         "https://example.com/?Barfoo=456"_ns, true);
+      // If the service is enabled with the given pref config we need for the
+      // list changes to propagate as they happen async.
+      if (pref || prefPBM) {
+        waitForStripListChange("foobar foobaz"_ns);
+      }
 
-  DoTest("https://example.com/?FOOBAR=123"_ns, "https://example.com/"_ns, true);
-  DoTest("https://example.com/?barfoo=foobar"_ns,
-         "https://example.com/?barfoo=foobar"_ns, false);
-  DoTest("https://example.com/?foobar=123&nostrip=456&FooBar=789"_ns,
-         "https://example.com/?nostrip=456"_ns, true);
-  DoTest("https://example.com/?AfoobazB=123"_ns,
-         "https://example.com/?AfoobazB=123"_ns, false);
+      // Test with normal and private browsing mode.
+      for (bool isPBM : {false, true}) {
+        bool expectStrip = (prefPBM && isPBM) || (pref && !isPBM);
+
+        DoTest("https://example.com/"_ns, isPBM, ""_ns, 0);
+        DoTest("https://example.com/?Barfoo=123"_ns, isPBM, ""_ns, 0);
+
+        DoTest("https://example.com/?fooBar=123"_ns, isPBM,
+               "https://example.com/"_ns, expectStrip ? 1 : 0);
+        DoTest("https://example.com/?fooBar=123&foobaz"_ns, isPBM,
+               "https://example.com/"_ns, expectStrip ? 2 : 0);
+        DoTest("https://example.com/?fooBar=123&Barfoo=456&foobaz"_ns, isPBM,
+               "https://example.com/?Barfoo=456"_ns, expectStrip ? 2 : 0);
+
+        DoTest("https://example.com/?FOOBAR=123"_ns, isPBM,
+               "https://example.com/"_ns, expectStrip ? 1 : 0);
+        DoTest("https://example.com/?barfoo=foobar"_ns, isPBM,
+               "https://example.com/?barfoo=foobar"_ns, 0);
+        DoTest("https://example.com/?foobar=123&nostrip=456&FooBar=789"_ns,
+               isPBM, "https://example.com/?nostrip=456"_ns,
+               expectStrip ? 2 : 0);
+        DoTest("https://example.com/?AfoobazB=123"_ns, isPBM,
+               "https://example.com/?AfoobazB=123"_ns, 0);
+      }
+    }
+  }
 
   // Change the strip list pref to see if it is updated properly.
-  observer->StartWaitingObserver();
+  // We test this in normal browsing, so set the prefs accordingly.
+  Preferences::SetBool(kPrefQueryStrippingEnabled, true);
+  Preferences::SetBool(kPrefQueryStrippingEnabledPBM, false);
+
   Preferences::SetCString(kPrefQueryStrippingList, "Barfoo bazfoo");
-  MOZ_ALWAYS_TRUE(mozilla::SpinEventLoopUntil(
-      "TEST(TestURLQueryStringStripper, TestStripping)"_ns,
-      [&]() -> bool { return !observer->IsStillWaiting(); }));
 
-  DoTest("https://example.com/?fooBar=123"_ns, ""_ns, false);
-  DoTest("https://example.com/?fooBar=123&foobaz"_ns, ""_ns, false);
+  waitForStripListChange("barfoo bazfoo"_ns);
 
-  DoTest("https://example.com/?bazfoo=123"_ns, "https://example.com/"_ns, true);
-  DoTest("https://example.com/?fooBar=123&Barfoo=456&foobaz=abc"_ns,
-         "https://example.com/?fooBar=123&foobaz=abc"_ns, true);
+  DoTest("https://example.com/?fooBar=123"_ns, false, ""_ns, 0);
+  DoTest("https://example.com/?fooBar=123&foobaz"_ns, false, ""_ns, 0);
+
+  DoTest("https://example.com/?bazfoo=123"_ns, false, "https://example.com/"_ns,
+         1);
+  DoTest("https://example.com/?fooBar=123&Barfoo=456&foobaz=abc"_ns, false,
+         "https://example.com/?fooBar=123&foobaz=abc"_ns, 1);
 }

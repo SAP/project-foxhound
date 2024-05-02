@@ -5,16 +5,16 @@
 // Tests that the cert download/import UI correctly identifies the cert being
 // downloaded, and allows the trust of the cert to be specified.
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 /**
- * @typedef {TestCase}
- * @type Object
- * @property {String} certFilename
+ * @typedef TestCase
+ * @type {object}
+ * @property {string} certFilename
  *           Filename of the cert for this test case.
- * @property {String} expectedDisplayString
+ * @property {string} expectedDisplayString
  *           The string we expect the UI to display to represent the given cert.
  * @property {nsIX509Cert} cert
  *           Handle to the cert once read in setup().
@@ -22,7 +22,8 @@ const { MockRegistrar } = ChromeUtils.import(
 
 /**
  * A list of test cases representing certs that get "downloaded".
- * @type TestCase[]
+ *
+ * @type {TestCase[]}
  */
 const TEST_CASES = [
   { certFilename: "has-cn.pem", expectedDisplayString: "Foo", cert: null },
@@ -58,7 +59,7 @@ function openCertDownloadDialog(cert) {
   return new Promise((resolve, reject) => {
     win.addEventListener(
       "load",
-      function() {
+      function () {
         executeSoon(() => resolve([win, returnVals]));
       },
       { once: true }
@@ -66,7 +67,7 @@ function openCertDownloadDialog(cert) {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   for (let testCase of TEST_CASES) {
     testCase.cert = await readCertificate(testCase.certFilename, ",,");
     Assert.notEqual(

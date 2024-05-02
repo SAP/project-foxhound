@@ -123,7 +123,7 @@ macro_rules! impl_reduction_min_max {
 
 macro_rules! test_reduction_float_min_max {
     ([$elem_ty:ident; $elem_count:expr]: $id:ident | $test_tt:tt) => {
-        test_if!{
+        test_if! {
             $test_tt:
             paste::item! {
                 // Comparisons use integer casts within mantissa^1 range.
@@ -160,20 +160,7 @@ macro_rules! test_reduction_float_min_max {
                             // targets:
                             if i == $id::lanes() - 1 &&
                                 target_with_broken_last_lane_nan {
-                                // FIXME:
-                                // https://github.com/rust-lang-nursery/packed_simd/issues/5
-                                //
-                                // If there is a NaN, the result should always
-                                // the smallest element, but currently when the
-                                // last element is NaN the current
-                                // implementation incorrectly returns NaN.
-                                //
-                                // The targets mentioned above use different
-                                // codegen that produces the correct result.
-                                //
-                                // These asserts detect if this behavior changes
-                                    assert!(v.min_element().is_nan(),
-                                            // FIXME: ^^^ should be -3.
+                                    assert_eq!(v.min_element(), -3.,
                                             "[A]: nan at {} => {} | {:?}",
                                             i, v.min_element(), v);
 
@@ -181,14 +168,17 @@ macro_rules! test_reduction_float_min_max {
                                 // up-to the `i-th` lane with `NaN`s, the result
                                 // is still always `-3.` unless all elements of
                                 // the vector are `NaN`s:
-                                //
-                                // This is also broken:
                                 for j in 0..i {
                                     v = v.replace(j, n);
-                                    assert!(v.min_element().is_nan(),
-                                            // FIXME: ^^^ should be -3.
+                                    if j == i-1 {
+                                        assert!(v.min_element().is_nan(),
                                             "[B]: nan at {} => {} | {:?}",
                                             i, v.min_element(), v);
+                                    } else {
+                                        assert_eq!(v.min_element(), -3.,
+                                            "[B]: nan at {} => {} | {:?}",
+                                            i, v.min_element(), v);
+                                    }
                                 }
 
                                 // We are done here, since we were in the last
@@ -203,7 +193,7 @@ macro_rules! test_reduction_float_min_max {
                             if $id::lanes() == 1 {
                                 assert!(v.min_element().is_nan(),
                                         "[C]: all nans | v={:?} | min={} | \
-                                         is_nan: {}",
+is_nan: {}",
                                         v, v.min_element(),
                                         v.min_element().is_nan()
                                 );
@@ -235,7 +225,7 @@ macro_rules! test_reduction_float_min_max {
                                     // "i - 1" does not overflow.
                                     assert!(v.min_element().is_nan(),
                                             "[E]: all nans | v={:?} | min={} | \
-                                             is_nan: {}",
+is_nan: {}",
                                             v, v.min_element(),
                                             v.min_element().is_nan());
                                 } else {
@@ -280,21 +270,7 @@ macro_rules! test_reduction_float_min_max {
                             // targets:
                             if i == $id::lanes() - 1 &&
                               target_with_broken_last_lane_nan {
-                                // FIXME:
-                                // https://github.com/rust-lang-nursery/packed_simd/issues/5
-                                //
-                                // If there is a NaN, the result should
-                                // always the largest element, but currently
-                                // when the last element is NaN the current
-                                // implementation incorrectly returns NaN.
-                                //
-                                // The targets mentioned above use different
-                                // codegen that produces the correct result.
-                                //
-                                // These asserts detect if this behavior
-                                // changes
-                                assert!(v.max_element().is_nan(),
-                                        // FIXME: ^^^ should be -3.
+                                assert_eq!(v.max_element(), -3.,
                                         "[A]: nan at {} => {} | {:?}",
                                         i, v.max_element(), v);
 
@@ -302,14 +278,17 @@ macro_rules! test_reduction_float_min_max {
                                 // up-to the `i-th` lane with `NaN`s, the result
                                 // is still always `-3.` unless all elements of
                                 // the vector are `NaN`s:
-                                //
-                                // This is also broken:
                                 for j in 0..i {
                                     v = v.replace(j, n);
-                                    assert!(v.max_element().is_nan(),
-                                            // FIXME: ^^^ should be -3.
+                                    if j == i-1 {
+                                        assert!(v.min_element().is_nan(),
+                                        "[B]: nan at {} => {} | {:?}",
+                                        i, v.min_element(), v);
+                                    } else {
+                                        assert_eq!(v.max_element(), -3.,
                                             "[B]: nan at {} => {} | {:?}",
                                             i, v.max_element(), v);
+                                    }
                                 }
 
                                 // We are done here, since we were in the last
@@ -324,7 +303,7 @@ macro_rules! test_reduction_float_min_max {
                             if $id::lanes() == 1 {
                                 assert!(v.max_element().is_nan(),
                                         "[C]: all nans | v={:?} | min={} | \
-                                         is_nan: {}",
+is_nan: {}",
                                         v, v.max_element(),
                                         v.max_element().is_nan());
 
@@ -355,7 +334,7 @@ macro_rules! test_reduction_float_min_max {
                                     // "i - 1" does not overflow.
                                     assert!(v.max_element().is_nan(),
                                             "[E]: all nans | v={:?} | max={} | \
-                                             is_nan: {}",
+is_nan: {}",
                                             v, v.max_element(),
                                             v.max_element().is_nan());
                                 } else {
@@ -377,5 +356,5 @@ macro_rules! test_reduction_float_min_max {
                 }
             }
         }
-    }
+    };
 }

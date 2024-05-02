@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <prthread.h>
 #include "nsExpirationTracker.h"
-#include "nsMemory.h"
 #include "nsString.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
@@ -173,7 +172,9 @@ static bool test_random8() { return test_random<8>(); }
 
 typedef bool (*TestFunc)();
 #define DECL_TEST(name) \
-  { #name, name }
+  {                     \
+#    name, name         \
+  }
 
 static const struct Test {
   const char* name;

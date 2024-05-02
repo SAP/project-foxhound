@@ -1,15 +1,14 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function
-
 import copy
 import os
 import re
 import sys
 
 from mozlog.commandline import setup_logging
-from talos import utils, test
+
+from talos import test, utils
 from talos.cmdline import parse_args
 
 
@@ -58,6 +57,7 @@ DEFAULTS = dict(
         setup=None,
         cleanup=None,
         preferences={},
+        pine=True,
     ),
 )
 
@@ -70,6 +70,7 @@ GLOBAL_OVERRIDES = (
     "gecko_profile_entries",
     "gecko_profile_features",
     "gecko_profile_threads",
+    "gecko_profile_extra_threads",
     "tpcycles",
     "tppagecycles",
     "tpmanifest",
@@ -293,6 +294,7 @@ def get_test(config, global_overrides, counters, test_instance):
             _counters.extend(
                 [counter for counter in counters if counter not in _counters]
             )
+
     return dict(test_instance.items())
 
 
@@ -338,7 +340,6 @@ def get_browser_config(config):
         "xperf_path": None,
         "error_filename": None,
         "no_upload_results": False,
-        "stylothreads": 0,
         "subtests": None,
         "preferences": {},
     }

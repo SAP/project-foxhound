@@ -84,21 +84,20 @@ If a serial number is not explicitly specified, it is automatically
 generated based on the contents of the certificate.
 """
 
-from pyasn1.codec.der import decoder
-from pyasn1.codec.der import encoder
-from pyasn1.type import constraint, tag, univ, useful
-from pyasn1_modules import rfc2459
-from struct import pack
 import base64
 import datetime
 import hashlib
 import re
 import socket
-import six
 import sys
+from struct import pack
 
 import pyct
 import pykey
+import six
+from pyasn1.codec.der import decoder, encoder
+from pyasn1.type import constraint, tag, univ, useful
+from pyasn1_modules import rfc2459
 
 
 class Error(Exception):
@@ -795,15 +794,6 @@ class Certificate(object):
 # file-like object and a path to a file containing a
 # specification. This will read the specification and output
 # the certificate as PEM.
-# This utility tries as hard as possible to ensure that two
-# runs with the same input will have the same output. This is
-# particularly important when building on OS X, where we
-# generate everything twice for unified builds. During the
-# unification step, if any pair of input files differ, the build
-# system throws an error.
-# The one concrete failure mode is if one run happens before
-# midnight on New Year's Eve and the next run happens after
-# midnight.
 def main(output, inputPath):
     with open(inputPath) as configStream:
         output.write(Certificate(configStream).toPEM() + "\n")

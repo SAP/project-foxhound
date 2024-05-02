@@ -5,14 +5,11 @@
 import { positionCmp } from "./positionCmp";
 import { filterSortedArray } from "./filtering";
 import { mappingContains } from "./mappingContains";
+import { getGeneratedLocation } from "../../source-maps";
 
-export async function originalRangeStartsInside(
-  source,
-  { start, end },
-  sourceMaps
-) {
-  const endPosition = await sourceMaps.getGeneratedLocation(end);
-  const startPosition = await sourceMaps.getGeneratedLocation(start);
+export async function originalRangeStartsInside({ start, end }, thunkArgs) {
+  const endPosition = await getGeneratedLocation(end, thunkArgs);
+  const startPosition = await getGeneratedLocation(start, thunkArgs);
 
   // If the start and end positions collapse into eachother, it means that
   // the range in the original content didn't _start_ at the start position.
@@ -27,9 +24,10 @@ export async function getApplicableBindingsForOriginalPosition(
   { start, end },
   bindingType,
   locationType,
-  sourceMaps
+  thunkArgs
 ) {
-  const ranges = await sourceMaps.getGeneratedRanges(start);
+  const { sourceMapLoader } = thunkArgs;
+  const ranges = await sourceMapLoader.getGeneratedRanges(start);
 
   const resultRanges = ranges.map(mapRange => ({
     start: {
@@ -52,8 +50,8 @@ export async function getApplicableBindingsForOriginalPosition(
   // var _mod = require("mod"); // mapped from import statement
   // var _mod2 = interop(_mod); // entirely unmapped
   if (bindingType === "import" && locationType !== "ref") {
-    const endPosition = await sourceMaps.getGeneratedLocation(end);
-    const startPosition = await sourceMaps.getGeneratedLocation(start);
+    const endPosition = await getGeneratedLocation(end, thunkArgs);
+    const startPosition = await getGeneratedLocation(start, thunkArgs);
 
     for (const range of resultRanges) {
       if (

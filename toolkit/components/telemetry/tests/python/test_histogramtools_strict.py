@@ -2,11 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import mozunit
+import os
 import sys
 import unittest
-import os
 from os import path
+
+import mozunit
 from test_histogramtools_non_strict import load_histogram
 
 TELEMETRY_ROOT_PATH = path.abspath(
@@ -16,8 +17,8 @@ sys.path.append(TELEMETRY_ROOT_PATH)
 # The parsers live in a subdirectory of "build_scripts", account for that.
 # NOTE: if the parsers are moved, this logic will need to be updated.
 sys.path.append(path.join(TELEMETRY_ROOT_PATH, "build_scripts"))
-from mozparsers.shared_telemetry_utils import ParserError
 from mozparsers import parse_histograms
+from mozparsers.shared_telemetry_utils import ParserError
 
 
 class TestParser(unittest.TestCase):
@@ -34,7 +35,7 @@ class TestParser(unittest.TestCase):
     def test_valid_histogram(self):
         SAMPLE_HISTOGRAM = {
             "TEST_VALID_HISTOGRAM": {
-                "record_in_processes": ["main", "content", "socket"],
+                "record_in_processes": ["main", "content", "socket", "utility"],
                 "alert_emails": ["team@mozilla.xyz"],
                 "bug_numbers": [1383793],
                 "expires_in_version": "never",
@@ -157,7 +158,7 @@ class TestParser(unittest.TestCase):
                 "expires_in_version": "never",
                 "kind": "exponential",
                 "low": 1024,
-                "high": 2 ** 64,
+                "high": 2**64,
                 "n_buckets": 100,
                 "products": ["firefox"],
                 "description": "Test histogram",
@@ -514,7 +515,7 @@ class TestParser(unittest.TestCase):
                 "expires_in_version": "never",
                 "kind": "exponential",
                 "low": 1024,
-                "high": 2 ** 64,
+                "high": 2**64,
                 "n_buckets": 100,
                 "keyed": "true",
                 "description": "Test histogram",
@@ -534,7 +535,7 @@ class TestParser(unittest.TestCase):
     def test_enumerated_histogram_with_100_buckets(self):
         SAMPLE_HISTOGRAM = {
             "TEST_100_BUCKETS_HISTOGRAM": {
-                "record_in_processes": ["main", "content", "socket"],
+                "record_in_processes": ["main", "content", "socket", "utility"],
                 "alert_emails": ["team@mozilla.xyz"],
                 "bug_numbers": [1383793],
                 "expires_in_version": "never",

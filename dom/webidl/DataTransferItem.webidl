@@ -8,17 +8,17 @@
  * https://wicg.github.io/entries-api/#idl-index
  */
 
-[Exposed=Window]
+[InstrumentedProps=(webkitGetAsEntry),Exposed=Window]
 interface DataTransferItem {
   readonly attribute DOMString kind;
   readonly attribute DOMString type;
   [Throws, NeedsSubjectPrincipal]
-  void getAsString(FunctionStringCallback? callback);
+  undefined getAsString(FunctionStringCallback? callback);
   [Throws, NeedsSubjectPrincipal]
   File? getAsFile();
 };
 
-callback FunctionStringCallback = void (DOMString data);
+callback FunctionStringCallback = undefined (DOMString data);
 
 // https://wicg.github.io/entries-api/#idl-index
 partial interface DataTransferItem {

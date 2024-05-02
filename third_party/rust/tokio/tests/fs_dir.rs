@@ -1,5 +1,5 @@
 #![warn(rust_2018_idioms)]
-#![cfg(feature = "full")]
+#![cfg(all(feature = "full", not(tokio_wasi)))] // WASI does not support all fs operations
 
 use tokio::fs;
 use tokio_test::{assert_err, assert_ok};
@@ -46,6 +46,27 @@ async fn build_dir() {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn build_dir_mode_read_only() {
+    let base_dir = tempdir().unwrap();
+    let new_dir = base_dir.path().join("abc");
+
+    assert_ok!(
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o444)
+            .create(&new_dir)
+            .await
+    );
+
+    assert!(fs::metadata(new_dir)
+        .await
+        .expect("metadata result")
+        .permissions()
+        .readonly());
+}
+
+#[tokio::test]
 async fn remove() {
     let base_dir = tempdir().unwrap();
     let new_dir = base_dir.path().join("foo");
@@ -87,33 +108,19 @@ async fn read_inherent() {
 }
 
 #[tokio::test]
-async fn read_stream() {
-    use tokio::stream::StreamExt;
+async fn read_dir_entry_info() {
+    let temp_dir = tempdir().unwrap();
 
-    let base_dir = tempdir().unwrap();
+    let file_path = temp_dir.path().join("a.txt");
 
-    let p = base_dir.path();
-    std::fs::create_dir(p.join("aa")).unwrap();
-    std::fs::create_dir(p.join("bb")).unwrap();
-    std::fs::create_dir(p.join("cc")).unwrap();
+    fs::write(&file_path, b"Hello File!").await.unwrap();
 
-    let files = Arc::new(Mutex::new(Vec::new()));
+    let mut dir = fs::read_dir(temp_dir.path()).await.unwrap();
 
-    let f = files.clone();
-    let p = p.to_path_buf();
+    let first_entry = dir.next_entry().await.unwrap().unwrap();
 
-    let mut entries = fs::read_dir(p).await.unwrap();
-
-    while let Some(res) = entries.next().await {
-        let e = assert_ok!(res);
-        let s = e.file_name().to_str().unwrap().to_string();
-        f.lock().unwrap().push(s);
-    }
-
-    let mut files = files.lock().unwrap();
-    files.sort(); // because the order is not guaranteed
-    assert_eq!(
-        *files,
-        vec!["aa".to_string(), "bb".to_string(), "cc".to_string()]
-    );
+    assert_eq!(first_entry.path(), file_path);
+    assert_eq!(first_entry.file_name(), "a.txt");
+    assert!(first_entry.metadata().await.unwrap().is_file());
+    assert!(first_entry.file_type().await.unwrap().is_file());
 }

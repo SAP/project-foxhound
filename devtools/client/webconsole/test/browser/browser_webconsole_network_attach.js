@@ -8,7 +8,7 @@ const TEST_PATH =
   "https://example.com/browser/devtools/client/webconsole/" + "test/browser/";
 const TEST_URI = TEST_PATH + TEST_FILE;
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
       resolve()
@@ -22,13 +22,13 @@ add_task(async function task() {
   await openNewTabAndToolbox(TEST_URI, "netmonitor");
 
   const currentTab = gBrowser.selectedTab;
-  const toolbox = await gDevTools.getToolboxForTab(currentTab);
+  const toolbox = gDevTools.getToolboxForTab(currentTab);
   const panel = toolbox.getCurrentPanel().panelWin;
 
   const netReady = panel.api.once("NetMonitor:PayloadReady");
 
   // Fire an XHR POST request.
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.wrappedJSObject.testXhrGet();
   });
 
@@ -41,7 +41,9 @@ add_task(async function task() {
   const { hud } = await toolbox.selectTool("webconsole");
 
   const xhrUrl = TEST_PATH + "test-data.json";
-  const messageNode = await waitFor(() => findMessage(hud, xhrUrl));
+  const messageNode = await waitFor(() =>
+    findMessageByType(hud, xhrUrl, ".network")
+  );
   const urlNode = messageNode.querySelector(".url");
   info("Network message found.");
 

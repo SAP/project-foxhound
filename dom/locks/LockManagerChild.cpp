@@ -8,12 +8,20 @@
 #include "LockRequestChild.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 
 namespace mozilla::dom::locks {
+
+LockManagerChild::LockManagerChild(nsIGlobalObject* aOwner) : mOwner(aOwner) {
+  if (!NS_IsMainThread()) {
+    mWorkerRef = IPCWorkerRef::Create(GetCurrentThreadWorkerPrivate(),
+                                      "LockManagerChild");
+  }
+}
 
 void LockManagerChild::NotifyBFCacheOnMainThread(nsPIDOMWindowInner* aInner,
                                                  bool aCreated) {
@@ -66,10 +74,6 @@ class BFCacheNotifyLockRunnable final : public WorkerProxyToMainThreadRunnable {
   bool mCreated;
 };
 
-NS_IMPL_CYCLE_COLLECTION(LockManagerChild, mOwner)
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(LockManagerChild, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(LockManagerChild, Release)
-
 void LockManagerChild::RequestLock(const LockRequest& aRequest,
                                    const LockOptions& aOptions) {
   auto requestActor = MakeRefPtr<LockRequestChild>(aRequest, aOptions.mSignal);
@@ -84,7 +88,7 @@ void LockManagerChild::NotifyRequestDestroy() const { NotifyToWindow(false); }
 
 void LockManagerChild::NotifyToWindow(bool aCreated) const {
   if (NS_IsMainThread()) {
-    NotifyBFCacheOnMainThread(GetParentObject()->AsInnerWindow(), aCreated);
+    NotifyBFCacheOnMainThread(GetParentObject()->GetAsInnerWindow(), aCreated);
     return;
   }
 

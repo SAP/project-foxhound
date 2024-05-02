@@ -18,9 +18,8 @@ namespace net {
 
 nsHttpRequestHead::nsHttpRequestHead() { MOZ_COUNT_CTOR(nsHttpRequestHead); }
 
-nsHttpRequestHead::nsHttpRequestHead(const nsHttpRequestHead& aRequestHead)
-    : mRecursiveMutex("nsHttpRequestHead.mRecursiveMutex"),
-      mInVisitHeaders(false) {
+nsHttpRequestHead::nsHttpRequestHead(const nsHttpRequestHead& aRequestHead) {
+  MOZ_COUNT_CTOR(nsHttpRequestHead);
   nsHttpRequestHead& other = const_cast<nsHttpRequestHead&>(aRequestHead);
   RecursiveMutexAutoLock monitor(other.mRecursiveMutex);
 
@@ -32,6 +31,22 @@ nsHttpRequestHead::nsHttpRequestHead(const nsHttpRequestHead& aRequestHead)
   mOrigin = other.mOrigin;
   mParsedMethod = other.mParsedMethod;
   mHTTPS = other.mHTTPS;
+  mInVisitHeaders = false;
+}
+
+nsHttpRequestHead::nsHttpRequestHead(nsHttpRequestHead&& aRequestHead) {
+  MOZ_COUNT_CTOR(nsHttpRequestHead);
+  nsHttpRequestHead& other = aRequestHead;
+  RecursiveMutexAutoLock monitor(other.mRecursiveMutex);
+
+  mHeaders = std::move(other.mHeaders);
+  mMethod = std::move(other.mMethod);
+  mVersion = std::move(other.mVersion);
+  mRequestURI = std::move(other.mRequestURI);
+  mPath = std::move(other.mPath);
+  mOrigin = std::move(other.mOrigin);
+  mParsedMethod = std::move(other.mParsedMethod);
+  mHTTPS = std::move(other.mHTTPS);
   mInVisitHeaders = false;
 }
 

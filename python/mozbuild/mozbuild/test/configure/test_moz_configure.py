@@ -2,15 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 from mozunit import main
-from mozbuild.util import (
-    exec_,
-    memoized_property,
-    ReadOnlyNamespace,
-)
+
 from common import BaseConfigureTest, ConfigureTestSandbox
+from mozbuild.util import ReadOnlyNamespace, exec_, memoized_property
 
 
 def sandbox_class(platform):
@@ -29,7 +24,7 @@ class TargetTest(BaseConfigureTest):
     def get_target(self, args, env={}):
         if "linux" in self.HOST:
             platform = "linux2"
-        elif "mingw" in self.HOST:
+        elif "mingw" in self.HOST or "windows" in self.HOST:
             platform = "win32"
         elif "openbsd6" in self.HOST:
             platform = "openbsd6"
@@ -48,20 +43,21 @@ class TestTargetLinux(TargetTest):
             "i686-unknown-linux-gnu",
         )
         self.assertEqual(
-            self.get_target(["--target=i686-pc-mingw32"]), "i686-pc-mingw32"
+            self.get_target(["--target=i686-pc-windows-msvc"]), "i686-pc-windows-msvc"
         )
 
 
 class TestTargetWindows(TargetTest):
     # BaseConfigureTest uses this as the return value for config.guess
-    HOST = "i686-pc-mingw32"
+    HOST = "i686-pc-windows-msvc"
 
     def test_target(self):
         self.assertEqual(self.get_target([]), self.HOST)
         self.assertEqual(
-            self.get_target(["--target=x86_64-pc-mingw32"]), "x86_64-pc-mingw32"
+            self.get_target(["--target=x86_64-pc-windows-msvc"]),
+            "x86_64-pc-windows-msvc",
         )
-        self.assertEqual(self.get_target(["--target=x86_64"]), "x86_64-pc-mingw32")
+        self.assertEqual(self.get_target(["--target=x86_64"]), "x86_64-pc-windows-msvc")
 
         # The tests above are actually not realistic, because most Windows
         # machines will have a few environment variables that make us not
@@ -72,31 +68,41 @@ class TestTargetWindows(TargetTest):
             "PROCESSOR_ARCHITECTURE": "x86",
             "PROCESSOR_ARCHITEW6432": "AMD64",
         }
-        self.assertEqual(self.get_target([], env), "x86_64-pc-mingw32")
+        self.assertEqual(self.get_target([], env), "x86_64-pc-windows-msvc")
         self.assertEqual(
-            self.get_target(["--target=i686-pc-mingw32"]), "i686-pc-mingw32"
+            self.get_target(["--target=i686-pc-windows-msvc"]), "i686-pc-windows-msvc"
         )
-        self.assertEqual(self.get_target(["--target=i686"]), "i686-pc-mingw32")
+        self.assertEqual(self.get_target(["--target=i686"]), "i686-pc-windows-msvc")
 
         # 64-bits process on x86_64 host.
         env = {
             "PROCESSOR_ARCHITECTURE": "AMD64",
         }
-        self.assertEqual(self.get_target([], env), "x86_64-pc-mingw32")
+        self.assertEqual(self.get_target([], env), "x86_64-pc-windows-msvc")
         self.assertEqual(
-            self.get_target(["--target=i686-pc-mingw32"]), "i686-pc-mingw32"
+            self.get_target(["--target=i686-pc-windows-msvc"]), "i686-pc-windows-msvc"
         )
-        self.assertEqual(self.get_target(["--target=i686"]), "i686-pc-mingw32")
+        self.assertEqual(self.get_target(["--target=i686"]), "i686-pc-windows-msvc")
 
         # 32-bits process on x86 host.
         env = {
             "PROCESSOR_ARCHITECTURE": "x86",
         }
-        self.assertEqual(self.get_target([], env), "i686-pc-mingw32")
+        self.assertEqual(self.get_target([], env), "i686-pc-windows-msvc")
         self.assertEqual(
-            self.get_target(["--target=x86_64-pc-mingw32"]), "x86_64-pc-mingw32"
+            self.get_target(["--target=x86_64-pc-windows-msvc"]),
+            "x86_64-pc-windows-msvc",
         )
-        self.assertEqual(self.get_target(["--target=x86_64"]), "x86_64-pc-mingw32")
+        self.assertEqual(self.get_target(["--target=x86_64"]), "x86_64-pc-windows-msvc")
+
+        # While host autodection will give us a -windows-msvc triplet, setting host
+        # is expecting to implicitly set the target.
+        self.assertEqual(
+            self.get_target(["--host=x86_64-pc-windows-gnu"]), "x86_64-pc-windows-gnu"
+        )
+        self.assertEqual(
+            self.get_target(["--host=x86_64-pc-mingw32"]), "x86_64-pc-mingw32"
+        )
 
 
 class TestTargetAndroid(TargetTest):
@@ -148,14 +154,14 @@ class TestMozConfigure(BaseConfigureTest):
                 self.version = version
 
             def __call__(self, stdin, args):
-                this.assertEquals(args, ("-version",))
+                this.assertEqual(args, ("-version",))
                 return 0, self.version, ""
 
         def check_nsis_version(version):
             sandbox = self.get_sandbox(
                 {"/usr/bin/makensis": FakeNSIS(version)},
                 {},
-                ["--target=x86_64-pc-mingw32", "--disable-bootstrap"],
+                ["--target=x86_64-pc-windows-msvc", "--disable-bootstrap"],
                 {"PATH": "/usr/bin", "MAKENSISU": "/usr/bin/makensis"},
             )
             return sandbox._value_for(sandbox["nsis_version"])
@@ -166,13 +172,13 @@ class TestMozConfigure(BaseConfigureTest):
         with self.assertRaises(SystemExit):
             check_nsis_version("v3.0a2")
 
-        self.assertEquals(check_nsis_version("v3.0b1"), "3.0b1")
-        self.assertEquals(check_nsis_version("v3.0b2"), "3.0b2")
-        self.assertEquals(check_nsis_version("v3.0rc1"), "3.0rc1")
-        self.assertEquals(check_nsis_version("v3.0"), "3.0")
-        self.assertEquals(check_nsis_version("v3.0-2"), "3.0")
-        self.assertEquals(check_nsis_version("v3.0.1"), "3.0")
-        self.assertEquals(check_nsis_version("v3.1"), "3.1")
+        self.assertEqual(check_nsis_version("v3.0b1"), "3.0b1")
+        self.assertEqual(check_nsis_version("v3.0b2"), "3.0b2")
+        self.assertEqual(check_nsis_version("v3.0rc1"), "3.0rc1")
+        self.assertEqual(check_nsis_version("v3.0"), "3.0")
+        self.assertEqual(check_nsis_version("v3.0-2"), "3.0")
+        self.assertEqual(check_nsis_version("v3.0.1"), "3.0")
+        self.assertEqual(check_nsis_version("v3.1"), "3.1")
 
 
 if __name__ == "__main__":

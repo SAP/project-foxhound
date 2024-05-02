@@ -14,12 +14,14 @@
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
 #include "nsGkAtoms.h"
 #include "nsFrameManager.h"
 #include "nsPlaceholderFrame.h"
+#include "nsTextFrame.h"
 #include "nsCSSFrameConstructor.h"
 
 using namespace mozilla;
@@ -67,8 +69,8 @@ void nsFirstLetterFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 }
 
 void nsFirstLetterFrame::SetInitialChildList(ChildListID aListID,
-                                             nsFrameList& aChildList) {
-  MOZ_ASSERT(aListID == kPrincipalList,
+                                             nsFrameList&& aChildList) {
+  MOZ_ASSERT(aListID == FrameChildListID::Principal,
              "Principal child list is the only "
              "list that nsFirstLetterFrame should set via this function");
   for (nsIFrame* f : aChildList) {
@@ -78,7 +80,7 @@ void nsFirstLetterFrame::SetInitialChildList(ChildListID aListID,
     nsLayoutUtils::MarkDescendantsDirty(f);  // Drops cached textruns
   }
 
-  mFrames.SetFrames(aChildList);
+  mFrames = std::move(aChildList);
 }
 
 nsresult nsFirstLetterFrame::GetChildFrameContainingOffset(
@@ -138,6 +140,46 @@ nsIFrame::SizeComputationResult nsFirstLetterFrame::ComputeSize(
                                        aSizeOverrides, aFlags);
 }
 
+bool nsFirstLetterFrame::UseTightBounds() const {
+  int v = StaticPrefs::layout_css_floating_first_letter_tight_glyph_bounds();
+
+  // Check for the simple cases:
+  //   pref value > 0: use legacy gecko behavior
+  //   pref value = 0: use webkit/blink-like behavior
+  if (v > 0) {
+    return true;
+  }
+  if (v == 0) {
+    return false;
+  }
+
+  // Pref value < 0: use heuristics to determine whether the page is assuming
+  // webkit/blink-style behavior:
+  // If line-height is less than font-size, or there is a negative block-start
+  // or -end margin, use webkit/blink behavior.
+  if (nsTextFrame* textFrame = do_QueryFrame(mFrames.FirstChild())) {
+    RefPtr<nsFontMetrics> fm = textFrame->InflatedFontMetrics();
+    if (textFrame->ComputeLineHeight() < fm->EmHeight()) {
+      return false;
+    }
+  }
+
+  const auto wm = GetWritingMode();
+  const auto& margin = StyleMargin()->mMargin;
+  const auto& bStart = margin.GetBStart(wm);
+  // Currently, we only check for margins with negative *length* values;
+  // negative percentages seem unlikely to be used/useful in this context.
+  if (bStart.ConvertsToLength() && bStart.ToLength() < 0) {
+    return false;
+  }
+  const auto& bEnd = margin.GetBEnd(wm);
+  if (bEnd.ConvertsToLength() && bEnd.ToLength() < 0) {
+    return false;
+  }
+
+  return true;
+}
+
 void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
                                 ReflowOutput& aMetrics,
                                 const ReflowInput& aReflowInput,
@@ -175,7 +217,7 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
     WritingMode kidWritingMode = WritingModeForLine(wm, kid);
     LogicalSize kidAvailSize = availSize.ConvertTo(kidWritingMode, wm);
     ReflowInput rs(aPresContext, aReflowInput, kid, kidAvailSize);
-    nsLineLayout ll(aPresContext, nullptr, &aReflowInput, nullptr, nullptr);
+    nsLineLayout ll(aPresContext, nullptr, aReflowInput, nullptr, nullptr);
 
     ll.BeginLineReflow(
         bp.IStart(wm), bp.BStart(wm), availSize.ISize(wm), NS_UNCONSTRAINEDSIZE,
@@ -196,10 +238,23 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
 
     // Place and size the child and update the output metrics
     LogicalSize convertedSize = kidMetrics.Size(wm);
-    kid->SetRect(nsRect(bp.IStart(wm), bp.BStart(wm), convertedSize.ISize(wm),
-                        convertedSize.BSize(wm)));
+
+    const bool tightBounds = UseTightBounds();
+    const nscoord shift =
+        tightBounds ? 0
+                    // Shift by half of the difference between the line-height
+                    // we're going to use and current height of the kid frame.
+                    : (rs.GetLineHeight() - convertedSize.BSize(wm)) / 2;
+
+    kid->SetRect(nsRect(bp.IStart(wm), bp.BStart(wm) + shift,
+                        convertedSize.ISize(wm), convertedSize.BSize(wm)));
     kid->FinishAndStoreOverflow(&kidMetrics, rs.mStyleDisplay);
     kid->DidReflow(aPresContext, nullptr);
+
+    if (!tightBounds) {
+      // Adjust size to account for line-height.
+      convertedSize.BSize(wm) = rs.GetLineHeight();
+    }
 
     convertedSize.ISize(wm) += bp.IStartEnd(wm);
     convertedSize.BSize(wm) += bp.BStartEnd(wm);
@@ -247,10 +302,11 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
       if (aReflowInput.mLineLayout) {
         aReflowInput.mLineLayout->SetFirstLetterStyleOK(false);
       }
-      nsIFrame* kidNextInFlow = kid->GetNextInFlow();
-      if (kidNextInFlow) {
+      if (nsIFrame* kidNextInFlow = kid->GetNextInFlow()) {
+        DestroyContext context(PresShell());
         // Remove all of the childs next-in-flows
-        kidNextInFlow->GetParent()->DeleteNextInFlowChild(kidNextInFlow, true);
+        kidNextInFlow->GetParent()->DeleteNextInFlowChild(context,
+                                                          kidNextInFlow, true);
       }
     } else {
       // Create a continuation for the child frame if it doesn't already
@@ -258,7 +314,7 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
       if (!IsFloating()) {
         CreateNextInFlow(kid);
         // And then push it to our overflow list
-        nsFrameList overflow = mFrames.RemoveFramesAfter(kid);
+        nsFrameList overflow = mFrames.TakeFramesAfter(kid);
         if (overflow.NotEmpty()) {
           SetOverflowFrames(std::move(overflow));
         }
@@ -271,8 +327,6 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
       }
     }
   }
-
-  NS_FRAME_SET_TRUNCATION(aReflowStatus, aReflowInput, aMetrics);
 }
 
 /* virtual */
@@ -313,11 +367,11 @@ void nsFirstLetterFrame::CreateContinuationForFloatingParent(
   }
 
   // XXX Bidi may not be involved but we have to use the list name
-  // kNoReflowPrincipalList because this is just like creating a continuation
-  // except we have to insert it in a different place and we don't want a
-  // reflow command to try to be issued.
-  nsFrameList temp(continuation, continuation);
-  parent->InsertFrames(kNoReflowPrincipalList, placeholderFrame, nullptr, temp);
+  // FrameChildListID::NoReflowPrincipal because this is just like creating a
+  // continuation except we have to insert it in a different place and we don't
+  // want a reflow command to try to be issued.
+  parent->InsertFrames(FrameChildListID::NoReflowPrincipal, placeholderFrame,
+                       nullptr, nsFrameList(continuation, continuation));
 
   *aContinuation = continuation;
 }
@@ -335,7 +389,7 @@ void nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext) {
       // views need to be reparented.
       nsContainerFrame::ReparentFrameViewList(*overflowFrames, prevInFlow,
                                               this);
-      mFrames.InsertFrames(this, nullptr, *overflowFrames);
+      mFrames.InsertFrames(this, nullptr, std::move(*overflowFrames));
     }
   }
 
@@ -343,7 +397,7 @@ void nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext) {
   AutoFrameListPtr overflowFrames(aPresContext, StealOverflowFrames());
   if (overflowFrames) {
     NS_ASSERTION(mFrames.NotEmpty(), "overflow list w/o frames");
-    mFrames.AppendFrames(nullptr, *overflowFrames);
+    mFrames.AppendFrames(nullptr, std::move(*overflowFrames));
   }
 
   // Now repair our first frames ComputedStyle (since we only reflow
@@ -372,8 +426,13 @@ void nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext) {
   }
 }
 
-nscoord nsFirstLetterFrame::GetLogicalBaseline(WritingMode aWritingMode) const {
-  return mBaseline;
+Maybe<nscoord> nsFirstLetterFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+    BaselineExportContext) const {
+  if (aBaselineGroup == BaselineSharingGroup::Last) {
+    return Nothing{};
+  }
+  return Some(mBaseline);
 }
 
 LogicalSides nsFirstLetterFrame::GetLogicalSkipSides() const {

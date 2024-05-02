@@ -49,12 +49,12 @@ class MockWidget : public nsBaseWidget {
 
   virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                           const LayoutDeviceIntRect& aRect,
-                          nsWidgetInitData* aInitData = nullptr) override {
+                          InitData* aInitData = nullptr) override {
     return NS_OK;
   }
   virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                           const DesktopIntRect& aRect,
-                          nsWidgetInitData* aInitData = nullptr) override {
+                          InitData* aInitData = nullptr) override {
     return NS_OK;
   }
   virtual void Show(bool aState) override {}
@@ -66,6 +66,10 @@ class MockWidget : public nsBaseWidget {
 
   virtual void Enable(bool aState) override {}
   virtual bool IsEnabled() const override { return true; }
+
+  virtual nsSizeMode SizeMode() override { return mSizeMode; }
+  virtual void SetSizeMode(nsSizeMode aMode) override { mSizeMode = aMode; }
+
   virtual void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override {}
   virtual void Invalidate(const LayoutDeviceIntRect& aRect) override {}
   virtual nsresult SetTitle(const nsAString& title) override { return NS_OK; }
@@ -82,6 +86,8 @@ class MockWidget : public nsBaseWidget {
 
  private:
   ~MockWidget() = default;
+
+  nsSizeMode mSizeMode = nsSizeMode_Normal;
 
   int mCompWidth;
   int mCompHeight;

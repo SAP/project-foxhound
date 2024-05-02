@@ -9,15 +9,11 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test_jsterm_screenshot_command.html";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-
 // on some machines, such as macOS, dpr is set to 2. This is expected behavior, however
 // to keep tests consistant across OSs we are setting the dpr to 1
 const dpr = "--dpr 1";
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.input.context", true);
 
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -30,13 +26,17 @@ add_task(async function() {
   });
 
   info("Test :screenshot --selector iframe");
-  const sameOriginIframeScreenshotFile = FileUtils.getFile("TmpD", [
-    "TestScreenshotFile-same-origin-iframe.png",
-  ]);
-  await executeAndWaitForMessage(
+  const sameOriginIframeScreenshotFile = new FileUtils.File(
+    PathUtils.join(
+      PathUtils.tempDir,
+      "TestScreenshotFile-same-origin-iframe.png"
+    )
+  );
+  await executeAndWaitForMessageByType(
     hud,
     `:screenshot --selector #same-origin-iframe ${sameOriginIframeScreenshotFile.path} ${dpr}`,
-    `Saved to ${sameOriginIframeScreenshotFile.path}`
+    `Saved to ${sameOriginIframeScreenshotFile.path}`,
+    ".console-api"
   );
 
   let fileExists = sameOriginIframeScreenshotFile.exists();
@@ -51,7 +51,7 @@ add_task(async function() {
 
   info("Create an image using the downloaded file as source");
   let image = new Image();
-  image.src = OS.Path.toFileURI(sameOriginIframeScreenshotFile.path);
+  image.src = PathUtils.toFileURI(sameOriginIframeScreenshotFile.path);
   await once(image, "load");
 
   info("Check that the node was rendered as expected in the screenshot");
@@ -64,7 +64,7 @@ add_task(async function() {
   });
 
   // Remove the downloaded screenshot file and cleanup downloads
-  await OS.File.remove(sameOriginIframeScreenshotFile.path);
+  await IOUtils.remove(sameOriginIframeScreenshotFile.path);
   await resetDownloads();
 
   info("Check using :screenshot --selector in a remote-iframe context");
@@ -94,13 +94,14 @@ add_task(async function() {
     evaluationContextSelectorButton.innerText.includes("example.org")
   );
 
-  const remoteIframeSpanScreenshot = FileUtils.getFile("TmpD", [
-    "TestScreenshotFile-remote-iframe.png",
-  ]);
-  await executeAndWaitForMessage(
+  const remoteIframeSpanScreenshot = new FileUtils.File(
+    PathUtils.join(PathUtils.tempDir, "TestScreenshotFile-remote-iframe.png")
+  );
+  await executeAndWaitForMessageByType(
     hud,
     `:screenshot --selector span ${remoteIframeSpanScreenshot.path} ${dpr}`,
-    `Saved to ${remoteIframeSpanScreenshot.path}`
+    `Saved to ${remoteIframeSpanScreenshot.path}`,
+    ".console-api"
   );
 
   fileExists = remoteIframeSpanScreenshot.exists();
@@ -112,7 +113,7 @@ add_task(async function() {
 
   info("Create an image using the downloaded file as source");
   image = new Image();
-  image.src = OS.Path.toFileURI(remoteIframeSpanScreenshot.path);
+  image.src = PathUtils.toFileURI(remoteIframeSpanScreenshot.path);
   await once(image, "load");
 
   info("Check that the node was rendered as expected in the screenshot");
@@ -127,10 +128,11 @@ add_task(async function() {
   info(
     "Check that using a selector that doesn't match any element displays a warning in console"
   );
-  await executeAndWaitForMessage(
+  await executeAndWaitForMessageByType(
     hud,
     `:screenshot --selector #this-element-does-not-exist`,
-    `The ‘#this-element-does-not-exist’ selector does not match any element on the page.`
+    `The ‘#this-element-does-not-exist’ selector does not match any element on the page.`,
+    ".warn"
   );
   ok(
     true,
@@ -138,6 +140,6 @@ add_task(async function() {
   );
 
   // Remove the downloaded screenshot file and cleanup downloads
-  await OS.File.remove(remoteIframeSpanScreenshot.path);
+  await IOUtils.remove(remoteIframeSpanScreenshot.path);
   await resetDownloads();
 });

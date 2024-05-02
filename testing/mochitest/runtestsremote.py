@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import datetime
 import os
 import posixpath
@@ -14,12 +13,12 @@ import uuid
 
 sys.path.insert(0, os.path.abspath(os.path.realpath(os.path.dirname(__file__))))
 
-from runtests import MochitestDesktop, MessageLogger
-from mochitest_options import MochitestArgumentParser, build_obj
-from mozdevice import ADBDeviceFactory, ADBTimeoutError, RemoteProcessMonitor
-from mozscreenshot import dump_screen, dump_device_screen
 import mozcrash
 import mozinfo
+from mochitest_options import MochitestArgumentParser, build_obj
+from mozdevice import ADBDeviceFactory, ADBTimeoutError, RemoteProcessMonitor
+from mozscreenshot import dump_device_screen, dump_screen
+from runtests import MessageLogger, MochitestDesktop
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
 
@@ -107,7 +106,6 @@ class MochiRemote(MochitestDesktop):
             % str(self.device.version)
         )
         mozinfo.info["android_version"] = str(self.device.version)
-        mozinfo.info["is_fennec"] = not ("geckoview" in options.app)
         mozinfo.info["is_emulator"] = self.device._device_serial.startswith("emulator-")
 
     def cleanup(self, options, final=False):
@@ -343,6 +341,7 @@ class MochiRemote(MochitestDesktop):
         e10s=True,
         runFailures=False,
         crashAsPass=False,
+        currentManifest=None,
     ):
         """
         Run the app, log the duration it took to execute, return the status code.
@@ -385,7 +384,10 @@ class MochiRemote(MochitestDesktop):
             "runtestsremote.py | Application ran for: %s"
             % str(datetime.datetime.now() - startTime)
         )
-        crashed = self.check_for_crashes(symbolsPath, rpm.last_test_seen)
+
+        lastTestSeen = currentManifest or "Main app process exited normally"
+
+        crashed = self.check_for_crashes(symbolsPath, lastTestSeen)
         if crashed:
             status = 1
 
@@ -393,7 +395,7 @@ class MochiRemote(MochitestDesktop):
         self.countfail += rpm.counts["fail"]
         self.counttodo += rpm.counts["todo"]
 
-        return status, rpm.last_test_seen
+        return status, lastTestSeen
 
     def check_for_crashes(self, symbols_path, last_test_seen):
         """

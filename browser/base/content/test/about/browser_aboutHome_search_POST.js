@@ -4,7 +4,7 @@
 
 ignoreAllUncaughtExceptions();
 
-add_task(async function() {
+add_task(async function () {
   info("Check POST search engine support");
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -54,12 +54,16 @@ add_task(async function() {
       let engine;
       await promiseContentSearchChange(browser, async () => {
         Services.search.addOpenSearchEngine(
+          // eslint-disable-next-line @microsoft/sdl/no-insecure-url
           "http://test:80/browser/browser/base/content/test/about/POSTSearchEngine.xml",
           null
         );
 
         engine = await observerPromise;
-        Services.search.setDefault(engine);
+        Services.search.setDefault(
+          engine,
+          Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+        );
         return engine.name;
       });
 
@@ -67,7 +71,7 @@ add_task(async function() {
       let needle = "Search for something awesome.";
 
       let promise = BrowserTestUtils.browserLoaded(browser);
-      await SpecialPowers.spawn(browser, [{ needle }], async function(args) {
+      await SpecialPowers.spawn(browser, [{ needle }], async function (args) {
         let doc = content.document;
         let el = doc.querySelector(["#searchText", "#newtab-search-text"]);
         el.value = args.needle;
@@ -77,7 +81,7 @@ add_task(async function() {
       await promise;
 
       // When the search results load, check them for correctness.
-      await SpecialPowers.spawn(browser, [{ needle }], async function(args) {
+      await SpecialPowers.spawn(browser, [{ needle }], async function (args) {
         let loadedText = content.document.body.textContent;
         ok(loadedText, "search page loaded");
         is(
@@ -87,7 +91,10 @@ add_task(async function() {
         );
       });
 
-      await Services.search.setDefault(currEngine);
+      await Services.search.setDefault(
+        currEngine,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
       try {
         await Services.search.removeEngine(engine);
       } catch (ex) {}

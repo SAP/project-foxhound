@@ -6,13 +6,13 @@
 
 "use strict";
 
-const CanvasUtils = require("devtools/client/memory/components/tree-map/canvas-utils");
+const CanvasUtils = require("resource://devtools/client/memory/components/tree-map/canvas-utils.js");
 const D3_SCRIPT =
   '<script type="application/javascript" ' +
   'src="chrome://global/content/third_party/d3/d3.js">';
 const TEST_URL = `data:text/html,<html><body>${D3_SCRIPT}</body></html>`;
 
-this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function ({ tab, panel }) {
   const document = panel.panelWin.document;
   const window = panel.panelWin;
   const div = document.createElement("div");
@@ -55,7 +55,7 @@ this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
   info("Test resizing");
 
   let timesResizeCalled = 0;
-  canvases.on("resize", function() {
+  canvases.on("resize", function () {
     timesResizeCalled++;
   });
 

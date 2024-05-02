@@ -19,7 +19,6 @@ var createCredentialDefaultArgs = {
             // Relying Party:
             rp: {
                 name: "Acme",
-                icon: "https://www.w3.org/StyleSheets/TR/2016/logos/W3C"
             },
 
             // User:
@@ -27,7 +26,6 @@ var createCredentialDefaultArgs = {
                 id: new Uint8Array(16), // Won't survive the copy, must be rebuilt
                 name: "john.p.smith@example.com",
                 displayName: "John P. Smith",
-                icon: "https://pics.acme.com/00/p/aBjjjpqPb.png"
             },
 
             pubKeyCredParams: [{
@@ -73,6 +71,15 @@ function createCredential(opts) {
 
     // create the credential, return the Promise
     return navigator.credentials.create(createArgs.options);
+}
+
+function assertCredential(credential) {
+    var options = cloneObject(getCredentialDefaultArgs);
+    let challengeBytes = new Uint8Array(16);
+    window.crypto.getRandomValues(challengeBytes);
+    options.challenge = challengeBytes;
+    options.allowCredentials = [{type: 'public-key', id: credential.rawId}];
+    return navigator.credentials.get({publicKey: options});
 }
 
 function createRandomString(len) {
@@ -343,7 +350,7 @@ function cloneObject(o) {
 
 function extendObject(dst, src) {
     Object.keys(src).forEach(function(key) {
-        if (isSimpleObject(src[key])) {
+        if (isSimpleObject(src[key]) && !isAbortSignal(src[key])) {
             dst[key] ||= {};
             extendObject(dst[key], src[key]);
         } else {
@@ -356,6 +363,10 @@ function isSimpleObject(o) {
     return (typeof o === "object" &&
         !Array.isArray(o) &&
         !(o instanceof ArrayBuffer));
+}
+
+function isAbortSignal(o) {
+    return (o instanceof AbortSignal);
 }
 
 /**

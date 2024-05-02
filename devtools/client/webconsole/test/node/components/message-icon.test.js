@@ -2,13 +2,18 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const { MESSAGE_LEVEL } = require("devtools/client/webconsole/constants");
+const {
+  MESSAGE_LEVEL,
+  MESSAGE_TYPE,
+} = require("resource://devtools/client/webconsole/constants.js");
 
 const expect = require("expect");
 const { render } = require("enzyme");
-const { createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+} = require("resource://devtools/client/shared/vendor/react.js");
 const MessageIcon = createFactory(
-  require("devtools/client/webconsole/components/Output/MessageIcon")
+  require("resource://devtools/client/webconsole/components/Output/MessageIcon.js")
 );
 
 describe("MessageIcon component:", () => {
@@ -27,5 +32,39 @@ describe("MessageIcon component:", () => {
       })
     );
     expect(rendered.hasClass("logpoint")).toBe(true);
+  });
+
+  it("renders evaluation expression items", () => {
+    const rendered = render(
+      MessageIcon({
+        level: MESSAGE_LEVEL.LOG,
+        type: MESSAGE_TYPE.COMMAND,
+      })
+    );
+    expect(rendered.hasClass("icon")).toBe(true);
+    expect(rendered.attr("title")).toBe("Evaluated code");
+  });
+
+  it("renders evaluation expression result items", () => {
+    const rendered = render(
+      MessageIcon({
+        level: MESSAGE_LEVEL.LOG,
+        type: MESSAGE_TYPE.RESULT,
+      })
+    );
+    expect(rendered.hasClass("icon")).toBe(true);
+    expect(rendered.attr("title")).toBe("Evaluation result");
+  });
+
+  it("renders icon with custom title", () => {
+    const expectedTitle = "Rendered with custom title";
+    const rendered = render(
+      MessageIcon({
+        level: MESSAGE_LEVEL.INFO,
+        type: "info",
+        title: expectedTitle,
+      })
+    );
+    expect(rendered.attr("title")).toBe(expectedTitle);
   });
 });

@@ -8,6 +8,7 @@
 #define mozilla_dom_ClonedErrorHolder_h
 
 #include "nsISupportsImpl.h"
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "js/ErrorReport.h"
 #include "js/TypeDecls.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -65,7 +66,7 @@ class ClonedErrorHolder final {
   // Creates a new JS Error or Exception/DOMException object based on the
   // values stored in the holder. Returns false and sets an exception on aCx
   // if it fails.
-  bool ToErrorValue(JSContext* aCx, JS::MutableHandleValue aResult);
+  bool ToErrorValue(JSContext* aCx, JS::MutableHandle<JS::Value> aResult);
 
   class Holder final : public StructuredCloneHolder {
    public:
@@ -82,10 +83,10 @@ class ClonedErrorHolder final {
   nsCString mFilename;    // JSError only
   nsCString mSourceLine;  // JSError only
 
-  uint32_t mLineNumber = 0;   // JSError only
-  uint32_t mColumn = 0;       // JSError only
-  uint32_t mTokenOffset = 0;  // JSError only
-  uint32_t mErrorNumber = 0;  // JSError only
+  uint32_t mLineNumber = 0;           // JSError only
+  JS::ColumnNumberOneOrigin mColumn;  // JSError only
+  uint32_t mTokenOffset = 0;          // JSError only
+  uint32_t mErrorNumber = 0;          // JSError only
 
   Type mType = Type::Uninitialized;
 

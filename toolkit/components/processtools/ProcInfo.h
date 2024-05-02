@@ -38,14 +38,13 @@ nsresult GetGpuTimeSinceProcessStartInMs(uint64_t* aResult);
 // WebIDLProcType, ChromeUtils::RequestProcInfo and ProcTypeToWebIDL to
 // mirror the changes.
 enum class ProcType {
-  // These must match the ones in RemoteType.h, and E10SUtils.jsm
+  // These must match the ones in RemoteType.h, and E10SUtils.sys.mjs
   Web,
   WebIsolated,
   File,
   Extension,
   PrivilegedAbout,
   PrivilegedMozilla,
-  WebLargeAllocation,
   WebCOOPCOEP,
   WebServiceWorker,
 // the rest matches GeckoProcessTypes.h
@@ -68,6 +67,11 @@ enum class ProcType {
   Unknown,
   Max = Unknown,
 };
+
+using UtilityActorName = mozilla::dom::WebIDLUtilityActorName;
+
+// String that will be used e.g. to annotate crash reports
+nsCString GetUtilityActorName(const UtilityActorName aActorName);
 
 /* Get the CPU frequency to use to convert cycle time values to actual time.
  * @returns the TSC (Time Stamp Counter) frequency in MHz, or 0 if converting
@@ -117,6 +121,13 @@ struct WindowInfo {
   const bool isInProcess;
 };
 
+// Info on a Utility process actor
+struct UtilityInfo {
+  explicit UtilityInfo() : actorName(UtilityActorName::Unknown) {}
+  explicit UtilityInfo(UtilityActorName aActorName) : actorName(aActorName) {}
+  const UtilityActorName actorName;
+};
+
 struct ProcInfo {
   // Process Id
   base::ProcessId pid = 0;
@@ -135,6 +146,8 @@ struct ProcInfo {
   CopyableTArray<ThreadInfo> threads;
   // DOM windows represented by this process.
   CopyableTArray<WindowInfo> windows;
+  // Utility process actors, empty for non Utility process
+  CopyableTArray<UtilityInfo> utilityActors;
 };
 
 typedef MozPromise<mozilla::HashMap<base::ProcessId, ProcInfo>, nsresult, true>
@@ -153,7 +166,7 @@ typedef MozPromise<mozilla::HashMap<base::ProcessId, ProcInfo>, nsresult, true>
 struct ProcInfoRequest {
   ProcInfoRequest(base::ProcessId aPid, ProcType aProcessType,
                   const nsACString& aOrigin, nsTArray<WindowInfo>&& aWindowInfo,
-                  uint32_t aChildId = 0
+                  nsTArray<UtilityInfo>&& aUtilityInfo, uint32_t aChildId = 0
 #ifdef XP_MACOSX
                   ,
                   mach_port_t aChildTask = 0
@@ -163,6 +176,7 @@ struct ProcInfoRequest {
         processType(aProcessType),
         origin(aOrigin),
         windowInfo(std::move(aWindowInfo)),
+        utilityInfo(std::move(aUtilityInfo)),
         childId(aChildId)
 #ifdef XP_MACOSX
         ,
@@ -174,6 +188,7 @@ struct ProcInfoRequest {
   const ProcType processType;
   const nsCString origin;
   const nsTArray<WindowInfo> windowInfo;
+  const nsTArray<UtilityInfo> utilityInfo;
   // If the process is a child, its child id, otherwise `0`.
   const int32_t childId;
 #ifdef XP_MACOSX

@@ -7,6 +7,7 @@
 #ifndef mozilla_net_BaseWebSocketChannel_h
 #define mozilla_net_BaseWebSocketChannel_h
 
+#include "mozilla/DataMutex.h"
 #include "nsIWebSocketChannel.h"
 #include "nsIWebSocketListener.h"
 #include "nsIProtocolHandler.h"
@@ -76,6 +77,9 @@ class BaseWebSocketChannel : public nsIWebSocketChannel,
   virtual void GetEffectiveURL(nsAString& aEffectiveURL) const = 0;
   virtual bool IsEncrypted() const = 0;
 
+  already_AddRefed<nsISerialEventTarget> GetTargetThread();
+  bool IsOnTargetThread();
+
   class ListenerAndContextContainer final {
    public:
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ListenerAndContextContainer)
@@ -91,14 +95,20 @@ class BaseWebSocketChannel : public nsIWebSocketChannel,
   };
 
  protected:
+  virtual ~BaseWebSocketChannel();
   nsCOMPtr<nsIURI> mOriginalURI;
   nsCOMPtr<nsIURI> mURI;
   RefPtr<ListenerAndContextContainer> mListenerMT;
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
   nsCOMPtr<nsILoadInfo> mLoadInfo;
-  nsCOMPtr<nsIEventTarget> mTargetThread;
   nsCOMPtr<nsITransportProvider> mServerTransportProvider;
+
+  // Used to ensure atomicity of mTargetThread.
+  // Set before AsyncOpen via RetargetDeliveryTo or in AsyncOpen, never changed
+  // after AsyncOpen
+  DataMutex<nsCOMPtr<nsISerialEventTarget>> mTargetThread{
+      "BaseWebSocketChannel::EventTargetMutex"};
 
   nsCString mProtocol;
   nsCString mOrigin;
@@ -113,8 +123,8 @@ class BaseWebSocketChannel : public nsIWebSocketChannel,
   bool mPingForced;
   bool mIsServerSide;
 
-  uint32_t mPingInterval;        /* milliseconds */
-  uint32_t mPingResponseTimeout; /* milliseconds */
+  Atomic<uint32_t> mPingInterval; /* milliseconds */
+  uint32_t mPingResponseTimeout;  /* milliseconds */
 
   uint32_t mSerial;
 

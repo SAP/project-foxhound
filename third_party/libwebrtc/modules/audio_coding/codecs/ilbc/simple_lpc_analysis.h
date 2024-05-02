@@ -19,6 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SIMPLE_LPC_ANALYSIS_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SIMPLE_LPC_ANALYSIS_H_
 
+#include <stdint.h>
+
 #include "modules/audio_coding/codecs/ilbc/defines.h"
 
 /*----------------------------------------------------------------*
@@ -30,6 +32,6 @@ void WebRtcIlbcfix_SimpleLpcAnalysis(
     int16_t* data, /* (i) new block of speech */
     IlbcEncoder* iLBCenc_inst
     /* (i/o) the encoder state structure */
-    );
+);
 
 #endif

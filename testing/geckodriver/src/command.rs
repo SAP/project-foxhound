@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use crate::logging;
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use hyper::Method;
 use serde::de::{self, Deserialize, Deserializer};
 use serde_json::{self, Value};
@@ -15,10 +17,8 @@ use webdriver::error::WebDriverResult;
 use webdriver::httpapi::WebDriverExtensionRoute;
 use webdriver::Parameters;
 
-pub const CHROME_ELEMENT_KEY: &str = "chromeelement-9fc5-4b51-a3c8-01716eedeb04";
-
 pub fn extension_routes() -> Vec<(Method, &'static str, GeckoExtensionRoute)> {
-    return vec![
+    vec![
         (
             Method::GET,
             "/session/{sessionId}/moz/context",
@@ -44,10 +44,10 @@ pub fn extension_routes() -> Vec<(Method, &'static str, GeckoExtensionRoute)> {
             "/session/{sessionId}/moz/screenshot/full",
             GeckoExtensionRoute::TakeFullScreenshot,
         ),
-    ];
+    ]
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum GeckoExtensionRoute {
     GetContext,
     SetContext,
@@ -106,7 +106,7 @@ impl WebDriverExtensionCommand for GeckoExtensionCommand {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct AddonInstallParameters {
     pub path: String,
     pub temporary: Option<bool>,
@@ -144,7 +144,9 @@ impl<'de> Deserialize<'de> for AddonInstallParameters {
                 temporary: data.temporary,
             },
             Helper::Base64(ref mut data) => {
-                let content = base64::decode(&data.addon).map_err(de::Error::custom)?;
+                let content = BASE64_STANDARD
+                    .decode(&data.addon)
+                    .map_err(de::Error::custom)?;
 
                 let path = env::temp_dir()
                     .as_path()
@@ -170,30 +172,30 @@ impl<'de> Deserialize<'de> for AddonInstallParameters {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddonUninstallParameters {
     pub id: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GeckoContext {
     Content,
     Chrome,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeckoContextParameters {
     pub context: GeckoContext,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct XblLocatorParameters {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct LogOptions {
     pub level: Option<logging::Level>,
 }

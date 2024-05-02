@@ -5,7 +5,10 @@
 // Test that pausing within an event handler on an element does *not* show the
 // HTML page containing that element. It should show a sources tab containing
 // just the handler's text instead.
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-event-handler.html");
 
   invokeInTab("synthesizeClick");

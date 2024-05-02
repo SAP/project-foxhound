@@ -22,7 +22,7 @@ class Promise;
 class Permissions final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Permissions)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Permissions)
 
   explicit Permissions(nsPIDOMWindowInner* aWindow);
 
@@ -34,13 +34,6 @@ class Permissions final : public nsISupports, public nsWrapperCache {
   already_AddRefed<Promise> Query(JSContext* aCx,
                                   JS::Handle<JSObject*> aPermission,
                                   ErrorResult& aRv);
-
-  static nsresult RemovePermission(nsIPrincipal* aPrincipal,
-                                   const nsACString& aPermissionType);
-
-  already_AddRefed<Promise> Revoke(JSContext* aCx,
-                                   JS::Handle<JSObject*> aPermission,
-                                   ErrorResult& aRv);
 
  private:
   ~Permissions();

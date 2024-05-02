@@ -4,83 +4,109 @@
 
 "use strict";
 
-const Services = require("Services");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { Cc, Ci } = require("chrome");
+/*
+ * Represents any process running in Firefox.
+ * This can be:
+ *  - the parent process, where all top level chrome window runs:
+ *    like browser.xhtml, sidebars, devtools iframes, the browser console, ...
+ *  - any content process
+ *
+ * There is some special cases in the class around:
+ *  - xpcshell, where there is only one process which doesn't expose any DOM document
+ *    And instead of exposing a ParentProcessTargetActor, getTarget will return
+ *    a ContentProcessTargetActor.
+ *  - background task, similarly to xpcshell, they don't expose any DOM document
+ *    and this also works with a ContentProcessTargetActor.
+ *
+ * See devtools/docs/backend/actor-hierarchy.md for more details.
+ */
+
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  processDescriptorSpec,
+} = require("resource://devtools/shared/specs/descriptors/process.js");
+
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 
 const {
   createBrowserSessionContext,
-} = require("devtools/server/actors/watcher/session-context");
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
-const {
-  processDescriptorSpec,
-} = require("devtools/shared/specs/descriptors/process");
+  createContentProcessSessionContext,
+} = require("resource://devtools/server/actors/watcher/session-context.js");
 
 loader.lazyRequireGetter(
   this,
   "ContentProcessTargetActor",
-  "devtools/server/actors/targets/content-process",
+  "resource://devtools/server/actors/targets/content-process.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ParentProcessTargetActor",
-  "devtools/server/actors/targets/parent-process",
+  "resource://devtools/server/actors/targets/parent-process.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "connectToContentProcess",
-  "devtools/server/connectors/content-process-connector",
+  "resource://devtools/server/connectors/content-process-connector.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WatcherActor",
-  "devtools/server/actors/watcher",
+  "resource://devtools/server/actors/watcher.js",
   true
 );
 
-const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
-  initialize(connection, options = {}) {
+class ProcessDescriptorActor extends Actor {
+  constructor(connection, options = {}) {
+    super(connection, processDescriptorSpec);
+
     if ("id" in options && typeof options.id != "number") {
       throw Error("process connect requires a valid `id` attribute.");
     }
-    Actor.prototype.initialize.call(this, connection);
+
     this.id = options.id;
     this._windowGlobalTargetActor = null;
     this.isParent = options.parent;
     this.destroy = this.destroy.bind(this);
-  },
+  }
 
   get browsingContextID() {
     if (this._windowGlobalTargetActor) {
       return this._windowGlobalTargetActor.docShell.browsingContext.id;
     }
     return null;
-  },
+  }
 
   get isWindowlessParent() {
-    return this.isParent && this.isXpcshell;
-  },
+    return this.isParent && (this.isXpcshell || this.isBackgroundTaskMode);
+  }
 
   get isXpcshell() {
-    const env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
+    return Services.env.exists("XPCSHELL_TEST_PROFILE_DIR");
+  }
+
+  get isBackgroundTaskMode() {
+    const bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
+      Ci.nsIBackgroundTasks
     );
-    return env.exists("XPCSHELL_TEST_PROFILE_DIR");
-  },
+    return bts && bts.isBackgroundTaskMode;
+  }
 
   _parentProcessConnect() {
     let targetActor;
-    if (this.isXpcshell) {
-      // Check if we are running on xpcshell.
-      // When running on xpcshell, there is no valid browsing context to attach to
+    if (this.isWindowlessParent) {
+      // Check if we are running on xpcshell or in background task mode.
+      // In these modes, there is no valid browsing context to attach to
       // and so ParentProcessTargetActor doesn't make sense as it inherits from
       // WindowGlobalTargetActor. So instead use ContentProcessTargetActor, which
-      // matches xpcshell needs.
+      // matches the needs of these modes.
       targetActor = new ContentProcessTargetActor(this.conn, {
         isXpcShellTarget: true,
+        sessionContext: createContentProcessSessionContext(),
       });
     } else {
       // Create the target actor for the parent process, which is in the same process
@@ -103,7 +129,7 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
     // to be consistent with the return value of the _childProcessConnect, we are returning
     // the form here. This might be memoized in the future
     return targetActor.form();
-  },
+  }
 
   /**
    * Connect to a remote process actor, always a ContentProcess target.
@@ -123,7 +149,7 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       this.destroy
     );
     return childTargetForm;
-  },
+  }
 
   _lookupMessageManager(id) {
     for (let i = 0; i < Services.ppmm.childCount; i++) {
@@ -135,7 +161,7 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       }
     }
     return null;
-  },
+  }
 
   /**
    * Connect the a process actor.
@@ -152,7 +178,7 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
     }
     // This is a remote process we are connecting to
     return this._childProcessConnect();
-  },
+  }
 
   /**
    * Return a Watcher actor, allowing to keep track of targets which
@@ -165,7 +191,7 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       this.manage(this.watcher);
     }
     return this.watcher;
-  },
+  }
 
   form() {
     return {
@@ -175,35 +201,46 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       isWindowlessParent: this.isWindowlessParent,
       traits: {
         // Supports the Watcher actor. Can be removed as part of Bug 1680280.
-        watcher: true,
+        // Bug 1687461: WatcherActor only supports the parent process, where we debug everything.
+        // For the "Browser Content Toolbox", where we debug only one content process,
+        // we will still be using legacy listeners.
+        watcher: this.isParent,
         // ParentProcessTargetActor can be reloaded.
         supportsReloadDescriptor: this.isParent && !this.isWindowlessParent,
       },
     };
-  },
+  }
 
-  async reloadDescriptor({ bypassCache }) {
+  async reloadDescriptor() {
     if (!this.isParent || this.isWindowlessParent) {
       throw new Error(
-        "reloadDescriptor is only available for parent process descriptors linked to a window"
+        "reloadDescriptor is only available for parent process descriptors"
       );
     }
 
-    // For parent process debugging, we only reload the current top level
-    // browser window.
-    this._windowGlobalTargetActor.browsingContext.reload(
-      bypassCache
-        ? Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE
-        : Ci.nsIWebNavigation.LOAD_FLAGS_NONE
+    // Reload for the parent process will restart the whole browser
+    //
+    // This aims at replicate `DevelopmentHelpers.quickRestart`
+    // This allows a user to do a full firefox restart + session restore
+    // Via Ctrl+Alt+R on the Browser Console/Toolbox
+
+    // Maximize the chance of fetching new source content by clearing the cache
+    Services.obs.notifyObservers(null, "startupcache-invalidate");
+
+    // Avoid safemode popup from appearing on restart
+    Services.env.set("MOZ_DISABLE_SAFE_MODE_KEY", "1");
+
+    Services.startup.quit(
+      Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart
     );
-  },
+  }
 
   destroy() {
     this.emit("descriptor-destroyed");
 
     this._windowGlobalTargetActor = null;
-    Actor.prototype.destroy.call(this);
-  },
-});
+    super.destroy();
+  }
+}
 
 exports.ProcessDescriptorActor = ProcessDescriptorActor;

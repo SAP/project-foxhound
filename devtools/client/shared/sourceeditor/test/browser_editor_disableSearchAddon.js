@@ -6,7 +6,6 @@
 // Ensure disableSearchAddon config works as expected in the source editor.
 
 const isMacOS = Services.appinfo.OS === "Darwin";
-const { LocalizationHelper } = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/sourceeditor.properties"
 );
@@ -16,7 +15,7 @@ const REPLACE_KEY = L10N.getStr(
   isMacOS ? "replaceAllMac.key" : "replaceAll.key"
 );
 
-add_task(async function() {
+add_task(async function () {
   const { ed, win } = await setup({
     disableSearchAddon: true,
   });

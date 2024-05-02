@@ -15,6 +15,7 @@
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/Try.h"
 #include "jsapi.h"
 #include "js/PropertyAndElement.h"  // JS_SetProperty
 #include "mozilla/dom/Promise.h"
@@ -50,6 +51,7 @@
 #ifdef MOZ_WIDGET_GTK
 #  include <gtk/gtk.h>
 #  include <dlfcn.h>
+#  include "mozilla/WidgetUtilsGtk.h"
 #endif
 
 #if defined(XP_LINUX) && !defined(ANDROID)
@@ -595,6 +597,7 @@ static const struct PropItems {
 
 nsresult CollectProcessInfo(ProcessInfo& info) {
   nsAutoCString cpuVendor;
+  nsAutoCString cpuName;
   int cpuSpeed = -1;
   int cpuFamily = -1;
   int cpuModel = -1;
@@ -691,6 +694,20 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       CopyUTF16toUTF8(nsDependentString(cpuVendorStr), cpuVendor);
     }
 
+    // Limit to 64 double byte characters, should be plenty, but create
+    // a buffer one larger as the result may not be null terminated. If
+    // it is more than 64, we will not get the value.
+    // The expected string size is 48 characters or less.
+    wchar_t cpuNameStr[64 + 1];
+    len = sizeof(cpuNameStr) - 2;
+    if (RegQueryValueExW(key, L"ProcessorNameString", 0, &vtype,
+                         reinterpret_cast<LPBYTE>(cpuNameStr),
+                         &len) == ERROR_SUCCESS &&
+        vtype == REG_SZ && len % 2 == 0 && len > 1) {
+      cpuNameStr[len / 2] = 0;  // In case it isn't null terminated
+      CopyUTF16toUTF8(nsDependentString(cpuNameStr), cpuName);
+    }
+
     RegCloseKey(key);
   }
 
@@ -748,6 +765,14 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
     delete[] cpuVendorStr;
   }
 
+  if (!sysctlbyname("machdep.cpu.brand_string", NULL, &len, NULL, 0)) {
+    char* cpuNameStr = new char[len];
+    if (!sysctlbyname("machdep.cpu.brand_string", cpuNameStr, &len, NULL, 0)) {
+      cpuName = cpuNameStr;
+    }
+    delete[] cpuNameStr;
+  }
+
   len = sizeof(sysctlValue32);
   if (!sysctlbyname("machdep.cpu.family", &sysctlValue32, &len, NULL, 0)) {
     cpuFamily = static_cast<int>(sysctlValue32);
@@ -775,6 +800,9 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
 
     // cpuVendor from "vendor_id"
     info.cpuVendor.Assign(keyValuePairs["vendor_id"_ns]);
+
+    // cpuName from "model name"
+    info.cpuName.Assign(keyValuePairs["model name"_ns]);
 
     {
       // cpuFamily from "cpu family"
@@ -873,6 +901,9 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
   if (!cpuVendor.IsEmpty()) {
     info.cpuVendor = cpuVendor;
   }
+  if (!cpuName.IsEmpty()) {
+    info.cpuName = cpuName;
+  }
   if (cpuFamily >= 0) {
     info.cpuFamily = cpuFamily;
   }
@@ -900,7 +931,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
   return NS_OK;
 }
 
-#if defined(XP_WIN) && (_WIN32_WINNT < 0x0A00)
+#if defined(__MINGW32__)
 WINBASEAPI
 BOOL WINAPI IsUserCetAvailableInEnvironment(_In_ DWORD UserCetEnvironment);
 
@@ -934,9 +965,7 @@ nsresult nsSystemInfo::Init() {
     }
   }
 
-  rv = SetPropertyAsBool(NS_ConvertASCIItoUTF16("hasWindowsTouchInterface"),
-                         false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  SetPropertyAsBool(u"isPackagedApp"_ns, false);
 
   // Additional informations not available through PR_GetSystemInfo.
   SetInt32Property(u"pagesize"_ns, PR_GetPageSize());
@@ -977,14 +1006,20 @@ nsresult nsSystemInfo::Init() {
     return rv;
   }
 
-  rv = SetPropertyAsBool(u"hasWinPackageId"_ns,
-                         widget::WinUtils::HasPackageIdentity());
+  boolean hasPackageIdentity = widget::WinUtils::HasPackageIdentity();
+
+  rv = SetPropertyAsBool(u"hasWinPackageId"_ns, hasPackageIdentity);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   rv = SetPropertyAsAString(u"winPackageFamilyName"_ns,
                             widget::WinUtils::GetPackageFamilyName());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = SetPropertyAsBool(u"isPackagedApp"_ns, hasPackageIdentity);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1023,6 +1058,13 @@ nsresult nsSystemInfo::Init() {
   bool hasUserCET = isUserCetAvailable &&
                     isUserCetAvailable(USER_CET_ENVIRONMENT_WIN32_PROCESS);
   rv = SetPropertyAsBool(u"hasUserCET"_ns, hasUserCET);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  nsString pointerExplanation;
+  widget::WinUtils::GetPointerExplanation(&pointerExplanation);
+  rv = SetPropertyAsAString(u"pointingDevices"_ns, pointerExplanation);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1091,6 +1133,12 @@ nsresult nsSystemInfo::Init() {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+  rv = SetPropertyAsBool(u"isPackagedApp"_ns,
+                         widget::IsRunningUnderFlatpakOrSnap() ||
+                             widget::IsPackagedAppFileExists());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -1151,7 +1199,7 @@ void nsSystemInfo::GetAndroidSystemInfo(AndroidSystemInfo* aInfo) {
   jni::String::LocalRef hardware = java::sdk::Build::HARDWARE();
   aInfo->hardware() = hardware->ToString();
 
-  jni::String::LocalRef release = java::sdk::VERSION::RELEASE();
+  jni::String::LocalRef release = java::sdk::Build::VERSION::RELEASE();
   nsString str(release->ToString());
   int major_version;
   int minor_version;
@@ -1318,6 +1366,11 @@ JSObject* GetJSObjForProcessInfo(JSContext* aCx, const ProcessInfo& info) {
       JS_NewStringCopyN(aCx, info.cpuVendor.get(), info.cpuVendor.Length());
   JS::Rooted<JS::Value> valVendor(aCx, JS::StringValue(strVendor));
   JS_SetProperty(aCx, jsInfo, "vendor", valVendor);
+
+  JSString* strName =
+      JS_NewStringCopyN(aCx, info.cpuName.get(), info.cpuName.Length());
+  JS::Rooted<JS::Value> valName(aCx, JS::StringValue(strName));
+  JS_SetProperty(aCx, jsInfo, "name", valName);
 
   JS::Rooted<JS::Value> valFamilyInfo(aCx, JS::Int32Value(info.cpuFamily));
   JS_SetProperty(aCx, jsInfo, "family", valFamilyInfo);

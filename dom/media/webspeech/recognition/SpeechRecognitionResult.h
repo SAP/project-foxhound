@@ -17,8 +17,7 @@
 
 #include "SpeechRecognitionAlternative.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SpeechRecognitionResult final : public nsISupports,
                                       public nsWrapperCache {
@@ -26,7 +25,7 @@ class SpeechRecognitionResult final : public nsISupports,
   explicit SpeechRecognitionResult(SpeechRecognition* aParent);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(SpeechRecognitionResult)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(SpeechRecognitionResult)
 
   nsISupports* GetParentObject() const;
 
@@ -50,7 +49,6 @@ class SpeechRecognitionResult final : public nsISupports,
   RefPtr<SpeechRecognition> mParent;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

@@ -3,72 +3,82 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { PureComponent } from "react";
+import { div, span } from "react-dom-factories";
+import PropTypes from "prop-types";
+
 import { connect } from "../../../utils/connect";
 import actions from "../../../actions";
+
 import {
   getTruncatedFileName,
   getDisplayPath,
   getSourceQueryString,
   getFileURL,
 } from "../../../utils/source";
-import {
-  getHasSiblingOfSameName,
-  getBreakpointsForSource,
-  getContext,
-} from "../../../selectors";
+import { createLocation } from "../../../utils/location";
+import { getFirstSourceActorForGeneratedSource } from "../../../selectors";
 
 import SourceIcon from "../../shared/SourceIcon";
 
-import showContextMenu from "./BreakpointHeadingsContextMenu";
-
 class BreakpointHeading extends PureComponent {
-  onContextMenu = e => {
-    showContextMenu({ ...this.props, contextMenuEvent: e });
+  static get propTypes() {
+    return {
+      sources: PropTypes.array.isRequired,
+      source: PropTypes.object.isRequired,
+      firstSourceActor: PropTypes.object,
+      selectSource: PropTypes.func.isRequired,
+      showBreakpointHeadingContextMenu: PropTypes.func.isRequired,
+    };
+  }
+  onContextMenu = event => {
+    event.preventDefault();
+
+    this.props.showBreakpointHeadingContextMenu(event, this.props.source);
   };
 
   render() {
-    const {
-      cx,
-      sources,
-      source,
-      hasSiblingOfSameName,
-      selectSource,
-    } = this.props;
+    const { sources, source, selectSource } = this.props;
 
     const path = getDisplayPath(source, sources);
-    const query = hasSiblingOfSameName ? getSourceQueryString(source) : "";
-
-    return (
-      <div
-        className="breakpoint-heading"
-        title={getFileURL(source, false)}
-        onClick={() => selectSource(cx, source.id)}
-        onContextMenu={this.onContextMenu}
-      >
-        <SourceIcon
-          source={source}
-          modifier={icon =>
-            ["file", "javascript"].includes(icon) ? null : icon
-          }
-        />
-        <div className="filename">
-          {getTruncatedFileName(source, query)}
-          {path && <span>{`../${path}/..`}</span>}
-        </div>
-      </div>
+    const query = getSourceQueryString(source);
+    return div(
+      {
+        className: "breakpoint-heading",
+        title: getFileURL(source, false),
+        onClick: () => selectSource(source),
+        onContextMenu: this.onContextMenu,
+      },
+      React.createElement(
+        SourceIcon,
+        // Breakpoints are displayed per source and may relate to many source actors.
+        // Arbitrarily pick the first source actor to compute the matching source icon
+        // The source actor is used to pick one specific source text content and guess
+        // the related framework icon.
+        {
+          location: createLocation({
+            source,
+            sourceActor: this.props.firstSourceActor,
+          }),
+          modifier: icon =>
+            ["file", "javascript"].includes(icon) ? null : icon,
+        }
+      ),
+      div(
+        {
+          className: "filename",
+        },
+        getTruncatedFileName(source, query),
+        path && span(null, `../${path}/..`)
+      )
     );
   }
 }
 
 const mapStateToProps = (state, { source }) => ({
-  cx: getContext(state),
-  hasSiblingOfSameName: getHasSiblingOfSameName(state, source),
-  breakpointsForSource: getBreakpointsForSource(state, source.id),
+  firstSourceActor: getFirstSourceActorForGeneratedSource(state, source.id),
 });
 
 export default connect(mapStateToProps, {
   selectSource: actions.selectSource,
-  enableBreakpointsInSource: actions.enableBreakpointsInSource,
-  disableBreakpointsInSource: actions.disableBreakpointsInSource,
-  removeBreakpointsInSource: actions.removeBreakpointsInSource,
+  showBreakpointHeadingContextMenu: actions.showBreakpointHeadingContextMenu,
 })(BreakpointHeading);

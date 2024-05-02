@@ -6,12 +6,8 @@
 
 #include "InlineTranslator.h"
 #include "RecordedEventImpl.h"
-#include "DrawEventRecorder.h"
 
-#include "gfxContext.h"
-#include "nsDeviceContext.h"
 #include "mozilla/gfx/RecordingTypes.h"
-#include "mozilla/UniquePtr.h"
 
 using namespace mozilla::gfx;
 
@@ -66,7 +62,7 @@ bool InlineTranslator::TranslateRecording(char* aData, size_t aLen) {
     return false;
   }
 
-  int32_t eventType;
+  uint8_t eventType;
   ReadElement(reader, eventType);
   while (reader.good()) {
     bool success = RecordedEvent::DoWithEvent(

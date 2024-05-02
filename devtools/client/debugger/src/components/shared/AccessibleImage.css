@@ -59,10 +59,6 @@
   mask-image: url(chrome://devtools/content/debugger/images/breadcrumbs-divider.svg);
 }
 
-.img.case-match {
-  mask-image: url(chrome://devtools/content/debugger/images/case-match.svg);
-}
-
 .img.close {
   mask-image: url(chrome://devtools/skin/images/close.svg);
 }
@@ -107,7 +103,10 @@
 }
 
 .img.loader {
-  mask-image: url(chrome://devtools/content/debugger/images/loader.svg);
+  background-image: url(chrome://devtools/content/debugger/images/loader.svg);
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-color);
+  background-color: unset;
 }
 
 .img.more-tabs {
@@ -116,6 +115,13 @@
 
 html[dir="rtl"] .img.more-tabs {
   transform: scaleX(-1);
+}
+
+.img.sourcemap {
+  background-image: url(chrome://devtools/content/debugger/images/sourcemap.svg);
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-warning-color);
+  background-color: unset;
 }
 
 .img.next {
@@ -139,23 +145,27 @@ html[dir="rtl"] .img.more-tabs {
 }
 
 .img.plus {
-  mask-image: url(chrome://devtools/content/debugger/images/plus.svg);
+  mask-image: url(chrome://devtools/skin/images/add.svg);
 }
 
 .img.prettyPrint {
-  mask-image: url(chrome://devtools/content/debugger/images/prettyPrint.svg);
+  background-image: url(chrome://devtools/content/debugger/images/prettyPrint.svg);
+  background-size: 14px 14px;
+  background-color: transparent !important;
+  fill: var(--theme-icon-color);
+  -moz-context-properties: fill;
+}
+
+.img.removeAll {
+  mask-image: url(chrome://devtools/skin/images/clear.svg)
 }
 
 .img.refresh {
-  mask-image: url(chrome://devtools/content/debugger/images/reload.svg);
-}
-
-.img.regex-match {
-  mask-image: url(chrome://devtools/content/debugger/images/regex-match.svg);
+  mask-image: url(chrome://devtools/skin/images/reload.svg);
 }
 
 .img.resume {
-  mask-image: url(chrome://devtools/content/shared/images/resume.svg);
+  mask-image: url(resource://devtools-shared-images/resume.svg);
 }
 
 .img.search {
@@ -179,15 +189,11 @@ html[dir="rtl"] .img.more-tabs {
 }
 
 .img.stepOver {
-  mask-image: url(chrome://devtools/content/shared/images/stepOver.svg);
+  mask-image: url(resource://devtools-shared-images/stepOver.svg);
 }
 
 .img.tab {
   mask-image: url(chrome://devtools/content/debugger/images/tab.svg);
-}
-
-.img.whole-word-match {
-  mask-image: url(chrome://devtools/content/debugger/images/whole-word-match.svg);
 }
 
 .img.worker {

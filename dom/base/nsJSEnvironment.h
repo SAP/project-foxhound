@@ -67,7 +67,7 @@ class nsJSContext : public nsIScriptContext {
 
   static void RunIncrementalGCSlice(JS::GCReason aReason,
                                     IsShrinking aShrinking,
-                                    mozilla::TimeDuration aBudget);
+                                    js::SliceBudget& aBudget);
 
   static void CycleCollectNow(mozilla::CCReason aReason,
                               nsICycleCollectorListener* aListener = nullptr);
@@ -86,7 +86,7 @@ class nsJSContext : public nsIScriptContext {
 
   static void BeginCycleCollectionCallback(mozilla::CCReason aReason);
   static void EndCycleCollectionCallback(
-      mozilla::CycleCollectorResults& aResults);
+      const mozilla::CycleCollectorResults& aResults);
 
   // Return the longest CC slice time since ClearMaxCCSliceTime() was last
   // called.
@@ -103,9 +103,14 @@ class nsJSContext : public nsIScriptContext {
   static void MaybeRunNextCollectorSlice(nsIDocShell* aDocShell,
                                          JS::GCReason aReason);
 
-  // The GC should probably run soon, in the zone of object aObj (if given).
+  // The GC should run soon, in the zone of aObj if given. If aObj is
+  // nullptr, collect all Zones.
   static void PokeGC(JS::GCReason aReason, JSObject* aObj,
                      mozilla::TimeDuration aDelay = 0);
+
+  // If usage is nearing a threshold, request idle-only GC work. (This is called
+  // when a collection would be relatively convenient.)
+  static void MaybePokeGC();
 
   // Immediately perform a non-incremental shrinking GC and CC.
   static void DoLowMemoryGC();
@@ -154,8 +159,7 @@ class nsJSContext : public nsIScriptContext {
   static bool DOMOperationCallback(JSContext* cx);
 };
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SerializedStackHolder;
 
@@ -179,7 +183,7 @@ class AsyncErrorReporter final : public mozilla::Runnable {
   NS_IMETHOD Run() override;
 
   // This is only used on main thread!
-  JS::PersistentRootedValue mException;
+  JS::PersistentRooted<JS::Value> mException;
   bool mHasException = false;
 
   RefPtr<xpc::ErrorReport> mReport;
@@ -188,8 +192,7 @@ class AsyncErrorReporter final : public mozilla::Runnable {
   UniquePtr<SerializedStackHolder> mStackHolder;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 // An interface for fast and native conversion to/from nsIArray. If an object
 // supports this interface, JS can reach directly in for the argv, and avoid

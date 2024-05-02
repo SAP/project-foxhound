@@ -6,11 +6,23 @@
  * This if the debugger's layout is correctly modified when the toolbox's
  * host changes.
  */
+
+"use strict";
+
 requestLongerTimeout(2);
 
 let gDefaultHostType = Services.prefs.getCharPref("devtools.toolbox.host");
 
-add_task(async function() {
+add_setup(async function () {
+  // Disable window occlusion. See bug 1733955 / bug 1779559.
+  if (navigator.platform.indexOf("Win") == 0) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.windows.window_occlusion_tracking.enabled", false]],
+    });
+  }
+});
+
+add_task(async function () {
   // test is too slow on some platforms due to the number of test cases
   const dbg = await initDebugger("doc-iframes.html");
 
@@ -18,7 +30,7 @@ add_task(async function() {
     ["vertical", "window:small"],
     ["horizontal", "bottom"],
     ["vertical", "right"],
-    ["horizontal", "window:big"]
+    ["horizontal", "window:big"],
   ];
 
   for (const layout of layouts) {
@@ -53,26 +65,30 @@ async function switchHost(dbg, hostType) {
 }
 
 function resizeToolboxWindow(dbg, host) {
-  const { panel, toolbox } = dbg;
+  const { toolbox } = dbg;
   const sizeOption = host.split(":")[1];
+  if (!sizeOption) {
+    return;
+  }
+
   const win = toolbox.win.parent;
 
-  const breakpoint = 800;
+  let breakpoint = 800;
   if (sizeOption == "big" && win.outerWidth <= breakpoint) {
-    return resizeWindow(dbg, breakpoint + 300);
+    breakpoint += 300;
   } else if (sizeOption == "small" && win.outerWidth >= breakpoint) {
-    return resizeWindow(dbg, breakpoint - 300);
+    breakpoint -= 300;
   }
+  resizeWindow(dbg, breakpoint);
 }
 
 function resizeWindow(dbg, width) {
-  const { panel, toolbox } = dbg;
+  const { toolbox } = dbg;
   const win = toolbox.win.parent;
-  const currentWidth = win.screen.width;
   win.resizeTo(width, window.screen.availHeight);
 }
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   Services.prefs.setCharPref("devtools.toolbox.host", gDefaultHostType);
   gDefaultHostType = null;
 });

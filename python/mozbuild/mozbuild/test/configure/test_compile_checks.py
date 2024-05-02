@@ -2,20 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import textwrap
 import unittest
+
 import mozpack.path as mozpath
-
-from six import StringIO
-
 from buildconfig import topsrcdir
+from mozunit import main
+from six import StringIO
+from test_toolchain_helpers import FakeCompiler
+
 from common import ConfigureTestSandbox
 from mozbuild.util import exec_
-from mozunit import main
-from test_toolchain_helpers import FakeCompiler
 
 
 class BaseCompileChecks(unittest.TestCase):
@@ -23,25 +21,25 @@ class BaseCompileChecks(unittest.TestCase):
         expected_flags = expected_flags or []
 
         def mock_compiler(stdin, args):
-            test_file = [a for a in args if not a.startswith("-")]
-            self.assertEqual(len(test_file), 1)
-            test_file = test_file[0]
-            args = [a for a in args if a.startswith("-")]
-            self.assertIn("-c", args)
-            for flag in expected_flags:
-                self.assertIn(flag, args)
+            if args != ["--version"]:
+                test_file = [a for a in args if not a.startswith("-")]
+                self.assertEqual(len(test_file), 1)
+                test_file = test_file[0]
+                args = [a for a in args if a.startswith("-")]
+                self.assertIn("-c", args)
+                for flag in expected_flags:
+                    self.assertIn(flag, args)
 
-            if expected_test_content:
-                with open(test_file) as fh:
-                    test_content = fh.read()
-                self.assertEqual(test_content, expected_test_content)
+                if expected_test_content:
+                    with open(test_file) as fh:
+                        test_content = fh.read()
+                    self.assertEqual(test_content, expected_test_content)
 
             return FakeCompiler()(None, args)
 
         return mock_compiler
 
     def do_compile_test(self, command, expected_test_content=None, expected_flags=None):
-
         paths = {
             os.path.abspath("/usr/bin/mockcc"): self.get_mock_compiler(
                 expected_test_content=expected_test_content,
@@ -58,14 +56,23 @@ class BaseCompileChecks(unittest.TestCase):
                 return []
 
             @depends(when=True)
-            def stlport_cppflags():
-                return []
-
-            @depends(when=True)
             def linker_ldflags():
                 return []
 
             target = depends(when=True)(lambda: True)
+
+            @depends(when=True)
+            def configure_cache():
+
+                class ConfigureCache(dict):
+                    pass
+
+                cache_data = {}
+
+                cache = ConfigureCache(cache_data)
+                cache.version_checked_compilers = set()
+
+                return cache
 
             include('%s/compilers-util.configure')
 
@@ -342,7 +349,6 @@ class TestHeaderChecks(BaseCompileChecks):
         )
 
     def test_check_headers_not_found(self):
-
         cmd = textwrap.dedent(
             """\
             baz_bar, quux_bar = check_headers('baz/foo-bar.h', 'baz-quux/foo-bar.h',
@@ -375,7 +381,7 @@ class TestWarningChecks(BaseCompileChecks):
         """
         )
 
-    def test_check_and_add_gcc_warning(self):
+    def test_check_and_add_warning(self):
         for flag, expected_flags in (
             ("-Wfoo", ["-Werror", "-Wfoo"]),
             ("-Wno-foo", ["-Werror", "-Wfoo"]),
@@ -385,7 +391,7 @@ class TestWarningChecks(BaseCompileChecks):
             cmd = (
                 textwrap.dedent(
                     """\
-                check_and_add_gcc_warning('%s')
+                check_and_add_warning('%s')
             """
                     % flag
                 )
@@ -415,11 +421,11 @@ class TestWarningChecks(BaseCompileChecks):
                 ),
             )
 
-    def test_check_and_add_gcc_warning_one(self):
+    def test_check_and_add_warning_one(self):
         cmd = (
             textwrap.dedent(
                 """\
-            check_and_add_gcc_warning('-Wfoo', cxx_compiler)
+            check_and_add_warning('-Wfoo', cxx_compiler)
         """
             )
             + self.get_warnings()
@@ -443,14 +449,14 @@ class TestWarningChecks(BaseCompileChecks):
             ),
         )
 
-    def test_check_and_add_gcc_warning_when(self):
+    def test_check_and_add_warning_when(self):
         cmd = (
             textwrap.dedent(
                 """\
             @depends(when=True)
             def never():
                 return False
-            check_and_add_gcc_warning('-Wfoo', cxx_compiler, when=never)
+            check_and_add_warning('-Wfoo', cxx_compiler, when=never)
         """
             )
             + self.get_warnings()
@@ -473,7 +479,7 @@ class TestWarningChecks(BaseCompileChecks):
             @depends(when=True)
             def always():
                 return True
-            check_and_add_gcc_warning('-Wfoo', cxx_compiler, when=always)
+            check_and_add_warning('-Wfoo', cxx_compiler, when=always)
         """
             )
             + self.get_warnings()
@@ -497,11 +503,11 @@ class TestWarningChecks(BaseCompileChecks):
             ),
         )
 
-    def test_add_gcc_warning(self):
+    def test_add_warning(self):
         cmd = (
             textwrap.dedent(
                 """\
-            add_gcc_warning('-Wfoo')
+            add_warning('-Wfoo')
         """
             )
             + self.get_warnings()
@@ -518,11 +524,11 @@ class TestWarningChecks(BaseCompileChecks):
         )
         self.assertEqual(out, "")
 
-    def test_add_gcc_warning_one(self):
+    def test_add_warning_one(self):
         cmd = (
             textwrap.dedent(
                 """\
-            add_gcc_warning('-Wfoo', c_compiler)
+            add_warning('-Wfoo', c_compiler)
         """
             )
             + self.get_warnings()
@@ -539,14 +545,14 @@ class TestWarningChecks(BaseCompileChecks):
         )
         self.assertEqual(out, "")
 
-    def test_add_gcc_warning_when(self):
+    def test_add_warning_when(self):
         cmd = (
             textwrap.dedent(
                 """\
             @depends(when=True)
             def never():
                 return False
-            add_gcc_warning('-Wfoo', c_compiler, when=never)
+            add_warning('-Wfoo', c_compiler, when=never)
         """
             )
             + self.get_warnings()
@@ -569,7 +575,7 @@ class TestWarningChecks(BaseCompileChecks):
             @depends(when=True)
             def always():
                 return True
-            add_gcc_warning('-Wfoo', c_compiler, when=always)
+            add_warning('-Wfoo', c_compiler, when=always)
         """
             )
             + self.get_warnings()

@@ -31,7 +31,7 @@
 #include "prthread.h"
 #endif /* THREADMARK */
 
-#if defined(XP_UNIX) || defined(XP_OS2) || defined(XP_BEOS)
+#if defined(XP_UNIX) || defined(XP_OS2)
 #include <stdlib.h>
 #else
 #include "wtypes.h"
@@ -773,14 +773,14 @@ NSS_SecureMemcmp(const void *ia, const void *ib, size_t n)
 {
     const unsigned char *a = (const unsigned char *)ia;
     const unsigned char *b = (const unsigned char *)ib;
-    size_t i;
-    unsigned char r = 0;
+    int r = 0;
 
-    for (i = 0; i < n; ++i) {
-        r |= *a++ ^ *b++;
+    for (size_t i = 0; i < n; ++i) {
+        r |= a[i] ^ b[i];
     }
 
-    return r;
+    /* 0 <= r < 256, so -r has bit 8 set when r != 0 */
+    return 1 & (-r >> 8);
 }
 
 /*
@@ -790,10 +790,136 @@ NSS_SecureMemcmp(const void *ia, const void *ib, size_t n)
 unsigned int
 NSS_SecureMemcmpZero(const void *mem, size_t n)
 {
-    PRUint8 zero = 0;
-    size_t i;
-    for (i = 0; i < n; ++i) {
-        zero |= *(PRUint8 *)((uintptr_t)mem + i);
+    const unsigned char *a = (const unsigned char *)mem;
+    int r = 0;
+
+    for (size_t i = 0; i < n; ++i) {
+        r |= a[i];
     }
-    return zero;
+
+    /* 0 <= r < 256, so -r has bit 8 set when r != 0 */
+    return 1 & (-r >> 8);
+}
+
+/*
+ * A "value barrier" prevents the compiler from making optimizations based on
+ * the value that a variable takes.
+ *
+ * Standard C does not have value barriers, so C implementations of them are
+ * compiler-specific and are not guaranteed to be effective. Thus, the value
+ * barriers here are a best-effort, defense-in-depth, strategy. They are not a
+ * substitute for standard constant-time programming discipline.
+ *
+ * Some implementations have a performance penalty, so value barriers should
+ * be used sparingly.
+ */
+static inline int
+value_barrier_int(int x)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    /* This inline assembly trick from Chandler Carruth's CppCon 2015 talk
+     * generates no instructions.
+     *
+     * "+r"(x) means that x will be mapped to a register that is both an input
+     * and an output to the assembly routine (""). The compiler will not
+     * inspect the assembly routine itself, so it cannot assume anything about
+     * the value of x after this line.
+     */
+    __asm__(""
+            : "+r"(x)
+            : /* no other inputs */);
+    return x;
+#else
+    /* If the compiler does not support the inline assembly trick above, we can
+     * put x in `volatile` storage and read it out again. This will generate
+     * explict store and load instructions, and possibly more depending on the
+     * target.
+     */
+    volatile int y = x;
+    return y;
+#endif
+}
+
+/*
+ * A branch-free implementation of
+ *      if (!b) {
+ *           memmove(dest, src0, n);
+ *      } else {
+ *           memmove(dest, src1, n);
+ *      }
+ *
+ * The memmove is performed with src0 if `b == 0` and with src1
+ * otherwise.
+ *
+ * As with memmove, the selected src can overlap dest.
+ *
+ * Each of dest, src0, and src1 must point to an allocated buffer
+ * of at least n bytes.
+ */
+void
+NSS_SecureSelect(void *dest, const void *src0, const void *src1, size_t n, unsigned char b)
+
+{
+    // This value barrier makes it safe for the compiler to inline
+    // NSS_SecureSelect into a routine where it could otherwise infer something
+    // about the value of b, e.g. that b is 0/1 valued.
+    int w = value_barrier_int(b);
+
+    // 0 <= b < 256, and int is at least 16 bits, so -w has bits 8-15
+    // set when w != 0.
+    unsigned char mask = 0xff & (-w >> 8);
+
+    for (size_t i = 0; i < n; ++i) {
+        unsigned char s0i = ((unsigned char *)src0)[i];
+        unsigned char s1i = ((unsigned char *)src1)[i];
+        // if mask == 0 this simplifies to s0 ^ 0
+        // if mask == -1 this simplifies to s0 ^ s0 ^ s1
+        ((unsigned char *)dest)[i] = s0i ^ (mask & (s0i ^ s1i));
+    }
+}
+
+/*
+ * consolidate all the calls to get the system FIPS status in one spot.
+ * This function allows an environment variable to override what is returned.
+ */
+PRBool
+NSS_GetSystemFIPSEnabled(void)
+{
+/* if FIPS is disabled in NSS, always return FALSE, even if the environment
+ * variable is set, or the system is in FIPS mode */
+#ifndef NSS_FIPS_DISABLED
+    const char *env;
+
+    /* The environment variable is active for all platforms */
+    env = PR_GetEnvSecure("NSS_FIPS");
+    /* we generally accept y, Y, 1, FIPS, TRUE, and ON as turning on FIPS
+     * mode. Anything else is considered 'off' */
+    if (env && (*env == 'y' || *env == '1' || *env == 'Y' ||
+                (PORT_Strcasecmp(env, "fips") == 0) ||
+                (PORT_Strcasecmp(env, "true") == 0) ||
+                (PORT_Strcasecmp(env, "on") == 0))) {
+        return PR_TRUE;
+    }
+
+/* currently only Linux has a system FIPS indicator. Add others here
+ * as they become available/known */
+#ifdef LINUX
+    {
+        FILE *f;
+        char d;
+        size_t size;
+        f = fopen("/proc/sys/crypto/fips_enabled", "r");
+        if (!f)
+            return PR_FALSE;
+
+        size = fread(&d, 1, 1, f);
+        fclose(f);
+        if (size != 1)
+            return PR_FALSE;
+        if (d == '1')
+            return PR_TRUE;
+    }
+#endif /* LINUX */
+#endif /* NSS_FIPS_DISABLED == 0 */
+    return PR_FALSE;
 }

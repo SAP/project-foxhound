@@ -12,7 +12,11 @@ transforms:
 
 kind-dependencies:
     - build-signing
+    - build-mac-signing
+    - build-mac-notarization
     - shippable-l10n-signing
+    - shippable-l10n-mac-signing
+    - shippable-l10n-mac-notarization
 
 job-defaults:
     name: partner-repack
@@ -20,7 +24,7 @@ job-defaults:
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-product: firefox
     shipping-phase: promote
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image:
             in-tree: "partner-repack"
@@ -32,7 +36,6 @@ job-defaults:
             - partner_repacks/release_mozilla-release_desktop.py
         script: mozharness/scripts/desktop_partner_repacks.py
         job-script: taskcluster/scripts/builder/repackage.sh
-        need-xvfb: false
         tooltool-downloads: false
     extra:
         limit-locales:

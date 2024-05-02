@@ -6,12 +6,12 @@
 const {
   APPEND_NOTIFICATION,
   REMOVE_NOTIFICATION,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 
 loader.lazyRequireGetter(
   this,
   ["appendNotification", "removeNotificationWithValue"],
-  "devtools/client/shared/components/NotificationBox",
+  "resource://devtools/client/shared/components/NotificationBox.js",
   true
 );
 

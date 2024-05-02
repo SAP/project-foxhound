@@ -4,47 +4,48 @@
 
 "use strict";
 
-const Services = require("Services");
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const { div } = dom;
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   connect,
-} = require("devtools/client/shared/redux/visibility-handler-connect");
-const { findDOMNode } = require("devtools/client/shared/vendor/react-dom");
-const Actions = require("devtools/client/netmonitor/src/actions/index");
+} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+const {
+  findDOMNode,
+} = require("resource://devtools/client/shared/vendor/react-dom.js");
+const Actions = require("resource://devtools/client/netmonitor/src/actions/index.js");
 const {
   updateFormDataSections,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   getSelectedRequest,
   isSelectedRequestVisible,
-} = require("devtools/client/netmonitor/src/selectors/index");
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 
 // Components
 const SplitBox = createFactory(
-  require("devtools/client/shared/components/splitter/SplitBox")
+  require("resource://devtools/client/shared/components/splitter/SplitBox.js")
 );
 const RequestList = createFactory(
-  require("devtools/client/netmonitor/src/components/request-list/RequestList")
+  require("resource://devtools/client/netmonitor/src/components/request-list/RequestList.js")
 );
 const Toolbar = createFactory(
-  require("devtools/client/netmonitor/src/components/Toolbar")
+  require("resource://devtools/client/netmonitor/src/components/Toolbar.js")
 );
 
-loader.lazyGetter(this, "NetworkDetailsBar", function() {
+loader.lazyGetter(this, "NetworkDetailsBar", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-details/NetworkDetailsBar")
+    require("resource://devtools/client/netmonitor/src/components/request-details/NetworkDetailsBar.js")
   );
 });
 
-loader.lazyGetter(this, "NetworkActionBar", function() {
+loader.lazyGetter(this, "NetworkActionBar", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/NetworkActionBar")
+    require("resource://devtools/client/netmonitor/src/components/NetworkActionBar.js")
   );
 });
 
@@ -100,7 +101,8 @@ class MonitorPanel extends Component {
     this.persistActionBarSize();
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     updateFormDataSections(nextProps);
   }
 
@@ -253,7 +255,7 @@ class MonitorPanel extends Component {
 
 module.exports = connect(
   state => ({
-    isEmpty: state.requests.requests.length == 0,
+    isEmpty: !state.requests.requests.length,
     networkDetailsOpen: state.ui.networkDetailsOpen,
     networkActionOpen: state.ui.networkActionOpen,
     request: getSelectedRequest(state),

@@ -3,10 +3,6 @@
 
 "use strict";
 
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 add_task(async function testStopStartingAutoScroll() {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -22,14 +18,13 @@ add_task(async function testStopStartingAutoScroll() {
 
   await BrowserTestUtils.withNewTab(
     "https://example.com/browser/toolkit/content/tests/browser/file_empty.html",
-    async function(browser) {
+    async function (browser) {
       async function doTest({
         aInnerHTML,
         aDescription,
         aExpectedActiveElement,
       }) {
         await SpecialPowers.spawn(browser, [aInnerHTML], async contentHTML => {
-          // eslint-disable-next-line no-unsanitized/property
           content.document.body.innerHTML = contentHTML;
           content.document.documentElement.scrollTop; // Flush layout.
           const iframe = content.document.querySelector("iframe");

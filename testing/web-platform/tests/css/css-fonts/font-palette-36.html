@@ -2,32 +2,33 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Tests currentColor in @font-palette-values is inherited as currentColor</title>
+<title>font-palette multiple family-name and @font-palette-values</title>
 <link rel="help" href="https://drafts.csswg.org/css-fonts/#font-palette-prop">
 <link rel="help" href="https://drafts.csswg.org/css-fonts-4/#font-palette-values">
-<link rel="author" title="Mike Bremford" href="mailto:mike@bfo.com">
-<link rel="match" href="font-palette-35-ref.html">
+<link rel="match" href="font-palette-36-ref.html">
+<meta name="assert" content="A single @font-palette-values can be applied to multiple font-families">
 <style>
 @font-face {
     font-family: "COLR-test-font";
     src: url("resources/COLR-palettes-test-font.ttf") format("truetype");
 }
+@font-face {
+    font-family: "foo bar";
+    src: url("resources/COLR-palettes-test-font.ttf") format("truetype");
+}
+@font-face {
+    font-family: foo;
+    src: url("resources/COLR-palettes-test-font.ttf") format("truetype");
+}
 @font-palette-values --MyPalette {
-    font-family: "COLR-test-font";
-    override-colors: 7 currentColor;
+    font-family: "COLR-test-font", "foo bar", foo;
+    base-palette: light;
 }
-div {
-    color: red;
-    font: 48px 'COLR-test-font';
-    font-palette: --MyPalette;
-}
-span {
-    color: #00FF00;
-}
-
 </style>
 </head>
 <body>
-<div><span>A</span></div>
+<div style="font: 48px 'COLR-test-font'; font-palette: --MyPalette;">A</div>
+<div style="font: 48px foo; font-palette: --MyPalette;">A</div>
+<div style="font: 48px 'foo bar'; font-palette: --MyPalette;">A</div>
 </body>
 </html>

@@ -6,30 +6,33 @@
 
 const {
   getAllMessagesUiById,
-  getAllMessagesPayloadById,
+  getAllCssMessagesMatchingElements,
   getAllNetworkMessagesUpdateById,
   getAllRepeatById,
   getCurrentGroup,
   getGroupsById,
-  getAllMessagesById,
+  getMutableMessagesById,
   getVisibleMessages,
-} = require("devtools/client/webconsole/selectors/messages");
+} = require("resource://devtools/client/webconsole/selectors/messages.js");
 const {
   getFirstMessage,
   getLastMessage,
   getPrivatePacket,
   setupActions,
   setupStore,
-} = require("devtools/client/webconsole/test/node/helpers");
+} = require("resource://devtools/client/webconsole/test/node/helpers.js");
 const {
   stubPackets,
-} = require("devtools/client/webconsole/test/node/fixtures/stubs/index");
+} = require("resource://devtools/client/webconsole/test/node/fixtures/stubs/index.js");
+const {
+  CSS_MESSAGE_ADD_MATCHING_ELEMENTS,
+} = require("resource://devtools/client/webconsole/constants.js");
 
 const expect = require("expect");
 
 describe("private messages", () => {
   let actions;
-  before(() => {
+  beforeAll(() => {
     actions = setupActions();
   });
 
@@ -46,13 +49,13 @@ describe("private messages", () => {
     );
 
     let state = getState();
-    const messages = getAllMessagesById(state);
+    const messages = getMutableMessagesById(state);
     expect(messages.size).toBe(4);
 
     dispatch(actions.privateMessagesClear());
 
     state = getState();
-    expect(getAllMessagesById(state).size).toBe(1);
+    expect(getMutableMessagesById(state).size).toBe(1);
     expect(getVisibleMessages(state).length).toBe(1);
   });
 
@@ -102,41 +105,47 @@ describe("private messages", () => {
     });
   });
 
-  it("cleans messagesPayloadById on PRIVATE_MESSAGES_CLEAR action", () => {
+  it("cleans cssMessagesMatchingElements on PRIVATE_MESSAGES_CLEAR action", () => {
     const { dispatch, getState } = setupStore();
 
     dispatch(
       actions.messagesAdd([
-        getPrivatePacket("console.table(['a', 'b', 'c'])"),
-        stubPackets.get("console.table(['a', 'b', 'c'])"),
+        getPrivatePacket(
+          `Unknown property ‘such-unknown-property’.  Declaration dropped.`
+        ),
+        stubPackets.get(
+          `Error in parsing value for ‘padding-top’.  Declaration dropped.`
+        ),
       ])
     );
 
-    const privateTableData = Symbol("privateTableData");
-    const publicTableData = Symbol("publicTableData");
-    dispatch(
-      actions.messageUpdatePayload(
-        getFirstMessage(getState()).id,
-        privateTableData
-      )
-    );
-    dispatch(
-      actions.messageUpdatePayload(
-        getLastMessage(getState()).id,
-        publicTableData
-      )
-    );
+    const privateData = Symbol("privateData");
+    const publicData = Symbol("publicData");
+
+    dispatch({
+      type: CSS_MESSAGE_ADD_MATCHING_ELEMENTS,
+      id: getFirstMessage(getState()).id,
+      elements: privateData,
+    });
+
+    dispatch({
+      type: CSS_MESSAGE_ADD_MATCHING_ELEMENTS,
+      id: getLastMessage(getState()).id,
+      elements: publicData,
+    });
 
     let state = getState();
-    expect(getAllMessagesPayloadById(state).size).toBe(2);
+    expect(getAllCssMessagesMatchingElements(state).size).toBe(2);
 
     dispatch(actions.privateMessagesClear());
 
     state = getState();
-    expect(getAllMessagesPayloadById(state).size).toBe(1);
+    expect(getAllCssMessagesMatchingElements(state).size).toBe(1);
     expect(
-      getAllMessagesPayloadById(state).get(getFirstMessage(getState()).id)
-    ).toBe(publicTableData);
+      getAllCssMessagesMatchingElements(state).get(
+        getFirstMessage(getState()).id
+      )
+    ).toBe(publicData);
   });
 
   it("cleans group properties on PRIVATE_MESSAGES_CLEAR action", () => {
@@ -194,7 +203,7 @@ describe("private messages", () => {
   it("releases private backend actors on PRIVATE_MESSAGES_CLEAR action", () => {
     const releasedActors = [];
     const { dispatch, getState } = setupStore([]);
-    const mockFrontRelease = function() {
+    const mockFrontRelease = function () {
       releasedActors.push(this.actorID);
     };
 

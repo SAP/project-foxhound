@@ -6,12 +6,15 @@
 #define HttpTransactionShell_h__
 
 #include <functional>
-#include "nsISupports.h"
+
 #include "TimingStruct.h"
-#include "nsInputStreamPump.h"
-#include "nsIEarlyHintObserver.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
+#include "nsIClassOfService.h"
+#include "nsIEarlyHintObserver.h"
+#include "nsISupports.h"
+#include "nsITransportSecurityInfo.h"
+#include "nsInputStreamPump.h"
 
 class nsIEventTraget;
 class nsIInputStream;
@@ -20,8 +23,7 @@ class nsIRequest;
 class nsIRequestContext;
 class nsITransportEventSink;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 enum HttpTrafficCategory : uint8_t;
 class Http2PushedStreamWrapper;
@@ -71,17 +73,17 @@ class HttpTransactionShell : public nsISupports {
   //        the dispatch target were notifications should be sent.
   // @param callbacks
   //        the notification callbacks to be given to PSM.
-  // @param topBrowsingContextId
-  //        indicate the id of the top browsing context in which
-  //        this transaction is being loaded.
+  // @param browserId
+  //        indicate the id of the browser in which this transaction is being
+  //        loaded.
   [[nodiscard]] nsresult virtual Init(
       uint32_t caps, nsHttpConnectionInfo* connInfo,
       nsHttpRequestHead* reqHeaders, nsIInputStream* reqBody,
       uint64_t reqContentLength, bool reqBodyIncludesHeaders,
       nsIEventTarget* consumerTarget, nsIInterfaceRequestor* callbacks,
-      nsITransportEventSink* eventsink, uint64_t topBrowsingContextId,
+      nsITransportEventSink* eventsink, uint64_t browserId,
       HttpTrafficCategory trafficCategory, nsIRequestContext* requestContext,
-      uint32_t classOfService, uint32_t initialRwin,
+      ClassOfService classOfService, uint32_t initialRwin,
       bool responseTimeoutEnabled, uint64_t channelId,
       TransactionObserverFunc&& transactionObserver,
       OnPushCallback&& aOnPushCallback,
@@ -105,11 +107,13 @@ class HttpTransactionShell : public nsISupports {
   // Returning null if there is no trailer.
   virtual UniquePtr<nsHttpHeaderArray> TakeResponseTrailers() = 0;
 
-  virtual already_AddRefed<nsISupports> SecurityInfo() = 0;
+  virtual already_AddRefed<nsITransportSecurityInfo> SecurityInfo() = 0;
   virtual void SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks) = 0;
 
   virtual void GetNetworkAddresses(NetAddr& self, NetAddr& peer,
                                    bool& aResolvedByTRR,
+                                   nsIRequest::TRRMode& aEffectiveTRRMode,
+                                   TRRSkippedReason& aSkipReason,
                                    bool& aEchConfigUsed) = 0;
 
   // Functions for Timing interface
@@ -130,6 +134,8 @@ class HttpTransactionShell : public nsISupports {
                                   bool onlyIfNull = false) = 0;
 
   virtual TimingStruct Timings() = 0;
+
+  virtual mozilla::TimeStamp GetPendingTime() = 0;
 
   // Called to set/find out if the transaction generated a complete response.
   virtual bool ResponseIsComplete() = 0;
@@ -161,6 +167,12 @@ class HttpTransactionShell : public nsISupports {
   virtual already_AddRefed<nsHttpConnectionInfo> GetConnInfo() const = 0;
 
   virtual bool GetSupportsHTTP3() = 0;
+
+  virtual void SetIsForWebTransport(bool aIsForWebTransport) = 0;
+
+  virtual TimeStamp GetOnStartRequestStartTime() const { return TimeStamp(); }
+  virtual TimeStamp GetDataAvailableStartTime() const { return TimeStamp(); }
+  virtual TimeStamp GetOnStopRequestStartTime() const { return TimeStamp(); }
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpTransactionShell, HTTPTRANSACTIONSHELL_IID)
@@ -171,9 +183,9 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpTransactionShell, HTTPTRANSACTIONSHELL_IID)
       nsHttpRequestHead* reqHeaders, nsIInputStream* reqBody,                  \
       uint64_t reqContentLength, bool reqBodyIncludesHeaders,                  \
       nsIEventTarget* consumerTarget, nsIInterfaceRequestor* callbacks,        \
-      nsITransportEventSink* eventsink, uint64_t topBrowsingContextId,         \
+      nsITransportEventSink* eventsink, uint64_t browserId,                    \
       HttpTrafficCategory trafficCategory, nsIRequestContext* requestContext,  \
-      uint32_t classOfService, uint32_t initialRwin,                           \
+      ClassOfService classOfService, uint32_t initialRwin,                     \
       bool responseTimeoutEnabled, uint64_t channelId,                         \
       TransactionObserverFunc&& transactionObserver,                           \
       OnPushCallback&& aOnPushCallback,                                        \
@@ -183,12 +195,13 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpTransactionShell, HTTPTRANSACTIONSHELL_IID)
       override;                                                                \
   virtual UniquePtr<nsHttpResponseHead> TakeResponseHead() override;           \
   virtual UniquePtr<nsHttpHeaderArray> TakeResponseTrailers() override;        \
-  virtual already_AddRefed<nsISupports> SecurityInfo() override;               \
+  virtual already_AddRefed<nsITransportSecurityInfo> SecurityInfo() override;  \
   virtual void SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks)         \
       override;                                                                \
-  virtual void GetNetworkAddresses(NetAddr& self, NetAddr& peer,               \
-                                   bool& aResolvedByTRR, bool& aEchConfigUsed) \
-      override;                                                                \
+  virtual void GetNetworkAddresses(                                            \
+      NetAddr& self, NetAddr& peer, bool& aResolvedByTRR,                      \
+      nsIRequest::TRRMode& aEffectiveTRRMode, TRRSkippedReason& aSkipReason,   \
+      bool& aEchConfigUsed) override;                                          \
   virtual mozilla::TimeStamp GetDomainLookupStart() override;                  \
   virtual mozilla::TimeStamp GetDomainLookupEnd() override;                    \
   virtual mozilla::TimeStamp GetConnectStart() override;                       \
@@ -221,8 +234,9 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpTransactionShell, HTTPTRANSACTIONSHELL_IID)
   virtual bool Http2Disabled() const override;                                 \
   virtual bool Http3Disabled() const override;                                 \
   virtual already_AddRefed<nsHttpConnectionInfo> GetConnInfo() const override; \
-  virtual bool GetSupportsHTTP3() override;
-}  // namespace net
-}  // namespace mozilla
+  virtual bool GetSupportsHTTP3() override;                                    \
+  virtual void SetIsForWebTransport(bool aIsForWebTransport) override;
+
+}  // namespace mozilla::net
 
 #endif  // HttpTransactionShell_h__

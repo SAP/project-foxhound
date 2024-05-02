@@ -5,23 +5,19 @@
 Transform the per-locale balrog task into an actual task description.
 """
 
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_primary_dependency
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.treeherder import replace_group
+from voluptuous import Optional, Required
 
-from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.schema import (
-    optionally_keyed_by,
-    resolve_keyed_by,
-)
-from gecko_taskgraph.util.treeherder import replace_group
 from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import Optional
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 
-
-balrog_description_schema = schema.extend(
+balrog_description_schema = Schema(
     {
         # unique label to describe this balrog task, defaults to balrog-{dep.label}
-        Optional("label"): str,
+        Required("label"): str,
         Optional(
             "update-no-wnp",
             description="Whether the parallel `-No-WNP` blob should be updated as well.",
@@ -31,6 +27,8 @@ balrog_description_schema = schema.extend(
         # below transforms for defaults of various values.
         Optional("treeherder"): task_description_schema["treeherder"],
         Optional("attributes"): task_description_schema["attributes"],
+        Optional("dependencies"): task_description_schema["dependencies"],
+        Optional("job-from"): task_description_schema["job-from"],
         # Shipping product / phase
         Optional("shipping-product"): task_description_schema["shipping-product"],
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
@@ -39,6 +37,16 @@ balrog_description_schema = schema.extend(
 
 
 transforms = TransformSequence()
+
+
+@transforms.add
+def remove_name(config, jobs):
+    for job in jobs:
+        if "name" in job:
+            del job["name"]
+        yield job
+
+
 transforms.add_validate(balrog_description_schema)
 
 
@@ -49,12 +57,11 @@ def handle_keyed_by(config, jobs):
         "update-no-wnp",
     ]
     for job in jobs:
-        label = job.get("dependent-task", object).__dict__.get("label", "?no-label?")
         for field in fields:
             resolve_keyed_by(
                 item=job,
                 field=field,
-                item_name=label,
+                item_name=job["label"],
                 **{
                     "project": config.params["project"],
                     "release-type": config.params["release_type"],
@@ -66,7 +73,10 @@ def handle_keyed_by(config, jobs):
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job["primary-dependency"]
+        dep_job = get_primary_dependency(config, job)
+        assert dep_job
+
+        job["shipping-product"] = dep_job.attributes.get("shipping_product")
 
         treeherder = job.get("treeherder", {})
         treeherder.setdefault("symbol", "c-Up(N)")
@@ -110,16 +120,19 @@ def make_task_description(config, jobs):
         ]
 
         dependencies = {"beetmover": dep_job.label}
-        for kind_dep in config.kind_dependencies_tasks.values():
-            if (
-                kind_dep.kind == "startup-test"
-                and kind_dep.attributes["build_platform"]
-                == attributes.get("build_platform")
-                and kind_dep.attributes["build_type"] == attributes.get("build_type")
-                and kind_dep.attributes.get("shipping_product")
-                == job.get("shipping-product")
-            ):
-                dependencies["startup-test"] = kind_dep.label
+        # don't block on startup-test for release/esr, they block on manual testing anyway
+        if config.params["release_type"] in ("nightly", "beta", "release-rc"):
+            for kind_dep in config.kind_dependencies_tasks.values():
+                if (
+                    kind_dep.kind == "startup-test"
+                    and kind_dep.attributes["build_platform"]
+                    == attributes.get("build_platform")
+                    and kind_dep.attributes["build_type"]
+                    == attributes.get("build_type")
+                    and kind_dep.attributes.get("shipping_product")
+                    == job.get("shipping-product")
+                ):
+                    dependencies["startup-test"] = kind_dep.label
 
         task = {
             "label": label,

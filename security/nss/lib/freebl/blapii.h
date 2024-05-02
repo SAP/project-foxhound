@@ -29,7 +29,7 @@ typedef void (*freeblDestroyFunc)(void *cx, PRBool freeit);
 SEC_BEGIN_PROTOS
 
 #ifndef NSS_FIPS_DISABLED
-SECStatus BL_FIPSEntryOK(PRBool freeblOnly);
+SECStatus BL_FIPSEntryOK(PRBool freeblOnly, PRBool rerun);
 PRBool BL_POSTRan(PRBool freeblOnly);
 #endif
 
@@ -88,6 +88,7 @@ PRBool clmul_support();
 PRBool sha_support();
 PRBool avx_support();
 PRBool avx2_support();
+PRBool adx_support();
 PRBool ssse3_support();
 PRBool sse4_1_support();
 PRBool sse4_2_support();

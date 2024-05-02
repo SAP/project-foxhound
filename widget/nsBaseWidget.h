@@ -159,12 +159,12 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
  public:
   nsBaseWidget();
 
+  explicit nsBaseWidget(BorderStyle aBorderStyle);
+
   NS_DECL_THREADSAFE_ISUPPORTS
 
   // nsIWidget interface
-  void CaptureMouse(bool aCapture) override {}
-  void CaptureRollupEvents(nsIRollupListener* aListener,
-                           bool aDoCapture) override {}
+  void CaptureRollupEvents(bool aDoCapture) override {}
   nsIWidgetListener* GetWidgetListener() const override;
   void SetWidgetListener(nsIWidgetListener* alistener) override;
   void Destroy() override;
@@ -180,8 +180,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   void PlaceBehind(nsTopLevelWidgetZPlacement aPlacement, nsIWidget* aWidget,
                    bool aActivate) override {}
 
-  void SetSizeMode(nsSizeMode aMode) override;
-  nsSizeMode SizeMode() override { return mSizeMode; }
   void GetWorkspaceID(nsAString& workspaceID) override;
   void MoveToWorkspace(const nsAString& workspaceID) override;
   bool IsTiled() const override { return mIsTiled; }
@@ -193,8 +191,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     mCursor = {};
     mUpdateCursor = true;
   }
-  void SetTransparencyMode(nsTransparencyMode aMode) override;
-  nsTransparencyMode GetTransparencyMode() override;
+  void SetTransparencyMode(TransparencyMode aMode) override;
+  TransparencyMode GetTransparencyMode() override;
   void SetWindowShadowStyle(mozilla::StyleWindowShadow aStyle) override {}
   void SetShowsToolbarButton(bool aShow) override {}
   void SetSupportsNativeFullscreen(bool aSupportsNativeFullscreen) override {}
@@ -207,11 +205,12 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
                                    uint16_t aDuration, nsISupports* aData,
                                    nsIRunnable* aCallback) override;
   void CleanupFullscreenTransition() override {}
-  already_AddRefed<nsIScreen> GetWidgetScreen() override;
+  already_AddRefed<Screen> GetWidgetScreen() override;
   nsresult MakeFullScreen(bool aFullScreen) override;
   void InfallibleMakeFullScreen(bool aFullScreen);
 
   WindowRenderer* GetWindowRenderer() override;
+  bool HasWindowRenderer() const final { return !!mWindowRenderer; }
 
   // A remote compositor session tied to this window has been lost and IPC
   // messages will no longer work. The widget must clean up any lingering
@@ -233,7 +232,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
       const nsTArray<ThemeGeometry>& aThemeGeometries) override {}
   void SetModal(bool aModal) override {}
   uint32_t GetMaxTouchPoints() const override;
-  void SetWindowClass(const nsAString& xulWinType) override {}
+  void SetWindowClass(const nsAString& xulWinType, const nsAString& xulWinClass,
+                      const nsAString& xulWinName) override {}
   // Return whether this widget interprets parameters to Move and Resize APIs
   // as "desktop pixels" rather than "device pixels", and therefore
   // applies its GetDefaultScale() value to them before using them as mBounds
@@ -242,7 +242,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   // -setting- them (i.e. moving or resizing the widget) will always return
   // values in the widget's device pixels.
   bool BoundsUseDesktopPixels() const {
-    return mWindowType <= eWindowType_popup;
+    return mWindowType <= WindowType::Popup;
   }
   // Default implementation, to be overridden by platforms where desktop coords
   // are virtualized and may not correspond to device pixels on the screen.
@@ -252,7 +252,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScaleByScreen()
       override;
 
-  void ConstrainPosition(bool aAllowSlop, int32_t* aX, int32_t* aY) override {}
+  void ConstrainPosition(DesktopIntPoint&) override {}
   void MoveClient(const DesktopPoint& aOffset) override;
   void ResizeClient(const DesktopSize& aSize, bool aRepaint) override;
   void ResizeClient(const DesktopRect& aRect, bool aRepaint) override;
@@ -260,23 +260,18 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   LayoutDeviceIntRect GetClientBounds() override;
   LayoutDeviceIntRect GetScreenBounds() override;
   [[nodiscard]] nsresult GetRestoredBounds(LayoutDeviceIntRect& aRect) override;
-  nsresult SetNonClientMargins(LayoutDeviceIntMargin& aMargins) override;
+  nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
   LayoutDeviceIntPoint GetClientOffset() override;
   void EnableDragDrop(bool aEnable) override{};
   nsresult AsyncEnableDragDrop(bool aEnable) override;
+  void SetResizeMargin(mozilla::LayoutDeviceIntCoord aResizeMargin) override;
   [[nodiscard]] nsresult GetAttention(int32_t aCycleCount) override {
     return NS_OK;
   }
   bool HasPendingInputEvent() override;
   void SetIcon(const nsAString& aIconSpec) override {}
-  void SetDrawsInTitlebar(bool aState) override {}
   bool ShowsResizeIndicator(LayoutDeviceIntRect* aResizerRect) override;
   void FreeNativeData(void* data, uint32_t aDataType) override {}
-  [[nodiscard]] nsresult BeginResizeDrag(mozilla::WidgetGUIEvent* aEvent,
-                                         int32_t aHorizontal,
-                                         int32_t aVertical) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
   nsresult ActivateNativeMenuItemAt(const nsAString& indexString) override {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -295,7 +290,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
   already_AddRefed<nsIWidget> CreateChild(
-      const LayoutDeviceIntRect& aRect, nsWidgetInitData* aInitData = nullptr,
+      const LayoutDeviceIntRect& aRect, InitData* aInitData = nullptr,
       bool aForceUseIWidgetParent = false) override;
   void AttachViewToTopLevel(bool aUseAttachedEvents) override;
   nsIWidgetListener* GetAttachedWidgetListener() const override;
@@ -329,38 +324,33 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   void SwipeFinished() override;
   void ReportSwipeStarted(uint64_t aInputBlockId, bool aStartSwipe) override;
   void TrackScrollEventAsSwipe(const mozilla::PanGestureInput& aSwipeStartEvent,
-                               uint32_t aAllowedDirections);
+                               uint32_t aAllowedDirections,
+                               uint64_t aInputBlockId);
   struct SwipeInfo {
     bool wantsSwipe;
     uint32_t allowedDirections;
   };
   SwipeInfo SendMayStartSwipe(const mozilla::PanGestureInput& aSwipeStartEvent);
-  enum class CanTriggerSwipe : bool {
-    No = false,
-    Yes = true,
-  };
   // Returns a WidgetWheelEvent which needs to be handled by APZ regardless of
   // whether |aPanInput| event was used for SwipeTracker or not.
   mozilla::WidgetWheelEvent MayStartSwipeForAPZ(
       const mozilla::PanGestureInput& aPanInput,
-      const mozilla::layers::APZEventResult& aApzResult,
-      CanTriggerSwipe aCanTriggerSwipe);
+      const mozilla::layers::APZEventResult& aApzResult);
 
   // Returns true if |aPanInput| event was used for SwipeTracker, false
   // otherwise.
-  bool MayStartSwipeForNonAPZ(const mozilla::PanGestureInput& aPanInput,
-                              CanTriggerSwipe aCanTriggerSwipe);
+  bool MayStartSwipeForNonAPZ(const mozilla::PanGestureInput& aPanInput);
 
   void NotifyWindowDestroyed();
   void NotifySizeMoveDone();
-  void NotifyWindowMoved(int32_t aX, int32_t aY);
 
-  void SetNativeData(uint32_t aDataType, uintptr_t aVal) override {}
+  using ByMoveToRect = nsIWidgetListener::ByMoveToRect;
+  void NotifyWindowMoved(int32_t aX, int32_t aY,
+                         ByMoveToRect = ByMoveToRect::No);
 
   // Should be called by derived implementations to notify on system color and
   // theme changes.
   void NotifyThemeChanged(mozilla::widget::ThemeChangeKind);
-  void NotifyUIStateChanged(UIStateChangeType aShowFocusRings);
 
 #ifdef ACCESSIBILITY
   // Get the accessible for the window.
@@ -371,18 +361,13 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   // accelerating)
   bool IsSmallPopup() const;
 
-  nsPopupLevel PopupLevel() { return mPopupLevel; }
-
-  LayoutDeviceIntSize ClientToWindowSize(
-      const LayoutDeviceIntSize& aClientSize) override {
-    return aClientSize;
-  }
+  PopupLevel GetPopupLevel() { return mPopupLevel; }
 
   // return true if this is a popup widget with a native titlebar
   bool IsPopupWithTitleBar() const {
-    return (mWindowType == eWindowType_popup &&
-            mBorderStyle != eBorderStyle_default &&
-            mBorderStyle & eBorderStyle_title);
+    return (mWindowType == WindowType::Popup &&
+            mBorderStyle != BorderStyle::Default &&
+            mBorderStyle & BorderStyle::Title);
   }
 
   void ReparentNativeWidget(nsIWidget* aNewParent) override {}
@@ -481,7 +466,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   void ResolveIconName(const nsAString& aIconName, const nsAString& aIconSuffix,
                        nsIFile** aResult);
   virtual void OnDestroy();
-  void BaseCreate(nsIWidget* aParent, nsWidgetInitData* aInitData);
+  void BaseCreate(nsIWidget* aParent, InitData* aInitData);
 
   virtual void ConfigureAPZCTreeManager();
   virtual void ConfigureAPZControllerThread();
@@ -568,7 +553,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   nsresult SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                        LayoutDeviceIntPoint aPoint,
                                        double aDeltaX, double aDeltaY,
-                                       int32_t aModifierFlags) override {
+                                       int32_t aModifierFlags,
+                                       nsIObserver* aObserver) override {
     MOZ_RELEASE_ASSERT(
         false, "This method is not implemented on the current platform");
     return NS_ERROR_UNEXPECTED;
@@ -587,17 +573,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   WindowRenderer* CreateFallbackRenderer();
 
-  nsPopupType PopupType() const { return mPopupType; }
+  PopupType GetPopupType() const { return mPopupType; }
 
   bool HasRemoteContent() const { return mHasRemoteContent; }
-
-  void NotifyRollupGeometryChange() {
-    // XULPopupManager isn't interested in this notification, so only
-    // send it if gRollupListener is set.
-    if (gRollupListener) {
-      gRollupListener->NotifyGeometryChange();
-    }
-  }
 
   /**
    * Apply the current size constraints to the given size.
@@ -615,6 +593,10 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   CompositorBridgeChild* GetRemoteRenderer() override;
 
   void ClearCachedWebrenderResources() override;
+
+  void ClearWebrenderAnimationResources() override;
+
+  bool SetNeedFastSnaphot() override;
 
   /**
    * Notify the widget that this window is being used with OMTC.
@@ -641,10 +623,10 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
    * a new MultiTouchInput object that is ready to be dispatched.
    */
   mozilla::MultiTouchInput UpdateSynthesizedTouchState(
-      mozilla::MultiTouchInput* aState, uint32_t aTime,
-      mozilla::TimeStamp aTimeStamp, uint32_t aPointerId,
-      TouchPointerState aPointerState, LayoutDeviceIntPoint aPoint,
-      double aPointerPressure, uint32_t aPointerOrientation);
+      mozilla::MultiTouchInput* aState, mozilla::TimeStamp aTimeStamp,
+      uint32_t aPointerId, TouchPointerState aPointerState,
+      LayoutDeviceIntPoint aPoint, double aPointerPressure,
+      uint32_t aPointerOrientation);
 
   /**
    * Dispatch the given MultiTouchInput through APZ to Gecko (if APZ is enabled)
@@ -691,6 +673,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   void FreeShutdownObserver();
   void FreeLocalesChangedObserver();
 
+  bool IsPIPWindow() const { return mIsPIPWindow; };
+
   nsIWidgetListener* mWidgetListener;
   nsIWidgetListener* mAttachedWidgetListener;
   nsIWidgetListener* mPreviouslyAttachedWidgetListener;
@@ -710,22 +694,26 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   RefPtr<mozilla::SwipeTracker> mSwipeTracker;
   mozilla::UniquePtr<mozilla::SwipeEventQueue> mSwipeEventQueue;
   Cursor mCursor;
-  nsBorderStyle mBorderStyle;
+  BorderStyle mBorderStyle;
   LayoutDeviceIntRect mBounds;
-  LayoutDeviceIntRect* mOriginalBounds;
-  nsSizeMode mSizeMode;
   bool mIsTiled;
-  nsPopupLevel mPopupLevel;
-  nsPopupType mPopupType;
+  PopupLevel mPopupLevel;
+  PopupType mPopupType;
   SizeConstraints mSizeConstraints;
   bool mHasRemoteContent;
-  bool mFissionWindow;
+
+  struct FullscreenSavedState {
+    DesktopRect windowRect;
+    DesktopRect screenRect;
+  };
+  mozilla::Maybe<FullscreenSavedState> mSavedBounds;
 
   bool mUpdateCursor;
   bool mUseAttachedEvents;
   bool mIMEHasFocus;
   bool mIMEHasQuit;
   bool mIsFullyOccluded;
+  bool mNeedFastSnaphot;
   // This flag is only used when APZ is off. It indicates that the current pan
   // gesture was processed as a swipe. Sometimes the swipe animation can finish
   // before momentum events of the pan gesture have stopped firing, so this
@@ -734,7 +722,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   // a PANGESTURE_(MAY)START event).
   bool mCurrentPanGestureBelongsToSwipe;
 
-  static nsIRollupListener* gRollupListener;
+  // It's PictureInPicture window.
+  bool mIsPIPWindow : 1;
 
   struct InitialZoomConstraints {
     InitialZoomConstraints(const uint32_t& aPresShellID,

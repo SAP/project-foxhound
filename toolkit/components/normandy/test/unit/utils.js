@@ -4,17 +4,18 @@
 // Loaded into the same scope as head_xpc.js
 /* import-globals-from head_xpc.js */
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { NormandyApi } = ChromeUtils.import(
-  "resource://normandy/lib/NormandyApi.jsm"
+const { NormandyApi } = ChromeUtils.importESModule(
+  "resource://normandy/lib/NormandyApi.sys.mjs"
 );
-const { NormandyTestUtils } = ChromeUtils.import(
-  "resource://testing-common/NormandyTestUtils.jsm"
+const { NormandyTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/NormandyTestUtils.sys.mjs"
 );
 
 const CryptoHash = Components.Constructor(
@@ -43,17 +44,12 @@ class MockResponse {
 }
 
 function withServer(server) {
-  return function(testFunction) {
+  return function (testFunction) {
     return NormandyTestUtils.decorate(
       NormandyTestUtils.withMockPreferences(),
       async function inner({ mockPreferences, ...args }) {
         const serverUrl = `http://localhost:${server.identity.primaryPort}`;
         mockPreferences.set("app.normandy.api_url", `${serverUrl}/api/v1`);
-        mockPreferences.set(
-          "security.content.signature.root_hash",
-          // Hash of the key that signs the normandy dev certificates
-          "4C:35:B1:C3:E3:12:D9:55:E7:78:ED:D0:A7:E7:8A:38:83:04:EF:01:BF:FA:03:29:B2:46:9F:3C:C5:EC:36:04"
-        );
         NormandyApi.clearIndexCache();
 
         try {
@@ -82,7 +78,7 @@ function makeMockApiServer(directory) {
   const server = new HttpServer();
   server.registerDirectory("/", directory);
 
-  server.setIndexHandler(async function(request, response) {
+  server.setIndexHandler(async function (request, response) {
     response.processAsync();
     const dir = request.getProperty("directory");
     const index = dir.clone();
@@ -96,7 +92,7 @@ function makeMockApiServer(directory) {
     }
 
     try {
-      const contents = await OS.File.read(index.path, { encoding: "utf-8" });
+      const contents = await IOUtils.readUTF8(index.path);
       response.write(contents);
     } catch (e) {
       response.setStatusLine("1.1", 500, "Server error");

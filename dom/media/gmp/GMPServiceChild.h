@@ -10,16 +10,15 @@
 #include "MediaResult.h"
 #include "base/process.h"
 #include "mozilla/dom/PContent.h"
-#include "mozilla/ipc/Transport.h"
 #include "mozilla/gmp/PGMPServiceChild.h"
 #include "mozilla/MozPromise.h"
 #include "nsIAsyncShutdown.h"
 #include "nsRefPtrHashtable.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPContentParent;
+class GMPContentParentCloseBlocker;
 class GMPServiceChild;
 
 class GeckoMediaPluginServiceChild : public GeckoMediaPluginService,
@@ -33,7 +32,8 @@ class GeckoMediaPluginServiceChild : public GeckoMediaPluginService,
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIASYNCSHUTDOWNBLOCKER
 
-  NS_IMETHOD HasPluginForAPI(const nsACString& aAPI, nsTArray<nsCString>* aTags,
+  NS_IMETHOD HasPluginForAPI(const nsACString& aAPI,
+                             const nsTArray<nsCString>& aTags,
                              bool* aRetVal) override;
   NS_IMETHOD GetNodeId(const nsAString& aOrigin,
                        const nsAString& aTopLevelOrigin,
@@ -58,7 +58,7 @@ class GeckoMediaPluginServiceChild : public GeckoMediaPluginService,
 
   RefPtr<GetGMPContentParentPromise> GetContentParent(
       GMPCrashHelper* aHelper, const NodeIdVariant& aNodeIdVariant,
-      const nsCString& aAPI, const nsTArray<nsCString>& aTags) override;
+      const nsACString& aAPI, const nsTArray<nsCString>& aTags) override;
 
  private:
   friend class OpenPGMPServiceChild;
@@ -133,6 +133,10 @@ class GeckoMediaPluginServiceChild : public GeckoMediaPluginService,
   // End shutdown blocker management.
 };
 
+/**
+ * This class runs in the content process, and allows the content process to
+ * request an IPC connection to the desired GMP process.
+ */
 class GMPServiceChild : public PGMPServiceChild {
  public:
   // Mark AddRef and Release as `final`, as they overload pure virtual
@@ -146,7 +150,11 @@ class GMPServiceChild : public PGMPServiceChild {
 
   void RemoveGMPContentParent(GMPContentParent* aGMPContentParent);
 
-  void GetAlreadyBridgedTo(nsTArray<ProcessId>& aAlreadyBridgedTo);
+  bool HasAlreadyBridgedTo(base::ProcessId aPid) const;
+
+  void GetAndBlockAlreadyBridgedTo(
+      nsTArray<ProcessId>& aAlreadyBridgedTo,
+      nsTArray<RefPtr<GMPContentParentCloseBlocker>>& aBlockers);
 
   static bool Create(Endpoint<PGMPServiceChild>&& aGMPService);
 
@@ -160,7 +168,6 @@ class GMPServiceChild : public PGMPServiceChild {
   nsRefPtrHashtable<nsUint64HashKey, GMPContentParent> mContentParents;
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // GMPServiceChild_h_

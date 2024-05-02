@@ -6,22 +6,19 @@
 // working out a plan for them, updating the local data and mirror, etc.
 
 use interrupt_support::Interruptee;
-use rusqlite::{
-    types::{Null, ToSql},
-    Connection, Row, Transaction,
-};
+use rusqlite::{Connection, Row, Transaction};
 use sql_support::ConnExt;
-use sync15_traits::Payload;
+use sync15::bso::{IncomingContent, IncomingKind};
 use sync_guid::Guid as SyncGuid;
 
 use crate::api::{StorageChanges, StorageValueChange};
 use crate::error::*;
 
-use super::{merge, remove_matching_keys, JsonMap, Record, RecordData};
+use super::{merge, remove_matching_keys, JsonMap, WebextRecord};
 
 /// The state data can be in. Could be represented as Option<JsonMap>, but this
 /// is clearer and independent of how the data is stored.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DataState {
     /// The data was deleted.
     Deleted,
@@ -69,43 +66,44 @@ fn json_map_from_row(row: &Row<'_>, col: &str) -> Result<DataState> {
 /// The actual processing is done via this table.
 pub fn stage_incoming(
     tx: &Transaction<'_>,
-    incoming_payloads: Vec<Payload>,
+    incoming_records: &[IncomingContent<WebextRecord>],
     signal: &dyn Interruptee,
 ) -> Result<()> {
-    let mut incoming_records = Vec::with_capacity(incoming_payloads.len());
-    for payload in incoming_payloads {
-        incoming_records.push(payload.into_record::<Record>()?);
-    }
     sql_support::each_sized_chunk(
-        &incoming_records,
+        incoming_records,
         // We bind 3 params per chunk.
         sql_support::default_max_variable_number() / 3,
         |chunk, _| -> Result<()> {
-            let sql = format!(
-                "INSERT OR REPLACE INTO temp.storage_sync_staging
-                (guid, ext_id, data)
-                VALUES {}",
-                sql_support::repeat_multi_values(chunk.len(), 3)
-            );
             let mut params = Vec::with_capacity(chunk.len() * 3);
             for record in chunk {
                 signal.err_if_interrupted()?;
-                params.push(&record.guid as &dyn ToSql);
-                match &record.data {
-                    RecordData::Data {
-                        ref ext_id,
-                        ref data,
-                    } => {
-                        params.push(ext_id);
-                        params.push(data);
+                match &record.kind {
+                    IncomingKind::Content(r) => {
+                        params.push(Some(record.envelope.id.to_string()));
+                        params.push(Some(r.ext_id.to_string()));
+                        params.push(Some(r.data.clone()));
                     }
-                    RecordData::Tombstone => {
-                        params.push(&Null);
-                        params.push(&Null);
+                    IncomingKind::Tombstone => {
+                        params.push(Some(record.envelope.id.to_string()));
+                        params.push(None);
+                        params.push(None);
+                    }
+                    IncomingKind::Malformed => {
+                        log::error!("Ignoring incoming malformed record: {}", record.envelope.id);
                     }
                 }
             }
-            tx.execute(&sql, &params)?;
+            // we might have skipped records
+            let actual_len = params.len() / 3;
+            if actual_len != 0 {
+                let sql = format!(
+                    "INSERT OR REPLACE INTO temp.storage_sync_staging
+                    (guid, ext_id, data)
+                    VALUES {}",
+                    sql_support::repeat_multi_values(actual_len, 3)
+                );
+                tx.execute(&sql, rusqlite::params_from_iter(params))?;
+            }
             Ok(())
         },
     )?;
@@ -115,7 +113,7 @@ pub fn stage_incoming(
 /// The "state" we find ourselves in when considering an incoming/staging
 /// record. This "state" is the input to calculating the IncomingAction and
 /// carries all the data we need to make the required local changes.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum IncomingState {
     /// There's an incoming item, but data for that extension doesn't exist
     /// either in our local data store or in the local mirror. IOW, this is the
@@ -219,13 +217,13 @@ pub fn get_incoming(conn: &Connection) -> Result<Vec<(SyncGuid, IncomingState)>>
         Ok((guid, state))
     }
 
-    conn.conn().query_rows_and_then_named(sql, &[], from_row)
+    conn.conn().query_rows_and_then(sql, [], from_row)
 }
 
 /// This is the set of actions we know how to take *locally* for incoming
 /// records. Which one depends on the IncomingState.
 /// Every state which updates also records the set of changes we should notify
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum IncomingAction {
     /// We should locally delete the data for this record
     DeleteLocally {
@@ -395,13 +393,13 @@ pub fn plan_incoming(s: IncomingState) -> IncomingAction {
 }
 
 fn insert_changes(tx: &Transaction<'_>, ext_id: &str, changes: &StorageChanges) -> Result<()> {
-    tx.execute_named_cached(
+    tx.execute_cached(
         "INSERT INTO temp.storage_sync_applied (ext_id, changes)
             VALUES (:ext_id, :changes)",
-        &[
-            (":ext_id", &ext_id),
-            (":changes", &serde_json::to_string(&changes)?),
-        ],
+        rusqlite::named_params! {
+            ":ext_id": ext_id,
+            ":changes": &serde_json::to_string(&changes)?,
+        },
     )?;
     Ok(())
 }
@@ -419,7 +417,7 @@ pub fn apply_actions(
         match action {
             IncomingAction::DeleteLocally { ext_id, changes } => {
                 // Can just nuke it entirely.
-                tx.execute_named_cached(
+                tx.execute_cached(
                     "DELETE FROM storage_sync_data WHERE ext_id = :ext_id",
                     &[(":ext_id", &ext_id)],
                 )?;
@@ -431,13 +429,13 @@ pub fn apply_actions(
                 data,
                 changes,
             } => {
-                tx.execute_named_cached(
+                tx.execute_cached(
                     "INSERT OR REPLACE INTO storage_sync_data(ext_id, data, sync_change_counter)
                         VALUES (:ext_id, :data, 0)",
-                    &[
-                        (":ext_id", &ext_id),
-                        (":data", &serde_json::Value::Object(data)),
-                    ],
+                    rusqlite::named_params! {
+                        ":ext_id": ext_id,
+                        ":data": serde_json::Value::Object(data),
+                    },
                 )?;
                 insert_changes(tx, &ext_id, &changes)?;
             }
@@ -449,12 +447,12 @@ pub fn apply_actions(
                 data,
                 changes,
             } => {
-                tx.execute_named_cached(
+                tx.execute_cached(
                     "UPDATE storage_sync_data SET data = :data, sync_change_counter = sync_change_counter + 1 WHERE ext_id = :ext_id",
-                    &[
-                        (":ext_id", &ext_id),
-                        (":data", &serde_json::Value::Object(data)),
-                    ]
+                    rusqlite::named_params! {
+                        ":ext_id": ext_id,
+                        ":data": serde_json::Value::Object(data),
+                    },
                 )?;
                 insert_changes(tx, &ext_id, &changes)?;
             }
@@ -462,7 +460,7 @@ pub fn apply_actions(
             // Both local and remote ended up the same - only need to nuke the
             // change counter.
             IncomingAction::Same { ext_id } => {
-                tx.execute_named_cached(
+                tx.execute_cached(
                     "UPDATE storage_sync_data SET sync_change_counter = 0 WHERE ext_id = :ext_id",
                     &[(":ext_id", &ext_id)],
                 )?;
@@ -481,22 +479,21 @@ mod tests {
     use super::*;
     use crate::api;
     use interrupt_support::NeverInterrupts;
-    use rusqlite::NO_PARAMS;
     use serde_json::{json, Value};
-    use sync15_traits::Payload;
+    use sync15::bso::IncomingBso;
 
     // select simple int
     fn ssi(conn: &Connection, stmt: &str) -> u32 {
-        conn.try_query_one(stmt, &[], true)
+        conn.try_query_one(stmt, [], true)
             .expect("must work")
             .unwrap_or_default()
     }
 
-    fn array_to_incoming(mut array: Value) -> Vec<Payload> {
+    fn array_to_incoming(mut array: Value) -> Vec<IncomingContent<WebextRecord>> {
         let jv = array.as_array_mut().expect("you must pass a json array");
         let mut result = Vec::with_capacity(jv.len());
         for elt in jv {
-            result.push(Payload::from_json(elt.take()).expect("must be valid"));
+            result.push(IncomingBso::from_test_content(elt.take()).into_content());
         }
         result
     }
@@ -520,7 +517,7 @@ mod tests {
                 key: $key.to_string(),
                 old_value: Some(json!($old)),
                 new_value: None,
-            };
+            }
         };
         ($key:literal, None, $new:tt) => {
             StorageValueChange {
@@ -534,7 +531,7 @@ mod tests {
                 key: $key.to_string(),
                 old_value: Some(json!($old)),
                 new_value: Some(json!($new)),
-            };
+            }
         };
     }
     macro_rules! changes {
@@ -562,7 +559,7 @@ mod tests {
             }
         ]};
 
-        stage_incoming(&tx, array_to_incoming(incoming), &NeverInterrupts)?;
+        stage_incoming(&tx, &array_to_incoming(incoming), &NeverInterrupts)?;
         // check staging table
         assert_eq!(
             ssi(&tx, "SELECT count(*) FROM temp.storage_sync_staging"),
@@ -582,7 +579,7 @@ mod tests {
             INSERT INTO temp.storage_sync_staging (guid, ext_id, data)
             VALUES ('guid', 'ext_id', '{"foo":"bar"}')
         "#,
-            NO_PARAMS,
+            [],
         )?;
 
         let incoming = get_incoming(&tx)?;
@@ -602,7 +599,7 @@ mod tests {
             INSERT INTO storage_sync_mirror (guid, ext_id, data)
             VALUES ('guid', 'ext_id', '{"foo":"new"}')
         "#,
-            NO_PARAMS,
+            [],
         )?;
         let incoming = get_incoming(&tx)?;
         assert_eq!(incoming.len(), 1);
@@ -643,7 +640,7 @@ mod tests {
             INSERT INTO temp.storage_sync_staging (guid, ext_id, data)
             VALUES ('guid', NULL, NULL)
         "#,
-            NO_PARAMS,
+            [],
         )?;
 
         let incoming = get_incoming(&tx)?;
@@ -657,7 +654,7 @@ mod tests {
             INSERT INTO storage_sync_mirror (guid, ext_id, data)
             VALUES ('guid', NULL, NULL)
         "#,
-            NO_PARAMS,
+            [],
         )?;
         let incoming = get_incoming(&tx)?;
         assert_eq!(incoming.len(), 1);
@@ -668,7 +665,7 @@ mod tests {
             INSERT INTO storage_sync_data (ext_id, data)
             VALUES ('ext_id', NULL)
         "#,
-            NO_PARAMS,
+            [],
         )?;
         let incoming = get_incoming(&tx)?;
         assert_eq!(incoming.len(), 1);
@@ -690,9 +687,9 @@ mod tests {
     }
 
     fn get_local_item(conn: &Connection) -> Option<LocalItem> {
-        conn.try_query_row::<_, Error, _>(
+        conn.try_query_row::<_, Error, _, _>(
             "SELECT data, sync_change_counter FROM storage_sync_data WHERE ext_id = 'ext_id'",
-            &[],
+            [],
             |row| {
                 let data = json_map_from_row(row, "data")?;
                 let sync_change_counter = row.get::<_, i32>(1)?;
@@ -709,9 +706,9 @@ mod tests {
     fn get_applied_item_changes(conn: &Connection) -> Option<StorageChanges> {
         // no custom deserialize for storagechanges and we only need it for
         // tests, so do it manually.
-        conn.try_query_row::<_, Error, _>(
+        conn.try_query_row::<_, Error, _, _>(
             "SELECT changes FROM temp.storage_sync_applied WHERE ext_id = 'ext_id'",
-            &[],
+            [],
             |row| Ok(serde_json::from_str(&row.get::<_, String>("changes")?)?),
             true,
         )

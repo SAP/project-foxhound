@@ -6,12 +6,20 @@
 
 use crate::parser::{Parse, ParserContext};
 use crate::One;
+use crate::values::animated::ToAnimatedZero;
 use byteorder::{BigEndian, ReadBytesExt};
 use cssparser::Parser;
 use std::fmt::{self, Write};
 use std::io::Cursor;
 use style_traits::{CssWriter, ParseError};
 use style_traits::{StyleParseErrorKind, ToCss};
+
+/// A trait for values that are labelled with a FontTag (for feature and
+/// variation settings).
+pub trait TaggedFontValue {
+    /// The value's tag.
+    fn tag(&self) -> FontTag;
+}
 
 /// https://drafts.csswg.org/css-fonts-4/#feature-tag-value
 #[derive(
@@ -30,6 +38,12 @@ pub struct FeatureTagValue<Integer> {
     pub tag: FontTag,
     /// The actual value.
     pub value: Integer,
+}
+
+impl<T> TaggedFontValue for FeatureTagValue<T> {
+    fn tag(&self) -> FontTag {
+        self.tag
+    }
 }
 
 impl<Integer> ToCss for FeatureTagValue<Integer>
@@ -76,18 +90,15 @@ pub struct VariationValue<Number> {
     pub value: Number,
 }
 
+impl<T> TaggedFontValue for VariationValue<T> {
+    fn tag(&self) -> FontTag {
+        self.tag
+    }
+}
+
 /// A value both for font-variation-settings and font-feature-settings.
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToResolvedValue,
-    ToShmem,
+    Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToResolvedValue, ToShmem,
 )]
 #[css(comma)]
 pub struct FontSettings<T>(#[css(if_empty = "normal", iterable)] pub Box<[T]>);
@@ -205,9 +216,7 @@ pub enum FontStyle<Angle> {
 
 /// A generic value for the `font-size-adjust` property.
 ///
-/// https://www.w3.org/TR/css-fonts-4/#font-size-adjust-prop
-/// https://github.com/w3c/csswg-drafts/issues/6160
-/// https://github.com/w3c/csswg-drafts/issues/6288
+/// https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
 #[allow(missing_docs)]
 #[repr(u8)]
 #[derive(
@@ -226,22 +235,22 @@ pub enum FontStyle<Angle> {
     ToResolvedValue,
     ToShmem,
 )]
-pub enum GenericFontSizeAdjust<Number> {
+pub enum GenericFontSizeAdjust<Factor> {
     #[animation(error)]
     None,
-    // 'ex-height' is the implied basis, so the keyword can be omitted
-    ExHeight(Number),
     #[value_info(starts_with_keyword)]
-    CapHeight(Number),
+    ExHeight(Factor),
     #[value_info(starts_with_keyword)]
-    ChWidth(Number),
+    CapHeight(Factor),
     #[value_info(starts_with_keyword)]
-    IcWidth(Number),
+    ChWidth(Factor),
     #[value_info(starts_with_keyword)]
-    IcHeight(Number),
+    IcWidth(Factor),
+    #[value_info(starts_with_keyword)]
+    IcHeight(Factor),
 }
 
-impl<Number: ToCss> ToCss for GenericFontSizeAdjust<Number> {
+impl<Factor: ToCss> ToCss for GenericFontSizeAdjust<Factor> {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
@@ -257,5 +266,51 @@ impl<Number: ToCss> ToCss for GenericFontSizeAdjust<Number> {
 
         dest.write_str(prefix)?;
         value.to_css(dest)
+    }
+}
+
+/// A generic value for the `line-height` property.
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToAnimatedValue,
+    ToCss,
+    ToShmem,
+    Parse,
+)]
+#[repr(C, u8)]
+pub enum GenericLineHeight<N, L> {
+    /// `normal`
+    Normal,
+    /// `-moz-block-height`
+    #[cfg(feature = "gecko")]
+    #[parse(condition = "ParserContext::in_ua_sheet")]
+    MozBlockHeight,
+    /// `<number>`
+    Number(N),
+    /// `<length-percentage>`
+    Length(L),
+}
+
+pub use self::GenericLineHeight as LineHeight;
+
+impl<N, L> ToAnimatedZero for LineHeight<N, L> {
+    #[inline]
+    fn to_animated_zero(&self) -> Result<Self, ()> {
+        Err(())
+    }
+}
+
+impl<N, L> LineHeight<N, L> {
+    /// Returns `normal`.
+    #[inline]
+    pub fn normal() -> Self {
+        LineHeight::Normal
     }
 }

@@ -6,7 +6,6 @@
 
 # This is a template config file for web-platform-tests test.
 
-from __future__ import absolute_import
 import os
 import platform
 import sys
@@ -28,12 +27,12 @@ TASKBAR_AUTOHIDE_REG_PATH = {
 
 config = {
     "options": [
-        "--prefs-root=%(test_path)s/prefs",
-        "--config=%(test_path)s/wptrunner.ini",
-        "--ca-cert-path=%(test_path)s/tests/tools/certs/cacert.pem",
-        "--host-key-path=%(test_path)s/tests/tools/certs/web-platform.test.key",
-        "--host-cert-path=%(test_path)s/tests/tools/certs/web-platform.test.pem",
-        "--certutil-binary=%(test_install_path)s/bin/certutil",
+        "--prefs-root=%(test_path)s\\prefs",
+        "--config=%(test_path)s\\wptrunner.ini",
+        "--ca-cert-path=%(test_path)s\\tests\\tools\\certs\\cacert.pem",
+        "--host-key-path=%(test_path)s\\tests\\tools\\certs\\web-platform.test.key",
+        "--host-cert-path=%(test_path)s\\tests\\tools\\certs\\web-platform.test.pem",
+        "--certutil-binary=%(test_install_path)s\\bin\\certutil.exe",
     ],
     "exes": {
         "python": sys.executable,
@@ -92,6 +91,17 @@ config = {
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
+            "enabled": True,
+        },
+        {
+            "name": "create scrollbars always show key",
+            "cmd": [
+                "powershell",
+                "-command",
+                "New-ItemProperty -Path 'HKCU:\Control Panel\Accessibility' -Name 'DynamicScrollbars' -Value 0",
+            ],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": False,
             "enabled": True,
         },
         {

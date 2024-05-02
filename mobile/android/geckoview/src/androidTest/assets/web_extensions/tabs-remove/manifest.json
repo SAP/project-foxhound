@@ -3,7 +3,7 @@
   "name": "messaging",
   "version": "1.0",
   "description": "Removes an existing tab.",
-  "applications": {
+  "browser_specific_settings": {
     "gecko": {
       "id": "tabs-remove@tests.mozilla.org"
     }
@@ -11,7 +11,5 @@
   "background": {
     "scripts": ["background.js"]
   },
-  "permissions": [
-    "tabs"
-  ]
+  "permissions": ["tabs"]
 }

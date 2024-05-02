@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # This is a template config file for marionette production on Windows.
-from __future__ import absolute_import
 import os
 import platform
 import sys
@@ -39,12 +38,10 @@ config = {
         "install",
         "run-tests",
     ],
-    "download_symbols": "ondemand",
     "suite_definitions": {
         "marionette_desktop": {
             "options": [
                 "-vv",
-                "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--log-html=%(html_report_file)s",
                 "--binary=%(binary)s",
@@ -108,6 +105,17 @@ config = {
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
+            "enabled": True,
+        },
+        {
+            "name": "create scrollbars always show key",
+            "cmd": [
+                "powershell",
+                "-command",
+                "New-ItemProperty -Path 'HKCU:\Control Panel\Accessibility' -Name 'DynamicScrollbars' -Value 0",
+            ],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": False,
             "enabled": True,
         },
         {

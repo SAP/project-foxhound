@@ -15,7 +15,9 @@
 #include "mozilla/dom/PContent.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 
+#include "mozilla/extensions/MatchPattern.h"
 #include "nsContentUtils.h"
+#include "JSActorProtocolUtils.h"
 
 namespace mozilla::dom {
 
@@ -27,21 +29,21 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(JSWindowActorProtocol)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEventListener)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION(JSWindowActorProtocol, mURIMatcher)
+NS_IMPL_CYCLE_COLLECTION(JSWindowActorProtocol)
 
 /* static */ already_AddRefed<JSWindowActorProtocol>
 JSWindowActorProtocol::FromIPC(const JSWindowActorInfo& aInfo) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsContentProcess());
 
   RefPtr<JSWindowActorProtocol> proto = new JSWindowActorProtocol(aInfo.name());
+  JSActorProtocolUtils::FromIPCShared(proto, aInfo);
+
   // Content processes cannot load chrome browsing contexts, so this flag is
   // irrelevant and not propagated.
   proto->mIncludeChrome = false;
   proto->mAllFrames = aInfo.allFrames();
   proto->mMatches = aInfo.matches().Clone();
-  proto->mRemoteTypes = aInfo.remoteTypes().Clone();
   proto->mMessageManagerGroups = aInfo.messageManagerGroups().Clone();
-  proto->mChild.mModuleURI = aInfo.url();
 
   proto->mChild.mEvents.SetCapacity(aInfo.events().Length());
   for (auto& ipc : aInfo.events()) {
@@ -56,7 +58,6 @@ JSWindowActorProtocol::FromIPC(const JSWindowActorInfo& aInfo) {
     event->mCreateActor = ipc.createActor();
   }
 
-  proto->mChild.mObservers = aInfo.observers().Clone();
   return proto.forget();
 }
 
@@ -64,12 +65,11 @@ JSWindowActorInfo JSWindowActorProtocol::ToIPC() {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
 
   JSWindowActorInfo info;
-  info.name() = mName;
+  JSActorProtocolUtils::ToIPCShared(info, this);
+
   info.allFrames() = mAllFrames;
   info.matches() = mMatches.Clone();
-  info.remoteTypes() = mRemoteTypes.Clone();
   info.messageManagerGroups() = mMessageManagerGroups.Clone();
-  info.url() = mChild.mModuleURI;
 
   info.events().SetCapacity(mChild.mEvents.Length());
   for (auto& event : mChild.mEvents) {
@@ -84,7 +84,6 @@ JSWindowActorInfo JSWindowActorProtocol::ToIPC() {
     ipc->createActor() = event.mCreateActor;
   }
 
-  info.observers() = mChild.mObservers.Clone();
   return info;
 }
 
@@ -95,6 +94,10 @@ JSWindowActorProtocol::FromWebIDLOptions(const nsACString& aName,
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
 
   RefPtr<JSWindowActorProtocol> proto = new JSWindowActorProtocol(aName);
+  if (!JSActorProtocolUtils::FromWebIDLOptionsShared(proto, aOptions, aRv)) {
+    return nullptr;
+  }
+
   proto->mAllFrames = aOptions.mAllFrames;
   proto->mIncludeChrome = aOptions.mIncludeChrome;
 
@@ -103,27 +106,8 @@ JSWindowActorProtocol::FromWebIDLOptions(const nsACString& aName,
     proto->mMatches = aOptions.mMatches.Value();
   }
 
-  if (aOptions.mRemoteTypes.WasPassed()) {
-    MOZ_ASSERT(aOptions.mRemoteTypes.Value().Length());
-    proto->mRemoteTypes = aOptions.mRemoteTypes.Value();
-  }
-
   if (aOptions.mMessageManagerGroups.WasPassed()) {
     proto->mMessageManagerGroups = aOptions.mMessageManagerGroups.Value();
-  }
-
-  if (aOptions.mParent.WasPassed()) {
-    proto->mParent.mModuleURI.emplace(aOptions.mParent.Value().mModuleURI);
-  }
-  if (aOptions.mChild.WasPassed()) {
-    proto->mChild.mModuleURI.emplace(aOptions.mChild.Value().mModuleURI);
-  }
-
-  if (!aOptions.mChild.WasPassed() && !aOptions.mParent.WasPassed()) {
-    aRv.ThrowNotSupportedError(
-        "No point registering an actor with neither child nor parent "
-        "specifications.");
-    return nullptr;
   }
 
   // For each event declared in the source dictionary, initialize the
@@ -155,11 +139,6 @@ JSWindowActorProtocol::FromWebIDLOptions(const nsACString& aName,
       }
       evt->mCreateActor = entry.mValue.mCreateActor;
     }
-  }
-
-  if (aOptions.mChild.WasPassed() &&
-      aOptions.mChild.Value().mObservers.WasPassed()) {
-    proto->mChild.mObservers = aOptions.mChild.Value().mObservers.Value();
   }
 
   return proto.forget();
@@ -244,7 +223,7 @@ NS_IMETHODIMP JSWindowActorProtocol::Observe(nsISupports* aSubject,
           NS_ConvertUTF8toUTF16(nsPrintfCString(
               "JSWindowActor %s: expected window subject for topic '%s'.",
               mName.get(), aTopic)),
-          "JSActor",
+          "JSActor"_ns,
           /* aFromPrivateWindow */ false,
           /* aFromChromeContext */ true);
       return NS_ERROR_FAILURE;
@@ -315,30 +294,18 @@ void JSWindowActorProtocol::RemoveObservers() {
   }
 }
 
-extensions::MatchPatternSet* JSWindowActorProtocol::GetURIMatcher() {
+extensions::MatchPatternSetCore* JSWindowActorProtocol::GetURIMatcher() {
   // If we've already created the pattern set, return it.
   if (mURIMatcher || mMatches.IsEmpty()) {
     return mURIMatcher;
   }
 
-  // Constructing the MatchPatternSet requires a JS environment to be run in.
-  // We can construct it here in the JSM scope, as we will be keeping it around.
-  AutoJSAPI jsapi;
-  MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
-  GlobalObject global(jsapi.cx(), xpc::PrivilegedJunkScope());
-
-  nsTArray<OwningStringOrMatchPattern> patterns;
-  patterns.SetCapacity(mMatches.Length());
-  for (nsString& s : mMatches) {
-    auto entry = patterns.AppendElement();
-    entry->SetAsString() = s;
+  nsTArray<RefPtr<extensions::MatchPatternCore>> patterns(mMatches.Length());
+  for (const nsString& pattern : mMatches) {
+    patterns.AppendElement(new extensions::MatchPatternCore(
+        pattern, false, false, IgnoreErrors()));
   }
-
-  MatchPatternOptions matchPatternOptions;
-  // Make MatchPattern's mSchemes create properly.
-  matchPatternOptions.mRestrictSchemes = false;
-  mURIMatcher = extensions::MatchPatternSet::Constructor(
-      global, patterns, matchPatternOptions, IgnoreErrors());
+  mURIMatcher = new extensions::MatchPatternSetCore(std::move(patterns));
   return mURIMatcher;
 }
 
@@ -398,7 +365,7 @@ bool JSWindowActorProtocol::Matches(BrowsingContext* aBrowsingContext,
     return false;
   }
 
-  if (extensions::MatchPatternSet* uriMatcher = GetURIMatcher()) {
+  if (extensions::MatchPatternSetCore* uriMatcher = GetURIMatcher()) {
     if (!uriMatcher->Matches(aURI)) {
       aRv.ThrowNotSupportedError(nsPrintfCString(
           "Window protocol '%s' doesn't match uri %s", mName.get(),

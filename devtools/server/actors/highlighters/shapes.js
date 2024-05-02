@@ -7,23 +7,23 @@
 const {
   CanvasFrameAnonymousContentHelper,
   getComputedStyle,
-} = require("devtools/server/actors/highlighters/utils/markup");
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
 const {
   setIgnoreLayoutChanges,
   getCurrentZoom,
   getAdjustedQuads,
   getFrameOffsets,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 const {
   AutoRefreshHighlighter,
-} = require("devtools/server/actors/highlighters/auto-refresh");
+} = require("resource://devtools/server/actors/highlighters/auto-refresh.js");
 const {
   getDistance,
   clickedOnEllipseEdge,
   distanceToLine,
   projection,
   clickedOnPoint,
-} = require("devtools/server/actors/utils/shapes-utils");
+} = require("resource://devtools/server/actors/utils/shapes-utils.js");
 const {
   identity,
   apply,
@@ -33,9 +33,11 @@ const {
   rotate,
   changeMatrixBase,
   getBasis,
-} = require("devtools/shared/layout/dom-matrix-2d");
-const EventEmitter = require("devtools/shared/event-emitter");
-const { getCSSStyleRules } = require("devtools/shared/inspector/css-logic");
+} = require("resource://devtools/shared/layout/dom-matrix-2d.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const {
+  getCSSStyleRules,
+} = require("resource://devtools/shared/inspector/css-logic.js");
 
 const BASE_MARKER_SIZE = 5;
 // the width of the area around highlighter lines that can be clicked, in px
@@ -380,8 +382,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     // and "stroke-box" is not specified. stroke only applies to SVG elements, so use
     // getBBox, which only exists for SVG, to check if currentNode is an SVG element.
     if (
-      this.currentNode.getBBox &&
-      getComputedStyle(this.currentNode).stroke !== "none" &&
+      this.drawingNode.getBBox &&
+      getComputedStyle(this.drawingNode).stroke !== "none" &&
       !this.useStrokeBox
     ) {
       dims = getObjectBoundingBox(
@@ -389,7 +391,7 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
         dims.left,
         dims.width,
         dims.height,
-        this.currentNode
+        this.drawingNode
       );
     }
 
@@ -405,11 +407,11 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     // In an iframe, we get the node's quads relative to the frame, instead of the parent
     // document.
     let dims =
-      this.highlighterEnv.window.document === this.currentNode.ownerDocument
+      this.highlighterEnv.window.document === this.drawingNode.ownerDocument
         ? this.currentQuads[this.referenceBox][0].bounds
         : getAdjustedQuads(
-            this.currentNode.ownerGlobal,
-            this.currentNode,
+            this.drawingNode.ownerGlobal,
+            this.drawingNode,
             this.referenceBox
           )[0].bounds;
     const zoom = getCurrentZoom(this.win);
@@ -420,8 +422,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     // and "stroke-box" is not specified. stroke only applies to SVG elements, so use
     // getBBox, which only exists for SVG, to check if currentNode is an SVG element.
     if (
-      this.currentNode.getBBox &&
-      getComputedStyle(this.currentNode).stroke !== "none" &&
+      this.drawingNode.getBBox &&
+      getComputedStyle(this.drawingNode).stroke !== "none" &&
       !this.useStrokeBox
     ) {
       dims = getObjectBoundingBox(
@@ -429,7 +431,7 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
         dims.left,
         dims.width,
         dims.height,
-        this.currentNode
+        this.drawingNode
       );
     }
 
@@ -1014,16 +1016,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
    *                 before scaling
    */
   _transformCircle(transX = null) {
-    const {
-      unitX,
-      unitY,
-      unitRad,
-      valueX,
-      valueY,
-      ratioX,
-      ratioY,
-      ratioRad,
-    } = this[_dragging];
+    const { unitX, unitY, unitRad, valueX, valueY, ratioX, ratioY, ratioRad } =
+      this[_dragging];
     let { radius } = this.coordUnits;
 
     let [newCx, newCy] = apply(this.transformMatrix, [
@@ -1086,7 +1080,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     newCy = round(newCy * ratioY, unitY);
 
     const centerStr = `${newCx}${unitX} ${newCy}${unitY}`;
-    const ellipseDef = `ellipse(${rx} ${ry} at ${centerStr}) ${this.geometryBox}`.trim();
+    const ellipseDef =
+      `ellipse(${rx} ${ry} at ${centerStr}) ${this.geometryBox}`.trim();
     this.emit("highlighter-event", { type: "shape-change", value: ellipseDef });
   }
 
@@ -1173,9 +1168,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
    * @param {Number} pageY the new y coordinate of the point
    */
   _handlePolygonMove(pageX, pageY) {
-    const { point, unitX, unitY, valueX, valueY, ratioX, ratioY, x, y } = this[
-      _dragging
-    ];
+    const { point, unitX, unitY, valueX, valueY, ratioX, ratioY, x, y } =
+      this[_dragging];
     const deltaX = (pageX - x) * ratioX;
     const deltaY = (pageY - y) * ratioY;
     const newX = round(valueX + deltaX, unitX);
@@ -1304,15 +1298,15 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     const { radius, cx, cy } = this.coordUnits;
 
     if (point === "center") {
-      const { unitX, unitY, valueX, valueY, ratioX, ratioY, x, y } = this[
-        _dragging
-      ];
+      const { unitX, unitY, valueX, valueY, ratioX, ratioY, x, y } =
+        this[_dragging];
       const deltaX = (pageX - x) * ratioX;
       const deltaY = (pageY - y) * ratioY;
       const newCx = `${round(valueX + deltaX, unitX)}${unitX}`;
       const newCy = `${round(valueY + deltaY, unitY)}${unitY}`;
       // if not defined by the user, geometryBox will be an empty string; trim() cleans up
-      const circleDef = `circle(${radius} at ${newCx} ${newCy}) ${this.geometryBox}`.trim();
+      const circleDef =
+        `circle(${radius} at ${newCx} ${newCy}) ${this.geometryBox}`.trim();
 
       this.emit("highlighter-event", {
         type: "shape-change",
@@ -1330,7 +1324,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
       const delta = (newRadiusPx - origRadius) * ratio;
       const newRadius = `${round(value + delta, unit)}${unit}`;
 
-      const circleDef = `circle(${newRadius} at ${cx} ${cy}) ${this.geometryBox}`.trim();
+      const circleDef =
+        `circle(${newRadius} at ${cx} ${cy}) ${this.geometryBox}`.trim();
 
       this.emit("highlighter-event", {
         type: "shape-change",
@@ -1417,14 +1412,14 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     const { rx, ry, cx, cy } = this.coordUnits;
 
     if (point === "center") {
-      const { unitX, unitY, valueX, valueY, ratioX, ratioY, x, y } = this[
-        _dragging
-      ];
+      const { unitX, unitY, valueX, valueY, ratioX, ratioY, x, y } =
+        this[_dragging];
       const deltaX = (pageX - x) * ratioX;
       const deltaY = (pageY - y) * ratioY;
       const newCx = `${round(valueX + deltaX, unitX)}${unitX}`;
       const newCy = `${round(valueY + deltaY, unitY)}${unitY}`;
-      const ellipseDef = `ellipse(${rx} ${ry} at ${newCx} ${newCy}) ${this.geometryBox}`.trim();
+      const ellipseDef =
+        `ellipse(${rx} ${ry} at ${newCx} ${newCy}) ${this.geometryBox}`.trim();
 
       this.emit("highlighter-event", {
         type: "shape-change",
@@ -1437,7 +1432,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
       const delta = ((newRadiusPercent / 100) * width - origRadius) * ratio;
       const newRadius = `${round(value + delta, unit)}${unit}`;
 
-      const ellipseDef = `ellipse(${newRadius} ${ry} at ${cx} ${cy}) ${this.geometryBox}`.trim();
+      const ellipseDef =
+        `ellipse(${newRadius} ${ry} at ${cx} ${cy}) ${this.geometryBox}`.trim();
 
       this.emit("highlighter-event", {
         type: "shape-change",
@@ -1450,7 +1446,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
       const delta = ((newRadiusPercent / 100) * height - origRadius) * ratio;
       const newRadius = `${round(value + delta, unit)}${unit}`;
 
-      const ellipseDef = `ellipse(${rx} ${newRadius} at ${cx} ${cy}) ${this.geometryBox}`.trim();
+      const ellipseDef =
+        `ellipse(${rx} ${newRadius} at ${cx} ${cy}) ${this.geometryBox}`.trim();
 
       this.emit("highlighter-event", {
         type: "shape-change",
@@ -1589,18 +1586,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
         this.setCursor("auto");
         return;
       }
-      const {
-        nw,
-        ne,
-        sw,
-        se,
-        n,
-        w,
-        s,
-        e,
-        rotatePoint,
-        center,
-      } = this.transformedBoundingBox;
+      const { nw, ne, sw, se, n, w, s, e, rotatePoint, center } =
+        this.transformedBoundingBox;
 
       const points = [
         {
@@ -1767,18 +1754,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
    *          to the shape.
    */
   getTransformPointAt(pageX, pageY) {
-    const {
-      nw,
-      ne,
-      sw,
-      se,
-      n,
-      w,
-      s,
-      e,
-      rotatePoint,
-      center,
-    } = this.transformedBoundingBox;
+    const { nw, ne, sw, se, n, w, s, e, rotatePoint, center } =
+      this.transformedBoundingBox;
     const { width, height } = this.currentDimensions;
     const zoom = getCurrentZoom(this.win);
     const clickRadiusX = ((BASE_MARKER_SIZE / zoom) * 100) / width;
@@ -2069,9 +2046,14 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
       },
     ];
     const geometryTypes = ["margin", "border", "padding", "content"];
+    // default to border for clip-path and offset-path, and margin for shape-outside
+    const defaultGeometryTypesByProperty = new Map([
+      ["clip-path", "border"],
+      ["offset-path", "border"],
+      ["shape-outside", "margin"],
+    ]);
 
-    // default to border for clip-path, and margin for shape-outside
-    let referenceBox = this.property === "clip-path" ? "border" : "margin";
+    let referenceBox = defaultGeometryTypesByProperty.get(this.property);
     for (const geometry of geometryTypes) {
       if (definition.includes(geometry)) {
         referenceBox = geometry;
@@ -2189,7 +2171,9 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     const values = definition.split("at");
     let radius = values[0] ? values[0].trim() : "closest-side";
     const { width, height } = this.currentDimensions;
-    const center = splitCoords(values[1]).map(
+    // This defaults to center if omitted.
+    const position = values[1] || "50% 50%";
+    const center = splitCoords(position).map(
       this.convertCoordsToPercent.bind(this)
     );
 
@@ -2276,7 +2260,9 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     }
 
     const values = definition.split("at");
-    const center = splitCoords(values[1]).map(
+    // This defaults to center if omitted.
+    const position = values[1] || "50% 50%";
+    const center = splitCoords(position).map(
       this.convertCoordsToPercent.bind(this)
     );
 
@@ -2350,9 +2336,7 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
       this.origCoordUnits = this.coordUnits;
     }
     const values = definition.split(" round ");
-    const offsets = splitCoords(values[0]).map(
-      this.convertCoordsToPercent.bind(this)
-    );
+    const offsets = splitCoords(values[0]);
 
     let top, left, right, bottom;
     // The offsets, like margin/padding/border, are in order: top, right, bottom, left.
@@ -2371,6 +2355,11 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
       bottom = offsets[2];
       left = offsets[3];
     }
+
+    top = this.convertCoordsToPercentFromCurrentDimension(top, "height");
+    bottom = this.convertCoordsToPercentFromCurrentDimension(bottom, "height");
+    left = this.convertCoordsToPercentFromCurrentDimension(left, "width");
+    right = this.convertCoordsToPercentFromCurrentDimension(right, "width");
 
     // maxX/maxY are found by subtracting the right/bottom edges from 100
     // (the width/height of the element in %)
@@ -2430,9 +2419,32 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
     return { top, left, right, bottom };
   }
 
+  /**
+   * This uses the index to decide whether to use width or height for the
+   * computation. See `convertCoordsToPercentFromCurrentDimension()` if you
+   * need to specify width or height.
+   * @param {Number} coord a single coordinate
+   * @param {Number} i the index of its position in the function
+   * @returns {Number} the coordinate as a percentage value
+   */
   convertCoordsToPercent(coord, i) {
     const { width, height } = this.currentDimensions;
     const size = i % 2 === 0 ? width : height;
+    if (coord.includes("calc(")) {
+      return evalCalcExpression(coord.substring(5, coord.length - 1), size);
+    }
+    return coordToPercent(coord, size);
+  }
+
+  /**
+   * Converts a value to percent based on the specified dimension.
+   * @param {Number} coord a single coordinate
+   * @param {Number} currentDimensionProperty the dimension ("width" or
+   *        "height") to base the calculation off of
+   * @returns {Number} the coordinate as a percentage value
+   */
+  convertCoordsToPercentFromCurrentDimension(coord, currentDimensionProperty) {
+    const size = this.currentDimensions[currentDimensionProperty];
     if (coord.includes("calc(")) {
       return evalCalcExpression(coord.substring(5, coord.length - 1), size);
     }
@@ -2690,18 +2702,8 @@ class ShapesHighlighter extends AutoRefreshHighlighter {
    * @param {Number} zoom the zoom level of the window
    */
   _updateTransformMode(width, height, zoom) {
-    const {
-      nw,
-      ne,
-      sw,
-      se,
-      n,
-      w,
-      s,
-      e,
-      rotatePoint,
-      center,
-    } = this.transformedBoundingBox;
+    const { nw, ne, sw, se, n, w, s, e, rotatePoint, center } =
+      this.transformedBoundingBox;
     const boundingBox = this.getElement("bounding-box");
     const path = `M${nw.join(" ")} L${ne.join(" ")} L${se.join(" ")} L${sw.join(
       " "

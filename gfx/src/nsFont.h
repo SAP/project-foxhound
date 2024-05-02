@@ -10,9 +10,8 @@
 #include <cstdint>
 #include "gfxFontConstants.h"  // for NS_FONT_KERNING_AUTO, etc
 #include "gfxFontVariations.h"
-#include "mozilla/FontPropertyTypes.h"
-#include "mozilla/ServoStyleConstsInlines.h"
-#include "mozilla/StyleColorInlines.h"  // for StyleRGBA
+#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/StyleColorInlines.h"  // for StyleAbsoluteColor
 #include "nsTArray.h"                   // for nsTArray
 
 struct gfxFontFeature;
@@ -42,11 +41,6 @@ struct nsFont final {
   mozilla::StyleFontSizeAdjust sizeAdjust =
       mozilla::StyleFontSizeAdjust::None();
 
-  // The estimated background color behind the text. Enables a special
-  // rendering mode when NS_GET_A(.) > 0. Only used for text in the chrome.
-  mozilla::StyleRGBA fontSmoothingBackgroundColor =
-      mozilla::StyleRGBA::Transparent();
-
   // Language system tag, to override document language;
   // this is an OpenType "language system" tag represented as a 32-bit integer
   // (see http://www.microsoft.com/typography/otspec/languagetags.htm).
@@ -54,14 +48,14 @@ struct nsFont final {
 
   // Font-selection/rendering properties corresponding to CSS font-style,
   // font-weight, font-stretch. These are all 16-bit types.
-  FontSlantStyle style = FontSlantStyle::Normal();
-  FontWeight weight = FontWeight::Normal();
-  FontStretch stretch = FontStretch::Normal();
+  FontSlantStyle style = FontSlantStyle::NORMAL;
+  FontWeight weight = FontWeight::NORMAL;
+  FontStretch stretch = FontStretch::NORMAL;
 
   // Some font-variant-alternates property values require
   // font-specific settings defined via @font-feature-values rules.
   // These are resolved *after* font matching occurs.
-  mozilla::StyleVariantAlternatesList variantAlternates;
+  mozilla::StyleFontVariantAlternates variantAlternates;
 
   // Variant subproperties
   uint16_t variantLigatures = NS_FONT_VARIANT_LIGATURES_NORMAL;
@@ -71,6 +65,7 @@ struct nsFont final {
   uint8_t variantNumeric = NS_FONT_VARIANT_NUMERIC_NORMAL;
   uint8_t variantPosition = NS_FONT_VARIANT_POSITION_NORMAL;
   uint8_t variantWidth = NS_FONT_VARIANT_WIDTH_NORMAL;
+  StyleFontVariantEmoji variantEmoji = StyleFontVariantEmoji::Normal;
 
   // Smoothing - controls subpixel-antialiasing (currently OSX only)
   uint8_t smoothing = NS_FONT_SMOOTHING_AUTO;
@@ -83,8 +78,14 @@ struct nsFont final {
   uint8_t opticalSizing = NS_FONT_OPTICAL_SIZING_AUTO;
 
   // Synthesis setting, controls use of fake bolding/italics/small-caps
-  uint8_t synthesis = NS_FONT_SYNTHESIS_WEIGHT | NS_FONT_SYNTHESIS_STYLE |
-                      NS_FONT_SYNTHESIS_SMALL_CAPS;
+  mozilla::StyleFontSynthesis synthesisWeight =
+      mozilla::StyleFontSynthesis::Auto;
+  mozilla::StyleFontSynthesis synthesisStyle =
+      mozilla::StyleFontSynthesis::Auto;
+  mozilla::StyleFontSynthesis synthesisSmallCaps =
+      mozilla::StyleFontSynthesis::Auto;
+  mozilla::StyleFontSynthesis synthesisPosition =
+      mozilla::StyleFontSynthesis::Auto;
 
   // initialize the font with a fontlist
   nsFont(const mozilla::StyleFontFamily&, mozilla::Length aSize);

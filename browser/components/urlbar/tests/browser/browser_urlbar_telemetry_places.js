@@ -16,8 +16,8 @@ const TEST_URL = getRootDirectory(gTestPath).replace(
   "http://mochi.test:8888"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 function searchInAwesomebar(value, win = window) {
@@ -67,15 +67,6 @@ function snapshotHistograms() {
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
   return {
-    resultIndexHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX"
-    ),
-    resultTypeHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_TYPE_2"
-    ),
-    resultIndexByTypeHist: TelemetryTestUtils.getAndClearKeyedHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2"
-    ),
     resultMethodHist: TelemetryTestUtils.getAndClearHistogram(
       "FX_URLBAR_SELECTED_RESULT_METHOD"
     ),
@@ -84,21 +75,6 @@ function snapshotHistograms() {
 }
 
 function assertTelemetryResults(histograms, type, index, method) {
-  TelemetryTestUtils.assertHistogram(histograms.resultIndexHist, index, 1);
-
-  TelemetryTestUtils.assertHistogram(
-    histograms.resultTypeHist,
-    UrlbarUtils.SELECTED_RESULT_TYPES[type],
-    1
-  );
-
-  TelemetryTestUtils.assertKeyedHistogramValue(
-    histograms.resultIndexByTypeHist,
-    type,
-    index,
-    1
-  );
-
   TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
 
   TelemetryTestUtils.assertKeyedScalar(
@@ -109,7 +85,7 @@ function assertTelemetryResults(histograms, type, index, method) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Disable search suggestions in the urlbar.
@@ -140,7 +116,7 @@ add_task(async function setup() {
   });
 
   // Make sure to restore the engine once we're done.
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.keywords.remove("get");
     Services.telemetry.canRecordExtended = oldCanRecord;
     await PlacesUtils.history.clear();
@@ -182,13 +158,34 @@ add_task(async function test_history() {
   BrowserTestUtils.removeTab(tab);
 });
 
-add_task(async function test_bookmark() {
+add_task(async function test_history_adaptive() {
   const histograms = snapshotHistograms();
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:blank"
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+
+  let p = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await searchInAwesomebar("example");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  EventUtils.synthesizeKey("KEY_Enter");
+  await p;
+
+  assertSearchTelemetryEmpty(histograms.search_hist);
+  assertTelemetryResults(
+    histograms,
+    "history_adaptive",
+    1,
+    UrlbarTestUtils.SELECTED_RESULT_METHODS.arrowEnterSelection
   );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_bookmark_without_history() {
+  await PlacesUtils.history.clear();
+
+  const histograms = snapshotHistograms();
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
   let bm = await PlacesUtils.bookmarks.insert({
     url: "http://example.com",
@@ -206,6 +203,36 @@ add_task(async function test_bookmark() {
   assertTelemetryResults(
     histograms,
     "bookmark",
+    1,
+    UrlbarTestUtils.SELECTED_RESULT_METHODS.arrowEnterSelection
+  );
+
+  await PlacesUtils.bookmarks.remove(bm);
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_bookmark_with_history() {
+  const histograms = snapshotHistograms();
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+
+  let bm = await PlacesUtils.bookmarks.insert({
+    url: "http://example.com",
+    title: "example",
+    parentGuid: PlacesUtils.bookmarks.menuGuid,
+  });
+
+  let p = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await searchInAwesomebar("example");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  EventUtils.synthesizeKey("KEY_Enter");
+  await p;
+
+  assertSearchTelemetryEmpty(histograms.search_hist);
+  assertTelemetryResults(
+    histograms,
+    "bookmark_adaptive",
     1,
     UrlbarTestUtils.SELECTED_RESULT_METHODS.arrowEnterSelection
   );
@@ -278,7 +305,7 @@ add_task(async function test_visitURL() {
   );
 
   let p = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  await searchInAwesomebar("http://example.com");
+  await searchInAwesomebar("http://example.com/a/");
   EventUtils.synthesizeKey("KEY_Enter");
   await p;
 
@@ -286,40 +313,6 @@ add_task(async function test_visitURL() {
   assertTelemetryResults(
     histograms,
     "visiturl",
-    0,
-    UrlbarTestUtils.SELECTED_RESULT_METHODS.enter
-  );
-
-  BrowserTestUtils.removeTab(tab);
-});
-
-add_task(async function test_autofill() {
-  const histograms = snapshotHistograms();
-
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:blank"
-  );
-
-  await PlacesTestUtils.addVisits([
-    {
-      uri: "http://example.com/mypage",
-      title: "example",
-      transition: Ci.nsINavHistoryService.TRANSITION_TYPED,
-    },
-  ]);
-
-  Services.prefs.setBoolPref("browser.urlbar.autoFill", true);
-
-  let p = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  await searchInAwesomebar("example.com/my");
-  EventUtils.synthesizeKey("KEY_Enter");
-  await p;
-
-  assertSearchTelemetryEmpty(histograms.search_hist);
-  assertTelemetryResults(
-    histograms,
-    "autofill",
     0,
     UrlbarTestUtils.SELECTED_RESULT_METHODS.enter
   );

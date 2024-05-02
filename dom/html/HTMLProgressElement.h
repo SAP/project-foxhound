@@ -13,22 +13,22 @@
 #include "nsAttrValueInlines.h"
 #include <algorithm>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLProgressElement final : public nsGenericHTMLElement {
  public:
   explicit HTMLProgressElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-  EventStates IntrinsicState() const override;
-
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
+  void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
 
   // WebIDL
   double Value() const;
@@ -46,16 +46,9 @@ class HTMLProgressElement final : public nsGenericHTMLElement {
  protected:
   virtual ~HTMLProgressElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
-
- protected:
-  static const double kIndeterminatePosition;
-  static const double kDefaultValue;
-  static const double kDefaultMax;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLProgressElement_h

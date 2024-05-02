@@ -258,6 +258,9 @@ ja{
         "America:Chihuahua"{
             ec{"チワワ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"シウダー・フアレス"}
+        }
         "America:Coral_Harbour"{
             ec{"アティコカン"}
         }
@@ -1025,7 +1028,7 @@ ja{
             ec{"カリーニングラード"}
         }
         "Europe:Kiev"{
-            ec{"キエフ"}
+            ec{"キーウ"}
         }
         "Europe:Kirov"{
             ec{"キーロフ"}
@@ -1222,6 +1225,9 @@ ja{
         }
         "Pacific:Johnston"{
             ec{"ジョンストン島"}
+        }
+        "Pacific:Kanton"{
+            ec{"カントン島"}
         }
         "Pacific:Kiritimati"{
             ec{"キリスィマスィ島"}

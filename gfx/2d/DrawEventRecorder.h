@@ -11,10 +11,12 @@
 #include "RecordedEvent.h"
 #include "RecordingTypes.h"
 
-#include <unordered_set>
-#include <unordered_map>
 #include <functional>
+#include <vector>
 
+#include "mozilla/DataMutex.h"
+#include "mozilla/ThreadSafeWeakPtr.h"
+#include "nsTHashMap.h"
 #include "nsTHashSet.h"
 
 namespace mozilla {
@@ -34,24 +36,30 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
   }
   virtual void FlushItem(IntRect) {}
   void DetachResources() {
-    // The iteration is a bit awkward here because our iterator will
-    // be invalidated by the removal
-    for (auto font = mStoredFonts.begin(); font != mStoredFonts.end();) {
-      auto oldFont = font++;
-      (*oldFont)->RemoveUserData(reinterpret_cast<UserDataKey*>(this));
+    nsTHashSet<ScaledFont*> fonts = std::move(mStoredFonts);
+    for (const auto& font : fonts) {
+      font->RemoveUserData(reinterpret_cast<UserDataKey*>(this));
     }
-    for (auto surface = mStoredSurfaces.begin();
-         surface != mStoredSurfaces.end();) {
-      auto oldSurface = surface++;
-      (*oldSurface)->RemoveUserData(reinterpret_cast<UserDataKey*>(this));
+
+    // SourceSurfaces can be deleted off the main thread, so we use
+    // ThreadSafeWeakPtrs to allow for this. RemoveUserData is thread safe.
+    nsTHashMap<void*, ThreadSafeWeakPtr<SourceSurface>> surfaces =
+        std::move(mStoredSurfaces);
+    for (const auto& entry : surfaces) {
+      RefPtr<SourceSurface> strongRef(entry.GetData());
+      if (strongRef) {
+        strongRef->RemoveUserData(reinterpret_cast<UserDataKey*>(this));
+      }
     }
-    mStoredFonts.clear();
-    mStoredSurfaces.clear();
+
+    // Now that we've detached we can't get any more pending deletions, so
+    // processing now should mean we include all clean up operations.
+    ProcessPendingDeletions();
   }
 
   void ClearResources() {
-    mStoredObjects.clear();
-    mStoredFontData.clear();
+    mStoredObjects.Clear();
+    mStoredFontData.Clear();
     mScaledFonts.clear();
   }
 
@@ -63,14 +71,30 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
   }
 
   virtual void RecordEvent(const RecordedEvent& aEvent) = 0;
-  void WritePath(const PathRecording* aPath);
 
   void AddStoredObject(const ReferencePtr aObject) {
-    mStoredObjects.insert(aObject);
+    ProcessPendingDeletions();
+    mStoredObjects.Insert(aObject);
+  }
+
+  /**
+   * This is a combination of HasStoredObject and AddStoredObject, so that we
+   * only have to call ProcessPendingDeletions once, which involves locking.
+   * @param aObject the object to store if not already stored
+   * @return true if the object was not already stored, false if it was
+   */
+  bool TryAddStoredObject(const ReferencePtr aObject) {
+    ProcessPendingDeletions();
+    return mStoredObjects.EnsureInserted(aObject);
+  }
+
+  void AddPendingDeletion(std::function<void()>&& aPendingDeletion) {
+    auto lockedPendingDeletions = mPendingDeletions.Lock();
+    lockedPendingDeletions->emplace_back(std::move(aPendingDeletion));
   }
 
   void RemoveStoredObject(const ReferencePtr aObject) {
-    mStoredObjects.erase(aObject);
+    mStoredObjects.Remove(aObject);
   }
 
   /**
@@ -78,7 +102,7 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
    * @return the previous reference count
    */
   int32_t IncrementUnscaledFontRefCount(const ReferencePtr aUnscaledFont) {
-    int32_t& count = mUnscaledFontRefs[aUnscaledFont];
+    int32_t& count = mUnscaledFontRefs.LookupOrInsert(aUnscaledFont, 0);
     return count++;
   }
 
@@ -90,31 +114,35 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
   void DecrementUnscaledFontRefCount(const ReferencePtr aUnscaledFont);
 
   void AddScaledFont(ScaledFont* aFont) {
-    if (mStoredFonts.insert(aFont).second && WantsExternalFonts()) {
+    if (mStoredFonts.EnsureInserted(aFont) && WantsExternalFonts()) {
       mScaledFonts.push_back(aFont);
     }
   }
 
-  void RemoveScaledFont(ScaledFont* aFont) { mStoredFonts.erase(aFont); }
+  void RemoveScaledFont(ScaledFont* aFont) { mStoredFonts.Remove(aFont); }
 
   void AddSourceSurface(SourceSurface* aSurface) {
-    mStoredSurfaces.insert(aSurface);
+    mStoredSurfaces.InsertOrUpdate(aSurface, aSurface);
   }
 
   void RemoveSourceSurface(SourceSurface* aSurface) {
-    mStoredSurfaces.erase(aSurface);
+    mStoredSurfaces.Remove(aSurface);
   }
 
+#if defined(DEBUG)
+  // Only used within debug assertions.
   bool HasStoredObject(const ReferencePtr aObject) {
-    return mStoredObjects.find(aObject) != mStoredObjects.end();
+    ProcessPendingDeletions();
+    return mStoredObjects.Contains(aObject);
   }
+#endif
 
   void AddStoredFontData(const uint64_t aFontDataKey) {
-    mStoredFontData.insert(aFontDataKey);
+    mStoredFontData.Insert(aFontDataKey);
   }
 
   bool HasStoredFontData(const uint64_t aFontDataKey) {
-    return mStoredFontData.find(aFontDataKey) != mStoredFontData.end();
+    return mStoredFontData.Contains(aFontDataKey);
   }
 
   bool WantsExternalFonts() const { return mExternalFonts; }
@@ -127,17 +155,12 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
                                            const char* aReason);
 
   /**
-   * This is virtual to allow subclasses to control the recording, if for
-   * example it needs to happen on a specific thread. aSurface is a void*
-   * instead of a SourceSurface* because this is called during the SourceSurface
-   * destructor, so it is partially destructed and should not be accessed. If we
-   * use a SourceSurface* we might, for example, accidentally AddRef/Release the
-   * object by passing it to NewRunnableMethod to submit to a different thread.
-   * We are only using the pointer as a lookup ID to our internal maps and
-   * ReferencePtr to be used on the translation side.
+   * Used when a source surface is destroyed, aSurface is a void* instead of a
+   * SourceSurface* because this is called during the SourceSurface destructor,
+   * so it is partially destructed and should not be accessed.
    * @param aSurface the surface whose destruction is being recorded
    */
-  virtual void RecordSourceSurfaceDestruction(void* aSurface);
+  void RecordSourceSurfaceDestruction(void* aSurface);
 
   virtual void AddDependentSurface(uint64_t aDependencyId) {
     MOZ_CRASH("GFX: AddDependentSurface");
@@ -146,9 +169,26 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
  protected:
   void StoreExternalSurfaceRecording(SourceSurface* aSurface, uint64_t aKey);
 
+  void ProcessPendingDeletions() {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    PendingDeletionsVector pendingDeletions;
+    {
+      auto lockedPendingDeletions = mPendingDeletions.Lock();
+      pendingDeletions.swap(*lockedPendingDeletions);
+    }
+    for (const auto& pendingDeletion : pendingDeletions) {
+      pendingDeletion();
+    }
+  }
+
   virtual void Flush() = 0;
 
-  std::unordered_set<const void*> mStoredObjects;
+  nsTHashSet<const void*> mStoredObjects;
+
+  using PendingDeletionsVector = std::vector<std::function<void()>>;
+  DataMutex<PendingDeletionsVector> mPendingDeletions{
+      "DrawEventRecorderPrivate::mPendingDeletions"};
 
   // It's difficult to track the lifetimes of UnscaledFonts directly, so we
   // instead track the number of recorded ScaledFonts that hold a reference to
@@ -156,12 +196,15 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
   // UnscaledFonts lifetime could be longer than this, but we only use the
   // ScaledFonts directly and if another uses an UnscaledFont we have destroyed
   // on the translation side, it will be recreated.
-  std::unordered_map<const void*, int32_t> mUnscaledFontRefs;
+  nsTHashMap<const void*, int32_t> mUnscaledFontRefs;
 
-  std::unordered_set<uint64_t> mStoredFontData;
-  std::unordered_set<ScaledFont*> mStoredFonts;
+  nsTHashSet<uint64_t> mStoredFontData;
+  nsTHashSet<ScaledFont*> mStoredFonts;
   std::vector<RefPtr<ScaledFont>> mScaledFonts;
-  std::unordered_set<SourceSurface*> mStoredSurfaces;
+
+  // SourceSurfaces can get deleted off the main thread, so we hold a map of the
+  // raw pointer to a ThreadSafeWeakPtr to protect against this.
+  nsTHashMap<void*, ThreadSafeWeakPtr<SourceSurface>> mStoredSurfaces;
   std::vector<RefPtr<SourceSurface>> mExternalSurfaces;
   bool mExternalFonts;
 };

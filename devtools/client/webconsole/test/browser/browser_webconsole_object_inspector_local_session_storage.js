@@ -8,7 +8,7 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-local-session-storage.html";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const messages = await logMessages(hud);
   const objectInspectors = messages.map(node => node.querySelector(".tree"));
@@ -27,13 +27,15 @@ async function logMessages(hud) {
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.console.log("localStorage", content.localStorage);
   });
-  const localStorageMsg = await waitFor(() => findMessage(hud, "localStorage"));
+  const localStorageMsg = await waitFor(() =>
+    findConsoleAPIMessage(hud, "localStorage")
+  );
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.console.log("sessionStorage", content.sessionStorage);
   });
   const sessionStorageMsg = await waitFor(() =>
-    findMessage(hud, "sessionStorage")
+    findConsoleAPIMessage(hud, "sessionStorage")
   );
 
   return [localStorageMsg, sessionStorageMsg];

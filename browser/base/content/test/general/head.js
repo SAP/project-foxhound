@@ -1,32 +1,9 @@
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "AboutNewTab",
-  "resource:///modules/AboutNewTab.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserTestUtils",
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TabCrashHandler",
-  "resource:///modules/ContentCrashHandlers.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  TabCrashHandler: "resource:///modules/ContentCrashHandlers.sys.mjs",
+});
 
 /**
  * Wait for a <notification> to be closed then call the specified callback.
@@ -54,7 +31,7 @@ function closeAllNotifications() {
 
   return new Promise(resolve => {
     for (let notification of gNotificationBox.allNotifications) {
-      waitForNotificationClose(notification, function() {
+      waitForNotificationClose(notification, function () {
         if (gNotificationBox.allNotifications.length === 0) {
           resolve();
         }
@@ -82,8 +59,8 @@ function openToolbarCustomizationUI(aCallback, aBrowserWin) {
 
   aBrowserWin.gNavToolbox.addEventListener(
     "customizationready",
-    function() {
-      executeSoon(function() {
+    function () {
+      executeSoon(function () {
         aCallback(aBrowserWin);
       });
     },
@@ -94,7 +71,7 @@ function openToolbarCustomizationUI(aCallback, aBrowserWin) {
 function closeToolbarCustomizationUI(aCallback, aBrowserWin) {
   aBrowserWin.gNavToolbox.addEventListener(
     "aftercustomization",
-    function() {
+    function () {
       executeSoon(aCallback);
     },
     { once: true }
@@ -106,7 +83,7 @@ function closeToolbarCustomizationUI(aCallback, aBrowserWin) {
 function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
   retryTimes = typeof retryTimes !== "undefined" ? retryTimes : 30;
   var tries = 0;
-  var interval = setInterval(function() {
+  var interval = setInterval(function () {
     if (tries >= retryTimes) {
       ok(false, errorMsg);
       moveOn();
@@ -123,7 +100,7 @@ function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
     }
     tries++;
   }, 100);
-  var moveOn = function() {
+  var moveOn = function () {
     clearInterval(interval);
     nextTest();
   };
@@ -198,7 +175,7 @@ function promiseOpenAndLoadWindow(aOptions, aWaitForDelayedStartup = false) {
     } else {
       win.addEventListener(
         "load",
-        function() {
+        function () {
           resolve(win);
         },
         { once: true }
@@ -261,7 +238,7 @@ function promiseTabLoadEvent(tab, url) {
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
 
   if (url) {
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
   }
 
   return loaded;
@@ -290,7 +267,7 @@ function is_hidden(element) {
   if (style.visibility != "visible") {
     return true;
   }
-  if (style.display == "-moz-popup") {
+  if (XULPopupElement.isInstance(element)) {
     return ["hiding", "closed"].includes(element.state);
   }
 
@@ -352,31 +329,11 @@ function promiseOnBookmarkItemAdded(aExpectedURI) {
 
 async function loadBadCertPage(url) {
   let loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
   await loaded;
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     content.document.getElementById("exceptionDialogButton").click();
   });
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-}
-
-/**
- * Waits for the stylesheets to be loaded into the browser menu.
- *
- * @param tab
- *        The tab that contains the webpage we're testing.
- * @param styleSheetCount
- *        How many stylesheets we expect to be loaded.
- * @return Promise
- */
-async function promiseStylesheetsLoaded(tab, styleSheetCount) {
-  let styleMenu = tab.ownerGlobal.gPageStyleMenu;
-  let permanentKey = tab.permanentKey;
-
-  await TestUtils.waitForCondition(() => {
-    let menu = styleMenu._pageStyleSheets.get(permanentKey);
-    info(`waiting for sheets: ${menu && menu.filteredStyleSheets.length}`);
-    return menu && menu.filteredStyleSheets.length >= styleSheetCount;
-  }, "waiting for style sheets to load");
 }

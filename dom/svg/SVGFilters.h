@@ -29,21 +29,14 @@ struct SVGStringInfo {
   SVGElement* mElement;
 };
 
-using SVGFEBase = SVGElement;
-
-#define NS_SVG_FE_CID                                \
-  {                                                  \
-    0x60483958, 0xd229, 0x4a77, {                    \
-      0x96, 0xb2, 0x62, 0x3e, 0x69, 0x95, 0x1e, 0x0e \
-    }                                                \
-  }
+using SVGFilterPrimitiveElementBase = SVGElement;
 
 /**
  * Base class for filter primitive elements
  * Children of those elements e.g. feMergeNode
- * derive from SVGFEUnstyledElement instead
+ * derive from SVGFilterPrimitiveChildElement instead
  */
-class SVGFE : public SVGFEBase {
+class SVGFilterPrimitiveElement : public SVGFilterPrimitiveElementBase {
   friend class mozilla::SVGFilterInstance;
 
  protected:
@@ -53,12 +46,16 @@ class SVGFE : public SVGFEBase {
   using ColorSpace = mozilla::gfx::ColorSpace;
   using FilterPrimitiveDescription = mozilla::gfx::FilterPrimitiveDescription;
 
-  explicit SVGFE(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-      : SVGFEBase(std::move(aNodeInfo)) {}
-  virtual ~SVGFE() = default;
+  explicit SVGFilterPrimitiveElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : SVGFilterPrimitiveElementBase(std::move(aNodeInfo)) {}
+  virtual ~SVGFilterPrimitiveElement() = default;
 
  public:
   using PrimitiveAttributes = mozilla::gfx::PrimitiveAttributes;
+
+  NS_IMPL_FROMNODE_HELPER(SVGFilterPrimitiveElement,
+                          IsSVGFilterPrimitiveElement())
 
   ColorSpace GetInputColorSpace(int32_t aInputIndex,
                                 ColorSpace aUnchangedInputColorSpace) {
@@ -77,19 +74,12 @@ class SVGFE : public SVGFEBase {
   // See http://www.w3.org/TR/SVG/filters.html#FilterPrimitiveSubRegion
   virtual bool SubregionIsUnionOfRegions() { return true; }
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_SVG_FE_CID)
-
-  // interfaces:
-  NS_DECL_ISUPPORTS_INHERITED
-
-  // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  bool IsSVGFilterPrimitiveElement() const final { return true; }
 
   // SVGElement interface
-  virtual nsresult Clone(mozilla::dom::NodeInfo*,
-                         nsINode** aResult) const override = 0;
+  nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const override = 0;
 
-  virtual bool HasValidDimensions() const override;
+  bool HasValidDimensions() const override;
 
   virtual SVGAnimatedString& GetResultImageName() = 0;
   // Return a list of all image names used as sources. Default is to
@@ -139,7 +129,7 @@ class SVGFE : public SVGFEBase {
   bool StyleIsSetToSRGB();
 
   // SVGElement specializations:
-  virtual LengthAttributesInfo GetLengthInfo() override;
+  LengthAttributesInfo GetLengthInfo() override;
 
   Size GetKernelUnitLength(SVGFilterInstance* aInstance,
                            SVGAnimatedNumberPair* aKernelUnitLength);
@@ -149,19 +139,22 @@ class SVGFE : public SVGFEBase {
   static LengthInfo sLengthInfo[4];
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(SVGFE, NS_SVG_FE_CID)
+using SVGFilterPrimitiveChildElementBase = SVGElement;
 
-using SVGFEUnstyledElementBase = SVGElement;
-
-class SVGFEUnstyledElement : public SVGFEUnstyledElementBase {
+class SVGFilterPrimitiveChildElement
+    : public SVGFilterPrimitiveChildElementBase {
  protected:
-  explicit SVGFEUnstyledElement(
+  explicit SVGFilterPrimitiveChildElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-      : SVGFEUnstyledElementBase(std::move(aNodeInfo)) {}
+      : SVGFilterPrimitiveChildElementBase(std::move(aNodeInfo)) {}
 
  public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo*,
-                         nsINode** aResult) const override = 0;
+  NS_IMPL_FROMNODE_HELPER(SVGFilterPrimitiveChildElement,
+                          IsSVGFilterPrimitiveChildElement())
+
+  bool IsSVGFilterPrimitiveChildElement() const final { return true; }
+
+  nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const override = 0;
 
   // returns true if changes to the attribute should cause us to
   // repaint the filter
@@ -171,7 +164,7 @@ class SVGFEUnstyledElement : public SVGFEUnstyledElementBase {
 
 //------------------------------------------------------------
 
-using SVGFELightingElementBase = SVGFE;
+using SVGFELightingElementBase = SVGFilterPrimitiveElement;
 
 class SVGFELightingElement : public SVGFELightingElementBase {
  protected:
@@ -186,23 +179,21 @@ class SVGFELightingElement : public SVGFELightingElementBase {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(SVGFELightingElement,
                                        SVGFELightingElementBase)
 
-  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute) const override;
-  virtual SVGAnimatedString& GetResultImageName() override {
+  bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                 nsAtom* aAttribute) const override;
+  SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
-  virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
  protected:
-  virtual bool OperatesOnSRGB(int32_t aInputIndex,
-                              bool aInputIsAlreadySRGB) override {
+  bool OperatesOnSRGB(int32_t aInputIndex, bool aInputIsAlreadySRGB) override {
     return true;
   }
 
-  virtual NumberAttributesInfo GetNumberInfo() override;
-  virtual NumberPairAttributesInfo GetNumberPairInfo() override;
-  virtual StringAttributesInfo GetStringInfo() override;
+  NumberAttributesInfo GetNumberInfo() override;
+  NumberPairAttributesInfo GetNumberPairInfo() override;
+  StringAttributesInfo GetStringInfo() override;
 
   mozilla::gfx::LightType ComputeLightAttributes(
       SVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes);
@@ -229,7 +220,7 @@ class SVGFELightingElement : public SVGFELightingElementBase {
   static StringInfo sStringInfo[2];
 };
 
-using SVGFELightElementBase = SVGFEUnstyledElement;
+using SVGFELightElementBase = SVGFilterPrimitiveChildElement;
 
 class SVGFELightElement : public SVGFELightElementBase {
  protected:

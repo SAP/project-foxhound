@@ -3,9 +3,6 @@
 "use strict";
 
 const uuidGenerator = Services.uuid;
-const environment = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
 
 /*
  * Utility functions for the browser content sandbox tests.
@@ -52,17 +49,37 @@ function sanityChecks() {
 // otherwise false. Include imports so this can be safely serialized and run
 // remotely by ContentTask.spawn.
 function createFile(path) {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  let encoder = new TextEncoder();
-  let array = encoder.encode("TEST FILE DUMMY DATA");
-  return OS.File.writeAtomic(path, array).then(
-    function(value) {
-      return { ok: true };
-    },
-    function(reason) {
-      return { ok: false };
-    }
+  const { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
   );
+
+  try {
+    const fstream = Cc[
+      "@mozilla.org/network/file-output-stream;1"
+    ].createInstance(Ci.nsIFileOutputStream);
+
+    fstream.init(
+      new FileUtils.File(path),
+      -1, // readonly mode
+      -1, // default permissions
+      0
+    ); // behaviour flags
+
+    const ostream = Cc["@mozilla.org/binaryoutputstream;1"].createInstance(
+      Ci.nsIBinaryOutputStream
+    );
+    ostream.setOutputStream(fstream);
+
+    const data = "TEST FILE DUMMY DATA";
+    ostream.writeBytes(data, data.length);
+
+    ostream.close();
+    fstream.close();
+  } catch (e) {
+    return { ok: false };
+  }
+
+  return { ok: true };
 }
 
 // Creates a symlink at |path| and returns a promise that resolves with an
@@ -70,16 +87,31 @@ function createFile(path) {
 // created, otherwise false. Include imports so this can be safely serialized
 // and run remotely by ContentTask.spawn.
 function createSymlink(path) {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  // source location for the symlink can be anything
-  return OS.File.unixSymLink("/Users", path).then(
-    function(value) {
-      return { ok: true };
-    },
-    function(reason) {
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
+
+  try {
+    const libc = ctypes.open(
+      Services.appinfo.OS === "Darwin" ? "libSystem.B.dylib" : "libc.so"
+    );
+
+    const symlink = libc.declare(
+      "symlink",
+      ctypes.default_abi,
+      ctypes.int, // return value
+      ctypes.char.ptr, // target
+      ctypes.char.ptr //linkpath
+    );
+
+    if (symlink("/etc", path)) {
       return { ok: false };
     }
-  );
+  } catch (e) {
+    return { ok: false };
+  }
+
+  return { ok: true };
 }
 
 // Deletes file at |path| and returns a promise that resolves with an object
@@ -87,14 +119,18 @@ function createSymlink(path) {
 // otherwise false. Include imports so this can be safely serialized and run
 // remotely by ContentTask.spawn.
 function deleteFile(path) {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  return OS.File.remove(path, { ignoreAbsent: false })
-    .then(function(value) {
-      return { ok: true };
-    })
-    .catch(function(err) {
-      return { ok: false };
-    });
+  const { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
+  );
+
+  try {
+    const file = new FileUtils.File(path);
+    file.remove(false);
+  } catch (e) {
+    return { ok: false };
+  }
+
+  return { ok: true };
 }
 
 // Reads the directory at |path| and returns a promise that resolves when
@@ -102,51 +138,73 @@ function deleteFile(path) {
 // resolves with an object where .ok indicates success or failure and
 // .numEntries is the number of directory entries found.
 function readDir(path) {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+  const { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
+  );
+
   let numEntries = 0;
-  let iterator = new OS.File.DirectoryIterator(path);
-  let promise = iterator
-    .forEach(function(dirEntry) {
+
+  try {
+    const file = new FileUtils.File(path);
+    const enumerator = file.directoryEntries;
+
+    while (enumerator.hasMoreElements()) {
+      void enumerator.nextFile;
       numEntries++;
-    })
-    .then(function() {
-      iterator.close();
-      return { ok: true, numEntries };
-    })
-    .catch(function() {
-      return { ok: false, numEntries };
-    });
-  return promise;
+    }
+  } catch (e) {
+    return { ok: false, numEntries };
+  }
+
+  return { ok: true, numEntries };
 }
 
 // Reads the file at |path| and returns a promise that resolves when
 // reading is completed. Returned object has boolean .ok to indicate
 // success or failure.
 function readFile(path) {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  let promise = OS.File.read(path)
-    .then(function(binaryData) {
-      return { ok: true };
-    })
-    .catch(function(error) {
-      return { ok: false };
-    });
-  return promise;
+  const { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
+  );
+
+  try {
+    const file = new FileUtils.File(path);
+
+    const fstream = Cc[
+      "@mozilla.org/network/file-input-stream;1"
+    ].createInstance(Ci.nsIFileInputStream);
+    fstream.init(file, -1, -1, 0);
+
+    const istream = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+      Ci.nsIBinaryInputStream
+    );
+    istream.setInputStream(fstream);
+
+    const available = istream.available();
+    void istream.readBytes(available);
+  } catch (e) {
+    return { ok: false };
+  }
+
+  return { ok: true };
 }
 
 // Does a stat of |path| and returns a promise that resolves if the
 // stat is successful. Returned object has boolean .ok to indicate
 // success or failure.
 function statPath(path) {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  let promise = OS.File.stat(path)
-    .then(function(stat) {
-      return { ok: true };
-    })
-    .catch(function(error) {
-      return { ok: false };
-    });
-  return promise;
+  const { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
+  );
+
+  try {
+    const file = new FileUtils.File(path);
+    void file.lastModifiedTime;
+  } catch (e) {
+    return { ok: false };
+  }
+
+  return { ok: true };
 }
 
 // Returns true if the current content sandbox level, passed in
@@ -241,12 +299,12 @@ function fileInHomeDir() {
 
 // Returns a file object for a new file in the content temp dir (.../<UUID>).
 function fileInTempDir() {
-  let contentTempKey = "ContentTmpD";
+  let contentTempKey = "TmpD";
 
   // get the content temp dir, make sure it exists
   let ctmp = Services.dirsvc.get(contentTempKey, Ci.nsIFile);
-  Assert.ok(ctmp.exists(), "Content temp dir exists");
-  Assert.ok(ctmp.isDirectory(), "Content temp dir is a directory");
+  Assert.ok(ctmp.exists(), "Temp dir exists");
+  Assert.ok(ctmp.isDirectory(), "Temp dir is a directory");
 
   // build a file object for a new file in content temp
   let tempFile = ctmp.clone();
@@ -307,17 +365,13 @@ function GetDir(path) {
 }
 
 function GetDirFromEnvVariable(varName) {
-  return GetDir(environment.get(varName));
+  return GetDir(Services.env.get(varName));
 }
 
 function GetFile(path) {
   let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
   file.initWithPath(path);
   return file;
-}
-
-function GetEnvironmentVariable(varName) {
-  return environment.get(varName);
 }
 
 function GetBrowserType(type) {

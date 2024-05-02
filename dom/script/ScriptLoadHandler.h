@@ -13,9 +13,14 @@
 
 #include "nsIIncrementalStreamLoader.h"
 #include "nsISupports.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+
+namespace JS::loader {
+class ScriptLoadRequest;
+}
 
 namespace mozilla {
 
@@ -23,22 +28,27 @@ class Decoder;
 
 namespace dom {
 
-class ScriptLoadRequest;
 class ScriptLoader;
 class SRICheckDataVerifier;
 
-class ScriptLoadHandler final : public nsIIncrementalStreamLoaderObserver {
+class ScriptDecoder {
  public:
-  explicit ScriptLoadHandler(
-      ScriptLoader* aScriptLoader, ScriptLoadRequest* aRequest,
-      UniquePtr<SRICheckDataVerifier>&& aSRIDataVerifier);
+  enum BOMHandling { Ignore, Remove };
 
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIINCREMENTALSTREAMLOADEROBSERVER
+  ScriptDecoder(const Encoding* aEncoding,
+                ScriptDecoder::BOMHandling handleBOM);
+
+  ~ScriptDecoder() = default;
+
+  /*
+   * Once the charset is found by the EnsureDecoder function, we can
+   * incrementally convert the charset to the one expected by the JS Parser.
+   */
+  nsresult DecodeRawData(JS::loader::ScriptLoadRequest* aRequest,
+                         const uint8_t* aData, uint32_t aDataLength,
+                         bool aEndOfStream);
 
  private:
-  virtual ~ScriptLoadHandler();
-
   /*
    * Decode the given data into the already-allocated internal
    * |ScriptTextBuffer<Unit>|.
@@ -47,15 +57,25 @@ class ScriptLoadHandler final : public nsIIncrementalStreamLoaderObserver {
    * determining which sort of |ScriptTextBuffer<Unit>| has been allocated.
    */
   template <typename Unit>
-  nsresult DecodeRawDataHelper(const uint8_t* aData, uint32_t aDataLength,
+  nsresult DecodeRawDataHelper(JS::loader::ScriptLoadRequest* aRequest,
+                               const uint8_t* aData, uint32_t aDataLength,
                                bool aEndOfStream);
 
-  /*
-   * Once the charset is found by the EnsureDecoder function, we can
-   * incrementally convert the charset to the one expected by the JS Parser.
-   */
-  nsresult DecodeRawData(const uint8_t* aData, uint32_t aDataLength,
-                         bool aEndOfStream);
+  // Unicode decoder for charset.
+  mozilla::UniquePtr<mozilla::Decoder> mDecoder;
+};
+
+class ScriptLoadHandler final : public nsIIncrementalStreamLoaderObserver {
+ public:
+  explicit ScriptLoadHandler(
+      ScriptLoader* aScriptLoader, JS::loader::ScriptLoadRequest* aRequest,
+      UniquePtr<SRICheckDataVerifier>&& aSRIDataVerifier);
+
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIINCREMENTALSTREAMLOADEROBSERVER
+
+ private:
+  virtual ~ScriptLoadHandler();
 
   /*
    * Discover the charset by looking at the stream data, the script tag, and
@@ -96,7 +116,7 @@ class ScriptLoadHandler final : public nsIIncrementalStreamLoaderObserver {
   RefPtr<ScriptLoader> mScriptLoader;
 
   // The ScriptLoadRequest for this load. Decoded data are accumulated on it.
-  RefPtr<ScriptLoadRequest> mRequest;
+  RefPtr<JS::loader::ScriptLoadRequest> mRequest;
 
   // SRI data verifier.
   UniquePtr<SRICheckDataVerifier> mSRIDataVerifier;
@@ -104,8 +124,7 @@ class ScriptLoadHandler final : public nsIIncrementalStreamLoaderObserver {
   // Status of SRI data operations.
   nsresult mSRIStatus;
 
-  // Unicode decoder for charset.
-  mozilla::UniquePtr<mozilla::Decoder> mDecoder;
+  UniquePtr<ScriptDecoder> mDecoder;
 
   // Flipped to true after calling NotifyStart the first time
   bool mPreloadStartNotified = false;

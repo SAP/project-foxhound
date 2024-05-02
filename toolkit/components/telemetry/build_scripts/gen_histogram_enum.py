@@ -12,14 +12,12 @@
 #
 # The histograms are defined in files provided as command-line arguments.
 
-from __future__ import print_function
-from mozparsers.shared_telemetry_utils import ParserError
-from mozparsers import parse_histograms
-
 import itertools
 import sys
-import buildconfig
 
+import buildconfig
+from mozparsers import parse_histograms
+from mozparsers.shared_telemetry_utils import ParserError
 
 banner = """/* This file is auto-generated, see gen_histogram_enum.py.  */
 """
@@ -68,7 +66,7 @@ def main(output, *filenames):
     # contiguous block.
     print("enum HistogramID : uint32_t {", file=output)
     seen_group_types = {"UseCounter": False, "UseCounterWorker": False}
-    for (group_type, histograms) in groups:
+    for group_type, histograms in groups:
         if group_type is not None:
             assert isinstance(group_type, str)
             assert group_type in seen_group_types.keys()
@@ -97,7 +95,7 @@ def main(output, *filenames):
 
     print("  HistogramCount,", file=output)
 
-    for (key, value) in sorted(seen_group_types.items()):
+    for key, value in sorted(seen_group_types.items()):
         if value:
             print(
                 "  Histogram{0}Count = HistogramLast{0} - HistogramFirst{0} + 1,".format(

@@ -13,10 +13,10 @@ offThreadCompileModuleToStencil(`
     offThreadFun();
     offThreadFun();
 `);
-let stencil = finishOffThreadCompileModuleToStencil();
+let stencil = finishOffThreadStencil();
 let mod = instantiateModuleStencil(stencil);
-mod.declarationInstantiation();
-mod.evaluation();
+moduleLink(mod);
+moduleEvaluate(mod);
 assertEq(hitCount, 4);
 
 const expected = "FNDA:4,offThreadFun";

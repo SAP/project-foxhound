@@ -3,18 +3,20 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { assert } = require("devtools/shared/DevToolsUtils");
-const { actions } = require("devtools/client/memory/constants");
-const { findSelectedSnapshot } = require("devtools/client/memory/utils");
-const refresh = require("devtools/client/memory/actions/refresh");
+const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
+const { actions } = require("resource://devtools/client/memory/constants.js");
+const {
+  findSelectedSnapshot,
+} = require("resource://devtools/client/memory/utils.js");
+const refresh = require("resource://devtools/client/memory/actions/refresh.js");
 
 /**
  * Change the currently selected view.
  *
  * @param {viewState} view
  */
-const changeView = (exports.changeView = function(view) {
-  return function({ dispatch, getState }) {
+const changeView = (exports.changeView = function (view) {
+  return function ({ dispatch, getState }) {
     dispatch({
       type: actions.CHANGE_VIEW,
       newViewState: view,
@@ -28,8 +30,8 @@ const changeView = (exports.changeView = function(view) {
  * Given that we are in the INDIVIDUALS view state, go back to the state we were
  * in before.
  */
-const popView = (exports.popView = function() {
-  return function({ dispatch, getState }) {
+const popView = (exports.popView = function () {
+  return function ({ dispatch, getState }) {
     const { previous } = getState().view;
     assert(previous);
     dispatch({
@@ -46,8 +48,8 @@ const popView = (exports.popView = function() {
  * @param {viewState} view
  * @param {HeapAnalysesClient} heapWorker
  */
-exports.changeViewAndRefresh = function(view, heapWorker) {
-  return async function({ dispatch, getState }) {
+exports.changeViewAndRefresh = function (view, heapWorker) {
+  return async function ({ dispatch, getState }) {
     dispatch(changeView(view));
     await dispatch(refresh.refresh(heapWorker));
   };
@@ -59,8 +61,8 @@ exports.changeViewAndRefresh = function(view, heapWorker) {
  *
  * @param {HeapAnalysesClient} heapWorker
  */
-exports.popViewAndRefresh = function(heapWorker) {
-  return async function({ dispatch, getState }) {
+exports.popViewAndRefresh = function (heapWorker) {
+  return async function ({ dispatch, getState }) {
     dispatch(popView());
     await dispatch(refresh.refresh(heapWorker));
   };

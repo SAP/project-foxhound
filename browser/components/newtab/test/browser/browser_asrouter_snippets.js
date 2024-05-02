@@ -13,8 +13,7 @@ add_task(async function render_below_search_snippet() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url:
-        "about:newtab?endpoint=https://example.com/browser/browser/components/newtab/test/browser/snippet_below_search_test.json",
+      url: "about:newtab?endpoint=https://example.com/browser/browser/components/newtab/test/browser/snippet_below_search_test.json",
     },
     async browser => {
       await waitForPreloaded(browser);
@@ -49,8 +48,7 @@ add_task(async function render_snippets_icon_and_link() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url:
-        "about:newtab?endpoint=https://example.com/browser/browser/components/newtab/test/browser/snippet_simple_test.json",
+      url: "about:newtab?endpoint=https://example.com/browser/browser/components/newtab/test/browser/snippet_simple_test.json",
     },
     async browser => {
       await waitForPreloaded(browser);
@@ -99,8 +97,7 @@ add_task(async function render_preview_snippet() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url:
-        "about:newtab?endpoint=https://example.com/browser/browser/components/newtab/test/browser/snippet.json",
+      url: "about:newtab?endpoint=https://example.com/browser/browser/components/newtab/test/browser/snippet.json",
     },
     async browser => {
       let text = await SpecialPowers.spawn(browser, [], async () => {
@@ -152,7 +149,7 @@ add_task(async function test_snippets_telemetry() {
       url: "about:blank",
     },
     async browser => {
-      await BrowserTestUtils.loadURI(browser, "about:home");
+      BrowserTestUtils.startLoadingURIString(browser, "about:home");
       await BrowserTestUtils.browserLoaded(browser);
       let text = await SpecialPowers.spawn(browser, [], async () => {
         await ContentTaskUtils.waitForCondition(

@@ -2,7 +2,7 @@
 
 const BUTTONID = "test-seenwidget-post-reset";
 
-add_task(async function() {
+add_task(async function () {
   CustomizableUI.createWidget({
     id: BUTTONID,
     label: "Test widget seen post reset",
@@ -10,17 +10,13 @@ add_task(async function() {
   });
 
   const kPrefCustomizationState = "browser.uiCustomization.state";
-  let bsPass = ChromeUtils.import(
-    "resource:///modules/CustomizableUI.jsm",
-    null
-  );
   ok(
-    bsPass.gSeenWidgets.has(BUTTONID),
+    CustomizableUI.getTestOnlyInternalProp("gSeenWidgets").has(BUTTONID),
     "Widget should be seen after createWidget is called."
   );
   CustomizableUI.reset();
   ok(
-    bsPass.gSeenWidgets.has(BUTTONID),
+    CustomizableUI.getTestOnlyInternalProp("gSeenWidgets").has(BUTTONID),
     "Widget should still be seen after reset."
   );
   CustomizableUI.addWidgetToArea(BUTTONID, CustomizableUI.AREA_NAVBAR);
@@ -39,7 +35,7 @@ add_task(async function() {
   }
 });
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   CustomizableUI.destroyWidget(BUTTONID);
   CustomizableUI.reset();
 });

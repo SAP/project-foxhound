@@ -3,8 +3,8 @@
 /* eslint max-len: ["error", 80] */
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -35,7 +35,7 @@ function mockResults() {
   };
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   let results = btoa(JSON.stringify(mockResults()));
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -109,7 +109,7 @@ async function installAddon({ card, recommendedList, manifestExtra = {} }) {
   );
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: card.addonId } },
+      browser_specific_settings: { gecko: { id: card.addonId } },
       ...manifestExtra,
     },
     useAddonManager: "temporary",
@@ -120,8 +120,6 @@ async function installAddon({ card, recommendedList, manifestExtra = {} }) {
 }
 
 async function testListRecommendations({ type, manifestExtra = {} }) {
-  Services.telemetry.clearEvents();
-
   let win = await loadInitialView(type);
   let doc = win.document;
 
@@ -144,7 +142,7 @@ async function testListRecommendations({ type, manifestExtra = {} }) {
   ok(addonId, "The card has an addonId");
 
   // Installing the add-on will fail since the URL doesn't point to a valid
-  // XPI. This will trigger the telemetry though.
+  // XPI.
   let installButton = cards[0].querySelector('[action="install-addon"]');
   let { panel } = PopupNotifications;
   let popupId = "addon-install-failed-notification";
@@ -190,19 +188,6 @@ async function testListRecommendations({ type, manifestExtra = {} }) {
   is_element_visible(hiddenCard, "The card is now shown");
 
   await closeView(win);
-
-  assertAboutAddonsTelemetryEvents(
-    [
-      [
-        "addonsManager",
-        "action",
-        "aboutAddons",
-        null,
-        { action: "installFromRecommendation", view: "list", addonId, type },
-      ],
-    ],
-    { methods: ["action"] }
-  );
 }
 
 add_task(async function testExtensionList() {

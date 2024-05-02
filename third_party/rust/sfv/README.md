@@ -1,6 +1,8 @@
-![Build Status](https://github.com/undef1nd/structured-headers/workflows/CI/badge.svg)
-[![Version](https://img.shields.io/crates/v/sfv.svg)](https://crates.io/crates/sfv)
-[![Documentation](https://docs.rs/sfv/badge.svg)](https://docs.rs/sfv/)
+[![License](https://img.shields.io/crates/l/sfv)](LICENSE-MIT)
+![Build Status](https://img.shields.io/github/actions/workflow/status/undef1nd/sfv/ci-workflow.yml)
+[![Version](https://img.shields.io/crates/v/sfv)](https://crates.io/crates/sfv)
+[![Docs](https://img.shields.io/docsrs/sfv?color=white)](https://docs.rs/sfv)
+
 
 # Structured Field Values for HTTP
 

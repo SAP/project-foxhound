@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // ReactJS
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
@@ -13,7 +13,6 @@ define(function(require, exports, module) {
   // Reps
   const {
     getGripType,
-    isGrip,
     getURLDisplayString,
     wrapRender,
   } = require("devtools/client/shared/components/reps/reps/rep-utils");
@@ -27,8 +26,7 @@ define(function(require, exports, module) {
    */
 
   WindowRep.propTypes = {
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
+    mode: PropTypes.oneOf(Object.values(MODE)),
     object: PropTypes.object.isRequired,
     shouldRenderTooltip: PropTypes.bool,
   };
@@ -93,11 +91,7 @@ define(function(require, exports, module) {
 
   // Registration
   function supportsObject(object, noGrip = false) {
-    if (noGrip === true || !isGrip(object)) {
-      return false;
-    }
-
-    return object.preview && getGripType(object, noGrip) == "Window";
+    return object?.preview && getGripType(object, noGrip) == "Window";
   }
 
   // Exports from this module

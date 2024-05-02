@@ -100,16 +100,11 @@ SDBConnection::~SDBConnection() {
 }
 
 // static
-nsresult SDBConnection::Create(nsISupports* aOuter, REFNSIID aIID,
-                               void** aResult) {
+nsresult SDBConnection::Create(REFNSIID aIID, void** aResult) {
   MOZ_ASSERT(aResult);
 
   if (NS_WARN_IF(!Preferences::GetBool(kPrefSimpleDBEnabled, false))) {
     return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
   }
 
   RefPtr<SDBConnection> connection = new SDBConnection();
@@ -357,7 +352,7 @@ SDBConnection::Read(uint64_t aSize, nsISDBRequest** _retval) {
 }
 
 NS_IMETHODIMP
-SDBConnection::Write(JS::HandleValue aValue, JSContext* aCx,
+SDBConnection::Write(JS::Handle<JS::Value> aValue, JSContext* aCx,
                      nsISDBRequest** _retval) {
   AssertIsOnOwningThread();
 

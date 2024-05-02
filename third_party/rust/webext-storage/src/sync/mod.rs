@@ -12,7 +12,7 @@ mod sync_tests;
 use crate::api::{StorageChanges, StorageValueChange};
 use crate::db::StorageDb;
 use crate::error::*;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use serde_derive::*;
 use sql_support::ConnExt;
 use sync_guid::Guid as SyncGuid;
@@ -24,40 +24,14 @@ type JsonMap = serde_json::Map<String, serde_json::Value>;
 
 pub const STORAGE_VERSION: usize = 1;
 
-// Note that we never use serde to serialize a tombstone, so it doesn't matter
-// how that looks - but we care about how a Record with RecordData::Data looks.
-// However, deserializing is trickier still - it seems tricky to tell serde
-// how to unpack a tombstone - if we used `Tombstone { deleted: bool }` and
-// enforced bool must only be ever true it might be possible, but that's quite
-// clumsy for the rest of the code. So we just capture serde's failure to
-// unpack it and treat it as a tombstone.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum RecordData {
-    Data {
-        #[serde(rename = "extId")]
-        ext_id: String,
-        data: String,
-    },
-    #[serde(skip_deserializing)]
-    Tombstone,
-}
-
-#[allow(clippy::unnecessary_wraps)]
-fn deserialize_record_data<'de, D>(deserializer: D) -> Result<RecordData, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(RecordData::deserialize(deserializer).unwrap_or(RecordData::Tombstone))
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Record {
+pub struct WebextRecord {
     #[serde(rename = "id")]
     guid: SyncGuid,
-    #[serde(flatten, deserialize_with = "deserialize_record_data")]
-    data: RecordData,
+    #[serde(rename = "extId")]
+    ext_id: String,
+    data: String,
 }
 
 // Perform a 2-way or 3-way merge, where the incoming value wins on confict.
@@ -187,16 +161,15 @@ pub struct SyncedExtensionChange {
 
 // Fetches the applied changes we stashed in the storage_sync_applied table.
 pub fn get_synced_changes(db: &StorageDb) -> Result<Vec<SyncedExtensionChange>> {
-    let signal = db.begin_interrupt_scope();
+    let signal = db.begin_interrupt_scope()?;
     let sql = "SELECT ext_id, changes FROM temp.storage_sync_applied";
-    db.conn()
-        .query_rows_and_then_named(sql, &[], |row| -> Result<_> {
-            signal.err_if_interrupted()?;
-            Ok(SyncedExtensionChange {
-                ext_id: row.get("ext_id")?,
-                changes: row.get("changes")?,
-            })
+    db.conn().query_rows_and_then(sql, [], |row| -> Result<_> {
+        signal.err_if_interrupted()?;
+        Ok(SyncedExtensionChange {
+            ext_id: row.get("ext_id")?,
+            changes: row.get("changes")?,
         })
+    })
 }
 
 // Helpers for tests
@@ -222,34 +195,14 @@ mod tests {
     #[test]
     fn test_serde_record_ser() {
         assert_eq!(
-            serde_json::to_string(&Record {
+            serde_json::to_string(&WebextRecord {
                 guid: "guid".into(),
-                data: RecordData::Data {
-                    ext_id: "ext_id".to_string(),
-                    data: "data".to_string()
-                }
+                ext_id: "ext_id".to_string(),
+                data: "data".to_string()
             })
             .unwrap(),
             r#"{"id":"guid","extId":"ext_id","data":"data"}"#
         );
-    }
-
-    #[test]
-    fn test_serde_record_de() {
-        let p: Record = serde_json::from_str(r#"{"id":"guid","deleted":true}"#).unwrap();
-        assert_eq!(p.data, RecordData::Tombstone);
-        let p: Record =
-            serde_json::from_str(r#"{"id":"guid","extId": "ext-id", "data":"foo"}"#).unwrap();
-        assert_eq!(
-            p.data,
-            RecordData::Data {
-                ext_id: "ext-id".into(),
-                data: "foo".into()
-            }
-        );
-        // invalid are treated as tombstones.
-        let p: Record = serde_json::from_str(r#"{"id":"guid"}"#).unwrap();
-        assert_eq!(p.data, RecordData::Tombstone);
     }
 
     // a macro for these tests - constructs a serde_json::Value::Object
@@ -272,21 +225,21 @@ mod tests {
                 key: $key.to_string(),
                 old_value: Some(json!($old)),
                 new_value: None,
-            };
+            }
         };
         ($key:literal, None, $new:tt) => {
             StorageValueChange {
                 key: $key.to_string(),
                 old_value: None,
                 new_value: Some(json!($new)),
-            };
+            }
         };
         ($key:literal, $old:tt, $new:tt) => {
             StorageValueChange {
                 key: $key.to_string(),
                 old_value: Some(json!($old)),
                 new_value: Some(json!($new)),
-            };
+            }
         };
     }
     macro_rules! changes {

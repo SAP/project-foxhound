@@ -6,15 +6,15 @@
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>Test reverse_search telemetry event`;
 const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 const isMacOS = AppConstants.platform === "macosx";
 
-add_task(async function() {
+add_task(async function () {
   // Let's reset the counts.
   Services.telemetry.clearEvents();
 
@@ -24,9 +24,9 @@ add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Evaluate single line expressions");
-  await keyboardExecuteAndWaitForMessage(hud, `"single line 1"`, "", ".result");
-  await keyboardExecuteAndWaitForMessage(hud, `"single line 2"`, "", ".result");
-  await keyboardExecuteAndWaitForMessage(hud, `"single line 3"`, "", ".result");
+  await keyboardExecuteAndWaitForResultMessage(hud, `"single line 1"`, "");
+  await keyboardExecuteAndWaitForResultMessage(hud, `"single line 2"`, "");
+  await keyboardExecuteAndWaitForResultMessage(hud, `"single line 3"`, "");
 
   info("Open editor mode");
   await toggleLayout(hud);
@@ -58,7 +58,7 @@ add_task(async function() {
   navigateReverseSearch("mouse", "previous", hud);
 
   info("Reverse search evaluate expression");
-  const onMessage = waitForMessage(hud, "single line 3", ".result");
+  const onMessage = waitForMessageByType(hud, "single line 3", ".result");
   EventUtils.synthesizeKey("KEY_Enter");
   await onMessage;
 

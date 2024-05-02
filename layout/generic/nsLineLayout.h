@@ -10,17 +10,18 @@
 #define nsLineLayout_h___
 
 #include "gfxTypes.h"
+#include "gfxTextRun.h"
 #include "JustificationUtils.h"
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/WritingModes.h"
-#include "BlockReflowInput.h"
+#include "BlockReflowState.h"
 #include "nsLineBox.h"
 
 class nsFloatManager;
 struct nsStyleText;
 
 class nsLineLayout {
-  using BlockReflowInput = mozilla::BlockReflowInput;
+  using BlockReflowState = mozilla::BlockReflowState;
   using ReflowInput = mozilla::ReflowInput;
   using ReflowOutput = mozilla::ReflowOutput;
 
@@ -30,14 +31,14 @@ class nsLineLayout {
    * nullptr if no separate base nsLineLayout is needed.
    */
   nsLineLayout(nsPresContext* aPresContext, nsFloatManager* aFloatManager,
-               const ReflowInput* aOuterReflowInput,
+               const ReflowInput& aLineContainerRI,
                const nsLineList::iterator* aLine,
                nsLineLayout* aBaseLineLayout);
   ~nsLineLayout();
 
-  void Init(BlockReflowInput* aState, nscoord aMinLineBSize,
+  void Init(BlockReflowState* aState, nscoord aMinLineBSize,
             int32_t aLineNumber) {
-    mBlockRI = aState;
+    mBlockRS = aState;
     mMinLineBSize = aMinLineBSize;
     mLineNumber = aLineNumber;
   }
@@ -47,7 +48,10 @@ class nsLineLayout {
   void BeginLineReflow(nscoord aICoord, nscoord aBCoord, nscoord aISize,
                        nscoord aBSize, bool aImpactedByFloats,
                        bool aIsTopOfPage, mozilla::WritingMode aWritingMode,
-                       const nsSize& aContainerSize);
+                       const nsSize& aContainerSize,
+                       // aInset is used during text-wrap:balance to reduce
+                       // the effective available space on the line.
+                       nscoord aInset = 0);
 
   void EndLineReflow();
 
@@ -146,14 +150,14 @@ class nsLineLayout {
   // Inform the line-layout about the presence of a floating frame
   // XXX get rid of this: use get-frame-type?
   bool AddFloat(nsIFrame* aFloat, nscoord aAvailableISize) {
-    // When reflowing ruby text frames, no block reflow input is
+    // When reflowing ruby text frames, no block reflow state is
     // provided to the line layout. However, floats should never be
     // associated with ruby text containers, hence this method should
     // not be called in that case.
-    MOZ_ASSERT(mBlockRI,
-               "Should not call this method if there is no block reflow input "
+    MOZ_ASSERT(mBlockRS,
+               "Should not call this method if there is no block reflow state "
                "available");
-    return mBlockRI->AddFloat(this, aFloat, aAvailableISize);
+    return mBlockRS->AddFloat(this, aFloat, aAvailableISize);
   }
 
   void SetTrimmableISize(nscoord aTrimmableISize) {
@@ -290,8 +294,8 @@ class nsLineLayout {
    * some other kind of frame when inline frames are reflowed in a non-block
    * context (e.g. MathML or floating first-letter).
    */
-  nsIFrame* LineContainerFrame() const { return mBlockReflowInput->mFrame; }
-  const ReflowInput* LineContainerRI() const { return mBlockReflowInput; }
+  nsIFrame* LineContainerFrame() const { return mLineContainerRI.mFrame; }
+  const ReflowInput& LineContainerRI() const { return mLineContainerRI; }
   const nsLineList::iterator* GetLine() const {
     return mGotLineBox ? &mLineBox : nullptr;
   }
@@ -334,7 +338,7 @@ class nsLineLayout {
   nsFloatManager* mFloatManager;
 
   const nsStyleText* mStyleText;  // for the block
-  const ReflowInput* mBlockReflowInput;
+  const ReflowInput& mLineContainerRI;
 
   // The line layout for the base text.  It is usually nullptr.
   // It becomes not null when the current line layout is for ruby
@@ -364,7 +368,7 @@ class nsLineLayout {
   //     member. It should not be a problem currently, since the only
   //     code use it is handling float, which does not affect ruby.
   //     See comment in nsLineLayout::AddFloat
-  BlockReflowInput* mBlockRI; /* XXX hack! */
+  BlockReflowState* mBlockRS = nullptr; /* XXX hack! */
 
   nsLineList::iterator mLineBox;
 
@@ -417,7 +421,7 @@ class nsLineLayout {
     mozilla::JustificationAssignment mJustificationAssignment;
 
     // PerFrameData flags
-    bool mRelativePos : 1;
+    bool mIsRelativelyOrStickyPos : 1;
     bool mIsTextFrame : 1;
     bool mIsNonEmptyTextFrame : 1;
     bool mIsNonWhitespaceTextFrame : 1;
@@ -493,6 +497,7 @@ class nsLineLayout {
     nscoord mIStart;
     nscoord mICoord;
     nscoord mIEnd;
+    nscoord mInset;
 
     nscoord mBStartLeading, mBEndLeading;
     nscoord mLogicalBSize;
@@ -523,6 +528,12 @@ class nsLineLayout {
                : aPSD->mFrame->mBounds.Size(mRootSpan->mWritingMode)
                      .GetPhysicalSize(mRootSpan->mWritingMode);
   }
+
+  // Get the advance of any trailing hangable whitespace. If the whitespace
+  // has directionality opposite to the line, the result is negated.
+  nscoord GetHangFrom(const PerSpanData* aSpan, bool aLineIsRTL) const;
+  gfxTextRun::TrimmableWS GetTrimFrom(const PerSpanData* aSpan,
+                                      bool aLineIsRTL) const;
 
   gfxBreakPriority mLastOptionalBreakPriority;
   int32_t mLastOptionalBreakFrameOffset;

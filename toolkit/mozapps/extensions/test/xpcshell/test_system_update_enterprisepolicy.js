@@ -5,22 +5,16 @@
 // This test verifies that system addon updates are correctly blocked by the
 // DisableSystemAddonUpdate enterprise policy.
 
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
-
-// Setting PREF_DISABLE_SECURITY tells the policy engine that we are in testing
-// mode and enables restarting the policy engine without restarting the browser.
-Services.prefs.setBoolPref(PREF_DISABLE_SECURITY, true);
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref(PREF_DISABLE_SECURITY);
-});
 
 Services.policies; // Load policy engine
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "2");
 
-let distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "empty"], true);
+let distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "empty"]);
+distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 registerDirectory("XREAppFeat", distroDir);
 add_task(() => initSystemAddonDirs());
 

@@ -7,7 +7,7 @@ async function runTests(options) {
     let manifest = browser.runtime.getManifest();
     let { manifest_version } = manifest;
     const action = manifest_version < 3 ? "browserAction" : "action";
-    async function checkDetails(expecting, details) {
+    async function checkExtAPIDetails(expecting, details) {
       let title = await browser[action].getTitle(details);
       browser.test.assertEq(
         expecting.title,
@@ -103,9 +103,9 @@ async function runTests(options) {
           active: true,
           currentWindow: true,
         });
-        await checkDetails(expectTab, { tabId });
-        await checkDetails(expectWindow, { windowId });
-        await checkDetails(expectGlobal, {});
+        await checkExtAPIDetails(expectTab, { tabId });
+        await checkExtAPIDetails(expectWindow, { windowId });
+        await checkExtAPIDetails(expectGlobal, {});
 
         // Check that the actual icon has the expected values, then
         // run the next test.
@@ -146,17 +146,40 @@ async function runTests(options) {
   }
 
   let browserActionId;
-  function checkDetails(details, windowId) {
+  async function checkWidgetDetails(details, windowId) {
     let { document } = Services.wm.getOuterWindowWithId(windowId);
     if (!browserActionId) {
       browserActionId = `${makeWidgetId(extension.id)}-browser-action`;
     }
 
-    let button = document.getElementById(browserActionId);
+    let node = document.getElementById(browserActionId);
+    let button = node.firstElementChild;
 
     ok(button, "button exists");
 
     let title = details.title || options.manifest.name;
+
+    // NOTE: resorting to waitForCondition to prevent frequent
+    // intermittent failures due to multiple action API calls
+    // being queued.
+    if (getListStyleImage(button) !== details.icon) {
+      info(`wait for action icon url to be set to ${details.icon}`);
+      await TestUtils.waitForCondition(
+        () => getListStyleImage(button) === details.icon,
+        "Wait for the expected icon URL to be set"
+      );
+    }
+
+    // NOTE: resorting to waitForCondition to prevent frequent
+    // intermittent failures due to multiple action API calls
+    // being queued.
+    if (button.getAttribute("tooltiptext") !== title) {
+      info(`wait for action tooltiptext to be set to ${title}`);
+      await TestUtils.waitForCondition(
+        () => button.getAttribute("tooltiptext") === title,
+        "Wait for expected title to be set"
+      );
+    }
 
     is(getListStyleImage(button), details.icon, "icon URL is correct");
     is(button.getAttribute("tooltiptext"), title, "image title is correct");
@@ -176,7 +199,16 @@ async function runTests(options) {
         color: serializeColor(details.badgeTextColor),
       };
       for (let [prop, value] of Object.entries(expected)) {
-        is(style[prop], value, `${prop} is correct`);
+        // NOTE: resorting to waitForCondition to prevent frequent
+        // intermittent failures due to multiple action API calls
+        // being queued.
+        if (style[prop] !== value) {
+          info(`wait for badge ${prop} to be set to ${value}`);
+          await TestUtils.waitForCondition(
+            () => window.getComputedStyle(badge)[prop] === value,
+            `Wait for expected badge ${prop} to be set`
+          );
+        }
       }
     }
 
@@ -188,8 +220,7 @@ async function runTests(options) {
       "nextTest",
       async (expecting, windowId, testsRemaining) => {
         await promiseAnimationFrame();
-
-        checkDetails(expecting, windowId);
+        await checkWidgetDetails(expecting, windowId);
 
         if (testsRemaining) {
           extension.sendMessage("runNextTest");
@@ -227,7 +258,7 @@ let tabSwitchTestData = {
     "2.png": imageBuffer,
   },
 
-  getTests: function(tabs, windows) {
+  getTests: function (tabs, windows) {
     let manifest = browser.runtime.getManifest();
     let { manifest_version } = manifest;
     const action = manifest_version < 3 ? "browserAction" : "action";
@@ -411,6 +442,7 @@ add_task(async function testTabSwitchContext() {
         default_icon: "default.png",
         default_popup: "__MSG_popup__",
         default_title: "Default __MSG_title__",
+        default_area: "navbar",
       },
 
       default_locale: "en",
@@ -433,6 +465,7 @@ add_task(async function testTabSwitchActionContext() {
         default_icon: "default.png",
         default_popup: "__MSG_popup__",
         default_title: "Default __MSG_title__",
+        default_area: "navbar",
       },
       default_locale: "en",
       permissions: ["tabs"],
@@ -448,6 +481,7 @@ add_task(async function testDefaultTitle() {
 
       browser_action: {
         default_icon: "icon.png",
+        default_area: "navbar",
       },
 
       permissions: ["tabs"],
@@ -457,7 +491,7 @@ add_task(async function testDefaultTitle() {
       "icon.png": imageBuffer,
     },
 
-    getTests: function(tabs, windows) {
+    getTests: function (tabs, windows) {
       let details = [
         {
           title: "Foo Extension",
@@ -527,14 +561,16 @@ add_task(async function testBadgeColorPersistence() {
       });
     },
     manifest: {
-      browser_action: {},
+      browser_action: {
+        default_area: "navbar",
+      },
     },
   });
   await extension.startup();
 
   function getBadgeForWindow(win) {
     const widget = getBrowserActionWidget(extension).forWindow(win).node;
-    return widget.badgeLabel;
+    return widget.firstElementChild.badgeLabel;
   }
 
   let badge = getBadgeForWindow(window);
@@ -579,6 +615,7 @@ add_task(async function testPropertyRemoval() {
         default_icon: "default.png",
         default_popup: "default.html",
         default_title: "Default Title",
+        default_area: "navbar",
       },
     },
 
@@ -590,7 +627,7 @@ add_task(async function testPropertyRemoval() {
       "tab.png": imageBuffer,
     },
 
-    getTests: function(tabs, windows) {
+    getTests: function (tabs, windows) {
       let defaultIcon = "chrome://mozapps/skin/extensions/extensionGeneric.svg";
       let details = [
         {
@@ -765,6 +802,7 @@ add_task(async function testMultipleWindows() {
         default_icon: "default.png",
         default_popup: "default.html",
         default_title: "Default Title",
+        default_area: "navbar",
       },
     },
 
@@ -774,7 +812,7 @@ add_task(async function testMultipleWindows() {
       "window2.png": imageBuffer,
     },
 
-    getTests: function(tabs, windows) {
+    getTests: function (tabs, windows) {
       let details = [
         {
           icon: browser.runtime.getURL("default.png"),
@@ -935,6 +973,7 @@ add_task(async function testDefaultBadgeTextColor() {
         default_icon: "default.png",
         default_popup: "default.html",
         default_title: "Default Title",
+        default_area: "navbar",
       },
     },
 
@@ -944,7 +983,7 @@ add_task(async function testDefaultBadgeTextColor() {
       "window2.png": imageBuffer,
     },
 
-    getTests: function(tabs, windows) {
+    getTests: function (tabs, windows) {
       let details = [
         {
           icon: browser.runtime.getURL("default.png"),
@@ -1051,7 +1090,7 @@ add_task(async function testNavigationClearsData() {
     Management: {
       global: { tabTracker },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
+  } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
   let extension,
     tabs = [];
   async function addTab(...args) {
@@ -1094,7 +1133,7 @@ add_task(async function testNavigationClearsData() {
     manifest: {
       browser_action: { default_title },
     },
-    background: function() {
+    background: function () {
       browser.test.onMessage.addListener(
         async ({ method, param, expect, msg }) => {
           let result = await browser.browserAction[method](param);

@@ -3,6 +3,10 @@
 "use strict";
 
 add_task(async function test_cross_docGroup_adoption() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.content_web_accessible.enabled", true]],
+  });
+
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     "http://example.com/"
@@ -16,11 +20,12 @@ add_task(async function test_cross_docGroup_adoption() {
           js: ["content-script.js"],
         },
       ],
+      web_accessible_resources: ["current.html"],
     },
 
     files: {
       "current.html": "<html>data</html>",
-      "content-script.js": function() {
+      "content-script.js": function () {
         let iframe = document.createElement("iframe");
         iframe.src = browser.runtime.getURL("current.html");
         document.body.appendChild(iframe);

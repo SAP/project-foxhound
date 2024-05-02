@@ -57,7 +57,8 @@ class RemoteContentController : public GeckoContentController,
   void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) override;
 
   void NotifyAPZStateChange(const ScrollableLayerGuid& aGuid,
-                            APZStateChange aChange, int aArg) override;
+                            APZStateChange aChange, int aArg,
+                            Maybe<uint64_t> aInputBlockId) override;
 
   void UpdateOverscrollVelocity(const ScrollableLayerGuid& aGuid, float aX,
                                 float aY, bool aIsRootContent) override;
@@ -80,6 +81,9 @@ class RemoteContentController : public GeckoContentController,
       const ScrollableLayerGuid::ViewID& aScrollId) override;
 
   void CancelAutoscroll(const ScrollableLayerGuid& aScrollId) override;
+
+  void NotifyScaleGestureComplete(const ScrollableLayerGuid& aGuid,
+                                  float aScale) override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -106,6 +110,10 @@ class RemoteContentController : public GeckoContentController,
 
   void CancelAutoscrollInProcess(const ScrollableLayerGuid& aScrollId);
   void CancelAutoscrollCrossProcess(const ScrollableLayerGuid& aScrollId);
+  void NotifyScaleGestureCompleteInProcess(const ScrollableLayerGuid& aGuid,
+                                           float aScale);
+  void NotifyScaleGestureCompleteCrossProcess(const ScrollableLayerGuid& aGuid,
+                                              float aScale);
 };
 
 }  // namespace layers

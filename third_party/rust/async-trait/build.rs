@@ -3,10 +3,16 @@ use std::process::Command;
 use std::str;
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+
     let compiler = match rustc_minor_version() {
         Some(compiler) => compiler,
         None => return,
     };
+
+    if compiler < 45 {
+        println!("cargo:rustc-cfg=no_span_mixed_site");
+    }
 
     if compiler < 47 {
         println!("cargo:rustc-cfg=self_span_hack");

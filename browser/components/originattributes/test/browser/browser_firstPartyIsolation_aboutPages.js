@@ -2,14 +2,11 @@ if (SpecialPowers.useRemoteSubframes) {
   requestLongerTimeout(2);
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   Services.prefs.setBoolPref("privacy.firstparty.isolate", true);
-  // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
-  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("privacy.firstparty.isolate");
-    Services.prefs.clearUserPref("network.cookie.sameSite.laxByDefault");
   });
 });
 
@@ -24,7 +21,7 @@ add_task(async function test_remote_window_open_aboutBlank() {
 
   Assert.ok(browser.isRemoteBrowser, "should be a remote browser");
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     Assert.ok(true, "origin " + content.document.nodePrincipal.origin);
 
     Assert.ok(
@@ -60,7 +57,7 @@ add_task(async function test_nonremote_window_open_aboutBlank() {
 
   Assert.ok(!browser.isRemoteBrowser, "shouldn't be a remote browser");
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     info("origin " + content.document.nodePrincipal.origin);
 
     Assert.ok(
@@ -102,11 +99,11 @@ add_task(async function test_remote_window_open_data_uri() {
     element.click();
   });
 
-  await BrowserTestUtils.browserLoaded(browser, false, function(url) {
+  await BrowserTestUtils.browserLoaded(browser, false, function (url) {
     return url == "data:text/plain,hello";
   });
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     Assert.ok(true, "origin: " + content.document.nodePrincipal.origin);
 
     Assert.ok(
@@ -131,15 +128,15 @@ add_task(async function test_remote_window_open_data_uri2() {
   let win = await BrowserTestUtils.openNewBrowserWindow({ remote: true });
   let browser = win.gBrowser.selectedBrowser;
   const TEST_PAGE =
-    "http://mochi.test:8888/browser/browser/components/originattributes/test/browser/test2.html";
+    "https://example.net/browser/browser/components/originattributes/test/browser/test2.html";
 
   // The iframe test2.html will fetch test2.js, which will have cookies.
   const DATA_URI = `data:text/html,
                     <iframe id="iframe1" src="${TEST_PAGE}"></iframe>`;
-  BrowserTestUtils.loadURI(browser, DATA_URI);
+  BrowserTestUtils.startLoadingURIString(browser, DATA_URI);
   await BrowserTestUtils.browserLoaded(browser, true, TEST_PAGE);
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     Assert.ok(true, "origin " + content.document.nodePrincipal.origin);
 
     Assert.ok(
@@ -156,7 +153,7 @@ add_task(async function test_remote_window_open_data_uri2() {
     await SpecialPowers.spawn(
       iframe,
       [content.document.nodePrincipal.originAttributes.firstPartyDomain],
-      function(firstPartyDomain) {
+      function (firstPartyDomain) {
         Assert.ok(
           true,
           "iframe principal: " + content.document.nodePrincipal.origin
@@ -235,7 +232,7 @@ add_task(async function test_aboutURL() {
     await SpecialPowers.spawn(
       tab.linkedBrowser,
       [{ attrs, url }],
-      async function(args) {
+      async function (args) {
         Assert.ok(
           true,
           "loading page about:" +

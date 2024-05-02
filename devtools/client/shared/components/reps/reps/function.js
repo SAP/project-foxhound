@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // ReactJS
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const {
@@ -16,7 +16,6 @@ define(function(require, exports, module) {
   // Reps
   const {
     getGripType,
-    isGrip,
     cropString,
     wrapRender,
   } = require("devtools/client/shared/components/reps/reps/rep-utils");
@@ -251,12 +250,7 @@ define(function(require, exports, module) {
 
   // Registration
   function supportsObject(grip, noGrip = false) {
-    const type = getGripType(grip, noGrip);
-    if (noGrip === true || !isGrip(grip)) {
-      return type == "function";
-    }
-
-    return type == "Function";
+    return getGripType(grip, noGrip) === "Function";
   }
 
   // Exports from this module

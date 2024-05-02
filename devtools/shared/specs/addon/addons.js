@@ -3,15 +3,29 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Arg, RetVal, generateActorSpec } = require("devtools/shared/protocol");
+const {
+  Arg,
+  RetVal,
+  generateActorSpec,
+} = require("resource://devtools/shared/protocol.js");
 
 const addonsSpec = generateActorSpec({
   typeName: "addons",
 
   methods: {
     installTemporaryAddon: {
-      request: { addonPath: Arg(0, "string") },
+      request: {
+        addonPath: Arg(0, "string"),
+        openDevTools: Arg(1, "nullable:boolean"),
+      },
       response: { addon: RetVal("json") },
+    },
+
+    uninstallAddon: {
+      request: {
+        addonId: Arg(0, "string"),
+      },
+      response: {},
     },
   },
 });

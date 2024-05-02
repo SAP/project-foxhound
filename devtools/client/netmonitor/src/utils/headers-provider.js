@@ -6,7 +6,7 @@
 
 const {
   ObjectProvider,
-} = require("devtools/client/shared/components/tree/ObjectProvider");
+} = require("resource://devtools/client/shared/components/tree/ObjectProvider.js");
 
 /**
  * Custom tree provider.
@@ -29,23 +29,23 @@ var HeadersProvider = {
     return ObjectProvider.getChildren(object);
   },
 
-  hasChildren: function(object) {
+  hasChildren(object) {
     if (object.value instanceof HeaderList) {
-      return object.value.headers.length > 0;
+      return !!object.value.headers.length;
     } else if (object instanceof Header) {
       return false;
     }
     return ObjectProvider.hasChildren(object);
   },
 
-  getLabel: function(object) {
+  getLabel(object) {
     if (object instanceof Header) {
       return object.name;
     }
     return ObjectProvider.getLabel(object);
   },
 
-  getValue: function(object) {
+  getValue(object) {
     if (object instanceof Header) {
       return object.value;
     }
@@ -59,7 +59,7 @@ var HeadersProvider = {
     return ObjectProvider.getKey(object);
   },
 
-  getType: function(object) {
+  getType(object) {
     if (object instanceof Header) {
       return "string";
     }

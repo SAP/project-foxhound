@@ -3,11 +3,13 @@
 
 "use strict";
 
-/* import-globals-from storage-helpers.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/server/tests/browser/storage-helpers.js",
   this
 );
+
+const l10n = new Localization(["devtools/client/storage.ftl"], true);
+const sessionString = l10n.formatValueSync("storage-expires-session");
 
 const storeMap = {
   cookies: {
@@ -378,24 +380,26 @@ async function testStores(commands) {
               if (!data[resourceType].dataByHost[host]) {
                 data[resourceType].dataByHost[host] = {};
               }
-              data[resourceType].dataByHost[
-                host
-              ].main = await resource.getStoreObjects(host);
+              data[resourceType].dataByHost[host].main =
+                await resource.getStoreObjects(host, null, {
+                  sessionString,
+                });
               for (const name of resource.hosts[host]) {
                 const objName = JSON.parse(name).slice(0, 1);
-                data[resourceType].dataByHost[host][
-                  objName
-                ] = await resource.getStoreObjects(host, [
-                  JSON.stringify(objName),
-                ]);
-                data[resourceType].dataByHost[host][
-                  name
-                ] = await resource.getStoreObjects(host, [name]);
+                data[resourceType].dataByHost[host][objName] =
+                  await resource.getStoreObjects(
+                    host,
+                    [JSON.stringify(objName)],
+                    { sessionString }
+                  );
+                data[resourceType].dataByHost[host][name] =
+                  await resource.getStoreObjects(host, [name], {
+                    sessionString,
+                  });
               }
             } else {
-              data[resourceType].dataByHost[
-                host
-              ] = await resource.getStoreObjects(host);
+              data[resourceType].dataByHost[host] =
+                await resource.getStoreObjects(host, null, { sessionString });
             }
           }
         }
@@ -467,7 +471,7 @@ function testLocalStorage({ hosts, dataByHost }) {
   return testLocalStorageObjects(0, hosts, dataByHost);
 }
 
-var testLocalStorageObjects = async function(index, hosts, dataByHost) {
+var testLocalStorageObjects = async function (index, hosts, dataByHost) {
   const host = Object.keys(hosts)[index];
   ok(
     !!storeMap["local-storage"][host],
@@ -719,36 +723,16 @@ async function testIDBEntries(index, hosts, dataByHost) {
   await testObjectStores(++index, hosts, dataByHost);
 }
 
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["privacy.documentCookies.maxage", 0]],
   });
 
-  const { commands, front } = await openTabAndSetupStorage(
+  const { commands } = await openTabAndSetupStorage(
     MAIN_DOMAIN + "storage-listings.html"
   );
 
   await testStores(commands);
-
-  // Only test listStores if JSWindowActor based target is disabled
-  // if they are enabled, we are supported to use ResourceCommand instead of listStores
-  if (
-    !Services.prefs.getBoolPref(
-      "devtools.target-switching.server.enabled",
-      false
-    )
-  ) {
-    info("Check that listStores can handle multiple concurrent calls");
-    const listStoresCalls = [];
-    for (let i = 0; i < 5; i++) {
-      listStoresCalls.push(front.listStores());
-    }
-    const onAllListStoresCallsResolved = Promise.all(listStoresCalls);
-    const timeoutResValue = "TIMED_OUT";
-    const onTimeout = wait(5000).then(() => timeoutResValue);
-    const res = await Promise.race([onTimeout, onAllListStoresCallsResolved]);
-    isnot(res, timeoutResValue, "listStores handled concurrent calls");
-  }
 
   await clearStorage();
 

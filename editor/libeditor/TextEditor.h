@@ -7,6 +7,7 @@
 #define mozilla_TextEditor_h
 
 #include "mozilla/EditorBase.h"
+#include "mozilla/EditorForwards.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/UniquePtr.h"
 
@@ -25,10 +26,6 @@ class nsISelectionController;
 class nsITransferable;
 
 namespace mozilla {
-class DeleteNodeTransaction;
-class InsertNodeTransaction;
-enum class EditSubAction : int32_t;
-
 namespace dom {
 class Selection;
 }  // namespace dom
@@ -86,6 +83,14 @@ class TextEditor final : public EditorBase,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult PostCreate();
 
   /**
+   * This method re-initializes the selection and caret state that are for
+   * current editor state. When editor session is destroyed, it always reset
+   * selection state even if this has no focus.  So if destroying editor,
+   * we have to call this method for focused editor to set selection state.
+   */
+  MOZ_CAN_RUN_SCRIPT void ReinitializeSelection(Element& aElement);
+
+  /**
    * PreDestroy() is called before the editor goes away, and gives the editor a
    * chance to tell its documentStateObservers that the document is going away.
    * Note that TextEditor::PreDestroy() shouldn't cause running script
@@ -101,18 +106,24 @@ class TextEditor final : public EditorBase,
     return aEditor ? aEditor->GetAsTextEditor() : nullptr;
   }
 
+  /**
+   * Helper method for `AppendString()` and `AppendSubString()`.  This should
+   * be called only when `aText` is in a password field.  This method masks
+   * A part of or all of `aText` (`aStartOffsetInText` and later) should've
+   * been copied (appended) to `aString`.  `aStartOffsetInString` is where
+   * the password was appended into `aString`.
+   */
+  static void MaskString(nsString& aString, const dom::Text& aTextNode,
+                         uint32_t aStartOffsetInString,
+                         uint32_t aStartOffsetInText);
+
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSINAMED
 
   // Overrides of nsIEditor
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD EndOfDocument() final;
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD InsertLineBreak() final;
   NS_IMETHOD GetTextLength(uint32_t* aCount) final;
-  MOZ_CAN_RUN_SCRIPT NS_IMETHOD Paste(int32_t aClipboardType) final {
-    const nsresult rv = TextEditor::PasteAsAction(aClipboardType, true);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                         "HTMLEditor::PasteAsAction() failed");
-    return rv;
-  }
 
   // Shouldn't be used internally, but we need these using declarations for
   // avoiding warnings of clang.
@@ -125,9 +136,6 @@ class TextEditor final : public EditorBase,
 
   bool CanPaste(int32_t aClipboardType) const final;
 
-  MOZ_CAN_RUN_SCRIPT nsresult PasteTransferableAsAction(
-      nsITransferable* aTransferable, nsIPrincipal* aPrincipal = nullptr) final;
-
   bool CanPasteTransferable(nsITransferable* aTransferable) final;
 
   MOZ_CAN_RUN_SCRIPT nsresult
@@ -136,12 +144,9 @@ class TextEditor final : public EditorBase,
   dom::EventTarget* GetDOMEventTarget() const final;
 
   MOZ_CAN_RUN_SCRIPT nsresult
-  PasteAsAction(int32_t aClipboardType, bool aDispatchPasteEvent,
-                nsIPrincipal* aPrincipal = nullptr) final;
+  OnFocus(const nsINode& aOriginalEventTargetNode) final;
 
-  MOZ_CAN_RUN_SCRIPT nsresult
-  PasteAsQuotationAsAction(int32_t aClipboardType, bool aDispatchPasteEvent,
-                           nsIPrincipal* aPrincipal = nullptr) final;
+  nsresult OnBlur(const dom::EventTarget* aEventTarget) final;
 
   /**
    * The maximum number of characters allowed.
@@ -149,6 +154,12 @@ class TextEditor final : public EditorBase,
    */
   int32_t MaxTextLength() const { return mMaxTextLength; }
   void SetMaxTextLength(int32_t aLength) { mMaxTextLength = aLength; }
+
+  /**
+   * This updates the wrap width used for initializing a document encoder within
+   * a call of EditorBase::GetAndInitDocEncoder().
+   */
+  void SetWrapColumn(int32_t aWrapColumn) { mWrapColumn = aWrapColumn; }
 
   /**
    * Replace existed string with a string.
@@ -278,6 +289,18 @@ class TextEditor final : public EditorBase,
   using EditorBase::SetAttributeOrEquivalent;
 
   /**
+   * FindBetterInsertionPoint() tries to look for better insertion point which
+   * is typically the nearest text node and offset in it.
+   *
+   * @param aPoint      Insertion point which the callers found.
+   * @return            Better insertion point if there is.  If not returns
+   *                    same point as aPoint.
+   */
+  template <typename EditorDOMPointType>
+  EditorDOMPointType FindBetterInsertionPoint(
+      const EditorDOMPointType& aPoint) const;
+
+  /**
    * InsertLineBreakAsSubAction() inserts a line break.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult InsertLineBreakAsSubAction();
@@ -403,14 +426,14 @@ class TextEditor final : public EditorBase,
    * @return                    If aInsertionString is truncated, it returns "as
    *                            handled", else "as ignored."
    */
-  EditActionResult MaybeTruncateInsertionStringForMaxLength(
+  Result<EditActionResult, nsresult> MaybeTruncateInsertionStringForMaxLength(
       nsAString& aInsertionString);
 
   /**
    * InsertLineFeedCharacterAtSelection() inserts a linefeed character at
    * selection.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT EditActionResult
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult>
   InsertLineFeedCharacterAtSelection();
 
   /**
@@ -435,9 +458,10 @@ class TextEditor final : public EditorBase,
    */
   void HandleNewLinesInStringForSingleLineEditor(nsString& aString) const;
 
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT EditActionResult HandleInsertText(
-      EditSubAction aEditSubAction, const nsAString& aInsertionString,
-      SelectionHandling aSelectionHandling) final;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult>
+  HandleInsertText(EditSubAction aEditSubAction,
+                   const nsAString& aInsertionString,
+                   SelectionHandling aSelectionHandling) final;
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult InsertDroppedDataTransferAsAction(
       AutoEditActionDataSetter& aEditActionData,
@@ -452,7 +476,7 @@ class TextEditor final : public EditorBase,
    *       needs to check if the editor is still available even if this returns
    *       NS_OK.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT EditActionResult
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult>
   HandleDeleteSelectionInternal(nsIEditor::EDirection aDirectionAndAmount,
                                 nsIEditor::EStripWrappers aStripWrappers);
 
@@ -462,7 +486,7 @@ class TextEditor final : public EditorBase,
    * @param aDirectionAndAmount Direction of the deletion.
    * @param aStripWrappers      Must be nsIEditor::eNoStrip.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT EditActionResult
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult>
   HandleDeleteSelection(nsIEditor::EDirection aDirectionAndAmount,
                         nsIEditor::EStripWrappers aStripWrappers) final;
 
@@ -473,7 +497,7 @@ class TextEditor final : public EditorBase,
    * the result is marked as "handled".  Otherwise, the caller needs to
    * compute it with another way.
    */
-  EditActionResult ComputeValueFromTextNodeAndBRElement(
+  Result<EditActionResult, nsresult> ComputeValueFromTextNodeAndBRElement(
       nsAString& aValue) const;
 
   /**
@@ -481,7 +505,7 @@ class TextEditor final : public EditorBase,
    * and `<textarea>.value` to aValue without transaction.  This must be
    * called only when it's not `HTMLEditor` and undo/redo is disabled.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT EditActionResult
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult>
   SetTextWithoutTransaction(const nsAString& aValue);
 
   /**
@@ -524,9 +548,30 @@ class TextEditor final : public EditorBase,
   bool CanEchoPasswordNow() const;
 
   /**
+   * InitEditorContentAndSelection() may insert a padding `<br>` element for
+   * if it's required in the anonymous `<div>` element or `<body>` element and
+   * collapse selection at the end if there is no selection ranges.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult InitEditorContentAndSelection();
+
+  /**
+   * Collapse `Selection` to end of the text node in the anonymous <div>
+   * element.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult CollapseSelectionToEndOfTextNode();
+
+  /**
    * Make the given selection span the entire document.
    */
   MOZ_CAN_RUN_SCRIPT nsresult SelectEntireDocument() final;
+
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandlePaste(
+      AutoEditActionDataSetter& aEditActionData, int32_t aClipboardType) final;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandlePasteAsQuotation(
+      AutoEditActionDataSetter& aEditActionData, int32_t aClipboardType) final;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  HandlePasteTransferable(AutoEditActionDataSetter& aEditActionData,
+                          nsITransferable& aTransferable) final;
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   InsertWithQuotationsAsSubAction(const nsAString& aQuotedText) final;
@@ -559,6 +604,7 @@ class TextEditor final : public EditorBase,
 
   int32_t mMaxTextLength = -1;
 
+  friend class AutoRangeArray;  // FindBetterInsertionPoint
   friend class DeleteNodeTransaction;
   friend class EditorBase;
   friend class InsertNodeTransaction;

@@ -7,25 +7,25 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
-const Actions = require("devtools/client/aboutdebugging/src/actions/index");
-const Types = require("devtools/client/aboutdebugging/src/types/index");
+const Actions = require("resource://devtools/client/aboutdebugging/src/actions/index.js");
+const Types = require("resource://devtools/client/aboutdebugging/src/types/index.js");
 
 const DetailsLog = createFactory(
-  require("devtools/client/aboutdebugging/src/components/shared/DetailsLog")
+  require("resource://devtools/client/aboutdebugging/src/components/shared/DetailsLog.js")
 );
 const Message = createFactory(
-  require("devtools/client/aboutdebugging/src/components/shared/Message")
+  require("resource://devtools/client/aboutdebugging/src/components/shared/Message.js")
 );
 const {
   MESSAGE_LEVEL,
-} = require("devtools/client/aboutdebugging/src/constants");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
 /**
  * This component provides components that reload/remove temporary extension.
@@ -41,6 +41,11 @@ class TemporaryExtensionAdditionalActions extends PureComponent {
   reload() {
     const { dispatch, target } = this.props;
     dispatch(Actions.reloadTemporaryExtension(target.id));
+  }
+
+  terminateBackgroundScript() {
+    const { dispatch, target } = this.props;
+    dispatch(Actions.terminateExtensionBackgroundScript(target.id));
   }
 
   remove() {
@@ -75,6 +80,75 @@ class TemporaryExtensionAdditionalActions extends PureComponent {
     );
   }
 
+  renderTerminateBackgroundScriptError() {
+    const { lastTerminateBackgroundScriptError } = this.props.target.details;
+
+    if (!lastTerminateBackgroundScriptError) {
+      return null;
+    }
+
+    return Message(
+      {
+        className: "qa-temporary-extension-terminate-backgroundscript-error",
+        level: MESSAGE_LEVEL.ERROR,
+        key: "terminate-backgroundscript-error",
+      },
+      DetailsLog(
+        {
+          type: MESSAGE_LEVEL.ERROR,
+        },
+        dom.p(
+          {
+            className: "technical-text",
+          },
+          lastTerminateBackgroundScriptError
+        )
+      )
+    );
+  }
+
+  renderTerminateBackgroundScriptButton() {
+    const { persistentBackgroundScript } = this.props.target.details;
+
+    // For extensions with a non persistent background script
+    // also include a "terminate background script" action.
+    if (persistentBackgroundScript !== false) {
+      return null;
+    }
+
+    return Localized(
+      {
+        id: "about-debugging-tmp-extension-terminate-bgscript-button",
+      },
+      dom.button(
+        {
+          className:
+            "default-button default-button--micro " +
+            "qa-temporary-extension-terminate-bgscript-button",
+          onClick: e => this.terminateBackgroundScript(),
+        },
+        "Terminate Background Script"
+      )
+    );
+  }
+
+  renderRemoveButton() {
+    return Localized(
+      {
+        id: "about-debugging-tmp-extension-remove-button",
+      },
+      dom.button(
+        {
+          className:
+            "default-button default-button--micro " +
+            "qa-temporary-extension-remove-button",
+          onClick: e => this.remove(),
+        },
+        "Remove"
+      )
+    );
+  }
+
   render() {
     return [
       dom.div(
@@ -82,6 +156,7 @@ class TemporaryExtensionAdditionalActions extends PureComponent {
           className: "toolbar toolbar--right-align",
           key: "actions",
         },
+        this.renderTerminateBackgroundScriptButton(),
         Localized(
           {
             id: "about-debugging-tmp-extension-reload-button",
@@ -96,22 +171,10 @@ class TemporaryExtensionAdditionalActions extends PureComponent {
             "Reload"
           )
         ),
-        Localized(
-          {
-            id: "about-debugging-tmp-extension-remove-button",
-          },
-          dom.button(
-            {
-              className:
-                "default-button default-button--micro " +
-                "qa-temporary-extension-remove-button",
-              onClick: e => this.remove(),
-            },
-            "Remove"
-          )
-        )
+        this.renderRemoveButton()
       ),
       this.renderReloadError(),
+      this.renderTerminateBackgroundScriptError(),
     ];
   }
 }

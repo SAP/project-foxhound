@@ -8,7 +8,11 @@
 
 #include "js/SavedFrameAPI.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/Services.h"
 #include "nsJSPrincipals.h"
+#include "nsIObserverService.h"
+#include "xpcpublic.h"
 
 namespace mozilla::dom {
 
@@ -18,8 +22,8 @@ SerializedStackHolder::SerializedStackHolder()
               StructuredCloneHolder::StructuredCloneScope::SameProcess) {}
 
 void SerializedStackHolder::WriteStack(JSContext* aCx,
-                                       JS::HandleObject aStack) {
-  JS::RootedValue stackValue(aCx, JS::ObjectValue(*aStack));
+                                       JS::Handle<JSObject*> aStack) {
+  JS::Rooted<JS::Value> stackValue(aCx, JS::ObjectValue(*aStack));
   mHolder.Write(aCx, stackValue, IgnoreErrors());
 
   // StructuredCloneHolder::Write can leave a pending exception on the context.
@@ -27,14 +31,14 @@ void SerializedStackHolder::WriteStack(JSContext* aCx,
 }
 
 void SerializedStackHolder::SerializeMainThreadOrWorkletStack(
-    JSContext* aCx, JS::HandleObject aStack) {
+    JSContext* aCx, JS::Handle<JSObject*> aStack) {
   MOZ_ASSERT(!IsCurrentThreadRunningWorker());
   WriteStack(aCx, aStack);
 }
 
 void SerializedStackHolder::SerializeWorkerStack(JSContext* aCx,
                                                  WorkerPrivate* aWorkerPrivate,
-                                                 JS::HandleObject aStack) {
+                                                 JS::Handle<JSObject*> aStack) {
   MOZ_ASSERT(aWorkerPrivate->IsOnCurrentThread());
 
   RefPtr<StrongWorkerRef> workerRef =
@@ -50,7 +54,7 @@ void SerializedStackHolder::SerializeWorkerStack(JSContext* aCx,
 }
 
 void SerializedStackHolder::SerializeCurrentStack(JSContext* aCx) {
-  JS::RootedObject stack(aCx);
+  JS::Rooted<JSObject*> stack(aCx);
   if (JS::CurrentGlobalOrNull(aCx) && !JS::CaptureCurrentStack(aCx, &stack)) {
     JS_ClearPendingException(aCx);
     return;
@@ -72,17 +76,9 @@ JSObject* SerializedStackHolder::ReadStack(JSContext* aCx) {
     return nullptr;
   }
 
-  JS::RootedValue stackValue(aCx);
+  JS::Rooted<JS::Value> stackValue(aCx);
 
-  {
-    Maybe<nsJSPrincipals::AutoSetActiveWorkerPrincipal> set;
-    if (mWorkerRef) {
-      set.emplace(mWorkerRef->Private()->GetPrincipal());
-    }
-
-    mHolder.Read(xpc::CurrentNativeGlobal(aCx), aCx, &stackValue,
-                 IgnoreErrors());
-  }
+  mHolder.Read(xpc::CurrentNativeGlobal(aCx), aCx, &stackValue, IgnoreErrors());
 
   return stackValue.isObject() ? &stackValue.toObject() : nullptr;
 }
@@ -123,12 +119,12 @@ void ConvertSerializedStackToJSON(UniquePtr<SerializedStackHolder> aStackHolder,
   DebugOnly<bool> ok = jsapi.Init(xpc::PrivilegedJunkScope());
   JSContext* cx = jsapi.cx();
 
-  JS::RootedObject savedFrame(cx, aStackHolder->ReadStack(cx));
+  JS::Rooted<JSObject*> savedFrame(cx, aStackHolder->ReadStack(cx));
   if (!savedFrame) {
     return;
   }
 
-  JS::RootedObject converted(cx);
+  JS::Rooted<JSObject*> converted(cx);
   converted = JS::ConvertSavedFrameToPlainObject(
       cx, savedFrame, JS::SavedFrameSelfHosted::Exclude);
   if (!converted) {
@@ -136,8 +132,9 @@ void ConvertSerializedStackToJSON(UniquePtr<SerializedStackHolder> aStackHolder,
     return;
   }
 
-  JS::RootedValue convertedValue(cx, JS::ObjectValue(*converted));
-  if (!nsContentUtils::StringifyJSON(cx, &convertedValue, aStackString)) {
+  JS::Rooted<JS::Value> convertedValue(cx, JS::ObjectValue(*converted));
+  if (!nsContentUtils::StringifyJSON(cx, convertedValue, aStackString,
+                                     UndefinedIsNullStringLiteral)) {
     JS_ClearPendingException(cx);
     return;
   }

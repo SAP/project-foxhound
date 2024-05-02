@@ -7,9 +7,6 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const MozXULTextElement = MozElements.MozElementMixin(XULTextElement);
 
   let gInsertSeparator = false;
@@ -242,7 +239,7 @@
     if (!element.isConnected) {
       return;
     }
-    if (element.previousSibling instanceof Text) {
+    if (Text.isInstance(element.previousSibling)) {
       element.previousSibling.appendData(element.textContent);
     } else {
       element.parentNode.insertBefore(element.firstChild, element);
@@ -315,9 +312,8 @@
       var uri = null;
       try {
         const nsISSM = Ci.nsIScriptSecurityManager;
-        const secMan = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(
-          nsISSM
-        );
+        const secMan =
+          Cc["@mozilla.org/scriptsecuritymanager;1"].getService(nsISSM);
 
         uri = Services.io.newURI(href);
 
@@ -339,7 +335,7 @@
             uri.scheme +
             ": link using \
                          the text-link binding.";
-          Cu.reportError(msg);
+          console.error(msg);
           return;
         }
 
@@ -355,7 +351,7 @@
           return;
         }
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
 
       aEvent.preventDefault();

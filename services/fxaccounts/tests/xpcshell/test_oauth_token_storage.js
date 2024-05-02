@@ -3,16 +3,16 @@
 
 "use strict";
 
-const { FxAccounts } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+const { FxAccounts } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
-const { FxAccountsClient } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsClient.jsm"
+const { FxAccountsClient } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsClient.sys.mjs"
 );
 
 // We grab some additional stuff via backstage passes.
-var { AccountState } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+var { AccountState } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
 
 function promiseNotification(topic) {
@@ -65,32 +65,34 @@ function MockFxAccountsClient() {
   this._email = "nobody@example.com";
   this._verified = false;
 
-  this.accountStatus = function(uid) {
+  this.accountStatus = function (uid) {
     return Promise.resolve(!!uid && !this._deletedOnServer);
   };
 
-  this.signOut = function() {
+  this.signOut = function () {
     return Promise.resolve();
   };
-  this.registerDevice = function() {
+  this.registerDevice = function () {
     return Promise.resolve();
   };
-  this.updateDevice = function() {
+  this.updateDevice = function () {
     return Promise.resolve();
   };
-  this.signOutAndDestroyDevice = function() {
+  this.signOutAndDestroyDevice = function () {
     return Promise.resolve();
   };
-  this.getDeviceList = function() {
+  this.getDeviceList = function () {
     return Promise.resolve();
   };
 
   FxAccountsClient.apply(this);
 }
 
-MockFxAccountsClient.prototype = {
-  __proto__: FxAccountsClient.prototype,
-};
+MockFxAccountsClient.prototype = {};
+Object.setPrototypeOf(
+  MockFxAccountsClient.prototype,
+  FxAccountsClient.prototype
+);
 
 function MockFxAccounts(device = {}) {
   return new FxAccounts({
@@ -122,10 +124,13 @@ async function createMockFxA() {
     email: "foo@example.com",
     uid: "1234@lcip.org",
     sessionToken: "dead",
-    kSync: "beef",
-    kXCS: "cafe",
-    kExtSync: "bacon",
-    kExtKbHash: "cheese",
+    scopedKeys: {
+      [SCOPE_OLD_SYNC]: {
+        kid: "key id for sync key",
+        k: "key material for sync key",
+        kty: "oct",
+      },
+    },
     verified: true,
   };
   await fxa._internal.setSignedInUser(credentials);
@@ -140,7 +145,7 @@ add_task(async function testCacheStorage() {
   // Hook what the impl calls to save to disk.
   let cas = fxa._internal.currentAccountState;
   let origPersistCached = cas._persistCachedTokens.bind(cas);
-  cas._persistCachedTokens = function() {
+  cas._persistCachedTokens = function () {
     return origPersistCached().then(() => {
       Services.obs.notifyObservers(null, "testhelper-fxa-cache-persist-done");
     });

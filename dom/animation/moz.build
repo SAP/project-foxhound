@@ -7,8 +7,8 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Animation")
 
-MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest.toml"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome.toml"]
 
 EXPORTS.mozilla.dom += [
     "Animation.h",
@@ -20,6 +20,7 @@ EXPORTS.mozilla.dom += [
     "DocumentTimeline.h",
     "KeyframeEffect.h",
     "ScrollTimeline.h",
+    "ViewTimeline.h",
 ]
 
 EXPORTS.mozilla += [
@@ -30,15 +31,16 @@ EXPORTS.mozilla += [
     "AnimationTarget.h",
     "AnimationUtils.h",
     "ComputedTiming.h",
-    "ComputedTimingFunction.h",
     "EffectCompositor.h",
     "EffectSet.h",
+    "ElementAnimationData.h",
     "Keyframe.h",
     "KeyframeEffectParams.h",
     "KeyframeUtils.h",
     "PendingAnimationTracker.h",
     "PostRestyleMode.h",
     "PseudoElementHashEntry.h",
+    "ScrollTimelineAnimationTracker.h",
     "TimingParams.h",
 ]
 
@@ -49,18 +51,20 @@ UNIFIED_SOURCES += [
     "AnimationPerformanceWarning.cpp",
     "AnimationTimeline.cpp",
     "AnimationUtils.cpp",
-    "ComputedTimingFunction.cpp",
     "CSSAnimation.cpp",
     "CSSPseudoElement.cpp",
     "CSSTransition.cpp",
     "DocumentTimeline.cpp",
     "EffectCompositor.cpp",
     "EffectSet.cpp",
+    "ElementAnimationData.cpp",
     "KeyframeEffect.cpp",
     "KeyframeUtils.cpp",
     "PendingAnimationTracker.cpp",
     "ScrollTimeline.cpp",
+    "ScrollTimelineAnimationTracker.cpp",
     "TimingParams.cpp",
+    "ViewTimeline.cpp",
 ]
 
 LOCAL_INCLUDES += [

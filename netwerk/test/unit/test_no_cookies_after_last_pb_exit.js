@@ -1,4 +1,3 @@
-/* globals ChromeUtils, Assert, add_task */
 "use strict";
 
 do_get_profile();
@@ -15,7 +14,9 @@ do_get_profile();
 //   last-pb-context-exit notification
 // - after the completion of the request, no cookies should be set
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 let server;
 
@@ -114,7 +115,7 @@ const steps = [
 ];
 
 function next() {
-  if (steps.length == 0) {
+  if (!steps.length) {
     do_test_finished();
     return;
   }

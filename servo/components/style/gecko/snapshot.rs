@@ -6,9 +6,8 @@
 //! change in order to properly calculate restyle hints.
 
 use crate::dom::TElement;
-use crate::element_state::ElementState;
 use crate::gecko::snapshot_helpers;
-use crate::gecko::wrapper::{GeckoElement, NamespaceConstraintHelpers};
+use crate::gecko::wrapper::GeckoElement;
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs::ServoElementSnapshot;
 use crate::gecko_bindings::structs::ServoElementSnapshotFlags as Flags;
@@ -19,8 +18,8 @@ use crate::string_cache::{Atom, Namespace};
 use crate::values::{AtomIdent, AtomString};
 use crate::LocalName;
 use crate::WeakAtom;
-use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
-use selectors::attr::{CaseSensitivity, NamespaceConstraint};
+use dom::ElementState;
+use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 
 /// A snapshot of a Gecko element.
 pub type GeckoElementSnapshot = ServoElementSnapshot;
@@ -91,70 +90,7 @@ impl GeckoElementSnapshot {
         local_name: &LocalName,
         operation: &AttrSelectorOperation<&AttrValue>,
     ) -> bool {
-        unsafe {
-            match *operation {
-                AttrSelectorOperation::Exists => {
-                    bindings::Gecko_SnapshotHasAttr(self, ns.atom_or_null(), local_name.as_ptr())
-                },
-                AttrSelectorOperation::WithValue {
-                    operator,
-                    case_sensitivity,
-                    expected_value,
-                } => {
-                    let ignore_case = match case_sensitivity {
-                        CaseSensitivity::CaseSensitive => false,
-                        CaseSensitivity::AsciiCaseInsensitive => true,
-                    };
-                    // FIXME: case sensitivity for operators other than Equal
-                    match operator {
-                        AttrSelectorOperator::Equal => bindings::Gecko_SnapshotAttrEquals(
-                            self,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Includes => bindings::Gecko_SnapshotAttrIncludes(
-                            self,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::DashMatch => bindings::Gecko_SnapshotAttrDashEquals(
-                            self,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Prefix => bindings::Gecko_SnapshotAttrHasPrefix(
-                            self,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Suffix => bindings::Gecko_SnapshotAttrHasSuffix(
-                            self,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Substring => {
-                            bindings::Gecko_SnapshotAttrHasSubstring(
-                                self,
-                                ns.atom_or_null(),
-                                local_name.as_ptr(),
-                                expected_value.as_ptr(),
-                                ignore_case,
-                            )
-                        },
-                    }
-                },
-            }
-        }
+        snapshot_helpers::attr_matches(&self.mAttrs, ns, local_name, operation)
     }
 }
 
@@ -170,7 +106,7 @@ impl ElementSnapshot for GeckoElementSnapshot {
 
     fn state(&self) -> Option<ElementState> {
         if self.has_any(Flags::State) {
-            Some(ElementState::from_bits_truncate(self.mState))
+            Some(ElementState::from_bits_retain(self.mState))
         } else {
             None
         }

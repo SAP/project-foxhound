@@ -14,7 +14,9 @@
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Variant.h"
+#include "mozilla/dom/AnimationEffect.h"
 #include "mozilla/dom/AnimationPlaybackEvent.h"
+#include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "nsCSSProps.h"
 #include "nsCycleCollectionParticipant.h"
@@ -22,17 +24,130 @@
 
 class nsRefreshDriver;
 
+namespace geckoprofiler::markers {
+
+using namespace mozilla;
+
+struct CSSAnimationMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("CSSAnimation");
+  }
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   const nsCString& aName,
+                                   const nsCString& aTarget,
+                                   nsCSSPropertyIDSet aPropertySet) {
+    aWriter.StringProperty("Name", aName);
+    aWriter.StringProperty("Target", aTarget);
+    nsAutoCString properties;
+    nsAutoCString oncompositor;
+    for (nsCSSPropertyID property : aPropertySet) {
+      if (!properties.IsEmpty()) {
+        properties.AppendLiteral(", ");
+        oncompositor.AppendLiteral(", ");
+      }
+      properties.Append(nsCSSProps::GetStringValue(property));
+      oncompositor.Append(nsCSSProps::PropHasFlags(
+                              property, CSSPropFlags::CanAnimateOnCompositor)
+                              ? "true"
+                              : "false");
+    }
+
+    aWriter.StringProperty("properties", properties);
+    aWriter.StringProperty("oncompositor", oncompositor);
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.AddKeyFormatSearchable("Name", MS::Format::String,
+                                  MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("properties", "Animated Properties",
+                             MS::Format::String);
+    schema.AddKeyLabelFormat("oncompositor", "Can Run on Compositor",
+                             MS::Format::String);
+    schema.AddKeyFormat("Target", MS::Format::String);
+    schema.SetChartLabel("{marker.data.Name}");
+    schema.SetTableLabel(
+        "{marker.name} - {marker.data.Name}: {marker.data.properties}");
+    return schema;
+  }
+};
+
+struct CSSTransitionMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("CSSTransition");
+  }
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   const nsCString& aTarget,
+                                   nsCSSPropertyID aProperty, bool aCanceled) {
+    aWriter.StringProperty("Target", aTarget);
+    aWriter.StringProperty("property", nsCSSProps::GetStringValue(aProperty));
+    aWriter.BoolProperty("oncompositor",
+                         nsCSSProps::PropHasFlags(
+                             aProperty, CSSPropFlags::CanAnimateOnCompositor));
+    if (aCanceled) {
+      aWriter.BoolProperty("Canceled", aCanceled);
+    }
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.AddKeyLabelFormat("property", "Animated Property",
+                             MS::Format::String);
+    schema.AddKeyLabelFormat("oncompositor", "Can Run on Compositor",
+                             MS::Format::String);
+    schema.AddKeyFormat("Canceled", MS::Format::String);
+    schema.AddKeyFormat("Target", MS::Format::String);
+    schema.SetChartLabel("{marker.data.property}");
+    schema.SetTableLabel("{marker.name} - {marker.data.property}");
+    return schema;
+  }
+};
+
+}  // namespace geckoprofiler::markers
+
 namespace mozilla {
 
 struct AnimationEventInfo {
-  RefPtr<dom::EventTarget> mTarget;
+  struct CssAnimationOrTransitionData {
+    OwningAnimationTarget mTarget;
+    const EventMessage mMessage;
+    const double mElapsedTime;
+    // FIXME(emilio): is this needed? This preserves behavior from before
+    // bug 1847200, but it's unclear what the timeStamp of the event should be.
+    // See also https://github.com/w3c/csswg-drafts/issues/9167
+    const TimeStamp mEventEnqueueTimeStamp{TimeStamp::Now()};
+  };
+
+  struct CssAnimationData : public CssAnimationOrTransitionData {
+    const RefPtr<nsAtom> mAnimationName;
+  };
+
+  struct CssTransitionData : public CssAnimationOrTransitionData {
+    // For transition events only.
+    const nsCSSPropertyID mPropertyId = eCSSProperty_UNKNOWN;
+  };
+
+  struct WebAnimationData {
+    RefPtr<dom::AnimationPlaybackEvent> mEvent;
+  };
+
+  using Data = Variant<CssAnimationData, CssTransitionData, WebAnimationData>;
+
   RefPtr<dom::Animation> mAnimation;
   TimeStamp mScheduledEventTimeStamp;
+  Data mData;
 
-  typedef Variant<InternalTransitionEvent, InternalAnimationEvent,
-                  RefPtr<dom::AnimationPlaybackEvent>>
-      EventVariant;
-  EventVariant mEvent;
+  OwningAnimationTarget* GetOwningAnimationTarget() {
+    if (mData.is<CssAnimationData>()) {
+      return &mData.as<CssAnimationData>().mTarget;
+    }
+    if (mData.is<CssTransitionData>()) {
+      return &mData.as<CssTransitionData>().mTarget;
+    }
+    return nullptr;
+  }
+
+  void MaybeAddMarker() const;
 
   // For CSS animation events
   AnimationEventInfo(nsAtom* aAnimationName,
@@ -40,33 +155,14 @@ struct AnimationEventInfo {
                      EventMessage aMessage, double aElapsedTime,
                      const TimeStamp& aScheduledEventTimeStamp,
                      dom::Animation* aAnimation)
-      : mTarget(aTarget.mElement),
-        mAnimation(aAnimation),
+      : mAnimation(aAnimation),
         mScheduledEventTimeStamp(aScheduledEventTimeStamp),
-        mEvent(EventVariant(InternalAnimationEvent(true, aMessage))) {
-    InternalAnimationEvent& event = mEvent.as<InternalAnimationEvent>();
-
-    aAnimationName->ToString(event.mAnimationName);
-    // XXX Looks like nobody initialize WidgetEvent::time
-    event.mElapsedTime = aElapsedTime;
-    event.mPseudoElement =
-        nsCSSPseudoElements::PseudoTypeAsString(aTarget.mPseudoType);
-
-    if ((aMessage == eAnimationCancel || aMessage == eAnimationEnd) &&
-        profiler_thread_is_being_profiled_for_markers()) {
-      nsCString markerText;
-      aAnimationName->ToUTF8String(markerText);
-      PROFILER_MARKER_TEXT(
-          "CSS animation", DOM,
-          MarkerOptions(
-              MarkerTiming::Interval(
-                  aScheduledEventTimeStamp -
-                      TimeDuration::FromSeconds(aElapsedTime),
-                  aScheduledEventTimeStamp),
-              aAnimation->GetOwner()
-                  ? MarkerInnerWindowId(aAnimation->GetOwner()->WindowID())
-                  : MarkerInnerWindowId::NoId()),
-          markerText);
+        mData(CssAnimationData{
+            {OwningAnimationTarget(aTarget.mElement, aTarget.mPseudoType),
+             aMessage, aElapsedTime},
+            aAnimationName}) {
+    if (profiler_thread_is_being_profiled_for_markers()) {
+      MaybeAddMarker();
     }
   }
 
@@ -76,102 +172,96 @@ struct AnimationEventInfo {
                      EventMessage aMessage, double aElapsedTime,
                      const TimeStamp& aScheduledEventTimeStamp,
                      dom::Animation* aAnimation)
-      : mTarget(aTarget.mElement),
-        mAnimation(aAnimation),
+      : mAnimation(aAnimation),
         mScheduledEventTimeStamp(aScheduledEventTimeStamp),
-        mEvent(EventVariant(InternalTransitionEvent(true, aMessage))) {
-    InternalTransitionEvent& event = mEvent.as<InternalTransitionEvent>();
-
-    event.mPropertyName =
-        NS_ConvertUTF8toUTF16(nsCSSProps::GetStringValue(aProperty));
-    // XXX Looks like nobody initialize WidgetEvent::time
-    event.mElapsedTime = aElapsedTime;
-    event.mPseudoElement =
-        nsCSSPseudoElements::PseudoTypeAsString(aTarget.mPseudoType);
-
-    if ((aMessage == eTransitionEnd || aMessage == eTransitionCancel) &&
-        profiler_thread_is_being_profiled_for_markers()) {
-      nsCString markerText;
-      markerText.Assign(nsCSSProps::GetStringValue(aProperty));
-      if (aMessage == eTransitionCancel) {
-        markerText.AppendLiteral(" (canceled)");
-      }
-
-      PROFILER_MARKER_TEXT(
-          "CSS transition", DOM,
-          MarkerOptions(
-              MarkerTiming::Interval(
-                  aScheduledEventTimeStamp -
-                      TimeDuration::FromSeconds(aElapsedTime),
-                  aScheduledEventTimeStamp),
-              aAnimation->GetOwner()
-                  ? MarkerInnerWindowId(aAnimation->GetOwner()->WindowID())
-                  : MarkerInnerWindowId::NoId()),
-          markerText);
+        mData(CssTransitionData{
+            {OwningAnimationTarget(aTarget.mElement, aTarget.mPseudoType),
+             aMessage, aElapsedTime},
+            aProperty}) {
+    if (profiler_thread_is_being_profiled_for_markers()) {
+      MaybeAddMarker();
     }
   }
 
   // For web animation events
-  AnimationEventInfo(const nsAString& aName,
-                     RefPtr<dom::AnimationPlaybackEvent>&& aEvent,
+  AnimationEventInfo(RefPtr<dom::AnimationPlaybackEvent>&& aEvent,
                      TimeStamp&& aScheduledEventTimeStamp,
                      dom::Animation* aAnimation)
-      : mTarget(aAnimation),
-        mAnimation(aAnimation),
+      : mAnimation(aAnimation),
         mScheduledEventTimeStamp(std::move(aScheduledEventTimeStamp)),
-        mEvent(std::move(aEvent)) {}
+        mData(WebAnimationData{std::move(aEvent)}) {}
 
   AnimationEventInfo(const AnimationEventInfo& aOther) = delete;
   AnimationEventInfo& operator=(const AnimationEventInfo& aOther) = delete;
+
   AnimationEventInfo(AnimationEventInfo&& aOther) = default;
   AnimationEventInfo& operator=(AnimationEventInfo&& aOther) = default;
 
-  bool IsWebAnimationEvent() const {
-    return mEvent.is<RefPtr<dom::AnimationPlaybackEvent>>();
-  }
-
-#ifdef DEBUG
-  bool IsStale() const {
-    const WidgetEvent* widgetEvent = AsWidgetEvent();
-    return widgetEvent->mFlags.mIsBeingDispatched ||
-           widgetEvent->mFlags.mDispatchedAtLeastOnce;
-  }
-
-  const WidgetEvent* AsWidgetEvent() const {
-    return const_cast<AnimationEventInfo*>(this)->AsWidgetEvent();
-  }
-#endif
-
-  WidgetEvent* AsWidgetEvent() {
-    if (mEvent.is<InternalTransitionEvent>()) {
-      return &mEvent.as<InternalTransitionEvent>();
-    }
-    if (mEvent.is<InternalAnimationEvent>()) {
-      return &mEvent.as<InternalAnimationEvent>();
-    }
-    if (mEvent.is<RefPtr<dom::AnimationPlaybackEvent>>()) {
-      return mEvent.as<RefPtr<dom::AnimationPlaybackEvent>>()->WidgetEventPtr();
+  bool operator<(const AnimationEventInfo& aOther) const {
+    if (this->mScheduledEventTimeStamp != aOther.mScheduledEventTimeStamp) {
+      // Null timestamps sort first
+      if (this->mScheduledEventTimeStamp.IsNull() ||
+          aOther.mScheduledEventTimeStamp.IsNull()) {
+        return this->mScheduledEventTimeStamp.IsNull();
+      }
+      return this->mScheduledEventTimeStamp < aOther.mScheduledEventTimeStamp;
     }
 
-    MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("Unexpected event type");
-    return nullptr;
+    // Events in the Web Animations spec are prior to CSS events.
+    if (this->IsWebAnimationEvent() != aOther.IsWebAnimationEvent()) {
+      return this->IsWebAnimationEvent();
+    }
+
+    AnimationPtrComparator<RefPtr<dom::Animation>> comparator;
+    return comparator.LessThan(this->mAnimation, aOther.mAnimation);
   }
+
+  bool IsWebAnimationEvent() const { return mData.is<WebAnimationData>(); }
 
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void Dispatch(nsPresContext* aPresContext) {
-    RefPtr<dom::EventTarget> target = mTarget;
-    if (mEvent.is<RefPtr<dom::AnimationPlaybackEvent>>()) {
-      auto playbackEvent = mEvent.as<RefPtr<dom::AnimationPlaybackEvent>>();
+    if (mData.is<WebAnimationData>()) {
+      RefPtr playbackEvent = mData.as<WebAnimationData>().mEvent;
+      RefPtr target = mAnimation;
       EventDispatcher::DispatchDOMEvent(target, nullptr /* WidgetEvent */,
                                         playbackEvent, aPresContext,
                                         nullptr /* nsEventStatus */);
       return;
     }
 
-    MOZ_ASSERT(mEvent.is<InternalTransitionEvent>() ||
-               mEvent.is<InternalAnimationEvent>());
+    if (mData.is<CssTransitionData>()) {
+      const auto& data = mData.as<CssTransitionData>();
+      nsPIDOMWindowInner* win =
+          data.mTarget.mElement->OwnerDoc()->GetInnerWindow();
+      if (win && !win->HasTransitionEventListeners()) {
+        MOZ_ASSERT(data.mMessage == eTransitionStart ||
+                   data.mMessage == eTransitionRun ||
+                   data.mMessage == eTransitionEnd ||
+                   data.mMessage == eTransitionCancel);
+        return;
+      }
 
-    EventDispatcher::Dispatch(target, aPresContext, AsWidgetEvent());
+      InternalTransitionEvent event(true, data.mMessage);
+      CopyUTF8toUTF16(nsCSSProps::GetStringValue(data.mPropertyId),
+                      event.mPropertyName);
+      event.mElapsedTime = data.mElapsedTime;
+      event.mPseudoElement =
+          nsCSSPseudoElements::PseudoTypeAsString(data.mTarget.mPseudoType);
+      event.AssignEventTime(WidgetEventTime(data.mEventEnqueueTimeStamp));
+      RefPtr target = data.mTarget.mElement;
+      EventDispatcher::Dispatch(target, aPresContext, &event);
+      return;
+    }
+
+    const auto& data = mData.as<CssAnimationData>();
+    InternalAnimationEvent event(true, data.mMessage);
+    data.mAnimationName->ToString(event.mAnimationName);
+    event.mElapsedTime = data.mElapsedTime;
+    event.mPseudoElement =
+        nsCSSPseudoElements::PseudoTypeAsString(data.mTarget.mPseudoType);
+    event.AssignEventTime(WidgetEventTime(data.mEventEnqueueTimeStamp));
+    RefPtr target = data.mTarget.mElement;
+    EventDispatcher::Dispatch(target, aPresContext, &event);
   }
 };
 
@@ -202,7 +292,6 @@ class AnimationEventDispatcher final {
     // mIsSorted will be set to true by SortEvents above, and we leave it
     // that way since mPendingEvents is now empty
     for (AnimationEventInfo& info : events) {
-      MOZ_ASSERT(!info.IsStale(), "The event shouldn't be stale");
       info.Dispatch(mPresContext);
 
       // Bail out if our mPresContext was nullified due to destroying the pres
@@ -230,30 +319,6 @@ class AnimationEventDispatcher final {
   }
 #endif
 
-  class AnimationEventInfoLessThan {
-   public:
-    bool operator()(const AnimationEventInfo& a,
-                    const AnimationEventInfo& b) const {
-      if (a.mScheduledEventTimeStamp != b.mScheduledEventTimeStamp) {
-        // Null timestamps sort first
-        if (a.mScheduledEventTimeStamp.IsNull() ||
-            b.mScheduledEventTimeStamp.IsNull()) {
-          return a.mScheduledEventTimeStamp.IsNull();
-        } else {
-          return a.mScheduledEventTimeStamp < b.mScheduledEventTimeStamp;
-        }
-      }
-
-      // Events in the Web Animations spec are prior to CSS events.
-      if (a.IsWebAnimationEvent() != b.IsWebAnimationEvent()) {
-        return a.IsWebAnimationEvent();
-      }
-
-      AnimationPtrComparator<RefPtr<dom::Animation>> comparator;
-      return comparator.LessThan(a.mAnimation, b.mAnimation);
-    }
-  };
-
   // Sort all pending CSS animation/transition events by scheduled event time
   // and composite order.
   // https://drafts.csswg.org/web-animations/#update-animations-and-send-events
@@ -266,10 +331,7 @@ class AnimationEventDispatcher final {
       pending.mAnimation->CachedChildIndexRef().reset();
     }
 
-    // FIXME: Replace with mPendingEvents.StableSort when bug 1147091 is
-    // fixed.
-    std::stable_sort(mPendingEvents.begin(), mPendingEvents.end(),
-                     AnimationEventInfoLessThan());
+    mPendingEvents.StableSort();
     mIsSorted = true;
   }
   void ScheduleDispatch();

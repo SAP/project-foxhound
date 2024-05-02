@@ -1,8 +1,10 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpServer.identity.primaryPort;
 });
 
@@ -115,15 +117,15 @@ function handle_remote_response(request, buffer) {
 }
 
 // hit the network instead of synthesizing
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(chan) {
-    chan.resetInterception(false);
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (channel) {
+    channel.resetInterception(false);
   });
   chan.asyncOpen(new ChannelListener(handle_remote_response, null));
 });
 
 // synthesize a response
-add_test(function() {
+add_test(function () {
   var chan = make_channel(URL + "/body", NON_REMOTE_BODY);
   chan.asyncOpen(
     new ChannelListener(handle_synthesized_response, null, CL_ALLOW_UNKNOWN_CL)
@@ -132,15 +134,15 @@ add_test(function() {
 
 // hit the network instead of synthesizing, to test that no previous synthesized
 // cache entry is used.
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(chan) {
-    chan.resetInterception(false);
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (channel) {
+    channel.resetInterception(false);
   });
   chan.asyncOpen(new ChannelListener(handle_remote_response, null));
 });
 
 // synthesize a different response to ensure no previous response is cached
-add_test(function() {
+add_test(function () {
   var chan = make_channel(URL + "/body", NON_REMOTE_BODY_2);
   chan.asyncOpen(
     new ChannelListener(
@@ -152,9 +154,9 @@ add_test(function() {
 });
 
 // ensure that the channel waits for a decision and synthesizes headers correctly
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(channel) {
-    do_timeout(100, function() {
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (channel) {
+    do_timeout(100, function () {
       var synthesized = Cc[
         "@mozilla.org/io/string-input-stream;1"
       ].createInstance(Ci.nsIStringInputStream);
@@ -168,18 +170,18 @@ add_test(function() {
 });
 
 // ensure that the channel waits for a decision
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(chan) {
-    do_timeout(100, function() {
-      chan.resetInterception(false);
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (channel) {
+    do_timeout(100, function () {
+      channel.resetInterception(false);
     });
   });
   chan.asyncOpen(new ChannelListener(handle_remote_response, null));
 });
 
 // ensure that the intercepted channel supports suspend/resume
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(intercepted) {
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (intercepted) {
     var synthesized = Cc[
       "@mozilla.org/io/string-input-stream;1"
     ].createInstance(Ci.nsIStringInputStream);
@@ -201,21 +203,21 @@ add_test(function() {
 });
 
 // ensure that the intercepted channel can be cancelled
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(intercepted) {
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (intercepted) {
     intercepted.cancelInterception(Cr.NS_BINDING_ABORTED);
   });
   chan.asyncOpen(new ChannelListener(run_next_test, null, CL_EXPECT_FAILURE));
 });
 
 // ensure that the channel can't be cancelled via nsIInterceptedChannel after making a decision
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(chan) {
-    chan.resetInterception(false);
-    do_timeout(0, function() {
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (channel) {
+    channel.resetInterception(false);
+    do_timeout(0, function () {
       var gotexception = false;
       try {
-        chan.cancelInterception();
+        channel.cancelInterception();
       } catch (x) {
         gotexception = true;
       }
@@ -226,8 +228,8 @@ add_test(function() {
 });
 
 // ensure that the intercepted channel can be canceled during the response
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(intercepted) {
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (intercepted) {
     var synthesized = Cc[
       "@mozilla.org/io/string-input-stream;1"
     ].createInstance(Ci.nsIStringInputStream);
@@ -248,8 +250,8 @@ add_test(function() {
 });
 
 // ensure that the intercepted channel can be canceled before the response
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(intercepted) {
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (intercepted) {
     var synthesized = Cc[
       "@mozilla.org/io/string-input-stream;1"
     ].createInstance(Ci.nsIStringInputStream);
@@ -274,13 +276,13 @@ add_test(function() {
 // Ensure that nsIInterceptedChannel.channelIntercepted() can return an error.
 // In this case we should automatically ResetInterception() and complete the
 // network request.
-add_test(function() {
-  var chan = make_channel(URL + "/body", null, function(chan) {
-    throw "boom";
+add_test(function () {
+  var chan = make_channel(URL + "/body", null, function (channel) {
+    throw new Error("boom");
   });
   chan.asyncOpen(new ChannelListener(handle_remote_response, null));
 });
 
-add_test(function() {
+add_test(function () {
   httpServer.stop(run_next_test);
 });

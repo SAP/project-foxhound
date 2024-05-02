@@ -12,15 +12,17 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 #include <hwy/nanobenchmark.h>
-#include <hwy/tests/test_util-inl.h>
+#include <hwy/tests/hwy_gtest.h>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 #ifndef JXL_DEBUG_CONVOLVE
 #define JXL_DEBUG_CONVOLVE 0
@@ -35,24 +37,27 @@ namespace HWY_NAMESPACE {
 void TestNeighbors() {
   const Neighbors::D d;
   const Neighbors::V v = Iota(d, 0);
-  HWY_ALIGN float actual[hwy::kTestMaxVectorSize / sizeof(float)] = {0};
+  constexpr size_t kMaxVectorSize = 64;
+  constexpr size_t M = kMaxVectorSize / sizeof(float);
+  HWY_ALIGN float actual[M] = {0};
 
-  HWY_ALIGN float first_l1[hwy::kTestMaxVectorSize / sizeof(float)] = {
-      0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+  HWY_ALIGN float first_l1[M] = {0, 0, 1, 2,  3,  4,  5,  6,
+                                 7, 8, 9, 10, 11, 12, 13, 14};
   Store(Neighbors::FirstL1(v), d, actual);
   const size_t N = Lanes(d);
+  ASSERT_LE(N, M);
   EXPECT_EQ(std::vector<float>(first_l1, first_l1 + N),
             std::vector<float>(actual, actual + N));
 
 #if HWY_TARGET != HWY_SCALAR
-  HWY_ALIGN float first_l2[hwy::kTestMaxVectorSize / sizeof(float)] = {
-      1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
+  HWY_ALIGN float first_l2[M] = {1, 0, 0, 1, 2,  3,  4,  5,
+                                 6, 7, 8, 9, 10, 11, 12, 13};
   Store(Neighbors::FirstL2(v), d, actual);
   EXPECT_EQ(std::vector<float>(first_l2, first_l2 + N),
             std::vector<float>(actual, actual + N));
 
-  HWY_ALIGN float first_l3[hwy::kTestMaxVectorSize / sizeof(float)] = {
-      2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+  HWY_ALIGN float first_l3[] = {2, 1, 0, 0, 1, 2,  3,  4,
+                                5, 6, 7, 8, 9, 10, 11, 12};
   Store(Neighbors::FirstL3(v), d, actual);
   EXPECT_EQ(std::vector<float>(first_l3, first_l3 + N),
             std::vector<float>(actual, actual + N));
@@ -73,7 +78,7 @@ void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
   Symmetric3(in, rect, weights, pool, &out_expected);
   SlowSymmetric3(in, rect, weights, pool, &out_actual);
 
-  VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
+  JXL_ASSERT_OK(VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
 }
 
 // Ensures Symmetric and Separable give the same result.
@@ -90,7 +95,7 @@ void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
   Separable5(in, Rect(in), WeightsSeparable5Lowpass(), pool, &out_expected);
   Symmetric5(in, rect, WeightsSymmetric5Lowpass(), pool, &out_actual);
 
-  VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
+  JXL_ASSERT_OK(VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
 }
 
 void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
@@ -107,7 +112,7 @@ void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
   Separable5(in, Rect(in), weights, pool, &out_expected);
   SlowSeparable5(in, rect, weights, pool, &out_actual);
 
-  VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
+  JXL_ASSERT_OK(VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
 }
 
 void VerifySeparable7(const size_t xsize, const size_t ysize, ThreadPool* pool,
@@ -129,14 +134,14 @@ void VerifySeparable7(const size_t xsize, const size_t ysize, ThreadPool* pool,
   SlowSeparable7(in, rect, weights, pool, &out_expected);
   Separable7(in, Rect(in), weights, pool, &out_actual);
 
-  VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
+  JXL_ASSERT_OK(VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
 }
 
 // For all xsize/ysize and kernels:
 void TestConvolve() {
   TestNeighbors();
 
-  ThreadPoolInternal pool(4);
+  test::ThreadPoolForTests pool(4);
   EXPECT_EQ(true,
             RunOnPool(
                 &pool, kConvolveMaxRadius, 40, ThreadPool::NoInit,
@@ -145,12 +150,12 @@ void TestConvolve() {
                   Rng rng(129 + 13 * xsize);
 
                   ThreadPool* null_pool = nullptr;
-                  ThreadPoolInternal pool3(3);
+                  test::ThreadPoolForTests pool3(3);
                   for (size_t ysize = kConvolveMaxRadius; ysize < 16; ++ysize) {
                     JXL_DEBUG(JXL_DEBUG_CONVOLVE,
-                              "%" PRIuS " x %" PRIuS
-                              " (target %d)===============================",
-                              xsize, ysize, HWY_TARGET);
+                              "%" PRIuS " x %" PRIuS " (target %" PRIx64
+                              ")===============================",
+                              xsize, ysize, static_cast<int64_t>(HWY_TARGET));
 
                     JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym3------------------");
                     VerifySymmetric3(xsize, ysize, null_pool, &rng);

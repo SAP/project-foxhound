@@ -15,6 +15,7 @@
 #include "pk11func.h"
 #include "secerr.h"
 #include "keyi.h"
+#include "nss.h"
 
 struct SGNContextStr {
     SECOidTag signalg;
@@ -32,6 +33,7 @@ sgn_NewContext(SECOidTag alg, SECItem *params, SECKEYPrivateKey *key)
     SECOidTag hashalg, signalg;
     KeyType keyType;
     PRUint32 policyFlags;
+    PRInt32 optFlags;
     SECStatus rv;
 
     /* OK, map a PKCS #7 hash and encrypt algorithm into
@@ -55,6 +57,16 @@ sgn_NewContext(SECOidTag alg, SECItem *params, SECKEYPrivateKey *key)
         !((key->keyType == rsaKey) && (keyType == rsaPssKey))) {
         PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
         return NULL;
+    }
+    if (NSS_OptionGet(NSS_KEY_SIZE_POLICY_FLAGS, &optFlags) != SECFailure) {
+        if (optFlags & NSS_KEY_SIZE_POLICY_SIGN_FLAG) {
+            rv = seckey_EnforceKeySize(key->keyType,
+                                       SECKEY_PrivateKeyStrengthInBits(key),
+                                       SEC_ERROR_SIGNATURE_ALGORITHM_DISABLED);
+            if (rv != SECSuccess) {
+                return NULL;
+            }
+        }
     }
     /* check the policy on the hash algorithm */
     if ((NSS_GetAlgorithmPolicy(hashalg, &policyFlags) == SECFailure) ||
@@ -338,35 +350,33 @@ SEC_SignDataWithAlgorithmID(SECItem *res, const unsigned char *buf, int len,
 
 /************************************************************************/
 
-DERTemplate CERTSignedDataTemplate[] =
-    {
-      { DER_SEQUENCE,
-        0, NULL, sizeof(CERTSignedData) },
-      { DER_ANY,
-        offsetof(CERTSignedData, data) },
-      { DER_INLINE,
-        offsetof(CERTSignedData, signatureAlgorithm),
-        SECAlgorithmIDTemplate },
-      { DER_BIT_STRING,
-        offsetof(CERTSignedData, signature) },
-      { 0 }
-    };
+DERTemplate CERTSignedDataTemplate[] = {
+    { DER_SEQUENCE,
+      0, NULL, sizeof(CERTSignedData) },
+    { DER_ANY,
+      offsetof(CERTSignedData, data) },
+    { DER_INLINE,
+      offsetof(CERTSignedData, signatureAlgorithm),
+      SECAlgorithmIDTemplate },
+    { DER_BIT_STRING,
+      offsetof(CERTSignedData, signature) },
+    { 0 }
+};
 
 SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
 
-const SEC_ASN1Template CERT_SignedDataTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE,
-        0, NULL, sizeof(CERTSignedData) },
-      { SEC_ASN1_ANY,
-        offsetof(CERTSignedData, data) },
-      { SEC_ASN1_INLINE | SEC_ASN1_XTRN,
-        offsetof(CERTSignedData, signatureAlgorithm),
-        SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
-      { SEC_ASN1_BIT_STRING,
-        offsetof(CERTSignedData, signature) },
-      { 0 }
-    };
+const SEC_ASN1Template CERT_SignedDataTemplate[] = {
+    { SEC_ASN1_SEQUENCE,
+      0, NULL, sizeof(CERTSignedData) },
+    { SEC_ASN1_ANY,
+      offsetof(CERTSignedData, data) },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN,
+      offsetof(CERTSignedData, signatureAlgorithm),
+      SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
+    { SEC_ASN1_BIT_STRING,
+      offsetof(CERTSignedData, signature) },
+    { 0 }
+};
 
 SEC_ASN1_CHOOSER_IMPLEMENT(CERT_SignedDataTemplate)
 
@@ -431,7 +441,7 @@ sec_DerSignData(PLArenaPool *arena, SECItem *result,
 
     /* DER encode the signed data object */
     rv = DER_Encode(arena, result, CERTSignedDataTemplate, &sd);
-/* FALL THROUGH */
+    /* FALL THROUGH */
 
 loser:
     PORT_Free(it.data);
@@ -467,9 +477,20 @@ SGN_Digest(SECKEYPrivateKey *privKey,
     SGNDigestInfo *di = 0;
     SECOidTag enctag;
     PRUint32 policyFlags;
+    PRInt32 optFlags;
 
     result->data = 0;
 
+    if (NSS_OptionGet(NSS_KEY_SIZE_POLICY_FLAGS, &optFlags) != SECFailure) {
+        if (optFlags & NSS_KEY_SIZE_POLICY_SIGN_FLAG) {
+            rv = seckey_EnforceKeySize(privKey->keyType,
+                                       SECKEY_PrivateKeyStrengthInBits(privKey),
+                                       SEC_ERROR_SIGNATURE_ALGORITHM_DISABLED);
+            if (rv != SECSuccess) {
+                return SECFailure;
+            }
+        }
+    }
     /* check the policy on the hash algorithm */
     if ((NSS_GetAlgorithmPolicy(algtag, &policyFlags) == SECFailure) ||
         !(policyFlags & NSS_USE_ALG_IN_ANY_SIGNATURE)) {

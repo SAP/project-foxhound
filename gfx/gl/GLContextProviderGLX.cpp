@@ -32,7 +32,6 @@
 #include "nsDebug.h"
 #include "nsIWidget.h"
 #include "GLXLibrary.h"
-#include "gfxXlibSurface.h"
 #include "gfxContext.h"
 #include "gfxEnv.h"
 #include "gfxPlatform.h"
@@ -100,7 +99,7 @@ bool GLXLibrary::EnsureInitialized(Display* aDisplay) {
     reporter.SetSuccessful();
   }
 
-  if (gfxEnv::GlxDebug()) {
+  if (gfxEnv::MOZ_GLX_DEBUG()) {
     mDebug = true;
   }
 
@@ -242,10 +241,11 @@ bool GLXLibrary::SupportsVideoSync(Display* aDisplay) {
 }
 
 static int (*sOldErrorHandler)(Display*, XErrorEvent*);
-ScopedXErrorHandler::ErrorEvent sErrorEvent;
+static XErrorEvent sErrorEvent = {};
+
 static int GLXErrorHandler(Display* display, XErrorEvent* ev) {
-  if (!sErrorEvent.mError.error_code) {
-    sErrorEvent.mError = *ev;
+  if (!sErrorEvent.error_code) {
+    sErrorEvent = *ev;
   }
   return 0;
 }
@@ -264,21 +264,23 @@ GLXLibrary::WrapperScope::~WrapperScope() {
     if (mDisplay) {
       FinishX(mDisplay);
     }
-    if (sErrorEvent.mError.error_code) {
+    if (sErrorEvent.error_code) {
       char buffer[100] = {};
       if (mDisplay) {
-        XGetErrorText(mDisplay, sErrorEvent.mError.error_code, buffer,
-                      sizeof(buffer));
+        XGetErrorText(mDisplay, sErrorEvent.error_code, buffer, sizeof(buffer));
       } else {
-        SprintfLiteral(buffer, "%d", sErrorEvent.mError.error_code);
+        SprintfLiteral(buffer, "%d", sErrorEvent.error_code);
       }
       printf_stderr("X ERROR after %s: %s (%i) - Request: %i.%i, Serial: %lu",
-                    mFuncName, buffer, sErrorEvent.mError.error_code,
-                    sErrorEvent.mError.request_code,
-                    sErrorEvent.mError.minor_code, sErrorEvent.mError.serial);
+                    mFuncName, buffer, sErrorEvent.error_code,
+                    sErrorEvent.request_code, sErrorEvent.minor_code,
+                    sErrorEvent.serial);
       MOZ_ASSERT_UNREACHABLE("AfterGLXCall sErrorEvent");
     }
-    XSetErrorHandler(sOldErrorHandler);
+    const auto was = XSetErrorHandler(sOldErrorHandler);
+    if (was != GLXErrorHandler) {
+      NS_WARNING("Concurrent XSetErrorHandlers");
+    }
   }
 }
 
@@ -315,8 +317,7 @@ std::shared_ptr<XlibDisplay> GLXLibrary::GetDisplay() {
 
 already_AddRefed<GLContextGLX> GLContextGLX::CreateGLContext(
     const GLContextDesc& desc, std::shared_ptr<XlibDisplay> display,
-    GLXDrawable drawable, GLXFBConfig cfg, bool deleteDrawable,
-    gfxXlibSurface* pixmap) {
+    GLXDrawable drawable, GLXFBConfig cfg, Drawable ownedPixmap) {
   GLXLibrary& glx = sGLXLibrary;
 
   int isDoubleBuffered = 0;
@@ -338,24 +339,16 @@ already_AddRefed<GLContextGLX> GLContextGLX::CreateGLContext(
 
   const auto CreateWithAttribs =
       [&](const std::vector<int>& attribs) -> RefPtr<GLContextGLX> {
-    OffMainThreadScopedXErrorHandler handler;
-
     auto terminated = attribs;
     terminated.push_back(0);
 
-    // X Errors can happen even if this context creation returns non-null, and
-    // we should not try to use such contexts. (Errors may come from the
-    // distant server, or something)
     const auto glxContext = glx.fCreateContextAttribs(
         *display, cfg, nullptr, X11True, terminated.data());
     if (!glxContext) return nullptr;
-    const RefPtr<GLContextGLX> ret =
-        new GLContextGLX(desc, display, drawable, glxContext, deleteDrawable,
-                         isDoubleBuffered, pixmap);
-    if (handler.SyncAndGetError(*display)) return nullptr;
+    const RefPtr<GLContextGLX> ret = new GLContextGLX(
+        desc, display, drawable, glxContext, isDoubleBuffered, ownedPixmap);
 
     if (!ret->Init()) return nullptr;
-    if (handler.SyncAndGetError(*display)) return nullptr;
 
     return ret;
   };
@@ -439,18 +432,20 @@ GLContextGLX::~GLContextGLX() {
   }
 
   // see bug 659842 comment 76
-#ifdef DEBUG
-  bool success =
-#endif
-      mGLX->fMakeCurrent(*mDisplay, X11None, nullptr);
-  MOZ_ASSERT(success,
-             "glXMakeCurrent failed to release GL context before we call "
-             "glXDestroyContext!");
+  bool success = mGLX->fMakeCurrent(*mDisplay, X11None, nullptr);
+  if (!success) {
+    NS_WARNING(
+        "glXMakeCurrent failed to release GL context before we call "
+        "glXDestroyContext!");
+  }
 
   mGLX->fDestroyContext(*mDisplay, mContext);
 
-  if (mDeleteDrawable) {
+  // If we own the enclosed X pixmap, then free it after we free the enclosing
+  // GLX pixmap.
+  if (mOwnedPixmap) {
     mGLX->fDestroyPixmap(*mDisplay, mDrawable);
+    XFreePixmap(*mDisplay, mOwnedPixmap);
   }
 }
 
@@ -476,7 +471,9 @@ bool GLContextGLX::MakeCurrentImpl() const {
   }
 
   const bool succeeded = mGLX->fMakeCurrent(*mDisplay, mDrawable, mContext);
-  NS_ASSERTION(succeeded, "Failed to make GL context current!");
+  if (!succeeded) {
+    NS_WARNING("Failed to make GL context current!");
+  }
 
   if (!IsOffscreen() && mGLX->SupportsSwapControl()) {
     // Many GLX implementations default to blocking until the next
@@ -552,16 +549,14 @@ bool GLContextGLX::RestoreDrawable() {
 GLContextGLX::GLContextGLX(const GLContextDesc& desc,
                            std::shared_ptr<XlibDisplay> aDisplay,
                            GLXDrawable aDrawable, GLXContext aContext,
-                           bool aDeleteDrawable, bool aDoubleBuffered,
-                           gfxXlibSurface* aPixmap)
+                           bool aDoubleBuffered, Drawable aOwnedPixmap)
     : GLContext(desc, nullptr),
       mContext(aContext),
       mDisplay(aDisplay),
       mDrawable(aDrawable),
-      mDeleteDrawable(aDeleteDrawable),
+      mOwnedPixmap(aOwnedPixmap),
       mDoubleBuffered(aDoubleBuffered),
-      mGLX(&sGLXLibrary),
-      mPixmap(aPixmap) {}
+      mGLX(&sGLXLibrary) {}
 
 static bool AreCompatibleVisuals(Visual* one, Visual* two) {
   if (one->c_class != two->c_class) {
@@ -621,9 +616,8 @@ already_AddRefed<GLContext> CreateForWidget(Display* aXDisplay, Window aXWindow,
   } else {
     flags = CreateContextFlags::REQUIRE_COMPAT_PROFILE;
   }
-  return GLContextGLX::CreateGLContext({{flags}, false},
-                                       XlibDisplay::Borrow(aXDisplay), aXWindow,
-                                       config, false, nullptr);
+  return GLContextGLX::CreateGLContext(
+      {{flags}, false}, XlibDisplay::Borrow(aXDisplay), aXWindow, config);
 }
 
 already_AddRefed<GLContext> GLContextProviderGLX::CreateForCompositorWidget(
@@ -868,33 +862,27 @@ static already_AddRefed<GLContextGLX> CreateOffscreenPixmapContext(
   int depth;
   FindVisualAndDepth(*display, visid, &visual, &depth);
 
-  OffMainThreadScopedXErrorHandler xErrorHandler;
-  bool error = false;
-
   gfx::IntSize dummySize(16, 16);
-  RefPtr<gfxXlibSurface> surface = gfxXlibSurface::Create(
-      display, DefaultScreenOfDisplay(display->get()), visual, dummySize);
-  if (surface->CairoStatus() != 0) {
-    mozilla::Unused << xErrorHandler.SyncAndGetError(*display);
+  const auto drawable =
+      XCreatePixmap(*display, DefaultRootWindow(display->get()),
+                    dummySize.width, dummySize.height, depth);
+  if (!drawable) {
     return nullptr;
   }
 
   // Handle slightly different signature between glXCreatePixmap and
   // its pre-GLX-1.3 extension equivalent (though given the ABI, we
   // might not need to).
-  const auto drawable = surface->XDrawable();
   const auto pixmap = glx->fCreatePixmap(*display, config, drawable, nullptr);
   if (pixmap == 0) {
-    error = true;
+    XFreePixmap(*display, drawable);
+    return nullptr;
   }
-
-  bool serverError = xErrorHandler.SyncAndGetError(*display);
-  if (error || serverError) return nullptr;
 
   auto fullDesc = GLContextDesc{desc};
   fullDesc.isOffscreen = true;
-  return GLContextGLX::CreateGLContext(fullDesc, display, pixmap, config, true,
-                                       surface);
+  return GLContextGLX::CreateGLContext(fullDesc, display, pixmap, config,
+                                       drawable);
 }
 
 /*static*/

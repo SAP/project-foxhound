@@ -4,10 +4,8 @@
 
 "use strict";
 
-/* import-globals-from antitracking_head.js */
-
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const LABEL_STORAGE_GRANTED = 0;
@@ -19,6 +17,23 @@ const LABEL_REDIRECT = 4;
 function clearTelemetry() {
   Services.telemetry.getSnapshotForHistograms("main", true /* clear */);
   Services.telemetry.getHistogramById("STORAGE_ACCESS_REMAINING_DAYS").clear();
+}
+
+function getExpectedExpiredDaysFromPref(pref) {
+  let expiredSecond = Services.prefs.getIntPref(pref);
+
+  // This is unlikely to happen, but just in case.
+  if (expiredSecond <= 0) {
+    return 0;
+  }
+
+  // We need to subtract one second from the expect expired second because there
+  // will be a short delay between the time we add the permission and the time
+  // we record the telemetry. Subtracting one can help us to get the correct
+  // expected expired days.
+  //
+  // Note that 86400 is seconds in one day.
+  return Math.trunc((expiredSecond - 1) / 86400);
 }
 
 async function testTelemetry(
@@ -85,7 +100,7 @@ async function testTelemetry(
   clearTelemetry();
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["network.cookie.cookieBehavior", BEHAVIOR_REJECT_TRACKER],
@@ -97,6 +112,11 @@ add_task(async function setup() {
       ],
       ["privacy.restrict3rdpartystorage.heuristic.redirect", true],
       ["toolkit.telemetry.ipcBatchTimeout", 0],
+      // Explicity set the expiration time to 29 days to avoid an intermittent
+      // issue that we could get 30 days of expiration time if we test the
+      // telemetry too soon.
+      ["privacy.restrict3rdpartystorage.expiration", 2591999],
+      ["privacy.restrict3rdpartystorage.expiration_redirect", 2591999],
     ],
   });
 
@@ -143,7 +163,7 @@ add_task(async function testTelemetryForStorageAccessAPI() {
 
       await new content.Promise(resolve => {
         let ifr = content.document.createElement("iframe");
-        ifr.onload = function() {
+        ifr.onload = function () {
           info("Sending code to the 3rd party content");
           ifr.contentWindow.postMessage(msg, "*");
         };
@@ -177,9 +197,13 @@ add_task(async function testTelemetryForStorageAccessAPI() {
   info("Removing the tab");
   BrowserTestUtils.removeTab(tab);
 
+  let expectedExpiredDays = getExpectedExpiredDaysFromPref(
+    "privacy.restrict3rdpartystorage.expiration"
+  );
+
   // The storage access permission will be expired in 29 days, so the expected
   // index in the telemetry probe would be 29.
-  await testTelemetry(false, 1, LABEL_STORAGE_ACCESS_API, 29);
+  await testTelemetry(false, 1, LABEL_STORAGE_ACCESS_API, expectedExpiredDays);
 });
 
 add_task(async function testTelemetryForWindowOpenHeuristic() {
@@ -218,7 +242,7 @@ add_task(async function testTelemetryForWindowOpenHeuristic() {
       info("Checking if storage access is denied");
       await new content.Promise(resolve => {
         let ifr = content.document.createElement("iframe");
-        ifr.onload = function() {
+        ifr.onload = function () {
           info("Sending code to the 3rd party content");
           ifr.contentWindow.postMessage(msg, "*");
         };
@@ -252,9 +276,13 @@ add_task(async function testTelemetryForWindowOpenHeuristic() {
   info("Removing the tab");
   BrowserTestUtils.removeTab(tab);
 
+  let expectedExpiredDays = getExpectedExpiredDaysFromPref(
+    "privacy.restrict3rdpartystorage.expiration"
+  );
+
   // The storage access permission will be expired in 29 days, so the expected
   // index in the telemetry probe would be 29.
-  await testTelemetry(false, 1, LABEL_OPENER, 29);
+  await testTelemetry(false, 1, LABEL_OPENER, expectedExpiredDays);
 });
 
 add_task(async function testTelemetryForUserInteractionHeuristic() {
@@ -335,12 +363,16 @@ add_task(async function testTelemetryForUserInteractionHeuristic() {
   info("Removing the tab");
   BrowserTestUtils.removeTab(tab);
 
+  let expectedExpiredDays = getExpectedExpiredDaysFromPref(
+    "privacy.restrict3rdpartystorage.expiration"
+  );
+
   // The storage access permission will be expired in 29 days, so the expected
   // index in the telemetry probe would be 29.
   //
   // Note that the expected count here is 2. It's because the opener heuristic
   // will also be triggered when triggered UserInteraction Heuristic.
-  await testTelemetry(false, 2, LABEL_OPENER_AFTER_UI, 29);
+  await testTelemetry(false, 2, LABEL_OPENER_AFTER_UI, expectedExpiredDays);
 });
 
 add_task(async function testTelemetryForRedirectHeuristic() {
@@ -376,7 +408,11 @@ add_task(async function testTelemetryForRedirectHeuristic() {
   info("Removing the tab");
   BrowserTestUtils.removeTab(tab);
 
-  // We would only grant the storage permission for 15 mins for the redirect
-  // heuristic, so the expected index in the telemetry probe would be 0.
-  await testTelemetry(true, 1, LABEL_REDIRECT, 0);
+  let expectedExpiredDaysRedirect = getExpectedExpiredDaysFromPref(
+    "privacy.restrict3rdpartystorage.expiration_redirect"
+  );
+
+  // We would only grant the storage permission for 29 days for the redirect
+  // heuristic, so the expected index in the telemetry probe would be 29.
+  await testTelemetry(true, 1, LABEL_REDIRECT, expectedExpiredDaysRedirect);
 });

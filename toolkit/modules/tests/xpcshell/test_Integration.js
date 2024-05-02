@@ -2,12 +2,12 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /*
- * Tests the Integration.jsm module.
+ * Tests the Integration.sys.mjs module.
  */
 
 "use strict";
-const { Integration } = ChromeUtils.import(
-  "resource://gre/modules/Integration.jsm"
+const { Integration } = ChromeUtils.importESModule(
+  "resource://gre/modules/Integration.sys.mjs"
 );
 
 const TestIntegration = {
@@ -56,28 +56,30 @@ let overrideFn = base => ({
   },
 });
 
-let superOverrideFn = base => ({
-  __proto__: base,
+let superOverrideFn = base => {
+  let nextLevel = {
+    value: "overridden-value",
 
-  value: "overridden-value",
+    get property() {
+      return "overridden-" + super.property;
+    },
 
-  get property() {
-    return "overridden-" + super.property;
-  },
+    set property(value) {
+      super.property = "overridden-" + value;
+    },
 
-  set property(value) {
-    super.property = "overridden-" + value;
-  },
+    method() {
+      return "overridden-" + super.method(...arguments);
+    },
 
-  method() {
-    return "overridden-" + super.method(...arguments);
-  },
-
-  async asyncMethod() {
-    // We cannot use the "super" keyword in methods defined using "Task.async".
-    return "overridden-" + (await base.asyncMethod.apply(this, arguments));
-  },
-});
+    async asyncMethod() {
+      // We cannot use the "super" keyword in methods defined using "Task.async".
+      return "overridden-" + (await base.asyncMethod.apply(this, arguments));
+    },
+  };
+  Object.setPrototypeOf(nextLevel, base);
+  return nextLevel;
+};
 
 /**
  * Fails the test if the results of method invocations on the combined object
@@ -218,30 +220,21 @@ add_task(async function test_xpcom_throws() {
 });
 
 /**
- * Checks that getters defined by defineModuleGetter are able to retrieve the
+ * Checks that getters defined by defineESModuleGetter are able to retrieve the
  * latest version of the combined integration object.
  */
-add_task(async function test_defineModuleGetter() {
+add_task(async function test_defineESModuleGetter() {
   let objectForGetters = {};
 
-  // Test with and without the optional "symbol" parameter.
-  Integration.testModule.defineModuleGetter(
+  Integration.testModule.defineESModuleGetter(
     objectForGetters,
     "TestIntegration",
-    "resource://testing-common/TestIntegration.jsm"
-  );
-  Integration.testModule.defineModuleGetter(
-    objectForGetters,
-    "integration",
-    "resource://testing-common/TestIntegration.jsm",
-    "TestIntegration"
+    "resource://testing-common/TestIntegration.sys.mjs"
   );
 
   Integration.testModule.register(overrideFn);
-  await assertCombinedResults(objectForGetters.integration, 1);
   await assertCombinedResults(objectForGetters.TestIntegration, 1);
 
   Integration.testModule.unregister(overrideFn);
-  await assertCombinedResults(objectForGetters.integration, 0);
   await assertCombinedResults(objectForGetters.TestIntegration, 0);
 });

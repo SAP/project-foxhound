@@ -51,7 +51,6 @@ const char* StrErrorAdaptor(int errnum, char* buf, size_t buflen) {
 }
 
 std::string StrErrorInternal(int errnum) {
-  absl::base_internal::ErrnoSaver errno_saver;
   char buf[100];
   const char* str = StrErrorAdaptor(errnum, buf, sizeof buf);
   if (*str == '\0') {
@@ -67,8 +66,8 @@ constexpr int kSysNerr = 135;
 
 std::array<std::string, kSysNerr>* NewStrErrorTable() {
   auto* table = new std::array<std::string, kSysNerr>;
-  for (int i = 0; i < static_cast<int>(table->size()); ++i) {
-    (*table)[i] = StrErrorInternal(i);
+  for (size_t i = 0; i < table->size(); ++i) {
+    (*table)[i] = StrErrorInternal(static_cast<int>(i));
   }
   return table;
 }
@@ -76,9 +75,10 @@ std::array<std::string, kSysNerr>* NewStrErrorTable() {
 }  // namespace
 
 std::string StrError(int errnum) {
+  absl::base_internal::ErrnoSaver errno_saver;
   static const auto* table = NewStrErrorTable();
-  if (errnum >= 0 && errnum < static_cast<int>(table->size())) {
-    return (*table)[errnum];
+  if (errnum >= 0 && static_cast<size_t>(errnum) < table->size()) {
+    return (*table)[static_cast<size_t>(errnum)];
   }
   return StrErrorInternal(errnum);
 }

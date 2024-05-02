@@ -2,12 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import struct
 import subprocess
 from io import BytesIO
+
 from mozpack.errors import errors
 
 MACHO_SIGNATURES = [
@@ -67,9 +66,8 @@ def is_executable(path):
     """
     Return whether a given file path points to an executable or a library,
     where an executable or library is identified by:
-        - the file extension on OS/2 and WINNT
-        - the file signature on OS/X and ELF systems (GNU/Linux, Android, BSD,
-          Solaris)
+    - the file extension on OS/2 and WINNT
+    - the file signature on OS/X and ELF systems (GNU/Linux, Android, BSD, Solaris)
 
     As this function is intended for use to choose between the ExecutableFile
     and File classes in FileFinder, and choosing ExecutableFile only matters
@@ -93,11 +91,6 @@ def may_strip(path):
     """
     from buildconfig import substs
 
-    # Bug 1658632: clang-11-based strip complains about d3dcompiler_47.dll.
-    # It's not clear why this happens, but as a quick fix just avoid stripping
-    # this DLL. It's not from our build anyway.
-    if "d3dcompiler" in path:
-        return False
     return bool(substs.get("PKG_STRIP"))
 
 

@@ -1,11 +1,10 @@
- /* This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 "use strict";
 
-const TEST_COM_URI =
-  URL_ROOT_COM_SSL + "examples/doc_dbg-fission-frame-sources.html";
+const TEST_COM_URI = `${URL_ROOT_COM_SSL}examples/doc_dbg-fission-frame-sources.html`;
 
 // Testing project search for remote frames.
 add_task(async function () {
@@ -22,12 +21,12 @@ add_task(async function () {
   type(dbg, "foo");
   pressKey(dbg, "Enter");
 
-  await waitForState(dbg, state => state.projectTextSearch.status === "DONE");
+  await waitForSearchResults(dbg, 2);
 
   const fileResults = findAllElements(dbg, "projectSearchFileResults");
   const matches = findAllElements(dbg, "projectSearchExpandedResults");
 
-  is(fileResults.length, 2, "Two results found")
+  is(fileResults.length, 2, "Two results found");
   is(matches.length, 6, "Total no of matches found");
 
   // Asserts that we find a matches in the js file included in the top-level document
@@ -37,14 +36,17 @@ add_task(async function () {
 
   function assertFileResult(fileMatched, noOfMatches) {
     // The results can be out of order so let find it from the collection
-    const match = [...fileResults].find(result => result.querySelector(".file-path").innerText.includes(fileMatched));
+    const match = [...fileResults].find(result =>
+      result.querySelector(".file-path").innerText.includes(fileMatched)
+    );
 
     ok(match, `Matches were found in ${fileMatched} file.`);
 
     const matchText = noOfMatches > 1 ? "matches" : "match";
-    is(match.querySelector(".matches-summary").innerText.trim(),
-    `(${noOfMatches} ${matchText})`,
-    `${noOfMatches} ${matchText} were found in ${fileMatched} file.`);
+    is(
+      match.querySelector(".matches-summary").innerText.trim(),
+      `(${noOfMatches} ${matchText})`,
+      `${noOfMatches} ${matchText} were found in ${fileMatched} file.`
+    );
   }
 });
-

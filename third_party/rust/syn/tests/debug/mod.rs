@@ -4,6 +4,7 @@
     clippy::used_underscore_binding
 )]
 
+#[rustfmt::skip]
 mod gen;
 
 use proc_macro2::{Ident, Literal, TokenStream};
@@ -86,7 +87,7 @@ where
     Lite<T>: Debug,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        Debug::fmt(Lite(&*self.value), formatter)
+        Debug::fmt(Lite(self.value), formatter)
     }
 }
 
@@ -120,5 +121,23 @@ where
             .debug_list()
             .entries(self.value.iter().map(Lite))
             .finish()
+    }
+}
+
+struct Present;
+
+impl Debug for Present {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("Some")
+    }
+}
+
+struct Option {
+    present: bool,
+}
+
+impl Debug for Option {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str(if self.present { "Some" } else { "None" })
     }
 }

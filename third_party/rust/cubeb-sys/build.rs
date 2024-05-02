@@ -35,7 +35,7 @@ fn main() {
 
     if !Path::new("libcubeb/.git").exists() {
         let _ = Command::new("git")
-            .args(&["submodule", "update", "--init", "--recursive"])
+            .args(["submodule", "update", "--init", "--recursive"])
             .status();
     }
 
@@ -45,6 +45,17 @@ fn main() {
     let freebsd = target.contains("freebsd");
     let android = target.contains("android");
     let mut cfg = cmake::Config::new("libcubeb");
+
+    if darwin {
+        let cmake_osx_arch = if target.contains("aarch64") {
+            // Apple Silicon
+            "arm64"
+        } else {
+            // Assuming Intel (x86_64)
+            "x86_64"
+        };
+        cfg.define("CMAKE_OSX_ARCHITECTURES", cmake_osx_arch);
+    }
 
     let _ = fs::remove_dir_all(env::var("OUT_DIR").unwrap());
     t!(fs::create_dir_all(env::var("OUT_DIR").unwrap()));
@@ -59,6 +70,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=cubeb");
     if windows {
         println!("cargo:rustc-link-lib=dylib=avrt");
+        println!("cargo:rustc-link-lib=dylib=ksuser");
         println!("cargo:rustc-link-lib=dylib=ole32");
         println!("cargo:rustc-link-lib=dylib=user32");
         println!("cargo:rustc-link-lib=dylib=winmm");
@@ -83,6 +95,7 @@ fn main() {
         let _ = pkg_config::find_library("alsa");
         let _ = pkg_config::find_library("libpulse");
         let _ = pkg_config::find_library("jack");
+        let _ = pkg_config::find_library("speexdsp");
         if android {
             println!("cargo:rustc-link-lib=dylib=OpenSLES");
         }

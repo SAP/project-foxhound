@@ -5,23 +5,27 @@ import android.content.res.AssetManager
 import android.os.SystemClock
 import android.webkit.MimeTypeMap
 import com.koushikdutta.async.ByteBufferList
-import com.koushikdutta.async.http.body.AsyncHttpRequestBody
 import com.koushikdutta.async.http.server.AsyncHttpServer
 import com.koushikdutta.async.http.server.AsyncHttpServerRequest
 import com.koushikdutta.async.http.server.AsyncHttpServerResponse
+import com.koushikdutta.async.http.server.HttpServerRequestCallback
 import com.koushikdutta.async.util.TaggedList
 import org.json.JSONObject
 import java.io.FileNotFoundException
 import java.math.BigInteger
 import java.security.MessageDigest
-import java.util.*
+import java.util.* // ktlint-disable no-wildcard-imports
 
-class TestServer {
+class TestServer @JvmOverloads constructor(
+    context: Context,
+    private val customHeaders: Map<String, String>? = null,
+    private val responseModifiers: Map<String, ResponseModifier>? = null,
+) {
     private val server = AsyncHttpServer()
     private val assets: AssetManager
     private val stallingResponses = Vector<AsyncHttpServerResponse>()
 
-    constructor(context: Context) {
+    init {
         assets = context.resources.assets
 
         val anything = { request: AsyncHttpServerRequest, response: AsyncHttpServerResponse ->
@@ -47,12 +51,21 @@ class TestServer {
         server.post("/anything", anything)
         server.get("/anything", anything)
 
-        server.get("/assets/.*") { request, response ->
+        val assetsCallback = HttpServerRequestCallback { request, response ->
             try {
                 val mimeType = MimeTypeMap.getSingleton()
-                        .getMimeTypeFromExtension(MimeTypeMap.getFileExtensionFromUrl(request.path))
+                    .getMimeTypeFromExtension(MimeTypeMap.getFileExtensionFromUrl(request.path))
                 val name = request.path.substring("/assets/".count())
                 val asset = assets.open(name).readBytes()
+
+                customHeaders?.forEach { (header, value) ->
+                    response.headers.set(header, value)
+                }
+
+                responseModifiers?.get(request.path)?.let { modifier ->
+                    response.send(mimeType, modifier.transformResponse(asset.decodeToString()))
+                    return@HttpServerRequestCallback
+                }
 
                 response.send(mimeType, asset)
             } catch (e: FileNotFoundException) {
@@ -60,6 +73,9 @@ class TestServer {
                 response.end()
             }
         }
+
+        server.get("/assets/.*", assetsCallback)
+        server.post("/assets/.*", assetsCallback)
 
         server.get("/status/.*") { request, response ->
             val statusCode = request.path.substring("/status/".count()).toInt()
@@ -74,7 +90,7 @@ class TestServer {
         server.get("/redirect/.*") { request, response ->
             val count = request.path.split('/').last().toInt() - 1
             if (count > 0) {
-                response.redirect("/redirect/${count}")
+                response.redirect("/redirect/$count")
             }
 
             response.end()
@@ -123,7 +139,7 @@ class TestServer {
             val count = request.path.split("/").last().toInt()
 
             response.setContentType("application/octet-stream")
-            response.headers.set("Content-Length", "${count}")
+            response.headers.set("Content-Length", "$count")
             response.writeHead()
 
             val payload = byteArrayOf(1)
@@ -141,7 +157,7 @@ class TestServer {
 
             val count = 100
             response.setContentType("InstallException")
-            response.headers.set("Content-Length", "${count}")
+            response.headers.set("Content-Length", "$count")
             response.writeHead()
 
             val payload = byteArrayOf(1)
@@ -161,8 +177,12 @@ class TestServer {
 
     fun stop() {
         for (response in stallingResponses) {
-          response.end()
+            response.end()
         }
         server.stop()
+    }
+
+    fun interface ResponseModifier {
+        abstract fun transformResponse(response: String): String
     }
 }

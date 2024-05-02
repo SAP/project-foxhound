@@ -7,8 +7,8 @@
 
 "use strict";
 
-const { CrashManager, CrashStore, dateToDays } = ChromeUtils.import(
-  "resource://gre/modules/CrashManager.jsm"
+const { CrashManager, CrashStore, dateToDays } = ChromeUtils.importESModule(
+  "resource://gre/modules/CrashManager.sys.mjs"
 );
 
 const DUMMY_DATE = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
@@ -27,7 +27,7 @@ const {
 var STORE_DIR_COUNT = 0;
 
 function getStore() {
-  return (async function() {
+  return (async function () {
     let storeDir = do_get_tempdir().path;
     storeDir = PathUtils.join(storeDir, "store-" + STORE_DIR_COUNT++);
 
@@ -271,8 +271,9 @@ add_task(async function test_add_mixed_types() {
     }
   );
 
-  const expectedCrashes = Object.keys(CrashManager.prototype.processTypes)
-    .length;
+  const expectedCrashes = Object.keys(
+    CrashManager.prototype.processTypes
+  ).length;
 
   Assert.ok(allAdd);
 

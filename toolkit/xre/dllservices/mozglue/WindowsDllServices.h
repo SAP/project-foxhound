@@ -58,33 +58,34 @@ class DllServicesBase : public Authenticode {
     mAuthenticode = aAuthenticode;
   }
 
-  void SetWinLauncherFunctions(const nt::WinLauncherFunctions& aFunctions) {
-    mWinLauncherFunctions = aFunctions;
+  void SetWinLauncherServices(const nt::WinLauncherServices& aWinLauncher) {
+    mWinLauncher = aWinLauncher;
   }
 
   template <typename... Args>
   LauncherVoidResultWithLineInfo InitDllBlocklistOOP(Args&&... aArgs) {
-    MOZ_RELEASE_ASSERT(mWinLauncherFunctions.mInitDllBlocklistOOP);
-    return mWinLauncherFunctions.mInitDllBlocklistOOP(
-        std::forward<Args>(aArgs)...);
+    MOZ_RELEASE_ASSERT(mWinLauncher.mInitDllBlocklistOOP);
+    return mWinLauncher.mInitDllBlocklistOOP(std::forward<Args>(aArgs)...);
   }
 
   template <typename... Args>
   void HandleLauncherError(Args&&... aArgs) {
-    MOZ_RELEASE_ASSERT(mWinLauncherFunctions.mHandleLauncherError);
-    mWinLauncherFunctions.mHandleLauncherError(std::forward<Args>(aArgs)...);
+    MOZ_RELEASE_ASSERT(mWinLauncher.mHandleLauncherError);
+    mWinLauncher.mHandleLauncherError(std::forward<Args>(aArgs)...);
   }
+
+  nt::SharedSection* GetSharedSection() { return mWinLauncher.mSharedSection; }
 
   // In debug builds we override GetBinaryOrgName to add a Gecko-specific
   // assertion. OTOH, we normally do not want people overriding this function,
   // so we'll make it final in the release case, thus covering all bases.
 #if defined(DEBUG)
   UniquePtr<wchar_t[]> GetBinaryOrgName(
-      const wchar_t* aFilePath,
+      const wchar_t* aFilePath, bool* aHasNestedMicrosoftSignature = nullptr,
       AuthenticodeFlags aFlags = AuthenticodeFlags::Default) override
 #else
   UniquePtr<wchar_t[]> GetBinaryOrgName(
-      const wchar_t* aFilePath,
+      const wchar_t* aFilePath, bool* aHasNestedMicrosoftSignature = nullptr,
       AuthenticodeFlags aFlags = AuthenticodeFlags::Default) final
 #endif  // defined(DEBUG)
   {
@@ -92,7 +93,8 @@ class DllServicesBase : public Authenticode {
       return nullptr;
     }
 
-    return mAuthenticode->GetBinaryOrgName(aFilePath, aFlags);
+    return mAuthenticode->GetBinaryOrgName(
+        aFilePath, aHasNestedMicrosoftSignature, aFlags);
   }
 
   virtual void DisableFull() { DllBlocklist_SetFullDllServices(nullptr); }
@@ -112,7 +114,7 @@ class DllServicesBase : public Authenticode {
 
  private:
   Authenticode* mAuthenticode;
-  nt::WinLauncherFunctions mWinLauncherFunctions;
+  nt::WinLauncherServices mWinLauncher;
 };
 
 }  // namespace detail
@@ -148,12 +150,28 @@ struct EnhancedModuleLoadInfo final {
 class DllServices : public detail::DllServicesBase {
  public:
   void DispatchDllLoadNotification(ModuleLoadInfo&& aModLoadInfo) final {
+    // We only notify one blocked DLL load event per blocked DLL for the main
+    // thread, because dispatching a notification can trigger a new blocked
+    // DLL load if the DLL is registered as a WH_GETMESSAGE hook. In that case,
+    // dispatching a notification with every load results in an infinite cycle,
+    // see bug 1823412.
+    if (aModLoadInfo.WasBlocked() && NS_IsMainThread()) {
+      nsDependentString sectionName(aModLoadInfo.mSectionName.AsString());
+
+      for (const auto& blockedModule : mMainThreadBlockedModules) {
+        if (sectionName == blockedModule) {
+          return;
+        }
+      }
+
+      MOZ_ALWAYS_TRUE(mMainThreadBlockedModules.append(sectionName));
+    }
+
     nsCOMPtr<nsIRunnable> runnable(
         NewRunnableMethod<StoreCopyPassByRRef<EnhancedModuleLoadInfo>>(
             "DllServices::NotifyDllLoad", this, &DllServices::NotifyDllLoad,
             std::move(aModLoadInfo)));
-
-    SchedulerGroup::Dispatch(TaskCategory::Other, runnable.forget());
+    SchedulerGroup::Dispatch(runnable.forget());
   }
 
   void DispatchModuleLoadBacklogNotification(
@@ -163,17 +181,18 @@ class DllServices : public detail::DllServicesBase {
             "DllServices::NotifyModuleLoadBacklog", this,
             &DllServices::NotifyModuleLoadBacklog, std::move(aEvents)));
 
-    SchedulerGroup::Dispatch(TaskCategory::Other, runnable.forget());
+    SchedulerGroup::Dispatch(runnable.forget());
   }
 
 #  if defined(DEBUG)
   UniquePtr<wchar_t[]> GetBinaryOrgName(
-      const wchar_t* aFilePath,
+      const wchar_t* aFilePath, bool* aHasNestedMicrosoftSignature = nullptr,
       AuthenticodeFlags aFlags = AuthenticodeFlags::Default) final {
     // This function may perform disk I/O, so we should never call it on the
     // main thread.
     MOZ_ASSERT(!NS_IsMainThread());
-    return detail::DllServicesBase::GetBinaryOrgName(aFilePath, aFlags);
+    return detail::DllServicesBase::GetBinaryOrgName(
+        aFilePath, aHasNestedMicrosoftSignature, aFlags);
   }
 #  endif  // defined(DEBUG)
 
@@ -185,6 +204,11 @@ class DllServices : public detail::DllServicesBase {
 
   virtual void NotifyDllLoad(EnhancedModuleLoadInfo&& aModLoadInfo) = 0;
   virtual void NotifyModuleLoadBacklog(ModuleLoadInfoVec&& aEvents) = 0;
+
+ private:
+  // This vector has no associated lock. It must only be used on the main
+  // thread.
+  Vector<nsString> mMainThreadBlockedModules;
 };
 
 #else

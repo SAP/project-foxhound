@@ -22,23 +22,13 @@ import logging
 from importlib import import_module
 
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-    Exclusive,
-)
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from voluptuous import Any, Exclusive, Optional, Required
 
 from gecko_taskgraph.optimize.schema import OptimizationSchema
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.test.other import get_mobile_project
-from gecko_taskgraph.util.schema import (
-    optionally_keyed_by,
-    resolve_keyed_by,
-    Schema,
-)
 from gecko_taskgraph.util.chunking import manifest_loaders
-
 
 logger = logging.getLogger(__name__)
 transforms = TransformSequence()
@@ -59,8 +49,11 @@ test_description_schema = Schema(
         Required("description"): str,
         # test suite category and name
         Optional("suite"): Any(
-            str,
-            {Optional("category"): str, Optional("name"): str},
+            optionally_keyed_by("variant", str),
+            {
+                Optional("category"): str,
+                Optional("name"): optionally_keyed_by("variant", str),
+            },
         ),
         # base work directory used to set up the task.
         Optional("workdir"): optionally_keyed_by("test-platform", Any(str, "default")),
@@ -108,7 +101,9 @@ test_description_schema = Schema(
         # number of chunks to create for this task.  This can be keyed by test
         # platform by passing a dictionary in the `by-test-platform` key.  If the
         # test platform is not found, the key 'default' will be tried.
-        Required("chunks"): optionally_keyed_by("test-platform", Any(int, "dynamic")),
+        Required("chunks"): optionally_keyed_by(
+            "test-platform", "variant", Any(int, "dynamic")
+        ),
         # Custom 'test_manifest_loader' to use, overriding the one configured in the
         # parameters. When 'null', no test chunking will be performed. Can also
         # be used to disable "manifest scheduling".
@@ -154,8 +149,10 @@ test_description_schema = Schema(
             ),
         ),
         # seconds of runtime after which the task will be killed.  Like 'chunks',
-        # this can be keyed by test pltaform.
-        Required("max-run-time"): optionally_keyed_by("test-platform", "subtest", int),
+        # this can be keyed by test platform, but also variant.
+        Required("max-run-time"): optionally_keyed_by(
+            "test-platform", "subtest", "variant", "app", int
+        ),
         # the exit status code that indicates the task should be retried
         Optional("retry-exit-status"): [int],
         # Whether to perform a gecko checkout.
@@ -200,7 +197,7 @@ test_description_schema = Schema(
             # of chunks is 1
             Required("chunked"): optionally_keyed_by("test-platform", bool),
             Required("requires-signed-builds"): optionally_keyed_by(
-                "test-platform", bool
+                "test-platform", "variant", bool
             ),
         },
         # The set of test manifests to run.
@@ -208,6 +205,8 @@ test_description_schema = Schema(
             [str],
             {"active": [str], "skipped": [str]},
         ),
+        # flag to determine if this is a confirm failure task
+        Optional("confirm-failure"): bool,
         # The current chunk (if chunking is enabled).
         Optional("this-chunk"): int,
         # os user groups for test task workers; required scopes, will be
@@ -221,7 +220,7 @@ test_description_schema = Schema(
         Required("build-label"): str,
         # the label of the signing task generating the materials to test.
         # Signed builds are used in xpcshell tests on Windows, for instance.
-        Optional("build-signing-label"): str,
+        Optional("build-signing-label"): optionally_keyed_by("variant", str),
         # the build's attributes
         Required("build-attributes"): {str: object},
         # the platform on which the tests will run
@@ -261,6 +260,7 @@ test_description_schema = Schema(
         Optional("target"): optionally_keyed_by(
             "app",
             "test-platform",
+            "variant",
             Any(
                 str,
                 None,
@@ -291,13 +291,15 @@ def handle_keyed_by_mozharness(config, tasks):
         "mozharness.chunked",
         "mozharness.config",
         "mozharness.extra-options",
-        "mozharness.requires-signed-builds",
         "mozharness.script",
     ]
     for task in tasks:
         for field in fields:
             resolve_keyed_by(
-                task, field, item_name=task["test-name"], enforce_single_match=False
+                task,
+                field,
+                item_name=task["test-name"],
+                enforce_single_match=False,
             )
         yield task
 
@@ -357,11 +359,20 @@ transforms.add_validate(test_description_schema)
 
 
 @transforms.add
+def run_variant_transforms(config, tasks):
+    """Variant transforms are run as soon as possible to allow other transforms
+    to key by variant."""
+    for task in tasks:
+        xforms = TransformSequence()
+        mod = import_module("gecko_taskgraph.transforms.test.variant")
+        xforms.add(mod.transforms)
+
+        yield from xforms(config, [task])
+
+
+@transforms.add
 def resolve_keys(config, tasks):
-    keys = (
-        "require-signed-extensions",
-        "run-without-variant",
-    )
+    keys = ("require-signed-extensions", "run-without-variant", "suite", "suite.name")
     for task in tasks:
         for key in keys:
             resolve_keyed_by(
@@ -371,21 +382,21 @@ def resolve_keys(config, tasks):
                 enforce_single_match=False,
                 **{
                     "release-type": config.params["release_type"],
+                    "variant": task["attributes"].get("unittest_variant"),
                 },
             )
         yield task
 
 
 @transforms.add
-def run_sibling_transforms(config, tasks):
+def run_remaining_transforms(config, tasks):
     """Runs other transform files next to this module."""
     # List of modules to load transforms from in order.
     transform_modules = (
-        ("variant", None),
         ("raptor", lambda t: t["suite"] == "raptor"),
         ("other", None),
         ("worker", None),
-        ("fission", None),
+        ("confirm_failure", None),
         # These transforms should always run last as there is never any
         # difference in configuration from one chunk to another (other than
         # chunk number).
@@ -428,11 +439,11 @@ def make_job_description(config, tasks):
             label += suffix
             try_name += suffix
 
-        if "1proc" not in attributes.get("unittest_variant", ""):
-            label += "-e10s"
-
         if task["chunks"] > 1:
             label += "-{}".format(task["this-chunk"])
+
+        if task.get("confirm-failure", False):
+            label += "-cf"
 
         build_label = task["build-label"]
 
@@ -514,6 +525,10 @@ def make_job_description(config, tasks):
             run["workdir"] = task.pop("workdir")
 
         jobdesc["worker-type"] = task.pop("worker-type")
+
+        if "worker" in task:
+            jobdesc["worker"] = task.pop("worker")
+
         if task.get("fetches"):
             jobdesc["fetches"] = task.pop("fetches")
 

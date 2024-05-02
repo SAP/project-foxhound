@@ -7,8 +7,10 @@
  * Makes sure Table Charts correctly handle empty source data.
  */
 
-add_task(async function() {
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+add_task(async function () {
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
   const { monitor } = await initNetMonitor(HTTPS_SIMPLE_URL, {
     requestCount: 1,
@@ -42,27 +44,23 @@ add_task(async function() {
 
   is(rows.length, 2, "There should be 1 table chart row and 1 header created.");
 
-  ok(
-    rows[1].querySelector(".table-chart-row-box.chart-colored-blob"),
-    "A colored blob exists for the first row."
-  );
   is(
-    rows[1].querySelectorAll("span")[0].getAttribute("name"),
+    rows[1].querySelectorAll(".table-chart-row-label")[0].getAttribute("name"),
     "size",
     "The first column of the first row exists."
   );
   is(
-    rows[1].querySelectorAll("span")[1].getAttribute("name"),
+    rows[1].querySelectorAll(".table-chart-row-label")[1].getAttribute("name"),
     "label",
     "The second column of the first row exists."
   );
   is(
-    rows[1].querySelectorAll("span")[0].textContent,
+    rows[1].querySelectorAll(".table-chart-row-label")[0].textContent,
     "",
     "The first column of the first row displays the correct text."
   );
   is(
-    rows[1].querySelectorAll("span")[1].textContent,
+    rows[1].querySelectorAll(".table-chart-row-label")[1].textContent,
     L10N.getStr("tableChart.unavailable"),
     "The second column of the first row displays the correct text."
   );

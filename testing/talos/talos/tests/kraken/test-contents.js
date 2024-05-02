@@ -50303,7 +50303,7 @@ var path = [];\n\
 \n\
 \n\
 \n\
-TalosContentProfiler.resume('astar', true).then(() => {\n\
+TalosContentProfiler.subtestStart('astar', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   Array.prototype.each = function(f) {\n\
@@ -50458,7 +50458,7 @@ TalosContentProfiler.resume('astar', true).then(() => {\n\
   go();\n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('astar', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('astar', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -53099,7 +53099,7 @@ BeatDetektor.modules.vis.VU.prototype.getLevel = function(x)\n\
 }\n\
 \n\
 \n\
-TalosContentProfiler.resume('audio-beat-detection', true).then(() => {\n\
+TalosContentProfiler.subtestStart('audio-beat-detection', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   var iterations = 1000;\n\
@@ -53123,7 +53123,7 @@ TalosContentProfiler.resume('audio-beat-detection', true).then(() => {\n\
   runTest(calcBeat, iterations);\n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('audio-beat-detection', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('audio-beat-detection', true).then(() => {\n\
 \n\
     record(_sunSpiderInterval);\n\
   });\n\
@@ -55100,7 +55100,7 @@ function mixSampleBuffers(sampleBuffer1, sampleBuffer2, negate, volumeCorrection
 }   \n\
 \n\
 \n\
-TalosContentProfiler.resume('audio-dft', true).then(() => {\n\
+TalosContentProfiler.subtestStart('audio-dft', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   var iterations = 20;\n\
@@ -55116,7 +55116,7 @@ TalosContentProfiler.resume('audio-dft', true).then(() => {\n\
 \n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('audio-dft', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('audio-dft', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 });\n\
@@ -57095,7 +57095,7 @@ function mixSampleBuffers(sampleBuffer1, sampleBuffer2, negate, volumeCorrection
 }   \n\
 \n\
 \n\
-TalosContentProfiler.resume('audio-fft', true).then(() => {\n\
+TalosContentProfiler.subtestStart('audio-fft', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   var iterations = 1000;\n\
@@ -57113,7 +57113,7 @@ TalosContentProfiler.resume('audio-fft', true).then(() => {\n\
 \n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('audio-fft', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('audio-fft', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   })\n\
 });\n\
@@ -59089,7 +59089,7 @@ function mixSampleBuffers(sampleBuffer1, sampleBuffer2, negate, volumeCorrection
 }   \n\
 \n\
 \n\
-TalosContentProfiler.resume('audio-oscillator', true).then(() => {\n\
+TalosContentProfiler.subtestStart('audio-oscillator', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   var iterations = 500;\n\
@@ -59111,7 +59111,7 @@ TalosContentProfiler.resume('audio-oscillator', true).then(() => {\n\
 \n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('audio-oscillator', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('audio-oscillator', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 });\n\
@@ -59207,7 +59207,7 @@ buildKernel();\n\
 var width = 400, height = 267;\n\
 \n\
 \n\
-TalosContentProfiler.resume('imaging-gaussian-blur', true).then(() => {\n\
+TalosContentProfiler.subtestStart('imaging-gaussian-blur', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   //print(\"i: \" + i + \"j: \" + j);\n\
@@ -59237,7 +59237,7 @@ TalosContentProfiler.resume('imaging-gaussian-blur', true).then(() => {\n\
   gaussianBlur();\n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('imaging-gaussian-blur', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('imaging-gaussian-blur', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 });\n\
@@ -59409,7 +59409,7 @@ var squidImageData = [8, 7, 21, 255, 42, 39, 79, 255, 74, 64, 104, 255, 96, 83, 
       }\n\
 \n\
 \n\
-TalosContentProfiler.resume('imaging-darkroom', true).then(() => {\n\
+TalosContentProfiler.subtestStart('imaging-darkroom', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   var width = 400, height = 267;\n\
@@ -59419,7 +59419,7 @@ TalosContentProfiler.resume('imaging-darkroom', true).then(() => {\n\
   }\n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('imagine-darkroom', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('imagine-darkroom', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -59481,7 +59481,7 @@ var squidImageData = [8, 7, 21, 255, 42, 39, 79, 255, 74, 64, 104, 255, 96, 83, 
 var width = 400, height = 267;\n\
 \n\
 \n\
-TalosContentProfiler.resume('imaging-desaturate', true).then(() => {\n\
+TalosContentProfiler.subtestStart('imaging-desaturate', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   /*\n\
@@ -59526,7 +59526,7 @@ TalosContentProfiler.resume('imaging-desaturate', true).then(() => {\n\
       Pixastic.Actions.desaturate.process(params);\n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('imaging-desaturate', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('imaging-desaturate', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -59688,7 +59688,7 @@ var data =\n\
 \"id\\\":219948,\\\"deposits\\\":0}\";\n\
 \n\
 \n\
-TalosContentProfiler.resume('json-parse-financial', true).then(() => {\n\
+TalosContentProfiler.subtestStart('json-parse-financial', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
 \n\
@@ -59697,7 +59697,7 @@ TalosContentProfiler.resume('json-parse-financial', true).then(() => {\n\
   }\n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('json-parse-financial', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('json-parse-financial', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -59888,7 +59888,7 @@ var tinderbox_data = {'cvs_module' : '','name_count' : 40,'cvs_branch' : '','num
 {'cltbld' : 1,'brendan%mozilla.org' : 1,'gavin%gavinsharp.com' : 1,'dbaron%dbaron.org' : 1,'neil%parkwaycc.co.uk' : 1,'reed%reedloden.com' : 1,'dietrich%mozilla.com' : 1,'crowder%fiverocks.com' : 1,'philringnalda%gmail.com' : 1,'mnyromyr%tprac.de' : 1,'marco.zehe%googlemail.com' : 1,'Pidgeot18%gmail.com' : 1,'hwaara%gmail.com' : 1,'silver%warwickcompsoc.co.uk' : 1,'dholbert%cs.stanford.edu' : 1,'jst%mozilla.org' : 1,'mozilla%kewis.ch' : 1,'bugzilla%standard8.plus.com' : 1,'anodelman%mozilla.com' : 1,'mkmelin+mozilla%iki.fi' : 1,'axel%pike.org' : 1,'sdwilsh%shawnwilsher.com' : 1,'bhearsum%mozilla.com' : 1,'ctalbert%mozilla.com' : 1,'smichaud%pobox.com' : 1,'wr%rosenauer.org' : 1,'timeless%mozdev.org' : 1,'Callek%gmail.com' : 1,'dcamp%mozilla.com' : 1,'jminta%gmail.com' : 1,'bienvenu%nventure.com' : 1}],'build_names' : ['Linux mozilla-central build','Linux mozilla-central leak test build','Linux mozilla-central nightly','Linux mozilla-central unit test','Linux talos mozilla-central fast qm-plinux-fast03','Linux talos mozilla-central nochrome qm-plinux-trunk07','Linux talos mozilla-central qm-plinux-trunk01','Linux talos mozilla-central qm-plinux-trunk03','Linux x86-64 mozilla-central build','Linux x86-64 mozilla-central nightly','MacOSX Darwin 8.8.1 talos mozilla-central fast qm-pmac-fast03','MacOSX Darwin 8.8.1 talos mozilla-central nochrome qm-pmac-trunk10','MacOSX Darwin 8.8.1 talos mozilla-central qm-pmac-trunk01','MacOSX Darwin 8.8.1 talos mozilla-central qm-pmac-trunk02','MacOSX Darwin 8.8.1 talos mozilla-central qm-pmac-trunk03','MacOSX Darwin 9.2.2 talos mozilla-central nochrome qm-pleopard-trunk04','MacOSX Darwin 9.2.2 talos mozilla-central qm-pleopard-trunk01','MacOSX Darwin 9.2.2 talos mozilla-central qm-pleopard-trunk02','MacOSX Darwin 9.2.2 talos mozilla-central qm-pleopard-trunk03','OS X 10.5.2 mozilla-central build','OS X 10.5.2 mozilla-central leak test build','OS X 10.5.2 mozilla-central nightly','OS X 10.5.2 mozilla-central shark','OS X 10.5.2 mozilla-central unit test','WINNT 5.1 talos mozilla-central fast qm-pxp-fast03','WINNT 5.1 talos mozilla-central jss qm-pxp-jss01','WINNT 5.1 talos mozilla-central jss qm-pxp-jss02','WINNT 5.1 talos mozilla-central jss qm-pxp-jss03','WINNT 5.1 talos mozilla-central nochrome qm-pxp-trunk07','WINNT 5.1 talos mozilla-central qm-pxp-trunk01','WINNT 5.1 talos mozilla-central qm-pxp-trunk02','WINNT 5.1 talos mozilla-central qm-pxp-trunk03','WINNT 5.2 mozilla-central build','WINNT 5.2 mozilla-central leak test build','WINNT 5.2 mozilla-central nightly','WINNT 5.2 mozilla-central unit test','WINNT 6.0 talos mozilla-central nochrome qm-pvista-trunk04','WINNT 6.0 talos mozilla-central qm-pvista-trunk01','WINNT 6.0 talos mozilla-central qm-pvista-trunk02','static-analysis-bsmedberg']};\n\
 \n\
 \n\
-TalosContentProfiler.resume('json-stringify-tinderbox', true).then(() => {\n\
+TalosContentProfiler.subtestStart('json-stringify-tinderbox', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
 \n\
@@ -59897,7 +59897,7 @@ TalosContentProfiler.resume('json-stringify-tinderbox', true).then(() => {\n\
   }\n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('json-stringify-tinderbox', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('json-stringify-tinderbox', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -66414,7 +66414,7 @@ sjcl.test.vector.aes = [ \n\
 ];\n\
 \n\
 \n\
-TalosContentProfiler.resume('stanford-crypto-aes', true).then(() => {\n\
+TalosContentProfiler.subtestStart('stanford-crypto-aes', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   new sjcl.test.TestCase(\"AES official known-answer tests\", function (cb) {\n\
@@ -66443,7 +66443,7 @@ TalosContentProfiler.resume('stanford-crypto-aes', true).then(() => {\n\
 \n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('stanford-crypto-aes', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('stanford-crypto-aes', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -73729,7 +73729,7 @@ sjcl.test.vector.ccm = [\n\
 }];\n\
 \n\
 \n\
-TalosContentProfiler.resume('stanford-crypto-ccm', true).then(() => {\n\
+TalosContentProfiler.subtestStart('stanford-crypto-ccm', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   new sjcl.test.TestCase(\"CCM mode tests\", function (cb) {\n\
@@ -73768,7 +73768,7 @@ TalosContentProfiler.resume('stanford-crypto-ccm', true).then(() => {\n\
 \n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('stanford-crypto-ccm', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('stanford-crypto-ccm', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -74049,7 +74049,7 @@ sjcl.codec.hex = sjcl.codec.hex ||\n\
 \n\
 \n\
 \n\
-TalosContentProfiler.resume('stanford-crypto-pbkdf2', true).then(() => {\n\
+TalosContentProfiler.subtestStart('stanford-crypto-pbkdf2', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   /* From http://www.cryptosys.net/manapi/api_PBE_Kdf2.html */\n\
@@ -74075,7 +74075,7 @@ TalosContentProfiler.resume('stanford-crypto-pbkdf2', true).then(() => {\n\
 \n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('stanford-crypto-pbkdf2', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('stanford-crypto-pbkdf2', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\
@@ -74357,7 +74357,7 @@ sjcl.codec.hex = sjcl.codec.hex ||\n\
 sjcl.test.run();\n\
 \n\
 \n\
-TalosContentProfiler.resume('stanford-crypto-sha256-iterative', true).then(() => {\n\
+TalosContentProfiler.subtestStart('stanford-crypto-sha256-iterative', true).then(() => {\n\
   var _sunSpiderStartDate = new Date();\n\
 \n\
   /**\n\
@@ -74399,7 +74399,7 @@ TalosContentProfiler.resume('stanford-crypto-sha256-iterative', true).then(() =>
 \n\
 \n\
   var _sunSpiderInterval = new Date() - _sunSpiderStartDate;\n\
-  TalosContentProfiler.pause('stanford-crypto-sha256-iterative', true).then(() => {\n\
+  TalosContentProfiler.subtestEnd('stanford-crypto-sha256-iterative', true).then(() => {\n\
     record(_sunSpiderInterval);\n\
   });\n\
 \n\

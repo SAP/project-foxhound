@@ -11,19 +11,16 @@
 #include "mozilla/HashFunctions.h"  // mozilla::HashGeneric
 #include "mozilla/RefPtr.h"         // mozilla::RefPtr
 
-#include "js/experimental/JSStencil.h"  // mozilla::RefPtrTraits<JS::Stencil>
-#include "js/HashTable.h"               // js::HashTable
+#include "js/HashTable.h"  // js::HashTable
 
 #include "threading/ExclusiveData.h"  // js::ExclusiveData
 
-#include "vm/MutexIDs.h"       // js::mutexid::StencilCache
+#include "vm/JSScript.h"       // js::ScriptSource
 #include "vm/SharedStencil.h"  // js::SourceExtent
 
 struct JS_PUBLIC_API JSContext;  // vm/JSContext.h
 
 namespace js {
-
-class ScriptSource;  // vm/JSScript.h
 
 namespace frontend {
 struct CompilationStencil;            // frontend/CompilationStencil.h
@@ -177,6 +174,22 @@ class StencilCache {
   // WARNING: This function should not be called within a scope checking for
   // isSourceCached, as this would cause a dead-lock.
   void clearAndDisable();
+};
+
+// This cache is used to store the result of delazification compilations which
+// might be happening off-thread. The main-thread will concurrently read the
+// content of this cache to avoid delazification, or fallback on running the
+// delazification on the main-thread.
+//
+// Main-thread results are not stored in the DelazificationCache as there is no
+// other consumer.
+class DelazificationCache : public StencilCache {
+  static DelazificationCache singleton;
+
+ public:
+  DelazificationCache() = default;
+
+  static DelazificationCache& getSingleton() { return singleton; }
 };
 
 } /* namespace js */

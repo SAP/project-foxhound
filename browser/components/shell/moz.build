@@ -7,7 +7,7 @@
 # For BinaryPath::GetLong for Windows
 LOCAL_INCLUDES += ["/xpcom/build"]
 
-BROWSER_CHROME_MANIFESTS += ["test/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
 
 JAR_MANIFESTS += ["jar.mn"]
@@ -55,6 +55,7 @@ elif CONFIG["OS_ARCH"] == "WINNT":
     ]
     LOCAL_INCLUDES += [
         "../../../other-licenses/nsis/Contrib/CityHash/cityhash",
+        "/toolkit/xre",
     ]
     OS_LIBS += [
         "bcrypt",
@@ -68,9 +69,9 @@ if SOURCES:
     FINAL_LIBRARY = "browsercomps"
 
 EXTRA_JS_MODULES += [
-    "HeadlessShell.jsm",
-    "ScreenshotChild.jsm",
-    "ShellService.jsm",
+    "HeadlessShell.sys.mjs",
+    "ScreenshotChild.sys.mjs",
+    "ShellService.sys.mjs",
 ]
 
 for var in (
@@ -83,9 +84,6 @@ for var in (
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
-
-if CONFIG["MOZ_ENABLE_DBUS"]:
-    CXXFLAGS += CONFIG["MOZ_DBUS_GLIB_CFLAGS"]
 
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Shell Integration")

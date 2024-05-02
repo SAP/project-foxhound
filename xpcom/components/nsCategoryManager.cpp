@@ -341,20 +341,12 @@ void nsCategoryManager::Destroy() {
   gCategoryManager = nullptr;
 }
 
-nsresult nsCategoryManager::Create(nsISupports* aOuter, REFNSIID aIID,
-                                   void** aResult) {
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
+nsresult nsCategoryManager::Create(REFNSIID aIID, void** aResult) {
   return GetSingleton()->QueryInterface(aIID, aResult);
 }
 
 nsCategoryManager::nsCategoryManager()
-    : mArena(),
-      mTable(),
-      mLock("nsCategoryManager"),
-      mSuppressNotifications(false) {}
+    : mLock("nsCategoryManager"), mSuppressNotifications(false) {}
 
 void nsCategoryManager::InitMemoryReporter() {
   RegisterWeakMemoryReporter(this);

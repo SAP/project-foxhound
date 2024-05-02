@@ -13,15 +13,12 @@ add_task(async function prepare() {
     ],
   });
 
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
+  });
 
-  registerCleanupFunction(async function() {
-    await Services.search.setDefault(oldDefaultEngine);
-
+  registerCleanupFunction(async function () {
     // Clicking urlbar results causes visits to their associated pages, so clear
     // that history now.
     await PlacesUtils.history.clear();
@@ -39,7 +36,7 @@ add_task(async function prepare() {
 });
 
 add_task(async function heuristicResultMouse() {
-  await compareCounts(async function() {
+  await compareCounts(async function () {
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     gURLBar.focus();
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -62,7 +59,7 @@ add_task(async function heuristicResultMouse() {
 });
 
 add_task(async function heuristicResultKeyboard() {
-  await compareCounts(async function() {
+  await compareCounts(async function () {
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     gURLBar.focus();
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -84,7 +81,7 @@ add_task(async function heuristicResultKeyboard() {
 });
 
 add_task(async function searchSuggestionMouse() {
-  await compareCounts(async function() {
+  await compareCounts(async function () {
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     gURLBar.focus();
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -106,7 +103,7 @@ add_task(async function searchSuggestionMouse() {
 });
 
 add_task(async function searchSuggestionKeyboard() {
-  await compareCounts(async function() {
+  await compareCounts(async function () {
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     gURLBar.focus();
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -127,7 +124,7 @@ add_task(async function searchSuggestionKeyboard() {
 });
 
 add_task(async function formHistoryMouse() {
-  await compareCounts(async function() {
+  await compareCounts(async function () {
     await UrlbarTestUtils.formHistory.add(["foofoo", "foobar"]);
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     gURLBar.focus();
@@ -153,7 +150,7 @@ add_task(async function formHistoryMouse() {
 });
 
 add_task(async function formHistoryKeyboard() {
-  await compareCounts(async function() {
+  await compareCounts(async function () {
     await UrlbarTestUtils.formHistory.add(["foofoo", "foobar"]);
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     gURLBar.focus();
@@ -182,7 +179,7 @@ add_task(async function formHistoryKeyboard() {
  * clickCallback, gets telemetry/FHR counts again to compare them to the old
  * counts.
  *
- * @param {function} clickCallback Use this to open the urlbar popup and choose
+ * @param {Function} clickCallback Use this to open the urlbar popup and choose
  *   and click a result.
  */
 async function compareCounts(clickCallback) {

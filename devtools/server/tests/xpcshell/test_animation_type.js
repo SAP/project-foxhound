@@ -7,27 +7,24 @@
 const {
   ANIMATION_TYPES,
   AnimationPlayerActor,
-} = require("devtools/server/actors/animation");
+} = require("resource://devtools/server/actors/animation.js");
 
 function run_test() {
   // Mock a window with just the properties the AnimationPlayerActor uses.
-  const window = {
-    MutationObserver: function() {
+  const window = {};
+  window.MutationObserver = class {
+    constructor() {
       this.observe = () => {};
-    },
-    Animation: function() {
+    }
+  };
+  window.Animation = class {
+    constructor() {
       this.effect = { target: getMockNode() };
-    },
-    CSSAnimation: function() {
-      this.effect = { target: getMockNode() };
-    },
-    CSSTransition: function() {
-      this.effect = { target: getMockNode() };
-    },
+    }
   };
 
-  window.CSSAnimation.prototype = Object.create(window.Animation.prototype);
-  window.CSSTransition.prototype = Object.create(window.Animation.prototype);
+  window.CSSAnimation = class extends window.Animation {};
+  window.CSSTransition = class extends window.Animation {};
 
   // Helper to get a mock DOM node.
   function getMockNode() {
@@ -69,7 +66,7 @@ function run_test() {
 
   for (const { desc, animation, expectedType } of TEST_DATA) {
     info(desc);
-    const actor = AnimationPlayerActor({}, animation);
+    const actor = new AnimationPlayerActor({}, animation);
     Assert.equal(actor.getType(), expectedType);
   }
 }

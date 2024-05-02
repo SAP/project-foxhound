@@ -6,10 +6,9 @@
 
 #include "xpcAccessibleTableCell.h"
 
-#include "LocalAccessible.h"
+#include "mozilla/a11y/TableAccessible.h"
+#include "mozilla/a11y/TableCellAccessible.h"
 #include "nsIAccessibleTable.h"
-#include "TableAccessible.h"
-#include "TableCellAccessible.h"
 
 #include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
@@ -94,7 +93,7 @@ xpcAccessibleTableCell::GetColumnHeaderCells(nsIArray** aHeaderCells) {
 
   if (!Intl()) return NS_ERROR_FAILURE;
 
-  AutoTArray<LocalAccessible*, 10> headerCells;
+  AutoTArray<Accessible*, 10> headerCells;
   Intl()->ColHeaderCells(&headerCells);
 
   nsCOMPtr<nsIMutableArray> cells = do_CreateInstance(NS_ARRAY_CONTRACTID);
@@ -115,7 +114,7 @@ xpcAccessibleTableCell::GetRowHeaderCells(nsIArray** aHeaderCells) {
 
   if (!Intl()) return NS_ERROR_FAILURE;
 
-  AutoTArray<LocalAccessible*, 10> headerCells;
+  AutoTArray<Accessible*, 10> headerCells;
   Intl()->RowHeaderCells(&headerCells);
 
   nsCOMPtr<nsIMutableArray> cells = do_CreateInstance(NS_ARRAY_CONTRACTID);

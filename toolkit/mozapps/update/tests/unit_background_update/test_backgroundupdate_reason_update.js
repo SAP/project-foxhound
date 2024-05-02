@@ -6,19 +6,21 @@
 
 "use strict";
 
-const { BackgroundUpdate } = ChromeUtils.import(
-  "resource://gre/modules/BackgroundUpdate.jsm"
+const { BackgroundUpdate } = ChromeUtils.importESModule(
+  "resource://gre/modules/BackgroundUpdate.sys.mjs"
 );
 let reasons = () => BackgroundUpdate._reasonsToNotUpdateInstallation();
 let REASON = BackgroundUpdate.REASON;
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
-const { UpdateService } = ChromeUtils.import(
-  "resource://gre/modules/UpdateService.jsm"
+const { UpdateService } = ChromeUtils.importESModule(
+  "resource://gre/modules/UpdateService.sys.mjs"
 );
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 // We can't reasonably check NO_MOZ_BACKGROUNDTASKS, nor NO_OMNIJAR.
 
@@ -47,15 +49,30 @@ async function setupPolicyEngineWithJson(json, customSchema) {
   return EnterprisePolicyTesting.setupPolicyEngineWithJson(json, customSchema);
 }
 
+add_setup(function test_setup() {
+  // FOG needs a profile directory to put its data in.
+  do_get_profile();
+
+  // We need to initialize it once, otherwise operations will be stuck in the pre-init queue.
+  Services.fog.initializeFOG();
+
+  setupProfileService();
+});
+
 add_task(async function test_reasons_update_no_app_update_auto() {
   let prev = await UpdateUtils.getAppUpdateAutoEnabled();
   try {
     await UpdateUtils.setAppUpdateAutoEnabled(false);
     let result = await reasons();
     Assert.ok(result.includes(REASON.NO_APP_UPDATE_AUTO));
+    result = await checkGleanPing();
+    Assert.ok(result.includes(REASON.NO_APP_UPDATE_AUTO));
 
     await UpdateUtils.setAppUpdateAutoEnabled(true);
     result = await reasons();
+    Assert.ok(!result.includes(REASON.NO_APP_UPDATE_AUTO));
+
+    result = await checkGleanPing();
     Assert.ok(!result.includes(REASON.NO_APP_UPDATE_AUTO));
   } finally {
     await UpdateUtils.setAppUpdateAutoEnabled(prev);
@@ -73,12 +90,16 @@ add_task(async function test_reasons_update_no_app_update_background_enabled() {
     );
     let result = await reasons();
     Assert.ok(result.includes(REASON.NO_APP_UPDATE_BACKGROUND_ENABLED));
+    result = await checkGleanPing();
+    Assert.ok(result.includes(REASON.NO_APP_UPDATE_BACKGROUND_ENABLED));
 
     await UpdateUtils.writeUpdateConfigSetting(
       "app.update.background.enabled",
       true
     );
     result = await reasons();
+    Assert.ok(!result.includes(REASON.NO_APP_UPDATE_BACKGROUND_ENABLED));
+    result = await checkGleanPing();
     Assert.ok(!result.includes(REASON.NO_APP_UPDATE_BACKGROUND_ENABLED));
   } finally {
     await UpdateUtils.writeUpdateConfigSetting(
@@ -101,6 +122,8 @@ add_task(async function test_reasons_update_cannot_usually_check() {
       .get(() => false);
     result = await reasons();
     Assert.ok(result.includes(REASON.CANNOT_USUALLY_CHECK));
+    result = await checkGleanPing();
+    Assert.ok(result.includes(REASON.CANNOT_USUALLY_CHECK));
   } finally {
     sandbox.restore();
   }
@@ -121,6 +144,10 @@ add_task(async function test_reasons_update_can_usually_stage_or_appl() {
     Assert.ok(
       !result.includes(REASON.CANNOT_USUALLY_STAGE_AND_CANNOT_USUALLY_APPLY)
     );
+    result = await checkGleanPing();
+    Assert.ok(
+      !result.includes(REASON.CANNOT_USUALLY_STAGE_AND_CANNOT_USUALLY_APPLY)
+    );
 
     sandbox
       .stub(UpdateService.prototype, "canUsuallyStageUpdates")
@@ -129,6 +156,10 @@ add_task(async function test_reasons_update_can_usually_stage_or_appl() {
       .stub(UpdateService.prototype, "canUsuallyApplyUpdates")
       .get(() => false);
     result = await reasons();
+    Assert.ok(
+      result.includes(REASON.CANNOT_USUALLY_STAGE_AND_CANNOT_USUALLY_APPLY)
+    );
+    result = await checkGleanPing();
     Assert.ok(
       result.includes(REASON.CANNOT_USUALLY_STAGE_AND_CANNOT_USUALLY_APPLY)
     );
@@ -159,9 +190,16 @@ add_task(
       Services.prefs.setBoolPref("app.update.BITS.enabled", false);
       let result = await reasons();
       Assert.ok(result.includes(REASON.WINDOWS_CANNOT_USUALLY_USE_BITS));
+      result = await checkGleanPing();
+      Assert.ok(
+        result.includes(REASON.WINDOWS_CANNOT_USUALLY_USE_BITS),
+        "result : " + result.join("', '") + "']"
+      );
 
       Services.prefs.setBoolPref("app.update.BITS.enabled", true);
       result = await reasons();
+      Assert.ok(!result.includes(REASON.WINDOWS_CANNOT_USUALLY_USE_BITS));
+      result = await checkGleanPing();
       Assert.ok(!result.includes(REASON.WINDOWS_CANNOT_USUALLY_USE_BITS));
     } finally {
       sandbox.restore();
@@ -184,12 +222,96 @@ add_task(async function test_reasons_update_manual_update_only() {
 
   let result = await reasons();
   Assert.ok(result.includes(REASON.MANUAL_UPDATE_ONLY));
+  result = await checkGleanPing();
+  Assert.ok(result.includes(REASON.MANUAL_UPDATE_ONLY));
 
   await setupPolicyEngineWithJson({});
 
   result = await reasons();
   Assert.ok(!result.includes(REASON.MANUAL_UPDATE_ONLY));
+  result = await checkGleanPing();
+  Assert.ok(!result.includes(REASON.MANUAL_UPDATE_ONLY));
 });
+
+add_task(
+  {
+    skip_if: () => AppConstants.platform != "win",
+  },
+  async function test_unelevated_nimbus_enabled() {
+    // Enable feature.
+    Services.prefs.setBoolPref(
+      "app.update.background.allowUpdatesForUnelevatedInstallations",
+      true
+    );
+    registerCleanupFunction(() => {
+      Services.prefs.clearUserPref(
+        "app.update.background.allowUpdatesForUnelevatedInstallations"
+      );
+    });
+
+    // execute!
+    let r = await reasons();
+    Assert.ok(
+      !r.includes(BackgroundUpdate.REASON.SERVICE_REGISTRY_KEY_MISSING),
+      `no SERVICE_REGISTRY_KEY_MISSING in ${JSON.stringify(r)}`
+    );
+    Assert.ok(
+      !r.includes(BackgroundUpdate.REASON.APPBASEDIR_NOT_WRITABLE),
+      `no APPBASEDIR_NOT_WRITABLE in ${JSON.stringify(r)}`
+    );
+
+    // the test directory usually is writable, but we now create a file and keep
+    // it open, so that the test file can neither be deleted nor recreated and
+    // appears to be locked. With that we re-execute the test and expect to find
+    // APPBASEDIR_NOT_WRITABLE in the telemetry data.
+    let appDirTestFile = Services.dirsvc.get(
+      XRE_EXECUTABLE_FILE,
+      Ci.nsIFile
+    ).parent;
+    appDirTestFile.append(FILE_UPDATE_TEST);
+    appDirTestFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
+
+    var outputStream = Cc[
+      "@mozilla.org/network/file-output-stream;1"
+    ].createInstance(Ci.nsIFileOutputStream);
+    //                              WR_ONLY|CREATE|TRUNC
+    outputStream.init(appDirTestFile, 0x02 | 0x08 | 0x20, 0o644, null);
+    registerCleanupFunction(() => {
+      outputStream.close();
+      appDirTestFile.remove(false);
+    });
+    // after the preperation: execute again!
+    r = await reasons();
+    Assert.ok(
+      r.includes(BackgroundUpdate.REASON.APPBASEDIR_NOT_WRITABLE),
+      `no APPBASEDIR_NOT_WRITABLE in ${JSON.stringify(r)}`
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => AppConstants.platform != "win",
+  },
+  async function test_unelevated_nimbus_disabled() {
+    // Disable feature.
+    Services.prefs.setBoolPref(
+      "app.update.background.allowUpdatesForUnelevatedInstallations",
+      false
+    );
+    registerCleanupFunction(() => {
+      Services.prefs.clearUserPref(
+        "app.update.background.allowUpdatesForUnelevatedInstallations"
+      );
+    });
+
+    let r = await reasons();
+    Assert.ok(
+      r.includes(BackgroundUpdate.REASON.SERVICE_REGISTRY_KEY_MISSING),
+      `SERVICE_REGISTRY_KEY_MISSING in ${JSON.stringify(r)}`
+    );
+  }
+);
 
 add_task(() => {
   // `setupTestCommon()` calls `do_test_pending()`; this calls

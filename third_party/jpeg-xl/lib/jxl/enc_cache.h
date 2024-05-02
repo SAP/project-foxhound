@@ -12,25 +12,24 @@
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/enc_progressive_split.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/passes_state.h"
-#include "lib/jxl/progressive_split.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 // Contains encoder state.
 struct PassesEncoderState {
@@ -38,6 +37,7 @@ struct PassesEncoderState {
 
   ImageF initial_quant_field;    // Invalid in Falcon mode.
   ImageF initial_quant_masking;  // Invalid in Falcon mode.
+  ImageF initial_quant_masking1x1;  // Invalid in Falcon mode.
 
   // Per-pass DCT coefficients for the image. One row per group.
   std::vector<std::unique_ptr<ACImage>> coeffs;

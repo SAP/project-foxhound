@@ -67,7 +67,9 @@ already_AddRefed<MediaData> BlankVideoDataCreator::Create(
   buffer.mPlanes[2].mWidth = (mFrameWidth + 1) / 2;
   buffer.mPlanes[2].mSkip = 0;
 
+  buffer.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
   buffer.mYUVColorSpace = gfx::YUVColorSpace::BT601;
+  buffer.mColorPrimaries = gfx::ColorSpace2::BT709;
 
   return VideoData::CreateAndCopyData(mInfo, mImageContainer, aSample->mOffset,
                                       aSample->mTime, aSample->mDuration,
@@ -129,9 +131,9 @@ already_AddRefed<MediaDataDecoder> BlankDecoderModule::CreateAudioDecoder(
   return decoder.forget();
 }
 
-bool BlankDecoderModule::SupportsMimeType(
+media::DecodeSupportSet BlankDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
-  return true;
+  return media::DecodeSupport::SoftwareDecode;
 }
 
 /* static */

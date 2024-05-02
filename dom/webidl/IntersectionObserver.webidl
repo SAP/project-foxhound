@@ -7,8 +7,7 @@
  * https://w3c.github.io/IntersectionObserver/
  */
 
-[ProbablyShortLivingWrapper, Pref="dom.IntersectionObserver.enabled",
- Exposed=Window]
+[ProbablyShortLivingWrapper, Exposed=Window]
 interface IntersectionObserverEntry {
   [Constant]
   readonly attribute DOMHighResTimeStamp time;
@@ -26,8 +25,7 @@ interface IntersectionObserverEntry {
   readonly attribute Element target;
 };
 
-[Pref="dom.IntersectionObserver.enabled",
- Exposed=Window]
+[Exposed=Window]
 interface IntersectionObserver {
   [Throws]
   constructor(IntersectionCallback intersectionCallback,
@@ -39,14 +37,14 @@ interface IntersectionObserver {
   readonly attribute UTF8String rootMargin;
   [Constant,Cached]
   readonly attribute sequence<double> thresholds;
-  void observe(Element target);
-  void unobserve(Element target);
-  void disconnect();
+  undefined observe(Element target);
+  undefined unobserve(Element target);
+  undefined disconnect();
   sequence<IntersectionObserverEntry> takeRecords();
 };
 
 callback IntersectionCallback =
-  void (sequence<IntersectionObserverEntry> entries, IntersectionObserver observer);
+  undefined (sequence<IntersectionObserverEntry> entries, IntersectionObserver observer);
 
 dictionary IntersectionObserverEntryInit {
   required DOMHighResTimeStamp time;

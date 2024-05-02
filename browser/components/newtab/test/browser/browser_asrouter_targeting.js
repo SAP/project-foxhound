@@ -1,62 +1,70 @@
-const { ASRouterTargeting, QueryCache } = ChromeUtils.import(
-  "resource://activity-stream/lib/ASRouterTargeting.jsm"
-);
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
-);
-const { CFRMessageProvider } = ChromeUtils.import(
-  "resource://activity-stream/lib/CFRMessageProvider.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ProfileAge",
-  "resource://gre/modules/ProfileAge.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ShellService",
-  "resource:///modules/ShellService.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "NewTabUtils",
-  "resource://gre/modules/NewTabUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryEnvironment",
-  "resource://gre/modules/TelemetryEnvironment.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Region",
-  "resource://gre/modules/Region.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "HomePage",
-  "resource:///modules/HomePage.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AboutNewTab",
-  "resource:///modules/AboutNewTab.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  ASRouterTargeting: "resource://activity-stream/lib/ASRouterTargeting.jsm",
+  QueryCache: "resource://activity-stream/lib/ASRouterTargeting.jsm",
+});
+ChromeUtils.defineESModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  CFRMessageProvider:
+    "resource://activity-stream/lib/CFRMessageProvider.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
+  FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
+  HomePage: "resource:///modules/HomePage.sys.mjs",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
+  ShellService: "resource:///modules/ShellService.sys.mjs",
+  TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+  TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
+});
+
+function sendFormAutofillMessage(name, data) {
+  let actor =
+    gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
+      "FormAutofill"
+    );
+  return actor.receiveMessage({ name, data });
+}
+
+async function removeAutofillRecords() {
+  let addresses = (
+    await sendFormAutofillMessage("FormAutofill:GetRecords", {
+      collectionName: "addresses",
+    })
+  ).records;
+  if (addresses.length) {
+    let observePromise = TestUtils.topicObserved(
+      "formautofill-storage-changed"
+    );
+    await sendFormAutofillMessage("FormAutofill:RemoveAddresses", {
+      guids: addresses.map(address => address.guid),
+    });
+    await observePromise;
+  }
+  let creditCards = (
+    await sendFormAutofillMessage("FormAutofill:GetRecords", {
+      collectionName: "creditCards",
+    })
+  ).records;
+  if (creditCards.length) {
+    let observePromise = TestUtils.topicObserved(
+      "formautofill-storage-changed"
+    );
+    await sendFormAutofillMessage("FormAutofill:RemoveCreditCards", {
+      guids: creditCards.map(cc => cc.guid),
+    });
+    await observePromise;
+  }
+}
 
 // ASRouterTargeting.findMatchingMessage
 add_task(async function find_matching_message() {
@@ -253,6 +261,54 @@ add_task(async function check_isFxAEnabled() {
   );
 });
 
+add_task(async function check_isFxASignedIn_false() {
+  await pushPrefs(
+    ["identity.fxaccounts.enabled", true],
+    ["services.sync.username", ""]
+  );
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => sandbox.restore());
+  sandbox.stub(FxAccounts.prototype, "getSignedInUser").resolves(null);
+  is(
+    await ASRouterTargeting.Environment.isFxASignedIn,
+    false,
+    "user should not appear signed in"
+  );
+
+  const message = { id: "foo", targeting: "isFxASignedIn" };
+  isnot(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should not select the message since user is not signed in"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function check_isFxASignedIn_true() {
+  await pushPrefs(
+    ["identity.fxaccounts.enabled", true],
+    ["services.sync.username", ""]
+  );
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => sandbox.restore());
+  sandbox.stub(FxAccounts.prototype, "getSignedInUser").resolves({});
+  is(
+    await ASRouterTargeting.Environment.isFxASignedIn,
+    true,
+    "user should appear signed in"
+  );
+
+  const message = { id: "foo", targeting: "isFxASignedIn" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select the correct message"
+  );
+
+  sandbox.restore();
+});
+
 add_task(async function check_totalBookmarksCount() {
   // Make sure we remove default bookmarks so they don't interfere
   await clearHistoryAndBookmarks();
@@ -356,7 +412,7 @@ add_task(async function checksearchEngines() {
 
 add_task(async function checkisDefaultBrowser() {
   const expected = ShellService.isDefaultBrowser();
-  const result = ASRouterTargeting.Environment.isDefaultBrowser;
+  const result = await ASRouterTargeting.Environment.isDefaultBrowser;
   is(typeof result, "boolean", "isDefaultBrowser should be a boolean value");
   is(
     result,
@@ -410,7 +466,7 @@ add_task(async function checkAddonsInfo() {
 
   const xpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
-      applications: { gecko: { id: FAKE_ID } },
+      browser_specific_settings: { gecko: { id: FAKE_ID } },
       name: FAKE_NAME,
       version: FAKE_VERSION,
     },
@@ -553,9 +609,9 @@ add_task(async function checkFrecentSites() {
 
   message = {
     id: "foo",
-    targeting: `'mozilla2.com' in topFrecentSites[.lastVisitDate >= ${timeDaysAgo(
-      1
-    ) - 1}]|mapToProperty('host')`,
+    targeting: `'mozilla2.com' in topFrecentSites[.lastVisitDate >= ${
+      timeDaysAgo(1) - 1
+    }]|mapToProperty('host')`,
   };
   is(
     await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
@@ -565,9 +621,9 @@ add_task(async function checkFrecentSites() {
 
   message = {
     id: "foo",
-    targeting: `'mozilla2.com' in topFrecentSites[.lastVisitDate >= ${timeDaysAgo(
-      0
-    ) - 1}]|mapToProperty('host')`,
+    targeting: `'mozilla2.com' in topFrecentSites[.lastVisitDate >= ${
+      timeDaysAgo(0) - 1
+    }]|mapToProperty('host')`,
   };
   ok(
     !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
@@ -576,10 +632,9 @@ add_task(async function checkFrecentSites() {
 
   message = {
     id: "foo",
-    targeting: `(topFrecentSites[.frecency >= 900 && .lastVisitDate >= ${timeDaysAgo(
-      1
-    ) -
-      1}]|mapToProperty('host') intersect ['mozilla3.com', 'mozilla2.com', 'mozilla1.com'])|length > 0`,
+    targeting: `(topFrecentSites[.frecency >= 900 && .lastVisitDate >= ${
+      timeDaysAgo(1) - 1
+    }]|mapToProperty('host') intersect ['mozilla3.com', 'mozilla2.com', 'mozilla1.com'])|length > 0`,
   };
   is(
     await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
@@ -1111,10 +1166,530 @@ add_task(async function check_userMonthlyActivity() {
   );
 });
 
-add_task(async function check_doesAppNeedPing() {
+add_task(async function check_doesAppNeedPin() {
   is(
     typeof (await ASRouterTargeting.Environment.doesAppNeedPin),
     "boolean",
     "Should return a boolean"
+  );
+});
+
+add_task(async function check_doesAppNeedPrivatePin() {
+  is(
+    typeof (await ASRouterTargeting.Environment.doesAppNeedPrivatePin),
+    "boolean",
+    "Should return a boolean"
+  );
+});
+
+add_task(async function check_isBackgroundTaskMode() {
+  if (!AppConstants.MOZ_BACKGROUNDTASKS) {
+    // `mochitest-browser` suite `add_task` does not yet support
+    // `properties.skip_if`.
+    ok(true, "Skipping because !AppConstants.MOZ_BACKGROUNDTASKS");
+    return;
+  }
+
+  const bts = Cc["@mozilla.org/backgroundtasks;1"].getService(
+    Ci.nsIBackgroundTasks
+  );
+
+  // Pretend that this is a background task.
+  bts.overrideBackgroundTaskNameForTesting("taskName");
+  is(
+    await ASRouterTargeting.Environment.isBackgroundTaskMode,
+    true,
+    "Is in background task mode"
+  );
+  is(
+    await ASRouterTargeting.Environment.backgroundTaskName,
+    "taskName",
+    "Has expected background task name"
+  );
+
+  // Unset, so that subsequent test functions don't see background task mode.
+  bts.overrideBackgroundTaskNameForTesting(null);
+  is(
+    await ASRouterTargeting.Environment.isBackgroundTaskMode,
+    false,
+    "Is not in background task mode"
+  );
+  is(
+    await ASRouterTargeting.Environment.backgroundTaskName,
+    null,
+    "Has no background task name"
+  );
+});
+
+add_task(async function check_userPrefersReducedMotion() {
+  is(
+    typeof (await ASRouterTargeting.Environment.userPrefersReducedMotion),
+    "boolean",
+    "Should return a boolean"
+  );
+});
+
+add_task(async function test_mr2022Holdback() {
+  await ExperimentAPI.ready();
+
+  ok(
+    !ASRouterTargeting.Environment.inMr2022Holdback,
+    "Should not be in holdback (no experiment)"
+  );
+
+  {
+    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+      featureId: "majorRelease2022",
+      value: {
+        onboarding: true,
+      },
+    });
+
+    ok(
+      !ASRouterTargeting.Environment.inMr2022Holdback,
+      "Should not be in holdback (onboarding = true)"
+    );
+
+    await doExperimentCleanup();
+  }
+
+  {
+    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+      featureId: "majorRelease2022",
+      value: {
+        onboarding: false,
+      },
+    });
+
+    ok(
+      ASRouterTargeting.Environment.inMr2022Holdback,
+      "Should be in holdback (onboarding = false)"
+    );
+
+    await doExperimentCleanup();
+  }
+});
+
+add_task(async function test_distributionId() {
+  is(
+    ASRouterTargeting.Environment.distributionId,
+    "",
+    "Should return an empty distribution Id"
+  );
+
+  Services.prefs.getDefaultBranch(null).setCharPref("distribution.id", "test");
+
+  is(
+    ASRouterTargeting.Environment.distributionId,
+    "test",
+    "Should return the correct distribution Id"
+  );
+});
+
+add_task(async function test_fxViewButtonAreaType_default() {
+  is(
+    typeof (await ASRouterTargeting.Environment.fxViewButtonAreaType),
+    "string",
+    "Should return a string"
+  );
+
+  is(
+    await ASRouterTargeting.Environment.fxViewButtonAreaType,
+    "toolbar",
+    "Should return name of container if button hasn't been removed"
+  );
+});
+
+add_task(async function test_fxViewButtonAreaType_removed() {
+  CustomizableUI.removeWidgetFromArea("firefox-view-button");
+
+  is(
+    await ASRouterTargeting.Environment.fxViewButtonAreaType,
+    null,
+    "Should return null if button has been removed"
+  );
+  CustomizableUI.reset();
+});
+
+add_task(async function test_creditCardsSaved() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.formautofill.creditCards.supported", "on"],
+      ["extensions.formautofill.creditCards.enabled", true],
+    ],
+  });
+
+  is(
+    await ASRouterTargeting.Environment.creditCardsSaved,
+    0,
+    "Should return 0 when no credit cards are saved"
+  );
+
+  let creditcard = {
+    "cc-name": "Test User",
+    "cc-number": "5038146897157463",
+    "cc-exp-month": "11",
+    "cc-exp-year": "20",
+  };
+
+  // Intermittently fails on macOS, likely related to Bug 1714221. So, mock the
+  // autofill actor.
+  if (AppConstants.platform === "macosx") {
+    const sandbox = sinon.createSandbox();
+    registerCleanupFunction(async () => sandbox.restore());
+    let stub = sandbox
+      .stub(
+        gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
+          "FormAutofill"
+        ),
+        "receiveMessage"
+      )
+      .withArgs(
+        sandbox.match({
+          name: "FormAutofill:GetRecords",
+          data: { collectionName: "creditCards" },
+        })
+      )
+      .resolves({ records: [creditcard] })
+      .callThrough();
+
+    is(
+      await ASRouterTargeting.Environment.creditCardsSaved,
+      1,
+      "Should return 1 when 1 credit card is saved"
+    );
+    ok(
+      stub.calledWithMatch({ name: "FormAutofill:GetRecords" }),
+      "Targeting called FormAutofill:GetRecords"
+    );
+
+    sandbox.restore();
+  } else {
+    let observePromise = TestUtils.topicObserved(
+      "formautofill-storage-changed"
+    );
+    await sendFormAutofillMessage("FormAutofill:SaveCreditCard", {
+      creditcard,
+    });
+    await observePromise;
+
+    is(
+      await ASRouterTargeting.Environment.creditCardsSaved,
+      1,
+      "Should return 1 when 1 credit card is saved"
+    );
+    await removeAutofillRecords();
+  }
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_addressesSaved() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.formautofill.addresses.supported", "on"],
+      ["extensions.formautofill.addresses.enabled", true],
+    ],
+  });
+
+  is(
+    await ASRouterTargeting.Environment.addressesSaved,
+    0,
+    "Should return 0 when no addresses are saved"
+  );
+
+  let observePromise = TestUtils.topicObserved("formautofill-storage-changed");
+  await sendFormAutofillMessage("FormAutofill:SaveAddress", {
+    address: {
+      "given-name": "John",
+      "additional-name": "R.",
+      "family-name": "Smith",
+      organization: "World Wide Web Consortium",
+      "street-address": "32 Vassar Street\nMIT Room 32-G524",
+      "address-level2": "Cambridge",
+      "address-level1": "MA",
+      "postal-code": "02139",
+      country: "US",
+      tel: "+16172535702",
+      email: "timbl@w3.org",
+    },
+  });
+  await observePromise;
+
+  is(
+    await ASRouterTargeting.Environment.addressesSaved,
+    1,
+    "Should return 1 when 1 address is saved"
+  );
+
+  await removeAutofillRecords();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_migrationInteractions() {
+  const PREF_GETTER_MAPPING = new Map([
+    ["browser.migrate.interactions.bookmarks", "hasMigratedBookmarks"],
+    ["browser.migrate.interactions.csvpasswords", "hasMigratedCSVPasswords"],
+    ["browser.migrate.interactions.history", "hasMigratedHistory"],
+    ["browser.migrate.interactions.passwords", "hasMigratedPasswords"],
+  ]);
+
+  for (let [pref, getterName] of PREF_GETTER_MAPPING) {
+    await pushPrefs([pref, false]);
+    ok(!(await ASRouterTargeting.Environment[getterName]));
+    await pushPrefs([pref, true]);
+    ok(await ASRouterTargeting.Environment[getterName]);
+  }
+});
+
+add_task(async function check_useEmbeddedMigrationWizard() {
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "default",
+  ]);
+
+  ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "autoclose",
+  ]);
+
+  ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "embedded",
+  ]);
+
+  ok(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard);
+
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "standalone",
+  ]);
+
+  ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+});
+
+add_task(async function check_isRTAMO() {
+  is(
+    typeof ASRouterTargeting.Environment.isRTAMO,
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const TEST_CASES = [
+    {
+      title: "no attribution data",
+      attributionData: {},
+      expected: false,
+    },
+    {
+      title: "null attribution data",
+      attributionData: null,
+      expected: false,
+    },
+    {
+      title: "no content",
+      attributionData: {
+        source: "addons.mozilla.org",
+      },
+      expected: false,
+    },
+    {
+      title: "empty content",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null content",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: null,
+      },
+      expected: false,
+    },
+    {
+      title: "empty source",
+      attributionData: {
+        source: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null source",
+      attributionData: {
+        source: null,
+      },
+      expected: false,
+    },
+    {
+      title: "valid attribution data for RTAMO with content not encoded",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "rta:<encoded-addon-id>",
+      },
+      expected: true,
+    },
+    {
+      title: "valid attribution data for RTAMO with content encoded once",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "rta%3A<encoded-addon-id>",
+      },
+      expected: true,
+    },
+    {
+      title: "valid attribution data for RTAMO with content encoded twice",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "rta%253A<encoded-addon-id>",
+      },
+      expected: true,
+    },
+    {
+      title: "invalid source",
+      attributionData: {
+        source: "www.mozilla.org",
+        content: "rta%3A<encoded-addon-id>",
+      },
+      expected: false,
+    },
+  ];
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  const stub = sandbox.stub(AttributionCode, "getCachedAttributionData");
+
+  for (const { title, attributionData, expected } of TEST_CASES) {
+    stub.returns(attributionData);
+
+    is(
+      ASRouterTargeting.Environment.isRTAMO,
+      expected,
+      `${title} - Expected isRTAMO to have the expected value`
+    );
+  }
+
+  sandbox.restore();
+});
+
+add_task(async function check_isDeviceMigration() {
+  is(
+    typeof ASRouterTargeting.Environment.isDeviceMigration,
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const TEST_CASES = [
+    {
+      title: "no attribution data",
+      attributionData: {},
+      expected: false,
+    },
+    {
+      title: "null attribution data",
+      attributionData: null,
+      expected: false,
+    },
+    {
+      title: "no campaign",
+      attributionData: {
+        source: "support.mozilla.org",
+      },
+      expected: false,
+    },
+    {
+      title: "empty campaign",
+      attributionData: {
+        source: "support.mozilla.org",
+        campaign: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null campaign",
+      attributionData: {
+        source: "addons.mozilla.org",
+        campaign: null,
+      },
+      expected: false,
+    },
+    {
+      title: "empty source",
+      attributionData: {
+        source: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null source",
+      attributionData: {
+        source: null,
+      },
+      expected: false,
+    },
+    {
+      title: "other source",
+      attributionData: {
+        source: "www.mozilla.org",
+        campaign: "migration",
+      },
+      expected: true,
+    },
+    {
+      title: "valid attribution data for isDeviceMigration",
+      attributionData: {
+        source: "support.mozilla.org",
+        campaign: "migration",
+      },
+      expected: true,
+    },
+  ];
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  const stub = sandbox.stub(AttributionCode, "getCachedAttributionData");
+
+  for (const { title, attributionData, expected } of TEST_CASES) {
+    stub.returns(attributionData);
+
+    is(
+      ASRouterTargeting.Environment.isDeviceMigration,
+      expected,
+      `${title} - Expected isDeviceMigration to have the expected value`
+    );
+  }
+
+  sandbox.restore();
+});
+
+add_task(async function check_primaryResolution() {
+  is(
+    typeof ASRouterTargeting.Environment.primaryResolution,
+    "object",
+    "Should return an object"
+  );
+
+  is(
+    typeof ASRouterTargeting.Environment.primaryResolution.width,
+    "number",
+    "Width property should return a number"
+  );
+
+  is(
+    typeof ASRouterTargeting.Environment.primaryResolution.height,
+    "number",
+    "Height property should return a number"
   );
 });

@@ -23,10 +23,7 @@ nsIncrementalStreamLoader::Init(nsIIncrementalStreamLoaderObserver* observer) {
   return NS_OK;
 }
 
-nsresult nsIncrementalStreamLoader::Create(nsISupports* aOuter, REFNSIID aIID,
-                                           void** aResult) {
-  if (aOuter) return NS_ERROR_NO_AGGREGATION;
-
+nsresult nsIncrementalStreamLoader::Create(REFNSIID aIID, void** aResult) {
   RefPtr<nsIncrementalStreamLoader> it = new nsIncrementalStreamLoader();
   return it->QueryInterface(aIID, aResult);
 }
@@ -85,7 +82,7 @@ nsIncrementalStreamLoader::OnStopRequest(nsIRequest* request,
     size_t length = mData.length();
     uint8_t* elems = mData.extractOrCopyRawBuffer();
     nsresult rv =
-        mObserver->OnStreamComplete(this, mContext, aStatus, length, elems, mTaint);
+        mObserver->OnStreamComplete(this, mContext, aStatus, length, elems, &mTaint);
     if (rv != NS_SUCCESS_ADOPTED_DATA) {
       // The observer didn't take ownership of the extracted data buffer, so
       // put it back into mData.
@@ -112,7 +109,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
   if (self->mData.empty()) {
     // Shortcut when observer wants to keep the listener's buffer empty.
     rv = self->mObserver->OnIncrementalData(self, self->mContext, count, data,
-                                            taint, &consumedCount);
+                                            &taint, &consumedCount);
 
     if (rv != NS_OK) {
       return rv;
@@ -123,7 +120,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
     }
 
     if (consumedCount < count) {
-      self->mTaint.concat(taint.safeCopy().subtaint(consumedCount, count), self->mData.length());
+      self->mTaint.concat(taint.safeSubTaint(consumedCount, count), self->mData.length());
       if (!self->mData.append(fromSegment + consumedCount,
                               count - consumedCount)) {
         self->mData.clearAndFree();
@@ -143,7 +140,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
     uint8_t* elems = self->mData.extractOrCopyRawBuffer();
 
     rv = self->mObserver->OnIncrementalData(self, self->mContext, reportCount,
-                                            elems, self->mTaint, &consumedCount);
+                                            elems, &self->mTaint, &consumedCount);
 
     // We still own elems, freeing its memory when exiting scope.
     if (rv != NS_OK) {
@@ -164,7 +161,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
       if (consumedCount > 0) {
         self->mData.erase(self->mData.begin() + consumedCount);
       }
-      self->mTaint = self->mTaint.safeCopy().subtaint(consumedCount, length);
+      self->mTaint = self->mTaint.safeSubTaint(consumedCount, length);
     }
   }
 
@@ -233,3 +230,6 @@ void nsIncrementalStreamLoader::ReleaseData() { mData.clearAndFree(); }
 
 NS_IMETHODIMP
 nsIncrementalStreamLoader::CheckListenerChain() { return NS_OK; }
+
+NS_IMETHODIMP
+nsIncrementalStreamLoader::OnDataFinished(nsresult aStatus) { return NS_OK; }

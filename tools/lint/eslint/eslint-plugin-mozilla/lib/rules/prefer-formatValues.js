@@ -9,10 +9,6 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 function isIdentifier(node, id) {
   return node && node.type === "Identifier" && node.name === id;
 }
@@ -27,14 +23,17 @@ module.exports = {
   meta: {
     docs: {
       description: "disallow multiple document.l10n.formatValue calls",
-      category: "Best Practices",
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/prefer-formatValues.html",
+    },
+    messages: {
+      outsideCallBlock: "call expression found outside of known block",
+      useSingleCall:
+        "prefer to use a single document.l10n.formatValues call instead " +
+        "of multiple calls to document.l10n.formatValue or document.l10n.formatValues",
     },
     schema: [],
+    type: "problem",
   },
-
-  // ---------------------------------------------------------------------------
-  // Public
-  //  --------------------------------------------------------------------------
 
   create(context) {
     function enterBlock() {
@@ -45,11 +44,10 @@ module.exports = {
       let calls = BlockStack.pop();
       if (calls.size > 1) {
         for (let callNode of calls) {
-          context.report(
-            callNode,
-            "prefer to use a single document.l10n.formatValues call instead " +
-              "of multiple calls to document.l10n.formatValue or document.l10n.formatValues"
-          );
+          context.report({
+            node: callNode,
+            messageId: "useSingleCall",
+          });
         }
       }
     }
@@ -62,7 +60,10 @@ module.exports = {
 
       CallExpression(node) {
         if (!BlockStack.length) {
-          context.report(node, "call expression found outside of known block");
+          context.report({
+            node,
+            messageId: "outsideCallBlock",
+          });
         }
 
         let callee = node.callee;

@@ -21,6 +21,12 @@
 
 class nsILoadContext;
 
+namespace mozilla::widget::filedialog {
+class Command;
+class Results;
+enum class FileDialogType : uint8_t;
+}  // namespace mozilla::widget::filedialog
+
 class nsBaseWinFilePicker : public nsBaseFilePicker {
  public:
   NS_IMETHOD GetDefaultString(nsAString& aDefaultString) override;
@@ -41,11 +47,20 @@ class nsBaseWinFilePicker : public nsBaseFilePicker {
 class nsFilePicker : public nsBaseWinFilePicker {
   virtual ~nsFilePicker() = default;
 
+  template <typename T>
+  using Maybe = mozilla::Maybe<T>;
+  template <typename T>
+  using Result = mozilla::Result<T, HRESULT>;
+
+  using Command = mozilla::widget::filedialog::Command;
+  using Results = mozilla::widget::filedialog::Results;
+  using FileDialogType = mozilla::widget::filedialog::FileDialogType;
+
  public:
   nsFilePicker();
 
   NS_IMETHOD Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
-                  int16_t aMode) override;
+                  nsIFilePicker::Mode aMode) override;
 
   NS_DECL_ISUPPORTS
 
@@ -61,11 +76,33 @@ class nsFilePicker : public nsBaseWinFilePicker {
  protected:
   /* method from nsBaseFilePicker */
   virtual void InitNative(nsIWidget* aParent, const nsAString& aTitle) override;
-  nsresult Show(int16_t* aReturnVal) override;
-  nsresult ShowW(int16_t* aReturnVal);
+  nsresult Show(nsIFilePicker::ResultCode* aReturnVal) override;
+  nsresult ShowW(nsIFilePicker::ResultCode* aReturnVal);
   void GetFilterListArray(nsString& aFilterList);
   bool ShowFolderPicker(const nsString& aInitialDir);
   bool ShowFilePicker(const nsString& aInitialDir);
+
+ private:
+  // Show the dialog (by default, remotely falling back to locally, or whatever
+  // is specified by the current config).
+  static Result<Maybe<Results>> ShowFilePickerImpl(
+      HWND aParent, FileDialogType type, nsTArray<Command> const& commands);
+  static Result<Maybe<nsString>> ShowFolderPickerImpl(
+      HWND aParent, nsTArray<Command> const& commands);
+
+  // Show the dialog out-of-process.
+  static Result<Maybe<Results>> ShowFilePickerRemote(
+      HWND aParent, FileDialogType type, nsTArray<Command> const& commands);
+  static Result<Maybe<nsString>> ShowFolderPickerRemote(
+      HWND aParent, nsTArray<Command> const& commands);
+
+  // Show the dialog in-process.
+  static Result<Maybe<Results>> ShowFilePickerLocal(
+      HWND aParent, FileDialogType type, nsTArray<Command> const& commands);
+  static Result<Maybe<nsString>> ShowFolderPickerLocal(
+      HWND aParent, nsTArray<Command> const& commands);
+
+ protected:
   void RememberLastUsedDirectory();
   bool IsPrivacyModeEnabled();
   bool IsDefaultPathLink();
@@ -75,8 +112,7 @@ class nsFilePicker : public nsBaseWinFilePicker {
   nsCOMPtr<nsIWidget> mParentWidget;
   nsString mTitle;
   nsCString mFile;
-  nsString mFilterList;
-  int16_t mSelectedType;
+  int32_t mSelectedType;
   nsCOMArray<nsIFile> mFiles;
   nsString mUnicodeFile;
 
@@ -85,25 +121,11 @@ class nsFilePicker : public nsBaseWinFilePicker {
   };
   static mozilla::UniquePtr<char16_t[], FreeDeleter> sLastUsedUnicodeDirectory;
 
-  class ComDlgFilterSpec {
-   public:
-    ComDlgFilterSpec() {}
-    ~ComDlgFilterSpec() {}
-
-    const uint32_t Length() { return mSpecList.Length(); }
-
-    const bool IsEmpty() { return (mSpecList.Length() == 0); }
-
-    const COMDLG_FILTERSPEC* get() { return mSpecList.Elements(); }
-
-    void Append(const nsAString& aTitle, const nsAString& aFilter);
-
-   private:
-    AutoTArray<COMDLG_FILTERSPEC, 1> mSpecList;
-    AutoTArray<nsString, 2> mStrings;
+  struct Filter {
+    nsString title;
+    nsString filter;
   };
-
-  ComDlgFilterSpec mComFilterList;
+  AutoTArray<Filter, 1> mFilterList;
 };
 
 #endif  // nsFilePicker_h__

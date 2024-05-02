@@ -7,7 +7,7 @@
 // Check evaluating eager-evaluation values.
 const TEST_URI = "data:text/html;charset=utf8,<!DOCTYPE html>";
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
 
   await pushPref("devtools.chrome.enabled", true);
@@ -21,9 +21,9 @@ add_task(async function() {
 // Test that code is still terminated, even if it is calling into realms
 // that aren't the normal debuggee realms (bug 1620087).
 async function executeNonDebuggeeSideeffect(hud) {
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
-    `globalThis.eagerLoader = ChromeUtils.import("resource://devtools/shared/loader/Loader.jsm");`,
+    `globalThis.eagerLoader = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs");`,
     `DevToolsLoader`
   );
 
@@ -41,5 +41,9 @@ async function executeNonDebuggeeSideeffect(hud) {
 
   setInputValue(hud, "");
 
-  await executeAndWaitForMessage(hud, `delete globalThis.eagerLoader;`, `true`);
+  await executeAndWaitForResultMessage(
+    hud,
+    `delete globalThis.eagerLoader;`,
+    `true`
+  );
 }

@@ -6,7 +6,7 @@
 const TEST_URI = "data:text/html;charset=utf8,<!DOCTYPE html>Bidi strings";
 const rtlOverride = "\u202e";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const browser = gBrowser.selectedBrowser;
 
@@ -23,7 +23,6 @@ add_task(async function() {
     console.log(new Map([[null, rtlOverride + "msg07"]]));
 
     const parser = content.document.createElement("div");
-    // eslint-disable-next-line no-unsanitized/property
     parser.innerHTML = `
       <div data-test="${rtlOverride}msg08"></div>
       <div data-${rtlOverride}="msg09"></div>
@@ -48,7 +47,7 @@ add_task(async function() {
   ];
   for (let i = 0; i < texts.length; ++i) {
     const msgId = "msg" + String(i + 1).padStart(2, "0");
-    const message = await waitFor(() => findMessage(hud, msgId));
+    const message = await waitFor(() => findConsoleAPIMessage(hud, msgId));
     const objectBox = message.querySelector(".objectBox");
     is(objectBox.textContent, texts[i], "Should have all the relevant text");
     checkRects(objectBox);

@@ -39,8 +39,18 @@ Table of Contents
    telemetry
    firefox-suggest-telemetry
    debugging
+   ranking
    experiments
    dynamic-result-types
    preferences
    testing
    contact
+
+API Reference
+-------------
+
+.. toctree::
+
+   UrlbarController
+   UrlbarInput
+   UrlbarView

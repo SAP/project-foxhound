@@ -8,8 +8,10 @@ Transform the beetmover task into an actual task description.
 
 from copy import deepcopy
 
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.treeherder import add_suffix, inherit_treeherder_from_dep
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.treeherder import add_suffix, inherit_treeherder_from_dep
+
+from gecko_taskgraph.util.attributes import task_name
 
 transforms = TransformSequence()
 
@@ -22,7 +24,7 @@ def add_command(config, tasks):
             "update-verify-config" in dep.kind
             or "update-verify-next-config" in dep.kind
         ):
-            config_tasks[dep.name] = dep
+            config_tasks[task_name(dep)] = dep
 
     for task in tasks:
         config_task = config_tasks[task["name"]]

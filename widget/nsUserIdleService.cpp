@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsError.h"
+#include "nsIAsyncShutdown.h"
 #include "nsUserIdleService.h"
 #include "nsString.h"
 #include "nsIObserverService.h"
@@ -14,6 +16,7 @@
 #include "prinrval.h"
 #include "mozilla/Logging.h"
 #include "prtime.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
@@ -25,9 +28,6 @@
 #endif
 
 using namespace mozilla;
-
-// interval in milliseconds between internal idle time requests.
-#define MIN_IDLE_POLL_INTERVAL_MSEC (5 * PR_MSEC_PER_SEC) /* 5 sec */
 
 // After the twenty four hour period expires for an idle daily, this is the
 // amount of idle time we wait for before actually firing the idle-daily
@@ -66,22 +66,13 @@ NS_IMPL_ISUPPORTS(nsUserIdleServiceDaily, nsIObserver, nsISupportsWeakReference)
 NS_IMETHODIMP
 nsUserIdleServiceDaily::Observe(nsISupports*, const char* aTopic,
                                 const char16_t*) {
+  auto shutdownInProgress =
+      AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed);
   MOZ_LOG(sLog, LogLevel::Debug,
           ("nsUserIdleServiceDaily: Observe '%s' (%d)", aTopic,
-           mShutdownInProgress));
+           shutdownInProgress));
 
-  if (strcmp(aTopic, "profile-after-change") == 0) {
-    // We are back. Start sending notifications again.
-    mShutdownInProgress = false;
-    return NS_OK;
-  }
-
-  if (strcmp(aTopic, "xpcom-will-shutdown") == 0 ||
-      strcmp(aTopic, "profile-change-teardown") == 0) {
-    mShutdownInProgress = true;
-  }
-
-  if (mShutdownInProgress || strcmp(aTopic, OBSERVER_TOPIC_ACTIVE) == 0) {
+  if (shutdownInProgress || strcmp(aTopic, OBSERVER_TOPIC_ACTIVE) == 0) {
     return NS_OK;
   }
   MOZ_ASSERT(strcmp(aTopic, OBSERVER_TOPIC_IDLE) == 0);
@@ -147,7 +138,6 @@ nsUserIdleServiceDaily::nsUserIdleServiceDaily(nsIUserIdleService* aIdleService)
     : mIdleService(aIdleService),
       mTimer(NS_NewTimer()),
       mCategoryObservers(OBSERVER_TOPIC_IDLE_DAILY),
-      mShutdownInProgress(false),
       mExpectedTriggerTime(0),
       mIdleDailyTriggerWait(DAILY_SIGNIFICANT_IDLE_SERVICE_SEC) {}
 
@@ -217,17 +207,6 @@ void nsUserIdleServiceDaily::Init() {
     (void)mTimer->InitWithNamedFuncCallback(
         DailyCallback, this, milliSecLeftUntilDaily, nsITimer::TYPE_ONE_SHOT,
         "nsUserIdleServiceDaily::Init");
-  }
-
-  // Register for when we should terminate/pause
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    MOZ_LOG(
-        sLog, LogLevel::Debug,
-        ("nsUserIdleServiceDaily: Registering for system event observers."));
-    obs->AddObserver(this, "xpcom-will-shutdown", true);
-    obs->AddObserver(this, "profile-change-teardown", true);
-    obs->AddObserver(this, "profile-after-change", true);
   }
 }
 
@@ -375,9 +354,37 @@ already_AddRefed<nsUserIdleService> nsUserIdleService::GetInstance() {
   return instance.forget();
 }
 
+class UserIdleBlocker final : public nsIAsyncShutdownBlocker {
+  ~UserIdleBlocker() = default;
+
+ public:
+  explicit UserIdleBlocker() = default;
+
+  NS_IMETHOD
+  GetName(nsAString& aNameOut) override {
+    aNameOut = nsLiteralString(u"UserIdleBlocker");
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  BlockShutdown(nsIAsyncShutdownClient* aClient) override {
+    if (gIdleService) {
+      gIdleService->SetDisabledForShutdown();
+    }
+    aClient->RemoveBlocker(this);
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  GetState(nsIPropertyBag**) override { return NS_OK; }
+
+  NS_DECL_ISUPPORTS
+};
+
+NS_IMPL_ISUPPORTS(UserIdleBlocker, nsIAsyncShutdownBlocker)
+
 nsUserIdleService::nsUserIdleService()
-    : mCurrentlySetToTimeoutAt(TimeStamp()),
-      mIdleObserverCount(0),
+    : mIdleObserverCount(0),
       mDeltaToNextIdleSwitchInS(UINT32_MAX),
       mLastUserInteraction(TimeStamp::Now()) {
   MOZ_ASSERT(!gIdleService);
@@ -386,6 +393,18 @@ nsUserIdleService::nsUserIdleService()
     mDailyIdle = new nsUserIdleServiceDaily(this);
     mDailyIdle->Init();
   }
+  nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
+  MOZ_ASSERT(svc);
+  nsCOMPtr<nsIAsyncShutdownClient> client;
+  auto rv = svc->GetQuitApplicationGranted(getter_AddRefs(client));
+  if (NS_FAILED(rv)) {
+    // quitApplicationGranted can be undefined in some environments.
+    rv = svc->GetXpcomWillShutdown(getter_AddRefs(client));
+  }
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  client->AddBlocker(new UserIdleBlocker(),
+                     NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
+                     u""_ns);
 }
 
 nsUserIdleService::~nsUserIdleService() {
@@ -400,6 +419,14 @@ nsUserIdleService::~nsUserIdleService() {
 NS_IMPL_ISUPPORTS(nsUserIdleService, nsIUserIdleService,
                   nsIUserIdleServiceInternal)
 
+void nsUserIdleService::SetDisabledForShutdown() {
+  SetDisabled(true);
+  if (mTimer) {
+    mTimer->Cancel();
+    mTimer = nullptr;
+  }
+}
+
 NS_IMETHODIMP
 nsUserIdleService::AddIdleObserver(nsIObserver* aObserver,
                                    uint32_t aIdleTimeInS) {
@@ -407,6 +434,13 @@ nsUserIdleService::AddIdleObserver(nsIObserver* aObserver,
   // We don't accept idle time at 0, and we can't handle idle time that are too
   // high either - no more than ~136 years.
   NS_ENSURE_ARG_RANGE(aIdleTimeInS, 1, (UINT32_MAX / 10) - 1);
+
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsAutoCString timeCStr;
+    timeCStr.AppendInt(aIdleTimeInS);
+    PROFILER_MARKER_TEXT("UserIdle::AddObserver", OTHER, MarkerStack::Capture(),
+                         timeCStr);
+  }
 
   if (XRE_IsContentProcess()) {
     dom::ContentChild* cpc = dom::ContentChild::GetSingleton();
@@ -452,10 +486,8 @@ nsUserIdleService::AddIdleObserver(nsIObserver* aObserver,
 #endif
 
     mDeltaToNextIdleSwitchInS = aIdleTimeInS;
+    ReconfigureTimer();
   }
-
-  // Ensure timer is running.
-  ReconfigureTimer();
 
   return NS_OK;
 }
@@ -465,6 +497,13 @@ nsUserIdleService::RemoveIdleObserver(nsIObserver* aObserver,
                                       uint32_t aTimeInS) {
   NS_ENSURE_ARG_POINTER(aObserver);
   NS_ENSURE_ARG(aTimeInS);
+
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsAutoCString timeCStr;
+    timeCStr.AppendInt(aTimeInS);
+    PROFILER_MARKER_TEXT("UserIdle::RemoveObserver", OTHER,
+                         MarkerStack::Capture(), timeCStr);
+  }
 
   if (XRE_IsContentProcess()) {
     dom::ContentChild* cpc = dom::ContentChild::GetSingleton();
@@ -626,11 +665,6 @@ bool nsUserIdleService::PollIdleTime(uint32_t* /*aIdleTime*/) {
   return false;
 }
 
-bool nsUserIdleService::UsePollMode() {
-  uint32_t dummy;
-  return PollIdleTime(&dummy);
-}
-
 nsresult nsUserIdleService::GetDisabled(bool* aResult) {
   *aResult = mDisabled;
   return NS_OK;
@@ -764,6 +798,9 @@ void nsUserIdleService::IdleTimerCallback(void) {
                         "Idle timer callback: tell observer %p user is idle",
                         notifyList[numberOfPendingNotifications]);
 #endif
+    nsAutoCString timeCStr;
+    timeCStr.AppendInt(currentIdleTimeInS);
+    AUTO_PROFILER_MARKER_TEXT("UserIdle::IdleCallback", OTHER, {}, timeCStr);
     notifyList[numberOfPendingNotifications]->Observe(this, OBSERVER_TOPIC_IDLE,
                                                       timeStr.get());
   }
@@ -858,26 +895,6 @@ void nsUserIdleService::ReconfigureTimer(void) {
   __android_log_print(LOG_LEVEL, LOG_TAG, "next timeout %0.f msec from now",
                       nextTimeoutDuration.ToMilliseconds());
 #endif
-
-  // Check if we should correct the timeout time because we should poll before.
-  if ((mIdleObserverCount > 0) && UsePollMode()) {
-    TimeStamp pollTimeout =
-        curTime + TimeDuration::FromMilliseconds(MIN_IDLE_POLL_INTERVAL_MSEC);
-
-    if (nextTimeoutAt > pollTimeout) {
-      MOZ_LOG(
-          sLog, LogLevel::Debug,
-          ("idleService: idle observers, reducing timeout to %lu msec from now",
-           MIN_IDLE_POLL_INTERVAL_MSEC));
-#ifdef MOZ_WIDGET_ANDROID
-      __android_log_print(
-          LOG_LEVEL, LOG_TAG,
-          "idle observers, reducing timeout to %lu msec from now",
-          MIN_IDLE_POLL_INTERVAL_MSEC);
-#endif
-      nextTimeoutAt = pollTimeout;
-    }
-  }
 
   SetTimerExpiryIfBefore(nextTimeoutAt);
 }

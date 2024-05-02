@@ -40,7 +40,7 @@
 #include "common/windows/guid_string.h"
 
 #ifdef MOZ_PHC
-#include "replace_malloc_bridge.h"
+#include "PHC.h"
 #endif
 
 namespace google_breakpad {
@@ -307,14 +307,6 @@ void ExceptionHandler::Initialize(
 }
 
 ExceptionHandler::~ExceptionHandler() {
-  if (dbghelp_module_) {
-    FreeLibrary(dbghelp_module_);
-  }
-
-  if (rpcrt4_module_) {
-    FreeLibrary(rpcrt4_module_);
-  }
-
   if (handler_types_ != HANDLER_NONE) {
     EnterCriticalSection(&handler_stack_critical_section_);
 
@@ -392,6 +384,17 @@ ExceptionHandler::~ExceptionHandler() {
   if (InterlockedDecrement(&instance_count_) == 0) {
     DeleteCriticalSection(&handler_stack_critical_section_);
   }
+
+  // The exception handler is not set anymore and the handler thread which
+  // could call MiniDumpWriteDump() has been shut down; it is now safe to
+  // unload these modules.
+  if (dbghelp_module_) {
+    FreeLibrary(dbghelp_module_);
+  }
+
+  if (rpcrt4_module_) {
+    FreeLibrary(rpcrt4_module_);
+  }
 }
 
 bool ExceptionHandler::RequestUpload(DWORD crash_id) {
@@ -404,12 +407,14 @@ typedef HRESULT(WINAPI* SetThreadDescriptionPtr)(HANDLE hThread,
 
 // static
 DWORD ExceptionHandler::ExceptionHandlerThreadMain(void* lpParameter) {
-  static auto SetThreadDescriptionFunc =
-      reinterpret_cast<SetThreadDescriptionPtr>(::GetProcAddress(
-          ::GetModuleHandle(L"Kernel32.dll"), "SetThreadDescription"));
-  if (SetThreadDescriptionFunc) {
-    SetThreadDescriptionFunc(::GetCurrentThread(),
-                             L"Breakpad ExceptionHandler");
+  HMODULE handle = ::GetModuleHandle(L"Kernel32.dll");
+  if (handle) {
+    if (FARPROC address = ::GetProcAddress(handle, "SetThreadDescription")) {
+      auto SetThreadDescriptionFunc =
+        reinterpret_cast<SetThreadDescriptionPtr>(address);
+      SetThreadDescriptionFunc(::GetCurrentThread(),
+                               L"Breakpad ExceptionHandler");
+    }
   }
 
   ExceptionHandler* self = reinterpret_cast<ExceptionHandler *>(lpParameter);
@@ -898,18 +903,18 @@ static void GetPHCAddrInfo(EXCEPTION_POINTERS* exinfo,
     // operation it what, and rec->ExceptionInformation[1] contains the
     // virtual address of the inaccessible data.
     char* crashAddr = reinterpret_cast<char*>(rec->ExceptionInformation[1]);
-    ReplaceMalloc::IsPHCAllocation(crashAddr, addr_info);
+    mozilla::phc::IsPHCAllocation(crashAddr, addr_info);
   }
 }
 #endif
 
 ExceptionHandler::MinidumpResult ExceptionHandler::WriteMinidumpWithException(
-    DWORD requesting_thread_id,
-    EXCEPTION_POINTERS* exinfo,
+    DWORD requesting_thread_id, EXCEPTION_POINTERS* exinfo,
     MDRawAssertionInfo* assertion) {
-    mozilla::phc::AddrInfo addr_info;
+  mozilla::phc::AddrInfo* addr_info = nullptr;
 #ifdef MOZ_PHC
-    GetPHCAddrInfo(exinfo, &addr_info);
+  addr_info = &mozilla::phc::gAddrInfo;
+  GetPHCAddrInfo(exinfo, addr_info);
 #endif
 
   // Give user code a chance to approve or prevent writing a minidump.  If the
@@ -944,7 +949,7 @@ ExceptionHandler::MinidumpResult ExceptionHandler::WriteMinidumpWithException(
     // scenario, the server process ends up creating the dump path and dump
     // id so they are not known to the client.
     success = callback_(dump_path_c_, next_minidump_id_c_, callback_context_,
-                        exinfo, assertion, &addr_info, success);
+                        exinfo, assertion, addr_info, success);
   }
 
   return success ? MinidumpResult::Success : MinidumpResult::Failure;

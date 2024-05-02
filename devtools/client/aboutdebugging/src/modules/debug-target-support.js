@@ -8,9 +8,7 @@ const {
   DEBUG_TARGET_PANE,
   PREFERENCES,
   RUNTIMES,
-} = require("devtools/client/aboutdebugging/src/constants");
-
-const Services = require("Services");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
 // Process target debugging is disabled by default.
 function isProcessDebuggingSupported() {
@@ -96,14 +94,5 @@ exports.isSupportedDebugTargetPane = isSupportedDebugTargetPane;
 function supportsTemporaryExtensionInstaller(runtimeType) {
   return runtimeType === RUNTIMES.THIS_FIREFOX;
 }
-exports.supportsTemporaryExtensionInstaller = supportsTemporaryExtensionInstaller;
-
-/**
- * Check if the given runtimeType supports temporary extension additional
- * actions (e.g. reload and remove, which are currently disallowed on
- * non-local runtimes).
- */
-function supportsTemporaryExtensionAdditionalActions(runtimeType) {
-  return runtimeType === RUNTIMES.THIS_FIREFOX;
-}
-exports.supportsTemporaryExtensionAdditionalActions = supportsTemporaryExtensionAdditionalActions;
+exports.supportsTemporaryExtensionInstaller =
+  supportsTemporaryExtensionInstaller;

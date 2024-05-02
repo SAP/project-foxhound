@@ -18,7 +18,7 @@ async function checkFlexItemDimension(
   expected
 ) {
   info("Select the container's flex item.");
-  const onUpdate = waitUntilAction(store, "UPDATE_FLEXBOX");
+  const onUpdate = waitForDispatch(store, "UPDATE_FLEXBOX");
   await selectNode(selector, inspector);
   await onUpdate;
 
@@ -32,7 +32,7 @@ async function checkFlexItemDimension(
   );
 }
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   const { inspector, flexboxInspector } = await openLayoutView();
   const { document: doc, store } = flexboxInspector;

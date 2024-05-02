@@ -53,7 +53,7 @@ function messageServiceWorker(win, scope, message) {
         resolve();
       };
       const sw = swr.active || swr.waiting || swr.installing;
-      sw.postMessage({ type: "PING", message: message });
+      sw.postMessage({ type: "PING", message });
     });
   });
 }
@@ -78,6 +78,12 @@ const expectedConsoleCalls = [
       level: "log",
       filename: /helper_serviceworker/,
       arguments: ['script evaluation'],
+    },
+    {
+      level: "log",
+      filename: /helper_serviceworker/,
+      // Note that the second argument isn't a SharedArrayBuffer, but a DevTools "Object Front" instance.
+      arguments: ['Here is a SAB', { class : "SharedArrayBuffer" }],
     },
     {
       level: "log",
@@ -108,7 +114,11 @@ const startTest = async function () {
   await new Promise(resolve => {
     SpecialPowers.pushPrefEnv({"set": [
       ["dom.serviceWorkers.enabled", true],
-      ["devtools.webconsole.filter.serviceworkers", true]
+      ["devtools.webconsole.filter.serviceworkers", true],
+      [
+        "dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled",
+        true
+      ],
     ]}, resolve);
   });
 

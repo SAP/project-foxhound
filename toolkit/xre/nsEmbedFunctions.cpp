@@ -14,7 +14,6 @@
 #include "prenv.h"
 
 #include "nsIAppShell.h"
-#include "nsAppStartupNotifier.h"
 #include "nsIToolkitProfile.h"
 
 #ifdef XP_WIN
@@ -26,12 +25,13 @@
 #  endif
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/WinDllServices.h"
+#  include "mozilla/WindowsBCryptInitialization.h"
 #  include "WinUtils.h"
 #endif
 
 #include "nsAppRunner.h"
 #include "nsExceptionHandler.h"
-#include "nsString.h"
+#include "mozilla/RuntimeExceptionModule.h"
 #include "nsThreadUtils.h"
 #include "nsJSUtils.h"
 #include "nsWidgetsCID.h"
@@ -49,6 +49,7 @@
 #  include "chrome/common/mach_ipc_mac.h"
 #  include "gfxPlatformMac.h"
 #endif
+#include "nsX11ErrorHandler.h"
 #include "nsGDKErrorHandler.h"
 #include "base/at_exit.h"
 #include "base/message_loop.h"
@@ -62,6 +63,7 @@
 #include "mozilla/AbstractThread.h"
 #include "mozilla/FilePreferences.h"
 #include "mozilla/IOInterposer.h"
+#include "mozilla/ProcessType.h"
 #include "mozilla/RDDProcessImpl.h"
 #include "mozilla/ipc/UtilityProcessImpl.h"
 #include "mozilla/UniquePtr.h"
@@ -83,8 +85,7 @@
 #include "mozilla/gfx/GPUProcessImpl.h"
 #include "mozilla/net/SocketProcessImpl.h"
 
-#include "GeckoProfiler.h"
-#include "BaseProfiler.h"
+#include "ProfilerControl.h"
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
 #  include "mozilla/sandboxTarget.h"
@@ -111,13 +112,6 @@
 #  endif
 #endif
 
-#ifdef MOZ_IPDL_TESTS
-#  include "mozilla/_ipdltest/IPDLUnitTests.h"
-#  include "mozilla/_ipdltest/IPDLUnitTestProcessChild.h"
-
-using mozilla::_ipdltest::IPDLUnitTestProcessChild;
-#endif  // ifdef MOZ_IPDL_TESTS
-
 #ifdef MOZ_JPROF
 #  include "jprof.h"
 #endif
@@ -143,7 +137,6 @@ using mozilla::ipc::BrowserProcessSubThread;
 using mozilla::ipc::GeckoChildProcessHost;
 using mozilla::ipc::IOThreadChild;
 using mozilla::ipc::ProcessChild;
-using mozilla::ipc::ScopedXREEmbed;
 
 using mozilla::dom::ContentParent;
 using mozilla::dom::ContentProcess;
@@ -153,75 +146,13 @@ using mozilla::gmp::GMPProcessChild;
 using mozilla::ipc::TestShellCommandParent;
 using mozilla::ipc::TestShellParent;
 
-using mozilla::startup::sChildProcessType;
+namespace mozilla::_ipdltest {
+// Set in IPDLUnitTest.cpp when running gtests.
+UniquePtr<mozilla::ipc::ProcessChild> (*gMakeIPDLUnitTestProcessChild)(
+    base::ProcessId, const nsID&) = nullptr;
+}  // namespace mozilla::_ipdltest
 
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
-
-nsresult XRE_LockProfileDirectory(nsIFile* aDirectory,
-                                  nsISupports** aLockObject) {
-  nsCOMPtr<nsIProfileLock> lock;
-
-  nsresult rv =
-      NS_LockProfilePath(aDirectory, nullptr, nullptr, getter_AddRefs(lock));
-  if (NS_SUCCEEDED(rv)) NS_ADDREF(*aLockObject = lock);
-
-  return rv;
-}
-
-static int32_t sInitCounter;
-
-nsresult XRE_InitEmbedding2(nsIFile* aLibXULDirectory, nsIFile* aAppDirectory,
-                            nsIDirectoryServiceProvider* aAppDirProvider) {
-  // Initialize some globals to make nsXREDirProvider happy
-  static char* kNullCommandLine[] = {nullptr};
-  gArgv = kNullCommandLine;
-  gArgc = 0;
-
-  NS_ENSURE_ARG(aLibXULDirectory);
-
-  if (++sInitCounter > 1)  // XXXbsmedberg is this really the right solution?
-    return NS_OK;
-
-  if (!aAppDirectory) aAppDirectory = aLibXULDirectory;
-
-  nsresult rv;
-
-  new nsXREDirProvider;  // This sets gDirServiceProvider
-  if (!gDirServiceProvider) return NS_ERROR_OUT_OF_MEMORY;
-
-  rv = gDirServiceProvider->Initialize(aAppDirectory, aLibXULDirectory,
-                                       aAppDirProvider);
-  if (NS_FAILED(rv)) return rv;
-
-  rv = NS_InitXPCOM(nullptr, aAppDirectory, gDirServiceProvider);
-  if (NS_FAILED(rv)) return rv;
-
-  // We do not need to autoregister components here. The CheckCompatibility()
-  // bits in nsAppRunner.cpp check for an invalidation flag in
-  // compatibility.ini.
-  // If the app wants to autoregister every time (for instance, if it's debug),
-  // it can do so after we return from this function.
-
-  nsAppStartupNotifier::NotifyObservers(APPSTARTUP_CATEGORY);
-
-  return NS_OK;
-}
-
-void XRE_NotifyProfile() {
-  NS_ASSERTION(gDirServiceProvider, "XRE_InitEmbedding was not called!");
-  gDirServiceProvider->DoStartup();
-}
-
-void XRE_TermEmbedding() {
-  if (--sInitCounter != 0) return;
-
-  NS_ASSERTION(gDirServiceProvider,
-               "XRE_TermEmbedding without XRE_InitEmbedding");
-
-  gDirServiceProvider->DoShutdown();
-  NS_ShutdownXPCOM(nullptr);
-  delete gDirServiceProvider;
-}
 
 const char* XRE_GeckoProcessTypeToString(GeckoProcessType aProcessType) {
   switch (aProcessType) {
@@ -250,10 +181,6 @@ const char* XRE_ChildProcessTypeToAnnotation(GeckoProcessType aProcessType) {
   }
 }
 
-namespace mozilla::startup {
-GeckoProcessType sChildProcessType = GeckoProcessType_Default;
-}  // namespace mozilla::startup
-
 #if defined(MOZ_WIDGET_ANDROID)
 void XRE_SetAndroidChildFds(JNIEnv* env, const XRE_AndroidChildFds& fds) {
   mozilla::jni::SetGeckoThreadEnv(env);
@@ -261,25 +188,11 @@ void XRE_SetAndroidChildFds(JNIEnv* env, const XRE_AndroidChildFds& fds) {
   mozilla::ipc::SetPrefMapFd(fds.mPrefMapFd);
   IPC::Channel::SetClientChannelFd(fds.mIpcFd);
   CrashReporter::SetNotificationPipeForChild(fds.mCrashFd);
-  CrashReporter::SetCrashAnnotationPipeForChild(fds.mCrashAnnotationFd);
 }
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
 void XRE_SetProcessType(const char* aProcessTypeString) {
-  static bool called = false;
-  if (called && sChildProcessType != GeckoProcessType_ForkServer) {
-    MOZ_CRASH();
-  }
-  called = true;
-
-  sChildProcessType = GeckoProcessType_Invalid;
-  for (GeckoProcessType t :
-       MakeEnumeratedRange(GeckoProcessType::GeckoProcessType_End)) {
-    if (!strcmp(XRE_GeckoProcessTypeToString(t), aProcessTypeString)) {
-      sChildProcessType = t;
-      return;
-    }
-  }
+  SetGeckoProcessType(aProcessTypeString);
 }
 
 #if defined(XP_WIN)
@@ -297,6 +210,10 @@ void AddContentSandboxLevelAnnotation() {
     int level = GetEffectiveContentSandboxLevel();
     CrashReporter::AnnotateCrashReport(
         CrashReporter::Annotation::ContentSandboxLevel, level);
+  } else if (XRE_GetProcessType() == GeckoProcessType_GPU) {
+    int level = GetEffectiveGpuSandboxLevel();
+    CrashReporter::AnnotateCrashReport(
+        CrashReporter::Annotation::GpuSandboxLevel, level);
   }
 }
 #endif /* MOZ_SANDBOX */
@@ -308,15 +225,15 @@ int GetDebugChildPauseTime() {
   if (pauseStr && *pauseStr) {
     int pause = atoi(pauseStr);
     if (pause != 1) {  // must be !=1 since =1 enables the default pause time
-#if defined(OS_WIN)
+#if defined(XP_WIN)
       pause *= 1000;  // convert to ms
 #endif
       return pause;
     }
   }
-#ifdef OS_POSIX
+#ifdef XP_UNIX
   return 30;  // seconds
-#elif defined(OS_WIN)
+#elif defined(XP_WIN)
   return 10000;  // milliseconds
 #else
   return 0;
@@ -466,8 +383,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 
   bool exceptionHandlerIsSet = false;
   if (!CrashReporter::IsDummy()) {
-    CrashReporter::FileHandle crashTimeAnnotationFile =
-        CrashReporter::kInvalidFileHandle;
 #if defined(XP_WIN)
     if (aArgc < 1) {
       return NS_ERROR_FAILURE;
@@ -475,23 +390,27 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
     // Pop the first argument, this is used by the WER runtime exception module
     // which reads it from the command-line so we can just discard it here.
     --aArgc;
-
-    const char* const crashTimeAnnotationArg = aArgv[--aArgc];
-    crashTimeAnnotationFile = reinterpret_cast<CrashReporter::FileHandle>(
-        std::stoul(std::string(crashTimeAnnotationArg)));
 #endif
 
     if (aArgc < 1) return NS_ERROR_FAILURE;
     const char* const crashReporterArg = aArgv[--aArgc];
 
     if (IsCrashReporterEnabled(crashReporterArg)) {
-      exceptionHandlerIsSet = CrashReporter::SetRemoteExceptionHandler(
-          crashReporterArg, crashTimeAnnotationFile);
+      exceptionHandlerIsSet =
+          CrashReporter::SetRemoteExceptionHandler(crashReporterArg);
+      MOZ_ASSERT(exceptionHandlerIsSet,
+                 "Should have been able to set remote exception handler");
 
       if (!exceptionHandlerIsSet) {
         // Bug 684322 will add better visibility into this condition
         NS_WARNING("Could not setup crash reporting\n");
       }
+    } else {
+      // We might have registered a runtime exception module very early in
+      // process startup to catch early crashes. This is before we process the
+      // crash reporter arg, so unregister here if it turns out the crash
+      // reporter is disabled.
+      CrashReporter::UnregisterRuntimeExceptionModule();
     }
   }
 
@@ -506,7 +425,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   g_set_prgname(aArgv[0]);
 #endif
 
-#ifdef OS_POSIX
+#ifdef XP_UNIX
   if (PR_GetEnv("MOZ_DEBUG_CHILD_PROCESS") ||
       PR_GetEnv("MOZ_DEBUG_CHILD_PAUSE")) {
 #  if defined(XP_LINUX) && defined(DEBUG)
@@ -519,17 +438,24 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
         XRE_GetProcessTypeString(), base::GetCurrentProcId());
     sleep(GetDebugChildPauseTime());
   }
-#elif defined(OS_WIN)
+#elif defined(XP_WIN)
   if (PR_GetEnv("MOZ_DEBUG_CHILD_PROCESS")) {
     NS_DebugBreak(NS_DEBUG_BREAK,
                   "Invoking NS_DebugBreak() to debug child process", nullptr,
                   __FILE__, __LINE__);
   } else if (PR_GetEnv("MOZ_DEBUG_CHILD_PAUSE")) {
     printf_stderr(
-        "\n\nCHILDCHILDCHILDCHILD (process type %s)\n  debug me @ %d\n\n",
+        "\n\nCHILDCHILDCHILDCHILD (process type %s)\n  debug me @ %lu\n\n",
         XRE_GetProcessTypeString(), base::GetCurrentProcId());
     ::Sleep(GetDebugChildPauseTime());
   }
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+  // The parent process already did this, but Gecko child processes on
+  // Android aren't descendants of the parent process, so they don't
+  // inherit its rlimits.
+  mozilla::startup::IncreaseDescriptorLimits();
 #endif
 
   // child processes launched by GeckoChildProcessHost get this magic
@@ -541,6 +467,16 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   char* end = 0;
   base::ProcessId parentPID = strtol(parentPIDString, &end, 10);
   MOZ_ASSERT(!*end, "invalid parent PID");
+
+  // They also get the initial message channel ID passed in the same manner.
+  const char* const messageChannelIdString = aArgv[aArgc - 1];
+  MOZ_ASSERT(messageChannelIdString, "NULL MessageChannel Id");
+  --aArgc;
+
+  nsID messageChannelId{};
+  if (!messageChannelId.Parse(messageChannelIdString)) {
+    return NS_ERROR_FAILURE;
+  }
 
 #if defined(XP_WIN)
   // On Win7+, when not running as an MSIX package, register the application
@@ -573,6 +509,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   switch (XRE_GetProcessType()) {
     case GeckoProcessType_Content:
     case GeckoProcessType_GPU:
+    case GeckoProcessType_IPDLUnitTest:
     case GeckoProcessType_VR:
     case GeckoProcessType_RDD:
     case GeckoProcessType_Socket:
@@ -581,6 +518,11 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       uiLoopType = MessageLoop::TYPE_MOZILLA_CHILD;
       break;
     case GeckoProcessType_GMPlugin:
+      gmp::GMPProcessChild::InitStatics(aArgc, aArgv);
+      uiLoopType = gmp::GMPProcessChild::UseXPCOM()
+                       ? MessageLoop::TYPE_MOZILLA_CHILD
+                       : MessageLoop::TYPE_DEFAULT;
+      break;
     case GeckoProcessType_RemoteSandboxBroker:
       uiLoopType = MessageLoop::TYPE_DEFAULT;
       break;
@@ -589,24 +531,19 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       break;
   }
 
-#if defined(MOZ_SANDBOX) && defined(XP_WIN)
+#if defined(XP_WIN)
+#  if defined(MOZ_SANDBOX)
   if (aChildData->sandboxBrokerServices) {
     SandboxBroker::Initialize(aChildData->sandboxBrokerServices);
     SandboxBroker::GeckoDependentInitialize();
   }
+#  endif  // defined(MOZ_SANDBOX)
 
-  // Call BCryptGenRandom() to pre-load bcryptPrimitives.dll while the current
-  // thread still has an unrestricted impersonation token. We need to perform
-  // that operation to warmup the BCryptGenRandom() call that is used by
-  // others, especially rust.  See bug 1746524, bug 1751094, bug 1751177
-  UCHAR buffer[32];
-  NTSTATUS status = BCryptGenRandom(NULL,            // hAlgorithm
-                                    buffer,          // pbBuffer
-                                    sizeof(buffer),  // cbBuffer
-                                    BCRYPT_USE_SYSTEM_PREFERRED_RNG  // dwFlags
-  );
-  MOZ_RELEASE_ASSERT(status == STATUS_SUCCESS);
-#endif  // defined(MOZ_SANDBOX) && defined(XP_WIN)
+  {
+    DebugOnly<bool> result = mozilla::WindowsBCryptInitialization();
+    MOZ_ASSERT(result);
+  }
+#endif  // defined(XP_WIN)
 
   {
     // This is a lexical scope for the MessageLoop below.  We want it
@@ -614,7 +551,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
     // spurious warnings about XPCOM objects being destroyed from a
     // static context.
 
-    Maybe<IOInterposerInit> ioInterposerGuard;
+    AutoIOInterposer ioInterposerGuard;
 
     // Associate this thread with a UI MessageLoop
     MessageLoop uiMessageLoop(uiLoopType);
@@ -626,46 +563,51 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
           break;
 
         case GeckoProcessType_Content:
-          ioInterposerGuard.emplace();
-          process = MakeUnique<ContentProcess>(parentPID);
+          ioInterposerGuard.Init();
+          process = MakeUnique<ContentProcess>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_IPDLUnitTest:
-#ifdef MOZ_IPDL_TESTS
-          process = MakeUnique<IPDLUnitTestProcessChild>(parentPID);
-#else
-          MOZ_CRASH("rebuild with --enable-ipdl-tests");
-#endif
+          MOZ_RELEASE_ASSERT(mozilla::_ipdltest::gMakeIPDLUnitTestProcessChild,
+                             "xul-gtest not loaded!");
+          process = mozilla::_ipdltest::gMakeIPDLUnitTestProcessChild(
+              parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_GMPlugin:
-          process = MakeUnique<gmp::GMPProcessChild>(parentPID);
+          process =
+              MakeUnique<gmp::GMPProcessChild>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_GPU:
-          process = MakeUnique<gfx::GPUProcessImpl>(parentPID);
+          process =
+              MakeUnique<gfx::GPUProcessImpl>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_VR:
-          process = MakeUnique<gfx::VRProcessChild>(parentPID);
+          process =
+              MakeUnique<gfx::VRProcessChild>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_RDD:
-          process = MakeUnique<RDDProcessImpl>(parentPID);
+          process = MakeUnique<RDDProcessImpl>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_Socket:
-          ioInterposerGuard.emplace();
-          process = MakeUnique<net::SocketProcessImpl>(parentPID);
+          ioInterposerGuard.Init();
+          process =
+              MakeUnique<net::SocketProcessImpl>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_Utility:
-          process = MakeUnique<ipc::UtilityProcessImpl>(parentPID);
+          process =
+              MakeUnique<ipc::UtilityProcessImpl>(parentPID, messageChannelId);
           break;
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
         case GeckoProcessType_RemoteSandboxBroker:
-          process = MakeUnique<RemoteSandboxBrokerProcessChild>(parentPID);
+          process = MakeUnique<RemoteSandboxBrokerProcessChild>(
+              parentPID, messageChannelId);
           break;
 #endif
 
@@ -702,9 +644,8 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       if (XRE_GetProcessType() != GeckoProcessType_RemoteSandboxBroker) {
         // Remote sandbox launcher process doesn't have prerequisites for
         // these...
-        mozilla::FilePreferences::InitDirectoriesWhitelist();
+        mozilla::FilePreferences::InitDirectoriesAllowlist();
         mozilla::FilePreferences::InitPrefs();
-        OverrideDefaultLocaleIfNeeded();
       }
 
 #if defined(MOZ_SANDBOX)
@@ -721,115 +662,17 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
     }
   }
 
-  if (exceptionHandlerIsSet) {
-    CrashReporter::UnsetRemoteExceptionHandler();
-  }
+  CrashReporter::UnsetRemoteExceptionHandler(exceptionHandlerIsSet);
 
   return XRE_DeinitCommandLine();
 }
 
 MessageLoop* XRE_GetIOMessageLoop() {
-  if (sChildProcessType == GeckoProcessType_Default) {
+  if (GetGeckoProcessType() == GeckoProcessType_Default) {
     return BrowserProcessSubThread::GetMessageLoop(BrowserProcessSubThread::IO);
   }
   return IOThreadChild::message_loop();
 }
-
-namespace {
-
-class MainFunctionRunnable : public Runnable {
- public:
-  NS_DECL_NSIRUNNABLE
-
-  MainFunctionRunnable(MainFunction aFunction, void* aData)
-      : mozilla::Runnable("MainFunctionRunnable"),
-        mFunction(aFunction),
-        mData(aData) {
-    NS_ASSERTION(aFunction, "Don't give me a null pointer!");
-  }
-
- private:
-  MainFunction mFunction;
-  void* mData;
-};
-
-} /* anonymous namespace */
-
-NS_IMETHODIMP
-MainFunctionRunnable::Run() {
-  mFunction(mData);
-  return NS_OK;
-}
-
-nsresult XRE_InitParentProcess(int aArgc, char* aArgv[],
-                               MainFunction aMainFunction,
-                               void* aMainFunctionData) {
-  NS_ENSURE_ARG_MIN(aArgc, 1);
-  NS_ENSURE_ARG_POINTER(aArgv);
-  NS_ENSURE_ARG_POINTER(aArgv[0]);
-
-  // Set main thread before we initialize the profiler
-  NS_SetMainThread();
-
-  mozilla::LogModule::Init(aArgc, aArgv);
-
-  AUTO_BASE_PROFILER_LABEL("XRE_InitParentProcess (around Gecko Profiler)",
-                           OTHER);
-  AUTO_PROFILER_INIT;
-  AUTO_PROFILER_LABEL("XRE_InitParentProcess", OTHER);
-
-  ScopedXREEmbed embed;
-
-  gArgc = aArgc;
-  gArgv = aArgv;
-  nsresult rv = XRE_InitCommandLine(gArgc, gArgv);
-  if (NS_FAILED(rv)) return NS_ERROR_FAILURE;
-
-  {
-    embed.Start();
-
-    nsCOMPtr<nsIAppShell> appShell(do_GetService(kAppShellCID));
-    NS_ENSURE_TRUE(appShell, NS_ERROR_FAILURE);
-
-    if (aMainFunction) {
-      nsCOMPtr<nsIRunnable> runnable =
-          new MainFunctionRunnable(aMainFunction, aMainFunctionData);
-
-      nsresult rv = NS_DispatchToCurrentThread(runnable);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-
-    // Do event loop
-    if (NS_FAILED(appShell->Run())) {
-      NS_WARNING("Failed to run appshell");
-      return NS_ERROR_FAILURE;
-    }
-  }
-
-  return XRE_DeinitCommandLine();
-}
-
-#ifdef MOZ_IPDL_TESTS
-//-----------------------------------------------------------------------------
-// IPDL unit test
-
-int XRE_RunIPDLTest(int aArgc, char** aArgv) {
-  if (aArgc < 2) {
-    fprintf(
-        stderr,
-        "TEST-UNEXPECTED-FAIL | <---> | insufficient #args, need at least 2\n");
-    return 1;
-  }
-
-  void* data = reinterpret_cast<void*>(aArgv[aArgc - 1]);
-
-  nsresult rv = XRE_InitParentProcess(
-      --aArgc, aArgv, mozilla::_ipdltest::IPDLUnitTestMain, data);
-  NS_ENSURE_SUCCESS(rv, 1);
-
-  return 0;
-}
-#endif  // ifdef MOZ_IPDL_TESTS
 
 nsresult XRE_RunAppShell() {
   nsCOMPtr<nsIAppShell> appShell(do_GetService(kAppShellCID));
@@ -915,7 +758,7 @@ TestShellParent* GetOrCreateTestShellParent() {
     RefPtr<ContentParent> parent =
         ContentParent::GetNewOrUsedBrowserProcess(DEFAULT_REMOTE_TYPE);
     parent.forget(&gContentParent);
-  } else if (!gContentParent->IsAlive()) {
+  } else if (gContentParent->IsShuttingDown()) {
     return nullptr;
   }
   TestShellParent* tsp = gContentParent->GetTestShellSingleton();
@@ -929,7 +772,7 @@ TestShellParent* GetOrCreateTestShellParent() {
 
 bool XRE_SendTestShellCommand(JSContext* aCx, JSString* aCommand,
                               JS::Value* aCallback) {
-  JS::RootedString cmd(aCx, aCommand);
+  JS::Rooted<JSString*> cmd(aCx, aCommand);
   TestShellParent* tsp = GetOrCreateTestShellParent();
   NS_ENSURE_TRUE(tsp, false);
 
@@ -966,10 +809,18 @@ bool XRE_ShutdownTestShell() {
 void XRE_InstallX11ErrorHandler() {
 #  ifdef MOZ_WIDGET_GTK
   InstallGdkErrorHandler();
-#  else
-  InstallX11ErrorHandler();
 #  endif
+
+  // Ensure our X11 error handler overrides the default GDK error handler such
+  // that errors are ignored by default. GDK will install its own error handler
+  // temporarily when pushing error traps internally as needed. This avoids us
+  // otherwise having to frequently override the error handler merely to trap
+  // errors in multiple places that would otherwise contend with GDK or other
+  // libraries that might also override the handler.
+  InstallX11ErrorHandler();
 }
+
+void XRE_CleanupX11ErrorHandler() { CleanupX11ErrorHandler(); }
 #endif
 
 #ifdef MOZ_ENABLE_FORKSERVER

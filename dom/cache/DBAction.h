@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_cache_DBAction_h
 #define mozilla_dom_cache_DBAction_h
 
+#include "CacheCipherKeyManager.h"
 #include "mozilla/dom/cache/Action.h"
 #include "mozilla/RefPtr.h"
 #include "nsString.h"
@@ -14,12 +15,11 @@
 class mozIStorageConnection;
 class nsIFile;
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenDBConnection(
-    const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBFile);
+    const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBFile,
+    const Maybe<CipherKey>& aMaybeCipherKey);
 
 class DBAction : public Action {
  protected:
@@ -43,10 +43,12 @@ class DBAction : public Action {
  private:
   void RunOnTarget(SafeRefPtr<Resolver> aResolver,
                    const Maybe<CacheDirectoryMetadata>& aDirectoryMetadata,
-                   Data* aOptionalData) override;
+                   Data* aOptionalData,
+                   const Maybe<CipherKey>& aMaybeCipherKey) override;
 
   Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenConnection(
-      const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBDir);
+      const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBDir,
+      const Maybe<CipherKey>& aMaybeCipherKey);
 
   const Mode mMode;
 };
@@ -69,8 +71,6 @@ class SyncDBAction : public DBAction {
       mozIStorageConnection* aConn) override;
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_DBAction_h

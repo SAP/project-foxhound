@@ -13,6 +13,7 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/Mutex.h"
 
 namespace mozilla {
 
@@ -36,7 +37,15 @@ class AndroidDataEncoder final : public MediaDataEncoder {
   class CallbacksSupport final : public JavaCallbacksSupport {
    public:
     explicit CallbacksSupport(AndroidDataEncoder* aEncoder)
-        : mEncoder(aEncoder) {}
+        : mMutex("AndroidDataEncoder::CallbacksSupport") {
+      MutexAutoLock lock(mMutex);
+      mEncoder = aEncoder;
+    }
+
+    ~CallbacksSupport() {
+      MutexAutoLock lock(mMutex);
+      mEncoder = nullptr;
+    }
 
     void HandleInput(int64_t aTimestamp, bool aProcessed) override;
     void HandleOutput(java::Sample::Param aSample,
@@ -46,7 +55,8 @@ class AndroidDataEncoder final : public MediaDataEncoder {
     void HandleError(const MediaResult& aError) override;
 
    private:
-    AndroidDataEncoder* mEncoder;
+    Mutex mMutex;
+    AndroidDataEncoder* mEncoder MOZ_GUARDED_BY(mMutex);
   };
   friend class CallbacksSupport;
 
@@ -79,7 +89,7 @@ class AndroidDataEncoder final : public MediaDataEncoder {
   java::sdk::MediaFormat::GlobalRef mFormat;
   // Preallocated Java object used as a reusable storage for input buffer
   // information. Contents must be changed only on mTaskQueue.
-  java::sdk::BufferInfo::GlobalRef mInputBufferInfo;
+  java::sdk::MediaCodec::BufferInfo::GlobalRef mInputBufferInfo;
 
   MozPromiseHolder<EncodePromise> mDrainPromise;
 

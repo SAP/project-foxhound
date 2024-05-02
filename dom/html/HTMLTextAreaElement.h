@@ -27,7 +27,6 @@ namespace mozilla {
 
 class EventChainPostVisitor;
 class EventChainPreVisitor;
-class EventStates;
 class PresState;
 
 namespace dom {
@@ -51,97 +50,92 @@ class HTMLTextAreaElement final : public TextControlElement,
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLTextAreaElement, textarea)
 
-  virtual int32_t TabIndexDefault() override;
+  int32_t TabIndexDefault() override;
 
   // Element
-  virtual bool IsInteractiveHTMLContent() const override { return true; }
+  bool IsInteractiveHTMLContent() const override { return true; }
 
   // nsGenericHTMLElement
-  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+  bool IsDisabledForEvents(WidgetEvent* aEvent) override;
 
   // nsGenericHTMLFormElement
   void SaveState() override;
-  bool RestoreState(PresState* aState) override;
+
+  // FIXME: Shouldn't be a CAN_RUN_SCRIPT_BOUNDARY probably?
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool RestoreState(PresState*) override;
 
   // nsIFormControl
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD Reset() override;
   NS_IMETHOD SubmitNamesValues(FormData* aFormData) override;
 
-  virtual void FieldSetDisabledChanged(bool aNotify) override;
-
-  virtual EventStates IntrinsicState() const override;
+  void FieldSetDisabledChanged(bool aNotify) override;
 
   void SetLastValueChangeWasInteractive(bool);
 
   // TextControlElement
-  virtual nsresult SetValueChanged(bool aValueChanged) override;
-  virtual bool IsSingleLineTextControl() const override;
-  virtual bool IsTextArea() const override;
-  virtual bool IsPasswordTextControl() const override;
-  virtual int32_t GetCols() override;
-  virtual int32_t GetWrapCols() override;
-  virtual int32_t GetRows() override;
-  virtual void GetDefaultValueFromContent(nsAString& aValue) override;
-  virtual bool ValueChanged() const override;
-  virtual void GetTextEditorValue(nsAString& aValue,
-                                  bool aIgnoreWrap) const override;
-  MOZ_CAN_RUN_SCRIPT virtual TextEditor* GetTextEditor() override;
-  virtual TextEditor* GetTextEditorWithoutCreation() override;
-  virtual nsISelectionController* GetSelectionController() override;
-  virtual nsFrameSelection* GetConstFrameSelection() override;
-  virtual TextControlState* GetTextControlState() const override {
-    return mState;
-  }
-  virtual nsresult BindToFrame(nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT virtual void UnbindFromFrame(
-      nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT virtual nsresult CreateEditor() override;
-  virtual void SetPreviewValue(const nsAString& aValue) override;
-  virtual void GetPreviewValue(nsAString& aValue) override;
-  virtual void EnablePreview() override;
-  virtual bool IsPreviewEnabled() override;
-  virtual void InitializeKeyboardEventListeners() override;
-  virtual void OnValueChanged(ValueChangeKind) override;
-  virtual void GetValueFromSetRangeText(nsAString& aValue) override;
-  MOZ_CAN_RUN_SCRIPT virtual nsresult SetValueFromSetRangeText(
-      const nsAString& aValue) override;
-  virtual bool HasCachedSelection() override;
+  void SetValueChanged(bool aValueChanged) override;
+  bool IsSingleLineTextControl() const override;
+  bool IsTextArea() const override;
+  bool IsPasswordTextControl() const override;
+  int32_t GetCols() override;
+  int32_t GetWrapCols() override;
+  int32_t GetRows() override;
+  void GetDefaultValueFromContent(nsAString& aValue, bool aForDisplay) override;
+  bool ValueChanged() const override;
+  void GetTextEditorValue(nsAString& aValue) const override;
+  MOZ_CAN_RUN_SCRIPT TextEditor* GetTextEditor() override;
+  TextEditor* GetTextEditorWithoutCreation() override;
+  nsISelectionController* GetSelectionController() override;
+  nsFrameSelection* GetConstFrameSelection() override;
+  TextControlState* GetTextControlState() const override { return mState; }
+  nsresult BindToFrame(nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT void UnbindFromFrame(nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT nsresult CreateEditor() override;
+  void SetPreviewValue(const nsAString& aValue) override;
+  void GetPreviewValue(nsAString& aValue) override;
+  void EnablePreview() override;
+  bool IsPreviewEnabled() override;
+  void InitializeKeyboardEventListeners() override;
+  void UpdatePlaceholderShownState();
+  void OnValueChanged(ValueChangeKind, bool aNewValueEmpty,
+                      const nsAString* aKnownNewValue) override;
+  void GetValueFromSetRangeText(nsAString& aValue) override;
+  MOZ_CAN_RUN_SCRIPT nsresult
+  SetValueFromSetRangeText(const nsAString& aValue) override;
+  bool HasCachedSelection() override;
 
   // nsIContent
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
-      const override;
-  virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                              int32_t aModType) const override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
+  nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
+  nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
+                                      int32_t aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
-  virtual nsresult PreHandleEvent(EventChainVisitor& aVisitor) override;
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  nsresult PreHandleEvent(EventChainVisitor& aVisitor) override;
+  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
-  virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
-                               int32_t* aTabIndex) override;
+  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+                       int32_t* aTabIndex) override;
 
-  virtual void DoneAddingChildren(bool aHaveNotified) override;
-  virtual bool IsDoneAddingChildren() override;
+  void DoneAddingChildren(bool aHaveNotified) override;
+
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
-
   nsresult CopyInnerTo(Element* aDest);
 
   /**
    * Called when an attribute is about to be changed
    */
-  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                 const nsAttrValueOrString* aValue,
-                                 bool aNotify) override;
+  void BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
 
   // nsIMutationObserver
   NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
@@ -170,14 +164,16 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetAutocomplete(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::autocomplete, aValue, aRv);
   }
-  bool Autofocus() { return GetBoolAttr(nsGkAtoms::autofocus); }
-  void SetAutofocus(bool aAutoFocus, ErrorResult& aError) {
-    SetHTMLBoolAttr(nsGkAtoms::autofocus, aAutoFocus, aError);
-  }
   uint32_t Cols() { return GetUnsignedIntAttr(nsGkAtoms::cols, DEFAULT_COLS); }
   void SetCols(uint32_t aCols, ErrorResult& aError) {
     uint32_t cols = aCols ? aCols : DEFAULT_COLS;
     SetUnsignedIntAttr(nsGkAtoms::cols, cols, DEFAULT_COLS, aError);
+  }
+  void GetDirName(nsAString& aValue) {
+    GetHTMLAttr(nsGkAtoms::dirname, aValue);
+  }
+  void SetDirName(const nsAString& aValue, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::dirname, aValue, aError);
   }
   bool Disabled() { return GetBoolAttr(nsGkAtoms::disabled); }
   void SetDisabled(bool aDisabled, ErrorResult& aError) {
@@ -218,7 +214,7 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetReadOnly(bool aReadOnly, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::readonly, aReadOnly, aError);
   }
-  bool Required() const { return State().HasState(NS_EVENT_STATE_REQUIRED); }
+  bool Required() const { return State().HasState(ElementState::REQUIRED); }
 
   MOZ_CAN_RUN_SCRIPT void SetRangeText(const nsAString& aReplacement,
                                        ErrorResult& aRv);
@@ -243,17 +239,10 @@ class HTMLTextAreaElement final : public TextControlElement,
     SetHTMLAttr(nsGkAtoms::wrap, aWrap, aError);
   }
   void GetType(nsAString& aType);
-  void GetDefaultValue(nsAString& aDefaultValue, ErrorResult& aError);
+  void GetDefaultValue(nsAString& aDefaultValue, ErrorResult& aError) const;
   void SetDefaultValue(const nsAString& aDefaultValue, ErrorResult& aError);
   void GetValue(nsAString& aValue);
-  /**
-   * ValueEquals() is designed for internal use so that aValue shouldn't
-   * include \r character.  It should be handled before calling this with
-   * nsContentUtils::PlatformToDOMLineBreaks().
-   */
-  bool ValueEquals(const nsAString& aValue) const;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void SetValue(const nsAString& aValue,
-                                            ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT void SetValue(const nsAString&, ErrorResult&);
 
   uint32_t GetTextLength();
 
@@ -295,8 +284,7 @@ class HTMLTextAreaElement final : public TextControlElement,
   // get rid of the compiler warning
   using nsGenericHTMLFormControlElementWithState::IsSingleLineTextControl;
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
   nsCOMPtr<nsIControllers> mControllers;
   /** Whether or not the value has changed since its default value was given. */
@@ -354,11 +342,18 @@ class HTMLTextAreaElement final : public TextControlElement,
    */
   void ContentChanged(nsIContent* aContent);
 
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
+  void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
+
+  void SetDirectionFromValue(bool aNotify,
+                             const nsAString* aKnownValue = nullptr);
+
+  // To Taint the "value" text input
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const override;
+
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const override;
+
 
   /**
    * Return if an element should have a specific validity UI
@@ -391,7 +386,9 @@ class HTMLTextAreaElement final : public TextControlElement,
    *
    * @return whether the current value is the empty string.
    */
-  bool IsValueEmpty() const;
+  bool IsValueEmpty() const {
+    return State().HasState(ElementState::VALUE_EMPTY);
+  }
 
   /**
    * A helper to get the current selection range.  Will throw on the ErrorResult
@@ -400,9 +397,10 @@ class HTMLTextAreaElement final : public TextControlElement,
   void GetSelectionRange(uint32_t* aSelectionStart, uint32_t* aSelectionEnd,
                          ErrorResult& aRv);
 
+  void UpdateValidityElementStates(bool aNotify) final;
+
  private:
-  static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    MappedDeclarations&);
+  static void MapAttributesIntoRule(MappedDeclarationsBuilder&);
 };
 
 }  // namespace dom

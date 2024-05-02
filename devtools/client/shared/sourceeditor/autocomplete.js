@@ -4,18 +4,18 @@
 
 "use strict";
 
-const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
+const AutocompletePopup = require("resource://devtools/client/shared/autocomplete-popup.js");
 
 loader.lazyRequireGetter(
   this,
   "KeyCodes",
-  "devtools/client/shared/keycodes",
+  "resource://devtools/client/shared/keycodes.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CSSCompleter",
-  "devtools/client/shared/sourceeditor/css-autocompleter"
+  "resource://devtools/client/shared/sourceeditor/css-autocompleter.js"
 );
 
 const autocompleteMap = new WeakMap();
@@ -110,10 +110,10 @@ function initializeAutoCompletion(ctx, options = {}) {
   }
 
   autocompleteMap.set(ed, {
-    popup: popup,
-    completer: completer,
-    keyMap: keyMap,
-    destroy: destroy,
+    popup,
+    completer,
+    keyMap,
+    destroy,
     insertingSuggestion: false,
     suggestionInsertedOnce: false,
   });
@@ -168,9 +168,8 @@ function autoComplete({ ed, cm }) {
       // character "b". Thus we need to calculate the width of the entered part
       // of the token ("backgr" here).
 
-      const cursorElement = cm.display.cursorDiv.querySelector(
-        ".CodeMirror-cursor"
-      );
+      const cursorElement =
+        cm.display.cursorDiv.querySelector(".CodeMirror-cursor");
       const left = suggestions[0].preLabel.length * cm.defaultCharWidth();
       popup.hidePopup();
       popup.setItems(suggestions);
@@ -197,10 +196,7 @@ function insertPopupItem(ed, popupItem) {
     .split("")
     .reverse()
     .join("");
-  const backwardsPreLabel = preLabel
-    .split("")
-    .reverse()
-    .join("");
+  const backwardsPreLabel = preLabel.split("").reverse().join("");
 
   // If there is additional text in the preLabel vs the line, then
   // just insert the entire autocomplete text.  An example:

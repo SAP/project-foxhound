@@ -8,18 +8,15 @@
 const TEST_URI =
   "data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test top-level await";
 
-add_task(async function() {
+add_task(async function () {
   // Enable await mapping.
   await pushPref("devtools.debugger.features.map-await-expression", true);
 
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const executeAndWaitForResultMessage = (input, expectedOutput) =>
-    executeAndWaitForMessage(hud, input, expectedOutput, ".result");
-
   info("Evaluate a top-level await expression");
   const simpleAwait = `await new Promise(r => setTimeout(() => r(["await1"]), 500))`;
-  await executeAndWaitForResultMessage(simpleAwait, `Array [ "await1" ]`);
+  await executeAndWaitForResultMessage(hud, simpleAwait, `Array [ "await1" ]`);
 
   // Check that the resulting promise of the async iife is not displayed.
   const messages = hud.ui.outputNode.querySelectorAll(".message .message-body");
@@ -33,14 +30,13 @@ add_task(async function() {
   );
 
   // Check that the timestamp of the result is accurate
-  const {
-    visibleMessages,
-    messagesById,
-  } = hud.ui.wrapper.getStore().getState().messages;
+  const { visibleMessages, mutableMessagesById } = hud.ui.wrapper
+    .getStore()
+    .getState().messages;
   const [commandId, resultId] = visibleMessages;
   const delta =
-    messagesById.get(resultId).timeStamp -
-    messagesById.get(commandId).timeStamp;
+    mutableMessagesById.get(resultId).timeStamp -
+    mutableMessagesById.get(commandId).timeStamp;
   ok(
     delta >= 500,
     `The result has a timestamp at least 500ms (${delta}ms) older than the command`
@@ -48,11 +44,13 @@ add_task(async function() {
 
   info("Check that assigning the result of a top-level await expression works");
   await executeAndWaitForResultMessage(
+    hud,
     `x = await new Promise(r => setTimeout(() => r("await2"), 500))`,
     `await2`
   );
 
   let message = await executeAndWaitForResultMessage(
+    hud,
     `"-" + x + "-"`,
     `"-await2-"`
   );
@@ -60,8 +58,26 @@ add_task(async function() {
 
   info("Check that a logged promise is still displayed as a promise");
   message = await executeAndWaitForResultMessage(
+    hud,
     `new Promise(r => setTimeout(() => r(1), 1000))`,
     `Promise {`
   );
   ok(message, "Promise are displayed as expected");
+
+  info("Check that then getters aren't called twice");
+  message = await executeAndWaitForResultMessage(
+    hud,
+    // It's important to keep the last statement of the expression as it covers the original issue.
+    // We could execute another expression to get `object.called`, but since we get a preview
+    // of the object with an accurate `called` value, this is enough.
+    `
+    var obj = {
+      called: 0,
+      get then(){
+        this.called++
+      }
+    };
+    await obj`,
+    `Object { called: 1, then: Getter }`
+  );
 });

@@ -10,8 +10,7 @@
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/RefPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ServiceWorkerContainerParent;
 
@@ -27,11 +26,12 @@ class ServiceWorkerContainerProxy final {
   void RevokeActor(ServiceWorkerContainerParent* aActor);
 
   RefPtr<ServiceWorkerRegistrationPromise> Register(
-      const ClientInfo& aClientInfo, const nsCString& aScopeURL,
-      const nsCString& aScriptURL, ServiceWorkerUpdateViaCache aUpdateViaCache);
+      const ClientInfo& aClientInfo, const nsACString& aScopeURL,
+      const nsACString& aScriptURL,
+      ServiceWorkerUpdateViaCache aUpdateViaCache);
 
   RefPtr<ServiceWorkerRegistrationPromise> GetRegistration(
-      const ClientInfo& aClientInfo, const nsCString& aURL);
+      const ClientInfo& aClientInfo, const nsACString& aURL);
 
   RefPtr<ServiceWorkerRegistrationListPromise> GetRegistrations(
       const ClientInfo& aClientInfo);
@@ -42,7 +42,6 @@ class ServiceWorkerContainerProxy final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ServiceWorkerContainerProxy);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // moz_dom_ServiceWorkerContainerProxy_h

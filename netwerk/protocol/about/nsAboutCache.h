@@ -46,7 +46,8 @@
     return !(_to) ? NS_ERROR_NULL_POINTER                                      \
                   : (_to)->SetNotificationCallbacks(aNotificationCallbacks);   \
   }                                                                            \
-  NS_IMETHOD GetSecurityInfo(nsISupports** aSecurityInfo) override {           \
+  NS_IMETHOD GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo)         \
+      override {                                                               \
     return !(_to) ? NS_ERROR_NULL_POINTER                                      \
                   : (_to)->GetSecurityInfo(aSecurityInfo);                     \
   }                                                                            \
@@ -120,8 +121,7 @@ class nsAboutCache final : public nsIAboutModule {
 
   nsAboutCache() = default;
 
-  [[nodiscard]] static nsresult Create(nsISupports* aOuter, REFNSIID aIID,
-                                       void** aResult);
+  [[nodiscard]] static nsresult Create(REFNSIID aIID, void** aResult);
 
   [[nodiscard]] static nsresult GetStorage(nsACString const& storageName,
                                            nsILoadContextInfo* loadInfo,

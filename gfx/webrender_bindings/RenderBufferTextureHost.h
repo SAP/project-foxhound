@@ -18,8 +18,7 @@ class RenderBufferTextureHost final : public RenderTextureHostSWGL {
                           const layers::BufferDescriptor& aDescriptor);
 
   // RenderTextureHost
-  wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL,
-                           wr::ImageRendering aRendering) override;
+  wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL) override;
   void Unlock() override;
 
   size_t Bytes() override {
@@ -49,6 +48,8 @@ class RenderBufferTextureHost final : public RenderTextureHostSWGL {
 
   void UnmapPlanes() override;
 
+  void Destroy() override;
+
  private:
   virtual ~RenderBufferTextureHost();
 
@@ -70,6 +71,8 @@ class RenderBufferTextureHost final : public RenderTextureHostSWGL {
   gfx::DataSourceSurface::MappedSurface mCrMap;
 
   bool mLocked;
+
+  bool mDestroyed = false;
 };
 
 }  // namespace wr

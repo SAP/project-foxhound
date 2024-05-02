@@ -10,13 +10,15 @@
 #include "ClientManager.h"
 #include "ClientState.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/dom/ContentParent.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsFocusManager.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsIDocShell.h"
-#include "nsIDOMChromeWindow.h"
+#include "nsIDocShellTreeOwner.h"
 #include "nsIURI.h"
 #include "nsIBrowser.h"
 #include "nsIWebProgress.h"
@@ -199,6 +201,7 @@ struct ClientOpenWindowArgsParsed {
   nsCOMPtr<nsIURI> baseURI;
   nsCOMPtr<nsIPrincipal> principal;
   nsCOMPtr<nsIContentSecurityPolicy> csp;
+  RefPtr<ThreadsafeContentParentHandle> originContent;
 };
 
 void OpenWindow(const ClientOpenWindowArgsParsed& aArgsValidated,
@@ -219,15 +222,14 @@ void OpenWindow(const ClientOpenWindowArgsParsed& aArgsValidated,
     return;
   }
 
-  nsCOMPtr<nsIDOMChromeWindow> chromeWin = do_QueryInterface(browserWindow);
-  if (NS_WARN_IF(!chromeWin)) {
+  if (NS_WARN_IF(!nsGlobalWindowOuter::Cast(browserWindow)->IsChromeWindow())) {
     // XXXbz Can this actually happen?  Seems unlikely.
     aRv.ThrowTypeError("Unable to open window");
     return;
   }
 
-  nsCOMPtr<nsIBrowserDOMWindow> bwin;
-  chromeWin->GetBrowserDOMWindow(getter_AddRefs(bwin));
+  nsCOMPtr<nsIBrowserDOMWindow> bwin =
+      nsGlobalWindowOuter::Cast(browserWindow)->GetBrowserDOMWindow();
 
   if (NS_WARN_IF(!bwin)) {
     aRv.ThrowTypeError("Unable to open window");
@@ -284,6 +286,10 @@ void WaitForLoad(const ClientOpenWindowArgsParsed& aArgsValidated,
   loadState->SetFirstParty(true);
   loadState->SetLoadFlags(
       nsIWebNavigation::LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL);
+  loadState->SetTriggeringRemoteType(
+      aArgsValidated.originContent
+          ? aArgsValidated.originContent->GetRemoteType()
+          : NOT_REMOTE_TYPE);
 
   rv = aBrowsingContext->LoadURI(loadState, true);
   if (NS_FAILED(rv)) {
@@ -321,23 +327,31 @@ void GeckoViewOpenWindow(const ClientOpenWindowArgsParsed& aArgsValidated,
   promiseResult->Then(
       GetMainThreadSerialEventTarget(), __func__,
       [aArgsValidated, promise](nsString sessionId) {
-        nsresult rv;
-        nsCOMPtr<nsIWindowWatcher> wwatch =
-            do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
+        // Retrieve the primary content BrowsingContext using the GeckoSession
+        // ID. The chrome window is named the same as the ID of the GeckoSession
+        // it is associated with.
+        RefPtr<BrowsingContext> browsingContext;
+        nsresult rv = [&sessionId, &browsingContext]() -> nsresult {
+          nsresult rv;
+          nsCOMPtr<nsIWindowWatcher> wwatch =
+              do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
+          NS_ENSURE_SUCCESS(rv, rv);
+          nsCOMPtr<mozIDOMWindowProxy> chromeWindow;
+          rv = wwatch->GetWindowByName(sessionId, getter_AddRefs(chromeWindow));
+          NS_ENSURE_SUCCESS(rv, rv);
+          NS_ENSURE_TRUE(chromeWindow, NS_ERROR_FAILURE);
+          nsCOMPtr<nsIDocShellTreeOwner> treeOwner =
+              nsPIDOMWindowOuter::From(chromeWindow)->GetTreeOwner();
+          NS_ENSURE_TRUE(treeOwner, NS_ERROR_FAILURE);
+          rv = treeOwner->GetPrimaryContentBrowsingContext(
+              getter_AddRefs(browsingContext));
+          NS_ENSURE_SUCCESS(rv, rv);
+          NS_ENSURE_TRUE(browsingContext, NS_ERROR_FAILURE);
+          return NS_OK;
+        }();
         if (NS_WARN_IF(NS_FAILED(rv))) {
           promise->Reject(rv, __func__);
           return rv;
-        }
-
-        // Retrieve the browsing context by using the GeckoSession ID. The
-        // window is named the same as the ID of the GeckoSession it is
-        // associated with.
-        RefPtr<BrowsingContext> browsingContext =
-            static_cast<nsWindowWatcher*>(wwatch.get())
-                ->GetBrowsingContextByName(sessionId, false, nullptr);
-        if (NS_WARN_IF(!browsingContext)) {
-          promise->Reject(NS_ERROR_FAILURE, __func__);
-          return NS_ERROR_FAILURE;
         }
 
         WaitForLoad(aArgsValidated, browsingContext, promise);
@@ -352,7 +366,9 @@ void GeckoViewOpenWindow(const ClientOpenWindowArgsParsed& aArgsValidated,
 
 }  // anonymous namespace
 
-RefPtr<ClientOpPromise> ClientOpenWindow(const ClientOpenWindowArgs& aArgs) {
+RefPtr<ClientOpPromise> ClientOpenWindow(
+    ThreadsafeContentParentHandle* aOriginContent,
+    const ClientOpenWindowArgs& aArgs) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
 
   RefPtr<ClientOpPromise::Private> promise =
@@ -394,11 +410,13 @@ RefPtr<ClientOpPromise> ClientOpenWindow(const ClientOpenWindowArgs& aArgs) {
   if (aArgs.cspInfo().isSome()) {
     csp = CSPInfoToCSP(aArgs.cspInfo().ref(), nullptr);
   }
-  ClientOpenWindowArgsParsed argsValidated;
-  argsValidated.uri = uri;
-  argsValidated.baseURI = baseURI;
-  argsValidated.principal = principal;
-  argsValidated.csp = csp;
+  ClientOpenWindowArgsParsed argsValidated{
+      .uri = uri,
+      .baseURI = baseURI,
+      .principal = principal,
+      .csp = csp,
+      .originContent = aOriginContent,
+  };
 
 #ifdef MOZ_WIDGET_ANDROID
   // If we are on Android we are GeckoView.

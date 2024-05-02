@@ -6,7 +6,7 @@
 loadScript("dom/quota/test/common/system.js");
 
 function addTest(testFunction) {
-  const taskFunction = async function() {
+  const taskFunction = async function () {
     await enableStorageTesting();
 
     await testFunction();
@@ -23,7 +23,6 @@ function addTest(testFunction) {
 async function enableStorageTesting() {
   const prefsToSet = [
     ["dom.quotaManager.testing", true],
-    ["dom.storageManager.enabled", true],
     ["dom.simpleDB.enabled", true],
   ];
   if (Services.appinfo.OS === "WINNT") {

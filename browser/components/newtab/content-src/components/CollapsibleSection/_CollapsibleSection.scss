@@ -1,3 +1,5 @@
+/* stylelint-disable max-nesting-depth */
+
 .collapsible-section {
   padding: $section-vertical-padding $section-horizontal-padding;
 
@@ -7,6 +9,7 @@
     &.has-subtitle {
       display: flex;
       flex-direction: column;
+
       @media (min-width: $break-point-large) {
         flex-direction: row;
         align-items: baseline;
@@ -80,6 +83,7 @@
   .section-body {
     // This is so the top sites favicon and card dropshadows don't get clipped during animation:
     $horizontal-padding: 7px;
+
     margin: 0 (-$horizontal-padding);
     padding: 0 $horizontal-padding;
 

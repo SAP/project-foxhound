@@ -4,38 +4,18 @@
 
 /**
  * Redux actions for the editor tabs
- * @module actions/tabs
  */
 
 import { removeDocument } from "../utils/editor";
 import { selectSource } from "./sources";
 
-import {
-  getSourceByURL,
-  getSourceTabs,
-  getNewSelectedSourceId,
-} from "../selectors";
+import { getSelectedLocation, getSourcesForTabs } from "../selectors";
 
-export function updateTab(source, framework) {
-  const { url, id: sourceId, isOriginal } = source;
-
-  return {
-    type: "UPDATE_TAB",
-    url,
-    framework,
-    isOriginal,
-    sourceId,
-  };
-}
-
-export function addTab(source) {
-  const { url, id: sourceId, isOriginal } = source;
-
+export function addTab(source, sourceActor) {
   return {
     type: "ADD_TAB",
-    url,
-    isOriginal,
-    sourceId,
+    source,
+    sourceActor,
   };
 }
 
@@ -55,37 +35,70 @@ export function moveTabBySourceId(sourceId, tabIndex) {
   };
 }
 
-/**
- * @memberof actions/tabs
- * @static
- */
-export function closeTab(cx, source, reason = "click") {
-  return ({ dispatch, getState, client }) => {
-    removeDocument(source.id);
+export function closeTab(source) {
+  return closeTabs([source]);
+}
 
-    const tabs = getSourceTabs(getState());
-    dispatch({ type: "CLOSE_TAB", source });
+export function closeTabs(sources) {
+  return ({ dispatch, getState }) => {
+    if (!sources.length) {
+      return;
+    }
 
-    const sourceId = getNewSelectedSourceId(getState(), tabs);
-    dispatch(selectSource(cx, sourceId));
+    for (const source of sources) {
+      removeDocument(source.id);
+    }
+
+    // If we are removing the tabs for the selected location,
+    // we need to select another source
+    const newSourceToSelect = getNewSourceToSelect(getState(), sources);
+
+    dispatch({ type: "CLOSE_TABS", sources });
+
+    dispatch(selectSource(newSourceToSelect));
   };
 }
 
 /**
- * @memberof actions/tabs
- * @static
+ * Compute the potential new source to select while closing tabs for a given set of sources.
+ *
+ * @param {Object} state
+ *        Redux state object.
+ * @param {Array<Source>} closedTabsSources
+ *        Ordered list of source object for which tabs should be closed.
+ *        Should be a consecutive list of source matching the order of tabs reducer.
  */
-export function closeTabs(cx, urls) {
-  return ({ dispatch, getState, client }) => {
-    const sources = urls
-      .map(url => getSourceByURL(getState(), url))
-      .filter(Boolean);
+function getNewSourceToSelect(state, closedTabsSources) {
+  const selectedLocation = getSelectedLocation(state);
+  // Do not try to select any source if none was selected before
+  if (!selectedLocation) {
+    return null;
+  }
+  // Keep selecting the same source if we aren't removing the currently selected source
+  if (!closedTabsSources.includes(selectedLocation.source)) {
+    return selectedLocation.source;
+  }
+  const tabsSources = getSourcesForTabs(state);
+  // Assume that `sources` is a consecutive list of tab's sources
+  // ordered in the same way as `tabsSources`.
+  const lastRemovedTabSource = closedTabsSources.at(-1);
+  const lastRemovedTabIndex = tabsSources.indexOf(lastRemovedTabSource);
+  if (lastRemovedTabIndex == -1) {
+    // This is unexpected, do not try to select any source.
+    return null;
+  }
+  // If there is some tabs after the last removed tab, select the first one.
+  if (lastRemovedTabIndex + 1 < tabsSources.length) {
+    return tabsSources[lastRemovedTabIndex + 1];
+  }
 
-    const tabs = getSourceTabs(getState());
-    sources.map(source => removeDocument(source.id));
-    dispatch({ type: "CLOSE_TABS", sources });
+  // If there is some tabs before the first removed tab, select the last one.
+  const firstRemovedTabIndex =
+    lastRemovedTabIndex - (closedTabsSources.length - 1);
+  if (firstRemovedTabIndex > 0) {
+    return tabsSources[firstRemovedTabIndex - 1];
+  }
 
-    const sourceId = getNewSelectedSourceId(getState(), tabs);
-    dispatch(selectSource(cx, sourceId));
-  };
+  // It looks like we removed all the tabs
+  return null;
 }

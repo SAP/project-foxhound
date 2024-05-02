@@ -2,6 +2,28 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
+const { FirefoxProfileMigrator } = ChromeUtils.importESModule(
+  "resource:///modules/FirefoxProfileMigrator.sys.mjs"
+);
+const { InternalTestingProfileMigrator } = ChromeUtils.importESModule(
+  "resource:///modules/InternalTestingProfileMigrator.sys.mjs"
+);
+const { LoginCSVImport } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginCSVImport.sys.mjs"
+);
+const { PasswordFileMigrator } = ChromeUtils.importESModule(
+  "resource:///modules/FileMigrators.sys.mjs"
+);
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
+// These preferences are set to true anytime MigratorBase.migrate
+// successfully completes a migration of their type.
+const BOOKMARKS_PREF = "browser.migrate.interactions.bookmarks";
+const CSV_PASSWORDS_PREF = "browser.migrate.interactions.csvpasswords";
+const HISTORY_PREF = "browser.migrate.interactions.history";
+const PASSWORDS_PREF = "browser.migrate.interactions.passwords";
 
 function readFile(file) {
   let stream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
@@ -80,10 +102,11 @@ function createSubDir(dir, subDirName) {
   return subDir;
 }
 
-function promiseMigrator(name, srcDir, targetDir) {
-  let migrator = Cc[
-    "@mozilla.org/profile/migrator;1?app=browser&type=firefox"
-  ].createInstance(Ci.nsISupports).wrappedJSObject;
+async function promiseMigrator(name, srcDir, targetDir) {
+  // As the FirefoxProfileMigrator is a startup-only migrator, we import its
+  // module and instantiate it directly rather than going through MigrationUtils,
+  // to bypass that availability check.
+  let migrator = new FirefoxProfileMigrator();
   let migrators = migrator._getResourcesInternal(srcDir, targetDir);
   for (let m of migrators) {
     if (m.name == name) {
@@ -262,4 +285,152 @@ add_task(async function test_times_migration() {
   Assert.ok(times.reset >= earliest && times.reset <= latest);
   // and it should have left the creation time alone.
   Assert.equal(times.created, 1234);
+});
+
+/**
+ * Tests that when importing bookmarks, history, or passwords, we
+ * set interaction prefs. These preferences are sent using
+ * TelemetryEnvironment.sys.mjs.
+ */
+add_task(async function test_interaction_telemetry() {
+  let testingMigrator = await MigrationUtils.getMigrator(
+    InternalTestingProfileMigrator.key
+  );
+
+  Services.prefs.clearUserPref(BOOKMARKS_PREF);
+  Services.prefs.clearUserPref(HISTORY_PREF);
+  Services.prefs.clearUserPref(PASSWORDS_PREF);
+
+  // Ensure that these prefs start false.
+  Assert.ok(!Services.prefs.getBoolPref(BOOKMARKS_PREF));
+  Assert.ok(!Services.prefs.getBoolPref(HISTORY_PREF));
+  Assert.ok(!Services.prefs.getBoolPref(PASSWORDS_PREF));
+
+  await testingMigrator.migrate(
+    MigrationUtils.resourceTypes.BOOKMARKS,
+    false,
+    InternalTestingProfileMigrator.testProfile
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(BOOKMARKS_PREF),
+    "Bookmarks pref should have been set."
+  );
+  Assert.ok(!Services.prefs.getBoolPref(HISTORY_PREF));
+  Assert.ok(!Services.prefs.getBoolPref(PASSWORDS_PREF));
+
+  await testingMigrator.migrate(
+    MigrationUtils.resourceTypes.HISTORY,
+    false,
+    InternalTestingProfileMigrator.testProfile
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(BOOKMARKS_PREF),
+    "Bookmarks pref should have been set."
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(HISTORY_PREF),
+    "History pref should have been set."
+  );
+  Assert.ok(!Services.prefs.getBoolPref(PASSWORDS_PREF));
+
+  await testingMigrator.migrate(
+    MigrationUtils.resourceTypes.PASSWORDS,
+    false,
+    InternalTestingProfileMigrator.testProfile
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(BOOKMARKS_PREF),
+    "Bookmarks pref should have been set."
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(HISTORY_PREF),
+    "History pref should have been set."
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(PASSWORDS_PREF),
+    "Passwords pref should have been set."
+  );
+
+  // Now make sure that we still record these if we migrate a
+  // series of resources at the same time.
+  Services.prefs.clearUserPref(BOOKMARKS_PREF);
+  Services.prefs.clearUserPref(HISTORY_PREF);
+  Services.prefs.clearUserPref(PASSWORDS_PREF);
+
+  await testingMigrator.migrate(
+    MigrationUtils.resourceTypes.ALL,
+    false,
+    InternalTestingProfileMigrator.testProfile
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(BOOKMARKS_PREF),
+    "Bookmarks pref should have been set."
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(HISTORY_PREF),
+    "History pref should have been set."
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(PASSWORDS_PREF),
+    "Passwords pref should have been set."
+  );
+});
+
+/**
+ * Tests that when importing passwords from a CSV file using the
+ * migration wizard, we set an interaction pref. This preference
+ * is sent using TelemetryEnvironment.sys.mjs.
+ */
+add_task(async function test_csv_password_interaction_telemetry() {
+  let sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => {
+    sandbox.restore();
+  });
+
+  let testingMigrator = new PasswordFileMigrator();
+
+  Services.prefs.clearUserPref(CSV_PASSWORDS_PREF);
+  Assert.ok(!Services.prefs.getBoolPref(CSV_PASSWORDS_PREF));
+
+  sandbox.stub(LoginCSVImport, "importFromCSV").resolves([]);
+  await testingMigrator.migrate("some/fake/path.csv");
+
+  Assert.ok(
+    Services.prefs.getBoolPref(CSV_PASSWORDS_PREF),
+    "CSV import pref should have been set."
+  );
+
+  sandbox.restore();
+});
+
+/**
+ * Tests that interaction preferences used for TelemetryEnvironment are
+ * persisted across profile resets.
+ */
+add_task(async function test_interaction_telemetry_persist_across_reset() {
+  const PREFS = `
+user_pref("${BOOKMARKS_PREF}", true);
+user_pref("${CSV_PASSWORDS_PREF}", true);
+user_pref("${HISTORY_PREF}", true);
+user_pref("${PASSWORDS_PREF}", true);
+  `;
+
+  let [srcDir, targetDir] = getTestDirs();
+  writeToFile(srcDir, "prefs.js", PREFS);
+
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
+  Assert.ok(ok, "callback should have been true");
+
+  let prefsPath = PathUtils.join(targetDir.path, "prefs.js");
+  Assert.ok(await IOUtils.exists(prefsPath), "Prefs should have been written.");
+  let writtenPrefsString = await IOUtils.readUTF8(prefsPath);
+  for (let prefKey of [
+    BOOKMARKS_PREF,
+    CSV_PASSWORDS_PREF,
+    HISTORY_PREF,
+    PASSWORDS_PREF,
+  ]) {
+    const EXPECTED = `user_pref("${prefKey}", true);`;
+    Assert.ok(writtenPrefsString.includes(EXPECTED), "Found persisted pref.");
+  }
 });

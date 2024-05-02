@@ -7,41 +7,42 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const Services = require("Services");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   connect,
-} = require("devtools/client/shared/redux/visibility-handler-connect");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   fetchNetworkUpdatePacket,
   parseFormData,
   parseJSON,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   sortObjectKeys,
-} = require("devtools/client/netmonitor/src/utils/sort-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/sort-utils.js");
 const {
   FILTER_SEARCH_DELAY,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 const {
   updateFormDataSections,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
-const Actions = require("devtools/client/netmonitor/src/actions/index");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
+const Actions = require("resource://devtools/client/netmonitor/src/actions/index.js");
 
 // Components
 const PropertiesView = createFactory(
-  require("devtools/client/netmonitor/src/components/request-details/PropertiesView")
+  require("resource://devtools/client/netmonitor/src/components/request-details/PropertiesView.js")
 );
 const SearchBox = createFactory(
-  require("devtools/client/shared/components/SearchBox")
+  require("resource://devtools/client/shared/components/SearchBox.js")
 );
 
-loader.lazyGetter(this, "SourcePreview", function() {
+loader.lazyGetter(this, "SourcePreview", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/previews/SourcePreview")
+    require("resource://devtools/client/netmonitor/src/components/previews/SourcePreview.js")
   );
 });
 
@@ -78,9 +79,8 @@ class RequestPanel extends Component {
     };
 
     this.toggleRawRequestPayload = this.toggleRawRequestPayload.bind(this);
-    this.renderRawRequestPayloadBtn = this.renderRawRequestPayloadBtn.bind(
-      this
-    );
+    this.renderRawRequestPayloadBtn =
+      this.renderRawRequestPayloadBtn.bind(this);
   }
 
   componentDidMount() {
@@ -91,7 +91,8 @@ class RequestPanel extends Component {
     updateFormDataSections(this.props);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { request, connector } = nextProps;
     fetchNetworkUpdatePacket(connector.requestData, request, [
       "requestPostData",
@@ -190,7 +191,7 @@ class RequestPanel extends Component {
     const { request, targetSearchResult } = this.props;
     const { filterText, rawRequestPayloadDisplayed } = this.state;
     const { formDataSections, mimeType, requestPostData } = request;
-    const postData = requestPostData ? requestPostData.postData.text : null;
+    const postData = requestPostData ? requestPostData.postData?.text : null;
 
     if ((!formDataSections || formDataSections.length === 0) && !postData) {
       return div({ className: "empty-notice" }, REQUEST_EMPTY_TEXT);
@@ -204,7 +205,7 @@ class RequestPanel extends Component {
     let error;
 
     // Form Data section
-    if (formDataSections && formDataSections.length > 0) {
+    if (formDataSections && formDataSections.length) {
       const sections = formDataSections.filter(str => /\S/.test(str)).join("&");
       component = PropertiesView;
       componentProps = {
@@ -227,11 +228,15 @@ class RequestPanel extends Component {
     if (postData && limit <= postData.length) {
       error = REQUEST_TRUNCATED;
     }
-
     if (formDataSections && formDataSections.length === 0 && postData) {
       if (!error) {
-        const json = parseJSON(postData).json;
-        if (json) {
+        const jsonParsedPostData = parseJSON(postData);
+        const { json, strippedChars } = jsonParsedPostData;
+        // If XSSI characters were present in the request just display the raw
+        // data because a request should never have XSSI escape characters
+        if (strippedChars) {
+          hasFormattedDisplay = false;
+        } else if (json) {
           component = PropertiesView;
           componentProps = {
             object: sortObjectKeys(json),

@@ -28,7 +28,10 @@ bool CrashReporterHost::GenerateCrashReport(base::ProcessId aPid) {
   if (!TakeCrashedChildMinidump(aPid, nullptr)) {
     return false;
   }
-  return FinalizeCrashReport();
+
+  FinalizeCrashReport();
+  RecordCrash(mProcessType, nsICrashService::CRASH_TYPE_CRASH, mDumpID);
+  return true;
 }
 
 RefPtr<nsIFile> CrashReporterHost::TakeCrashedChildMinidump(
@@ -57,7 +60,7 @@ bool CrashReporterHost::AdoptMinidump(nsIFile* aFile,
   return true;
 }
 
-bool CrashReporterHost::FinalizeCrashReport() {
+void CrashReporterHost::FinalizeCrashReport() {
   MOZ_ASSERT(!mFinalized);
   MOZ_ASSERT(HasMinidump());
 
@@ -70,11 +73,13 @@ bool CrashReporterHost::FinalizeCrashReport() {
       nsDependentCString(startTime);
 
   CrashReporter::WriteExtraFile(mDumpID, mExtraAnnotations);
-
-  RecordCrash(mProcessType, nsICrashService::CRASH_TYPE_CRASH, mDumpID);
-
   mFinalized = true;
-  return true;
+}
+
+void CrashReporterHost::DeleteCrashReport() {
+  if (mFinalized && HasMinidump()) {
+    CrashReporter::DeleteMinidumpFilesForID(mDumpID, Some(u"browser"_ns));
+  }
 }
 
 /* static */
@@ -170,20 +175,6 @@ void CrashReporterHost::AddAnnotation(CrashReporter::Annotation aKey,
 void CrashReporterHost::AddAnnotation(CrashReporter::Annotation aKey,
                                       const nsACString& aValue) {
   mExtraAnnotations[aKey] = aValue;
-}
-
-bool CrashReporterHost::IsLikelyOOM() {
-  // The data is only populated during the call to `FinalizeCrashReport()`.
-  MOZ_ASSERT(mFinalized);
-
-  // If `OOMAllocationSize` was set, we know that the crash happened
-  // because an allocation failed (`malloc` returned `nullptr`).
-  //
-  // As Unix systems generally allow `malloc` to return a non-null value
-  // even when no virtual memory is available, this doesn't cover all
-  // cases of OOM under Unix (far from it).
-  return mExtraAnnotations[CrashReporter::Annotation::OOMAllocationSize]
-             .Length() > 0;
 }
 
 }  // namespace ipc

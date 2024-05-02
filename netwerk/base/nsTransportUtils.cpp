@@ -3,11 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Mutex.h"
-#include "nsTransportUtils.h"
+#include "nsCOMPtr.h"
 #include "nsITransport.h"
 #include "nsProxyRelease.h"
+#include "nsSocketTransportService2.h"
 #include "nsThreadUtils.h"
-#include "nsCOMPtr.h"
+#include "nsTransportUtils.h"
 
 using namespace mozilla;
 
@@ -39,7 +40,7 @@ class nsTransportEventSinkProxy : public nsITransportEventSink {
  public:
   nsITransportEventSink* mSink;
   nsCOMPtr<nsIEventTarget> mTarget;
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
   nsTransportStatusEvent* mLastEvent;
 };
 
@@ -55,7 +56,13 @@ class nsTransportStatusEvent : public Runnable {
         mProgress(progress),
         mProgressMax(progressMax) {}
 
-  ~nsTransportStatusEvent() = default;
+  ~nsTransportStatusEvent() {
+    auto ReleaseTransport = [transport(std::move(mTransport))]() mutable {};
+    if (!net::OnSocketThread()) {
+      net::gSocketTransportService->Dispatch(NS_NewRunnableFunction(
+          "nsHttpConnection::~nsHttpConnection", std::move(ReleaseTransport)));
+    }
+  }
 
   NS_IMETHOD Run() override {
     // since this event is being handled, we need to clear the proxy's ref.

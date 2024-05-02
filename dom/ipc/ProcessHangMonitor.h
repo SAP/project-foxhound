@@ -12,6 +12,7 @@
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "nsIRemoteTab.h"
+#include "nsIThread.h"
 #include "nsStringFwd.h"
 
 class nsIRunnable;
@@ -25,10 +26,6 @@ class ContentParent;
 class BrowserParent;
 struct CancelContentJSOptions;
 }  // namespace dom
-
-namespace layers {
-struct LayersObserverEpoch;
-}  // namespace layers
 
 class PProcessHangMonitorParent;
 
@@ -44,23 +41,28 @@ class ProcessHangMonitor final : public nsIObserver {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
-  static PProcessHangMonitorParent* AddProcess(
+  static already_AddRefed<PProcessHangMonitorParent> AddProcess(
       dom::ContentParent* aContentParent);
   static void RemoveProcess(PProcessHangMonitorParent* aParent);
 
   static void ClearHang();
 
-  static void PaintWhileInterruptingJS(
-      PProcessHangMonitorParent* aParent, dom::BrowserParent* aTab,
-      const layers::LayersObserverEpoch& aEpoch);
-  static void ClearPaintWhileInterruptingJS(
-      const layers::LayersObserverEpoch& aEpoch);
+  static void PaintWhileInterruptingJS(PProcessHangMonitorParent* aParent,
+                                       dom::BrowserParent* aTab);
+
+  static void UnloadLayersWhileInterruptingJS(
+      PProcessHangMonitorParent* aParent, dom::BrowserParent* aTab);
+
+  static void ClearPaintWhileInterruptingJS();
   static void MaybeStartPaintWhileInterruptingJS();
 
   static void CancelContentJSExecutionIfRunning(
       PProcessHangMonitorParent* aParent, dom::BrowserParent* aTab,
       nsIRemoteTab::NavigationType aNavigationType,
       const dom::CancelContentJSOptions& aCancelContentJSOptions);
+
+  static void SetMainThreadQoSPriority(PProcessHangMonitorParent* aParent,
+                                       nsIThread::QoSPriority aQoSPriority);
 
   enum SlowScriptAction {
     Continue,
@@ -79,7 +81,7 @@ class ProcessHangMonitor final : public nsIObserver {
   void InitiateCPOWTimeout();
   bool ShouldTimeOutCPOWs();
 
-  void Dispatch(already_AddRefed<nsIRunnable> aRunnable);
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable);
   bool IsOnThread();
 
  private:

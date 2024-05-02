@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/SVGFEImageElement.h"
 
-#include "mozilla/EventStates.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
@@ -25,8 +24,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FEImage)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFEImageElement::WrapNode(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {
@@ -51,7 +49,7 @@ SVGFEImageElement::SVGFEImageElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : SVGFEImageElementBase(std::move(aNodeInfo)), mImageAnimationMode(0) {
   // We start out broken
-  AddStatesSilently(NS_EVENT_STATE_BROKEN);
+  AddStatesSilently(ElementState::BROKEN);
 }
 
 SVGFEImageElement::~SVGFEImageElement() { nsImageLoadingContent::Destroy(); }
@@ -103,19 +101,24 @@ void SVGFEImageElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
 //----------------------------------------------------------------------
 // nsIContent methods:
 
-NS_IMETHODIMP_(bool)
-SVGFEImageElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sGraphicsMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGFEImageElementBase::IsAttributeMapped(name);
+bool SVGFEImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                       const nsAString& aValue,
+                                       nsIPrincipal* aMaybeScriptedPrincipal,
+                                       nsAttrValue& aResult) {
+  if (aNamespaceID == kNameSpaceID_None &&
+      aAttribute == nsGkAtoms::crossorigin) {
+    ParseCORSValue(aValue, aResult);
+    return true;
+  }
+  return SVGFEImageElementBase::ParseAttribute(
+      aNamespaceID, aAttribute, aValue, aMaybeScriptedPrincipal, aResult);
 }
 
-nsresult SVGFEImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                         const nsAttrValue* aValue,
-                                         const nsAttrValue* aOldValue,
-                                         nsIPrincipal* aSubjectPrincipal,
-                                         bool aNotify) {
+void SVGFEImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                     const nsAttrValue* aValue,
+                                     const nsAttrValue* aOldValue,
+                                     nsIPrincipal* aSubjectPrincipal,
+                                     bool aNotify) {
   if (aName == nsGkAtoms::href && (aNamespaceID == kNameSpaceID_XLink ||
                                    aNamespaceID == kNameSpaceID_None)) {
     if (aValue) {
@@ -124,6 +127,12 @@ nsresult SVGFEImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       }
     } else {
       CancelImageRequests(aNotify);
+    }
+  } else if (aNamespaceID == kNameSpaceID_None &&
+             aName == nsGkAtoms::crossorigin) {
+    if (aNotify && GetCORSMode() != AttrValueToCORSMode(aOldValue) &&
+        ShouldLoadImage()) {
+      ForceReload(aNotify, IgnoreErrors());
     }
   }
 
@@ -166,11 +175,6 @@ void SVGFEImageElement::UnbindFromTree(bool aNullParent) {
   SVGFEImageElementBase::UnbindFromTree(aNullParent);
 }
 
-EventStates SVGFEImageElement::IntrinsicState() const {
-  return SVGFEImageElementBase::IntrinsicState() |
-         nsImageLoadingContent::ImageState();
-}
-
 void SVGFEImageElement::DestroyContent() {
   nsImageLoadingContent::Destroy();
   SVGFEImageElementBase::DestroyContent();
@@ -185,6 +189,13 @@ already_AddRefed<DOMSVGAnimatedString> SVGFEImageElement::Href() {
   return mStringAttributes[HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
+}
+
+//----------------------------------------------------------------------
+//  nsImageLoadingContent methods:
+
+CORSMode SVGFEImageElement::GetCORSMode() {
+  return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
 }
 
 //----------------------------------------------------------------------
@@ -270,10 +281,8 @@ bool SVGFEImageElement::OutputIsTainted(const nsTArray<bool>& aInputsAreTainted,
     return true;
   }
 
-  int32_t corsmode;
-  if (NS_SUCCEEDED(currentRequest->GetCORSMode(&corsmode)) &&
-      corsmode != CORS_NONE) {
-    // If CORS was used to load the image, the page is allowed to read from it.
+  // If CORS was used to load the image, the page is allowed to read from it.
+  if (nsLayoutUtils::ImageRequestUsesCORS(currentRequest)) {
     return false;
   }
 
@@ -352,12 +361,10 @@ void SVGFEImageElement::Notify(imgIRequest* aRequest, int32_t aType,
   if (aType == imgINotificationObserver::LOAD_COMPLETE ||
       aType == imgINotificationObserver::FRAME_UPDATE ||
       aType == imgINotificationObserver::SIZE_AVAILABLE) {
-    if (GetParent() && GetParent()->IsSVGElement(nsGkAtoms::filter)) {
-      SVGObserverUtils::InvalidateDirectRenderingObservers(
-          static_cast<SVGFilterElement*>(GetParent()));
+    if (auto* filter = SVGFilterElement::FromNodeOrNull(GetParent())) {
+      SVGObserverUtils::InvalidateDirectRenderingObservers(filter);
     }
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -4,10 +4,11 @@
 
 :root {
   --addon-icon-size: 32px;
+  --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
   --main-margin-start: 28px;
   --section-width: 664px;
   --sidebar-width: var(--in-content-sidebar-width);
-  --z-index-sticky-container: 1;
+  --z-index-sticky-container: 5;
   --z-index-popup: 10;
 }
 
@@ -75,7 +76,7 @@ body {
   display: inline-block;
   min-width: 20px;
   background-color: var(--in-content-accent-color);
-  color: #fff;
+  color: var(--in-content-primary-button-text-color);
   font-weight: bold;
   /* Use a large border-radius to get semi-circles on the sides. */
   border-radius: 1000px;
@@ -167,7 +168,7 @@ search-addons > search-textbox {
 
 /* Plugins aren't yet disabled by safemode (bug 342333),
    so don't show that warning when viewing plugins. */
-#page-header[current-param="plugin"] message-bar[warning-type="safe-mode"] {
+#page-header[current-param="plugin"] moz-message-bar[warning-type="safe-mode"] {
   display: none;
 }
 
@@ -191,8 +192,6 @@ message-bar-stack > * {
 /* List sections */
 
 .list-section-heading {
-  font-size: 17px;
-  font-weight: 600;
   margin-bottom: 16px;
 }
 
@@ -257,7 +256,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
   margin-top: 0px;
 }
 
-.update-postponed-bar + .addon-card-message {
+.update-postponed-bar + .addon-card-message:not([hidden]) {
   /* Prevent the small overlapping between the two message bars
    * when they are both visible at the same time one after the
    * other on the same addon card */
@@ -300,7 +299,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .addon-name {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: var(--font-weight-bold);
   line-height: 22px;
   margin: 0;
   margin-inline-end: 8px;
@@ -357,8 +356,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .theme-enable-button {
   min-width: auto;
-  height: auto;
-  font-size: 13px;
+  font-size: var(--font-size-small);
   min-height: auto;
   height: 24px;
   margin: 0;
@@ -369,7 +367,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 .addon-description {
   font-size: 14px;
   line-height: 20px;
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
   font-weight: 400;
 }
 
@@ -448,20 +446,6 @@ recommended-addon-card .addon-description:not(:empty) {
   margin: 24px 0;
 }
 
-.discopane-notice-content {
-  padding-block: 6px;
-}
-
-.discopane-notice-content > span {
-  flex-grow: 1;
-  margin-inline-end: 4px;
-}
-
-.discopane-notice-content > button {
-  flex-grow: 0;
-  flex-shrink: 0;
-}
-
 .view-footer {
   text-align: center;
 }
@@ -479,11 +463,41 @@ recommended-addon-card .addon-description:not(:empty) {
 }
 
 addon-details {
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
 }
 
-.addon-detail-description {
+.addon-detail-description-wrapper {
   margin: 16px 0;
+}
+
+.addon-detail-description-collapse .addon-detail-description {
+  max-height: 20rem;
+  overflow: hidden;
+}
+
+/* Include button to beat out .button-link which is below this */
+button.addon-detail-description-toggle {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  font-weight: normal;
+  gap: 4px;
+}
+
+.addon-detail-description-toggle::after {
+  content: "";
+  display: block;
+  background-image: url("chrome://global/skin/icons/arrow-up-12.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  width: 12px;
+  height: 12px;
+}
+
+.addon-detail-description-collapse .addon-detail-description-toggle::after {
+  transform: scaleY(-1);
 }
 
 .addon-detail-contribute {
@@ -528,7 +542,7 @@ addon-details {
 
 .addon-detail-row.addon-detail-help-row {
   display: block;
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
   padding-top: 4px;
   padding-bottom: var(--card-padding);
   border: none;
@@ -583,32 +597,19 @@ addon-details {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--in-content-accent-color);;
+  background-color: var(--in-content-accent-color);;
 }
 
-panel-item {
-  -moz-context-properties: fill;
-  fill: currentColor;
+panel-item[action="remove"]::part(button) {
+  background-image: url("chrome://global/skin/icons/delete.svg");
 }
 
-panel-item[action="remove"] {
-  --icon: url("chrome://global/skin/icons/delete.svg");
+panel-item[action="install-update"]::part(button) {
+  background-image: url("chrome://global/skin/icons/update-icon.svg");
 }
 
-panel-item[action="install-update"] {
-  --icon: url("chrome://global/skin/icons/update-icon.svg");
-}
-
-panel-item[action="report"] {
-  --icon: url(chrome://global/skin/icons/warning.svg);
-}
-
-panel-item-separator {
-  display: block;
-  height: 1px;
-  background: var(--in-content-box-border-color);
-  padding: 0;
-  margin: 6px 0;
+panel-item[action="report"]::part(button) {
+  background-image: url(chrome://global/skin/icons/warning.svg);
 }
 
 .hide-amo-link .amo-link-container {
@@ -620,18 +621,18 @@ panel-item-separator {
   background: none !important;
   padding: 0;
   margin: 0;
-  color: var(--in-content-link-color) !important;
+  color: var(--link-color) !important;
   cursor: pointer;
   border: none;
 }
 
 .button-link:hover {
-  color: var(--in-content-link-color-hover) !important;
+  color: var(--link-color-hover) !important;
   text-decoration: underline;
 }
 
 .button-link:active {
-  color: var(--in-content-link-color-active) !important;
+  color: var(--link-color-active) !important;
   text-decoration: none;
 }
 
@@ -665,13 +666,6 @@ addon-permissions-list > .addon-detail-row {
 
 .addon-permissions-list > li:dir(rtl) {
   background-position-x: right 0;
-}
-
-/* justify the permission toggle */
-li.permission-info > label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 /* using a list-style-image prevents aligning the image */
@@ -735,10 +729,6 @@ button.tab-button:-moz-focusring {
   box-shadow: none;
 }
 
-panel-list {
-  font: menu;
-}
-
 section:not(:empty) ~ #empty-addons-message {
   display: none;
 }
@@ -755,56 +745,6 @@ section:not(:empty) ~ #empty-addons-message {
     /* move the badged dot into the top-end (right in ltr, left in rtl) corner. */
     margin-top: -20px;
   }
-}
-
-/* Colorways Section */
-
-.monochromatic-addon-list section {
-  display: flex;
-  flex-flow: row wrap;
-  justify-content: space-between;
-}
-
-.monochromatic-addon-list .header-name,
-.monochromatic-addon-list .list-section-subheading {
-  flex-basis: 100%;
-}
-
-.monochromatic-addon-list addon-card .card {
-  box-sizing: border-box;
-  height: calc(100% - 16px);
-  overflow: clip;
-  width: calc((var(--section-width) / 3) - 16px);
-}
-
-.monochromatic-addon-list addon-card .card .card-contents {
-  white-space: normal;
-}
-
-/* Remove disabled add-on fade */
-.monochromatic-addon-list addon-card:not([expanded]) > .addon.card[active="false"] {
-  opacity: unset;
-}
-
-.monochromatic-addon-list .addon-name-container {
-  align-items: start;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: 3em 1fr;
-  row-gap: 16px;
-}
-
-.monochromatic-addon-list .addon-name-container .addon-name {
-  grid-column-end: span 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.monochromatic-addon-list .addon-name-container .spacer {
-  display: none;
 }
 
 .permission-header > .addon-sitepermissions-host {

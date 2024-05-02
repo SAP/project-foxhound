@@ -1,7 +1,6 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function getString(clipboard) {
   var str = "";
@@ -11,13 +10,13 @@ function getString(clipboard) {
     Ci.nsITransferable
   );
   trans.init(null);
-  trans.addDataFlavor("text/unicode");
+  trans.addDataFlavor("text/plain");
 
   clipboard.getData(trans, Ci.nsIClipboard.kGlobalClipboard);
 
   try {
     var data = {};
-    trans.getTransferData("text/unicode", data);
+    trans.getTransferData("text/plain", data);
 
     if (data) {
       data = data.value.QueryInterface(Ci.nsISupportsString);

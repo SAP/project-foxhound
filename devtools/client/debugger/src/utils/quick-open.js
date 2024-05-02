@@ -4,10 +4,10 @@
 
 import { endTruncateStr } from "./utils";
 import {
-  isPretty,
   getFilename,
   getSourceClassnames,
   getSourceQueryString,
+  getRelativeUrl,
 } from "./source";
 
 export const MODIFIERS = {
@@ -42,30 +42,43 @@ export function parseLineColumn(query) {
   const [, line, column] = query.split(":");
   const lineNumber = parseInt(line, 10);
   const columnNumber = parseInt(column, 10);
-  if (!isNaN(lineNumber)) {
-    return {
-      line: lineNumber,
-      ...(!isNaN(columnNumber) ? { column: columnNumber } : null),
-    };
+  if (isNaN(lineNumber)) {
+    return null;
   }
+  if (isNaN(columnNumber)) {
+    return { line: lineNumber };
+  }
+  // columnNumber here is the user input value which is 1-based.
+  // Whereas in location objects, line is 1-based, and column is 0-based.
+  return {
+    line: lineNumber,
+    column: columnNumber - 1,
+  };
 }
 
-export function formatSourcesForList(source, tabUrls) {
+export function formatSourceForList(
+  source,
+  hasTabOpened,
+  isBlackBoxed,
+  projectDirectoryRoot
+) {
   const title = getFilename(source);
-  const relativeUrlWithQuery = `${source.relativeUrl}${getSourceQueryString(
-    source
-  ) || ""}`;
+  const relativeUrlWithQuery = `${getRelativeUrl(
+    source,
+    projectDirectoryRoot
+  )}${getSourceQueryString(source) || ""}`;
   const subtitle = endTruncateStr(relativeUrlWithQuery, 100);
   const value = relativeUrlWithQuery;
   return {
     value,
     title,
     subtitle,
-    icon: tabUrls.has(source.url)
+    icon: hasTabOpened
       ? "tab result-item-icon"
-      : `result-item-icon ${getSourceClassnames(source)}`,
+      : `result-item-icon ${getSourceClassnames(source, null, isBlackBoxed)}`,
     id: source.id,
     url: source.url,
+    source,
   };
 }
 
@@ -76,18 +89,6 @@ export function formatSymbol(symbol) {
     subtitle: `${symbol.location.start.line}`,
     value: symbol.name,
     location: symbol.location,
-  };
-}
-
-export function formatSymbols(symbols) {
-  if (!symbols || symbols.loading) {
-    return { functions: [] };
-  }
-
-  const { functions } = symbols;
-
-  return {
-    functions: functions.map(formatSymbol),
   };
 }
 
@@ -109,18 +110,4 @@ export function formatShortcutResults() {
       id: ":",
     },
   ];
-}
-
-export function formatSources(sources, tabUrls) {
-  const formattedSources = [];
-
-  for (let i = 0; i < sources.length; ++i) {
-    const source = sources[i];
-
-    if (!!source.relativeUrl && !isPretty(source)) {
-      formattedSources.push(formatSourcesForList(source, tabUrls));
-    }
-  }
-
-  return formattedSources;
 }

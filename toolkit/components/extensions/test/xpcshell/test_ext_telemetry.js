@@ -1,21 +1,21 @@
 "use strict";
 
-const { TelemetryArchive } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryArchive.jsm"
+const { TelemetryArchive } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryArchive.sys.mjs"
 );
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
-
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TelemetryArchiveTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryArchiveTesting.sys.mjs"
+);
+
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 // All tests run privileged unless otherwise specified not to.
@@ -131,7 +131,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
   });
 
   add_task(async function test_telemetry_scalar_add_invalid_keyed_scalar() {
-    let { messages } = await promiseConsoleOutput(async function() {
+    let { messages } = await promiseConsoleOutput(async function () {
       await run({
         backgroundScript: async () => {
           await browser.telemetry.scalarAdd(
@@ -192,7 +192,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
   });
 
   add_task(async function test_telemetry_scalar_set_unknown_name() {
-    let { messages } = await promiseConsoleOutput(async function() {
+    let { messages } = await promiseConsoleOutput(async function () {
       await run({
         backgroundScript: async () => {
           await browser.telemetry.scalarSet(
@@ -249,7 +249,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
   });
 
   add_task(async function test_telemetry_scalar_set_maximum_unknown_name() {
-    let { messages } = await promiseConsoleOutput(async function() {
+    let { messages } = await promiseConsoleOutput(async function () {
       await run({
         backgroundScript: async () => {
           await browser.telemetry.scalarSetMaximum(
@@ -346,7 +346,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
   });
 
   add_task(async function test_telemetry_keyed_scalar_add_invalid_scalar() {
-    let { messages } = await promiseConsoleOutput(async function() {
+    let { messages } = await promiseConsoleOutput(async function () {
       await run({
         backgroundScript: async () => {
           await browser.telemetry.keyedScalarAdd(
@@ -413,7 +413,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
   });
 
   add_task(async function test_telemetry_keyed_scalar_set_unknown_name() {
-    let { messages } = await promiseConsoleOutput(async function() {
+    let { messages } = await promiseConsoleOutput(async function () {
       await run({
         backgroundScript: async () => {
           await browser.telemetry.keyedScalarSet(
@@ -477,7 +477,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
 
   add_task(
     async function test_telemetry_keyed_scalar_set_maximum_unknown_name() {
-      let { messages } = await promiseConsoleOutput(async function() {
+      let { messages } = await promiseConsoleOutput(async function () {
         await run({
           backgroundScript: async () => {
             await browser.telemetry.keyedScalarSetMaximum(
@@ -869,7 +869,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
     });
 
     let pings;
-    await TestUtils.waitForCondition(async function() {
+    await TestUtils.waitForCondition(async function () {
       pings = await TelemetryArchive.promiseArchivedPingList();
       return pings.length >= 3;
     }, "Wait until we have at least 3 pings in the telemetry archive");

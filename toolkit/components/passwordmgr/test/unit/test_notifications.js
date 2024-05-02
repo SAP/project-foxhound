@@ -51,7 +51,7 @@ let TestObserver = {
   },
 };
 
-add_task(function test_notifications() {
+add_task(async function test_notifications() {
   let testnum = 0;
   let testdesc = "Setup of nsLoginInfo test-users";
 
@@ -88,8 +88,8 @@ add_task(function test_notifications() {
 
     expectedNotification = "addLogin";
     expectedData = testuser1;
-    Services.logins.addLogin(testuser1);
-    LoginTestUtils.checkLogins([testuser1]);
+    await Services.logins.addLoginAsync(testuser1);
+    await LoginTestUtils.checkLogins([testuser1]);
     Assert.equal(expectedNotification, null); // check that observer got a notification
 
     /* ========== 3 ========== */
@@ -100,7 +100,7 @@ add_task(function test_notifications() {
     expectedData = [testuser1, testuser2];
     Services.logins.modifyLogin(testuser1, testuser2);
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.checkLogins([testuser2]);
+    await LoginTestUtils.checkLogins([testuser2]);
 
     /* ========== 4 ========== */
     testnum++;
@@ -110,7 +110,7 @@ add_task(function test_notifications() {
     expectedData = testuser2;
     Services.logins.removeLogin(testuser2);
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.checkLogins([]);
+    await LoginTestUtils.checkLogins([]);
 
     /* ========== 5 ========== */
     testnum++;
@@ -120,7 +120,7 @@ add_task(function test_notifications() {
     expectedData = null;
     Services.logins.removeAllLogins();
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.checkLogins([]);
+    await LoginTestUtils.checkLogins([]);
 
     /* ========== 6 ========== */
     testnum++;
@@ -128,13 +128,13 @@ add_task(function test_notifications() {
 
     expectedNotification = "addLogin";
     expectedData = testuser1;
-    Services.logins.addLogin(testuser1);
+    await Services.logins.addLoginAsync(testuser1);
 
     expectedNotification = "removeAllLogins";
     expectedData = null;
     Services.logins.removeAllLogins();
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.checkLogins([]);
+    await LoginTestUtils.checkLogins([]);
 
     /* ========== 7 ========== */
     testnum++;
@@ -170,7 +170,7 @@ add_task(function test_notifications() {
     expectedData = "http://site.com";
     Services.logins.setLoginSavingEnabled("http://site.com", true);
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.checkLogins([]);
+    await LoginTestUtils.checkLogins([]);
 
     /* ========== 10 ========== */
     testnum++;
@@ -180,7 +180,7 @@ add_task(function test_notifications() {
     expectedData = "http://site.com";
     Services.logins.setLoginSavingEnabled("http://site.com", true);
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.checkLogins([]);
+    await LoginTestUtils.checkLogins([]);
 
     Services.obs.removeObserver(TestObserver, "passwordmgr-storage-changed");
 

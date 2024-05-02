@@ -3,12 +3,15 @@
 
 "use strict";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
-const Services = require("Services");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { DevToolsClient } = require("devtools/client/devtools-client");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
 
 function dumpn(msg) {
   dump("DBG-TEST: " + msg + "\n");
@@ -34,7 +37,7 @@ function TracingTransport(childTransport) {
 
 TracingTransport.prototype = {
   // Remove actor names
-  normalize: function(packet) {
+  normalize(packet) {
     return JSON.parse(
       JSON.stringify(packet, (key, value) => {
         if (key === "to" || key === "from" || key === "actor") {
@@ -44,39 +47,39 @@ TracingTransport.prototype = {
       })
     );
   },
-  send: function(packet) {
+  send(packet) {
     this.packets.push({
       type: "sent",
       packet: this.normalize(packet),
     });
     return this.child.send(packet);
   },
-  close: function() {
+  close() {
     return this.child.close();
   },
-  ready: function() {
+  ready() {
     return this.child.ready();
   },
-  onPacket: function(packet) {
+  onPacket(packet) {
     this.packets.push({
       type: "received",
       packet: this.normalize(packet),
     });
     this.hooks.onPacket(packet);
   },
-  onTransportClosed: function() {
+  onTransportClosed() {
     if (this.hooks.onTransportClosed) {
       this.hooks.onTransportClosed();
     }
   },
 
-  expectSend: function(expected) {
+  expectSend(expected) {
     const packet = this.packets[this.checkIndex++];
     Assert.equal(packet.type, "sent");
     deepEqual(packet.packet, this.normalize(expected));
   },
 
-  expectReceive: function(expected) {
+  expectReceive(expected) {
     const packet = this.packets[this.checkIndex++];
     Assert.equal(packet.type, "received");
     deepEqual(packet.packet, this.normalize(expected));
@@ -84,7 +87,7 @@ TracingTransport.prototype = {
 
   // Write your tests, call dumpLog at the end, inspect the output,
   // then sprinkle the calls through the right places in your test.
-  dumpLog: function() {
+  dumpLog() {
     for (const entry of this.packets) {
       if (entry.type === "sent") {
         dumpn("trace.expectSend(" + entry.packet + ");");

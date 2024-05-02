@@ -57,7 +57,7 @@ console.log("${HTML_CONSOLE_OUTPUT}");
 <script src="/${JS_ASCII_FILENAME}"></script>
 <script src="/${ENCODED_JS_UNICODE_FILENAME}"></script>`;
 
-add_task(async function() {
+add_task(async function () {
   const testUrl = createServerAndGetTestUrl();
   const hud = await openNewTabAndConsole(testUrl);
 
@@ -66,8 +66,8 @@ add_task(async function() {
   const lastSeason = SEASONS[SEASONS.length - 1];
   await waitFor(
     () =>
-      findMessage(hud, lastSeason.english) &&
-      findMessage(hud, lastSeason.chinese)
+      findConsoleAPIMessage(hud, lastSeason.english) &&
+      findConsoleAPIMessage(hud, lastSeason.chinese)
   );
 
   // One external Javascript file outputs every season name in English, and the
@@ -203,37 +203,37 @@ function createServerAndGetTestUrl() {
   httpServer.registerContentType("html", "text/html");
   httpServer.registerContentType("js", "application/javascript");
 
-  httpServer.registerPathHandler("/" + HTML_FILENAME, function(
-    request,
-    response
-  ) {
-    response.setStatusLine(request.httpVersion, 200, "OK");
-    response.write(HTML_CONTENT);
-  });
-  httpServer.registerPathHandler("/" + JS_ASCII_FILENAME, function(
-    request,
-    response
-  ) {
-    response.setStatusLine(request.httpVersion, 200, "OK");
-    response.setHeader("Content-Type", "application/javascript", false);
-    let content = "";
-    for (const curSeason of SEASONS) {
-      content += `console.log("${curSeason.english}");`;
+  httpServer.registerPathHandler(
+    "/" + HTML_FILENAME,
+    function (request, response) {
+      response.setStatusLine(request.httpVersion, 200, "OK");
+      response.write(HTML_CONTENT);
     }
-    response.write(content);
-  });
-  httpServer.registerPathHandler("/" + ENCODED_JS_UNICODE_FILENAME, function(
-    request,
-    response
-  ) {
-    response.setStatusLine(request.httpVersion, 200, "OK");
-    response.setHeader("Content-Type", "application/javascript", false);
-    let content = "";
-    for (const curSeason of SEASONS) {
-      content += `console.log("${curSeason.escapedChinese}");`;
+  );
+  httpServer.registerPathHandler(
+    "/" + JS_ASCII_FILENAME,
+    function (request, response) {
+      response.setStatusLine(request.httpVersion, 200, "OK");
+      response.setHeader("Content-Type", "application/javascript", false);
+      let content = "";
+      for (const curSeason of SEASONS) {
+        content += `console.log("${curSeason.english}");`;
+      }
+      response.write(content);
     }
-    response.write(content);
-  });
+  );
+  httpServer.registerPathHandler(
+    "/" + ENCODED_JS_UNICODE_FILENAME,
+    function (request, response) {
+      response.setStatusLine(request.httpVersion, 200, "OK");
+      response.setHeader("Content-Type", "application/javascript", false);
+      let content = "";
+      for (const curSeason of SEASONS) {
+        content += `console.log("${curSeason.escapedChinese}");`;
+      }
+      response.write(content);
+    }
+  );
   const port = httpServer.identity.primaryPort;
   return `http://localhost:${port}/${HTML_FILENAME}`;
 }

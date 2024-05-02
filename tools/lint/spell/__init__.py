@@ -13,7 +13,6 @@ except ImportError:
     JSONDecodeError = ValueError
 
 from mozfile import which
-
 from mozlint import result
 from mozlint.util.implementation import LintProcess
 
@@ -112,6 +111,11 @@ def get_codespell_version(binary):
     )
 
 
+def get_ignored_words_file(config):
+    config_root = os.path.dirname(config["path"])
+    return os.path.join(config_root, "spell", "exclude-list.txt")
+
+
 def lint(paths, config, fix=None, **lintargs):
     log = lintargs["log"]
     binary = get_codespell_binary()
@@ -123,7 +127,7 @@ def lint(paths, config, fix=None, **lintargs):
 
     config["root"] = lintargs["root"]
 
-    exclude_list = os.path.join(here, "exclude-list.txt")
+    exclude_list = get_ignored_words_file(config)
     cmd_args = [
         which("python"),
         binary,

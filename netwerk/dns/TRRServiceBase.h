@@ -70,11 +70,12 @@ class TRRServiceBase : public nsIProxyConfigChangedCallback {
   void RegisterProxyChangeListener();
   void UnregisterProxyChangeListener();
 
-  nsCString mPrivateURI;
+  nsCString mPrivateURI;  // protected by mMutex
   // Pref caches should only be used on the main thread.
   nsCString mURIPref;
   nsCString mRolloutURIPref;
   nsCString mDefaultURIPref;
+  nsCString mOHTTPURIPref;
 
   Atomic<nsIDNSService::ResolverMode, Relaxed> mMode{
       nsIDNSService::MODE_NATIVEONLY};

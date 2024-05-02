@@ -8,7 +8,7 @@
 
 const TEST_URI = `data:text/html,<!DOCTYPE html>Test console.table with modified variable`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
@@ -16,14 +16,20 @@ add_task(async function() {
     content.wrappedJSObject.console.table(x);
     x.push("c");
     content.wrappedJSObject.console.table(x);
-    x.sort((a, b) => b - a);
+    x.sort((a, b) => {
+      if (a < b) {
+        return 1;
+      }
+      if (a > b) {
+        return -1;
+      }
+      return 0;
+    });
     content.wrappedJSObject.console.table(x);
   });
 
   const [table1, table2, table3] = await waitFor(() => {
-    const res = hud.ui.outputNode.querySelectorAll(
-      ".message .new-consoletable"
-    );
+    const res = hud.ui.outputNode.querySelectorAll(".message .consoletable");
     if (res.length === 3) {
       return res;
     }
@@ -52,23 +58,11 @@ add_task(async function() {
 });
 
 function checkTable(node, expectedRows) {
-  const columns = Array.from(node.querySelectorAll("[role=columnheader]"));
-  const columnsNumber = columns.length;
-  const cells = Array.from(node.querySelectorAll("[role=gridcell]"));
-
-  // We don't really have rows since we are using a CSS grid in order to have a sticky
-  // header on the table. So we check the "rows" by dividing the number of cells by the
-  // number of columns.
-  is(
-    cells.length / columnsNumber,
-    expectedRows.length,
-    "table has the expected number of rows"
-  );
+  const rows = Array.from(node.querySelectorAll("tbody tr"));
+  is(rows.length, expectedRows.length, "table has the expected number of rows");
 
   expectedRows.forEach((expectedRow, rowIndex) => {
-    const startIndex = rowIndex * columnsNumber;
-    // Slicing the cells array so we can get the current "row".
-    const rowCells = cells.slice(startIndex, startIndex + columnsNumber);
+    const rowCells = Array.from(rows[rowIndex].querySelectorAll("td"));
     is(rowCells.map(x => x.textContent).join(" | "), expectedRow.join(" | "));
   });
 }

@@ -1,19 +1,16 @@
 "use strict";
 
-const { TelemetryEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryEnvironment.jsm"
+const { AddonRolloutAction } = ChromeUtils.importESModule(
+  "resource://normandy/actions/AddonRolloutAction.sys.mjs"
 );
-const { AddonRolloutAction } = ChromeUtils.import(
-  "resource://normandy/actions/AddonRolloutAction.jsm"
+const { BaseAction } = ChromeUtils.importESModule(
+  "resource://normandy/actions/BaseAction.sys.mjs"
 );
-const { BaseAction } = ChromeUtils.import(
-  "resource://normandy/actions/BaseAction.jsm"
+const { AddonRollouts } = ChromeUtils.importESModule(
+  "resource://normandy/lib/AddonRollouts.sys.mjs"
 );
-const { AddonRollouts } = ChromeUtils.import(
-  "resource://normandy/lib/AddonRollouts.jsm"
-);
-const { NormandyTestUtils } = ChromeUtils.import(
-  "resource://testing-common/NormandyTestUtils.jsm"
+const { NormandyTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/NormandyTestUtils.sys.mjs"
 );
 
 // Test that a simple recipe enrolls as expected
@@ -41,9 +38,8 @@ decorate_task(
       }),
     };
 
-    const webExtStartupPromise = AddonTestUtils.promiseWebExtensionStartup(
-      FIXTURE_ADDON_ID
-    );
+    const webExtStartupPromise =
+      AddonTestUtils.promiseWebExtensionStartup(FIXTURE_ADDON_ID);
 
     const action = new AddonRolloutAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -70,14 +66,9 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
-          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
-    );
-    ok(
-      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
-      "enrollmentId should be a UUID"
     );
 
     sendEventSpy.assertEvents([
@@ -122,9 +113,8 @@ decorate_task(
       }),
     };
 
-    let webExtStartupPromise = AddonTestUtils.promiseWebExtensionStartup(
-      FIXTURE_ADDON_ID
-    );
+    let webExtStartupPromise =
+      AddonTestUtils.promiseWebExtensionStartup(FIXTURE_ADDON_ID);
 
     let action = new AddonRolloutAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -139,9 +129,8 @@ decorate_task(
 
     // update existing enrollment
     recipe.arguments.extensionApiId = 2;
-    webExtStartupPromise = AddonTestUtils.promiseWebExtensionStartup(
-      FIXTURE_ADDON_ID
-    );
+    webExtStartupPromise =
+      AddonTestUtils.promiseWebExtensionStartup(FIXTURE_ADDON_ID);
     action = new AddonRolloutAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
     is(action.lastError, null, "lastError should be null");
@@ -167,14 +156,9 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].hash,
           xpiHashAlgorithm: "sha256",
-          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
-    );
-    ok(
-      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
-      "enrollmentId should be a UUID"
     );
 
     sendEventSpy.assertEvents([
@@ -207,9 +191,8 @@ decorate_task(
       }),
     };
 
-    const webExtStartupPromise = AddonTestUtils.promiseWebExtensionStartup(
-      FIXTURE_ADDON_ID
-    );
+    const webExtStartupPromise =
+      AddonTestUtils.promiseWebExtensionStartup(FIXTURE_ADDON_ID);
 
     let action = new AddonRolloutAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -246,14 +229,9 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
-          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
-    );
-    ok(
-      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
-      "Enrollment ID should be a UUID"
     );
 
     sendEventSpy.assertEvents([["enroll", "addon_rollout", "test-rollout"]]);
@@ -283,9 +261,8 @@ decorate_task(
       }),
     };
 
-    const webExtStartupPromise = AddonTestUtils.promiseWebExtensionStartup(
-      FIXTURE_ADDON_ID
-    );
+    const webExtStartupPromise =
+      AddonTestUtils.promiseWebExtensionStartup(FIXTURE_ADDON_ID);
 
     let action = new AddonRolloutAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -332,25 +309,23 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
-          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
     );
-    ok(NormandyTestUtils.isUuid(rollouts[0].enrollmentId));
 
     sendEventSpy.assertEvents([
       [
         "enroll",
         "addon_rollout",
         "test-rollout",
-        { addonId: FIXTURE_ADDON_ID, enrollmentId: rollouts[0].enrollmentId },
+        { addonId: FIXTURE_ADDON_ID },
       ],
       [
         "enrollFailed",
         "addon_rollout",
         "test-conflict",
-        { enrollmentId: rollouts[0].enrollmentId, reason: "conflict" },
+        { reason: "conflict" },
       ],
     ]);
 
@@ -389,9 +364,8 @@ decorate_task(
       }),
     };
 
-    const webExtStartupPromise = AddonTestUtils.promiseWebExtensionStartup(
-      FIXTURE_ADDON_ID
-    );
+    const webExtStartupPromise =
+      AddonTestUtils.promiseWebExtensionStartup(FIXTURE_ADDON_ID);
 
     let action = new AddonRolloutAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -429,14 +403,9 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
-          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
-    );
-    ok(
-      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
-      "enrollment ID should be a UUID"
     );
 
     sendEventSpy.assertEvents([
@@ -483,9 +452,8 @@ decorate_task(
       }),
     };
 
-    const webExtStartupPromise = AddonTestUtils.promiseWebExtensionStartup(
-      FIXTURE_ADDON_ID
-    );
+    const webExtStartupPromise =
+      AddonTestUtils.promiseWebExtensionStartup(FIXTURE_ADDON_ID);
 
     let action = new AddonRolloutAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -523,14 +491,9 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].hash,
           xpiHashAlgorithm: "sha256",
-          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
-    );
-    ok(
-      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
-      "enrollment ID should be a UUID"
     );
 
     sendEventSpy.assertEvents([

@@ -8,11 +8,13 @@
 #include "nsBaseChannel.h"
 #include "nsIChannel.h"
 #include "nsIChildChannel.h"
+#include "nsICancelable.h"
 #include "nsIInputStream.h"
 #include "nsIRequest.h"
 #include "nsISupportsImpl.h"
 #include "nsNetUtil.h"
 
+#include "mozilla/Try.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/net/NeckoChild.h"

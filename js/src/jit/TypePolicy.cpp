@@ -43,6 +43,25 @@ template <class T>
   return replace->typePolicy()->adjustInputs(alloc, replace);
 }
 
+static void SetTypePolicyBailoutKind(MInstruction* newIns,
+                                     MInstruction* forIns) {
+  // Infallible ToFloat32 or ToDouble doesn't bail out.
+  if ((newIns->isToFloat32() || newIns->isToDouble()) && !newIns->isGuard()) {
+    return;
+  }
+
+  // Ensure we're not introducing TypePolicy bailouts for transpiled CacheIR
+  // instructions. Unbox operations and other guards should have been inserted
+  // by the transpiler.
+  //
+  // This avoids a performance cliff because frequent TypePolicy bailouts will
+  // disable Warp compilation instead of invalidating the script.
+  // See bug 1850305.
+  MOZ_ASSERT(forIns->bailoutKind() != BailoutKind::TranspiledCacheIR);
+
+  newIns->setBailoutKind(BailoutKind::TypePolicy);
+}
+
 [[nodiscard]] static bool UnboxOperand(TempAllocator& alloc, MInstruction* def,
                                        unsigned op, MIRType expected) {
   MDefinition* in = def->getOperand(op);
@@ -51,7 +70,7 @@ template <class T>
   }
 
   auto* replace = MUnbox::New(alloc, in, expected, MUnbox::Fallible);
-  replace->setBailoutKind(BailoutKind::TypePolicy);
+  SetTypePolicyBailoutKind(replace, def);
   def->block()->insertBefore(def, replace);
   def->replaceOperand(op, replace);
 
@@ -113,7 +132,7 @@ bool ArithPolicy::adjustInputs(TempAllocator& alloc, MInstruction* ins) const {
       replace = MToNumberInt32::New(alloc, in);
     }
 
-    replace->setBailoutKind(BailoutKind::TypePolicy);
+    SetTypePolicyBailoutKind(replace, ins);
     ins->block()->insertBefore(ins, replace);
     ins->replaceOperand(i, replace);
 
@@ -379,6 +398,15 @@ bool SymbolPolicy<Op>::staticAdjustInputs(TempAllocator& alloc,
 
 template bool SymbolPolicy<0>::staticAdjustInputs(TempAllocator& alloc,
                                                   MInstruction* ins);
+
+template <unsigned Op>
+bool BooleanPolicy<Op>::staticAdjustInputs(TempAllocator& alloc,
+                                           MInstruction* ins) {
+  return UnboxOperand(alloc, ins, Op, MIRType::Boolean);
+}
+
+template bool BooleanPolicy<0>::staticAdjustInputs(TempAllocator& alloc,
+                                                   MInstruction* ins);
 
 template <unsigned Op>
 bool StringPolicy<Op>::staticAdjustInputs(TempAllocator& alloc,
@@ -663,8 +691,7 @@ bool ToDoublePolicy::staticAdjustInputs(TempAllocator& alloc,
 
 bool ToInt32Policy::staticAdjustInputs(TempAllocator& alloc,
                                        MInstruction* ins) {
-  MOZ_ASSERT(ins->isToNumberInt32() || ins->isTruncateToInt32() ||
-             ins->isToIntegerInt32());
+  MOZ_ASSERT(ins->isToNumberInt32() || ins->isTruncateToInt32());
 
   IntConversionInputKind conversion = IntConversionInputKind::Any;
   if (ins->isToNumberInt32()) {
@@ -681,9 +708,7 @@ bool ToInt32Policy::staticAdjustInputs(TempAllocator& alloc,
       return true;
     case MIRType::Undefined:
       // No need for boxing when truncating.
-      // Also no need for boxing when performing ToInteger, because
-      // ToInteger(undefined) = ToInteger(NaN) = 0.
-      if (ins->isTruncateToInt32() || ins->isToIntegerInt32()) {
+      if (ins->isTruncateToInt32()) {
         return true;
       }
       break;
@@ -802,13 +827,18 @@ template bool ObjectPolicy<3>::staticAdjustInputs(TempAllocator& alloc,
                                                   MInstruction* ins);
 
 bool CallPolicy::adjustInputs(TempAllocator& alloc, MInstruction* ins) const {
-  MCall* call = ins->toCall();
+  MCallBase* call;
+  if (ins->isCall()) {
+    call = ins->toCall();
+  } else {
+    call = ins->toCallClassHook();
+  }
 
   MDefinition* func = call->getCallee();
   if (func->type() != MIRType::Object) {
     MInstruction* unbox =
         MUnbox::New(alloc, func, MIRType::Object, MUnbox::Fallible);
-    unbox->setBailoutKind(BailoutKind::TypePolicy);
+    SetTypePolicyBailoutKind(unbox, call);
     call->block()->insertBefore(call, unbox);
     call->replaceCallee(unbox);
 
@@ -821,14 +851,14 @@ bool CallPolicy::adjustInputs(TempAllocator& alloc, MInstruction* ins) const {
     if (!alloc.ensureBallast()) {
       return false;
     }
-    EnsureOperandNotFloat32(alloc, call, MCall::IndexOfStackArg(i));
+    EnsureOperandNotFloat32(alloc, call, MCallBase::IndexOfStackArg(i));
   }
 
   return true;
 }
 
-bool CallSetElementPolicy::adjustInputs(TempAllocator& alloc,
-                                        MInstruction* ins) const {
+bool MegamorphicSetElementPolicy::adjustInputs(TempAllocator& alloc,
+                                               MInstruction* ins) const {
   // The first operand should be an object.
   if (!SingleObjectPolicy::staticAdjustInputs(alloc, ins)) {
     return false;
@@ -989,30 +1019,31 @@ bool ClampPolicy::adjustInputs(TempAllocator& alloc, MInstruction* ins) const {
 }
 
 // Lists of all TypePolicy specializations which are used by MIR Instructions.
-#define TYPE_POLICY_LIST(_)     \
-  _(AllDoublePolicy)            \
-  _(ArithPolicy)                \
-  _(BigIntArithPolicy)          \
-  _(BitwisePolicy)              \
-  _(BoxInputsPolicy)            \
-  _(CallPolicy)                 \
-  _(CallSetElementPolicy)       \
-  _(ClampPolicy)                \
-  _(ComparePolicy)              \
-  _(PowPolicy)                  \
-  _(SignPolicy)                 \
-  _(StoreDataViewElementPolicy) \
-  _(StoreTypedArrayHolePolicy)  \
-  _(StoreUnboxedScalarPolicy)   \
-  _(TestPolicy)                 \
-  _(ToDoublePolicy)             \
-  _(ToInt32Policy)              \
-  _(ToBigIntPolicy)             \
-  _(ToStringPolicy)             \
+#define TYPE_POLICY_LIST(_)      \
+  _(AllDoublePolicy)             \
+  _(ArithPolicy)                 \
+  _(BigIntArithPolicy)           \
+  _(BitwisePolicy)               \
+  _(BoxInputsPolicy)             \
+  _(CallPolicy)                  \
+  _(MegamorphicSetElementPolicy) \
+  _(ClampPolicy)                 \
+  _(ComparePolicy)               \
+  _(PowPolicy)                   \
+  _(SignPolicy)                  \
+  _(StoreDataViewElementPolicy)  \
+  _(StoreTypedArrayHolePolicy)   \
+  _(StoreUnboxedScalarPolicy)    \
+  _(TestPolicy)                  \
+  _(ToDoublePolicy)              \
+  _(ToInt32Policy)               \
+  _(ToBigIntPolicy)              \
+  _(ToStringPolicy)              \
   _(ToInt64Policy)
 
 #define TEMPLATE_TYPE_POLICY_LIST(_)                                          \
   _(BigIntPolicy<0>)                                                          \
+  _(BooleanPolicy<0>)                                                         \
   _(BoxExceptPolicy<0, MIRType::Object>)                                      \
   _(BoxPolicy<0>)                                                             \
   _(ConvertToInt32Policy<0>)                                                  \
@@ -1061,6 +1092,7 @@ bool ClampPolicy::adjustInputs(TempAllocator& alloc, MInstruction* ins) const {
   _(MixPolicy<ObjectPolicy<0>, NoFloatPolicy<1>>)                             \
   _(MixPolicy<ObjectPolicy<0>, NoFloatPolicy<2>>)                             \
   _(MixPolicy<ObjectPolicy<0>, NoFloatPolicy<3>>)                             \
+  _(MixPolicy<ObjectPolicy<0>, NoFloatPolicyAfter<1>>)                        \
   _(MixPolicy<ObjectPolicy<0>, ObjectPolicy<1>>)                              \
   _(MixPolicy<ObjectPolicy<0>, StringPolicy<1>>)                              \
   _(MixPolicy<ObjectPolicy<0>, ConvertToStringPolicy<2>>)                     \
@@ -1068,10 +1100,13 @@ bool ClampPolicy::adjustInputs(TempAllocator& alloc, MInstruction* ins) const {
   _(MixPolicy<StringPolicy<0>, UnboxedInt32Policy<1>>)                        \
   _(MixPolicy<StringPolicy<0>, StringPolicy<1>>)                              \
   _(MixPolicy<BoxPolicy<0>, BoxPolicy<1>>)                                    \
+  _(MixPolicy<BoxPolicy<0>, BoxPolicy<1>, BoxPolicy<2>>)                      \
   _(MixPolicy<ObjectPolicy<0>, BoxPolicy<2>, ObjectPolicy<3>>)                \
   _(MixPolicy<BoxExceptPolicy<0, MIRType::Object>, ObjectPolicy<1>>)          \
   _(MixPolicy<UnboxedInt32Policy<0>, BigIntPolicy<1>>)                        \
   _(MixPolicy<UnboxedInt32Policy<0>, NoFloatPolicyAfter<1>>)                  \
+  _(MixPolicy<UnboxedInt32Policy<0>, UnboxedInt32Policy<1>,                   \
+              NoFloatPolicyAfter<2>>)                                         \
   _(NoFloatPolicy<0>)                                                         \
   _(NoFloatPolicy<1>)                                                         \
   _(NoFloatPolicy<2>)                                                         \

@@ -11,7 +11,7 @@ NSS 3.21.2 release notes
    Network Security Services (NSS) 3.21.2 is a security patch release for NSS 3.21.1. The bug fixes
    in NSS 3.21.2 are described in the "Security Fixes" section below.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -30,8 +30,6 @@ NSS 3.21.2 release notes
 `New in NSS 3.21.2 <#new_in_nss_3.21.2>`__
 ------------------------------------------
 
-.. container::
-
 .. _new_functionality:
 
 `New Functionality <#new_functionality>`__
@@ -49,7 +47,7 @@ NSS 3.21.2 release notes
 .. container::
 
    -  `Bug 1293334 <https://bugzilla.mozilla.org/show_bug.cgi?id=1293334>`__ /
-      `CVE-2016-9074 <https://www.cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-9074>`__  - Fixed
+      `CVE-2016-9074 <https://www.cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-9074>`__  - Fixed
       a timing side channel in the TLS CBC code.
 
 `Compatibility <#compatibility>`__

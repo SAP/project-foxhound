@@ -2,16 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
   "nsITouchBarHelper"
 );
+
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarInput",
@@ -80,7 +77,7 @@ add_task(async function updateReaderView() {
   );
 
   let url = TEST_PATH + "readerModeArticle.html";
-  await BrowserTestUtils.withNewTab(url, async function() {
+  await BrowserTestUtils.withNewTab(url, async function () {
     await BrowserTestUtils.waitForCondition(() => !readerButton.hidden);
 
     Assert.equal(
@@ -97,7 +94,7 @@ add_task(async function updateMainButtonInFullscreen() {
     "chrome://global/skin/icons/search-glass.svg",
     "OpenLocation should be displaying the search glass icon."
   );
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser.selectedBrowser,
     TEST_PATH + "video_test.html"
   );
@@ -121,6 +118,20 @@ add_task(async function updateMainButtonInFullscreen() {
     "chrome://global/skin/icons/search-glass.svg",
     "OpenLocation should be displaying the search glass icon."
   );
+});
+
+add_task(async function toggleUrlbarFocusOnOpenLocation() {
+  Assert.equal(TouchBarHelper.isUrlbarFocused, false, "Urlbar is unfocused.");
+  TouchBarHelper.toggleFocusUrlbar();
+  Assert.equal(TouchBarHelper.isUrlbarFocused, true, "Urlbar is unfocused.");
+  TouchBarHelper.toggleFocusUrlbar();
+});
+
+add_task(async function unfocusUrlbar() {
+  window.gURLBar.focus();
+  Assert.equal(TouchBarHelper.isUrlbarFocused, true, "Urlbar is unfocused.");
+  TouchBarHelper.unfocusUrlbar();
+  Assert.equal(TouchBarHelper.isUrlbarFocused, false, "Urlbar is unfocused.");
 });
 
 function waitForFullScreenState(browser, state) {

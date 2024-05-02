@@ -57,18 +57,18 @@ android-x86_64-asan-fuzzing/opt:
     treeherder:
         platform: android-5-0-x86_64/asan
         symbol: Bof
-    worker-type: b-linux-large
+    worker-type: b-linux-large-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: x86_64-fuzzing-asan
+        custom-build-variant-cfg: fuzzing-asan-tc
     use-sccache: true
     fetches:
         toolchain:
-            - linux64-clang-android-cross
+            - linux64-clang
             - linux64-sccache
             - android-gradle-dependencies
     optimization:

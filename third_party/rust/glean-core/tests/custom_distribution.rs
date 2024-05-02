@@ -40,10 +40,10 @@ mod linear {
                 HistogramType::Linear,
             );
 
-            metric.accumulate_samples_signed(&glean, vec![50]);
+            metric.accumulate_samples_sync(&glean, vec![50]);
 
             let snapshot = metric
-                .test_get_value(&glean, "store1")
+                .get_value(&glean, "store1")
                 .expect("Value should be stored");
 
             assert_eq!(snapshot.sum, 50);
@@ -52,7 +52,7 @@ mod linear {
         // Make a new Glean instance here, which should force reloading of the data from disk
         // so we can ensure it persisted, because it has User lifetime
         {
-            let (glean, _) = new_glean(Some(tempdir));
+            let (glean, _t) = new_glean(Some(tempdir));
             let snapshot = StorageManager
                 .snapshot_as_json(glean.storage(), "store1", true)
                 .unwrap();
@@ -84,7 +84,7 @@ mod linear {
             HistogramType::Linear,
         );
 
-        metric.accumulate_samples_signed(&glean, vec![50]);
+        metric.accumulate_samples_sync(&glean, vec![50]);
 
         for store_name in store_names {
             let snapshot = StorageManager
@@ -126,10 +126,10 @@ mod linear {
 
         // Accumulate the samples. We intentionally do not report
         // negative values to not trigger error reporting.
-        metric.accumulate_samples_signed(&glean, [1, 2, 3].to_vec());
+        metric.accumulate_samples_sync(&glean, [1, 2, 3].to_vec());
 
         let snapshot = metric
-            .test_get_value(&glean, "store1")
+            .get_value(&glean, "store1")
             .expect("Value should be stored");
 
         // Check that we got the right sum of samples.
@@ -143,13 +143,9 @@ mod linear {
         assert_eq!(1, snapshot.values[&3]);
 
         // No errors should be reported.
-        assert!(test_get_num_recorded_errors(
-            &glean,
-            metric.meta(),
-            ErrorType::InvalidValue,
-            Some("store1")
-        )
-        .is_err());
+        assert!(
+            test_get_num_recorded_errors(&glean, metric.meta(), ErrorType::InvalidValue).is_err()
+        );
     }
 
     #[test]
@@ -172,10 +168,10 @@ mod linear {
         );
 
         // Accumulate the samples.
-        metric.accumulate_samples_signed(&glean, [-1, 1, 2, 3].to_vec());
+        metric.accumulate_samples_sync(&glean, [-1, 1, 2, 3].to_vec());
 
         let snapshot = metric
-            .test_get_value(&glean, "store1")
+            .get_value(&glean, "store1")
             .expect("Value should be stored");
 
         // Check that we got the right sum of samples.
@@ -191,12 +187,7 @@ mod linear {
         // 1 error should be reported.
         assert_eq!(
             Ok(1),
-            test_get_num_recorded_errors(
-                &glean,
-                metric.meta(),
-                ErrorType::InvalidValue,
-                Some("store1")
-            )
+            test_get_num_recorded_errors(&glean, metric.meta(), ErrorType::InvalidValue)
         );
     }
 
@@ -218,9 +209,9 @@ mod linear {
             HistogramType::Linear,
         );
 
-        metric.accumulate_samples_signed(&glean, vec![50]);
+        metric.accumulate_samples_sync(&glean, vec![50]);
 
-        let snapshot = metric.test_get_value_as_json_string(&glean, "store1");
+        let snapshot = metric.get_value(&glean, "store1");
         assert!(snapshot.is_some());
     }
 }
@@ -251,10 +242,10 @@ mod exponential {
                 HistogramType::Exponential,
             );
 
-            metric.accumulate_samples_signed(&glean, vec![50]);
+            metric.accumulate_samples_sync(&glean, vec![50]);
 
             let snapshot = metric
-                .test_get_value(&glean, "store1")
+                .get_value(&glean, "store1")
                 .expect("Value should be stored");
 
             assert_eq!(snapshot.sum, 50);
@@ -263,7 +254,7 @@ mod exponential {
         // Make a new Glean instance here, which should force reloading of the data from disk
         // so we can ensure it persisted, because it has User lifetime
         {
-            let (glean, _) = new_glean(Some(tempdir));
+            let (glean, _t) = new_glean(Some(tempdir));
             let snapshot = StorageManager
                 .snapshot_as_json(glean.storage(), "store1", true)
                 .unwrap();
@@ -295,7 +286,7 @@ mod exponential {
             HistogramType::Exponential,
         );
 
-        metric.accumulate_samples_signed(&glean, vec![50]);
+        metric.accumulate_samples_sync(&glean, vec![50]);
 
         for store_name in store_names {
             let snapshot = StorageManager
@@ -337,10 +328,10 @@ mod exponential {
 
         // Accumulate the samples. We intentionally do not report
         // negative values to not trigger error reporting.
-        metric.accumulate_samples_signed(&glean, [1, 2, 3].to_vec());
+        metric.accumulate_samples_sync(&glean, [1, 2, 3].to_vec());
 
         let snapshot = metric
-            .test_get_value(&glean, "store1")
+            .get_value(&glean, "store1")
             .expect("Value should be stored");
 
         // Check that we got the right sum of samples.
@@ -354,13 +345,9 @@ mod exponential {
         assert_eq!(1, snapshot.values[&3]);
 
         // No errors should be reported.
-        assert!(test_get_num_recorded_errors(
-            &glean,
-            metric.meta(),
-            ErrorType::InvalidValue,
-            Some("store1")
-        )
-        .is_err());
+        assert!(
+            test_get_num_recorded_errors(&glean, metric.meta(), ErrorType::InvalidValue).is_err()
+        );
     }
 
     #[test]
@@ -383,10 +370,10 @@ mod exponential {
         );
 
         // Accumulate the samples.
-        metric.accumulate_samples_signed(&glean, [-1, 1, 2, 3].to_vec());
+        metric.accumulate_samples_sync(&glean, [-1, 1, 2, 3].to_vec());
 
         let snapshot = metric
-            .test_get_value(&glean, "store1")
+            .get_value(&glean, "store1")
             .expect("Value should be stored");
 
         // Check that we got the right sum of samples.
@@ -402,12 +389,7 @@ mod exponential {
         // 1 error should be reported.
         assert_eq!(
             Ok(1),
-            test_get_num_recorded_errors(
-                &glean,
-                metric.meta(),
-                ErrorType::InvalidValue,
-                Some("store1")
-            )
+            test_get_num_recorded_errors(&glean, metric.meta(), ErrorType::InvalidValue)
         );
     }
 
@@ -429,9 +411,9 @@ mod exponential {
             HistogramType::Exponential,
         );
 
-        metric.accumulate_samples_signed(&glean, vec![50]);
+        metric.accumulate_samples_sync(&glean, vec![50]);
 
-        let snapshot = metric.test_get_value_as_json_string(&glean, "store1");
+        let snapshot = metric.get_value(&glean, "store1");
         assert!(snapshot.is_some());
     }
 }

@@ -4,12 +4,12 @@ const BinaryInputStream = CC(
   "nsIBinaryInputStream",
   "setInputStream"
 );
-Cu.import("resource://gre/modules/Services.jsm");
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 
+// eslint-disable-next-line complexity
 function handleRequest(request, response) {
   var query = {};
-  request.queryString.split("&").forEach(function(val) {
+  request.queryString.split("&").forEach(function (val) {
     var [name, value] = val.split("=");
     query[name] = unescape(value);
   });
@@ -126,12 +126,12 @@ function handleRequest(request, response) {
     request
       .getHeader("Cookie")
       .split(/ *; */)
-      .forEach(function(val) {
+      .forEach(function (val) {
         var [name, value] = val.split("=");
         cookies[name] = unescape(value);
       });
 
-    query.cookie.split(",").forEach(function(val) {
+    query.cookie.split(",").forEach(function (val) {
       var [name, value] = val.split("=");
       if (cookies[name] != value) {
         sendHttp500(
@@ -143,7 +143,6 @@ function handleRequest(request, response) {
             " got " +
             cookies[name]
         );
-        return;
       }
     });
   }

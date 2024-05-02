@@ -17,7 +17,6 @@
 #include "jsfriendapi.h"
 
 #include "nsCOMPtr.h"
-#include "nsHTMLStyleSheet.h"
 #include "nsIContentSink.h"
 #include "mozilla/dom/Document.h"
 #include "nsIFormControl.h"
@@ -170,19 +169,6 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(XULContentSinkImpl)
 // nsIContentSink interface
 
 NS_IMETHODIMP
-XULContentSinkImpl::WillBuildModel(nsDTDMode aDTDMode) {
-#if FIXME
-  if (!mParentContentSink) {
-    // If we're _not_ an overlay, then notify the document that
-    // the load is beginning.
-    mDocument->BeginLoad();
-  }
-#endif
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 XULContentSinkImpl::DidBuildModel(bool aTerminated) {
   nsCOMPtr<Document> doc = do_QueryReferent(mDocument);
   if (doc) {
@@ -202,10 +188,8 @@ XULContentSinkImpl::WillInterrupt(void) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-XULContentSinkImpl::WillResume(void) {
+void XULContentSinkImpl::WillResume() {
   // XXX Notify the docshell, if necessary
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -432,8 +416,8 @@ XULContentSinkImpl::HandleEndElement(const char16_t* aName) {
 
         script->mOutOfLine = false;
         if (doc) {
-          script->Compile(mText, mTextLength, JS::SourceOwnership::Borrowed,
-                          mDocumentURL, script->mLineNo, doc);
+          script->Compile(mText, mTextLength, mDocumentURL, script->mLineNo,
+                          doc);
         }
       }
 

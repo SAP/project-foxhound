@@ -4,8 +4,8 @@
 
 /* import-globals-from allDownloadsView.js */
 
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
 var ContentAreaDownloadsView = {
@@ -19,12 +19,11 @@ var ContentAreaDownloadsView = {
         // And prevent it from showing the focus ring around the richlistbox (Bug 1702694)
         document
           .getElementById("downloadsListBox")
-          .focus({ preventFocusRing: true });
+          .focus({ focusVisible: false });
         // Pause the indicator if the browser is active.
         if (document.visibilityState === "visible") {
-          DownloadsCommon.getIndicatorData(
-            window
-          ).attentionSuppressed |= suppressionFlag;
+          DownloadsCommon.getIndicatorData(window).attentionSuppressed |=
+            suppressionFlag;
         }
       },
       { once: true }
@@ -45,6 +44,6 @@ var ContentAreaDownloadsView = {
   },
 };
 
-window.onload = function() {
+window.onload = function () {
   ContentAreaDownloadsView.init();
 };

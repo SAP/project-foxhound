@@ -3,24 +3,18 @@
 
 "use strict";
 
-/* import-globals-from ../head.js */
-
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/remote/cdp/test/browser/head.js",
   this
 );
 
-const { streamRegistry } = ChromeUtils.import(
-  "chrome://remote/content/cdp/domains/parent/IO.jsm"
+const { streamRegistry } = ChromeUtils.importESModule(
+  "chrome://remote/content/cdp/domains/parent/IO.sys.mjs"
 );
 
-async function registerFileStream(contents, options = {}) {
-  // Any file as registered with the stream registry will be automatically
-  // deleted during the shutdown of Firefox.
-  options.remove = false;
+async function registerFileStream(contents, options) {
+  const stream = await createFileStream(contents, options);
+  const handle = streamRegistry.add(stream);
 
-  const { file, path } = await createFile(contents, options);
-  const handle = streamRegistry.add(file);
-
-  return { handle, path };
+  return { handle, stream };
 }

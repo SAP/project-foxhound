@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { ChromeMigrationUtils } = ChromeUtils.import(
-  "resource:///modules/ChromeMigrationUtils.jsm"
+const { ChromeMigrationUtils } = ChromeUtils.importESModule(
+  "resource:///modules/ChromeMigrationUtils.sys.mjs"
 );
 
 const SOURCE_PROFILE_DIR = "Library/Application Support/Google/Chrome/Default/";
@@ -135,7 +135,7 @@ function removeHistoryFile() {
     file.remove(false);
   } catch (ex) {
     // It is ok if this doesn't exist.
-    if (ex.result != Cr.NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
+    if (ex.result != Cr.NS_ERROR_FILE_NOT_FOUND) {
       throw ex;
     }
   }

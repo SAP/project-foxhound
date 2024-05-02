@@ -8,6 +8,7 @@
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsMathMLmmultiscriptsFrame.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/MathMLElement.h"
 #include <algorithm>
 #include "gfxContext.h"
@@ -56,7 +57,7 @@ nsMathMLmunderoverFrame::UpdatePresentationData(uint32_t aFlagsValues,
   // disable the stretch-all flag if we are going to act like a
   // subscript-superscript pair
   if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
-      StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT) {
+      StyleFont()->mMathStyle == StyleMathStyle::Compact) {
     mPresentationData.flags &= ~NS_MATHML_STRETCH_ALL_CHILDREN_HORIZONTALLY;
   } else {
     mPresentationData.flags |= NS_MATHML_STRETCH_ALL_CHILDREN_HORIZONTALLY;
@@ -74,12 +75,11 @@ nsMathMLmunderoverFrame::InheritAutomaticData(nsIFrame* aParent) {
   return NS_OK;
 }
 
-void nsMathMLmunderoverFrame::DestroyFrom(nsIFrame* aDestroyRoot,
-                                          PostDestroyData& aPostDestroyData) {
+void nsMathMLmunderoverFrame::Destroy(DestroyContext& aContext) {
   if (!mPostReflowIncrementScriptLevelCommands.IsEmpty()) {
     PresShell()->CancelReflowCallback(this);
   }
-  nsMathMLContainerFrame::DestroyFrom(aDestroyRoot, aPostDestroyData);
+  nsMathMLContainerFrame::Destroy(aContext);
 }
 
 uint8_t nsMathMLmunderoverFrame::ScriptIncrement(nsIFrame* aFrame) {
@@ -222,8 +222,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
 
     // if we have an accentunder attribute, it overrides what the underscript
     // said
-    if (mContent->AsElement()->GetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::accentunder_, value)) {
+    if (mContent->AsElement()->GetAttr(nsGkAtoms::accentunder_, value)) {
       if (value.EqualsLiteral("true")) {
         mEmbellishData.flags |= NS_MATHML_EMBELLISH_ACCENTUNDER;
       } else if (value.EqualsLiteral("false")) {
@@ -244,8 +243,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
     }
 
     // if we have an accent attribute, it overrides what the overscript said
-    if (mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::accent_,
-                                       value)) {
+    if (mContent->AsElement()->GetAttr(nsGkAtoms::accent_, value)) {
       if (value.EqualsLiteral("true")) {
         mEmbellishData.flags |= NS_MATHML_EMBELLISH_ACCENTOVER;
       } else if (value.EqualsLiteral("false")) {
@@ -256,7 +254,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
 
   bool subsupDisplay =
       NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
-      StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT;
+      StyleFont()->mMathStyle == StyleMathStyle::Compact;
 
   // disable the stretch-all flag if we are going to act like a superscript
   if (subsupDisplay) {
@@ -350,7 +348,7 @@ The REC says:
 
 i.e.,:
  if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishDataflags) &&
-     StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT) {
+     StyleFont()->mMathStyle == StyleMathStyle::Compact) {
   // place like subscript-superscript pair
  }
  else {
@@ -364,7 +362,7 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
                                         ReflowOutput& aDesiredSize) {
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
   if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
-      StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT) {
+      StyleFont()->mMathStyle == StyleMathStyle::Compact) {
     // place like sub sup or subsup
     if (mContent->IsMathMLElement(nsGkAtoms::munderover_)) {
       return nsMathMLmmultiscriptsFrame::PlaceMultiScript(
@@ -431,7 +429,7 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
     if (aPlaceOrigin) {
       ReportChildCountError();
     }
-    return ReflowError(aDrawTarget, aDesiredSize);
+    return PlaceAsMrow(aDrawTarget, aPlaceOrigin, aDesiredSize);
   }
   GetReflowAndBoundingMetricsFor(baseFrame, baseSize, bmBase);
   if (underFrame) {
@@ -451,7 +449,7 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
 
   nscoord xHeight = fm->XHeight();
   nscoord oneDevPixel = fm->AppUnitsPerDevPixel();
-  gfxFont* mathFont = fm->GetThebesFontGroup()->GetFirstMathFont();
+  RefPtr<gfxFont> mathFont = fm->GetThebesFontGroup()->GetFirstMathFont();
 
   nscoord ruleThickness;
   GetRuleThickness(aDrawTarget, fm, ruleThickness);
@@ -578,19 +576,6 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
 
   nscoord dxBase = 0, dxOver = 0, dxUnder = 0;
   nsAutoString valueAlign;
-  enum { center, left, right } alignPosition = center;
-
-  if (!StaticPrefs::mathml_deprecated_alignment_attributes_disabled() &&
-      mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::align,
-                                     valueAlign)) {
-    mContent->OwnerDoc()->WarnOnceAbout(
-        dom::DeprecatedOperations::eMathML_DeprecatedAlignmentAttributes);
-    if (valueAlign.EqualsLiteral("left")) {
-      alignPosition = left;
-    } else if (valueAlign.EqualsLiteral("right")) {
-      alignPosition = right;
-    }
-  }
 
   //////////
   // pass 1, do what <mover> does: attach the overscript on the base
@@ -606,23 +591,14 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
 
   if (NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags)) {
     mBoundingMetrics.width = bmBase.width;
-    if (alignPosition == center) {
-      dxOver += correction;
-    }
+    dxOver += correction;
   } else {
     mBoundingMetrics.width = std::max(bmBase.width, overWidth);
-    if (alignPosition == center) {
-      dxOver += correction / 2;
-    }
+    dxOver += correction / 2;
   }
 
-  if (alignPosition == center) {
-    dxOver += (mBoundingMetrics.width - overWidth) / 2;
-    dxBase = (mBoundingMetrics.width - bmBase.width) / 2;
-  } else if (alignPosition == right) {
-    dxOver += mBoundingMetrics.width - overWidth;
-    dxBase = mBoundingMetrics.width - bmBase.width;
-  }
+  dxOver += (mBoundingMetrics.width - overWidth) / 2;
+  dxBase = (mBoundingMetrics.width - bmBase.width) / 2;
 
   mBoundingMetrics.ascent =
       bmBase.ascent + overDelta1 + bmOver.ascent + bmOver.descent;
@@ -655,19 +631,13 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
   }
 
   nscoord maxWidth = std::max(bmAnonymousBase.width, underWidth);
-  if (alignPosition == center &&
-      !NS_MATHML_EMBELLISH_IS_ACCENTUNDER(mEmbellishData.flags)) {
+  if (!NS_MATHML_EMBELLISH_IS_ACCENTUNDER(mEmbellishData.flags)) {
     GetItalicCorrection(bmAnonymousBase, correction);
     dxUnder += -correction / 2;
   }
   nscoord dxAnonymousBase = 0;
-  if (alignPosition == center) {
-    dxUnder += (maxWidth - underWidth) / 2;
-    dxAnonymousBase = (maxWidth - bmAnonymousBase.width) / 2;
-  } else if (alignPosition == right) {
-    dxUnder += maxWidth - underWidth;
-    dxAnonymousBase = maxWidth - bmAnonymousBase.width;
-  }
+  dxUnder += (maxWidth - underWidth) / 2;
+  dxAnonymousBase = (maxWidth - bmAnonymousBase.width) / 2;
 
   // adjust the offsets of the real base and overscript since their
   // final offsets should be relative to us...

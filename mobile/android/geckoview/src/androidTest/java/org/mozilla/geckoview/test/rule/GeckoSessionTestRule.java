@@ -9,9 +9,13 @@ import static org.junit.Assert.fail;
 
 import android.app.Instrumentation;
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
+import android.location.Criteria;
+import android.location.Location;
+import android.location.LocationManager;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Pair;
@@ -42,8 +46,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import kotlin.jvm.JvmClassMappingKt;
 import kotlin.reflect.KClass;
 import org.hamcrest.Matcher;
@@ -60,6 +68,7 @@ import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.geckoview.Autocomplete;
 import org.mozilla.geckoview.Autofill;
 import org.mozilla.geckoview.ContentBlocking;
+import org.mozilla.geckoview.ExperimentDelegate;
 import org.mozilla.geckoview.GeckoDisplay;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
@@ -71,6 +80,7 @@ import org.mozilla.geckoview.GeckoSession.HistoryDelegate;
 import org.mozilla.geckoview.GeckoSession.MediaDelegate;
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate;
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate;
+import org.mozilla.geckoview.GeckoSession.PrintDelegate;
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate;
 import org.mozilla.geckoview.GeckoSession.ScrollDelegate;
@@ -81,10 +91,12 @@ import org.mozilla.geckoview.MediaSession;
 import org.mozilla.geckoview.OrientationController;
 import org.mozilla.geckoview.RuntimeTelemetry;
 import org.mozilla.geckoview.SessionTextInput;
+import org.mozilla.geckoview.TranslationsController;
 import org.mozilla.geckoview.WebExtension;
 import org.mozilla.geckoview.WebExtensionController;
 import org.mozilla.geckoview.WebNotificationDelegate;
 import org.mozilla.geckoview.WebPushDelegate;
+import org.mozilla.geckoview.test.GeckoViewTestActivity;
 import org.mozilla.geckoview.test.util.Environment;
 import org.mozilla.geckoview.test.util.RuntimeCreator;
 import org.mozilla.geckoview.test.util.TestServer;
@@ -134,7 +146,7 @@ public class GeckoSessionTestRule implements TestRule {
     displayTexture.setDefaultBufferSize(x, y);
 
     final Surface displaySurface = new Surface(displayTexture);
-    display.surfaceChanged(displaySurface, x, y);
+    display.surfaceChanged(new GeckoDisplay.SurfaceInfo.Builder(displaySurface).size(x, y).build());
 
     mDisplays.put(session, display);
     mDisplayTextures.put(session, displayTexture);
@@ -357,7 +369,9 @@ public class GeckoSessionTestRule implements TestRule {
   @Target(ElementType.METHOD)
   @Retention(RetentionPolicy.RUNTIME)
   public @interface IgnoreCrash {
-    /** @return True if content crashes should be ignored, false otherwise. Default is true. */
+    /**
+     * @return True if content crashes should be ignored, false otherwise. Default is true.
+     */
     boolean value() default true;
   }
 
@@ -757,11 +771,13 @@ public class GeckoSessionTestRule implements TestRule {
     DEFAULT_DELEGATES.add(MediaSession.Delegate.class);
     DEFAULT_DELEGATES.add(NavigationDelegate.class);
     DEFAULT_DELEGATES.add(PermissionDelegate.class);
+    DEFAULT_DELEGATES.add(PrintDelegate.class);
     DEFAULT_DELEGATES.add(ProgressDelegate.class);
     DEFAULT_DELEGATES.add(PromptDelegate.class);
     DEFAULT_DELEGATES.add(ScrollDelegate.class);
     DEFAULT_DELEGATES.add(SelectionActionDelegate.class);
     DEFAULT_DELEGATES.add(TextInputDelegate.class);
+    DEFAULT_DELEGATES.add(TranslationsController.SessionTranslation.Delegate.class);
   }
 
   private static final Set<Class<?>> DEFAULT_RUNTIME_DELEGATES = new HashSet<>();
@@ -788,11 +804,13 @@ public class GeckoSessionTestRule implements TestRule {
           MediaSession.Delegate,
           NavigationDelegate,
           PermissionDelegate,
+          PrintDelegate,
           ProgressDelegate,
           PromptDelegate,
           ScrollDelegate,
           SelectionActionDelegate,
           TextInputDelegate,
+          TranslationsController.SessionTranslation.Delegate,
           // Runtime delegates
           ActivityDelegate,
           Autocomplete.StorageDelegate,
@@ -806,6 +824,14 @@ public class GeckoSessionTestRule implements TestRule {
     public GeckoResult<Intent> onStartActivityForResult(@NonNull PendingIntent intent) {
       return null;
     }
+
+    // The default impl of this will call `onLocationChange(2)` which causes duplicated
+    // call records, to avoid that we implement it here so that it doesn't do anything.
+    @Override
+    public void onLocationChange(
+        @NonNull GeckoSession session,
+        @Nullable String url,
+        @NonNull List<ContentPermission> perms) {}
 
     @Override
     public void onShutdown() {}
@@ -844,8 +870,24 @@ public class GeckoSessionTestRule implements TestRule {
   protected boolean mClosedSession;
   protected boolean mIgnoreCrash;
 
+  @Nullable private Map<String, String> mServerCustomHeaders = null;
+  @Nullable private Map<String, TestServer.ResponseModifier> mResponseModifiers = null;
+
   public GeckoSessionTestRule() {
     mDefaultSettings = new GeckoSessionSettings.Builder().build();
+  }
+
+  public GeckoSessionTestRule(@Nullable Map<String, String> mServerCustomHeaders) {
+    this();
+    this.mServerCustomHeaders = mServerCustomHeaders;
+  }
+
+  public GeckoSessionTestRule(
+      @Nullable Map<String, String> serverCustomHeaders,
+      @Nullable Map<String, TestServer.ResponseModifier> responseModifiers) {
+    this();
+    this.mServerCustomHeaders = serverCustomHeaders;
+    this.mResponseModifiers = responseModifiers;
   }
 
   /**
@@ -949,6 +991,11 @@ public class GeckoSessionTestRule implements TestRule {
     RuntimeCreator.setTelemetryDelegate(delegate);
   }
 
+  /** Sets an experiment delegate on the runtime creator. */
+  public void setExperimentDelegate(final ExperimentDelegate delegate) {
+    RuntimeCreator.setExperimentDelegate(delegate);
+  }
+
   public @Nullable GeckoDisplay getDisplay() {
     return mDisplays.get(mMainSession);
   }
@@ -966,6 +1013,9 @@ public class GeckoSessionTestRule implements TestRule {
       session.setAutofillDelegate((Autofill.Delegate) delegate);
     } else if (cls == MediaSession.Delegate.class) {
       session.setMediaSessionDelegate((MediaSession.Delegate) delegate);
+    } else if (cls == TranslationsController.SessionTranslation.Delegate.class) {
+      session.setTranslationsSessionDelegate(
+          (TranslationsController.SessionTranslation.Delegate) delegate);
     } else {
       GeckoSession.class.getMethod("set" + cls.getSimpleName(), cls).invoke(session, delegate);
     }
@@ -1038,6 +1088,9 @@ public class GeckoSessionTestRule implements TestRule {
     if (cls == MediaSession.Delegate.class) {
       return GeckoSession.class.getMethod("getMediaSessionDelegate").invoke(session);
     }
+    if (cls == TranslationsController.SessionTranslation.Delegate.class) {
+      return GeckoSession.class.getMethod("getTranslationsSessionDelegate").invoke(session);
+    }
     return GeckoSession.class.getMethod("get" + cls.getSimpleName()).invoke(session);
   }
 
@@ -1100,7 +1153,7 @@ public class GeckoSessionTestRule implements TestRule {
 
   private static RuntimeException unwrapRuntimeException(final Throwable e) {
     final Throwable cause = e.getCause();
-    if (cause != null && cause instanceof RuntimeException) {
+    if (cause instanceof RuntimeException) {
       return (RuntimeException) cause;
     } else if (e instanceof RuntimeException) {
       return (RuntimeException) e;
@@ -1363,13 +1416,13 @@ public class GeckoSessionTestRule implements TestRule {
 
   protected void cleanupExtensions() throws Throwable {
     final WebExtensionController controller = getRuntime().getWebExtensionController();
-    final List<WebExtension> list = waitForResult(controller.list());
+    final List<WebExtension> list = waitForResult(controller.list(), env.getDefaultTimeoutMillis());
 
     boolean hasTestSupport = false;
     // Uninstall any left-over extensions
     for (final WebExtension extension : list) {
       if (!extension.id.equals(RuntimeCreator.TEST_SUPPORT_EXTENSION_ID)) {
-        waitForResult(controller.uninstall(extension));
+        waitForResult(controller.uninstall(extension), env.getDefaultTimeoutMillis());
       } else {
         hasTestSupport = true;
       }
@@ -1410,6 +1463,7 @@ public class GeckoSessionTestRule implements TestRule {
     mLastWaitEnd = 0;
     mTimeoutMillis = 0;
     RuntimeCreator.setTelemetryDelegate(null);
+    RuntimeCreator.setExperimentDelegate(null);
   }
 
   // These markers are used by runjunit.py to capture the logcat of a test
@@ -1442,7 +1496,11 @@ public class GeckoSessionTestRule implements TestRule {
       public void evaluate() throws Throwable {
         final AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
 
-        mServer = new TestServer(InstrumentationRegistry.getInstrumentation().getTargetContext());
+        mServer =
+            new TestServer(
+                InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                mServerCustomHeaders,
+                mResponseModifiers);
 
         mInstrumentation.runOnMainSync(
             () -> {
@@ -1519,7 +1577,7 @@ public class GeckoSessionTestRule implements TestRule {
     methodCalls.add(
         new MethodCall(session, sOnPageStop, new CallRequirement(/* allowed */ true, count, null)));
 
-    waitUntilCalled(session, GeckoSession.ProgressDelegate.class, methodCalls);
+    waitUntilCalled(session, GeckoSession.ProgressDelegate.class, methodCalls, null);
   }
 
   /**
@@ -1590,7 +1648,7 @@ public class GeckoSessionTestRule implements TestRule {
           if (!pattern.matcher(method.getName()).matches()) {
             continue;
           }
-          waitMethods.add(new MethodCall(session, method, /* requirement */ null));
+          waitMethods.add(new MethodCall(session, method, new CallRequirement(true, -1, null)));
           break;
         }
       }
@@ -1602,7 +1660,7 @@ public class GeckoSessionTestRule implements TestRule {
         isSessionCallback,
         equalTo(true));
 
-    waitUntilCalled(session, callback, waitMethods);
+    waitUntilCalled(session, callback, waitMethods, null);
   }
 
   /**
@@ -1649,9 +1707,7 @@ public class GeckoSessionTestRule implements TestRule {
           throw new RuntimeException(e);
         }
         final AssertCalled ac = getAssertCalled(callbackMethod, callback);
-        if (ac != null && ac.value() && ac.count() != 0) {
-          methodCalls.add(new MethodCall(session, method, ac, /* target */ null));
-        }
+        methodCalls.add(new MethodCall(session, method, ac, /* target */ null));
       }
       isSessionCallback = true;
     }
@@ -1662,14 +1718,29 @@ public class GeckoSessionTestRule implements TestRule {
         isSessionCallback,
         equalTo(true));
 
-    waitUntilCalled(session, callback.getClass(), methodCalls);
-    forCallbacksDuringWait(session, callback);
+    waitUntilCalled(session, callback.getClass(), methodCalls, callback);
+  }
+
+  /**
+   * * Implement this interface in {@link #waitUntilCalled} to allow waiting until this method
+   * returns true. E.g. for when the test needs to wait for a specific value on a delegate call.
+   */
+  public interface ShouldContinue {
+    /**
+     * Whether the test should keep waiting or not.
+     *
+     * @return true if the test should keep waiting.
+     */
+    default boolean shouldContinue() {
+      return false;
+    }
   }
 
   private void waitUntilCalled(
       final @Nullable GeckoSession session,
       final @NonNull Class<?> delegate,
-      final @NonNull List<MethodCall> methodCalls) {
+      final @NonNull List<MethodCall> methodCalls,
+      final @Nullable Object callback) {
     ThreadUtils.assertOnUiThread();
 
     if (session != null && !session.equals(mMainSession)) {
@@ -1680,9 +1751,9 @@ public class GeckoSessionTestRule implements TestRule {
     // instead of through GeckoSession directly, so that we can still record calls even with
     // custom handlers set.
     for (final Class<?> ifce : DEFAULT_DELEGATES) {
-      final Object callback;
+      final Object sessionDelegate;
       try {
-        callback = getDelegate(ifce, session == null ? mMainSession : session);
+        sessionDelegate = getDelegate(ifce, session == null ? mMainSession : session);
       } catch (final NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
         throw unwrapRuntimeException(e);
       }
@@ -1694,12 +1765,12 @@ public class GeckoSessionTestRule implements TestRule {
           ifce.getSimpleName()
               + " callbacks should be "
               + "accessed through GeckoSessionTestRule delegate methods",
-          callback,
+          sessionDelegate,
           sameInstance(mCallbackProxy));
     }
 
     for (final Class<?> ifce : DEFAULT_RUNTIME_DELEGATES) {
-      final Object callback = getRuntimeDelegate(ifce, getRuntime());
+      final Object runtimeDelegate = getRuntimeDelegate(ifce, getRuntime());
       if (mNullDelegates.contains(ifce)) {
         // Null-delegates are initially null but are allowed to be any value.
         continue;
@@ -1708,7 +1779,7 @@ public class GeckoSessionTestRule implements TestRule {
           ifce.getSimpleName()
               + " callbacks should be "
               + "accessed through GeckoSessionTestRule delegate methods",
-          callback,
+          runtimeDelegate,
           sameInstance(mCallbackProxy));
     }
 
@@ -1734,7 +1805,19 @@ public class GeckoSessionTestRule implements TestRule {
 
     beforeWait();
 
-    while (!calledAny || !methodCalls.isEmpty()) {
+    ShouldContinue cont = new ShouldContinue() {};
+    if (callback instanceof ShouldContinue) {
+      cont = (ShouldContinue) callback;
+    }
+
+    List<MethodCall> pendingMethodCalls =
+        methodCalls.stream()
+            .filter(
+                mc -> mc.requirement != null && mc.requirement.count != 0 && mc.requirement.allowed)
+            .collect(Collectors.toList());
+
+    int order = 0;
+    while (!calledAny || !pendingMethodCalls.isEmpty() || cont.shouldContinue()) {
       final int currentIndex = index;
 
       // Let's wait for more messages if we reached the end
@@ -1744,8 +1827,12 @@ public class GeckoSessionTestRule implements TestRule {
         throw new UiThreadUtils.TimeoutException("Timed out after " + mTimeoutMillis + "ms");
       }
 
-      final MethodCall recorded = mCallRecords.get(index).methodCall;
-      calledAny |= recorded.method.getDeclaringClass().isAssignableFrom(delegate);
+      final CallRecord record = mCallRecords.get(index);
+      final MethodCall recorded = record.methodCall;
+
+      final boolean isDelegate = recorded.method.getDeclaringClass().isAssignableFrom(delegate);
+
+      calledAny |= isDelegate;
       index++;
 
       final int i = methodCalls.indexOf(recorded);
@@ -1754,9 +1841,25 @@ public class GeckoSessionTestRule implements TestRule {
       }
 
       final MethodCall methodCall = methodCalls.get(i);
+      assertAllowMoreCalls(methodCall);
+
       methodCall.incrementCounter();
+      assertOrder(methodCall, order);
+      order = Math.max(methodCall.getOrder(), order);
+
       if (methodCall.allowUnlimitedCalls() || !methodCall.allowMoreCalls()) {
-        methodCalls.remove(i);
+        pendingMethodCalls.remove(methodCall);
+      }
+
+      if (isDelegate && callback != null) {
+        try {
+          mCurrentMethodCall = methodCall;
+          record.method.invoke(callback, record.args);
+        } catch (IllegalAccessException | InvocationTargetException e) {
+          throw unwrapRuntimeException(e);
+        } finally {
+          mCurrentMethodCall = null;
+        }
       }
     }
 
@@ -2013,6 +2116,217 @@ public class GeckoSessionTestRule implements TestRule {
     session.getPanZoomController().onTouchEvent(moveEvent);
   }
 
+  /**
+   * Simulates a press to the Home button, causing the application to go to onPause. NB: Some time
+   * must elapse for the event to fully occur.
+   *
+   * @param context starting the Home intent
+   */
+  public void simulatePressHome(Context context) {
+    Intent intent = new Intent();
+    intent.setAction(Intent.ACTION_MAIN);
+    intent.addCategory(Intent.CATEGORY_HOME);
+    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    context.startActivity(intent);
+  }
+
+  /**
+   * Simulates returningGeckoViewTestActivity to the foreground. Activity must already be in use.
+   * NB: Some time must elapse for the event to fully occur.
+   *
+   * @param context starting the intent
+   */
+  public void requestActivityToForeground(Context context) {
+    Intent notificationIntent = new Intent(context, GeckoViewTestActivity.class);
+    notificationIntent.setAction(Intent.ACTION_MAIN);
+    notificationIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+    notificationIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    context.startActivity(notificationIntent);
+  }
+
+  /**
+   * Mock Location Provider can be used in testing for creating mock locations. NB: Likely also need
+   * to set test setting geo.provider.testing to false to prevent network geolocation from
+   * interfering when using.
+   */
+  public class MockLocationProvider {
+
+    private final LocationManager locationManager;
+    private final String mockProviderName;
+    private boolean isActiveTestProvider = false;
+    private double mockLatitude;
+    private double mockLongitude;
+    private float mockAccuracy = .000001f;
+    private boolean doContinuallyPost;
+
+    @Nullable private ScheduledExecutorService executor;
+
+    /**
+     * Mock Location Provider adds a test provider to the location manager and controls sending mock
+     * locations. Use @{@link #postLocation()} to post the location to the location manager.
+     * Use @{@link #removeMockLocationProvider()} to remove the location provider to clean-up the
+     * test harness. Default accuracy is .000001f.
+     *
+     * @param locationManager location manager to accept the locations
+     * @param mockProviderName location provider that will use this location
+     * @param mockLatitude initial latitude in degrees that @{@link #postLocation()} will use
+     * @param mockLongitude initial longitude in degrees that @{@link #postLocation()} will use
+     * @param doContinuallyPost when posting a location, continue to post every 3s to keep location
+     *     current
+     */
+    public MockLocationProvider(
+        LocationManager locationManager,
+        String mockProviderName,
+        double mockLatitude,
+        double mockLongitude,
+        boolean doContinuallyPost) {
+      this.locationManager = locationManager;
+      this.mockProviderName = mockProviderName;
+      this.mockLatitude = mockLatitude;
+      this.mockLongitude = mockLongitude;
+      this.doContinuallyPost = doContinuallyPost;
+      addMockLocationProvider();
+    }
+
+    /** Adds a mock location provider that can have locations manually set. */
+    private void addMockLocationProvider() {
+      // Ensures that only one location provider with this name exists
+      removeMockLocationProvider();
+      locationManager.addTestProvider(
+          mockProviderName,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          Criteria.POWER_LOW,
+          Criteria.ACCURACY_FINE);
+      locationManager.setTestProviderEnabled(mockProviderName, true);
+      isActiveTestProvider = true;
+    }
+
+    /**
+     * Removes the location provider. Recommend calling when ending test to prevent the mock
+     * provider remaining as a test provider.
+     */
+    public void removeMockLocationProvider() {
+      stopPostingLocation();
+      try {
+        locationManager.removeTestProvider(mockProviderName);
+      } catch (Exception e) {
+        // Throws an exception if there is no provider with that name
+      }
+      isActiveTestProvider = false;
+    }
+
+    /**
+     * Sets the mock location on MockLocationProvider, that will be used by @{@link #postLocation()}
+     *
+     * @param latitude latitude in degrees to mock
+     * @param longitude longitude in degrees to mock
+     */
+    public void setMockLocation(double latitude, double longitude) {
+      mockLatitude = latitude;
+      mockLongitude = longitude;
+    }
+
+    /**
+     * Sets the mock location on a MockLocationProvider, that will be used by @{@link
+     * #postLocation()} . Note, changing the accuracy can affect the importance of the mock provider
+     * compared to other location providers.
+     *
+     * @param latitude latitude in degrees to mock
+     * @param longitude longitude in degrees to mock
+     * @param accuracy horizontal accuracy in meters to mock
+     */
+    public void setMockLocation(double latitude, double longitude, float accuracy) {
+      mockLatitude = latitude;
+      mockLongitude = longitude;
+      mockAccuracy = accuracy;
+    }
+
+    /**
+     * When doContinuallyPost is set to true, @{@link #postLocation()} will post the location to the
+     * location manager every 3s. When set to false, @{@link #postLocation()} will only post the
+     * location once. Purpose is to prevent the location from becoming stale.
+     *
+     * @param doContinuallyPost setting for continually posting the location after calling @{@link
+     *     #postLocation()}
+     */
+    public void setDoContinuallyPost(boolean doContinuallyPost) {
+      this.doContinuallyPost = doContinuallyPost;
+    }
+
+    /**
+     * Shutsdown and removes the executor created by @{@link #postLocation()} when @{@link
+     * #doContinuallyPost is true} to stop posting the location.
+     */
+    public void stopPostingLocation() {
+      if (executor != null) {
+        executor.shutdown();
+        executor = null;
+      }
+    }
+
+    /**
+     * Posts the set location to the system location manager. If @{@link #doContinuallyPost} is
+     * true, the location will be posted every 3s by an executor, otherwise will post once.
+     */
+    public void postLocation() {
+      if (!isActiveTestProvider) {
+        throw new IllegalStateException("The mock test provider is not active.");
+      }
+
+      // Ensure the thread that was posting a location (if applicable) is stopped.
+      stopPostingLocation();
+
+      // Set Location
+      Location location = new Location(mockProviderName);
+      location.setAccuracy(mockAccuracy);
+      location.setLatitude(mockLatitude);
+      location.setLongitude(mockLongitude);
+      location.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+      location.setTime(System.currentTimeMillis());
+      locationManager.setTestProviderLocation(mockProviderName, location);
+      Log.i(
+          LOGTAG,
+          mockProviderName
+              + " is posting location, lat: "
+              + mockLatitude
+              + " lon: "
+              + mockLongitude
+              + " acc: "
+              + mockAccuracy);
+      // Continually post location
+      if (doContinuallyPost) {
+        executor = Executors.newScheduledThreadPool(1);
+        executor.scheduleAtFixedRate(
+            new Runnable() {
+              @Override
+              public void run() {
+                location.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+                location.setTime(System.currentTimeMillis());
+                locationManager.setTestProviderLocation(mockProviderName, location);
+                Log.i(
+                    LOGTAG,
+                    mockProviderName
+                        + " is posting location, lat: "
+                        + mockLatitude
+                        + " lon: "
+                        + mockLongitude
+                        + " acc: "
+                        + mockAccuracy);
+              }
+            },
+            0,
+            3,
+            TimeUnit.SECONDS);
+      }
+    }
+  }
+
   Map<GeckoSession, WebExtension.Port> mPorts = new HashMap<>();
 
   private class MessageDelegate implements WebExtension.MessageDelegate, WebExtension.PortDelegate {
@@ -2174,8 +2488,29 @@ public class GeckoSessionTestRule implements TestRule {
   }
 
   public boolean getActive(final @NonNull GeckoSession session) {
-    final Boolean isActive = (Boolean) webExtensionApiCall(session, "GetActive", null);
-    return isActive;
+    return (Boolean) webExtensionApiCall(session, "GetActive", null);
+  }
+
+  public void triggerCookieBannerDetected(final @NonNull GeckoSession session) {
+    webExtensionApiCall(session, "TriggerCookieBannerDetected", null);
+  }
+
+  public void triggerCookieBannerHandled(final @NonNull GeckoSession session) {
+    webExtensionApiCall(session, "TriggerCookieBannerHandled", null);
+  }
+
+  public void triggerTranslationsOffer(final @NonNull GeckoSession session) {
+    webExtensionApiCall(session, "TriggerTranslationsOffer", null);
+  }
+
+  public void triggerLanguageStateChange(
+      final @NonNull GeckoSession session, final @NonNull JSONObject languageState) {
+    webExtensionApiCall(
+        session,
+        "TriggerLanguageStateChange",
+        args -> {
+          args.put("languageState", languageState);
+        });
   }
 
   private Object waitForMessage(final WebExtension.Port port, final String id) {
@@ -2432,6 +2767,11 @@ public class GeckoSessionTestRule implements TestRule {
     webExtensionApiCall("CrashGpuProcess", null);
   }
 
+  /** Clears sites from the HSTS list. */
+  public void clearHSTSState() {
+    webExtensionApiCall("ClearHSTSState", null);
+  }
+
   private Object webExtensionApiCall(
       final @NonNull String apiName, final @NonNull SetArgs argsSetter) {
     return webExtensionApiCall(null, apiName, argsSetter);
@@ -2533,7 +2873,9 @@ public class GeckoSessionTestRule implements TestRule {
     }
   }
 
-  /** @see #addExternalDelegateUntilTestEnd(Class, DelegateRegistrar, DelegateRegistrar, Object) */
+  /**
+   * @see #addExternalDelegateUntilTestEnd(Class, DelegateRegistrar, DelegateRegistrar, Object)
+   */
   public <T> void addExternalDelegateUntilTestEnd(
       @NonNull final KClass<T> delegate,
       @NonNull final DelegateRegistrar<T> register,
@@ -2597,9 +2939,22 @@ public class GeckoSessionTestRule implements TestRule {
    * @return The value of the completed {@link GeckoResult}.
    */
   public <T> T waitForResult(@NonNull final GeckoResult<T> result) throws Throwable {
+    return waitForResult(result, mTimeoutMillis);
+  }
+
+  /**
+   * This is similar to waitForResult with specific timeout.
+   *
+   * @param result A {@link GeckoResult} instance.
+   * @param timeout timeout in milliseconds
+   * @param <T> The type of the value held by the {@link GeckoResult}
+   * @return The value of the completed {@link GeckoResult}.
+   */
+  private <T> T waitForResult(@NonNull final GeckoResult<T> result, final long timeout)
+      throws Throwable {
     beforeWait();
     try {
-      return UiThreadUtils.waitForResult(result, mTimeoutMillis);
+      return UiThreadUtils.waitForResult(result, timeout);
     } catch (final Throwable e) {
       throw unwrapRuntimeException(e);
     } finally {

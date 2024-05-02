@@ -9,22 +9,14 @@
 
 #include "mozilla/dom/quota/Config.h"
 
-namespace mozilla {
-namespace dom {
-namespace quota {
-
-class PQuotaParent;
+namespace mozilla::dom::quota {
 
 void InitializeQuotaManager();
 
-PQuotaParent* AllocPQuotaParent();
-
-bool DeallocPQuotaParent(PQuotaParent* aActor);
+void InitializeScopedLogExtraInfo();
 
 bool RecvShutdownQuotaManager();
 
-}  // namespace quota
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::quota
 
 #endif  // mozilla_dom_quota_ActorsParent_h

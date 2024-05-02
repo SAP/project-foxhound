@@ -1,9 +1,10 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
 esid: sec-temporal.calendar.prototype.dayofyear
-description: Temporal.Calendar.prototype.dayOfYear will take PlainDate object and
+description: >
+  Temporal.Calendar.prototype.dayOfYear will take PlainDate object and
   return the day of year.
 info: |
   5. Return 𝔽(! ToISODayOfYear(temporalDate.[[ISOYear]], temporalDate.[[ISOMonth]], temporalDate.[[ISODay]])).

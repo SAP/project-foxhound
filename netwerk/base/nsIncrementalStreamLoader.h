@@ -15,9 +15,7 @@
 
 class nsIRequest;
 
-class nsIncrementalStreamLoader final
-    : public nsIIncrementalStreamLoader,
-      public nsIThreadRetargetableStreamListener {
+class nsIncrementalStreamLoader final : public nsIIncrementalStreamLoader {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINCREMENTALSTREAMLOADER
@@ -27,7 +25,7 @@ class nsIncrementalStreamLoader final
 
   nsIncrementalStreamLoader();
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
  protected:
   ~nsIncrementalStreamLoader() = default;
@@ -53,7 +51,7 @@ class nsIncrementalStreamLoader final
   // Buffer to accumulate incoming data. We preallocate if contentSize is
   // available.
   mozilla::Vector<uint8_t, 0> mData;
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 
   // Number of bytes read, which may not match the number of bytes in mData at
   // all, as we incrementally remove from there.

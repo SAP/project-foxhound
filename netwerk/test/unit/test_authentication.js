@@ -3,16 +3,18 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 // Turn off the authentication dialog blocking for this test.
 Services.prefs.setIntPref("network.auth.subresource-http-auth-allow", 2);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpserv.identity.primaryPort;
 });
 
-XPCOMUtils.defineLazyGetter(this, "PORT", function() {
+ChromeUtils.defineLazyGetter(this, "PORT", function () {
   return httpserv.identity.primaryPort;
 });
 
@@ -30,6 +32,8 @@ const nsIAuthInformation = Ci.nsIAuthInformation;
 function AuthPrompt1(flags) {
   this.flags = flags;
 }
+
+var initialChannelId = -1;
 
 AuthPrompt1.prototype = {
   user: "guest",
@@ -145,6 +149,7 @@ AuthPrompt2.prototype = {
     const kAllKnownFlags = 127; // Don't fail test for newly added flags
     Assert.equal(expectedFlags, authInfo.flags & kAllKnownFlags);
 
+    // eslint-disable-next-line no-nested-ternary
     var expectedScheme = isNTLM ? "ntlm" : isDigest ? "digest" : "basic";
     Assert.equal(expectedScheme, authInfo.authenticationScheme);
 
@@ -180,7 +185,15 @@ AuthPrompt2.prototype = {
   },
 
   asyncPromptAuth: function ap2_async(chan, cb, ctx, lvl, info) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+    let self = this;
+    executeSoon(function () {
+      let ret = self.promptAuth(chan, lvl, info);
+      if (ret) {
+        cb.onAuthAvailable(ctx, info);
+      } else {
+        cb.onAuthCancelled(ctx, true);
+      }
+    });
   },
 };
 
@@ -247,15 +260,32 @@ RealmTestRequestor.prototype = {
 var listener = {
   expectedCode: -1, // Uninitialized
   nextTest: undefined,
-
+  expectRequestFail: false,
   onStartRequest: function test_onStartR(request) {
     try {
-      if (!Components.isSuccessCode(request.status)) {
+      if (
+        !this.expectRequestFail &&
+        !Components.isSuccessCode(request.status)
+      ) {
         do_throw("Channel should have a success code!");
       }
 
       if (!(request instanceof Ci.nsIHttpChannel)) {
         do_throw("Expecting an HTTP channel");
+      }
+
+      if (
+        Services.prefs.getBoolPref("network.auth.use_redirect_for_retries") &&
+        // we should skip redirect check if we do not expect to succeed
+        this.expectedCode == 200
+      ) {
+        // ensure channel ids are initialized
+        Assert.notEqual(initialChannelId, -1);
+
+        // for each request we must use a unique channel ID.
+        // See Bug 1820807
+        var chan = request.QueryInterface(Ci.nsIIdentChannel);
+        Assert.notEqual(initialChannelId, chan.channelId);
       }
 
       Assert.equal(request.responseStatus, this.expectedCode);
@@ -274,12 +304,65 @@ var listener = {
 
   onStopRequest: function test_onStopR(request, status) {
     Assert.equal(status, Cr.NS_ERROR_ABORT);
-
+    initialChannelId = -1;
     this.nextTest();
   },
 };
 
-function makeChan(url, loadingUrl) {
+let ChannelEventSink1 = {
+  _classDescription: "WebRequest channel event sink",
+  _classID: Components.ID("115062f8-92f1-11e5-8b7f-08001110f7ec"),
+  _contractID: "@mozilla.org/webrequest/channel-event-sink;1",
+
+  QueryInterface: ChromeUtils.generateQI(["nsIChannelEventSink", "nsIFactory"]),
+
+  init() {
+    Components.manager
+      .QueryInterface(Ci.nsIComponentRegistrar)
+      .registerFactory(
+        this._classID,
+        this._classDescription,
+        this._contractID,
+        this
+      );
+  },
+
+  register() {
+    Services.catMan.addCategoryEntry(
+      "net-channel-event-sinks",
+      this._contractID,
+      this._contractID,
+      false,
+      true
+    );
+  },
+
+  unregister() {
+    Services.catMan.deleteCategoryEntry(
+      "net-channel-event-sinks",
+      this._contractID,
+      false
+    );
+  },
+
+  // nsIChannelEventSink implementation
+  asyncOnChannelRedirect(oldChannel, newChannel, flags, redirectCallback) {
+    // Abort the redirection
+    redirectCallback.onRedirectVerifyCallback(Cr.NS_ERROR_ABORT);
+  },
+
+  // nsIFactory implementation
+  createInstance(iid) {
+    return this.QueryInterface(iid);
+  },
+};
+
+function makeChan(
+  url,
+  loadingUrl,
+  securityFlags = Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+  contentPolicyType = Ci.nsIContentPolicy.TYPE_OTHER
+) {
   var principal = Services.scriptSecurityManager.createContentPrincipal(
     Services.io.newURI(loadingUrl),
     {}
@@ -287,12 +370,19 @@ function makeChan(url, loadingUrl) {
   return NetUtil.newChannel({
     uri: url,
     loadingPrincipal: principal,
-    securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-    contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
+    securityFlags,
+    contentPolicyType,
   });
 }
 
-var current_test = 0;
+var ChannelCreationObserver = {
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
+  observe(aSubject, aTopic, aData) {
+    if (aTopic == "http-on-opening-request") {
+      initialChannelId = aSubject.QueryInterface(Ci.nsIIdentChannel).channelId;
+    }
+  },
+};
 
 var httpserv = null;
 
@@ -300,6 +390,10 @@ function setup() {
   httpserv = new HttpServer();
 
   httpserv.registerPathHandler("/auth", authHandler);
+  httpserv.registerPathHandler(
+    "/auth/stored/wrong/credentials/",
+    authHandlerWrongStoredCredentials
+  );
   httpserv.registerPathHandler("/auth/ntlm/simple", authNtlmSimple);
   httpserv.registerPathHandler("/auth/realm", authRealm);
   httpserv.registerPathHandler("/auth/non_ascii", authNonascii);
@@ -317,11 +411,14 @@ function setup() {
   httpserv.registerPathHandler("/largeRealm", largeRealm);
   httpserv.registerPathHandler("/largeDomain", largeDomain);
 
+  httpserv.registerPathHandler("/corp-coep", corpAndCoep);
+
   httpserv.start(-1);
 
   registerCleanupFunction(async () => {
     await httpserv.stop();
   });
+  Services.obs.addObserver(ChannelCreationObserver, "http-on-opening-request");
 }
 setup();
 
@@ -335,86 +432,100 @@ async function openAndListen(chan) {
     .clearAll();
 }
 
-add_task(async function test_noauth() {
+async function test_noauth() {
   var chan = makeChan(URL + "/auth", URL);
 
   listener.expectedCode = 401; // Unauthorized
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_returnfalse1() {
+async function test_returnfalse1() {
   var chan = makeChan(URL + "/auth", URL);
 
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 1);
   listener.expectedCode = 401; // Unauthorized
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_wrongpw1() {
+async function test_wrongpw1() {
   var chan = makeChan(URL + "/auth", URL);
 
   chan.notificationCallbacks = new Requestor(FLAG_WRONG_PASSWORD, 1);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_prompt1() {
+async function test_prompt1() {
   var chan = makeChan(URL + "/auth", URL);
 
   chan.notificationCallbacks = new Requestor(0, 1);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_prompt1CrossOrigin() {
+async function test_prompt1CrossOrigin() {
   var chan = makeChan(URL + "/auth", "http://example.org");
 
   chan.notificationCallbacks = new Requestor(16, 1);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_prompt2CrossOrigin() {
+async function test_prompt2CrossOrigin() {
   var chan = makeChan(URL + "/auth", "http://example.org");
 
   chan.notificationCallbacks = new Requestor(16, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_returnfalse2() {
+async function test_returnfalse2() {
   var chan = makeChan(URL + "/auth", URL);
 
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
   listener.expectedCode = 401; // Unauthorized
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_wrongpw2() {
+async function test_wrongpw2() {
   var chan = makeChan(URL + "/auth", URL);
 
   chan.notificationCallbacks = new Requestor(FLAG_WRONG_PASSWORD, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_prompt2() {
+var requestNum = 0;
+var expectedRequestNum = 0;
+async function test_wrong_stored_passwd() {
+  // tests that we don't retry auth requests for incorrect custom credentials passed during channel creation
+  requestNum = 0;
+  expectedRequestNum = 1;
+  var chan = makeChan(URL + "/auth/stored/wrong/credentials/", URL);
+  chan.nsIHttpChannel.setRequestHeader("Authorization", "wrong_cred", false);
+  chan.notificationCallbacks = new Requestor(0, 1);
+  listener.expectedCode = 401; // Unauthorized
+
+  await openAndListen(chan);
+}
+
+async function test_prompt2() {
   var chan = makeChan(URL + "/auth", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_ntlm() {
+async function test_ntlm() {
   var chan = makeChan(URL + "/auth/ntlm/simple", URL);
 
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
   listener.expectedCode = 401; // Unauthorized
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_basicrealm() {
+async function test_basicrealm() {
   var chan = makeChan(URL + "/auth/realm", URL);
 
   let requestor = new RealmTestRequestor();
@@ -422,101 +533,140 @@ add_task(async function test_basicrealm() {
   listener.expectedCode = 401; // Unauthorized
   await openAndListen(chan);
   Assert.equal(requestor.promptRealm, '"foo_bar');
-});
+}
 
-add_task(async function test_nonascii() {
+async function test_nonascii() {
   var chan = makeChan(URL + "/auth/non_ascii", URL);
 
   chan.notificationCallbacks = new Requestor(FLAG_NON_ASCII_USER_PASSWORD, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_noauth() {
+async function test_digest_noauth() {
   var chan = makeChan(URL + "/auth/digest_md5", URL);
 
   // chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
   listener.expectedCode = 401; // Unauthorized
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_md5() {
+async function test_digest_md5() {
   var chan = makeChan(URL + "/auth/digest_md5", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_md5sess() {
+add_task(
+  { pref_set: [["network.auth.use_redirect_for_retries", true]] },
+  async function test_digest_md5_redirect_veto() {
+    ChannelEventSink1.init();
+    ChannelEventSink1.register();
+    var chan = makeChan(URL + "/auth/digest_md5", URL);
+
+    chan.notificationCallbacks = new Requestor(0, 1);
+    listener.expectedCode = 401; // Unauthorized
+    listener.expectRequestFail = true;
+    await openAndListen(chan);
+    ChannelEventSink1.unregister();
+    listener.expectRequestFail = false;
+  }
+);
+
+async function test_digest_md5sess() {
   var chan = makeChan(URL + "/auth/digest_md5sess", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_sha256() {
+async function test_digest_sha256() {
   var chan = makeChan(URL + "/auth/digest_sha256", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_sha256sess() {
+async function test_digest_sha256sess() {
   var chan = makeChan(URL + "/auth/digest_sha256sess", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_sha256_md5() {
+async function test_digest_sha256_md5() {
   var chan = makeChan(URL + "/auth/digest_sha256_md5", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_md5_sha256() {
+async function test_digest_md5_sha256() {
   var chan = makeChan(URL + "/auth/digest_md5_sha256", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_md5_sha256_oneline() {
+async function test_digest_md5_sha256_oneline() {
   var chan = makeChan(URL + "/auth/digest_md5_sha256_oneline", URL);
 
   chan.notificationCallbacks = new Requestor(0, 2);
   listener.expectedCode = 200; // OK
   await openAndListen(chan);
-});
+}
 
-add_task(async function test_digest_bogus_user() {
+async function test_digest_bogus_user() {
   var chan = makeChan(URL + "/auth/digest_md5", URL);
   chan.notificationCallbacks = new Requestor(FLAG_BOGUS_USER, 2);
   listener.expectedCode = 401; // unauthorized
   await openAndListen(chan);
-});
+}
 
 // Test header "WWW-Authenticate: Digest" - bug 1338876.
-add_task(async function test_short_digest() {
+async function test_short_digest() {
   var chan = makeChan(URL + "/auth/short_digest", URL);
   chan.notificationCallbacks = new Requestor(FLAG_NO_REALM, 2);
   listener.expectedCode = 401; // OK
   await openAndListen(chan);
-});
+}
+
+// Test that COOP/COEP are processed even though asyncPromptAuth is cancelled.
+async function test_corp_coep() {
+  var chan = makeChan(
+    URL + "/corp-coep",
+    URL,
+    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
+    Ci.nsIContentPolicy.TYPE_DOCUMENT
+  );
+
+  chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
+  listener.expectedCode = 401; // OK
+  await openAndListen(chan);
+
+  Assert.equal(
+    chan.getResponseHeader("cross-origin-embedder-policy"),
+    "require-corp"
+  );
+  Assert.equal(
+    chan.getResponseHeader("cross-origin-opener-policy"),
+    "same-origin"
+  );
+}
 
 // XXX(valentin): this makes tests fail if it's not run last. Why?
-add_task(async function test_nonascii_xhr() {
+async function test_nonascii_xhr() {
   await new Promise(resolve => {
     let xhr = new XMLHttpRequest();
     xhr.open("GET", URL + "/auth/non_ascii", true, "é", "é");
-    xhr.onreadystatechange = function(event) {
+    xhr.onreadystatechange = function (event) {
       if (xhr.readyState == 4) {
         Assert.equal(xhr.status, 200);
         resolve();
@@ -525,7 +675,49 @@ add_task(async function test_nonascii_xhr() {
     };
     xhr.send(null);
   });
-});
+}
+
+let auth_tests = [
+  test_noauth,
+  test_returnfalse1,
+  test_wrongpw1,
+  test_wrong_stored_passwd,
+  test_prompt1,
+  test_prompt1CrossOrigin,
+  test_prompt2CrossOrigin,
+  test_returnfalse2,
+  test_wrongpw2,
+  test_prompt2,
+  test_ntlm,
+  test_basicrealm,
+  test_nonascii,
+  test_digest_noauth,
+  test_digest_md5,
+  test_digest_md5sess,
+  test_digest_sha256,
+  test_digest_sha256sess,
+  test_digest_sha256_md5,
+  test_digest_md5_sha256,
+  test_digest_md5_sha256_oneline,
+  test_digest_bogus_user,
+  test_short_digest,
+  test_corp_coep,
+  test_nonascii_xhr,
+];
+
+for (let auth_test of auth_tests) {
+  add_task(
+    { pref_set: [["network.auth.use_redirect_for_retries", false]] },
+    auth_test
+  );
+}
+
+for (let auth_test of auth_tests) {
+  add_task(
+    { pref_set: [["network.auth.use_redirect_for_retries", true]] },
+    auth_test
+  );
+}
 
 // PATH HANDLERS
 
@@ -551,6 +743,23 @@ function authHandler(metadata, response) {
     body = "failed";
   }
 
+  response.bodyOutputStream.write(body, body.length);
+}
+
+function authHandlerWrongStoredCredentials(metadata, response) {
+  var body;
+  if (++requestNum > expectedRequestNum) {
+    response.setStatusLine(metadata.httpVersion, 500, "");
+  } else {
+    response.setStatusLine(
+      metadata.httpVersion,
+      401,
+      "Unauthorized" + requestNum
+    );
+    response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
+  }
+
+  body = "failed";
   response.bodyOutputStream.write(body, body.length);
 }
 
@@ -606,16 +815,18 @@ function authNonascii(metadata, response) {
   response.bodyOutputStream.write(body, body.length);
 }
 
+function corpAndCoep(metadata, response) {
+  response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
+  response.setHeader("cross-origin-embedder-policy", "require-corp");
+  response.setHeader("cross-origin-opener-policy", "same-origin");
+  response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
+}
+
 //
 // Digest functions
 //
 function bytesFromString(str) {
-  var converter = Cc[
-    "@mozilla.org/intl/scriptableunicodeconverter"
-  ].createInstance(Ci.nsIScriptableUnicodeConverter);
-  converter.charset = "UTF-8";
-  var data = converter.convertToByteArray(str);
-  return data;
+  return new TextEncoder().encode(str);
 }
 
 // return the two-digit hexadecimal code for a byte
@@ -850,12 +1061,12 @@ function authShortDigest(metadata, response) {
   response.setHeader("WWW-Authenticate", "Digest", false);
 }
 
-let buildLargePayload = (function() {
+let buildLargePayload = (function () {
   let size = 33 * 1024;
   let ret = "";
-  return function() {
+  return function () {
     // Return cached value.
-    if (ret.length > 0) {
+    if (ret.length) {
       return ret;
     }
     for (let i = 0; i < size; i++) {

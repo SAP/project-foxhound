@@ -5,12 +5,12 @@
 
 // Test the ResourceCommand API internal cache / ignoreExistingResources around NETWORK_EVENT
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
 const EXAMPLE_DOMAIN = "https://example.com/";
 const TEST_URI = `${URL_ROOT_SSL}network_document.html`;
 
-add_task(async function() {
+add_task(async function () {
   info("Test basic NETWORK_EVENT resources against ResourceCommand cache");
   await testNetworkEventResourcesWithExistingResources();
   await testNetworkEventResourcesWithoutExistingResources();

@@ -9,11 +9,14 @@
 
 #include "vm/ErrorObject.h"
 
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
+
+#include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 
 inline JSString* js::ErrorObject::fileName(JSContext* cx) const {
   Value val = getReservedSlot(FILENAME_SLOT);
-  return val.isString() ? val.toString() : cx->names().empty;
+  return val.isString() ? val.toString() : cx->names().empty_;
 }
 
 inline uint32_t js::ErrorObject::sourceId() const {
@@ -26,9 +29,13 @@ inline uint32_t js::ErrorObject::lineNumber() const {
   return val.isInt32() ? val.toInt32() : 0;
 }
 
-inline uint32_t js::ErrorObject::columnNumber() const {
+inline JS::ColumnNumberOneOrigin js::ErrorObject::columnNumber() const {
   Value val = getReservedSlot(COLUMNNUMBER_SLOT);
-  return val.isInt32() ? val.toInt32() : 0;
+  // If Error object's `columnNumber` property is modified from JS code,
+  // COLUMNNUMBER_SLOT slot can contain non-int32 value.
+  // Use column number 1 as fallback value for such case.
+  return val.isInt32() ? JS::ColumnNumberOneOrigin(val.toInt32())
+                       : JS::ColumnNumberOneOrigin();
 }
 
 inline JSObject* js::ErrorObject::stack() const {

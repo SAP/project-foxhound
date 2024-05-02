@@ -143,7 +143,7 @@ class nsInputStreamTeeWriteEvent : public Runnable {
 };
 
 nsInputStreamTee::nsInputStreamTee()
-    : mWriter(nullptr), mClosure(nullptr), mLock(), mSinkIsValid(true) {}
+    : mWriter(nullptr), mClosure(nullptr), mSinkIsValid(true) {}
 
 bool nsInputStreamTee::SinkIsValid() {
   MutexAutoLock lock(*mLock);
@@ -264,6 +264,14 @@ nsInputStreamTee::Available(uint64_t* aAvail) {
     return NS_ERROR_NOT_INITIALIZED;
   }
   return mSource->Available(aAvail);
+}
+
+NS_IMETHODIMP
+nsInputStreamTee::StreamStatus() {
+  if (NS_WARN_IF(!mSource)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+  return mSource->StreamStatus();
 }
 
 NS_IMETHODIMP

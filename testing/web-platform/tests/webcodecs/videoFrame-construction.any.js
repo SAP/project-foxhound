@@ -18,12 +18,12 @@ test(t => {
 
 test(t => {
   let image = makeImageBitmap(32, 16);
-  let frame = new VideoFrame(image, {timestamp: 10});
+  let frame = new VideoFrame(image, {timestamp: 10, duration: 15});
   frame.close();
 
   assert_equals(frame.format, null, 'format')
-  assert_equals(frame.timestamp, null, 'timestamp');
-  assert_equals(frame.duration, null, 'duration');
+  assert_equals(frame.timestamp, 10, 'timestamp');
+  assert_equals(frame.duration, 15, 'duration');
   assert_equals(frame.codedWidth, 0, 'codedWidth');
   assert_equals(frame.codedHeight, 0, 'codedHeight');
   assert_equals(frame.visibleRect, null, 'visibleRect');
@@ -33,6 +33,7 @@ test(t => {
   assert_equals(frame.colorSpace.transfer, null, 'colorSpace.transfer');
   assert_equals(frame.colorSpace.matrix, null, 'colorSpace.matrix');
   assert_equals(frame.colorSpace.fullRange, null, 'colorSpace.fullRange');
+  assert_true(isFrameClosed(frame));
 
   assert_throws_dom('InvalidStateError', () => frame.clone());
 }, 'Test closed VideoFrame.');
@@ -43,6 +44,31 @@ test(t => {
   assert_equals(frame.timestamp, -10, 'timestamp');
   frame.close();
 }, 'Test we can construct a VideoFrame with a negative timestamp.');
+
+promise_test(async t => {
+  verifyTimestampRequiredToConstructFrame(makeImageBitmap(1, 1));
+}, 'Test that timestamp is required when constructing VideoFrame from ImageBitmap');
+
+promise_test(async t => {
+  verifyTimestampRequiredToConstructFrame(makeOffscreenCanvas(16, 16));
+}, 'Test that timestamp is required when constructing VideoFrame from OffscreenCanvas');
+
+promise_test(async t => {
+  let init = {
+    format: 'I420',
+    timestamp: 1234,
+    codedWidth: 4,
+    codedHeight: 2
+  };
+  let data = new Uint8Array([
+    1, 2, 3, 4, 5, 6, 7, 8,  // y
+    1, 2,                    // u
+    1, 2,                    // v
+  ]);
+  let i420Frame = new VideoFrame(data, init);
+  let validFrame = new VideoFrame(i420Frame);
+  validFrame.close();
+}, 'Test that timestamp is NOT required when constructing VideoFrame from another VideoFrame');
 
 test(t => {
   let image = makeImageBitmap(1, 1);
@@ -67,6 +93,34 @@ test(t => {
     let frame = new VideoFrame(video, {timestamp: 10});
   })
 }, 'Test constructing w/ unusable image argument throws: HAVE_NOTHING <video>.');
+
+promise_test(async t => {
+  // Test only valid for Window contexts.
+  if (!('document' in self))
+    return;
+
+  let video = document.createElement('video');
+  video.src = 'vp9.mp4';
+  video.autoplay = true;
+  video.controls = false;
+  video.muted = false;
+  document.body.appendChild(video);
+
+  const loadVideo = new Promise((resolve) => {
+    if (video.requestVideoFrameCallback) {
+      video.requestVideoFrameCallback(resolve);
+      return;
+    }
+    video.onloadeddata = () => resolve();
+  });
+  await loadVideo;
+
+  let frame = new VideoFrame(video, {timestamp: 10});
+  assert_equals(frame.codedWidth, 320, 'codedWidth');
+  assert_equals(frame.codedHeight, 240, 'codedHeight');
+  assert_equals(frame.timestamp, 10, 'timestamp');
+  frame.close();
+}, 'Test we can construct a VideoFrame from a <video>.');
 
 test(t => {
   let canvas = new OffscreenCanvas(0, 0);
@@ -113,68 +167,85 @@ test(t => {
 
   assert_throws_js(
       TypeError,
-      () => new VideoFrame(image, {timestamp: 10, visibleRect: {x: -1, y: 0, width: 10, height: 10}}),
-    'negative visibleRect x');
+      () => new VideoFrame(
+          image,
+          {timestamp: 10, visibleRect: {x: -1, y: 0, width: 10, height: 10}}),
+      'negative visibleRect x');
 
-    assert_throws_js(
+  assert_throws_js(
       TypeError,
-      () => new VideoFrame(image, {timestamp: 10, visibleRect: {x: 0, y: 0, width: -10, height: 10}}),
-    'negative visibleRect width');
+      () => new VideoFrame(
+          image,
+          {timestamp: 10, visibleRect: {x: 0, y: 0, width: -10, height: 10}}),
+      'negative visibleRect width');
 
-    assert_throws_js(
+  assert_throws_js(
       TypeError,
-      () => new VideoFrame(image, {timestamp: 10, visibleRect: {x: 0, y: 0, width: 10, height: 0}}),
-    'zero visibleRect height');
+      () => new VideoFrame(
+          image,
+          {timestamp: 10, visibleRect: {x: 0, y: 0, width: 10, height: 0}}),
+      'zero visibleRect height');
 
-    assert_throws_js(
+  assert_throws_js(
+      TypeError, () => new VideoFrame(image, {
+                   timestamp: 10,
+                   visibleRect: {x: 0, y: Infinity, width: 10, height: 10}
+                 }),
+      'non finite visibleRect y');
+
+  assert_throws_js(
+      TypeError, () => new VideoFrame(image, {
+                   timestamp: 10,
+                   visibleRect: {x: 0, y: 0, width: 10, height: Infinity}
+                 }),
+      'non finite visibleRect height');
+
+  assert_throws_js(
       TypeError,
-      () => new VideoFrame(image, {timestamp: 10, visibleRect: {x: 0, y: Infinity, width: 10, height: 10}}),
-    'non finite visibleRect y');
+      () => new VideoFrame(
+          image,
+          {timestamp: 10, visibleRect: {x: 0, y: 0, width: 33, height: 17}}),
+      'visibleRect area exceeds coded size');
 
-    assert_throws_js(
+  assert_throws_js(
       TypeError,
-      () => new VideoFrame(image, {timestamp: 10, visibleRect: {x: 0, y: 0, width: 10, height: Infinity}}),
-    'non finite visibleRect height');
+      () => new VideoFrame(
+          image,
+          {timestamp: 10, visibleRect: {x: 2, y: 2, width: 32, height: 16}}),
+      'visibleRect outside coded size');
 
-    assert_throws_js(
-      TypeError,
-      () => new VideoFrame(image, {timestamp: 10, visibleRect: {x: 0, y: 0, width: 33, height: 17}}),
-    'visibleRect area exceeds coded size');
-
-    assert_throws_js(
-      TypeError,
-      () => new VideoFrame(image, {timestamp: 10, visibleRect: {x: 2, y: 2, width: 32, height: 16}}),
-    'visibleRect outside coded size');
-
-    assert_throws_js(
+  assert_throws_js(
       TypeError,
       () => new VideoFrame(image, {timestamp: 10, displayHeight: 10}),
-    'displayHeight provided without displayWidth');
+      'displayHeight provided without displayWidth');
 
-    assert_throws_js(
-      TypeError,
-      () => new VideoFrame(image, {timestamp: 10, displayWidth: 10}),
-    'displayWidth provided without displayHeight');
+  assert_throws_js(
+      TypeError, () => new VideoFrame(image, {timestamp: 10, displayWidth: 10}),
+      'displayWidth provided without displayHeight');
 
-    assert_throws_js(
+  assert_throws_js(
       TypeError,
-      () => new VideoFrame(image, {timestamp: 10, displayWidth: 0, displayHeight: 10}),
-    'displayWidth is zero');
+      () => new VideoFrame(
+          image, {timestamp: 10, displayWidth: 0, displayHeight: 10}),
+      'displayWidth is zero');
 
-    assert_throws_js(
+  assert_throws_js(
       TypeError,
-      () => new VideoFrame(image, {timestamp: 10, displayWidth: 10, displayHeight: 0}),
-    'displayHeight is zero');
+      () => new VideoFrame(
+          image, {timestamp: 10, displayWidth: 10, displayHeight: 0}),
+      'displayHeight is zero');
 
-    assert_throws_js(
+  assert_throws_js(
       TypeError,
-      () => new VideoFrame(i420Frame, {visibleRect: {x: 1, y: 0, width: 2, height: 2}}),
+      () => new VideoFrame(
+          i420Frame, {visibleRect: {x: 1, y: 0, width: 2, height: 2}}),
       'visibleRect x is not sample aligned');
 
-    assert_throws_js(
-        TypeError,
-        () => new VideoFrame(i420Frame, {visibleRect: {x: 0, y: 0, width: 1, height: 2}}),
-        'visibleRect width is not sample aligned');
+  assert_throws_js(
+      TypeError,
+      () => new VideoFrame(
+          i420Frame, {visibleRect: {x: 0, y: 1, width: 2, height: 2}}),
+      'visibleRect y is not sample aligned');
 
 }, 'Test invalid CanvasImageSource constructed VideoFrames');
 
@@ -192,7 +263,8 @@ test(t => {
   ]);
   let origFrame = new VideoFrame(data, init);
 
-  let cropLeftHalf = new VideoFrame(origFrame, {visibleRect : {x: 0, y: 0, width: 2, height: 2}});
+  let cropLeftHalf = new VideoFrame(
+      origFrame, {visibleRect: {x: 0, y: 0, width: 2, height: 2}});
   assert_equals(cropLeftHalf.codedWidth, origFrame.codedWidth);
   assert_equals(cropLeftHalf.codedHeight, origFrame.codedHeight);
   assert_equals(cropLeftHalf.visibleRect.x, 0);
@@ -219,7 +291,8 @@ test(t => {
   ]);
   let anamorphicFrame = new VideoFrame(data, init);
 
-  let cropRightFrame = new VideoFrame(anamorphicFrame, {visibleRect : {x: 2, y: 0, width: 2, height: 2}});
+  let cropRightFrame = new VideoFrame(
+      anamorphicFrame, {visibleRect: {x: 2, y: 0, width: 2, height: 2}});
   assert_equals(cropRightFrame.codedWidth, anamorphicFrame.codedWidth);
   assert_equals(cropRightFrame.codedHeight, anamorphicFrame.codedHeight);
   assert_equals(cropRightFrame.visibleRect.x, 2);
@@ -246,7 +319,8 @@ test(t => {
   ]);
   let scaledFrame = new VideoFrame(data, init);
 
-  let cropRightFrame = new VideoFrame(scaledFrame, {visibleRect : {x: 2, y: 0, width: 2, height: 2}});
+  let cropRightFrame = new VideoFrame(
+      scaledFrame, {visibleRect: {x: 2, y: 0, width: 2, height: 2}});
   assert_equals(cropRightFrame.codedWidth, scaledFrame.codedWidth);
   assert_equals(cropRightFrame.codedHeight, scaledFrame.codedHeight);
   assert_equals(cropRightFrame.visibleRect.x, 2);
@@ -260,11 +334,12 @@ test(t => {
 test(t => {
   let image = makeImageBitmap(32, 16);
 
-  let scaledFrame = new VideoFrame(image,
-    { visibleRect : {x: 0, y: 0, width: 2, height: 2},
-      displayWidth: 10, displayHeight: 20,
-      timestamp: 0
-    });
+  let scaledFrame = new VideoFrame(image, {
+    visibleRect: {x: 0, y: 0, width: 2, height: 2},
+    displayWidth: 10,
+    displayHeight: 20,
+    timestamp: 0
+  });
   assert_equals(scaledFrame.codedWidth, 32);
   assert_equals(scaledFrame.codedHeight, 16);
   assert_equals(scaledFrame.visibleRect.x, 0);
@@ -415,6 +490,32 @@ test(t => {
 }, 'Test planar constructed I420 VideoFrame with colorSpace');
 
 test(t => {
+  let fmt = 'I420';
+  let vfInit = {
+    format: fmt,
+    timestamp: 1234,
+    codedWidth: 4,
+    codedHeight: 2,
+    colorSpace: {
+      primaries: null,
+      transfer: null,
+      matrix: null,
+      fullRange: null,
+    },
+  };
+  let data = new Uint8Array([
+    1, 2, 3, 4, 5, 6, 7, 8,  // y
+    1, 2,                    // u
+    1, 2,                    // v
+  ]);
+  let frame = new VideoFrame(data, vfInit);
+  assert_true(frame.colorSpace.primaries !== undefined, 'color primaries');
+  assert_true(frame.colorSpace.transfer !== undefined, 'color transfer');
+  assert_true(frame.colorSpace.matrix !== undefined, 'color matrix');
+  assert_true(frame.colorSpace.fullRange !== undefined, 'color range');
+}, 'Test planar can construct I420 VideoFrame with null colorSpace values');
+
+test(t => {
   let fmt = 'I420A';
   let vfInit = {format: fmt, timestamp: 1234, codedWidth: 4, codedHeight: 2};
   let data = new Uint8Array([
@@ -554,6 +655,30 @@ test(t => {
 }, 'Test we can construct a VideoFrame from an offscreen canvas.');
 
 test(t => {
+  let fmt = 'I420';
+  let vfInit = {
+    format: fmt,
+    timestamp: 1234,
+    codedWidth: 4,
+    codedHeight: 2,
+    visibleRect: {x: 0, y: 0, width: 1, height: 1},
+  };
+  let data = new Uint8Array([
+    1, 2, 3, 4, 5, 6, 7, 8,  // y
+    1, 2,                    // u
+    1, 2,                    // v
+    8, 7, 6, 5, 4, 3, 2, 1,  // a
+  ]);
+  let frame = new VideoFrame(data, vfInit);
+  assert_equals(frame.format, fmt, 'format');
+  assert_equals(frame.visibleRect.x, 0, 'visibleRect.x');
+  assert_equals(frame.visibleRect.y, 0, 'visibleRect.y');
+  assert_equals(frame.visibleRect.width, 1, 'visibleRect.width');
+  assert_equals(frame.visibleRect.height, 1, 'visibleRect.height');
+  frame.close();
+}, 'Test I420 VideoFrame with odd visible size');
+
+test(t => {
   let fmt = 'I420A';
   let vfInit = {format: fmt, timestamp: 1234, codedWidth: 4, codedHeight: 2};
   let data = new Uint8Array([
@@ -625,3 +750,4 @@ test(t => {
       'plane format should not have alpha: ' + frame.format);
   frame.close();
 }, 'Test a VideoFrame constructed from canvas can drop the alpha channel.');
+

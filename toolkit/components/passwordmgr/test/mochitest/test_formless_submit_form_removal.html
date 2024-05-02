@@ -9,9 +9,6 @@
 </head>
 <body>
 <script type="application/javascript">
-const LMCBackstagePass = SpecialPowers.Cu.import("resource://gre/modules/LoginManagerChild.jsm");
-const { LoginManagerChild } = LMCBackstagePass;
-
 let loadPromise = new Promise(resolve => {
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("loginFrame").addEventListener("load", (evt) => {
@@ -20,7 +17,7 @@ let loadPromise = new Promise(resolve => {
   });
 });
 
-add_task(async function setup() {
+add_setup(async () => {
   info("Waiting for page and frame loads");
   await loadPromise;
 
@@ -207,7 +204,6 @@ async function testFormlesSubmitFormRemoval(tc, testDoc, scriptName) {
   let frameDoc = SpecialPowers.wrap(loginFrame.contentWindow).document;
 
   let formsProcessed = promiseFormsProcessed(tc.expectedFormsCount);
-  // eslint-disable-next-line no-unsanitized/property
   frameDoc.documentElement.innerHTML = testDoc;
   await formsProcessed;
   // We eliminate no user input as a reason for not capturing by modifying the value

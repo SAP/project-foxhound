@@ -14,7 +14,7 @@ const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip.xhtml";
 
 const {
   HTMLTooltip,
-} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
+} = require("resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js");
 loadHelperScript("helper_html_tooltip.js");
 
 function getTooltipContent(doc) {
@@ -24,7 +24,7 @@ function getTooltipContent(doc) {
   return div;
 }
 
-add_task(async function() {
+add_task(async function () {
   const { doc } = await createHost("bottom", TEST_URI);
 
   // Creating a host is not correctly waiting when DevTools run in content frame

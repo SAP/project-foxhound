@@ -71,10 +71,10 @@ Test preset with syntax subcommand
   Presets from */mozbuild/try_presets.yml: (glob)
   
     bar:
+      dry_run: true
       no_artifact: true
       platforms:
       - win32
-      push: false
       selector: syntax
       tags:
       - bar
@@ -96,10 +96,10 @@ Test preset with syntax subcommand
     
   $ ./mach try syntax $testargs --edit-presets
   bar:
+    dry_run: true
     no_artifact: true
     platforms:
     - win32
-    push: false
     selector: syntax
     tags:
     - bar
@@ -206,10 +206,10 @@ Queries can be appended to presets
   Presets from */mozbuild/try_presets.yml: (glob)
   
     bar:
+      dry_run: true
       no_artifact: true
       platforms:
       - win32
-      push: false
       selector: syntax
       tags:
       - bar
@@ -218,10 +218,10 @@ Queries can be appended to presets
       tests:
       - none
     baz:
+      dry_run: true
       no_artifact: true
-      push: false
       query:
-      - '''foo'
+      - "'foo"
       rebuild: 5
       selector: fuzzy
     foo:
@@ -238,10 +238,10 @@ Queries can be appended to presets
     
   $ ./mach try fuzzy $testargs --edit-presets
   bar:
+    dry_run: true
     no_artifact: true
     platforms:
     - win32
-    push: false
     selector: syntax
     tags:
     - bar
@@ -250,10 +250,10 @@ Queries can be appended to presets
     tests:
     - none
   baz:
+    dry_run: true
     no_artifact: true
-    push: false
     query:
-    - '''foo'
+    - "'foo"
     rebuild: 5
     selector: fuzzy
   foo:
@@ -319,10 +319,10 @@ settings; everything else uses dashes.)
   
   $ EDITOR=cat ./mach try fuzzy $testargs --edit-preset profile
   bar:
+    dry_run: true
     no_artifact: true
     platforms:
     - win32
-    push: false
     selector: syntax
     tags:
     - bar
@@ -331,10 +331,10 @@ settings; everything else uses dashes.)
     tests:
     - none
   baz:
+    dry_run: true
     no_artifact: true
-    push: false
     query:
-    - '''foo'
+    - "'foo"
     rebuild: 5
     selector: fuzzy
   foo:
@@ -349,11 +349,11 @@ settings; everything else uses dashes.)
     tests:
     - mochitests
   profile:
+    dry_run: true
     gecko_profile_features: nostacksampling,cpu
     no_artifact: true
-    push: false
     query:
-    - '''foo'
+    - "'foo"
     rebuild: 5
     selector: fuzzy
 

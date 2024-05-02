@@ -4,10 +4,12 @@
 
 "use strict";
 
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
 // Constants for formatting bytes.
-const BYTES_IN_KB = 1024;
+const BYTES_IN_KB = 1000;
 const BYTES_IN_MB = Math.pow(BYTES_IN_KB, 2);
 const BYTES_IN_GB = Math.pow(BYTES_IN_KB, 3);
 const MAX_BYTES_SIZE = 1000;
@@ -19,6 +21,11 @@ const MAX_MILLISECOND = 1000;
 const MAX_SECOND = 60 * MAX_MILLISECOND;
 
 const REQUEST_DECIMALS = 2;
+
+// Constants for formatting the priority, derived from nsISupportsPriority.idl
+const PRIORITY_HIGH = -10;
+const PRIORITY_NORMAL = 0;
+const PRIORITY_LOW = 10;
 
 function getSizeWithDecimals(size, decimals = REQUEST_DECIMALS) {
   return L10N.numberWithDecimals(size, decimals);
@@ -33,10 +40,8 @@ function formatDecimals(size, decimals) {
 }
 
 /**
- * Get a human-readable string from a number of bytes, with the B, KB, MB, or
- * GB value. Note that the transition between abbreviations is by 1000 rather
- * than 1024 in order to keep the displayed digits smaller as "1016 KB" is
- * more awkward than 0.99 MB"
+ * Get a human-readable string from a number of bytes, with the B, kB, MB, or
+ * GB value.
  */
 function getFormattedSize(bytes, decimals = REQUEST_DECIMALS) {
   if (bytes < MAX_BYTES_SIZE) {
@@ -47,7 +52,7 @@ function getFormattedSize(bytes, decimals = REQUEST_DECIMALS) {
     const formattedDecimals = formatDecimals(kb, decimals);
 
     return L10N.getFormatStr(
-      "networkMenu.sizeKB",
+      "networkMenu.size.kB",
       getSizeWithDecimals(kb, formattedDecimals)
     );
   }
@@ -97,10 +102,31 @@ function getFormattedIPAndPort(ip, port) {
   return ip.match(/:+/) ? `[${ip}]:${port}` : `${ip}:${port}`;
 }
 
+/**
+ * Formats the priority of a request
+ * Based on unix conventions
+ * See xpcom/threads/nsISupportsPriority.idl
+ *
+ * @param {Number} priority - request priority
+ */
+function getRequestPriorityAsText(priority) {
+  if (priority < PRIORITY_HIGH) {
+    return "Highest";
+  } else if (priority >= PRIORITY_HIGH && priority < PRIORITY_NORMAL) {
+    return "High";
+  } else if (priority === PRIORITY_NORMAL) {
+    return "Normal";
+  } else if (priority > PRIORITY_NORMAL && priority <= PRIORITY_LOW) {
+    return "Low";
+  }
+  return "Lowest";
+}
+
 module.exports = {
   getFormattedIPAndPort,
   getFormattedSize,
   getFormattedTime,
   getSizeWithDecimals,
   getTimeWithDecimals,
+  getRequestPriorityAsText,
 };

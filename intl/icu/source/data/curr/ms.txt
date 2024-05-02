@@ -765,6 +765,7 @@ ms{
         PYG{"₲"}
         RON{"lei"}
         RUB{"₽"}
+        RUR{"RUR"}
         RWF{"RF"}
         SBD{"$"}
         SEK{"kr"}
@@ -861,10 +862,10 @@ ms{
             other{"Pula Botswana"}
         }
         BYN{
-            other{"rubel lama Belarus"}
+            other{"Rubel Belarus"}
         }
         BYR{
-            other{"Rubel Belarus"}
+            other{"Rubel Belarus (2000–2016)"}
         }
         BZD{
             other{"Dolar Belize"}
@@ -1040,6 +1041,9 @@ ms{
         LRD{
             other{"Dolar Liberia"}
         }
+        LSL{
+            other{"Loti Lesotho"}
+        }
         LTL{
             other{"Litas Lithuania"}
         }
@@ -1057,6 +1061,9 @@ ms{
         }
         MGA{
             other{"Ariary Malagasy"}
+        }
+        MGF{
+            other{"Franc Malagasy"}
         }
         MKD{
             other{"Denar Macedonia"}
@@ -1285,6 +1292,9 @@ ms{
         }
         ZAR{
             other{"Rand Afrika Selatan"}
+        }
+        ZMK{
+            other{"Kwacha Zambia (1968–2012)"}
         }
         ZMW{
             other{"Kwacha Zambia"}

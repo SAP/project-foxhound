@@ -66,19 +66,33 @@ class D3D11YCbCrImage : public Image {
 
   already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
 
+  nsresult BuildSurfaceDescriptorBuffer(
+      SurfaceDescriptorBuffer& aSdBuffer, BuildSdbFlags aFlags,
+      const std::function<MemoryOrShmem(uint32_t)>& aAllocate) override;
+
   TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
   gfx::IntRect GetPictureRect() const override { return mPictureRect; }
 
+  gfx::IntSize GetYSize() const {
+    return {mPictureRect.XMost(), mPictureRect.YMost()};
+  }
+  gfx::IntSize GetCbCrSize() const {
+    return ChromaSize(GetYSize(), mChromaSubsampling);
+  }
+
  private:
+  nsresult ReadIntoBuffer(
+      const std::function<nsresult(const PlanarYCbCrData&, const gfx::IntSize&,
+                                   gfx::SurfaceFormat)>& aCopy);
+
   const DXGIYCbCrTextureData* GetData() const;
 
-  gfx::IntSize mYSize;
-  gfx::IntSize mCbCrSize;
   gfx::IntRect mPictureRect;
   gfx::ColorDepth mColorDepth;
   gfx::YUVColorSpace mColorSpace;
   gfx::ColorRange mColorRange;
+  gfx::ChromaSubsampling mChromaSubsampling;
   RefPtr<TextureClient> mTextureClient;
 };
 

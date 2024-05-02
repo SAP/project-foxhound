@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsComponentManagerUtils.h"
-#include "nsXULAppAPI.h"
 #include "nsSystemAlertsService.h"
 #include "nsAlertsIconListener.h"
 
@@ -70,7 +69,8 @@ NS_IMETHODIMP nsSystemAlertsService::ShowAlert(nsIAlertNotification* aAlert,
   return alertListener->InitAlertAsync(aAlert, aAlertListener);
 }
 
-NS_IMETHODIMP nsSystemAlertsService::CloseAlert(const nsAString& aAlertName) {
+NS_IMETHODIMP nsSystemAlertsService::CloseAlert(const nsAString& aAlertName,
+                                                bool aContextClosed) {
   RefPtr<nsAlertsIconListener> listener = mActiveListeners.Get(aAlertName);
   if (!listener) {
     return NS_OK;

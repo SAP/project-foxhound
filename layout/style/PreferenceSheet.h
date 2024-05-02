@@ -27,19 +27,23 @@ struct PreferenceSheet {
 
       nscolor mDefault = NS_RGB(0, 0, 0);
       nscolor mDefaultBackground = NS_RGB(0xFF, 0xFF, 0xFF);
-
-      nscolor mFocusText = mDefault;
-      nscolor mFocusBackground = mDefaultBackground;
     } mLightColors, mDarkColors;
 
     const Colors& ColorsFor(ColorScheme aScheme) const {
-      return aScheme == ColorScheme::Light ? mLightColors : mDarkColors;
+      return mMustUseLightColorSet || aScheme == ColorScheme::Light
+                 ? mLightColors
+                 : mDarkColors;
     }
 
     bool mIsChrome = false;
     bool mUseAccessibilityTheme = false;
-
     bool mUseDocumentColors = true;
+    bool mUsePrefColors = false;
+    bool mUseStandins = false;
+    bool mMustUseLightColorSet = false;
+    bool mMustUseLightSystemColors = false;
+
+    ColorScheme mColorScheme = ColorScheme::Light;
 
     // Whether the non-native theme should use real system colors for widgets.
     bool NonNativeThemeShouldBeHighContrast() const;
@@ -61,6 +65,20 @@ struct PreferenceSheet {
   }
 
   static bool AffectedByPref(const nsACString&);
+
+  enum class ChromeColorSchemeSetting { Light, Dark, System };
+  static ChromeColorSchemeSetting ColorSchemeSettingForChrome();
+
+  static ColorScheme ColorSchemeForChrome() {
+    MOZ_ASSERT(sInitialized);
+    return ChromePrefs().mColorScheme;
+  }
+
+  static ColorScheme PreferredColorSchemeForContent() {
+    MOZ_ASSERT(sInitialized);
+    return ContentPrefs().mColorScheme;
+  }
+  static ColorScheme ThemeDerivedColorSchemeForContent();
 
   static Prefs& ContentPrefs() {
     MOZ_ASSERT(sInitialized);

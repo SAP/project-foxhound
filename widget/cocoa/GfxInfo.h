@@ -27,7 +27,6 @@ class GfxInfo : public GfxInfoBase {
       bool* aEmbeddedInFirefoxReality) override;
   NS_IMETHOD GetHasBattery(bool* aHasBattery) override;
   NS_IMETHOD GetWindowProtocol(nsAString& aWindowProtocol) override;
-  NS_IMETHOD GetDesktopEnvironment(nsAString& aDesktopEnvironment) override;
   NS_IMETHOD GetTestType(nsAString& aTestType) override;
   NS_IMETHOD GetCleartypeParameters(nsAString& aCleartypeParams) override;
   NS_IMETHOD GetAdapterDescription(nsAString& aAdapterDescription) override;
@@ -50,9 +49,6 @@ class GfxInfo : public GfxInfoBase {
       nsAString& aAdapterDriverVersion) override;
   NS_IMETHOD GetAdapterDriverDate2(nsAString& aAdapterDriverDate) override;
   NS_IMETHOD GetIsGPU2Active(bool* aIsGPU2Active) override;
-  NS_IMETHOD GetDisplayInfo(nsTArray<nsString>& aDisplayInfo) override;
-  NS_IMETHOD GetDisplayWidth(nsTArray<uint32_t>& aDisplayWidth) override;
-  NS_IMETHOD GetDisplayHeight(nsTArray<uint32_t>& aDisplayHeight) override;
   NS_IMETHOD GetDrmRenderDevice(nsACString& aDrmRenderDevice) override;
 
   using GfxInfoBase::GetFeatureStatus;
@@ -67,11 +63,10 @@ class GfxInfo : public GfxInfoBase {
 
   virtual uint32_t OperatingSystemVersion() override { return mOSXVersion; }
 
-  nsresult FindMonitors(JSContext* cx, JS::HandleObject array) override;
-
  protected:
   virtual ~GfxInfo() {}
 
+  OperatingSystem GetOperatingSystem() override;
   virtual nsresult GetFeatureStatusImpl(
       int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedDriverVersion,
       const nsTArray<GfxDriverInfo>& aDriverInfo, nsACString& aFailureId,

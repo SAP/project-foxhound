@@ -14,6 +14,7 @@
 #include "mozilla/dom/FlexBinding.h"
 #include "mozilla/UniquePtr.h"
 #include "nsContainerFrame.h"
+#include "nsILineIterator.h"
 
 namespace mozilla {
 class LogicalPoint;
@@ -118,7 +119,8 @@ class MOZ_STACK_CLASS FlexboxAxisInfo final {
  * layout here as well (since that's what the -webkit versions are aliased to)
  * -- but only inside of a "display:-webkit-{inline-}box" container.)
  */
-class nsFlexContainerFrame final : public nsContainerFrame {
+class nsFlexContainerFrame final : public nsContainerFrame,
+                                   public nsILineIterator {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsFlexContainerFrame)
   NS_DECL_QUERYFRAME
@@ -135,6 +137,7 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   class CachedBAxisMeasurement;
   class CachedFlexItemData;
   struct SharedFlexData;
+  struct PerFragmentFlexData;
   class FlexItemIterator;
 
   // nsIFrame overrides
@@ -162,42 +165,23 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  nscoord GetLogicalBaseline(mozilla::WritingMode aWM) const override;
+  Maybe<nscoord> GetNaturalBaselineBOffset(
+      mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+      BaselineExportContext) const override;
 
-  bool GetVerticalAlignBaseline(mozilla::WritingMode aWM,
-                                nscoord* aBaseline) const override {
-    return GetNaturalBaselineBOffset(aWM, BaselineSharingGroup::First,
-                                     aBaseline);
-  }
+  // Unions the child overflow from our in-flow children.
+  void UnionInFlowChildOverflow(mozilla::OverflowAreas&);
 
-  bool GetNaturalBaselineBOffset(mozilla::WritingMode aWM,
-                                 BaselineSharingGroup aBaselineGroup,
-                                 nscoord* aBaseline) const override {
-    if (StyleDisplay()->IsContainLayout() ||
-        HasAnyStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE)) {
-      return false;
-    }
-    *aBaseline = aBaselineGroup == BaselineSharingGroup::First
-                     ? mBaselineFromLastReflow
-                     : mLastBaselineFromLastReflow;
-    return true;
-  }
-
-  /**
-   * Returns the effective value of -webkit-line-clamp for this flex container.
-   *
-   * This will be 0 if the property is 'none', or if the element is not
-   * display:-webkit-(inline-)box and -webkit-box-orient:vertical.
-   */
-  uint32_t GetLineClampValue() const;
+  // Unions the child overflow from all our children, including out of flows.
+  void UnionChildOverflow(mozilla::OverflowAreas&) final;
 
   // nsContainerFrame overrides
   bool DrainSelfOverflowList() override;
-  void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                     const nsLineList::iterator* aPrevFrameLine,
-                    nsFrameList& aFrameList) override;
-  void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
+                    nsFrameList&& aFrameList) override;
+  void RemoveFrame(DestroyContext&, ChildListID, nsIFrame*) override;
   mozilla::StyleAlignFlags CSSAlignmentForAbsPosChild(
       const ReflowInput& aChildRI,
       mozilla::LogicalAxis aLogicalAxis) const override;
@@ -282,6 +266,19 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    */
   static void MarkCachedFlexMeasurementsDirty(nsIFrame* aItemFrame);
 
+  bool CanProvideLineIterator() const final { return true; }
+  nsILineIterator* GetLineIterator() final { return this; }
+  int32_t GetNumLines() const final;
+  bool IsLineIteratorFlowRTL() final;
+  mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
+  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
+                         nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
+                         bool* aPosIsAfterLastFrame) final;
+  NS_IMETHOD CheckLineOrder(int32_t aLine, bool* aIsReordered,
+                            nsIFrame** aFirstVisual,
+                            nsIFrame** aLastVisual) final;
+
  protected:
   // Protected constructor & destructor
   explicit nsFlexContainerFrame(ComputedStyle* aStyle,
@@ -292,10 +289,9 @@ class nsFlexContainerFrame final : public nsContainerFrame {
 
   // Protected flex-container-specific methods / member-vars
 
-  /*
+  /**
    * This method does the bulk of the flex layout, implementing the algorithm
-   * described at:
-   *   http://dev.w3.org/csswg/css-flexbox/#layout-algorithm
+   * described at: https://drafts.csswg.org/css-flexbox-1/#layout-algorithm
    * (with a few initialization pieces happening in the caller, Reflow().
    *
    * (The logic behind the division of work between Reflow and DoFlexLayout is
@@ -303,27 +299,57 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * to, if we find any visibility:collapse children, and Reflow() does
    * everything before that point.)
    *
-   * @param aContentBoxMainSize [in/out] initially, the "tentative" content-box
-   *                            main-size of the flex container; "tentative"
-   *                            because it may be unconstrained or may run off
-   *                            the page. In those cases, this method will
-   *                            resolve it to a final value before returning.
-   * @param aContentBoxCrossSize [out] the final content-box cross-size of the
-   *                             flex container.
-   * @param aFlexContainerAscent [out] the flex container's ascent, derived from
-   *                             any baseline-aligned flex items in the first
-   *                             flex line, if any such items exist. Otherwise,
-   *                             nscoord_MIN.
+   * @param aTentativeContentBoxMainSize the "tentative" content-box main-size
+   *                                     of the flex container; "tentative"
+   *                                     because it may be unconstrained or may
+   *                                     run off the page.
+   * @param aTentativeContentBoxCrossSize the "tentative" content-box cross-size
+   *                                      of the flex container; "tentative"
+   *                                      because it may be unconstrained or may
+   *                                      run off the page.
    */
-  void DoFlexLayout(const ReflowInput& aReflowInput,
-                    nscoord& aContentBoxMainSize, nscoord& aContentBoxCrossSize,
-                    nscoord& aFlexContainerAscent, nsTArray<FlexLine>& aLines,
-                    nsTArray<StrutInfo>& aStruts,
-                    nsTArray<nsIFrame*>& aPlaceholders,
-                    const FlexboxAxisTracker& aAxisTracker,
-                    nscoord aMainGapSize, nscoord aCrossGapSize,
-                    nscoord aConsumedBSize, bool aHasLineClampEllipsis,
-                    ComputedFlexContainerInfo* const aContainerInfo);
+  struct FlexLayoutResult final {
+    // The flex lines of the flex container.
+    nsTArray<FlexLine> mLines;
+
+    // The absolutely-positioned flex children.
+    nsTArray<nsIFrame*> mPlaceholders;
+
+    bool mHasCollapsedItems = false;
+
+    // The final content-box main-size of the flex container as if there's no
+    // fragmentation.
+    nscoord mContentBoxMainSize = NS_UNCONSTRAINEDSIZE;
+
+    // The final content-box cross-size of the flex container as if there's no
+    // fragmentation.
+    nscoord mContentBoxCrossSize = NS_UNCONSTRAINEDSIZE;
+
+    // The flex container's ascent for the "first baseline" alignment, derived
+    // from any baseline-aligned flex items in the startmost (from the
+    // perspective of the flex container's WM) flex line, if any such items
+    // exist. Otherwise, nscoord_MIN.
+    //
+    // Note: this is a distance from the border-box block-start edge.
+    nscoord mAscent = NS_UNCONSTRAINEDSIZE;
+
+    // The flex container's ascent for the "last baseline" alignment, derived
+    // from any baseline-aligned flex items in the endmost (from the perspective
+    // of the flex container's WM) flex line, if any such items exist.
+    // Otherwise, nscoord_MIN.
+    //
+    // Note: this is a distance from the border-box block-end edge. It's
+    // different from the identically-named-member FlexItem::mAscentForLast,
+    // which is a distance from the item frame's border-box block-start edge.
+    nscoord mAscentForLast = NS_UNCONSTRAINEDSIZE;
+  };
+  FlexLayoutResult DoFlexLayout(
+      const ReflowInput& aReflowInput,
+      const nscoord aTentativeContentBoxMainSize,
+      const nscoord aTentativeContentBoxCrossSize,
+      const FlexboxAxisTracker& aAxisTracker, nscoord aMainGapSize,
+      nscoord aCrossGapSize, nsTArray<StrutInfo>& aStruts,
+      ComputedFlexContainerInfo* const aContainerInfo);
 
   /**
    * If our devtools have requested a ComputedFlexContainerInfo for this flex
@@ -355,26 +381,26 @@ class nsFlexContainerFrame final : public nsContainerFrame {
 #endif  // DEBUG
 
   /**
-   * Returns a new FlexItem for the given child frame, directly constructed at
-   * the end of aLine. Guaranteed to return non-null.
+   * Construct a new FlexItem for the given child frame, directly at the end of
+   * aLine.
    *
    * Before returning, this method also processes the FlexItem to resolve its
    * flex basis (including e.g. auto-height) as well as to resolve
    * "min-height:auto", via ResolveAutoFlexBasisAndMinSize(). (Basically, the
-   * returned FlexItem will be ready to participate in the "Resolve the
+   * constructed FlexItem will be ready to participate in the "Resolve the
    * Flexible Lengths" step of the Flex Layout Algorithm.)
    * https://drafts.csswg.org/css-flexbox-1/#algo-flex
    *
    * Note that this method **does not** update aLine's main-size bookkeeping to
    * account for the newly-constructed flex item. The caller is responsible for
-   * determining whether this line is a good fit for the new item. If so,
-   * updating aLine's bookkeeping (via FlexLine::AddLastItemToMainSizeTotals),
-   * or moving the new item to a new line otherwise.
+   * determining whether this line is a good fit for the new item. If so, the
+   * caller should update aLine's bookkeeping (via
+   * FlexLine::AddLastItemToMainSizeTotals), or move the new item to a new line.
    */
-  FlexItem* GenerateFlexItemForChild(FlexLine& aLine, nsIFrame* aChildFrame,
-                                     const ReflowInput& aParentReflowInput,
-                                     const FlexboxAxisTracker& aAxisTracker,
-                                     bool aHasLineClampEllipsis);
+  void GenerateFlexItemForChild(FlexLine& aLine, nsIFrame* aChildFrame,
+                                const ReflowInput& aParentReflowInput,
+                                const FlexboxAxisTracker& aAxisTracker,
+                                const nscoord aTentativeContentBoxCrossSize);
 
   /**
    * This method looks up cached block-axis measurements for a flex item, or
@@ -394,7 +420,6 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    */
   nscoord MeasureFlexItemContentBSize(FlexItem& aFlexItem,
                                       bool aForceBResizeForMeasuringReflow,
-                                      bool aHasLineClampEllipsis,
                                       const ReflowInput& aParentReflowInput);
 
   /**
@@ -404,19 +429,7 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    */
   void ResolveAutoFlexBasisAndMinSize(FlexItem& aFlexItem,
                                       const ReflowInput& aItemReflowInput,
-                                      const FlexboxAxisTracker& aAxisTracker,
-                                      bool aHasLineClampEllipsis);
-
-  /**
-   * Returns true if "this" is the nsFlexContainerFrame for a -moz-box or
-   * a -moz-inline-box -- these boxes have special behavior for flex items with
-   * "visibility:collapse".
-   *
-   * @param aFlexStyleDisp This frame's StyleDisplay(). (Just an optimization to
-   *                       avoid repeated lookup; some callers already have it.)
-   * @return true if "this" is the nsFlexContainerFrame for a -moz-{inline}box.
-   */
-  bool ShouldUseMozBoxCollapseBehavior(const nsStyleDisplay* aFlexStyleDisp);
+                                      const FlexboxAxisTracker& aAxisTracker);
 
   /**
    * This method:
@@ -432,24 +445,20 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * (Absolutely positioned children of a flex container are *not* flex items.)
    */
   void GenerateFlexLines(const ReflowInput& aReflowInput,
-                         nscoord aContentBoxMainSize,
+                         const nscoord aTentativeContentBoxMainSize,
+                         const nscoord aTentativeContentBoxCrossSize,
                          const nsTArray<StrutInfo>& aStruts,
                          const FlexboxAxisTracker& aAxisTracker,
-                         nscoord aMainGapSize, bool aHasLineClampEllipsis,
+                         nscoord aMainGapSize,
                          nsTArray<nsIFrame*>& aPlaceholders,
-                         nsTArray<FlexLine>& aLines);
+                         nsTArray<FlexLine>& aLines, bool& aHasCollapsedItems);
 
   /**
-   * This method creates FlexLines and FlexItems for children in flex
-   * container's next-in-flows by using the SharedFlexData stored in flex
-   * container's first-in-flow. Returns FlexLines in the outparam |aLines|.
+   * Generates and returns a FlexLayoutResult that contains the FlexLines and
+   * some sizing metrics that should be used to lay out a particular flex
+   * container continuation (i.e. don't call this on the first-in-flow).
    */
-  void GenerateFlexLines(const SharedFlexData& aData,
-                         nsTArray<FlexLine>& aLines);
-
-  nscoord GetMainSizeFromReflowInput(const ReflowInput& aReflowInput,
-                                     const FlexboxAxisTracker& aAxisTracker,
-                                     nscoord aConsumedBSize);
+  FlexLayoutResult GenerateFlexLayoutResult();
 
   /**
    * Resolves the content-box main-size of a flex container frame,
@@ -469,18 +478,17 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * the spec. https://drafts.csswg.org/css-flexbox-1/#algo-main-container
    *
    * (Note: This function should be structurally similar to
-   * 'ComputeCrossSize()', except that here, the caller has already grabbed the
-   * tentative size from the reflow input.)
+   *  ComputeCrossSize().)
    */
   nscoord ComputeMainSize(const ReflowInput& aReflowInput,
                           const FlexboxAxisTracker& aAxisTracker,
-                          nscoord aTentativeMainSize,
+                          const nscoord aTentativeContentBoxMainSize,
                           nsTArray<FlexLine>& aLines) const;
 
   nscoord ComputeCrossSize(const ReflowInput& aReflowInput,
                            const FlexboxAxisTracker& aAxisTracker,
-                           nscoord aSumLineCrossSizes, nscoord aConsumedBSize,
-                           bool* aIsDefinite) const;
+                           const nscoord aTentativeContentBoxCrossSize,
+                           nscoord aSumLineCrossSizes, bool* aIsDefinite) const;
 
   /**
    * Compute the size of the available space that we'll give to our children to
@@ -526,10 +534,14 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * @param aAnyChildIncomplete true if any child being reflowed is incomplete;
    *                            false otherwise (as returned by
    *                            ReflowChildren()).
-   * @param aFlexContainerAscent the flex container's ascent, if one has been
-   *                             determined from its children. (If there are no
-   *                             children, pass nscoord_MIN to synthesize a
-   *                             value from the flex container itself).
+   * @param aFlr the result returned by DoFlexLayout.
+   *             Note: aFlr is mostly an "input" parameter, but we use
+   *             aFlr.mAscent as an "in/out" parameter; it's initially the
+   *             "tentative" flex container ascent computed in DoFlexLayout; or
+   *             nscoord_MIN if the ascent hasn't been established yet. If the
+   *             latter, this will be updated with an ascent derived from the
+   *             (WM-relative) startmost flex item (if there are any flex
+   *             items). Similar for aFlr.mAscentForLast.
    */
   void PopulateReflowOutput(
       ReflowOutput& aReflowOutput, const ReflowInput& aReflowInput,
@@ -537,16 +549,11 @@ class nsFlexContainerFrame final : public nsContainerFrame {
       const mozilla::LogicalMargin& aBorderPadding,
       const nscoord aConsumedBSize, const bool aMayNeedNextInFlow,
       const nscoord aMaxBlockEndEdgeOfChildren, const bool aAnyChildIncomplete,
-      nscoord aFlexContainerAscent, nsTArray<FlexLine>& aLines,
-      const FlexboxAxisTracker& aAxisTracker);
+      const FlexboxAxisTracker& aAxisTracker, FlexLayoutResult& aFlr);
 
   /**
    * Perform a final Reflow for our child frames.
    *
-   * @param aContentBoxMainSize the final content-box main-size of the flex
-   *                            container.
-   * @param aContentBoxCrossSize the final content-box cross-size of the flex
-   *                             container.
    * @param aContainerSize this frame's tentative physical border-box size, used
    *                       only for logical to physical coordinate conversion.
    * @param aAvailableSizeForItems the size of the available space for our
@@ -556,26 +563,23 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    *                       continuation chain).
    * @param aSumOfPrevInFlowsChildrenBlockSize See the comment for
    *                                           SumOfChildrenBlockSizeProperty.
-   * @param aFlexContainerAscent [in/out] initially, the "tentative" flex
-   *                             container ascent computed in DoFlexLayout; or,
-   *                             nscoord_MIN if the ascent hasn't been
-   *                             established yet. If the latter, this will be
-   *                             updated with an ascent derived from the first
-   *                             flex item (if there are any flex items).
+   * @param aFlr the result returned by DoFlexLayout.
+   * @param aFragmentData See the comment for PerFragmentFlexData.
+   *                      Note: aFragmentData is an "in/out" parameter. It is
+   *                      initialized by the data stored in our prev-in-flow's
+   *                      PerFragmentFlexData::Prop(); its fields will then be
+   *                      updated and become our PerFragmentFlexData.
    * @return nscoord the maximum block-end edge of children of this fragment in
    *                 flex container's coordinate space.
    * @return bool true if any child being reflowed is incomplete; false
    *              otherwise.
    */
   std::tuple<nscoord, bool> ReflowChildren(
-      const ReflowInput& aReflowInput, const nscoord aContentBoxMainSize,
-      const nscoord aContentBoxCrossSize, const nsSize& aContainerSize,
+      const ReflowInput& aReflowInput, const nsSize& aContainerSize,
       const mozilla::LogicalSize& aAvailableSizeForItems,
       const mozilla::LogicalMargin& aBorderPadding,
-      const nscoord aSumOfPrevInFlowsChildrenBlockSize,
-      nscoord& aFlexContainerAscent, nsTArray<FlexLine>& aLines,
-      nsTArray<nsIFrame*>& aPlaceholders,
-      const FlexboxAxisTracker& aAxisTracker, bool aHasLineClampEllipsis);
+      const FlexboxAxisTracker& aAxisTracker, FlexLayoutResult& aFlr,
+      PerFragmentFlexData& aFragmentData);
 
   /**
    * Moves the given flex item's frame to the given LogicalPosition (modulo any
@@ -585,16 +589,14 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * for the flex item at the correct size, and hence can skip its final reflow
    * (but still need to move it to the right final position).
    *
-   * @param aReflowInput    The flex container's reflow input.
    * @param aItem           The flex item whose frame should be moved.
    * @param aFramePos       The position where the flex item's frame should
    *                        be placed. (pre-relative positioning)
    * @param aContainerSize  The flex container's size (required by some methods
    *                        that we call, to interpret aFramePos correctly).
    */
-  void MoveFlexItemToFinalPosition(const ReflowInput& aReflowInput,
-                                   const FlexItem& aItem,
-                                   mozilla::LogicalPoint& aFramePos,
+  void MoveFlexItemToFinalPosition(const FlexItem& aItem,
+                                   const mozilla::LogicalPoint& aFramePos,
                                    const nsSize& aContainerSize);
   /**
    * Helper-function to reflow a child frame, at its final position determined
@@ -614,10 +616,9 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   nsReflowStatus ReflowFlexItem(const FlexboxAxisTracker& aAxisTracker,
                                 const ReflowInput& aReflowInput,
                                 const FlexItem& aItem,
-                                mozilla::LogicalPoint& aFramePos,
+                                const mozilla::LogicalPoint& aFramePos,
                                 const mozilla::LogicalSize& aAvailableSize,
-                                const nsSize& aContainerSize,
-                                bool aHasLineClampEllipsis);
+                                const nsSize& aContainerSize);
 
   /**
    * Helper-function to perform a "dummy reflow" on all our nsPlaceholderFrame
@@ -657,9 +658,15 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   nscoord mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
   nscoord mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
 
-  nscoord mBaselineFromLastReflow = NS_INTRINSIC_ISIZE_UNKNOWN;
-  // Note: the last baseline is a distance from our border-box end edge.
-  nscoord mLastBaselineFromLastReflow = NS_INTRINSIC_ISIZE_UNKNOWN;
+  /**
+   * Cached baselines computed in our last reflow to optimize
+   * GetNaturalBaselineBOffset().
+   */
+  // Note: the first baseline is a distance from our border-box block-start
+  // edge.
+  nscoord mFirstBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
+  // Note: the last baseline is a distance from our border-box block-end edge.
+  nscoord mLastBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
 };
 
 #endif /* nsFlexContainerFrame_h___ */

@@ -14,8 +14,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FEDisplacementMap)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFEDisplacementMapElement::WrapNode(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -23,7 +22,7 @@ JSObject* SVGFEDisplacementMapElement::WrapNode(
 }
 
 SVGElement::NumberInfo SVGFEDisplacementMapElement::sNumberInfo[1] = {
-    {nsGkAtoms::scale, 0, false},
+    {nsGkAtoms::scale, 0},
 };
 
 SVGEnumMapping SVGFEDisplacementMapElement::sChannelMap[] = {
@@ -117,7 +116,7 @@ nsresult SVGFEDisplacementMapElement::BindToTree(BindContext& aCtx,
     aCtx.OwnerDoc().SetUseCounter(eUseCounter_custom_feDisplacementMap);
   }
 
-  return SVGFE::BindToTree(aCtx, aParent);
+  return SVGFEDisplacementMapElementBase::BindToTree(aCtx, aParent);
 }
 
 //----------------------------------------------------------------------
@@ -137,5 +136,4 @@ SVGElement::StringAttributesInfo SVGFEDisplacementMapElement::GetStringInfo() {
                               ArrayLength(sStringInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

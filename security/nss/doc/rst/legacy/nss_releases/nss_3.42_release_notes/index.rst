@@ -11,7 +11,7 @@ NSS 3.42 release notes
    The NSS team has released Network Security Services (NSS) 3.42 on 25 January 2019, which is a
    minor release.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -31,8 +31,6 @@ NSS 3.42 release notes
 
 `New in NSS 3.42 <#new_in_nss_3.42>`__
 --------------------------------------
-
-.. container::
 
 .. _new_functionality:
 
@@ -70,7 +68,7 @@ NSS 3.42 release notes
       -  `Bug 1508666 <https://bugzilla.mozilla.org/show_bug.cgi?id=1508666>`__ - Added AES-GCM test
          cases
 
-      -  
+      -
 
          .. container:: field indent
 
@@ -81,7 +79,7 @@ NSS 3.42 release notes
                   `Bug 1508673 <https://bugzilla.mozilla.org/show_bug.cgi?id=1508673>`__ - Added
                   ChaCha20-Poly1305 test cases
 
-      -  
+      -
 
          .. container:: field indent
 
@@ -110,7 +108,7 @@ NSS 3.42 release notes
       Poddebniak for the discovery and fixes.] Note: This was mistakenly not in release 3.42, and is
       instead in :ref:`mozilla_projects_nss_nss_3_42_1_release_notes`.
 
-   -  
+   -
 
       .. container:: field indent
 

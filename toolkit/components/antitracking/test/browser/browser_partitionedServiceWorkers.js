@@ -1,4 +1,3 @@
-/* import-globals-from partitionedstorage_head.js */
 /* import-globals-from storageAccessAPIHelpers.js */
 
 PartitionedStorageHelper.runTest(
@@ -429,7 +428,7 @@ PartitionedStorageHelper.runTest(
     );
     is(
       res.value,
-      "http://not-tracking.example.com/browser/toolkit/components/antitracking/test/browser/empty.js",
+      "https://not-tracking.example.com/browser/toolkit/components/antitracking/test/browser/empty.js",
       "The first-party service worker received fetch event."
     );
     res = await sendAndWaitWorkerMessage(
@@ -464,7 +463,7 @@ PartitionedStorageHelper.runTest(
     );
     is(
       res.value,
-      "http://not-tracking.example.com/browser/toolkit/components/antitracking/test/browser/empty.js",
+      "https://not-tracking.example.com/browser/toolkit/components/antitracking/test/browser/empty.js",
       "The third-party service worker received fetch event."
     );
   },
@@ -561,4 +560,136 @@ PartitionedStorageHelper.runTest(
     ["dom.serviceWorkers.testing.enabled", true],
     ["privacy.partition.serviceWorkers", true],
   ]
+);
+
+// Bug1768193 - Verify the parent process won't crash if we create a shared
+// worker in a service worker controlled third-party page with Storage Access.
+PartitionedStorageHelper.runTest(
+  "ServiceWorkers - Create Shared Worker",
+  async (win3rdParty, win1stParty, allowed) => {
+    // We only do this test when the storage access is granted.
+    if (!allowed) {
+      return;
+    }
+
+    // Register service worker for the first-party window.
+    if (!win1stParty.sw) {
+      win1stParty.sw = await registerServiceWorker(
+        win1stParty,
+        "serviceWorker.js"
+      );
+    }
+
+    // Register service worker for the third-party window.
+    if (!win3rdParty.sw) {
+      win3rdParty.sw = await registerServiceWorker(
+        win3rdParty,
+        "serviceWorker.js"
+      );
+    }
+
+    // Create a shared worker in third-party window.
+    let thirdPartyWorker = new win3rdParty.SharedWorker("sharedWorker.js");
+
+    // Post a message to the dedicated worker and wait until the message circles
+    // back.
+    await new Promise(resolve => {
+      thirdPartyWorker.port.onmessage = msg => {
+        resolve();
+      };
+      thirdPartyWorker.onerror = _ => {
+        ok(false, "We should not be here");
+        resolve();
+      };
+      thirdPartyWorker.port.postMessage("count");
+    });
+
+    thirdPartyWorker.port.postMessage("close");
+  },
+
+  async _ => {
+    await new Promise(resolve => {
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
+    });
+  },
+
+  [
+    ["dom.serviceWorkers.exemptFromPerDomainMax", true],
+    ["dom.ipc.processCount", 1],
+    ["dom.serviceWorkers.enabled", true],
+    ["dom.serviceWorkers.testing.enabled", true],
+    ["privacy.partition.serviceWorkers", true],
+  ]
+);
+
+PartitionedStorageHelper.runTest(
+  "ServiceWorkers - Private Browsing with partitioning disabled",
+  async (win3rdParty, win1stParty, allowed) => {
+    // Partitioned serviceWorkers are disabled in third-party context.
+    ok(
+      !win3rdParty.navigator.serviceWorker,
+      "ServiceWorker should not be available"
+    );
+    ok(
+      !win1stParty.navigator.serviceWorker,
+      "ServiceWorker should not be available"
+    );
+  },
+
+  async _ => {
+    await new Promise(resolve => {
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
+    });
+  },
+
+  [
+    ["dom.serviceWorkers.exemptFromPerDomainMax", true],
+    ["dom.ipc.processCount", 1],
+    ["dom.serviceWorkers.enabled", true],
+    ["dom.serviceWorkers.testing.enabled", true],
+    ["privacy.partition.serviceWorkers", false],
+  ],
+
+  {
+    runInPrivateWindow: true,
+  }
+);
+
+PartitionedStorageHelper.runTest(
+  "ServiceWorkers - Private Browsing with partitioning enabled",
+  async (win3rdParty, win1stParty, allowed) => {
+    // Partitioned serviceWorkers are disabled in third-party context.
+    ok(
+      !win3rdParty.navigator.serviceWorker,
+      "ServiceWorker should not be available"
+    );
+    ok(
+      !win1stParty.navigator.serviceWorker,
+      "ServiceWorker should not be available"
+    );
+  },
+
+  async _ => {
+    await new Promise(resolve => {
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
+    });
+  },
+
+  [
+    ["dom.serviceWorkers.exemptFromPerDomainMax", true],
+    ["dom.ipc.processCount", 1],
+    ["dom.serviceWorkers.enabled", true],
+    ["dom.serviceWorkers.testing.enabled", true],
+    ["privacy.partition.serviceWorkers", true],
+  ],
+
+  {
+    runInPrivateWindow: true,
+  }
 );

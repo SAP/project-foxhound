@@ -13,9 +13,14 @@
 #include <vector>
 
 #include "nsIWeakReferenceUtils.h"
+#include "mozilla/Monitor.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/WindowsVersion.h"
 #include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/widget/WindowOcclusionState.h"
 #include "mozilla/widget/WinEventObserver.h"
+#include "Units.h"
+#include "nsThreadUtils.h"
 
 class nsBaseWidget;
 struct IVirtualDesktopManager;
@@ -27,10 +32,6 @@ class Thread;
 }  // namespace base
 
 namespace mozilla {
-
-namespace layers {
-class SynchronousTask;
-}
 
 namespace widget {
 
@@ -60,6 +61,12 @@ class WinWindowOcclusionTracker final : public DisplayStatusListener,
   /// Can be called from any thread.
   static bool IsInWinWindowOcclusionThread();
 
+  /// Can only be called from the main thread.
+  void EnsureDisplayStatusObserver();
+
+  /// Can only be called from the main thread.
+  void EnsureSessionChangeObserver();
+
   // Enables notifying to widget via NotifyOcclusionState() when the occlusion
   // state has been computed.
   void Enable(nsBaseWidget* aWindow, HWND aHwnd);
@@ -75,13 +82,15 @@ class WinWindowOcclusionTracker final : public DisplayStatusListener,
     return mSerializedTaskDispatcher;
   }
 
+  void TriggerCalculation();
+
   void DumpOccludingWindows(HWND aHWnd);
 
  private:
   friend class ::WinWindowOcclusionTrackerTest;
   friend class ::WinWindowOcclusionTrackerInteractiveTest;
 
-  explicit WinWindowOcclusionTracker(base::Thread* aThread);
+  explicit WinWindowOcclusionTracker(UniquePtr<base::Thread> aThread);
   virtual ~WinWindowOcclusionTracker();
 
   // This class computes the occlusion state of the tracked windows.
@@ -99,13 +108,16 @@ class WinWindowOcclusionTracker final : public DisplayStatusListener,
     // Returns existing WindowOcclusionCalculator instance.
     static WindowOcclusionCalculator* GetInstance() { return sCalculator; }
 
-    void Shutdown(layers::SynchronousTask* aTask);
+    void Initialize();
+    void Shutdown();
 
     void EnableOcclusionTrackingForWindow(HWND hwnd);
     void DisableOcclusionTrackingForWindow(HWND hwnd);
 
     // If a window becomes visible, makes sure event hooks are registered.
     void HandleVisibilityChanged(bool aVisible);
+
+    void HandleTriggerCalculation();
 
    private:
     WindowOcclusionCalculator();
@@ -236,11 +248,14 @@ class WinWindowOcclusionTracker final : public DisplayStatusListener,
     HWND mMovingWindow = 0;
 
     // Only used on Win10+.
-    // XXX VirtualDesktopManager is going to be handled by Bug 1732737.
     RefPtr<IVirtualDesktopManager> mVirtualDesktopManager;
 
     // Used to serialize tasks related to mRootWindowHwndsOcclusionState.
     RefPtr<SerializedTaskDispatcher> mSerializedTaskDispatcher;
+
+    // This is an alias to the singleton WinWindowOcclusionTracker mMonitor,
+    // and is used in ShutDown().
+    Monitor& mMonitor;
 
     friend class OcclusionUpdateRunnable;
   };
@@ -280,7 +295,12 @@ class WinWindowOcclusionTracker final : public DisplayStatusListener,
   static StaticRefPtr<WinWindowOcclusionTracker> sTracker;
 
   // "WinWindowOcclusionCalc" thread.
-  base::Thread* const mThread;
+  UniquePtr<base::Thread> mThread;
+  Monitor mMonitor;
+
+  // Has ShutDown been called on us? We might have survived if our thread join
+  // timed out.
+  bool mHasAttemptedShutdown = false;
 
   // Map of HWND to widget. Maintained on main thread, and used to send
   // occlusion state notifications to Windows from

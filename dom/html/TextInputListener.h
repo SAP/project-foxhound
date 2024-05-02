@@ -40,13 +40,12 @@ class TextInputListener final : public nsIDOMEventListener,
    * aFrame is an optional pointer to our frame, if not passed the method will
    * use mFrame to compute it lazily.
    */
-  void HandleValueChanged();
+  void HandleValueChanged(TextEditor&);
 
   /**
    * OnEditActionHandled() is called when the editor handles each edit action.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  OnEditActionHandled(TextEditor& aTextEditor);
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult OnEditActionHandled(TextEditor&);
 
   /**
    * OnSelectionChange() is called when selection is changed in the editor.
@@ -68,9 +67,7 @@ class TextInputListener final : public nsIDOMEventListener,
  protected:
   virtual ~TextInputListener() = default;
 
-  nsresult UpdateTextInputCommands(const nsAString& aCommandsToUpdate,
-                                   dom::Selection* aSelection = nullptr,
-                                   int16_t aReason = 0);
+  nsresult UpdateTextInputCommands(const nsAString& aCommandsToUpdate);
 
  protected:
   nsIFrame* mFrame;

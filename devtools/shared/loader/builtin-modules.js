@@ -8,93 +8,14 @@
  * This module defines custom globals injected in all our modules and also
  * pseudo modules that aren't separate files but just dynamically set values.
  *
+ * Note that some globals are being defined by base-loader.sys.mjs via wantGlobalProperties property.
+ *
  * As it does so, the module itself doesn't have access to these globals,
  * nor the pseudo modules. Be careful to avoid loading any other js module as
  * they would also miss them.
  */
 
-const { Cu, Cc, Ci } = require("chrome");
-const jsmScope = require("resource://devtools/shared/loader/Loader.jsm");
-const { Services } = require("resource://gre/modules/Services.jsm");
-
 const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-
-// Steal various globals only available in JSM scope (and not Sandbox one)
-const {
-  CanonicalBrowsingContext,
-  BrowsingContext,
-  WindowGlobalParent,
-  WindowGlobalChild,
-  console,
-  DebuggerNotificationObserver,
-  DOMPoint,
-  DOMQuad,
-  DOMRect,
-  HeapSnapshot,
-  L10nRegistry,
-  Localization,
-  NamedNodeMap,
-  NodeFilter,
-  StructuredCloneHolder,
-  TelemetryStopwatch,
-} = Cu.getGlobalForObject(jsmScope);
-
-// Create a single Sandbox to access global properties needed in this module.
-// Sandbox are memory expensive, so we should create as little as possible.
-const debuggerSandbox = (exports.internalSandbox = Cu.Sandbox(systemPrincipal, {
-  // This sandbox is also reused for ChromeDebugger implementation.
-  // As we want to load the `Debugger` API for debugging chrome contexts,
-  // we have to ensure loading it in a distinct compartment from its debuggee.
-  freshCompartment: true,
-
-  wantGlobalProperties: [
-    "AbortController",
-    "atob",
-    "btoa",
-    "Blob",
-    "ChromeUtils",
-    "crypto",
-    "CSS",
-    "CSSRule",
-    "DOMParser",
-    "Element",
-    "Event",
-    "FileReader",
-    "FormData",
-    "indexedDB",
-    "InspectorUtils",
-    "Node",
-    "TextDecoder",
-    "TextEncoder",
-    "URL",
-    "Window",
-    "XMLHttpRequest",
-  ],
-}));
-
-const {
-  AbortController,
-  atob,
-  btoa,
-  Blob,
-  ChromeUtils,
-  crypto,
-  CSS,
-  CSSRule,
-  DOMParser,
-  Element,
-  Event,
-  FileReader,
-  FormData,
-  indexedDB,
-  InspectorUtils,
-  Node,
-  TextDecoder,
-  TextEncoder,
-  URL,
-  Window,
-  XMLHttpRequest,
-} = debuggerSandbox;
 
 /**
  * Defines a getter on a specified object that will be created upon first use.
@@ -109,7 +30,7 @@ const {
  */
 function defineLazyGetter(object, name, lambda) {
   Object.defineProperty(object, name, {
-    get: function() {
+    get() {
       // Redefine this accessor property as a data property.
       // Delete it first, to rule out "too much recursion" in case object is
       // a proxy whose defineProperty handler might unwittingly trigger this
@@ -143,30 +64,8 @@ function defineLazyGetter(object, name, lambda) {
  *        The name of the interface to query the service to.
  */
 function defineLazyServiceGetter(object, name, contract, interfaceName) {
-  defineLazyGetter(object, name, function() {
+  defineLazyGetter(object, name, function () {
     return Cc[contract].getService(Ci[interfaceName]);
-  });
-}
-
-/**
- * Defines a getter on a specified object for a module.  The module will not
- * be imported until first use.
- *
- * @param object
- *        The object to define the lazy getter on.
- * @param name
- *        The name of the getter to define on object for the module.
- * @param resource
- *        The URL used to obtain the module.
- */
-function defineLazyModuleGetter(object, name, resource) {
-  defineLazyGetter(object, name, function() {
-    try {
-      return ChromeUtils.import(resource)[name];
-    } catch (ex) {
-      Cu.reportError("Failed to load module " + resource + ".");
-      throw ex;
-    }
   });
 }
 
@@ -211,15 +110,11 @@ function lazyRequireGetter(obj, properties, module, destructure) {
 
 // List of pseudo modules exposed to all devtools modules.
 exports.modules = {
-  ChromeUtils,
-  DebuggerNotificationObserver,
   HeapSnapshot,
-  InspectorUtils,
   // Expose "chrome" Promise, which aren't related to any document
   // and so are never frozen, even if the browser loader module which
   // pull it is destroyed. See bug 1402779.
   Promise,
-  Services: Object.create(Services),
   TelemetryStopwatch,
 };
 
@@ -229,16 +124,24 @@ defineLazyGetter(exports.modules, "Debugger", () => {
   if (global.Debugger) {
     return global.Debugger;
   }
-  const { addDebuggerToGlobal } = ChromeUtils.import(
-    "resource://gre/modules/jsdebugger.jsm"
+  const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+    "resource://gre/modules/jsdebugger.sys.mjs"
   );
   addDebuggerToGlobal(global);
   return global.Debugger;
 });
 
 defineLazyGetter(exports.modules, "ChromeDebugger", () => {
-  const { addDebuggerToGlobal } = ChromeUtils.import(
-    "resource://gre/modules/jsdebugger.jsm"
+  // Sandbox are memory expensive, so we should create as little as possible.
+  const debuggerSandbox = Cu.Sandbox(systemPrincipal, {
+    // This sandbox is used for the ChromeDebugger implementation.
+    // As we want to load the `Debugger` API for debugging chrome contexts,
+    // we have to ensure loading it in a distinct compartment from its debuggee.
+    freshCompartment: true,
+  });
+
+  const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+    "resource://gre/modules/jsdebugger.sys.mjs"
   );
   addDebuggerToGlobal(debuggerSandbox);
   return debuggerSandbox.Debugger;
@@ -251,47 +154,14 @@ defineLazyGetter(exports.modules, "xpcInspector", () => {
 // List of all custom globals exposed to devtools modules.
 // Changes here should be mirrored to devtools/.eslintrc.
 exports.globals = {
-  AbortController,
-  atob,
-  Blob,
-  btoa,
-  CanonicalBrowsingContext,
-  BrowsingContext,
-  WindowGlobalParent,
-  WindowGlobalChild,
-  console,
-  crypto,
-  CSS,
-  CSSRule,
-  DOMParser,
-  DOMPoint,
-  DOMQuad,
-  Event,
-  NamedNodeMap,
-  NodeFilter,
-  DOMRect,
-  Element,
-  FileReader,
-  FormData,
   isWorker: false,
-  L10nRegistry,
   loader: {
     lazyGetter: defineLazyGetter,
-    lazyImporter: defineLazyModuleGetter,
     lazyServiceGetter: defineLazyServiceGetter,
-    lazyRequireGetter: lazyRequireGetter,
-    // Defined by Loader.jsm
+    lazyRequireGetter,
+    // Defined by Loader.sys.mjs
     id: null,
   },
-  Localization,
-  Node,
-  reportError: Cu.reportError,
-  StructuredCloneHolder,
-  TextDecoder,
-  TextEncoder,
-  URL,
-  Window,
-  XMLHttpRequest,
 };
 // DevTools loader copy globals property descriptors on each module global
 // object so that we have to memoize them from here in order to instantiate each
@@ -302,7 +172,7 @@ const globals = {};
 function lazyGlobal(name, getter) {
   defineLazyGetter(globals, name, getter);
   Object.defineProperty(exports.globals, name, {
-    get: function() {
+    get() {
       return globals[name];
     },
     configurable: true,
@@ -310,25 +180,24 @@ function lazyGlobal(name, getter) {
   });
 }
 
-// Lazily define a few things so that the corresponding jsms are only loaded
+// Lazily define a few things so that the corresponding modules are only loaded
 // when used.
 lazyGlobal("clearTimeout", () => {
-  return require("resource://gre/modules/Timer.jsm").clearTimeout;
+  return ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs")
+    .clearTimeout;
 });
 lazyGlobal("setTimeout", () => {
-  return require("resource://gre/modules/Timer.jsm").setTimeout;
+  return ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs")
+    .setTimeout;
 });
 lazyGlobal("clearInterval", () => {
-  return require("resource://gre/modules/Timer.jsm").clearInterval;
+  return ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs")
+    .clearInterval;
 });
 lazyGlobal("setInterval", () => {
-  return require("resource://gre/modules/Timer.jsm").setInterval;
+  return ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs")
+    .setInterval;
 });
 lazyGlobal("WebSocket", () => {
   return Services.appShell.hiddenDOMWindow.WebSocket;
-});
-lazyGlobal("indexedDB", () => {
-  return require("devtools/shared/indexed-db").createDevToolsIndexedDB(
-    indexedDB
-  );
 });

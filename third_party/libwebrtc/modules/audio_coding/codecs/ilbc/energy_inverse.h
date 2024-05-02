@@ -19,14 +19,17 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_ENERGY_INVERSE_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_ENERGY_INVERSE_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "modules/audio_coding/codecs/ilbc/defines.h"
 
 /* Inverses the in vector in into Q29 domain */
 
 void WebRtcIlbcfix_EnergyInverse(
     int16_t*
-        energy, /* (i/o) Energy and inverse
-                                                          energy (in Q29) */
+        energy,           /* (i/o) Energy and inverse
+                                                                    energy (in Q29) */
     size_t noOfEnergies); /* (i)   The length of the energy
                                  vector */
 

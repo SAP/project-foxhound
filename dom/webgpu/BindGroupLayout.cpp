@@ -9,17 +9,14 @@
 
 #include "Device.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
 GPU_IMPL_CYCLE_COLLECTION(BindGroupLayout, mParent)
 GPU_IMPL_JS_WRAP(BindGroupLayout)
 
 BindGroupLayout::BindGroupLayout(Device* const aParent, RawId aId, bool aOwning)
     : ChildOf(aParent), mId(aId), mOwning(aOwning) {
-  if (!aId) {
-    mValid = false;
-  }
+  MOZ_RELEASE_ASSERT(aId);
 }
 
 BindGroupLayout::~BindGroupLayout() { Cleanup(); }
@@ -29,10 +26,9 @@ void BindGroupLayout::Cleanup() {
     mValid = false;
     auto bridge = mParent->GetBridge();
     if (mOwning && bridge && bridge->IsOpen()) {
-      bridge->SendBindGroupLayoutDestroy(mId);
+      bridge->SendBindGroupLayoutDrop(mId);
     }
   }
 }
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu

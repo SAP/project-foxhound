@@ -7,42 +7,64 @@
  * https://html.spec.whatwg.org/#elementinternals
  */
 
-[Pref="dom.webcomponents.elementInternals.enabled", Exposed=Window]
+[Exposed=Window]
 interface ElementInternals {
   // Shadow root access
   readonly attribute ShadowRoot? shadowRoot;
 
   // Form-associated custom elements
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
-  void setFormValue((File or USVString or FormData)? value,
-                    optional (File or USVString or FormData)? state);
+  [Throws]
+  undefined setFormValue((File or USVString or FormData)? value,
+                         optional (File or USVString or FormData)? state);
 
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
+  [Throws]
   readonly attribute HTMLFormElement? form;
 
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
-  void setValidity(optional ValidityStateFlags flags = {},
-                   optional DOMString message,
-                   optional HTMLElement anchor);
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
+  [Throws]
+  undefined setValidity(optional ValidityStateFlags flags = {},
+                        optional DOMString message,
+                        optional HTMLElement anchor);
+  [Throws]
   readonly attribute boolean willValidate;
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
+  [Throws]
   readonly attribute ValidityState validity;
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
+  [Throws]
   readonly attribute DOMString validationMessage;
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
+  [Throws]
   boolean checkValidity();
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
+  [Throws]
   boolean reportValidity();
 
-  [Pref="dom.webcomponents.formAssociatedCustomElement.enabled", Throws]
+  [Throws]
   readonly attribute NodeList labels;
+
+  [Pref="dom.element.customstateset.enabled", SameObject] readonly attribute CustomStateSet states;
+};
+
+[Pref="dom.element.customstateset.enabled", Exposed=Window]
+interface CustomStateSet {
+  setlike<DOMString>;
+};
+
+partial interface CustomStateSet {
+  // Setlike methods need to be overriden.
+  [Throws]
+  undefined add(DOMString state);
+
+  [Throws]
+  boolean delete(DOMString state);
+
+  [Throws]
+  undefined clear();
 };
 
 partial interface ElementInternals {
   [ChromeOnly, Throws]
   readonly attribute HTMLElement? validationAnchor;
 };
+
+ElementInternals includes AccessibilityRole;
+ElementInternals includes AriaAttributes;
 
 dictionary ValidityStateFlags {
   boolean valueMissing = false;

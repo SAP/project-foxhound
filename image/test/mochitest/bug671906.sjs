@@ -1,7 +1,5 @@
 function handleRequest(request, response) {
-  var file = Components.classes["@mozilla.org/file/directory_service;1"]
-    .getService(Components.interfaces.nsIProperties)
-    .get("CurWorkD", Components.interfaces.nsIFile);
+  var file = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
 
   file.append("tests");
   file.append("image");
@@ -23,9 +21,9 @@ function handleRequest(request, response) {
   date.setFullYear(date.getFullYear() + 1);
   response.setHeader("Expires", date.toUTCString(), false);
 
-  var fileStream = Components.classes[
+  var fileStream = Cc[
     "@mozilla.org/network/file-input-stream;1"
-  ].createInstance(Components.interfaces.nsIFileInputStream);
+  ].createInstance(Ci.nsIFileInputStream);
   fileStream.init(file, 1, 0, false);
 
   response.bodyOutputStream.writeFrom(fileStream, fileStream.available());

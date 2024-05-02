@@ -23,10 +23,8 @@ use crate::driver::{AbortController, Driver, Logger};
 use crate::error;
 use crate::store;
 
-#[derive(xpcom)]
-#[xpimplements(mozISyncedBookmarksMerger)]
-#[refcnt = "nonatomic"]
-pub struct InitSyncedBookmarksMerger {
+#[xpcom(implement(mozISyncedBookmarksMerger), nonatomic)]
+pub struct SyncedBookmarksMerger {
     db: RefCell<Option<Conn>>,
     logger: RefCell<Option<RefPtr<mozIServicesLogSink>>>,
 }
@@ -180,7 +178,7 @@ impl MergeTask {
             // merge, since we won't be able to apply the merged tree back to
             // Places. This is common, especially if the user makes lots of
             // changes at once. In that case, our merge task might run in the
-            // middle of a `Sqlite.jsm` transaction, and fail when we try to
+            // middle of a `Sqlite.sys.mjs` transaction, and fail when we try to
             // open our own transaction in `Store::apply`. Since the local
             // tree might be in an inconsistent state, we can't safely update
             // Places.
@@ -221,10 +219,8 @@ impl Task for MergeTask {
     }
 }
 
-#[derive(xpcom)]
-#[xpimplements(mozIPlacesPendingOperation)]
-#[refcnt = "atomic"]
-pub struct InitMergeOp {
+#[xpcom(implement(mozIPlacesPendingOperation), atomic)]
+pub struct MergeOp {
     controller: Arc<AbortController>,
 }
 

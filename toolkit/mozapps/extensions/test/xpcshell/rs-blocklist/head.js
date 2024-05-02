@@ -1,9 +1,11 @@
 // Appease eslint.
 /* import-globals-from ../head_addons.js */
 
-const { ComponentUtils } = ChromeUtils.import(
-  "resource://gre/modules/ComponentUtils.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
+
+const IS_ANDROID_BUILD = AppConstants.platform === "android";
 
 const MLBF_RECORD = {
   id: "A blocklist entry that refers to a MLBF file",
@@ -22,8 +24,8 @@ function enable_blocklist_v2_instead_of_useMLBF() {
   Blocklist.allowDeprecatedBlocklistV2 = true;
   Services.prefs.setBoolPref("extensions.blocklist.useMLBF", false);
   // Sanity check: blocklist v2 has been enabled.
-  const { BlocklistPrivate } = ChromeUtils.import(
-    "resource://gre/modules/Blocklist.jsm"
+  const { BlocklistPrivate } = ChromeUtils.importESModule(
+    "resource://gre/modules/Blocklist.sys.mjs"
   );
   Assert.equal(
     Blocklist.ExtensionBlocklist,
@@ -36,7 +38,6 @@ async function load_mlbf_record_as_blob() {
   const url = Services.io.newFileURI(
     do_get_file("../data/mlbf-blocked1-unblocked2.bin")
   ).spec;
-  Cu.importGlobalProperties(["fetch"]);
   return (await fetch(url)).blob();
 }
 
@@ -45,10 +46,12 @@ function getExtensionBlocklistMLBF() {
   // pref is set to true.
   const {
     BlocklistPrivate: { ExtensionBlocklistMLBF },
-  } = ChromeUtils.import("resource://gre/modules/Blocklist.jsm");
-  Assert.ok(
-    Services.prefs.getBoolPref("extensions.blocklist.useMLBF", false),
-    "blocklist.useMLBF should be true"
-  );
+  } = ChromeUtils.importESModule("resource://gre/modules/Blocklist.sys.mjs");
+  if (Blocklist.allowDeprecatedBlocklistV2) {
+    Assert.ok(
+      Services.prefs.getBoolPref("extensions.blocklist.useMLBF", false),
+      "blocklist.useMLBF should be true"
+    );
+  }
   return ExtensionBlocklistMLBF;
 }

@@ -63,7 +63,7 @@ def WebIDLTest(parser, harness):
     parser.parse(
         """
             interface Child : Parent {
-              static void foo();
+              static undefined foo();
             };
             interface Parent {
               [LegacyUnforgeable] readonly attribute long foo;
@@ -86,7 +86,7 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface Child : Parent {
-              void foo();
+              undefined foo();
             };
             interface Parent {
               [LegacyUnforgeable] readonly attribute long foo;
@@ -95,7 +95,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         threw,
@@ -109,16 +109,16 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface Child : Parent {
-              void foo();
+              undefined foo();
             };
             interface Parent {
-              [LegacyUnforgeable] void foo();
+              [LegacyUnforgeable] undefined foo();
             };
         """
         )
 
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         threw,
@@ -141,7 +141,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(
         threw,
@@ -158,13 +158,13 @@ def WebIDLTest(parser, harness):
               attribute short foo;
             };
             interface Parent {
-              [LegacyUnforgeable] void foo();
+              [LegacyUnforgeable] undefined foo();
             };
         """
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(
         threw,
@@ -199,7 +199,7 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface Child : Parent {
-              void foo();
+              undefined foo();
             };
             interface Parent {};
             interface mixin Mixin {
@@ -210,7 +210,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(
@@ -233,14 +233,14 @@ def WebIDLTest(parser, harness):
             };
             GrandParent includes Mixin;
             interface mixin ChildMixin {
-              void foo();
+              undefined foo();
             };
             Child includes ChildMixin;
         """
         )
 
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(
@@ -259,18 +259,18 @@ def WebIDLTest(parser, harness):
             interface Parent : GrandParent {};
             interface GrandParent {};
             interface mixin Mixin {
-              [LegacyUnforgeable] void foo();
+              [LegacyUnforgeable] undefined foo();
             };
             GrandParent includes Mixin;
             interface mixin ChildMixin {
-              void foo();
+              undefined foo();
             };
             Child includes ChildMixin;
         """
         )
 
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(
@@ -305,7 +305,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should have thrown for static [LegacyUnforgeable] attribute.")

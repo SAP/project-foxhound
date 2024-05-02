@@ -11,6 +11,7 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
+#include "js/CompileOptions.h"  // PrefableCompileOptions
 #include "js/WasmFeatures.h"
 
 struct JS_PUBLIC_API JSContext;
@@ -21,55 +22,39 @@ class JS_PUBLIC_API ContextOptions {
  public:
   // clang-format off
   ContextOptions()
-      : asmJS_(true),
-        wasm_(true),
+      : wasm_(true),
         wasmForTrustedPrinciples_(true),
         wasmVerbose_(false),
         wasmBaseline_(true),
         wasmIon_(true),
-        wasmCranelift_(false),
-#define WASM_DEFAULT_FEATURE(NAME, ...) wasm##NAME##_(true),
-#define WASM_EXPERIMENTAL_FEATURE(NAME, ...) wasm##NAME##_(false),
-        JS_FOR_WASM_FEATURES(WASM_DEFAULT_FEATURE, WASM_DEFAULT_FEATURE, WASM_EXPERIMENTAL_FEATURE)
-#undef WASM_DEFAULT_FEATURE
-#undef WASM_EXPERIMENTAL_FEATURE
-        wasmSimdWormhole_(false),
+#define WASM_FEATURE(NAME, LOWER_NAME, STAGE, ...) wasm##NAME##_(STAGE == WasmFeatureStage::Default),
+        JS_FOR_WASM_FEATURES(WASM_FEATURE)
+#undef WASM_FEATURE
         testWasmAwaitTier2_(false),
-        throwOnAsmJSValidationFailure_(false),
         disableIon_(false),
         disableEvalSecurityChecks_(false),
         asyncStack_(true),
         asyncStackCaptureDebuggeeOnly_(false),
-        sourcePragmas_(true),
         throwOnDebuggeeWouldRun_(true),
         dumpStackOnDebuggeeWouldRun_(false),
-        strictMode_(false),
 #ifdef JS_ENABLE_SMOOSH
         trackNotImplemented_(false),
         trySmoosh_(false),
 #endif
-        fuzzing_(false),
-        privateClassFields_(false),
-        privateClassMethods_(false),
-#ifdef NIGHTLY_BUILD
-        arrayGrouping_(true),
-#endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-        changeArrayByCopy_(false),
-#endif
-        ergonomicBrandChecks_(false),
-        classStaticBlocks_(false),
-        importAssertions_(false) {
+        fuzzing_(false) {
   }
   // clang-format on
 
-  bool asmJS() const { return asmJS_; }
+  bool asmJS() const {
+    return compileOptions_.asmJSOption() == AsmJSOption::Enabled;
+  }
+  AsmJSOption asmJSOption() const { return compileOptions_.asmJSOption(); }
   ContextOptions& setAsmJS(bool flag) {
-    asmJS_ = flag;
+    compileOptions_.setAsmJS(flag);
     return *this;
   }
-  ContextOptions& toggleAsmJS() {
-    asmJS_ = !asmJS_;
+  ContextOptions& setAsmJSOption(AsmJSOption option) {
+    compileOptions_.setAsmJSOption(option);
     return *this;
   }
 
@@ -107,10 +92,6 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-  bool wasmCranelift() const { return wasmCranelift_; }
-  // Defined out-of-line because it depends on a compile-time option
-  ContextOptions& setWasmCranelift(bool flag);
-
   bool testWasmAwaitTier2() const { return testWasmAwaitTier2_; }
   ContextOptions& setTestWasmAwaitTier2(bool flag) {
     testWasmAwaitTier2_ = flag;
@@ -123,22 +104,18 @@ class JS_PUBLIC_API ContextOptions {
     wasm##NAME##_ = flag;                           \
     return *this;                                   \
   }
-  JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
+  JS_FOR_WASM_FEATURES(WASM_FEATURE)
 #undef WASM_FEATURE
 
-  bool wasmSimdWormhole() const { return wasmSimdWormhole_; }
-  // Defined out-of-line because it depends on a compile-time option
-  ContextOptions& setWasmSimdWormhole(bool flag);
-
   bool throwOnAsmJSValidationFailure() const {
-    return throwOnAsmJSValidationFailure_;
+    return compileOptions_.throwOnAsmJSValidationFailure();
   }
   ContextOptions& setThrowOnAsmJSValidationFailure(bool flag) {
-    throwOnAsmJSValidationFailure_ = flag;
+    compileOptions_.setThrowOnAsmJSValidationFailure(flag);
     return *this;
   }
   ContextOptions& toggleThrowOnAsmJSValidationFailure() {
-    throwOnAsmJSValidationFailure_ = !throwOnAsmJSValidationFailure_;
+    compileOptions_.toggleThrowOnAsmJSValidationFailure();
     return *this;
   }
 
@@ -151,49 +128,9 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-  bool privateClassFields() const { return privateClassFields_; }
-  ContextOptions& setPrivateClassFields(bool enabled) {
-    privateClassFields_ = enabled;
-    return *this;
-  }
-
-  bool privateClassMethods() const { return privateClassMethods_; }
-  ContextOptions& setPrivateClassMethods(bool enabled) {
-    privateClassMethods_ = enabled;
-    return *this;
-  }
-
-  bool ergonomicBrandChecks() const { return ergonomicBrandChecks_; }
-  ContextOptions& setErgnomicBrandChecks(bool enabled) {
-    ergonomicBrandChecks_ = enabled;
-    return *this;
-  }
-
-#ifdef NIGHTLY_BUILD
-  bool arrayGrouping() const { return arrayGrouping_; }
-  ContextOptions& setArrayGrouping(bool enabled) {
-    arrayGrouping_ = enabled;
-    return *this;
-  }
-#endif
-
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  bool changeArrayByCopy() const { return changeArrayByCopy_; }
-  ContextOptions& setChangeArrayByCopy(bool enabled) {
-    changeArrayByCopy_ = enabled;
-    return *this;
-  }
-#endif
-
-  bool classStaticBlocks() const { return classStaticBlocks_; }
-  ContextOptions& setClassStaticBlocks(bool enabled) {
-    classStaticBlocks_ = enabled;
-    return *this;
-  }
-
-  bool importAssertions() const { return importAssertions_; }
+  bool importAssertions() const { return compileOptions_.importAssertions(); }
   ContextOptions& setImportAssertions(bool enabled) {
-    importAssertions_ = enabled;
+    compileOptions_.setImportAssertions(enabled);
     return *this;
   }
 
@@ -220,9 +157,9 @@ class JS_PUBLIC_API ContextOptions {
   }
 
   // Enable/disable support for parsing '//(#@) source(Mapping)?URL=' pragmas.
-  bool sourcePragmas() const { return sourcePragmas_; }
+  bool sourcePragmas() const { return compileOptions_.sourcePragmas(); }
   ContextOptions& setSourcePragmas(bool flag) {
-    sourcePragmas_ = flag;
+    compileOptions_.setSourcePragmas(flag);
     return *this;
   }
 
@@ -237,16 +174,6 @@ class JS_PUBLIC_API ContextOptions {
   }
   ContextOptions& setDumpStackOnDebuggeeWouldRun(bool flag) {
     dumpStackOnDebuggeeWouldRun_ = flag;
-    return *this;
-  }
-
-  bool strictMode() const { return strictMode_; }
-  ContextOptions& setStrictMode(bool flag) {
-    strictMode_ = flag;
-    return *this;
-  }
-  ContextOptions& toggleStrictMode() {
-    strictMode_ = !strictMode_;
     return *this;
   }
 
@@ -273,48 +200,44 @@ class JS_PUBLIC_API ContextOptions {
   ContextOptions& setFuzzing(bool flag);
 
   void disableOptionsForSafeMode() {
-    setAsmJS(false);
+    setAsmJSOption(AsmJSOption::DisabledByAsmJSPref);
     setWasmBaseline(false);
   }
 
+  PrefableCompileOptions& compileOptions() { return compileOptions_; }
+  const PrefableCompileOptions& compileOptions() const {
+    return compileOptions_;
+  }
+
  private:
-  bool asmJS_ : 1;
+  // WASM options.
   bool wasm_ : 1;
   bool wasmForTrustedPrinciples_ : 1;
   bool wasmVerbose_ : 1;
   bool wasmBaseline_ : 1;
   bool wasmIon_ : 1;
-  bool wasmCranelift_ : 1;
 #define WASM_FEATURE(NAME, ...) bool wasm##NAME##_ : 1;
-  JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
+  JS_FOR_WASM_FEATURES(WASM_FEATURE)
 #undef WASM_FEATURE
-  bool wasmSimdWormhole_ : 1;
   bool testWasmAwaitTier2_ : 1;
-  bool throwOnAsmJSValidationFailure_ : 1;
+
+  // JIT options.
   bool disableIon_ : 1;
   bool disableEvalSecurityChecks_ : 1;
+
+  // Runtime options.
   bool asyncStack_ : 1;
   bool asyncStackCaptureDebuggeeOnly_ : 1;
-  bool sourcePragmas_ : 1;
   bool throwOnDebuggeeWouldRun_ : 1;
   bool dumpStackOnDebuggeeWouldRun_ : 1;
-  bool strictMode_ : 1;
 #ifdef JS_ENABLE_SMOOSH
   bool trackNotImplemented_ : 1;
   bool trySmoosh_ : 1;
 #endif
   bool fuzzing_ : 1;
-  bool privateClassFields_ : 1;
-  bool privateClassMethods_ : 1;
-#ifdef NIGHTLY_BUILD
-  bool arrayGrouping_ : 1;
-#endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  bool changeArrayByCopy_ : 1;
-#endif
-  bool ergonomicBrandChecks_ : 1;
-  bool classStaticBlocks_ : 1;
-  bool importAssertions_ : 1;
+
+  // Compile options.
+  PrefableCompileOptions compileOptions_;
 };
 
 JS_PUBLIC_API ContextOptions& ContextOptionsRef(JSContext* cx);

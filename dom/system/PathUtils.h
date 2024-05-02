@@ -13,8 +13,10 @@
 #include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Result.h"
+#include "mozilla/dom/PathUtilsBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceDefs.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
@@ -49,6 +51,20 @@ class PathUtils final {
   static void Join(const GlobalObject&, const Sequence<nsString>& aComponents,
                    nsString& aResult, ErrorResult& aErr);
 
+  /**
+   * Join a sequence of path components and return an nsIFile with the resulting
+   * path.
+   *
+   * @param aComponents  A sequence of path components. The first component must
+   *                     be an absolute path.
+   * @param aErr  The error result, if any.
+   *
+   * @return An nsIFile with the resulting path, if there were no errors.
+   * Otherwise, nullptr is returned.
+   */
+  static already_AddRefed<nsIFile> Join(const Span<const nsString>& aComponents,
+                                        ErrorResult& aErr);
+
   static void JoinRelative(const GlobalObject&, const nsAString& aBasePath,
                            const nsAString& aRelativePath, nsString& aResult,
                            ErrorResult& aErr);
@@ -62,6 +78,10 @@ class PathUtils final {
   static void Split(const GlobalObject&, const nsAString& aPath,
                     nsTArray<nsString>& aResult, ErrorResult& aErr);
 
+  static void SplitRelative(const GlobalObject& aGlobal, const nsAString& aPath,
+                            const SplitRelativeOptions& aOptions,
+                            nsTArray<nsString>& aResult, ErrorResult& aErr);
+
   static void ToFileURI(const GlobalObject&, const nsAString& aPath,
                         nsCString& aResult, ErrorResult& aErr);
 
@@ -73,6 +93,8 @@ class PathUtils final {
                                      ErrorResult& aErr);
   static void GetTempDirSync(const GlobalObject&, nsString& aResult,
                              ErrorResult& aErr);
+  static void GetXulLibraryPathSync(const GlobalObject&, nsString& aResult,
+                                    ErrorResult& aErr);
 
   static already_AddRefed<Promise> GetProfileDirAsync(
       const GlobalObject& aGlobal, ErrorResult& aErr);
@@ -80,6 +102,8 @@ class PathUtils final {
       const GlobalObject& aGlobal, ErrorResult& aErr);
   static already_AddRefed<Promise> GetTempDirAsync(const GlobalObject& aGlobal,
                                                    ErrorResult& aErr);
+  static already_AddRefed<Promise> GetXulLibraryPathAsync(
+      const GlobalObject& aGlobal, ErrorResult& aErr);
 
  private:
   class DirectoryCache;
@@ -107,9 +131,13 @@ class PathUtils::DirectoryCache final {
      */
     LocalProfile,
     /**
-     * The temporary directory for the process.
+     * The OS temporary directory.
      */
     Temp,
+    /**
+     * The libxul path.
+     */
+    XulLibrary,
     /**
      * The number of Directory entries.
      */
@@ -221,7 +249,8 @@ class PathUtils::DirectoryCache final {
   static constexpr DirectoryArray<const char*> kDirectoryNames{
       NS_APP_USER_PROFILE_50_DIR,
       NS_APP_USER_PROFILE_LOCAL_50_DIR,
-      NS_APP_CONTENT_PROCESS_TEMP_DIR,
+      NS_OS_TEMP_DIR,
+      NS_XPCOM_LIBRARY_FILE,
   };
 };
 

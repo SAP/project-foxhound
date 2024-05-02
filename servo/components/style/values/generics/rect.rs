@@ -17,9 +17,11 @@ use style_traits::{CssWriter, ParseError, ToCss};
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
     SpecifiedValueInfo,
+    Serialize,
     ToAnimatedValue,
     ToAnimatedZero,
     ToComputedValue,
@@ -81,6 +83,24 @@ where
         // <first> <second> <third> <fourth>
         Ok(Self::new(first, second, third, fourth))
     }
+
+    /// Parses a new `Rect<T>` value which all components must be specified, with the given parse
+    /// function.
+    pub fn parse_all_components_with<'i, 't, Parse>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        parse: Parse,
+    ) -> Result<Self, ParseError<'i>>
+    where
+        Parse: Fn(&ParserContext, &mut Parser<'i, 't>) -> Result<T, ParseError<'i>>,
+    {
+        let first = parse(context, input)?;
+        let second = parse(context, input)?;
+        let third = parse(context, input)?;
+        let fourth = parse(context, input)?;
+        // <first> <second> <third> <fourth>
+        Ok(Self::new(first, second, third, fourth))
+    }
 }
 
 impl<T> Parse for Rect<T>
@@ -110,17 +130,17 @@ where
         if same_vertical && same_horizontal && self.0 == self.1 {
             return Ok(());
         }
-        dest.write_str(" ")?;
+        dest.write_char(' ')?;
         self.1.to_css(dest)?;
         if same_vertical && same_horizontal {
             return Ok(());
         }
-        dest.write_str(" ")?;
+        dest.write_char(' ')?;
         self.2.to_css(dest)?;
         if same_horizontal {
             return Ok(());
         }
-        dest.write_str(" ")?;
+        dest.write_char(' ')?;
         self.3.to_css(dest)
     }
 }

@@ -17,9 +17,9 @@
 #  undef PostMessage
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
+class EventWithOptionsRunnable;
 struct StructuredSerializeOptions;
 struct WorkerOptions;
 class WorkerPrivate;
@@ -49,6 +49,11 @@ class Worker : public DOMEventTargetHelper, public SupportsWeakPtr {
                    const StructuredSerializeOptions& aOptions,
                    ErrorResult& aRv);
 
+  void PostEventWithOptions(JSContext* aCx, JS::Handle<JS::Value> aOptions,
+                            const Sequence<JSObject*>& aTransferable,
+                            EventWithOptionsRunnable* aRunnable,
+                            ErrorResult& aRv);
+
   void Terminate();
 
   IMPL_EVENT_HANDLER(error)
@@ -60,10 +65,10 @@ class Worker : public DOMEventTargetHelper, public SupportsWeakPtr {
          already_AddRefed<WorkerPrivate> aWorkerPrivate);
   ~Worker();
 
+  friend class EventWithOptionsRunnable;
   RefPtr<WorkerPrivate> mWorkerPrivate;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_Worker_h */

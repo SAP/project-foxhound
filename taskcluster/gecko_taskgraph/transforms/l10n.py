@@ -6,34 +6,36 @@ Do transforms specific to l10n kind
 """
 
 
-import copy
 import json
 
 from mozbuild.chunkify import chunkify
-from gecko_taskgraph.loader.multi_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.schema import (
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_dependencies, get_primary_dependency
+from taskgraph.util.schema import (
+    Schema,
     optionally_keyed_by,
     resolve_keyed_by,
     taskref_or_string,
 )
-from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.taskcluster import get_artifact_prefix
-from gecko_taskgraph.util.treeherder import add_suffix
+from taskgraph.util.taskcluster import get_artifact_prefix
+from taskgraph.util.treeherder import add_suffix
+from voluptuous import Any, Optional, Required
+
 from gecko_taskgraph.transforms.job import job_description_schema
 from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
+from gecko_taskgraph.util.attributes import (
+    copy_attributes_from_dependent_job,
+    sorted_unique_list,
+    task_name,
 )
+from gecko_taskgraph.util.copy_task import copy_task
 
 
 def _by_platform(arg):
     return optionally_keyed_by("build-platform", arg)
 
 
-l10n_description_schema = schema.extend(
+l10n_description_schema = Schema(
     {
         # Name for this job, inferred from the dependent job before validation
         Required("name"): str,
@@ -106,7 +108,7 @@ l10n_description_schema = schema.extend(
         Optional("env"): _by_platform({str: taskref_or_string}),
         # Max number locales per chunk
         Optional("locales-per-chunk"): _by_platform(int),
-        # Task deps to chain this task with, added in transforms from primary-dependency
+        # Task deps to chain this task with, added in transforms from primary dependency
         # if this is a shippable-style build
         Optional("dependencies"): {str: str},
         # Run the task when the listed files change (if present).
@@ -117,6 +119,7 @@ l10n_description_schema = schema.extend(
         # Shipping product and phase
         Optional("shipping-product"): task_description_schema["shipping-product"],
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
+        Optional("job-from"): task_description_schema["job-from"],
     }
 )
 
@@ -156,17 +159,19 @@ def _remove_locales(locales, to_remove=None):
 @transforms.add
 def setup_name(config, jobs):
     for job in jobs:
-        dep = job["primary-dependency"]
+        dep = get_primary_dependency(config, job)
+        assert dep
         # Set the name to the same as the dep task, without kind name.
         # Label will get set automatically with this kinds name.
-        job["name"] = job.get("name", dep.name)
+        job["name"] = job.get("name", task_name(dep))
         yield job
 
 
 @transforms.add
 def copy_in_useful_magic(config, jobs):
     for job in jobs:
-        dep = job["primary-dependency"]
+        dep = get_primary_dependency(config, job)
+        assert dep
         attributes = copy_attributes_from_dependent_job(dep)
         attributes.update(job.get("attributes", {}))
         # build-platform is needed on `job` for by-build-platform
@@ -179,22 +184,24 @@ transforms.add_validate(l10n_description_schema)
 
 
 @transforms.add
-def setup_shippable_dependency(config, jobs):
-    """Sets up a task dependency to the signing job this relates to"""
+def gather_required_signoffs(config, jobs):
     for job in jobs:
-        job["dependencies"] = {"build": job["dependent-tasks"]["build"].label}
-        if job["attributes"]["build_platform"].startswith("win") or job["attributes"][
-            "build_platform"
-        ].startswith("linux"):
-            job["dependencies"].update(
-                {
-                    "build-signing": job["dependent-tasks"]["build-signing"].label,
-                }
+        job.setdefault("attributes", {})["required_signoffs"] = sorted_unique_list(
+            *(
+                dep.attributes.get("required_signoffs", [])
+                for dep in get_dependencies(config, job)
             )
-        if job["attributes"]["build_platform"].startswith("macosx"):
-            job["dependencies"].update(
-                {"repackage": job["dependent-tasks"]["repackage"].label}
-            )
+        )
+        yield job
+
+
+@transforms.add
+def remove_repackage_dependency(config, jobs):
+    for job in jobs:
+        build_platform = job["attributes"]["build_platform"]
+        if not build_platform.startswith("macosx"):
+            del job["dependencies"]["repackage"]
+
         yield job
 
 
@@ -226,7 +233,7 @@ def handle_keyed_by(config, jobs):
         "when.files-changed",
     ]
     for job in jobs:
-        job = copy.deepcopy(job)  # don't overwrite dict values here
+        job = copy_task(job)  # don't overwrite dict values here
         for field in fields:
             resolve_keyed_by(item=job, field=field, item_name=job["name"])
         yield job
@@ -278,7 +285,7 @@ def chunk_locales(config, jobs):
             if remainder:
                 chunks = int(chunks + 1)
             for this_chunk in range(1, chunks + 1):
-                chunked = copy.deepcopy(job)
+                chunked = copy_task(job)
                 chunked["name"] = chunked["name"].replace("/", f"-{this_chunk}/", 1)
                 chunked["mozharness"]["options"] = chunked["mozharness"].get(
                     "options", []
@@ -379,12 +386,10 @@ def make_job_description(config, jobs):
             "max-run-time": job["run-time"],
             "chain-of-trust": True,
         }
-        if job["worker-type"] == "b-win2012":
+        if job["worker-type"] in ["b-win2012", "b-win2022"]:
             job_description["worker"]["os"] = "windows"
             job_description["run"]["use-simple-package"] = False
             job_description["run"]["use-magic-mh-args"] = False
-        else:
-            job_description["run"]["need-xvfb"] = True
 
         if job.get("docker-image"):
             job_description["worker"]["docker-image"] = job["docker-image"]

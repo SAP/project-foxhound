@@ -41,22 +41,23 @@ class SVGFilterFrame final : public SVGContainerFrame {
       : SVGContainerFrame(aStyle, aPresContext, kClassID),
         mLoopFlag(false),
         mNoHRefURI(false) {
-    AddStateBits(NS_FRAME_IS_NONDISPLAY);
+    AddStateBits(NS_FRAME_IS_NONDISPLAY |
+                 NS_STATE_SVG_RENDERING_OBSERVER_CONTAINER);
   }
 
  public:
   NS_DECL_FRAMEARENA_HELPERS(SVGFilterFrame)
 
   // nsIFrame methods:
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override {}
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override {}
 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
 #ifdef DEBUG
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 #endif
 
  private:

@@ -11,8 +11,7 @@
 #include "nsCOMPtr.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class GamepadButton : public nsISupports, public nsWrapperCache {
  public:
@@ -20,7 +19,7 @@ class GamepadButton : public nsISupports, public nsWrapperCache {
       : mParent(aParent), mValue(0), mPressed(false), mTouched(false) {}
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(GamepadButton)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(GamepadButton)
 
   nsISupports* GetParentObject() const { return mParent; }
 
@@ -49,7 +48,6 @@ class GamepadButton : public nsISupports, public nsWrapperCache {
   bool mTouched;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_gamepad_GamepadButton_h

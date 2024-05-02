@@ -6,7 +6,7 @@
 /**
  * Tests resizing of columns in NetMonitor.
  */
-add_task(async function() {
+add_task(async function () {
   // Reset visibleColumns so we only get the default ones
   // and not all that are set in head.js
   Services.prefs.clearUserPref("devtools.netmonitor.visibleColumns");
@@ -52,10 +52,10 @@ add_task(async function() {
     document.querySelector("#requests-list-transferred-button")
   );
 
-  getContextMenuItem(
+  await selectContextMenuItem(
     monitor,
     "request-list-header-resize-column-to-fit-content"
-  ).click();
+  );
 
   columnsData = JSON.parse(
     Services.prefs.getCharPref("devtools.netmonitor.columnsData")
@@ -88,7 +88,7 @@ function checkSumOfVisibleColumns(columnsData, visibleColumns) {
 }
 
 function getWidthFromPref(columnsData, column) {
-  const widthInPref = columnsData.find(function(element) {
+  const widthInPref = columnsData.find(function (element) {
     return element.name === column;
   }).width;
   return widthInPref;

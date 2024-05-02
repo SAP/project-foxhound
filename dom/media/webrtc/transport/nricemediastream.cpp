@@ -50,15 +50,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // nICEr includes
 extern "C" {
 #include "nr_api.h"
-#include "registry.h"
-#include "async_timer.h"
-#include "ice_util.h"
 #include "transport_addr.h"
-#include "nr_crypto.h"
 #include "nr_socket.h"
-#include "nr_socket_local.h"
-#include "stun_client_ctx.h"
-#include "stun_server_ctx.h"
 #include "ice_ctx.h"
 #include "ice_candidate.h"
 #include "ice_handler.h"
@@ -292,9 +285,9 @@ nsresult NrIceMediaStream::ParseTrickleCandidate(const std::string& candidate,
     return NS_ERROR_FAILURE;
   }
 
-  MOZ_MTLOG(ML_INFO, "NrIceCtx(" << ctx_->ctx()->label << ")/STREAM(" << name()
-                                 << ") : parsing trickle candidate "
-                                 << candidate);
+  MOZ_MTLOG(ML_NOTICE, "NrIceCtx(" << ctx_->ctx()->label << ")/STREAM("
+                                   << name() << ") : parsing trickle candidate "
+                                   << candidate);
 
   int r = nr_ice_peer_ctx_parse_trickle_candidate(
       ctx_->peer(), stream, const_cast<char*>(candidate.c_str()),

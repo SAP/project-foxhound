@@ -1,11 +1,13 @@
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
 // Bug 380852 - Delete permission manager entries in Clear Recent History
 
-const { Sanitizer } = ChromeUtils.import("resource:///modules/Sanitizer.jsm");
-const { SiteDataTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SiteDataTestUtils.jsm"
+const { SiteDataTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -25,24 +27,6 @@ const oneHour = 3600000000;
 const fiveHours = oneHour * 5;
 
 const itemsToClear = ["cookies", "offlineApps"];
-
-function hasIndexedDB(origin) {
-  return new Promise(resolve => {
-    let hasData = true;
-    let uri = Services.io.newURI(origin);
-    let principal = Services.scriptSecurityManager.createContentPrincipal(
-      uri,
-      {}
-    );
-    let request = indexedDB.openForPrincipal(principal, "TestDatabase", 1);
-    request.onupgradeneeded = function(e) {
-      hasData = false;
-    };
-    request.onsuccess = function(e) {
-      resolve(hasData);
-    };
-  });
-}
 
 function waitForUnregister(host) {
   return new Promise(resolve => {
@@ -124,7 +108,7 @@ add_task(async function testWithRange() {
   is(found, 2, "Our origins are active.");
 
   ok(
-    await hasIndexedDB("https://example.org"),
+    await SiteDataTestUtils.hasIndexedDB("https://example.org"),
     "We have indexedDB data for example.org"
   );
   ok(
@@ -133,7 +117,7 @@ add_task(async function testWithRange() {
   );
 
   ok(
-    await hasIndexedDB("https://example.com"),
+    await SiteDataTestUtils.hasIndexedDB("https://example.com"),
     "We have indexedDB data for example.com"
   );
   ok(
@@ -155,7 +139,7 @@ add_task(async function testWithRange() {
   await p;
 
   ok(
-    !(await hasIndexedDB("https://example.org")),
+    !(await SiteDataTestUtils.hasIndexedDB("https://example.org")),
     "We don't have indexedDB data for example.org"
   );
   ok(
@@ -164,7 +148,7 @@ add_task(async function testWithRange() {
   );
 
   ok(
-    await hasIndexedDB("https://example.com"),
+    await SiteDataTestUtils.hasIndexedDB("https://example.com"),
     "We still have indexedDB data for example.com"
   );
   ok(
@@ -184,7 +168,7 @@ add_task(async function testWithRange() {
   await Sanitizer.sanitize(itemsToClear, { ignoreTimespan: false });
 
   ok(
-    await hasIndexedDB("https://example.com"),
+    await SiteDataTestUtils.hasIndexedDB("https://example.com"),
     "We still have indexedDB data for example.com"
   );
   ok(
@@ -193,7 +177,7 @@ add_task(async function testWithRange() {
   );
 
   ok(
-    !(await hasIndexedDB("https://example.org")),
+    !(await SiteDataTestUtils.hasIndexedDB("https://example.org")),
     "We don't have indexedDB data for example.org"
   );
   ok(
@@ -204,5 +188,68 @@ add_task(async function testWithRange() {
   sas.testOnlyReset();
 
   // Clean up.
-  await Sanitizer.sanitize(itemsToClear);
+  await SiteDataTestUtils.clear();
+});
+
+add_task(async function testExceptionsOnShutdown() {
+  await createData("example.org");
+  await createData("example.com");
+
+  // Set exception for example.org to not get cleaned
+  let originALLOW = "https://example.org";
+  PermissionTestUtils.add(
+    originALLOW,
+    "cookie",
+    Ci.nsICookiePermission.ACCESS_ALLOW
+  );
+
+  ok(
+    await SiteDataTestUtils.hasIndexedDB("https://example.org"),
+    "We have indexedDB data for example.org"
+  );
+  ok(
+    SiteDataTestUtils.hasServiceWorkers("https://example.org"),
+    "We have serviceWorker data for example.org"
+  );
+
+  ok(
+    await SiteDataTestUtils.hasIndexedDB("https://example.com"),
+    "We have indexedDB data for example.com"
+  );
+  ok(
+    SiteDataTestUtils.hasServiceWorkers("https://example.com"),
+    "We have serviceWorker data for example.com"
+  );
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.sanitizer.loglevel", "All"],
+      ["privacy.clearOnShutdown.offlineApps", true],
+      ["privacy.sanitize.sanitizeOnShutdown", true],
+    ],
+  });
+  // Clear it
+  await Sanitizer.runSanitizeOnShutdown();
+  // Data for example.org should not have been cleared
+  ok(
+    await SiteDataTestUtils.hasIndexedDB("https://example.org"),
+    "We still have indexedDB data for example.org"
+  );
+  ok(
+    SiteDataTestUtils.hasServiceWorkers("https://example.org"),
+    "We still have serviceWorker data for example.org"
+  );
+  // Data for example.com should be cleared
+  ok(
+    !(await SiteDataTestUtils.hasIndexedDB("https://example.com")),
+    "We don't have indexedDB data for example.com"
+  );
+  ok(
+    !SiteDataTestUtils.hasServiceWorkers("https://example.com"),
+    "We don't have serviceWorker data for example.com"
+  );
+
+  // Clean up
+  await SiteDataTestUtils.clear();
+  Services.perms.removeAll();
 });

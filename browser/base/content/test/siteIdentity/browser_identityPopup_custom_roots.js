@@ -13,7 +13,7 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 // imports root certificates by default, so we just visit example.com
 // and verify that the custom root certificates UI is visible.
 add_task(async function test_https() {
-  await BrowserTestUtils.withNewTab("https://example.com", async function() {
+  await BrowserTestUtils.withNewTab("https://example.com", async function () {
     let promisePanelOpen = BrowserTestUtils.waitForEvent(
       window,
       "popupshown",
@@ -48,7 +48,8 @@ add_task(async function test_https() {
 
 // Also check that there are conditions where this isn't shown.
 add_task(async function test_http() {
-  await BrowserTestUtils.withNewTab("http://example.com", async function() {
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  await BrowserTestUtils.withNewTab("http://example.com", async function () {
     let promisePanelOpen = BrowserTestUtils.waitForEvent(
       window,
       "popupshown",

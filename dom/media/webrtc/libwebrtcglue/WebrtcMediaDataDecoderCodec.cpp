@@ -5,37 +5,45 @@
 #include "WebrtcMediaDataDecoderCodec.h"
 
 #include "ImageContainer.h"
-#include "Layers.h"
 #include "MediaDataDecoderProxy.h"
 #include "PDMFactory.h"
 #include "VideoUtils.h"
-#include "ImageContainer.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/media/MediaUtils.h"
-#include "rtc_base/keep_ref_until_done.h"
+#include "mozilla/StaticPrefs_media.h"
 
 namespace mozilla {
 
-WebrtcMediaDataDecoder::WebrtcMediaDataDecoder(nsACString& aCodecMimeType)
+WebrtcMediaDataDecoder::WebrtcMediaDataDecoder(nsACString& aCodecMimeType,
+                                               TrackingId aTrackingId)
     : mThreadPool(GetMediaThreadPool(MediaThreadType::SUPERVISOR)),
-      mTaskQueue(new TaskQueue(do_AddRef(mThreadPool),
-                               "WebrtcMediaDataDecoder::mTaskQueue")),
+      mTaskQueue(TaskQueue::Create(do_AddRef(mThreadPool),
+                                   "WebrtcMediaDataDecoder::mTaskQueue")),
       mImageContainer(MakeAndAddRef<layers::ImageContainer>(
           layers::ImageContainer::ASYNCHRONOUS)),
       mFactory(new PDMFactory()),
       mTrackType(TrackInfo::kUndefinedTrack),
-      mCodecType(aCodecMimeType) {}
+      mCodecType(aCodecMimeType),
+      mTrackingId(std::move(aTrackingId)) {}
 
 WebrtcMediaDataDecoder::~WebrtcMediaDataDecoder() {}
 
-int32_t WebrtcMediaDataDecoder::InitDecode(
-    const webrtc::VideoCodec* aCodecSettings, int32_t aNumberOfCores) {
+bool WebrtcMediaDataDecoder::Configure(
+    const webrtc::VideoDecoder::Settings& settings) {
   nsCString codec;
   mTrackType = TrackInfo::kVideoTrack;
-  mInfo = VideoInfo(aCodecSettings->width, aCodecSettings->height);
+  mInfo = VideoInfo(settings.max_render_resolution().Width(),
+                    settings.max_render_resolution().Height());
   mInfo.mMimeType = mCodecType;
 
-  return CreateDecoder();
+#ifdef MOZ_WIDGET_GTK
+  if (mInfo.mMimeType.EqualsLiteral("video/vp8") &&
+      !StaticPrefs::media_navigator_mediadatadecoder_vp8_hardware_enabled()) {
+    mDisabledHardwareAcceleration = true;
+  }
+#endif
+
+  return WEBRTC_VIDEO_CODEC_OK == CreateDecoder();
 }
 
 int32_t WebrtcMediaDataDecoder::Decode(const webrtc::EncodedImage& aInputImage,
@@ -54,11 +62,7 @@ int32_t WebrtcMediaDataDecoder::Decode(const webrtc::EncodedImage& aInputImage,
     if (aInputImage._frameType != webrtc::VideoFrameType::kVideoFrameKey)
       return WEBRTC_VIDEO_CODEC_ERROR;
     // We have a key frame - is it complete?
-    if (aInputImage._completeFrame) {
-      mNeedKeyframe = false;
-    } else {
-      return WEBRTC_VIDEO_CODEC_ERROR;
-    }
+    mNeedKeyframe = false;
   }
 
   auto disabledHardwareAcceleration =
@@ -151,8 +155,8 @@ int32_t WebrtcMediaDataDecoder::CreateDecoder() {
   }
 
   RefPtr<TaskQueue> tq =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
-                    "webrtc decode TaskQueue");
+      TaskQueue::Create(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "webrtc decode TaskQueue");
   RefPtr<MediaDataDecoder> decoder;
 
   media::Await(do_AddRef(mThreadPool), InvokeAsync(tq, __func__, [&] {
@@ -169,7 +173,8 @@ int32_t WebrtcMediaDataDecoder::CreateDecoder() {
                                       ? CreateDecoderParams::Option::
                                             HardwareDecoderNotAllowed
                                       : CreateDecoderParams::Option::Default),
-                              mTrackType, mImageContainer, knowsCompositor})
+                              mTrackType, mImageContainer, knowsCompositor,
+                              Some(mTrackingId)})
                          ->Then(
                              tq, __func__,
                              [&](RefPtr<MediaDataDecoder>&& aDecoder) {

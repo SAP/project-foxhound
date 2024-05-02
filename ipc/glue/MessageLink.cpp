@@ -28,6 +28,17 @@ using namespace mozilla;
 namespace mozilla {
 namespace ipc {
 
+const char* StringFromIPCSide(Side side) {
+  switch (side) {
+    case ChildSide:
+      return "Child";
+    case ParentSide:
+      return "Parent";
+    default:
+      return "Unknown";
+  }
+}
+
 MessageLink::MessageLink(MessageChannel* aChan) : mChan(aChan) {}
 
 MessageLink::~MessageLink() {
@@ -64,8 +75,6 @@ PortLink::PortLink(MessageChannel* aChan, ScopedPort aPort)
 
   mObserver = new PortObserverThunk(mChan->mMonitor, this);
   mNode->SetPortObserver(mPort, mObserver);
-
-  mChan->mChannelState = ChannelConnected;
 
   // Dispatch an event to the IO loop to trigger an initial
   // `OnPortStatusChanged` to deliver any pending messages. This needs to be run
@@ -117,6 +126,7 @@ void PortLink::SendMessage(UniquePtr<Message> aMessage) {
   PortRef port = mPort;
 
   bool ok = false;
+  monitor->AssertCurrentThreadOwns();
   {
     MonitorAutoUnlock guard(*monitor);
     ok = node->SendUserMessage(port, std::move(aMessage));
@@ -131,12 +141,8 @@ void PortLink::SendMessage(UniquePtr<Message> aMessage) {
   }
 }
 
-void PortLink::SendClose() {
+void PortLink::Close() {
   mChan->mMonitor->AssertCurrentThreadOwns();
-
-  // Our channel has been closed, mark it as such.
-  mChan->mChannelState = ChannelClosed;
-  mChan->mMonitor->Notify();
 
   if (!mObserver) {
     // We're already being closed.
@@ -185,23 +191,15 @@ void PortLink::OnPortStatusChanged() {
       return;
     }
 
-    mChan->OnMessageReceivedFromLink(std::move(*message));
+    mChan->OnMessageReceivedFromLink(std::move(message));
   }
 }
 
-bool PortLink::Unsound_IsClosed() const {
+bool PortLink::IsClosed() const {
   if (Maybe<PortStatus> status = mNode->GetStatus(mPort)) {
     return !(status->has_messages || status->receiving_messages);
   }
   return true;
-}
-
-uint32_t PortLink::Unsound_NumQueuedMessages() const {
-  // There is no easy way to see the number of messages which have been sent to
-  // a port but haven't been delivered yet.
-  //
-  // FIXME: If this is important, we'll need to add a mechanism for this.
-  return 0;
 }
 
 }  // namespace ipc

@@ -12,16 +12,15 @@
 // XXX Avoid including this here by moving function bodies to the cpp file
 #include "mozilla/dom/WorkerRef.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class IPCWorkerRef;
-class RemoteServiceWorkerRegistrationImpl;
+class ServiceWorkerRegistration;
 
 class ServiceWorkerRegistrationChild final
     : public PServiceWorkerRegistrationChild {
   RefPtr<IPCWorkerRef> mIPCWorkerRef;
-  RemoteServiceWorkerRegistrationImpl* mOwner;
+  ServiceWorkerRegistration* mOwner;
   bool mTeardownStarted;
 
   ServiceWorkerRegistrationChild();
@@ -41,14 +40,13 @@ class ServiceWorkerRegistrationChild final
 
   static RefPtr<ServiceWorkerRegistrationChild> Create();
 
-  void SetOwner(RemoteServiceWorkerRegistrationImpl* aOwner);
+  void SetOwner(ServiceWorkerRegistration* aOwner);
 
-  void RevokeOwner(RemoteServiceWorkerRegistrationImpl* aOwner);
+  void RevokeOwner(ServiceWorkerRegistration* aOwner);
 
   void MaybeStartTeardown();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_serviceworkerregistrationchild_h__

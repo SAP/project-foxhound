@@ -1,21 +1,20 @@
 const TEST_URL_PATH =
   "://example.org/browser/toolkit/components/passwordmgr/test/browser/";
 
-add_task(async function setup() {
-  let login = LoginTestUtils.testData.formLogin({
+add_setup(async function () {
+  const login1 = LoginTestUtils.testData.formLogin({
     origin: "http://example.org",
     formActionOrigin: "http://example.org",
     username: "username",
     password: "password",
   });
-  Services.logins.addLogin(login);
-  login = LoginTestUtils.testData.formLogin({
+  const login2 = LoginTestUtils.testData.formLogin({
     origin: "http://example.org",
     formActionOrigin: "http://example.com",
     username: "username",
     password: "password",
   });
-  Services.logins.addLogin(login);
+  await Services.logins.addLogins([login1, login2]);
   await SpecialPowers.pushPrefEnv({
     set: [["signon.autofillForms.http", false]],
   });
@@ -35,7 +34,7 @@ add_task(async function test_http_autofill() {
     let [username, password] = await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
       [],
-      async function() {
+      async function () {
         let doc = content.document;
         let contentUsername = doc.getElementById("form-basic-username").value;
         let contentPassword = doc.getElementById("form-basic-password").value;
@@ -43,12 +42,12 @@ add_task(async function test_http_autofill() {
       }
     );
 
-    is(
+    Assert.equal(
       username,
       scheme == "http" ? "" : "username",
       "Username filled correctly"
     );
-    is(
+    Assert.equal(
       password,
       scheme == "http" ? "" : "password",
       "Password filled correctly"
@@ -73,7 +72,7 @@ add_task(async function test_iframe_in_http_autofill() {
     let [username, password] = await SpecialPowers.spawn(
       gBrowser.selectedBrowser.browsingContext.children[0],
       [],
-      async function() {
+      async function () {
         let doc = this.content.document;
         return [
           doc.getElementById("form-basic-username").value,
@@ -82,12 +81,12 @@ add_task(async function test_iframe_in_http_autofill() {
       }
     );
 
-    is(
+    Assert.equal(
       username,
       scheme == "http" ? "" : "username",
       "Username filled correctly"
     );
-    is(
+    Assert.equal(
       password,
       scheme == "http" ? "" : "password",
       "Password filled correctly"
@@ -111,7 +110,7 @@ add_task(async function test_http_action_autofill() {
     let [username, password] = await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
       [],
-      async function() {
+      async function () {
         let doc = this.content.document;
         return [
           doc.getElementById("form-basic-username").value,
@@ -120,12 +119,12 @@ add_task(async function test_http_action_autofill() {
       }
     );
 
-    is(
+    Assert.equal(
       username,
       type == "insecure" ? "" : "username",
       "Username filled correctly"
     );
-    is(
+    Assert.equal(
       password,
       type == "insecure" ? "" : "password",
       "Password filled correctly"

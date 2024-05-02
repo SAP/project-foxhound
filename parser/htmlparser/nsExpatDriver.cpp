@@ -6,7 +6,6 @@
 #include "nsExpatDriver.h"
 #include "mozilla/fallible.h"
 #include "nsCOMPtr.h"
-#include "nsParserCIID.h"
 #include "CParserContext.h"
 #include "nsIExpatSink.h"
 #include "nsIContentSink.h"
@@ -48,6 +47,7 @@
 using mozilla::fallible;
 using mozilla::LogLevel;
 using mozilla::MakeStringSpan;
+using mozilla::Maybe;
 using mozilla::Unused;
 using mozilla::dom::Document;
 
@@ -85,8 +85,16 @@ static const uint16_t sMaxXMLTreeDepth = 5000;
       ->invoke_sandbox_function(foo, mExpatParser, ##__VA_ARGS__) \
       .copy_and_verify(verifier)
 
+#define RLBOX_EXPAT_CALL(foo, ...) \
+  aSandbox.invoke_sandbox_function(foo, self->mExpatParser, ##__VA_ARGS__)
+
 #define RLBOX_EXPAT_MCALL(foo, ...) \
   Sandbox()->invoke_sandbox_function(foo, mExpatParser, ##__VA_ARGS__)
+
+#define RLBOX_SAFE_PRINT "Value used only for printing"
+#define MOZ_RELEASE_ASSERT_TAINTED(cond, ...)                        \
+  MOZ_RELEASE_ASSERT((cond).unverified_safe_because("Sanity check"), \
+                     ##__VA_ARGS__)
 
 /* safe_unverified is used whenever it's safe to not use a validator */
 template <typename T>
@@ -351,9 +359,8 @@ static void GetLocalDTDURI(const nsCatalogData* aCatalogData, nsIURI* aDTD,
 /***************************** END CATALOG UTILS *****************************/
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsExpatDriver)
-  NS_INTERFACE_MAP_ENTRY(nsITokenizer)
   NS_INTERFACE_MAP_ENTRY(nsIDTD)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDTD)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsExpatDriver)
@@ -368,7 +375,6 @@ nsExpatDriver::nsExpatDriver()
       mInExternalDTD(false),
       mMadeFinalCallToExpat(false),
       mInParser(false),
-      mIsFinalChunk(false),
       mInternalState(NS_OK),
       mExpatBuffered(0),
       mTagDepth(0),
@@ -423,19 +429,25 @@ void nsExpatDriver::HandleStartElement(rlbox_sandbox_expat& aSandbox,
   // XML_GetSpecifiedAttributeCount will only give us the number of specified
   // attrs (twice that number, actually), so we have to check for default
   // attrs ourselves.
-  int count = RLBOX_EXPAT_SAFE_CALL(MOZ_XML_GetSpecifiedAttributeCount,
-                                    safe_unverified<int>);
-  MOZ_RELEASE_ASSERT(count >= 0, "Unexpected attribute count");
-  uint32_t attrArrayLength;
-  for (attrArrayLength = count;
-       (aAttrs[attrArrayLength] != nullptr)
+  tainted_expat<int> count =
+      RLBOX_EXPAT_CALL(MOZ_XML_GetSpecifiedAttributeCount);
+  MOZ_RELEASE_ASSERT_TAINTED(count >= 0, "Unexpected attribute count");
+
+  tainted_expat<uint64_t> attrArrayLengthTainted;
+  for (attrArrayLengthTainted = rlbox::sandbox_static_cast<uint64_t>(count);
+       (aAttrs[attrArrayLengthTainted] != nullptr)
            .unverified_safe_because("Bad length is checked later");
-       attrArrayLength += 2) {
+       attrArrayLengthTainted += 2) {
     // Just looping till we find out what the length is
   }
-  // A malicious length could result in an overflow when we allocate aAttrs
-  // and then access elements of the array.
-  MOZ_RELEASE_ASSERT(attrArrayLength < UINT32_MAX, "Overflow attempt");
+
+  uint32_t attrArrayLength =
+      attrArrayLengthTainted.copy_and_verify([&](uint64_t value) {
+        // A malicious length could result in an overflow when we allocate
+        // aAttrs and then access elements of the array.
+        MOZ_RELEASE_ASSERT(value < UINT32_MAX, "Overflow attempt");
+        return value;
+      });
 
   // Copy tainted aAttrs from sandbox
   AllocAttrs allocAttrs;
@@ -488,11 +500,10 @@ void nsExpatDriver::HandleStartElementForSystemPrincipal(
 
     // Adjust the column number so that it is one based rather than zero
     // based.
-    uint32_t colNumber = RLBOX_EXPAT_SAFE_CALL(MOZ_XML_GetCurrentColumnNumber,
-                                               safe_unverified<XML_Size>) +
-                         1;
-    uint32_t lineNumber = RLBOX_EXPAT_SAFE_CALL(MOZ_XML_GetCurrentLineNumber,
-                                                safe_unverified<XML_Size>);
+    tainted_expat<XML_Size> colNumber =
+        RLBOX_EXPAT_CALL(MOZ_XML_GetCurrentColumnNumber) + 1;
+    tainted_expat<XML_Size> lineNumber =
+        RLBOX_EXPAT_CALL(MOZ_XML_GetCurrentLineNumber);
 
     int32_t nameSpaceID;
     RefPtr<nsAtom> prefix, localName;
@@ -511,7 +522,8 @@ void nsExpatDriver::HandleStartElementForSystemPrincipal(
 
     nsContentUtils::ReportToConsoleNonLocalized(
         error, nsIScriptError::warningFlag, "XML Document"_ns, doc, nullptr,
-        u""_ns, lineNumber, colNumber);
+        u""_ns, lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
+        colNumber.unverified_safe_because(RLBOX_SAFE_PRINT));
   }
 }
 
@@ -932,8 +944,8 @@ nsresult nsExpatDriver::OpenInputStreamFromExternalDTD(const char16_t* aFPIStr,
 
 static nsresult CreateErrorText(const char16_t* aDescription,
                                 const char16_t* aSourceURL,
-                                const uint32_t aLineNumber,
-                                const uint32_t aColNumber,
+                                tainted_expat<XML_Size> aLineNumber,
+                                tainted_expat<XML_Size> aColNumber,
                                 nsString& aErrorString, bool spoofEnglish) {
   aErrorString.Truncate();
 
@@ -944,19 +956,33 @@ static nsresult CreateErrorText(const char16_t* aDescription,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // XML Parsing Error: %1$S\nLocation: %2$S\nLine Number %3$u, Column %4$u:
-  nsTextFormatter::ssprintf(aErrorString, msg.get(), aDescription, aSourceURL,
-                            aLineNumber, aColNumber);
+  nsTextFormatter::ssprintf(
+      aErrorString, msg.get(), aDescription, aSourceURL,
+      aLineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
+      aColNumber.unverified_safe_because(RLBOX_SAFE_PRINT));
   return NS_OK;
 }
 
-static nsresult AppendErrorPointer(const int32_t aColNumber,
+static nsresult AppendErrorPointer(tainted_expat<XML_Size> aColNumber,
                                    const char16_t* aSourceLine,
+                                   size_t aSourceLineLength,
                                    nsString& aSourceString) {
   aSourceString.Append(char16_t('\n'));
 
+  MOZ_RELEASE_ASSERT_TAINTED(aColNumber != static_cast<XML_Size>(0),
+                             "Unexpected value of column");
+
   // Last character will be '^'.
-  int32_t last = aColNumber - 1;
-  int32_t i;
+  XML_Size last =
+      (aColNumber - 1).copy_and_verify([&](XML_Size val) -> XML_Size {
+        if (val > aSourceLineLength) {
+          // Unexpected value of last column, just return a safe value
+          return 0;
+        }
+        return val;
+      });
+
+  XML_Size i;
   uint32_t minuses = 0;
   for (i = 0; i < last; ++i) {
     if (aSourceLine[i] == '\t') {
@@ -975,7 +1001,8 @@ static nsresult AppendErrorPointer(const int32_t aColNumber,
 }
 
 nsresult nsExpatDriver::HandleError() {
-  int32_t code = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_GetErrorCode, error_verifier);
+  int32_t code =
+      RLBOX_EXPAT_MCALL(MOZ_XML_GetErrorCode).copy_and_verify(error_verifier);
 
   // Map Expat error code to an error string
   // XXX Deal with error returns.
@@ -1039,17 +1066,24 @@ nsresult nsExpatDriver::HandleError() {
   }
 
   // Adjust the column number so that it is one based rather than zero based.
-  uint32_t colNumber = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_GetCurrentColumnNumber,
-                                              safe_unverified<XML_Size>) +
-                       1;
-  uint32_t lineNumber = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_GetCurrentLineNumber,
-                                               safe_unverified<XML_Size>);
-  const XML_Char* expatBase =
+  tainted_expat<XML_Size> colNumber =
+      RLBOX_EXPAT_MCALL(MOZ_XML_GetCurrentColumnNumber) + 1;
+  tainted_expat<XML_Size> lineNumber =
+      RLBOX_EXPAT_MCALL(MOZ_XML_GetCurrentLineNumber);
+
+  // Copy out the two character bufer that holds the expatBase
+  const std::unique_ptr<XML_Char[]> expatBase =
       RLBOX_EXPAT_MCALL(MOZ_XML_GetBase)
-          .copy_and_verify_address(unverified_xml_string);
+          .copy_and_verify_range(
+              [](std::unique_ptr<XML_Char[]> val) {
+                // No additional checks needed as this is sent to GetBaseURI
+                // which checks its inputs
+                return val;
+              },
+              ExpatBaseURI::Length);
   nsAutoString uri;
   nsCOMPtr<nsIURI> baseURI;
-  if (expatBase && (baseURI = GetBaseURI(expatBase))) {
+  if (expatBase && (baseURI = GetBaseURI(expatBase.get()))) {
     // Let's ignore if this fails, we're already reporting a parse error.
     Unused << CopyUTF8toUTF16(baseURI->GetSpecOrDefault(), uri, fallible);
   }
@@ -1058,7 +1092,8 @@ nsresult nsExpatDriver::HandleError() {
                   errorText, spoofEnglish);
 
   nsAutoString sourceText(mLastLine);
-  AppendErrorPointer(colNumber, mLastLine.get(), sourceText);
+  AppendErrorPointer(colNumber, mLastLine.get(), mLastLine.Length(),
+                     sourceText);
 
   if (doc && nsContentUtils::IsChromeDoc(doc)) {
     nsCString path = doc->GetDocumentURI()->GetSpecOrDefault();
@@ -1076,7 +1111,11 @@ nsresult nsExpatDriver::HandleError() {
             mozilla::Telemetry::EventExtraEntry{"error_code"_ns,
                                                 nsPrintfCString("%u", code)},
             mozilla::Telemetry::EventExtraEntry{
-                "location"_ns, nsPrintfCString("%u:%u", lineNumber, colNumber)},
+                "location"_ns,
+                nsPrintfCString(
+                    "%lu:%lu",
+                    lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
+                    colNumber.unverified_safe_because(RLBOX_SAFE_PRINT))},
             mozilla::Telemetry::EventExtraEntry{
                 "last_line"_ns, NS_ConvertUTF16toUTF8(mLastLine)},
             mozilla::Telemetry::EventExtraEntry{
@@ -1098,7 +1137,9 @@ nsresult nsExpatDriver::HandleError() {
   nsresult rv = NS_ERROR_FAILURE;
   if (serr) {
     rv = serr->InitWithSourceURI(
-        errorText, mURIs.SafeElementAt(0), mLastLine, lineNumber, colNumber,
+        errorText, mURIs.SafeElementAt(0), mLastLine,
+        lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
+        colNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
         nsIScriptError::errorFlag, "malformed-xml", mInnerWindowID);
   }
 
@@ -1141,16 +1182,17 @@ nsresult nsExpatDriver::HandleError() {
 void nsExpatDriver::ChunkAndParseBuffer(const char16_t* aBuffer,
                                         uint32_t aLength, bool aIsFinal,
                                         uint32_t* aPassedToExpat,
-                                        uint32_t* aConsumed) {
+                                        uint32_t* aConsumed,
+                                        XML_Size* aLastLineLength) {
   *aConsumed = 0;
+  *aLastLineLength = 0;
 
   uint32_t remainder = aLength;
   while (remainder > sMaxChunkLength) {
-    uint32_t consumed = 0;
-    ParseBuffer(aBuffer, sMaxChunkLength, /* aIsFinal = */ false, &consumed);
+    ParseChunk(aBuffer, sMaxChunkLength, ChunkOrBufferIsFinal::None, aConsumed,
+               aLastLineLength);
     aBuffer += sMaxChunkLength;
     remainder -= sMaxChunkLength;
-    *aConsumed += consumed;
     if (NS_FAILED(mInternalState)) {
       // Stop parsing if there's an error (including if we're blocked or
       // interrupted).
@@ -1159,16 +1201,20 @@ void nsExpatDriver::ChunkAndParseBuffer(const char16_t* aBuffer,
     }
   }
 
-  uint32_t consumed = 0;
-  ParseBuffer(aBuffer, remainder, aIsFinal, &consumed);
-  *aConsumed += consumed;
+  ParseChunk(aBuffer, remainder,
+             aIsFinal ? ChunkOrBufferIsFinal::FinalChunkAndBuffer
+                      : ChunkOrBufferIsFinal::FinalChunk,
+             aConsumed, aLastLineLength);
   *aPassedToExpat = aLength;
 }
 
-void nsExpatDriver::ParseBuffer(const char16_t* aBuffer, uint32_t aLength,
-                                bool aIsFinal, uint32_t* aConsumed) {
+void nsExpatDriver::ParseChunk(const char16_t* aBuffer, uint32_t aLength,
+                               ChunkOrBufferIsFinal aIsFinal,
+                               uint32_t* aConsumed, XML_Size* aLastLineLength) {
   NS_ASSERTION((aBuffer && aLength != 0) || (!aBuffer && aLength == 0), "?");
-  NS_ASSERTION(mInternalState != NS_OK || aIsFinal || aBuffer,
+  NS_ASSERTION(mInternalState != NS_OK ||
+                   (aIsFinal == ChunkOrBufferIsFinal::FinalChunkAndBuffer) ||
+                   aBuffer,
                "Useless call, we won't call Expat");
   MOZ_ASSERT(!BlockedOrInterrupted() || !aBuffer,
              "Non-null buffer when resuming");
@@ -1183,52 +1229,59 @@ void nsExpatDriver::ParseBuffer(const char16_t* aBuffer, uint32_t aLength,
   int32_t parserBytesBefore = RLBOX_EXPAT_SAFE_MCALL(
       XML_GetCurrentByteIndex, parserBytesBefore_verifier);
 
-  if (mInternalState == NS_OK || BlockedOrInterrupted()) {
-    XML_Status status;
-    bool inParser = mInParser;  // Save in-parser status
-    mInParser = true;
-    if (BlockedOrInterrupted()) {
-      mInternalState = NS_OK;  // Resume in case we're blocked.
-      status = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_ResumeParser, status_verifier);
-    } else {
-      auto buffer = TransferBuffer<char16_t>(Sandbox(), aBuffer, aLength);
-      MOZ_RELEASE_ASSERT(!aBuffer || !!*buffer,
-                         "Chunking should avoid OOM in ParseBuffer");
+  if (mInternalState != NS_OK && !BlockedOrInterrupted()) {
+    return;
+  }
 
-      status = RLBOX_EXPAT_SAFE_MCALL(
-          MOZ_XML_Parse, status_verifier,
-          rlbox::sandbox_reinterpret_cast<const char*>(*buffer),
-          aLength * sizeof(char16_t), aIsFinal);
-    }
-    mInParser = inParser;  // Restore in-parser status
-
-    auto parserBytesConsumed_verifier = [&](auto parserBytesConsumed) {
-      MOZ_RELEASE_ASSERT(parserBytesConsumed >= 0, "Unexpected value");
-      MOZ_RELEASE_ASSERT(parserBytesConsumed >= parserBytesBefore,
-                         "How'd this happen?");
-      MOZ_RELEASE_ASSERT(parserBytesConsumed % sizeof(char16_t) == 0,
-                         "Consumed part of a char16_t?");
-      return parserBytesConsumed;
-    };
-    int32_t parserBytesConsumed = RLBOX_EXPAT_SAFE_MCALL(
-        XML_GetCurrentByteIndex, parserBytesConsumed_verifier);
-
-    // Consumed something.
-    *aConsumed = (parserBytesConsumed - parserBytesBefore) / sizeof(char16_t);
-
-    NS_ASSERTION(status != XML_STATUS_SUSPENDED || BlockedOrInterrupted(),
-                 "Inconsistent expat suspension state.");
-
-    if (status == XML_STATUS_ERROR) {
-      mInternalState = NS_ERROR_HTMLPARSER_STOPPARSING;
-    }
+  XML_Status status;
+  bool inParser = mInParser;  // Save in-parser status
+  mInParser = true;
+  Maybe<TransferBuffer<char16_t>> buffer;
+  if (BlockedOrInterrupted()) {
+    mInternalState = NS_OK;  // Resume in case we're blocked.
+    status = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_ResumeParser, status_verifier);
   } else {
-    *aConsumed = 0;
+    buffer.emplace(Sandbox(), aBuffer, aLength);
+    MOZ_RELEASE_ASSERT(!aBuffer || !!*buffer.ref(),
+                       "Chunking should avoid OOM in ParseBuffer");
+
+    status = RLBOX_EXPAT_SAFE_MCALL(
+        MOZ_XML_Parse, status_verifier,
+        rlbox::sandbox_reinterpret_cast<const char*>(*buffer.ref()),
+        aLength * sizeof(char16_t),
+        aIsFinal == ChunkOrBufferIsFinal::FinalChunkAndBuffer);
+  }
+  mInParser = inParser;  // Restore in-parser status
+
+  auto parserBytesConsumed_verifier = [&](auto parserBytesConsumed) {
+    MOZ_RELEASE_ASSERT(parserBytesConsumed >= 0, "Unexpected value");
+    MOZ_RELEASE_ASSERT(parserBytesConsumed >= parserBytesBefore,
+                       "How'd this happen?");
+    MOZ_RELEASE_ASSERT(parserBytesConsumed % sizeof(char16_t) == 0,
+                       "Consumed part of a char16_t?");
+    return parserBytesConsumed;
+  };
+  int32_t parserBytesConsumed = RLBOX_EXPAT_SAFE_MCALL(
+      XML_GetCurrentByteIndex, parserBytesConsumed_verifier);
+
+  // Consumed something.
+  *aConsumed += (parserBytesConsumed - parserBytesBefore) / sizeof(char16_t);
+
+  NS_ASSERTION(status != XML_STATUS_SUSPENDED || BlockedOrInterrupted(),
+               "Inconsistent expat suspension state.");
+
+  if (status == XML_STATUS_ERROR) {
+    mInternalState = NS_ERROR_HTMLPARSER_STOPPARSING;
+  }
+
+  if (*aConsumed > 0 &&
+      (aIsFinal != ChunkOrBufferIsFinal::None || NS_FAILED(mInternalState))) {
+    *aLastLineLength = RLBOX_EXPAT_SAFE_MCALL(MOZ_XML_GetCurrentColumnNumber,
+                                              safe_unverified<XML_Size>);
   }
 }
 
-NS_IMETHODIMP
-nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
+nsresult nsExpatDriver::ResumeParse(nsScanner& aScanner, bool aIsFinalChunk) {
   // We keep the scanner pointing to the position where Expat will start
   // parsing.
   nsScannerIterator currentExpatPosition;
@@ -1250,9 +1303,9 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
   // We want to call Expat if we have more buffers, or if we know there won't
   // be more buffers (and so we want to flush the remaining data), or if we're
   // currently blocked and there's data in Expat's buffer.
-  while (start != end || (mIsFinalChunk && !mMadeFinalCallToExpat) ||
+  while (start != end || (aIsFinalChunk && !mMadeFinalCallToExpat) ||
          (BlockedOrInterrupted() && mExpatBuffered > 0)) {
-    bool noMoreBuffers = start == end && mIsFinalChunk;
+    bool noMoreBuffers = start == end && aIsFinalChunk;
     bool blocked = BlockedOrInterrupted();
 
     const char16_t* buffer;
@@ -1295,8 +1348,9 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
 
     uint32_t passedToExpat;
     uint32_t consumed;
+    XML_Size lastLineLength;
     ChunkAndParseBuffer(buffer, length, noMoreBuffers, &passedToExpat,
-                        &consumed);
+                        &consumed, &lastLineLength);
     MOZ_ASSERT_IF(passedToExpat != length, NS_FAILED(mInternalState));
     MOZ_ASSERT(consumed <= passedToExpat + mExpatBuffered);
     if (consumed > 0) {
@@ -1306,10 +1360,6 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
       // We consumed some data, we want to store the last line of data that
       // was consumed in case we run into an error (to show the line in which
       // the error occurred).
-
-      // The length of the last line that Expat has parsed.
-      XML_Size lastLineLength = RLBOX_EXPAT_SAFE_MCALL(
-          XML_GetCurrentColumnNumber, safe_unverified<XML_Size>);
 
       if (lastLineLength <= consumed) {
         // The length of the last line was less than what expat consumed, so
@@ -1408,7 +1458,9 @@ RLBoxExpatSandboxPool::CreateSandboxData(uint64_t aSize) {
   auto sandbox = mozilla::MakeUnique<rlbox_sandbox_expat>();
 
 #ifdef MOZ_WASM_SANDBOXING_EXPAT
-  bool create_ok = sandbox->create_sandbox(/* infallible = */ false, aSize);
+  const w2c_mem_capacity capacity =
+      get_valid_wasm2c_memory_capacity(aSize, true /* 32-bit wasm memory*/);
+  bool create_ok = sandbox->create_sandbox(/* infallible = */ false, &capacity);
 #else
   bool create_ok = sandbox->create_sandbox();
 #endif
@@ -1503,9 +1555,7 @@ RLBoxExpatSandboxData::~RLBoxExpatSandboxData() {
   MOZ_COUNT_DTOR(RLBoxExpatSandboxData);
 }
 
-NS_IMETHODIMP
-nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
-                              nsITokenizer* aTokenizer, nsIContentSink* aSink) {
+nsresult nsExpatDriver::Initialize(nsIURI* aURI, nsIContentSink* aSink) {
   mSink = do_QueryInterface(aSink);
   if (!mSink) {
     NS_ERROR("nsExpatDriver didn't get an nsIExpatSink");
@@ -1576,7 +1626,7 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
                     XML_PARAM_ENTITY_PARSING_ALWAYS);
 #endif
 
-  auto baseURI = GetExpatBaseURI(aParserContext.mScanner->GetURI());
+  auto baseURI = GetExpatBaseURI(aURI);
   auto uri =
       TransferBuffer<XML_Char>(Sandbox(), &baseURI[0], ArrayLength(baseURI));
   RLBOX_EXPAT_MCALL(MOZ_XML_SetBase, *uri);
@@ -1610,12 +1660,9 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
 }
 
 NS_IMETHODIMP
-nsExpatDriver::BuildModel(nsITokenizer* aTokenizer, nsIContentSink* aSink) {
-  return mInternalState;
-}
+nsExpatDriver::BuildModel(nsIContentSink* aSink) { return mInternalState; }
 
-NS_IMETHODIMP
-nsExpatDriver::DidBuildModel(nsresult anErrorCode) {
+void nsExpatDriver::DidBuildModel() {
   if (!mInParser) {
     // Because nsExpatDriver is cycle-collected, it gets destroyed
     // asynchronously. We want to eagerly release the sandbox back into the
@@ -1625,13 +1672,6 @@ nsExpatDriver::DidBuildModel(nsresult anErrorCode) {
   }
   mOriginalSink = nullptr;
   mSink = nullptr;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsExpatDriver::WillTokenize(bool aIsFinalChunk) {
-  mIsFinalChunk = aIsFinalChunk;
-  return NS_OK;
 }
 
 NS_IMETHODIMP_(void)
@@ -1643,21 +1683,7 @@ nsExpatDriver::Terminate() {
   mInternalState = NS_ERROR_HTMLPARSER_STOPPARSING;
 }
 
-NS_IMETHODIMP_(int32_t)
-nsExpatDriver::GetType() { return NS_IPARSER_FLAG_XML; }
-
-NS_IMETHODIMP_(nsDTDMode)
-nsExpatDriver::GetMode() const { return eDTDMode_full_standards; }
-
 /*************************** Unused methods **********************************/
-
-NS_IMETHODIMP_(bool)
-nsExpatDriver::IsContainer(int32_t aTag) const { return true; }
-
-NS_IMETHODIMP_(bool)
-nsExpatDriver::CanContain(int32_t aParent, int32_t aChild) const {
-  return true;
-}
 
 void nsExpatDriver::MaybeStopParser(nsresult aState) {
   if (NS_FAILED(aState)) {

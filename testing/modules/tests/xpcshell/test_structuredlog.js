@@ -2,17 +2,17 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 function run_test() {
-  const { StructuredLogger } = ChromeUtils.import(
-    "resource://testing-common/StructuredLog.jsm"
+  const { StructuredLogger } = ChromeUtils.importESModule(
+    "resource://testing-common/StructuredLog.sys.mjs"
   );
 
   let testBuffer = [];
 
-  let appendBuffer = function(msg) {
+  let appendBuffer = function (msg) {
     testBuffer.push(JSON.stringify(msg));
   };
 
-  let assertLastMsg = function(refData) {
+  let assertLastMsg = function (refData) {
     // Check all fields in refData agree with those in the
     // last message logged, and pop that message.
     let lastMsg = JSON.parse(testBuffer.pop());
@@ -21,15 +21,9 @@ function run_test() {
     }
     // The logger should always set the source to the logger name.
     equal(lastMsg.source, "test_log");
-    // The source_file field is always set by the mutator function.
-    equal(lastMsg.source_file, "test_structuredlog.js");
   };
 
-  let addFileName = function(data) {
-    data.source_file = "test_structuredlog.js";
-  };
-
-  let logger = new StructuredLogger("test_log", appendBuffer, [addFileName]);
+  let logger = new StructuredLogger("test_log", appendBuffer);
 
   // Test unstructured logging
   logger.info("Test message");

@@ -12,7 +12,7 @@ techniques.
 Often scrolling effects are implemented by listening for the `scroll`
 event and then updating elements on the page in some way (usually the
 CSS
-[`position`]((https://developer.mozilla.org/en-US/docs/Web/CSS/position "The position CSS property sets how an element is positioned in a document. The top, right, bottom, and left properties determine the final location of positioned elements.")
+[`position`]((https://developer.mozilla.org/en-US/docs/Web/CSS/Position "The position CSS property sets how an element is positioned in a document. The top, right, bottom, and left properties determine the final location of positioned elements.")
 or
 [`transform`](https://developer.mozilla.org/en-US/docs/Web/CSS/transform "The transform CSS property lets you rotate, scale, skew, or translate an element. It modifies the coordinate space of the CSS visual formatting model.")
 property.) You can find a sampling of such effects at [CSS Scroll API:
@@ -39,7 +39,7 @@ well:
 Here is an implementation of a sticky-positioning effect, where the
 \"toolbar\" div will stick to the top of the screen as you scroll down.
 
-``` {.brush: .html}
+```html
 <body style="height: 5000px" onscroll="document.getElementById('toolbar').style.top = Math.max(100, window.scrollY) + 'px'">
  <div id="toolbar" style="position: absolute; top: 100px; width: 100px; height: 20px; background-color: green"></div>
 </body>
@@ -57,7 +57,7 @@ constant moving and snapping will result in a jittery visual effect. One
 way to implement this without the scroll event listener is to use the
 CSS property designed for this purpose:
 
-``` {.brush: .html}
+```html
 <body style="height: 5000px">
  <div id="toolbar" style="position: sticky; top: 0px; margin-top: 100px; width: 100px; height: 20px; background-color: green"></div>
 </body>
@@ -72,7 +72,7 @@ Below is an implementation of scroll snapping, where the scroll position
 snaps to a particular destination when the user's scrolling stops near
 that destination.
 
-``` {.brush: .html}
+```html
 <body style="height: 5000px">
  <script>
     function snap(destination) {
@@ -104,7 +104,7 @@ Instead, using the CSS snap-points property will allow the browser to
 run the animation asynchronously, providing a smooth visual effect to
 the user.
 
-``` {.brush: .html}
+```html
 <body style="height: 5000px">
  <style>
     body, /* blink currently has bug that requires declaration on `body` */

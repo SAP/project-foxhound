@@ -25,8 +25,12 @@ export DATE
 SCRIPT_DIRECTORY="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TARGET_TAR_XZ_FULL_PATH="$ARTIFACTS_DIR/target.flatpak.tar.xz"
 SOURCE_DEST="${WORKSPACE}/source"
-FREEDESKTOP_VERSION="21.08"
-FIREFOX_BASEAPP_CHANNEL="21.08"
+
+# When updating this, please make sure to keep in sync the script for symbol
+# scraping at
+# https://github.com/mozilla/symbol-scrapers/blob/master/firefox-flatpak/script.sh
+FREEDESKTOP_VERSION="22.08"
+FIREFOX_BASEAPP_CHANNEL="22.08"
 
 
 # XXX: these commands are temporarily, there's an upcoming fix in the upstream Docker image
@@ -99,6 +103,10 @@ directory=lib/ffmpeg
 add-ld-path=.
 no-autodownload=true
 version=${FREEDESKTOP_VERSION}
+
+[Extension org.mozilla.firefox.systemconfig]
+directory=etc/firefox
+no-autodownload=true
 EOF
 
 cat <<EOF > build/metadata.locale
@@ -118,6 +126,7 @@ for size in 16 32 48 64 128; do
     install -D -m644 "${appdir}/lib/firefox/browser/chrome/icons/default/default${size}.png" "${appdir}/share/icons/hicolor/${size}x${size}/apps/org.mozilla.firefox.png"
 done
 mkdir -p "${appdir}/lib/ffmpeg"
+mkdir -p "${appdir}/etc/firefox"
 
 appstream-compose --prefix="${appdir}" --origin=flatpak --basename=org.mozilla.firefox org.mozilla.firefox
 appstream-util mirror-screenshots "${appdir}"/share/app-info/xmls/org.mozilla.firefox.xml.gz "https://dl.flathub.org/repo/screenshots/org.mozilla.firefox-${FLATPAK_BRANCH}" build/screenshots "build/screenshots/org.mozilla.firefox-${FLATPAK_BRANCH}"
@@ -139,7 +148,13 @@ install -D -m755 launch-script.sh "${appdir}/bin/firefox"
 
 # We need to set GTK_PATH to load cups printing backend which is missing in
 # freedesktop sdk.
+#
+# We use features=devel to enable ptrace, which we need for the crash
+# reporter.  The application is still confined in a pid namespace, so
+# that won't let us escape the flatpak sandbox.  See bug 1653852.
+
 flatpak build-finish build                                      \
+        --allow=devel                                           \
         --share=ipc                                             \
         --share=network                                         \
         --env=GTK_PATH=/app/lib/gtkmodules                      \
@@ -151,6 +166,7 @@ flatpak build-finish build                                      \
         --require-version=0.11.1                                \
         --persist=.mozilla                                      \
         --filesystem=xdg-download:rw                            \
+        --filesystem=/run/.heim_org.h5l.kcm-socket              \
         --device=all                                            \
         --talk-name=org.freedesktop.FileManager1                \
         --system-talk-name=org.freedesktop.NetworkManager       \
@@ -158,9 +174,9 @@ flatpak build-finish build                                      \
         --talk-name=org.gnome.SessionManager                    \
         --talk-name=org.freedesktop.ScreenSaver                 \
         --talk-name="org.gtk.vfs.*"                             \
-        --talk-name=org.freedesktop.Notifications               \
         --own-name="org.mpris.MediaPlayer2.firefox.*"           \
         --own-name="org.mozilla.firefox.*"                      \
+        --own-name="org.mozilla.firefox_beta.*"                 \
         --command=firefox
 
 flatpak build-export --disable-sandbox --no-update-summary --exclude='/share/runtime/langpack/*/*' repo build "$FLATPAK_BRANCH"

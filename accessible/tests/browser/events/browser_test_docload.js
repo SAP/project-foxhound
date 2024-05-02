@@ -5,7 +5,7 @@
 "use strict";
 
 function busyChecker(isBusy) {
-  return function(event) {
+  return function (event) {
     let scEvent;
     try {
       scEvent = event.QueryInterface(nsIAccessibleStateChangeEvent);
@@ -18,13 +18,13 @@ function busyChecker(isBusy) {
 }
 
 function inIframeChecker(iframeId) {
-  return function(event) {
+  return function (event) {
     return getAccessibleDOMNodeID(event.accessibleDocument.parent) == iframeId;
   };
 }
 
 function urlChecker(url) {
-  return function(event) {
+  return function (event) {
     info(`${event.accessibleDocument.URL} == ${url}`);
     return event.accessibleDocument.URL == url;
   };
@@ -43,7 +43,7 @@ async function runTests(browser, accDoc) {
     ],
   });
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     browser,
     `data:text/html;charset=utf-8,
     <html><body id="body2">
@@ -59,7 +59,7 @@ async function runTests(browser, accDoc) {
     [EVENT_REORDER, getAccessible(browser)],
   ]);
 
-  BrowserTestUtils.loadURI(browser, "about:about");
+  BrowserTestUtils.startLoadingURIString(browser, "about:about");
 
   await onLoadEvents;
 
@@ -79,7 +79,7 @@ async function runTests(browser, accDoc) {
     [EVENT_REORDER, getAccessible(browser)],
   ]);
 
-  BrowserTestUtils.loadURI(browser, "about:mozilla");
+  BrowserTestUtils.startLoadingURIString(browser, "about:mozilla");
 
   await onLoadEvents;
 
@@ -94,12 +94,17 @@ async function runTests(browser, accDoc) {
   await onLoadEvents;
 
   onLoadEvents = waitForEvents([
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     [EVENT_DOCUMENT_LOAD_COMPLETE, urlChecker("http://www.wronguri.wronguri/")],
     [EVENT_STATE_CHANGE, busyChecker(false)],
     [EVENT_REORDER, getAccessible(browser)],
   ]);
 
-  BrowserTestUtils.loadURI(browser, "http://www.wronguri.wronguri/");
+  BrowserTestUtils.startLoadingURIString(
+    browser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    "http://www.wronguri.wronguri/"
+  );
 
   await onLoadEvents;
 
@@ -109,7 +114,10 @@ async function runTests(browser, accDoc) {
     [EVENT_REORDER, getAccessible(browser)],
   ]);
 
-  BrowserTestUtils.loadURI(browser, "https://nocert.example.com:443/");
+  BrowserTestUtils.startLoadingURIString(
+    browser,
+    "https://nocert.example.com:443/"
+  );
 
   await onLoadEvents;
 }

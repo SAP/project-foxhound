@@ -12,6 +12,9 @@
 #include "mozilla/layers/APZInputBridgeChild.h"     // for APZInputBridgeChild
 #include "mozilla/layers/GeckoContentController.h"  // for GeckoContentController
 #include "mozilla/layers/RemoteCompositorSession.h"  // for RemoteCompositorSession
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/jni/Utils.h"  // for DispatchToGeckoPriorityQueue
+#endif
 
 namespace mozilla {
 namespace layers {
@@ -89,6 +92,12 @@ void APZCTreeManagerChild::SetAllowedTouchBehavior(
   SendSetAllowedTouchBehavior(aInputBlockId, aValues);
 }
 
+void APZCTreeManagerChild::SetBrowserGestureResponse(
+    uint64_t aInputBlockId, BrowserGestureResponse aResponse) {
+  MOZ_ASSERT(NS_IsMainThread());
+  SendSetBrowserGestureResponse(aInputBlockId, aResponse);
+}
+
 void APZCTreeManagerChild::StartScrollbarDrag(
     const ScrollableLayerGuid& aGuid, const AsyncDragMetrics& aDragMetrics) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -116,22 +125,6 @@ APZInputBridge* APZCTreeManagerChild::InputBridge() {
   MOZ_ASSERT(mInputBridge);
 
   return mInputBridge.get();
-}
-
-void APZCTreeManagerChild::AddInputBlockCallback(
-    uint64_t aInputBlockId, InputBlockCallback&& aCallback) {
-  if (!NS_IsMainThread()) {
-    NS_DispatchToMainThread(NewRunnableMethod<uint64_t, InputBlockCallback&&>(
-        "layers::APZCTreeManagerChild::AddInputBlockCallback", this,
-        &APZCTreeManagerChild::AddInputBlockCallback, aInputBlockId,
-        std::move(aCallback)));
-    return;
-  }
-
-  MOZ_ASSERT(NS_IsMainThread());
-  mInputBlockCallbacks.emplace(aInputBlockId, std::move(aCallback));
-
-  SendAddInputBlockCallback(aInputBlockId);
 }
 
 void APZCTreeManagerChild::AddIPDLReference() {
@@ -165,7 +158,21 @@ mozilla::ipc::IPCResult APZCTreeManagerChild::RecvHandleTap(
   dom::BrowserParent* tab =
       dom::BrowserParent::GetBrowserParentFromLayersId(aGuid.mLayersId);
   if (tab) {
+#ifdef MOZ_WIDGET_ANDROID
+    // On Android, touch events are dispatched from the UI thread to the main
+    // thread using the Android priority queue. It is possible that this tap has
+    // made it to the GPU process and back before they have been processed. We
+    // must therefore dispatch this message to the same queue, otherwise the tab
+    // may receive the tap event before the touch events that synthesized it.
+    mozilla::jni::DispatchToGeckoPriorityQueue(
+        NewRunnableMethod<TapType, LayoutDevicePoint, Modifiers,
+                          ScrollableLayerGuid, uint64_t>(
+            "dom::BrowserParent::SendHandleTap", tab,
+            &dom::BrowserParent::SendHandleTap, aType, aPoint, aModifiers,
+            aGuid, aInputBlockId));
+#else
     tab->SendHandleTap(aType, aPoint, aModifiers, aGuid, aInputBlockId);
+#endif
   }
   return IPC_OK();
 }
@@ -200,15 +207,17 @@ mozilla::ipc::IPCResult APZCTreeManagerChild::RecvCancelAutoscroll(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult APZCTreeManagerChild::RecvCallInputBlockCallback(
-    uint64_t aInputBlockId, const APZHandledResult& aHandledResult) {
-  auto it = mInputBlockCallbacks.find(aInputBlockId);
-  if (it != mInputBlockCallbacks.end()) {
-    it->second(aInputBlockId, aHandledResult);
-    // The callback is one-shot; discard it after calling it.
-    mInputBlockCallbacks.erase(it);
-  }
+mozilla::ipc::IPCResult APZCTreeManagerChild::RecvNotifyScaleGestureComplete(
+    const ScrollableLayerGuid::ViewID& aScrollId, float aScale) {
+  // This will only get sent from the GPU process to the parent process, so
+  // this function should never get called in the content process.
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
 
+  if (mCompositorSession && mCompositorSession->GetWidget()) {
+    APZCCallbackHelper::NotifyScaleGestureComplete(
+        mCompositorSession->GetWidget(), aScale);
+  }
   return IPC_OK();
 }
 

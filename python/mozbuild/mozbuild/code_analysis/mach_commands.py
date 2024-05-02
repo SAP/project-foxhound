@@ -1,42 +1,34 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function, unicode_literals
-
 import concurrent.futures
-import logging
 import json
+import logging
 import multiprocessing
 import ntpath
 import os
 import pathlib
 import posixpath
 import re
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
-import yaml
 from types import SimpleNamespace
 
+import mozpack.path as mozpath
 import six
+import yaml
+from mach.decorators import Command, CommandArgument, SubCommand
+from mach.main import Mach
+from mozversioncontrol import get_repository_object
 from six.moves import input
 
-from mach.decorators import CommandArgument, Command, SubCommand
-
-from mach.main import Mach
-
 from mozbuild import build_commands
-from mozbuild.nodeutil import find_node_executable
-
-import mozpack.path as mozpath
-
-from mozbuild.util import memoize
-
-from mozversioncontrol import get_repository_object
-
 from mozbuild.controller.clobber import Clobberer
+from mozbuild.nodeutil import find_node_executable
+from mozbuild.util import memoize
 
 
 # Function used to run clang-format on a batch of files. It is a helper function
@@ -107,7 +99,6 @@ class StaticAnalysisMonitor(object):
         self._warnings_database = WarningsDatabase()
 
         def on_warning(warning):
-
             # Output paths relative to repository root if the paths are under repo tree
             warning["filename"] = build_repo_relative_path(
                 warning["filename"], self._srcdir
@@ -328,7 +319,7 @@ def check(
     command_context.activate_virtualenv()
     command_context.log_manager.enable_unstructured()
 
-    rc, clang_paths = _get_clang_tools(command_context, verbose=verbose)
+    rc, clang_paths = get_clang_tools(command_context, verbose=verbose)
     if rc != 0:
         return rc
 
@@ -512,7 +503,7 @@ def _get_current_version(command_context, clang_paths):
     return version_info
 
 
-def _is_version_eligible(command_context, clang_paths):
+def _is_version_eligible(command_context, clang_paths, log_error=True):
     version = _get_required_version(command_context)
     if version is None:
         return False
@@ -523,17 +514,20 @@ def _is_version_eligible(command_context, clang_paths):
     version = "clang-format version " + version
     if version in current_version:
         return True
-    command_context.log(
-        logging.ERROR,
-        "static-analysis",
-        {},
-        "ERROR: You're using an old or incorrect version ({}) of clang-format binary. "
-        "Please update to a more recent one (at least > {}) "
-        "by running: './mach bootstrap' ".format(
-            _get_current_version(command_context, clang_paths),
-            _get_required_version(command_context),
-        ),
-    )
+
+    if log_error:
+        command_context.log(
+            logging.ERROR,
+            "static-analysis",
+            {},
+            "ERROR: You're using an old or incorrect version ({}) of clang-format binary. "
+            "Please update to a more recent one (at least > {}) "
+            "by running: './mach bootstrap' ".format(
+                _get_current_version(command_context, clang_paths),
+                _get_required_version(command_context),
+            ),
+        )
+
     return False
 
 
@@ -547,7 +541,6 @@ def _get_clang_tidy_command(
     jobs,
     fix,
 ):
-
     if checks == "-*":
         checks = ",".join(get_clang_tidy_config(command_context).checks)
 
@@ -557,7 +550,6 @@ def _get_clang_tidy_command(
         "-clang-apply-replacements-binary",
         clang_paths._clang_apply_replacements,
         "-checks=%s" % checks,
-        "-extra-arg=-std=c++17",
         "-extra-arg=-DMOZ_CLANG_PLUGIN",
     ]
 
@@ -688,7 +680,7 @@ def autotest(
         # Ensure that clang-tidy is present
         rc = not os.path.exists(clang_paths._clang_tidy_path)
     else:
-        rc, clang_paths = _get_clang_tools(
+        rc, clang_paths = get_clang_tools(
             command_context, force=force_download, verbose=verbose
         )
 
@@ -792,7 +784,6 @@ def autotest(
                 error_code = ret_val
 
         if error_code != TOOLS_SUCCESS:
-
             command_context.log(
                 logging.INFO,
                 "static-analysis",
@@ -984,7 +975,7 @@ def _create_temp_compilation_db(command_context):
             file = item + ".cpp"
             element = {}
             element["directory"] = director
-            element["command"] = "cpp " + file
+            element["command"] = "cpp -std=c++17 " + file
             element["file"] = mozpath.join(director, file)
             compile_commands.append(element)
 
@@ -1027,7 +1018,7 @@ def install(
     verbose=False,
 ):
     command_context._set_log_level(verbose)
-    rc, _ = _get_clang_tools(
+    rc, _ = get_clang_tools(
         command_context,
         force=force,
         skip_cache=skip_cache,
@@ -1044,7 +1035,7 @@ def install(
 )
 def clear_cache(command_context, verbose=False):
     command_context._set_log_level(verbose)
-    rc, _ = _get_clang_tools(
+    rc, _ = get_clang_tools(
         command_context,
         force=True,
         download_if_needed=True,
@@ -1067,7 +1058,7 @@ def clear_cache(command_context, verbose=False):
 )
 def print_checks(command_context, verbose=False):
     command_context._set_log_level(verbose)
-    rc, clang_paths = _get_clang_tools(command_context, verbose=verbose)
+    rc, clang_paths = get_clang_tools(command_context, verbose=verbose)
 
     if rc != 0:
         return rc
@@ -1240,13 +1231,13 @@ def clang_format(
         if not _do_clang_tools_exist(clang_paths):
             print("clang-format: Unable to set locate clang-format tools.")
             return 1
+
+        if not _is_version_eligible(command_context, clang_paths):
+            return 1
     else:
-        rc, clang_paths = _get_clang_tools(command_context, verbose=verbose)
+        rc, clang_paths = get_clang_tools(command_context, verbose=verbose)
         if rc != 0:
             return rc
-
-    if not _is_version_eligible(command_context, clang_paths):
-        return 1
 
     if path is None:
         return _run_clang_format_diff(
@@ -1558,7 +1549,7 @@ def _do_clang_tools_exist(clang_paths):
     )
 
 
-def _get_clang_tools(
+def get_clang_tools(
     command_context,
     force=False,
     skip_cache=False,
@@ -1566,20 +1557,23 @@ def _get_clang_tools(
     download_if_needed=True,
     verbose=False,
 ):
-
     rc, clang_paths = _set_clang_tools_paths(command_context)
 
     if rc != 0:
         return rc, clang_paths
 
-    if _do_clang_tools_exist(clang_paths) and not force:
+    if (
+        _do_clang_tools_exist(clang_paths)
+        and _is_version_eligible(command_context, clang_paths, log_error=False)
+        and not force
+    ):
         return 0, clang_paths
 
     if os.path.isdir(clang_paths._clang_tools_path) and download_if_needed:
         # The directory exists, perhaps it's corrupted?  Delete it
         # and start from scratch.
         shutil.rmtree(clang_paths._clang_tools_path)
-        return _get_clang_tools(
+        return get_clang_tools(
             command_context,
             force=force,
             skip_cache=skip_cache,
@@ -1594,37 +1588,14 @@ def _get_clang_tools(
     if source:
         return _get_clang_tools_from_source(command_context, clang_paths, source)
 
-    from mozbuild.artifact_commands import artifact_toolchain
-
     if not download_if_needed:
         return 0, clang_paths
 
-    job, _ = command_context.platform
+    from mozbuild.bootstrap import bootstrap_toolchain
 
-    if job is None:
-        raise Exception(
-            "The current platform isn't supported. "
-            "Currently only the following platforms are "
-            "supported: win32/win64, linux64 and macosx64."
-        )
+    bootstrap_toolchain("clang-tools/clang-tidy")
 
-    job += "-clang-tidy"
-
-    # We want to unpack data in the clang-tidy mozbuild folder
-    currentWorkingDir = os.getcwd()
-    os.chdir(clang_paths._clang_tools_path)
-    rc = artifact_toolchain(
-        command_context,
-        verbose=verbose,
-        skip_cache=skip_cache,
-        from_build=[job],
-        no_unpack=False,
-        retry=0,
-    )
-    # Change back the cwd
-    os.chdir(currentWorkingDir)
-
-    return rc, clang_paths
+    return 0 if _is_version_eligible(command_context, clang_paths) else 1, clang_paths
 
 
 def _get_clang_tools_from_source(command_context, clang_paths, filename):
@@ -1695,7 +1666,7 @@ def _run_clang_format_diff(
 ):
     # Run clang-format on the diff
     # Note that this will potentially miss a lot things
-    from subprocess import Popen, PIPE, check_output, CalledProcessError
+    from subprocess import PIPE, CalledProcessError, Popen, check_output
 
     diff_process = Popen(
         _get_clang_format_diff_command(command_context, commit), stdout=PIPE
@@ -1828,9 +1799,8 @@ def _copy_clang_format_for_show_diff(
 def _run_clang_format_path(
     command_context, clang_format, paths, output_file, output_format
 ):
-
     # Run clang-format on files or directories directly
-    from subprocess import check_output, CalledProcessError
+    from subprocess import CalledProcessError, check_output
 
     if output_format == "json":
         # Get replacements in xml, then process to json

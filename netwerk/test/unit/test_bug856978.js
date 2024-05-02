@@ -11,7 +11,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var notification = "http-on-modify-request";
 
@@ -103,6 +105,9 @@ var tests = [startAuthHeaderTest, removeAuthHeaderTest];
 
 var current_test = 0;
 
+// Must create a RequestObserver for the test to pass, we keep it in memory
+// to avoid garbage collection.
+// eslint-disable-next-line no-unused-vars
 var requestObserver = null;
 
 function run_test() {

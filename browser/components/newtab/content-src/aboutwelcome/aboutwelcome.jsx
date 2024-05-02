@@ -4,6 +4,7 @@
 
 import React from "react";
 import ReactDOM from "react-dom";
+import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils";
 import { MultiStageAboutWelcome } from "./components/MultiStageAboutWelcome";
 import { ReturnToAMO } from "./components/ReturnToAMO";
 
@@ -15,7 +16,7 @@ class AboutWelcome extends React.PureComponent {
   }
 
   async fetchFxAFlowUri() {
-    this.setState({ metricsFlowUri: await window.AWGetFxAMetricsFlowURI() });
+    this.setState({ metricsFlowUri: await window.AWGetFxAMetricsFlowURI?.() });
   }
 
   componentDidMount() {
@@ -23,38 +24,35 @@ class AboutWelcome extends React.PureComponent {
       this.fetchFxAFlowUri();
     }
 
-    // Record impression with performance data after allowing the page to load
-    const recordImpression = domState => {
-      const { domComplete, domInteractive } = performance
-        .getEntriesByType("navigation")
-        .pop();
-      window.AWSendEventTelemetry({
-        event: "IMPRESSION",
-        event_context: {
+    if (document.location.href === "about:welcome") {
+      // Record impression with performance data after allowing the page to load
+      const recordImpression = domState => {
+        const { domComplete, domInteractive } = performance
+          .getEntriesByType("navigation")
+          .pop();
+        AboutWelcomeUtils.sendImpressionTelemetry(this.props.messageId, {
           domComplete,
           domInteractive,
           mountStart: performance.getEntriesByName("mount").pop().startTime,
           domState,
           source: this.props.UTMTerm,
-          page: "about:welcome",
-        },
-        message_id: this.props.messageId,
-      });
-    };
-    if (document.readyState === "complete") {
-      // Page might have already triggered a load event because it waited for async data,
-      // e.g., attribution, so the dom load timing could be of a empty content
-      // with domState in telemetry captured as 'complete'
-      recordImpression(document.readyState);
-    } else {
-      window.addEventListener("load", () => recordImpression("load"), {
-        once: true,
-      });
-    }
+        });
+      };
+      if (document.readyState === "complete") {
+        // Page might have already triggered a load event because it waited for async data,
+        // e.g., attribution, so the dom load timing could be of a empty content
+        // with domState in telemetry captured as 'complete'
+        recordImpression(document.readyState);
+      } else {
+        window.addEventListener("load", () => recordImpression("load"), {
+          once: true,
+        });
+      }
 
-    // Captures user has seen about:welcome by setting
-    // firstrun.didSeeAboutWelcome pref to true and capturing welcome UI unique messageId
-    window.AWSendToParent("SET_WELCOME_MESSAGE_SEEN", this.props.messageId);
+      // Captures user has seen about:welcome by setting
+      // firstrun.didSeeAboutWelcome pref to true and capturing welcome UI unique messageId
+      window.AWSendToParent("SET_WELCOME_MESSAGE_SEEN", this.props.messageId);
+    }
   }
 
   render() {
@@ -67,19 +65,23 @@ class AboutWelcome extends React.PureComponent {
           name={props.name}
           url={props.url}
           iconURL={props.iconURL}
+          themeScreenshots={props.screenshots}
           metricsFlowUri={this.state.metricsFlowUri}
         />
       );
     }
-
     return (
       <MultiStageAboutWelcome
-        screens={props.screens}
-        metricsFlowUri={this.state.metricsFlowUri}
         message_id={props.messageId}
+        defaultScreens={props.screens}
+        updateHistory={!props.disableHistoryUpdates}
+        metricsFlowUri={this.state.metricsFlowUri}
         utm_term={props.UTMTerm}
         transitions={props.transitions}
-        background_url={props.background_url}
+        backdrop={props.backdrop}
+        startScreen={props.startScreen || 0}
+        appAndSystemLocaleInfo={props.appAndSystemLocaleInfo}
+        ariaRole={props.aria_role}
       />
     );
   }
@@ -89,16 +91,16 @@ class AboutWelcome extends React.PureComponent {
 function ComputeTelemetryInfo(welcomeContent, experimentId, branchId) {
   let messageId =
     welcomeContent.template === "return_to_amo"
-      ? "RTAMO_DEFAULT_WELCOME"
+      ? `RTAMO_DEFAULT_WELCOME_${welcomeContent.type.toUpperCase()}`
       : "DEFAULT_ID";
-  let UTMTerm = "default";
+  let UTMTerm = "aboutwelcome-default";
 
   if (welcomeContent.id) {
     messageId = welcomeContent.id.toUpperCase();
   }
 
   if (experimentId && branchId) {
-    UTMTerm = `${experimentId}-${branchId}`.toLowerCase();
+    UTMTerm = `aboutwelcome-${experimentId}-${branchId}`.toLowerCase();
   }
   return {
     messageId,
@@ -134,7 +136,7 @@ async function mount() {
       UTMTerm={UTMTerm}
       {...aboutWelcomeProps}
     />,
-    document.getElementById("root")
+    document.getElementById("multi-stage-message-root")
   );
 }
 

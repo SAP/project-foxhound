@@ -8,24 +8,25 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 const EvaluationContextSelector = createFactory(
-  require("devtools/client/webconsole/components/Input/EvaluationContextSelector")
+  require("resource://devtools/client/webconsole/components/Input/EvaluationContextSelector.js")
 );
 
-const actions = require("devtools/client/webconsole/actions/index");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
-const Services = require("Services");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 const isMacOS = Services.appinfo.OS === "Darwin";
 
 // Constants used for defining the direction of JSTerm input history navigation.
 const {
   HISTORY_BACK,
   HISTORY_FORWARD,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 
 class EditorToolbar extends Component {
   static get propTypes() {
@@ -42,9 +43,8 @@ class EditorToolbar extends Component {
   constructor(props) {
     super(props);
 
-    this.onReverseSearchButtonClick = this.onReverseSearchButtonClick.bind(
-      this
-    );
+    this.onReverseSearchButtonClick =
+      this.onReverseSearchButtonClick.bind(this);
   }
 
   onReverseSearchButtonClick(event) {
@@ -60,10 +60,7 @@ class EditorToolbar extends Component {
   }
 
   renderEvaluationContextSelector() {
-    if (
-      !this.props.webConsoleUI.wrapper.toolbox ||
-      !this.props.showEvaluationContextSelector
-    ) {
+    if (!this.props.showEvaluationContextSelector) {
       return null;
     }
 
@@ -73,12 +70,8 @@ class EditorToolbar extends Component {
   }
 
   render() {
-    const {
-      editorMode,
-      dispatch,
-      reverseSearchInputVisible,
-      webConsoleUI,
-    } = this.props;
+    const { editorMode, dispatch, reverseSearchInputVisible, webConsoleUI } =
+      this.props;
 
     if (!editorMode) {
       return null;

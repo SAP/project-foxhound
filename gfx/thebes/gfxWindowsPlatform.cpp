@@ -21,6 +21,7 @@
 
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/Components.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/WindowsVersion.h"
@@ -60,8 +61,6 @@
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
-
-#include "nsMemory.h"
 
 #include <dwmapi.h>
 #include <d3d11.h>
@@ -191,28 +190,15 @@ class GPUAdapterReporter final : public nsIMemoryReporter {
           queryStatistics.QuerySegment.SegmentId = i;
 
           if (NT_SUCCESS(queryD3DKMTStatistics(&queryStatistics))) {
-            bool aperture;
-
-            // SegmentInformation has a different definition in Win7 than later
-            // versions
-            if (!IsWin8OrLater())
-              aperture = queryStatistics.QueryResult.SegmentInfoWin7.Aperture;
-            else
-              aperture = queryStatistics.QueryResult.SegmentInfoWin8.Aperture;
-
+            bool aperture = queryStatistics.QueryResult.SegmentInfo.Aperture;
             memset(&queryStatistics, 0, sizeof(D3DKMTQS));
             queryStatistics.Type = D3DKMTQS_PROCESS_SEGMENT;
             queryStatistics.AdapterLuid = adapterDesc.AdapterLuid;
             queryStatistics.hProcess = ProcessHandle;
             queryStatistics.QueryProcessSegment.SegmentId = i;
             if (NT_SUCCESS(queryD3DKMTStatistics(&queryStatistics))) {
-              ULONGLONG bytesCommitted;
-              if (!IsWin8OrLater())
-                bytesCommitted = queryStatistics.QueryResult.ProcessSegmentInfo
-                                     .Win7.BytesCommitted;
-              else
-                bytesCommitted = queryStatistics.QueryResult.ProcessSegmentInfo
-                                     .Win8.BytesCommitted;
+              ULONGLONG bytesCommitted =
+                  queryStatistics.QueryResult.ProcessSegmentInfo.BytesCommitted;
               if (aperture)
                 sharedBytesUsed += bytesCommitted;
               else
@@ -273,8 +259,7 @@ class D3DSharedTexturesReporter final : public nsIMemoryReporter {
 NS_IMPL_ISUPPORTS(D3DSharedTexturesReporter, nsIMemoryReporter)
 
 gfxWindowsPlatform::gfxWindowsPlatform()
-    : mRenderMode(RENDER_GDI),
-      mDwmCompositionStatus(DwmCompositionStatus::Unknown) {
+    : mRenderMode(RENDER_GDI), mSupportsHDR(false) {
   // If win32k is locked down then we can't use COM STA and shouldn't need it.
   // Also, we won't be using any GPU memory in this process.
   if (!IsWin32kLockedDown()) {
@@ -315,6 +300,13 @@ void gfxWindowsPlatform::InitMemoryReportersForGPUProcess() {
 /* static */
 nsresult gfxWindowsPlatform::GetGpuTimeSinceProcessStartInMs(
     uint64_t* aResult) {
+  // If win32k is locked down then we should not have any GPU processing and
+  // cannot use these APIs either way.
+  if (IsWin32kLockedDown()) {
+    *aResult = 0;
+    return NS_OK;
+  }
+
   nsModuleHandle module(LoadLibrary(L"gdi32.dll"));
   if (!module) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -402,40 +394,17 @@ void gfxWindowsPlatform::InitAcceleration() {
   gfxVars::SetSystemTextQualityListener(
       gfxDWriteFont::SystemTextQualityChanged);
 
-  if (XRE_IsParentProcess()) {
-    BOOL dwmEnabled = FALSE;
-    if (FAILED(::DwmIsCompositionEnabled(&dwmEnabled)) || !dwmEnabled) {
-      gfxVars::SetDwmCompositionEnabled(false);
-    } else {
-      gfxVars::SetDwmCompositionEnabled(true);
-    }
-  }
-
-  // gfxVars are not atomic, but multiple threads can query DWM status
-  // Therefore, mirror value into an atomic
-  mDwmCompositionStatus = gfxVars::DwmCompositionEnabled()
-                              ? DwmCompositionStatus::Enabled
-                              : DwmCompositionStatus::Disabled;
-
-  gfxVars::SetDwmCompositionEnabledListener([this] {
-    this->mDwmCompositionStatus = gfxVars::DwmCompositionEnabled()
-                                      ? DwmCompositionStatus::Enabled
-                                      : DwmCompositionStatus::Disabled;
-  });
-
   // CanUseHardwareVideoDecoding depends on DeviceManagerDx state,
   // so update the cached value now.
   UpdateCanUseHardwareVideoDecoding();
+  UpdateSupportsHDR();
 
   RecordStartupTelemetry();
 }
 
 void gfxWindowsPlatform::InitWebRenderConfig() {
   gfxPlatform::InitWebRenderConfig();
-
-  if (gfxVars::UseWebRender()) {
-    UpdateBackendPrefs();
-  }
+  UpdateBackendPrefs();
 }
 
 bool gfxWindowsPlatform::CanUseHardwareVideoDecoding() {
@@ -504,11 +473,6 @@ BackendPrefsData gfxWindowsPlatform::GetBackendPrefs() const {
   if (gfxConfig::IsEnabled(Feature::DIRECT2D)) {
     data.mCanvasBitmask |= BackendTypeBit(BackendType::DIRECT2D1_1);
     data.mCanvasDefault = BackendType::DIRECT2D1_1;
-    // We do not use d2d for content when WebRender is used.
-    if (!gfxVars::UseWebRender()) {
-      data.mContentBitmask |= BackendTypeBit(BackendType::DIRECT2D1_1);
-      data.mContentDefault = BackendType::DIRECT2D1_1;
-    }
   }
   return data;
 }
@@ -564,6 +528,57 @@ void gfxWindowsPlatform::UpdateRenderMode() {
   }
 }
 
+void gfxWindowsPlatform::UpdateSupportsHDR() {
+  // TODO: This function crashes content processes, for reasons that are not
+  // obvious from the crash reports. For now, this function can only be executed
+  // by the parent process. Therefore SupportsHDR() will always return false for
+  // content processes, as noted in the header.
+  if (!XRE_IsParentProcess()) {
+    return;
+  }
+
+  // Set mSupportsHDR to true if any of the DeviceManager outputs have both:
+  // 1) greater than 8-bit color
+  // 2) a colorspace that uses BT2020
+  DeviceManagerDx* dx = DeviceManagerDx::Get();
+  nsTArray<DXGI_OUTPUT_DESC1> outputs = dx->EnumerateOutputs();
+
+  for (auto& output : outputs) {
+    if (output.BitsPerColor <= 8) {
+      continue;
+    }
+
+    switch (output.ColorSpace) {
+      case DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P2020:
+      case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020:
+      case DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_TOPLEFT_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_TOPLEFT_P2020:
+      case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_STUDIO_GHLG_TOPLEFT_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_FULL_GHLG_TOPLEFT_P2020:
+#ifndef __MINGW32__
+      // Windows MinGW has an older dxgicommon.h that doesn't define
+      // these enums. We'd like to define them ourselves in that case,
+      // but there's no compilable way to add new enums to an existing
+      // enum type. So instead we just don't check for these values.
+      case DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_STUDIO_G24_LEFT_P2020:
+      case DXGI_COLOR_SPACE_YCBCR_STUDIO_G24_TOPLEFT_P2020:
+#endif
+        mSupportsHDR = true;
+        return;
+      default:
+        break;
+    }
+  }
+
+  mSupportsHDR = false;
+}
+
 mozilla::gfx::BackendType gfxWindowsPlatform::GetContentBackendFor(
     mozilla::layers::LayersBackend aLayers) {
   mozilla::gfx::BackendType defaultBackend =
@@ -586,7 +601,7 @@ mozilla::gfx::BackendType gfxWindowsPlatform::GetPreferredCanvasBackend() {
   mozilla::gfx::BackendType backend = gfxPlatform::GetPreferredCanvasBackend();
 
   if (backend == BackendType::DIRECT2D1_1) {
-    if (gfx::gfxVars::UseWebRender() && !gfx::gfxVars::UseWebRenderANGLE()) {
+    if (!gfx::gfxVars::UseWebRenderANGLE()) {
       // We can't have D2D without ANGLE when WebRender is enabled, so fallback
       // to Skia.
       return BackendType::SKIA;
@@ -601,12 +616,11 @@ mozilla::gfx::BackendType gfxWindowsPlatform::GetPreferredCanvasBackend() {
 }
 
 bool gfxWindowsPlatform::CreatePlatformFontList() {
-  // bug 630201 - older pre-RTM versions of Direct2D/DirectWrite cause odd
-  // crashers so block them altogether
-  if (IsNotWin7PreRTM() && DWriteEnabled()) {
+  if (DWriteEnabled()) {
     if (gfxPlatformFontList::Initialize(new gfxDWriteFontList)) {
       return true;
     }
+
     // DWrite font initialization failed! Don't know why this would happen,
     // but apparently it can - see bug 594865.
     // So we're going to fall back to GDI fonts & rendering.
@@ -614,9 +628,11 @@ bool gfxWindowsPlatform::CreatePlatformFontList() {
                "FEATURE_FAILURE_FONT_FAIL"_ns);
   }
 
-  // Ensure this is false, even if the Windows version was recent enough to
-  // permit it, as we're using GDI fonts.
-  mHasVariationFontSupport = false;
+  // Make sure the static variable is initialized...
+  gfxPlatform::HasVariationFontSupport();
+  // ...then force it to false, even if the Windows version was recent enough
+  // to permit it, as we're using GDI fonts.
+  sHasVariationFontSupport = false;
 
   return gfxPlatformFontList::Initialize(new gfxGDIFontList);
 }
@@ -983,15 +999,20 @@ nsTArray<uint8_t> gfxWindowsPlatform::GetPlatformCMSOutputProfileData() {
     return result;
   }
 
-  if (!mCachedOutputColorProfile.IsEmpty()) {
-    return mCachedOutputColorProfile.Clone();
-  }
+  return GetPlatformCMSOutputProfileData_Impl();
+}
 
-  mCachedOutputColorProfile = [&] {
-    nsTArray<uint8_t> prefProfileData = GetPrefCMSOutputProfileData();
+nsTArray<uint8_t> gfxWindowsPlatform::GetPlatformCMSOutputProfileData_Impl() {
+  static nsTArray<uint8_t> sCached = [&] {
+    // Check override pref first:
+    nsTArray<uint8_t> prefProfileData =
+        gfxPlatform::GetPrefCMSOutputProfileData();
     if (!prefProfileData.IsEmpty()) {
       return prefProfileData;
     }
+
+    // -
+    // Otherwise, create a dummy DC and pull from that.
 
     HDC dc = ::GetDC(nullptr);
     if (!dc) {
@@ -1025,7 +1046,7 @@ nsTArray<uint8_t> gfxWindowsPlatform::GetPlatformCMSOutputProfileData() {
     return result;
   }();
 
-  return mCachedOutputColorProfile.Clone();
+  return sCached.Clone();
 }
 
 void gfxWindowsPlatform::GetDLLVersion(char16ptr_t aDLLPath,
@@ -1066,7 +1087,7 @@ void gfxWindowsPlatform::GetDLLVersion(char16ptr_t aDLLPath,
   vers[3] = LOWORD(fileVersLS);
 
   char buf[256];
-  SprintfLiteral(buf, "%u.%u.%u.%u", vers[0], vers[1], vers[2], vers[3]);
+  SprintfLiteral(buf, "%lu.%lu.%lu.%lu", vers[0], vers[1], vers[2], vers[3]);
   aVersion.Assign(NS_ConvertUTF8toUTF16(buf));
 }
 
@@ -1141,17 +1162,7 @@ bool gfxWindowsPlatform::IsOptimus() {
   }
   return knowIsOptimus;
 }
-/*
-static inline bool
-IsWARPStable()
-{
-  // It seems like nvdxgiwrap makes a mess of WARP. See bug 1154703.
-  if (!IsWin8OrLater() || GetModuleHandleA("nvdxgiwrap.dll")) {
-    return false;
-  }
-  return true;
-}
-*/
+
 static void InitializeANGLEConfig() {
   FeatureState& d3d11ANGLE = gfxConfig::GetFeature(Feature::D3D11_HW_ANGLE);
 
@@ -1210,26 +1221,6 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
   if (StaticPrefs::layers_d3d11_force_warp_AtStartup()) {
     // Force D3D11 on even if we disabled it.
     d3d11.UserForceEnable("User force-enabled WARP");
-  }
-
-  if (!IsWin8OrLater() &&
-      !DeviceManagerDx::Get()->CheckRemotePresentSupport()) {
-    nsCOMPtr<nsIGfxInfo> gfxInfo;
-    gfxInfo = components::GfxInfo::Service();
-    nsAutoString adaptorId;
-    gfxInfo->GetAdapterDeviceID(adaptorId);
-    // Blocklist Intel HD Graphics 510/520/530 on Windows 7 without platform
-    // update due to the crashes in Bug 1351349.
-    if (adaptorId.EqualsLiteral("0x1912") ||
-        adaptorId.EqualsLiteral("0x1916") ||
-        adaptorId.EqualsLiteral("0x1902")) {
-#ifdef RELEASE_OR_BETA
-      d3d11.Disable(FeatureStatus::Blocklisted, "Blocklisted, see bug 1351349",
-                    "FEATURE_FAILURE_BUG_1351349"_ns);
-#else
-      Preferences::SetBool("gfx.compositor.clearstate", true);
-#endif
-    }
   }
 
   nsCString message;
@@ -1470,332 +1461,273 @@ void gfxWindowsPlatform::InitGPUProcessSupport() {
     gpuProc.Disable(FeatureStatus::Unavailable,
                     "Not using GPU Process since D3D11 is unavailable",
                     "FEATURE_FAILURE_NO_D3D11"_ns);
-  } else if (!IsWin7SP1OrLater()) {
-    // On Windows 7 Pre-SP1, DXGI 1.2 is not available and remote presentation
-    // for D3D11 will not work. Rather than take a regression we revert back
-    // to in-process rendering.
-    gpuProc.Disable(FeatureStatus::Unavailable,
-                    "Windows 7 Pre-SP1 cannot use the GPU process",
-                    "FEATURE_FAILURE_OLD_WINDOWS"_ns);
-  } else if (!IsWin8OrLater()) {
-    // Windows 7 SP1 can have DXGI 1.2 only via the Platform Update, so we
-    // explicitly check for that here.
-    if (!DeviceManagerDx::Get()->CheckRemotePresentSupport()) {
-      gpuProc.Disable(FeatureStatus::Unavailable,
-                      "GPU Process requires the Windows 7 Platform Update",
-                      "FEATURE_FAILURE_PLATFORM_UPDATE"_ns);
-    } else {
-      // Clear anything cached by the above call since we don't need it.
-      DeviceManagerDx::Get()->ResetDevices();
-    }
   }
-
   // If we're still enabled at this point, the user set the force-enabled pref.
-}
-
-bool gfxWindowsPlatform::DwmCompositionEnabled() {
-  MOZ_RELEASE_ASSERT(mDwmCompositionStatus != DwmCompositionStatus::Unknown);
-
-  return mDwmCompositionStatus == DwmCompositionStatus::Enabled;
 }
 
 class D3DVsyncSource final : public VsyncSource {
  public:
-  class D3DVsyncDisplay final : public VsyncSource::Display {
-   public:
-    D3DVsyncDisplay()
-        : mPrevVsync(TimeStamp::Now()),
-          mVsyncEnabled(false),
-          mWaitVBlankMonitor(NULL),
-          mIsWindows8OrLater(false) {
-      mVsyncThread = new base::Thread("WindowsVsyncThread");
-      MOZ_RELEASE_ASSERT(mVsyncThread->Start(),
-                         "GFX: Could not start Windows vsync thread");
-      SetVsyncRate();
+  D3DVsyncSource()
+      : mPrevVsync(TimeStamp::Now()),
+        mVsyncEnabled(false),
+        mWaitVBlankMonitor(NULL) {
+    mVsyncThread = new base::Thread("WindowsVsyncThread");
+    MOZ_RELEASE_ASSERT(mVsyncThread->Start(),
+                       "GFX: Could not start Windows vsync thread");
+    SetVsyncRate();
+  }
 
-      mIsWindows8OrLater = IsWin8OrLater();
+  void SetVsyncRate() {
+    DWM_TIMING_INFO vblankTime;
+    // Make sure to init the cbSize, otherwise GetCompositionTiming will fail
+    vblankTime.cbSize = sizeof(DWM_TIMING_INFO);
+    HRESULT hr = DwmGetCompositionTimingInfo(0, &vblankTime);
+    if (SUCCEEDED(hr)) {
+      UNSIGNED_RATIO refreshRate = vblankTime.rateRefresh;
+      // We get the rate in hertz / time, but we want the rate in ms.
+      float rate =
+          ((float)refreshRate.uiDenominator / (float)refreshRate.uiNumerator) *
+          1000;
+      mVsyncRate = TimeDuration::FromMilliseconds(rate);
+    } else {
+      mVsyncRate = TimeDuration::FromMilliseconds(1000.0 / 60.0);
     }
+  }
 
-    void SetVsyncRate() {
-      if (!gfxWindowsPlatform::GetPlatform()->DwmCompositionEnabled()) {
-        mVsyncRate = TimeDuration::FromMilliseconds(1000.0 / 60.0);
+  virtual void Shutdown() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    DisableVsync();
+    mVsyncThread->Stop();
+    delete mVsyncThread;
+  }
+
+  virtual void EnableVsync() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(mVsyncThread->IsRunning());
+    {  // scope lock
+      if (mVsyncEnabled) {
         return;
       }
-
-      DWM_TIMING_INFO vblankTime;
-      // Make sure to init the cbSize, otherwise GetCompositionTiming will fail
-      vblankTime.cbSize = sizeof(DWM_TIMING_INFO);
-      HRESULT hr = DwmGetCompositionTimingInfo(0, &vblankTime);
-      if (SUCCEEDED(hr)) {
-        UNSIGNED_RATIO refreshRate = vblankTime.rateRefresh;
-        // We get the rate in hertz / time, but we want the rate in ms.
-        float rate = ((float)refreshRate.uiDenominator /
-                      (float)refreshRate.uiNumerator) *
-                     1000;
-        mVsyncRate = TimeDuration::FromMilliseconds(rate);
-      } else {
-        mVsyncRate = TimeDuration::FromMilliseconds(1000.0 / 60.0);
-      }
+      mVsyncEnabled = true;
     }
 
-    virtual void Shutdown() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      DisableVsync();
-      mVsyncThread->Stop();
-      delete mVsyncThread;
+    mVsyncThread->message_loop()->PostTask(NewRunnableMethod(
+        "D3DVsyncSource::VBlankLoop", this, &D3DVsyncSource::VBlankLoop));
+  }
+
+  virtual void DisableVsync() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(mVsyncThread->IsRunning());
+    if (!mVsyncEnabled) {
+      return;
+    }
+    mVsyncEnabled = false;
+  }
+
+  virtual bool IsVsyncEnabled() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    return mVsyncEnabled;
+  }
+
+  virtual TimeDuration GetVsyncRate() override { return mVsyncRate; }
+
+  void ScheduleSoftwareVsync(TimeStamp aVsyncTimestamp) {
+    MOZ_ASSERT(IsInVsyncThread());
+    NS_WARNING(
+        "DwmComposition dynamically disabled, falling back to software "
+        "timers");
+
+    TimeStamp nextVsync = aVsyncTimestamp + mVsyncRate;
+    TimeDuration delay = nextVsync - TimeStamp::Now();
+    if (delay.ToMilliseconds() < 0) {
+      delay = mozilla::TimeDuration::FromMilliseconds(0);
     }
 
-    virtual void EnableVsync() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      MOZ_ASSERT(mVsyncThread->IsRunning());
-      {  // scope lock
-        if (mVsyncEnabled) {
-          return;
-        }
-        mVsyncEnabled = true;
-      }
+    mVsyncThread->message_loop()->PostDelayedTask(
+        NewRunnableMethod("D3DVsyncSource::VBlankLoop", this,
+                          &D3DVsyncSource::VBlankLoop),
+        delay.ToMilliseconds());
+  }
 
-      mVsyncThread->message_loop()->PostTask(NewRunnableMethod(
-          "D3DVsyncDisplay::VBlankLoop", this, &D3DVsyncDisplay::VBlankLoop));
-    }
+  // Returns the timestamp for the just happened vsync
+  TimeStamp GetVBlankTime() {
+    TimeStamp vsync = TimeStamp::Now();
+    TimeStamp now = vsync;
 
-    virtual void DisableVsync() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      MOZ_ASSERT(mVsyncThread->IsRunning());
-      if (!mVsyncEnabled) {
-        return;
-      }
-      mVsyncEnabled = false;
-    }
-
-    virtual bool IsVsyncEnabled() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      return mVsyncEnabled;
-    }
-
-    virtual TimeDuration GetVsyncRate() override { return mVsyncRate; }
-
-    void ScheduleSoftwareVsync(TimeStamp aVsyncTimestamp) {
-      MOZ_ASSERT(IsInVsyncThread());
-      NS_WARNING(
-          "DwmComposition dynamically disabled, falling back to software "
-          "timers");
-
-      TimeStamp nextVsync = aVsyncTimestamp + mVsyncRate;
-      TimeDuration delay = nextVsync - TimeStamp::Now();
-      if (delay.ToMilliseconds() < 0) {
-        delay = mozilla::TimeDuration::FromMilliseconds(0);
-      }
-
-      mVsyncThread->message_loop()->PostDelayedTask(
-          NewRunnableMethod("D3DVsyncDisplay::VBlankLoop", this,
-                            &D3DVsyncDisplay::VBlankLoop),
-          delay.ToMilliseconds());
-    }
-
-    // Returns the timestamp for the just happened vsync
-    TimeStamp GetVBlankTime() {
-      TimeStamp vsync = TimeStamp::Now();
-      TimeStamp now = vsync;
-
-      DWM_TIMING_INFO vblankTime;
-      // Make sure to init the cbSize, otherwise
-      // GetCompositionTiming will fail
-      vblankTime.cbSize = sizeof(DWM_TIMING_INFO);
-      HRESULT hr = DwmGetCompositionTimingInfo(0, &vblankTime);
-      if (!SUCCEEDED(hr)) {
-        return vsync;
-      }
-
-      LARGE_INTEGER frequency;
-      QueryPerformanceFrequency(&frequency);
-
-      LARGE_INTEGER qpcNow;
-      QueryPerformanceCounter(&qpcNow);
-
-      const int microseconds = 1000000;
-      int64_t adjust = qpcNow.QuadPart - vblankTime.qpcVBlank;
-      int64_t usAdjust = (adjust * microseconds) / frequency.QuadPart;
-      vsync -= TimeDuration::FromMicroseconds((double)usAdjust);
-
-      if (IsWin10OrLater()) {
-        // On Windows 10 and on, DWMGetCompositionTimingInfo, mostly
-        // reports the upcoming vsync time, which is in the future.
-        // It can also sometimes report a vblank time in the past.
-        // Since large parts of Gecko assume TimeStamps can't be in future,
-        // use the previous vsync.
-
-        // Windows 10 and Intel HD vsync timestamps are messy and
-        // all over the place once in a while. Most of the time,
-        // it reports the upcoming vsync. Sometimes, that upcoming
-        // vsync is in the past. Sometimes that upcoming vsync is before
-        // the previously seen vsync.
-        // In these error cases, normalize to Now();
-        if (vsync >= now) {
-          vsync = vsync - mVsyncRate;
-        }
-      }
-
-      // On Windows 7 and 8, DwmFlush wakes up AFTER qpcVBlankTime
-      // from DWMGetCompositionTimingInfo. We can return the adjusted vsync.
-      if (vsync >= now) {
-        vsync = now;
-      }
-
-      // Our vsync time is some time very far in the past, adjust to Now.
-      // 4 ms is arbitrary, so feel free to pick something else if this isn't
-      // working. See the comment above within IsWin10OrLater().
-      if ((now - vsync).ToMilliseconds() > 4.0) {
-        vsync = now;
-      }
-
+    DWM_TIMING_INFO vblankTime;
+    // Make sure to init the cbSize, otherwise
+    // GetCompositionTiming will fail
+    vblankTime.cbSize = sizeof(DWM_TIMING_INFO);
+    HRESULT hr = DwmGetCompositionTimingInfo(0, &vblankTime);
+    if (!SUCCEEDED(hr)) {
       return vsync;
     }
 
-    void VBlankLoop() {
-      MOZ_ASSERT(IsInVsyncThread());
-      MOZ_ASSERT(sizeof(int64_t) == sizeof(QPC_TIME));
+    LARGE_INTEGER frequency;
+    QueryPerformanceFrequency(&frequency);
 
-      TimeStamp vsync = TimeStamp::Now();
-      mPrevVsync = TimeStamp();
-      TimeStamp flushTime = TimeStamp::Now();
-      TimeDuration longVBlank = mVsyncRate * 2;
+    LARGE_INTEGER qpcNow;
+    QueryPerformanceCounter(&qpcNow);
 
-      for (;;) {
-        {  // scope lock
-          if (!mVsyncEnabled) return;
-        }
+    const int microseconds = 1000000;
+    int64_t adjust = qpcNow.QuadPart - vblankTime.qpcVBlank;
+    int64_t usAdjust = (adjust * microseconds) / frequency.QuadPart;
+    vsync -= TimeDuration::FromMicroseconds((double)usAdjust);
 
-        // Large parts of gecko assume that the refresh driver timestamp
-        // must be <= Now() and cannot be in the future.
-        MOZ_ASSERT(vsync <= TimeStamp::Now());
-        Display::NotifyVsync(vsync, vsync + mVsyncRate);
+    // On Windows 10 and on, DWMGetCompositionTimingInfo, mostly
+    // reports the upcoming vsync time, which is in the future.
+    // It can also sometimes report a vblank time in the past.
+    // Since large parts of Gecko assume TimeStamps can't be in future,
+    // use the previous vsync.
 
-        // DwmComposition can be dynamically enabled/disabled
-        // so we have to check every time that it's available.
-        // When it is unavailable, we fallback to software but will try
-        // to get back to dwm rendering once it's re-enabled
-        if (!gfxWindowsPlatform::GetPlatform()->DwmCompositionEnabled()) {
-          ScheduleSoftwareVsync(vsync);
-          return;
-        }
+    // Windows 10 and Intel HD vsync timestamps are messy and
+    // all over the place once in a while. Most of the time,
+    // it reports the upcoming vsync. Sometimes, that upcoming
+    // vsync is in the past. Sometimes that upcoming vsync is before
+    // the previously seen vsync.
+    // In these error cases, normalize to Now();
+    if (vsync >= now) {
+      vsync = vsync - mVsyncRate;
+    }
 
-        HRESULT hr = E_FAIL;
-        if (mIsWindows8OrLater &&
-            !StaticPrefs::gfx_vsync_force_disable_waitforvblank()) {
-          UpdateVBlankOutput();
-          if (mWaitVBlankOutput) {
-            const TimeStamp vblank_begin_wait = TimeStamp::Now();
+    // On Windows 7 and 8, DwmFlush wakes up AFTER qpcVBlankTime
+    // from DWMGetCompositionTimingInfo. We can return the adjusted vsync.
+    if (vsync >= now) {
+      vsync = now;
+    }
+
+    // Our vsync time is some time very far in the past, adjust to Now.
+    // 4 ms is arbitrary, so feel free to pick something else if this isn't
+    // working. See the comment above.
+    if ((now - vsync).ToMilliseconds() > 4.0) {
+      vsync = now;
+    }
+
+    return vsync;
+  }
+
+  void VBlankLoop() {
+    MOZ_ASSERT(IsInVsyncThread());
+    MOZ_ASSERT(sizeof(int64_t) == sizeof(QPC_TIME));
+
+    TimeStamp vsync = TimeStamp::Now();
+    mPrevVsync = TimeStamp();
+    TimeStamp flushTime = TimeStamp::Now();
+    TimeDuration longVBlank = mVsyncRate * 2;
+
+    for (;;) {
+      {  // scope lock
+        if (!mVsyncEnabled) return;
+      }
+
+      // Large parts of gecko assume that the refresh driver timestamp
+      // must be <= Now() and cannot be in the future.
+      MOZ_ASSERT(vsync <= TimeStamp::Now());
+      NotifyVsync(vsync, vsync + mVsyncRate);
+
+      HRESULT hr = E_FAIL;
+      if (!StaticPrefs::gfx_vsync_force_disable_waitforvblank()) {
+        UpdateVBlankOutput();
+        if (mWaitVBlankOutput) {
+          const TimeStamp vblank_begin_wait = TimeStamp::Now();
+          {
+            AUTO_PROFILER_THREAD_SLEEP;
             hr = mWaitVBlankOutput->WaitForVBlank();
-            if (SUCCEEDED(hr)) {
-              // vblank might return instantly when running headless,
-              // monitor powering off, etc.  Since we're on a dedicated
-              // thread, instant-return should not happen in the normal
-              // case, so catch any odd behavior with a time cutoff:
-              TimeDuration vblank_wait = TimeStamp::Now() - vblank_begin_wait;
-              if (vblank_wait.ToMilliseconds() < 1.0) {
-                hr = E_FAIL;  // fall back on old behavior
-              }
+          }
+          if (SUCCEEDED(hr)) {
+            // vblank might return instantly when running headless,
+            // monitor powering off, etc.  Since we're on a dedicated
+            // thread, instant-return should not happen in the normal
+            // case, so catch any odd behavior with a time cutoff:
+            TimeDuration vblank_wait = TimeStamp::Now() - vblank_begin_wait;
+            if (vblank_wait.ToMilliseconds() < 1.0) {
+              hr = E_FAIL;  // fall back on old behavior
             }
           }
         }
-        if (!SUCCEEDED(hr)) {
-          hr = DwmFlush();
-        }
-        if (!SUCCEEDED(hr)) {
-          // DWMFlush isn't working, fallback to software vsync.
-          ScheduleSoftwareVsync(TimeStamp::Now());
-          return;
-        }
-
-        TimeStamp now = TimeStamp::Now();
-        TimeDuration flushDiff = now - flushTime;
-        flushTime = now;
-        if ((flushDiff > longVBlank) || mPrevVsync.IsNull()) {
-          // Our vblank took longer than 2 intervals, readjust our timestamps
-          vsync = GetVBlankTime();
-          mPrevVsync = vsync;
-        } else {
-          // Instead of giving the actual vsync time, a constant interval
-          // between vblanks instead of the noise generated via hardware
-          // is actually what we want. Most apps just care about the diff
-          // between vblanks to animate, so a clean constant interval is
-          // smoother.
-          vsync = mPrevVsync + mVsyncRate;
-          if (vsync > now) {
-            // DWMFlush woke up very early, so readjust our times again
-            vsync = GetVBlankTime();
-          }
-
-          if (vsync <= mPrevVsync) {
-            vsync = TimeStamp::Now();
-          }
-
-          if ((now - vsync).ToMilliseconds() > 2.0) {
-            // Account for time drift here where vsync never quite catches up to
-            // Now and we'd fall ever so slightly further behind Now().
-            vsync = GetVBlankTime();
-          }
-
-          mPrevVsync = vsync;
-        }
-      }  // end for
-    }
-    virtual ~D3DVsyncDisplay() { MOZ_ASSERT(NS_IsMainThread()); }
-
-   private:
-    bool IsInVsyncThread() {
-      return mVsyncThread->thread_id() == PlatformThread::CurrentId();
-    }
-
-    void UpdateVBlankOutput() {
-      HMONITOR primary_monitor =
-          MonitorFromWindow(nullptr, MONITOR_DEFAULTTOPRIMARY);
-      if (primary_monitor == mWaitVBlankMonitor && mWaitVBlankOutput) {
+      }
+      if (!SUCCEEDED(hr)) {
+        hr = DwmFlush();
+      }
+      if (!SUCCEEDED(hr)) {
+        // DWMFlush isn't working, fallback to software vsync.
+        ScheduleSoftwareVsync(TimeStamp::Now());
         return;
       }
 
-      mWaitVBlankMonitor = primary_monitor;
-
-      RefPtr<IDXGIOutput> output = nullptr;
-      if (DeviceManagerDx* dx = DeviceManagerDx::Get()) {
-        if (dx->GetOutputFromMonitor(mWaitVBlankMonitor, &output)) {
-          mWaitVBlankOutput = output;
-          return;
+      TimeStamp now = TimeStamp::Now();
+      TimeDuration flushDiff = now - flushTime;
+      flushTime = now;
+      if ((flushDiff > longVBlank) || mPrevVsync.IsNull()) {
+        // Our vblank took longer than 2 intervals, readjust our timestamps
+        vsync = GetVBlankTime();
+        mPrevVsync = vsync;
+      } else {
+        // Instead of giving the actual vsync time, a constant interval
+        // between vblanks instead of the noise generated via hardware
+        // is actually what we want. Most apps just care about the diff
+        // between vblanks to animate, so a clean constant interval is
+        // smoother.
+        vsync = mPrevVsync + mVsyncRate;
+        if (vsync > now) {
+          // DWMFlush woke up very early, so readjust our times again
+          vsync = GetVBlankTime();
         }
+
+        if (vsync <= mPrevVsync) {
+          vsync = TimeStamp::Now();
+        }
+
+        if ((now - vsync).ToMilliseconds() > 2.0) {
+          // Account for time drift here where vsync never quite catches up to
+          // Now and we'd fall ever so slightly further behind Now().
+          vsync = GetVBlankTime();
+        }
+
+        mPrevVsync = vsync;
       }
-
-      // failed to convert a monitor to an output so keep trying
-      mWaitVBlankOutput = nullptr;
-    }
-
-    TimeStamp mPrevVsync;
-    base::Thread* mVsyncThread;
-    TimeDuration mVsyncRate;
-    Atomic<bool> mVsyncEnabled;
-
-    HMONITOR mWaitVBlankMonitor;
-    RefPtr<IDXGIOutput> mWaitVBlankOutput;
-    bool mIsWindows8OrLater;
-  };  // end d3dvsyncdisplay
-
-  D3DVsyncSource() { mPrimaryDisplay = new D3DVsyncDisplay(); }
-
-  virtual Display& GetGlobalDisplay() override { return *mPrimaryDisplay; }
+    }  // end for
+  }
+  virtual ~D3DVsyncSource() { MOZ_ASSERT(NS_IsMainThread()); }
 
  private:
-  virtual ~D3DVsyncSource() = default;
-  RefPtr<D3DVsyncDisplay> mPrimaryDisplay;
-};  // end D3DVsyncSource
+  bool IsInVsyncThread() {
+    return mVsyncThread->thread_id() == PlatformThread::CurrentId();
+  }
+
+  void UpdateVBlankOutput() {
+    HMONITOR primary_monitor =
+        MonitorFromWindow(nullptr, MONITOR_DEFAULTTOPRIMARY);
+    if (primary_monitor == mWaitVBlankMonitor && mWaitVBlankOutput) {
+      return;
+    }
+
+    mWaitVBlankMonitor = primary_monitor;
+
+    RefPtr<IDXGIOutput> output = nullptr;
+    if (DeviceManagerDx* dx = DeviceManagerDx::Get()) {
+      if (dx->GetOutputFromMonitor(mWaitVBlankMonitor, &output)) {
+        mWaitVBlankOutput = output;
+        return;
+      }
+    }
+
+    // failed to convert a monitor to an output so keep trying
+    mWaitVBlankOutput = nullptr;
+  }
+
+  TimeStamp mPrevVsync;
+  base::Thread* mVsyncThread;
+  TimeDuration mVsyncRate;
+  Atomic<bool> mVsyncEnabled;
+
+  HMONITOR mWaitVBlankMonitor;
+  RefPtr<IDXGIOutput> mWaitVBlankOutput;
+};  // D3DVsyncSource
 
 already_AddRefed<mozilla::gfx::VsyncSource>
-gfxWindowsPlatform::CreateHardwareVsyncSource() {
+gfxWindowsPlatform::CreateGlobalHardwareVsyncSource() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread(), "GFX: Not in main thread.");
-
-  if (!DwmCompositionEnabled()) {
-    NS_WARNING("DWM not enabled, falling back to software vsync");
-    return gfxPlatform::CreateHardwareVsyncSource();
-  }
 
   RefPtr<VsyncSource> d3dVsyncSource = new D3DVsyncSource();
   return d3dVsyncSource.forget();

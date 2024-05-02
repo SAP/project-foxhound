@@ -12,17 +12,20 @@
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIRunnable.h"
 #include "nsIScriptError.h"
 #include "nsIURI.h"
 #include "nsIOService.h"
-#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsJSUtils.h"
 #include "mozIThirdPartyUtil.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using mozilla::dom::BrowsingContext;
 using mozilla::dom::ContentChild;
 using mozilla::dom::Document;
@@ -84,14 +87,15 @@ void ReportUnblockingToConsole(
             break;
         }
 
-        nsAutoString origin;
-        nsresult rv = nsContentUtils::GetUTFOrigin(principal, origin);
+        nsAutoCString origin;
+        nsresult rv = principal->GetOriginNoSuffix(origin);
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return;
         }
 
         // Not adding grantedOrigin yet because we may not want it later.
-        AutoTArray<nsString, 2> params = {origin, trackingOrigin};
+        AutoTArray<nsString, 2> params = {NS_ConvertUTF8toUTF16(origin),
+                                          trackingOrigin};
 
         nsAutoString errorText;
         rv = nsContentUtils::FormatLocalizedString(
@@ -115,17 +119,32 @@ void ReportBlockingToConsole(uint64_t aWindowID, nsIURI* aURI,
   MOZ_ASSERT(
       aRejectedReason == 0 ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN ||
-      aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL ||
-      aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN));
 
   if (aURI->SchemeIs("chrome") || aURI->SchemeIs("about")) {
+    return;
+  }
+  bool hasFlags;
+  nsresult rv = NS_URIChainHasFlags(
+      aURI, nsIProtocolHandler::URI_FORBIDS_COOKIE_ACCESS, &hasFlags);
+  if (NS_FAILED(rv) || hasFlags) {
+    // If the protocol doesn't support cookies, no need to report them blocked.
     return;
   }
 
@@ -206,20 +225,26 @@ void ReportBlockingToConsole(uint64_t aWindowID, nsIURI* aURI,
 void ReportBlockingToConsole(nsIChannel* aChannel, nsIURI* aURI,
                              uint32_t aRejectedReason) {
   MOZ_ASSERT(aChannel && aURI);
+  uint64_t windowID = nsContentUtils::GetInnerWindowID(aChannel);
+  if (!windowID) {
+    // Get the window ID from the target BrowsingContext
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
 
-  // Get the top-level window ID from the top-level BrowsingContext
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    RefPtr<dom::BrowsingContext> targetBrowsingContext;
+    loadInfo->GetTargetBrowsingContext(getter_AddRefs(targetBrowsingContext));
 
-  RefPtr<dom::BrowsingContext> bc;
-  loadInfo->GetBrowsingContext(getter_AddRefs(bc));
+    if (!targetBrowsingContext) {
+      return;
+    }
 
-  BrowsingContext* top = bc ? bc->Top() : nullptr;
-  if (!top) {
-    return;
+    WindowContext* windowContext =
+        targetBrowsingContext->GetCurrentWindowContext();
+    if (!windowContext) {
+      return;
+    }
+
+    windowID = windowContext->InnerWindowId();
   }
-
-  uint64_t windowID = top->GetCurrentInnerWindowId();
-
   ReportBlockingToConsole(windowID, aURI, aRejectedReason);
 }
 
@@ -261,7 +286,11 @@ void NotifyBlockingDecision(nsIChannel* aTrackingChannel,
 
   nsAutoCString trackingOrigin;
   if (aURI) {
-    Unused << nsContentUtils::GetASCIIOrigin(aURI, trackingOrigin);
+    // Using an empty OriginAttributes is OK here, as we'll only be accessing
+    // OriginNoSuffix.
+    nsCOMPtr<nsIPrincipal> principal =
+        BasePrincipal::CreateContentPrincipal(aURI, OriginAttributes{});
+    principal->GetOriginNoSuffix(trackingOrigin);
   }
 
   if (aDecision == ContentBlockingNotifier::BlockingDecision::eBlock) {
@@ -307,7 +336,10 @@ void NotifyEventInChild(
     nsIChannel* aTrackingChannel, bool aBlocked, uint32_t aRejectedReason,
     const nsACString& aTrackingOrigin,
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
-        aReason) {
+        aReason,
+    const Maybe<ContentBlockingNotifier::CanvasFingerprinter>
+        aCanvasFingerprinter,
+    const Maybe<bool> aCanvasFingerprinterKnownText) {
   MOZ_ASSERT(XRE_IsContentProcess());
 
   // We don't need to find the top-level window here because the
@@ -336,9 +368,10 @@ void NotifyEventInChild(
         trackingFullHashes);
   }
 
-  browserChild->NotifyContentBlockingEvent(aRejectedReason, aTrackingChannel,
-                                           aBlocked, aTrackingOrigin,
-                                           trackingFullHashes, aReason);
+  browserChild->NotifyContentBlockingEvent(
+      aRejectedReason, aTrackingChannel, aBlocked, aTrackingOrigin,
+      trackingFullHashes, aReason, aCanvasFingerprinter,
+      aCanvasFingerprinterKnownText);
 }
 
 // Update the ContentBlockingLog of the top-level WindowGlobalParent of
@@ -347,7 +380,10 @@ void NotifyEventInParent(
     nsIChannel* aTrackingChannel, bool aBlocked, uint32_t aRejectedReason,
     const nsACString& aTrackingOrigin,
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
-        aReason) {
+        aReason,
+    const Maybe<ContentBlockingNotifier::CanvasFingerprinter>
+        aCanvasFingerprinter,
+    const Maybe<bool> aCanvasFingerprinterKnownText) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   nsCOMPtr<nsILoadInfo> loadInfo = aTrackingChannel->LoadInfo();
@@ -373,7 +409,9 @@ void NotifyEventInParent(
   }
 
   wgp->NotifyContentBlockingEvent(aRejectedReason, aTrackingChannel, aBlocked,
-                                  aTrackingOrigin, trackingFullHashes, aReason);
+                                  aTrackingOrigin, trackingFullHashes, aReason,
+                                  aCanvasFingerprinter,
+                                  aCanvasFingerprinterKnownText);
 }
 
 }  // namespace
@@ -404,15 +442,23 @@ void ContentBlockingNotifier::OnDecision(nsIChannel* aChannel,
   MOZ_ASSERT(
       aRejectedReason == 0 ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN ||
-      aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL ||
-      aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN));
   MOZ_ASSERT(aDecision == BlockingDecision::eBlock ||
              aDecision == BlockingDecision::eAllow);
 
@@ -435,15 +481,23 @@ void ContentBlockingNotifier::OnDecision(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(
       aRejectedReason == 0 ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER ||
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER) ||
       aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN ||
-      aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL ||
-      aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN));
   MOZ_ASSERT(aDecision == BlockingDecision::eBlock ||
              aDecision == BlockingDecision::eAllow);
 
@@ -505,7 +559,11 @@ void ContentBlockingNotifier::OnEvent(nsIChannel* aTrackingChannel,
 
   nsAutoCString trackingOrigin;
   if (uri) {
-    Unused << nsContentUtils::GetASCIIOrigin(uri, trackingOrigin);
+    // Using empty OriginAttributes is OK here, as we only want to access
+    // OriginNoSuffix.
+    nsCOMPtr<nsIPrincipal> trackingPrincipal =
+        BasePrincipal::CreateContentPrincipal(uri, OriginAttributes{});
+    trackingPrincipal->GetOriginNoSuffix(trackingOrigin);
   }
 
   return ContentBlockingNotifier::OnEvent(aTrackingChannel, aBlocked,
@@ -516,12 +574,16 @@ void ContentBlockingNotifier::OnEvent(nsIChannel* aTrackingChannel,
 void ContentBlockingNotifier::OnEvent(
     nsIChannel* aTrackingChannel, bool aBlocked, uint32_t aRejectedReason,
     const nsACString& aTrackingOrigin,
-    const Maybe<StorageAccessPermissionGrantedReason>& aReason) {
+    const Maybe<StorageAccessPermissionGrantedReason>& aReason,
+    const Maybe<CanvasFingerprinter>& aCanvasFingerprinter,
+    const Maybe<bool> aCanvasFingerprinterKnownText) {
   if (XRE_IsParentProcess()) {
     NotifyEventInParent(aTrackingChannel, aBlocked, aRejectedReason,
-                        aTrackingOrigin, aReason);
+                        aTrackingOrigin, aReason, aCanvasFingerprinter,
+                        aCanvasFingerprinterKnownText);
   } else {
     NotifyEventInChild(aTrackingChannel, aBlocked, aRejectedReason,
-                       aTrackingOrigin, aReason);
+                       aTrackingOrigin, aReason, aCanvasFingerprinter,
+                       aCanvasFingerprinterKnownText);
   }
 }

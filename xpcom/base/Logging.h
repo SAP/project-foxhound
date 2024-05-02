@@ -120,6 +120,12 @@ class LogModule {
   static void SetIsSync(bool aIsSync);
 
   /**
+   * @param aCaptureStacks If we should capture stacks for the Firefox
+   * Profiler markers that are recorded for for each log entry.
+   */
+  static void SetCaptureStacks(bool aCaptureStacks);
+
+  /**
    * Indicates whether or not the given log level is enabled.
    */
   bool ShouldLog(LogLevel aLevel) const { return mLevel >= aLevel; }
@@ -272,9 +278,9 @@ void log_print(const LogModule* aModule, LogLevel aLevel, TimeStamp* aStart,
 // code will never be executed.)  Hence, the following code.
 //
 // MOZ_LOG_DURATION takes a start time, and will generate a time range
-// in the logs.  Also, if 'profilermarkers' is used in the env var
-// MOZ_LOG, MOZ_LOG_DURATION will generate a marker with a time
-// duration instead of a single point in time.
+// in the logs.  Also, if the Firefox Profiler is running,
+// MOZ_LOG_DURATION will generate a marker with a time duration
+// instead of a single point in time.
 #if MOZ_LOGGING_ENABLED
 #  define MOZ_LOG(_module, _level, _args)                      \
     do {                                                       \

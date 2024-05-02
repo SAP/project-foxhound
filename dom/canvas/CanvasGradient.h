@@ -12,15 +12,14 @@
 #include "nsWrapperCache.h"
 #include "gfxGradientCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CanvasRenderingContext2D;
 
 class CanvasGradient : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(CanvasGradient)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(CanvasGradient)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(CanvasGradient)
 
   enum class Type : uint8_t { LINEAR = 0, RADIAL, CONIC };
 
@@ -54,7 +53,6 @@ class CanvasGradient : public nsWrapperCache {
   Type mType;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_CanvasGradient_h

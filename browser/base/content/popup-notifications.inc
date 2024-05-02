@@ -8,7 +8,7 @@
            noautofocus="true"
            role="alert"/>
 
-    <popupnotification id="webRTC-shareDevices-notification" hidden="true" 
+    <popupnotification id="webRTC-shareDevices-notification" hidden="true"
                        descriptionid="webRTC-shareDevices-notification-description">
       <popupnotificationcontent id="webRTC-selectCamera" orient="vertical">
         <label id="webRTC-selectCamera-label"
@@ -25,6 +25,7 @@
 
       <popupnotificationcontent id="webRTC-selectWindowOrScreen" orient="vertical">
         <label id="webRTC-selectWindow-label"
+               data-l10n-id="popup-select-window-or-screen"
                control="webRTC-selectWindow-menulist"/>
         <menulist id="webRTC-selectWindow-menulist"
                   oncommand="webrtcUI.updateWarningLabel(this);"
@@ -60,9 +61,8 @@
       <popupnotificationcontent id="webRTC-selectSpeaker" orient="vertical">
         <html:div class="webRTC-selectDevice-selector-container">
           <xul:image id="webRTC-selectSpeaker-icon" data-l10n-id="popup-select-speaker-icon" class="webRTC-selectDevice-icon"/>
-          <menulist id="webRTC-selectSpeaker-menulist" aria-labelledby="webRTC-selectSpeaker-icon" size="large">
-            <menupopup id="webRTC-selectSpeaker-menupopup"/>
-          </menulist>
+          <richlistbox id="webRTC-selectSpeaker-richlistbox" aria-labelledby="webRTC-selectSpeaker-icon" size="large">
+          </richlistbox>
           <label id="webRTC-selectSpeaker-single-device-label" class="webRTC-selectDevice-label"></label>
         </html:div>
       </popupnotificationcontent>
@@ -118,7 +118,12 @@
         <label id="addon-webext-perm-single-entry" class="addon-webext-perm-single-entry"/>
         <html:ul id="addon-webext-perm-list" class="addon-webext-perm-list"/>
         <hbox>
-          <label id="addon-webext-perm-info" is="text-link" class="popup-notification-learnmore-link"/>
+          <html:a
+            is="moz-support-link"
+            id="addon-webext-perm-info"
+            class="popup-notification-learnmore-link"
+            support-page="extension-permissions"
+          />
         </hbox>
       </popupnotificationcontent>
     </popupnotification>
@@ -127,7 +132,12 @@
       <popupnotificationcontent id="addon-install-blocked-content" orient="vertical">
         <description id="addon-install-blocked-message" class="popup-notification-description"></description>
         <hbox>
-          <label id="addon-install-blocked-info" class="popup-notification-learnmore-link" is="text-link"/>
+          <html:a 
+              is="moz-support-link"
+              id="addon-install-blocked-info"
+              class="popup-notification-learnmore-link"
+              data-l10n-id="popup-notification-xpinstall-prompt-learn-more"
+            />
         </hbox>
       </popupnotificationcontent>
     </popupnotification>
@@ -151,18 +161,115 @@
         </stack>
       </popupnotificationheader>
       <popupnotificationcontent>
+      <hbox>
         <description id="cfr-notification-author"></description>
+        <hbox id="cfr-notification-footer-addon-info">
+            <hbox id="cfr-notification-footer-filled-stars"/>
+            <hbox id="cfr-notification-footer-empty-stars"/>
+            <label id="cfr-notification-footer-users"/>
+          </hbox>
+      </hbox>
       </popupnotificationcontent>
       <popupnotificationfooter id="cfr-notification-footer" orient="vertical">
         <vbox id="cfr-notification-footer-text-and-addon-info">
           <description id="cfr-notification-footer-text"/>
-          <hbox id="cfr-notification-footer-addon-info">
-            <hbox id="cfr-notification-footer-filled-stars"/>
-            <hbox id="cfr-notification-footer-empty-stars"/>
-            <label id="cfr-notification-footer-users"/>
-            <spacer id="cfr-notification-footer-spacer" hidden="true"/>
-            <label id="cfr-notification-footer-learn-more-link" is="text-link"/>
-          </hbox>
+          <label id="cfr-notification-footer-learn-more-link" is="text-link"/>
         </vbox>
       </popupnotificationfooter>
+    </popupnotification>
+
+    <popupnotification id="identity-credential-notification" hidden="true">
+      <popupnotificationheader id="identity-credential-header" orient="horizontal" hidden="true">
+        <html:div class="identity-credential-header-container">
+          <html:img class="identity-credential-header-icon"></html:img>
+          <span id="identity-credential-header-text"></span>
+        </html:div>
+      </popupnotificationheader>
+      <popupnotificationcontent id="identity-credential-provider" orient="vertical">
+        <html:div id="identity-credential-provider-selector-container">
+        </html:div>
+        <html:template id="template-credential-provider-list-item">
+          <html:label class="identity-credential-list-item" align="center">
+            <html:input type="radio" name="credential-provider" class="identity-credential-list-item-radio"></html:input>
+            <html:img class="identity-credential-list-item-icon" src="chrome://global/skin/icons/defaultFavicon.svg"></html:img>
+            <div class="identity-credential-list-item-info">
+              <span class="identity-credential-list-item-label-primary"></span>
+              <span class="identity-credential-list-item-label-secondary" hidden="true"></span>
+            </div>
+          </html:label>
+        </html:template>
+      </popupnotificationcontent>
+      <popupnotificationcontent id="identity-credential-policy" orient="vertical">
+        <description id="identity-credential-policy-explanation" data-l10n-id="identity-credential-policy-description"  data-l10n-args='{"host":"", "provider":""}'>
+          <label class="text-link" is="text-link" data-l10n-name="privacy-url" id="identity-credential-privacy-policy"></label>
+          <label class="text-link" is="text-link" data-l10n-name="tos-url" id="identity-credential-terms-of-service"></label>
+        </description>
+      </popupnotificationcontent>
+      <popupnotificationcontent id="identity-credential-account" orient="vertical" hidden="true">
+        <html:div id="identity-credential-account-selector-container">
+        </html:div>
+        <html:template id="template-credential-account-list-item">
+           <html:label class="identity-credential-list-item" align="center">
+            <html:input type="radio" name="credential-account" class="identity-credential-list-item-radio"></html:input>
+            <html:img class="identity-credential-list-item-icon" src="chrome://browser/skin/fxa/avatar.svg"></html:img>
+            <div class="identity-credential-list-item-label-stack">
+              <div class="identity-credential-list-item-label-primary"></div>
+              <div class="identity-credential-list-item-label-secondary"></div>
+            </div>
+          </html:label>
+        </html:template>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="relay-integration-offer-notification" hidden="true">
+      <popupnotificationcontent orient="vertical">
+        <html:div>
+          <html:p data-l10n-id="firefox-relay-offer-why-to-use-relay"></html:p>
+          <html:p id="firefox-relay-offer-what-relay-provides" data-l10n-id="firefox-relay-offer-what-relay-provides" data-l10n-args='{"useremail": ""}'></html:p>
+          <html:p id="firefox-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice">
+            <label id="firefox-relay-offer-tos-url" is="text-link" data-l10n-name="tos-url"/>
+            <label id="firefox-relay-offer-privacy-url" is="text-link" data-l10n-name="privacy-url"/>
+          </html:p>
+        </html:div>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="relay-integration-reuse-masks-notification" hidden="true">
+      <popupnotificationcontent orient="vertical">
+        <html:div>
+          <html:p class="error-message"></html:p>
+          <html:div class="reusable-relay-masks" />
+        </html:div>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <template id="firefox-relay-header">
+      <html:div class="relay-integration-header">
+        <html:div />
+        <html:span>Firefox</html:span>
+        <html:span> Relay</html:span>
+      </html:div>
+    </template>
+
+    <popupnotification id="address-save-update-notification" class="address-capture-notification" hidden="true">
+      <popupnotificationcontent class="address-save-update-notification-content" orient="vertical">
+        <html:div class="address-capture-header">
+          <html:p/>
+        </html:div>
+        <html:div class="address-capture-description">
+          <html:p/>
+        </html:div>
+        <html:div class="address-capture-content">
+        </html:div>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="address-edit-notification" class="address-capture-notification" hidden="true">
+      <popupnotificationcontent class="address-edit-notification-content" orient="vertical">
+        <html:div class="address-capture-header">
+          <html:p/>
+        </html:div>
+        <html:div class="address-capture-content">
+        </html:div>
+      </popupnotificationcontent>
     </popupnotification>

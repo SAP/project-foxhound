@@ -4,6 +4,13 @@
 
 "use strict";
 
+// Allow telemetry probes which may otherwise be disabled for some
+// applications (e.g. Thunderbird).
+Services.prefs.setBoolPref(
+  "toolkit.telemetry.testing.overrideProductsCheck",
+  true
+);
+
 // Tests that nsIHttpChannelInternal.beConservative correctly limits the use of
 // advanced TLS features that may cause compatibility issues. Does so by
 // starting a TLS server that requires the advanced features and then ensuring
@@ -12,23 +19,6 @@
 // Get a profile directory and ensure PSM initializes NSS.
 do_get_profile();
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
-
-function getCert() {
-  return new Promise((resolve, reject) => {
-    let certService = Cc[
-      "@mozilla.org/security/local-cert-service;1"
-    ].getService(Ci.nsILocalCertService);
-    certService.getOrCreateCert("beConservative-test", {
-      handleCert(c, rv) {
-        if (rv) {
-          reject(rv);
-          return;
-        }
-        resolve(c);
-      },
-    });
-  });
-}
 
 class InputStreamCallback {
   constructor(output) {
@@ -122,7 +112,7 @@ class ServerSocketListener {
 
   onSocketAccepted(socket, transport) {
     info("accepted TLS client connection");
-    let connectionInfo = transport.securityInfo.QueryInterface(
+    let connectionInfo = transport.securityCallbacks.getInterface(
       Ci.nsITLSServerConnectionInfo
     );
     let input = transport.openInputStream(0, 0, 0);
@@ -160,20 +150,21 @@ function storeCertOverride(port, cert) {
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
-  certOverrideService.rememberValidityOverride(
-    hostname,
-    port,
-    {},
-    cert,
-    overrideBits,
-    true
-  );
+  certOverrideService.rememberValidityOverride(hostname, port, {}, cert, true);
 }
 
 function startClient(port, beConservative, expectSuccess) {
+  HandshakeTelemetryHelpers.resetHistograms();
+  let flavors = ["", "_FIRST_TRY"];
+  let nonflavors = [];
+  if (beConservative) {
+    flavors.push("_CONSERVATIVE");
+    nonflavors.push("_ECH");
+    nonflavors.push("_ECH_GREASE");
+  } else {
+    nonflavors.push("_CONSERVATIVE");
+  }
+
   let req = new XMLHttpRequest();
   req.open("GET", `https://${hostname}:${port}`);
   let internalChannel = req.channel.QueryInterface(Ci.nsIHttpChannelInternal);
@@ -185,6 +176,13 @@ function startClient(port, beConservative, expectSuccess) {
         `should ${expectSuccess ? "" : "not "}have gotten load event`
       );
       equal(req.responseText, "OK", "response text should be 'OK'");
+
+      // Only check telemetry if network process is disabled.
+      if (!mozinfo.socketprocess_networking) {
+        HandshakeTelemetryHelpers.checkSuccess(flavors);
+        HandshakeTelemetryHelpers.checkEmpty(nonflavors);
+      }
+
       resolve();
     };
     req.onerror = () => {
@@ -192,6 +190,14 @@ function startClient(port, beConservative, expectSuccess) {
         !expectSuccess,
         `should ${!expectSuccess ? "" : "not "}have gotten an error`
       );
+
+      // Only check telemetry if network process is disabled.
+      if (!mozinfo.socketprocess_networking) {
+        // 98 is SSL_ERROR_PROTOCOL_VERSION_ALERT (see sslerr.h)
+        HandshakeTelemetryHelpers.checkEntry(flavors, 98, 1);
+        HandshakeTelemetryHelpers.checkEmpty(nonflavors);
+      }
+
       resolve();
     };
 
@@ -199,10 +205,11 @@ function startClient(port, beConservative, expectSuccess) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   Services.prefs.setIntPref("security.tls.version.max", 4);
   Services.prefs.setCharPref("network.dns.localDomains", hostname);
-  let cert = await getCert();
+  Services.prefs.setIntPref("network.http.speculative-parallel-limit", 0);
+  let cert = getTestServerCertificate();
 
   // First run a server that accepts TLS 1.2 and 1.3. A conservative client
   // should succeed in connecting.
@@ -242,7 +249,8 @@ add_task(async function() {
   server.close();
 });
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   Services.prefs.clearUserPref("security.tls.version.max");
   Services.prefs.clearUserPref("network.dns.localDomains");
+  Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
 });

@@ -24,22 +24,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1329288
  * gets called with the right (a non null) 'context' for the TYPE_DOCUMENT load.
  */
 
-// Services.jsm is disabled as ChromeUtils appears to be out of scope
-/* eslint-disable mozilla/use-services */
-
-const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
 
-var categoryManager = Cc["@mozilla.org/categorymanager;1"].getService(Ci.nsICategoryManager);
-var componentManager = SpecialPowers.wrap(SpecialPowers.Components).manager
-                                    .QueryInterface(Ci.nsIComponentRegistrar);
+var categoryManager = SpecialPowers.Services.catMan;
+var componentManager = SpecialPowers.Components.manager
+                       .QueryInterface(Ci.nsIComponentRegistrar);
 
 // Content policy / factory implementation for the test
 var policyID = SpecialPowers.wrap(SpecialPowers.Components).ID("{b80e19d0-878f-d41b-2654-194714a4115c}");
 var policyName = "@mozilla.org/testpolicy;1";
 var policy = {
   // nsISupports implementation
-  // eslint-disable-next-line mozilla/use-chromeutils-generateqi
   QueryInterface(iid) {
     iid = SpecialPowers.wrap(iid);
     if (iid.equals(Ci.nsISupports) ||
@@ -50,7 +45,7 @@ var policy = {
   },
 
   // nsIFactory implementation
-  createInstance(outer, iid) {
+  createInstance(iid) {
     return this.QueryInterface(iid);
   },
 

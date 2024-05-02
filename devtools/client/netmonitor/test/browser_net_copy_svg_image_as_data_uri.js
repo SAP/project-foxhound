@@ -9,7 +9,7 @@
 
 const SVG_URL = HTTPS_EXAMPLE_URL + "dropmarker.svg";
 
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(HTTPS_CURL_URL, {
     requestCount: 1,
   });
@@ -18,7 +18,7 @@ add_task(async function() {
   const { document } = monitor.panelWin;
 
   const wait = waitForNetworkEvents(monitor, 1);
-  await SpecialPowers.spawn(tab.linkedBrowser, [SVG_URL], async function(url) {
+  await SpecialPowers.spawn(tab.linkedBrowser, [SVG_URL], async function (url) {
     content.wrappedJSObject.performRequest(url);
   });
   await wait;
@@ -33,11 +33,11 @@ add_task(async function() {
   );
 
   await waitForClipboardPromise(
-    function setup() {
-      getContextMenuItem(
+    async function setup() {
+      await selectContextMenuItem(
         monitor,
         "request-list-context-copy-image-as-data-uri"
-      ).click();
+      );
     },
     function check(text) {
       return text.startsWith("data:") && !/undefined/.test(text);

@@ -4,29 +4,31 @@
 
 "use strict";
 
-const { connect } = require("devtools/client/shared/vendor/react-redux");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 
-const Types = require("devtools/client/inspector/compatibility/types");
+const Types = require("resource://devtools/client/inspector/compatibility/types.js");
 
 const Accordion = createFactory(
-  require("devtools/client/shared/components/Accordion")
+  require("resource://devtools/client/shared/components/Accordion.js")
 );
 const Footer = createFactory(
-  require("devtools/client/inspector/compatibility/components/Footer")
+  require("resource://devtools/client/inspector/compatibility/components/Footer.js")
 );
 const IssuePane = createFactory(
-  require("devtools/client/inspector/compatibility/components/IssuePane")
+  require("resource://devtools/client/inspector/compatibility/components/IssuePane.js")
 );
 const Settings = createFactory(
-  require("devtools/client/inspector/compatibility/components/Settings")
+  require("resource://devtools/client/inspector/compatibility/components/Settings.js")
 );
 
 class CompatibilityApp extends PureComponent {
@@ -35,7 +37,7 @@ class CompatibilityApp extends PureComponent {
       dispatch: PropTypes.func.isRequired,
       // getString prop is injected by the withLocalization wrapper
       getString: PropTypes.func.isRequired,
-      isSettingsVisibile: PropTypes.bool.isRequired,
+      isSettingsVisible: PropTypes.bool.isRequired,
       isTopLevelTargetProcessing: PropTypes.bool.isRequired,
       selectedNodeIssues: PropTypes.arrayOf(PropTypes.shape(Types.issue))
         .isRequired,
@@ -49,7 +51,7 @@ class CompatibilityApp extends PureComponent {
     const {
       dispatch,
       getString,
-      isSettingsVisibile,
+      isSettingsVisible,
       isTopLevelTargetProcessing,
       selectedNodeIssues,
       topLevelTargetIssues,
@@ -61,7 +63,7 @@ class CompatibilityApp extends PureComponent {
     });
 
     const topLevelTargetIssuePane =
-      topLevelTargetIssues.length > 0 || !isTopLevelTargetProcessing
+      topLevelTargetIssues.length || !isTopLevelTargetProcessing
         ? IssuePane({
             dispatch,
             issues: topLevelTargetIssues,
@@ -83,7 +85,7 @@ class CompatibilityApp extends PureComponent {
         {
           className:
             "compatibility-app__container" +
-            (isSettingsVisibile ? " compatibility-app__container-hidden" : ""),
+            (isSettingsVisible ? " compatibility-app__container-hidden" : ""),
         },
         Accordion({
           className: "compatibility-app__main",
@@ -106,14 +108,14 @@ class CompatibilityApp extends PureComponent {
           className: "compatibility-app__footer",
         })
       ),
-      isSettingsVisibile ? Settings() : null
+      isSettingsVisible ? Settings() : null
     );
   }
 }
 
 const mapStateToProps = state => {
   return {
-    isSettingsVisibile: state.compatibility.isSettingsVisibile,
+    isSettingsVisible: state.compatibility.isSettingsVisible,
     isTopLevelTargetProcessing: state.compatibility.isTopLevelTargetProcessing,
     selectedNodeIssues: state.compatibility.selectedNodeIssues,
     topLevelTargetIssues: state.compatibility.topLevelTargetIssues,

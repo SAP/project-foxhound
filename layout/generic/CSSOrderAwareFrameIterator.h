@@ -60,7 +60,7 @@ class CSSOrderAwareFrameIteratorT {
     BoxOrdinalGroup  // Legacy behavior: use prefixed "box-ordinal-group".
   };
   CSSOrderAwareFrameIteratorT(
-      nsIFrame* aContainer, nsIFrame::ChildListID aListID,
+      nsIFrame* aContainer, FrameChildListID aListID,
       ChildFilter aFilter = ChildFilter::SkipPlaceholders,
       OrderState aState = OrderState::Unknown,
       OrderingProperty aOrderProp = OrderingProperty::Order)
@@ -184,7 +184,7 @@ class CSSOrderAwareFrameIteratorT {
   void Next() {
 #ifdef DEBUG
     MOZ_ASSERT(!AtEnd());
-    nsFrameList list = mContainer->GetChildList(mListID);
+    const nsFrameList& list = mContainer->GetChildList(mListID);
     MOZ_ASSERT(list.FirstChild() == mChildren.FirstChild() &&
                    list.LastChild() == mChildren.LastChild(),
                "the list of child frames must not change while iterating!");
@@ -223,7 +223,6 @@ class CSSOrderAwareFrameIteratorT {
   void Invalidate() {
     mIter.reset();
     mArray.reset();
-    mozWritePoison(&mChildren, sizeof(mChildren));
   }
 
   bool ItemsAreAlreadyInOrder() const { return mIter.isSome(); }
@@ -238,7 +237,7 @@ class CSSOrderAwareFrameIteratorT {
   static int CSSBoxOrdinalGroupComparator(nsIFrame* const& a,
                                           nsIFrame* const& b);
 
-  nsFrameList mChildren;
+  const nsFrameList& mChildren;
   // Used if child list is already in ascending 'order'.
   Maybe<Iterator> mIter;
   Maybe<Iterator> mIterEnd;
@@ -255,7 +254,7 @@ class CSSOrderAwareFrameIteratorT {
   bool mSkipPlaceholders;
 #ifdef DEBUG
   nsIFrame* mContainer;
-  nsIFrame::ChildListID mListID;
+  FrameChildListID mListID;
 #endif
 };
 

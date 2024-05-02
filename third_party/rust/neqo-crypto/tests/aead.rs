@@ -34,10 +34,11 @@ fn make_aead(cipher: Cipher) -> Aead {
     )
     .expect("make a secret");
     Aead::new(
+        false,
         TLS_VERSION_1_3,
         cipher,
         &secret,
-        "quic ", // Note the trailing space here.
+        "quic ", // QUICv1 label prefix; note the trailing space here.
     )
     .expect("can make an AEAD")
 }

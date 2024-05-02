@@ -260,6 +260,20 @@ fn into_iter_len() {
 }
 
 #[test]
+fn into_iter_partial() {
+    let stream = vec![future::ready(1), future::ready(2), future::ready(3), future::ready(4)]
+        .into_iter()
+        .collect::<FuturesUnordered<_>>();
+
+    let mut into_iter = stream.into_iter();
+    assert!(into_iter.next().is_some());
+    assert!(into_iter.next().is_some());
+    assert!(into_iter.next().is_some());
+    assert_eq!(into_iter.len(), 1);
+    // don't panic when iterator is dropped before completing
+}
+
+#[test]
 fn futures_not_moved_after_poll() {
     // Future that will be ready after being polled twice,
     // asserting that it does not move.
@@ -340,7 +354,7 @@ fn polled_only_once_at_most_per_iteration() {
 
     let mut tasks = FuturesUnordered::from_iter(vec![F::default(); 33]);
     assert!(tasks.poll_next_unpin(cx).is_pending());
-    assert_eq!(32, tasks.iter().filter(|f| f.polled).count());
+    assert_eq!(33, tasks.iter().filter(|f| f.polled).count());
 
     let mut tasks = FuturesUnordered::<F>::new();
     assert_eq!(Poll::Ready(None), tasks.poll_next_unpin(cx));

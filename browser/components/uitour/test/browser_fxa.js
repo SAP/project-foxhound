@@ -3,13 +3,15 @@
 
 "use strict";
 
-const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "fxAccounts",
-  "resource://gre/modules/FxAccounts.jsm"
+const { UIState } = ChromeUtils.importESModule(
+  "resource://services-sync/UIState.sys.mjs"
 );
+
+ChromeUtils.defineLazyGetter(this, "fxAccounts", () => {
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/FxAccounts.sys.mjs"
+  ).getFxAccountsSingleton();
+});
 
 var gTestTab;
 var gContentAPI;
@@ -19,7 +21,7 @@ function test() {
 }
 
 const oldState = UIState.get();
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   await signOut();
   gSync.updateAllUI(oldState);
 });

@@ -5,10 +5,18 @@
  *
  * The origin of this IDL file is
  * http://encoding.spec.whatwg.org/#interface-textencoder
- *
- * Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
  */
+
+interface mixin TextEncoderCommon {
+  /*
+   * This is DOMString in the spec, but the value is always ASCII
+   * and short. By declaring this as ByteString, we get the same
+   * end result (storage as inline Latin1 string in SpiderMonkey)
+   * with fewer conversions.
+   */
+  [Constant]
+  readonly attribute ByteString encoding;
+};
 
 dictionary TextEncoderEncodeIntoResult {
   unsigned long long read;
@@ -20,21 +28,12 @@ interface TextEncoder {
   constructor();
 
   /*
-   * This is DOMString in the spec, but the value is always ASCII
-   * and short. By declaring this as ByteString, we get the same
-   * end result (storage as inline Latin1 string in SpiderMonkey)
-   * with fewer conversions.
-   */
-  [Constant]
-  readonly attribute ByteString encoding;
-
-  /*
    * This is spec-wise USVString but marking it as UTF8String as an
    * optimization. (The SpiderMonkey-provided conversion to UTF-8 takes care of
    * replacing lone surrogates with the REPLACEMENT CHARACTER, so the
    * observable behavior of USVString is matched.)
    */
-  [NewObject]
+  [NewObject, Throws]
   Uint8Array encode(optional UTF8String input = "");
 
   /*
@@ -46,3 +45,4 @@ interface TextEncoder {
   [CanOOM]
   TextEncoderEncodeIntoResult encodeInto(JSString source, Uint8Array destination);
 };
+TextEncoder includes TextEncoderCommon;

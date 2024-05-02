@@ -10,8 +10,7 @@
 #include "mozilla/dom/GridBinding.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class GridTracks;
 
@@ -24,7 +23,7 @@ class GridTrack : public nsISupports, public nsWrapperCache {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(GridTrack)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(GridTrack)
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -46,7 +45,6 @@ class GridTrack : public nsISupports, public nsWrapperCache {
   GridTrackState mState;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_GridTrack_h */

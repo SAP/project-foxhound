@@ -68,6 +68,15 @@ enum class PixelCastJustification : uint8_t {
   ContentProcessIsLayerInUiProcess,
   // Propagating TransformToAncestorScale to a child process.
   PropagatingToChildProcess,
+  // A quantity represents a proportion of a page length, e.g. "0.5 pages".
+  // The proportion does not need to be scaled when converting between
+  // units (the page length that it's mutlipled by will be scaled instead).
+  DeltaIsPageProportion,
+  // Used to cast between CSS and OuterCSS pixels when moving between code
+  // that deals with content outside a scroll frame generically (which would
+  // use CSS pixels) and code related to the scroll frame in APZ (which wants
+  // such quantities in OuterCSS pixels).
+  CSSPixelsOfSurroundingContent,
 };
 
 template <class TargetUnits, class SourceUnits>
@@ -115,8 +124,9 @@ gfx::IntRectTyped<TargetUnits> ViewAs(
 template <class TargetUnits, class SourceUnits>
 gfx::MarginTyped<TargetUnits> ViewAs(
     const gfx::MarginTyped<SourceUnits>& aMargin, PixelCastJustification) {
-  return gfx::MarginTyped<TargetUnits>(aMargin.top, aMargin.right,
-                                       aMargin.bottom, aMargin.left);
+  return gfx::MarginTyped<TargetUnits>(aMargin.top.value, aMargin.right.value,
+                                       aMargin.bottom.value,
+                                       aMargin.left.value);
 }
 template <class TargetUnits, class SourceUnits>
 gfx::IntMarginTyped<TargetUnits> ViewAs(
@@ -153,7 +163,7 @@ Maybe<gfx::IntRectTyped<TargetUnits>> ViewAs(
   return Nothing();
 }
 // Unlike the other functions in this category, these functions take the
-// target matrix type, rather than its source and target unit types, as
+// target matrix or scale type, rather than its source and target unit types, as
 // the explicit template argument, so an example invocation is:
 //    ViewAs<ScreenToLayerMatrix4x4>(otherTypedMatrix, justification)
 // The reason is that if it took the source and target unit types as two
@@ -177,6 +187,13 @@ Maybe<TargetMatrix> ViewAs(
   }
   return Nothing();
 }
+template <class TargetScale, class SourceScaleSourceUnits,
+          class SourceScaleTargetUnits>
+TargetScale ViewAs(const gfx::ScaleFactor<SourceScaleSourceUnits,
+                                          SourceScaleTargetUnits>& aScale,
+                   PixelCastJustification) {
+  return TargetScale{aScale.scale};
+}
 
 // A non-member overload of ToUnknownMatrix() for use on a Maybe<Matrix>.
 // We can't make this a member because we can't inject a member into Maybe.
@@ -192,6 +209,10 @@ Maybe<gfx::Matrix4x4> ToUnknownMatrix(
 // Convenience functions for casting untyped entities to typed entities.
 // Using these functions does not require a justification, but once we convert
 // all code to use strongly typed units they should not be needed any longer.
+template <class TargetUnits>
+gfx::CoordTyped<TargetUnits> ViewAs(const gfx::Coord& aCoord) {
+  return gfx::CoordTyped<TargetUnits>(aCoord.value);
+}
 template <class TargetUnits>
 gfx::PointTyped<TargetUnits> ViewAs(const gfxPoint& aPoint) {
   return gfx::PointTyped<TargetUnits>(aPoint.x, aPoint.y);
@@ -222,13 +243,17 @@ template <class TargetUnits>
 gfx::IntRegionTyped<TargetUnits> ViewAs(const nsIntRegion& aRegion) {
   return gfx::IntRegionTyped<TargetUnits>::FromUnknownRegion(aRegion);
 }
-// Unlike the other functions in this category, this function takes the
-// target matrix type, rather than its source and target unit types, as
-// the template argument, so an example invocation is:
+// Unlike the other functions in this category, these functions take the
+// target matrix or scale type, rather than its source and target unit
+// types, as the template argument, so an example invocation is:
 //    ViewAs<ScreenToLayerMatrix4x4>(untypedMatrix)
 // The reason is that if it took the source and target unit types as two
 // template arguments, there may be some confusion as to which is the
 // source and which is the target.
+template <class TypedScale>
+TypedScale ViewAs(const Scale2D& aScale) {
+  return TypedScale(aScale.xScale, aScale.yScale);
+}
 template <class TypedMatrix>
 TypedMatrix ViewAs(const gfx::Matrix4x4& aMatrix) {
   return TypedMatrix::FromUnknownMatrix(aMatrix);

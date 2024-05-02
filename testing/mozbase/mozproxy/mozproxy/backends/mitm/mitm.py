@@ -1,8 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-
 import json
 import os
 import signal
@@ -13,14 +11,15 @@ import time
 import mozinfo
 import six
 from mozprocess import ProcessHandler
+
 from mozproxy.backends.base import Playback
 from mozproxy.recordings import RecordingFile
 from mozproxy.utils import (
-    download_file_from_url,
-    transform_platform,
-    tooltool_download,
-    get_available_port,
     LOG,
+    download_file_from_url,
+    get_available_port,
+    tooltool_download,
+    transform_platform,
 )
 
 here = os.path.dirname(__file__)
@@ -179,7 +178,6 @@ class Mitmproxy(Playback):
             raise Exception("playback_files should be a list")
 
         for playback_file in self.config["playback_files"]:
-
             if playback_file.startswith("https://") and "mozilla.com" in playback_file:
                 # URL provided
                 dest = os.path.join(self.mozproxy_dir, os.path.basename(playback_file))
@@ -272,7 +270,6 @@ class Mitmproxy(Playback):
 
         # record mode
         if self.record_mode:
-
             # generate recording script paths
 
             command.extend(
@@ -296,7 +293,7 @@ class Mitmproxy(Playback):
         else:
             # playback mode
             if len(self.playback_files) > 0:
-                if self.config["playback_version"] == "7.0.4":
+                if self.config["playback_version"] == "8.1.1":
                     command.extend(
                         [
                             "--set",
@@ -326,7 +323,11 @@ class Mitmproxy(Playback):
                             ),
                         ]
                     )
-                elif self.config["playback_version"] in ["4.0.4", "5.1.1", "6.0.2"]:
+                elif self.config["playback_version"] in [
+                    "4.0.4",
+                    "5.1.1",
+                    "6.0.2",
+                ]:
                     command.extend(
                         [
                             "--set",
@@ -373,7 +374,6 @@ class Mitmproxy(Playback):
             command,
             logfile=os.path.join(self.upload_dir, "mitmproxy.log"),
             env=env,
-            processStderrLine=LOG.error,
             storeOutput=False,
         )
         self.mitmproxy_proc.run()
@@ -420,10 +420,10 @@ class Mitmproxy(Playback):
                 return
 
             if mozinfo.os == "win":
-                from mozprocess.winprocess import (
+                from mozprocess.winprocess import (  # noqa
                     ERROR_CONTROL_C_EXIT,
                     ERROR_CONTROL_C_EXIT_DECIMAL,
-                )  # noqa
+                )
 
                 if exit_code in [ERROR_CONTROL_C_EXIT, ERROR_CONTROL_C_EXIT_DECIMAL]:
                     LOG.info(

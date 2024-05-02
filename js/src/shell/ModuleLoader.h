@@ -8,7 +8,6 @@
 #define shell_ModuleLoader_h
 
 #include "builtin/ModuleObject.h"
-#include "gc/Rooting.h"
 #include "js/RootingAPI.h"
 
 namespace js {
@@ -21,7 +20,10 @@ class ModuleLoader {
 
   // Testing hook to register a module that wasn't loaded by the module loader.
   bool registerTestModule(JSContext* cx, HandleObject moduleRequest,
-                          HandleModuleObject module);
+                          Handle<ModuleObject*> module);
+
+  // Testing hook to clear all loaded modules.
+  void clearModules(JSContext* cx);
 
  private:
   static JSObject* ResolveImportedModule(JSContext* cx,
@@ -29,6 +31,7 @@ class ModuleLoader {
                                          HandleObject moduleRequest);
   static bool GetImportMetaProperties(JSContext* cx, HandleValue privateValue,
                                       HandleObject metaObject);
+  static bool ImportMetaResolve(JSContext* cx, unsigned argc, Value* vp);
   static bool ImportModuleDynamically(JSContext* cx,
                                       HandleValue referencingPrivate,
                                       HandleObject moduleRequest,
@@ -46,6 +49,10 @@ class ModuleLoader {
                                   HandleObject moduleRequest);
   bool populateImportMeta(JSContext* cx, HandleValue privateValue,
                           HandleObject metaObject);
+  bool importMetaResolve(JSContext* cx,
+                         JS::Handle<JS::Value> referencingPrivate,
+                         JS::Handle<JSString*> specifier,
+                         JS::MutableHandle<JSString*> urlOut);
   bool dynamicImport(JSContext* cx, HandleValue referencingPrivate,
                      HandleObject moduleRequest, HandleObject promise);
   bool doDynamicImport(JSContext* cx, HandleValue referencingPrivate,
@@ -60,15 +67,25 @@ class ModuleLoader {
                            HandleObject module);
   JSLinearString* resolve(JSContext* cx, HandleObject moduleRequestArg,
                           HandleValue referencingInfo);
+  JSLinearString* resolve(JSContext* cx, HandleString specifier,
+                          HandleValue referencingInfo);
   bool getScriptPath(JSContext* cx, HandleValue privateValue,
                      MutableHandle<JSLinearString*> pathOut);
-  JSLinearString* normalizePath(JSContext* cx, HandleLinearString path);
+  JSLinearString* normalizePath(JSContext* cx, Handle<JSLinearString*> path);
   JSObject* getOrCreateModuleRegistry(JSContext* cx);
-  JSString* fetchSource(JSContext* cx, HandleLinearString path);
+  JSString* fetchSource(JSContext* cx, Handle<JSLinearString*> path);
 
   // The following are used for pinned atoms which do not need rooting.
   JSAtom* loadPathStr = nullptr;
   JSAtom* pathSeparatorStr = nullptr;
+
+  // The slot stored in ImportMetaResolve function.
+  enum { ModulePrivateSlot = 0, SlotCount };
+
+  // The number of args in ImportMetaResolve.
+  static const uint32_t ImportMetaResolveNumArgs = 1;
+  // The index of the 'specifier' argument in ImportMetaResolve.
+  static const uint32_t ImportMetaResolveSpecifierArg = 0;
 } JS_HAZ_NON_GC_POINTER;
 
 }  // namespace shell

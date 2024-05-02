@@ -2,13 +2,14 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const HTML_URI = TEST_PATH + "file_data_load_inherit_csp.html";
 const DATA_URI = "data:text/html;html,<html><body>foo</body></html>";
 
 function setDataHrefOnLink(aBrowser, aDataURI) {
-  return SpecialPowers.spawn(aBrowser, [aDataURI], function(uri) {
+  return SpecialPowers.spawn(aBrowser, [aDataURI], function (uri) {
     let link = content.document.getElementById("testlink");
     link.href = uri;
   });
@@ -18,7 +19,7 @@ function verifyCSP(aTestName, aBrowser, aDataURI) {
   return SpecialPowers.spawn(
     aBrowser,
     [{ aTestName, aDataURI }],
-    async function({ aTestName, aDataURI }) {
+    async function ({ aTestName, aDataURI }) {
       let channel = content.docShell.currentDocumentChannel;
       is(channel.URI.spec, aDataURI, "testing CSP for " + aTestName);
       let cspJSON = content.document.cspJSON;
@@ -35,7 +36,7 @@ function verifyCSP(aTestName, aBrowser, aDataURI) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // allow top level data: URI navigations, otherwise clicking data: link fails
   await SpecialPowers.pushPrefEnv({
     set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
@@ -43,7 +44,7 @@ add_task(async function setup() {
 });
 
 add_task(async function test_data_csp_inheritance_regular_click() {
-  await BrowserTestUtils.withNewTab(HTML_URI, async function(browser) {
+  await BrowserTestUtils.withNewTab(HTML_URI, async function (browser) {
     let loadPromise = BrowserTestUtils.browserLoaded(browser, false, DATA_URI);
     // set the data href + simulate click
     await setDataHrefOnLink(gBrowser.selectedBrowser, DATA_URI);
@@ -58,7 +59,7 @@ add_task(async function test_data_csp_inheritance_regular_click() {
 });
 
 add_task(async function test_data_csp_inheritance_ctrl_click() {
-  await BrowserTestUtils.withNewTab(HTML_URI, async function(browser) {
+  await BrowserTestUtils.withNewTab(HTML_URI, async function (browser) {
     let loadPromise = BrowserTestUtils.waitForNewTab(gBrowser, DATA_URI, true);
     // set the data href + simulate ctrl+click
     await setDataHrefOnLink(gBrowser.selectedBrowser, DATA_URI);
@@ -76,7 +77,7 @@ add_task(async function test_data_csp_inheritance_ctrl_click() {
 
 add_task(
   async function test_data_csp_inheritance_right_click_open_link_in_new_tab() {
-    await BrowserTestUtils.withNewTab(HTML_URI, async function(browser) {
+    await BrowserTestUtils.withNewTab(HTML_URI, async function (browser) {
       let loadPromise = BrowserTestUtils.waitForNewTab(
         gBrowser,
         DATA_URI,

@@ -6,15 +6,9 @@
 
 // Checks for the AccessibleActor
 
-add_task(async function() {
-  const {
-    target,
-    walker,
-    a11yWalker,
-    parentAccessibility,
-  } = await initAccessibilityFrontsForUrl(
-    MAIN_DOMAIN + "doc_accessibility.html"
-  );
+add_task(async function () {
+  const { target, walker, a11yWalker, parentAccessibility } =
+    await initAccessibilityFrontsForUrl(MAIN_DOMAIN + "doc_accessibility.html");
   const modifiers =
     Services.appinfo.OS === "Darwin" ? "\u2303\u2325" : "Alt+Shift+";
 
@@ -23,7 +17,7 @@ add_task(async function() {
 
   checkA11yFront(accessibleFront, {
     name: "Accessible Button",
-    role: "pushbutton",
+    role: "button",
     childCount: 1,
   });
 
@@ -31,7 +25,7 @@ add_task(async function() {
 
   checkA11yFront(accessibleFront, {
     name: "Accessible Button",
-    role: "pushbutton",
+    role: "button",
     value: "",
     description: "Accessibility Test",
     keyboardShortcut: modifiers + "b",
@@ -67,32 +61,48 @@ add_task(async function() {
   const labelAccessibleFront = await a11yWalker.getAccessibleFor(labelNode);
   const controlAccessibleFront = await a11yWalker.getAccessibleFor(controlNode);
   const docAccessibleFront = await a11yWalker.getAccessibleFor(walker.rootNode);
-  const relations = await labelAccessibleFront.getRelations();
-  is(relations.length, 2, "Accessible front has a correct number of relations");
-  is(relations[0].type, "label for", "Label has a label for relation");
-  is(relations[0].targets.length, 1, "Label is a label for one target");
+  const labelRelations = await labelAccessibleFront.getRelations();
+  is(labelRelations.length, 2, "Label has correct number of relations");
+  is(labelRelations[0].type, "label for", "Label has a label for relation");
+  is(labelRelations[0].targets.length, 1, "Label is a label for one target");
   is(
-    relations[0].targets[0],
+    labelRelations[0].targets[0],
     controlAccessibleFront,
     "Label is a label for control accessible front"
   );
   is(
-    relations[1].type,
+    labelRelations[1].type,
     "containing document",
     "Label has a containing document relation"
   );
-  is(relations[1].targets.length, 1, "Label is contained by just one document");
   is(
-    relations[1].targets[0],
+    labelRelations[1].targets.length,
+    1,
+    "Label is contained by just one document"
+  );
+  is(
+    labelRelations[1].targets[0],
     docAccessibleFront,
     "Label's containing document is a root document"
+  );
+
+  const controlRelations = await controlAccessibleFront.getRelations();
+  is(controlRelations.length, 3, "Control has correct number of relations");
+  is(controlRelations[2].type, "details", "Control has a details relation");
+  is(controlRelations[2].targets.length, 1, "Control has one details target");
+  const detailsNode = await walker.querySelector(walker.rootNode, "#details");
+  const detailsAccessibleFront = await a11yWalker.getAccessibleFor(detailsNode);
+  is(
+    controlRelations[2].targets[0],
+    detailsAccessibleFront,
+    "Control has correct details target"
   );
 
   info("Snapshot");
   const snapshot = await controlAccessibleFront.snapshot();
   Assert.deepEqual(snapshot, {
     name: "Label",
-    role: "entry",
+    role: "textbox",
     actions: ["Activate"],
     value: "",
     nodeCssSelector: "#control",
@@ -124,6 +134,30 @@ add_task(async function() {
       display: "inline-block",
       "explicit-name": "true",
     },
+  });
+
+  // Check that we're using ARIA role tokens for landmarks implicit in native
+  // markup.
+  const headerNode = await walker.querySelector(walker.rootNode, "#header");
+  const headerAccessibleFront = await a11yWalker.getAccessibleFor(headerNode);
+  checkA11yFront(headerAccessibleFront, {
+    name: null,
+    role: "banner",
+    childCount: 1,
+  });
+  const navNode = await walker.querySelector(walker.rootNode, "#nav");
+  const navAccessibleFront = await a11yWalker.getAccessibleFor(navNode);
+  checkA11yFront(navAccessibleFront, {
+    name: null,
+    role: "navigation",
+    childCount: 1,
+  });
+  const footerNode = await walker.querySelector(walker.rootNode, "#footer");
+  const footerAccessibleFront = await a11yWalker.getAccessibleFor(footerNode);
+  checkA11yFront(footerAccessibleFront, {
+    name: null,
+    role: "contentinfo",
+    childCount: 1,
   });
 
   await waitForA11yShutdown(parentAccessibility);

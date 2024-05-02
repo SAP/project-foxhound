@@ -19,7 +19,7 @@ const LEARN_MORE_URI =
   "Mixed_content" +
   DOCS_GA_PARAMS;
 
-add_task(async function() {
+add_task(async function () {
   await Promise.all([
     pushPref("security.mixed_content.block_active_content", false),
     pushPref("security.mixed_content.block_display_content", false),
@@ -36,7 +36,7 @@ add_task(async function() {
     "\u201chttp://example.com/tests/image/test/mochitest/blue.png\u201d on a secure page";
 
   const waitUntilWarningMessage = text =>
-    waitFor(() => findMessage(hud, text, ".message.warn"), undefined, 100);
+    waitFor(() => findWarningMessage(hud, text), undefined, 100);
 
   const onMixedActiveContent = waitUntilWarningMessage(activeContentText);
   const onMixedDisplayContent = waitUntilWarningMessage(displayContentText);
@@ -53,9 +53,8 @@ add_task(async function() {
   };
 
   info("Clicking on the Learn More link");
-  const learnMoreLink = mixedActiveContentMessage.querySelector(
-    ".learn-more-link"
-  );
+  const learnMoreLink =
+    mixedActiveContentMessage.querySelector(".learn-more-link");
   const linkSimulation = await simulateLinkClick(learnMoreLink);
   checkLink({
     ...linkSimulation,

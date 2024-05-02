@@ -3,9 +3,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  RemoteSettingsWorker: "resource://services-settings/RemoteSettingsWorker.jsm",
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  RemoteSettingsWorker:
+    "resource://services-settings/RemoteSettingsWorker.sys.mjs",
 });
 
 do_get_profile();
@@ -35,10 +35,14 @@ add_task(async function test_selector_db_out_of_date() {
         last_modified: 1606227264000,
       },
     ],
+    1606227264000,
   ]);
 
   // Now load the configuration and check we get what we expect.
-  let engineSelector = new SearchEngineSelector();
+  let engineSelector = SearchUtils.newSearchConfigEnabled
+    ? new SearchEngineSelector()
+    : new SearchEngineSelectorOld();
+
   let result = await engineSelector.fetchEngineConfiguration({
     // Use the fallback default locale/regions to get a simple list.
     locale: "default",

@@ -8,25 +8,22 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import json
 from pathlib import Path
 
 import mozunit
 import pytest
-
 from mozilla_version.gecko import GeckoVersion
-from mozrelease.buglist_creator import (
-    is_excluded_change,
-    create_bugs_url,
-    is_backout_bug,
-    get_previous_tag_version,
-    get_bugs_in_changeset,
-    tag_version,
-    parse_tag_version,
-)
 
+from mozrelease.buglist_creator import (
+    create_bugs_url,
+    get_bugs_in_changeset,
+    get_previous_tag_version,
+    is_backout_bug,
+    is_excluded_change,
+    parse_tag_version,
+    tag_version,
+)
 
 DATA_PATH = Path(__file__).with_name("data")
 
@@ -120,36 +117,36 @@ def test_parse_tag_version(tag, version):
 def test_get_previous_tag_version(version, tag, previous_tag):
     product = "firefox"
     ff_48_tags = [
-        u"FIREFOX_BETA_48_END",
-        u"FIREFOX_RELEASE_48_END",
-        u"FIREFOX_48_0_2_RELEASE",
-        u"FIREFOX_48_0_2_BUILD1",
-        u"FIREFOX_48_0_1_RELEASE",
-        u"FIREFOX_48_0_1_BUILD3",
-        u"FIREFOX_48_0_RELEASE",
-        u"FIREFOX_48_0_BUILD2",
-        u"FIREFOX_RELEASE_48_BASE",
-        u"FIREFOX_48_0b10_RELEASE",
-        u"FIREFOX_48_0b10_BUILD1",
-        u"FIREFOX_48_0b9_RELEASE",
-        u"FIREFOX_48_0b9_BUILD1",
-        u"FIREFOX_48_0b7_RELEASE",
-        u"FIREFOX_48_0b7_BUILD1",
-        u"FIREFOX_48_0b6_RELEASE",
-        u"FIREFOX_48_0b6_BUILD1",
-        u"FIREFOX_48_0b5_RELEASE",
-        u"FIREFOX_48_0b5_BUILD1",
-        u"FIREFOX_48_0b4_RELEASE",
-        u"FIREFOX_48_0b4_BUILD1",
-        u"FIREFOX_48_0b3_RELEASE",
-        u"FIREFOX_48_0b3_BUILD1",
-        u"FIREFOX_48_0b2_RELEASE",
-        u"FIREFOX_48_0b2_BUILD2",
-        u"FIREFOX_48_0b1_RELEASE",
-        u"FIREFOX_48_0b1_BUILD2",
-        u"FIREFOX_AURORA_48_END",
-        u"FIREFOX_BETA_48_BASE",
-        u"FIREFOX_AURORA_48_BASE",
+        "FIREFOX_BETA_48_END",
+        "FIREFOX_RELEASE_48_END",
+        "FIREFOX_48_0_2_RELEASE",
+        "FIREFOX_48_0_2_BUILD1",
+        "FIREFOX_48_0_1_RELEASE",
+        "FIREFOX_48_0_1_BUILD3",
+        "FIREFOX_48_0_RELEASE",
+        "FIREFOX_48_0_BUILD2",
+        "FIREFOX_RELEASE_48_BASE",
+        "FIREFOX_48_0b10_RELEASE",
+        "FIREFOX_48_0b10_BUILD1",
+        "FIREFOX_48_0b9_RELEASE",
+        "FIREFOX_48_0b9_BUILD1",
+        "FIREFOX_48_0b7_RELEASE",
+        "FIREFOX_48_0b7_BUILD1",
+        "FIREFOX_48_0b6_RELEASE",
+        "FIREFOX_48_0b6_BUILD1",
+        "FIREFOX_48_0b5_RELEASE",
+        "FIREFOX_48_0b5_BUILD1",
+        "FIREFOX_48_0b4_RELEASE",
+        "FIREFOX_48_0b4_BUILD1",
+        "FIREFOX_48_0b3_RELEASE",
+        "FIREFOX_48_0b3_BUILD1",
+        "FIREFOX_48_0b2_RELEASE",
+        "FIREFOX_48_0b2_BUILD2",
+        "FIREFOX_48_0b1_RELEASE",
+        "FIREFOX_48_0b1_BUILD2",
+        "FIREFOX_AURORA_48_END",
+        "FIREFOX_BETA_48_BASE",
+        "FIREFOX_AURORA_48_BASE",
     ]
 
     mock_hg_json = {"tags": [{"tag": ff_48_tag} for ff_48_tag in ff_48_tags]}
@@ -163,18 +160,18 @@ def test_get_bugs_in_changeset():
     bugs, backouts = get_bugs_in_changeset(changeset_data)
 
     assert bugs == {
-        u"1356563",
-        u"1348409",
-        u"1341190",
-        u"1360626",
-        u"1332731",
-        u"1328762",
-        u"1355870",
-        u"1358089",
-        u"1354911",
-        u"1354038",
+        "1356563",
+        "1348409",
+        "1341190",
+        "1360626",
+        "1332731",
+        "1328762",
+        "1355870",
+        "1358089",
+        "1354911",
+        "1354038",
     }
-    assert backouts == {u"1337861", u"1320072"}
+    assert backouts == {"1337861", "1320072"}
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function, unicode_literals
 
 import argparse
 import logging
@@ -9,11 +8,8 @@ import os
 import sys
 
 from mach.decorators import Command
-
-from mozbuild.base import (
-    MachCommandConditions as conditions,
-    BinaryNotFoundException,
-)
+from mozbuild.base import BinaryNotFoundException
+from mozbuild.base import MachCommandConditions as conditions
 
 
 def create_parser_tests():
@@ -26,11 +22,9 @@ def create_parser_tests():
 
 
 def run_telemetry(tests, binary=None, topsrcdir=None, **kwargs):
-    from mozlog.structured import commandline
-
-    from telemetry_harness.runtests import TelemetryTestRunner
-
     from marionette_harness.runtests import MarionetteHarness
+    from mozlog.structured import commandline
+    from telemetry_harness.runtests import TelemetryTestRunner
 
     parser = create_parser_tests()
 
@@ -53,6 +47,9 @@ def run_telemetry(tests, binary=None, topsrcdir=None, **kwargs):
     parser.verify_usage(args)
 
     os.environ["MOZ_IGNORE_NSS_SHUTDOWN_LEAKS"] = "1"
+
+    # Causes Firefox to crash when using non-local connections.
+    os.environ["MOZ_DISABLE_NONLOCAL_CONNECTIONS"] = "1"
 
     if not args.logger:
         args.logger = commandline.setup_logging(

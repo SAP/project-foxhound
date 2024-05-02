@@ -8,14 +8,13 @@
 #define mozilla_a11y_TextRange_inl_h__
 
 #include "TextRange.h"
-#include "HyperTextAccessible.h"
 
 namespace mozilla {
 namespace a11y {
 
-inline LocalAccessible* TextRange::Container() const {
+inline Accessible* TextRange::Container() const {
   uint32_t pos1 = 0, pos2 = 0;
-  AutoTArray<LocalAccessible*, 30> parents1, parents2;
+  AutoTArray<Accessible*, 30> parents1, parents2;
   return CommonParent(mStartContainer, mEndContainer, &parents1, &pos1,
                       &parents2, &pos2);
 }

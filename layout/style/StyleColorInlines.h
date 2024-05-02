@@ -11,53 +11,58 @@
 
 #include "nsColor.h"
 #include "mozilla/ServoStyleConsts.h"
+#include "nsStyleUtil.h"
 
 namespace mozilla {
 
-inline StyleRGBA StyleRGBA::FromColor(nscolor aColor) {
-  return {NS_GET_R(aColor), NS_GET_G(aColor), NS_GET_B(aColor),
-          NS_GET_A(aColor)};
+inline StyleAbsoluteColor StyleAbsoluteColor::FromColor(nscolor aColor) {
+  return StyleAbsoluteColor::SrgbLegacy(
+      NS_GET_R(aColor) / 255.0f, NS_GET_G(aColor) / 255.0f,
+      NS_GET_B(aColor) / 255.0f, NS_GET_A(aColor) / 255.0f);
 }
 
-inline nscolor StyleRGBA::ToColor() const {
-  return NS_RGBA(red, green, blue, alpha);
-}
+// static
+inline StyleAbsoluteColor StyleAbsoluteColor::SrgbLegacy(float red, float green,
+                                                         float blue,
+                                                         float alpha) {
+  const auto ToLegacyComponent = [](float aF) {
+    if (MOZ_UNLIKELY(!std::isfinite(aF))) {
+      return 0.0f;
+    }
+    return aF;
+  };
 
-inline StyleRGBA StyleRGBA::Transparent() { return {0, 0, 0, 0}; }
+  return StyleAbsoluteColor{
+      StyleColorComponents{ToLegacyComponent(red), ToLegacyComponent(green),
+                           ToLegacyComponent(blue)},
+      alpha, StyleColorSpace::Srgb, StyleColorFlags::IS_LEGACY_SRGB};
+}
 
 template <>
 inline StyleColor StyleColor::FromColor(nscolor aColor) {
-  return StyleColor{
-      StyleRGBA::FromColor(aColor),
-      StyleComplexColorRatios::NUMERIC,
-  };
-}
-
-template <>
-inline StyleColor StyleColor::CurrentColor() {
-  return StyleColor{
-      StyleRGBA::Transparent(),
-      StyleComplexColorRatios::CURRENT_COLOR,
-  };
-}
-
-template <>
-inline StyleColor StyleColor::Black() {
-  return FromColor(NS_RGB(0, 0, 0));
-}
-
-template <>
-inline StyleColor StyleColor::White() {
-  return FromColor(NS_RGB(255, 255, 255));
+  return StyleColor::Absolute(StyleAbsoluteColor::FromColor(aColor));
 }
 
 template <>
 inline StyleColor StyleColor::Transparent() {
-  return FromColor(NS_RGBA(0, 0, 0, 0));
+  return StyleColor::Absolute(StyleAbsoluteColor::TRANSPARENT_BLACK);
 }
 
 template <>
-nscolor StyleColor::CalcColor(const StyleRGBA&) const;
+inline StyleColor StyleColor::Black() {
+  return StyleColor::Absolute(StyleAbsoluteColor::BLACK);
+}
+
+template <>
+inline StyleColor StyleColor::White() {
+  return StyleColor::Absolute(StyleAbsoluteColor::WHITE);
+}
+
+template <>
+StyleAbsoluteColor StyleColor::ResolveColor(const StyleAbsoluteColor&) const;
+
+template <>
+nscolor StyleColor::CalcColor(const StyleAbsoluteColor&) const;
 
 template <>
 nscolor StyleColor::CalcColor(nscolor) const;

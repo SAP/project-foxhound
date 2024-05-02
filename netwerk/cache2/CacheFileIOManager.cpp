@@ -2,14 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <limits>
 #include "CacheLog.h"
 #include "CacheFileIOManager.h"
 
-#include "../cache/nsCacheUtils.h"
 #include "CacheHashUtils.h"
 #include "CacheStorageService.h"
 #include "CacheIndex.h"
 #include "CacheFileUtils.h"
+#include "nsError.h"
 #include "nsThreadUtils.h"
 #include "CacheFile.h"
 #include "CacheObserver.h"
@@ -24,6 +25,8 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Services.h"
+#include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -31,6 +34,11 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "nsNetUtil.h"
+
+#ifdef MOZ_BACKGROUNDTASKS
+#  include "mozilla/BackgroundTasksRunner.h"
+#  include "nsIBackgroundTasks.h"
+#endif
 
 // include files for ftruncate (or equivalent)
 #if defined(XP_UNIX)
@@ -56,6 +64,7 @@ const uint32_t kMaxCacheSizeKB = 512 * 1024;  // 512 MB
 const uint32_t kMaxCacheSizeKB = 1024 * 1024;  // 1 GB
 #endif
 const uint32_t kMaxClearOnShutdownCacheSizeKB = 150 * 1024;  // 150 MB
+const auto kPurgeExtension = ".purge.bg_rm"_ns;
 
 bool CacheFileHandle::DispatchRelease() {
   if (CacheFileIOManager::IsOnIOThreadOrCeased()) {
@@ -516,29 +525,48 @@ size_t CacheFileHandles::SizeOfExcludingThis(
 
 // Events
 
-class ShutdownEvent : public Runnable {
+class ShutdownEvent : public Runnable, nsITimerCallback {
+  NS_DECL_ISUPPORTS_INHERITED
  public:
-  ShutdownEvent()
-      : Runnable("net::ShutdownEvent"), mMonitor("ShutdownEvent.mMonitor") {}
+  ShutdownEvent() : Runnable("net::ShutdownEvent") {}
 
  protected:
   ~ShutdownEvent() = default;
 
  public:
   NS_IMETHOD Run() override {
-    MonitorAutoLock mon(mMonitor);
-
     CacheFileIOManager::gInstance->ShutdownInternal();
 
     mNotified = true;
-    mon.Notify();
+
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("CacheFileIOManager::ShutdownEvent::Run", []() {
+          // This empty runnable is dispatched just in case the MT event loop
+          // becomes empty - we need to process a task to break out of
+          // SpinEventLoopUntil.
+        }));
 
     return NS_OK;
   }
 
-  void PostAndWait() {
-    MonitorAutoLock mon(mMonitor);
+  NS_IMETHOD Notify(nsITimer* timer) override {
+    if (mNotified) {
+      return NS_OK;
+    }
 
+    // If there is any IO blocking on the IO thread, this will
+    // try to cancel it.
+    CacheFileIOManager::gInstance->mIOThread->CancelBlockingIO();
+
+    // After this runs the first time, the browser_cache_max_shutdown_io_lag
+    // time has elapsed. The CacheIO thread may pick up more blocking IO tasks
+    // so we want to block those too if necessary.
+    mTimer->SetDelay(
+        StaticPrefs::browser_cache_shutdown_io_time_between_cancellations_ms());
+    return NS_OK;
+  }
+
+  void PostAndWait() {
     nsresult rv = CacheFileIOManager::gInstance->mIOThread->Dispatch(
         this,
         CacheIOThread::WRITE);  // When writes and closing of handles is done
@@ -551,22 +579,27 @@ class ShutdownEvent : public Runnable {
       return;
     }
 
-    TimeDuration waitTime = TimeDuration::FromSeconds(1);
-    while (!mNotified) {
-      mon.Wait(waitTime);
-      if (!mNotified) {
-        // If there is any IO blocking on the IO thread, this will
-        // try to cancel it.  Returns no later than after two seconds.
-        MonitorAutoUnlock unmon(mMonitor);  // Prevent delays
-        CacheFileIOManager::gInstance->mIOThread->CancelBlockingIO();
-      }
+    rv = NS_NewTimerWithCallback(
+        getter_AddRefs(mTimer), this,
+        StaticPrefs::browser_cache_max_shutdown_io_lag() * 1000,
+        nsITimer::TYPE_REPEATING_SLACK);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+    mozilla::SpinEventLoopUntil("CacheFileIOManager::ShutdownEvent"_ns,
+                                [&]() { return bool(mNotified); });
+
+    if (mTimer) {
+      mTimer->Cancel();
+      mTimer = nullptr;
     }
   }
 
  protected:
-  mozilla::Monitor mMonitor;
-  bool mNotified{false};
+  Atomic<bool> mNotified{false};
+  nsCOMPtr<nsITimer> mTimer;
 };
+
+NS_IMPL_ISUPPORTS_INHERITED(ShutdownEvent, Runnable, nsITimerCallback)
 
 // Class responsible for reporting IO performance stats
 class IOPerfReportEvent {
@@ -1336,6 +1369,55 @@ nsresult CacheFileIOManager::OnProfile() {
   }
 
   return NS_OK;
+}
+
+static bool inBackgroundTask() {
+  MOZ_ASSERT(NS_IsMainThread(), "backgroundtasks are main thread only");
+#if defined(MOZ_BACKGROUNDTASKS)
+  nsCOMPtr<nsIBackgroundTasks> backgroundTaskService =
+      do_GetService("@mozilla.org/backgroundtasks;1");
+  if (!backgroundTaskService) {
+    return false;
+  }
+  bool isBackgroundTask = false;
+  backgroundTaskService->GetIsBackgroundTaskMode(&isBackgroundTask);
+  return isBackgroundTask;
+#else
+  return false;
+#endif
+}
+
+// static
+nsresult CacheFileIOManager::OnDelayedStartupFinished() {
+  // If we don't clear the cache at shutdown, or we don't use a
+  // background task then there's no need to dispatch a cleanup task
+  // at startup
+  if (!CacheObserver::ClearCacheOnShutdown()) {
+    return NS_OK;
+  }
+  if (!StaticPrefs::network_cache_shutdown_purge_in_background_task()) {
+    return NS_OK;
+  }
+
+  // If this is a background task already, there's no need to
+  // dispatch another one.
+  if (inBackgroundTask()) {
+    return NS_OK;
+  }
+
+  RefPtr<CacheFileIOManager> ioMan = gInstance;
+  nsCOMPtr<nsIEventTarget> target = IOTarget();
+  if (NS_WARN_IF(!ioMan || !target)) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return target->Dispatch(
+      NS_NewRunnableFunction("CacheFileIOManager::OnDelayedStartupFinished",
+                             [ioMan = std::move(ioMan)] {
+                               ioMan->DispatchPurgeTask(""_ns, "0"_ns,
+                                                        kPurgeExtension);
+                             }),
+      nsIEventTarget::DISPATCH_NORMAL);
 }
 
 // static
@@ -2144,8 +2226,7 @@ nsresult CacheFileIOManager::DoomFileInternal(
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = aHandle->mFile->MoveToNative(parentDir, leafName);
-    if (NS_ERROR_FILE_NOT_FOUND == rv ||
-        NS_ERROR_FILE_TARGET_DOES_NOT_EXIST == rv) {
+    if (NS_ERROR_FILE_NOT_FOUND == rv) {
       LOG(("  file already removed under our hands"));
       aHandle->mFileExists = false;
       rv = NS_OK;
@@ -2452,13 +2533,30 @@ nsresult CacheFileIOManager::GetEntryInfo(
 
   // Pick all data to pass to the callback.
   int64_t dataSize = metadata->Offset();
+  int64_t altDataSize = 0;
   uint32_t fetchCount = metadata->GetFetchCount();
   uint32_t expirationTime = metadata->GetExpirationTime();
   uint32_t lastModified = metadata->GetLastModified();
 
+  const char* altDataElement =
+      metadata->GetElement(CacheFileUtils::kAltDataKey);
+  if (altDataElement) {
+    int64_t altDataOffset = std::numeric_limits<int64_t>::max();
+    if (NS_SUCCEEDED(CacheFileUtils::ParseAlternativeDataInfo(
+            altDataElement, &altDataOffset, nullptr)) &&
+        altDataOffset < dataSize) {
+      dataSize = altDataOffset;
+      altDataSize = metadata->Offset() - altDataOffset;
+    } else {
+      LOG(("CacheFileIOManager::GetEntryInfo() invalid alternative data info"));
+      return NS_OK;
+    }
+  }
+
   // Call directly on the callback.
-  aCallback->OnEntryInfo(uriSpec, enhanceId, dataSize, fetchCount, lastModified,
-                         expirationTime, metadata->Pinned(), info);
+  aCallback->OnEntryInfo(uriSpec, enhanceId, dataSize, altDataSize, fetchCount,
+                         lastModified, expirationTime, metadata->Pinned(),
+                         info);
 
   return NS_OK;
 }
@@ -3123,7 +3221,7 @@ nsresult CacheFileIOManager::EvictByContextInternal(
 
         // Clear entry if the host belongs to the given base domain.
         bool hasRootDomain = false;
-        rv = NS_HasRootDomain(host, baseDomain, &hasRootDomain);
+        rv = HasRootDomain(host, baseDomain, &hasRootDomain);
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return false;
         }
@@ -3483,6 +3581,10 @@ nsresult CacheFileIOManager::FindTrashDirToRemove() {
   LOG(("CacheFileIOManager::FindTrashDirToRemove()"));
 
   nsresult rv;
+
+  if (!mCacheDirectory) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
   // We call this method on the main thread during shutdown when user wants to
   // remove all cache files.
@@ -3975,6 +4077,10 @@ nsresult CacheFileIOManager::SyncRemoveDir(nsIFile* aFile, const char* aDir) {
   nsresult rv;
   nsCOMPtr<nsIFile> file;
 
+  if (!aFile) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   if (!aDir) {
     file = aFile;
   } else {
@@ -4005,10 +4111,91 @@ nsresult CacheFileIOManager::SyncRemoveDir(nsIFile* aFile, const char* aDir) {
   return rv;
 }
 
+nsresult CacheFileIOManager::DispatchPurgeTask(
+    const nsCString& aCacheDirName, const nsCString& aSecondsToWait,
+    const nsCString& aPurgeExtension) {
+#if !defined(MOZ_BACKGROUNDTASKS)
+  // If background tasks are disabled, then we should just bail out early.
+  return NS_ERROR_NOT_IMPLEMENTED;
+#else
+  nsCOMPtr<nsIFile> cacheDir;
+  nsresult rv = mCacheDirectory->Clone(getter_AddRefs(cacheDir));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIFile> profileDir;
+  rv = cacheDir->GetParent(getter_AddRefs(profileDir));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIFile> lf;
+  rv = XRE_GetBinaryPath(getter_AddRefs(lf));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoCString path;
+#  if !defined(XP_WIN)
+  rv = profileDir->GetNativePath(path);
+#  else
+  rv = profileDir->GetNativeTarget(path);
+#  endif
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIBackgroundTasksRunner> runner =
+      do_GetService("@mozilla.org/backgroundtasksrunner;1");
+
+  return runner->RemoveDirectoryInDetachedProcess(
+      path, aCacheDirName, aSecondsToWait, aPurgeExtension, "HttpCache"_ns);
+#endif
+}
+
 void CacheFileIOManager::SyncRemoveAllCacheFiles() {
   LOG(("CacheFileIOManager::SyncRemoveAllCacheFiles()"));
-
   nsresult rv;
+
+  // If we are already running in a background task, we
+  // don't want to spawn yet another one at shutdown.
+  if (inBackgroundTask()) {
+    return;
+  }
+
+  if (StaticPrefs::network_cache_shutdown_purge_in_background_task()) {
+    rv = [&]() -> nsresult {
+      nsresult rv;
+
+      // If there is no cache directory, there's nothing to remove.
+      if (!mCacheDirectory) {
+        return NS_OK;
+      }
+
+      nsAutoCString leafName;
+      rv = mCacheDirectory->GetNativeLeafName(leafName);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      leafName.Append('.');
+
+      PRExplodedTime now;
+      PR_ExplodeTime(PR_Now(), PR_GMTParameters, &now);
+      leafName.Append(nsPrintfCString(
+          "%04d-%02d-%02d-%02d-%02d-%02d", now.tm_year, now.tm_month + 1,
+          now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec));
+      leafName.Append(kPurgeExtension);
+
+      nsAutoCString secondsToWait;
+      secondsToWait.AppendInt(
+          StaticPrefs::network_cache_shutdown_purge_folder_wait_seconds());
+
+      rv = DispatchPurgeTask(leafName, secondsToWait, kPurgeExtension);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = mCacheDirectory->RenameToNative(nullptr, leafName);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      return NS_OK;
+    }();
+
+    // Dispatching to the background task has succeeded. This is finished.
+    if (NS_SUCCEEDED(rv)) {
+      return;
+    }
+  }
 
   SyncRemoveDir(mCacheDirectory, ENTRIES_DIR);
   SyncRemoveDir(mCacheDirectory, DOOMED_DIR);
@@ -4197,7 +4384,7 @@ class SizeOfHandlesRunnable : public Runnable {
   }
 
  private:
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor mMonitor MOZ_UNANNOTATED;
   bool mMonitorNotified;
   mozilla::MallocSizeOf mMallocSizeOf;
   CacheFileHandles const& mHandles;

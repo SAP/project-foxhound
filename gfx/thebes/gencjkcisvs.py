@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import os.path
 import re
 import sys
@@ -36,7 +35,7 @@ f.close
 
 offsets = []
 length = 10 + 11 * len(vsdict)
-for (k, mappings) in sorted(vsdict.items()):
+for k, mappings in sorted(vsdict.items()):
     offsets.append(length)
     length += 4 + 5 * len(mappings)
 
@@ -70,10 +69,10 @@ for i, k in enumerate(sorted(vsdict.keys())):
         "    U24(0x%04X), U32(0), U32(%d), // varSelectorRecord[%d]\n"
         % (k, offsets[i], i)
     )
-for (k, mappings) in sorted(vsdict.items()):
+for k, mappings in sorted(vsdict.items()):
     f.write("  // 0x%04X\n" % k)
     f.write("  U32(%d), // numUVSMappings\n" % len(mappings))
-    for (unified, compat) in sorted(mappings.items()):
+    for unified, compat in sorted(mappings.items()):
         f.write("    U24(0x%04X), GLYPH(0x%04X),\n" % (unified, compat))
 f.write(
     """};

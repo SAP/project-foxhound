@@ -7,17 +7,11 @@
 #include "xpcpublic.h"
 #include "nsString.h"
 #include "nsJSPrincipals.h"
-#include "plstr.h"
 #include "nsCOMPtr.h"
-#include "nsMemory.h"
 #include "nsStringBuffer.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/StructuredCloneTags.h"
-// for mozilla::dom::workerinternals::kJSPrincipalsDebugToken
-#include "mozilla/dom/workerinternals/JSSettings.h"
-// for mozilla::dom::worklet::kJSPrincipalsDebugToken
-#include "mozilla/dom/WorkletPrincipals.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 
@@ -27,7 +21,6 @@ using namespace mozilla::ipc;
 
 NS_IMETHODIMP_(MozExternalRefCountType)
 nsJSPrincipals::AddRef() {
-  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(int32_t(refcount) >= 0, "illegal refcnt");
   nsrefcnt count = ++refcount;
   NS_LOG_ADDREF(this, count, "nsJSPrincipals", sizeof(*this));
@@ -36,7 +29,6 @@ nsJSPrincipals::AddRef() {
 
 NS_IMETHODIMP_(MozExternalRefCountType)
 nsJSPrincipals::Release() {
-  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(0 != refcount, "dup release");
   nsrefcnt count = --refcount;
   NS_LOG_RELEASE(this, count, "nsJSPrincipals");
@@ -88,10 +80,6 @@ JS_PUBLIC_API void JSPrincipals::dump() {
     nsresult rv = static_cast<nsJSPrincipals*>(this)->GetScriptLocation(str);
     fprintf(stderr, "nsIPrincipal (%p) = %s\n", static_cast<void*>(this),
             NS_SUCCEEDED(rv) ? str.get() : "(unknown)");
-  } else if (debugToken == dom::workerinternals::kJSPrincipalsDebugToken) {
-    fprintf(stderr, "Web Worker principal singleton (%p)\n", this);
-  } else if (debugToken == dom::WorkletPrincipals::kJSPrincipalsDebugToken) {
-    fprintf(stderr, "Web Worklet principal (%p)\n", this);
   } else {
     fprintf(stderr,
             "!!! JSPrincipals (%p) is not nsJSPrincipals instance - bad token: "
@@ -112,10 +100,9 @@ bool nsJSPrincipals::ReadPrincipals(JSContext* aCx,
     return false;
   }
 
-  if (!(tag == SCTAG_DOM_NULL_PRINCIPAL || tag == SCTAG_DOM_SYSTEM_PRINCIPAL ||
-        tag == SCTAG_DOM_CONTENT_PRINCIPAL ||
-        tag == SCTAG_DOM_EXPANDED_PRINCIPAL ||
-        tag == SCTAG_DOM_WORKER_PRINCIPAL)) {
+  if (tag != SCTAG_DOM_NULL_PRINCIPAL && tag != SCTAG_DOM_SYSTEM_PRINCIPAL &&
+      tag != SCTAG_DOM_CONTENT_PRINCIPAL &&
+      tag != SCTAG_DOM_EXPANDED_PRINCIPAL) {
     xpc::Throw(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
     return false;
   }
@@ -210,7 +197,8 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
     nsAutoCString spec;
     nsAutoCString originNoSuffix;
     nsAutoCString baseDomain;
-    if (!ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix, baseDomain)) {
+    if (!::ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix,
+                             baseDomain)) {
       return false;
     }
     aInfo = NullPrincipalInfo(attrs, spec);
@@ -241,7 +229,8 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
     nsAutoCString spec;
     nsAutoCString originNoSuffix;
     nsAutoCString baseDomain;
-    if (!ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix, baseDomain)) {
+    if (!::ReadPrincipalInfo(aReader, attrs, spec, originNoSuffix,
+                             baseDomain)) {
       return false;
     }
 
@@ -267,17 +256,14 @@ static bool ReadPrincipalInfo(JSStructuredCloneReader* aReader, uint32_t aTag,
   return true;
 }
 
-static StaticRefPtr<nsIPrincipal> sActiveWorkerPrincipal;
-
-nsJSPrincipals::AutoSetActiveWorkerPrincipal::AutoSetActiveWorkerPrincipal(
-    nsIPrincipal* aPrincipal) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_RELEASE_ASSERT(!sActiveWorkerPrincipal);
-  sActiveWorkerPrincipal = aPrincipal;
-}
-
-nsJSPrincipals::AutoSetActiveWorkerPrincipal::~AutoSetActiveWorkerPrincipal() {
-  sActiveWorkerPrincipal = nullptr;
+/* static */
+bool nsJSPrincipals::ReadPrincipalInfo(JSStructuredCloneReader* aReader,
+                                       PrincipalInfo& aInfo) {
+  uint32_t tag, unused;
+  if (!JS_ReadUint32Pair(aReader, &tag, &unused)) {
+    return false;
+  }
+  return ::ReadPrincipalInfo(aReader, tag, aInfo);
 }
 
 /* static */
@@ -288,28 +274,10 @@ bool nsJSPrincipals::ReadKnownPrincipalType(JSContext* aCx,
   MOZ_ASSERT(aTag == SCTAG_DOM_NULL_PRINCIPAL ||
              aTag == SCTAG_DOM_SYSTEM_PRINCIPAL ||
              aTag == SCTAG_DOM_CONTENT_PRINCIPAL ||
-             aTag == SCTAG_DOM_EXPANDED_PRINCIPAL ||
-             aTag == SCTAG_DOM_WORKER_PRINCIPAL);
-
-  if (NS_WARN_IF(!NS_IsMainThread())) {
-    xpc::Throw(aCx, NS_ERROR_UNCATCHABLE_EXCEPTION);
-    return false;
-  }
-
-  if (aTag == SCTAG_DOM_WORKER_PRINCIPAL) {
-    // When reading principals which were written on a worker thread, we need to
-    // know the principal of the worker which did the write.
-    if (!sActiveWorkerPrincipal) {
-      xpc::Throw(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
-      return false;
-    }
-    RefPtr<nsJSPrincipals> retval = get(sActiveWorkerPrincipal);
-    retval.forget(aOutPrincipals);
-    return true;
-  }
+             aTag == SCTAG_DOM_EXPANDED_PRINCIPAL);
 
   PrincipalInfo info;
-  if (!ReadPrincipalInfo(aReader, aTag, info)) {
+  if (!::ReadPrincipalInfo(aReader, aTag, info)) {
     return false;
   }
 

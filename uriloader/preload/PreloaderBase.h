@@ -45,9 +45,10 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
   // preload service to provide coalescing, and access to the preload when it
   // should be used for an actual load.
   void NotifyOpen(const PreloadHashKey& aKey, dom::Document* aDocument,
-                  bool aIsPreload);
+                  bool aIsPreload, bool aIsModule = false);
   void NotifyOpen(const PreloadHashKey& aKey, nsIChannel* aChannel,
-                  dom::Document* aDocument, bool aIsPreload);
+                  dom::Document* aDocument, bool aIsPreload,
+                  bool aIsModule = false);
 
   // Called when the load is about to be started all over again and thus this
   // PreloaderBase will be registered again with the same key.  This method
@@ -65,14 +66,6 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
   // channel.
   void NotifyStop(nsresult aStatus);
 
-  // Called when this currently existing load has to be asynchronously
-  // revalidated before it can be used.  This prevents link preload DOM nodes
-  // being notified until the validation is resolved.
-  void NotifyValidating();
-  // Called when the validation process has been done.  This will notify
-  // associated link DOM nodes.
-  void NotifyValidated(nsresult aStatus);
-
   // Called by resource loaders or any suitable component to notify the preload
   // has been used for an actual load.  This is intended to stop any usage
   // timers.
@@ -80,7 +73,8 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
   // progress, will not be removed the LOAD_BACKGROUND flag, for instance XHR is
   // the user here.
   enum class LoadBackground { Keep, Drop };
-  void NotifyUsage(LoadBackground aLoadBackground = LoadBackground::Drop);
+  void NotifyUsage(dom::Document* aDocument,
+                   LoadBackground aLoadBackground = LoadBackground::Drop);
   // Whether this preloader has been used for a regular/actual load or not.
   bool IsUsed() const { return mIsUsed; }
 
@@ -97,11 +91,6 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
 
   // Accessor to the resource loading channel.
   nsIChannel* Channel() const { return mChannel; }
-
-  // May change priority of the resource loading channel so that it's treated as
-  // preload when this was initially representing a normal speculative load but
-  // later <link rel="preload"> was found for this resource.
-  virtual void PrioritizeAsPreload() = 0;
 
   // Helper function to set the LOAD_BACKGROUND flag on channel initiated by
   // <link rel=preload>.  This MUST be used before the channel is AsyncOpen'ed.
@@ -129,6 +118,8 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
   };
 
   const nsTArray<RedirectRecord>& Redirects() { return mRedirectRecords; }
+
+  void SetForEarlyHints() { mIsEarlyHintsPreload = true; }
 
  protected:
   virtual ~PreloaderBase();
@@ -190,6 +181,9 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
 
   // True after we have reported the usage telemetry.  Prevent duplicates.
   bool mUsageTelementryReported = false;
+
+  // True when this is used to Early Hints preload.
+  bool mIsEarlyHintsPreload = false;
 
   // Emplaced when the data delivery has finished, in NotifyStop, holds the
   // result of the load.

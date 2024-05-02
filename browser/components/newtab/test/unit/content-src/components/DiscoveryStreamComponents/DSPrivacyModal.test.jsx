@@ -1,6 +1,6 @@
 import { DSPrivacyModal } from "content-src/components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal";
 import { shallow, mount } from "enzyme";
-import { actionCreators as ac } from "common/Actions.jsm";
+import { actionCreators as ac } from "common/Actions.sys.mjs";
 import React from "react";
 
 describe("Discovery Stream <DSPrivacyModal>", () => {
@@ -35,7 +35,7 @@ describe("Discovery Stream <DSPrivacyModal>", () => {
     assert.calledOnce(dispatch);
     assert.calledWith(
       dispatch,
-      ac.UserEvent({
+      ac.DiscoveryStreamUserEvent({
         event: "CLICK_PRIVACY_INFO",
         source: "DS_PRIVACY_MODAL",
       })

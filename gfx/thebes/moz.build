@@ -17,6 +17,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = "gfx"
 
 EXPORTS += [
+    "COLRFonts.h",
     "DrawMode.h",
     "gfx2DGlue.h",
     "gfxAlphaRecovery.h",
@@ -47,6 +48,7 @@ EXPORTS += [
     "gfxPattern.h",
     "gfxPlatform.h",
     "gfxPlatformFontList.h",
+    "gfxPlatformWorker.h",
     "gfxPoint.h",
     "gfxQuad.h",
     "gfxQuaternion.h",
@@ -68,6 +70,7 @@ EXPORTS.mozilla.gfx += [
     "D3D11Checks.h",
     "DeviceManagerDx.h",
     "DisplayConfigWindows.h",
+    "PrintPromise.h",
     "PrintTarget.h",
     "PrintTargetThebes.h",
     "ThebesRLBox.h",
@@ -94,6 +97,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
     ]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     EXPORTS += [
+        "gfxMacUtils.h",
         "gfxPlatformMac.h",
         "gfxQuartzNativeDrawing.h",
         "gfxQuartzSurface.h",
@@ -102,8 +106,10 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
         "PrintTargetCG.h",
     ]
     SOURCES += [
+        "CoreTextFontList.cpp",
         "gfxCoreTextShaper.cpp",
         "gfxMacFont.cpp",
+        "gfxMacUtils.cpp",
         "gfxPlatformMac.cpp",
         "gfxQuartzNativeDrawing.cpp",
         "gfxQuartzSurface.cpp",
@@ -138,8 +144,8 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
         ]
 
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
-    REQUIRES_UNIFIED_BUILD = True
     EXPORTS += [
+        "gfxDWriteCommon.h",
         "gfxDWriteFonts.h",
         "gfxGDIFont.h",
         "gfxGDIFontList.h",
@@ -191,6 +197,7 @@ SOURCES += [
 
 UNIFIED_SOURCES += [
     "CJKCompatSVS.cpp",
+    "COLRFonts.cpp",
     "gfxAlphaRecovery.cpp",
     "gfxBaseSharedMemorySurface.cpp",
     "gfxBlur.cpp",
@@ -210,6 +217,7 @@ UNIFIED_SOURCES += [
     "gfxMathTable.cpp",
     "gfxPattern.cpp",
     "gfxPlatformFontList.cpp",
+    "gfxPlatformWorker.cpp",
     "gfxScriptItemizer.cpp",
     "gfxSkipChars.cpp",
     "gfxSVGGlyphs.cpp",
@@ -232,8 +240,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     UNIFIED_SOURCES += [
         "D3D11Checks.cpp",
-    ]
-    SOURCES += [
         "DeviceManagerDx.cpp",
     ]
 
@@ -260,6 +266,7 @@ LOCAL_INCLUDES += [
     "/dom/media/platforms/apple",
     "/dom/xml",
     "/gfx/cairo/cairo/src",
+    "/widget/gtk",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("android", "gtk"):
@@ -285,8 +292,6 @@ LOCAL_INCLUDES += CONFIG["SKIA_INCLUDES"]
 
 DEFINES["GRAPHITE2_STATIC"] = True
 
-if CONFIG["CC_TYPE"] == "clang":
-    # Suppress warnings from Skia header files.
-    SOURCES["gfxPlatform.cpp"].flags += ["-Wno-implicit-fallthrough"]
-
 CXXFLAGS += ["-Werror=switch"]
+
+include("/tools/fuzzing/libfuzzer-config.mozbuild")

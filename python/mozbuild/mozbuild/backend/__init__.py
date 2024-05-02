@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 backends = {
     "Clangd": "mozbuild.backend.clangd",
     "ChromeMap": "mozbuild.codecoverage.chrome_map",
@@ -11,8 +9,6 @@ backends = {
     "CppEclipse": "mozbuild.backend.cpp_eclipse",
     "FasterMake": "mozbuild.backend.fastermake",
     "FasterMake+RecursiveMake": None,
-    "GnConfigGen": "mozbuild.gn_processor",
-    "GnMozbuildWriter": "mozbuild.gn_processor",
     "RecursiveMake": "mozbuild.backend.recursivemake",
     "StaticAnalysis": "mozbuild.backend.static_analysis",
     "TestManifest": "mozbuild.backend.test_manifest",

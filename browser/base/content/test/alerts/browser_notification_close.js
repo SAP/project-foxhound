@@ -1,14 +1,15 @@
 "use strict";
 
-const { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 let notificationURL =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 let oldShowFavicons;
 
@@ -51,17 +52,15 @@ add_task(async function test_notificationClose() {
         return;
       }
 
-      let alertTitleLabel = alertWindow.document.getElementById(
-        "alertTitleLabel"
-      );
+      let alertTitleLabel =
+        alertWindow.document.getElementById("alertTitleLabel");
       is(
         alertTitleLabel.value,
         "Test title",
         "Title text of notification should be present"
       );
-      let alertTextLabel = alertWindow.document.getElementById(
-        "alertTextLabel"
-      );
+      let alertTextLabel =
+        alertWindow.document.getElementById("alertTextLabel");
       is(
         alertTextLabel.textContent,
         "Test body 2",

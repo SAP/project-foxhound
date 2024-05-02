@@ -47,7 +47,7 @@ async function startTest()
   // Reset HSTS state.
   const gSSService = Cc["@mozilla.org/ssservice;1"].getService(Ci.nsISiteSecurityService);
   const uri = Services.io.newURI(TEST_CASES[0].url);
-  gSSService.resetState(uri, 0);
+  gSSService.resetState(uri);
 
   SimpleTest.finish();
 }
@@ -55,7 +55,6 @@ async function startTest()
 async function checkHSTS({desc, url, usesHSTS}) {
   info("Testing HSTS for " + url);
   const commands = await createCommandsForTab();
-  const target = commands.targetCommand.targetFront;
   const resourceCommand = commands.resourceCommand;
 
   const resource = await new Promise(resolve => {
@@ -73,8 +72,7 @@ async function checkHSTS({desc, url, usesHSTS}) {
       });
   });
 
-  const webConsoleFront = await target.getFront("console");
-  const packet = await webConsoleFront.getSecurityInfo(resource.actor);
+  const packet = await commands.client.request({ to: resource.actor, type: "getSecurityInfo" });
   is(
     packet.securityInfo.hsts,
     usesHSTS,

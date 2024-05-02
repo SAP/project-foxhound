@@ -3,9 +3,9 @@
 
 "use strict";
 
-const { KeyCodes } = require("devtools/client/shared/keycodes");
+const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
 
-add_task(async function() {
+add_task(async function () {
   for (const key in KeyCodes) {
     is(KeyCodes[key], KeyboardEvent[key], "checking value for " + key);
   }

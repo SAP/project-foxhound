@@ -20,16 +20,12 @@
   <script class="testbody" type="text/javascript">
     "use strict";
 
-    function getAttestationCertFromAttestationBuffer(aAttestationBuffer) {
-      return webAuthnDecodeCBORAttestation(aAttestationBuffer)
-      .then((aAttestationObj) => {
-        is(aAttestationObj.fmt, "fido-u2f", "Is a FIDO U2F Attestation");
-        let attestationCertDER = aAttestationObj.attStmt.x5c[0];
-        let certDERBuffer = attestationCertDER.slice(0, attestationCertDER.byteLength).buffer;
-        let certAsn1 = org.pkijs.fromBER(certDERBuffer);
-        return new org.pkijs.simpl.CERT({ schema: certAsn1.result });
-      });
-    }
+    add_task(async () => {
+      await SpecialPowers.pushPrefEnv({"set": [
+        ["security.webauth.webauthn_testing_allow_direct_attestation", true],
+      ]});
+      await addVirtualAuthenticator();
+    });
 
     function verifyAnonymizedCertificate(aResult) {
       return webAuthnDecodeCBORAttestation(aResult.response.attestationObject)
@@ -40,12 +36,16 @@
       });
     }
 
-    function verifyDirectCertificate(aResult) {
-      return getAttestationCertFromAttestationBuffer(aResult.response.attestationObject)
-      .then((attestationCert) => {
-        let subject = attestationCert.subject.types_and_values[0].value.value_block.value;
-        is(subject, "Firefox U2F Soft Token", "Subject name matches the direct Soft Token")
-      });
+    async function verifyDirectCertificate(aResult) {
+      let clientDataHash = await crypto.subtle.digest("SHA-256", aResult.response.clientDataJSON)
+          .then(digest => new Uint8Array(digest));
+      let {fmt, attStmt, authData, authDataObj} = await webAuthnDecodeCBORAttestation(aResult.response.attestationObject);
+      is(fmt, "packed", "Is a Packed Attestation");
+      let signedData = new Uint8Array(authData.length + clientDataHash.length);
+      signedData.set(authData);
+      signedData.set(clientDataHash, authData.length);
+      let valid = await verifySignature(authDataObj.publicKeyHandle, signedData, new Uint8Array(attStmt.sig));
+      ok(valid, "Signature is valid.");
     }
 
     function arrivingHereIsBad(aResult) {
@@ -56,22 +56,11 @@
       ok(aResult.toString().startsWith("TypeError"), "Expecting a TypeError, got " + aResult);
     }
 
-    add_task(() => {
-      // Enable the softtoken.
-      return SpecialPowers.pushPrefEnv({"set": [
-        ["security.webauth.webauthn", true],
-        ["security.webauth.webauthn_enable_softtoken", true],
-        ["security.webauth.webauthn_enable_usbtoken", false],
-        ["security.webauth.webauthn_enable_android_fido2", false],
-        ["security.webauth.webauthn_testing_allow_direct_attestation", true],
-      ]});
-    });
-
     // Start a new MakeCredential() request.
     function requestMakeCredential(attestation) {
       let publicKey = {
-        rp: {id: document.domain, name: "none", icon: "none"},
-        user: {id: new Uint8Array(), name: "none", icon: "none", displayName: "none"},
+        rp: {id: document.domain, name: "none"},
+        user: {id: new Uint8Array(), name: "none", displayName: "none"},
         challenge: crypto.getRandomValues(new Uint8Array(16)),
         timeout: 5000, // the minimum timeout is actually 15 seconds
         pubKeyCredParams: [{type: "public-key", alg: cose_alg_ECDSA_w_SHA256}],
@@ -82,9 +71,14 @@
     }
 
     // Test success cases for make credential.
-    add_task(async () => {
+    add_task(async function test_make_credential_success () {
       // No selection criteria should be equal to none, which means anonymized
       await requestMakeCredential()
+        .then(verifyAnonymizedCertificate)
+        .catch(arrivingHereIsBad);
+
+      // Request an unknown attestation type. This should be treated as "none".
+      await requestMakeCredential("unknown")
         .then(verifyAnonymizedCertificate)
         .catch(arrivingHereIsBad);
 
@@ -95,35 +89,13 @@
 
       // Request indirect attestation, which is the same as direct.
       await requestMakeCredential("indirect")
-        .then((x) => {
-          if (AppConstants.platform === "android") {
-            // If this is Android, the result will be anonymized (Bug 1551229)
-            return verifyAnonymizedCertificate(x);
-          } else {
-            return verifyDirectCertificate(x);
-          }
-        })
+        .then(verifyDirectCertificate)
         .catch(arrivingHereIsBad);
 
       // Request direct attestation, which will prompt for user intervention.
       await requestMakeCredential("direct")
-        .then((x) => {
-          if (AppConstants.platform === "android") {
-            // If this is Android, the result will be anonymized (Bug 1551229)
-            return verifyAnonymizedCertificate(x);
-          } else {
-            return verifyDirectCertificate(x);
-          }
-        })
+        .then(verifyDirectCertificate)
         .catch(arrivingHereIsBad);
-    });
-
-    // Test failure cases for make credential.
-    add_task(async () => {
-      // Request a platform authenticator.
-      await requestMakeCredential("unknown")
-        .then(arrivingHereIsBad)
-        .catch(expectTypeError);
     });
   </script>
 

@@ -9,12 +9,14 @@ const {
   censusState,
   viewState,
   individualsState,
-} = require("devtools/client/memory/constants");
+} = require("resource://devtools/client/memory/constants.js");
 const {
   fetchIndividuals,
   takeSnapshotAndCensus,
-} = require("devtools/client/memory/actions/snapshot");
-const { changeView } = require("devtools/client/memory/actions/view");
+} = require("resource://devtools/client/memory/actions/snapshot.js");
+const {
+  changeView,
+} = require("resource://devtools/client/memory/actions/view.js");
 
 const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.COMPUTING_DOMINATOR_TREE,
@@ -22,7 +24,7 @@ const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.FETCHED,
 ];
 
-add_task(async function() {
+add_task(async function () {
   const front = new StubbedMemoryFront();
   const heapWorker = new HeapAnalysesClient();
   await front.attach();
@@ -66,7 +68,7 @@ add_task(async function() {
   ok(getState().individuals, "Should have individuals state");
   ok(getState().individuals.nodes, "Should have individuals nodes");
   ok(
-    getState().individuals.nodes.length > 0,
+    !!getState().individuals.nodes.length,
     "Should have a positive number of nodes"
   );
 

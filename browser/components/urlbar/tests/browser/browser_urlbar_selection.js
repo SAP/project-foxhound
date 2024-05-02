@@ -63,7 +63,11 @@ function drag(target, fromX, fromY, toX, toY) {
 }
 
 function resetPrimarySelection(val = "") {
-  if (Services.clipboard.supportsSelectionClipboard()) {
+  if (
+    Services.clipboard.isClipboardTypeSupported(
+      Services.clipboard.kSelectionClipboard
+    )
+  ) {
     // Reset the clipboard.
     clipboardHelper.copyStringToClipboard(
       val,
@@ -73,16 +77,20 @@ function resetPrimarySelection(val = "") {
 }
 
 function checkPrimarySelection(expectedVal = "") {
-  if (Services.clipboard.supportsSelectionClipboard()) {
+  if (
+    Services.clipboard.isClipboardTypeSupported(
+      Services.clipboard.kSelectionClipboard
+    )
+  ) {
     let primaryAsText = SpecialPowers.getClipboardData(
-      "text/unicode",
+      "text/plain",
       SpecialPowers.Ci.nsIClipboard.kSelectionClipboard
     );
     Assert.equal(primaryAsText, expectedVal);
   }
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // On macOS, we must "warm up" the Urlbar to get the first test to pass.
   gURLBar.value = "";
   await click(gURLBar.inputField);
@@ -114,7 +122,7 @@ add_task(async function leftClickSelectsUrl() {
   Assert.equal(gURLBar.selectionStart, 0, "The entire url should be selected.");
   Assert.equal(
     gURLBar.selectionEnd,
-    exampleUrl.length,
+    UrlbarTestUtils.trimURL(exampleUrl).length,
     "The entire url should be selected."
   );
   gURLBar.blur();
@@ -135,7 +143,7 @@ add_task(async function rightClickSelectsAll() {
   Assert.equal(gURLBar.selectionStart, 0, "The entire URL should be selected.");
   Assert.equal(
     gURLBar.selectionEnd,
-    exampleUrl.length,
+    UrlbarTestUtils.trimURL(exampleUrl).length,
     "The entire URL should be selected."
   );
 
@@ -172,13 +180,13 @@ add_task(async function rightClickSelectsAll() {
   );
   Assert.equal(
     gURLBar.selectionEnd,
-    exampleUrl.length,
+    UrlbarTestUtils.trimURL(exampleUrl).length,
     "The entire URL should be selected after clicking selectAll button."
   );
 
   gURLBar.querySelector("moz-input-box").menupopup.hidePopup();
   gURLBar.blur();
-  checkPrimarySelection(gURLBar.value);
+  checkPrimarySelection(gURLBar._untrimmedValue);
   await SpecialPowers.popPrefEnv();
 });
 

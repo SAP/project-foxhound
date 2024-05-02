@@ -16,14 +16,14 @@ info: |
     Unless otherwise specified, the name property of a built-in Function
     object, if it exists, has the attributes { [[Writable]]: false,
     [[Enumerable]]: false, [[Configurable]]: true }.
-features: [resizable-arraybuffer]
+features: [SharedArrayBuffer, resizable-arraybuffer]
 includes: [propertyHelper.js]
 ---*/
 
 verifyProperty(SharedArrayBuffer.prototype.grow, 'name', {
   value: 'grow',
   enumerable: false,
-  wrtiable: false,
+  writable: false,
   configurable: true
 });
 

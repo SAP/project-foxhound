@@ -66,7 +66,6 @@ function setupTestPreferences() {
       ["media.autoplay.default", SpecialPowers.Ci.nsIAutoplay.BLOCKED],
       ["media.autoplay.blocking_policy", 0],
       ["media.autoplay.block-event.enabled", true],
-      ["media.autoplay.block-webaudio", true],
     ],
   });
 }
@@ -101,7 +100,7 @@ async function testPlayWithoutUserGesture() {
     window.gBrowser,
     "about:blank"
   );
-  BrowserTestUtils.loadURI(tab.linkedBrowser, VIDEO_PAGE);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, VIDEO_PAGE);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   async function checkAutoplayKeyword() {
@@ -109,10 +108,10 @@ async function testPlayWithoutUserGesture() {
     let video = content.document.createElement("video");
     video.src = "gizmo.mp4";
     video.autoplay = true;
-    let canplayPromise = new Promise(function(resolve) {
+    let canplayPromise = new Promise(function (resolve) {
       video.addEventListener(
         "canplaythrough",
-        function() {
+        function () {
           resolve();
         },
         { once: true }
@@ -129,7 +128,7 @@ async function testPlayWithoutUserGesture() {
   async function playVideo() {
     let video = content.document.getElementById("v");
     info("- call play() without user activation -");
-    await video.play().catch(function() {
+    await video.play().catch(function () {
       ok(video.paused, "video can't start play without user input.");
     });
   }
@@ -145,7 +144,7 @@ async function testPlayWithUserGesture(gesture) {
     window.gBrowser,
     "about:blank"
   );
-  BrowserTestUtils.loadURI(tab.linkedBrowser, VIDEO_PAGE);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, VIDEO_PAGE);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   info("- simulate user gesture -");
@@ -180,7 +179,7 @@ function createAudioContext() {
   ac.stateChangePromise = new Promise(resolve => {
     ac.addEventListener(
       "statechange",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -189,7 +188,7 @@ function createAudioContext() {
   ac.notAllowedToStart = new Promise(resolve => {
     ac.addEventListener(
       "blocked",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -235,7 +234,7 @@ async function testWebAudioWithUserGesture(gesture) {
     return new Promise(resolve => {
       ac.addEventListener(
         "blocked",
-        function() {
+        function () {
           Assert.equal(
             ac.state,
             "suspended",

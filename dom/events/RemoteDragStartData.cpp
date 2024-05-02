@@ -20,17 +20,19 @@ namespace mozilla::dom {
 RemoteDragStartData::~RemoteDragStartData() = default;
 
 RemoteDragStartData::RemoteDragStartData(
-    BrowserParent* aBrowserParent, nsTArray<IPCDataTransfer>&& aDataTransfer,
+    BrowserParent* aBrowserParent,
+    nsTArray<IPCTransferableData>&& aTransferableData,
     const LayoutDeviceIntRect& aRect, nsIPrincipal* aPrincipal,
     nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
-    WindowContext* aSourceWindowContext)
+    WindowContext* aSourceWindowContext, WindowContext* aSourceTopWindowContext)
     : mBrowserParent(aBrowserParent),
-      mDataTransfer(std::move(aDataTransfer)),
+      mTransferableData(std::move(aTransferableData)),
       mRect(aRect),
       mPrincipal(aPrincipal),
       mCsp(aCsp),
       mCookieJarSettings(aCookieJarSettings),
-      mSourceWindowContext(aSourceWindowContext) {}
+      mSourceWindowContext(aSourceWindowContext),
+      mSourceTopWindowContext(aSourceTopWindowContext) {}
 
 void RemoteDragStartData::AddInitialDnDDataTo(
     DataTransfer* aDataTransfer, nsIPrincipal** aPrincipal,
@@ -40,9 +42,16 @@ void RemoteDragStartData::AddInitialDnDDataTo(
   NS_IF_ADDREF(*aCsp = mCsp);
   NS_IF_ADDREF(*aCookieJarSettings = mCookieJarSettings);
 
-  for (uint32_t i = 0; i < mDataTransfer.Length(); ++i) {
-    nsTArray<IPCDataTransferItem>& itemArray = mDataTransfer[i].items();
+  for (uint32_t i = 0; i < mTransferableData.Length(); ++i) {
+    nsTArray<IPCTransferableDataItem>& itemArray = mTransferableData[i].items();
     for (auto& item : itemArray) {
+      if (!nsContentUtils::IPCTransferableDataItemHasKnownFlavor(item)) {
+        NS_WARNING(
+            "Ignoring unknown flavor in "
+            "RemoteDragStartData::AddInitialDnDDataTo");
+        continue;
+      }
+
       RefPtr<nsVariantCC> variant = new nsVariantCC();
       // Special case kFilePromiseMime so that we get the right
       // nsIFlavorDataProvider for it.
@@ -50,30 +59,12 @@ void RemoteDragStartData::AddInitialDnDDataTo(
         RefPtr<nsISupports> flavorDataProvider =
             new nsContentAreaDragDropDataProvider();
         variant->SetAsISupports(flavorDataProvider);
-      } else if (item.data().type() == IPCDataTransferData::TnsString) {
-        variant->SetAsAString(item.data().get_nsString());
-      } else if (item.data().type() == IPCDataTransferData::TIPCBlob) {
-        RefPtr<BlobImpl> impl =
-            IPCBlobUtils::Deserialize(item.data().get_IPCBlob());
-        variant->SetAsISupports(impl);
-      } else if (item.data().type() == IPCDataTransferData::TShmem) {
-        if (nsContentUtils::IsFlavorImage(item.flavor())) {
-          // An image! Get the imgIContainer for it and set it in the variant.
-          nsCOMPtr<imgIContainer> imageContainer;
-          nsresult rv = nsContentUtils::DataTransferItemToImage(
-              item, getter_AddRefs(imageContainer));
-          if (NS_FAILED(rv)) {
-            continue;
-          }
-          variant->SetAsISupports(imageContainer);
-        } else {
-          Shmem data = item.data().get_Shmem();
-          variant->SetAsACString(
-              nsDependentCSubstring(data.get<char>(), data.Size<char>()));
+      } else {
+        nsresult rv =
+            nsContentUtils::IPCTransferableDataItemToVariant(item, variant);
+        if (NS_FAILED(rv)) {
+          continue;
         }
-
-        mozilla::Unused << mBrowserParent->DeallocShmem(
-            item.data().get_Shmem());
       }
 
       // We set aHidden to false, as we don't need to worry about hiding data
@@ -85,7 +76,7 @@ void RemoteDragStartData::AddInitialDnDDataTo(
   }
 
   // Clear things that are no longer needed.
-  mDataTransfer.Clear();
+  mTransferableData.Clear();
   mPrincipal = nullptr;
 }
 

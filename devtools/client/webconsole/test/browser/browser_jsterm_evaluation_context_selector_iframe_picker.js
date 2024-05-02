@@ -15,7 +15,7 @@ const TEST_URI = `https://example.com/document-builder.sjs?html=${encodeURICompo
   </html>
 `)}`;
 
-add_task(async function() {
+add_task(async function () {
   // Enable the context selector and the frames button.
   await pushPref("devtools.webconsole.input.context", true);
   await pushPref("devtools.command-button-frames.enabled", true);
@@ -40,11 +40,10 @@ add_task(async function() {
   const evaluationContextSelectorButton = hud.ui.outputNode.querySelector(
     ".webconsole-evaluation-selector-button"
   );
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "document.location.host",
-    `"example.com"`,
-    ".result"
+    `"example.com"`
   );
   ok(true, "The expression was evaluated in the example.com document.");
 
@@ -73,11 +72,10 @@ add_task(async function() {
   }
   ok(true, "The context was set to the example.org document");
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "document.location.host",
-    `"example.org"`,
-    ".result"
+    `"example.org"`
   );
   ok(true, "The expression was evaluated in the example.org document.");
 
@@ -88,11 +86,10 @@ add_task(async function() {
   );
   ok(true, "The context was set to the example.net document");
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "document.location.host",
-    `"example.net"`,
-    ".result"
+    `"example.net"`
   );
   ok(true, "The expression was evaluated in the example.net document.");
 
@@ -103,11 +100,10 @@ add_task(async function() {
   );
   ok(true, "The context was set to the example.com document");
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "document.location.host",
-    `"example.com"`,
-    ".result"
+    `"example.com"`
   );
   ok(true, "The expression was evaluated in the example.com document.");
 });

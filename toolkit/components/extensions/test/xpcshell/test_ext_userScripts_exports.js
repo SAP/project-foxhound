@@ -251,10 +251,10 @@ add_task(async function test_apiScript_async_method() {
     // Redefine Promise to verify that it doesn't break the WebExtensions internals
     // that are going to use them.
     const { Promise } = this;
-    Promise.resolve = function() {
+    Promise.resolve = function () {
       throw new Error("Promise.resolve poisoning");
     };
-    this.Promise = function() {
+    this.Promise = function () {
       throw new Error("Promise constructor poisoning");
     };
 
@@ -357,7 +357,7 @@ add_task(async function test_apiScript_method_got_param_with_methods() {
           );
           browser.test.assertEq(
             undefined,
-            typeof objWithMethods && objWithMethods.objMethod,
+            objWithMethods?.objMethod,
             "XrayWrapper should deny access to a callable property"
           );
 

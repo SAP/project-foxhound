@@ -6,7 +6,6 @@
 #define CUBEBDEVICEENUMERATOR_H_
 
 #include "AudioDeviceInfo.h"
-#include "CubebUtils.h"
 #include "cubeb/cubeb.h"
 #include "MediaEventSource.h"
 #include "mozilla/Mutex.h"
@@ -69,7 +68,7 @@ class CubebDeviceEnumerator final {
   void AudioDeviceListChanged(Side aSide);
   RefPtr<const AudioDeviceSet> EnumerateAudioDevices(Side aSide);
   // Synchronize access to mInputDevices and mOutputDevices;
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
   RefPtr<const AudioDeviceSet> mInputDevices;
   RefPtr<const AudioDeviceSet> mOutputDevices;
   // If mManual*Invalidation is true, then it is necessary to query the device

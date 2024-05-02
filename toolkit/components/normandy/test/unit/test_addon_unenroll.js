@@ -1,26 +1,26 @@
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { ExtensionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/ExtensionXPCShellUtils.jsm"
+const { ExtensionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ExtensionXPCShellUtils.sys.mjs"
 );
-const { BranchedAddonStudyAction } = ChromeUtils.import(
-  "resource://normandy/actions/BranchedAddonStudyAction.jsm"
+const { BranchedAddonStudyAction } = ChromeUtils.importESModule(
+  "resource://normandy/actions/BranchedAddonStudyAction.sys.mjs"
 );
-const { BaseAction } = ChromeUtils.import(
-  "resource://normandy/actions/BaseAction.jsm"
+const { BaseAction } = ChromeUtils.importESModule(
+  "resource://normandy/actions/BaseAction.sys.mjs"
 );
-const { TelemetryEvents } = ChromeUtils.import(
-  "resource://normandy/lib/TelemetryEvents.jsm"
+const { TelemetryEvents } = ChromeUtils.importESModule(
+  "resource://normandy/lib/TelemetryEvents.sys.mjs"
 );
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
-const { AddonStudies } = ChromeUtils.import(
-  "resource://normandy/lib/AddonStudies.jsm"
+const { AddonStudies } = ChromeUtils.importESModule(
+  "resource://normandy/lib/AddonStudies.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 /* import-globals-from utils.js */
@@ -58,7 +58,7 @@ decorate_task(
       manifest: {
         version: "1.0",
 
-        applications: {
+        browser_specific_settings: {
           gecko: { id: ID },
         },
 
@@ -94,11 +94,11 @@ decorate_task(
           // the following two lines avoid false eslint warnings:
           /* globals browser, ExtensionAPI */
           /* eslint-disable-next-line no-shadow */
-          const { AddonStudies } = ChromeUtils.import(
-            "resource://normandy/lib/AddonStudies.jsm"
+          const { AddonStudies } = ChromeUtils.importESModule(
+            "resource://normandy/lib/AddonStudies.sys.mjs"
           );
-          const { ExtensionCommon } = ChromeUtils.import(
-            "resource://gre/modules/ExtensionCommon.jsm"
+          const { ExtensionCommon } = ChromeUtils.importESModule(
+            "resource://gre/modules/ExtensionCommon.sys.mjs"
           );
           this.study = class extends ExtensionAPI {
             getAPI(context) {
@@ -227,7 +227,7 @@ decorate_task(
       manifest: {
         version: "1.0",
 
-        applications: {
+        browser_specific_settings: {
           gecko: { id: ID },
         },
       },

@@ -12,22 +12,16 @@
 #include "nsDocShellLoadState.h"
 #include "nsIContentViewer.h"
 #include "mozilla/ScrollbarPreferences.h"
-
-namespace mozilla {
-namespace ipc {
-
-template <>
-struct IPDLParamTraits<nsDocShellLoadState*> {
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
-                    nsDocShellLoadState* aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, RefPtr<nsDocShellLoadState>* aResult);
-};
-
-}  // namespace ipc
-}  // namespace mozilla
+#include "mozilla/ipc/IPDLParamTraits.h"
 
 namespace IPC {
+
+template <>
+struct ParamTraits<nsDocShellLoadState*> {
+  static void Write(IPC::MessageWriter* aWriter, nsDocShellLoadState* aParam);
+  static bool Read(IPC::MessageReader* aReader,
+                   RefPtr<nsDocShellLoadState>* aResult);
+};
 
 template <>
 struct ParamTraits<mozilla::ScrollbarPreference>

@@ -2,108 +2,84 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import {
-  createInitial,
-  insertResources,
-  updateResources,
-  removeResources,
-  hasResource,
-  getResource,
-} from "../utils/resource";
-
-import { asyncActionAsValue } from "../actions/utils/middleware/promise";
-
 /**
- * This reducer stores the list of all source actors.
+ * This reducer stores the list of all source actors as well their breakable lines.
+ *
  * There is a one-one relationship with Source Actors from the server codebase,
  * as well as SOURCE Resources distributed by the ResourceCommand API.
  *
- * See create.js: `createSourceActor` for the shape of the source actor objects.
- * This reducer will append the following attributes:
- * - breakableLines: { state: <"pending"|"fulfilled">, value: Array<Number> }
- *   List of all lines where breakpoints can be set
- * - breakpointPositions: Map<line, { state: <"pending"|"fulfilled">, value: Array<Number> }>
- *   Map of the column positions per line where breakpoints can be set
  */
-export const initial = createInitial();
+function initialSourceActorsState() {
+  return {
+    // Map(Source Actor ID: string => SourceActor: object)
+    // See create.js: `createSourceActor` for the shape of the source actor objects.
+    mutableSourceActors: new Map(),
 
-export default function update(state = initial, action) {
+    // Map(Source Actor ID: string => Breakable lines: Array<Number>)
+    // The array is the list of all lines where breakpoints can be set
+    mutableBreakableLines: new Map(),
+
+    // Set(Source Actor ID: string)
+    // List of all IDs of source actor which have a valid related source map / original source.
+    // The SourceActor object may have a sourceMapURL attribute set,
+    // but this may be invalid. The source map URL or source map file content may be invalid.
+    // In these scenarios we will remove the source actor from this set.
+    mutableSourceActorsWithSourceMap: new Set(),
+  };
+}
+
+export const initial = initialSourceActorsState();
+
+export default function update(state = initialSourceActorsState(), action) {
   switch (action.type) {
     case "INSERT_SOURCE_ACTORS": {
-      const { items } = action;
-      // The `item` objects are defined from create.js: `createSource` method.
-      state = insertResources(
-        state,
-        items.map(item => ({
-          ...item,
-          breakpointPositions: new Map(),
-          breakableLines: null,
-        }))
-      );
-      break;
-    }
-    case "REMOVE_SOURCE_ACTORS": {
-      state = removeResources(state, action.items);
-      break;
+      for (const sourceActor of action.sourceActors) {
+        state.mutableSourceActors.set(sourceActor.id, sourceActor);
+
+        // If the sourceMapURL attribute is set, consider that it is valid.
+        // But this may be revised later and removed from this Set.
+        if (sourceActor.sourceMapURL) {
+          state.mutableSourceActorsWithSourceMap.add(sourceActor.id);
+        }
+      }
+      return {
+        ...state,
+      };
     }
 
-    case "NAVIGATE": {
-      state = initial;
-      break;
+    case "REMOVE_THREAD": {
+      for (const sourceActor of state.mutableSourceActors.values()) {
+        if (sourceActor.thread == action.threadActorID) {
+          state.mutableSourceActors.delete(sourceActor.id);
+          state.mutableBreakableLines.delete(sourceActor.id);
+          state.mutableSourceActorsWithSourceMap.delete(sourceActor.id);
+        }
+      }
+      return {
+        ...state,
+      };
     }
-
-    case "SET_SOURCE_ACTOR_BREAKPOINT_COLUMNS":
-      state = updateBreakpointColumns(state, action);
-      break;
 
     case "SET_SOURCE_ACTOR_BREAKABLE_LINES":
-      state = updateBreakableLines(state, action);
-      break;
+      state.mutableBreakableLines.set(
+        action.sourceActor.id,
+        action.breakableLines
+      );
+
+      return {
+        ...state,
+      };
 
     case "CLEAR_SOURCE_ACTOR_MAP_URL":
-      state = clearSourceActorMapURL(state, action.id);
-      break;
+      if (
+        state.mutableSourceActorsWithSourceMap.delete(action.sourceActor.id)
+      ) {
+        return {
+          ...state,
+        };
+      }
+      return state;
   }
 
   return state;
-}
-
-function clearSourceActorMapURL(state, id) {
-  if (!hasResource(state, id)) {
-    return state;
-  }
-
-  return updateResources(state, [
-    {
-      id,
-      sourceMapURL: "",
-    },
-  ]);
-}
-
-function updateBreakpointColumns(state, action) {
-  const { sourceId, line } = action;
-  const value = asyncActionAsValue(action);
-
-  if (!hasResource(state, sourceId)) {
-    return state;
-  }
-
-  const breakpointPositions = new Map(
-    getResource(state, sourceId).breakpointPositions
-  );
-  breakpointPositions.set(line, value);
-
-  return updateResources(state, [{ id: sourceId, breakpointPositions }]);
-}
-
-function updateBreakableLines(state, action) {
-  const value = asyncActionAsValue(action);
-  const { sourceId } = action;
-
-  if (!hasResource(state, sourceId)) {
-    return state;
-  }
-
-  return updateResources(state, [{ id: sourceId, breakableLines: value }]);
 }

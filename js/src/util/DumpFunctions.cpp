@@ -15,34 +15,36 @@
 #include "jsfriendapi.h"  // js::WeakMapTracer
 #include "jstypes.h"      // JS_PUBLIC_API
 
-#include "gc/Allocator.h"         // js::CanGC
 #include "gc/Cell.h"              // js::gc::Cell, js::gc::TenuredCell
 #include "gc/GC.h"                // js::TraceRuntimeWithoutEviction
+#include "gc/GCEnum.h"            // js::CanGC
 #include "gc/Heap.h"              // js::gc::Arena
 #include "gc/Tracer.h"            // js::TraceChildren
 #include "gc/WeakMap.h"           // js::IterateHeapUnbarriered, js::WeakMapBase
 #include "js/CallAndConstruct.h"  // JS::IsCallable
+#include "js/ColumnNumber.h"      // JS::LimitedColumnNumberOneOrigin
 #include "js/GCAPI.h"             // JS::GCReason
 #include "js/GCVector.h"          // JS::RootedVector
 #include "js/HeapAPI.h"           // JS::GCCellPtr, js::gc::IsInsideNursery
 #include "js/Id.h"                // JS::PropertyKey
-#include "js/RootingAPI.h"        // JS::Handle, JS::Rooted
-#include "js/TracingAPI.h"        // JS::CallbackTracer, JS_GetTraceThingInfo
-#include "js/UbiNode.h"           // JS::ubi::Node
-#include "js/Value.h"             // JS::Value
-#include "js/Wrapper.h"           // js::UncheckedUnwrapWithoutExpose
-#include "vm/BigIntType.h"        // JS::BigInt::dump
-#include "vm/FrameIter.h"         // js::AllFramesIter, js::FrameIter
-#include "vm/JSContext.h"         // JSContext
-#include "vm/JSFunction.h"        // JSFunction
-#include "vm/JSObject.h"          // JSObject
-#include "vm/JSScript.h"          // JSScript
-#include "vm/Printer.h"     // js::GenericPrinter, js::QuoteString, js::Sprinter
-#include "vm/Realm.h"       // JS::Realm
-#include "vm/Runtime.h"     // JSRuntime
-#include "vm/Scope.h"       // js::PositionalFormalParameterIter
-#include "vm/Stack.h"       // js::DONT_CHECK_ALIASING
-#include "vm/StringType.h"  // JSAtom, JSString, js::ToString
+#include "js/Printer.h"     // js::GenericPrinter, js::QuoteString, js::Sprinter
+#include "js/RootingAPI.h"  // JS::Handle, JS::Rooted
+#include "js/TracingAPI.h"  // JS::CallbackTracer, JS_GetTraceThingInfo
+#include "js/UbiNode.h"     // JS::ubi::Node
+#include "js/Value.h"       // JS::Value
+#include "js/Wrapper.h"     // js::UncheckedUnwrapWithoutExpose
+#include "vm/BigIntType.h"  // JS::BigInt::dump
+#include "vm/FrameIter.h"   // js::AllFramesIter, js::FrameIter
+#include "vm/Interpreter.h"  // GetFunctionThis
+#include "vm/JSContext.h"    // JSContext
+#include "vm/JSFunction.h"   // JSFunction
+#include "vm/JSObject.h"     // JSObject
+#include "vm/JSScript.h"     // JSScript
+#include "vm/Realm.h"        // JS::Realm
+#include "vm/Runtime.h"      // JSRuntime
+#include "vm/Scope.h"        // js::PositionalFormalParameterIter
+#include "vm/Stack.h"        // js::DONT_CHECK_ALIASING
+#include "vm/StringType.h"   // JSAtom, JSString, js::ToString
 
 #include "vm/JSObject-inl.h"  // js::IsCallable
 #include "vm/Realm-inl.h"     // js::AutoRealm
@@ -261,18 +263,17 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
   JSAutoRealm ar(cx, envChain);
 
   const char* filename = script->filename();
-  unsigned column = 0;
+  JS::LimitedColumnNumberOneOrigin column;
   unsigned lineno = PCToLineNumber(script, pc, &column);
   Rooted<JSFunction*> fun(cx, iter.maybeCallee(cx));
   Rooted<JSString*> funname(cx);
   if (fun) {
-    funname = fun->displayAtom();
+    funname = fun->fullDisplayAtom();
   }
 
   Rooted<Value> thisVal(cx);
   if (iter.hasUsableAbstractFramePtr() && iter.isFunctionFrame() && fun &&
-      !fun->isArrow() && !fun->isDerivedClassConstructor() &&
-      !(fun->isBoundFunction() && iter.isConstructing())) {
+      !fun->isArrow() && !fun->isDerivedClassConstructor()) {
     if (!GetFunctionThis(cx, iter.abstractFramePtr(), &thisVal)) {
       return false;
     }
@@ -284,17 +285,11 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
     if (!funbytes) {
       return false;
     }
-    if (!sp.printf("%d %s(", num, funbytes.get())) {
-      return false;
-    }
+    sp.printf("%d %s(", num, funbytes.get());
   } else if (fun) {
-    if (!sp.printf("%d anonymous(", num)) {
-      return false;
-    }
+    sp.printf("%d anonymous(", num);
   } else {
-    if (!sp.printf("%d <TOP LEVEL>", num)) {
-      return false;
-    }
+    sp.printf("%d <TOP LEVEL>", num);
   }
 
   if (showArgs && iter.hasArgs()) {
@@ -345,27 +340,23 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
       }
 
       if (value) {
-        if (!sp.printf("%s%s%s%s%s%s", !first ? ", " : "", name ? name : "",
-                       name ? " = " : "", arg.isString() ? "\"" : "", value,
-                       arg.isString() ? "\"" : "")) {
-          return false;
-        }
+        sp.printf("%s%s%s%s%s%s", !first ? ", " : "", name ? name : "",
+                  name ? " = " : "", arg.isString() ? "\"" : "", value,
+                  arg.isString() ? "\"" : "");
 
         first = false;
       } else {
-        if (!sp.put("    <Failed to get argument while inspecting stack "
-                    "frame>\n")) {
-          return false;
-        }
+        sp.put(
+            "    <Failed to get argument while inspecting stack "
+            "frame>\n");
       }
     }
   }
 
   // print filename, line number and column
-  if (!sp.printf("%s [\"%s\":%u:%u]\n", fun ? ")" : "",
-                 filename ? filename : "<unknown>", lineno, column)) {
-    return false;
-  }
+  sp.printf("%s [\"%s\":%u:%u]\n", fun ? ")" : "",
+            filename ? filename : "<unknown>", lineno,
+            column.zeroOriginValue());
 
   // Note: Right now we don't dump the local variables anymore, because
   // that is hard to support across all the JITs etc.
@@ -385,13 +376,9 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
         if (!thisValBytes) {
           return false;
         }
-        if (!sp.printf("    this = %s\n", thisValBytes.get())) {
-          return false;
-        }
+        sp.printf("    this = %s\n", thisValBytes.get());
       } else {
-        if (!sp.put("    <failed to get 'this' value>\n")) {
-          return false;
-        }
+        sp.put("    <failed to get 'this' value>\n");
       }
     }
   }
@@ -417,10 +404,9 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
           return false;
         }
         cx->clearPendingException();
-        if (!sp.put("    <Failed to fetch property while inspecting stack "
-                    "frame>\n")) {
-          return false;
-        }
+        sp.put(
+            "    <Failed to fetch property while inspecting stack "
+            "frame>\n");
         continue;
       }
 
@@ -443,15 +429,12 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
       }
 
       if (name && value) {
-        if (!sp.printf("    this.%s = %s%s%s\n", name, v.isString() ? "\"" : "",
-                       value, v.isString() ? "\"" : "")) {
-          return false;
-        }
+        sp.printf("    this.%s = %s%s%s\n", name, v.isString() ? "\"" : "",
+                  value, v.isString() ? "\"" : "");
       } else {
-        if (!sp.put("    <Failed to format values while inspecting stack "
-                    "frame>\n")) {
-          return false;
-        }
+        sp.put(
+            "    <Failed to format values while inspecting stack "
+            "frame>\n");
       }
     }
   }
@@ -470,15 +453,10 @@ static bool FormatWasmFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
     }
   }
 
-  if (!sp.printf("%d %s()", num, nameStr ? nameStr.get() : "<wasm-function>")) {
-    return false;
-  }
-
-  if (!sp.printf(" [\"%s\":wasm-function[%u]:0x%x]\n",
-                 iter.filename() ? iter.filename() : "<unknown>",
-                 iter.wasmFuncIndex(), iter.wasmBytecodeOffset())) {
-    return false;
-  }
+  sp.printf("%d %s()", num, nameStr ? nameStr.get() : "<wasm-function>");
+  sp.printf(" [\"%s\":wasm-function[%u]:0x%x]\n",
+            iter.filename() ? iter.filename() : "<unknown>",
+            iter.wasmFuncIndex(), iter.wasmBytecodeOffset());
 
   MOZ_ASSERT(!cx->isExceptionPending());
   return true;
@@ -504,9 +482,7 @@ JS::UniqueChars JS::FormatStackDump(JSContext* cx, bool showArgs,
   }
 
   if (num == 0) {
-    if (!sp.put("JavaScript stack is empty\n")) {
-      return nullptr;
-    }
+    sp.put("JavaScript stack is empty\n");
   }
 
   return sp.release();
@@ -536,7 +512,7 @@ struct DumpHeapTracer final : public JS::CallbackTracer, public WeakMapTracer {
             key.asCell(), kdelegate, value.asCell());
   }
 
-  void onChild(JS::GCCellPtr thing) override;
+  void onChild(JS::GCCellPtr thing, const char* name) override;
 };
 
 static char MarkDescriptor(js::gc::Cell* thing) {
@@ -602,13 +578,13 @@ static void DumpHeapVisitCell(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
   JS::TraceChildren(dtrc, cellptr);
 }
 
-void DumpHeapTracer::onChild(JS::GCCellPtr thing) {
+void DumpHeapTracer::onChild(JS::GCCellPtr thing, const char* name) {
   if (js::gc::IsInsideNursery(thing.asCell())) {
     return;
   }
 
   char buffer[1024];
-  context().getEdgeName(buffer, sizeof(buffer));
+  context().getEdgeName(name, buffer, sizeof(buffer));
   fprintf(output, "%s%p %c %s\n", prefix, thing.asCell(),
           MarkDescriptor(thing.asCell()), buffer);
 }
@@ -635,4 +611,23 @@ void js::DumpHeap(JSContext* cx, FILE* fp,
                          DumpHeapVisitArena, DumpHeapVisitCell);
 
   fflush(dtrc.output);
+}
+
+void DumpFmtV(FILE* fp, const char* fmt, va_list args) {
+  js::Fprinter out(fp);
+  out.vprintf(fmt, args);
+}
+
+void js::DumpFmt(FILE* fp, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  DumpFmtV(fp, fmt, args);
+  va_end(args);
+}
+
+void js::DumpFmt(const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  DumpFmtV(stderr, fmt, args);
+  va_end(args);
 }

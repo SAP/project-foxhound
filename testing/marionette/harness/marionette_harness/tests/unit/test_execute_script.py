@@ -1,11 +1,9 @@
-from __future__ import absolute_import
-
 import os
 
 from six.moves.urllib.parse import quote
 
 from marionette_driver import By, errors
-from marionette_driver.marionette import Alert, HTMLElement
+from marionette_driver.marionette import Alert, WebElement
 from marionette_driver.wait import Wait
 
 from marionette_harness import MarionetteTestCase, WindowManagerMixin
@@ -16,6 +14,26 @@ def inline(doc):
 
 
 elements = inline("<p>foo</p> <p>bar</p>")
+
+shadow_dom = """
+    <style>
+        custom-checkbox-element {
+            display:block; width:20px; height:20px;
+        }
+    </style>
+    <custom-checkbox-element></custom-checkbox-element>
+    <script>
+        customElements.define('custom-checkbox-element',
+            class extends HTMLElement {
+                constructor() {
+                        super();
+                        this.attachShadow({mode: '%s'}).innerHTML = `
+                            <div><input type="checkbox"/></div>
+                        `;
+                    }
+            });
+    </script>"""
+
 
 globals = set(
     [
@@ -56,7 +74,7 @@ class TestExecuteContent(MarionetteTestCase):
         )
 
     def assert_is_web_element(self, element):
-        self.assertIsInstance(element, HTMLElement)
+        self.assertIsInstance(element, WebElement)
 
     def test_return_number(self):
         self.assertEqual(1, self.marionette.execute_script("return 1"))
@@ -149,6 +167,23 @@ class TestExecuteContent(MarionetteTestCase):
             self.marionette.execute_script("return arguments[0]", ({"foo": 1},)),
         )
 
+    def test_argument_shadow_root(self):
+        self.marionette.navigate(inline(shadow_dom % "open"))
+        elem = self.marionette.find_element(By.TAG_NAME, "custom-checkbox-element")
+        shadow_root = elem.shadow_root
+        nodeType = self.marionette.execute_script(
+            "return arguments[0].nodeType", script_args=(shadow_root,)
+        )
+        self.assertEqual(nodeType, 11)
+
+    def test_argument_web_element(self):
+        self.marionette.navigate(elements)
+        elem = self.marionette.find_element(By.TAG_NAME, "p")
+        nodeType = self.marionette.execute_script(
+            "return arguments[0].nodeType", script_args=(elem,)
+        )
+        self.assertEqual(nodeType, 1)
+
     def test_default_sandbox_globals(self):
         for property in globals:
             self.assert_is_defined(property, sandbox="default")
@@ -209,6 +244,26 @@ class TestExecuteContent(MarionetteTestCase):
             return [els[0], els[1]]"""
         )
         self.assertEqual(expected, actual)
+
+    def test_return_web_element_nested_array(self):
+        self.marionette.navigate(elements)
+        expected = self.marionette.find_elements(By.TAG_NAME, "p")
+        actual = self.marionette.execute_script(
+            """
+            let els = document.querySelectorAll('p')
+            return { els: [els[0], els[1]] }"""
+        )
+        self.assertEqual(expected, actual["els"])
+
+    def test_return_web_element_nested_dict(self):
+        self.marionette.navigate(elements)
+        expected = self.marionette.find_element(By.TAG_NAME, "p")
+        actual = self.marionette.execute_script(
+            """
+            let el = document.querySelector('p')
+            return { path: { to: { el } } }"""
+        )
+        self.assertEqual(expected, actual["path"]["to"]["el"])
 
     # Bug 938228 identifies a problem with unmarshaling NodeList
     # objects from the DOM.  document.querySelectorAll returns this
@@ -422,7 +477,6 @@ class TestExecuteContent(MarionetteTestCase):
         )
         self.assert_is_web_element(el)
         self.assertEqual(el, self.marionette.find_element(By.CSS_SELECTOR, ":root"))
-        self.assertEqual(el.get_property("localName"), "html")
 
     def test_comment_in_last_line(self):
         self.marionette.execute_script(" // comment ")
@@ -437,8 +491,12 @@ class TestExecuteChrome(WindowManagerMixin, TestExecuteContent):
         super(TestExecuteChrome, self).setUp()
 
         self.marionette.set_context("chrome")
+        win = self.open_chrome_window("chrome://remote/content/marionette/test.xhtml")
+        self.marionette.switch_to_window(win)
 
     def tearDown(self):
+        self.close_all_windows()
+
         super(TestExecuteChrome, self).tearDown()
 
     def test_permission(self):
@@ -447,21 +505,22 @@ class TestExecuteChrome(WindowManagerMixin, TestExecuteContent):
         )
 
     def test_unmarshal_element_collection(self):
-        try:
-            win = self.open_chrome_window(
-                "chrome://remote/content/marionette/test.xhtml"
-            )
-            self.marionette.switch_to_window(win)
+        expected = self.marionette.find_elements(By.TAG_NAME, "input")
+        actual = self.marionette.execute_script(
+            "return document.querySelectorAll('input')"
+        )
+        self.assertTrue(len(expected) > 0)
+        self.assertEqual(expected, actual)
 
-            expected = self.marionette.find_elements(By.TAG_NAME, "input")
-            actual = self.marionette.execute_script(
-                "return document.querySelectorAll('input')"
-            )
-            self.assertTrue(len(expected) > 0)
-            self.assertEqual(expected, actual)
+    def test_argument_shadow_root(self):
+        pass
 
-        finally:
-            self.close_all_windows()
+    def test_argument_web_element(self):
+        elem = self.marionette.find_element(By.TAG_NAME, "input")
+        nodeType = self.marionette.execute_script(
+            "return arguments[0].nodeType", script_args=(elem,)
+        )
+        self.assertEqual(nodeType, 1)
 
     def test_async_script_timeout(self):
         with self.assertRaises(errors.ScriptTimeoutException):
@@ -480,6 +539,12 @@ class TestExecuteChrome(WindowManagerMixin, TestExecuteContent):
         pass
 
     def test_return_web_element_array(self):
+        pass
+
+    def test_return_web_element_nested_array(self):
+        pass
+
+    def test_return_web_element_nested_dict(self):
         pass
 
     def test_return_web_element_nodelist(self):

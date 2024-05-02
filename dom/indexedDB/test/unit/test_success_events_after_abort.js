@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -33,7 +34,7 @@ function* testSteps() {
 
   request = objectStore.get(1);
   request.onsuccess = unexpectedSuccessHandler;
-  request.onerror = function(event) {
+  request.onerror = function (event) {
     is(event.target.error.name, "AbortError", "Good error");
     sawError = true;
     event.preventDefault();

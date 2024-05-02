@@ -65,6 +65,7 @@ const TEST_DATA = [
         #shadow-root
           slot
             div!slotted
+            default content
         ::marker
         ::before
         class="light-dom"`,
@@ -97,7 +98,7 @@ const TEST_DATA = [
 
 for (const { url, tree, title } of TEST_DATA) {
   // Test each configuration in both open and closed modes
-  add_task(async function() {
+  add_task(async function () {
     info(`Testing: [${title}] in OPEN mode`);
     const { inspector, tab } = await openInspectorForURL(
       url.replace(/#MODE#/g, "open")
@@ -105,7 +106,7 @@ for (const { url, tree, title } of TEST_DATA) {
     await assertMarkupViewAsTree(tree, "test-component", inspector);
     await removeTab(tab);
   });
-  add_task(async function() {
+  add_task(async function () {
     info(`Testing: [${title}] in CLOSED mode`);
     const { inspector, tab } = await openInspectorForURL(
       url.replace(/#MODE#/g, "closed")

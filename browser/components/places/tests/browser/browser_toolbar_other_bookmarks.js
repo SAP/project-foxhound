@@ -25,7 +25,14 @@ const bookmarksInfo = [
  */
 
 // Setup.
-add_task(async function setup() {
+add_setup(async function () {
+  // Disable window occlusion. See bug 1733955 / bug 1779559.
+  if (navigator.platform.indexOf("Win") == 0) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.windows.window_occlusion_tracking.enabled", false]],
+    });
+  }
+
   let toolbar = document.getElementById("PersonalToolbar");
   let wasCollapsed = toolbar.collapsed;
 
@@ -258,14 +265,14 @@ add_task(async function testShowingOtherBookmarksContextMenuItem() {
     "Ensure 'Show Other Bookmarks' isn't shown when Other Bookmarks is empty."
   );
   await PlacesUtils.bookmarks.remove(bookmark);
-  await testIsOtherBookmarksMenuItemShown(false);
+  await testIsOtherBookmarksMenuItemEnabled(false);
 
   info("Add a bookmark to the empty Other Bookmarks folder.");
   await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.unfiledGuid,
     children: [{ title: "firefox", url: "http://example.com" }],
   });
-  await testIsOtherBookmarksMenuItemShown(true);
+  await testIsOtherBookmarksMenuItemEnabled(true);
 
   info(
     "Ensure that displaying Other Bookmarks is consistent across separate windows."
@@ -301,7 +308,7 @@ add_task(async function testShowingOtherBookmarksContextMenuItem() {
 // Test 'Show Other Bookmarks' isn't shown when pref is false.
 add_task(async function showOtherBookmarksMenuItemPrefDisabled() {
   await setupBookmarksToolbar();
-  await testIsOtherBookmarksMenuItemShown(false);
+  await testIsOtherBookmarksMenuItemEnabled(false);
 });
 
 // Test that node visibility for toolbar overflow is consisten when the "Other Bookmarks"
@@ -421,12 +428,12 @@ async function testOtherBookmarksCheckedState(expectedCheckedState) {
 
 /**
  * Test helper for checking whether or not the 'Show Other Bookmarks' menu item
- * appears in the toolbar's context menu.
+ * is enabled in the toolbar's context menu.
  *
  * @param {boolean} expected
- *        Whether or not the menu item appears in the toolbar conext menu.
+ *        Whether or not the menu item is enabled in the toolbar conext menu.
  */
-async function testIsOtherBookmarksMenuItemShown(expected) {
+async function testIsOtherBookmarksMenuItemEnabled(expected) {
   await openToolbarContextMenu();
 
   let otherBookmarksMenuItem = document.querySelector(
@@ -434,7 +441,7 @@ async function testIsOtherBookmarksMenuItemShown(expected) {
   );
 
   is(
-    !!otherBookmarksMenuItem,
+    !otherBookmarksMenuItem.disabled,
     expected,
     "'Show Other Bookmarks' menu item appearance state is correct."
   );
@@ -518,6 +525,7 @@ async function closeToolbarContextMenu() {
  * Other Bookmarks folder testable.
  *
  * @param {object} [win]
+ *   The window object to use.
  */
 async function setupBookmarksToolbar(win = window) {
   let toolbar = win.document.getElementById("PersonalToolbar");
@@ -573,9 +581,8 @@ function testUpdatedNodeVisibility(otherWin) {
     }
   }
 
-  let otherToolbarItems = otherWin.document.getElementById(
-    "PlacesToolbarItems"
-  );
+  let otherToolbarItems =
+    otherWin.document.getElementById("PlacesToolbarItems");
   let otherVisibleNodes = [];
 
   for (let node of otherToolbarItems.children) {

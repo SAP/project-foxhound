@@ -8,7 +8,6 @@
 
 #include "mozilla/Assertions.h"   // MOZ_ASSERT, MOZ_ASSERT_IF
 #include "mozilla/EndianUtils.h"  // mozilla::NativeEndian, MOZ_LITTLE_ENDIAN
-#include "mozilla/RefPtr.h"       // RefPtr
 #include "mozilla/Result.h"       // mozilla::{Result, Ok, Err}, MOZ_TRY
 #include "mozilla/Utf8.h"         // mozilla::Utf8Unit
 
@@ -19,6 +18,7 @@
 #include <type_traits>  // std::is_same_v
 #include <utility>      // std::move
 
+#include "frontend/FrontendContext.h"  // FrontendContext
 #include "js/Transcoding.h"  // JS::TranscodeResult, JS::TranscodeBuffer, JS::TranscodeRange
 #include "js/UniquePtr.h"   // UniquePtr
 #include "js/Utility.h"     // JS::FreePolicy, js_delete
@@ -30,14 +30,9 @@ using namespace js;
 using mozilla::Utf8Unit;
 
 #ifdef DEBUG
-bool XDRCoderBase::validateResultCode(JSContext* cx,
+bool XDRCoderBase::validateResultCode(FrontendContext* fc,
                                       JS::TranscodeResult code) const {
-  // NOTE: This function is called to verify that we do not have a pending
-  // exception on the JSContext at the same time as a TranscodeResult failure.
-  if (cx->isHelperThreadContext()) {
-    return true;
-  }
-  return cx->isExceptionPending() == bool(code == JS::TranscodeResult::Throw);
+  return fc->hadErrors() == bool(code == JS::TranscodeResult::Throw);
 }
 #endif
 
@@ -132,7 +127,7 @@ static XDRResult XDRCodeCharsZ(XDRState<mode>* xdr,
     // Set a reasonable limit on string length.
     size_t lengthSizeT = std::char_traits<CharT>::length(chars);
     if (lengthSizeT > JSString::MAX_LENGTH) {
-      ReportAllocationOverflow(xdr->cx());
+      ReportAllocationOverflow(xdr->fc());
       return xdr->fail(JS::TranscodeResult::Throw);
     }
     length = static_cast<uint32_t>(lengthSizeT);
@@ -140,7 +135,8 @@ static XDRResult XDRCodeCharsZ(XDRState<mode>* xdr,
   MOZ_TRY(xdr->codeUint32(&length));
 
   if (mode == XDR_DECODE) {
-    owned = xdr->cx()->template make_pod_array<CharT>(length + 1);
+    owned =
+        xdr->fc()->getAllocator()->template make_pod_array<CharT>(length + 1);
     if (!owned) {
       return xdr->fail(JS::TranscodeResult::Throw);
     }

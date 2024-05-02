@@ -294,6 +294,10 @@ nsresult nsIconChannel::GetIcon(nsIURI* aURI, ByteBuf* aDataOut) {
   nsCOMPtr<nsIMozIconURI> iconURI = do_QueryInterface(aURI);
   NS_ASSERTION(iconURI, "URI is not an nsIMozIconURI");
 
+  if (!iconURI) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   if (gfxPlatform::IsHeadless()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -401,7 +405,6 @@ nsresult nsIconChannel::GetIcon(nsIURI* aURI, ByteBuf* aDataOut) {
 }
 
 nsresult nsIconChannel::Init(nsIURI* aURI) {
-  nsresult rv;
   nsCOMPtr<nsIInputStream> stream;
 
   using ContentChild = mozilla::dom::ContentChild;
@@ -416,10 +419,8 @@ nsresult nsIconChannel::Init(nsIURI* aURI) {
 
     nsCOMPtr<nsIAsyncInputStream> inputStream;
     nsCOMPtr<nsIAsyncOutputStream> outputStream;
-    nsresult rv =
-        NS_NewPipe2(getter_AddRefs(inputStream), getter_AddRefs(outputStream),
-                    true, false, 0, UINT32_MAX);
-    NS_ENSURE_SUCCESS(rv, rv);
+    NS_NewPipe2(getter_AddRefs(inputStream), getter_AddRefs(outputStream), true,
+                false, 0, UINT32_MAX);
 
     // FIXME: Bug 1718324
     // The GetSystemIcon() call will end up on the parent doing GetIcon()
@@ -430,10 +431,9 @@ nsresult nsIconChannel::Init(nsIURI* aURI) {
 
     icon->Then(
         mozilla::GetCurrentSerialEventTarget(), __func__,
-        [outputStream](
-            mozilla::Tuple<nsresult, mozilla::Maybe<ByteBuf>>&& aArg) {
-          nsresult rv = mozilla::Get<0>(aArg);
-          mozilla::Maybe<ByteBuf> bytes = std::move(mozilla::Get<1>(aArg));
+        [outputStream](std::tuple<nsresult, mozilla::Maybe<ByteBuf>>&& aArg) {
+          nsresult rv = std::get<0>(aArg);
+          mozilla::Maybe<ByteBuf> bytes = std::move(std::get<1>(aArg));
 
           if (NS_SUCCEEDED(rv)) {
             MOZ_RELEASE_ASSERT(bytes);
@@ -464,7 +464,7 @@ nsresult nsIconChannel::Init(nsIURI* aURI) {
   } else {
     // Get the icon directly.
     ByteBuf bytebuf;
-    rv = GetIcon(aURI, &bytebuf);
+    nsresult rv = GetIcon(aURI, &bytebuf);
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = ByteBufToStream(std::move(bytebuf), getter_AddRefs(stream));

@@ -1,7 +1,7 @@
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 // ExtensionContent.jsm needs to know when it's running from xpcshell,
@@ -163,7 +163,7 @@ add_task(async function test_i18n() {
 
       "content.js":
         "new " +
-        function(runTestsFn) {
+        function (runTestsFn) {
           runTestsFn((...args) => {
             browser.runtime.sendMessage(["assertEq", ...args]);
           });
@@ -175,7 +175,7 @@ add_task(async function test_i18n() {
 
     background:
       "new " +
-      function(runTestsFn) {
+      function (runTestsFn) {
         browser.runtime.onMessage.addListener(([msg, ...args]) => {
           if (msg == "assertEq") {
             browser.test.assertEq(...args);
@@ -233,7 +233,7 @@ add_task(async function test_i18n_negotiation() {
 
       "content.js":
         "new " +
-        function(runTestsFn) {
+        function (runTestsFn) {
           browser.test.onMessage.addListener(expected => {
             runTestsFn(expected);
 
@@ -246,7 +246,7 @@ add_task(async function test_i18n_negotiation() {
 
     background:
       "new " +
-      function(runTestsFn) {
+      function (runTestsFn) {
         browser.test.onMessage.addListener(expected => {
           runTestsFn(expected);
 
@@ -351,7 +351,9 @@ add_task(async function test_get_accept_languages() {
   await extension.startup();
   await extension.awaitMessage("content-loaded");
 
-  let expectedLangs = ["en-US", "en"];
+  // TODO bug 1765375: ", en" is missing on Android.
+  let expectedLangs =
+    AppConstants.platform == "android" ? ["en-US"] : ["en-US", "en"];
   extension.sendMessage(["expect-results", expectedLangs]);
   await extension.awaitMessage("background-done");
   await extension.awaitMessage("content-done");
@@ -452,11 +454,6 @@ add_task(async function test_get_ui_language() {
 });
 
 add_task(async function test_detect_language() {
-  if (AppConstants.MOZ_BUILD_APP !== "browser") {
-    // This is not supported on Android.
-    return;
-  }
-
   const af_string =
     " aam skukuza die naam beteken hy wat skoonvee of hy wat alles onderstebo keer wysig " +
     "bosveldkampe boskampe is kleiner afgeleë ruskampe wat oor min fasiliteite beskik daar is geen restaurante " +

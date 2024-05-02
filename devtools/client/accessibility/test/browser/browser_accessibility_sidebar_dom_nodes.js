@@ -3,6 +3,10 @@
 
 "use strict";
 
+const {
+  L10N,
+} = require("resource://devtools/client/accessibility/utils/l10n.js");
+
 // Check that DOM nodes in the sidebar can be highlighted and that clicking on the icon
 // next to them opens the inspector.
 
@@ -38,6 +42,11 @@ addA11YPanelTask(
 
     const openInspectorButton = domNodeEl.querySelector(".open-inspector");
     ok(openInspectorButton, "The open inspector button is displayed");
+    is(
+      openInspectorButton.getAttribute("title"),
+      L10N.getStr("accessibility.accessible.selectNodeInInspector.title"),
+      "The open inspector button has expected title"
+    );
 
     info("Check that hovering DOMNode triggers the highlight");
     // Loading the inspector panel at first, to make it possible to listen for

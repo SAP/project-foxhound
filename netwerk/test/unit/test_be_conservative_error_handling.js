@@ -13,23 +13,6 @@
 do_get_profile();
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
 
-function getCert() {
-  return new Promise((resolve, reject) => {
-    let certService = Cc[
-      "@mozilla.org/security/local-cert-service;1"
-    ].getService(Ci.nsILocalCertService);
-    certService.getOrCreateCert("beConservative-test", {
-      handleCert(c, rv) {
-        if (rv) {
-          reject(rv);
-          return;
-        }
-        resolve(c);
-      },
-    });
-  });
-}
-
 class InputStreamCallback {
   constructor(output) {
     this.output = output;
@@ -122,7 +105,7 @@ class ServerSocketListener {
 
   onSocketAccepted(socket, transport) {
     info("accepted TLS client connection");
-    let connectionInfo = transport.securityInfo.QueryInterface(
+    let connectionInfo = transport.securityCallbacks.getInterface(
       Ci.nsITLSServerConnectionInfo
     );
     let input = transport.openInputStream(0, 0, 0);
@@ -160,17 +143,7 @@ function storeCertOverride(port, cert) {
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
-  certOverrideService.rememberValidityOverride(
-    hostname,
-    port,
-    {},
-    cert,
-    overrideBits,
-    true
-  );
+  certOverrideService.rememberValidityOverride(hostname, port, {}, cert, true);
 }
 
 function startClient(port, beConservative, expectSuccess) {
@@ -199,12 +172,12 @@ function startClient(port, beConservative, expectSuccess) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   // Restrict to only TLS 1.3.
   Services.prefs.setIntPref("security.tls.version.min", 4);
   Services.prefs.setIntPref("security.tls.version.max", 4);
   Services.prefs.setCharPref("network.dns.localDomains", hostname);
-  let cert = await getCert();
+  let cert = getTestServerCertificate();
 
   // Run a server that accepts TLS 1.2 and 1.3. The connection should succeed.
   let server = startServer(
@@ -236,7 +209,7 @@ add_task(async function() {
   server.close();
 });
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   Services.prefs.clearUserPref("security.tls.version.min");
   Services.prefs.clearUserPref("security.tls.version.max");
   Services.prefs.clearUserPref("network.dns.localDomains");

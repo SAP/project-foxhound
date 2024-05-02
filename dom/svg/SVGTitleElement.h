@@ -13,8 +13,7 @@
 
 nsresult NS_NewSVGTitleElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using SVGTitleElementBase = SVGElement;
 
@@ -28,8 +27,8 @@ class SVGTitleElement final : public SVGTitleElementBase,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   ~SVGTitleElement() = default;
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
  public:
   // interfaces:
@@ -42,19 +41,18 @@ class SVGTitleElement final : public SVGTitleElementBase,
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
-  virtual void DoneAddingChildren(bool aHaveNotified) override;
+  void DoneAddingChildren(bool aHaveNotified) override;
 
  private:
   void SendTitleChangeEvent(bool aBound);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGTITLEELEMENT_H_

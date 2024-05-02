@@ -12,7 +12,7 @@ const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8><script>
 
 const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 
-add_task(async function() {
+add_task(async function () {
   // Let's reset the counts.
   Services.telemetry.clearEvents();
 
@@ -22,7 +22,9 @@ add_task(async function() {
 
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const message = await waitFor(() => findMessage(hud, "test message"));
+  const message = await waitFor(() =>
+    findConsoleAPIMessage(hud, "test message")
+  );
   info("Click on the 'jump to definition' button");
   const jumpIcon = message.querySelector(".jump-definition");
   jumpIcon.click();

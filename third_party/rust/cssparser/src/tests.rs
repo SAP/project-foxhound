@@ -6,7 +6,6 @@
 extern crate test;
 
 use encoding_rs;
-use matches::matches;
 use serde_json::{self, json, Map, Value};
 
 #[cfg(feature = "bench")]
@@ -14,10 +13,10 @@ use self::test::Bencher;
 
 use super::{
     parse_important, parse_nth, parse_one_declaration, parse_one_rule, stylesheet_encoding,
-    AtRuleParser, BasicParseError, BasicParseErrorKind, Color, CowRcStr,
-    DeclarationListParser, DeclarationParser, Delimiter, EncodingSupport, ParseError,
-    ParseErrorKind, Parser, ParserInput, ParserState, QualifiedRuleParser, RuleListParser,
-    SourceLocation, ToCss, Token, TokenSerializationType, UnicodeRange, RGBA,
+    AtRuleParser, BasicParseError, BasicParseErrorKind, CowRcStr, DeclarationParser, Delimiter,
+    EncodingSupport, ParseError, ParseErrorKind, Parser, ParserInput, ParserState,
+    QualifiedRuleParser, RuleBodyItemParser, RuleBodyParser, SourceLocation, StyleSheetParser,
+    ToCss, Token, TokenSerializationType, UnicodeRange,
 };
 
 macro_rules! JArray {
@@ -81,7 +80,7 @@ fn assert_json_eq(results: Value, mut expected: Value, message: &str) {
 fn run_raw_json_tests<F: Fn(Value, Value) -> ()>(json_data: &str, run: F) {
     let items = match serde_json::from_str(json_data) {
         Ok(Value::Array(items)) => items,
-        _ => panic!("Invalid JSON"),
+        other => panic!("Invalid JSON: {:?}", other),
     };
     assert!(items.len() % 2 == 0);
     let mut input = None;
@@ -134,7 +133,7 @@ fn declaration_list() {
         include_str!("css-parsing-tests/declaration_list.json"),
         |input| {
             Value::Array(
-                DeclarationListParser::new(input, JsonParser)
+                RuleBodyParser::new(input, &mut JsonParser)
                     .map(|result| result.unwrap_or(JArray!["error", "invalid"]))
                     .collect(),
             )
@@ -156,7 +155,7 @@ fn one_declaration() {
 fn rule_list() {
     run_json_tests(include_str!("css-parsing-tests/rule_list.json"), |input| {
         Value::Array(
-            RuleListParser::new_for_nested_rule(input, JsonParser)
+            RuleBodyParser::new(input, &mut JsonParser)
                 .map(|result| result.unwrap_or(JArray!["error", "invalid"]))
                 .collect(),
         )
@@ -167,7 +166,7 @@ fn rule_list() {
 fn stylesheet() {
     run_json_tests(include_str!("css-parsing-tests/stylesheet.json"), |input| {
         Value::Array(
-            RuleListParser::new_for_stylesheet(input, JsonParser)
+            StyleSheetParser::new(input, &mut JsonParser)
                 .map(|result| result.unwrap_or(JArray!["error", "invalid"]))
                 .collect(),
         )
@@ -232,7 +231,7 @@ fn stylesheet_from_bytes() {
                 let (css_unicode, used_encoding, _) = encoding.decode(&css);
                 let mut input = ParserInput::new(&css_unicode);
                 let input = &mut Parser::new(&mut input);
-                let rules = RuleListParser::new_for_stylesheet(input, JsonParser)
+                let rules = StyleSheetParser::new(input, &mut JsonParser)
                     .map(|result| result.unwrap_or(JArray!["error", "invalid"]))
                     .collect::<Vec<_>>();
                 JArray![rules, used_encoding.name().to_lowercase()]
@@ -354,44 +353,6 @@ fn test_expect_url() {
     assert!(parse(&mut input).is_err());
 }
 
-fn run_color_tests<F: Fn(Result<Color, ()>) -> Value>(json_data: &str, to_json: F) {
-    run_json_tests(json_data, |input| {
-        let result: Result<_, ParseError<()>> =
-            input.parse_entirely(|i| Color::parse(i).map_err(Into::into));
-        to_json(result.map_err(|_| ()))
-    });
-}
-
-#[test]
-fn color3() {
-    run_color_tests(include_str!("css-parsing-tests/color3.json"), |c| {
-        c.ok().map(|v| v.to_json()).unwrap_or(Value::Null)
-    })
-}
-
-#[test]
-fn color3_hsl() {
-    run_color_tests(include_str!("css-parsing-tests/color3_hsl.json"), |c| {
-        c.ok().map(|v| v.to_json()).unwrap_or(Value::Null)
-    })
-}
-
-/// color3_keywords.json is different: R, G and B are in 0..255 rather than 0..1
-#[test]
-fn color3_keywords() {
-    run_color_tests(
-        include_str!("css-parsing-tests/color3_keywords.json"),
-        |c| c.ok().map(|v| v.to_json()).unwrap_or(Value::Null),
-    )
-}
-
-#[test]
-fn color4_hwb() {
-    run_color_tests(include_str!("css-parsing-tests/color4_hwb.json"), |c| {
-        c.ok().map(|v| v.to_json()).unwrap_or(Value::Null)
-    })
-}
-
 #[test]
 fn nth() {
     run_json_tests(include_str!("css-parsing-tests/An+B.json"), |input| {
@@ -404,6 +365,24 @@ fn nth() {
             .map(|(v0, v1)| json!([v0, v1]))
             .unwrap_or(Value::Null)
     });
+}
+
+#[test]
+fn parse_comma_separated_ignoring_errors() {
+    let input = "red, green something, yellow, whatever, blue";
+    let mut input = ParserInput::new(input);
+    let mut input = Parser::new(&mut input);
+    let result = input.parse_comma_separated_ignoring_errors(|input| {
+        let loc = input.current_source_location();
+        let ident = input.expect_ident()?;
+        crate::color::parse_named_color(ident).map_err(|()| {
+            loc.new_unexpected_token_error::<ParseError<()>>(Token::Ident(ident.clone()))
+        })
+    });
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0], (255, 0, 0));
+    assert_eq!(result[1], (255, 255, 0));
+    assert_eq!(result[2], (0, 0, 255));
 }
 
 #[test]
@@ -487,7 +466,7 @@ fn serializer(preserve_comments: bool) {
             }
             let mut serialized = String::new();
             write_to(
-                TokenSerializationType::nothing(),
+                TokenSerializationType::Nothing,
                 input,
                 &mut serialized,
                 preserve_comments,
@@ -517,30 +496,6 @@ fn serialize_bad_tokens() {
     assert_eq!(token.to_css_string(), "4");
 
     assert!(parser.next().is_err());
-}
-
-#[test]
-fn serialize_current_color() {
-    let c = Color::CurrentColor;
-    assert!(c.to_css_string() == "currentcolor");
-}
-
-#[test]
-fn serialize_rgb_full_alpha() {
-    let c = Color::RGBA(RGBA::new(255, 230, 204, 255));
-    assert_eq!(c.to_css_string(), "rgb(255, 230, 204)");
-}
-
-#[test]
-fn serialize_rgba() {
-    let c = Color::RGBA(RGBA::new(26, 51, 77, 32));
-    assert_eq!(c.to_css_string(), "rgba(26, 51, 77, 0.125)");
-}
-
-#[test]
-fn serialize_rgba_two_digit_float_if_roundtrips() {
-    let c = Color::RGBA(RGBA::from_floats(0., 0., 0., 0.5));
-    assert_eq!(c.to_css_string(), "rgba(0, 0, 0, 0.5)");
 }
 
 #[test]
@@ -638,7 +593,6 @@ fn line_numbers() {
 
 #[test]
 fn overflow() {
-    use std::f32;
     use std::iter::repeat;
 
     let css = r"
@@ -828,20 +782,24 @@ where
     }
 }
 
-impl ToJson for Color {
-    fn to_json(&self) -> Value {
-        match *self {
-            Color::RGBA(ref rgba) => json!([rgba.red, rgba.green, rgba.blue, rgba.alpha]),
-            Color::CurrentColor => "currentcolor".to_json(),
-        }
-    }
-}
-
 impl<'a> ToJson for CowRcStr<'a> {
     fn to_json(&self) -> Value {
         let s: &str = &*self;
         s.to_json()
     }
+}
+
+#[bench]
+#[cfg(feature = "bench")]
+fn delimiter_from_byte(b: &mut Bencher) {
+    use crate::Delimiters;
+    b.iter(|| {
+        for _ in 0..1000 {
+            for i in 0..256 {
+                std::hint::black_box(Delimiters::from_byte(Some(i as u8)));
+            }
+        }
+    })
 }
 
 #[cfg(feature = "bench")]
@@ -864,6 +822,7 @@ fn unquoted_url(b: &mut Bencher) {
     })
 }
 
+#[cfg_attr(all(miri, feature = "skip_long_tests"), ignore)]
 #[cfg(feature = "bench")]
 #[bench]
 fn numeric(b: &mut Bencher) {
@@ -878,6 +837,7 @@ fn numeric(b: &mut Bencher) {
 
 struct JsonParser;
 
+#[cfg_attr(all(miri, feature = "skip_long_tests"), ignore)]
 #[test]
 fn no_stack_overflow_multiple_nested_blocks() {
     let mut input: String = "{{".into();
@@ -951,7 +911,11 @@ impl<'i> AtRuleParser<'i> for JsonParser {
         }
     }
 
-    fn rule_without_block(&mut self, mut prelude: Vec<Value>, _: &ParserState) -> Result<Value, ()> {
+    fn rule_without_block(
+        &mut self,
+        mut prelude: Vec<Value>,
+        _: &ParserState,
+    ) -> Result<Value, ()> {
         prelude.push(Value::Null);
         Ok(Value::Array(prelude))
     }
@@ -990,6 +954,15 @@ impl<'i> QualifiedRuleParser<'i> for JsonParser {
             prelude,
             component_values_to_json(input),
         ])
+    }
+}
+
+impl<'i> RuleBodyItemParser<'i, Value, ()> for JsonParser {
+    fn parse_qualified(&self) -> bool {
+        true
+    }
+    fn parse_declarations(&self) -> bool {
+        true
     }
 }
 
@@ -1120,8 +1093,8 @@ fn procedural_masquerade_whitespace() {
             "  \t\n" => ()
         }
     }
-    assert_eq!(map("  \t\n"), Some(&()));
-    assert_eq!(map(" "), None);
+    assert_eq!(map::get("  \t\n"), Some(&()));
+    assert_eq!(map::get(" "), None);
 
     match_ignore_ascii_case! { "  \t\n",
         " " => panic!("1"),
@@ -1193,52 +1166,6 @@ fn parser_maintains_current_line() {
 
     assert_eq!(parser.next(), Ok(&Token::Ident("ident".into())));
     assert_eq!(parser.current_line(), "ident");
-}
-
-#[test]
-fn parser_with_line_number_offset() {
-    let mut input = ParserInput::new_with_line_number_offset("ident\nident", 72);
-    let mut parser = Parser::new(&mut input);
-    assert_eq!(
-        parser.current_source_location(),
-        SourceLocation {
-            line: 72,
-            column: 1
-        }
-    );
-    assert_eq!(
-        parser.next_including_whitespace_and_comments(),
-        Ok(&Token::Ident("ident".into()))
-    );
-    assert_eq!(
-        parser.current_source_location(),
-        SourceLocation {
-            line: 72,
-            column: 6
-        }
-    );
-    assert_eq!(
-        parser.next_including_whitespace_and_comments(),
-        Ok(&Token::WhiteSpace("\n".into()))
-    );
-    assert_eq!(
-        parser.current_source_location(),
-        SourceLocation {
-            line: 73,
-            column: 1
-        }
-    );
-    assert_eq!(
-        parser.next_including_whitespace_and_comments(),
-        Ok(&Token::Ident("ident".into()))
-    );
-    assert_eq!(
-        parser.current_source_location(),
-        SourceLocation {
-            line: 73,
-            column: 6
-        }
-    );
 }
 
 #[test]
@@ -1325,6 +1252,7 @@ fn parse_sourceurl_comments() {
     }
 }
 
+#[cfg_attr(all(miri, feature = "skip_long_tests"), ignore)]
 #[test]
 fn roundtrip_percentage_token() {
     fn test_roundtrip(value: &str) {
@@ -1407,7 +1335,7 @@ fn utf16_columns() {
 #[test]
 fn servo_define_css_keyword_enum() {
     macro_rules! define_css_keyword_enum {
-        (pub enum $name:ident { $($variant:ident = $css:expr,)+ }) => {
+        (pub enum $name:ident { $($variant:ident = $css:pat,)+ }) => {
             #[derive(PartialEq, Debug)]
             pub enum $name {
                 $($variant),+

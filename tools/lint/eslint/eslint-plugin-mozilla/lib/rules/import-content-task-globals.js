@@ -12,73 +12,62 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 var helpers = require("../helpers");
 var frameScriptEnv = require("../environments/frame-script");
+var sandboxEnv = require("../environments/special-powers-sandbox");
 
-// The global environment of SpecialPowers.spawn tasks is
-// controlled by the Sandbox environment created by
-// SpecialPowersSandbox.jsm. This list should be kept in sync with
-// that module.
-var sandboxGlobals = [
-  "Assert",
-  "Blob",
-  "BrowsingContext",
-  "ChromeUtils",
-  "ContentTaskUtils",
-  "EventUtils",
-  "Services",
-  "TextDecoder",
-  "TextEncoder",
-  "URL",
-  "assert",
-  "info",
-  "is",
-  "isnot",
-  "ok",
-  "todo",
-  "todo_is",
-];
+module.exports = {
+  // eslint-disable-next-line eslint-plugin/prefer-message-ids
+  meta: {
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/import-content-task-globals.html",
+    },
+    schema: [],
+    type: "problem",
+  },
 
-module.exports = function(context) {
-  // ---------------------------------------------------------------------------
-  // Public
-  // ---------------------------------------------------------------------------
-
-  return {
-    "CallExpression[callee.object.name='ContentTask'][callee.property.name='spawn']": function(
-      node
-    ) {
-      for (let global in frameScriptEnv.globals) {
-        helpers.addVarToScope(
-          global,
-          context.getScope(),
-          frameScriptEnv.globals[global]
-        );
-      }
-    },
-    "CallExpression[callee.object.name='SpecialPowers'][callee.property.name='spawn']": function(
-      node
-    ) {
-      let globals = [...sandboxGlobals, "SpecialPowers", "content", "docShell"];
-      for (let global of globals) {
-        helpers.addVarToScope(global, context.getScope(), false);
-      }
-    },
-    "CallExpression[callee.object.name='SpecialPowers'][callee.property.name='spawnChrome']": function(
-      node
-    ) {
-      let globals = [
-        ...sandboxGlobals,
-        "browsingContext",
-        "windowGlobalParent",
-      ];
-      for (let global of globals) {
-        helpers.addVarToScope(global, context.getScope(), false);
-      }
-    },
-  };
+  create(context) {
+    return {
+      "CallExpression[callee.object.name='ContentTask'][callee.property.name='spawn']":
+        function (node) {
+          // testing/mochitest/BrowserTestUtils/content/content-task.js
+          // This script is loaded as a sub script into a frame script.
+          for (let [name, value] of Object.entries(frameScriptEnv.globals)) {
+            helpers.addVarToScope(name, context.getScope(), value);
+          }
+        },
+      "CallExpression[callee.object.name='SpecialPowers'][callee.property.name='spawn']":
+        function (node) {
+          for (let [name, value] of Object.entries(sandboxEnv.globals)) {
+            helpers.addVarToScope(name, context.getScope(), value);
+          }
+          let globals = [
+            // testing/specialpowers/content/SpecialPowersChild.sys.mjs
+            // SpecialPowersChild._spawnTask
+            "SpecialPowers",
+            "ContentTaskUtils",
+            "content",
+            "docShell",
+          ];
+          for (let global of globals) {
+            helpers.addVarToScope(global, context.getScope(), false);
+          }
+        },
+      "CallExpression[callee.object.name='SpecialPowers'][callee.property.name='spawnChrome']":
+        function (node) {
+          for (let [name, value] of Object.entries(sandboxEnv.globals)) {
+            helpers.addVarToScope(name, context.getScope(), value);
+          }
+          let globals = [
+            // testing/specialpowers/content/SpecialPowersParent.sys.mjs
+            // SpecialPowersParent._spawnChrome
+            "windowGlobalParent",
+            "browsingContext",
+          ];
+          for (let global of globals) {
+            helpers.addVarToScope(global, context.getScope(), false);
+          }
+        },
+    };
+  },
 };

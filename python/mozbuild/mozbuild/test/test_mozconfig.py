@@ -2,22 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import unittest
-
 from shutil import rmtree
-
 from tempfile import mkdtemp
-from mozfile.mozfile import NamedTemporaryFile
 
+from mozfile.mozfile import NamedTemporaryFile
 from mozunit import main
 
-from mozbuild.mozconfig import (
-    MozconfigLoadException,
-    MozconfigLoader,
-)
+from mozbuild.mozconfig import MozconfigLoader, MozconfigLoadException
 
 
 class TestMozconfigLoader(unittest.TestCase):
@@ -274,8 +267,8 @@ class TestMozconfigLoader(unittest.TestCase):
             self.assertIn(
                 "Evaluation of your mozconfig exited with an error", str(e.exception)
             )
-            self.assertEquals(e.exception.path, mozconfig.name.replace(os.sep, "/"))
-            self.assertEquals(e.exception.output, ["hello world"])
+            self.assertEqual(e.exception.path, mozconfig.name.replace(os.sep, "/"))
+            self.assertEqual(e.exception.output, ["hello world"])
 
 
 if __name__ == "__main__":

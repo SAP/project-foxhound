@@ -40,16 +40,22 @@ TEST_DIRS += [
 ]
 
 if CONFIG["MOZ_LAUNCHER_PROCESS"]:
+    LOCAL_INCLUDES += [
+        "/other-licenses/nsis/Contrib/CityHash/cityhash",
+        "/toolkit/mozapps/update/common",
+    ]
     UNIFIED_SOURCES += [
+        "/other-licenses/nsis/Contrib/CityHash/cityhash/city.cpp",
+        "/toolkit/mozapps/update/common/commonupdatedir.cpp",
         "/toolkit/xre/LauncherRegistryInfo.cpp",
     ]
 
-for var in ("MOZ_APP_BASENAME", "MOZ_APP_VENDOR"):
+for var in ("MOZ_APP_BASENAME", "MOZ_APP_VENDOR", "MOZ_APP_DISPLAYNAME"):
     DEFINES[var] = '"%s"' % CONFIG[var]
+
+DEFINES["MOZ_USE_LAUNCHER_ERROR"] = 1
 
 DisableStlWrapping()
 
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Launcher Process")
-
-REQUIRES_UNIFIED_BUILD = True

@@ -4,7 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from collections import OrderedDict
 import datetime
 import functools
 import json
@@ -21,28 +20,13 @@ import jsonschema  # type: ignore
 from jsonschema import _utils  # type: ignore
 import yaml
 
-if sys.version_info < (3, 7):
-    import iso8601  # type: ignore
 
-    def date_fromisoformat(datestr: str) -> datetime.date:
-        try:
-            return iso8601.parse_date(datestr).date()
-        except iso8601.ParseError:
-            raise ValueError()
+def date_fromisoformat(datestr: str) -> datetime.date:
+    return datetime.date.fromisoformat(datestr)
 
-    def datetime_fromisoformat(datestr: str) -> datetime.datetime:
-        try:
-            return iso8601.parse_date(datestr)
-        except iso8601.ParseError:
-            raise ValueError()
 
-else:
-
-    def date_fromisoformat(datestr: str) -> datetime.date:
-        return datetime.date.fromisoformat(datestr)
-
-    def datetime_fromisoformat(datestr: str) -> datetime.datetime:
-        return datetime.datetime.fromisoformat(datestr)
+def datetime_fromisoformat(datestr: str) -> datetime.datetime:
+    return datetime.datetime.fromisoformat(datestr)
 
 
 TESTING_MODE = "pytest" in sys.modules
@@ -55,21 +39,9 @@ The types supported by JSON.
 This is only an approximation -- this should really be a recursive type.
 """
 
-# Adapted from
-# https://stackoverflow.com/questions/34667108/ignore-dates-and-times-while-parsing-yaml
 
-
-# A wrapper around OrderedDict for Python < 3.7 (where dict ordering is not
-# maintained by default), and regular dict everywhere else.
-if sys.version_info < (3, 7):
-
-    class DictWrapper(OrderedDict):
-        pass
-
-else:
-
-    class DictWrapper(dict):
-        pass
+class DictWrapper(dict):
+    pass
 
 
 class _NoDatesSafeLoader(yaml.SafeLoader):
@@ -212,6 +184,13 @@ def snake_case(value: str) -> str:
     return value.lower().replace(".", "_").replace("-", "_")
 
 
+def screaming_case(value: str) -> str:
+    """
+    Convert the value to SCREAMING_SNAKE_CASE.
+    """
+    return value.upper().replace(".", "_").replace("-", "_")
+
+
 @functools.lru_cache()
 def get_jinja2_template(
     template_name: str, filters: Iterable[Tuple[str, Callable]] = ()
@@ -233,6 +212,7 @@ def get_jinja2_template(
 
     env.filters["camelize"] = camelize
     env.filters["Camelize"] = Camelize
+    env.filters["scream"] = screaming_case
     for filter_name, filter_func in filters:
         env.filters[filter_name] = filter_func
 
@@ -374,21 +354,41 @@ def format_error(
         return f"{filepath}:\n{textwrap.indent(content, '    ')}"
 
 
-def parse_expires(expires: str) -> datetime.date:
+def parse_expiration_date(expires: str) -> datetime.date:
     """
     Parses the expired field date (yyyy-mm-dd) as a date.
     Raises a ValueError in case the string is not properly formatted.
     """
     try:
         return date_fromisoformat(expires)
-    except ValueError:
+    except (TypeError, ValueError):
         raise ValueError(
             f"Invalid expiration date '{expires}'. "
             "Must be of the form yyyy-mm-dd in UTC."
         )
 
 
-def is_expired(expires: str) -> bool:
+def parse_expiration_version(expires: str) -> int:
+    """
+    Parses the expired field version string as an integer.
+    Raises a ValueError in case the string does not contain a valid
+    positive integer.
+    """
+    try:
+        if isinstance(expires, int):
+            version_number = int(expires)
+            if version_number > 0:
+                return version_number
+        # Fall-through: if it's not an integer or is not greater than zero,
+        # raise an error.
+        raise ValueError()
+    except ValueError:
+        raise ValueError(
+            f"Invalid expiration version '{expires}'. Must be a positive integer."
+        )
+
+
+def is_expired(expires: str, major_version: Optional[int] = None) -> bool:
     """
     Parses the `expires` field in a metric or ping and returns whether
     the object should be considered expired.
@@ -397,20 +397,32 @@ def is_expired(expires: str) -> bool:
         return False
     elif expires == "expired":
         return True
+    elif major_version is not None:
+        return parse_expiration_version(expires) <= major_version
     else:
-        date = parse_expires(expires)
+        date = parse_expiration_date(expires)
         return date <= datetime.datetime.utcnow().date()
 
 
-def validate_expires(expires: str) -> None:
+def validate_expires(expires: str, major_version: Optional[int] = None) -> None:
     """
-    Raises a ValueError in case the `expires` is not ISO8601 parseable,
-    or in case the date is more than 730 days (~2 years) in the future.
+    If expiration by major version is enabled, raises a ValueError in
+    case `expires` is not a positive integer.
+    Otherwise raises a ValueError in case the `expires` is not ISO8601
+    parseable, or in case the date is more than 730 days (~2 years) in
+    the future.
     """
     if expires in ("never", "expired"):
         return
 
-    date = parse_expires(expires)
+    if major_version is not None:
+        parse_expiration_version(expires)
+        # Don't need to keep parsing dates if expiration by version
+        # is enabled. We don't allow mixing dates and versions for a
+        # single product.
+        return
+
+    date = parse_expiration_date(expires)
     max_date = datetime.datetime.now() + datetime.timedelta(days=730)
     if date > max_date.date():
         raise ValueError(
@@ -509,9 +521,10 @@ metric_args = common_metric_args + extra_metric_args
 
 # Names of ping parameters to pass to constructors.
 ping_args = [
+    "name",
     "include_client_id",
     "send_if_empty",
-    "name",
+    "precise_timestamps",
     "reason_codes",
 ]
 

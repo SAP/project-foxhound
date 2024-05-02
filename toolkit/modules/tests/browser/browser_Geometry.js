@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var tempScope = {};
-ChromeUtils.import("resource://gre/modules/Geometry.jsm", tempScope);
-var Point = tempScope.Point;
-var Rect = tempScope.Rect;
+const { Point, Rect } = ChromeUtils.importESModule(
+  "resource://gre/modules/Geometry.sys.mjs"
+);
 
 function test() {
   ok(Rect, "Rect class exists");
@@ -93,7 +92,7 @@ var tests = {
     function equals(rects1, rects2) {
       return (
         rects1.length == rects2.length &&
-        rects1.every(function(r, i) {
+        rects1.every(function (r, i) {
           return r.equals(rects2[i]);
         })
       );

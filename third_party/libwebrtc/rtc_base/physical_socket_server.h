@@ -11,19 +11,33 @@
 #ifndef RTC_BASE_PHYSICAL_SOCKET_SERVER_H_
 #define RTC_BASE_PHYSICAL_SOCKET_SERVER_H_
 
-#if defined(WEBRTC_POSIX) && defined(WEBRTC_LINUX)
+#include "api/units/time_delta.h"
+
+#if defined(WEBRTC_POSIX)
+#if defined(WEBRTC_LINUX)
+// On Linux, use epoll.
 #include <sys/epoll.h>
 #define WEBRTC_USE_EPOLL 1
-#endif
+#elif defined(WEBRTC_FUCHSIA)
+// Fuchsia implements select and poll but not epoll, and testing shows that poll
+// is faster than select.
+#include <poll.h>
+#define WEBRTC_USE_POLL 1
+#else
+// On other POSIX systems, use select by default.
+#endif  // WEBRTC_LINUX, WEBRTC_FUCHSIA
+#endif  // WEBRTC_POSIX
 
 #include <array>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
+#include "rtc_base/async_resolver.h"
+#include "rtc_base/async_resolver_interface.h"
 #include "rtc_base/deprecated/recursive_critical_section.h"
-#include "rtc_base/net_helpers.h"
 #include "rtc_base/socket_server.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/thread_annotations.h"
 
@@ -48,7 +62,6 @@ class Dispatcher {
  public:
   virtual ~Dispatcher() {}
   virtual uint32_t GetRequestedEvents() = 0;
-  virtual void OnPreEvent(uint32_t ff) = 0;
   virtual void OnEvent(uint32_t ff, int err) = 0;
 #if defined(WEBRTC_WIN)
   virtual WSAEVENT GetWSAEvent() = 0;
@@ -68,13 +81,12 @@ class RTC_EXPORT PhysicalSocketServer : public SocketServer {
 
   // SocketFactory:
   Socket* CreateSocket(int family, int type) override;
-  AsyncSocket* CreateAsyncSocket(int family, int type) override;
 
   // Internal Factory for Accept (virtual so it can be overwritten in tests).
-  virtual AsyncSocket* WrapSocket(SOCKET s);
+  virtual Socket* WrapSocket(SOCKET s);
 
   // SocketServer:
-  bool Wait(int cms, bool process_io) override;
+  bool Wait(webrtc::TimeDelta max_wait_duration, bool process_io) override;
   void WakeUp() override;
 
   void Add(Dispatcher* dispatcher);
@@ -84,16 +96,20 @@ class RTC_EXPORT PhysicalSocketServer : public SocketServer {
  private:
   // The number of events to process with one call to "epoll_wait".
   static constexpr size_t kNumEpollEvents = 128;
+  // A local historical definition of "foreverness", in milliseconds.
+  static constexpr int kForeverMs = -1;
+
+  static int ToCmsWait(webrtc::TimeDelta max_wait_duration);
 
 #if defined(WEBRTC_POSIX)
-  bool WaitSelect(int cms, bool process_io);
-#endif  // WEBRTC_POSIX
+  bool WaitSelect(int cmsWait, bool process_io);
+
 #if defined(WEBRTC_USE_EPOLL)
   void AddEpoll(Dispatcher* dispatcher, uint64_t key);
   void RemoveEpoll(Dispatcher* dispatcher);
   void UpdateEpoll(Dispatcher* dispatcher, uint64_t key);
-  bool WaitEpoll(int cms);
-  bool WaitPoll(int cms, Dispatcher* dispatcher);
+  bool WaitEpoll(int cmsWait);
+  bool WaitPollOneDispatcher(int cmsWait, Dispatcher* dispatcher);
 
   // This array is accessed in isolation by a thread calling into Wait().
   // It's useless to use a SequenceChecker to guard it because a socket
@@ -101,7 +117,16 @@ class RTC_EXPORT PhysicalSocketServer : public SocketServer {
   // to have to reset the sequence checker on Wait calls.
   std::array<epoll_event, kNumEpollEvents> epoll_events_;
   const int epoll_fd_ = INVALID_SOCKET;
-#endif  // WEBRTC_USE_EPOLL
+
+#elif defined(WEBRTC_USE_POLL)
+  void AddPoll(Dispatcher* dispatcher, uint64_t key);
+  void RemovePoll(Dispatcher* dispatcher);
+  void UpdatePoll(Dispatcher* dispatcher, uint64_t key);
+  bool WaitPoll(int cmsWait, bool process_io);
+
+#endif  // WEBRTC_USE_EPOLL, WEBRTC_USE_POLL
+#endif  // WEBRTC_POSIX
+
   // uint64_t keys are used to uniquely identify a dispatcher in order to avoid
   // the ABA problem during the epoll loop (a dispatcher being destroyed and
   // replaced by one with the same address).
@@ -112,9 +137,9 @@ class RTC_EXPORT PhysicalSocketServer : public SocketServer {
   std::unordered_map<Dispatcher*, uint64_t> key_by_dispatcher_
       RTC_GUARDED_BY(crit_);
   // A list of dispatcher keys that we're interested in for the current
-  // select() or WSAWaitForMultipleEvents() loop. Again, used to avoid the ABA
-  // problem (a socket being destroyed and a new one created with the same
-  // handle, erroneously receiving the events from the destroyed socket).
+  // select(), poll(), or WSAWaitForMultipleEvents() loop. Again, used to avoid
+  // the ABA problem (a socket being destroyed and a new one created with the
+  // same handle, erroneously receiving the events from the destroyed socket).
   //
   // Kept as a member variable just for efficiency.
   std::vector<uint64_t> current_dispatcher_keys_;
@@ -129,7 +154,7 @@ class RTC_EXPORT PhysicalSocketServer : public SocketServer {
   bool waiting_ = false;
 };
 
-class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
+class PhysicalSocket : public Socket, public sigslot::has_slots<> {
  public:
   PhysicalSocket(PhysicalSocketServer* ss, SOCKET s = INVALID_SOCKET);
   ~PhysicalSocket() override;
@@ -163,11 +188,13 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
                int64_t* timestamp) override;
 
   int Listen(int backlog) override;
-  AsyncSocket* Accept(SocketAddress* out_addr) override;
+  Socket* Accept(SocketAddress* out_addr) override;
 
   int Close() override;
 
   SocketServer* socketserver() { return ss_; }
+
+  SOCKET GetSocketFD() const { return s_; }
 
  protected:
   int DoConnect(const SocketAddress& connect_addr);
@@ -186,6 +213,11 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
                        const struct sockaddr* dest_addr,
                        socklen_t addrlen);
 
+  int DoReadFromSocket(void* buffer,
+                       size_t length,
+                       SocketAddress* out_addr,
+                       int64_t* timestamp);
+
   void OnResolveResult(AsyncResolverInterface* resolver);
 
   void UpdateLastError();
@@ -202,8 +234,8 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
   SOCKET s_;
   bool udp_;
   int family_ = 0;
-  RecursiveCriticalSection crit_;
-  int error_ RTC_GUARDED_BY(crit_);
+  mutable webrtc::Mutex mutex_;
+  int error_ RTC_GUARDED_BY(mutex_);
   ConnState state_;
   AsyncResolver* resolver_;
 
@@ -212,6 +244,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
 #endif
 
  private:
+  const bool read_scm_timestamp_experiment_;
   uint8_t enabled_events_ = 0;
 };
 
@@ -236,7 +269,6 @@ class SocketDispatcher : public Dispatcher, public PhysicalSocket {
 #endif
 
   uint32_t GetRequestedEvents() override;
-  void OnPreEvent(uint32_t ff) override;
   void OnEvent(uint32_t ff, int err) override;
 
   int Close() override;

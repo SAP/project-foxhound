@@ -9,14 +9,14 @@ const testPageURL =
 addTest(async function testPermissionAllow() {
   removePermission(testPageURL, "persistent-storage");
 
-  registerPopupEventHandler("popupshowing", function() {
+  registerPopupEventHandler("popupshowing", function () {
     ok(true, "prompt showing");
   });
-  registerPopupEventHandler("popupshown", function() {
+  registerPopupEventHandler("popupshown", function () {
     ok(true, "prompt shown");
     triggerMainCommand(this);
   });
-  registerPopupEventHandler("popuphidden", function() {
+  registerPopupEventHandler("popuphidden", function () {
     ok(true, "prompt hidden");
   });
 
@@ -24,7 +24,7 @@ addTest(async function testPermissionAllow() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   info("Loading test page: " + testPageURL);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, testPageURL);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, testPageURL);
   await waitForMessage(true, gBrowser);
 
   is(
@@ -38,13 +38,13 @@ addTest(async function testPermissionAllow() {
 });
 
 addTest(async function testNoPermissionPrompt() {
-  registerPopupEventHandler("popupshowing", function() {
+  registerPopupEventHandler("popupshowing", function () {
     ok(false, "Shouldn't show a popup this time");
   });
-  registerPopupEventHandler("popupshown", function() {
+  registerPopupEventHandler("popupshown", function () {
     ok(false, "Shouldn't show a popup this time");
   });
-  registerPopupEventHandler("popuphidden", function() {
+  registerPopupEventHandler("popuphidden", function () {
     ok(false, "Shouldn't show a popup this time");
   });
 
@@ -52,7 +52,7 @@ addTest(async function testNoPermissionPrompt() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   info("Loading test page: " + testPageURL);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, testPageURL);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, testPageURL);
   await waitForMessage(true, gBrowser);
 
   is(

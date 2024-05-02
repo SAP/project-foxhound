@@ -8,31 +8,28 @@
 #ifndef __nsGNOMEShellDBusHelper_h__
 #define __nsGNOMEShellDBusHelper_h__
 
-#include "mozilla/DBusHelpers.h"
-#include "nsIStringBundle.h"
+#include <gio/gio.h>
 #include "nsINavHistoryService.h"
 
 #define MAX_SEARCH_RESULTS_NUM 9
 #define KEYWORD_SEARCH_STRING "special:search"
 #define KEYWORD_SEARCH_STRING_LEN 14
 
-#define DBUS_BUS_NAME "org.mozilla.Firefox.SearchProvider"
-#define DBUS_OBJECT_PATH "/org/mozilla/Firefox/SearchProvider"
-
 class nsGNOMEShellHistorySearchResult;
 
-DBusHandlerResult DBusIntrospect(DBusConnection* aConnection,
-                                 DBusMessage* aMsg);
-DBusHandlerResult DBusHandleInitialResultSet(
-    RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult, DBusMessage* aMsg);
-DBusHandlerResult DBusHandleSubsearchResultSet(
-    RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult, DBusMessage* aMsg);
-DBusHandlerResult DBusHandleResultMetas(
-    RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult, DBusMessage* aMsg);
-DBusHandlerResult DBusActivateResult(
-    RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult, DBusMessage* aMsg);
-DBusHandlerResult DBusLaunchSearch(
-    RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult, DBusMessage* aMsg);
+void DBusHandleResultSet(RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult,
+                         GVariant* aParameters, bool aInitialSearch,
+                         GDBusMethodInvocation* aReply);
+void DBusHandleResultMetas(
+    RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult,
+    GVariant* aParameters, GDBusMethodInvocation* aReply);
+void DBusActivateResult(RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult,
+                        GVariant* aParameters, GDBusMethodInvocation* aReply);
+void DBusLaunchSearch(RefPtr<nsGNOMEShellHistorySearchResult> aSearchResult,
+                      GVariant* aParameters, GDBusMethodInvocation* aReply);
 bool IsHistoryResultNodeURI(nsINavHistoryResultNode* aHistoryNode);
+
+const char* GetDBusBusName();
+const char* GetDBusObjectPath();
 
 #endif  // __nsGNOMEShellDBusHelper_h__

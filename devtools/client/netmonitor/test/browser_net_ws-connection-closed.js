@@ -7,11 +7,7 @@
  * Test that WS connection is established successfully and message is displayed when the connection is closed.
  */
 
-add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["devtools.netmonitor.features.webSockets", true]],
-  });
-
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(WS_PAGE_URL, {
     requestCount: 1,
   });

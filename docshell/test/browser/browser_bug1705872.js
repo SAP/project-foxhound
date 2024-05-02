@@ -2,7 +2,7 @@
 
 async function doLoadAndGoBack(browser, ext) {
   let loaded = BrowserTestUtils.browserLoaded(browser);
-  BrowserTestUtils.loadURI(browser, "https://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "https://example.com/");
   await ext.awaitMessage("redir-handled");
   await loaded;
 
@@ -48,7 +48,7 @@ add_task(async function test_back() {
 
   await extension.startup();
 
-  await BrowserTestUtils.withNewTab("about:home", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:home", async function (browser) {
     await doLoadAndGoBack(browser, extension);
 
     await SpecialPowers.spawn(browser, [], () => {

@@ -1,20 +1,20 @@
 // 'timer' is global to avoid getting GCed which would cancel the timer
 var timer;
-const nsITimer = Components.interfaces.nsITimer;
+const nsITimer = Ci.nsITimer;
 
 function attemptUnblock(s) {
   try {
     let blockedResponse = null;
-    getObjectState("bug503481_" + s, function(x) {
+    getObjectState("bug503481_" + s, function (x) {
       blockedResponse = x.wrappedJSObject.r;
     });
     blockedResponse.finish();
     setObjectState("bug503481_" + s, null);
   } catch (e) {
     dump("unable to unblock " + s + "retrying in half a second\n");
-    timer = Components.classes["@mozilla.org/timer;1"].createInstance(nsITimer);
+    timer = Cc["@mozilla.org/timer;1"].createInstance(nsITimer);
     timer.initWithCallback(
-      function() {
+      function () {
         attemptUnblock(s);
       },
       500,
@@ -25,7 +25,7 @@ function attemptUnblock(s) {
 
 function handleRequest(request, response) {
   var query = {};
-  request.queryString.split("&").forEach(function(val) {
+  request.queryString.split("&").forEach(function (val) {
     var [name, value] = val.split("=");
     query[name] = unescape(value);
   });

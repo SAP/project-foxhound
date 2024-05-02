@@ -5,10 +5,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "Performance")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 EXPORTS.mozilla.dom += [
     "EventCounts.h",
+    "LargestContentfulPaint.h",
     "Performance.h",
     "PerformanceEntry.h",
     "PerformanceEventTiming.h",
@@ -26,10 +27,12 @@ EXPORTS.mozilla.dom += [
     "PerformanceStorage.h",
     "PerformanceStorageWorker.h",
     "PerformanceTiming.h",
+    "PerformanceWorker.h",
 ]
 
 UNIFIED_SOURCES += [
     "EventCounts.cpp",
+    "LargestContentfulPaint.cpp",
     "Performance.cpp",
     "PerformanceEntry.cpp",
     "PerformanceEventTiming.cpp",
@@ -49,9 +52,13 @@ UNIFIED_SOURCES += [
     "PerformanceWorker.cpp",
 ]
 
+IPDL_SOURCES += [
+    "PerformanceTimingTypes.ipdlh",
+]
+
 include("/ipc/chromium/chromium-config.mozbuild")
 
-MOCHITEST_MANIFESTS += ["tests/mochitest.ini"]
+MOCHITEST_MANIFESTS += ["tests/mochitest.toml"]
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

@@ -7,8 +7,8 @@ const TEST_HOST = "example.org";
 const TEST_FILE = "\u3002.bin";
 const TEST_URL = `http://${TEST_HOST}/${TEST_FILE}`;
 
-const { XPCShellContentUtils } = ChromeUtils.import(
-  "resource://testing-common/XPCShellContentUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/XPCShellContentUtils.sys.mjs"
 );
 XPCShellContentUtils.initMochitest(this);
 const server = XPCShellContentUtils.createHttpServer({
@@ -24,10 +24,7 @@ server.registerFile(`/${encodeURIComponent(TEST_FILE)}`, file);
  */
 add_task(async function test_idn_blocklisted_char_not_escaped() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      // Enable downloads improvements
-      ["browser.download.improvements_to_download_panel", true],
-    ],
+    set: [["browser.download.always_ask_before_handling_new_types", false]],
   });
 
   info("Testing with " + TEST_URL);

@@ -4,14 +4,13 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-const { dumpn } = require("devtools/shared/DevToolsUtils");
+const { dumpn } = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   runCommand,
-} = require("devtools/client/shared/remote-debugging/adb/commands/run-command");
+} = require("resource://devtools/client/shared/remote-debugging/adb/commands/run-command.js");
 
 // sends adb forward deviceId, localPort and devicePort
-const forwardPort = function(deviceId, localPort, devicePort) {
+const forwardPort = function (deviceId, localPort, devicePort) {
   dumpn("forwardPort " + localPort + " -- " + devicePort);
   // Send "host-serial:<serial-number>:<request>",
   // with <request> set to "forward:<local>;<remote>"
@@ -23,7 +22,7 @@ const forwardPort = function(deviceId, localPort, devicePort) {
   });
 };
 
-const getFreeTCPPort = function() {
+const getFreeTCPPort = function () {
   const serv = Cc["@mozilla.org/network/server-socket;1"].createInstance(
     Ci.nsIServerSocket
   );
@@ -35,7 +34,7 @@ const getFreeTCPPort = function() {
 
 // Prepare TCP connection for provided device id and socket path.
 // The returned value is a port number of localhost for the connection.
-const prepareTCPConnection = async function(deviceId, socketPath) {
+const prepareTCPConnection = async function (deviceId, socketPath) {
   const port = getFreeTCPPort();
   const local = `tcp:${port}`;
   const remote = socketPath.startsWith("@")

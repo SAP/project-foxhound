@@ -1,7 +1,7 @@
 "use strict";
 
-const { AboutWelcomeParent } = ChromeUtils.import(
-  "resource:///actors/AboutWelcomeParent.jsm"
+const { AboutWelcomeParent } = ChromeUtils.importESModule(
+  "resource:///actors/AboutWelcomeParent.sys.mjs"
 );
 
 async function openAboutWelcomeTab() {
@@ -54,9 +54,14 @@ add_task(async function test_About_Welcome_Location_Change() {
     aboutWelcomeActor.AboutWelcomeObserver,
     "AboutWelcomeObserver is not null"
   );
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/#foo");
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    "http://example.com/#foo"
+  );
   await BrowserTestUtils.waitForLocationChange(
     gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/#foo"
   );
 

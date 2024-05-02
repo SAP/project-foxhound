@@ -134,7 +134,7 @@ for (let [memType, ptrType] of memTypes ) {
     assertEq(WebAssembly.validate(wasmTextToBinary(`
 (module
   (memory ${memType} 1)
-  (data $seg passive "0123456789abcdef")
+  (data $seg "0123456789abcdef")
   (func (param $p ${ptrType})
     (drop (${ptrType}.add (${ptrType}.const 1) (memory.size)))
     (drop (${ptrType}.add (${ptrType}.const 1) (memory.grow (${ptrType}.const 1))))
@@ -239,7 +239,7 @@ assertEq(WebAssembly.validate(wasmTextToBinary(`
 
 // Smoketest: Can we actually allocate a memory larger than 4GB?
 
-if (getBuildConfiguration()["pointer-byte-size"] == 8) {
+if (getBuildConfiguration("pointer-byte-size") == 8) {
     // TODO: "index" is not yet part of the spec
     // https://github.com/WebAssembly/memory64/issues/24
 
@@ -1380,7 +1380,7 @@ function testAtomicWake(ins, mem, LOC) {
 let configs = [[40, 0, 3], [40, 3, '']];
 
 // On 64-bit systems, test beyond 2GB and also beyond 4GB
-if (getBuildConfiguration()["pointer-byte-size"] == 8) {
+if (getBuildConfiguration("pointer-byte-size") == 8) {
     configs.push([Math.pow(2, 31) + 40, 32771, '']);
     configs.push([Math.pow(2, 32) + 40, 65539, '']);
     configs.push([Math.pow(2, 31) + 40, 32771, 32773]);
@@ -1435,7 +1435,7 @@ function makeModule(initial, maximum, shared) {
 (module
   (memory (export "mem") i64 ${initial} ${maximum} ${shared})
 
-  (data $seg passive "0123456789")
+  (data $seg "0123456789")
 
   (func (export "size") (result i64)
     memory.size)
@@ -1492,7 +1492,7 @@ for ( let shared of ['','shared'] ) {
     assertSame(iota(5).map(x => x+49), mem.slice(128, 133));
 }
 
-if (getBuildConfiguration()["pointer-byte-size"] == 8) {
+if (getBuildConfiguration("pointer-byte-size") == 8) {
     for ( let shared of ['','shared'] ) {
         let limit = wasmMaxMemoryPages('i64');
         let initial = 65537;
@@ -1572,28 +1572,4 @@ if (getBuildConfiguration()["pointer-byte-size"] == 8) {
                            /out of bounds/);
         assertEq(mem[Number(oobTarget-1n)], 0);
     }
-}
-
-//////////////////////////////////////////////////////////////////////////////
-
-function assertSame(got, expected) {
-    assertEq(got.length, expected.length);
-    for ( let i=0; i < got.length; i++ ) {
-        let g = got[i];
-        let e = expected[i];
-        if (typeof g != typeof e) {
-            if (typeof g == "bigint")
-                e = BigInt(e);
-            else if (typeof e == "bigint")
-                g = BigInt(g);
-        }
-        assertEq(g, e);
-    }
-}
-
-function iota(len) {
-    let xs = [];
-    for ( let i=0 ; i < len ; i++ )
-        xs.push(i);
-    return xs;
 }

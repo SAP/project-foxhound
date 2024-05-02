@@ -134,9 +134,9 @@ private:
   void* transition_state = nullptr;
 
   template<typename T>
-  using convert_fn_ptr_to_sandbox_equivalent_t =
-    decltype(::rlbox::convert_fn_ptr_to_sandbox_equivalent_detail::helper<
-             T_Sbx>(std::declval<T>()));
+  using convert_fn_ptr_to_sandbox_equivalent_t = decltype(
+    ::rlbox::convert_fn_ptr_to_sandbox_equivalent_detail::helper<T_Sbx>(
+      std::declval<T>()));
 
   template<typename T>
   inline constexpr void check_invoke_param_type_is_ok()
@@ -368,7 +368,7 @@ public:
   /**
    * @brief Create a new sandbox.
    *
-   * @tparam T_args Arguments passed to the underlying sandbox
+   * @tparam T_Args Arguments passed to the underlying sandbox
    * implementation. For the null sandbox, no arguments are necessary.
    */
   template<typename... T_Args>

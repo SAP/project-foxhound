@@ -13,34 +13,31 @@ namespace mozilla::widget {
 
 class ScrollbarDrawingAndroid final : public ScrollbarDrawing {
  public:
-  ScrollbarDrawingAndroid() = default;
+  ScrollbarDrawingAndroid() : ScrollbarDrawing(Kind::Android) {}
   virtual ~ScrollbarDrawingAndroid() = default;
 
   LayoutDeviceIntSize GetMinimumWidgetSize(nsPresContext*,
                                            StyleAppearance aAppearance,
                                            nsIFrame* aFrame) override;
 
-  ScrollbarSizes GetScrollbarSizes(nsPresContext*, StyleScrollbarWidth,
-                                   Overlay) override;
-
   template <typename PaintBackendData>
   void DoPaintScrollbarThumb(PaintBackendData&, const LayoutDeviceRect& aRect,
-                             bool aHorizontal, nsIFrame* aFrame,
+                             ScrollbarKind, nsIFrame* aFrame,
                              const ComputedStyle& aStyle,
-                             const EventStates& aElementState,
-                             const EventStates& aDocumentState, const Colors&,
+                             const ElementState& aElementState,
+                             const DocumentState& aDocumentState, const Colors&,
                              const DPIRatio&);
   bool PaintScrollbarThumb(DrawTarget&, const LayoutDeviceRect& aRect,
-                           bool aHorizontal, nsIFrame* aFrame,
+                           ScrollbarKind, nsIFrame* aFrame,
                            const ComputedStyle& aStyle,
-                           const EventStates& aElementState,
-                           const EventStates& aDocumentState, const Colors&,
+                           const ElementState& aElementState,
+                           const DocumentState& aDocumentState, const Colors&,
                            const DPIRatio&) override;
   bool PaintScrollbarThumb(WebRenderBackendData&, const LayoutDeviceRect& aRect,
-                           bool aHorizontal, nsIFrame* aFrame,
+                           ScrollbarKind, nsIFrame* aFrame,
                            const ComputedStyle& aStyle,
-                           const EventStates& aElementState,
-                           const EventStates& aDocumentState, const Colors&,
+                           const ElementState& aElementState,
+                           const DocumentState& aDocumentState, const Colors&,
                            const DPIRatio&) override;
 
   void RecomputeScrollbarParams() override;

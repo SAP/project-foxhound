@@ -56,10 +56,6 @@
 #  include <CoreServices/CoreServices.h>
 #endif
 
-#if defined(MOZ_WIDGET_COCOA)
-#  include "nsCocoaFeatures.h"
-#endif
-
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/jni/Utils.h"
 #endif
@@ -70,7 +66,8 @@ namespace gl {
 using namespace mozilla::gfx;
 using namespace mozilla::layers;
 
-MOZ_THREAD_LOCAL(uintptr_t) GLContext::sCurrentContext;
+// Zero-initialized after init().
+MOZ_THREAD_LOCAL(const GLContext*) GLContext::sCurrentContext;
 
 // If adding defines, don't forget to undefine symbols. See #undef block below.
 // clang-format off
@@ -90,6 +87,7 @@ static const char* const sExtensionNames[] = {
     "GL_ANGLE_framebuffer_multisample",
     "GL_ANGLE_instanced_arrays",
     "GL_ANGLE_multiview",
+    "GL_ANGLE_provoking_vertex",
     "GL_ANGLE_texture_compression_dxt3",
     "GL_ANGLE_texture_compression_dxt5",
     "GL_ANGLE_timer_query",
@@ -117,6 +115,7 @@ static const char* const sExtensionNames[] = {
     "GL_ARB_map_buffer_range",
     "GL_ARB_occlusion_query2",
     "GL_ARB_pixel_buffer_object",
+    "GL_ARB_provoking_vertex",
     "GL_ARB_robust_buffer_access_behavior",
     "GL_ARB_robustness",
     "GL_ARB_sampler_objects",
@@ -158,6 +157,7 @@ static const char* const sExtensionNames[] = {
     "GL_EXT_multisampled_render_to_texture",
     "GL_EXT_occlusion_query_boolean",
     "GL_EXT_packed_depth_stencil",
+    "GL_EXT_provoking_vertex",
     "GL_EXT_read_format_bgra",
     "GL_EXT_robustness",
     "GL_EXT_sRGB",
@@ -244,15 +244,15 @@ static bool ParseVersion(const std::string& versionStr,
 uint8_t GLContext::ChooseDebugFlags(const CreateContextFlags createFlags) {
   uint8_t debugFlags = 0;
 
-#ifdef MOZ_GL_DEBUG
-  if (gfxEnv::GlDebug()) {
+#ifdef MOZ_GL_DEBUG_BUILD
+  if (gfxEnv::MOZ_GL_DEBUG()) {
     debugFlags |= GLContext::DebugFlagEnabled;
   }
 
   // Enables extra verbose output, informing of the start and finish of every GL
   // call. Useful e.g. to record information to investigate graphics system
   // crashes/lockups
-  if (gfxEnv::GlDebugVerbose()) {
+  if (gfxEnv::MOZ_GL_DEBUG_VERBOSE()) {
     debugFlags |= GLContext::DebugFlagTrace;
   }
 
@@ -263,12 +263,8 @@ uint8_t GLContext::ChooseDebugFlags(const CreateContextFlags createFlags) {
   if (createFlags & CreateContextFlags::NO_VALIDATION) {
     abortOnError = true;
 
-    const auto fnStringsMatch = [](const char* a, const char* b) {
-      return strcmp(a, b) == 0;
-    };
-
-    const char* envAbortOnError = PR_GetEnv("MOZ_GL_DEBUG_ABORT_ON_ERROR");
-    if (envAbortOnError && fnStringsMatch(envAbortOnError, "0")) {
+    const auto& env = gfxEnv::MOZ_GL_DEBUG_ABORT_ON_ERROR();
+    if (env.as_str == "0") {
       abortOnError = false;
     }
   }
@@ -287,18 +283,15 @@ GLContext::GLContext(const GLContextDesc& desc, GLContext* sharedContext,
       mUseTLSIsCurrent(ShouldUseTLSIsCurrent(useTLSIsCurrent)),
       mDebugFlags(ChooseDebugFlags(mDesc.flags)),
       mSharedContext(sharedContext),
+      mOwningThreadId(Some(PlatformThread::CurrentId())),
       mWorkAroundDriverBugs(
-          StaticPrefs::gfx_work_around_driver_bugs_AtStartup()) {
-  mOwningThreadId = PlatformThread::CurrentId();
-  MOZ_ALWAYS_TRUE(sCurrentContext.init());
-  sCurrentContext.set(0);
-}
+          StaticPrefs::gfx_work_around_driver_bugs_AtStartup()) {}
 
 GLContext::~GLContext() {
   NS_ASSERTION(
       IsDestroyed(),
       "GLContext implementation must call MarkDestroyed in destructor!");
-#ifdef MOZ_GL_DEBUG
+#ifdef MOZ_GL_DEBUG_BUILD
   if (mSharedContext) {
     GLContext* tip = mSharedContext;
     while (tip->mSharedContext) tip = tip->mSharedContext;
@@ -308,6 +301,11 @@ GLContext::~GLContext() {
     ReportOutstandingNames();
   }
 #endif
+  // Ensure we clear sCurrentContext if we were the last context set and avoid
+  // the memory getting reused.
+  if (sCurrentContext.init() && sCurrentContext.get() == this) {
+    sCurrentContext.set(nullptr);
+  }
 }
 
 /*static*/
@@ -650,6 +648,7 @@ bool GLContext::InitImpl() {
       "Adreno (TM) 420",
       "Mali-400 MP",
       "Mali-450 MP",
+      "Mali-T",
       "PowerVR SGX 530",
       "PowerVR SGX 540",
       "PowerVR SGX 544MP",
@@ -874,23 +873,12 @@ bool GLContext::InitImpl() {
     int maxTexSize = INT32_MAX;
     int maxCubeSize = INT32_MAX;
 #ifdef XP_MACOSX
-    if (!nsCocoaFeatures::IsAtLeastVersion(10, 12)) {
-      if (mVendor == GLVendor::Intel) {
-        // see bug 737182 for 2D textures, bug 684882 for cube map textures.
-        maxTexSize = 4096;
-        maxCubeSize = 512;
-      } else if (mVendor == GLVendor::NVIDIA) {
-        // See bug 879656.  8192 fails, 8191 works.
-        maxTexSize = 8191;
-      }
-    } else {
-      // https://bugzilla.mozilla.org/show_bug.cgi?id=1544446
-      // Mojave exposes 16k textures, but gives FRAMEBUFFER_UNSUPPORTED for any
-      // 16k*16k FB except rgba8 without depth/stencil.
-      // The max supported sizes changes based on involved formats.
-      // (RGBA32F more restrictive than RGBA16F)
-      maxTexSize = 8192;
-    }
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1544446
+    // Mojave exposes 16k textures, but gives FRAMEBUFFER_UNSUPPORTED for any
+    // 16k*16k FB except rgba8 without depth/stencil.
+    // The max supported sizes changes based on involved formats.
+    // (RGBA32F more restrictive than RGBA16F)
+    maxTexSize = 8192;
 #endif
 #ifdef MOZ_X11
     if (mVendor == GLVendor::Nouveau) {
@@ -914,25 +902,6 @@ bool GLContext::InitImpl() {
       // prevents occasional driver crash.
       mNeedsFlushBeforeDeleteFB = true;
     }
-#ifdef MOZ_WIDGET_ANDROID
-    if ((Renderer() == GLRenderer::AdrenoTM305 ||
-         Renderer() == GLRenderer::AdrenoTM320 ||
-         Renderer() == GLRenderer::AdrenoTM330) &&
-        jni::GetAPIVersion() < 21) {
-      // Bug 1164027. Driver crashes when functions such as
-      // glTexImage2D fail due to virtual memory exhaustion.
-      mTextureAllocCrashesOnMapFailure = true;
-    }
-#endif
-#if MOZ_WIDGET_ANDROID
-    if (Renderer() == GLRenderer::SGX540 && jni::GetAPIVersion() <= 15) {
-      // Bug 1288446. Driver sometimes crashes when uploading data to a
-      // texture if the render target has changed since the texture was
-      // rendered from. Calling glCheckFramebufferStatus after
-      // glFramebufferTexture2D prevents the crash.
-      mNeedsCheckAfterAttachTextureToFb = true;
-    }
-#endif
 
     // -
 
@@ -1503,6 +1472,17 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
     fnLoadForExt(symbols, APPLE_framebuffer_multisample);
   }
 
+  if (IsSupported(GLFeature::provoking_vertex)) {
+    const SymLoadStruct symbols[] = {{(PRFuncPtr*)&mSymbols.fProvokingVertex,
+                                      {{
+                                          "glProvokingVertex",
+                                          "glProvokingVertexANGLE",
+                                          "glProvokingVertexEXT",
+                                      }}},
+                                     END_SYMBOLS};
+    fnLoadForFeature(symbols, GLFeature::provoking_vertex);
+  }
+
   // Load developer symbols, don't fail if we can't find them.
   const SymLoadStruct devSymbols[] = {CORE_SYMBOL(GetTexImage),
                                       CORE_SYMBOL(GetTexLevelParameteriv),
@@ -1656,15 +1636,6 @@ void GLContext::InitExtensions() {
       // Bug 980048
       MarkExtensionUnsupported(OES_EGL_sync);
     }
-
-#ifdef MOZ_WIDGET_ANDROID
-    if (Vendor() == GLVendor::Imagination &&
-        Renderer() == GLRenderer::SGX544MP && jni::GetAPIVersion() < 21) {
-      // Bug 1026404
-      MarkExtensionUnsupported(OES_EGL_image);
-      MarkExtensionUnsupported(OES_EGL_image_external);
-    }
-#endif
 
     if (Vendor() == GLVendor::ARM && (Renderer() == GLRenderer::Mali400MP ||
                                       Renderer() == GLRenderer::Mali450MP)) {
@@ -1866,7 +1837,7 @@ bool GLContext::AssembleOffscreenFBs(const GLuint colorMSRB,
 
   if (!IsFramebufferComplete(drawFB, &status)) {
     NS_WARNING("DrawFBO: Incomplete");
-#ifdef MOZ_GL_DEBUG
+#ifdef MOZ_GL_DEBUG_BUILD
     if (ShouldSpew()) {
       printf_stderr("Framebuffer status: %X\n", status);
     }
@@ -1876,7 +1847,7 @@ bool GLContext::AssembleOffscreenFBs(const GLuint colorMSRB,
 
   if (!IsFramebufferComplete(readFB, &status)) {
     NS_WARNING("ReadFBO: Incomplete");
-#ifdef MOZ_GL_DEBUG
+#ifdef MOZ_GL_DEBUG_BUILD
     if (ShouldSpew()) {
       printf_stderr("Framebuffer status: %X\n", status);
     }
@@ -1915,7 +1886,7 @@ void GLContext::MarkDestroyed() {
 
 // -
 
-#ifdef MOZ_GL_DEBUG
+#ifdef MOZ_GL_DEBUG_BUILD
 /* static */
 void GLContext::AssertNotPassingStackBufferToTheGL(const void* ptr) {
   int somethingOnTheStack;
@@ -2093,7 +2064,7 @@ void GLContext::ReportOutstandingNames() {
   ReportArrayContents("Outstanding Renderbuffers", mTrackedRenderbuffers);
 }
 
-#endif /* DEBUG */
+#endif  // ifdef MOZ_GL_DEBUG_BUILD
 
 bool GLContext::IsOffscreenSizeAllowed(const IntSize& aSize) const {
   int32_t biggerDimension = std::max(aSize.width, aSize.height);
@@ -2101,8 +2072,9 @@ bool GLContext::IsOffscreenSizeAllowed(const IntSize& aSize) const {
   return biggerDimension <= maxAllowed;
 }
 
-bool GLContext::IsOwningThreadCurrent() {
-  return PlatformThread::CurrentId() == mOwningThreadId;
+bool GLContext::IsValidOwningThread() const {
+  if (!mOwningThreadId) return true;  // Free for all!
+  return PlatformThread::CurrentId() == *mOwningThreadId;
 }
 
 GLBlitHelper* GLContext::BlitHelper() {
@@ -2131,7 +2103,7 @@ void GLContext::FlushIfHeavyGLCallsSinceLastFlush() {
 }
 
 /*static*/
-bool GLContext::ShouldDumpExts() { return gfxEnv::GlDumpExtensions(); }
+bool GLContext::ShouldDumpExts() { return gfxEnv::MOZ_GL_DUMP_EXTS(); }
 
 bool DoesStringMatch(const char* aString, const char* aWantedString) {
   if (!aString || !aWantedString) return false;
@@ -2152,7 +2124,7 @@ bool DoesStringMatch(const char* aString, const char* aWantedString) {
 }
 
 /*static*/
-bool GLContext::ShouldSpew() { return gfxEnv::GlSpew(); }
+bool GLContext::ShouldSpew() { return gfxEnv::MOZ_GL_SPEW(); }
 
 void SplitByChar(const nsACString& str, const char delim,
                  std::vector<nsCString>* const out) {
@@ -2422,8 +2394,8 @@ bool GLContext::MakeCurrent(bool aForce) const {
 
   if (MOZ_LIKELY(!aForce)) {
     bool isCurrent;
-    if (mUseTLSIsCurrent) {
-      isCurrent = (sCurrentContext.get() == reinterpret_cast<uintptr_t>(this));
+    if (mUseTLSIsCurrent && sCurrentContext.init()) {
+      isCurrent = (sCurrentContext.get() == this);
     } else {
       isCurrent = IsCurrentImpl();
     }
@@ -2433,10 +2405,18 @@ bool GLContext::MakeCurrent(bool aForce) const {
       return true;
     }
   }
-
+  if (!IsValidOwningThread()) {
+    gfxCriticalError() << "MakeCurrent called on a thread other than the"
+                       << " creating thread!";
+    if (gfxEnv::MOZ_GL_RELEASE_ASSERT_CONTEXT_OWNERSHIP()) {
+      MOZ_CRASH("MOZ_GL_RELEASE_ASSERT_CONTEXT_OWNERSHIP");
+    }
+  }
   if (!MakeCurrentImpl()) return false;
 
-  sCurrentContext.set(reinterpret_cast<uintptr_t>(this));
+  if (sCurrentContext.init()) {
+    sCurrentContext.set(this);
+  }
   return true;
 }
 

@@ -1,16 +1,12 @@
 "use strict";
 
-let envService = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
+const PYTHON = Services.env.get("PYTHON");
 
-const PYTHON = envService.get("PYTHON");
+const PYTHON_BIN = PathUtils.filename(PYTHON);
+const PYTHON_DIR = PathUtils.parent(PYTHON);
 
-const PYTHON_BIN = OS.Path.basename(PYTHON);
-const PYTHON_DIR = OS.Path.dirname(PYTHON);
-
-const DOES_NOT_EXIST = OS.Path.join(
-  OS.Constants.Path.tmpDir,
+const DOES_NOT_EXIST = PathUtils.join(
+  PathUtils.tempDir,
   "ThisPathDoesNotExist"
 );
 
@@ -28,7 +24,7 @@ add_task(async function test_pathSearchAbsolute() {
 
   await Assert.rejects(
     Subprocess.pathSearch(DOES_NOT_EXIST, env),
-    function(e) {
+    function (e) {
       equal(
         e.errorCode,
         Subprocess.ERROR_BAD_EXECUTABLE,
@@ -47,7 +43,7 @@ add_task(async function test_pathSearchRelative() {
 
   await Assert.rejects(
     Subprocess.pathSearch(PYTHON_BIN, env),
-    function(e) {
+    function (e) {
       equal(
         e.errorCode,
         Subprocess.ERROR_BAD_EXECUTABLE,

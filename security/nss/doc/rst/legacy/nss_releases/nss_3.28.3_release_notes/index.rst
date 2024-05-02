@@ -11,7 +11,7 @@ NSS 3.28.3 release notes
    Network Security Services (NSS) 3.28.3 is a patch release for NSS 3.28. The bug fixes in NSS
    3.28.3 are described in the "Bugs Fixed" section below.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -30,8 +30,6 @@ NSS 3.28.3 release notes
 
 `New in NSS 3.28.3 <#new_in_nss_3.28.3>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

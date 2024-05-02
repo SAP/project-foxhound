@@ -61,6 +61,14 @@ test:
     labels:
       - one_label
       - two_labels
+      - three_labels
+      - four_labels
+      - five_labels
+      - six_labels
+      - seven_labels
+      - eight_labels
+      - nine_labels
+      - ten_labels
     telemetry_mirror: SOME_OTHER_KEYED_BOOL_SCALAR
 
   counter_metric:
@@ -171,6 +179,21 @@ test:
     data_reviews:
       - https://example.com
     telemetry_mirror: YET_ANOTHER_KEYED_BOOL_SCALAR
+
+  text_metric:
+    type: text
+    expires: never
+    description: |
+      A multi-line
+      description
+    lifetime: application
+    notification_emails:
+      - glean-team@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828528
+    data_reviews:
+      - https://example.com
+
 
   timespan_metric:
     type: timespan
@@ -357,5 +380,19 @@ test.nested:
       - glean-team@mozilla.com
     bugs:
       - https://bugzilla.mozilla.org/1704846/
+    data_reviews:
+      - https://example.com
+
+  optimizable_counter_metric:
+    type: counter
+    expires: never
+    description: |
+      A multi-line
+      description
+    lifetime: ping
+    notification_emails:
+      - glean-team@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1635260/
     data_reviews:
       - https://example.com

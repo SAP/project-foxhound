@@ -7,10 +7,6 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
-
   class MozArrowScrollbox extends MozElements.BaseControl {
     static get inheritedAttributes() {
       return {
@@ -44,9 +40,8 @@
 
       this.scrollbox = this.shadowRoot.querySelector("scrollbox");
       this._scrollButtonUp = this.shadowRoot.getElementById("scrollbutton-up");
-      this._scrollButtonDown = this.shadowRoot.getElementById(
-        "scrollbutton-down"
-      );
+      this._scrollButtonDown =
+        this.shadowRoot.getElementById("scrollbutton-down");
 
       this._arrowScrollAnim = {
         scrollbox: this,
@@ -588,37 +583,38 @@
             scrolledToStart = true;
             scrolledToEnd = true;
           } else {
-            let [leftOrTop, rightOrBottom] = this.startEndProps;
-            let leftOrTopEdge = ele =>
-              Math.round(this._boundsWithoutFlushing(ele)[leftOrTop]);
-            let rightOrBottomEdge = ele =>
-              Math.round(this._boundsWithoutFlushing(ele)[rightOrBottom]);
+            let isAtEdge = (element, start) => {
+              let edge = start ? this.startEndProps[0] : this.startEndProps[1];
+              let scrollEdge = this._boundsWithoutFlushing(this.scrollbox)[
+                edge
+              ];
+              let elementEdge = this._boundsWithoutFlushing(element)[edge];
+              // This is enough slop (>2/3) so that no subpixel value should
+              // get us confused about whether we reached the end.
+              const EPSILON = 0.7;
+              if (start) {
+                return scrollEdge <= elementEdge + EPSILON;
+              }
+              return elementEdge <= scrollEdge + EPSILON;
+            };
 
             let elements = this._getScrollableElements();
-            let [leftOrTopElement, rightOrBottomElement] = [
+            let [startElement, endElement] = [
               elements[0],
               elements[elements.length - 1],
             ];
             if (this.isRTLScrollbox) {
-              [leftOrTopElement, rightOrBottomElement] = [
-                rightOrBottomElement,
-                leftOrTopElement,
-              ];
+              [startElement, endElement] = [endElement, startElement];
             }
-
-            if (
-              leftOrTopElement &&
-              leftOrTopEdge(leftOrTopElement) >= leftOrTopEdge(this.scrollbox)
-            ) {
-              scrolledToStart = !this.isRTLScrollbox;
-              scrolledToEnd = this.isRTLScrollbox;
-            } else if (
-              rightOrBottomElement &&
-              rightOrBottomEdge(rightOrBottomElement) <=
-                rightOrBottomEdge(this.scrollbox)
-            ) {
-              scrolledToStart = this.isRTLScrollbox;
-              scrolledToEnd = !this.isRTLScrollbox;
+            scrolledToStart =
+              startElement && isAtEdge(startElement, /* start = */ true);
+            scrolledToEnd =
+              endElement && isAtEdge(endElement, /* start = */ false);
+            if (this.isRTLScrollbox) {
+              [scrolledToStart, scrolledToEnd] = [
+                scrolledToEnd,
+                scrolledToStart,
+              ];
             }
           }
 

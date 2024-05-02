@@ -11,18 +11,21 @@ let seenAutoUpgradeMessage = false;
 const kTestURI =
   testPath + "file_mixed_content_auto_upgrade_display_console.html";
 
-add_task(async function() {
+add_task(async function () {
   // A longer timeout is necessary for this test than the plain mochitests
   // due to opening a new tab with the web console.
   requestLongerTimeout(4);
 
   // Enable HTTPS-Only Mode and register console-listener
   await SpecialPowers.pushPrefEnv({
-    set: [["security.mixed_content.upgrade_display_content", true]],
+    set: [
+      ["security.mixed_content.upgrade_display_content", true],
+      ["security.mixed_content.upgrade_display_content.image", true],
+    ],
   });
   Services.console.registerListener(on_auto_upgrade_message);
 
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, kTestURI);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, kTestURI);
 
   await BrowserTestUtils.waitForCondition(() => seenAutoUpgradeMessage);
 

@@ -15,6 +15,7 @@
 #include "ConnectionEntry.h"
 #include "nsQueryObject.h"
 #include "mozilla/ChaosMode.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "nsHttpHandler.h"
 
 namespace mozilla {
@@ -242,8 +243,8 @@ bool ConnectionEntry::RestrictConnections() {
   // don't create any new ssl connections until the result of the
   // negotiation is known.
 
-  bool doRestrict = mConnInfo->FirstHopSSL() && gHttpHandler->IsSpdyEnabled() &&
-                    mUsingSpdy &&
+  bool doRestrict = mConnInfo->FirstHopSSL() &&
+                    StaticPrefs::network_http_http2_enabled() && mUsingSpdy &&
                     (mDnsAndConnectSockets.Length() || mActiveConns.Length());
 
   // If there are no restrictions, we are done
@@ -353,6 +354,17 @@ void ConnectionEntry::CloseIdleConnections(uint32_t maxToClose) {
   }
 }
 
+void ConnectionEntry::CloseH2WebsocketConnections() {
+  while (mH2WebsocketConns.Length()) {
+    RefPtr<HttpConnectionBase> conn(mH2WebsocketConns[0]);
+    mH2WebsocketConns.RemoveElementAt(0);
+
+    // safe to close connection since we are on the socket thread
+    // closing via transaction to break connection/transaction bond
+    conn->CloseTransaction(conn->Transaction(), NS_ERROR_ABORT, true);
+  }
+}
+
 nsresult ConnectionEntry::RemoveIdleConnection(nsHttpConnection* conn) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
@@ -414,6 +426,16 @@ nsresult ConnectionEntry::RemoveActiveConnection(HttpConnectionBase* conn) {
   return NS_OK;
 }
 
+nsresult ConnectionEntry::RemovePendingConnection(HttpConnectionBase* conn) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  if (!mPendingConns.RemoveElement(conn)) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  return NS_OK;
+}
+
 void ConnectionEntry::ClosePersistentConnections() {
   LOG(("ConnectionEntry::ClosePersistentConnections [ci=%s]\n",
        mConnInfo->HashKey().get()));
@@ -423,6 +445,8 @@ void ConnectionEntry::ClosePersistentConnections() {
   for (int32_t i = 0; i < activeCount; i++) {
     mActiveConns[i]->DontReuse();
   }
+
+  mCoalescingKeys.Clear();
 }
 
 uint32_t ConnectionEntry::PruneDeadConnections() {
@@ -462,13 +486,33 @@ uint32_t ConnectionEntry::PruneDeadConnections() {
 
 void ConnectionEntry::VerifyTraffic() {
   if (!mConnInfo->IsHttp3()) {
-    // Iterate over all active connections and check them.
-    for (uint32_t index = 0; index < mActiveConns.Length(); ++index) {
-      RefPtr<nsHttpConnection> conn = do_QueryObject(mActiveConns[index]);
+    for (uint32_t index = 0; index < mPendingConns.Length(); ++index) {
+      RefPtr<nsHttpConnection> conn = do_QueryObject(mPendingConns[index]);
       if (conn) {
         conn->CheckForTraffic(true);
       }
     }
+
+    uint32_t numConns = mActiveConns.Length();
+    if (numConns) {
+      // Walk the list backwards to allow us to remove entries easily.
+      for (int index = numConns - 1; index >= 0; index--) {
+        RefPtr<nsHttpConnection> conn = do_QueryObject(mActiveConns[index]);
+        if (conn) {
+          conn->CheckForTraffic(true);
+          if (conn->EverUsedSpdy() &&
+              StaticPrefs::
+                  network_http_http2_move_to_pending_list_after_network_change()) {
+            mActiveConns.RemoveElementAt(index);
+            gHttpHandler->ConnMgr()->DecrementActiveConnCount(conn);
+            mPendingConns.AppendElement(conn);
+            LOG(("Move active connection to pending list [conn=%p]\n",
+                 conn.get()));
+          }
+        }
+      }
+    }
+
     // Iterate the idle connections and unmark them for traffic checks.
     for (uint32_t index = 0; index < mIdleConns.Length(); ++index) {
       RefPtr<nsHttpConnection> conn = do_QueryObject(mIdleConns[index]);
@@ -507,6 +551,19 @@ void ConnectionEntry::InsertIntoActiveConns(HttpConnectionBase* conn) {
   gHttpHandler->ConnMgr()->IncrementActiveConnCount();
 }
 
+bool ConnectionEntry::IsInH2WebsocketConns(HttpConnectionBase* conn) {
+  return mH2WebsocketConns.Contains(conn);
+}
+
+void ConnectionEntry::InsertIntoH2WebsocketConns(HttpConnectionBase* conn) {
+  // no incrementing of connection count since it is just a "fake" connection
+  mH2WebsocketConns.AppendElement(conn);
+}
+
+void ConnectionEntry::RemoveH2WebsocketConns(HttpConnectionBase* conn) {
+  mH2WebsocketConns.RemoveElement(conn);
+}
+
 void ConnectionEntry::MakeAllDontReuseExcept(HttpConnectionBase* conn) {
   for (uint32_t index = 0; index < mActiveConns.Length(); ++index) {
     HttpConnectionBase* otherConn = mActiveConns[index];
@@ -517,6 +574,8 @@ void ConnectionEntry::MakeAllDontReuseExcept(HttpConnectionBase* conn) {
            "because new "
            "spdy connection (%p) takes precedence\n",
            otherConn, conn));
+      otherConn->SetCloseReason(
+          ConnectionCloseReason::CLOSE_EXISTING_CONN_FOR_COALESCING);
       otherConn->DontReuse();
     }
   }
@@ -659,6 +718,18 @@ void ConnectionEntry::CloseAllActiveConnsWithNullTransactcion(
            liveTransaction, activeConn.get()));
       activeConn->CloseTransaction(liveTransaction, aCloseCode);
     }
+  }
+}
+
+void ConnectionEntry::ClosePendingConnections() {
+  while (mPendingConns.Length()) {
+    RefPtr<HttpConnectionBase> conn(mPendingConns[0]);
+    mPendingConns.RemoveElementAt(0);
+
+    // Since HttpConnectionBase::Close doesn't break the bond with
+    // the connection's transaction, we must explicitely tell it
+    // to close its transaction and not just self.
+    conn->CloseTransaction(conn->Transaction(), NS_ERROR_ABORT, true);
   }
 }
 
@@ -975,6 +1046,56 @@ nsresult ConnectionEntry::CreateDnsAndConnectSocket(
   }
 
   return NS_OK;
+}
+
+bool ConnectionEntry::AllowToRetryDifferentIPFamilyForHttp3(nsresult aError) {
+  LOG(
+      ("ConnectionEntry::AllowToRetryDifferentIPFamilyForHttp3 %p "
+       "error=%" PRIx32,
+       this, static_cast<uint32_t>(aError)));
+  if (!IsHttp3()) {
+    MOZ_ASSERT(false, "Should not be called for non Http/3 connection");
+    return false;
+  }
+
+  if (!StaticPrefs::network_http_http3_retry_different_ip_family()) {
+    return false;
+  }
+
+  // Only allow to retry with these two errors.
+  if (aError != NS_ERROR_CONNECTION_REFUSED &&
+      aError != NS_ERROR_PROXY_CONNECTION_REFUSED) {
+    return false;
+  }
+
+  // Already retried once.
+  if (mRetriedDifferentIPFamilyForHttp3) {
+    return false;
+  }
+
+  return true;
+}
+
+void ConnectionEntry::SetRetryDifferentIPFamilyForHttp3(uint16_t aIPFamily) {
+  LOG(("ConnectionEntry::SetRetryDifferentIPFamilyForHttp3 %p, af=%u", this,
+       aIPFamily));
+
+  mPreferIPv4 = false;
+  mPreferIPv6 = false;
+
+  if (aIPFamily == AF_INET) {
+    mPreferIPv6 = true;
+  }
+
+  if (aIPFamily == AF_INET6) {
+    mPreferIPv4 = true;
+  }
+
+  mRetriedDifferentIPFamilyForHttp3 = true;
+
+  LOG(("  %p prefer ipv4=%d, ipv6=%d", this, (bool)mPreferIPv4,
+       (bool)mPreferIPv6));
+  MOZ_DIAGNOSTIC_ASSERT(mPreferIPv4 ^ mPreferIPv6);
 }
 
 }  // namespace net

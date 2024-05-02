@@ -9,8 +9,8 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
-  const { AppConstants } = ChromeUtils.import(
-    "resource://gre/modules/AppConstants.jsm"
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
 
   class MozTreeChildren extends MozElements.BaseControl {
@@ -198,44 +198,19 @@
   customElements.define("treechildren", MozTreeChildren);
 
   class MozTreecolPicker extends MozElements.BaseControl {
-    static get entities() {
-      return ["chrome://global/locale/tree.dtd"];
-    }
-
     static get markup() {
       return `
-      <image class="tree-columnpicker-icon"></image>
+      <button class="tree-columnpicker-button"/>
       <menupopup anonid="popup">
-        <menuseparator anonid="menuseparator"></menuseparator>
-        <menuitem anonid="menuitem" label="&restoreColumnOrder.label;"></menuitem>
+        <menuseparator anonid="menuseparator"/>
+        <menuitem anonid="menuitem" data-l10n-id="tree-columnpicker-restore-order"/>
       </menupopup>
       `;
     }
     constructor() {
       super();
 
-      this.addEventListener("command", event => {
-        if (event.originalTarget == this) {
-          var popup = this.querySelector('[anonid="popup"]');
-          this.buildPopup(popup);
-          popup.openPopup(this, "after_end");
-        } else {
-          var tree = this.parentNode.parentNode;
-          tree.stopEditing(true);
-          var menuitem = this.querySelector('[anonid="menuitem"]');
-          if (event.originalTarget == menuitem) {
-            this.style.MozBoxOrdinalGroup = "";
-            tree._ensureColumnOrder(tree.NATURAL_ORDER);
-          } else {
-            var colindex = event.originalTarget.getAttribute("colindex");
-            var column = tree.columns[colindex];
-            if (column) {
-              var element = column.element;
-              element.hidden = !element.hidden;
-            }
-          }
-        }
-      });
+      window.MozXULElement.insertFTLIfNeeded("toolkit/global/tree.ftl");
     }
 
     connectedCallback() {
@@ -245,6 +220,24 @@
 
       this.textContent = "";
       this.appendChild(this.constructor.fragment);
+
+      let button = this.querySelector(".tree-columnpicker-button");
+      let popup = this.querySelector('[anonid="popup"]');
+      let menuitem = this.querySelector('[anonid="menuitem"]');
+
+      button.addEventListener("command", e => {
+        this.buildPopup(popup);
+        popup.openPopup(this, "after_end");
+        e.preventDefault();
+      });
+
+      menuitem.addEventListener("command", e => {
+        let tree = this.parentNode.parentNode;
+        tree.stopEditing(true);
+        this.style.order = "";
+        tree._ensureColumnOrder(tree.NATURAL_ORDER);
+        e.preventDefault();
+      });
     }
 
     buildPopup(aPopup) {
@@ -285,6 +278,16 @@
               currElement.getAttribute("closemenu")
             );
           }
+
+          popupChild.addEventListener("command", function () {
+            let colindex = this.getAttribute("colindex");
+            let column = tree.columns[colindex];
+            if (column) {
+              var element = column.element;
+              element.hidden = !element.hidden;
+            }
+          });
+
           aPopup.insertBefore(popupChild, refChild);
         }
       }
@@ -299,6 +302,10 @@
   customElements.define("treecolpicker", MozTreecolPicker);
 
   class MozTreecol extends MozElements.BaseControl {
+    static get observedAttributes() {
+      return ["primary", ...super.observedAttributes];
+    }
+
     static get inheritedAttributes() {
       return {
         ".treecol-sortdirection": "sortdirection,hidden=hideheader",
@@ -308,9 +315,22 @@
 
     static get markup() {
       return `
-        <label class="treecol-text" flex="1" crop="right"></label>
+        <label class="treecol-text" flex="1" crop="end"></label>
         <image class="treecol-sortdirection"></image>
       `;
+    }
+
+    get _tree() {
+      return this.parentNode?.parentNode;
+    }
+
+    _invalidate() {
+      let tree = this._tree;
+      if (!tree || !XULTreeElement.isInstance(tree)) {
+        return;
+      }
+      tree.invalidate();
+      tree.columns?.invalidateColumns();
     }
 
     constructor() {
@@ -320,7 +340,7 @@
         if (event.button != 0) {
           return;
         }
-        if (this.parentNode.parentNode.enableColumnDrag) {
+        if (this._tree.enableColumnDrag) {
           var XUL_NS =
             "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
           var cols = this.parentNode.getElementsByTagNameNS(XUL_NS, "treecol");
@@ -358,7 +378,7 @@
           return;
         }
 
-        var tree = this.parentNode.parentNode;
+        var tree = this._tree;
         if (tree.columns) {
           tree.view.cycleHeader(tree.columns.getColumnFor(this));
         }
@@ -374,17 +394,35 @@
       this.appendChild(this.constructor.fragment);
       this.initializeAttributeInheritance();
       if (this.hasAttribute("ordinal")) {
-        this.style.MozBoxOrdinalGroup = this.getAttribute("ordinal");
+        this.style.order = this.getAttribute("ordinal");
       }
+      if (this.hasAttribute("width")) {
+        this.style.width = this.getAttribute("width") + "px";
+      }
+
+      this._resizeObserver = new ResizeObserver(() => {
+        this._invalidate();
+      });
+      this._resizeObserver.observe(this);
+    }
+
+    disconnectedCallback() {
+      this._resizeObserver?.unobserve(this);
+      this._resizeObserver = null;
+    }
+
+    attributeChangedCallback(name, oldValue, newValue) {
+      super.attributeChangedCallback(name, oldValue, newValue);
+      this._invalidate();
     }
 
     set ordinal(val) {
-      this.style.MozBoxOrdinalGroup = val;
+      this.style.order = val;
       this.setAttribute("ordinal", val);
     }
 
     get ordinal() {
-      var val = this.style.MozBoxOrdinalGroup;
+      var val = this.style.order;
       if (val == "") {
         return "1";
       }
@@ -534,7 +572,7 @@
       window.removeEventListener("mouseup", col._onDragMouseUp, true);
       // we have to wait for the click event to fire before removing
       // cancelling handler
-      var clickHandler = function(handler) {
+      var clickHandler = function (handler) {
         window.removeEventListener("click", handler, true);
       };
       window.setTimeout(clickHandler, 0, col._onDragMouseClick);
@@ -558,7 +596,7 @@
 
     static get markup() {
       return `
-      <treecolpicker class="treecol-image" fixed="true"></treecolpicker>
+      <treecolpicker fixed="true"></treecolpicker>
       `;
     }
 
@@ -635,6 +673,10 @@
         el.addEventListener("command", stopProp);
       }
       this.shadowRoot.appendChild(this.constructor.fragment);
+
+      this.#verticalScrollbar = this.shadowRoot.querySelector(
+        "scrollbar[orient='vertical']"
+      );
     }
 
     static get inheritedAttributes() {
@@ -656,7 +698,6 @@
 
       this.setAttribute("hidevscroll", "true");
       this.setAttribute("hidehscroll", "true");
-      this.setAttribute("clickthrough", "never");
 
       this.initializeAttributeInheritance();
 
@@ -751,31 +792,20 @@
 
       // This event doesn't retarget, so listen on the shadow DOM directly
       this.shadowRoot.addEventListener("MozMousePixelScroll", event => {
-        if (
-          !(
-            this.getAttribute("allowunderflowscroll") == "true" &&
-            this.getAttribute("hidevscroll") == "true"
-          )
-        ) {
+        if (this.#canScroll(event)) {
           event.preventDefault();
         }
       });
 
       // This event doesn't retarget, so listen on the shadow DOM directly
       this.shadowRoot.addEventListener("DOMMouseScroll", event => {
-        if (
-          !(
-            this.getAttribute("allowunderflowscroll") == "true" &&
-            this.getAttribute("hidevscroll") == "true"
-          )
-        ) {
-          event.preventDefault();
-        }
-
-        if (this._editingColumn) {
+        if (!this.#canScroll(event)) {
           return;
         }
-        if (event.axis == event.HORIZONTAL_AXIS) {
+
+        event.preventDefault();
+
+        if (this._editingColumn) {
           return;
         }
 
@@ -1153,7 +1183,7 @@
         // they are in between columns
         var splitters = this.getElementsByTagName("splitter");
         for (let i = 0; i < splitters.length; ++i) {
-          splitters[i].style.MozBoxOrdinalGroup = (i + 1) * 2;
+          splitters[i].style.order = (i + 1) * 2;
         }
       }
     }
@@ -1196,7 +1226,10 @@
         for (i = 0; i < cols.length; ++i) {
           cols[i].ordinal = parseInt(cols[i].ordinal) - 2;
         }
+      } else {
+        return;
       }
+      this.columns.invalidateColumns();
     }
 
     _getColumnAtX(aX, aThresh, aPos) {
@@ -1337,17 +1370,22 @@
       // The leftside of the textbox is aligned to the left side of the text
       // in LTR mode, and left side of the cell in RTL mode.
       let left = style.direction == "rtl" ? cellRect.x : textRect.x;
+      let scrollbarWidth = window.windowUtils.getBoundsWithoutFlushing(
+        this.#verticalScrollbar
+      ).width;
       // Note: this won't be quite right in RTL for trees using twisties
       // or indentation. bug 1708159 tracks fixing the implementation
       // of getCoordsForCellItem which we called above so it provides
       // better numbers in those cases.
-      let widthdiff = Math.abs(textRect.x - cellRect.x);
+      let widthdiff = Math.abs(textRect.x - cellRect.x) - scrollbarWidth;
 
       input.style.left = `${left}px`;
-      input.style.height = `${textRect.height +
+      input.style.height = `${
+        textRect.height +
         topadj +
         parseInt(style.borderBottomWidth) +
-        parseInt(style.paddingBottom)}px`;
+        parseInt(style.paddingBottom)
+      }px`;
       input.style.width = `${cellRect.width - widthdiff}px`;
       input.hidden = false;
 
@@ -1621,6 +1659,42 @@
       }
 
       return this.changeOpenState(this.currentIndex);
+    }
+
+    #verticalScrollbar = null;
+    #lastScrollEventTimeStampMap = new Map();
+
+    #canScroll(event) {
+      const lastScrollEventTimeStamp = this.#lastScrollEventTimeStampMap.get(
+        event.type
+      );
+      this.#lastScrollEventTimeStampMap.set(event.type, event.timeStamp);
+
+      if (
+        window.windowUtils.getWheelScrollTarget() ||
+        event.axis == event.HORIZONTAL_AXIS ||
+        (this.getAttribute("allowunderflowscroll") == "true" &&
+          this.getAttribute("hidevscroll") == "true")
+      ) {
+        return false;
+      }
+
+      if (
+        event.timeStamp - (lastScrollEventTimeStamp ?? 0) <
+        Services.prefs.getIntPref("mousewheel.scroll_series_timeout")
+      ) {
+        // If the time difference of previous event does not over the timeout,
+        // handle the event in tree as the same seies of events even if the
+        // current position is edge.
+        return true;
+      }
+
+      const curpos = Number(this.#verticalScrollbar.getAttribute("curpos"));
+      return (
+        (event.detail < 0 && 0 < curpos) ||
+        (event.detail > 0 &&
+          curpos < Number(this.#verticalScrollbar.getAttribute("maxpos")))
+      );
     }
   }
 

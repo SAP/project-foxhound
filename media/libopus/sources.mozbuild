@@ -17,6 +17,11 @@ celt_sources = [
     'celt/vq.c',
 ]
 
+celt_sources_x86_rtcd = [
+    'celt/x86/x86_celt_map.c',
+    'celt/x86/x86cpu.c',
+]
+
 opus_nonunified_sources = [
     # Disabled because of undefined reference to celt_fatal at link time
     'celt/celt.c',
@@ -30,8 +35,6 @@ opus_nonunified_sources = [
 
 celt_sources_sse = [
     'celt/x86/pitch_sse.c',
-    'celt/x86/x86_celt_map.c',
-    'celt/x86/x86cpu.c',
 ]
 
 celt_sources_sse2 = [
@@ -44,7 +47,7 @@ celt_sources_sse4_1 = [
     'celt/x86/pitch_sse4_1.c',
 ]
 
-celt_sources_arm = [
+celt_sources_arm_rtcd = [
     'celt/arm/arm_celt_map.c',
     'celt/arm/armcpu.c',
 ]
@@ -68,15 +71,12 @@ celt_sources_arm_ne10 = [
 ]
 
 opus_sources = [
-    'src/mapping_matrix.c',
     'src/opus.c',
     'src/opus_decoder.c',
     'src/opus_encoder.c',
     'src/opus_multistream.c',
     'src/opus_multistream_decoder.c',
     'src/opus_multistream_encoder.c',
-    'src/opus_projection_decoder.c',
-    'src/opus_projection_encoder.c',
     'src/repacketizer.c',
 ]
 
@@ -98,7 +98,6 @@ silk_sources = [
     'silk/control_audio_bandwidth.c',
     'silk/control_codec.c',
     'silk/control_SNR.c',
-    'silk/debug.c',
     'silk/dec_API.c',
     'silk/decode_core.c',
     'silk/decode_frame.c',
@@ -164,16 +163,22 @@ silk_sources = [
     'silk/VQ_WMat_EC.c',
 ]
 
+silk_sources_x86_rtcd = [
+    'silk/x86/x86_silk_map.c',
+]
+
 silk_sources_sse4_1 = [
     'silk/x86/NSQ_del_dec_sse4_1.c',
     'silk/x86/NSQ_sse4_1.c',
     'silk/x86/VAD_sse4_1.c',
     'silk/x86/VQ_WMat_EC_sse4_1.c',
-    'silk/x86/x86_silk_map.c',
+]
+
+silk_sources_arm_rtcd = [
+    'silk/arm/arm_silk_map.c',
 ]
 
 silk_sources_arm_neon_intr = [
-    'silk/arm/arm_silk_map.c',
     'silk/arm/biquad_alt_neon_intr.c',
     'silk/arm/LPC_inv_pred_gain_neon_intr.c',
     'silk/arm/NSQ_del_dec_neon_intr.c',
@@ -230,13 +235,11 @@ silk_sources_float = [
     'silk/float/inner_product_FLP.c',
     'silk/float/k2a_FLP.c',
     'silk/float/LPC_analysis_filter_FLP.c',
-    'silk/float/LPC_inv_pred_gain_FLP.c',
     'silk/float/LTP_analysis_filter_FLP.c',
     'silk/float/LTP_scale_ctrl_FLP.c',
     'silk/float/noise_shape_analysis_FLP.c',
     'silk/float/pitch_analysis_core_FLP.c',
     'silk/float/process_gains_FLP.c',
-    'silk/float/regularize_correlations_FLP.c',
     'silk/float/residual_energy_FLP.c',
     'silk/float/scale_copy_vector_FLP.c',
     'silk/float/scale_vector_FLP.c',

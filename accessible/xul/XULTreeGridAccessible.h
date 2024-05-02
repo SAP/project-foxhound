@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,9 +7,9 @@
 #ifndef mozilla_a11y_XULTreeGridAccessible_h__
 #define mozilla_a11y_XULTreeGridAccessible_h__
 
+#include "mozilla/a11y/TableAccessible.h"
+#include "mozilla/a11y/TableCellAccessible.h"
 #include "XULTreeAccessible.h"
-#include "TableAccessible.h"
-#include "TableCellAccessible.h"
 
 namespace mozilla {
 namespace a11y {
@@ -39,13 +40,20 @@ class XULTreeGridAccessible : public XULTreeAccessible, public TableAccessible {
   virtual uint32_t SelectedCellCount() override;
   virtual uint32_t SelectedColCount() override;
   virtual uint32_t SelectedRowCount() override;
-  virtual void SelectedCells(nsTArray<LocalAccessible*>* aCells) override;
+  virtual void SelectedCells(nsTArray<Accessible*>* aCells) override;
   virtual void SelectedCellIndices(nsTArray<uint32_t>* aCells) override;
   virtual void SelectedColIndices(nsTArray<uint32_t>* aCols) override;
   virtual void SelectedRowIndices(nsTArray<uint32_t>* aRows) override;
-  virtual void SelectRow(uint32_t aRowIdx) override;
-  virtual void UnselectRow(uint32_t aRowIdx) override;
   virtual LocalAccessible* AsAccessible() override { return this; }
+
+  virtual int32_t CellIndexAt(uint32_t aRowIdx, uint32_t aColIdx) override {
+    return static_cast<int32_t>(ColCount() * aRowIdx + aColIdx);
+  }
+
+  virtual int32_t ColIndexAt(uint32_t aCellIdx) override;
+  virtual int32_t RowIndexAt(uint32_t aCellIdx) override;
+  virtual void RowAndColIndicesAt(uint32_t aCellIdx, int32_t* aRowIdx,
+                                  int32_t* aColIdx) override;
 
   // LocalAccessible
   virtual TableAccessible* AsTable() override { return this; }
@@ -55,7 +63,7 @@ class XULTreeGridAccessible : public XULTreeAccessible, public TableAccessible {
   virtual ~XULTreeGridAccessible();
 
   // XULTreeAccessible
-  virtual already_AddRefed<LocalAccessible> CreateTreeItemAccessible(
+  virtual already_AddRefed<XULTreeItemAccessibleBase> CreateTreeItemAccessible(
       int32_t aRow) const override;
 };
 
@@ -124,7 +132,7 @@ class XULTreeGridCellAccessible : public LeafAccessible,
   virtual nsRect BoundsInAppUnits() const override;
   virtual nsIntRect BoundsInCSSPixels() const override;
   virtual ENameValueFlag Name(nsString& aName) const override;
-  virtual LocalAccessible* FocusedChild() override;
+  virtual Accessible* FocusedChild() override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
   virtual int32_t IndexInParent() const override;
   virtual Relation RelationByType(RelationType aType) const override;
@@ -133,17 +141,15 @@ class XULTreeGridCellAccessible : public LeafAccessible,
   virtual uint64_t NativeInteractiveState() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
+  virtual bool HasPrimaryAction() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) const override;
 
   // TableCellAccessible
   virtual TableAccessible* Table() const override;
   virtual uint32_t ColIdx() const override;
   virtual uint32_t RowIdx() const override;
-  virtual void ColHeaderCells(
-      nsTArray<LocalAccessible*>* aHeaderCells) override;
-  virtual void RowHeaderCells(nsTArray<LocalAccessible*>* aCells) override {}
+  virtual void ColHeaderCells(nsTArray<Accessible*>* aHeaderCells) override;
+  virtual void RowHeaderCells(nsTArray<Accessible*>* aCells) override {}
   virtual bool Selected() override;
 
   /**

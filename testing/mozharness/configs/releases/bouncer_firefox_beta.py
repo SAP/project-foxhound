@@ -10,7 +10,6 @@ config = {
         # products using versions are for release automation via release-bouncer-check-firefox
         "installer": {
             "product-name": "Firefox-%(version)s",
-            "check_uptake": True,
             "platforms": [
                 "linux",
                 "linux64",
@@ -22,7 +21,6 @@ config = {
         },
         "installer-latest": {
             "product-name": "Firefox-beta-latest",
-            "check_uptake": True,
             "platforms": [
                 "linux",
                 "linux64",
@@ -34,7 +32,6 @@ config = {
         },
         "installer-ssl": {
             "product-name": "Firefox-%(version)s-SSL",
-            "check_uptake": True,
             "platforms": [
                 "linux",
                 "linux64",
@@ -46,7 +43,6 @@ config = {
         },
         "installer-latest-ssl": {
             "product-name": "Firefox-beta-latest-SSL",
-            "check_uptake": True,
             "platforms": [
                 "linux",
                 "linux64",
@@ -58,7 +54,6 @@ config = {
         },
         "msi": {
             "product-name": "Firefox-%(version)s-msi-SSL",
-            "check_uptake": True,
             "platforms": [
                 "win",
                 "win64",
@@ -66,7 +61,6 @@ config = {
         },
         "msi-latest": {
             "product-name": "Firefox-beta-msi-latest-SSL",
-            "check_uptake": True,
             "platforms": [
                 "win",
                 "win64",
@@ -74,7 +68,6 @@ config = {
         },
         "msix": {
             "product-name": "Firefox-%(version)s-msix-SSL",
-            "check_uptake": True,
             "platforms": [
                 "win",
                 "win64",
@@ -82,15 +75,21 @@ config = {
         },
         "msix-latest": {
             "product-name": "Firefox-beta-msix-latest-SSL",
-            "check_uptake": True,
             "platforms": [
                 "win",
                 "win64",
             ],
         },
+        "pkg": {
+            "product-name": "Firefox-%(version)s-pkg-SSL",
+            "platforms": ["osx"],
+        },
+        "pkg-latest": {
+            "product-name": "Firefox-beta-pkg-latest-SSL",
+            "platforms": ["osx"],
+        },
         "stub-installer": {
             "product-name": "Firefox-%(version)s-stub",
-            "check_uptake": True,
             "platforms": [
                 "win",
                 "win64",
@@ -99,16 +98,34 @@ config = {
         },
         "stub-installer-latest": {
             "product-name": "Firefox-beta-stub",
-            "check_uptake": True,
             "platforms": [
                 "win",
                 "win64",
                 "win64-aarch64",
             ],
         },
+        "langpack": {
+            "product-name": "Firefox-%(version)s-langpack-SSL",
+            "platforms": [
+                "linux",
+                "linux64",
+                "osx",
+                "win",
+                "win64",
+            ],
+        },
+        "langpack-latest": {
+            "product-name": "Firefox-beta-langpack-latest-SSL",
+            "platforms": [
+                "linux",
+                "linux64",
+                "osx",
+                "win",
+                "win64",
+            ],
+        },
         "complete-mar": {
             "product-name": "Firefox-%(version)s-Complete",
-            "check_uptake": True,
             "platforms": [
                 "linux",
                 "linux64",
@@ -122,7 +139,6 @@ config = {
     "partials": {
         "releases-dir": {
             "product-name": "Firefox-%(version)s-Partial-%(prev_version)s",
-            "check_uptake": True,
             "platforms": [
                 "linux",
                 "linux64",

@@ -7,15 +7,12 @@ include protocol PClientHandle;
 include protocol PClientManagerOp;
 include protocol PClientNavigateOp;
 include protocol PClientSource;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
-include protocol PFileDescriptorSet;
-include protocol PRemoteLazyInputStream;
 include ClientIPCTypes;
 
 namespace mozilla {
 namespace dom {
 
+[ManualDealloc, ChildImpl=virtual, ParentImpl=virtual]
 sync protocol PClientManager
 {
   manager PBackground;

@@ -36,11 +36,14 @@ gu{
         gujr{
             patterns{
                 currencyFormat{"¤#,##0.00"}
+                currencyFormat%alphaNextToNumber{"¤ #,##0.00"}
+                currencyFormat%noCurrency{"#,##0.00"}
                 decimalFormat{"#,##,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
             symbols{
+                approximatelySign{"~"}
                 decimal{"."}
                 exponential{"E"}
                 group{","}
@@ -63,7 +66,10 @@ gu{
             }
             patterns{
                 accountingFormat{"¤#,##,##0.00;(¤#,##,##0.00)"}
+                accountingFormat%alphaNextToNumber{"¤ #,##,##0.00;(¤ #,##,##0.00)"}
+                accountingFormat%noCurrency{"#,##,##0.00;(#,##,##0.00)"}
                 currencyFormat{"¤#,##,##0.00"}
+                currencyPatternAppendISO{"{0} ¤¤"}
                 decimalFormat{"#,##,##0.###"}
                 percentFormat{"#,##,##0%"}
                 scientificFormat{"[#E0]"}
@@ -169,6 +175,56 @@ gu{
                     100000000000000{
                         one{"¤0 જલધિ"}
                         other{"¤0 જલધિ"}
+                    }
+                }
+                currencyFormat%alphaNextToNumber{
+                    1000{
+                        one{"¤ 0 હજાર"}
+                        other{"¤ 0 હજાર"}
+                    }
+                    10000{
+                        one{"¤ 00 હજાર"}
+                        other{"¤ 00 હજાર"}
+                    }
+                    100000{
+                        one{"¤ 0 લાખ"}
+                        other{"¤ 0 લાખ"}
+                    }
+                    1000000{
+                        one{"¤ 00 લાખ"}
+                        other{"¤ 00 લાખ"}
+                    }
+                    10000000{
+                        one{"¤ 0 કરોડ"}
+                        other{"¤ 0 કરોડ"}
+                    }
+                    100000000{
+                        one{"¤ 00 કરોડ"}
+                        other{"¤ 00 કરોડ"}
+                    }
+                    1000000000{
+                        one{"¤ 0 અબજ"}
+                        other{"¤ 0 અબજ"}
+                    }
+                    10000000000{
+                        one{"¤ 00 અબજ"}
+                        other{"¤ 00 અબજ"}
+                    }
+                    100000000000{
+                        one{"¤ 0 નિખર્વ"}
+                        other{"¤ 0 નિખર્વ"}
+                    }
+                    1000000000000{
+                        one{"¤ 0 મહાપદ્મ"}
+                        other{"¤ 0 મહાપદ્મ"}
+                    }
+                    10000000000000{
+                        one{"¤ 0 શંકુ"}
+                        other{"¤ 0 શંકુ"}
+                    }
+                    100000000000000{
+                        one{"¤ 0 જલધિ"}
+                        other{"¤ 0 જલધિ"}
                     }
                 }
                 decimalFormat{
@@ -521,6 +577,12 @@ gu{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimePatterns%atTime{
+                "{1} એ {0} વાગ્યે",
+                "{1} એ {0} વાગ્યે",
+                "{1} {0}",
+                "{1} {0}",
+            }
             DateTimeSkeletons{
                 "ahhmmsszzzz",
                 "ahhmmssz",
@@ -722,6 +784,12 @@ gu{
                 "d MMM, y",
                 "d/M/yy",
                 "{1} {0}",
+                "{1} {0}",
+                "{1} {0}",
+                "{1} {0}",
+                "{1} {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1} એ {0} વાગ્યે",
                 "{1} એ {0} વાગ્યે",
                 "{1} {0}",
@@ -1334,10 +1402,10 @@ gu{
             }
             eras{
                 abbreviated{
-                    "સાકા",
+                    "શક",
                 }
                 narrow{
-                    "સાકા",
+                    "શક",
                 }
                 wide{
                     "સાકા",
@@ -1352,9 +1420,9 @@ gu{
                         "અષાઢ",
                         "શ્રાવણ",
                         "ભાદો",
-                        "અસ્વિના",
+                        "અશ્વિન",
                         "કાર્તિક",
-                        "અગ્રેહાના",
+                        "અગ્રહાયણ",
                         "પોષ",
                         "મહા",
                         "ફાલ્ગુન",
@@ -1380,9 +1448,9 @@ gu{
                         "અષાઢ",
                         "શ્રાવણ",
                         "ભાદો",
-                        "અસ્વિના",
+                        "અશ્વિન",
                         "કાર્તિક",
-                        "અગ્રેહાના",
+                        "અગ્રહાયણ",
                         "પોષ",
                         "મહા",
                         "ફાલ્ગુન",
@@ -1396,9 +1464,9 @@ gu{
                         "અષાઢ",
                         "શ્રાવણ",
                         "ભાદો",
-                        "અસ્વિના",
+                        "અશ્વિન",
                         "કાર્તિક",
-                        "અગ્રેહાના",
+                        "અગ્રહાયણ",
                         "પોષ",
                         "મહા",
                         "ફાલ્ગુન",
@@ -1424,9 +1492,9 @@ gu{
                         "અષાઢ",
                         "શ્રાવણ",
                         "ભાદો",
-                        "અસ્વિના",
+                        "અશ્વિન",
                         "કાર્તિક",
-                        "અગ્રેહાના",
+                        "અગ્રહાયણ",
                         "પોષ",
                         "મહા",
                         "ફાલ્ગુન",
@@ -2575,8 +2643,17 @@ gu{
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
-        or-short{
+        or-narrow{
+            2{"{0} અથવા {1}"}
             end{"{0} અથવા {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
+        or-short{
+            2{"{0} અથવા {1}"}
+            end{"{0} અથવા {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         standard{
             2{"{0} અને {1}"}
@@ -2587,6 +2664,8 @@ gu{
         standard-narrow{
             2{"{0}, {1}"}
             end{"{0}, {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         standard-short{
             2{"{0} અને {1}"}
@@ -2631,6 +2710,68 @@ gu{
                 "[₩￦]",
                 "[₨₹{Rp}{Rs}]",
             }
+        }
+    }
+    personNames{
+        nameOrderLocales{
+            givenFirst{
+                "und",
+                "gu",
+            }
+            surnameFirst{
+                "ko",
+                "si",
+                "ta",
+                "te",
+                "vi",
+                "yue",
+                "zh",
+            }
+        }
+        namePattern{
+            givenFirst-long-addressing-formal{"{title} {surname}"}
+            givenFirst-long-addressing-informal{"{given-informal}"}
+            givenFirst-long-monogram-formal{
+                "{given-monogram-allCaps}{given2-monogram-allCaps}{surname-monogram-a"
+                "llCaps}"
+            }
+            givenFirst-long-monogram-informal{"{given-informal-monogram-allCaps}{surname-monogram-allCaps}"}
+            givenFirst-long-referring-formal{"{given} {given2} {surname} {credentials}"}
+            givenFirst-long-referring-informal{"{given} {given2} {surname}"}
+            givenFirst-medium-addressing-formal{"{title} . {surname}"}
+            givenFirst-medium-addressing-informal{"{given-informal}"}
+            givenFirst-medium-monogram-formal{"{surname-monogram-allCaps}"}
+            givenFirst-medium-monogram-informal{"{given-informal-monogram-allCaps}"}
+            givenFirst-medium-referring-formal{"{given} {given2-initial} {surname}"}
+            givenFirst-medium-referring-informal{"{given-informal} . {surname}"}
+            givenFirst-short-addressing-formal{"{title} {surname}"}
+            givenFirst-short-addressing-informal{"{given-informal}"}
+            givenFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
+            givenFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
+            givenFirst-short-referring-formal{"{given} {given2} {surname} {credentials}"}
+            givenFirst-short-referring-informal{"{given-informal} {surname-initial}"}
+            sorting-long-referring-informal{"{surname} {surname2}, {title} {given} {given2} {credentials}"}
+            sorting-medium-referring-formal{"{surname} {surname2}, {title} {given} {given2} {credentials}"}
+            sorting-medium-referring-informal{"{surname} {surname2}, {title} {given} {given2} {credentials}"}
+            sorting-short-referring-formal{"{surname} {surname2}, {title} {given} {given2} {credentials}"}
+            sorting-short-referring-informal{"{surname} {surname2}, {title} {given} {given2} {credentials}"}
+            surnameFirst-long-addressing-formal{"{title} {surname}"}
+            surnameFirst-long-addressing-informal{"{given-informal}"}
+            surnameFirst-long-monogram-informal{"{surname-monogram-allCaps}{given-informal-monogram-allCaps}"}
+            surnameFirst-long-referring-formal{"{surname} {given} {given2} {credentials}"}
+            surnameFirst-long-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-medium-addressing-formal{"{title} {surname}"}
+            surnameFirst-medium-addressing-informal{"{given-informal}"}
+            surnameFirst-medium-monogram-formal{"{surname-monogram-allCaps}"}
+            surnameFirst-medium-monogram-informal{"{given-informal-monogram-allCaps}"}
+            surnameFirst-medium-referring-formal{"{surname} {given} {given2-initial} {credentials}"}
+            surnameFirst-medium-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-short-addressing-formal{"{title} {surname}"}
+            surnameFirst-short-addressing-informal{"{given-informal}"}
+            surnameFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
+            surnameFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
+            surnameFirst-short-referring-formal{"{surname} {given-initial} {given2-initial}"}
+            surnameFirst-short-referring-informal{"{surname} {given-initial}"}
         }
     }
 }

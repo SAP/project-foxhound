@@ -8,7 +8,6 @@
 
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/TouchEvent.h"
-#include "nsGlobalWindow.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 
@@ -67,6 +66,15 @@ Touch::Touch(int32_t aIdentifier, LayoutDeviceIntPoint aPoint,
   nsJSContext::LikelyShortLivingObjectCreated();
 }
 
+Touch::Touch(int32_t aIdentifier, LayoutDeviceIntPoint aPoint,
+             LayoutDeviceIntPoint aRadius, float aRotationAngle, float aForce,
+             int32_t aTiltX, int32_t aTiltY, int32_t aTwist)
+    : Touch(aIdentifier, aPoint, aRadius, aRotationAngle, aForce) {
+  tiltX = aTiltX;
+  tiltY = aTiltY;
+  twist = aTwist;
+}
+
 Touch::Touch(const Touch& aOther)
     : mOriginalTarget(aOther.mOriginalTarget),
       mTarget(aOther.mTarget),
@@ -102,19 +110,28 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Touch)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Touch)
 
-EventTarget* Touch::GetTarget() const {
-  nsIContent* content = nsIContent::FromEventTargetOrNull(mTarget);
+static EventTarget* FindFirstNonChromeOnlyAccessContent(EventTarget* aTarget) {
+  nsIContent* content = nsIContent::FromEventTargetOrNull(aTarget);
   if (content && content->ChromeOnlyAccess() &&
       !nsContentUtils::LegacyIsCallerNativeCode() &&
       !nsContentUtils::CanAccessNativeAnon()) {
     return content->FindFirstNonChromeOnlyAccessContent();
   }
 
-  return mTarget;
+  return aTarget;
+}
+
+EventTarget* Touch::GetTarget() const {
+  return FindFirstNonChromeOnlyAccessContent(mTarget);
+}
+
+EventTarget* Touch::GetOriginalTarget() const {
+  return FindFirstNonChromeOnlyAccessContent(mOriginalTarget);
 }
 
 int32_t Touch::ScreenX(CallerType aCallerType) const {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, GetParentObject(),
+                                                 RFPTarget::TouchEvents)) {
     return ClientX();
   }
 
@@ -122,7 +139,8 @@ int32_t Touch::ScreenX(CallerType aCallerType) const {
 }
 
 int32_t Touch::ScreenY(CallerType aCallerType) const {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, GetParentObject(),
+                                                 RFPTarget::TouchEvents)) {
     return ClientY();
   }
 
@@ -130,7 +148,8 @@ int32_t Touch::ScreenY(CallerType aCallerType) const {
 }
 
 int32_t Touch::RadiusX(CallerType aCallerType) const {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, GetParentObject(),
+                                                 RFPTarget::TouchEvents)) {
     return 0;
   }
 
@@ -138,7 +157,8 @@ int32_t Touch::RadiusX(CallerType aCallerType) const {
 }
 
 int32_t Touch::RadiusY(CallerType aCallerType) const {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, GetParentObject(),
+                                                 RFPTarget::TouchEvents)) {
     return 0;
   }
 
@@ -146,7 +166,8 @@ int32_t Touch::RadiusY(CallerType aCallerType) const {
 }
 
 float Touch::RotationAngle(CallerType aCallerType) const {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, GetParentObject(),
+                                                 RFPTarget::TouchEvents)) {
     return 0.0f;
   }
 
@@ -154,7 +175,8 @@ float Touch::RotationAngle(CallerType aCallerType) const {
 }
 
 float Touch::Force(CallerType aCallerType) const {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, GetParentObject(),
+                                                 RFPTarget::TouchEvents)) {
     return 0.0f;
   }
 
@@ -169,7 +191,8 @@ void Touch::InitializePoints(nsPresContext* aPresContext, WidgetEvent* aEvent) {
       Event::GetClientCoords(aPresContext, aEvent, mRefPoint, mClientPoint);
   mPagePoint =
       Event::GetPageCoords(aPresContext, aEvent, mRefPoint, mClientPoint);
-  mScreenPoint = Event::GetScreenCoords(aPresContext, aEvent, mRefPoint);
+  mScreenPoint =
+      Event::GetScreenCoords(aPresContext, aEvent, mRefPoint).extract();
   mPointsInitialized = true;
 }
 
@@ -199,7 +222,7 @@ JSObject* Touch::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
 // Parent ourselves to the global of the target. This achieves the desirable
 // effects of parenting to the target, but avoids making the touch inaccessible
 // when the target happens to be NAC and therefore reflected into the XBL scope.
-nsIGlobalObject* Touch::GetParentObject() {
+nsIGlobalObject* Touch::GetParentObject() const {
   if (!mOriginalTarget) {
     return nullptr;
   }

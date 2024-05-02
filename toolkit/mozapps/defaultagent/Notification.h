@@ -9,6 +9,8 @@
 
 #include "DefaultBrowser.h"
 
+namespace mozilla::default_agent {
+
 enum class NotificationType {
   Initial,
   Followup,
@@ -38,7 +40,7 @@ struct NotificationActivities {
 };
 
 NotificationActivities MaybeShowNotification(
-    const DefaultBrowserInfo& browserInfo, const wchar_t* aumi);
+    const DefaultBrowserInfo& browserInfo, const wchar_t* aumi, bool force);
 
 // These take enum values and get strings suitable for telemetry
 std::string GetStringForNotificationType(NotificationType type);
@@ -49,5 +51,7 @@ std::string GetStringForNotificationAction(NotificationAction action);
 // not a valid action string, its value will be replaced with the string for
 // NotificationAction::NoAction.
 void EnsureValidNotificationAction(std::string& actionString);
+
+}  // namespace mozilla::default_agent
 
 #endif  // __DEFAULT_BROWSER_NOTIFICATION_H__

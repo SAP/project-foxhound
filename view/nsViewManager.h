@@ -62,7 +62,7 @@ class nsViewManager final {
    * @result The new view.  Never null.
    */
   nsView* CreateView(const nsRect& aBounds, nsView* aParent,
-                     nsViewVisibility aVisibilityFlag = nsViewVisibility_kShow);
+                     ViewVisibility aVisibilityFlag = ViewVisibility::Show);
 
   /**
    * Get the root of the view tree.
@@ -99,7 +99,7 @@ class nsViewManager final {
   /**
    * Do any resizes that are pending.
    */
-  void FlushDelayedResize(bool aDoReflow);
+  void FlushDelayedResize();
 
   /**
    * Called to inform the view manager that the entire area of a view
@@ -198,7 +198,7 @@ class nsViewManager final {
    * @param aView view to change visibility state of
    * @param visible new visibility state
    */
-  void SetViewVisibility(nsView* aView, nsViewVisibility aVisible);
+  void SetViewVisibility(nsView* aView, ViewVisibility aVisible);
 
   /**
    * Set the z-index of a view. Positive z-indices mean that a view
@@ -282,7 +282,7 @@ class nsViewManager final {
    * Retrieve the widget at the root of the nearest enclosing
    * view manager whose root view has a widget.
    */
-  already_AddRefed<nsIWidget> GetRootWidget();
+  nsIWidget* GetRootWidget() const;
 
   /**
    * Indicate whether the viewmanager is currently painting
@@ -342,6 +342,9 @@ class nsViewManager final {
    * Call WillPaint() on all view observers under this vm root.
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void CallWillPaintOnObservers();
+  static void CollectVMsForWillPaint(nsView* aView, nsViewManager* aParentVM,
+                                     nsTArray<RefPtr<nsViewManager>>& aVMs);
+
   void ReparentChildWidgets(nsView* aView, nsIWidget* aNewWidget);
   void ReparentWidgets(nsView* aView, nsView* aParent);
   void InvalidateWidgetArea(nsView* aWidgetView,
@@ -365,7 +368,7 @@ class nsViewManager final {
   LayoutDeviceIntRect ViewToWidget(nsView* aView, const nsRect& aRect) const;
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void DoSetWindowDimensions(nscoord aWidth, nscoord aHeight, bool aDoReflow);
+  void DoSetWindowDimensions(nscoord aWidth, nscoord aHeight);
   bool ShouldDelayResize() const;
 
   bool IsPainting() const { return RootViewManager()->mPainting; }
@@ -422,9 +425,6 @@ class nsViewManager final {
   bool mHasPendingWidgetGeometryChanges;
 
   // from here to public should be static and locked... MMP
-
-  // list of view managers
-  static mozilla::StaticAutoPtr<nsTArray<nsViewManager*>> gViewManagers;
 };
 
 /**

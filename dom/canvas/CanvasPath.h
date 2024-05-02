@@ -19,12 +19,15 @@ namespace dom {
 enum class CanvasWindingRule : uint8_t;
 struct DOMMatrix2DInit;
 
+class
+    UnrestrictedDoubleOrDOMPointInitOrUnrestrictedDoubleOrDOMPointInitSequence;
+
 class CanvasPath final : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(CanvasPath)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(CanvasPath)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(CanvasPath)
 
-  nsCOMPtr<nsISupports> GetParentObject() { return mParent; }
+  nsISupports* GetParentObject() { return mParent; }
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -44,6 +47,11 @@ class CanvasPath final : public nsWrapperCache {
   void ArcTo(double x1, double y1, double x2, double y2, double radius,
              ErrorResult& error);
   void Rect(double x, double y, double w, double h);
+  void RoundRect(
+      double aX, double aY, double aW, double aH,
+      const UnrestrictedDoubleOrDOMPointInitOrUnrestrictedDoubleOrDOMPointInitSequence&
+          aRadii,
+      ErrorResult& aError);
   void Arc(double x, double y, double radius, double startAngle,
            double endAngle, bool anticlockwise, ErrorResult& error);
   void Ellipse(double x, double y, double radiusX, double radiusY,
@@ -75,7 +83,12 @@ class CanvasPath final : public nsWrapperCache {
   mutable RefPtr<gfx::Path> mPath;
   mutable RefPtr<gfx::PathBuilder> mPathBuilder;
 
+  // Whether an internal segment was zero-length.
+  mutable bool mPruned = false;
+
   void EnsurePathBuilder() const;
+  void EnsureCapped() const;
+  void EnsureActive() const;
 };
 
 }  // namespace dom

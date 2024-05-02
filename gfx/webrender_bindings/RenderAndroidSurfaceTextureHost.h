@@ -23,10 +23,10 @@ class RenderAndroidSurfaceTextureHost final : public RenderTextureHostSWGL {
  public:
   explicit RenderAndroidSurfaceTextureHost(
       const java::GeckoSurfaceTexture::GlobalRef& aSurfTex, gfx::IntSize aSize,
-      gfx::SurfaceFormat aFormat, bool aContinuousUpdate);
+      gfx::SurfaceFormat aFormat, bool aContinuousUpdate,
+      Maybe<gfx::Matrix4x4> aTransformOverride, bool aIsRemoteTexture);
 
-  wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL,
-                           wr::ImageRendering aRendering) override;
+  wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL) override;
   void Unlock() override;
 
   size_t Bytes() override {
@@ -52,18 +52,26 @@ class RenderAndroidSurfaceTextureHost final : public RenderTextureHostSWGL {
     return this;
   }
 
+  void UpdateTexImageIfNecessary();
+
   mozilla::java::GeckoSurfaceTexture::GlobalRef mSurfTex;
   const gfx::IntSize mSize;
   const gfx::SurfaceFormat mFormat;
   // mContinuousUpdate was used for rendering video in the past.
   // It is not used on current gecko.
   const bool mContinuousUpdate;
+  const Maybe<gfx::Matrix4x4> mTransformOverride;
 
  private:
   virtual ~RenderAndroidSurfaceTextureHost();
   bool EnsureAttachedToGLContext();
 
   already_AddRefed<gfx::DataSourceSurface> ReadTexImage();
+
+  // Returns the UV coordinates to be used when sampling the texture, taking in
+  // to account the SurfaceTexture's transform if applicable.
+  std::pair<gfx::Point, gfx::Point> GetUvCoords(
+      gfx::IntSize aTextureSize) const override;
 
   enum PrepareStatus {
     STATUS_NONE,
@@ -72,13 +80,14 @@ class RenderAndroidSurfaceTextureHost final : public RenderTextureHostSWGL {
     STATUS_PREPARED
   };
 
-  // XXX const bool mIgnoreTransform;
   PrepareStatus mPrepareStatus;
   bool mAttachedToGLContext;
 
   RefPtr<gl::GLContext> mGL;
 
   RefPtr<gfx::DataSourceSurface> mReadback;
+
+  bool mIsRemoteTexture;
 };
 
 }  // namespace wr

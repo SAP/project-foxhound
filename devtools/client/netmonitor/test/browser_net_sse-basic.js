@@ -7,11 +7,7 @@
  * Test basic SSE connection.
  */
 
-add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["devtools.netmonitor.features.serverSentEvents", true]],
-  });
-
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(
     "http://mochi.test:8888/browser/devtools/client/netmonitor/test/html_sse-test-page.html",
     {

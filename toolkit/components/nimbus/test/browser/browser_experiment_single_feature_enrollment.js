@@ -3,25 +3,24 @@
 
 "use strict";
 
-const { ExperimentFakes } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+const { ExperimentFakes } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-const { ExperimentAPI, NimbusFeatures } = ChromeUtils.import(
-  "resource://nimbus/ExperimentAPI.jsm"
+const { ExperimentAPI } = ChromeUtils.importESModule(
+  "resource://nimbus/ExperimentAPI.sys.mjs"
 );
 
 const SINGLE_FEATURE_RECIPE = {
   appId: "firefox-desktop",
   appName: "firefox_desktop",
-  application: "firefox-desktop",
   arguments: {},
   branches: [
     {
       feature: {
-        enabled: true,
         featureId: "urlbar",
         isEarlyStartup: true,
         value: {
+          enabled: true,
           quickSuggestEnabled: false,
           quickSuggestNonSponsoredIndex: -1,
           quickSuggestShouldShowOnboardingDialog: true,
@@ -34,10 +33,10 @@ const SINGLE_FEATURE_RECIPE = {
     },
     {
       feature: {
-        enabled: true,
         featureId: "urlbar",
         isEarlyStartup: true,
         value: {
+          enabled: true,
           quickSuggestEnabled: true,
           quickSuggestNonSponsoredIndex: -1,
           quickSuggestShouldShowOnboardingDialog: false,
@@ -77,10 +76,8 @@ const SINGLE_FEATURE_RECIPE = {
 const SYNC_DATA_PREF_BRANCH = "nimbus.syncdatastore.";
 
 add_task(async function test_TODO() {
-  let {
-    enrollmentPromise,
-    doExperimentCleanup,
-  } = ExperimentFakes.enrollmentHelper(SINGLE_FEATURE_RECIPE);
+  let { enrollmentPromise, doExperimentCleanup } =
+    ExperimentFakes.enrollmentHelper(SINGLE_FEATURE_RECIPE);
   let sandbox = sinon.createSandbox();
   let stub = sandbox.stub(ExperimentAPI, "recordExposureEvent");
 

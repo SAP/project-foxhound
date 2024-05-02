@@ -21,6 +21,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "nsISocketTransportService.h"
 #include "nsICancelable.h"
+#include "nsSocketTransportService2.h"
 
 #include "WebrtcTCPSocketCallback.h"
 #include "WebrtcTCPSocketLog.h"
@@ -57,7 +58,7 @@ WebrtcTCPSocket::WebrtcTCPSocket(WebrtcTCPSocketCallback* aCallbacks)
       mSocketIn(nullptr),
       mSocketOut(nullptr) {
   LOG(("WebrtcTCPSocket::WebrtcTCPSocket %p\n", this));
-  mMainThread = GetMainThreadEventTarget();
+  mMainThread = GetMainThreadSerialEventTarget();
   mSocketThread = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
   MOZ_RELEASE_ASSERT(mMainThread, "no main thread");
   MOZ_RELEASE_ASSERT(mSocketThread, "no socket thread");
@@ -73,8 +74,10 @@ WebrtcTCPSocket::~WebrtcTCPSocket() {
 void WebrtcTCPSocket::SetTabId(dom::TabId aTabId) {
   MOZ_ASSERT(NS_IsMainThread());
   dom::ContentProcessManager* cpm = dom::ContentProcessManager::GetSingleton();
-  dom::ContentParentId cpId = cpm->GetTabProcessId(aTabId);
-  mAuthProvider = cpm->GetBrowserParentByProcessAndTabId(cpId, aTabId);
+  if (cpm) {
+    dom::ContentParentId cpId = cpm->GetTabProcessId(aTabId);
+    mAuthProvider = cpm->GetBrowserParentByProcessAndTabId(cpId, aTabId);
+  }
 }
 
 nsresult WebrtcTCPSocket::Write(nsTArray<uint8_t>&& aWriteData) {
@@ -147,11 +150,12 @@ void WebrtcTCPSocket::CloseWithReason(nsresult aReason) {
 }
 
 nsresult WebrtcTCPSocket::Open(
-    const nsCString& aHost, const int& aPort, const nsCString& aLocalAddress,
+    const nsACString& aHost, const int& aPort, const nsACString& aLocalAddress,
     const int& aLocalPort, bool aUseTls,
     const Maybe<net::WebrtcProxyConfig>& aProxyConfig) {
   LOG(("WebrtcTCPSocket::Open %p remote-host=%s local-addr=%s local-port=%d",
-       this, aHost.BeginReading(), aLocalAddress.BeginReading(), aLocalPort));
+       this, PromiseFlatCString(aHost).get(),
+       PromiseFlatCString(aLocalAddress).get(), aLocalPort));
   MOZ_ASSERT(NS_IsMainThread());
 
   if (NS_WARN_IF(mOpened)) {
@@ -161,8 +165,8 @@ nsresult WebrtcTCPSocket::Open(
   }
 
   mOpened = true;
-  nsCString schemePrefix = aUseTls ? "https://"_ns : "http://"_ns;
-  nsCString spec = schemePrefix;
+  const nsLiteralCString schemePrefix = aUseTls ? "https://"_ns : "http://"_ns;
+  nsAutoCString spec(schemePrefix);
 
   bool ipv6Literal = aHost.Find(":") != kNotFound;
   if (ipv6Literal) {
@@ -395,8 +399,15 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
   }
 
   nsCOMPtr<nsILoadInfo> loadInfo;
-  Maybe<net::LoadInfoArgs> loadInfoArgs = Some(mProxyConfig->loadInfoArgs());
-  rv = ipc::LoadInfoArgsToLoadInfo(loadInfoArgs, getter_AddRefs(loadInfo));
+
+  // FIXME: We don't know the remote type of the process which provided these
+  // LoadInfoArgs. Pass in `NOT_REMOTE_TYPE` as the origin process to blindly
+  // accept whatever value was passed by the other side for now, as we aren't
+  // using it for security checks here.
+  // If this code ever starts checking the triggering remote type, this needs to
+  // be changed.
+  rv = ipc::LoadInfoArgsToLoadInfo(mProxyConfig->loadInfoArgs(),
+                                   NOT_REMOTE_TYPE, getter_AddRefs(loadInfo));
   if (NS_FAILED(rv)) {
     LOG(("WebrtcTCPSocket %p: could not init load info\n", this));
     return rv;
@@ -459,7 +470,7 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
     return rv;
   }
 
-  rv = NS_MaybeOpenChannelUsingAsyncOpen(httpChannel, this);
+  rv = httpChannel->AsyncOpen(this);
 
   if (NS_FAILED(rv)) {
     LOG(("WebrtcTCPSocket %p: cannot async open\n", this));
@@ -614,6 +625,12 @@ WebrtcTCPSocket::OnUpgradeFailed(nsresult aErrorCode) {
   CloseWithReason(aErrorCode);
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+WebrtcTCPSocket::OnWebSocketConnectionAvailable(
+    WebSocketConnectionBase* aConnection) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 // nsIRequestObserver (from nsIStreamListener)

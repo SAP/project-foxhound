@@ -1,32 +1,33 @@
-use clap::{ErrorKind, IntoApp, Parser};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser};
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None)]
 struct Cli {
     /// set version manually
-    #[clap(long, value_name = "VER")]
+    #[arg(long, value_name = "VER")]
     set_ver: Option<String>,
 
     /// auto inc major
-    #[clap(long)]
+    #[arg(long)]
     major: bool,
 
     /// auto inc minor
-    #[clap(long)]
+    #[arg(long)]
     minor: bool,
 
     /// auto inc patch
-    #[clap(long)]
+    #[arg(long)]
     patch: bool,
 
     /// some regular input
     input_file: Option<String>,
 
     /// some special input argument
-    #[clap(long)]
+    #[arg(long)]
     spec_in: Option<String>,
 
-    #[clap(short)]
+    #[arg(short)]
     config: Option<String>,
 }
 
@@ -41,8 +42,8 @@ fn main() {
     // See if --set-ver was used to set the version manually
     let version = if let Some(ver) = cli.set_ver.as_deref() {
         if cli.major || cli.minor || cli.patch {
-            let mut app = Cli::into_app();
-            app.error(
+            let mut cmd = Cli::command();
+            cmd.error(
                 ErrorKind::ArgumentConflict,
                 "Can't do relative and absolute version change",
             )
@@ -57,36 +58,34 @@ fn main() {
             (false, true, false) => minor += 1,
             (false, false, true) => patch += 1,
             _ => {
-                let mut app = Cli::into_app();
-                app.error(
+                let mut cmd = Cli::command();
+                cmd.error(
                     ErrorKind::ArgumentConflict,
-                    "Cam only modify one version field",
+                    "Can only modify one version field",
                 )
                 .exit();
             }
         };
-        format!("{}.{}.{}", major, minor, patch)
+        format!("{major}.{minor}.{patch}")
     };
 
-    println!("Version: {}", version);
+    println!("Version: {version}");
 
     // Check for usage of -c
     if let Some(config) = cli.config.as_deref() {
-        // todo: remove `#[allow(clippy::or_fun_call)]` lint when MSRV is bumped.
-        #[allow(clippy::or_fun_call)]
         let input = cli
             .input_file
             .as_deref()
             // 'or' is preferred to 'or_else' here since `Option::as_deref` is 'const'
             .or(cli.spec_in.as_deref())
             .unwrap_or_else(|| {
-                let mut app = Cli::into_app();
-                app.error(
+                let mut cmd = Cli::command();
+                cmd.error(
                     ErrorKind::MissingRequiredArgument,
                     "INPUT_FILE or --spec-in is required when using --config",
                 )
                 .exit()
             });
-        println!("Doing work using input {} and config {}", input, config);
+        println!("Doing work using input {input} and config {config}");
     }
 }

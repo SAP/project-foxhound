@@ -10,7 +10,6 @@
 #include "crashreporter.h"
 
 #include <windows.h>
-#include <versionhelpers.h>
 #include <commctrl.h>
 #include <richedit.h>
 #include <shellapi.h>
@@ -23,13 +22,8 @@
 #include "windows/sender/crash_report_sender.h"
 #include "common/windows/string_utils-inl.h"
 
-#define CRASH_REPORTER_VALUE L"Enabled"
 #define SUBMIT_REPORT_VALUE L"SubmitCrashReport"
-#define SUBMIT_REPORT_OLD L"SubmitReport"
 #define INCLUDE_URL_VALUE L"IncludeURL"
-
-#define SENDURL_ORIGINAL L"https://crash-reports.mozilla.com/submit"
-#define SENDURL_XPSP2 L"https://crash-reports-xpsp2.mozilla.com/submit"
 
 #define WM_UPLOADCOMPLETE WM_APP
 
@@ -122,23 +116,6 @@ static bool GetBoolValue(HKEY hRegKey, LPCTSTR valueName, DWORD* value) {
   return false;
 }
 
-// Removes a value from HKEY_LOCAL_MACHINE and HKEY_CURRENT_USER, if it exists.
-static void RemoveUnusedValues(const wchar_t* key, LPCTSTR valueName) {
-  HKEY hRegKey;
-
-  if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, key, 0, KEY_SET_VALUE, &hRegKey) ==
-      ERROR_SUCCESS) {
-    RegDeleteValue(hRegKey, valueName);
-    RegCloseKey(hRegKey);
-  }
-
-  if (RegOpenKeyEx(HKEY_CURRENT_USER, key, 0, KEY_SET_VALUE, &hRegKey) ==
-      ERROR_SUCCESS) {
-    RegDeleteValue(hRegKey, valueName);
-    RegCloseKey(hRegKey);
-  }
-}
-
 static bool CheckBoolKey(const wchar_t* key, const wchar_t* valueName,
                          bool* enabled) {
   /*
@@ -176,9 +153,6 @@ static void SetBoolKey(const wchar_t* key, const wchar_t* value, bool enabled) {
    *       code in in nsExceptionHandler.cpp.
    */
   HKEY hRegKey;
-
-  // remove the old value from the registry if it exists
-  RemoveUnusedValues(key, SUBMIT_REPORT_OLD);
 
   if (RegCreateKey(HKEY_CURRENT_USER, key, &hRegKey) == ERROR_SUCCESS) {
     DWORD data = (enabled ? 1 : 0);
@@ -370,7 +344,7 @@ static void MaybeResizeProgressText(HWND hwndDlg) {
 
   StretchDialog(hwndDlg, diff);
 
-  for (int i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
+  for (size_t i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
     gAttachedBottom.insert(kDefaultAttachedBottom[i]);
   }
 }
@@ -668,7 +642,7 @@ static void StretchControlsToFit(HWND hwndDlg) {
   RECT dlgRect;
   GetClientRect(hwndDlg, &dlgRect);
 
-  for (int i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
+  for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
     RECT r;
     HWND hwndControl = GetDlgItem(hwndDlg, controls[i]);
     GetRelativeRect(hwndControl, hwndDlg, &r);
@@ -1045,7 +1019,7 @@ string WideToUTF8(const wstring& wide, bool* success) {
 /* === Crashreporter UI Functions === */
 
 bool UIInit() {
-  for (int i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
+  for (size_t i = 0; i < sizeof(kDefaultAttachedBottom) / sizeof(UINT); i++) {
     gAttachedBottom.insert(kDefaultAttachedBottom[i]);
   }
 
@@ -1061,35 +1035,10 @@ void UIShowDefaultUI() {
              MB_OK | MB_ICONSTOP);
 }
 
-static bool CanUseMainCrashReportServer() {
-  // Any NT from 6.0 and above is fine.
-  if (IsWindowsVersionOrGreater(6, 0, 0)) {
-    return true;
-  }
-
-  // On NT 5 servers, we need Server 2003 SP2.
-  if (IsWindowsServer()) {
-    return IsWindowsVersionOrGreater(5, 2, 2);
-  }
-
-  // Otherwise we have an NT 5 client.
-  // We need exactly XP SP3 (version 5.1 SP3 but not version 5.2).
-  return (IsWindowsVersionOrGreater(5, 1, 3) &&
-          !IsWindowsVersionOrGreater(5, 2, 0));
-}
-
 bool UIShowCrashUI(const StringTable& files, const Json::Value& queryParameters,
                    const string& sendURL, const vector<string>& restartArgs) {
   gSendData.hDlg = nullptr;
   gSendData.sendURL = UTF8ToWide(sendURL);
-
-  // Older Windows don't support the crash report server's crypto.
-  // This is a hack to use an alternate server.
-  if (!CanUseMainCrashReportServer() &&
-      gSendData.sendURL.find(SENDURL_ORIGINAL) == 0) {
-    gSendData.sendURL.replace(0, ARRAYSIZE(SENDURL_ORIGINAL) - 1,
-                              SENDURL_XPSP2);
-  }
 
   for (StringTable::const_iterator i = files.begin(); i != files.end(); i++) {
     gSendData.files[UTF8ToWide(i->first)] = UTF8ToWide(i->second);

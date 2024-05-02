@@ -13,7 +13,6 @@
 #include "api/array_view.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "common_video/generic_frame_descriptor/generic_frame_info.h"
-
 #include "test/gmock.h"
 
 namespace webrtc {
@@ -113,6 +112,24 @@ TEST(RtpDependencyDescriptorExtensionTest,
             3u);
   EXPECT_TRUE(RtpDependencyDescriptorExtension::Write(
       buffer, structure, active_chains, descriptor));
+}
+
+TEST(RtpDependencyDescriptorExtensionTest, FailsToWriteInvalidDescriptor) {
+  uint8_t buffer[256];
+  FrameDependencyStructure structure;
+  structure.num_decode_targets = 2;
+  structure.num_chains = 2;
+  structure.templates = {
+      FrameDependencyTemplate().T(0).Dtis("SR").ChainDiffs({2, 2})};
+  DependencyDescriptor descriptor;
+  descriptor.frame_dependencies = structure.templates[0];
+  descriptor.frame_dependencies.temporal_id = 1;
+
+  EXPECT_EQ(
+      RtpDependencyDescriptorExtension::ValueSize(structure, 0b11, descriptor),
+      0u);
+  EXPECT_FALSE(RtpDependencyDescriptorExtension::Write(buffer, structure, 0b11,
+                                                       descriptor));
 }
 
 }  // namespace

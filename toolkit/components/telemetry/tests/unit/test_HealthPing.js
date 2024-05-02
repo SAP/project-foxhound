@@ -6,15 +6,9 @@
 
 "use strict";
 
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryHealthPing",
-  "resource://gre/modules/HealthPing.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryHealthPing: "resource://gre/modules/HealthPing.sys.mjs",
+});
 
 function checkHealthPingStructure(ping, expectedFailuresDict) {
   let payload = ping.payload;
@@ -34,48 +28,34 @@ function checkHealthPingStructure(ping, expectedFailuresDict) {
 }
 
 function fakeHealthSchedulerTimer(set, clear) {
-  let { Policy } = ChromeUtils.import("resource://gre/modules/HealthPing.jsm");
+  let { Policy } = ChromeUtils.importESModule(
+    "resource://gre/modules/HealthPing.sys.mjs"
+  );
   Policy.setSchedulerTickTimeout = set;
   Policy.clearSchedulerTickTimeout = clear;
 }
 
-async function waitForConditionWithPromise(
-  promiseFn,
-  timeoutMsg,
-  tryCount = 30
-) {
-  const SINGLE_TRY_TIMEOUT = 100;
-  let tries = 0;
-  do {
-    try {
-      return await promiseFn();
-    } catch (ex) {}
-    await new Promise(resolve => do_timeout(SINGLE_TRY_TIMEOUT, resolve));
-  } while (++tries <= tryCount);
-  throw new Error(timeoutMsg);
-}
-
-function fakeSendSubmissionTimeout(timeOut) {
-  let { Policy } = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySend.jsm"
-  );
-  Policy.pingSubmissionTimeout = () => timeOut;
-}
-
-add_task(async function setup() {
+add_setup(async function setup() {
   // Trigger a proper telemetry init.
   do_get_profile(true);
   // Make sure we don't generate unexpected pings due to pref changes.
   await setEmptyPrefWatchlist();
-  Preferences.set(TelemetryUtils.Preferences.HealthPingEnabled, true);
+  Services.prefs.setBoolPref(
+    TelemetryUtils.Preferences.HealthPingEnabled,
+    true
+  );
 
   await TelemetryController.testSetup();
   PingServer.start();
   TelemetrySend.setServer("http://localhost:" + PingServer.port);
-  Preferences.set(
+  Services.prefs.setStringPref(
     TelemetryUtils.Preferences.Server,
     "http://localhost:" + PingServer.port
   );
+});
+
+registerCleanupFunction(async function cleanup() {
+  await PingServer.stop();
 });
 
 add_task(async function test_sendImmediately() {
@@ -148,61 +128,6 @@ add_task(async function test_sendOverSizedPing() {
     os: TelemetryHealthPing.OsInfo,
     reason: TelemetryHealthPing.Reason.IMMEDIATE,
   });
-});
-
-add_task(async function test_sendOnTimeout() {
-  TelemetryHealthPing.testReset();
-  await TelemetrySend.reset();
-  PingServer.clearRequests();
-  let PING_TYPE = "ping-on-timeout";
-
-  // Disable send retry to make this test more deterministic.
-  fakePingSendTimer(
-    () => {},
-    () => {}
-  );
-
-  // Set up small ping submission timeout to always have timeout error.
-  fakeSendSubmissionTimeout(2);
-
-  await TelemetryController.submitExternalPing(PING_TYPE, {});
-
-  let response;
-  PingServer.registerPingHandler((req, res) => {
-    PingServer.resetPingHandler();
-    // We don't finish the response yet to make sure to trigger a timeout.
-    res.processAsync();
-    response = res;
-  });
-
-  // Wait for health ping.
-  let ac = new TelemetryArchiveTesting.Checker();
-  await ac.promiseInit();
-  await waitForConditionWithPromise(() => {
-    ac.promiseFindPing("health", []);
-  }, "Failed to find health ping");
-
-  if (response) {
-    response.finish();
-  }
-
-  let { PING_SUBMIT_TIMEOUT_MS } = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySend.jsm"
-  );
-  fakeSendSubmissionTimeout(PING_SUBMIT_TIMEOUT_MS);
-  PingServer.resetPingHandler();
-  TelemetrySend.notifyCanUpload();
-
-  let pings = await PingServer.promiseNextPings(2);
-  let healthPing = pings.find(ping => ping.type === "health");
-  checkHealthPingStructure(healthPing, {
-    [TelemetryHealthPing.FailureType.SEND_FAILURE]: {
-      timeout: 1,
-    },
-    os: TelemetryHealthPing.OsInfo,
-    reason: TelemetryHealthPing.Reason.IMMEDIATE,
-  });
-  await TelemetryStorage.testClearPendingPings();
 });
 
 add_task(async function test_sendOnlyTopTenDiscardedPings() {
@@ -309,7 +234,7 @@ add_task(async function test_discardedForSizePending() {
 add_task(async function test_usePingSenderOnShutdown() {
   if (
     gIsAndroid ||
-    (AppConstants.platform == "linux" && OS.Constants.Sys.bits == 32)
+    (AppConstants.platform == "linux" && !Services.appinfo.is64Bit)
   ) {
     // We don't support the pingsender on Android, yet, see bug 1335917.
     // We also don't support the pingsender testing on Treeherder for
@@ -354,8 +279,4 @@ add_task(async function test_usePingSenderOnShutdown() {
     "1.0",
     "Should have received the correct PingSender version string."
   );
-});
-
-add_task(async function cleanup() {
-  await PingServer.stop();
 });

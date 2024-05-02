@@ -68,6 +68,21 @@ const APIS = {
   CrashGpuProcess() {
     return browser.test.crashGpuProcess();
   },
+  ClearHSTSState() {
+    return browser.test.clearHSTSState();
+  },
+  TriggerCookieBannerDetected({ tab }) {
+    return browser.test.triggerCookieBannerDetected(tab.id);
+  },
+  TriggerCookieBannerHandled({ tab }) {
+    return browser.test.triggerCookieBannerHandled(tab.id);
+  },
+  TriggerTranslationsOffer({ tab }) {
+    return browser.test.triggerTranslationsOffer(tab.id);
+  },
+  TriggerLanguageStateChange({ tab, languageState }) {
+    return browser.test.triggerLanguageStateChange(tab.id, languageState);
+  },
 };
 
 port.onMessage.addListener(async message => {

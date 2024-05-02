@@ -14,7 +14,7 @@ of all the exported APIs match the platform that libc is compiled for.
 More detailed information about the design of this library can be found in its
 [associated RFC][rfc].
 
-[rfc]: https://github.com/rust-lang/rfcs/blob/master/text/1291-promote-libc.md
+[rfc]: https://github.com/rust-lang/rfcs/blob/HEAD/text/1291-promote-libc.md
 
 ## Usage
 
@@ -35,13 +35,16 @@ libc = "0.2"
   This feature derives `Debug`, `Eq`, `Hash`, and `PartialEq`.
 
 * `const-extern-fn`: Changes some `extern fn`s into `const extern fn`s.
-   This feature requires a nightly rustc.
+  If you use Rust >= 1.62, this feature is implicitly enabled.
+  Otherwise it requires a nightly rustc.
 
 * **deprecated**: `use_std` is deprecated, and is equivalent to `std`.
 
 ## Rust version support
 
-The minimum supported Rust toolchain version is **Rust 1.13.0** . APIs requiring
+The minimum supported Rust toolchain version is currently **Rust 1.13.0**.
+(libc does not currently have any policy regarding changes to the minimum
+supported Rust version; such policy is a work in progress.) APIs requiring
 newer Rust features are only available on newer Rust toolchains:
 
 | Feature              | Version |
@@ -53,13 +56,14 @@ newer Rust features are only available on newer Rust toolchains:
 | `core::ffi::c_void`  |  1.30.0 |
 | `repr(packed(N))`    |  1.33.0 |
 | `cfg(target_vendor)` |  1.33.0 |
+| `const-extern-fn`    |  1.62.0 |
 
 ## Platform support
 
-[Platform-specific documentation (master branch)][docs.master].
+You can see the platform(target)-specific docs on [docs.rs], select a platform you want to see.
 
 See
-[`ci/build.sh`](https://github.com/rust-lang/libc/blob/master/ci/build.sh)
+[`ci/build.sh`](https://github.com/rust-lang/libc/blob/HEAD/ci/build.sh)
 for the platforms on which `libc` is guaranteed to build for each Rust
 toolchain. The test-matrix at [GitHub Actions] and [Cirrus CI] show the
 platforms in which `libc` tests are run.
@@ -71,10 +75,10 @@ platforms in which `libc` tests are run.
 This project is licensed under either of
 
 * [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0)
-  ([LICENSE-APACHE](https://github.com/rust-lang/libc/blob/master/LICENSE-APACHE))
+  ([LICENSE-APACHE](https://github.com/rust-lang/libc/blob/HEAD/LICENSE-APACHE))
 
 * [MIT License](https://opensource.org/licenses/MIT)
-  ([LICENSE-MIT](https://github.com/rust-lang/libc/blob/master/LICENSE-MIT))
+  ([LICENSE-MIT](https://github.com/rust-lang/libc/blob/HEAD/LICENSE-MIT))
 
 at your option.
 
@@ -83,7 +87,7 @@ at your option.
 We welcome all people who want to contribute. Please see the [contributing
 instructions] for more information.
 
-[contributing instructions]: https://github.com/rust-lang/libc/blob/master/CONTRIBUTING.md
+[contributing instructions]: https://github.com/rust-lang/libc/blob/HEAD/CONTRIBUTING.md
 
 Contributions in any form (issues, pull requests, etc.) to this project
 must adhere to Rust's [Code of Conduct].
@@ -103,4 +107,3 @@ dual licensed as above, without any additional terms or conditions.
 [Documentation]: https://docs.rs/libc/badge.svg
 [docs.rs]: https://docs.rs/libc
 [License]: https://img.shields.io/crates/l/libc.svg
-[docs.master]: https://rust-lang.github.io/libc/#platform-specific-documentation

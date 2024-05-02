@@ -4,8 +4,7 @@
 
 "use strict";
 
-const { Cr } = require("chrome");
-const flags = require("devtools/shared/flags");
+const flags = require("resource://devtools/shared/flags.js");
 
 /**
  * A transport for the debugging protocol that uses nsIMessageManagers to
@@ -53,18 +52,18 @@ ChildDebuggerTransport.prototype = {
     }
   },
 
-  ready: function() {
+  ready() {
     this._addListener();
   },
 
-  close: function() {
+  close(options) {
     this._removeListener();
     if (this.hooks.onTransportClosed) {
-      this.hooks.onTransportClosed();
+      this.hooks.onTransportClosed(null, options);
     }
   },
 
-  receiveMessage: function({ data }) {
+  receiveMessage({ data }) {
     this.hooks.onPacket(data);
   },
 
@@ -73,9 +72,13 @@ ChildDebuggerTransport.prototype = {
    * without being serialized to JSON.
    * See https://searchfox.org/mozilla-central/rev/6bfadf95b4a6aaa8bb3b2a166d6c3545983e179a/dom/base/nsFrameMessageManager.cpp#458-469
    */
-  _canBeSerialized: function(object) {
+  _canBeSerialized(object) {
     try {
-      const holder = new StructuredCloneHolder(object);
+      const holder = new StructuredCloneHolder(
+        "ChildDebuggerTransport._canBeSerialized",
+        null,
+        object
+      );
       holder.deserialize(this);
     } catch (e) {
       return false;
@@ -83,7 +86,7 @@ ChildDebuggerTransport.prototype = {
     return true;
   },
 
-  pathToUnserializable: function(object) {
+  pathToUnserializable(object) {
     for (const key in object) {
       const value = object[key];
       if (!this._canBeSerialized(value)) {
@@ -96,7 +99,7 @@ ChildDebuggerTransport.prototype = {
     return [];
   },
 
-  send: function(packet) {
+  send(packet) {
     if (flags.testing && !this._canBeSerialized(packet)) {
       const attributes = this.pathToUnserializable(packet);
       let msg =
@@ -117,7 +120,7 @@ ChildDebuggerTransport.prototype = {
     }
   },
 
-  startBulkSend: function() {
+  startBulkSend() {
     throw new Error("Can't send bulk data to child processes.");
   },
 };

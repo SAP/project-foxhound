@@ -5,7 +5,6 @@
 // stackframe from the js debugger.
 
 "use strict";
-/* import-globals-from head.js*/
 
 const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
@@ -13,12 +12,12 @@ const TEST_URI =
 
 requestLongerTimeout(20);
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
   const { autocompletePopup: popup } = jsterm;
 
-  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
+  const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   const jstermComplete = value => setInputValueForAutocompletion(hud, value);
 
@@ -26,7 +25,7 @@ add_task(async function() {
   await jstermComplete("document.title.");
 
   const newItemsLabels = getAutocompletePopupLabels(popup);
-  ok(newItemsLabels.length > 0, "'document.title.' gave a list of suggestions");
+  ok(!!newItemsLabels.length, "'document.title.' gave a list of suggestions");
   ok(newItemsLabels.includes("substr"), `results do contain "substr"`);
   ok(
     newItemsLabels.includes("toLowerCase"),
@@ -43,9 +42,9 @@ add_task(async function() {
 
   // Test if 'foo1Obj.' gives 'prop1' and 'prop2'
   await jstermComplete("foo1Obj.");
-  checkInputCompletionValue(hud, "prop1", "foo1Obj completion");
+  checkInputCompletionValue(hud, "method", "foo1Obj completion");
   ok(
-    hasExactPopupLabels(popup, ["prop1", "prop2"]),
+    hasExactPopupLabels(popup, ["method", "prop1", "prop2"]),
     `"foo1Obj." gave the expected suggestions`
   );
 
@@ -63,23 +62,40 @@ add_task(async function() {
 
   info("Waiting for pause");
   await pauseDebugger(dbg);
-  const stackFrames = dbg.selectors.getCallStackFrames();
+  const stackFrames = dbg.selectors.getCurrentThreadFrames();
 
   info("Opening Console again");
   await toolbox.selectTool("webconsole");
 
-  // Test if 'foo' gives 'foo3' and 'foo1' but not 'foo2', since we are paused in
-  // the `secondCall` function (called by `firstCall`, which we call in `pauseDebugger`).
+  // Test if 'this.' gives 'method', 'prop1', and 'prop2', not global variables, since we are paused in
+  // `foo1Obj.method()` (called by `secondCall`)
+  await jstermComplete("this.");
+  ok(
+    hasExactPopupLabels(popup, ["method", "prop1", "prop2"]),
+    `"this." gave the expected suggestions`
+  );
+
+  await selectFrame(dbg, stackFrames[1]);
+
+  // Test if 'foo' gives 'foo3' and 'foo1' but not 'foo2', since we are now in the `secondCall`
+  // frame (called by `firstCall`, which we call in `pauseDebugger`).
   await jstermComplete("foo");
   ok(
     hasExactPopupLabels(popup, ["foo1", "foo1Obj", "foo3", "foo3Obj"]),
     `"foo." gave the expected suggestions`
   );
 
+  // Test that 'shadowed.' autocompletes properties from the local variable named "shadowed".
+  await jstermComplete("shadowed.");
+  ok(
+    hasExactPopupLabels(popup, ["bar"]),
+    `"shadowed." gave the expected suggestions`
+  );
+
   await openDebugger();
 
   // Select the frame for the `firstCall` function.
-  await selectFrame(dbg, stackFrames[1]);
+  await selectFrame(dbg, stackFrames[2]);
 
   info("openConsole");
   await toolbox.selectTool("webconsole");
@@ -90,6 +106,13 @@ add_task(async function() {
   ok(
     hasExactPopupLabels(popup, ["foo1", "foo1Obj", "foo2", "foo2Obj"]),
     `"foo" gave the expected suggestions`
+  );
+
+  // Test that 'shadowed.' autocompletes properties from the global variable named "shadowed".
+  await jstermComplete("shadowed.");
+  ok(
+    hasExactPopupLabels(popup, ["foo"]),
+    `"shadowed." gave the expected suggestions`
   );
 
   // Test if 'foo2Obj.' gives 'prop1'

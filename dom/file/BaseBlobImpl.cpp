@@ -51,7 +51,7 @@ int64_t BaseBlobImpl::GetLastModified(ErrorResult& aRv) {
   return mLastModificationDate / PR_USEC_PER_MSEC;
 }
 
-int64_t BaseBlobImpl::GetFileId() { return -1; }
+int64_t BaseBlobImpl::GetFileId() const { return -1; }
 
 /* static */
 uint64_t BaseBlobImpl::NextSerialNumber() {
@@ -64,12 +64,10 @@ void BaseBlobImpl::SetLastModificationDatePrecisely(int64_t aDate) {
   mLastModificationDate = aDate;
 }
 
-void BaseBlobImpl::SetLastModificationDate(bool aCrossOriginIsolated,
+void BaseBlobImpl::SetLastModificationDate(RTPCallerType aRTPCallerType,
                                            int64_t aDate) {
   return SetLastModificationDatePrecisely(
-      nsRFPService::ReduceTimePrecisionAsUSecs(aDate, 0,
-                                               /* aIsSystemPrincipal */ false,
-                                               aCrossOriginIsolated));
+      nsRFPService::ReduceTimePrecisionAsUSecs(aDate, 0, aRTPCallerType));
   // mLastModificationDate is an absolute timestamp so we supply a zero
   // context mix-in
 }

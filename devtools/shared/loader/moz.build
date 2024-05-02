@@ -12,9 +12,10 @@ if CONFIG["MOZ_DEVTOOLS"] == "all":
     )
 
 DevToolsModules(
-    "base-loader.js",
+    "base-loader.sys.mjs",
     "builtin-modules.js",
-    "loader-plugin-raw.jsm",
-    "Loader.jsm",
+    "DistinctSystemPrincipalLoader.sys.mjs",
+    "loader-plugin-raw.sys.mjs",
+    "Loader.sys.mjs",
     "worker-loader.js",
 )

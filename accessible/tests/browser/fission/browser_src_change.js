@@ -9,7 +9,7 @@ loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
 addAccessibleTask(
   `<input id="textbox" value="hello"/>`,
-  async function(browser, iframeDocAcc, contentDocAcc) {
+  async function (browser, iframeDocAcc, contentDocAcc) {
     info(
       "Check that the IFRAME and the IFRAME document are accessible initially."
     );
@@ -30,6 +30,7 @@ addAccessibleTask(
         const { src } = content.document.getElementById(id);
         content.document.getElementById(id).src = src.replace(
           olddir,
+          // eslint-disable-next-line @microsoft/sdl/no-insecure-url
           "http://example.net/browser/accessible/tests/browser/"
         );
       }

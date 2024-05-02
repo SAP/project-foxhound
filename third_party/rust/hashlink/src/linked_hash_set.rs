@@ -202,11 +202,20 @@ where
         other.is_subset(self)
     }
 
+    /// Inserts the given value into the set.
+    ///
+    /// If the set did not have this value present, inserts it at the *back* of the internal linked
+    /// list and returns true, otherwise it moves the existing value to the *back* of the internal
+    /// linked list and returns false.
     #[inline]
     pub fn insert(&mut self, value: T) -> bool {
         self.map.insert(value, ()).is_none()
     }
 
+    /// Adds the given value to the set, replacing the existing value.
+    ///
+    /// If a previous value existed, returns the replaced value.  In this case, the value's position
+    /// in the internal linked list is *not* changed.
     #[inline]
     pub fn replace(&mut self, value: T) -> Option<T> {
         match self.map.entry(value) {
@@ -250,7 +259,7 @@ where
     }
 
     #[inline]
-    pub fn back(&mut self) -> Option<&T> {
+    pub fn back(&self) -> Option<&T> {
         self.map.back().map(|(k, _)| k)
     }
 
@@ -288,6 +297,14 @@ where
             linked_hash_map::RawEntryMut::Vacant(_) => false,
         }
     }
+
+    #[inline]
+    pub fn retain_with_order<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&T) -> bool,
+    {
+        self.map.retain_with_order(|k, _| f(k));
+    }
 }
 
 impl<T: Hash + Eq + Clone, S: BuildHasher + Clone> Clone for LinkedHashSet<T, S> {
@@ -304,12 +321,8 @@ where
     S: BuildHasher,
 {
     #[inline]
-    fn eq(&self, other: &LinkedHashSet<T, S>) -> bool {
-        if self.len() != other.len() {
-            return false;
-        }
-
-        self.iter().all(|key| other.contains(key))
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().eq(other)
     }
 }
 

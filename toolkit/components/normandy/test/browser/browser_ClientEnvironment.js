@@ -1,28 +1,26 @@
 "use strict";
 
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+
+const { AddonRollouts } = ChromeUtils.importESModule(
+  "resource://normandy/lib/AddonRollouts.sys.mjs"
 );
-const { AddonRollouts } = ChromeUtils.import(
-  "resource://normandy/lib/AddonRollouts.jsm"
+const { ClientEnvironment } = ChromeUtils.importESModule(
+  "resource://normandy/lib/ClientEnvironment.sys.mjs"
 );
-const { ClientEnvironment } = ChromeUtils.import(
-  "resource://normandy/lib/ClientEnvironment.jsm"
+const { PreferenceExperiments } = ChromeUtils.importESModule(
+  "resource://normandy/lib/PreferenceExperiments.sys.mjs"
 );
-const { PreferenceExperiments } = ChromeUtils.import(
-  "resource://normandy/lib/PreferenceExperiments.jsm"
+const { PreferenceRollouts } = ChromeUtils.importESModule(
+  "resource://normandy/lib/PreferenceRollouts.sys.mjs"
 );
-const { PreferenceRollouts } = ChromeUtils.import(
-  "resource://normandy/lib/PreferenceRollouts.jsm"
+const { RecipeRunner } = ChromeUtils.importESModule(
+  "resource://normandy/lib/RecipeRunner.sys.mjs"
 );
-const { RecipeRunner } = ChromeUtils.import(
-  "resource://normandy/lib/RecipeRunner.jsm"
-);
-const { NormandyTestUtils } = ChromeUtils.import(
-  "resource://testing-common/NormandyTestUtils.jsm"
+const { NormandyTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/NormandyTestUtils.sys.mjs"
 );
 
 add_task(async function testTelemetry() {
@@ -64,10 +62,14 @@ add_task(async function testUserId() {
 });
 
 add_task(async function testDistribution() {
-  // distribution id defaults to "default"
+  // distribution id defaults to "default" for most builds, and
+  // "mozilla-MSIX" for MSIX builds.
   is(
     ClientEnvironment.distribution,
-    "default",
+    AppConstants.platform === "win" &&
+      Services.sysinfo.getProperty("hasWinPackageId")
+      ? "mozilla-MSIX"
+      : "default",
     "distribution has a default value"
   );
 
@@ -234,13 +236,11 @@ decorate_task(PreferenceRollouts.withTestMock(), async function testRollouts() {
   const prefRollout = {
     slug: "test-rollout",
     preference: [],
-    enrollmentId: "test-enrollment-id-1",
   };
   await PreferenceRollouts.add(prefRollout);
   const addonRollout = {
     slug: "test-rollout-1",
     extension: {},
-    enrollmentId: "test-enrollment-id-2",
   };
   await AddonRollouts.add(addonRollout);
 
@@ -257,13 +257,13 @@ decorate_task(PreferenceRollouts.withTestMock(), async function testRollouts() {
     "addon and preference rollouts should be accessible"
   );
   is(
-    (await ClientEnvironment.rollouts).pref[prefRollout.slug].enrollmentId,
-    "test-enrollment-id-1",
+    (await ClientEnvironment.rollouts).pref[prefRollout.slug].slug,
+    prefRollout.slug,
     "A specific preference rollout field should be accessible in the context"
   );
   is(
-    (await ClientEnvironment.rollouts).addon[addonRollout.slug].enrollmentId,
-    "test-enrollment-id-2",
+    (await ClientEnvironment.rollouts).addon[addonRollout.slug].slug,
+    addonRollout.slug,
     "A specific addon rollout field should be accessible in the context"
   );
 

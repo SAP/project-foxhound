@@ -6,6 +6,7 @@
 
 #include "nsThreadUtils.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/SyncRunnable.h"
 #include "nsIThread.h"
@@ -69,7 +70,7 @@ RWLockRunnable::Run() {
 TEST(RWLock, SmokeTest)
 {
   nsCOMPtr<nsIThread> threads[sNumThreads];
-  RWLock rwlock("test lock");
+  RWLock rwlock MOZ_UNANNOTATED("test lock");
   mozilla::Atomic<size_t> data(0);
 
   for (size_t i = 0; i < sNumThreads; ++i) {
@@ -80,7 +81,7 @@ TEST(RWLock, SmokeTest)
   // Wait for all the threads to finish.
   for (size_t i = 0; i < sNumThreads; ++i) {
     nsresult rv = threads[i]->Shutdown();
-    EXPECT_TRUE(NS_SUCCEEDED(rv));
+    EXPECT_NS_SUCCEEDED(rv);
   }
 
   EXPECT_EQ(data, (sOuterIterations / sWriteLockIteration) * sNumThreads);
@@ -103,7 +104,7 @@ static std::invoke_result_t<Function> RunOnBackgroundThread(
 
 TEST(RWLock, AutoTryReadLock)
 {
-  RWLock l1("autotryreadlock");
+  RWLock l1 MOZ_UNANNOTATED("autotryreadlock");
   {
     AutoTryReadLock autol1(l1);
 
@@ -121,7 +122,7 @@ TEST(RWLock, AutoTryReadLock)
     EXPECT_TRUE(autol2);
 
     {
-      RWLock l2("autotryreadlock2");
+      RWLock l2 MOZ_UNANNOTATED("autotryreadlock2");
       AutoTryReadLock autol3(l2);
 
       EXPECT_TRUE(autol3);
@@ -155,7 +156,7 @@ TEST(RWLock, AutoTryReadLock)
 
 TEST(RWLock, AutoTryWriteLock)
 {
-  RWLock l1("autotrywritelock");
+  RWLock l1 MOZ_UNANNOTATED("autotrywritelock");
   {
     AutoTryWriteLock autol1(l1);
 
@@ -173,7 +174,7 @@ TEST(RWLock, AutoTryWriteLock)
     EXPECT_FALSE(autol2);
 
     {
-      RWLock l2("autotrywritelock2");
+      RWLock l2 MOZ_UNANNOTATED("autotrywritelock2");
       AutoTryWriteLock autol3(l2);
 
       EXPECT_TRUE(autol3);

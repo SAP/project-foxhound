@@ -39,16 +39,11 @@ add_task(async function test_removeFolderTransaction_reinsert() {
       ]);
     }
   };
-  let observer = {
-    __proto__: NavBookmarkObserver.prototype,
-  };
-  PlacesUtils.bookmarks.addObserver(observer);
   PlacesUtils.observers.addListener(
     ["bookmark-added", "bookmark-removed"],
     listener
   );
-  PlacesUtils.registerShutdownFunction(function() {
-    PlacesUtils.bookmarks.removeObserver(observer);
+  PlacesUtils.registerShutdownFunction(function () {
     PlacesUtils.observers.removeListener(
       ["bookmark-added", "bookmark-removed"],
       listener
@@ -57,12 +52,14 @@ add_task(async function test_removeFolderTransaction_reinsert() {
 
   let transaction = PlacesTransactions.Remove({ guid: folder.guid });
 
-  let folderId = await PlacesUtils.promiseItemId(folder.guid);
-  let fxId = await PlacesUtils.promiseItemId(fx.guid);
-  let tbId = await PlacesUtils.promiseItemId(tb.guid);
+  let folderId = await PlacesTestUtils.promiseItemId(folder.guid);
+  let fxId = await PlacesTestUtils.promiseItemId(fx.guid);
+  let tbId = await PlacesTestUtils.promiseItemId(tb.guid);
 
   await transaction.transact();
-
+  let bookmarksMenuItemId = await PlacesTestUtils.promiseItemId(
+    PlacesUtils.bookmarks.menuGuid
+  );
   checkNotifications(
     [
       ["bookmark-removed", tbId, folderId, tb.guid, folder.guid],
@@ -70,7 +67,7 @@ add_task(async function test_removeFolderTransaction_reinsert() {
       [
         "bookmark-removed",
         folderId,
-        PlacesUtils.bookmarksMenuFolderId,
+        bookmarksMenuItemId,
         folder.guid,
         PlacesUtils.bookmarks.menuGuid,
       ],
@@ -80,16 +77,16 @@ add_task(async function test_removeFolderTransaction_reinsert() {
 
   await PlacesTransactions.undo();
 
-  folderId = await PlacesUtils.promiseItemId(folder.guid);
-  fxId = await PlacesUtils.promiseItemId(fx.guid);
-  tbId = await PlacesUtils.promiseItemId(tb.guid);
+  folderId = await PlacesTestUtils.promiseItemId(folder.guid);
+  fxId = await PlacesTestUtils.promiseItemId(fx.guid);
+  tbId = await PlacesTestUtils.promiseItemId(tb.guid);
 
   checkNotifications(
     [
       [
         "bookmark-added",
         folderId,
-        PlacesUtils.bookmarksMenuFolderId,
+        bookmarksMenuItemId,
         folder.guid,
         PlacesUtils.bookmarks.menuGuid,
       ],
@@ -108,7 +105,7 @@ add_task(async function test_removeFolderTransaction_reinsert() {
       [
         "bookmark-removed",
         folderId,
-        PlacesUtils.bookmarksMenuFolderId,
+        bookmarksMenuItemId,
         folder.guid,
         PlacesUtils.bookmarks.menuGuid,
       ],

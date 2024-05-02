@@ -7,6 +7,7 @@
 #include "HttpLog.h"
 
 #include "PendingTransactionInfo.h"
+#include "NullHttpTransaction.h"
 
 // Log on level :5, instead of default :4.
 #undef LOG
@@ -116,6 +117,11 @@ bool PendingTransactionInfo::TryClaimingActiveConn(HttpConnectionBase* conn) {
   if (nullTrans && nullTrans->Claim()) {
     mActiveConn =
         do_GetWeakReference(static_cast<nsISupportsWeakReference*>(conn));
+    nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
+    conn->GetTLSSocketControl(getter_AddRefs(tlsSocketControl));
+    if (tlsSocketControl) {
+      Unused << tlsSocketControl->Claim();
+    }
     return true;
   }
   return false;

@@ -2,28 +2,18 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false);
 
 const SETTINGS_ID = "test_settings_staged_restart_webext@tests.mozilla.org";
 
-const {
-  createAppInfo,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { createAppInfo, promiseShutdownManager, promiseStartupManager } =
+  AddonTestUtils;
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
@@ -48,7 +38,7 @@ add_task(async function test_browser_settings() {
     "browser.tabs.insertRelatedAfterCurrent": true,
     "browser.tabs.insertAfterCurrent": false,
     "browser.display.document_color_use": 1,
-    "layout.css.prefers-color-scheme.content-override": 3,
+    "layout.css.prefers-color-scheme.content-override": 2,
     "browser.display.use_document_fonts": 1,
     "browser.zoom.full": true,
     "browser.zoom.siteSpecific": true,
@@ -278,11 +268,8 @@ add_task(async function test_browser_settings() {
   await testSetting("overrideContentColorScheme", "light", {
     "layout.css.prefers-color-scheme.content-override": 1,
   });
-  await testSetting("overrideContentColorScheme", "system", {
+  await testSetting("overrideContentColorScheme", "auto", {
     "layout.css.prefers-color-scheme.content-override": 2,
-  });
-  await testSetting("overrideContentColorScheme", "browser", {
-    "layout.css.prefers-color-scheme.content-override": 3,
   });
 
   await testSetting("useDocumentFonts", false, {
@@ -465,7 +452,7 @@ add_task(async function delay_updates_settings_after_restart() {
       manifest_version: 2,
       name: "Delay Upgrade",
       version: "2.0",
-      applications: {
+      browser_specific_settings: {
         gecko: { id: SETTINGS_ID },
       },
       permissions: ["browserSettings"],
@@ -482,7 +469,7 @@ add_task(async function delay_updates_settings_after_restart() {
     useAddonManager: "permanent",
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: SETTINGS_ID,
           update_url: `http://example.com/test_update.json`,

@@ -11,20 +11,18 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/NotificationBinding.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
 
 #include "nsIObserver.h"
 #include "nsISupports.h"
 
 #include "nsCycleCollectionParticipant.h"
-#include "nsHashKeys.h"
-#include "nsTHashtable.h"
 #include "nsWeakReference.h"
 
 class nsIPrincipal;
 class nsIVariant;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class NotificationRef;
 class WorkerNotificationObserver;
@@ -107,8 +105,6 @@ class Notification : public DOMEventTargetHelper,
   NS_DECL_NSIOBSERVER
 
   static bool PrefEnabled(JSContext* aCx, JSObject* aObj);
-  // Returns if Notification.get() is allowed for the current global.
-  static bool IsGetEnabled(JSContext* aCx, JSObject* aObj);
 
   static already_AddRefed<Notification> Constructor(
       const GlobalObject& aGlobal, const nsAString& aTitle,
@@ -124,11 +120,11 @@ class Notification : public DOMEventTargetHelper,
    * 2) The default binding requires main thread for parsing the JSON from the
    *    string behavior.
    */
-  static already_AddRefed<Notification> ConstructFromFields(
+  static Result<already_AddRefed<Notification>, QMResult> ConstructFromFields(
       nsIGlobalObject* aGlobal, const nsAString& aID, const nsAString& aTitle,
       const nsAString& aDir, const nsAString& aLang, const nsAString& aBody,
       const nsAString& aTag, const nsAString& aIcon, const nsAString& aData,
-      const nsAString& aServiceWorkerRegistrationScope, ErrorResult& aRv);
+      const nsAString& aServiceWorkerRegistrationScope);
 
   void GetID(nsAString& aRetval) { aRetval = mID; }
 
@@ -164,10 +160,6 @@ class Notification : public DOMEventTargetHelper,
                                        const nsAString& aScope,
                                        ErrorResult& aRv);
 
-  static already_AddRefed<Promise> Get(const GlobalObject& aGlobal,
-                                       const GetNotificationOptions& aFilter,
-                                       ErrorResult& aRv);
-
   static already_AddRefed<Promise> WorkerGet(
       WorkerPrivate* aWorkerPrivate, const GetNotificationOptions& aFilter,
       const nsAString& aScope, ErrorResult& aRv);
@@ -201,7 +193,7 @@ class Notification : public DOMEventTargetHelper,
   void InitFromJSVal(JSContext* aCx, JS::Handle<JS::Value> aData,
                      ErrorResult& aRv);
 
-  void InitFromBase64(const nsAString& aData, ErrorResult& aRv);
+  Result<Ok, QMResult> InitFromBase64(const nsAString& aData);
 
   void AssertIsOnTargetThread() const { MOZ_ASSERT(IsTargetThread()); }
 
@@ -256,10 +248,10 @@ class Notification : public DOMEventTargetHelper,
   nsresult Init();
   bool IsInPrivateBrowsing();
   void ShowInternal();
-  void CloseInternal();
+  void CloseInternal(bool aContextClosed = false);
 
-  static NotificationPermission GetPermissionInternal(nsISupports* aGlobal,
-                                                      ErrorResult& rv);
+  static NotificationPermission GetPermissionInternal(
+      nsPIDOMWindowInner* aWindow, ErrorResult& rv);
 
   static const nsString DirectionToString(NotificationDirection aDirection) {
     switch (aDirection) {
@@ -363,7 +355,6 @@ class Notification : public DOMEventTargetHelper,
   uint32_t mTaskCount;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_notification_h__

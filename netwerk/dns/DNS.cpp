@@ -213,8 +213,9 @@ bool IsLoopbackHostname(const nsACString& aAsciiHost) {
   nsAutoCString host;
   nsContentUtils::ASCIIToLower(aAsciiHost, host);
 
-  return host.EqualsLiteral("localhost") ||
-         StringEndsWith(host, ".localhost"_ns);
+  return host.EqualsLiteral("localhost") || host.EqualsLiteral("localhost.") ||
+         StringEndsWith(host, ".localhost"_ns) ||
+         StringEndsWith(host, ".localhost."_ns);
 }
 
 bool HostIsIPLiteral(const nsACString& aAsciiHost) {
@@ -413,7 +414,6 @@ AddrInfo::AddrInfo(const nsACString& host, DNSResolverType aResolverType,
                    uint32_t aTTL)
     : ttl(aTTL),
       mHostName(host),
-      mCanonicalName(),
       mResolverType(aResolverType),
       mTRRType(aTRRType),
       mAddresses(std::move(addresses)) {}

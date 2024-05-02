@@ -85,14 +85,11 @@ void FileReaderSync::ReadAsArrayBuffer(JSContext* aCx,
   }
 
   JSObject* arrayBuffer =
-      JS::NewArrayBufferWithContents(aCx, blobSize, bufferData.get());
+      JS::NewArrayBufferWithContents(aCx, blobSize, std::move(bufferData));
   if (!arrayBuffer) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  // arrayBuffer takes the ownership when it is not null. Otherwise we
-  // need to release it explicitly.
-  mozilla::Unused << bufferData.release();
 
   aRetval.set(arrayBuffer);
 }
@@ -329,12 +326,12 @@ class ReadReadyRunnable final : public WorkerSyncRunnable {
     nsCOMPtr<nsIEventTarget> syncLoopTarget;
     mSyncLoopTarget.swap(syncLoopTarget);
 
-    aWorkerPrivate->StopSyncLoop(syncLoopTarget, true);
+    aWorkerPrivate->StopSyncLoop(syncLoopTarget, NS_OK);
     return true;
   }
 
  private:
-  ~ReadReadyRunnable() = default;
+  ~ReadReadyRunnable() override = default;
 };
 
 // This class implements nsIInputStreamCallback and it will be called when the
@@ -422,7 +419,8 @@ nsresult FileReaderSync::SyncRead(nsIInputStream* aStream, char* aBuffer,
 
     AutoSyncLoopHolder syncLoop(workerPrivate, Canceling);
 
-    nsCOMPtr<nsIEventTarget> syncLoopTarget = syncLoop.GetEventTarget();
+    nsCOMPtr<nsISerialEventTarget> syncLoopTarget =
+        syncLoop.GetSerialEventTarget();
     if (!syncLoopTarget) {
       // SyncLoop creation can fail if the worker is shutting down.
       return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -442,7 +440,7 @@ nsresult FileReaderSync::SyncRead(nsIInputStream* aStream, char* aBuffer,
       return rv;
     }
 
-    if (!syncLoop.Run()) {
+    if (NS_WARN_IF(NS_FAILED(syncLoop.Run()))) {
       return NS_ERROR_DOM_INVALID_STATE_ERR;
     }
   }

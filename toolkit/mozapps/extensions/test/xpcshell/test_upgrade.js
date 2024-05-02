@@ -2,17 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-// Make Cu.isInAutomation true.
-Services.prefs.setBoolPref(
-  "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer",
-  true
-);
-
 // This verifies that app upgrades produce the expected behaviours,
 // with strict compatibility checking disabled.
-
-// turn on Cu.isInAutomation
-Services.prefs.setBoolPref(PREF_DISABLE_SECURITY, true);
 
 Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
 
@@ -36,7 +27,7 @@ const ID1 = "addon1@tests.mozilla.org";
 const ID2 = "addon2@tests.mozilla.org";
 const ID3 = "addon3@tests.mozilla.org";
 const ID4 = "addon4@tests.mozilla.org";
-const PATH4 = OS.Path.join(globalDir.path, `${ID4}.xpi`);
+const PATH4 = PathUtils.join(globalDir.path, `${ID4}.xpi`);
 
 add_task(async function setup() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");

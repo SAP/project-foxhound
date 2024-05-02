@@ -9,8 +9,8 @@
 // It is therefore quite long to run.
 
 requestLongerTimeout(10);
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 
 // allow a context error because it is harmless. This could likely be removed in the next patch because it is a symptom of events coming from the target-list and debugger targets module...
@@ -21,8 +21,7 @@ const TEST_URL =
   "<html><head><title>Test reload</title></head>" +
   "<body><h1>Testing reload from devtools</h1></body></html>";
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
@@ -30,7 +29,7 @@ const L10N = new LocalizationHelper(
 // Track how many page reloads we've sent to the page.
 var reloadsSent = 0;
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URL);
   const tab = gBrowser.selectedTab;
   const toolIDs = await getSupportedToolIds(tab);
@@ -90,6 +89,8 @@ async function testOneTool(toolbox, toolID) {
   info(`Select tool ${toolID}`);
   await toolbox.selectTool(toolID);
 
+  assertThemeStyleSheet(toolbox, toolID);
+
   await testReload("toolbox.reload.key", toolbox);
   await testReload("toolbox.reload2.key", toolbox);
   await testReload("toolbox.forceReload.key", toolbox);
@@ -101,4 +102,29 @@ async function testReload(shortcut, toolbox) {
 
   await sendToolboxReloadShortcut(L10N.getStr(shortcut), toolbox);
   reloadsSent++;
+}
+
+/**
+ * As opening all panels is an expensive operation, reuse this test in order
+ * to add a few assertions around panel's stylesheets.
+ * Ensure the proper ordering of the theme stylesheet. `global.css` should come
+ * first if it exists, then the theme.
+ */
+function assertThemeStyleSheet(toolbox, toolID) {
+  const iframe = toolbox.doc.getElementById("toolbox-panel-iframe-" + toolID);
+  const styleSheets = iframe.contentDocument.querySelectorAll(
+    `link[rel="stylesheet"]`
+  );
+  ok(
+    !!styleSheets.length,
+    `The panel ${toolID} should have at least have one stylesheet`
+  );
+
+  // In the web console, we have a special case where global.css is registered very first
+  if (styleSheets[0].href === "chrome://global/skin/global.css") {
+    is(styleSheets[1].href, "chrome://devtools/skin/light-theme.css");
+  } else {
+    // Otherwise, in all other panels, the theme file is registered very first
+    is(styleSheets[0].href, "chrome://devtools/skin/light-theme.css");
+  }
 }

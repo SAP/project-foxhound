@@ -22,20 +22,18 @@ fn uuid_is_generated_and_stored() {
         ..Default::default()
     });
 
-    uuid.generate_and_set(&glean);
+    uuid.generate_and_set_sync(&glean);
     let snapshot = glean.snapshot("core", false);
     assert!(
         snapshot.contains(r#""local.uuid": ""#),
-        "Snapshot 1: {}",
-        snapshot
+        "Snapshot 1: {snapshot}"
     );
 
-    uuid.generate_and_set(&glean);
+    uuid.generate_and_set_sync(&glean);
     let snapshot = glean.snapshot("core", false);
     assert!(
         snapshot.contains(r#""local.uuid": ""#),
-        "Snapshot 2: {}",
-        snapshot
+        "Snapshot 2: {snapshot}"
     );
 }
 
@@ -60,7 +58,7 @@ fn uuid_serializer_should_correctly_serialize_uuids() {
             ..Default::default()
         });
 
-        metric.set(&glean, value);
+        metric.set_from_uuid_sync(&glean, value);
 
         let snapshot = StorageManager
             .snapshot_as_json(glean.storage(), "store1", true)
@@ -74,7 +72,7 @@ fn uuid_serializer_should_correctly_serialize_uuids() {
     // Make a new Glean instance here, which should force reloading of the data from disk
     // so we can ensure it persisted, because it has User lifetime
     {
-        let (glean, _) = new_glean(Some(tempdir));
+        let (glean, _t) = new_glean(Some(tempdir));
         let snapshot = StorageManager
             .snapshot_as_json(glean.storage(), "store1", true)
             .unwrap();
@@ -100,7 +98,7 @@ fn set_properly_sets_the_value_in_all_stores() {
         ..Default::default()
     });
 
-    metric.set(&glean, value);
+    metric.set_from_uuid_sync(&glean, value);
 
     // Check that the data was correctly set in each store.
     for store_name in store_names {

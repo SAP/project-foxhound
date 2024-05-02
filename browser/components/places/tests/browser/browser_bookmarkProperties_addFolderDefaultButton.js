@@ -1,6 +1,6 @@
 "use strict";
 
-add_task(async function() {
+add_task(async function add_folder_default_button() {
   info(
     "Bug 475529 - Add is the default button for the new folder dialog + " +
       "Bug 1206376 - Changing properties of a new bookmark while adding it " +
@@ -16,7 +16,7 @@ add_task(async function() {
     url: "http://example.com/",
   });
 
-  await withSidebarTree("bookmarks", async function(tree) {
+  await withSidebarTree("bookmarks", async function (tree) {
     // Select the new bookmark in the sidebar.
     tree.selectItems([newBookmark.guid]);
     Assert.ok(
@@ -33,17 +33,18 @@ add_task(async function() {
         tree.controller.doCommand("placesCmd_new:folder");
       },
       async function test(dialogWin) {
-        let promiseTitleChangeNotification = PlacesTestUtils.waitForNotification(
-          "bookmark-title-changed",
-          events => events.some(e => e.title === "n"),
-          "places"
-        );
+        const notifications = [
+          PlacesTestUtils.waitForNotification("bookmark-added", events =>
+            events.some(e => e.title === "n")
+          ),
+          PlacesTestUtils.waitForNotification("bookmark-moved", null),
+        ];
 
         fillBookmarkTextField("editBMPanel_namePicker", "n", dialogWin, false);
 
         // Confirm and close the dialog.
         EventUtils.synthesizeKey("VK_RETURN", {}, dialogWin);
-        await promiseTitleChangeNotification;
+        await Promise.all(notifications);
 
         let newFolder = await PlacesUtils.bookmarks.fetch({
           parentGuid: PlacesUtils.bookmarks.unfiledGuid,

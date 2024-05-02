@@ -209,7 +209,7 @@ class InfallibleAllocWithoutHooksPolicy {
 // Define a custom implementation here.
 class Mutex : private ::mozilla::detail::MutexImpl {
  public:
-  Mutex() : ::mozilla::detail::MutexImpl() {}
+  Mutex() = default;
 
   void Lock() { ::mozilla::detail::MutexImpl::lock(); }
   void Unlock() { ::mozilla::detail::MutexImpl::unlock(); }
@@ -247,7 +247,7 @@ class AllocationTracker {
       AllocationSet;
 
  public:
-  AllocationTracker() : mAllocations(), mMutex() {}
+  AllocationTracker() = default;
 
   void AddMemoryAddress(const void* memoryAddress) {
     MutexAutoLock lock(mMutex);
@@ -278,7 +278,7 @@ class AllocationTracker {
 
  private:
   AllocationSet mAllocations;
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
 };
 
 static AllocationTracker* gAllocationTracker;
@@ -548,6 +548,10 @@ static arena_id_t replace_moz_create_arena_with_params(
 
 static void replace_moz_dispose_arena(arena_id_t aArenaId) {
   return gMallocTable.moz_dispose_arena(aArenaId);
+}
+
+static void replace_moz_set_max_dirty_page_modifier(int32_t aModifier) {
+  return gMallocTable.moz_set_max_dirty_page_modifier(aModifier);
 }
 
 // Must come after all the replace_* funcs

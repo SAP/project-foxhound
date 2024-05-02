@@ -52,17 +52,18 @@ ComputedStyle::ComputedStyle(PseudoStyleType aPseudoType,
 // whether we establish a containing block has really changed.
 static bool ContainingBlockMayHaveChanged(const ComputedStyle& aOldStyle,
                                           const ComputedStyle& aNewStyle) {
-  auto* oldDisp = aOldStyle.StyleDisplay();
-  auto* newDisp = aNewStyle.StyleDisplay();
+  const auto& oldDisp = *aOldStyle.StyleDisplay();
+  const auto& newDisp = *aNewStyle.StyleDisplay();
 
-  if (oldDisp->IsPositionedStyle() != newDisp->IsPositionedStyle()) {
+  if (oldDisp.IsPositionedStyle() != newDisp.IsPositionedStyle()) {
+    // XXX This check can probably be moved to after the fixedCB check, since
+    // IsPositionedStyle() is also only relevant for non-svg text frame
+    // subtrees.
     return true;
   }
 
-  bool fixedCB =
-      oldDisp->IsFixedPosContainingBlockForNonSVGTextFrames(aOldStyle);
-  if (fixedCB !=
-      newDisp->IsFixedPosContainingBlockForNonSVGTextFrames(aNewStyle)) {
+  const bool fixedCB = aOldStyle.IsFixedPosContainingBlockForNonSVGTextFrames();
+  if (fixedCB != aNewStyle.IsFixedPosContainingBlockForNonSVGTextFrames()) {
     return true;
   }
   // If we were both before and after a fixed-pos containing-block that means
@@ -71,20 +72,21 @@ static bool ContainingBlockMayHaveChanged(const ComputedStyle& aOldStyle,
   if (fixedCB) {
     return false;
   }
+
   // Note that neither of these two following sets of frames
   // (transform-supporting and layout-and-paint-supporting frames) is a subset
   // of the other, because table frames support contain: layout/paint but not
   // transforms (which are instead inherited to the table wrapper), and quite a
   // few frame types support transforms but not contain: layout/paint (e.g.,
   // table rows and row groups, many SVG frames).
-  if (oldDisp->IsFixedPosContainingBlockForTransformSupportingFrames() !=
-      newDisp->IsFixedPosContainingBlockForTransformSupportingFrames()) {
+  if (oldDisp.IsFixedPosContainingBlockForTransformSupportingFrames() !=
+      newDisp.IsFixedPosContainingBlockForTransformSupportingFrames()) {
     return true;
   }
   if (oldDisp
-          ->IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames() !=
+          .IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames() !=
       newDisp
-          ->IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames()) {
+          .IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames()) {
     return true;
   }
   return false;
@@ -92,7 +94,7 @@ static bool ContainingBlockMayHaveChanged(const ComputedStyle& aOldStyle,
 
 nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
                                                 uint32_t* aEqualStructs) const {
-  AUTO_PROFILER_LABEL("ComputedStyle::CalcStyleDifference", LAYOUT);
+  AUTO_PROFILER_LABEL_HOT("ComputedStyle::CalcStyleDifference", LAYOUT);
   static_assert(StyleStructConstants::kStyleStructCount <= 32,
                 "aEqualStructs is not big enough");
 
@@ -185,9 +187,9 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
   // Note that we do not check whether this->RelevantLinkVisited() !=
   // aNewContext->RelevantLinkVisited(); we don't need to since
   // nsCSSFrameConstructor::DoContentStateChanged always adds
-  // nsChangeHint_RepaintFrame for NS_EVENT_STATE_VISITED changes (and
+  // nsChangeHint_RepaintFrame for ElementState::VISITED changes (and
   // needs to, since HasStateDependentStyle probably doesn't work right
-  // for NS_EVENT_STATE_VISITED).  Hopefully this doesn't actually
+  // for ElementState::VISITED).  Hopefully this doesn't actually
   // expose whether links are visited to performance tests since all
   // link coloring happens asynchronously at a time when it's hard for
   // the page to measure.
@@ -294,7 +296,7 @@ static nscolor GetVisitedDependentColorInternal(const ComputedStyle& aStyle,
 }
 
 static nscolor ExtractColor(const ComputedStyle& aStyle,
-                            const StyleRGBA& aColor) {
+                            const StyleAbsoluteColor& aColor) {
   return aColor.ToColor();
 }
 
@@ -423,6 +425,9 @@ bool ComputedStyle::EqualForCachedAnonymousContentStyle(
                                                                   &aOther);
 }
 
+void ComputedStyle::DumpMatchedRules() const {
+  Servo_ComputedValues_DumpMatchedRules(this);
+}
 #endif
 
 }  // namespace mozilla

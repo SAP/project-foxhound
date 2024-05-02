@@ -36,11 +36,8 @@
 let chromeScriptHandle = null;
 
 function startListeningForContextmenuEventsInChrome() {
-  /* eslint-env mozilla/frame-script */
   function chromeScript() {
-    const { Services } = ChromeUtils.import(
-      "resource://gre/modules/Services.jsm"
-    );
+    /* eslint-env mozilla/chrome-script */
     let topWin = Services.wm.getMostRecentWindow("navigator:browser");
     if (!topWin) {
       topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
@@ -81,11 +78,6 @@ async function test() {
   var config = getHitTestConfig();
   var utils = config.utils;
 
-  if (config.isWindows) {
-    todo(false, "This test does not yet work on Windows");
-    return;
-  }
-
   // Overscroll the root scroll frame at the top, creating a gutter.
   // Note that the size of the gutter will only be 8px, because
   // setAsyncScrollOffset() applies the overscroll as a single delta,
@@ -99,7 +91,7 @@ async function test() {
   // on both the browser chrome window and the content window.
   // This makes sure we catch the case where the overscroll transform causes
   // the event to incorrectly target the browser chrome.
-  let deviceScale = utils.screenPixelsPerCSSPixel;
+  let deviceScale = window.devicePixelRatio;
   let midGutter = 4 / deviceScale;  // gutter is 8 *screen* pixels
   startListeningForContextmenuEventsInChrome();
   let contentReceivedContextmenu = false;
@@ -107,7 +99,7 @@ async function test() {
     contentReceivedContextmenu = true;
   };
   document.addEventListener("contextmenu", contentListener);
-  synthesizeNativeMouseEventWithAPZ({
+  await synthesizeNativeMouseEventWithAPZ({
     type: "click",
     button: 2,  // eSecondary (= "right mouse button")
     target: window,

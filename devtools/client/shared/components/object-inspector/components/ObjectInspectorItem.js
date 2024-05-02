@@ -2,17 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const { Component } = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
-const Services = require("Services");
 const isMacOS = Services.appinfo.OS === "Darwin";
 
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
 
-const Utils = require("devtools/client/shared/components/object-inspector/utils/index");
+const Utils = require("resource://devtools/client/shared/components/object-inspector/utils/index.js");
 
 const {
   getValue,
@@ -274,7 +273,7 @@ class ObjectInspectorItem extends Component {
 
     return dom.div(
       this.getTreeItemProps(),
-      arrow,
+      this.props.mode === MODE.HEADER ? null : arrow,
       labelElement,
       delimiter,
       value,

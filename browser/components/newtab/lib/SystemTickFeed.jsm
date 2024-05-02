@@ -3,29 +3,56 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { actionTypes: at } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
+const { actionTypes: at } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Actions.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "setInterval",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "clearInterval",
-  "resource://gre/modules/Timer.jsm"
-);
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  clearInterval: "resource://gre/modules/Timer.sys.mjs",
+  setInterval: "resource://gre/modules/Timer.sys.mjs",
+});
 
 // Frequency at which SYSTEM_TICK events are fired
 const SYSTEM_TICK_INTERVAL = 5 * 60 * 1000;
 
-this.SystemTickFeed = class SystemTickFeed {
+class SystemTickFeed {
   init() {
-    this.intervalId = setInterval(
-      () => this.store.dispatch({ type: at.SYSTEM_TICK }),
-      SYSTEM_TICK_INTERVAL
+    this._idleService = Cc["@mozilla.org/widget/useridleservice;1"].getService(
+      Ci.nsIUserIdleService
+    );
+    this._hasObserver = false;
+    this.setTimer();
+  }
+
+  setTimer() {
+    this.intervalId = lazy.setInterval(() => {
+      if (this._idleService.idleTime > SYSTEM_TICK_INTERVAL) {
+        this.cancelTimer();
+        Services.obs.addObserver(this, "user-interaction-active");
+        this._hasObserver = true;
+        return;
+      }
+      this.dispatchTick();
+    }, SYSTEM_TICK_INTERVAL);
+  }
+
+  cancelTimer() {
+    lazy.clearInterval(this.intervalId);
+    this.intervalId = null;
+  }
+
+  observe() {
+    this.dispatchTick();
+    Services.obs.removeObserver(this, "user-interaction-active");
+    this._hasObserver = false;
+    this.setTimer();
+  }
+
+  dispatchTick() {
+    ChromeUtils.idleDispatch(() =>
+      this.store.dispatch({ type: at.SYSTEM_TICK })
     );
   }
 
@@ -35,11 +62,14 @@ this.SystemTickFeed = class SystemTickFeed {
         this.init();
         break;
       case at.UNINIT:
-        clearInterval(this.intervalId);
+        this.cancelTimer();
+        if (this._hasObserver) {
+          Services.obs.removeObserver(this, "user-interaction-active");
+          this._hasObserver = false;
+        }
         break;
     }
   }
-};
+}
 
-this.SYSTEM_TICK_INTERVAL = SYSTEM_TICK_INTERVAL;
 const EXPORTED_SYMBOLS = ["SystemTickFeed", "SYSTEM_TICK_INTERVAL"];

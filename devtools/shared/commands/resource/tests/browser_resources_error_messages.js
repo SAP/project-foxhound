@@ -15,7 +15,7 @@ httpServer.registerPathHandler(`/test_page_errors.html`, (req, res) => {
 
 const TEST_URI = `http://localhost:${httpServer.identity.primaryPort}/test_page_errors.html`;
 
-add_task(async function() {
+add_task(async function () {
   // Disable the preloaded process as it creates processes intermittently
   // which forces the emission of RDP requests we aren't correctly waiting for.
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
@@ -165,14 +165,16 @@ async function triggerErrors(tab) {
       expectUncaughtException();
     }
 
-    await ContentTask.spawn(tab.linkedBrowser, expression, function frameScript(
-      expr
-    ) {
-      const document = content.document;
-      const scriptEl = document.createElement("script");
-      scriptEl.textContent = expr;
-      document.body.appendChild(scriptEl);
-    });
+    await ContentTask.spawn(
+      tab.linkedBrowser,
+      expression,
+      function frameScript(expr) {
+        const document = content.document;
+        const scriptEl = document.createElement("script");
+        scriptEl.textContent = expr;
+        document.body.appendChild(scriptEl);
+      }
+    );
 
     if (expected.isPromiseRejection) {
       // Wait a bit after an uncaught promise rejection error, as they are not emitted
@@ -192,10 +194,8 @@ function checkPageErrorResource(pageErrorResource, expected) {
       frame.filename.startsWith("resource://testing-common/content-task.js")
     );
     if (index > -1) {
-      clonedPageErrorResource.stacktrace = clonedPageErrorResource.stacktrace.slice(
-        0,
-        index
-      );
+      clonedPageErrorResource.stacktrace =
+        clonedPageErrorResource.stacktrace.slice(0, index);
     }
   }
   checkObject(clonedPageErrorResource, expected);
@@ -203,6 +203,10 @@ function checkPageErrorResource(pageErrorResource, expected) {
 
 const noUncaughtException = Symbol();
 const NUMBER_REGEX = /^\d+$/;
+// timeStamp are the result of a number in microsecond divided by 1000.
+// so we can't expect a precise number of decimals, or even if there would
+// be decimals at all.
+const FRACTIONAL_NUMBER_REGEX = /^\d+(\.\d{1,3})?$/;
 
 const mdnUrl = path =>
   `https://developer.mozilla.org/${path}?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default`;
@@ -215,7 +219,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_NOT_FUNCTION",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -248,7 +252,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_BAD_RADIX",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -279,7 +283,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_READ_ONLY",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -310,7 +314,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_BAD_ARRAY_LENGTH",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -343,7 +347,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_NEGATIVE_REPETITION_COUNT",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -383,7 +387,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_RESULTING_STRING_TOO_LARGE",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -423,7 +427,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_PRECISION_RANGE",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -456,7 +460,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_STMT_AFTER_RETURN",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: false,
       warning: true,
       info: false,
@@ -483,7 +487,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "JSMSG_REDECLARED_VAR",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -520,7 +524,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -551,7 +555,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "MSG_METHOD_THIS_DOES_NOT_IMPLEMENT_INTERFACE",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -589,7 +593,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -632,7 +636,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -677,7 +681,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -730,7 +734,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -768,7 +772,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -806,7 +810,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,
@@ -842,7 +846,7 @@ const expectedPageErrors = new Map([
       errorMessageName: "",
       sourceName: /test_page_errors/,
       category: "content javascript",
-      timeStamp: NUMBER_REGEX,
+      timeStamp: FRACTIONAL_NUMBER_REGEX,
       error: true,
       warning: false,
       info: false,

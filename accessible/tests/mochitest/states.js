@@ -56,6 +56,7 @@ const EXT_STATE_SUPPORTS_AUTOCOMPLETION =
   nsIAccessibleStates.EXT_STATE_SUPPORTS_AUTOCOMPLETION;
 const EXT_STATE_VERTICAL = nsIAccessibleStates.EXT_STATE_VERTICAL;
 const EXT_STATE_SELECTABLE_TEXT = nsIAccessibleStates.EXT_STATE_SELECTABLE_TEXT;
+const EXT_STATE_OPAQUE = nsIAccessibleStates.EXT_STATE_OPAQUE;
 
 const kOrdinalState = false;
 const kExtraState = 1;
@@ -129,7 +130,7 @@ function testStates(
       state & STATE_FOCUSABLE,
       STATE_FOCUSABLE,
       false,
-      "Focussed " + id + " must be focusable!"
+      "Focused " + id + " must be focusable!"
     );
   }
 

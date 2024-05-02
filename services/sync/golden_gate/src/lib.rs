@@ -22,11 +22,11 @@
 //! responsible for exposing your Sync engine to XPIDL [^1], in a way that lets
 //! JavaScript call it.
 //!
-//! For your bridge type, you'll need to declare an `Init` struct with the
-//! `#[derive(xpcom)]` and `#[xpimplements(mozIBridgedSyncEngine)]` attributes,
-//! then define `xpcom_method!()` stubs for the `mozIBridgedSyncEngine` methods.
-//! For more details about implementing XPCOM methods in Rust, check out the
-//! docs in `xpcom/rust/xpcom/src/method.rs`.
+//! For your bridge type, you'll need to implement an xpcom interface with the
+//! `#[xpcom(implement(mozIBridgedSyncEngine), nonatomic)]` attribute then
+//! define `xpcom_method!()` stubs for the `mozIBridgedSyncEngine` methods.  For
+//! more details about implementing XPCOM methods in Rust, check out the docs in
+//! `xpcom/rust/xpcom/src/method.rs`.
 //!
 //! You'll also need to add an entry for your bridge type to `components.conf`,
 //! and define C++ and Rust constructors for it, so that JavaScript code can
@@ -110,8 +110,10 @@ pub mod task;
 
 pub use crate::log::LogSink;
 pub use error::{Error, Result};
-// Re-export items from `interrupt-support` and `sync15-traits`, so that
+// Re-export items from `interrupt-support` and `sync15`, so that
 // consumers of `golden_gate` don't have to depend on them.
 pub use interrupt_support::{Interrupted, Interruptee};
-pub use sync15_traits::{ApplyResults, BridgedEngine, Guid, IncomingEnvelope, OutgoingEnvelope};
+pub use sync15::bso::{IncomingBso, OutgoingBso};
+pub use sync15::engine::{ApplyResults, BridgedEngine};
+pub use sync15::Guid;
 pub use task::{ApplyTask, FerryTask};

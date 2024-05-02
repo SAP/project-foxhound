@@ -3,7 +3,7 @@
   "name": "messaging",
   "version": "1.0",
   "description": "Creates a tab.",
-  "applications": {
+  "browser_specific_settings": {
     "gecko": {
       "id": "tabs-create@tests.mozilla.org"
     }
@@ -11,7 +11,5 @@
   "background": {
     "scripts": ["background.js"]
   },
-  "permissions": [
-    "tabs"
-  ]
+  "permissions": ["tabs"]
 }

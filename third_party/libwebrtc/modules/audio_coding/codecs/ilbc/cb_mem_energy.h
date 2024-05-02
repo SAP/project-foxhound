@@ -19,6 +19,9 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_MEM_ENERGY_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_MEM_ENERGY_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 void WebRtcIlbcfix_CbMemEnergy(
     size_t range,
     int16_t* CB,           /* (i) The CB memory (1:st section) */
@@ -29,6 +32,6 @@ void WebRtcIlbcfix_CbMemEnergy(
     int16_t* energyShifts, /* (o) Shift value of the energy */
     int scale,             /* (i) The scaling of all energy values */
     size_t base_size /* (i) Index to where energy values should be stored */
-    );
+);
 
 #endif

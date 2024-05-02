@@ -31,7 +31,7 @@ mod conv;
 mod device;
 mod instance;
 
-use std::{borrow::Borrow, ffi::CStr, num::NonZeroU32, sync::Arc};
+use std::{borrow::Borrow, ffi::CStr, fmt, num::NonZeroU32, sync::Arc};
 
 use arrayvec::ArrayVec;
 use ash::{
@@ -41,11 +41,9 @@ use ash::{
 use parking_lot::Mutex;
 
 const MILLIS_TO_NANOS: u64 = 1_000_000;
-const MAX_TOTAL_ATTACHMENTS: usize = crate::MAX_COLOR_TARGETS * 2 + 1;
+const MAX_TOTAL_ATTACHMENTS: usize = crate::MAX_COLOR_ATTACHMENTS * 2 + 1;
 
-pub type DropGuard = Box<dyn std::any::Any + Send + Sync>;
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Api;
 
 impl crate::Api for Api {
@@ -77,30 +75,71 @@ impl crate::Api for Api {
 struct DebugUtils {
     extension: ext::DebugUtils,
     messenger: vk::DebugUtilsMessengerEXT,
+
+    /// Owning pointer to the debug messenger callback user data.
+    ///
+    /// `InstanceShared::drop` destroys the debug messenger before
+    /// dropping this, so the callback should never receive a dangling
+    /// user data pointer.
+    #[allow(dead_code)]
+    callback_data: Box<DebugUtilsMessengerUserData>,
 }
 
-struct InstanceShared {
+pub struct DebugUtilsCreateInfo {
+    severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
+    callback_data: Box<DebugUtilsMessengerUserData>,
+}
+
+/// User data needed by `instance::debug_utils_messenger_callback`.
+///
+/// When we create the [`vk::DebugUtilsMessengerEXT`], the `pUserData`
+/// pointer refers to one of these values.
+#[derive(Debug)]
+pub struct DebugUtilsMessengerUserData {
+    /// Validation layer description, from `vk::LayerProperties`.
+    validation_layer_description: std::ffi::CString,
+
+    /// Validation layer specification version, from `vk::LayerProperties`.
+    validation_layer_spec_version: u32,
+
+    /// If the OBS layer is present. OBS never increments the version of their layer,
+    /// so there's no reason to have the version.
+    has_obs_layer: bool,
+}
+
+pub struct InstanceShared {
     raw: ash::Instance,
-    drop_guard: Option<DropGuard>,
-    flags: crate::InstanceFlags,
+    extensions: Vec<&'static CStr>,
+    drop_guard: Option<crate::DropGuard>,
+    flags: wgt::InstanceFlags,
     debug_utils: Option<DebugUtils>,
     get_physical_device_properties: Option<khr::GetPhysicalDeviceProperties2>,
     entry: ash::Entry,
     has_nv_optimus: bool,
+    android_sdk_version: u32,
+    /// The instance API version.
+    ///
+    /// Which is the version of Vulkan supported for instance-level functionality.
+    ///
+    /// It is associated with a `VkInstance` and its children,
+    /// except for a `VkPhysicalDevice` and its children.
+    instance_api_version: u32,
 }
 
 pub struct Instance {
     shared: Arc<InstanceShared>,
-    extensions: Vec<&'static CStr>,
 }
 
 struct Swapchain {
     raw: vk::SwapchainKHR,
+    raw_flags: vk::SwapchainCreateFlagsKHR,
     functor: khr::Swapchain,
     device: Arc<DeviceShared>,
     fence: vk::Fence,
     images: Vec<vk::Image>,
     config: crate::SurfaceConfiguration,
+    view_formats: Vec<wgt::TextureFormat>,
 }
 
 pub struct Surface {
@@ -143,7 +182,7 @@ enum ExtensionFn<T> {
 }
 
 struct DeviceExtensionFunctions {
-    draw_indirect_count: Option<ExtensionFn<khr::DrawIndirectCount>>,
+    draw_indirect_count: Option<khr::DrawIndirectCount>,
     timeline_semaphore: Option<ExtensionFn<khr::TimelineSemaphore>>,
 }
 
@@ -160,21 +199,49 @@ struct PrivateCapabilities {
     timeline_semaphores: bool,
     texture_d24: bool,
     texture_d24_s8: bool,
+    texture_s8: bool,
     /// Ability to present contents to any screen. Only needed to work around broken platform configurations.
     can_present: bool,
     non_coherent_map_mask: wgt::BufferAddress,
     robust_buffer_access: bool,
     robust_image_access: bool,
+    robust_buffer_access2: bool,
+    robust_image_access2: bool,
+    zero_initialize_workgroup_memory: bool,
+    image_format_list: bool,
 }
 
 bitflags::bitflags!(
     /// Workaround flags.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub struct Workarounds: u32 {
         /// Only generate SPIR-V for one entry point at a time.
         const SEPARATE_ENTRY_POINTS = 0x1;
         /// Qualcomm OOMs when there are zero color attachments but a non-null pointer
         /// to a subpass resolve attachment array. This nulls out that pointer in that case.
         const EMPTY_RESOLVE_ATTACHMENT_LISTS = 0x2;
+        /// If the following code returns false, then nvidia will end up filling the wrong range.
+        ///
+        /// ```skip
+        /// fn nvidia_succeeds() -> bool {
+        ///   # let (copy_length, start_offset) = (0, 0);
+        ///     if copy_length >= 4096 {
+        ///         if start_offset % 16 != 0 {
+        ///             if copy_length == 4096 {
+        ///                 return true;
+        ///             }
+        ///             if copy_length % 16 == 0 {
+        ///                 return false;
+        ///             }
+        ///         }
+        ///     }
+        ///     true
+        /// }
+        /// ```
+        ///
+        /// As such, we need to make sure all calls to vkCmdFillBuffer are aligned to 16 bytes
+        /// if they cover a range of 4096 bytes or more.
+        const FORCE_FILL_BUFFER_WITH_SIZE_GREATER_4096_ALIGNED_OFFSET_16 = 0x4;
     }
 );
 
@@ -210,7 +277,7 @@ struct DepthStencilAttachmentKey {
 
 #[derive(Clone, Eq, Default, Hash, PartialEq)]
 struct RenderPassKey {
-    colors: ArrayVec<ColorAttachmentKey, { crate::MAX_COLOR_TARGETS }>,
+    colors: ArrayVec<Option<ColorAttachmentKey>, { crate::MAX_COLOR_ATTACHMENTS }>,
     depth_stencil: Option<DepthStencilAttachmentKey>,
     sample_count: u32,
     multiview: Option<NonZeroU32>,
@@ -223,6 +290,7 @@ struct FramebufferAttachment {
     raw_image_flags: vk::ImageCreateFlags,
     view_usage: crate::TextureUses,
     view_format: wgt::TextureFormat,
+    raw_view_formats: Vec<vk::Format>,
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
@@ -232,95 +300,22 @@ struct FramebufferKey {
     sample_count: u32,
 }
 
-bitflags::bitflags! {
-    pub struct UpdateAfterBindTypes: u8 {
-        const UNIFORM_BUFFER = 0x1;
-        const STORAGE_BUFFER = 0x2;
-        const SAMPLED_TEXTURE = 0x4;
-        const STORAGE_TEXTURE = 0x8;
-    }
-}
-
-impl UpdateAfterBindTypes {
-    pub fn from_limits(limits: &wgt::Limits, phd_limits: &vk::PhysicalDeviceLimits) -> Self {
-        let mut uab_types = UpdateAfterBindTypes::empty();
-        uab_types.set(
-            UpdateAfterBindTypes::UNIFORM_BUFFER,
-            limits.max_uniform_buffers_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_uniform_buffers,
-        );
-        uab_types.set(
-            UpdateAfterBindTypes::STORAGE_BUFFER,
-            limits.max_storage_buffers_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_storage_buffers,
-        );
-        uab_types.set(
-            UpdateAfterBindTypes::SAMPLED_TEXTURE,
-            limits.max_sampled_textures_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_sampled_images,
-        );
-        uab_types.set(
-            UpdateAfterBindTypes::STORAGE_TEXTURE,
-            limits.max_storage_textures_per_shader_stage
-                > phd_limits.max_per_stage_descriptor_storage_images,
-        );
-        uab_types
-    }
-
-    fn from_features(features: &adapter::PhysicalDeviceFeatures) -> Self {
-        let mut uab_types = UpdateAfterBindTypes::empty();
-        if let Some(vk_12) = features.vulkan_1_2 {
-            uab_types.set(
-                UpdateAfterBindTypes::UNIFORM_BUFFER,
-                vk_12.descriptor_binding_uniform_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_BUFFER,
-                vk_12.descriptor_binding_storage_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::SAMPLED_TEXTURE,
-                vk_12.descriptor_binding_sampled_image_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_TEXTURE,
-                vk_12.descriptor_binding_storage_image_update_after_bind != 0,
-            );
-        } else if let Some(di) = features.descriptor_indexing {
-            uab_types.set(
-                UpdateAfterBindTypes::UNIFORM_BUFFER,
-                di.descriptor_binding_uniform_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_BUFFER,
-                di.descriptor_binding_storage_buffer_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::SAMPLED_TEXTURE,
-                di.descriptor_binding_sampled_image_update_after_bind != 0,
-            );
-            uab_types.set(
-                UpdateAfterBindTypes::STORAGE_TEXTURE,
-                di.descriptor_binding_storage_image_update_after_bind != 0,
-            );
-        }
-        uab_types
-    }
-}
-
 struct DeviceShared {
     raw: ash::Device,
+    family_index: u32,
+    queue_index: u32,
+    raw_queue: ash::vk::Queue,
     handle_is_owned: bool,
     instance: Arc<InstanceShared>,
+    physical_device: ash::vk::PhysicalDevice,
+    enabled_extensions: Vec<&'static CStr>,
     extension_fns: DeviceExtensionFunctions,
     vendor_id: u32,
     timestamp_period: f32,
-    uab_types: UpdateAfterBindTypes,
-    downlevel_flags: wgt::DownlevelFlags,
     private_caps: PrivateCapabilities,
     workarounds: Workarounds,
-    render_passes: Mutex<fxhash::FxHashMap<RenderPassKey, vk::RenderPass>>,
-    framebuffers: Mutex<fxhash::FxHashMap<FramebufferKey, vk::Framebuffer>>,
+    render_passes: Mutex<rustc_hash::FxHashMap<RenderPassKey, vk::RenderPass>>,
+    framebuffers: Mutex<rustc_hash::FxHashMap<FramebufferKey, vk::Framebuffer>>,
 }
 
 pub struct Device {
@@ -329,7 +324,7 @@ pub struct Device {
     desc_allocator:
         Mutex<gpu_descriptor::DescriptorAllocator<vk::DescriptorPool, vk::DescriptorSet>>,
     valid_ash_memory_types: u32,
-    naga_options: naga::back::spv::Options,
+    naga_options: naga::back::spv::Options<'static>,
     #[cfg(feature = "renderdoc")]
     render_doc: crate::auxil::renderdoc::RenderDoc,
 }
@@ -343,7 +338,7 @@ pub struct Queue {
     /// from submissions to the last present, since it's required by the
     /// specification.
     /// It would be correct to use a single semaphore there, but
-    /// https://gitlab.freedesktop.org/mesa/mesa/-/issues/5508
+    /// [Intel hangs in `anv_queue_finish`](https://gitlab.freedesktop.org/mesa/mesa/-/issues/5508).
     relay_semaphores: [vk::Semaphore; 2],
     relay_index: Option<usize>,
 }
@@ -351,19 +346,19 @@ pub struct Queue {
 #[derive(Debug)]
 pub struct Buffer {
     raw: vk::Buffer,
-    block: Mutex<gpu_alloc::MemoryBlock<vk::DeviceMemory>>,
+    block: Option<Mutex<gpu_alloc::MemoryBlock<vk::DeviceMemory>>>,
 }
 
 #[derive(Debug)]
 pub struct Texture {
     raw: vk::Image,
-    drop_guard: Option<DropGuard>,
+    drop_guard: Option<crate::DropGuard>,
     block: Option<gpu_alloc::MemoryBlock<vk::DeviceMemory>>,
     usage: crate::TextureUses,
-    aspects: crate::FormatAspects,
-    format_info: wgt::TextureFormatInfo,
+    format: wgt::TextureFormat,
     raw_flags: vk::ImageCreateFlags,
     copy_size: crate::CopyExtent,
+    view_formats: Vec<wgt::TextureFormat>,
 }
 
 impl Texture {
@@ -382,12 +377,6 @@ pub struct TextureView {
     attachment: FramebufferAttachment,
 }
 
-impl TextureView {
-    fn aspects(&self) -> crate::FormatAspects {
-        self.attachment.view_format.into()
-    }
-}
-
 #[derive(Debug)]
 pub struct Sampler {
     raw: vk::Sampler,
@@ -398,12 +387,14 @@ pub struct BindGroupLayout {
     raw: vk::DescriptorSetLayout,
     desc_count: gpu_descriptor::DescriptorTotalCount,
     types: Box<[(vk::DescriptorType, u32)]>,
-    requires_update_after_bind: bool,
+    /// Map of binding index to size,
+    binding_arrays: Vec<(u32, NonZeroU32)>,
 }
 
 #[derive(Debug)]
 pub struct PipelineLayout {
     raw: vk::PipelineLayout,
+    binding_arrays: naga::back::spv::BindingMap,
 }
 
 #[derive(Debug)]
@@ -448,8 +439,21 @@ pub struct CommandEncoder {
     /// If this is true, the active renderpass enabled a debug span,
     /// and needs to be disabled on renderpass close.
     rpass_debug_marker_active: bool,
+
+    /// If set, the end of the next render/compute pass will write a timestamp at
+    /// the given pool & location.
+    end_of_pass_timer_query: Option<(vk::QueryPool, u32)>,
 }
 
+impl fmt::Debug for CommandEncoder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommandEncoder")
+            .field("raw", &self.raw)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct CommandBuffer {
     raw: vk::CommandBuffer,
 }
@@ -589,10 +593,11 @@ impl crate::Queue<Api> for Queue {
                 } => {
                     fence_raw = match free.pop() {
                         Some(raw) => raw,
-                        None => self
-                            .device
-                            .raw
-                            .create_fence(&vk::FenceCreateInfo::builder(), None)?,
+                        None => unsafe {
+                            self.device
+                                .raw
+                                .create_fence(&vk::FenceCreateInfo::builder(), None)?
+                        },
                     };
                     active.push((value, fence_raw));
                 }
@@ -620,9 +625,11 @@ impl crate::Queue<Api> for Queue {
         vk_info = vk_info.signal_semaphores(&signal_semaphores[..signal_count]);
 
         profiling::scope!("vkQueueSubmit");
-        self.device
-            .raw
-            .queue_submit(self.raw, &[vk_info.build()], fence_raw)?;
+        unsafe {
+            self.device
+                .raw
+                .queue_submit(self.raw, &[vk_info.build()], fence_raw)?
+        };
         Ok(())
     }
 
@@ -645,15 +652,20 @@ impl crate::Queue<Api> for Queue {
 
         let suboptimal = {
             profiling::scope!("vkQueuePresentKHR");
-            self.swapchain_fn
-                .queue_present(self.raw, &vk_info)
-                .map_err(|error| match error {
+            unsafe { self.swapchain_fn.queue_present(self.raw, &vk_info) }.map_err(|error| {
+                match error {
                     vk::Result::ERROR_OUT_OF_DATE_KHR => crate::SurfaceError::Outdated,
                     vk::Result::ERROR_SURFACE_LOST_KHR => crate::SurfaceError::Lost,
                     _ => crate::DeviceError::from(error).into(),
-                })?
+                }
+            })?
         };
         if suboptimal {
+            // We treat `VK_SUBOPTIMAL_KHR` as `VK_SUCCESS` on Android.
+            // On Android 10+, libvulkan's `vkQueuePresentKHR` implementation returns `VK_SUBOPTIMAL_KHR` if not doing pre-rotation
+            // (i.e `VkSwapchainCreateInfoKHR::preTransform` not being equal to the current device orientation).
+            // This is always the case when the device orientation is anything other than the identity one, as we unconditionally use `VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR`.
+            #[cfg(not(target_os = "android"))]
             log::warn!("Suboptimal present of frame {}", texture.index);
         }
         Ok(())

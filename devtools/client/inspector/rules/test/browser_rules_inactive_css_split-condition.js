@@ -18,14 +18,14 @@ const TEST_URI = `
 </style>
 <div class="display gap">`;
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.inspector.inactive.css.enabled", true);
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
   await selectNode("div", inspector);
 
-  checkDeclarationIsActive(view, 1, { gap: "1em" });
+  await checkDeclarationIsActive(view, 1, { gap: "1em" });
   await toggleDeclaration(view, 2, { display: "grid" });
   await checkDeclarationIsInactive(view, 1, { gap: "1em" });
 });

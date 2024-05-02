@@ -23,23 +23,25 @@ namespace {
 
 class UnregisterActorRunnable final : public Runnable {
  public:
-  explicit UnregisterActorRunnable(already_AddRefed<ContentParent> aParent)
-      : Runnable("UnregisterActorRunnable"), mContentParent(aParent) {
+  explicit UnregisterActorRunnable(
+      already_AddRefed<ThreadsafeContentParentHandle> aParent)
+      : Runnable("UnregisterActorRunnable"), mContentHandle(aParent) {
     AssertIsOnBackgroundThread();
   }
 
   NS_IMETHOD
   Run() override {
-    MOZ_ASSERT(NS_IsMainThread());
-
-    mContentParent->UnregisterRemoveWorkerActor();
-    mContentParent = nullptr;
+    AssertIsOnMainThread();
+    if (RefPtr<ContentParent> contentParent =
+            mContentHandle->GetContentParent()) {
+      contentParent->UnregisterRemoveWorkerActor();
+    }
 
     return NS_OK;
   }
 
  private:
-  RefPtr<ContentParent> mContentParent;
+  RefPtr<ThreadsafeContentParentHandle> mContentHandle;
 };
 
 }  // namespace
@@ -55,7 +57,8 @@ RemoteWorkerParent::~RemoteWorkerParent() {
 }
 
 void RemoteWorkerParent::Initialize(bool aAlreadyRegistered) {
-  RefPtr<ContentParent> parent = BackgroundParent::GetContentParent(Manager());
+  RefPtr<ThreadsafeContentParentHandle> parent =
+      BackgroundParent::GetContentParentHandle(Manager());
 
   // Parent is null if the child actor runs on the parent process.
   if (parent) {
@@ -79,14 +82,14 @@ void RemoteWorkerParent::ActorDestroy(IProtocol::ActorDestroyReason) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  RefPtr<ContentParent> parent = BackgroundParent::GetContentParent(Manager());
+  RefPtr<ThreadsafeContentParentHandle> parent =
+      BackgroundParent::GetContentParentHandle(Manager());
 
   // Parent is null if the child actor runs on the parent process.
   if (parent) {
     RefPtr<UnregisterActorRunnable> r =
         new UnregisterActorRunnable(parent.forget());
-
-    SchedulerGroup::Dispatch(TaskCategory::Other, r.forget());
+    SchedulerGroup::Dispatch(r.forget());
   }
 
   if (mController) {
@@ -129,6 +132,17 @@ IPCResult RemoteWorkerParent::RecvNotifyLock(const bool& aCreated) {
 
   if (mController) {
     mController->NotifyLock(aCreated);
+  }
+
+  return IPC_OK();
+}
+
+IPCResult RemoteWorkerParent::RecvNotifyWebTransport(const bool& aCreated) {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (mController) {
+    mController->NotifyWebTransport(aCreated);
   }
 
   return IPC_OK();

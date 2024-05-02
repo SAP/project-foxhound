@@ -8,7 +8,7 @@
 const TEST_URI =
   "data:text/html;charset=utf-8,<script>console.log('foo');</script>";
 
-add_task(async function() {
+add_task(async function () {
   const tab = await addTab(TEST_URI);
 
   const { client, resourceCommand, targetCommand } = await initResourceCommand(
@@ -55,7 +55,10 @@ add_task(async function() {
 
   let onSwitched = targetCommand.once("switched-target");
   info("Navigate to another process");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:robots"
+  );
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   await onSwitched;
 
@@ -67,7 +70,7 @@ add_task(async function() {
 
   info("Navigate back to data: URI");
   onSwitched = targetCommand.once("switched-target");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, TEST_URI);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, TEST_URI);
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   await onSwitched;
 

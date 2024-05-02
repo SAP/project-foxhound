@@ -48,6 +48,9 @@ class BlockingSyncStream final : public nsIInputStream {
   Available(uint64_t* aLength) override { return mStream->Available(aLength); }
 
   NS_IMETHOD
+  StreamStatus() override { return mStream->StreamStatus(); }
+
+  NS_IMETHOD
   Read(char* aBuffer, uint32_t aCount, uint32_t* aReadCount) override {
     return mStream->Read(aBuffer, aCount, aReadCount);
   }
@@ -113,6 +116,9 @@ class BlockingAsyncStream final : public nsIAsyncInputStream {
   }
 
   NS_IMETHOD
+  StreamStatus() override { return mStream->StreamStatus(); }
+
+  NS_IMETHOD
   Read(char* aBuffer, uint32_t aCount, uint32_t* aReadCount) override {
     mPending = !mPending;
     if (mPending) {
@@ -154,6 +160,10 @@ class BlockingAsyncStream final : public nsIAsyncInputStream {
   NS_IMETHOD
   AsyncWait(nsIInputStreamCallback* aCallback, uint32_t aFlags,
             uint32_t aRequestedCount, nsIEventTarget* aEventTarget) override {
+    if (!aCallback) {
+      return NS_OK;
+    }
+
     RefPtr<BlockingAsyncStream> self = this;
     nsCOMPtr<nsIInputStreamCallback> callback = aCallback;
 

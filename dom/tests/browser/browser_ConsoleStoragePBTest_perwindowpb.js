@@ -9,7 +9,6 @@ function test() {
   let beforeEvents;
   let afterEvents;
   let storageShouldOccur;
-  let consoleObserver;
   let testURI =
     "http://example.com/browser/dom/tests/browser/test-console-api.html";
   let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"].getService(
@@ -24,7 +23,7 @@ function test() {
     let win = OpenBrowserWindow(aOptions);
     win.addEventListener(
       "load",
-      function() {
+      function () {
         aCallback(win);
       },
       { once: true }
@@ -34,30 +33,23 @@ function test() {
   function doTest(aIsPrivateMode, aWindow, aCallback) {
     BrowserTestUtils.browserLoaded(aWindow.gBrowser.selectedBrowser).then(
       () => {
-        consoleObserver = {
-          observe(aSubject, aTopic, aData) {
-            if (aTopic == "console-api-log-event") {
-              afterEvents = ConsoleAPIStorage.getEvents(innerID);
-              is(
-                beforeEvents.length == afterEvents.length - 1,
-                storageShouldOccur,
-                "storage should" + (storageShouldOccur ? "" : " not") + " occur"
-              );
+        function observe(aSubject) {
+          afterEvents = ConsoleAPIStorage.getEvents(innerID);
+          is(
+            beforeEvents.length == afterEvents.length - 1,
+            storageShouldOccur,
+            "storage should" + (storageShouldOccur ? "" : " not") + " occur"
+          );
 
-              executeSoon(function() {
-                Services.obs.removeObserver(
-                  consoleObserver,
-                  "console-api-log-event"
-                );
-                aCallback();
-              });
-            }
-          },
-        };
+          executeSoon(function () {
+            ConsoleAPIStorage.removeLogEventListener(observe);
+            aCallback();
+          });
+        }
 
-        aWindow.Services.obs.addObserver(
-          consoleObserver,
-          "console-api-log-event"
+        ConsoleAPIStorage.addLogEventListener(
+          observe,
+          aWindow.document.nodePrincipal
         );
         aWindow.nativeConsole.log(
           "foo bar baz (private: " + aIsPrivateMode + ")"
@@ -69,11 +61,14 @@ function test() {
     storageShouldOccur = true;
     innerID = getInnerWindowId(aWindow);
     beforeEvents = ConsoleAPIStorage.getEvents(innerID);
-    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
+    BrowserTestUtils.startLoadingURIString(
+      aWindow.gBrowser.selectedBrowser,
+      testURI
+    );
   }
 
   function testOnWindow(aOptions, aCallback) {
-    whenNewWindowLoaded(aOptions, function(aWin) {
+    whenNewWindowLoaded(aOptions, function (aWin) {
       windowsToClose.push(aWin);
       // execute should only be called when need, like when you are opening
       // web pages on the test. If calling executeSoon() is not necesary, then
@@ -83,17 +78,17 @@ function test() {
   }
 
   // this function is called after calling finish() on the test.
-  registerCleanupFunction(function() {
-    windowsToClose.forEach(function(aWin) {
+  registerCleanupFunction(function () {
+    windowsToClose.forEach(function (aWin) {
       aWin.close();
     });
   });
 
   // test first when not on private mode
-  testOnWindow({}, function(aWin) {
-    doTest(false, aWin, function() {
+  testOnWindow({}, function (aWin) {
+    doTest(false, aWin, function () {
       // then test when on private mode
-      testOnWindow({ private: true }, function(aWin) {
+      testOnWindow({ private: true }, function (aWin) {
         doTest(true, aWin, finish);
       });
     });

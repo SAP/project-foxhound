@@ -7,9 +7,9 @@
 # Write a Mochitest manifest for WebGL conformance test files.
 
 import os
-from pathlib import Path
 import re
 import shutil
+from pathlib import Path
 
 # All paths in this file are based where this file is run.
 WRAPPER_TEMPLATE_FILE = "mochi-wrapper.html.template"
@@ -36,6 +36,7 @@ ACCEPTABLE_ERRATA_KEYS = set(
     [
         "fail-if",
         "skip-if",
+        "prefs",
     ]
 )
 
@@ -509,7 +510,7 @@ def LoadErrata():
 
     ret = {}
 
-    for (sectionName, (sectionLineNum, sectionMap)) in iniMap.items():
+    for sectionName, (sectionLineNum, sectionMap) in iniMap.items():
         curLines = []
 
         if sectionName is None:
@@ -520,7 +521,7 @@ def LoadErrata():
                 sectionLineNum, sectionName
             )
 
-        for (key, (lineNum, val)) in sectionMap.items():
+        for key, (lineNum, val) in sectionMap.items():
             assert key in ACCEPTABLE_ERRATA_KEYS, "Line {}: {}".format(lineNum, key)
 
             curLine = "{} = {}".format(key, val)

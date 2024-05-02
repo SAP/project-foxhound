@@ -5,7 +5,7 @@ const PAGE_1 =
 const PAGE_2 =
   "data:text/html,<html><body>Another%20regular,%20everyday,%20normal%20page.";
 
-add_task(async function() {
+add_task(async function () {
   // Load an empty, non-remote tab at about:blank...
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
     forceNotRemote: true,
@@ -15,9 +15,9 @@ add_task(async function() {
   ok(!browser.isRemoteBrowser, "Ensure browser is not remote");
   // Load a remote page, and then another remote page immediately
   // after.
-  BrowserTestUtils.loadURI(browser, PAGE_1);
+  BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   browser.stop();
-  BrowserTestUtils.loadURI(browser, PAGE_2);
+  BrowserTestUtils.startLoadingURIString(browser, PAGE_2);
   await BrowserTestUtils.browserLoaded(browser, false, PAGE_2);
 
   ok(browser.isRemoteBrowser, "Should have switched remoteness");
@@ -32,7 +32,7 @@ add_task(async function() {
     "Should have PAGE_2 as the browser currentURI"
   );
 
-  await SpecialPowers.spawn(browser, [PAGE_2], async function(expectedURL) {
+  await SpecialPowers.spawn(browser, [PAGE_2], async function (expectedURL) {
     docShell.QueryInterface(Ci.nsIWebNavigation);
     Assert.equal(
       docShell.currentURI.spec,

@@ -2,20 +2,22 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-/* globals ChromeUtils, Assert, add_task */
 "use strict";
 
 // ClientID fails without...
 do_get_profile();
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
-const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
-const { Discovery } = ChromeUtils.import("resource:///modules/Discovery.jsm");
-const { ContextualIdentityService } = ChromeUtils.import(
-  "resource://gre/modules/ContextualIdentityService.jsm"
+const { ClientID } = ChromeUtils.importESModule(
+  "resource://gre/modules/ClientID.sys.mjs"
+);
+const { Discovery } = ChromeUtils.importESModule(
+  "resource:///modules/Discovery.sys.mjs"
+);
+const { ContextualIdentityService } = ChromeUtils.importESModule(
+  "resource://gre/modules/ContextualIdentityService.sys.mjs"
 );
 
 const TAAR_COOKIE_NAME = "taarId";
@@ -63,8 +65,10 @@ add_task(async function test_discovery() {
   });
 
   // Test the addition of a new container.
-  let changed = TestUtils.topicObserved("cookie-changed", (subject, data) => {
-    let cookie = subject.QueryInterface(Ci.nsICookie);
+  let changed = TestUtils.topicObserved("cookie-changed", subject => {
+    let cookie = subject
+      .QueryInterface(Ci.nsICookieNotification)
+      .cookie.QueryInterface(Ci.nsICookie);
     equal(cookie.name, TAAR_COOKIE_NAME, "taar cookie exists");
     equal(cookie.host, uri.host, "cookie exists for host");
     equal(
@@ -117,11 +121,12 @@ add_task(async function test_discovery() {
   });
 
   // Make sure clientId changes update discovery
-  changed = TestUtils.topicObserved("cookie-changed", (subject, data) => {
-    if (data !== "added") {
+  changed = TestUtils.topicObserved("cookie-changed", subject => {
+    let notification = subject.QueryInterface(Ci.nsICookieNotification);
+    if (notification.action != Ci.nsICookieNotification.COOKIE_ADDED) {
       return false;
     }
-    let cookie = subject.QueryInterface(Ci.nsICookie);
+    let cookie = notification.cookie.QueryInterface(Ci.nsICookie);
     equal(cookie.name, TAAR_COOKIE_NAME, "taar cookie exists");
     equal(cookie.host, uri.host, "cookie exists for host");
     return true;

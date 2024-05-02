@@ -48,8 +48,9 @@ class TabPriorityWatcher {
     this.priorityMap = new Map();
 
     // The keys in this map are childIDs we're not expecting to change.
-    // Each value is either null (if no change has been seen) or the
-    // priority that the process changed to.
+    // Each value is an array of priorities we've seen the childID changed
+    // to since it was added to the map. If the array is empty, there
+    // have been no changes.
     this.noChangeChildIDs = new Map();
 
     Services.obs.addObserver(this, PRIORITY_SET_TOPIC);
@@ -106,14 +107,14 @@ class TabPriorityWatcher {
    *   Once the WAIT_FOR_CHANGE_TIME_MS duration has passed.
    */
   async ensureNoPriorityChange(childID) {
-    this.noChangeChildIDs.set(childID, null);
+    this.noChangeChildIDs.set(childID, []);
     // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
     await new Promise(resolve => setTimeout(resolve, WAIT_FOR_CHANGE_TIME_MS));
-    let priority = this.noChangeChildIDs.get(childID);
-    Assert.equal(
-      priority,
-      null,
-      `Should have seen no process priority change for child ID ${childID}`
+    let priorities = this.noChangeChildIDs.get(childID);
+    Assert.deepEqual(
+      priorities,
+      [],
+      `Should have seen no process priority changes for child ID ${childID}`
     );
     this.noChangeChildIDs.delete(childID);
   }
@@ -199,7 +200,7 @@ class TabPriorityWatcher {
 
     let { childID, priority } = this.parsePPMData(data);
     if (this.noChangeChildIDs.has(childID)) {
-      this.noChangeChildIDs.set(childID, priority);
+      this.noChangeChildIDs.get(childID).push(priority);
     }
     this.priorityMap.set(childID, priority);
   }
@@ -207,7 +208,7 @@ class TabPriorityWatcher {
 
 let gTabPriorityWatcher;
 
-add_task(async function setup() {
+add_setup(async function () {
   // We need to turn on testMode for the process priority manager in
   // order to receive the observer notifications that this test relies on.
   await SpecialPowers.pushPrefEnv({
@@ -286,8 +287,9 @@ async function assertPriorityChangeOnBackground({
 
 /**
  * Test that if a normal tab goes into the background,
- * it has its process priority lowered to
- * PROCESS_PRIORITY_BACKGROUND.
+ * it has its process priority lowered to PROCESS_PRIORITY_BACKGROUND.
+ * Additionally, test priorityHint flag sets the process priority
+ * appropriately to PROCESS_PRIORITY_BACKGROUND and PROCESS_PRIORITY_FOREGROUND.
  */
 add_task(async function test_normal_background_tab() {
   let originalTab = gBrowser.selectedTab;
@@ -307,6 +309,74 @@ add_task(async function test_normal_background_tab() {
         toTab: tab,
         fromTabExpectedPriority: PROCESS_PRIORITY_BACKGROUND,
       });
+
+      let origtabID = browsingContextChildID(
+        originalTab.linkedBrowser.browsingContext
+      );
+
+      Assert.equal(
+        originalTab.linkedBrowser.frameLoader.remoteTab.priorityHint,
+        false,
+        "PriorityHint of the original tab should be false by default"
+      );
+
+      // Changing renderLayers doesn't change priority of the background tab.
+      originalTab.linkedBrowser.preserveLayers(true);
+      originalTab.linkedBrowser.renderLayers = true;
+      await new Promise(resolve =>
+        // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+        setTimeout(resolve, WAIT_FOR_CHANGE_TIME_MS)
+      );
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(origtabID),
+        PROCESS_PRIORITY_BACKGROUND,
+        "Tab didn't get prioritized only due to renderLayers"
+      );
+
+      // Test when priorityHint is true, the original tab priority
+      // becomes PROCESS_PRIORITY_FOREGROUND.
+      originalTab.linkedBrowser.frameLoader.remoteTab.priorityHint = true;
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(origtabID),
+        PROCESS_PRIORITY_FOREGROUND,
+        "Setting priorityHint to true should set the original tab to foreground priority"
+      );
+
+      // Test when priorityHint is false, the original tab priority
+      // becomes PROCESS_PRIORITY_BACKGROUND.
+      originalTab.linkedBrowser.frameLoader.remoteTab.priorityHint = false;
+      await new Promise(resolve =>
+        // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+        setTimeout(resolve, WAIT_FOR_CHANGE_TIME_MS)
+      );
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(origtabID),
+        PROCESS_PRIORITY_BACKGROUND,
+        "Setting priorityHint to false should set the original tab to background priority"
+      );
+
+      let tabID = browsingContextChildID(tab.linkedBrowser.browsingContext);
+
+      // Test when priorityHint is true, the process priority of the
+      // active tab remains PROCESS_PRIORITY_FOREGROUND.
+      tab.linkedBrowser.frameLoader.remoteTab.priorityHint = true;
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(tabID),
+        PROCESS_PRIORITY_FOREGROUND,
+        "Setting priorityHint to true should maintain the new tab priority as foreground"
+      );
+
+      // Test when priorityHint is false, the process priority of the
+      // active tab remains PROCESS_PRIORITY_FOREGROUND.
+      tab.linkedBrowser.frameLoader.remoteTab.priorityHint = false;
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(tabID),
+        PROCESS_PRIORITY_FOREGROUND,
+        "Setting priorityHint to false should maintain the new tab priority as foreground"
+      );
+
+      originalTab.linkedBrowser.preserveLayers(false);
+      originalTab.linkedBrowser.renderLayers = false;
     }
   );
 });
@@ -342,6 +412,57 @@ async function loadKeepAliveTab(host) {
   }
 
   return { tab, childID };
+}
+
+const AUDIO_WAKELOCK_NAME = "audio-playing";
+const VIDEO_WAKELOCK_NAME = "video-playing";
+
+// This function was copied from toolkit/content/tests/browser/head.js
+function wakeLockObserved(powerManager, observeTopic, checkFn) {
+  return new Promise(resolve => {
+    function wakeLockListener() {}
+    wakeLockListener.prototype = {
+      QueryInterface: ChromeUtils.generateQI(["nsIDOMMozWakeLockListener"]),
+      callback(topic, state) {
+        if (topic == observeTopic && checkFn(state)) {
+          powerManager.removeWakeLockListener(wakeLockListener.prototype);
+          resolve();
+        }
+      },
+    };
+    powerManager.addWakeLockListener(wakeLockListener.prototype);
+  });
+}
+
+// This function was copied from toolkit/content/tests/browser/head.js
+async function waitForExpectedWakeLockState(
+  topic,
+  { needLock, isForegroundLock }
+) {
+  const powerManagerService = Cc["@mozilla.org/power/powermanagerservice;1"];
+  const powerManager = powerManagerService.getService(
+    Ci.nsIPowerManagerService
+  );
+  const wakelockState = powerManager.getWakeLockState(topic);
+  let expectedLockState = "unlocked";
+  if (needLock) {
+    expectedLockState = isForegroundLock
+      ? "locked-foreground"
+      : "locked-background";
+  }
+  if (wakelockState != expectedLockState) {
+    info(`wait until wakelock becomes ${expectedLockState}`);
+    await wakeLockObserved(
+      powerManager,
+      topic,
+      state => state == expectedLockState
+    );
+  }
+  is(
+    powerManager.getWakeLockState(topic),
+    expectedLockState,
+    `the wakelock state for '${topic}' is equal to '${expectedLockState}'`
+  );
 }
 
 /**
@@ -434,11 +555,13 @@ add_task(async function test_iframe_navigate() {
       // Do a cross-origin navigation in the iframe in the foreground tab.
       let iframe2URI = iframe2Host + "/browser/dom/ipc/tests/file_dummy.html";
       let loaded = BrowserTestUtils.browserLoaded(browser, true, iframe2URI);
-      await SpecialPowers.spawn(iframe, [iframe2URI], async function(
-        _iframe2URI
-      ) {
-        content.location = _iframe2URI;
-      });
+      await SpecialPowers.spawn(
+        iframe,
+        [iframe2URI],
+        async function (_iframe2URI) {
+          content.location = _iframe2URI;
+        }
+      );
       await loaded;
 
       let iframe2ChildID = browsingContextChildID(iframe);
@@ -538,7 +661,7 @@ add_task(async function test_cross_group_navigate() {
       let dotOrgChildID = browsingContextChildID(browser.browsingContext);
 
       // Do a cross-group navigation.
-      BrowserTestUtils.loadURI(browser, coopPage);
+      BrowserTestUtils.startLoadingURIString(browser, coopPage);
       await BrowserTestUtils.browserLoaded(browser);
 
       let coopChildID = browsingContextChildID(browser.browsingContext);
@@ -583,7 +706,8 @@ add_task(async function test_video_background_tab() {
 
   await BrowserTestUtils.withNewTab("https://example.com", async browser => {
     // Let's load up a video in the tab, but mute it, so that this tab should
-    // reach PROCESS_PRIORITY_BACKGROUND_PERCEIVABLE.
+    // reach PROCESS_PRIORITY_BACKGROUND_PERCEIVABLE. We need to wait for the
+    // wakelock changes from the unmuting to get back up to the parent.
     await SpecialPowers.spawn(browser, [], async () => {
       let video = content.document.createElement("video");
       video.src = "https://example.net/browser/dom/ipc/tests/short.mp4";
@@ -593,6 +717,15 @@ add_task(async function test_video_background_tab() {
       video.loop = true;
       await video.play();
     });
+    await Promise.all([
+      waitForExpectedWakeLockState(AUDIO_WAKELOCK_NAME, {
+        needLock: false,
+      }),
+      waitForExpectedWakeLockState(VIDEO_WAKELOCK_NAME, {
+        needLock: true,
+        isForegroundLock: true,
+      }),
+    ]);
 
     let tab = gBrowser.getTabForBrowser(browser);
 
@@ -612,11 +745,18 @@ add_task(async function test_video_background_tab() {
       fromTabExpectedPriority: PROCESS_PRIORITY_BACKGROUND,
     });
 
-    // Let's unmute the video now.
-    await SpecialPowers.spawn(browser, [], async () => {
-      let video = content.document.querySelector("video");
-      video.muted = false;
-    });
+    // Let's unmute the video now. We need to wait for the wakelock change from
+    // the unmuting to get back up to the parent.
+    await Promise.all([
+      waitForExpectedWakeLockState(AUDIO_WAKELOCK_NAME, {
+        needLock: true,
+        isForegroundLock: true,
+      }),
+      SpecialPowers.spawn(browser, [], async () => {
+        let video = content.document.querySelector("video");
+        video.muted = false;
+      }),
+    ]);
 
     // The tab with the unmuted video should stay at
     // PROCESS_PRIORITY_FOREGROUND when backgrounded.
@@ -796,7 +936,7 @@ add_task(async function test_audio_background_tab() {
       "Loading a new tab should make it prioritized."
     );
     let loaded = BrowserTestUtils.browserLoaded(browser, false, page2);
-    BrowserTestUtils.loadURI(browser, page2);
+    BrowserTestUtils.startLoadingURIString(browser, page2);
     await loaded;
 
     childID = browsingContextChildID(browser.browsingContext);

@@ -8,18 +8,24 @@
 
 #include "mozAutoDocUpdate.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/GeckoBindings.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/SMILValue.h"
+#include "mozilla/StaticPresData.h"
 #include "mozilla/SVGIntegrationUtils.h"
 #include "mozilla/dom/SVGViewportElement.h"
 #include "DOMSVGAnimatedLength.h"
 #include "DOMSVGLength.h"
+#include "gfxTextRun.h"
 #include "LayoutLogging.h"
 #include "nsContentUtils.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsTextFormatter.h"
 #include "SMILFloatType.h"
 #include "SVGAttrTearoffTable.h"
+#include "SVGGeometryProperty.h"
 
 using namespace mozilla::dom;
 
@@ -62,61 +68,17 @@ class MOZ_RAII AutoChangeLengthNotifier {
   bool mDoSetAttr;
 };
 
-static const nsStaticAtom* const unitMap[] = {
-    nullptr, /* SVG_LENGTHTYPE_UNKNOWN */
-    nullptr, /* SVG_LENGTHTYPE_NUMBER */
-    nsGkAtoms::percentage,
-    nsGkAtoms::em,
-    nsGkAtoms::ex,
-    nsGkAtoms::px,
-    nsGkAtoms::cm,
-    nsGkAtoms::mm,
-    nsGkAtoms::in,
-    nsGkAtoms::pt,
-    nsGkAtoms::pc};
-
 static SVGAttrTearoffTable<SVGAnimatedLength, DOMSVGAnimatedLength>
     sSVGAnimatedLengthTearoffTable;
 
 /* Helper functions */
-
-static bool IsValidUnitType(uint16_t unit) {
-  return unit > SVGLength_Binding::SVG_LENGTHTYPE_UNKNOWN &&
-         unit <= SVGLength_Binding::SVG_LENGTHTYPE_PC;
-}
-
-static void GetUnitString(nsAString& unit, uint16_t unitType) {
-  if (IsValidUnitType(unitType)) {
-    if (unitMap[unitType]) {
-      unitMap[unitType]->ToString(unit);
-    }
-    return;
-  }
-
-  MOZ_ASSERT_UNREACHABLE("Unknown unit type");
-}
-
-static uint16_t GetUnitTypeForString(const nsAString& unitStr) {
-  if (unitStr.IsEmpty()) return SVGLength_Binding::SVG_LENGTHTYPE_NUMBER;
-
-  nsAtom* unitAtom = NS_GetStaticAtom(unitStr);
-  if (unitAtom) {
-    for (uint32_t i = 0; i < ArrayLength(unitMap); i++) {
-      if (unitMap[i] == unitAtom) {
-        return i;
-      }
-    }
-  }
-
-  return SVGLength_Binding::SVG_LENGTHTYPE_UNKNOWN;
-}
 
 static void GetValueString(nsAString& aValueAsString, float aValue,
                            uint16_t aUnitType) {
   nsTextFormatter::ssprintf(aValueAsString, u"%g", (double)aValue);
 
   nsAutoString unitString;
-  GetUnitString(unitString, aUnitType);
+  SVGLength::GetUnitString(unitString, aUnitType);
   aValueAsString.Append(unitString);
 }
 
@@ -136,8 +98,8 @@ static bool GetValueFromString(const nsAString& aString, float& aValue,
     return false;
   }
   const nsAString& units = Substring(iter.get(), end.get());
-  *aUnitType = GetUnitTypeForString(units);
-  return IsValidUnitType(*aUnitType);
+  *aUnitType = SVGLength::GetUnitTypeForString(units);
+  return *aUnitType != SVGLength_Binding::SVG_LENGTHTYPE_UNKNOWN;
 }
 
 static float FixAxisLength(float aLength) {
@@ -148,31 +110,127 @@ static float FixAxisLength(float aLength) {
   return aLength;
 }
 
-SVGElementMetrics::SVGElementMetrics(SVGElement* aSVGElement,
-                                     SVGViewportElement* aCtx)
-    : mSVGElement(aSVGElement), mCtx(aCtx) {}
-
-float SVGElementMetrics::GetEmLength() const {
-  return SVGContentUtils::GetFontSize(mSVGElement);
+GeckoFontMetrics UserSpaceMetrics::DefaultFontMetrics() {
+  return {StyleLength::FromPixels(16.0f),
+          StyleLength::FromPixels(-1),
+          StyleLength::FromPixels(-1),
+          StyleLength::FromPixels(-1),
+          StyleLength::FromPixels(-1),
+          StyleLength::FromPixels(16.0f),
+          0.0f,
+          0.0f};
 }
 
-float SVGElementMetrics::GetExLength() const {
-  return SVGContentUtils::GetFontXHeight(mSVGElement);
+GeckoFontMetrics UserSpaceMetrics::GetFontMetrics(const Element* aElement) {
+  GeckoFontMetrics metrics = DefaultFontMetrics();
+  auto* presContext =
+      aElement ? nsContentUtils::GetContextForContent(aElement) : nullptr;
+  if (presContext) {
+    SVGGeometryProperty::DoForComputedStyle(
+        aElement, [&](const ComputedStyle* style) {
+          metrics = Gecko_GetFontMetrics(
+              presContext, WritingMode(style).IsVertical(), style->StyleFont(),
+              style->StyleFont()->mFont.size,
+              /* aUseUserFontSet = */ true,
+              /* aRetrieveMathScales */ false);
+        });
+  }
+  return metrics;
+}
+
+WritingMode UserSpaceMetrics::GetWritingMode(const Element* aElement) {
+  WritingMode writingMode;
+  SVGGeometryProperty::DoForComputedStyle(
+      aElement,
+      [&](const ComputedStyle* style) { writingMode = WritingMode(style); });
+  return writingMode;
+}
+
+float UserSpaceMetrics::GetExLength(Type aType) const {
+  return GetFontMetricsForType(aType).mXSize.ToCSSPixels();
+}
+
+float UserSpaceMetrics::GetChSize(Type aType) const {
+  auto metrics = GetFontMetricsForType(aType);
+  if (metrics.mChSize.ToCSSPixels() > 0.0) {
+    return metrics.mChSize.ToCSSPixels();
+  }
+  auto emLength = GetEmLength(aType);
+  WritingMode writingMode = GetWritingModeForType(aType);
+  return writingMode.IsVertical() && !writingMode.IsSideways()
+             ? emLength
+             : emLength * 0.5f;
+}
+
+float UserSpaceMetrics::GetIcWidth(Type aType) const {
+  auto metrics = GetFontMetricsForType(aType);
+  if (metrics.mIcWidth.ToCSSPixels() > 0.0) {
+    return metrics.mIcWidth.ToCSSPixels();
+  }
+  return GetEmLength(aType);
+}
+
+float UserSpaceMetrics::GetCapHeight(Type aType) const {
+  auto metrics = GetFontMetricsForType(aType);
+  if (metrics.mCapHeight.ToCSSPixels() > 0.0) {
+    return metrics.mCapHeight.ToCSSPixels();
+  }
+  return GetEmLength(aType);
+}
+
+CSSSize UserSpaceMetrics::GetCSSViewportSizeFromContext(
+    const nsPresContext* aContext) {
+  return CSSPixel::FromAppUnits(aContext->GetSizeForViewportUnits());
+}
+
+SVGElementMetrics::SVGElementMetrics(const SVGElement* aSVGElement,
+                                     const SVGViewportElement* aCtx)
+    : mSVGElement(aSVGElement), mCtx(aCtx) {}
+
+const Element* SVGElementMetrics::GetElementForType(Type aType) const {
+  switch (aType) {
+    case Type::This:
+      return mSVGElement;
+    case Type::Root:
+      return mSVGElement ? mSVGElement->OwnerDoc()->GetRootElement() : nullptr;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Was a new value added to the enumeration?");
+      return nullptr;
+  }
+}
+
+GeckoFontMetrics SVGElementMetrics::GetFontMetricsForType(Type aType) const {
+  return GetFontMetrics(GetElementForType(aType));
+}
+
+WritingMode SVGElementMetrics::GetWritingModeForType(Type aType) const {
+  return GetWritingMode(GetElementForType(aType));
 }
 
 float SVGElementMetrics::GetAxisLength(uint8_t aCtxType) const {
   if (!EnsureCtx()) {
-    return 1;
+    return 1.0f;
   }
 
   return FixAxisLength(mCtx->GetLength(aCtxType));
+}
+
+CSSSize SVGElementMetrics::GetCSSViewportSize() const {
+  if (!mSVGElement) {
+    return {0.0f, 0.0f};
+  }
+  nsPresContext* context = nsContentUtils::GetContextForContent(mSVGElement);
+  if (!context) {
+    return {0.0f, 0.0f};
+  }
+  return GetCSSViewportSizeFromContext(context);
 }
 
 bool SVGElementMetrics::EnsureCtx() const {
   if (!mCtx && mSVGElement) {
     mCtx = mSVGElement->GetCtx();
     if (!mCtx && mSVGElement->IsSVGElement(nsGkAtoms::svg)) {
-      auto* e = static_cast<SVGViewportElement*>(mSVGElement);
+      const auto* e = static_cast<const SVGViewportElement*>(mSVGElement);
 
       if (!e->IsInner()) {
         // mSVGElement must be the outer svg element
@@ -184,18 +242,61 @@ bool SVGElementMetrics::EnsureCtx() const {
 }
 
 NonSVGFrameUserSpaceMetrics::NonSVGFrameUserSpaceMetrics(nsIFrame* aFrame)
-    : mFrame(aFrame) {}
-
-float NonSVGFrameUserSpaceMetrics::GetEmLength() const {
-  return SVGContentUtils::GetFontSize(mFrame);
+    : mFrame(aFrame) {
+  MOZ_ASSERT(mFrame, "Need a frame");
 }
 
-float NonSVGFrameUserSpaceMetrics::GetExLength() const {
-  return SVGContentUtils::GetFontXHeight(mFrame);
+float NonSVGFrameUserSpaceMetrics::GetEmLength(Type aType) const {
+  switch (aType) {
+    case Type::This:
+      return SVGContentUtils::GetFontSize(mFrame);
+    case Type::Root:
+      return SVGContentUtils::GetFontSize(
+          mFrame->PresContext()->Document()->GetRootElement());
+    default:
+      MOZ_ASSERT_UNREACHABLE("Was a new value added to the enumeration?");
+      return 1.0f;
+  }
+}
+
+GeckoFontMetrics NonSVGFrameUserSpaceMetrics::GetFontMetricsForType(
+    Type aType) const {
+  switch (aType) {
+    case Type::This:
+      return Gecko_GetFontMetrics(
+          mFrame->PresContext(), mFrame->GetWritingMode().IsVertical(),
+          mFrame->StyleFont(), mFrame->StyleFont()->mFont.size,
+          /* aUseUserFontSet = */ true,
+          /* aRetrieveMathScales */ false);
+    case Type::Root:
+      return GetFontMetrics(
+          mFrame->PresContext()->Document()->GetRootElement());
+    default:
+      MOZ_ASSERT_UNREACHABLE("Was a new value added to the enumeration?");
+      return DefaultFontMetrics();
+  }
+}
+
+WritingMode NonSVGFrameUserSpaceMetrics::GetWritingModeForType(
+    Type aType) const {
+  switch (aType) {
+    case Type::This:
+      return mFrame->GetWritingMode();
+    case Type::Root:
+      return GetWritingMode(
+          mFrame->PresContext()->Document()->GetRootElement());
+    default:
+      MOZ_ASSERT_UNREACHABLE("Was a new value added to the enumeration?");
+      return WritingMode();
+  }
 }
 
 gfx::Size NonSVGFrameUserSpaceMetrics::GetSize() const {
   return SVGIntegrationUtils::GetSVGCoordContextForNonSVGFrame(mFrame);
+}
+
+CSSSize NonSVGFrameUserSpaceMetrics::GetCSSViewportSize() const {
+  return GetCSSViewportSizeFromContext(mFrame->PresContext());
 }
 
 float UserSpaceMetricsWithSize::GetAxisLength(uint8_t aCtxType) const {
@@ -220,73 +321,34 @@ float UserSpaceMetricsWithSize::GetAxisLength(uint8_t aCtxType) const {
   return FixAxisLength(length);
 }
 
-float SVGAnimatedLength::GetPixelsPerUnit(SVGElement* aSVGElement,
+float SVGAnimatedLength::GetPixelsPerUnit(const SVGElement* aSVGElement,
                                           uint8_t aUnitType) const {
-  return GetPixelsPerUnit(SVGElementMetrics(aSVGElement), aUnitType);
+  return SVGLength::GetPixelsPerUnit(SVGElementMetrics(aSVGElement), aUnitType,
+                                     mCtxType);
 }
 
-float SVGAnimatedLength::GetPixelsPerUnit(SVGViewportElement* aCtx,
+float SVGAnimatedLength::GetPixelsPerUnit(const SVGViewportElement* aCtx,
                                           uint8_t aUnitType) const {
-  return GetPixelsPerUnit(SVGElementMetrics(aCtx, aCtx), aUnitType);
+  return SVGLength::GetPixelsPerUnit(SVGElementMetrics(aCtx, aCtx), aUnitType,
+                                     mCtxType);
 }
 
 float SVGAnimatedLength::GetPixelsPerUnit(nsIFrame* aFrame,
                                           uint8_t aUnitType) const {
-  nsIContent* content = aFrame->GetContent();
+  const nsIContent* content = aFrame->GetContent();
+  MOZ_ASSERT(!content->IsText(), "Not expecting text content");
   if (content->IsSVGElement()) {
-    return GetPixelsPerUnit(
-        SVGElementMetrics(static_cast<SVGElement*>(content)), aUnitType);
+    return SVGLength::GetPixelsPerUnit(
+        SVGElementMetrics(static_cast<const SVGElement*>(content)), aUnitType,
+        mCtxType);
   }
-  return GetPixelsPerUnit(NonSVGFrameUserSpaceMetrics(aFrame), aUnitType);
-}
-
-// See https://www.w3.org/TR/css-values-3/#absolute-lengths
-static const float DPI = 96.0f;
-
-bool UserSpaceMetrics::ResolveAbsoluteUnit(uint8_t aUnitType, float& aRes) {
-  switch (aUnitType) {
-    case SVGLength_Binding::SVG_LENGTHTYPE_NUMBER:
-    case SVGLength_Binding::SVG_LENGTHTYPE_PX:
-      aRes = 1;
-      break;
-    case SVGLength_Binding::SVG_LENGTHTYPE_MM:
-      aRes = DPI / MM_PER_INCH_FLOAT;
-      break;
-    case SVGLength_Binding::SVG_LENGTHTYPE_CM:
-      aRes = 10.0f * DPI / MM_PER_INCH_FLOAT;
-      break;
-    case SVGLength_Binding::SVG_LENGTHTYPE_IN:
-      aRes = DPI;
-      break;
-    case SVGLength_Binding::SVG_LENGTHTYPE_PT:
-      aRes = DPI / POINTS_PER_INCH_FLOAT;
-      break;
-    case SVGLength_Binding::SVG_LENGTHTYPE_PC:
-      aRes = 12.0f * DPI / POINTS_PER_INCH_FLOAT;
-      break;
-    default:
-      return false;
-  }
-  return true;
+  return SVGLength::GetPixelsPerUnit(NonSVGFrameUserSpaceMetrics(aFrame),
+                                     aUnitType, mCtxType);
 }
 
 float SVGAnimatedLength::GetPixelsPerUnit(const UserSpaceMetrics& aMetrics,
                                           uint8_t aUnitType) const {
-  float res;
-  if (UserSpaceMetrics::ResolveAbsoluteUnit(aUnitType, res)) {
-    return res;
-  }
-  switch (aUnitType) {
-    case SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE:
-      return aMetrics.GetAxisLength(mCtxType) / 100.0f;
-    case SVGLength_Binding::SVG_LENGTHTYPE_EMS:
-      return aMetrics.GetEmLength();
-    case SVGLength_Binding::SVG_LENGTHTYPE_EXS:
-      return aMetrics.GetExLength();
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unknown unit type");
-      return 0;
-  }
+  return SVGLength::GetPixelsPerUnit(aMetrics, aUnitType, mCtxType);
 }
 
 void SVGAnimatedLength::SetBaseValueInSpecifiedUnits(float aValue,
@@ -307,20 +369,29 @@ void SVGAnimatedLength::SetBaseValueInSpecifiedUnits(float aValue,
 
 nsresult SVGAnimatedLength::ConvertToSpecifiedUnits(uint16_t unitType,
                                                     SVGElement* aSVGElement) {
-  if (!IsValidUnitType(unitType)) return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+  if (!SVGLength::IsValidUnitType(unitType)) {
+    return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+  }
 
   if (mIsBaseSet && mSpecifiedUnitType == uint8_t(unitType)) return NS_OK;
 
-  float pixelsPerUnit = GetPixelsPerUnit(aSVGElement, unitType);
-  if (pixelsPerUnit == 0.0f) {
-    return NS_ERROR_ILLEGAL_VALUE;
+  float valueInSpecifiedUnits;
+
+  if (SVGLength::IsAbsoluteUnit(unitType) &&
+      SVGLength::IsAbsoluteUnit(mSpecifiedUnitType)) {
+    valueInSpecifiedUnits = mBaseVal * SVGLength::GetAbsUnitsPerAbsUnit(
+                                           unitType, mSpecifiedUnitType);
+  } else {
+    float pixelsPerUnit = GetPixelsPerUnit(aSVGElement, unitType);
+    if (pixelsPerUnit == 0.0f) {
+      return NS_ERROR_ILLEGAL_VALUE;
+    }
+    float valueInPixels =
+        mBaseVal * GetPixelsPerUnit(aSVGElement, mSpecifiedUnitType);
+    valueInSpecifiedUnits = valueInPixels / pixelsPerUnit;
   }
 
-  float valueInUserUnits =
-      mBaseVal * GetPixelsPerUnit(aSVGElement, mSpecifiedUnitType);
-  float valueInSpecifiedUnits = valueInUserUnits / pixelsPerUnit;
-
-  if (!IsFinite(valueInSpecifiedUnits)) {
+  if (!std::isfinite(valueInSpecifiedUnits)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -343,7 +414,9 @@ nsresult SVGAnimatedLength::NewValueSpecifiedUnits(uint16_t aUnitType,
                                                    SVGElement* aSVGElement) {
   NS_ENSURE_FINITE(aValueInSpecifiedUnits, NS_ERROR_ILLEGAL_VALUE);
 
-  if (!IsValidUnitType(aUnitType)) return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+  if (!SVGLength::IsValidUnitType(aUnitType)) {
+    return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+  }
 
   if (mIsBaseSet && mBaseVal == aValueInSpecifiedUnits &&
       mSpecifiedUnitType == uint8_t(aUnitType)) {
@@ -416,7 +489,7 @@ nsresult SVGAnimatedLength::SetBaseValue(float aValue, SVGElement* aSVGElement,
   }
 
   float valueInSpecifiedUnits = aValue / pixelsPerUnit;
-  if (!IsFinite(valueInSpecifiedUnits)) {
+  if (!std::isfinite(valueInSpecifiedUnits)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -439,7 +512,7 @@ nsresult SVGAnimatedLength::SetAnimValue(float aValue,
   float valueInSpecifiedUnits =
       aValue / GetPixelsPerUnit(aSVGElement, mSpecifiedUnitType);
 
-  if (IsFinite(valueInSpecifiedUnits)) {
+  if (std::isfinite(valueInSpecifiedUnits)) {
     SetAnimValueInSpecifiedUnits(valueInSpecifiedUnits, aSVGElement);
     return NS_OK;
   }
@@ -479,10 +552,7 @@ nsresult SVGAnimatedLength::SMILLength::ValueFromString(
   SMILValue val(SMILFloatType::Singleton());
   val.mU.mDouble = value * mVal->GetPixelsPerUnit(mSVGElement, unitType);
   aValue = val;
-  aPreventCachingOfSandwich =
-      (unitType == SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE ||
-       unitType == SVGLength_Binding::SVG_LENGTHTYPE_EMS ||
-       unitType == SVGLength_Binding::SVG_LENGTHTYPE_EXS);
+  aPreventCachingOfSandwich = !SVGLength::IsAbsoluteUnit(unitType);
 
   return NS_OK;
 }

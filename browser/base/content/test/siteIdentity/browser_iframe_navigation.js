@@ -12,11 +12,18 @@ const ROOT_URI = getRootDirectory(gTestPath).replace(
   "https://example.com"
 );
 const SECURE_TEST_URI = ROOT_URI + "iframe_navigation.html";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const INSECURE_TEST_URI = SECURE_TEST_URI.replace("https://", "http://");
+
+const NOT_SECURE_LABEL = Services.prefs.getBoolPref(
+  "security.insecure_connection_text.enabled"
+)
+  ? "notSecure notSecureText"
+  : "notSecure";
 
 // From a secure URI, navigate the iframe to about:blank (should still be
 // secure).
-add_task(async function() {
+add_task(async function () {
   let uri = SECURE_TEST_URI + "#blank";
   await BrowserTestUtils.withNewTab(uri, async browser => {
     let identityMode = window.document.getElementById("identity-box").className;
@@ -29,15 +36,15 @@ add_task(async function() {
       });
     });
 
-    let newIdentityMode = window.document.getElementById("identity-box")
-      .className;
+    let newIdentityMode =
+      window.document.getElementById("identity-box").className;
     is(newIdentityMode, "verifiedDomain", "identity should be secure after");
   });
 });
 
 // From a secure URI, navigate the iframe to an insecure URI (http://...)
 // (mixed active content should be blocked, should still be secure).
-add_task(async function() {
+add_task(async function () {
   let uri = SECURE_TEST_URI + "#insecure";
   await BrowserTestUtils.withNewTab(uri, async browser => {
     let identityMode = window.document.getElementById("identity-box").className;
@@ -50,8 +57,8 @@ add_task(async function() {
       });
     });
 
-    let newIdentityMode = window.document.getElementById("identity-box")
-      .classList;
+    let newIdentityMode =
+      window.document.getElementById("identity-box").classList;
     ok(
       newIdentityMode.contains("mixedActiveBlocked"),
       "identity should be blocked mixed active content after"
@@ -66,11 +73,15 @@ add_task(async function() {
 
 // From an insecure URI (http://..), navigate the iframe to about:blank (should
 // still be insecure).
-add_task(async function() {
+add_task(async function () {
   let uri = INSECURE_TEST_URI + "#blank";
   await BrowserTestUtils.withNewTab(uri, async browser => {
     let identityMode = window.document.getElementById("identity-box").className;
-    is(identityMode, "notSecure", "identity should be 'not secure' before");
+    is(
+      identityMode,
+      NOT_SECURE_LABEL,
+      "identity should be 'not secure' before"
+    );
 
     await SpecialPowers.spawn(browser, [], async () => {
       content.postMessage("", "*"); // This kicks off the navigation.
@@ -79,19 +90,27 @@ add_task(async function() {
       });
     });
 
-    let newIdentityMode = window.document.getElementById("identity-box")
-      .className;
-    is(newIdentityMode, "notSecure", "identity should be 'not secure' after");
+    let newIdentityMode =
+      window.document.getElementById("identity-box").className;
+    is(
+      newIdentityMode,
+      NOT_SECURE_LABEL,
+      "identity should be 'not secure' after"
+    );
   });
 });
 
 // From an insecure URI (http://..), navigate the iframe to a secure URI
 // (https://...) (should still be insecure).
-add_task(async function() {
+add_task(async function () {
   let uri = INSECURE_TEST_URI + "#secure";
   await BrowserTestUtils.withNewTab(uri, async browser => {
     let identityMode = window.document.getElementById("identity-box").className;
-    is(identityMode, "notSecure", "identity should be 'not secure' before");
+    is(
+      identityMode,
+      NOT_SECURE_LABEL,
+      "identity should be 'not secure' before"
+    );
 
     await SpecialPowers.spawn(browser, [], async () => {
       content.postMessage("", "*"); // This kicks off the navigation.
@@ -100,8 +119,12 @@ add_task(async function() {
       });
     });
 
-    let newIdentityMode = window.document.getElementById("identity-box")
-      .className;
-    is(newIdentityMode, "notSecure", "identity should be 'not secure' after");
+    let newIdentityMode =
+      window.document.getElementById("identity-box").className;
+    is(
+      newIdentityMode,
+      NOT_SECURE_LABEL,
+      "identity should be 'not secure' after"
+    );
   });
 });

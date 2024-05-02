@@ -6,28 +6,25 @@
 
 "use strict";
 
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
-const { TelemetrySend } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySend.jsm"
+const { TelemetrySend } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetrySend.sys.mjs"
 );
-const { TelemetryStorage } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryStorage.jsm"
+const { TelemetryStorage } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryStorage.sys.mjs"
 );
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryHealthPing",
-  "resource://gre/modules/HealthPing.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryHealthPing: "resource://gre/modules/HealthPing.sys.mjs",
+});
 
 const MS_IN_A_MINUTE = 60 * 1000;
 
@@ -40,7 +37,7 @@ function countPingTypes(pings) {
 }
 
 function setPingLastModified(id, timestamp) {
-  const path = OS.Path.join(TelemetryStorage.pingDirectoryPath, id);
+  const path = PathUtils.join(TelemetryStorage.pingDirectoryPath, id);
   return IOUtils.setModificationTime(path, timestamp);
 }
 
@@ -83,10 +80,10 @@ function fakePingId(type, number) {
   return id;
 }
 
-var checkPingsSaved = async function(pingIds) {
+var checkPingsSaved = async function (pingIds) {
   let allFound = true;
   for (let id of pingIds) {
-    const path = OS.Path.join(TelemetryStorage.pingDirectoryPath, id);
+    const path = PathUtils.join(TelemetryStorage.pingDirectoryPath, id);
     let exists = false;
     try {
       exists = await IOUtils.exists(path);
@@ -1034,7 +1031,7 @@ add_task(async function test_pref_observer() {
   Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, true);
 
   function waitAnnotateCrashReport(expectedValue, trigger) {
-    return new Promise(function(resolve, reject) {
+    return new Promise(function (resolve, reject) {
       let keys = new Set(["TelemetryClientId", "TelemetryServerURL"]);
 
       let crs = {
@@ -1074,7 +1071,7 @@ add_task(async function test_pref_observer() {
         "@mozilla.org/toolkit/crash-reporter;1",
         crs
       );
-      registerCleanupFunction(function() {
+      registerCleanupFunction(function () {
         MockRegistrar.unregister(gMockCrs);
       });
 

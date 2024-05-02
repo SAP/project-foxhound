@@ -31,8 +31,7 @@
 #include "nsTArrayForwardDeclare.h"
 #include "xpcObjectHelper.h"  // for xpcObjectHelper
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CallbackObject;
 class Promise;
@@ -118,7 +117,7 @@ inline bool ToJSValue(JSContext* aCx, double aArgument,
   // Make sure we're called in a compartment
   MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
 
-  aValue.setNumber(aArgument);
+  aValue.set(JS_NumberValue(aArgument));
   return true;
 }
 
@@ -275,11 +274,16 @@ template <typename T>
   return ToJSValue(aCx, *aArgument.get(), aValue);
 }
 
+template <typename T>
+[[nodiscard]] bool ToJSValue(JSContext* aCx, const OwningNonNull<T>& aArgument,
+                             JS::MutableHandle<JS::Value> aValue) {
+  return ToJSValue(aCx, *aArgument.get(), aValue);
+}
+
 // Accept WebIDL dictionaries
 template <class T>
-[[nodiscard]] std::enable_if_t<std::is_base_of<DictionaryBase, T>::value, bool>
-ToJSValue(JSContext* aCx, const T& aArgument,
-          JS::MutableHandle<JS::Value> aValue) {
+[[nodiscard]] std::enable_if_t<is_dom_dictionary<T>, bool> ToJSValue(
+    JSContext* aCx, const T& aArgument, JS::MutableHandle<JS::Value> aValue) {
   return aArgument.ToObjectInternal(aCx, aValue);
 }
 
@@ -335,10 +339,8 @@ ToJSValue(JSContext* aCx, const T& aArgument,
 
 // Accept owning WebIDL unions.
 template <typename T>
-[[nodiscard]] std::enable_if_t<std::is_base_of<AllOwningUnionBase, T>::value,
-                               bool>
-ToJSValue(JSContext* aCx, const T& aArgument,
-          JS::MutableHandle<JS::Value> aValue) {
+[[nodiscard]] std::enable_if_t<is_dom_owning_union<T>, bool> ToJSValue(
+    JSContext* aCx, const T& aArgument, JS::MutableHandle<JS::Value> aValue) {
   JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
   return aArgument.ToJSVal(aCx, global, aValue);
 }
@@ -401,12 +403,42 @@ template <typename T>
   return true;
 }
 
+// Accept tuple of other things we accept. The result will be a JS array object.
+template <typename... Elements>
+[[nodiscard]] bool ToJSValue(JSContext* aCx,
+                             const std::tuple<Elements...>& aArguments,
+                             JS::MutableHandle<JS::Value> aValue) {
+  // Make sure we're called in a compartment
+  MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
+
+  JS::RootedVector<JS::Value> v(aCx);
+  if (!v.resize(sizeof...(Elements))) {
+    return false;
+  }
+  bool ok = true;
+  size_t i = 0;
+  auto Callable = [aCx, &ok, &v, &i](auto& aElem) {
+    ok = ok && ToJSValue(aCx, aElem, v[i++]);
+  };
+  std::apply([Callable](auto&&... args) { (Callable(args), ...); }, aArguments);
+
+  if (!ok) {
+    return false;
+  }
+  JSObject* arrayObj = JS::NewArrayObject(aCx, v);
+  if (!arrayObj) {
+    return false;
+  }
+  aValue.setObject(*arrayObj);
+  return true;
+}
+
 // Accept records of other things we accept. N.B. This assumes that
 // keys are either UTF-8 or UTF-16-ish. See Bug 1706058.
 template <typename K, typename V>
 [[nodiscard]] bool ToJSValue(JSContext* aCx, const Record<K, V>& aArgument,
                              JS::MutableHandle<JS::Value> aValue) {
-  JS::RootedObject recordObj(aCx, JS_NewPlainObject(aCx));
+  JS::Rooted<JSObject*> recordObj(aCx, JS_NewPlainObject(aCx));
   if (!recordObj) {
     return false;
   }
@@ -446,7 +478,6 @@ template <typename T>
   return ToJSValue(aCx, aArgument.Value(), aValue);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_ToJSValue_h */

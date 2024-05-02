@@ -19,10 +19,11 @@ job-defaults:
     treeherder:
         kind: build
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
-        max-run-time: 36000
-        docker-image: {in-tree: debian11-amd64-build}
+        max-run-time: 10800
+        docker-image: {in-tree: debian12-amd64-build}
+    use-system-python: false
 
 jobs:
     linux64-shell-haz/debug:
@@ -50,6 +51,7 @@ jobs:
                 - linux64-rust
                 - linux64-cbindgen
                 - linux64-node
+                - linux64-pkgconf
                 - sysroot-x86_64-linux-gnu
 
     linux64-haz/debug:
@@ -74,6 +76,7 @@ jobs:
                 - linux64-cbindgen
                 - linux64-nasm
                 - linux64-node
+                - linux64-pkgconf
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
         optimization:

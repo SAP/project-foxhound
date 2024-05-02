@@ -23,7 +23,8 @@ void PrepareJit(js::jit::MacroAssembler& masm) {
 #if defined(JS_CODEGEN_ARM)
   save.add(js::jit::d15);
 #endif
-#if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   save.add(js::jit::ra);
 #elif defined(JS_USE_LINK_REGISTER)
   save.add(js::jit::lr);
@@ -40,7 +41,8 @@ bool ExecuteJit(JSContext* cx, js::jit::MacroAssembler& masm) {
 #if defined(JS_CODEGEN_ARM)
   save.add(js::jit::d15);
 #endif
-#if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   save.add(js::jit::ra);
 #elif defined(JS_USE_LINK_REGISTER)
   save.add(js::jit::lr);
@@ -61,14 +63,13 @@ bool ExecuteJit(JSContext* cx, js::jit::MacroAssembler& masm) {
     return false;
   }
 
-  Linker linker(masm);
-  JitCode* code = linker.newCode(cx, CodeKind::Other);
-  if (!code) {
-    return false;
-  }
-  if (!ExecutableAllocator::makeExecutableAndFlushICache(
-          FlushICacheSpec::LocalThreadOnly, code->raw(), code->bufferSize())) {
-    return false;
+  JitCode* code = nullptr;
+  {
+    Linker linker(masm);
+    code = linker.newCode(cx, CodeKind::Other);
+    if (!code) {
+      return false;
+    }
   }
 
   JS::AutoSuppressGCAnalysis suppress;

@@ -1,8 +1,8 @@
 const BEHAVIOR_ACCEPT = Ci.nsICookieService.BEHAVIOR_ACCEPT;
 const BEHAVIOR_REJECT_TRACKER = Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
 
-let { UrlClassifierTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlClassifierTestUtils.jsm"
+let { UrlClassifierTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
 );
 
 const TOP_DOMAIN = "http://mochi.test:8888/";
@@ -28,7 +28,7 @@ const SW_REL_SW_SCRIPT = "empty.js";
  * tracking protection (but is not yet).  Once the SW is installed, activate TP
  * and create a tab that embeds that tracking-site in an iframe.
  */
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["dom.serviceWorkers.enabled", true],
@@ -50,7 +50,7 @@ add_task(async function() {
   await SpecialPowers.spawn(
     topTab.linkedBrowser,
     [{ sw: SW_REL_SW_SCRIPT }],
-    async function({ sw }) {
+    async function ({ sw }) {
       // Waive the xray to use the content utils.js script functions.
       await content.wrappedJSObject.registerAndWaitForActive(sw);
     }
@@ -72,17 +72,16 @@ add_task(async function() {
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(
     topTab.linkedBrowser
   );
-  BrowserTestUtils.loadURI(topTab.linkedBrowser, TOP_EMPTY_PAGE);
+  BrowserTestUtils.startLoadingURIString(topTab.linkedBrowser, TOP_EMPTY_PAGE);
   await browserLoadedPromise;
 
   // Create Iframe in the top-level page and verify its state.
   let { controlled } = await SpecialPowers.spawn(
     topTab.linkedBrowser,
     [{ url: SW_IFRAME_PAGE }],
-    async function({ url }) {
-      const payload = await content.wrappedJSObject.createIframeAndWaitForMessage(
-        url
-      );
+    async function ({ url }) {
+      const payload =
+        await content.wrappedJSObject.createIframeAndWaitForMessage(url);
       return payload;
     }
   );
@@ -92,10 +91,13 @@ add_task(async function() {
   // ## Cleanup
   info("Loading the SW unregister page: " + SW_REGISTER_PAGE);
   browserLoadedPromise = BrowserTestUtils.browserLoaded(topTab.linkedBrowser);
-  BrowserTestUtils.loadURI(topTab.linkedBrowser, SW_REGISTER_PAGE);
+  BrowserTestUtils.startLoadingURIString(
+    topTab.linkedBrowser,
+    SW_REGISTER_PAGE
+  );
   await browserLoadedPromise;
 
-  await SpecialPowers.spawn(topTab.linkedBrowser, [], async function() {
+  await SpecialPowers.spawn(topTab.linkedBrowser, [], async function () {
     await content.wrappedJSObject.unregisterAll();
   });
 

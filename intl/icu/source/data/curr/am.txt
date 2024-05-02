@@ -769,7 +769,6 @@ am{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         TRY{"TL"}
     }
     CurrencyPlurals{
@@ -1104,6 +1103,10 @@ am{
         LRD{
             one{"የላይቤሪያ ዶላር"}
             other{"የላይቤሪያ ዶላር"}
+        }
+        LSL{
+            one{"የሌሶቶ ሎቲ"}
+            other{"የሌሶቶ ሎቲ"}
         }
         LTL{
             one{"ሊቱዌንያን ሊታስ"}

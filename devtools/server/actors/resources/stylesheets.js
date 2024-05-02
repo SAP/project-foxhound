@@ -6,20 +6,20 @@
 
 const {
   TYPES: { STYLESHEET },
-} = require("devtools/server/actors/resources/index");
+} = require("resource://devtools/server/actors/resources/index.js");
 
 loader.lazyRequireGetter(
   this,
   "CssLogic",
-  "devtools/shared/inspector/css-logic"
+  "resource://devtools/shared/inspector/css-logic.js"
 );
 
 class StyleSheetWatcher {
   constructor() {
-    this._onApplicableStylesheetAdded = this._onApplicableStylesheetAdded.bind(
-      this
-    );
+    this._onApplicableStylesheetAdded =
+      this._onApplicableStylesheetAdded.bind(this);
     this._onStylesheetUpdated = this._onStylesheetUpdated.bind(this);
+    this._onStylesheetRemoved = this._onStylesheetRemoved.bind(this);
   }
 
   /**
@@ -32,12 +32,13 @@ class StyleSheetWatcher {
    *        - onAvailable: mandatory function
    *          This will be called for each resource.
    */
-  async watch(targetActor, { onAvailable, onUpdated }) {
+  async watch(targetActor, { onAvailable, onUpdated, onDestroyed }) {
     this._targetActor = targetActor;
     this._onAvailable = onAvailable;
     this._onUpdated = onUpdated;
+    this._onDestroyed = onDestroyed;
 
-    this._styleSheetsManager = targetActor.getStyleSheetManager();
+    this._styleSheetsManager = targetActor.getStyleSheetsManager();
 
     // Add event listener for new additions and updates
     this._styleSheetsManager.on(
@@ -47,6 +48,10 @@ class StyleSheetWatcher {
     this._styleSheetsManager.on(
       "stylesheet-updated",
       this._onStylesheetUpdated
+    );
+    this._styleSheetsManager.on(
+      "applicable-stylesheet-removed",
+      this._onStylesheetRemoved
     );
 
     // startWatching will emit applicable-stylesheet-added for already existing stylesheet
@@ -61,23 +66,30 @@ class StyleSheetWatcher {
     this._notifyResourceUpdated(resourceId, updateKind, updates);
   }
 
+  _onStylesheetRemoved({ resourceId }) {
+    return this._notifyResourcesDestroyed(resourceId);
+  }
+
   async _toResource(
     styleSheet,
     { isCreatedByDevTools = false, fileName = null, resourceId } = {}
   ) {
+    const { atRules, ruleCount } =
+      this._styleSheetsManager.getStyleSheetRuleCountAndAtRules(styleSheet);
+
     const resource = {
       resourceId,
       resourceType: STYLESHEET,
       disabled: styleSheet.disabled,
+      constructed: styleSheet.constructed,
       fileName,
       href: styleSheet.href,
       isNew: isCreatedByDevTools,
-      mediaRules: await this._styleSheetsManager._getMediaRules(styleSheet),
+      atRules,
       nodeHref: this._styleSheetsManager._getNodeHref(styleSheet),
-      ruleCount: styleSheet.cssRules.length,
-      sourceMapBaseURL: this._styleSheetsManager._getSourcemapBaseURL(
-        styleSheet
-      ),
+      ruleCount,
+      sourceMapBaseURL:
+        this._styleSheetsManager._getSourcemapBaseURL(styleSheet),
       sourceMapURL: styleSheet.sourceMapURL,
       styleSheetIndex: this._styleSheetsManager._getStyleSheetIndex(styleSheet),
       system: CssLogic.isAgentStylesheet(styleSheet),
@@ -110,12 +122,23 @@ class StyleSheetWatcher {
   ) {
     this._onUpdated([
       {
+        browsingContextID: this._targetActor.browsingContextID,
+        innerWindowId: this._targetActor.innerWindowId,
         resourceType: STYLESHEET,
         resourceId,
         updateType,
         resourceUpdates,
         nestedResourceUpdates,
         event,
+      },
+    ]);
+  }
+
+  _notifyResourcesDestroyed(resourceId) {
+    this._onDestroyed([
+      {
+        resourceType: STYLESHEET,
+        resourceId,
       },
     ]);
   }
@@ -128,6 +151,10 @@ class StyleSheetWatcher {
     this._styleSheetsManager.off(
       "stylesheet-updated",
       this._onStylesheetUpdated
+    );
+    this._styleSheetsManager.off(
+      "applicable-stylesheet-removed",
+      this._onStylesheetRemoved
     );
   }
 }

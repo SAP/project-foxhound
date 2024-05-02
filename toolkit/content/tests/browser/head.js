@@ -1,9 +1,5 @@
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
 /**
  * Set the findbar value to the given text, start a search for that text, and
  * return a promise that resolves when the find has completed.
@@ -30,8 +26,8 @@ async function promiseFindFinished(gBrowser, searchText, highlightOn = false) {
       // forces foundOrTimeout wait for the second "FOUND" message before
       // resolving the promise.
       let waitMore = highlightOn;
-      let findTimeout = setTimeout(() => foundOrTimedout(null), 2000);
-      let foundOrTimedout = function(aData) {
+      let findTimeout = setTimeout(() => foundOrTimedout(null), 5000);
+      let foundOrTimedout = function (aData) {
         if (aData !== null && waitMore) {
           waitMore = false;
           return;
@@ -40,7 +36,7 @@ async function promiseFindFinished(gBrowser, searchText, highlightOn = false) {
           info("Result listener not called, timeout reached.");
         }
         clearTimeout(findTimeout);
-        findbar.browser.finder.removeResultListener(resultListener);
+        findbar.browser?.finder.removeResultListener(resultListener);
         resolve();
       };
 
@@ -66,13 +62,21 @@ function closeFindbarAndWait(findbar) {
       resolve();
       return;
     }
-    findbar.addEventListener("transitionend", function cont(aEvent) {
-      if (aEvent.propertyName != "visibility") {
-        return;
-      }
-      findbar.removeEventListener("transitionend", cont);
-      resolve();
-    });
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      BrowserTestUtils.waitForMutationCondition(
+        findbar,
+        { attributes: true, attributeFilter: ["hidden"] },
+        () => findbar.hidden
+      ).then(resolve);
+    } else {
+      findbar.addEventListener("transitionend", function cont(aEvent) {
+        if (aEvent.propertyName != "visibility") {
+          return;
+        }
+        findbar.removeEventListener("transitionend", cont);
+        resolve();
+      });
+    }
     let close = findbar.getElement("find-closebutton");
     close.doCommand();
   });
@@ -170,153 +174,13 @@ function leave_icon(icon) {
 }
 
 /**
- * Helper class for testing datetime input picker widget
- */
-class DateTimeTestHelper {
-  constructor() {
-    this.panel = gBrowser._getAndMaybeCreateDateTimePickerPanel();
-    this.panel.setAttribute("animate", false);
-    this.tab = null;
-    this.frame = null;
-  }
-
-  /**
-   * Opens a new tab with the URL of the test page, and make sure the picker is
-   * ready for testing.
-   *
-   * @param  {String} pageUrl
-   * @param  {bool} inFrame true if input is in the first child frame
-   */
-  async openPicker(pageUrl, inFrame) {
-    this.tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
-    let bc = gBrowser.selectedBrowser;
-    if (inFrame) {
-      await SpecialPowers.spawn(bc, [], async function() {
-        const iframe = content.document.querySelector("iframe");
-        // Ensure the iframe's position is correct before doing any
-        // other operations
-        iframe.getBoundingClientRect();
-      });
-      bc = bc.browsingContext.children[0];
-    }
-    await BrowserTestUtils.synthesizeMouseAtCenter("input", {}, bc);
-    this.frame = this.panel.querySelector("#dateTimePopupFrame");
-    await this.waitForPickerReady();
-  }
-
-  promisePickerClosed() {
-    return new Promise(resolve => {
-      this.panel.addEventListener("popuphidden", resolve, { once: true });
-    });
-  }
-
-  promiseChange(selector = "input") {
-    return SpecialPowers.spawn(
-      this.tab.linkedBrowser,
-      [selector],
-      async selector => {
-        let input = content.document.querySelector(selector);
-        await ContentTaskUtils.waitForEvent(input, "change", false, e => {
-          ok(
-            content.window.windowUtils.isHandlingUserInput,
-            "isHandlingUserInput should be true"
-          );
-          return true;
-        });
-      }
-    );
-  }
-
-  async waitForPickerReady() {
-    let readyPromise;
-    let loadPromise = new Promise(resolve => {
-      let listener = () => {
-        if (
-          this.frame.browsingContext.currentURI.spec !=
-          "chrome://global/content/datepicker.xhtml"
-        ) {
-          return;
-        }
-
-        this.frame.removeEventListener("load", listener, { capture: true });
-        // Add the PickerReady event listener directly inside the load event
-        // listener to avoid missing the event.
-        readyPromise = BrowserTestUtils.waitForEvent(
-          this.frame.contentDocument,
-          "PickerReady"
-        );
-        resolve();
-      };
-
-      this.frame.addEventListener("load", listener, { capture: true });
-    });
-
-    await loadPromise;
-    // Wait for picker elements to be ready
-    await readyPromise;
-  }
-
-  /**
-   * Find an element on the picker.
-   *
-   * @param  {String} selector
-   * @return {DOMElement}
-   */
-  getElement(selector) {
-    return this.frame.contentDocument.querySelector(selector);
-  }
-
-  /**
-   * Find the children of an element on the picker.
-   *
-   * @param  {String} selector
-   * @return {Array<DOMElement>}
-   */
-  getChildren(selector) {
-    return Array.from(this.getElement(selector).children);
-  }
-
-  /**
-   * Click on an element
-   *
-   * @param  {DOMElement} element
-   */
-  click(element) {
-    EventUtils.synthesizeMouseAtCenter(element, {}, this.frame.contentWindow);
-  }
-
-  /**
-   * Close the panel and the tab
-   */
-  async tearDown() {
-    if (this.panel.state != "closed") {
-      let pickerClosePromise = this.promisePickerClosed();
-      this.panel.hidePopup();
-      await pickerClosePromise;
-    }
-    BrowserTestUtils.removeTab(this.tab);
-    this.tab = null;
-  }
-
-  /**
-   * Clean up after tests. Remove the frame to prevent leak.
-   */
-  cleanup() {
-    this.frame.remove();
-    this.frame = null;
-    this.panel.removeAttribute("animate");
-    this.panel = null;
-  }
-}
-
-/**
  * Used to listen events if you just need it once
  */
 function once(target, name) {
-  var p = new Promise(function(resolve, reject) {
+  var p = new Promise(function (resolve, reject) {
     target.addEventListener(
       name,
-      function() {
+      function () {
         resolve();
       },
       { once: true }

@@ -3,18 +3,18 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { Normandy } = ChromeUtils.import("resource://normandy/Normandy.jsm");
-const { NormandyMigrations } = ChromeUtils.import(
-  "resource://normandy/NormandyMigrations.jsm"
+const { Normandy } = ChromeUtils.importESModule(
+  "resource://normandy/Normandy.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { NormandyMigrations } = ChromeUtils.importESModule(
+  "resource://normandy/NormandyMigrations.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
+ChromeUtils.defineESModuleGetters(this, {
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
 
 /* import-globals-from utils.js */
 load("utils.js");
@@ -47,7 +47,7 @@ decorate_task(
     );
     Assert.equal(Services.prefs.getCharPref(rolloutPref, "default"), "default");
 
-    let initPromise = Normandy.init();
+    let initPromise = Normandy.init({ runAsync: false });
 
     // note: There are no awaits before these asserts, so only the part of
     // Normandy's initialization before its first await can run.

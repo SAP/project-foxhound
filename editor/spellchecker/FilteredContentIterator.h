@@ -66,15 +66,9 @@ class FilteredContentIterator final {
   void CheckAdvNode(nsINode* aNode, bool& aDidSkip, eDirectionType aDir);
   nsresult SwitchDirections(bool aChangeToForward);
 
-  ContentIteratorBase* MOZ_NON_OWNING_REF mCurrentIterator;
+  SafeContentIteratorBase* MOZ_NON_OWNING_REF mCurrentIterator;
   PostContentIterator mPostIterator;
   PreContentIterator mPreIterator;
-
-  RefPtr<nsAtom> mBlockQuoteAtom;
-  RefPtr<nsAtom> mScriptAtom;
-  RefPtr<nsAtom> mTextAreaAtom;
-  RefPtr<nsAtom> mSelectAreaAtom;
-  RefPtr<nsAtom> mMapAtom;
 
   UniquePtr<nsComposeTxtSrvFilter> mFilter;
   RefPtr<nsRange> mRange;

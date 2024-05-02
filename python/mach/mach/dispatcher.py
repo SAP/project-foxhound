@@ -2,21 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
-from __future__ import absolute_import, unicode_literals
-
 import argparse
 import difflib
 import shlex
 import sys
-
 from operator import itemgetter
 
-from .base import (
-    NoCommandError,
-    UnknownCommandError,
-    UnrecognizedArgumentError,
-)
+from .base import NoCommandError, UnknownCommandError, UnrecognizedArgumentError
 from .decorators import SettingsProvider
 
 
@@ -168,7 +160,9 @@ class CommandAction(argparse.Action):
         # If there are sub-commands, parse the intent out immediately.
         if handler.subcommand_handlers and args:
             # mach <command> help <subcommand>
-            if set(args).intersection(("help", "--help")):
+            if set(args[: args.index("--")] if "--" in args else args).intersection(
+                ("help", "--help")
+            ):
                 self._handle_subcommand_help(parser, handler, args)
                 sys.exit(0)
             # mach <command> <subcommand> ...
@@ -445,6 +439,9 @@ class CommandAction(argparse.Action):
 
         subcommand = subcommand.pop()
         subhandler = handler.subcommand_handlers[subcommand]
+
+        # Initialize the parser if necessary
+        subhandler.parser
 
         c_parser = subhandler.parser or argparse.ArgumentParser(add_help=False)
         c_parser.formatter_class = CommandFormatter

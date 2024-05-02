@@ -7,7 +7,7 @@ const TEST_URI =
   "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-console.html";
 
-add_task(async function() {
+add_task(async function () {
   // Enable net messages in the console for this test.
   await pushPref("devtools.webconsole.filter.net", true);
   const isMacOS = Services.appinfo.OS === "Darwin";
@@ -19,7 +19,9 @@ add_task(async function() {
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.location.reload();
   });
-  const message = await waitFor(() => findMessage(hud, "test-console.html"));
+  const message = await waitFor(() =>
+    findMessageByType(hud, "test-console.html", ".network")
+  );
   ok(message, "Network log found in the console");
 
   const currentTab = gBrowser.selectedTab;
@@ -42,7 +44,6 @@ add_task(async function() {
   const newTabHref = newTab.linkedBrowser.currentURI.spec;
 
   is(newTabHref, TEST_URI, "Tab was opened with the expected URL");
-
   info("Remove the new tab and select the previous tab back");
   gBrowser.removeTab(newTab);
   gBrowser.selectedTab = currentTab;
@@ -55,7 +56,7 @@ function listenToTabLoad() {
   return new Promise(resolve => {
     gBrowser.tabContainer.addEventListener(
       "TabOpen",
-      function(evt) {
+      function (evt) {
         const newTab = evt.target;
         BrowserTestUtils.browserLoaded(newTab.linkedBrowser).then(() =>
           resolve(newTab)

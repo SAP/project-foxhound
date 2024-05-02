@@ -11,6 +11,10 @@ ha{
             miscPatterns{
                 atLeast{"{0}+"}
             }
+            patterns{
+                accountingFormat{"¤ #,##0.00"}
+                accountingFormat%noCurrency{"#,##0.00"}
+            }
             patternsLong{
                 decimalFormat{
                     1000{
@@ -114,6 +118,32 @@ ha{
                         other{"¤000T"}
                     }
                 }
+                currencyFormat%alphaNextToNumber{
+                    1000000000{
+                        one{"¤0B"}
+                        other{"¤ 0B"}
+                    }
+                    10000000000{
+                        one{"¤ 00B"}
+                        other{"¤ 00B"}
+                    }
+                    100000000000{
+                        one{"¤ 000B"}
+                        other{"¤ 000B"}
+                    }
+                    1000000000000{
+                        one{"¤ 0T"}
+                        other{"¤ 0T"}
+                    }
+                    10000000000000{
+                        one{"¤ 00T"}
+                        other{"¤ 00T"}
+                    }
+                    100000000000000{
+                        one{"¤ 000T"}
+                        other{"¤ 000T"}
+                    }
+                }
                 decimalFormat{
                     1000{
                         one{"0D"}
@@ -185,6 +215,12 @@ ha{
                 "d MMM, y G",
                 "d/M/yy GGGGG",
                 "{0}, {1}",
+                "{0}, {1}",
+                "{0}, {1}",
+                "{0}, {1}",
+                "{0}, {1}",
+            }
+            DateTimePatterns%atTime{
                 "{0} 'da' {1}",
                 "{0} 'da' {1}",
                 "{0}, {1}",
@@ -224,6 +260,10 @@ ha{
                 "SF",
                 "YM",
             }
+            AmPmMarkersNarrow{
+                "SF",
+                "YM",
+            }
             DateTimePatterns{
                 "HH:mm:ss zzzz",
                 "HH:mm:ss z",
@@ -235,6 +275,12 @@ ha{
                 "d/M/yy",
                 "{1}, {0}",
                 "{1} {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%atTime{
+                "{1} 'da' {0}",
                 "{1} 'da' {0}",
                 "{1}, {0}",
                 "{1}, {0}",
@@ -266,8 +312,8 @@ ha{
                 MMMd{"MMM d"}
                 Md{"M/d"}
                 d{"d"}
-                hm{"h:mm a"}
-                hms{"h:mm:ss a"}
+                hm{"h:mm a"}
+                hms{"h:mm:ss a"}
                 ms{"mm:ss"}
                 y{"y"}
                 yM{"M/y"}
@@ -405,37 +451,37 @@ ha{
                     m{"HH:mm–HH:mm"}
                 }
                 MEd{
-                    d{"E, dd/M – E, dd/M"}
+                    d{"E, dd/M – E, dd/M"}
                 }
                 h{
-                    a{"h a – h a"}
+                    a{"h a – h a"}
                 }
                 hm{
-                    a{"h:mm a – h:mm a"}
+                    a{"h:mm a – h:mm a"}
                 }
                 yM{
-                    M{"MM/y – MM/y"}
-                    y{"MM/y – MM/y"}
+                    M{"MM/y – MM/y"}
+                    y{"MM/y – MM/y"}
                 }
                 yMEd{
-                    M{"y-MM-dd, E – y-MM-dd, E"}
-                    y{"y-MM-dd, E – y-MM-dd, E"}
+                    M{"y-MM-dd, E – y-MM-dd, E"}
+                    y{"y-MM-dd, E – y-MM-dd, E"}
                 }
                 yMMM{
-                    y{"y MMM – y MMM"}
+                    y{"y MMM – y MMM"}
                 }
                 yMMMEd{
-                    y{"y MMM d, E – y MMM d, E"}
+                    y{"y MMM d, E – y MMM d, E"}
                 }
                 yMMMM{
-                    y{"y MMMM – y MMMM"}
+                    y{"y MMMM – y MMMM"}
                 }
                 yMMMd{
-                    y{"y MMM d – y MMM d"}
+                    y{"y MMM d – y MMM d"}
                 }
                 yMd{
-                    M{"dd/MM/y – dd/MM/y"}
-                    d{"dd/MM/y – dd/MM/y"}
+                    M{"dd/MM/y – dd/MM/y"}
+                    d{"dd/MM/y – dd/MM/y"}
                 }
             }
             monthNames{
@@ -571,6 +617,121 @@ ha{
                 }
             }
         }
+        islamic{
+            DateTimePatterns{
+                "HH:mm:ss zzzz",
+                "HH:mm:ss z",
+                "HH:mm:ss",
+                "HH:mm",
+                "EEEE, d MMMM, y G",
+                "d MMMM, y G",
+                "d MMM, y G",
+                "d/M/yy GGGGG",
+                "{0}, {1}",
+                "{0}, {1}",
+                "{0}, {1}",
+                "{0}, {1}",
+                "{0}, {1}",
+            }
+            availableFormats{
+                E{"ccc"}
+                Ed{"d E"}
+                Gy{"y G"}
+                GyMMM{"G MMM y"}
+                GyMMMEd{"G d MMM y, E"}
+                GyMMMd{"G d MMM y"}
+                GyMd{"GGGGG dd-MM-y"}
+                M{"L"}
+                MEd{"E, d/M"}
+                MMM{"LLL"}
+                MMMEd{"E, d MMM"}
+                MMMMEd{"E d MMM"}
+                MMMMd{"d MMMM"}
+                MMMd{"d MMM"}
+                Md{"d/M"}
+                d{"d"}
+                y{"y"}
+                yM{"yM"}
+                yMEd{"E, d M y"}
+                yMMM{"y MMM"}
+                yMMMEd{"E, d MMM, y"}
+                yMMMM{"MMMM y"}
+                yQQQ{"y QQQ"}
+                yQQQQ{"y QQQQ"}
+                yyyy{"y G"}
+                yyyyM{"y/M GGGGG"}
+                yyyyMEd{"E, d/M/y GGGGG"}
+                yyyyMMM{"y G MMM"}
+                yyyyMMMEd{"y G d MMM, E"}
+                yyyyMMMM{"y G MMMM"}
+                yyyyMMMd{"y G d MMM"}
+                yyyyMd{"d/M/y GGGGG"}
+                yyyyQQQ{"y G QQQ"}
+                yyyyQQQQ{"y G QQQQ"}
+            }
+            monthNames{
+                format{
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                    wide{
+                        "Muharram",
+                        "Safar",
+                        "Rabiʻ I",
+                        "Rabiʻ II",
+                        "Jumada I",
+                        "Jumada II",
+                        "Rajab",
+                        "Shaʼaban",
+                        "Ramadan",
+                        "Shawwal",
+                        "Dhuʻl-Qiʻdah",
+                        "Dhuʻl-Hijjah",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "Muh.",
+                        "Saf.",
+                        "Rab. I",
+                        "Rab. II",
+                        "Jum. I",
+                        "Jum. II",
+                        "Raj.",
+                        "Sha.",
+                        "Ram.",
+                        "Shaw.",
+                        "Dhuʻl-Q.",
+                        "Dhuʻl-H.",
+                    }
+                    wide{
+                        "Muharram",
+                        "Safar",
+                        "Rabiʻ I",
+                        "Rabiʻ II",
+                        "Jumada I",
+                        "Jumada II",
+                        "Rajab",
+                        "Shaʼaban",
+                        "Ramadan",
+                        "Shawwal",
+                        "Dhuʻl-Qiʻdah",
+                        "Dhuʻl-Hijjah",
+                    }
+                }
+            }
+        }
     }
     characterLabel{
         activities{"aiki"}
@@ -681,6 +842,11 @@ ha{
         }
         day-narrow{
             dn{"kwana"}
+            relative{
+                "-1"{"jiya"}
+                "0"{"yau"}
+                "1"{"gobe"}
+            }
             relativeTime{
                 future{
                     one{"a cikin rana {0}"}
@@ -694,6 +860,11 @@ ha{
         }
         day-short{
             dn{"kwana"}
+            relative{
+                "-1"{"jiya"}
+                "0"{"yau"}
+                "1"{"gobe"}
+            }
             relativeTime{
                 future{
                     one{"a cikin rana {0}"}
@@ -717,7 +888,19 @@ ha{
         dayperiod{
             dn{"SF/YM"}
         }
+        dayperiod-narrow{
+            dn{"SF/YM"}
+        }
+        dayperiod-short{
+            dn{"SF/YM"}
+        }
         era{
+            dn{"zamani"}
+        }
+        era-narrow{
+            dn{"zamani"}
+        }
+        era-short{
             dn{"zamani"}
         }
         fri{
@@ -1072,6 +1255,7 @@ ha{
             }
         }
         second-narrow{
+            dn{"daƙiƙa"}
             relativeTime{
                 future{
                     one{"cikin {0} dakika"}
@@ -1084,6 +1268,7 @@ ha{
             }
         }
         second-short{
+            dn{"daƙiƙa"}
             relativeTime{
                 future{
                     one{"cikin {0} dakika"}
@@ -1359,7 +1544,19 @@ ha{
         weekOfMonth{
             dn{"Makon Wata"}
         }
+        weekOfMonth-narrow{
+            dn{"Mk. wt."}
+        }
+        weekOfMonth-short{
+            dn{"Mk. wt."}
+        }
         weekday{
+            dn{"ranar mako"}
+        }
+        weekday-narrow{
+            dn{"ranar mako"}
+        }
+        weekday-short{
             dn{"ranar mako"}
         }
         weekdayOfMonth{
@@ -1397,6 +1594,10 @@ ha{
                 "1"{"badi"}
             }
             relativeTime{
+                future{
+                    one{"a shekarar {0}"}
+                    other{"a shekaru {0}"}
+                }
                 past{
                     one{"shekara da suka gabata {0}"}
                     other{"shekara da suka gabata {0}"}
@@ -1411,6 +1612,10 @@ ha{
                 "1"{"badi"}
             }
             relativeTime{
+                future{
+                    one{"a shekarar {0}"}
+                    other{"a shekaru {0}"}
+                }
                 past{
                     one{"shekara da suka gabata {0}"}
                     other{"shekara da suka gabata {0}"}
@@ -1418,6 +1623,12 @@ ha{
             }
         }
         zone{
+            dn{"Lokacin yanki"}
+        }
+        zone-narrow{
+            dn{"Lokacin yanki"}
+        }
+        zone-short{
             dn{"Lokacin yanki"}
         }
     }
@@ -1429,31 +1640,116 @@ ha{
         or-narrow{
             2{"{0} ko {1}"}
             end{"{0} ko {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         or-short{
             2{"{0} ko {1}"}
             end{"{0} ko {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         standard{
             2{"{0} da {1}"}
             end{"{0}, da {1}"}
         }
+        standard-narrow{
+            2{"{0} da {1}"}
+            end{"{0}, da {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
+        standard-short{
+            2{"{0} da {1}"}
+            end{"{0}, da {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
         unit{
             2{"{0}, {1}"}
             end{"{0}, {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         unit-narrow{
             2{"{0}, {1}"}
             end{"{0}, {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         unit-short{
             2{"{0}, {1}"}
             end{"{0}, {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
     }
     measurementSystemNames{
         UK{"Tsarin awo kasar Ingila"}
-        US{"Tsarin awo kasar Amirka"}
+        US{"Amurka"}
         metric{"Tsarin awo"}
+    }
+    personNames{
+        nameOrderLocales{
+            givenFirst{
+                "und",
+                "ha",
+            }
+            surnameFirst{
+                "ko",
+                "vi",
+                "yue",
+                "zh",
+            }
+        }
+        namePattern{
+            givenFirst-long-addressing-formal{"{title} {surname}"}
+            givenFirst-long-addressing-informal{"{given-informal}"}
+            givenFirst-long-monogram-informal{
+                "{given-monogram-allCaps}{given2-monogram-allCaps}{surname-monogram-a"
+                "llCaps}"
+            }
+            givenFirst-long-referring-informal{"{given-informal} {surname}"}
+            givenFirst-medium-addressing-formal{"{title} {surname}"}
+            givenFirst-medium-addressing-informal{"{given-informal}"}
+            givenFirst-medium-monogram-formal{
+                "{given-monogram-allCaps}{given2-monogram-allCaps}{surname-monogram-a"
+                "llCaps}"
+            }
+            givenFirst-medium-monogram-informal{
+                "{given-monogram-allCaps}{given2-monogram-allCaps}{surname-monogram-a"
+                "llCaps}"
+            }
+            givenFirst-medium-referring-formal{"{title} {given} {given2} {surname} {surname2} {credentials}"}
+            givenFirst-medium-referring-informal{"{given-informal} {surname}"}
+            givenFirst-short-addressing-formal{"{title} {surname}"}
+            givenFirst-short-addressing-informal{"{given-informal}"}
+            givenFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
+            givenFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
+            givenFirst-short-referring-formal{"{given-initial} {given2-initial} {surname}"}
+            givenFirst-short-referring-informal{"{given-informal} {surname-initial}"}
+            sorting-long-referring-formal{"{surname-core}, {given} {given2} {surname-prefix}"}
+            sorting-long-referring-informal{"{surname}, {given-informal}"}
+            sorting-medium-referring-formal{"{surname-core}, {given} {given2} {surname-prefix}"}
+            sorting-medium-referring-informal{"{surname-core}, {given} {given2} {surname-prefix}"}
+            sorting-short-referring-formal{"{surname-core}, {given} {given2} {surname-prefix}"}
+            sorting-short-referring-informal{"{surname-core}, {given} {given2} {surname-prefix}"}
+            surnameFirst-long-addressing-formal{"{title} {surname}"}
+            surnameFirst-long-addressing-informal{"{given-informal}"}
+            surnameFirst-long-monogram-informal{"{surname-monogram-allCaps}{given-informal-monogram-allCaps}"}
+            surnameFirst-long-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-medium-addressing-formal{"{title} {surname}"}
+            surnameFirst-medium-addressing-informal{"{given-informal}"}
+            surnameFirst-medium-monogram-formal{"{surname-monogram-allCaps}"}
+            surnameFirst-medium-monogram-informal{"{given-informal-monogram-allCaps}"}
+            surnameFirst-medium-referring-formal{"{surname} {given} {given2-initial} {generation}, {credentials}"}
+            surnameFirst-medium-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-short-addressing-formal{"{title} {surname}"}
+            surnameFirst-short-addressing-informal{"{given-informal}"}
+            surnameFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
+            surnameFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
+            surnameFirst-short-referring-formal{"{surname} {given-initial} {given2-initial}"}
+            surnameFirst-short-referring-informal{"{surname} {given-initial}"}
+        }
     }
 }

@@ -18,7 +18,7 @@ void nsHtml5UTF16Buffer::DeleteBuffer() { delete[] buffer; }
 
 void nsHtml5UTF16Buffer::Swap(nsHtml5UTF16Buffer* aOther) {
   char16_t* tempBuffer = buffer;
-  StringTaint tempTaint = taint;
+  SafeStringTaint tempTaint = taint;
   int32_t tempStart = start;
   int32_t tempEnd = end;
   buffer = aOther->buffer;

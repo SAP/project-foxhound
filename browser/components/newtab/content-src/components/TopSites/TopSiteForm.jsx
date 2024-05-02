@@ -2,7 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { A11yLinkButton } from "content-src/components/A11yLinkButton/A11yLinkButton";
 import React from "react";
 import { TOP_SITES_SOURCE } from "./TopSitesConstants";
@@ -26,9 +29,8 @@ export class TopSiteForm extends React.PureComponent {
     this.onCancelButtonClick = this.onCancelButtonClick.bind(this);
     this.onClearUrlClick = this.onClearUrlClick.bind(this);
     this.onDoneButtonClick = this.onDoneButtonClick.bind(this);
-    this.onCustomScreenshotUrlChange = this.onCustomScreenshotUrlChange.bind(
-      this
-    );
+    this.onCustomScreenshotUrlChange =
+      this.onCustomScreenshotUrlChange.bind(this);
     this.onPreviewButtonClick = this.onPreviewButtonClick.bind(this);
     this.onEnableScreenshotUrlForm = this.onEnableScreenshotUrlForm.bind(this);
     this.validateUrl = this.validateUrl.bind(this);
@@ -257,6 +259,7 @@ export class TopSiteForm extends React.PureComponent {
                 value={this.state.label}
                 titleId="newtab-topsites-title-label"
                 placeholderId="newtab-topsites-title-input"
+                autoFocusOnOpen={true}
               />
               <TopSiteFormInput
                 onChange={this.onUrlChange}

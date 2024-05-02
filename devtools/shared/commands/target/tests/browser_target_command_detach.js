@@ -12,16 +12,16 @@
 
 const TEST_URL = "data:text/html,test-page";
 
-add_task(async function() {
+add_task(async function () {
   info(" ### Test detaching the top target");
 
   // Create a TargetCommand for a given test tab
   const tab = await addTab(TEST_URL);
 
   info("Create a first commands, which will destroy its top target");
-  const commands = await CommandsFactory.forRemoteTabInTest({
-    outerWindowID: tab.linkedBrowser.outerWindowID,
-  });
+  const commands = await CommandsFactory.forRemoteTab(
+    tab.linkedBrowser.browserId
+  );
   const targetCommand = commands.targetCommand;
 
   // We have to start listening in order to ensure having a targetFront available
@@ -37,10 +37,12 @@ add_task(async function() {
   info(
     "Now create a second commands after destroy, to see if we can spawn a new, functional target"
   );
-  const secondCommands = await CommandsFactory.forRemoteTabInTest({
-    client: commands.client,
-    outerWindowID: tab.linkedBrowser.outerWindowID,
-  });
+  const secondCommands = await CommandsFactory.forRemoteTab(
+    tab.linkedBrowser.browserId,
+    {
+      client: commands.client,
+    }
+  );
   const secondTargetCommand = secondCommands.targetCommand;
 
   // We have to start listening in order to ensure having a targetFront available

@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import sys
 
 from marionette_driver import Wait
@@ -96,8 +94,9 @@ class WindowManagerMixin(object):
             with self.marionette.using_context("chrome"):
                 return self.marionette.execute_script(
                     """
-                  Components.utils.import("resource://gre/modules/Services.jsm");
-                  const { windowManager } = ChromeUtils.import("chrome://remote/content/shared/WindowManager.jsm");
+                  const { windowManager } = ChromeUtils.importESModule(
+                    "chrome://remote/content/shared/WindowManager.sys.mjs"
+                  );
                   const win = windowManager.findWindowByHandle(arguments[0]).win;
                   return win.document.readyState == "complete";
                 """,

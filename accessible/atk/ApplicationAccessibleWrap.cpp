@@ -6,20 +6,18 @@
 
 #include "ApplicationAccessibleWrap.h"
 
-#include "nsCOMPtr.h"
 #include "nsMai.h"
 #include "nsAccessibilityService.h"
 
 #include <gtk/gtk.h>
-#include <atk/atk.h>
+#include "atk/atkobject.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
 
 // ApplicationAccessibleWrap
 
-ApplicationAccessibleWrap::ApplicationAccessibleWrap()
-    : ApplicationAccessible() {}
+ApplicationAccessibleWrap::ApplicationAccessibleWrap() = default;
 
 ApplicationAccessibleWrap::~ApplicationAccessibleWrap() {
   AccessibleWrap::ShutdownAtkObject();

@@ -19,7 +19,7 @@ TEST(StableBweExperimentTest, Default) {
   StableTargetRateExperiment config =
       StableTargetRateExperiment::ParseFromFieldTrials();
   EXPECT_FALSE(config.IsEnabled());
-  EXPECT_EQ(config.GetVideoHysteresisFactor(), 1.0);
+  EXPECT_EQ(config.GetVideoHysteresisFactor(), 1.2);
   EXPECT_EQ(config.GetScreenshareHysteresisFactor(), 1.35);
 }
 
@@ -30,7 +30,7 @@ TEST(StableBweExperimentTest, EnabledNoHysteresis) {
   StableTargetRateExperiment config =
       StableTargetRateExperiment::ParseFromFieldTrials();
   EXPECT_TRUE(config.IsEnabled());
-  EXPECT_EQ(config.GetVideoHysteresisFactor(), 1.0);
+  EXPECT_EQ(config.GetVideoHysteresisFactor(), 1.2);
   EXPECT_EQ(config.GetScreenshareHysteresisFactor(), 1.35);
 }
 
@@ -46,19 +46,6 @@ TEST(StableBweExperimentTest, EnabledWithHysteresis) {
   EXPECT_TRUE(config.IsEnabled());
   EXPECT_EQ(config.GetVideoHysteresisFactor(), 1.1);
   EXPECT_EQ(config.GetScreenshareHysteresisFactor(), 1.2);
-}
-
-TEST(StableBweExperimentTest, OnNoHysteresisPropagatesVideoRateHystersis) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-StableTargetRate/enabled:true/"
-      "WebRTC-VideoRateControl/video_hysteresis:1.3,"
-      "screenshare_hysteresis:1.4/");
-
-  StableTargetRateExperiment config =
-      StableTargetRateExperiment::ParseFromFieldTrials();
-  EXPECT_TRUE(config.IsEnabled());
-  EXPECT_EQ(config.GetVideoHysteresisFactor(), 1.3);
-  EXPECT_EQ(config.GetScreenshareHysteresisFactor(), 1.4);
 }
 
 TEST(StableBweExperimentTest, HysteresisOverrideVideoRateHystersis) {

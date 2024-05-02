@@ -102,7 +102,8 @@ class ChannelMediaDecoder
   void DownloadProgressed();
 
   // Create a new state machine to run this decoder.
-  MediaDecoderStateMachine* CreateStateMachine();
+  MediaDecoderStateMachineBase* CreateStateMachine(
+      bool aDisableExternalEngine) override;
 
   nsresult Load(BaseMediaResource* aOriginal);
 
@@ -124,7 +125,7 @@ class ChannelMediaDecoder
   // The actual playback rate computation.
   static PlaybackRateInfo ComputePlaybackRate(
       const MediaChannelStatistics& aStats, BaseMediaResource* aResource,
-      double aDuration);
+      const media::TimeUnit& aDuration);
 
   // Something has changed that could affect the computed playback rate,
   // so recompute it.

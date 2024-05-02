@@ -3,22 +3,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { UpdateUtils } = ChromeUtils.import(
-  "resource://gre/modules/UpdateUtils.jsm"
+const { UpdateUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/UpdateUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { getAppInfo, updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { getAppInfo, updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
-const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+const { ctypes } = ChromeUtils.importESModule(
+  "resource://gre/modules/ctypes.sys.mjs"
+);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "WindowsRegistry",
-  "resource://gre/modules/WindowsRegistry.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
+});
 
 const PREF_APP_UPDATE_CHANNEL = "app.update.channel";
 const PREF_APP_PARTNER_BRANCH = "app.partner.";
@@ -194,7 +194,19 @@ function getMemoryMB() {
 // interested in
 async function getResult(url) {
   url = await UpdateUtils.formatUpdateURL(url);
-  return url.substr(URL_PREFIX.length).split("/")[0];
+  const component = url.substr(URL_PREFIX.length).split("/")[0];
+  // The docs for encodeURIComponent specify that it will encode everything
+  // except for:
+  //   A-Z a-z 0-9 - _ . ! ~ * ' ( )
+  // We want to ensure that we are passing Update URL components into
+  // encodeURIComponent, so we will make sure that we don't have characters
+  // except for these and `%` (for the escape sequences).
+  const escapedCharRegex = new RegExp("^[A-Za-z0-9_.!~*'()%-]*$");
+  Assert.ok(
+    escapedCharRegex.test(component),
+    `URL component (${component}) should not have unescaped characters`
+  );
+  return decodeURIComponent(component);
 }
 
 // url constructed with %PRODUCT%

@@ -4,9 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import gdb
+
 from gdbpp import GeckoPrettyPrinter
 
 
@@ -22,7 +21,7 @@ class enumset_printer(object):
         return (
             ("flag", gdb.Value(i).cast(self.enum_type))
             for i in range(0, max_bit)
-            if ((bitfield & (2 ** i)) != 0)
+            if ((bitfield & (2**i)) != 0)
         )
 
     def to_string(self):

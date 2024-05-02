@@ -20,6 +20,14 @@ async function runTests(browser, accDoc) {
       [x, y, width, height],
       COORDTYPE_SCREEN_RELATIVE
     );
+    // A 0 range should return an empty rect.
+    testTextBounds(
+      hyperTextNode,
+      0,
+      0,
+      [0, 0, 0, 0],
+      COORDTYPE_SCREEN_RELATIVE
+    );
   }
 
   async function testEmptyInputNode(id) {
@@ -33,6 +41,8 @@ async function runTests(browser, accDoc) {
       [x, y, width, height],
       COORDTYPE_SCREEN_RELATIVE
     );
+    // A 0 range in an empty input should still return
+    // rect of input node.
     testTextBounds(
       inputNode,
       0,
@@ -47,8 +57,8 @@ async function runTests(browser, accDoc) {
   await testEmptyInputNode("i1");
 
   await SpecialPowers.spawn(browser, [], () => {
-    const { Layout } = ChromeUtils.import(
-      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
+    const { Layout } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
     );
     Layout.zoomDocument(content.document, 2.0);
   });
@@ -56,8 +66,8 @@ async function runTests(browser, accDoc) {
   await testTextNode("p1");
 
   await SpecialPowers.spawn(browser, [], () => {
-    const { Layout } = ChromeUtils.import(
-      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
+    const { Layout } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
     );
     Layout.zoomDocument(content.document, 1.0);
   });

@@ -8,7 +8,7 @@
 #ifndef __nsUnixRemoteServer_h__
 #define __nsUnixRemoteServer_h__
 
-#include "nsString.h"
+#include "nsStringFwd.h"
 
 #ifdef IS_BIG_ENDIAN
 #  define TO_LITTLE_ENDIAN32(x)                           \
@@ -20,8 +20,8 @@
 
 class nsUnixRemoteServer {
  protected:
-  void SetDesktopStartupIDOrTimestamp(const nsACString& aDesktopStartupID,
-                                      uint32_t aTimestamp);
+  void SetStartupTokenOrTimestamp(const nsACString& aStartupToken,
+                                  uint32_t aTimestamp);
   const char* HandleCommandLine(const char* aBuffer, uint32_t aTimestamp);
 };
 

@@ -133,6 +133,22 @@ public final class CodecProxy {
   }
 
   @WrapForJNI
+  public int GetInputFormatStride() {
+    if (mFormat.asFormat().containsKey(MediaFormat.KEY_STRIDE)) {
+      return mFormat.asFormat().getInteger(MediaFormat.KEY_STRIDE);
+    }
+    return 0;
+  }
+
+  @WrapForJNI
+  public int GetInputFormatYPlaneHeight() {
+    if (mFormat.asFormat().containsKey(MediaFormat.KEY_SLICE_HEIGHT)) {
+      return mFormat.asFormat().getInteger(MediaFormat.KEY_SLICE_HEIGHT);
+    }
+    return 0;
+  }
+
+  @WrapForJNI
   public static CodecProxy create(
       final boolean isEncoder,
       final MediaFormat format,
@@ -388,11 +404,6 @@ public final class CodecProxy {
   public synchronized boolean setBitrate(final int bps) {
     if (!mIsEncoder) {
       Log.w(LOGTAG, "this api is encoder-only");
-      return false;
-    }
-
-    if (android.os.Build.VERSION.SDK_INT < 19) {
-      Log.w(LOGTAG, "this api was added in API level 19");
       return false;
     }
 

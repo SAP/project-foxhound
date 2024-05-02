@@ -32,6 +32,7 @@ var gPopupTests = null;
 var gTestIndex = -1;
 var gTestStepIndex = 0;
 var gTestEventIndex = 0;
+var gActualEvents = [];
 var gAutoHide = false;
 var gExpectedEventDetails = null;
 var gExpectedTriggerNode = null;
@@ -50,6 +51,9 @@ function startPopupTests(tests) {
   document.addEventListener("DOMMenuInactive", eventOccurred);
   document.addEventListener("DOMMenuBarActive", eventOccurred);
   document.addEventListener("DOMMenuBarInactive", eventOccurred);
+
+  // This is useful to explicitly finish a test that shouldn't trigger events.
+  document.addEventListener("TestDone", eventOccurred);
 
   gPopupTests = tests;
   gWindowUtils = SpecialPowers.getDOMWindowUtils(window);
@@ -75,6 +79,14 @@ function ok(condition, message) {
     window.opener.SimpleTest.ok(condition, message);
   } else {
     SimpleTest.ok(condition, message);
+  }
+}
+
+function info(message) {
+  if (window.opener) {
+    window.opener.SimpleTest.info(message);
+  } else {
+    SimpleTest.info(message);
   }
 }
 
@@ -122,6 +134,8 @@ function eventOccurred(event) {
       );
       return;
     }
+
+    gActualEvents.push(`${event.type} ${event.target.id}`);
 
     var eventitem = events[gTestEventIndex].split(" ");
     var matches;
@@ -205,6 +219,8 @@ function eventOccurred(event) {
       if (events.length <= gTestEventIndex) {
         setTimeout(checkResult, 0);
       }
+    } else {
+      info(`Actual events so far: ${JSON.stringify(gActualEvents)}`);
     }
   }
 }
@@ -230,7 +246,9 @@ async function checkResult() {
 }
 
 function goNextStep() {
+  info(`events: ${JSON.stringify(gActualEvents)}`);
   gTestEventIndex = 0;
+  gActualEvents = [];
 
   var step = null;
   var test = gPopupTests[gTestIndex];
@@ -249,7 +267,7 @@ function goNextStep() {
 function goNext() {
   // We want to continue after the next animation frame so that
   // we're in a stable state and don't get spurious mouse events at unexpected targets.
-  window.requestAnimationFrame(function() {
+  window.requestAnimationFrame(function () {
     setTimeout(goNextStepSync, 0);
   });
 }
@@ -270,6 +288,7 @@ function goNextStepSync() {
     var test = gPopupTests[gTestIndex];
     // Set the location hash so it's easy to see which test is running
     document.location.hash = test.testname;
+    info("Starting " + test.testname);
 
     // skip the test if the condition returns false
     if ("condition" in test && !test.condition()) {
@@ -458,12 +477,28 @@ function compareEdge(anchor, popup, edge, offsetX, offsetY, testname) {
         cornerX += offsetX;
         cornerY += offsetY;
         break;
+      case "topcenter":
+        cornerX += -popuprect.width / 2 + offsetX;
+        cornerY += offsetY;
+        break;
       case "topright":
         cornerX += -popuprect.width + offsetX;
         cornerY += offsetY;
         break;
+      case "leftcenter":
+        cornerX += offsetX;
+        cornerY += -popuprect.height / 2 + offsetY;
+        break;
+      case "rightcenter":
+        cornerX += -popuprect.width + offsetX;
+        cornerY += -popuprect.height / 2 + offsetY;
+        break;
       case "bottomleft":
         cornerX += offsetX;
+        cornerY += -popuprect.height + offsetY;
+        break;
+      case "bottomcenter":
+        cornerX += -popuprect.width / 2 + offsetX;
         cornerY += -popuprect.height + offsetY;
         break;
       case "bottomright":

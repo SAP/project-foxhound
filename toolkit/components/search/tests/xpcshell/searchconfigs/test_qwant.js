@@ -5,16 +5,14 @@
 
 const test = new SearchConfigTest({
   identifier: "qwant",
-  aliases: [],
+  aliases: ["@qwant"],
   default: {
     // Not default anywhere.
   },
   available: {
     included: [
       {
-        locales: {
-          matches: ["fr"],
-        },
+        locales: ["fr"],
       },
     ],
   },
@@ -29,7 +27,7 @@ const test = new SearchConfigTest({
   ],
 });
 
-add_task(async function setup() {
+add_setup(async function () {
   await test.setup();
 });
 

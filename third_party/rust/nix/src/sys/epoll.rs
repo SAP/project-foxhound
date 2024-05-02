@@ -1,10 +1,9 @@
-use Result;
-use errno::Errno;
+use crate::errno::Errno;
+use crate::Result;
 use libc::{self, c_int};
+use std::mem;
 use std::os::unix::io::RawFd;
 use std::ptr;
-use std::mem;
-use ::Error;
 
 libc_bitflags!(
     pub struct EpollFlags: c_int {
@@ -19,7 +18,6 @@ libc_bitflags!(
         EPOLLERR;
         EPOLLHUP;
         EPOLLRDHUP;
-        #[cfg(target_os = "linux")]  // Added in 4.5; not in Android.
         EPOLLEXCLUSIVE;
         #[cfg(not(target_arch = "mips"))]
         EPOLLWAKEUP;
@@ -30,27 +28,33 @@ libc_bitflags!(
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(i32)]
+#[non_exhaustive]
 pub enum EpollOp {
     EpollCtlAdd = libc::EPOLL_CTL_ADD,
     EpollCtlDel = libc::EPOLL_CTL_DEL,
     EpollCtlMod = libc::EPOLL_CTL_MOD,
 }
 
-libc_bitflags!{
+libc_bitflags! {
     pub struct EpollCreateFlags: c_int {
         EPOLL_CLOEXEC;
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[repr(C)]
+#[repr(transparent)]
 pub struct EpollEvent {
     event: libc::epoll_event,
 }
 
 impl EpollEvent {
     pub fn new(events: EpollFlags, data: u64) -> Self {
-        EpollEvent { event: libc::epoll_event { events: events.bits() as u32, u64: data } }
+        EpollEvent {
+            event: libc::epoll_event {
+                events: events.bits() as u32,
+                u64: data,
+            },
+        }
     }
 
     pub fn empty() -> Self {
@@ -81,12 +85,18 @@ pub fn epoll_create1(flags: EpollCreateFlags) -> Result<RawFd> {
 }
 
 #[inline]
-pub fn epoll_ctl<'a, T>(epfd: RawFd, op: EpollOp, fd: RawFd, event: T) -> Result<()>
-    where T: Into<Option<&'a mut EpollEvent>>
+pub fn epoll_ctl<'a, T>(
+    epfd: RawFd,
+    op: EpollOp,
+    fd: RawFd,
+    event: T,
+) -> Result<()>
+where
+    T: Into<Option<&'a mut EpollEvent>>,
 {
     let mut event: Option<&mut EpollEvent> = event.into();
     if event.is_none() && op != EpollOp::EpollCtlDel {
-        Err(Error::Sys(Errno::EINVAL))
+        Err(Errno::EINVAL)
     } else {
         let res = unsafe {
             if let Some(ref mut event) = event {
@@ -100,9 +110,18 @@ pub fn epoll_ctl<'a, T>(epfd: RawFd, op: EpollOp, fd: RawFd, event: T) -> Result
 }
 
 #[inline]
-pub fn epoll_wait(epfd: RawFd, events: &mut [EpollEvent], timeout_ms: isize) -> Result<usize> {
+pub fn epoll_wait(
+    epfd: RawFd,
+    events: &mut [EpollEvent],
+    timeout_ms: isize,
+) -> Result<usize> {
     let res = unsafe {
-        libc::epoll_wait(epfd, events.as_mut_ptr() as *mut libc::epoll_event, events.len() as c_int, timeout_ms as c_int)
+        libc::epoll_wait(
+            epfd,
+            events.as_mut_ptr() as *mut libc::epoll_event,
+            events.len() as c_int,
+            timeout_ms as c_int,
+        )
     };
 
     Errno::result(res).map(|r| r as usize)

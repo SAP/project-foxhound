@@ -9,7 +9,7 @@ const TEST_URI =
   "https://example.com/browser/devtools/client/webconsole/test/browser/" +
   "test-simple-function.html";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await testInspectingElement(hud);
@@ -71,13 +71,13 @@ async function testInspectingFunction(hud) {
 
       if (
         isOriginalSource &&
-        !selectedLocation.sourceId.includes("/originalSource-")
+        !selectedLocation.source.id.includes("/originalSource-")
       ) {
         return false;
       }
 
       return (
-        selectedLocation.sourceId.includes(sourceFilename) &&
+        selectedLocation.source.id.includes(sourceFilename) &&
         selectedLocation.line == sourceLine
       );
     };

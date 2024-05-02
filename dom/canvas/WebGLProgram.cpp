@@ -332,7 +332,7 @@ webgl::ActiveUniformValidationInfo webgl::ActiveUniformValidationInfo::Make(
 
 // -------------------------
 
-//#define DUMP_SHADERVAR_MAPPINGS
+// #define DUMP_SHADERVAR_MAPPINGS
 
 RefPtr<const webgl::LinkedProgramInfo> QueryProgramInfo(WebGLProgram* prog,
                                                         gl::GLContext* gl) {
@@ -446,6 +446,9 @@ RefPtr<const webgl::LinkedProgramInfo> QueryProgramInfo(WebGLProgram* prog,
     }
   }
 
+  info->webgl_gl_VertexID_Offset =
+      gl->fGetUniformLocation(prog->mGLName, "webgl_gl_VertexID_Offset");
+
   // -
 
   for (const auto& uniform : info->active.activeUniforms) {
@@ -487,7 +490,7 @@ RefPtr<const webgl::LinkedProgramInfo> QueryProgramInfo(WebGLProgram* prog,
 
       auto curInfo = std::unique_ptr<webgl::SamplerUniformInfo>(
           new webgl::SamplerUniformInfo{*texList, *baseType, isShadowSampler});
-      curInfo->texUnits.resize(uniform.elemCount);
+      MOZ_RELEASE_ASSERT(curInfo->texUnits.resize(uniform.elemCount));
       samplerInfo = curInfo.get();
       info->samplerUniforms.push_back(std::move(curInfo));
     }

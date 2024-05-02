@@ -7,8 +7,8 @@
 
 "use strict";
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 const TEST_URL = "http://example.com";
@@ -19,28 +19,7 @@ const match = new UrlbarResult(
 );
 let controller;
 
-/**
- * Asserts that the query context has the expected values.
- *
- * @param {UrlbarQueryContext} context
- * @param {object} expectedValues The expected values for the UrlbarQueryContext.
- */
-function assertContextMatches(context, expectedValues) {
-  Assert.ok(
-    context instanceof UrlbarQueryContext,
-    "Should be a UrlbarQueryContext"
-  );
-
-  for (let [key, value] of Object.entries(expectedValues)) {
-    Assert.equal(
-      context[key],
-      value,
-      `Should have the expected value for ${key} in the UrlbarQueryContext`
-    );
-  }
-}
-
-add_task(async function setup() {
+add_setup(async function () {
   controller = UrlbarTestUtils.newMockController();
 });
 

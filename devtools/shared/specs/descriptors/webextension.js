@@ -7,7 +7,7 @@ const {
   RetVal,
   generateActorSpec,
   Option,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
 const webExtensionDescriptorSpec = generateActorSpec({
   typeName: "webExtensionDescriptor",
@@ -16,6 +16,11 @@ const webExtensionDescriptorSpec = generateActorSpec({
     reload: {
       request: {},
       response: { addon: RetVal("json") },
+    },
+
+    terminateBackgroundScript: {
+      request: {},
+      response: {},
     },
 
     // @backward-compat { version 70 } The method is now called getTarget

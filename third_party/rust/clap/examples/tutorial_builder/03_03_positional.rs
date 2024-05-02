@@ -1,7 +1,9 @@
-use clap::{app_from_crate, arg};
+use clap::{command, Arg};
 
 fn main() {
-    let matches = app_from_crate!().arg(arg!([NAME])).get_matches();
+    let matches = command!() // requires `cargo` feature
+        .arg(Arg::new("name"))
+        .get_matches();
 
-    println!("NAME: {:?}", matches.value_of("NAME"));
+    println!("name: {:?}", matches.get_one::<String>("name"));
 }

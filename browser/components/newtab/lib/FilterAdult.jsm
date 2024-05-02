@@ -3,18 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+const lazy = {};
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gFilterAdultEnabled",
   "browser.newtabpage.activity-stream.filterAdult",
   true
@@ -59,7 +55,7 @@ const FilterAdult = {
    *   A filtered array without adult links.
    */
   filter(links) {
-    if (!gFilterAdultEnabled) {
+    if (!lazy.gFilterAdultEnabled) {
       return links;
     }
 
@@ -82,7 +78,7 @@ const FilterAdult = {
    *   True if it is an adult url.
    */
   isAdultUrl(url) {
-    if (!gFilterAdultEnabled) {
+    if (!lazy.gFilterAdultEnabled) {
       return false;
     }
     try {

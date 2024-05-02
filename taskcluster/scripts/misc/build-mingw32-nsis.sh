@@ -28,14 +28,22 @@ ln -s i686-w64-mingw32-clang++ $MOZ_FETCHES_DIR/clang/bin/i686-w64-mingw32-g++
 
 # --------------
 
-cd zlib-1.2.11
+cd zlib-1.3
 make -f win32/Makefile.gcc PREFIX=i686-w64-mingw32-
 
 cd ../nsis-3.07-src
 patch -p1 < $GECKO_PATH/build/win32/nsis-no-insert-timestamp.patch
 patch -p1 < $GECKO_PATH/build/win32/nsis-no-underscore.patch
-# --exclude-libs is not supported by lld, but is not required anyways
-sed -i 's/ -Wl,--exclude-libs,msvcrt.a//' SCons/Config/gnu
+patch -p1 < $GECKO_PATH/build/win32/nsis-scons.patch
+# --exclude-libs is not supported by lld, but is not required anyways.
+# /fixed is passed by the build system when building with MSVC but not
+# when building with GCC/binutils. The build system doesn't really support
+# clang/lld, but apparently binutils and lld don't have the same defaults
+# related to this. Unfortunately, /fixed is necessary for the stubs to be
+# handled properly by the resource editor in NSIS, which doesn't handle
+# relocations, so we pass the equivalent flag to lld-link through lld through
+# clang.
+sed -i 's/-Wl,--exclude-libs,msvcrt.a/-Wl,-Xlink=-fixed/' SCons/Config/gnu
 # memcpy.c and memset.c are built with a C++ compiler so we need to
 # avoid their symbols being mangled.
 sed -i '2i extern "C"' SCons/Config/{memcpy,memset}.c
@@ -46,7 +54,7 @@ scons \
   CC="clang --sysroot $MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu" \
   CXX="clang++ --sysroot $MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu" \
   XGCC_W32_PREFIX=i686-w64-mingw32- \
-  ZLIB_W32=../zlib-1.2.11 \
+  ZLIB_W32=../zlib-1.3 \
   SKIPUTILS="NSIS Menu,Makensisw" \
   PREFIX_DEST=$INSTALL_DIR/ \
   PREFIX_BIN=bin \

@@ -1,4 +1,5 @@
 // Copyright 2019 Google LLC
+// SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,9 +16,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <string>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/test_util_test.cc"
-#include "hwy/foreach_target.h"
+#include "hwy/foreach_target.h"  // IWYU pragma: keep
 #include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
 
@@ -52,10 +55,10 @@ HWY_NOINLINE void TestAllName() { ForAllTypes(ForPartialVectors<TestName>()); }
 struct TestEqualInteger {
   template <class T>
   HWY_NOINLINE void operator()(T /*t*/) const {
-    HWY_ASSERT(IsEqual(T(0), T(0)));
-    HWY_ASSERT(IsEqual(T(1), T(1)));
-    HWY_ASSERT(IsEqual(T(-1), T(-1)));
-    HWY_ASSERT(IsEqual(LimitsMin<T>(), LimitsMin<T>()));
+    HWY_ASSERT_EQ(T(0), T(0));
+    HWY_ASSERT_EQ(T(1), T(1));
+    HWY_ASSERT_EQ(T(-1), T(-1));
+    HWY_ASSERT_EQ(LimitsMin<T>(), LimitsMin<T>());
 
     HWY_ASSERT(!IsEqual(T(0), T(1)));
     HWY_ASSERT(!IsEqual(T(1), T(0)));
@@ -100,11 +103,5 @@ HWY_BEFORE_TEST(TestUtilTest);
 HWY_EXPORT_AND_TEST_P(TestUtilTest, TestAllName);
 HWY_EXPORT_AND_TEST_P(TestUtilTest, TestAllEqual);
 }  // namespace hwy
-
-// Ought not to be necessary, but without this, no tests run on RVV.
-int main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
 
 #endif

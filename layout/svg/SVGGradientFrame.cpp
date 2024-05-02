@@ -55,7 +55,7 @@ nsresult SVGGradientFrame::AttributeChanged(int32_t aNameSpaceID,
       (aAttribute == nsGkAtoms::gradientUnits ||
        aAttribute == nsGkAtoms::gradientTransform ||
        aAttribute == nsGkAtoms::spreadMethod)) {
-    SVGObserverUtils::InvalidateDirectRenderingObservers(this);
+    SVGObserverUtils::InvalidateRenderingObservers(this);
   } else if ((aNameSpaceID == kNameSpaceID_XLink ||
               aNameSpaceID == kNameSpaceID_None) &&
              aAttribute == nsGkAtoms::href) {
@@ -63,7 +63,7 @@ nsresult SVGGradientFrame::AttributeChanged(int32_t aNameSpaceID,
     SVGObserverUtils::RemoveTemplateObserver(this);
     mNoHRefURI = false;
     // And update whoever references us
-    SVGObserverUtils::InvalidateDirectRenderingObservers(this);
+    SVGObserverUtils::InvalidateRenderingObservers(this);
   }
 
   return SVGPaintServerFrame::AttributeChanged(aNameSpaceID, aAttribute,
@@ -237,7 +237,7 @@ already_AddRefed<gfxPattern> SVGGradientFrame::GetPaintServerPattern(
     // Set mSource for this consumer.
     // If this gradient is applied to text, our caller will be the glyph, which
     // is not an element, so we need to get the parent
-    mSource = aSource->GetContent()->IsText() ? aSource->GetParent() : aSource;
+    mSource = aSource->IsTextFrame() ? aSource->GetParent() : aSource;
   }
 
   AutoTArray<nsIFrame*, 8> stopFrames;
@@ -344,15 +344,11 @@ SVGGradientFrame* SVGGradientFrame::GetReferencedGradient() {
     this->mNoHRefURI = aHref.IsEmpty();
   };
 
-  nsIFrame* tframe = SVGObserverUtils::GetAndObserveTemplate(this, GetHref);
-  if (tframe) {
-    return static_cast<SVGGradientFrame*>(do_QueryFrame(tframe));
-  }
   // We don't call SVGObserverUtils::RemoveTemplateObserver and set
-  // `mNoHRefURI = false` here since we want to be invalidated if the ID
+  // `mNoHRefURI = false` on failure since we want to be invalidated if the ID
   // specified by our href starts resolving to a different/valid element.
 
-  return nullptr;
+  return do_QueryFrame(SVGObserverUtils::GetAndObserveTemplate(this, GetHref));
 }
 
 void SVGGradientFrame::GetStopFrames(nsTArray<nsIFrame*>* aStopFrames) {
@@ -410,7 +406,7 @@ nsresult SVGLinearGradientFrame::AttributeChanged(int32_t aNameSpaceID,
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::x1 || aAttribute == nsGkAtoms::y1 ||
        aAttribute == nsGkAtoms::x2 || aAttribute == nsGkAtoms::y2)) {
-    SVGObserverUtils::InvalidateDirectRenderingObservers(this);
+    SVGObserverUtils::InvalidateRenderingObservers(this);
   }
 
   return SVGGradientFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
@@ -464,12 +460,10 @@ bool SVGLinearGradientFrame::GradientVectorLengthIsZero() {
 }
 
 already_AddRefed<gfxPattern> SVGLinearGradientFrame::CreateGradient() {
-  float x1, y1, x2, y2;
-
-  x1 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_X1);
-  y1 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_Y1);
-  x2 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_X2);
-  y2 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_Y2);
+  float x1 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_X1);
+  float y1 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_Y1);
+  float x2 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_X2);
+  float y2 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_Y2);
 
   RefPtr<gfxPattern> pattern = new gfxPattern(x1, y1, x2, y2);
   return pattern.forget();
@@ -501,7 +495,7 @@ nsresult SVGRadialGradientFrame::AttributeChanged(int32_t aNameSpaceID,
       (aAttribute == nsGkAtoms::r || aAttribute == nsGkAtoms::cx ||
        aAttribute == nsGkAtoms::cy || aAttribute == nsGkAtoms::fx ||
        aAttribute == nsGkAtoms::fy)) {
-    SVGObserverUtils::InvalidateDirectRenderingObservers(this);
+    SVGObserverUtils::InvalidateRenderingObservers(this);
   }
 
   return SVGGradientFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
@@ -562,19 +556,24 @@ SVGRadialGradientFrame::GetRadialGradientWithLength(
 }
 
 bool SVGRadialGradientFrame::GradientVectorLengthIsZero() {
-  return GetLengthValue(dom::SVGRadialGradientElement::ATTR_R) == 0;
+  float cx = GetLengthValue(dom::SVGRadialGradientElement::ATTR_CX);
+  float cy = GetLengthValue(dom::SVGRadialGradientElement::ATTR_CY);
+  float r = GetLengthValue(dom::SVGRadialGradientElement::ATTR_R);
+  // If fx or fy are not set, use cx/cy instead
+  float fx = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FX, cx);
+  float fy = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FY, cy);
+  float fr = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FR);
+  return cx == fx && cy == fy && r == fr;
 }
 
 already_AddRefed<gfxPattern> SVGRadialGradientFrame::CreateGradient() {
-  float cx, cy, r, fx, fy, fr;
-
-  cx = GetLengthValue(dom::SVGRadialGradientElement::ATTR_CX);
-  cy = GetLengthValue(dom::SVGRadialGradientElement::ATTR_CY);
-  r = GetLengthValue(dom::SVGRadialGradientElement::ATTR_R);
+  float cx = GetLengthValue(dom::SVGRadialGradientElement::ATTR_CX);
+  float cy = GetLengthValue(dom::SVGRadialGradientElement::ATTR_CY);
+  float r = GetLengthValue(dom::SVGRadialGradientElement::ATTR_R);
   // If fx or fy are not set, use cx/cy instead
-  fx = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FX, cx);
-  fy = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FY, cy);
-  fr = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FR);
+  float fx = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FX, cx);
+  float fy = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FY, cy);
+  float fr = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FR);
 
   RefPtr<gfxPattern> pattern = new gfxPattern(fx, fy, fr, cx, cy, r);
   return pattern.forget();

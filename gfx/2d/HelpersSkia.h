@@ -9,9 +9,12 @@
 
 #include "2D.h"
 #include "skia/include/core/SkCanvas.h"
-#include "skia/include/effects/SkDashPathEffect.h"
+#include "skia/include/core/SkPathEffect.h"
+#include "skia/include/core/SkPathTypes.h"
 #include "skia/include/core/SkShader.h"
+#include "skia/include/effects/SkDashPathEffect.h"
 #include "mozilla/Assertions.h"
+#include <cmath>
 #include <vector>
 #include "nsDebug.h"
 
@@ -29,7 +32,13 @@ static inline SkColorType GfxFormatToSkiaColorType(SurfaceFormat format) {
       return kRGB_565_SkColorType;
     case SurfaceFormat::A8:
       return kAlpha_8_SkColorType;
+    case SurfaceFormat::R8G8B8A8:
+      return kRGBA_8888_SkColorType;
+    case SurfaceFormat::A8R8G8B8:
+      MOZ_DIAGNOSTIC_ASSERT(false, "A8R8G8B8 unsupported by Skia");
+      return kRGBA_8888_SkColorType;
     default:
+      MOZ_DIAGNOSTIC_ASSERT(false, "Unknown surface format");
       return kRGBA_8888_SkColorType;
   }
 }
@@ -113,7 +122,7 @@ static inline bool StrokeOptionsToPaint(SkPaint& aPaint,
   // Skia renders 0 width strokes with a width of 1 (and in black),
   // so we should just skip the draw call entirely.
   // Skia does not handle non-finite line widths.
-  if (!aOptions.mLineWidth || !IsFinite(aOptions.mLineWidth)) {
+  if (!aOptions.mLineWidth || !std::isfinite(aOptions.mLineWidth)) {
     return false;
   }
   aPaint.setStrokeWidth(SkFloatToScalar(aOptions.mLineWidth));
@@ -139,8 +148,8 @@ static inline bool StrokeOptionsToPaint(SkPaint& aPaint,
           SkFloatToScalar(aOptions.mDashPattern[i % aOptions.mDashLength]);
     }
 
-    sk_sp<SkPathEffect> dash = SkDashPathEffect::Make(
-        &pattern.front(), dashCount, SkFloatToScalar(aOptions.mDashOffset));
+    auto dash = SkDashPathEffect::Make(&pattern.front(), dashCount,
+                                       SkFloatToScalar(aOptions.mDashOffset));
     aPaint.setPathEffect(dash);
   }
 
@@ -150,6 +159,8 @@ static inline bool StrokeOptionsToPaint(SkPaint& aPaint,
 
 static inline SkBlendMode GfxOpToSkiaOp(CompositionOp op) {
   switch (op) {
+    case CompositionOp::OP_CLEAR:
+      return SkBlendMode::kClear;
     case CompositionOp::OP_OVER:
       return SkBlendMode::kSrcOver;
     case CompositionOp::OP_ADD:
@@ -202,9 +213,11 @@ static inline SkBlendMode GfxOpToSkiaOp(CompositionOp op) {
       return SkBlendMode::kColor;
     case CompositionOp::OP_LUMINOSITY:
       return SkBlendMode::kLuminosity;
-    default:
-      return SkBlendMode::kSrcOver;
+    case CompositionOp::OP_COUNT:
+      break;
   }
+
+  return SkBlendMode::kSrcOver;
 }
 
 /* There's quite a bit of inconsistency about
@@ -292,14 +305,14 @@ static inline SkFontHinting GfxHintingToSkiaHinting(FontHinting aHinting) {
   return SkFontHinting::kNormal;
 }
 
-static inline FillRule GetFillRule(SkPath::FillType aFillType) {
+static inline FillRule GetFillRule(SkPathFillType aFillType) {
   switch (aFillType) {
-    case SkPath::kWinding_FillType:
+    case SkPathFillType::kWinding:
       return FillRule::FILL_WINDING;
-    case SkPath::kEvenOdd_FillType:
+    case SkPathFillType::kEvenOdd:
       return FillRule::FILL_EVEN_ODD;
-    case SkPath::kInverseWinding_FillType:
-    case SkPath::kInverseEvenOdd_FillType:
+    case SkPathFillType::kInverseWinding:
+    case SkPathFillType::kInverseEvenOdd:
     default:
       NS_WARNING("Unsupported fill type\n");
       break;
@@ -325,6 +338,21 @@ static inline bool IsBackedByPixels(const SkCanvas* aCanvas) {
   }
   return true;
 }
+
+/**
+ * Computes appropriate resolution scale to be used with SkPath::getFillPath
+ * based on the scaling of the supplied transform.
+ */
+float ComputeResScaleForStroking(const Matrix& aTransform);
+
+/**
+ * This is a wrapper around SkGeometry's SkConic that can be used to convert
+ * conic sections in an SkPath to a sequence of quadratic curves. The quads
+ * vector is organized such that for the Nth quad, it's control points are
+ * 2*N, 2*N+1, 2*N+2. This function returns the resulting number of quads.
+ */
+int ConvertConicToQuads(const Point& aP0, const Point& aP1, const Point& aP2,
+                        float aWeight, std::vector<Point>& aQuads);
 
 }  // namespace gfx
 }  // namespace mozilla

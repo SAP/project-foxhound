@@ -8,6 +8,7 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 
+#include "nsIDNSAdditionalInfo.h"
 #include "nsIDNSListener.h"
 #include "nsIDNSService.h"
 #include "nsIDNSByTypeRecord.h"
@@ -39,6 +40,7 @@ nsDNSPrefetch::nsDNSPrefetch(nsIURI* aURI,
       mTRRMode(aTRRMode),
       mListener(do_GetWeakReference(aListener)) {
   aURI->GetAsciiHost(mHostname);
+  aURI->GetPort(&mPort);
 }
 
 nsDNSPrefetch::nsDNSPrefetch(nsIURI* aURI,
@@ -51,7 +53,7 @@ nsDNSPrefetch::nsDNSPrefetch(nsIURI* aURI,
   aURI->GetAsciiHost(mHostname);
 }
 
-nsresult nsDNSPrefetch::Prefetch(uint32_t flags) {
+nsresult nsDNSPrefetch::Prefetch(nsIDNSService::DNSFlags flags) {
   if (mHostname.IsEmpty()) return NS_ERROR_NOT_AVAILABLE;
 
   if (!sDNSService) return NS_ERROR_NOT_AVAILABLE;
@@ -63,7 +65,7 @@ nsresult nsDNSPrefetch::Prefetch(uint32_t flags) {
   // then our timing will be useless. However, in such a case,
   // mEndTimestamp will be a null timestamp and callers should check
   // TimingsValid() before using the timing.
-  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentEventTarget();
+  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentSerialEventTarget();
 
   flags |= nsIDNSService::GetFlagsFromTRRMode(mTRRMode);
 
@@ -73,18 +75,16 @@ nsresult nsDNSPrefetch::Prefetch(uint32_t flags) {
       mOriginAttributes, getter_AddRefs(tmpOutstanding));
 }
 
-nsresult nsDNSPrefetch::PrefetchLow(bool refreshDNS) {
-  return Prefetch(nsIDNSService::RESOLVE_PRIORITY_LOW |
-                  (refreshDNS ? nsIDNSService::RESOLVE_BYPASS_CACHE : 0));
+nsresult nsDNSPrefetch::PrefetchLow(nsIDNSService::DNSFlags aFlags) {
+  return Prefetch(nsIDNSService::RESOLVE_PRIORITY_LOW | aFlags);
 }
 
-nsresult nsDNSPrefetch::PrefetchMedium(bool refreshDNS) {
-  return Prefetch(nsIDNSService::RESOLVE_PRIORITY_MEDIUM |
-                  (refreshDNS ? nsIDNSService::RESOLVE_BYPASS_CACHE : 0));
+nsresult nsDNSPrefetch::PrefetchMedium(nsIDNSService::DNSFlags aFlags) {
+  return Prefetch(nsIDNSService::RESOLVE_PRIORITY_MEDIUM | aFlags);
 }
 
-nsresult nsDNSPrefetch::PrefetchHigh(bool refreshDNS) {
-  return Prefetch(refreshDNS ? nsIDNSService::RESOLVE_BYPASS_CACHE : 0);
+nsresult nsDNSPrefetch::PrefetchHigh(nsIDNSService::DNSFlags aFlags) {
+  return Prefetch(aFlags);
 }
 
 namespace {
@@ -127,8 +127,8 @@ nsresult nsDNSPrefetch::FetchHTTPSSVC(
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentEventTarget();
-  uint32_t flags = nsIDNSService::GetFlagsFromTRRMode(mTRRMode);
+  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentSerialEventTarget();
+  nsIDNSService::DNSFlags flags = nsIDNSService::GetFlagsFromTRRMode(mTRRMode);
   if (aRefreshDNS) {
     flags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
   }
@@ -138,8 +138,12 @@ nsresult nsDNSPrefetch::FetchHTTPSSVC(
 
   nsCOMPtr<nsICancelable> tmpOutstanding;
   nsCOMPtr<nsIDNSListener> listener = new HTTPSRRListener(std::move(aCallback));
+  nsCOMPtr<nsIDNSAdditionalInfo> info;
+  if (mPort != -1) {
+    sDNSService->NewAdditionalInfo(""_ns, mPort, getter_AddRefs(info));
+  }
   return sDNSService->AsyncResolveNative(
-      mHostname, nsIDNSService::RESOLVE_TYPE_HTTPSSVC, flags, nullptr, listener,
+      mHostname, nsIDNSService::RESOLVE_TYPE_HTTPSSVC, flags, info, listener,
       target, mOriginAttributes, getter_AddRefs(tmpOutstanding));
 }
 

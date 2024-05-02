@@ -11,13 +11,20 @@ const helpers = require("../helpers");
 
 let servicesInterfaceMap = helpers.servicesData;
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
 module.exports = {
   meta: {
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/use-services.html",
+    },
     // fixable: "code",
+    messages: {
+      useServices:
+        "Use Services.{{ serviceName }} rather than {{ getterName }}.",
+    },
+    schema: [],
+    type: "suggestion",
   },
+
   create(context) {
     return {
       CallExpression(node) {
@@ -34,10 +41,14 @@ module.exports = {
         ) {
           let serviceName = servicesInterfaceMap[node.arguments[3].value];
 
-          context.report(
+          context.report({
             node,
-            `Use Services.${serviceName} rather than defineLazyServiceGetter.`
-          );
+            messageId: "useServices",
+            data: {
+              serviceName,
+              getterName: "defineLazyServiceGetter",
+            },
+          });
           return;
         }
 
@@ -56,10 +67,14 @@ module.exports = {
               let serviceName =
                 servicesInterfaceMap[property.value.elements[1].value];
 
-              context.report(
-                property.value,
-                `Use Services.${serviceName} rather than defineLazyServiceGetters.`
-              );
+              context.report({
+                node: property.value,
+                messageId: "useServices",
+                data: {
+                  serviceName,
+                  getterName: "defineLazyServiceGetters",
+                },
+              });
             }
           }
           return;
@@ -80,7 +95,11 @@ module.exports = {
         let serviceName = servicesInterfaceMap[node.arguments[0].property.name];
         context.report({
           node,
-          message: `Use Services.${serviceName} rather than getService().`,
+          messageId: "useServices",
+          data: {
+            serviceName,
+            getterName: "getService()",
+          },
           // This is not enabled by default as for mochitest plain tests we
           // would need to replace with `SpecialPowers.Services.${serviceName}`.
           // At the moment we do not have an easy way to detect that.

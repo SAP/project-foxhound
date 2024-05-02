@@ -27,7 +27,9 @@ var win;
 var timeoutID;
 var menu;
 
-const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {AppConstants} = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 
 function beginTest() {
     if (AppConstants.platform == "macosx" && SpecialPowers.getBoolPref("widget.macos.native-context-menus", false)) {
@@ -109,8 +111,8 @@ function openContextMenu() {
         var rootElement = win.document.documentElement;
         var platformIsMac = navigator.userAgent.indexOf("Mac") > -1;
 
-        var x = menu.screenX - rootElement.screenX;
-        var y = menu.screenY - rootElement.screenY;
+        var x = menu.screenX - rootElement.screenX - parseFloat(getComputedStyle(menu).marginLeft);
+        var y = menu.screenY - rootElement.screenY - parseFloat(getComputedStyle(menu).marginTop);
 
         if (platformIsMac)
         {

@@ -6,7 +6,7 @@
 
 "use strict";
 
-const asyncStorage = require("devtools/shared/async-storage");
+const asyncStorage = require("resource://devtools/shared/async-storage.js");
 
 const {
   ADD_VIEWPORT,
@@ -17,9 +17,11 @@ const {
   RESIZE_VIEWPORT,
   ROTATE_VIEWPORT,
   ZOOM_VIEWPORT,
-} = require("devtools/client/responsive/actions/index");
+} = require("resource://devtools/client/responsive/actions/index.js");
 
-const { post } = require("devtools/client/responsive/utils/message");
+const {
+  post,
+} = require("resource://devtools/client/responsive/utils/message.js");
 
 module.exports = {
   /**
@@ -36,7 +38,7 @@ module.exports = {
    * Change the viewport device.
    */
   changeDevice(id, device, deviceType) {
-    return async function({ dispatch }) {
+    return async function ({ dispatch }) {
       dispatch({
         type: CHANGE_DEVICE,
         id,
@@ -79,7 +81,7 @@ module.exports = {
    * Remove the viewport's device assocation.
    */
   removeDeviceAssociation(id) {
-    return async function({ dispatch }) {
+    return async function ({ dispatch }) {
       post(window, "remove-device-association");
 
       dispatch({

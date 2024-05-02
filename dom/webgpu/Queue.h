@@ -43,6 +43,8 @@ class Queue final : public ObjectBase, public ChildOf<Device> {
   void Submit(
       const dom::Sequence<OwningNonNull<CommandBuffer>>& aCommandBuffers);
 
+  already_AddRefed<dom::Promise> OnSubmittedWorkDone(ErrorResult& aRv);
+
   void WriteBuffer(const Buffer& aBuffer, uint64_t aBufferOffset,
                    const dom::ArrayBufferViewOrArrayBuffer& aData,
                    uint64_t aDataOffset, const dom::Optional<uint64_t>& aSize,
@@ -52,6 +54,11 @@ class Queue final : public ObjectBase, public ChildOf<Device> {
                     const dom::ArrayBufferViewOrArrayBuffer& aData,
                     const dom::GPUImageDataLayout& aDataLayout,
                     const dom::GPUExtent3D& aSize, ErrorResult& aRv);
+
+  void CopyExternalImageToTexture(
+      const dom::GPUImageCopyExternalImage& aSource,
+      const dom::GPUImageCopyTextureTagged& aDestination,
+      const dom::GPUExtent3D& aCopySize, ErrorResult& aRv);
 
  private:
   virtual ~Queue();

@@ -13,8 +13,6 @@ If no arguments are given, install all packages.
 See https://wiki.mozilla.org/Auto-tools/Projects/Mozbase
 """
 
-from __future__ import absolute_import, print_function
-
 import os
 import subprocess
 import sys
@@ -147,7 +145,6 @@ def unroll_dependencies(dependencies):
         packages.update(deps)
 
     while len(order) != len(packages):
-
         for package in packages.difference(order):
             if set(dependencies.get(package, set())).issubset(order):
                 order.append(package)
@@ -161,7 +158,6 @@ def unroll_dependencies(dependencies):
 
 
 def main(args=sys.argv[1:]):
-
     # parse command line options
     usage = "%prog [options] [package] [package] [...]"
     parser = OptionParser(usage=usage, description=__doc__)

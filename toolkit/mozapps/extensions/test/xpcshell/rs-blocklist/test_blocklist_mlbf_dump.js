@@ -32,7 +32,6 @@ const nonBlockedAddon = {
 };
 
 async function sha256(arrayBuffer) {
-  Cu.importGlobalProperties(["crypto"]);
   let hash = await crypto.subtle.digest("SHA-256", arrayBuffer);
   const toHex = b => b.toString(16).padStart(2, "0");
   return Array.from(new Uint8Array(hash), toHex).join("");
@@ -53,7 +52,7 @@ add_task(async function setup() {
   // Despite being called "download", this does not actually access the network
   // when there is a valid dump.
   const originalImpl = ExtensionBlocklistMLBF._client.attachments.download;
-  ExtensionBlocklistMLBF._client.attachments.download = function(record) {
+  ExtensionBlocklistMLBF._client.attachments.download = function (record) {
     let downloadPromise = originalImpl.apply(this, arguments);
     observed.push({ inputRecord: record, downloadPromise });
     return downloadPromise;
@@ -92,7 +91,7 @@ add_task(async function verify_dump_first_run() {
   // If this fails:
   // - "dump_fallback" means that the MLBF attachment is out of sync with the
   //   collection data.
-  // - undefined could mean that the implementation of Attachments.jsm changed.
+  // - undefined could mean that the implementation of Attachments.sys.mjs changed.
   Assert.equal(
     downloadResult._source,
     "dump_match",

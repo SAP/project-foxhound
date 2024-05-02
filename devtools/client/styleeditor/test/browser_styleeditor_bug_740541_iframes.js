@@ -4,7 +4,7 @@
 
 // Test that sheets inside iframes are shown in the editor.
 
-add_task(async function() {
+add_task(async function () {
   function makeStylesheet(selector) {
     return (
       "data:text/css;charset=UTF-8," + encodeURIComponent(selector + " { }")
@@ -25,13 +25,13 @@ add_task(async function() {
               "<head>",
               "<title>Bug 740541</title>",
             ],
-            stylesheets.map(function(sheet) {
+            stylesheets.map(function (sheet) {
               return (
                 '<link rel="stylesheet" type="text/css" href="' + sheet + '">'
               );
             }),
             ["</head>", "<body>"],
-            framedDocuments.map(function(doc) {
+            framedDocuments.map(function (doc) {
               return '<iframe src="' + doc + '"></iframe>';
             }),
             ["</body>", "</html>"]
@@ -88,4 +88,20 @@ add_task(async function() {
     EXPECTED_STYLE_SHEET_COUNT,
     "Got the expected number of style sheets."
   );
+
+  // Verify that stylesheets are removed when their related target is destroyed
+  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
+    info("Remove all iframes");
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+      const iframes = content.document.querySelectorAll("iframe");
+      for (const iframe of iframes) {
+        iframe.remove();
+      }
+    });
+
+    await waitFor(
+      () => ui.editors.length == 1,
+      "Wait until all iframe stylesheets are removed and we only have the top document one"
+    );
+  }
 });

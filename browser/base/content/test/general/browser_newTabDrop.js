@@ -1,7 +1,9 @@
+/* eslint-disable @microsoft/sdl/no-insecure-url */
+
 const ANY_URL = undefined;
 
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
 
 SearchTestUtils.init(this);
@@ -10,41 +12,40 @@ registerCleanupFunction(async function cleanup() {
   while (gBrowser.tabs.length > 1) {
     BrowserTestUtils.removeTab(gBrowser.tabs[gBrowser.tabs.length - 1]);
   }
-  await Services.search.setDefault(originalEngine);
 });
 
-let originalEngine;
 add_task(async function test_setup() {
   // This test opens multiple tabs and some confirm dialogs, that takes long.
   requestLongerTimeout(2);
 
   // Stop search-engine loads from hitting the network
-  await SearchTestUtils.installSearchExtension({
-    name: "MozSearch",
-    search_url: "https://example.com/",
-    search_url_get_params: "q={searchTerms}",
-  });
-  let engine = Services.search.getEngineByName("MozSearch");
-  originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: "MozSearch",
+      search_url: "https://example.com/",
+      search_url_get_params: "q={searchTerms}",
+    },
+    { setAsDefault: true }
+  );
 });
 
 // New Tab Button opens any link.
 add_task(async function single_url() {
-  await dropText("mochi.test/first", ["https://www.mochi.test/first"]);
+  await dropText("example.com/first", ["http://example.com/first"]);
 });
 add_task(async function single_url2() {
-  await dropText("mochi.test/second", ["https://www.mochi.test/second"]);
+  await dropText("example.com/second", ["http://example.com/second"]);
 });
 add_task(async function single_url3() {
-  await dropText("mochi.test/third", ["https://www.mochi.test/third"]);
+  await dropText("example.com/third", ["http://example.com/third"]);
 });
 
 // Single text/plain item, with multiple links.
 add_task(async function multiple_urls() {
-  await dropText("mochi.test/1\nmochi.test/2", [
-    "https://www.mochi.test/1",
-    "https://www.mochi.test/2",
+  await dropText("www.example.com/1\nexample.com/2", [
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    "http://www.example.com/1",
+    "http://example.com/2",
   ]);
 });
 
@@ -52,14 +53,10 @@ add_task(async function multiple_urls() {
 add_task(async function multiple_items_single_and_multiple_links() {
   await drop(
     [
-      [{ type: "text/plain", data: "mochi.test/5" }],
-      [{ type: "text/plain", data: "mochi.test/6\nmochi.test/7" }],
+      [{ type: "text/plain", data: "example.com/5" }],
+      [{ type: "text/plain", data: "example.com/6\nexample.com/7" }],
     ],
-    [
-      "https://www.mochi.test/5",
-      "https://www.mochi.test/6",
-      "https://www.mochi.test/7",
-    ]
+    ["http://example.com/5", "http://example.com/6", "http://example.com/7"]
   );
 });
 
@@ -71,11 +68,11 @@ add_task(async function single_moz_url_multiple_links() {
       [
         {
           type: "text/x-moz-url",
-          data: "mochi.test/8\nTITLE8\nmochi.test/9\nTITLE9",
+          data: "example.com/8\nTITLE8\nexample.com/9\nTITLE9",
         },
       ],
     ],
-    ["https://www.mochi.test/8", "https://www.mochi.test/9"]
+    ["http://example.com/8", "http://example.com/9"]
   );
 });
 
@@ -84,11 +81,11 @@ add_task(async function single_item_multiple_types() {
   await drop(
     [
       [
-        { type: "text/plain", data: "mochi.test/10" },
-        { type: "text/x-moz-url", data: "mochi.test/11\nTITLE11" },
+        { type: "text/plain", data: "example.com/10" },
+        { type: "text/x-moz-url", data: "example.com/11\nTITLE11" },
       ],
     ],
-    ["https://www.mochi.test/11"]
+    ["http://example.com/11"]
   );
 });
 
@@ -96,14 +93,14 @@ add_task(async function single_item_multiple_types() {
 add_task(async function multiple_tabs_under_max() {
   let urls = [];
   for (let i = 0; i < 5; i++) {
-    urls.push("mochi.test/multi" + i);
+    urls.push("example.com/multi" + i);
   }
   await dropText(urls.join("\n"), [
-    "https://www.mochi.test/multi0",
-    "https://www.mochi.test/multi1",
-    "https://www.mochi.test/multi2",
-    "https://www.mochi.test/multi3",
-    "https://www.mochi.test/multi4",
+    "http://example.com/multi0",
+    "http://example.com/multi1",
+    "http://example.com/multi2",
+    "http://example.com/multi3",
+    "http://example.com/multi4",
   ]);
 });
 add_task(async function multiple_tabs_over_max_accept() {
@@ -113,14 +110,14 @@ add_task(async function multiple_tabs_over_max_accept() {
 
   let urls = [];
   for (let i = 0; i < 5; i++) {
-    urls.push("mochi.test/accept" + i);
+    urls.push("example.com/accept" + i);
   }
   await dropText(urls.join("\n"), [
-    "https://www.mochi.test/accept0",
-    "https://www.mochi.test/accept1",
-    "https://www.mochi.test/accept2",
-    "https://www.mochi.test/accept3",
-    "https://www.mochi.test/accept4",
+    "http://example.com/accept0",
+    "http://example.com/accept1",
+    "http://example.com/accept2",
+    "http://example.com/accept3",
+    "http://example.com/accept4",
   ]);
 
   await confirmPromise;
@@ -134,7 +131,7 @@ add_task(async function multiple_tabs_over_max_cancel() {
 
   let urls = [];
   for (let i = 0; i < 5; i++) {
-    urls.push("mochi.test/cancel" + i);
+    urls.push("example.com/cancel" + i);
   }
   await dropText(urls.join("\n"), []);
 
@@ -147,19 +144,19 @@ add_task(async function multiple_tabs_over_max_cancel() {
 add_task(async function multiple_urls() {
   await dropText(
     `
-    mochi.test/urls0
-    mochi.test/urls1
-    mochi.test/urls2
+    example.com/urls0
+    example.com/urls1
+    example.com/urls2
     non url0
-    mochi.test/urls3
+    example.com/urls3
     non url1
     non url2
 `,
     [
-      "https://www.mochi.test/urls0",
-      "https://www.mochi.test/urls1",
-      "https://www.mochi.test/urls2",
-      "https://www.mochi.test/urls3",
+      "http://example.com/urls0",
+      "http://example.com/urls1",
+      "http://example.com/urls2",
+      "http://example.com/urls3",
     ]
   );
 });
@@ -185,11 +182,6 @@ async function drop(dragData, expectedURLs) {
   info(
     `Starting test for dragData:${dragDataString}; expectedURLs.length:${expectedURLs.length}`
   );
-  let EventUtils = {};
-  Services.scriptloader.loadSubScript(
-    "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
-    EventUtils
-  );
 
   // Since synthesizeDrop triggers the srcElement, need to use another button
   // that should be visible.
@@ -205,7 +197,7 @@ async function drop(dragData, expectedURLs) {
   let awaitDrop = BrowserTestUtils.waitForEvent(newTabButton, "drop");
 
   let loadedPromises = expectedURLs.map(url =>
-    BrowserTestUtils.waitForNewTab(gBrowser, url, false, true)
+    BrowserTestUtils.waitForNewTab(gBrowser, url, true, true)
   );
 
   EventUtils.synthesizeDrop(

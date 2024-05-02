@@ -4,15 +4,12 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
 );
 
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const nsIBinaryInputStream = Components.Constructor(
@@ -32,7 +29,6 @@ Services.prefs.setBoolPref("network.jar.record_failure_reason", true);
 
 const fileBase = "test_empty_file.zip";
 const file = do_get_file("data/" + fileBase);
-const jarBase = "jar:" + Services.io.newFileURI(file).spec + "!";
 const tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
 var copy;
 
@@ -102,7 +98,7 @@ add_task(async function test_empty_jar_file_async() {
 
   await new Promise(resolve => {
     chan.asyncOpen(
-      new Listener(function(l) {
+      new Listener(function (l) {
         Assert.ok(chan.contentLength == 0);
         resolve();
       })

@@ -5,6 +5,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef _MozAccessible_H_
+#define _MozAccessible_H_
+
 #include "AccessibleWrap.h"
 #include "RemoteAccessible.h"
 
@@ -39,8 +42,16 @@ inline mozAccessible* GetNativeFromGeckoAccessible(
   return reinterpret_cast<mozAccessible*>(proxy->GetWrapper());
 }
 
-}  // a11y
-}  // mozilla
+// Checked state values some accessibles return as AXValue.
+enum CheckedState {
+  kUncheckable = -1,
+  kUnchecked = 0,
+  kChecked = 1,
+  kMixed = 2
+};
+
+}  // namespace a11y
+}  // namespace mozilla
 
 @interface mozAccessible : MOXAccessibleBase {
   /**
@@ -54,11 +65,6 @@ inline mozAccessible* GetNativeFromGeckoAccessible(
    */
   mozilla::a11y::role mRole;
 
-  /**
-   * A cache of a subset of our states.
-   */
-  uint64_t mCachedState;
-
   nsStaticAtom* mARIARole;
 
   bool mIsLiveRegion;
@@ -70,8 +76,6 @@ inline mozAccessible* GetNativeFromGeckoAccessible(
 // allows for gecko accessible access outside of the class
 - (mozilla::a11y::Accessible*)geckoAccessible;
 
-- (mozilla::a11y::Accessible*)geckoDocument;
-
 // override
 - (void)dealloc;
 
@@ -81,7 +85,7 @@ inline mozAccessible* GetNativeFromGeckoAccessible(
 // Given a gecko accessibility event type, post the relevant
 // system accessibility notification.
 // Note: when overriding or adding new events, make sure your events aren't
-// filtered out in Platform::ProxyEvent or AccessibleWrap::HandleAccEvent!
+// filtered out in Platform::PlatformEvent or AccessibleWrap::HandleAccEvent!
 - (void)handleAccessibleEvent:(uint32_t)eventType;
 
 - (void)handleAccessibleTextChangeEvent:(NSString*)change
@@ -98,11 +102,8 @@ inline mozAccessible* GetNativeFromGeckoAccessible(
 // Get gecko accessible's state filtered through given mask.
 - (uint64_t)stateWithMask:(uint64_t)mask;
 
-// Notify of a state change, so the cache can be altered.
+// Notify of a state change, so notifications can be fired.
 - (void)stateChanged:(uint64_t)state isEnabled:(BOOL)enabled;
-
-// Invalidate cached state.
-- (void)invalidateState;
 
 // Get top level (tab) web area.
 - (mozAccessible*)topWebArea;
@@ -206,6 +207,12 @@ inline mozAccessible* GetNativeFromGeckoAccessible(
 - (NSString*)moxARIALive;
 
 // override
+- (NSNumber*)moxARIAPosInSet;
+
+// override
+- (NSNumber*)moxARIASetSize;
+
+// override
 - (NSString*)moxARIARelevant;
 
 // override
@@ -274,3 +281,5 @@ inline mozAccessible* GetNativeFromGeckoAccessible(
 - (BOOL)isExpired;
 
 @end
+
+#endif

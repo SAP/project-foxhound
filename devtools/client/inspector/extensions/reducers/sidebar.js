@@ -9,7 +9,7 @@ const {
   EXTENSION_SIDEBAR_EXPRESSION_RESULT_VIEW_UPDATE,
   EXTENSION_SIDEBAR_PAGE_UPDATE,
   EXTENSION_SIDEBAR_REMOVE,
-} = require("devtools/client/inspector/extensions/actions/index");
+} = require("resource://devtools/client/inspector/extensions/actions/index.js");
 
 const INITIAL_SIDEBAR = {};
 
@@ -58,7 +58,7 @@ const reducers = {
   },
 };
 
-module.exports = function(sidebar = INITIAL_SIDEBAR, action) {
+module.exports = function (sidebar = INITIAL_SIDEBAR, action) {
   const reducer = reducers[action.type];
   if (!reducer) {
     return sidebar;

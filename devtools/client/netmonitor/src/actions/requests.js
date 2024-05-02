@@ -13,16 +13,17 @@ const {
   RIGHT_CLICK_REQUEST,
   SEND_CUSTOM_REQUEST,
   SET_EVENT_STREAM_FLAG,
-  TOGGLE_RECORDING,
+  SET_RECORDING_STATE,
   UPDATE_REQUEST,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 const {
   getSelectedRequest,
   getRequestById,
-} = require("devtools/client/netmonitor/src/selectors/index");
+  getRecordingState,
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 const {
   fetchNetworkUpdatePacket,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 function addRequest(id, data, batch) {
   return {
@@ -84,8 +85,8 @@ function cloneSelectedRequest() {
 /**
  * Send a new HTTP request using the data in the custom request form.
  */
-function sendCustomRequest(connector, requestId = null) {
-  return async ({ dispatch, getState }) => {
+function sendCustomRequest(requestId = null) {
+  return async ({ dispatch, getState, connector, commands }) => {
     let request;
     if (requestId) {
       request = getRequestById(getState(), requestId);
@@ -122,13 +123,11 @@ function sendCustomRequest(connector, requestId = null) {
       data.body = request.requestPostData.postData.text;
     }
 
-    // @backward-compat { version 85 } Introduced `channelId` to eventually
-    // replace `actor`.
-    const { channelId, actor } = await connector.sendHTTPRequest(data);
+    const { channelId } = await commands.networkCommand.sendHTTPRequest(data);
 
     dispatch({
       type: SEND_CUSTOM_REQUEST,
-      id: channelId || actor,
+      id: channelId,
     });
   };
 }
@@ -142,10 +141,13 @@ function removeSelectedCustomRequest() {
     type: REMOVE_SELECTED_CUSTOM_REQUEST,
   };
 }
-
+/**
+ * Clear all requests
+ */
 function clearRequests() {
-  return {
-    type: CLEAR_REQUESTS,
+  return ({ dispatch, connector }) => {
+    dispatch({ type: CLEAR_REQUESTS });
+    connector.clear();
   };
 }
 
@@ -153,8 +155,17 @@ function clearRequests() {
  * Toggle monitoring
  */
 function toggleRecording() {
-  return {
-    type: TOGGLE_RECORDING,
+  return async ({ dispatch, getState, connector }) => {
+    const recording = !getRecordingState(getState());
+    if (recording) {
+      await connector.resume();
+    } else {
+      connector.pause();
+    }
+    dispatch({
+      type: SET_RECORDING_STATE,
+      recording,
+    });
   };
 }
 

@@ -41,6 +41,13 @@ PerformanceResourceTiming::PerformanceResourceTiming(
 
 PerformanceResourceTiming::~PerformanceResourceTiming() = default;
 
+DOMHighResTimeStamp PerformanceResourceTiming::FetchStart() const {
+  if (mTimingData->TimingAllowed()) {
+    return mTimingData->FetchStartHighRes(mPerformance);
+  }
+  return StartTime();
+}
+
 DOMHighResTimeStamp PerformanceResourceTiming::StartTime() const {
   // Force the start time to be the earliest of:
   //  - RedirectStart
@@ -84,7 +91,7 @@ size_t PerformanceResourceTiming::SizeOfExcludingThis(
 
 void PerformanceResourceTiming::GetServerTiming(
     nsTArray<RefPtr<PerformanceServerTiming>>& aRetval,
-    Maybe<nsIPrincipal*>& aSubjectPrincipal) {
+    nsIPrincipal& aSubjectPrincipal) {
   aRetval.Clear();
   if (!TimingAllowedForCaller(aSubjectPrincipal)) {
     return;
@@ -103,25 +110,24 @@ void PerformanceResourceTiming::GetServerTiming(
 }
 
 bool PerformanceResourceTiming::TimingAllowedForCaller(
-    Maybe<nsIPrincipal*>& aCaller) const {
+    nsIPrincipal& aCaller) const {
   if (mTimingData->TimingAllowed()) {
     return true;
   }
 
   // Check if the addon has permission to access the cross-origin resource.
-  return mOriginalURI && aCaller.isSome() &&
-         BasePrincipal::Cast(aCaller.value())->AddonAllowsLoad(mOriginalURI);
+  return mOriginalURI &&
+         BasePrincipal::Cast(&aCaller)->AddonAllowsLoad(mOriginalURI);
 }
 
 bool PerformanceResourceTiming::ReportRedirectForCaller(
-    Maybe<nsIPrincipal*>& aCaller, bool aEnsureSameOriginAndIgnoreTAO) const {
+    nsIPrincipal& aCaller, bool aEnsureSameOriginAndIgnoreTAO) const {
   if (mTimingData->ShouldReportCrossOriginRedirect(
           aEnsureSameOriginAndIgnoreTAO)) {
     return true;
   }
 
   // Only report cross-origin redirect if the addon has <all_urls> permission.
-  return aCaller.isSome() &&
-         BasePrincipal::Cast(aCaller.value())
-             ->AddonHasPermission(nsGkAtoms::all_urlsPermission);
+  return BasePrincipal::Cast(&aCaller)->AddonHasPermission(
+      nsGkAtoms::all_urlsPermission);
 }

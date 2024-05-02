@@ -4,26 +4,21 @@
 
 "use strict";
 
-const Services = require("Services");
-const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
-const { accessibilitySpec } = require("devtools/shared/specs/accessibility");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  accessibilitySpec,
+} = require("resource://devtools/shared/specs/accessibility.js");
 
 loader.lazyRequireGetter(
   this,
   "AccessibleWalkerActor",
-  "devtools/server/actors/accessibility/walker",
+  "resource://devtools/server/actors/accessibility/walker.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "SimulatorActor",
-  "devtools/server/actors/accessibility/simulator",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "isWebRenderEnabled",
-  "devtools/server/actors/utils/accessibility",
+  "resource://devtools/server/actors/accessibility/simulator.js",
   true
 );
 
@@ -32,35 +27,35 @@ loader.lazyRequireGetter(
  * accessible walker and is the top-most point of interaction for accessibility
  * tools UI for a top level content process.
  */
-const AccessibilityActor = ActorClassWithSpec(accessibilitySpec, {
-  initialize(conn, targetActor) {
-    Actor.prototype.initialize.call(this, conn);
+class AccessibilityActor extends Actor {
+  constructor(conn, targetActor) {
+    super(conn, accessibilitySpec);
     // This event is fired when accessibility service is initialized or shut
     // down. "init" and "shutdown" events are only relayed when the enabled
     // state matches the event (e.g. the event came from the same process as
     // the actor).
     Services.obs.addObserver(this, "a11y-init-or-shutdown");
     this.targetActor = targetActor;
-  },
+  }
 
-  getTraits: function() {
+  getTraits() {
     // The traits are used to know if accessibility actors support particular
     // API on the server side.
     return {
       // @backward-compat { version 84 } Fixed on the server by Bug 1654956.
       tabbingOrder: true,
     };
-  },
+  }
 
   bootstrap() {
     return {
       enabled: this.enabled,
     };
-  },
+  }
 
   get enabled() {
     return Services.appinfo.accessibilityEnabled;
-  },
+  }
 
   /**
    * Observe Accessibility service init and shutdown events. It relays these
@@ -85,7 +80,7 @@ const AccessibilityActor = ActorClassWithSpec(accessibilitySpec, {
 
       this.emit("shutdown");
     }
-  },
+  }
 
   /**
    * Get or create AccessibilityWalker actor, similar to WalkerActor.
@@ -99,7 +94,7 @@ const AccessibilityActor = ActorClassWithSpec(accessibilitySpec, {
       this.manage(this.walker);
     }
     return this.walker;
-  },
+  }
 
   /**
    * Get or create Simulator actor, managed by AccessibilityActor,
@@ -112,29 +107,24 @@ const AccessibilityActor = ActorClassWithSpec(accessibilitySpec, {
    *         SimulatorActor for the current tab.
    */
   getSimulator() {
-    // TODO: Remove this check after Bug1570667
-    if (!isWebRenderEnabled(this.targetActor.window)) {
-      return null;
-    }
-
     if (!this.simulator) {
       this.simulator = new SimulatorActor(this.conn, this.targetActor);
       this.manage(this.simulator);
     }
 
     return this.simulator;
-  },
+  }
 
   /**
    * Destroy accessibility actor. This method also shutsdown accessibility
    * service if possible.
    */
   async destroy() {
-    Actor.prototype.destroy.call(this);
+    super.destroy();
     Services.obs.removeObserver(this, "a11y-init-or-shutdown");
     this.walker = null;
     this.targetActor = null;
-  },
-});
+  }
+}
 
 exports.AccessibilityActor = AccessibilityActor;

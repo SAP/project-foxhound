@@ -22,6 +22,7 @@
 #include "nsDebug.h"
 #include "nsError.h"
 #include "NSSErrorsService.h"
+#include "pk11hpke.h"
 #include "pk11pub.h"
 #include "pkcs12.h"
 #include "prerror.h"
@@ -35,6 +36,10 @@
 #ifndef MOZ_NO_MOZALLOC
 #  include "mozilla/mozalloc_oom.h"
 #endif
+
+// Normally this would be included from nsNSSComponent.h, but that file includes
+// this file.
+bool EnsureNSSInitializedChromeOrContent();
 
 namespace mozilla {
 
@@ -66,6 +71,18 @@ inline void SECKEYEncryptedPrivateKeyInfo_true(
   SECKEY_DestroyEncryptedPrivateKeyInfo(epki, true);
 }
 
+// If this was created via PK11_ListFixedKeysInSlot, we may have a list of keys,
+// in which case we have to free them all (and if not, this will still free the
+// one key).
+inline void FreeOneOrMoreSymKeys(PK11SymKey* keys) {
+  PK11SymKey* next;
+  while (keys) {
+    next = PK11_GetNextSymKey(keys);
+    PK11_FreeSymKey(keys);
+    keys = next;
+  }
+}
+
 }  // namespace internal
 
 // Emulates MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE, but for UniquePtrs.
@@ -77,6 +94,75 @@ inline void SECKEYEncryptedPrivateKeyInfo_true(
 
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11Context, PK11Context,
                                       internal::PK11_DestroyContext_true)
+MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11SlotInfo, PK11SlotInfo,
+                                      PK11_FreeSlot)
+MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11SymKey, PK11SymKey,
+                                      internal::FreeOneOrMoreSymKeys)
+
+// Common base class for Digest and HMAC. Should not be used directly.
+// Subclasses must implement a `Begin` function that initializes
+// `mDigestContext` and calls `SetLength`.
+class DigestBase {
+ protected:
+  explicit DigestBase() : mLen(0), mDigestContext(nullptr) {}
+
+ public:
+  nsresult Update(Span<const uint8_t> in) {
+    return Update(in.Elements(), in.Length());
+  }
+
+  nsresult Update(const unsigned char* buf, const uint32_t len) {
+    if (!mDigestContext) {
+      return NS_ERROR_NOT_INITIALIZED;
+    }
+    return MapSECStatus(PK11_DigestOp(mDigestContext.get(), buf, len));
+  }
+
+  nsresult End(/*out*/ nsTArray<uint8_t>& out) {
+    if (!mDigestContext) {
+      return NS_ERROR_NOT_INITIALIZED;
+    }
+    out.SetLength(mLen);
+    uint32_t len;
+    nsresult rv = MapSECStatus(
+        PK11_DigestFinal(mDigestContext.get(), out.Elements(), &len, mLen));
+    NS_ENSURE_SUCCESS(rv, rv);
+    mDigestContext = nullptr;
+    NS_ENSURE_TRUE(len == mLen, NS_ERROR_UNEXPECTED);
+
+    return NS_OK;
+  }
+
+ protected:
+  nsresult SetLength(SECOidTag hashType) {
+    switch (hashType) {
+      case SEC_OID_MD5:
+        mLen = MD5_LENGTH;
+        break;
+      case SEC_OID_SHA1:
+        mLen = SHA1_LENGTH;
+        break;
+      case SEC_OID_SHA256:
+        mLen = SHA256_LENGTH;
+        break;
+      case SEC_OID_SHA384:
+        mLen = SHA384_LENGTH;
+        break;
+      case SEC_OID_SHA512:
+        mLen = SHA512_LENGTH;
+        break;
+      default:
+        return NS_ERROR_INVALID_ARG;
+    }
+    return NS_OK;
+  }
+
+ private:
+  uint8_t mLen;
+
+ protected:
+  UniquePK11Context mDigestContext;
+};
 
 /** A more convenient way of dealing with digests calculated into
  *  stack-allocated buffers. NSS must be initialized on the main thread before
@@ -104,9 +190,9 @@ MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11Context, PK11Context,
  *   rv = digest.End(digestArray);
  *   NS_ENSURE_SUCCESS(rv, rv)
  */
-class Digest {
+class Digest : public DigestBase {
  public:
-  explicit Digest() : mLen(0), mDigestContext(nullptr) {}
+  explicit Digest() = default;
 
   static nsresult DigestBuf(SECOidTag hashAlg, Span<const uint8_t> buf,
                             /*out*/ nsTArray<uint8_t>& out) {
@@ -136,8 +222,19 @@ class Digest {
   }
 
   nsresult Begin(SECOidTag hashAlg) {
-    if (hashAlg != SEC_OID_SHA1 && hashAlg != SEC_OID_SHA256) {
-      return NS_ERROR_INVALID_ARG;
+    if (!EnsureNSSInitializedChromeOrContent()) {
+      return NS_ERROR_FAILURE;
+    }
+
+    switch (hashAlg) {
+      case SEC_OID_SHA1:
+      case SEC_OID_SHA256:
+      case SEC_OID_SHA384:
+      case SEC_OID_SHA512:
+        break;
+
+      default:
+        return NS_ERROR_INVALID_ARG;
     }
 
     mDigestContext = UniquePK11Context(PK11_CreateDigestContext(hashAlg));
@@ -149,60 +246,69 @@ class Digest {
     NS_ENSURE_SUCCESS(rv, rv);
     return MapSECStatus(PK11_DigestBegin(mDigestContext.get()));
   }
+};
 
-  nsresult Update(Span<const uint8_t> in) {
-    return Update(in.Elements(), in.Length());
-  }
+// A helper class to calculate HMACs over some data given a key.
+// Only SHA256 and, sadly, MD5 are supported at the moment.
+// Typical usage:
+//   (ensure NSS is initialized)
+//   (obtain raw bytes for a key, some data to calculate the HMAC for)
+//   HMAC hmac;
+//   nsresult rv = hmac.Begin(SEC_OID_SHA256, Span(key));
+//   NS_ENSURE_SUCCESS(rv, rv);
+//   rv = hmac.Update(buf, len);
+//   NS_ENSURE_SUCCESS(rv, rv);
+//   nsTArray<uint8_t> calculatedHmac;
+//   rv = hmac.End(calculatedHmac);
+//   NS_ENSURE_SUCCESS(rv, rv);
+class HMAC : public DigestBase {
+ public:
+  explicit HMAC() = default;
 
-  nsresult Update(const unsigned char* buf, const uint32_t len) {
-    if (!mDigestContext) {
-      return NS_ERROR_NOT_INITIALIZED;
+  nsresult Begin(SECOidTag hashAlg, Span<const uint8_t> key) {
+    if (!EnsureNSSInitializedChromeOrContent()) {
+      return NS_ERROR_FAILURE;
     }
-    return MapSECStatus(PK11_DigestOp(mDigestContext.get(), buf, len));
-  }
-
-  nsresult End(/*out*/ nsTArray<uint8_t>& out) {
-    if (!mDigestContext) {
-      return NS_ERROR_NOT_INITIALIZED;
-    }
-    out.SetLength(mLen);
-    uint32_t len;
-    nsresult rv = MapSECStatus(
-        PK11_DigestFinal(mDigestContext.get(), out.Elements(), &len, mLen));
-    NS_ENSURE_SUCCESS(rv, rv);
-    mDigestContext = nullptr;
-    NS_ENSURE_TRUE(len == mLen, NS_ERROR_UNEXPECTED);
-
-    return NS_OK;
-  }
-
- private:
-  nsresult SetLength(SECOidTag hashType) {
-#ifdef _MSC_VER
-#  pragma warning(push)
-    // C4061: enumerator 'symbol' in switch of enum 'symbol' is not
-    // explicitly handled.
-#  pragma warning(disable : 4061)
-#endif
-    switch (hashType) {
-      case SEC_OID_SHA1:
-        mLen = SHA1_LENGTH;
-        break;
+    CK_MECHANISM_TYPE mechType;
+    switch (hashAlg) {
       case SEC_OID_SHA256:
-        mLen = SHA256_LENGTH;
+        mechType = CKM_SHA256_HMAC;
+        break;
+      case SEC_OID_MD5:
+        mechType = CKM_MD5_HMAC;
         break;
       default:
         return NS_ERROR_INVALID_ARG;
     }
-#ifdef _MSC_VER
-#  pragma warning(pop)
-#endif
+    if (key.Length() > std::numeric_limits<unsigned int>::max()) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    // SECItem's data field is a non-const unsigned char*. The good news is the
+    // data won't be mutated, but the bad news is the constness needs to be
+    // casted away.
+    SECItem keyItem = {siBuffer, const_cast<unsigned char*>(key.Elements()),
+                       static_cast<unsigned int>(key.Length())};
+    UniquePK11SlotInfo slot(PK11_GetInternalSlot());
+    if (!slot) {
+      return mozilla::psm::GetXPCOMFromNSSError(PR_GetError());
+    }
+    UniquePK11SymKey symKey(
+        PK11_ImportSymKey(slot.get(), CKM_GENERIC_SECRET_KEY_GEN,
+                          PK11_OriginUnwrap, CKA_SIGN, &keyItem, nullptr));
+    if (!symKey) {
+      return mozilla::psm::GetXPCOMFromNSSError(PR_GetError());
+    }
+    SECItem emptyData = {siBuffer, nullptr, 0};
+    mDigestContext = UniquePK11Context(PK11_CreateContextBySymKey(
+        mechType, CKA_SIGN, symKey.get(), &emptyData));
+    if (!mDigestContext) {
+      return mozilla::psm::GetXPCOMFromNSSError(PR_GetError());
+    }
 
-    return NS_OK;
+    nsresult rv = SetLength(hashAlg);
+    NS_ENSURE_SUCCESS(rv, rv);
+    return MapSECStatus(PK11_DigestBegin(mDigestContext.get()));
   }
-
-  uint8_t mLen;
-  UniquePK11Context mDigestContext;
 };
 
 namespace internal {
@@ -271,16 +377,8 @@ inline void VFY_DestroyContext_true(VFYContext* ctx) {
   VFY_DestroyContext(ctx, true);
 }
 
-// If this was created via PK11_ListFixedKeysInSlot, we may have a list of keys,
-// in which case we have to free them all (and if not, this will still free the
-// one key).
-inline void FreeOneOrMoreSymKeys(PK11SymKey* keys) {
-  PK11SymKey* next;
-  while (keys) {
-    next = PK11_GetNextSymKey(keys);
-    PK11_FreeSymKey(keys);
-    keys = next;
-  }
+inline void PK11_HPKE_DestroyContext_true(HpkeContext* cx) {
+  PK11_HPKE_DestroyContext(cx, true);
 }
 
 }  // namespace internal
@@ -321,12 +419,8 @@ MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueNSSCMSSignedData, NSSCMSSignedData,
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11GenericObject,
                                       PK11GenericObject,
                                       PK11_DestroyGenericObject)
-MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11SlotInfo, PK11SlotInfo,
-                                      PK11_FreeSlot)
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11SlotList, PK11SlotList,
                                       PK11_FreeSlotList)
-MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11SymKey, PK11SymKey,
-                                      internal::FreeOneOrMoreSymKeys)
 
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePLArenaPool, PLArenaPool,
                                       internal::PORT_FreeArena_false)
@@ -363,6 +457,8 @@ MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSEC_PKCS12ExportContext,
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(
     UniqueSECKEYEncryptedPrivateKeyInfo, SECKEYEncryptedPrivateKeyInfo,
     internal::SECKEYEncryptedPrivateKeyInfo_true)
+MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueHpkeContext, HpkeContext,
+                                      internal::PK11_HPKE_DestroyContext_true)
 }  // namespace mozilla
 
 #endif  // ScopedNSSTypes_h

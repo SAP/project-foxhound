@@ -4,10 +4,12 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const Debugger = require("Debugger");
 
-const { reportException } = require("devtools/shared/DevToolsUtils");
+const {
+  reportException,
+} = require("resource://devtools/shared/DevToolsUtils.js");
 
 /**
  * Multiple actors that use a |Debugger| instance come in a few versions, each
@@ -61,28 +63,35 @@ module.exports = function makeDebugger({
   const dbg = new Debugger();
   EventEmitter.decorate(dbg);
 
+  // By default, we disable asm.js and WASM debugging because of performance reason.
+  // Enabling asm.js debugging (allowUnobservedAsmJS=false) will make asm.js fallback to JS compiler
+  // and be debugging as a regular JS script.
   dbg.allowUnobservedAsmJS = true;
+  // Enabling WASM debugging (allowUnobservedWasm=false) will make the engine compile WASM scripts
+  // into different machine code with debugging instructions. This significantly increase the memory usage of it.
+  dbg.allowUnobservedWasm = true;
+
   dbg.uncaughtExceptionHook = reportDebuggerHookException;
 
-  const onNewGlobalObject = function(global) {
+  const onNewGlobalObject = function (global) {
     if (shouldAddNewGlobalAsDebuggee(global)) {
       safeAddDebuggee(this, global);
     }
   };
 
   dbg.onNewGlobalObject = onNewGlobalObject;
-  dbg.addDebuggees = function() {
+  dbg.addDebuggees = function () {
     for (const global of findDebuggees(this)) {
       safeAddDebuggee(this, global);
     }
   };
 
-  dbg.disable = function() {
+  dbg.disable = function () {
     dbg.removeAllDebuggees();
     dbg.onNewGlobalObject = undefined;
   };
 
-  dbg.enable = function() {
+  dbg.enable = function () {
     dbg.addDebuggees();
     dbg.onNewGlobalObject = onNewGlobalObject;
   };

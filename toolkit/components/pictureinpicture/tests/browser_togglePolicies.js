@@ -12,6 +12,7 @@ add_task(async () => {
   let positionPolicies = [
     TOGGLE_POLICIES.TOP,
     TOGGLE_POLICIES.ONE_QUARTER,
+    TOGGLE_POLICIES.MIDDLE,
     TOGGLE_POLICIES.THREE_QUARTERS,
     TOGGLE_POLICIES.BOTTOM,
   ];
@@ -98,7 +99,7 @@ add_task(async () => {
         TOGGLE_POLICIES.HIDDEN
       );
 
-      await SpecialPowers.spawn(browser, [], async function() {
+      await SpecialPowers.spawn(browser, [], async function () {
         content.history.pushState({}, "2", "otherpage.html");
       });
 
@@ -108,7 +109,7 @@ add_task(async () => {
 
       // Now use the history API to put us back at the original location,
       // which should have the HIDDEN policy re-applied.
-      await SpecialPowers.spawn(browser, [], async function() {
+      await SpecialPowers.spawn(browser, [], async function () {
         content.history.pushState({}, "Return", "test-page.html");
       });
 

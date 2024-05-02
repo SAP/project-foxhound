@@ -11,8 +11,7 @@
 #include "nsGenericHTMLFrameElement.h"
 #include "nsGkAtoms.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLFrameElement final : public nsGenericHTMLFrameElement {
  public:
@@ -29,11 +28,11 @@ class HTMLFrameElement final : public nsGenericHTMLFrameElement {
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLFrameElement, frame)
 
   // nsIContent
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL API
   void GetFrameBorder(DOMString& aFrameBorder) const {
@@ -93,15 +92,9 @@ class HTMLFrameElement final : public nsGenericHTMLFrameElement {
  protected:
   virtual ~HTMLFrameElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
-
- private:
-  static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    MappedDeclarations&);
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLFrameElement_h

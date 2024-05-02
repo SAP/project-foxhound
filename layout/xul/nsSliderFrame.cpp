@@ -27,8 +27,6 @@
 #include "nsISupportsImpl.h"
 #include "nsScrollbarFrame.h"
 #include "nsRepeatService.h"
-#include "nsBoxLayoutState.h"
-#include "nsSprocketLayout.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
@@ -40,6 +38,8 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_general.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/SVGIntegrationUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/Document.h"
@@ -48,6 +48,7 @@
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
+#include "mozilla/StaticPrefs_slider.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -60,15 +61,9 @@ using mozilla::layers::ScrollbarData;
 using mozilla::layers::ScrollDirection;
 
 bool nsSliderFrame::gMiddlePref = false;
-int32_t nsSliderFrame::gSnapMultiplier;
 
 // Turn this on if you want to debug slider frames.
 #undef DEBUG_SLIDER
-
-static already_AddRefed<nsIContent> GetContentOfBox(nsIFrame* aBox) {
-  nsCOMPtr<nsIContent> content = aBox->GetContent();
-  return content.forget();
-}
 
 nsIFrame* NS_NewSliderFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsSliderFrame(aStyle, aPresShell->GetPresContext());
@@ -78,24 +73,25 @@ NS_IMPL_FRAMEARENA_HELPERS(nsSliderFrame)
 
 NS_QUERYFRAME_HEAD(nsSliderFrame)
   NS_QUERYFRAME_ENTRY(nsSliderFrame)
-NS_QUERYFRAME_TAIL_INHERITING(nsBoxFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 nsSliderFrame::nsSliderFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-    : nsBoxFrame(aStyle, aPresContext, kClassID),
+    : nsContainerFrame(aStyle, aPresContext, kClassID),
       mRatio(0.0f),
       mDragStart(0),
       mThumbStart(0),
       mCurPos(0),
-      mChange(0),
+      mRepeatDirection(0),
       mDragFinished(true),
       mUserChanged(false),
       mScrollingWithAPZ(false),
-      mSuppressionActive(false) {}
+      mSuppressionActive(false),
+      mThumbMinLength(0) {}
 
 // stop timer
 nsSliderFrame::~nsSliderFrame() {
   if (mSuppressionActive) {
-    if (mozilla::PresShell* presShell = PresShell()) {
+    if (auto* presShell = PresShell()) {
       presShell->SuppressDisplayport(false);
     }
   }
@@ -103,38 +99,46 @@ nsSliderFrame::~nsSliderFrame() {
 
 void nsSliderFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                          nsIFrame* aPrevInFlow) {
-  nsBoxFrame::Init(aContent, aParent, aPrevInFlow);
+  nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
   static bool gotPrefs = false;
   if (!gotPrefs) {
     gotPrefs = true;
 
     gMiddlePref = Preferences::GetBool("middlemouse.scrollbarPosition");
-    gSnapMultiplier = Preferences::GetInt("slider.snapMultiplier");
   }
 
   mCurPos = GetCurrentPosition(aContent);
 }
 
-void nsSliderFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
-  nsBoxFrame::RemoveFrame(aListID, aOldFrame);
-  if (mFrames.IsEmpty()) RemoveListener();
+void nsSliderFrame::RemoveFrame(DestroyContext& aContext, ChildListID aListID,
+                                nsIFrame* aOldFrame) {
+  nsContainerFrame::RemoveFrame(aContext, aListID, aOldFrame);
+  if (mFrames.IsEmpty()) {
+    RemoveListener();
+  }
 }
 
 void nsSliderFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                  const nsLineList::iterator* aPrevFrameLine,
-                                 nsFrameList& aFrameList) {
+                                 nsFrameList&& aFrameList) {
   bool wasEmpty = mFrames.IsEmpty();
-  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
-  if (wasEmpty) AddListener();
+  nsContainerFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                                 std::move(aFrameList));
+  if (wasEmpty) {
+    AddListener();
+  }
 }
 
-void nsSliderFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
-  // if we have no children and on was added then make sure we add the
+void nsSliderFrame::AppendFrames(ChildListID aListID,
+                                 nsFrameList&& aFrameList) {
+  // If we have no children and on was added then make sure we add the
   // listener
   bool wasEmpty = mFrames.IsEmpty();
-  nsBoxFrame::AppendFrames(aListID, aFrameList);
-  if (wasEmpty) AddListener();
+  nsContainerFrame::AppendFrames(aListID, std::move(aFrameList));
+  if (wasEmpty) {
+    AddListener();
+  }
 }
 
 int32_t nsSliderFrame::GetCurrentPosition(nsIContent* content) {
@@ -161,7 +165,7 @@ int32_t nsSliderFrame::GetIntegerAttribute(nsIContent* content, nsAtom* atom,
                                            int32_t defaultValue) {
   nsAutoString value;
   if (content->IsElement()) {
-    content->AsElement()->GetAttr(kNameSpaceID_None, atom, value);
+    content->AsElement()->GetAttr(atom, value);
   }
   if (!value.IsEmpty()) {
     nsresult error;
@@ -176,7 +180,7 @@ int32_t nsSliderFrame::GetIntegerAttribute(nsIContent* content, nsAtom* atom,
 nsresult nsSliderFrame::AttributeChanged(int32_t aNameSpaceID,
                                          nsAtom* aAttribute, int32_t aModType) {
   nsresult rv =
-      nsBoxFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
+      nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
   // if the current position changes
   if (aAttribute == nsGkAtoms::curpos) {
     CurrentPositionChanged();
@@ -184,8 +188,8 @@ nsresult nsSliderFrame::AttributeChanged(int32_t aNameSpaceID,
              aAttribute == nsGkAtoms::maxpos) {
     // bounds check it.
 
-    nsIFrame* scrollbarBox = GetScrollbar();
-    nsCOMPtr<nsIContent> scrollbar = GetContentOfBox(scrollbarBox);
+    nsScrollbarFrame* scrollbarBox = Scrollbar();
+    nsCOMPtr<nsIContent> scrollbar = scrollbarBox->GetContent();
     int32_t current = GetCurrentPosition(scrollbar);
     int32_t min = GetMinPosition(scrollbar);
     int32_t max = GetMaxPosition(scrollbar);
@@ -201,14 +205,11 @@ nsresult nsSliderFrame::AttributeChanged(int32_t aNameSpaceID,
       }
 
       // set the new position and notify observers
-      nsScrollbarFrame* scrollbarFrame = do_QueryFrame(scrollbarBox);
-      if (scrollbarFrame) {
-        nsIScrollbarMediator* mediator = scrollbarFrame->GetScrollbarMediator();
-        scrollbarFrame->SetIncrementToWhole(direction);
-        if (mediator) {
-          mediator->ScrollByWhole(scrollbarFrame, direction,
-                                  nsIScrollbarMediator::ENABLE_SNAP);
-        }
+      nsIScrollbarMediator* mediator = scrollbarBox->GetScrollbarMediator();
+      scrollbarBox->SetIncrementToWhole(direction);
+      if (mediator) {
+        mediator->ScrollByWhole(scrollbarBox, direction,
+                                ScrollSnapFlags::IntendedEndPosition);
       }
       // 'this' might be destroyed here
 
@@ -220,8 +221,8 @@ nsresult nsSliderFrame::AttributeChanged(int32_t aNameSpaceID,
   if (aAttribute == nsGkAtoms::minpos || aAttribute == nsGkAtoms::maxpos ||
       aAttribute == nsGkAtoms::pageincrement ||
       aAttribute == nsGkAtoms::increment) {
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                  NS_FRAME_IS_DIRTY);
+    PresShell()->FrameNeedsReflow(
+        this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
   }
 
   return rv;
@@ -243,8 +244,7 @@ class nsDisplaySliderMarks final : public nsPaintedDisplayItem {
   void PaintMarks(nsDisplayListBuilder* aDisplayListBuilder,
                   wr::DisplayListBuilder* aBuilder, gfxContext* aCtx);
 
-  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
-                           bool* aSnap) const override {
+  nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) const override {
     *aSnap = false;
     return mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
   }
@@ -252,7 +252,7 @@ class nsDisplaySliderMarks final : public nsPaintedDisplayItem {
   bool CreateWebRenderCommands(
       wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
-      mozilla::layers::RenderRootStateManager* aManager,
+      layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
@@ -284,8 +284,8 @@ void nsDisplaySliderMarks::PaintMarks(nsDisplayListBuilder* aDisplayListBuilder,
 
   nsSliderFrame* sliderFrame = static_cast<nsSliderFrame*>(mFrame);
 
-  nsIFrame* scrollbarBox = sliderFrame->GetScrollbar();
-  nsCOMPtr<nsIContent> scrollbar = GetContentOfBox(scrollbarBox);
+  nsIFrame* scrollbarBox = sliderFrame->Scrollbar();
+  nsCOMPtr<nsIContent> scrollbar = scrollbarBox->GetContent();
 
   int32_t minPos = sliderFrame->GetMinPosition(scrollbar);
   int32_t maxPos = sliderFrame->GetMaxPosition(scrollbar);
@@ -309,6 +309,11 @@ void nsDisplaySliderMarks::PaintMarks(nsDisplayListBuilder* aDisplayListBuilder,
                              ->DeviceContext()
                              ->GetDesktopToDeviceScale()
                              .scale;
+  const bool isHorizontal = sliderFrame->Scrollbar()->IsHorizontal();
+  float increasePixelsX = isHorizontal ? increasePixels : 0;
+  float increasePixelsY = isHorizontal ? 0 : increasePixels;
+  nsSize initialSize =
+      isHorizontal ? nsSize(0, sliderRect.height) : nsSize(sliderRect.width, 0);
 
   nsTArray<uint32_t>& marks = window->GetScrollMarks();
   for (uint32_t m = 0; m < marks.Length(); m++) {
@@ -320,33 +325,37 @@ void nsDisplaySliderMarks::PaintMarks(nsDisplayListBuilder* aDisplayListBuilder,
       markValue = minPos;
     }
 
-    // The values in the marks array range up to the window's scrollMaxY
-    // (the same as the slider's maxpos). Scale the values to fit within
-    // the slider's height.
-    nsRect markRect(refPoint, nsSize(sliderRect.width, 0));
-    markRect.y +=
-        (nscoord)((double)markValue / (maxPos - minPos) * sliderRect.height);
+    // The values in the marks array range up to the window's
+    // scrollMax{X,Y} - scrollMin{X,Y} (the same as the slider's maxpos).
+    // Scale the values to fit within the slider's width or height.
+    nsRect markRect(refPoint, initialSize);
+    if (isHorizontal) {
+      markRect.x +=
+          (nscoord)((double)markValue / (maxPos - minPos) * sliderRect.width);
+    } else {
+      markRect.y +=
+          (nscoord)((double)markValue / (maxPos - minPos) * sliderRect.height);
+    }
 
     if (drawTarget) {
       Rect devPixelRect =
           NSRectToSnappedRect(markRect, appUnitsPerDevPixel, *drawTarget);
-      devPixelRect.Inflate(0, increasePixels);
+      devPixelRect.Inflate(increasePixelsX, increasePixelsY);
       drawTarget->FillRect(devPixelRect, ColorPattern(fillColor));
     } else {
       LayoutDeviceIntRect dRect = LayoutDeviceIntRect::FromAppUnitsToNearest(
           markRect, appUnitsPerDevPixel);
-      dRect.Inflate(0, increasePixels);
+      dRect.Inflate(increasePixelsX, increasePixelsY);
       wr::LayoutRect layoutRect = wr::ToLayoutRect(dRect);
-      aBuilder->PushRect(layoutRect, layoutRect, BackfaceIsHidden(),
-                         wr::ToColorF(fillColor));
+      aBuilder->PushRect(layoutRect, layoutRect, BackfaceIsHidden(), false,
+                         false, wr::ToColorF(fillColor));
     }
   }
 }
 
 bool nsDisplaySliderMarks::CreateWebRenderCommands(
     wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
-    const StackingContextHelper& aSc,
-    mozilla::layers::RenderRootStateManager* aManager,
+    const StackingContextHelper& aSc, layers::RenderRootStateManager* aManager,
     nsDisplayListBuilder* aDisplayListBuilder) {
   PaintMarks(aDisplayListBuilder, &aBuilder, nullptr);
   return true;
@@ -368,25 +377,27 @@ void nsSliderFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     return;
   }
 
-  nsBoxFrame::BuildDisplayList(aBuilder, aLists);
+  DisplayBorderBackgroundOutline(aBuilder, aLists);
 
-  // If this is a vertical scrollbar for the root frame, draw any markers.
+  if (nsIFrame* thumb = mFrames.FirstChild()) {
+    BuildDisplayListForThumb(aBuilder, thumb, aLists);
+  }
+
+  // If this is an scrollbar for the root frame, draw any markers.
   // Markers are not drawn for other scrollbars.
+  // XXX seems like this should be done in nsScrollbarFrame instead perhaps?
   if (!aBuilder->IsForEventDelivery()) {
-    nsIFrame* scrollbarBox = GetScrollbar();
-    if (scrollbarBox && !IsXULHorizontal()) {
-      if (nsIScrollableFrame* scrollFrame =
-              do_QueryFrame(scrollbarBox->GetParent())) {
-        if (scrollFrame->IsRootScrollFrameOfDocument()) {
-          Document* doc = mContent->GetUncomposedDoc();
-          if (doc) {
-            nsGlobalWindowInner* window =
-                nsGlobalWindowInner::Cast(doc->GetInnerWindow());
-            if (window && window->GetScrollMarks().Length() > 0) {
-              aLists.Content()->AppendNewToTop<nsDisplaySliderMarks>(aBuilder,
-                                                                     this);
-            }
-          }
+    nsScrollbarFrame* scrollbar = Scrollbar();
+    if (nsIScrollableFrame* scrollFrame =
+            do_QueryFrame(scrollbar->GetParent())) {
+      if (scrollFrame->IsRootScrollFrameOfDocument()) {
+        nsGlobalWindowInner* window = nsGlobalWindowInner::Cast(
+            PresContext()->Document()->GetInnerWindow());
+        if (window &&
+            window->GetScrollMarksOnHScrollbar() == scrollbar->IsHorizontal() &&
+            window->GetScrollMarks().Length() > 0) {
+          aLists.Content()->AppendNewToTop<nsDisplaySliderMarks>(aBuilder,
+                                                                 this);
         }
       }
     }
@@ -408,155 +419,155 @@ static bool UsesCustomScrollbarMediator(nsIFrame* scrollbarBox) {
   return false;
 }
 
-void nsSliderFrame::BuildDisplayListForChildren(
-    nsDisplayListBuilder* aBuilder, const nsDisplayListSet& aLists) {
-  // if we are too small to have a thumb don't paint it.
-  nsIFrame* thumb = nsIFrame::GetChildXULBox(this);
+void nsSliderFrame::BuildDisplayListForThumb(nsDisplayListBuilder* aBuilder,
+                                             nsIFrame* aThumb,
+                                             const nsDisplayListSet& aLists) {
+  nsRect thumbRect(aThumb->GetRect());
 
-  if (thumb) {
-    nsRect thumbRect(thumb->GetRect());
-    nsMargin m;
-    thumb->GetXULMargin(m);
-    thumbRect.Inflate(m);
-
-    nsRect sliderTrack;
-    GetXULClientRect(sliderTrack);
-
-    if (sliderTrack.width < thumbRect.width ||
-        sliderTrack.height < thumbRect.height)
-      return;
-
-    // If this scrollbar is the scrollbar of an actively scrolled scroll frame,
-    // layerize the scrollbar thumb, wrap it in its own ContainerLayer and
-    // attach scrolling information to it.
-    // We do this here and not in the thumb's nsBoxFrame::BuildDisplayList so
-    // that the event region that gets created for the thumb is included in
-    // the nsDisplayOwnLayer contents.
-
-    const mozilla::layers::ScrollableLayerGuid::ViewID scrollTargetId =
-        aBuilder->GetCurrentScrollbarTarget();
-    const bool thumbGetsLayer =
-        (scrollTargetId != layers::ScrollableLayerGuid::NULL_SCROLL_ID);
-
-    if (thumbGetsLayer) {
-      const Maybe<ScrollDirection> scrollDirection =
-          aBuilder->GetCurrentScrollbarDirection();
-      MOZ_ASSERT(scrollDirection.isSome());
-      const bool isHorizontal =
-          *scrollDirection == ScrollDirection::eHorizontal;
-      const float appUnitsPerCss = float(AppUnitsPerCSSPixel());
-      const CSSCoord thumbLength = NSAppUnitsToFloatPixels(
-          isHorizontal ? thumbRect.width : thumbRect.height, appUnitsPerCss);
-
-      nsIFrame* scrollbarBox = GetScrollbar();
-      bool isAsyncDraggable = !UsesCustomScrollbarMediator(scrollbarBox);
-
-      nsPoint scrollPortOrigin;
-      if (nsIScrollableFrame* scrollFrame =
-              do_QueryFrame(scrollbarBox->GetParent())) {
-        scrollPortOrigin = scrollFrame->GetScrollPortRect().TopLeft();
-      } else {
-        isAsyncDraggable = false;
-      }
-
-      // This rect is the range in which the scroll thumb can slide in.
-      sliderTrack = sliderTrack + GetRect().TopLeft() +
-                    scrollbarBox->GetPosition() - scrollPortOrigin;
-      const CSSCoord sliderTrackStart = NSAppUnitsToFloatPixels(
-          isHorizontal ? sliderTrack.x : sliderTrack.y, appUnitsPerCss);
-      const CSSCoord sliderTrackLength = NSAppUnitsToFloatPixels(
-          isHorizontal ? sliderTrack.width : sliderTrack.height,
-          appUnitsPerCss);
-      const CSSCoord thumbStart = NSAppUnitsToFloatPixels(
-          isHorizontal ? thumbRect.x : thumbRect.y, appUnitsPerCss);
-
-      const nsRect overflow = thumb->InkOverflowRectRelativeToParent();
-      nsSize refSize = aBuilder->RootReferenceFrame()->GetSize();
-      nsRect dirty = aBuilder->GetVisibleRect().Intersect(thumbRect);
-      dirty = nsLayoutUtils::ComputePartialPrerenderArea(
-          thumb, aBuilder->GetVisibleRect(), overflow, refSize);
-
-      nsDisplayListBuilder::AutoBuildingDisplayList buildingDisplayList(
-          aBuilder, this, dirty, dirty);
-
-      // Clip the thumb layer to the slider track. This is necessary to ensure
-      // FrameLayerBuilder is able to merge content before and after the
-      // scrollframe into the same layer (otherwise it thinks the thumb could
-      // potentially move anywhere within the existing clip).
-      DisplayListClipState::AutoSaveRestore thumbClipState(aBuilder);
-      thumbClipState.ClipContainingBlockDescendants(
-          GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(this));
-
-      // Have the thumb's container layer capture the current clip, so
-      // it doesn't apply to the thumb's contents. This allows the contents
-      // to be fully rendered even if they're partially or fully offscreen,
-      // so async scrolling can still bring it into view.
-      DisplayListClipState::AutoSaveRestore thumbContentsClipState(aBuilder);
-      thumbContentsClipState.Clear();
-
-      nsDisplayListBuilder::AutoContainerASRTracker contASRTracker(aBuilder);
-      nsDisplayListCollection tempLists(aBuilder);
-      nsBoxFrame::BuildDisplayListForChildren(aBuilder, tempLists);
-
-      // This is a bit of a hack. Collect up all descendant display items
-      // and merge them into a single Content() list.
-      nsDisplayList masterList;
-      masterList.AppendToTop(tempLists.BorderBackground());
-      masterList.AppendToTop(tempLists.BlockBorderBackgrounds());
-      masterList.AppendToTop(tempLists.Floats());
-      masterList.AppendToTop(tempLists.Content());
-      masterList.AppendToTop(tempLists.PositionedDescendants());
-      masterList.AppendToTop(tempLists.Outlines());
-
-      // Restore the saved clip so it applies to the thumb container layer.
-      thumbContentsClipState.Restore();
-
-      // Wrap the list to make it its own layer.
-      const ActiveScrolledRoot* ownLayerASR = contASRTracker.GetContainerASR();
-      aLists.Content()->AppendNewToTopWithIndex<nsDisplayOwnLayer>(
-          aBuilder, this,
-          /* aIndex = */ nsDisplayOwnLayer::OwnLayerForScrollThumb, &masterList,
-          ownLayerASR, nsDisplayOwnLayerFlags::None,
-          ScrollbarData::CreateForThumb(*scrollDirection, GetThumbRatio(),
-                                        thumbStart, thumbLength,
-                                        isAsyncDraggable, sliderTrackStart,
-                                        sliderTrackLength, scrollTargetId),
-          true, false);
-
-      return;
-    }
+  nsRect sliderTrack = GetRect();
+  if (sliderTrack.width < thumbRect.width ||
+      sliderTrack.height < thumbRect.height) {
+    return;
   }
 
-  nsBoxFrame::BuildDisplayListForChildren(aBuilder, aLists);
+  // If this scrollbar is the scrollbar of an actively scrolled scroll frame,
+  // layerize the scrollbar thumb, wrap it in its own ContainerLayer and
+  // attach scrolling information to it.
+  // We do this here and not in the thumb's BuildDisplayList so that the event
+  // region that gets created for the thumb is included in the nsDisplayOwnLayer
+  // contents.
+
+  const layers::ScrollableLayerGuid::ViewID scrollTargetId =
+      aBuilder->GetCurrentScrollbarTarget();
+  const bool thumbGetsLayer =
+      scrollTargetId != layers::ScrollableLayerGuid::NULL_SCROLL_ID;
+
+  if (thumbGetsLayer) {
+    const Maybe<ScrollDirection> scrollDirection =
+        aBuilder->GetCurrentScrollbarDirection();
+    MOZ_ASSERT(scrollDirection.isSome());
+    const bool isHorizontal = *scrollDirection == ScrollDirection::eHorizontal;
+    const OuterCSSCoord thumbLength = OuterCSSPixel::FromAppUnits(
+        isHorizontal ? thumbRect.width : thumbRect.height);
+    const OuterCSSCoord minThumbLength =
+        OuterCSSPixel::FromAppUnits(mThumbMinLength);
+
+    nsIFrame* scrollbarBox = Scrollbar();
+    bool isAsyncDraggable = !UsesCustomScrollbarMediator(scrollbarBox);
+
+    nsPoint scrollPortOrigin;
+    if (nsIScrollableFrame* scrollFrame =
+            do_QueryFrame(scrollbarBox->GetParent())) {
+      scrollPortOrigin = scrollFrame->GetScrollPortRect().TopLeft();
+    } else {
+      isAsyncDraggable = false;
+    }
+
+    // This rect is the range in which the scroll thumb can slide in.
+    sliderTrack = sliderTrack + scrollbarBox->GetPosition() - scrollPortOrigin;
+    const OuterCSSCoord sliderTrackStart = OuterCSSPixel::FromAppUnits(
+        isHorizontal ? sliderTrack.x : sliderTrack.y);
+    const OuterCSSCoord sliderTrackLength = OuterCSSPixel::FromAppUnits(
+        isHorizontal ? sliderTrack.width : sliderTrack.height);
+    const OuterCSSCoord thumbStart =
+        OuterCSSPixel::FromAppUnits(isHorizontal ? thumbRect.x : thumbRect.y);
+
+    const nsRect overflow = aThumb->InkOverflowRectRelativeToParent();
+    nsSize refSize = aBuilder->RootReferenceFrame()->GetSize();
+    nsRect dirty = aBuilder->GetVisibleRect().Intersect(thumbRect);
+    dirty = nsLayoutUtils::ComputePartialPrerenderArea(
+        aThumb, aBuilder->GetVisibleRect(), overflow, refSize);
+
+    nsDisplayListBuilder::AutoBuildingDisplayList buildingDisplayList(
+        aBuilder, this, dirty, dirty);
+
+    // Clip the thumb layer to the slider track. This is necessary to ensure
+    // FrameLayerBuilder is able to merge content before and after the
+    // scrollframe into the same layer (otherwise it thinks the thumb could
+    // potentially move anywhere within the existing clip).
+    DisplayListClipState::AutoSaveRestore thumbClipState(aBuilder);
+    thumbClipState.ClipContainingBlockDescendants(
+        GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(this));
+
+    // Have the thumb's container layer capture the current clip, so
+    // it doesn't apply to the thumb's contents. This allows the contents
+    // to be fully rendered even if they're partially or fully offscreen,
+    // so async scrolling can still bring it into view.
+    DisplayListClipState::AutoSaveRestore thumbContentsClipState(aBuilder);
+    thumbContentsClipState.Clear();
+
+    nsDisplayListBuilder::AutoContainerASRTracker contASRTracker(aBuilder);
+    nsDisplayListCollection tempLists(aBuilder);
+    BuildDisplayListForChild(aBuilder, aThumb, tempLists);
+
+    // This is a bit of a hack. Collect up all descendant display items
+    // and merge them into a single Content() list.
+    nsDisplayList masterList(aBuilder);
+    masterList.AppendToTop(tempLists.BorderBackground());
+    masterList.AppendToTop(tempLists.BlockBorderBackgrounds());
+    masterList.AppendToTop(tempLists.Floats());
+    masterList.AppendToTop(tempLists.Content());
+    masterList.AppendToTop(tempLists.PositionedDescendants());
+    masterList.AppendToTop(tempLists.Outlines());
+
+    // Restore the saved clip so it applies to the thumb container layer.
+    thumbContentsClipState.Restore();
+
+    // Wrap the list to make it its own layer.
+    const ActiveScrolledRoot* ownLayerASR = contASRTracker.GetContainerASR();
+    aLists.Content()->AppendNewToTopWithIndex<nsDisplayOwnLayer>(
+        aBuilder, this,
+        /* aIndex = */ nsDisplayOwnLayer::OwnLayerForScrollThumb, &masterList,
+        ownLayerASR, nsDisplayOwnLayerFlags::None,
+        ScrollbarData::CreateForThumb(*scrollDirection, GetThumbRatio(),
+                                      thumbStart, thumbLength, minThumbLength,
+                                      isAsyncDraggable, sliderTrackStart,
+                                      sliderTrackLength, scrollTargetId),
+        true, false);
+
+    return;
+  }
+
+  BuildDisplayListForChild(aBuilder, aThumb, aLists);
 }
 
-NS_IMETHODIMP
-nsSliderFrame::DoXULLayout(nsBoxLayoutState& aState) {
-  // get the thumb should be our only child
-  nsIFrame* thumbBox = nsIFrame::GetChildXULBox(this);
+void nsSliderFrame::Reflow(nsPresContext* aPresContext,
+                           ReflowOutput& aDesiredSize,
+                           const ReflowInput& aReflowInput,
+                           nsReflowStatus& aStatus) {
+  MarkInReflow();
+  MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
+  NS_ASSERTION(aReflowInput.AvailableWidth() != NS_UNCONSTRAINEDSIZE,
+               "Bogus avail width");
+  NS_ASSERTION(aReflowInput.AvailableHeight() != NS_UNCONSTRAINEDSIZE,
+               "Bogus avail height");
 
-  if (!thumbBox) {
-    SyncXULLayout(aState);
-    return NS_OK;
+  // We always take all the space we're given.
+  aDesiredSize.Width() = aReflowInput.ComputedWidth();
+  aDesiredSize.Height() = aReflowInput.ComputedHeight();
+  aDesiredSize.SetOverflowAreasToDesiredBounds();
+
+  // Get the thumb, should be our only child.
+  nsIFrame* thumbBox = mFrames.FirstChild();
+  if (NS_WARN_IF(!thumbBox)) {
+    return;
   }
 
-  EnsureOrient();
+  nsScrollbarFrame* scrollbarBox = Scrollbar();
+  nsIContent* scrollbar = scrollbarBox->GetContent();
+  const bool horizontal = scrollbarBox->IsHorizontal();
+  const auto wm = GetWritingMode();
+  nsSize availSize = aDesiredSize.PhysicalSize();
+  ReflowInput thumbRI(aPresContext, aReflowInput, thumbBox,
+                      aReflowInput.AvailableSize(wm));
 
-  // get the content area inside our borders
-  nsRect clientRect;
-  GetXULClientRect(clientRect);
-
-  // get the scrollbar
-  nsIFrame* scrollbarBox = GetScrollbar();
-  nsCOMPtr<nsIContent> scrollbar = GetContentOfBox(scrollbarBox);
-
-  // get the thumb's pref size
-  nsSize thumbSize = thumbBox->GetXULPrefSize(aState);
-
-  if (IsXULHorizontal())
-    thumbSize.height = clientRect.height;
-  else
-    thumbSize.width = clientRect.width;
+  // Get the thumb's pref size.
+  nsSize thumbSize = thumbRI.ComputedMinSize(wm).GetPhysicalSize(wm);
+  if (horizontal) {
+    thumbSize.height = availSize.height;
+  } else {
+    thumbSize.width = availSize.width;
+  }
 
   int32_t curPos = GetCurrentPosition(scrollbar);
   int32_t minPos = GetMinPosition(scrollbar);
@@ -566,11 +577,13 @@ nsSliderFrame::DoXULLayout(nsBoxLayoutState& aState) {
   maxPos = std::max(minPos, maxPos);
   curPos = clamped(curPos, minPos, maxPos);
 
-  nscoord& availableLength =
-      IsXULHorizontal() ? clientRect.width : clientRect.height;
-  nscoord& thumbLength = IsXULHorizontal() ? thumbSize.width : thumbSize.height;
+  // If modifying the logic here, be sure to modify the corresponding
+  // compositor-side calculation in ScrollThumbUtils::ApplyTransformForAxis().
+  nscoord& availableLength = horizontal ? availSize.width : availSize.height;
+  nscoord& thumbLength = horizontal ? thumbSize.width : thumbSize.height;
+  mThumbMinLength = thumbLength;
 
-  if ((pageIncrement + maxPos - minPos) > 0 && thumbBox->GetXULFlex() > 0) {
+  if ((pageIncrement + maxPos - minPos) > 0) {
     float ratio = float(pageIncrement) / float(maxPos - minPos + pageIncrement);
     thumbLength =
         std::max(thumbLength, NSToCoordRound(availableLength * ratio));
@@ -594,20 +607,26 @@ nsSliderFrame::DoXULLayout(nsBoxLayoutState& aState) {
   nscoord pos = reverse ? (maxPos - curPos) : (curPos - minPos);
 
   // set the thumb's coord to be the current pos * the ratio.
-  nsRect thumbRect(clientRect.x, clientRect.y, thumbSize.width,
-                   thumbSize.height);
-  int32_t& thumbPos = (IsXULHorizontal() ? thumbRect.x : thumbRect.y);
-  thumbPos += NSToCoordRound(pos * mRatio);
+  nsPoint thumbPos;
+  if (horizontal) {
+    thumbPos.x = NSToCoordRound(pos * mRatio);
+  } else {
+    thumbPos.y = NSToCoordRound(pos * mRatio);
+  }
 
-  nsRect oldThumbRect(thumbBox->GetRect());
-  LayoutChildAt(aState, thumbBox, thumbRect);
-
-  SyncXULLayout(aState);
-
-  // Redraw only if thumb changed size.
-  if (!oldThumbRect.IsEqualInterior(thumbRect)) XULRedraw(aState);
-
-  return NS_OK;
+  const LogicalPoint logicalPos(wm, thumbPos, availSize);
+  // TODO: It seems like a lot of this stuff should really belong in the thumb's
+  // reflow code rather than here, but since we rely on the frame tree structure
+  // heavily this matches the previous code more closely for now.
+  ReflowOutput thumbDesiredSize(wm);
+  const auto flags = ReflowChildFlags::Default;
+  nsReflowStatus status;
+  thumbRI.SetComputedISize(thumbSize.width);
+  thumbRI.SetComputedBSize(thumbSize.height);
+  ReflowChild(thumbBox, aPresContext, thumbDesiredSize, thumbRI, wm, logicalPos,
+              availSize, flags, status);
+  FinishReflowChild(thumbBox, aPresContext, thumbDesiredSize, &thumbRI, wm,
+                    logicalPos, availSize, flags);
 }
 
 nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
@@ -643,10 +662,9 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
     return NS_OK;
   }
 
-  nsIFrame* scrollbarBox = GetScrollbar();
-  nsCOMPtr<nsIContent> scrollbar;
-  scrollbar = GetContentOfBox(scrollbarBox);
-  bool isHorizontal = IsXULHorizontal();
+  nsScrollbarFrame* scrollbarBox = Scrollbar();
+  nsCOMPtr<nsIContent> scrollbar = scrollbarBox->GetContent();
+  bool isHorizontal = scrollbarBox->IsHorizontal();
 
   if (isDraggingThumb()) {
     switch (aEvent->mMessage) {
@@ -659,7 +677,7 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
         if (!GetEventPoint(aEvent, eventPoint)) {
           break;
         }
-        if (mChange) {
+        if (mRepeatDirection) {
           // On Linux the destination point is determined by the initial click
           // on the scrollbar track and doesn't change until the mouse button
           // is released.
@@ -682,22 +700,25 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
         // take our current position and subtract the start location
         pos -= mDragStart;
         bool isMouseOutsideThumb = false;
-        if (gSnapMultiplier) {
+        const int32_t snapMultiplier = StaticPrefs::slider_snapMultiplier();
+        if (snapMultiplier) {
           nsSize thumbSize = thumbFrame->GetSize();
           if (isHorizontal) {
             // horizontal scrollbar - check if mouse is above or below thumb
             // XXXbz what about looking at the .y of the thumb's rect?  Is that
             // always zero here?
-            if (eventPoint.y < -gSnapMultiplier * thumbSize.height ||
+            if (eventPoint.y < -snapMultiplier * thumbSize.height ||
                 eventPoint.y >
-                    thumbSize.height + gSnapMultiplier * thumbSize.height)
+                    thumbSize.height + snapMultiplier * thumbSize.height) {
               isMouseOutsideThumb = true;
+            }
           } else {
             // vertical scrollbar - check if mouse is left or right of thumb
-            if (eventPoint.x < -gSnapMultiplier * thumbSize.width ||
+            if (eventPoint.x < -snapMultiplier * thumbSize.width ||
                 eventPoint.x >
-                    thumbSize.width + gSnapMultiplier * thumbSize.width)
+                    thumbSize.width + snapMultiplier * thumbSize.width) {
               isMouseOutsideThumb = true;
+            }
           }
         }
         if (aEvent->mClass == eTouchEventClass) {
@@ -753,21 +774,11 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
 
     DragThumb(true);
 
-#ifdef MOZ_WIDGET_GTK
-    RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
-    thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active, u"true"_ns, true);
-#endif
-
     if (aEvent->mClass == eTouchEventClass) {
       *aEventStatus = nsEventStatus_eConsumeNoDefault;
     }
 
-    if (isHorizontal)
-      mThumbStart = thumbFrame->GetPosition().x;
-    else
-      mThumbStart = thumbFrame->GetPosition().y;
-
-    mDragStart = pos - mThumbStart;
+    SetupDrag(aEvent, thumbFrame, pos, isHorizontal);
   }
 #ifdef MOZ_WIDGET_GTK
   else if (ShouldScrollForEvent(aEvent) && aEvent->mClass == eMouseEventClass &&
@@ -791,8 +802,9 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
   //    HandleRelease(aPresContext, aEvent, aEventStatus);
   //  }
 
-  if (aEvent->mMessage == eMouseOut && mChange)
+  if (aEvent->mMessage == eMouseOut && mRepeatDirection) {
     HandleRelease(aPresContext, aEvent, aEventStatus);
+  }
 
   return nsIFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
 }
@@ -801,38 +813,14 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
 // caching this, users expect to be able to change the system preference
 // and see the browser change its behavior immediately.
 bool nsSliderFrame::GetScrollToClick() {
-  if (GetScrollbar() != this) {
-    return LookAndFeel::GetInt(LookAndFeel::IntID::ScrollToClick, false);
-  }
-
-  if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                         nsGkAtoms::movetoclick,
-                                         nsGkAtoms::_true, eCaseMatters)) {
-    return true;
-  }
-  if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                         nsGkAtoms::movetoclick,
-                                         nsGkAtoms::_false, eCaseMatters)) {
-    return false;
-  }
-
-#ifdef XP_MACOSX
-  return true;
-#else
-  return false;
-#endif
+  return LookAndFeel::GetInt(LookAndFeel::IntID::ScrollToClick, false);
 }
 
-nsIFrame* nsSliderFrame::GetScrollbar() {
-  // if we are in a scrollbar then return the scrollbar's content node
-  // if we are not then return ours.
-  nsIFrame* scrollbar;
-  nsScrollbarButtonFrame::GetParentWithTag(nsGkAtoms::scrollbar, this,
-                                           scrollbar);
-
-  if (scrollbar == nullptr) return this;
-
-  return scrollbar->IsXULBoxFrame() ? scrollbar : this;
+nsScrollbarFrame* nsSliderFrame::Scrollbar() {
+  MOZ_ASSERT(GetParent());
+  MOZ_DIAGNOSTIC_ASSERT(
+      static_cast<nsScrollbarFrame*>(do_QueryFrame(GetParent())));
+  return static_cast<nsScrollbarFrame*>(GetParent());
 }
 
 void nsSliderFrame::PageUpDown(nscoord change) {
@@ -840,9 +828,8 @@ void nsSliderFrame::PageUpDown(nscoord change) {
   // scrollbar we are in and asking it for the current position and the page
   // increment. If we are not in a scrollbar we will get the values from our own
   // node.
-  nsIFrame* scrollbarBox = GetScrollbar();
-  nsCOMPtr<nsIContent> scrollbar;
-  scrollbar = GetContentOfBox(scrollbarBox);
+  nsIFrame* scrollbarBox = Scrollbar();
+  nsCOMPtr<nsIContent> scrollbar = scrollbarBox->GetContent();
 
   nscoord pageIncrement = GetPageIncrement(scrollbar);
   int32_t curpos = GetCurrentPosition(scrollbar);
@@ -862,14 +849,16 @@ void nsSliderFrame::PageUpDown(nscoord change) {
 // called when the current position changed and we need to update the thumb's
 // location
 void nsSliderFrame::CurrentPositionChanged() {
-  nsIFrame* scrollbarBox = GetScrollbar();
-  nsCOMPtr<nsIContent> scrollbar = GetContentOfBox(scrollbarBox);
+  nsScrollbarFrame* scrollbarBox = Scrollbar();
+  nsCOMPtr<nsIContent> scrollbar = scrollbarBox->GetContent();
 
   // get the current position
   int32_t curPos = GetCurrentPosition(scrollbar);
 
   // do nothing if the position did not change
-  if (mCurPos == curPos) return;
+  if (mCurPos == curPos) {
+    return;
+  }
 
   // get our current min and max position from our content node
   int32_t minPos = GetMinPosition(scrollbar);
@@ -880,24 +869,23 @@ void nsSliderFrame::CurrentPositionChanged() {
 
   // get the thumb's rect
   nsIFrame* thumbFrame = mFrames.FirstChild();
-  if (!thumbFrame) return;  // The thumb may stream in asynchronously via XBL.
-
-  nsRect thumbRect = thumbFrame->GetRect();
-
-  nsRect clientRect;
-  GetXULClientRect(clientRect);
-
-  // figure out the new rect
-  nsRect newThumbRect(thumbRect);
+  if (!thumbFrame) {
+    return;
+  }
 
   bool reverse = mContent->AsElement()->AttrValueIs(
       kNameSpaceID_None, nsGkAtoms::dir, nsGkAtoms::reverse, eCaseMatters);
   nscoord pos = reverse ? (maxPos - curPos) : (curPos - minPos);
+  const bool horizontal = Scrollbar()->IsHorizontal();
 
-  if (IsXULHorizontal())
-    newThumbRect.x = clientRect.x + NSToCoordRound(pos * mRatio);
-  else
-    newThumbRect.y = clientRect.y + NSToCoordRound(pos * mRatio);
+  // figure out the new rect
+  nsRect thumbRect = thumbFrame->GetRect();
+  nsRect newThumbRect(thumbRect);
+  if (horizontal) {
+    newThumbRect.x = NSToCoordRound(pos * mRatio);
+  } else {
+    newThumbRect.y = NSToCoordRound(pos * mRatio);
+  }
 
   // avoid putting the scroll thumb at subpixel positions which cause needless
   // invalidations
@@ -905,19 +893,25 @@ void nsSliderFrame::CurrentPositionChanged() {
   nsPoint snappedThumbLocation =
       ToAppUnits(newThumbRect.TopLeft().ToNearestPixels(appUnitsPerPixel),
                  appUnitsPerPixel);
-  if (IsXULHorizontal()) {
+  if (horizontal) {
     newThumbRect.x = snappedThumbLocation.x;
   } else {
     newThumbRect.y = snappedThumbLocation.y;
   }
 
   // set the rect
+  // XXX This out-of-band update of the frame tree is rather fishy!
   thumbFrame->SetRect(newThumbRect);
 
+  // When the thumb changes position, the mThumbStart value stored in
+  // ScrollbarData for the purpose of telling APZ about the thumb
+  // position painted by the main thread is invalidated. The ScrollbarData
+  // is stored on the nsDisplayOwnLayer item built by *this* frame, so
+  // we need to mark this frame as needing its fisplay item rebuilt.
+  MarkNeedsDisplayItemRebuild();
+
   // Request a repaint of the scrollbar
-  nsScrollbarFrame* scrollbarFrame = do_QueryFrame(scrollbarBox);
-  nsIScrollbarMediator* mediator =
-      scrollbarFrame ? scrollbarFrame->GetScrollbarMediator() : nullptr;
+  nsIScrollbarMediator* mediator = scrollbarBox->GetScrollbarMediator();
   if (!mediator || !mediator->ShouldSuppressScrollbarRepaints()) {
     SchedulePaint();
   }
@@ -946,11 +940,7 @@ static void UpdateAttribute(dom::Element* aScrollbar, nscoord aNewPos,
 void nsSliderFrame::SetCurrentThumbPosition(nsIContent* aScrollbar,
                                             nscoord aNewThumbPos,
                                             bool aIsSmooth, bool aMaySnap) {
-  nsRect crect;
-  GetXULClientRect(crect);
-  nscoord offset = IsXULHorizontal() ? crect.x : crect.y;
-  int32_t newPos = NSToIntRound((aNewThumbPos - offset) / mRatio);
-
+  int32_t newPos = NSToIntRound(aNewThumbPos / mRatio);
   if (aMaySnap &&
       mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::snap,
                                          nsGkAtoms::_true, eCaseMatters)) {
@@ -977,16 +967,18 @@ void nsSliderFrame::SetCurrentPosition(nsIContent* aScrollbar, int32_t aNewPos,
   // in reverse direction sliders, flip the value so that it goes from
   // right to left, or bottom to top.
   if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::dir,
-                                         nsGkAtoms::reverse, eCaseMatters))
+                                         nsGkAtoms::reverse, eCaseMatters)) {
     aNewPos = maxpos - aNewPos;
-  else
+  } else {
     aNewPos += minpos;
+  }
 
   // get the new position and make sure it is in bounds
-  if (aNewPos < minpos || maxpos < minpos)
+  if (aNewPos < minpos || maxpos < minpos) {
     aNewPos = minpos;
-  else if (aNewPos > maxpos)
+  } else if (aNewPos > maxpos) {
     aNewPos = maxpos;
+  }
 
   SetCurrentPositionInternal(aScrollbar, aNewPos, aIsSmooth);
 }
@@ -995,29 +987,25 @@ void nsSliderFrame::SetCurrentPositionInternal(nsIContent* aScrollbar,
                                                int32_t aNewPos,
                                                bool aIsSmooth) {
   nsCOMPtr<nsIContent> scrollbar = aScrollbar;
-  nsIFrame* scrollbarBox = GetScrollbar();
+  nsScrollbarFrame* scrollbarBox = Scrollbar();
   AutoWeakFrame weakFrame(this);
 
   mUserChanged = true;
 
-  nsScrollbarFrame* scrollbarFrame = do_QueryFrame(scrollbarBox);
-  if (scrollbarFrame) {
-    // See if we have a mediator.
-    nsIScrollbarMediator* mediator = scrollbarFrame->GetScrollbarMediator();
-    if (mediator) {
-      nscoord oldPos =
-          nsPresContext::CSSPixelsToAppUnits(GetCurrentPosition(scrollbar));
-      nscoord newPos = nsPresContext::CSSPixelsToAppUnits(aNewPos);
-      mediator->ThumbMoved(scrollbarFrame, oldPos, newPos);
-      if (!weakFrame.IsAlive()) {
-        return;
-      }
-      UpdateAttribute(scrollbar->AsElement(), aNewPos, /* aNotify */ false,
-                      aIsSmooth);
-      CurrentPositionChanged();
-      mUserChanged = false;
+  // See if we have a mediator.
+  if (nsIScrollbarMediator* mediator = scrollbarBox->GetScrollbarMediator()) {
+    nscoord oldPos =
+        nsPresContext::CSSPixelsToAppUnits(GetCurrentPosition(scrollbar));
+    nscoord newPos = nsPresContext::CSSPixelsToAppUnits(aNewPos);
+    mediator->ThumbMoved(scrollbarBox, oldPos, newPos);
+    if (!weakFrame.IsAlive()) {
       return;
     }
+    UpdateAttribute(scrollbar->AsElement(), aNewPos, /* aNotify */ false,
+                    aIsSmooth);
+    CurrentPositionChanged();
+    mUserChanged = false;
+    return;
   }
 
   UpdateAttribute(scrollbar->AsElement(), aNewPos, true, aIsSmooth);
@@ -1032,9 +1020,9 @@ void nsSliderFrame::SetCurrentPositionInternal(nsIContent* aScrollbar,
 }
 
 void nsSliderFrame::SetInitialChildList(ChildListID aListID,
-                                        nsFrameList& aChildList) {
-  nsBoxFrame::SetInitialChildList(aListID, aChildList);
-  if (aListID == kPrincipalList) {
+                                        nsFrameList&& aChildList) {
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
+  if (aListID == FrameChildListID::Principal) {
     AddListener();
   }
 }
@@ -1063,18 +1051,7 @@ static bool ScrollFrameWillBuildScrollInfoLayer(nsIFrame* aScrollFrame) {
 }
 
 nsIScrollableFrame* nsSliderFrame::GetScrollFrame() {
-  nsIFrame* scrollbarBox = GetScrollbar();
-  if (!scrollbarBox) {
-    return nullptr;
-  }
-
-  nsContainerFrame* scrollFrame = scrollbarBox->GetParent();
-  if (!scrollFrame) {
-    return nullptr;
-  }
-
-  nsIScrollableFrame* scrollFrameAsScrollable = do_QueryFrame(scrollFrame);
-  return scrollFrameAsScrollable;
+  return do_QueryFrame(Scrollbar()->GetParent());
 }
 
 void nsSliderFrame::StartAPZDrag(WidgetGUIEvent* aEvent) {
@@ -1086,7 +1063,12 @@ void nsSliderFrame::StartAPZDrag(WidgetGUIEvent* aEvent) {
     return;
   }
 
-  nsIFrame* scrollbarBox = GetScrollbar();
+  if (aEvent->AsMouseEvent() &&
+      aEvent->AsMouseEvent()->mButton != MouseButton::ePrimary) {
+    return;
+  }
+
+  nsIFrame* scrollbarBox = Scrollbar();
   nsContainerFrame* scrollFrame = scrollbarBox->GetParent();
   if (!scrollFrame) {
     return;
@@ -1108,12 +1090,12 @@ void nsSliderFrame::StartAPZDrag(WidgetGUIEvent* aEvent) {
     return;
   }
 
-  bool isHorizontal = IsXULHorizontal();
+  bool isHorizontal = Scrollbar()->IsHorizontal();
 
-  mozilla::layers::ScrollableLayerGuid::ViewID scrollTargetId;
+  layers::ScrollableLayerGuid::ViewID scrollTargetId;
   bool hasID = nsLayoutUtils::FindIDFor(scrollableContent, &scrollTargetId);
   bool hasAPZView =
-      hasID && (scrollTargetId != layers::ScrollableLayerGuid::NULL_SCROLL_ID);
+      hasID && scrollTargetId != layers::ScrollableLayerGuid::NULL_SCROLL_ID;
 
   if (!hasAPZView) {
     return;
@@ -1123,12 +1105,12 @@ void nsSliderFrame::StartAPZDrag(WidgetGUIEvent* aEvent) {
     return;
   }
 
-  mozilla::PresShell* presShell = PresShell();
+  auto* presShell = PresShell();
   uint64_t inputblockId = InputAPZContext::GetInputBlockId();
   uint32_t presShellId = presShell->GetPresShellId();
   AsyncDragMetrics dragMetrics(
       scrollTargetId, presShellId, inputblockId,
-      NSAppUnitsToFloatPixels(mDragStart, float(AppUnitsPerCSSPixel())),
+      OuterCSSPixel::FromAppUnits(mDragStart),
       isHorizontal ? ScrollDirection::eHorizontal : ScrollDirection::eVertical);
 
   // It's important to set this before calling
@@ -1179,7 +1161,7 @@ nsresult nsSliderFrame::StartDrag(Event* aEvent) {
   if (!GetEventPoint(event, pt)) {
     return NS_OK;
   }
-  bool isHorizontal = IsXULHorizontal();
+  bool isHorizontal = Scrollbar()->IsHorizontal();
   nscoord pos = isHorizontal ? pt.x : pt.y;
 
   // If we should scroll-to-click, first place the middle of the slider thumb
@@ -1198,8 +1180,7 @@ nsresult nsSliderFrame::StartDrag(Event* aEvent) {
 
     newpos -= (thumbLength / 2);
 
-    nsIFrame* scrollbarBox = GetScrollbar();
-    scrollbar = GetContentOfBox(scrollbarBox);
+    scrollbar = Scrollbar()->GetContent();
   }
 
   DragThumb(true);
@@ -1214,28 +1195,7 @@ nsresult nsSliderFrame::StartDrag(Event* aEvent) {
     return NS_OK;
   }
 
-#ifdef MOZ_WIDGET_GTK
-  RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
-  thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active, u"true"_ns, true);
-#endif
-
-  if (isHorizontal)
-    mThumbStart = thumbFrame->GetPosition().x;
-  else
-    mThumbStart = thumbFrame->GetPosition().y;
-
-  mDragStart = pos - mThumbStart;
-
-  mScrollingWithAPZ = false;
-  StartAPZDrag(event);  // sets mScrollingWithAPZ=true if appropriate
-
-#ifdef DEBUG_SLIDER
-  printf("Pressed mDragStart=%d\n", mDragStart);
-#endif
-
-  if (!mScrollingWithAPZ) {
-    SuppressDisplayport();
-  }
+  SetupDrag(event, thumbFrame, pos, isHorizontal);
 
   return NS_OK;
 }
@@ -1256,9 +1216,9 @@ nsresult nsSliderFrame::StopDrag() {
   }
 #endif
 
-  if (mChange) {
+  if (mRepeatDirection) {
     StopRepeat();
-    mChange = 0;
+    mRepeatDirection = 0;
   }
   return NS_OK;
 }
@@ -1380,21 +1340,12 @@ bool nsSliderFrame::IsEventOverThumb(WidgetGUIEvent* aEvent) {
     return false;
   }
 
-  nsRect thumbRect = thumbFrame->GetRect();
-#if defined(MOZ_WIDGET_GTK)
-  /* Scrollbar track can have padding, so it's better to check that eventPoint
-   * is inside of actual thumb, not just its one axis. The part of the scrollbar
-   * track adjacent to thumb can actually receive events in GTK3 */
-  return eventPoint.x >= thumbRect.x && eventPoint.x < thumbRect.XMost() &&
-         eventPoint.y >= thumbRect.y && eventPoint.y < thumbRect.YMost();
-#else
-  bool isHorizontal = IsXULHorizontal();
+  const nsRect thumbRect = thumbFrame->GetRect();
+  const bool isHorizontal = Scrollbar()->IsHorizontal();
   nscoord eventPos = isHorizontal ? eventPoint.x : eventPoint.y;
   nscoord thumbStart = isHorizontal ? thumbRect.x : thumbRect.y;
   nscoord thumbEnd = isHorizontal ? thumbRect.XMost() : thumbRect.YMost();
-
   return eventPos >= thumbStart && eventPos < thumbEnd;
-#endif
 }
 
 NS_IMETHODIMP
@@ -1424,32 +1375,26 @@ nsSliderFrame::HandlePress(nsPresContext* aPresContext, WidgetGUIEvent* aEvent,
     return NS_OK;
   }
 
-  if (IsXULHorizontal() ? eventPoint.x < thumbRect.x
-                        : eventPoint.y < thumbRect.y)
+  if (Scrollbar()->IsHorizontal() ? eventPoint.x < thumbRect.x
+                                  : eventPoint.y < thumbRect.y) {
     change = -1;
-
-  mChange = change;
-  DragThumb(true);
-  // On Linux we want to keep scrolling in the direction indicated by |change|
-  // until the mouse is released. On the other platforms we want to stop
-  // scrolling as soon as the scrollbar thumb has reached the current mouse
-  // position.
-#ifdef MOZ_WIDGET_GTK
-  nsRect clientRect;
-  GetXULClientRect(clientRect);
-
-  // Set the destination point to the very end of the scrollbar so that
-  // scrolling doesn't stop halfway through.
-  if (change > 0) {
-    mDestinationPoint = nsPoint(clientRect.width, clientRect.height);
-  } else {
-    mDestinationPoint = nsPoint(0, 0);
   }
-#else
-  mDestinationPoint = eventPoint;
-#endif
+
+  mRepeatDirection = change;
+  DragThumb(true);
+  if (StaticPrefs::layout_scrollbars_click_and_hold_track_continue_to_end()) {
+    // Set the destination point to the very end of the scrollbar so that
+    // scrolling doesn't stop halfway through.
+    if (change > 0) {
+      mDestinationPoint = nsPoint(GetRect().width, GetRect().height);
+    } else {
+      mDestinationPoint = nsPoint(0, 0);
+    }
+  } else {
+    mDestinationPoint = eventPoint;
+  }
   StartRepeat();
-  PageScroll(change);
+  PageScroll(false);
 
   return NS_OK;
 }
@@ -1460,19 +1405,14 @@ nsSliderFrame::HandleRelease(nsPresContext* aPresContext,
                              nsEventStatus* aEventStatus) {
   StopRepeat();
 
-  nsIFrame* scrollbar = GetScrollbar();
-  nsScrollbarFrame* sb = do_QueryFrame(scrollbar);
-  if (sb) {
-    nsIScrollbarMediator* m = sb->GetScrollbarMediator();
-    if (m) {
-      m->ScrollbarReleased(sb);
-    }
+  nsScrollbarFrame* sb = Scrollbar();
+  if (nsIScrollbarMediator* m = sb->GetScrollbarMediator()) {
+    m->ScrollbarReleased(sb);
   }
   return NS_OK;
 }
 
-void nsSliderFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                PostDestroyData& aPostDestroyData) {
+void nsSliderFrame::Destroy(DestroyContext& aContext) {
   // tell our mediator if we have one we are gone.
   if (mMediator) {
     mMediator->SetSlider(nullptr);
@@ -1481,37 +1421,10 @@ void nsSliderFrame::DestroyFrom(nsIFrame* aDestructRoot,
   StopRepeat();
 
   // call base class Destroy()
-  nsBoxFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsContainerFrame::Destroy(aContext);
 }
 
-nsSize nsSliderFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
-  EnsureOrient();
-  return nsBoxFrame::GetXULPrefSize(aState);
-}
-
-nsSize nsSliderFrame::GetXULMinSize(nsBoxLayoutState& aState) {
-  EnsureOrient();
-
-  // our min size is just our borders and padding
-  return nsIFrame::GetUncachedXULMinSize(aState);
-}
-
-nsSize nsSliderFrame::GetXULMaxSize(nsBoxLayoutState& aState) {
-  EnsureOrient();
-  return nsBoxFrame::GetXULMaxSize(aState);
-}
-
-void nsSliderFrame::EnsureOrient() {
-  nsIFrame* scrollbarBox = GetScrollbar();
-
-  bool isHorizontal = scrollbarBox->HasAnyStateBits(NS_STATE_IS_HORIZONTAL);
-  if (isHorizontal)
-    AddStateBits(NS_STATE_IS_HORIZONTAL);
-  else
-    RemoveStateBits(NS_STATE_IS_HORIZONTAL);
-}
-
-void nsSliderFrame::Notify(void) {
+void nsSliderFrame::Notify() {
   bool stop = false;
 
   nsIFrame* thumbFrame = mFrames.FirstChild();
@@ -1521,18 +1434,18 @@ void nsSliderFrame::Notify(void) {
   }
   nsRect thumbRect = thumbFrame->GetRect();
 
-  bool isHorizontal = IsXULHorizontal();
+  const bool isHorizontal = Scrollbar()->IsHorizontal();
 
   // See if the thumb has moved past our destination point.
   // if it has we want to stop.
   if (isHorizontal) {
-    if (mChange < 0) {
+    if (mRepeatDirection < 0) {
       if (thumbRect.x < mDestinationPoint.x) stop = true;
     } else {
       if (thumbRect.x + thumbRect.width > mDestinationPoint.x) stop = true;
     }
   } else {
-    if (mChange < 0) {
+    if (mRepeatDirection < 0) {
       if (thumbRect.y < mDestinationPoint.y) stop = true;
     } else {
       if (thumbRect.y + thumbRect.height > mDestinationPoint.y) stop = true;
@@ -1542,26 +1455,129 @@ void nsSliderFrame::Notify(void) {
   if (stop) {
     StopRepeat();
   } else {
-    PageScroll(mChange);
+    PageScroll(true);
   }
 }
 
-void nsSliderFrame::PageScroll(nscoord aChange) {
+void nsSliderFrame::PageScroll(bool aClickAndHold) {
+  int32_t changeDirection = mRepeatDirection;
   if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::dir,
                                          nsGkAtoms::reverse, eCaseMatters)) {
-    aChange = -aChange;
+    changeDirection = -changeDirection;
   }
-  nsIFrame* scrollbar = GetScrollbar();
-  nsScrollbarFrame* sb = do_QueryFrame(scrollbar);
-  if (sb) {
-    nsIScrollbarMediator* m = sb->GetScrollbarMediator();
-    sb->SetIncrementToPage(aChange);
-    if (m) {
-      m->ScrollByPage(sb, aChange, nsIScrollbarMediator::ENABLE_SNAP);
+  nsScrollbarFrame* sb = Scrollbar();
+
+  nsIScrollableFrame* sf = GetScrollFrame();
+  const ScrollSnapFlags scrollSnapFlags =
+      ScrollSnapFlags::IntendedDirection | ScrollSnapFlags::IntendedEndPosition;
+
+  // If our nsIScrollbarMediator implementation is an nsIScrollableFrame,
+  // use ScrollTo() to ensure we do not scroll past the intended
+  // destination. Otherwise, the combination of smooth scrolling and
+  // ScrollBy() semantics (which adds the delta to the current destination
+  // if there is a smooth scroll in progress) can lead to scrolling too far
+  // (bug 1331390).
+  // Only do this when the page scroll is triggered by the repeat timer
+  // when the mouse is being held down. For multiple clicks in
+  // succession, we want to make sure we scroll by a full page for
+  // each click, so we use ScrollByPage().
+  if (aClickAndHold && sf) {
+    const bool isHorizontal = sb->IsHorizontal();
+
+    nsIFrame* thumbFrame = mFrames.FirstChild();
+    if (!thumbFrame) {
       return;
     }
+
+    nsRect thumbRect = thumbFrame->GetRect();
+
+    nscoord maxDistanceAlongTrack;
+    if (isHorizontal) {
+      maxDistanceAlongTrack =
+          mDestinationPoint.x - thumbRect.x - thumbRect.width / 2;
+    } else {
+      maxDistanceAlongTrack =
+          mDestinationPoint.y - thumbRect.y - thumbRect.height / 2;
+    }
+
+    // Convert distance along scrollbar track to amount of scrolled content.
+    nscoord maxDistanceToScroll = maxDistanceAlongTrack / GetThumbRatio();
+
+    nsIContent* content = sb->GetContent();
+    const CSSIntCoord pageLength = GetPageIncrement(content);
+
+    nsPoint pos = sf->GetScrollPosition();
+
+    if (mCurrentClickHoldDestination) {
+      // We may not have arrived at the destination of the scroll from the
+      // previous repeat timer tick, some of that scroll may still be pending.
+      nsPoint pendingScroll =
+          *mCurrentClickHoldDestination - sf->GetScrollPosition();
+
+      // Scroll by one page relative to the previous destination, so that we
+      // scroll at a rate of a full page per repeat timer tick.
+      pos += pendingScroll;
+
+      // Make a corresponding adjustment to the maxium distance we can scroll,
+      // so we successfully avoid overshoot.
+      maxDistanceToScroll -= (isHorizontal ? pendingScroll.x : pendingScroll.y);
+    }
+
+    nscoord distanceToScroll =
+        std::min(abs(maxDistanceToScroll),
+                 CSSPixel::ToAppUnits(CSSCoord(pageLength))) *
+        changeDirection;
+
+    if (isHorizontal) {
+      pos.x += distanceToScroll;
+    } else {
+      pos.y += distanceToScroll;
+    }
+
+    mCurrentClickHoldDestination = Some(pos);
+    sf->ScrollTo(pos,
+                 StaticPrefs::general_smoothScroll() &&
+                         StaticPrefs::general_smoothScroll_pages()
+                     ? ScrollMode::Smooth
+                     : ScrollMode::Instant,
+                 nullptr, scrollSnapFlags);
+
+    return;
   }
-  PageUpDown(aChange);
+
+  sb->SetIncrementToPage(changeDirection);
+  if (nsIScrollbarMediator* m = sb->GetScrollbarMediator()) {
+    m->ScrollByPage(sb, changeDirection, scrollSnapFlags);
+    return;
+  }
+  PageUpDown(changeDirection);
+}
+
+void nsSliderFrame::SetupDrag(WidgetGUIEvent* aEvent, nsIFrame* aThumbFrame,
+                              nscoord aPos, bool aIsHorizontal) {
+#ifdef MOZ_WIDGET_GTK
+  RefPtr<dom::Element> thumb = aThumbFrame->GetContent()->AsElement();
+  thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active, u"true"_ns, true);
+#endif
+
+  if (aIsHorizontal) {
+    mThumbStart = aThumbFrame->GetPosition().x;
+  } else {
+    mThumbStart = aThumbFrame->GetPosition().y;
+  }
+
+  mDragStart = aPos - mThumbStart;
+
+  mScrollingWithAPZ = false;
+  StartAPZDrag(aEvent);  // sets mScrollingWithAPZ=true if appropriate
+
+#ifdef DEBUG_SLIDER
+  printf("Pressed mDragStart=%d\n", mDragStart);
+#endif
+
+  if (!mScrollingWithAPZ) {
+    SuppressDisplayport();
+  }
 }
 
 float nsSliderFrame::GetThumbRatio() const {
@@ -1569,7 +1585,7 @@ float nsSliderFrame::GetThumbRatio() const {
   // ratio of the thumb's CSS pixels per scrolled CSS pixels. (Note the thumb
   // is in the scrollframe's parent's space whereas the scrolled CSS pixels
   // are in the scrollframe's space).
-  return mRatio / mozilla::AppUnitsPerCSSPixel();
+  return mRatio / AppUnitsPerCSSPixel();
 }
 
 void nsSliderFrame::AsyncScrollbarDragInitiated(uint64_t aDragBlockId) {
@@ -1605,6 +1621,38 @@ bool nsSliderFrame::OnlySystemGroupDispatch(EventMessage aMessage) const {
   // matches the behaviour of other browsers.
   return (aMessage == eMouseMove || aMessage == ePointerMove) &&
          isDraggingThumb() && GetContent()->IsInNativeAnonymousSubtree();
+}
+
+bool nsSliderFrame::GetEventPoint(WidgetGUIEvent* aEvent, nsPoint& aPoint) {
+  LayoutDeviceIntPoint refPoint;
+  if (!GetEventPoint(aEvent, refPoint)) {
+    return false;
+  }
+  aPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, refPoint,
+                                                        RelativeTo{this});
+  return true;
+}
+
+bool nsSliderFrame::GetEventPoint(WidgetGUIEvent* aEvent,
+                                  LayoutDeviceIntPoint& aPoint) {
+  NS_ENSURE_TRUE(aEvent, false);
+  WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
+  if (touchEvent) {
+    // return false if there is more than one touch on the page, or if
+    // we can't find a touch point
+    if (touchEvent->mTouches.Length() != 1) {
+      return false;
+    }
+
+    dom::Touch* touch = touchEvent->mTouches.SafeElementAt(0);
+    if (!touch) {
+      return false;
+    }
+    aPoint = touch->mRefPoint;
+  } else {
+    aPoint = aEvent->mRefPoint;
+  }
+  return true;
 }
 
 NS_IMPL_ISUPPORTS(nsSliderMediator, nsIDOMEventListener)

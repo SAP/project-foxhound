@@ -1,4 +1,4 @@
-import { RemoteL10n, _RemoteL10n } from "lib/RemoteL10n.jsm";
+import { RemoteL10n, _RemoteL10n } from "lib/RemoteL10n.sys.mjs";
 import { GlobalOverrider } from "test/unit/utils";
 
 describe("RemoteL10n", () => {
@@ -78,11 +78,11 @@ describe("RemoteL10n", () => {
       // and the third one is the bundle generator.
       assert.equal(args.length, 2);
       assert.deepEqual(args[0], [
-        "browser/newtab/asrouter.ftl",
-        "browser/branding/brandings.ftl",
-        "browser/branding/sync-brand.ftl",
         "branding/brand.ftl",
         "browser/defaultBrowserNotification.ftl",
+        "browser/newtab/asrouter.ftl",
+        "toolkit/branding/accounts.ftl",
+        "toolkit/branding/brandings.ftl",
       ]);
       assert.isFalse(args[1]);
       assert.calledOnce(l10nRegInstance.hasSource);
@@ -100,11 +100,11 @@ describe("RemoteL10n", () => {
       // and the third one is null.
       assert.equal(args.length, 2);
       assert.deepEqual(args[0], [
-        "browser/newtab/asrouter.ftl",
-        "browser/branding/brandings.ftl",
-        "browser/branding/sync-brand.ftl",
         "branding/brand.ftl",
         "browser/defaultBrowserNotification.ftl",
+        "browser/newtab/asrouter.ftl",
+        "toolkit/branding/accounts.ftl",
+        "toolkit/branding/brandings.ftl",
       ]);
       assert.isFalse(args[1]);
       assert.calledOnce(l10nRegInstance.hasSource);
@@ -183,6 +183,35 @@ describe("RemoteL10n", () => {
     });
     it("should return false if the locale is not in all-locales", () => {
       assert.ok(!RemoteL10n.isLocaleSupported("und"));
+    });
+  });
+  describe("#formatLocalizableText", () => {
+    let instance;
+    let formatValueStub;
+    beforeEach(() => {
+      instance = new _RemoteL10n();
+      formatValueStub = sandbox.stub();
+      sandbox
+        .stub(instance, "l10n")
+        .get(() => ({ formatValue: formatValueStub }));
+    });
+    it("should localize a string_id", async () => {
+      formatValueStub.resolves("VALUE");
+
+      assert.equal(
+        await instance.formatLocalizableText({ string_id: "ID" }),
+        "VALUE"
+      );
+      assert.calledOnce(formatValueStub);
+    });
+    it("should pass through a string", async () => {
+      formatValueStub.reset();
+
+      assert.equal(
+        await instance.formatLocalizableText("unchanged"),
+        "unchanged"
+      );
+      assert.isFalse(formatValueStub.called);
     });
   });
 });

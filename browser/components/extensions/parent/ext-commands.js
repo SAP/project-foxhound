@@ -6,13 +6,38 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionShortcuts",
-  "resource://gre/modules/ExtensionShortcuts.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionShortcuts: "resource://gre/modules/ExtensionShortcuts.sys.mjs",
+});
 
-this.commands = class extends ExtensionAPI {
+this.commands = class extends ExtensionAPIPersistent {
+  PERSISTENT_EVENTS = {
+    onCommand({ fire }) {
+      let listener = (eventName, commandName) => {
+        fire.async(commandName);
+      };
+      this.on("command", listener);
+      return {
+        unregister: () => this.off("command", listener),
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+    onChanged({ fire }) {
+      let listener = (eventName, changeInfo) => {
+        fire.async(changeInfo);
+      };
+      this.on("shortcutChanged", listener);
+      return {
+        unregister: () => this.off("shortcutChanged", listener),
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+  };
+
   static onUninstall(extensionId) {
     return ExtensionShortcuts.removeCommandsFromStorage(extensionId);
   }
@@ -21,6 +46,7 @@ this.commands = class extends ExtensionAPI {
     let shortcuts = new ExtensionShortcuts({
       extension: this.extension,
       onCommand: name => this.emit("command", name),
+      onShortcutChanged: changeInfo => this.emit("shortcutChanged", changeInfo),
     });
     this.extension.shortcuts = shortcuts;
     await shortcuts.loadCommands();
@@ -39,17 +65,16 @@ this.commands = class extends ExtensionAPI {
         reset: name => this.extension.shortcuts.resetCommand(name),
         onCommand: new EventManager({
           context,
-          name: "commands.onCommand",
+          module: "commands",
+          event: "onCommand",
           inputHandling: true,
-          register: fire => {
-            let listener = (eventName, commandName) => {
-              fire.async(commandName);
-            };
-            this.on("command", listener);
-            return () => {
-              this.off("command", listener);
-            };
-          },
+          extensionApi: this,
+        }).api(),
+        onChanged: new EventManager({
+          context,
+          module: "commands",
+          event: "onChanged",
+          extensionApi: this,
         }).api(),
       },
     };

@@ -56,10 +56,15 @@ To address this, we invalidate the vertex buffers based on:
 
 */
 
-#[cfg(not(target_arch = "wasm32"))]
+///cbindgen:ignore
+#[cfg(not(any(windows, all(target_arch = "wasm32", not(target_os = "emscripten")))))]
 mod egl;
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_os = "emscripten")]
+mod emscripten;
+#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
 mod web;
+#[cfg(windows)]
+mod wgl;
 
 mod adapter;
 mod command;
@@ -67,19 +72,33 @@ mod conv;
 mod device;
 mod queue;
 
-#[cfg(not(target_arch = "wasm32"))]
-use self::egl::{AdapterContext, Instance, Surface};
+use crate::{CopyExtent, TextureDescriptor};
 
-#[cfg(target_arch = "wasm32")]
-use self::web::{AdapterContext, Instance, Surface};
+#[cfg(not(any(windows, all(target_arch = "wasm32", not(target_os = "emscripten")))))]
+pub use self::egl::{AdapterContext, AdapterContextLock};
+#[cfg(not(any(windows, all(target_arch = "wasm32", not(target_os = "emscripten")))))]
+use self::egl::{Instance, Surface};
+
+#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+pub use self::web::AdapterContext;
+#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+use self::web::{Instance, Surface};
+
+#[cfg(windows)]
+use self::wgl::AdapterContext;
+#[cfg(windows)]
+use self::wgl::{Instance, Surface};
 
 use arrayvec::ArrayVec;
 
 use glow::HasContext;
 
-use std::{ops::Range, sync::Arc};
+use naga::FastHashMap;
+use parking_lot::Mutex;
+use std::sync::atomic::AtomicU32;
+use std::{fmt, ops::Range, sync::Arc};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Api;
 
 //Note: we can support more samplers if not every one of them is used at a time,
@@ -88,6 +107,9 @@ const MAX_TEXTURE_SLOTS: usize = 16;
 const MAX_SAMPLERS: usize = 16;
 const MAX_VERTEX_ATTRIBUTES: usize = 16;
 const ZERO_BUFFER_SIZE: usize = 256 << 10;
+const MAX_PUSH_CONSTANTS: usize = 64;
+// We have to account for each push constant may need to be set for every shader.
+const MAX_PUSH_CONSTANT_COMMANDS: usize = MAX_PUSH_CONSTANTS * crate::MAX_CONCURRENT_SHADER_STAGES;
 
 impl crate::Api for Api {
     type Instance = Instance;
@@ -118,6 +140,7 @@ impl crate::Api for Api {
 bitflags::bitflags! {
     /// Flags that affect internal code paths but do not
     /// change the exposed feature set.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     struct PrivateCapabilities: u32 {
         /// Indicates support for `glBufferStorage` allocation.
         const BUFFER_ALLOCATION = 1 << 0;
@@ -132,13 +155,28 @@ bitflags::bitflags! {
         /// Indicates that buffers used as `GL_ELEMENT_ARRAY_BUFFER` may be created / initialized / used
         /// as other targets, if not present they must not be mixed with other targets.
         const INDEX_BUFFER_ROLE_CHANGE = 1 << 5;
-        /// Indicates that the device supports disabling draw buffers
-        const CAN_DISABLE_DRAW_BUFFER = 1 << 6;
+        /// Supports `glGetBufferSubData`
+        const GET_BUFFER_SUB_DATA = 1 << 7;
+        /// Supports `f16` color buffers
+        const COLOR_BUFFER_HALF_FLOAT = 1 << 8;
+        /// Supports `f11/f10` and `f32` color buffers
+        const COLOR_BUFFER_FLOAT = 1 << 9;
+        /// Supports linear flitering `f32` textures.
+        const TEXTURE_FLOAT_LINEAR = 1 << 10;
+        /// Supports query buffer objects.
+        const QUERY_BUFFERS = 1 << 11;
+        /// Supports `glTexStorage2D`, etc.
+        const TEXTURE_STORAGE = 1 << 12;
+        /// Supports `push_debug_group`, `pop_debug_group` and `debug_message_insert`.
+        const DEBUG_FNS = 1 << 13;
+        /// Supports framebuffer invalidation.
+        const INVALIDATE_FRAMEBUFFER = 1 << 14;
     }
 }
 
 bitflags::bitflags! {
     /// Flags that indicate necessary workarounds for specific devices or driver bugs
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     struct Workarounds: u32 {
         // Needs workaround for Intel Mesa bug:
         // https://gitlab.freedesktop.org/mesa/mesa/-/issues/2565.
@@ -168,17 +206,22 @@ impl Default for VertexAttribKind {
 }
 
 #[derive(Clone, Debug)]
-struct TextureFormatDesc {
-    internal: u32,
-    external: u32,
-    data_type: u32,
+pub struct TextureFormatDesc {
+    pub internal: u32,
+    pub external: u32,
+    pub data_type: u32,
 }
 
 struct AdapterShared {
     context: AdapterContext,
     private_caps: PrivateCapabilities,
+    features: wgt::Features,
     workarounds: Workarounds,
     shading_language_version: naga::back::glsl::Version,
+    max_texture_size: u32,
+    next_shader_id: AtomicU32,
+    program_cache: Mutex<ProgramCache>,
+    es: bool,
 }
 
 pub struct Adapter {
@@ -188,7 +231,7 @@ pub struct Adapter {
 pub struct Device {
     shared: Arc<AdapterShared>,
     main_vao: glow::VertexArray,
-    #[cfg(feature = "renderdoc")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "renderdoc"))]
     render_doc: crate::auxil::renderdoc::RenderDoc,
 }
 
@@ -197,7 +240,7 @@ pub struct Queue {
     features: wgt::Features,
     draw_fbo: glow::Framebuffer,
     copy_fbo: glow::Framebuffer,
-    /// Shader program used to clear the screen for [`PrivateCapabilities::REQUIRES_SHADER_CLEAR`]
+    /// Shader program used to clear the screen for [`Workarounds::MESA_I915_SRGB_SHADER_CLEAR`]
     /// devices.
     shader_clear_program: glow::Program,
     /// The uniform location of the color uniform in the shader clear program
@@ -219,14 +262,21 @@ pub struct Buffer {
     data: Option<Arc<std::sync::Mutex<Vec<u8>>>>,
 }
 
-// Safe: WASM doesn't have threads
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
 unsafe impl Sync for Buffer {}
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
 unsafe impl Send for Buffer {}
 
 #[derive(Clone, Debug)]
-enum TextureInner {
+pub enum TextureInner {
     Renderbuffer {
         raw: glow::Renderbuffer,
     },
@@ -235,7 +285,24 @@ enum TextureInner {
         raw: glow::Texture,
         target: BindTarget,
     },
+    #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+    ExternalFramebuffer {
+        inner: web_sys::WebGlFramebuffer,
+    },
 }
+
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
+unsafe impl Sync for TextureInner {}
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
+unsafe impl Send for TextureInner {}
 
 impl TextureInner {
     fn as_native(&self) -> (glow::Texture, BindTarget) {
@@ -244,25 +311,29 @@ impl TextureInner {
                 panic!("Unexpected renderbuffer");
             }
             Self::Texture { raw, target } => (raw, target),
+            #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+            Self::ExternalFramebuffer { .. } => panic!("Unexpected external framebuffer"),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct Texture {
-    inner: TextureInner,
-    mip_level_count: u32,
-    array_layer_count: u32,
-    format: wgt::TextureFormat,
+    pub inner: TextureInner,
+    pub drop_guard: Option<crate::DropGuard>,
+    pub mip_level_count: u32,
+    pub array_layer_count: u32,
+    pub format: wgt::TextureFormat,
     #[allow(unused)]
-    format_desc: TextureFormatDesc,
-    copy_size: crate::CopyExtent,
+    pub format_desc: TextureFormatDesc,
+    pub copy_size: CopyExtent,
 }
 
 impl Texture {
     pub fn default_framebuffer(format: wgt::TextureFormat) -> Self {
         Self {
             inner: TextureInner::DefaultRenderbuffer,
+            drop_guard: None,
             mip_level_count: 1,
             array_layer_count: 1,
             format,
@@ -271,11 +342,28 @@ impl Texture {
                 external: 0,
                 data_type: 0,
             },
-            copy_size: crate::CopyExtent {
+            copy_size: CopyExtent {
                 width: 0,
                 height: 0,
                 depth: 0,
             },
+        }
+    }
+
+    /// Returns the `target`, whether the image is 3d and whether the image is a cubemap.
+    fn get_info_from_desc(desc: &TextureDescriptor) -> u32 {
+        match desc.dimension {
+            wgt::TextureDimension::D1 => glow::TEXTURE_2D,
+            wgt::TextureDimension::D2 => {
+                // HACK: detect a cube map; forces cube compatible textures to be cube textures
+                match (desc.is_cube_compatible(), desc.size.depth_or_array_layers) {
+                    (false, 1) => glow::TEXTURE_2D,
+                    (false, _) => glow::TEXTURE_2D_ARRAY,
+                    (true, 6) => glow::TEXTURE_CUBE_MAP,
+                    (true, _) => glow::TEXTURE_CUBE_MAP_ARRAY,
+                }
+            }
+            wgt::TextureDimension::D3 => glow::TEXTURE_3D,
         }
     }
 }
@@ -283,7 +371,6 @@ impl Texture {
 #[derive(Clone, Debug)]
 pub struct TextureView {
     inner: TextureInner,
-    sample_type: wgt::TextureSampleType,
     aspects: crate::FormatAspects,
     mip_levels: Range<u32>,
     array_layers: Range<u32>,
@@ -295,6 +382,7 @@ pub struct Sampler {
     raw: glow::Sampler,
 }
 
+#[derive(Debug)]
 pub struct BindGroupLayout {
     entries: Arc<[wgt::BindGroupLayoutEntry]>,
 }
@@ -339,7 +427,9 @@ enum RawBinding {
     Texture {
         raw: glow::Texture,
         target: BindTarget,
-        //TODO: mip levels, array layers
+        aspects: crate::FormatAspects,
+        mip_levels: Range<u32>,
+        //TODO: array layers
     },
     Image(ImageBinding),
     Sampler(glow::Sampler),
@@ -350,10 +440,13 @@ pub struct BindGroup {
     contents: Box<[RawBinding]>,
 }
 
+type ShaderId = u32;
+
 #[derive(Debug)]
 pub struct ShaderModule {
     naga: crate::NagaShader,
     label: Option<String>,
+    id: ShaderId,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -392,13 +485,26 @@ struct VertexBufferDesc {
     stride: u32,
 }
 
-#[allow(unused)]
-#[derive(Clone)]
-struct UniformDesc {
+#[derive(Clone, Debug)]
+struct PushConstantDesc {
     location: glow::UniformLocation,
+    ty: naga::TypeInner,
     offset: u32,
-    utype: u32,
+    size_bytes: u32,
 }
+
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
+unsafe impl Sync for PushConstantDesc {}
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
+unsafe impl Send for PushConstantDesc {}
 
 /// For each texture in the pipeline layout, store the index of the only
 /// sampler (in this layout) that the texture is used with.
@@ -407,7 +513,7 @@ type SamplerBindMap = [Option<u8>; MAX_TEXTURE_SLOTS];
 struct PipelineInner {
     program: glow::Program,
     sampler_map: SamplerBindMap,
-    uniforms: Box<[UniformDesc]>,
+    push_constant_descs: ArrayVec<PushConstantDesc, MAX_PUSH_CONSTANT_COMMANDS>,
 }
 
 #[derive(Clone, Debug)]
@@ -435,8 +541,23 @@ struct ColorTargetDesc {
     blend: Option<BlendDesc>,
 }
 
+#[derive(PartialEq, Eq, Hash)]
+struct ProgramStage {
+    naga_stage: naga::ShaderStage,
+    shader_id: ShaderId,
+    entry_point: String,
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct ProgramCacheKey {
+    stages: ArrayVec<ProgramStage, 3>,
+    group_to_binding_to_slot: Box<[Box<[u8]>]>,
+}
+
+type ProgramCache = FastHashMap<ProgramCacheKey, Result<Arc<PipelineInner>, crate::PipelineError>>;
+
 pub struct RenderPipeline {
-    inner: PipelineInner,
+    inner: Arc<PipelineInner>,
     primitive: wgt::PrimitiveState,
     vertex_buffers: Box<[VertexBufferDesc]>,
     vertex_attributes: Box<[AttributeDesc]>,
@@ -444,23 +565,38 @@ pub struct RenderPipeline {
     depth: Option<DepthState>,
     depth_bias: wgt::DepthBiasState,
     stencil: Option<StencilState>,
+    alpha_to_coverage_enabled: bool,
 }
 
-// SAFE: WASM doesn't have threads
-#[cfg(target_arch = "wasm32")]
-unsafe impl Send for RenderPipeline {}
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
 unsafe impl Sync for RenderPipeline {}
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
+unsafe impl Send for RenderPipeline {}
 
 pub struct ComputePipeline {
-    inner: PipelineInner,
+    inner: Arc<PipelineInner>,
 }
 
-// SAFE: WASM doesn't have threads
-#[cfg(target_arch = "wasm32")]
-unsafe impl Send for ComputePipeline {}
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
 unsafe impl Sync for ComputePipeline {}
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "fragile-send-sync-non-atomic-wasm",
+    not(target_feature = "atomics")
+))]
+unsafe impl Send for ComputePipeline {}
 
 #[derive(Debug)]
 pub struct QuerySet {
@@ -474,7 +610,21 @@ pub struct Fence {
     pending: Vec<(crate::FenceValue, glow::Fence)>,
 }
 
+#[cfg(any(
+    not(target_arch = "wasm32"),
+    all(
+        feature = "fragile-send-sync-non-atomic-wasm",
+        not(target_feature = "atomics")
+    )
+))]
 unsafe impl Send for Fence {}
+#[cfg(any(
+    not(target_arch = "wasm32"),
+    all(
+        feature = "fragile-send-sync-non-atomic-wasm",
+        not(target_feature = "atomics")
+    )
+))]
 unsafe impl Sync for Fence {}
 
 impl Fence {
@@ -554,7 +704,7 @@ struct PrimitiveState {
     unclipped_depth: bool,
 }
 
-type InvalidatedAttachments = ArrayVec<u32, { crate::MAX_COLOR_TARGETS + 2 }>;
+type InvalidatedAttachments = ArrayVec<u32, { crate::MAX_COLOR_ATTACHMENTS + 2 }>;
 
 #[derive(Debug)]
 enum Command {
@@ -600,6 +750,15 @@ enum Command {
         dst_target: BindTarget,
         copy: crate::BufferCopy,
     },
+    #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+    CopyExternalImageToTexture {
+        src: wgt::ImageCopyExternalImage,
+        dst: glow::Texture,
+        dst_target: BindTarget,
+        dst_format: wgt::TextureFormat,
+        dst_premultiplication: bool,
+        copy: crate::TextureCopy,
+    },
     CopyTextureToTexture {
         src: glow::Texture,
         src_target: BindTarget,
@@ -628,6 +787,7 @@ enum Command {
     SetIndexBuffer(glow::Buffer),
     BeginQuery(glow::Query, BindTarget),
     EndQuery(BindTarget),
+    TimestampQuery(glow::Query),
     CopyQueryResults {
         query_range: Range<u32>,
         dst: Buffer,
@@ -657,6 +817,11 @@ enum Command {
     ClearColorI(u32, [i32; 4]),
     ClearDepth(f32),
     ClearStencil(u32),
+    // Clearing both the depth and stencil buffer individually appears to
+    // result in the stencil buffer failing to clear, atleast in WebGL.
+    // It is also more efficient to emit a single command instead of two for
+    // this.
+    ClearDepthAndStencil(f32, u32),
     BufferBarrier(glow::Buffer, crate::BufferUses),
     TextureBarrier(crate::TextureUses),
     SetViewport {
@@ -678,6 +843,7 @@ enum Command {
     SetDepth(DepthState),
     SetDepthBias(wgt::DepthBiasState),
     ConfigureDepthStencil(crate::FormatAspects),
+    SetAlphaToCoverage(bool),
     SetVertexAttribute {
         buffer: Option<glow::Buffer>,
         buffer_desc: VertexBufferDesc,
@@ -708,6 +874,8 @@ enum Command {
         slot: u32,
         texture: glow::Texture,
         target: BindTarget,
+        aspects: crate::FormatAspects,
+        mip_levels: Range<u32>,
     },
     BindImage {
         slot: u32,
@@ -716,6 +884,11 @@ enum Command {
     InsertDebugMarker(Range<u32>),
     PushDebugGroup(Range<u32>),
     PopDebugGroup,
+    SetPushConstants {
+        uniform: PushConstantDesc,
+        /// Offset from the start of the `data_bytes`
+        offset: u32,
+    },
 }
 
 #[derive(Default)]
@@ -726,6 +899,16 @@ pub struct CommandBuffer {
     queries: Vec<glow::Query>,
 }
 
+impl fmt::Debug for CommandBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut builder = f.debug_struct("CommandBuffer");
+        if let Some(ref label) = self.label {
+            builder.field("label", label);
+        }
+        builder.finish()
+    }
+}
+
 //TODO: we would have something like `Arc<typed_arena::Arena>`
 // here and in the command buffers. So that everything grows
 // inside the encoder and stays there until `reset_all`.
@@ -734,4 +917,62 @@ pub struct CommandEncoder {
     cmd_buffer: CommandBuffer,
     state: command::State,
     private_caps: PrivateCapabilities,
+}
+
+impl fmt::Debug for CommandEncoder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommandEncoder")
+            .field("cmd_buffer", &self.cmd_buffer)
+            .finish()
+    }
+}
+
+#[cfg(not(all(target_arch = "wasm32", not(target_os = "emscripten"))))]
+fn gl_debug_message_callback(source: u32, gltype: u32, id: u32, severity: u32, message: &str) {
+    let source_str = match source {
+        glow::DEBUG_SOURCE_API => "API",
+        glow::DEBUG_SOURCE_WINDOW_SYSTEM => "Window System",
+        glow::DEBUG_SOURCE_SHADER_COMPILER => "ShaderCompiler",
+        glow::DEBUG_SOURCE_THIRD_PARTY => "Third Party",
+        glow::DEBUG_SOURCE_APPLICATION => "Application",
+        glow::DEBUG_SOURCE_OTHER => "Other",
+        _ => unreachable!(),
+    };
+
+    let log_severity = match severity {
+        glow::DEBUG_SEVERITY_HIGH => log::Level::Error,
+        glow::DEBUG_SEVERITY_MEDIUM => log::Level::Warn,
+        glow::DEBUG_SEVERITY_LOW => log::Level::Info,
+        glow::DEBUG_SEVERITY_NOTIFICATION => log::Level::Trace,
+        _ => unreachable!(),
+    };
+
+    let type_str = match gltype {
+        glow::DEBUG_TYPE_DEPRECATED_BEHAVIOR => "Deprecated Behavior",
+        glow::DEBUG_TYPE_ERROR => "Error",
+        glow::DEBUG_TYPE_MARKER => "Marker",
+        glow::DEBUG_TYPE_OTHER => "Other",
+        glow::DEBUG_TYPE_PERFORMANCE => "Performance",
+        glow::DEBUG_TYPE_POP_GROUP => "Pop Group",
+        glow::DEBUG_TYPE_PORTABILITY => "Portability",
+        glow::DEBUG_TYPE_PUSH_GROUP => "Push Group",
+        glow::DEBUG_TYPE_UNDEFINED_BEHAVIOR => "Undefined Behavior",
+        _ => unreachable!(),
+    };
+
+    let _ = std::panic::catch_unwind(|| {
+        log::log!(
+            log_severity,
+            "GLES: [{}/{}] ID {} : {}",
+            source_str,
+            type_str,
+            id,
+            message
+        );
+    });
+
+    if cfg!(debug_assertions) && log_severity == log::Level::Error {
+        // Set canary and continue
+        crate::VALIDATION_CANARY.set();
+    }
 }

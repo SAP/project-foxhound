@@ -4,15 +4,20 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 loader.lazyRequireGetter(
   this,
   "HTMLTooltip",
-  "devtools/client/shared/widgets/tooltip/HTMLTooltip",
+  "resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js",
   true
 );
-loader.lazyRequireGetter(this, "colorUtils", "devtools/shared/css/color", true);
+loader.lazyRequireGetter(
+  this,
+  "colorUtils",
+  "resource://devtools/shared/css/color.js",
+  true
+);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 let itemIdCounter = 0;
@@ -126,7 +131,7 @@ AutocompletePopup.prototype = {
     return this._tooltip;
   },
 
-  onInputKeyDown: function(event) {
+  onInputKeyDown(event) {
     // Only handle the even if the popup is opened.
     if (!this.isOpen) {
       return;
@@ -179,20 +184,20 @@ AutocompletePopup.prototype = {
     }
   },
 
-  onInputBlur: function(event) {
+  onInputBlur(event) {
     if (this.isOpen) {
       this.clearItems();
       this.hidePopup();
     }
   },
 
-  onSelect: function(e) {
+  onSelect(e) {
     if (this.onSelectCallback) {
       this.onSelectCallback(e);
     }
   },
 
-  onClick: function(e) {
+  onClick(e) {
     const itemEl = e.target.closest(".autocomplete-item");
     const index =
       typeof itemEl?.dataset?.index !== "undefined"
@@ -226,7 +231,7 @@ AutocompletePopup.prototype = {
    *        The position of item to select.
    * @param {Object} options: Check `selectItemAtIndex` for more information.
    */
-  openPopup: async function(anchor, xOffset = 0, yOffset = 0, index, options) {
+  async openPopup(anchor, xOffset = 0, yOffset = 0, index, options) {
     if (!anchor && this.input) {
       anchor = this.input;
     }
@@ -269,7 +274,7 @@ AutocompletePopup.prototype = {
    *        -  {Boolean} preventSelectCallback: true to not call this.onSelectCallback as
    *                     during the initial autoSelect.
    */
-  selectItemAtIndex: function(index, options = {}) {
+  selectItemAtIndex(index, options = {}) {
     const { preventSelectCallback } = options;
 
     if (!Number.isInteger(index)) {
@@ -310,7 +315,7 @@ AutocompletePopup.prototype = {
   /**
    * Hide the autocomplete popup panel.
    */
-  hidePopup: function() {
+  hidePopup() {
     this._pendingShowPromise = null;
     this.tooltip.once("hidden", () => {
       this.emit("popup-closed");
@@ -334,7 +339,7 @@ AutocompletePopup.prototype = {
    * same code. It is the responsability of the client code to perform DOM
    * cleanup.
    */
-  destroy: function() {
+  destroy() {
     this._pendingShowPromise = null;
     if (this.isOpen) {
       this.hidePopup();
@@ -371,7 +376,7 @@ AutocompletePopup.prototype = {
    *
    * @return {Object} The autocomplete item at index index.
    */
-  getItemAtIndex: function(index) {
+  getItemAtIndex(index) {
     return this.items[index];
   },
 
@@ -380,7 +385,7 @@ AutocompletePopup.prototype = {
    *
    * @return {Array} The array of autocomplete items.
    */
-  getItems: function() {
+  getItems() {
     // Return a copy of the array to avoid side effects from the caller code.
     return this.items.slice(0);
   },
@@ -396,7 +401,7 @@ AutocompletePopup.prototype = {
    *        -  {Boolean} preventSelectCallback: true to not call this.onSelectCallback as
    *                     during the initial autoSelect.
    */
-  setItems: function(items, selectedIndex, options) {
+  setItems(items, selectedIndex, options) {
     this.clearItems();
 
     // If there is no new items, no need to do unecessary work.
@@ -440,7 +445,7 @@ AutocompletePopup.prototype = {
     this.selectItemAtIndex(selectedIndex, options);
   },
 
-  _scrollElementIntoViewIfNeeded: function(element) {
+  _scrollElementIntoViewIfNeeded(element) {
     const quads = element.getBoxQuads({
       relativeTo: this.tooltip.panel,
       createFramesForSuppressedWhitespace: false,
@@ -463,7 +468,7 @@ AutocompletePopup.prototype = {
   /**
    * Clear all the items from the autocomplete list.
    */
-  clearItems: function() {
+  clearItems() {
     if (this._list) {
       this._list.innerHTML = "";
     }
@@ -504,7 +509,7 @@ AutocompletePopup.prototype = {
    * @param {String} id
    *        The id (as in DOM id) of the currently selected autocomplete suggestion
    */
-  _setActiveDescendant: function(id) {
+  _setActiveDescendant(id) {
     if (!this._activeElement) {
       return;
     }
@@ -524,7 +529,7 @@ AutocompletePopup.prototype = {
   /**
    * Clear the aria-activedescendant attribute on the current active element.
    */
-  _clearActiveDescendant: function() {
+  _clearActiveDescendant() {
     if (!this._activeElement) {
       return;
     }
@@ -532,7 +537,7 @@ AutocompletePopup.prototype = {
     this._activeElement.removeAttribute("aria-activedescendant");
   },
 
-  createListItem: function(item, index, selected) {
+  createListItem(item, index, selected) {
     const listItem = this._document.createElementNS(HTML_NS, "li");
     // Items must have an id for accessibility.
     listItem.setAttribute("id", "autocomplete-item-" + itemIdCounter++);
@@ -614,7 +619,7 @@ AutocompletePopup.prototype = {
    * @return {Object}
    *         The newly selected item object.
    */
-  selectNextItem: function() {
+  selectNextItem() {
     if (this.selectedIndex < this.items.length - 1) {
       this.selectItemAtIndex(this.selectedIndex + 1);
     } else {
@@ -629,7 +634,7 @@ AutocompletePopup.prototype = {
    * @return {Object}
    *         The newly-selected item object.
    */
-  selectPreviousItem: function() {
+  selectPreviousItem() {
     if (this.selectedIndex > 0) {
       this.selectItemAtIndex(this.selectedIndex - 1);
     } else {
@@ -646,7 +651,7 @@ AutocompletePopup.prototype = {
    * @return {Object}
    *         The newly-selected item object.
    */
-  selectNextPageItem: function() {
+  selectNextPageItem() {
     const nextPageIndex = this.selectedIndex + this._itemsPerPane + 1;
     this.selectItemAtIndex(Math.min(nextPageIndex, this.itemCount - 1));
     return this.selectedItem;
@@ -659,7 +664,7 @@ AutocompletePopup.prototype = {
    * @return {Object}
    *         The newly-selected item object.
    */
-  selectPreviousPageItem: function() {
+  selectPreviousPageItem() {
     const prevPageIndex = this.selectedIndex - this._itemsPerPane - 1;
     this.selectItemAtIndex(Math.max(prevPageIndex, 0));
     return this.selectedItem;
@@ -672,7 +677,7 @@ AutocompletePopup.prototype = {
    * @return {Boolean}
    *         If the object represents a proper colour or not.
    */
-  _isValidColor: function(color) {
+  _isValidColor(color) {
     const colorObj = new colorUtils.CssColor(color);
     return colorObj.valid && !colorObj.specialValue;
   },

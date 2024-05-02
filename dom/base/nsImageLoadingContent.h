@@ -15,7 +15,6 @@
 
 #include "imgINotificationObserver.h"
 #include "mozilla/CORSMode.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
 #include "nsIContentPolicy.h"
@@ -23,6 +22,7 @@
 #include "nsIRequest.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/RustTypes.h"
 #include "nsAttrValue.h"
 #include "Units.h"
 
@@ -65,9 +65,9 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
   NS_DECL_NSIIMAGELOADINGCONTENT
 
   // Web IDL binding methods.
-  // Note that the XPCOM SetLoadingEnabled, ForceImageState methods are OK for
-  // Web IDL bindings to use as well, since none of them throw when called via
-  // the Web IDL bindings.
+  // Note that the XPCOM SetLoadingEnabled method is OK for Web IDL bindings
+  // to use as well, since it does not throw when called via the Web IDL
+  // bindings.
 
   bool LoadingEnabled() const { return mLoadingEnabled; }
   void AddObserver(imgINotificationObserver* aObserver);
@@ -80,6 +80,7 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
   void ForceReload(bool aNotify, mozilla::ErrorResult& aError);
 
   mozilla::dom::Element* FindImageMap();
+  static mozilla::dom::Element* FindImageMap(mozilla::dom::Element*);
 
   /**
    * Toggle whether or not to synchronously decode an image on draw.
@@ -92,12 +93,9 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
    */
   void NotifyOwnerDocumentActivityChanged();
 
-  /**
-   * Enables/disables image state forcing. When |aForce| is true, we force
-   * nsImageLoadingContent::ImageState() to return |aState|. Call again with
-   * |aForce| as false to revert ImageState() to its original behaviour.
-   */
-  void ForceImageState(bool aForce, mozilla::EventStates::InternalType aState);
+  // Trigger text recognition for the current image request.
+  already_AddRefed<mozilla::dom::Promise> RecognizeCurrentImageText(
+      mozilla::ErrorResult&);
 
  protected:
   enum ImageLoadType {
@@ -130,15 +128,15 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
 
   /**
    * ImageState is called by subclasses that are computing their content state.
-   * The return value will have the NS_EVENT_STATE_BROKEN bit set as needed.
+   * The return value will have the ElementState::BROKEN bit set as needed.
    *
    * Note that this state assumes that this node is "trying" to be an
    * image (so for example complete lack of attempt to load an image will lead
-   * to NS_EVENT_STATE_BROKEN being set).  Subclasses that are not "trying" to
+   * to ElementState::BROKEN being set).  Subclasses that are not "trying" to
    * be an image (eg an HTML <input> of type other than "image") should just
    * not call this method when computing their intrinsic state.
    */
-  mozilla::EventStates ImageState() const;
+  mozilla::dom::ElementState ImageState() const;
 
   /**
    * LoadImage is called by subclasses when the appropriate
@@ -184,9 +182,10 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
    * Helper function to get the frame associated with this content. Not named
    * GetPrimaryFrame to prevent ambiguous method names in subclasses.
    *
-   * @return The frame which we belong to, or nullptr if it doesn't exist.
+   * @return The frame we own, or nullptr if it doesn't exist, or isn't
+   * associated with any of our requests.
    */
-  nsIFrame* GetOurPrimaryFrame();
+  nsIFrame* GetOurPrimaryImageFrame();
 
   /**
    * Helper function to get the PresContext associated with this content's
@@ -350,8 +349,7 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
   /**
    * Method to fire an event once we know what's going on with the image load.
    *
-   * @param aEventType "loadstart", "loadend", "load", or "error" depending on
-   *                   how things went
+   * @param aEventType "load", or "error" depending on how things went
    * @param aIsCancelable true if event is cancelable.
    */
   nsresult FireEvent(const nsAString& aEventType, bool aIsCancelable = false);
@@ -536,12 +534,6 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
    */
   nsTArray<RefPtr<mozilla::dom::Promise>> mDecodePromises;
 
-  /**
-   * When mIsImageStateForced is true, this holds the ImageState that we'll
-   * return in ImageState().
-   */
-  mozilla::EventStates mForcedImageState;
-
   mozilla::TimeStamp mMostRecentRequestChange;
 
   /**
@@ -563,19 +555,13 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
 
   bool mLoadingEnabled : 1;
 
-  /**
-   * When true, we return mForcedImageState from ImageState().
-   */
-  bool mIsImageStateForced : 1;
-
+ protected:
   /**
    * The state we had the last time we checked whether we needed to notify the
    * document of a state change.  These are maintained by UpdateImageState.
    */
   bool mLoading : 1;
-  bool mBroken : 1;
 
- protected:
   /**
    * A hack to get animations to reset, see bug 594771. On requests
    * that originate from setting .src, we mark them for needing their animation

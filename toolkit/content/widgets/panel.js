@@ -41,7 +41,7 @@
           this.setAttribute("side", "top");
         }
         if (!this.hasAttribute("position")) {
-          this.setAttribute("position", "bottomcenter topleft");
+          this.setAttribute("position", "bottomleft topleft");
         }
         if (!this.hasAttribute("consumeoutsideclicks")) {
           this.setAttribute("consumeoutsideclicks", "false");
@@ -91,8 +91,12 @@
       return this.getAttribute("type") == "arrow";
     }
 
+    get noOpenOnAnchor() {
+      return this.hasAttribute("no-open-on-anchor");
+    }
+
     _setSideAttribute(event) {
-      if (!this.isArrowPanel || !this.isAnchored) {
+      if (!this.isArrowPanel || !event.isAnchored) {
         return;
       }
 
@@ -116,6 +120,10 @@
           this.setAttribute("side", "top");
         }
       }
+
+      // This method isn't implemented by panel.js, but it can be added to
+      // individual instances that need to show an arrow.
+      this.setArrowPosition?.(event);
     }
 
     on_popupshowing(event) {
@@ -123,7 +131,7 @@
         this.panelContent.style.display = "";
       }
       if (this.isArrowPanel && event.target == this) {
-        if (this.isAnchored && this.anchorNode) {
+        if (this.anchorNode && !this.noOpenOnAnchor) {
           let anchorRoot =
             this.anchorNode.closest("toolbarbutton, .anchor-root") ||
             this.anchorNode;
@@ -194,7 +202,7 @@
           this.setAttribute("animate", "cancel");
         }
 
-        if (this.isAnchored && this.anchorNode) {
+        if (this.anchorNode && !this.noOpenOnAnchor) {
           let anchorRoot =
             this.anchorNode.closest("toolbarbutton, .anchor-root") ||
             this.anchorNode;

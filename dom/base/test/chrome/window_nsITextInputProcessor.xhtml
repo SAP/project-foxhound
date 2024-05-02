@@ -8,11 +8,13 @@
   onunload="onunload();">
 <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 <body  xmlns="http://www.w3.org/1999/xhtml">
-<p id="display">
+<div id="display">
 <input id="input" type="text"/><input id="anotherInput" type="text"/><br/>
+<textarea></textarea>
 <iframe id="iframe" width="300" height="150"
         src="data:text/html,&lt;textarea id='textarea' cols='20' rows='4'&gt;&lt;/textarea&gt;"></iframe><br/>
-</p>
+<div contenteditable=""><br/></div>
+</div>
 <div id="content" style="display: none">
 
 </div>
@@ -23,11 +25,13 @@
 <script class="testbody" type="application/javascript">
 <![CDATA[
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var SimpleTest = window.arguments[0].SimpleTest;
 
 SimpleTest.waitForFocus(runTests, window);
+
+function getHTMLEditor(aWindow) {
+  return SpecialPowers.wrap(aWindow).docShell.editingSession?.getEditorForWindow(aWindow);
+}
 
 function ok(aCondition, aMessage)
 {
@@ -49,6 +53,10 @@ function todo_is(aLeft, aRight, aMessage)
   SimpleTest.todo_is(aLeft, aRight, aMessage);
 }
 
+function info(aMessage) {
+  SimpleTest.info(aMessage);
+}
+
 function finish()
 {
   window.close();
@@ -63,7 +71,7 @@ function checkInputEvent(aEvent, aCancelable, aIsComposing, aInputType, aData, a
   if (aEvent.type !== "input" && aEvent.type !== "beforeinput") {
     throw new Error(`${aDescription}"${aEvent.type}" is not InputEvent`);
   }
-  ok(aEvent instanceof InputEvent, `${aDescription}"${aEvent.type}" event should be dispatched with InputEvent interface`);
+  ok(InputEvent.isInstance(aEvent), `${aDescription}"${aEvent.type}" event should be dispatched with InputEvent interface`);
   is(aEvent.cancelable, aCancelable, `${aDescription}"${aEvent.type}" event should ${aCancelable ? "be" : "not be"} cancelable`);
   is(aEvent.bubbles, true, `${aDescription}"${aEvent.type}" event should always bubble`);
   is(aEvent.isComposing, aIsComposing, `${aDescription}isComposing of "${aEvent.type}" event should be ${aIsComposing}`);
@@ -75,13 +83,26 @@ function checkInputEvent(aEvent, aCancelable, aIsComposing, aInputType, aData, a
 
 const kIsMac = (navigator.platform.indexOf("Mac") == 0);
 
-var iframe = document.getElementById("iframe");
-var childWindow = iframe.contentWindow;
-var textareaInFrame;
-var input = document.getElementById("input");
-var otherWindow = window.arguments[0];
-var otherDocument = otherWindow.document;
-var inputInChildWindow = otherDocument.getElementById("input");
+const iframe = document.getElementById("iframe");
+let childWindow = iframe.contentWindow;
+let textareaInFrame;
+let input = document.getElementById("input");
+const textarea = document.querySelector("textarea");
+const otherWindow = window.arguments[0];
+const otherDocument = otherWindow.document;
+const inputInChildWindow = otherDocument.getElementById("input");
+const contenteditable = document.querySelector("div[contenteditable]");
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+const kLF = navigator.platform.startsWith("Win") && !AppConstants.EARLY_BETA_OR_EARLIER ? "\r\n" : "\n";
+function getNativeText(aXPText)
+{
+  if (kLF == "\n") {
+    return aXPText;
+  }
+  return aXPText.replace(/\n/g, kLF);
+}
 
 function createTIP()
 {
@@ -186,10 +207,11 @@ function runBeginInputTransactionMethodTests()
   var events = [];
   input.addEventListener("compositionstart", function (aEvent) {
     events.push(aEvent);
-    input.removeEventListener(aEvent.type, arguments.callee, false);
+    // eslint-disable-next-line no-caller
+    input.removeEventListener(aEvent.type, arguments.callee);
     ok(!TIP2.beginInputTransaction(window, simpleCallback),
        description + "TIP2 shouldn't be able to begin input transaction from compositionstart event handler during TIP1.startComposition();");
-  }, false);
+  });
   TIP1.beginInputTransaction(window, simpleCallback);
   TIP1.startComposition();
   is(events.length, 1,
@@ -428,13 +450,14 @@ function runBeginInputTransactionMethodTests()
      description + "events[4] should be keyup");
 
   // Let's check if beginInputTransactionForTests() fails to steal the rights of TextEventDispatcher during startComposition().
-  var events = [];
+  events = [];
   input.addEventListener("compositionstart", function (aEvent) {
     events.push(aEvent);
-    input.removeEventListener(aEvent.type, arguments.callee, false);
+    // eslint-disable-next-line no-caller
+    input.removeEventListener(aEvent.type, arguments.callee);
     ok(!TIP2.beginInputTransactionForTests(window),
        description + "TIP2 shouldn't be able to begin input transaction for tests from compositionstart event handler during TIP1.startComposition();");
-  }, false);
+  });
   TIP1.beginInputTransactionForTests(window);
   TIP1.startComposition();
   is(events.length, 1,
@@ -654,7 +677,7 @@ function runBeginInputTransactionMethodTests()
     ok(!TIP2.beginInputTransactionForTests(window),
        description + "TIP2 shouldn't be able to begin input transaction for tests from keyup event handler during a call of TIP1.keyup();");
   }, {once: true});
-  var keyA = new KeyboardEvent("", { key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
+  keyA = new KeyboardEvent("", { key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
   TIP1.keydown(keyA);
   TIP1.keyup(keyA);
   is(events.length, 5,
@@ -673,7 +696,7 @@ function runBeginInputTransactionMethodTests()
      description + "events[4] should be keyup");
 
   // Let's check if beginInputTransaction() with another window fails to begin new input transaction with different TextEventDispatcher during startComposition().
-  var events = [];
+  events = [];
   input.addEventListener("compositionstart", function (aEvent) {
     events.push(aEvent);
     try {
@@ -1054,7 +1077,7 @@ function runBeginInputTransactionMethodTests()
          description + "TIP1.beginInputTransaction(otherWindow, simpleCallback) called from \"keyup\" should cause NS_ERROR_ALREADY_INITIALIZED during keyup()");
     }
   }, {once: true});
-  var keyA = new KeyboardEvent("", { key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
+  keyA = new KeyboardEvent("", { key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
   TIP1.keydown(keyA);
   TIP1.keyup(keyA);
   is(events.length, 5,
@@ -1073,7 +1096,7 @@ function runBeginInputTransactionMethodTests()
      description + "events[4] should be keyup");
 
   // Let's check if beginInputTransactionForTests() with another window fails to begin new input transaction with different TextEventDispatcher during startComposition().
-  var events = [];
+  events = [];
   input.addEventListener("compositionstart", function (aEvent) {
     events.push(aEvent);
     try {
@@ -1454,7 +1477,7 @@ function runBeginInputTransactionMethodTests()
          description + "TIP1.beginInputTransactionForTests(otherWindow, simpleCallback) called from \"keyup\" should cause NS_ERROR_ALREADY_INITIALIZED during keyup()");
     }
   }, {once: true});
-  var keyA = new KeyboardEvent("", { key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
+  keyA = new KeyboardEvent("", { key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
   TIP1.keydown(keyA);
   TIP1.keyup(keyA);
   is(events.length, 5,
@@ -1537,7 +1560,7 @@ function runBeginInputTransactionMethodTests()
      description + "TIP2.beginInputTransactionForTests() should succeed because there is no composition");
   input.value = "";
   try {
-    var keyF = new KeyboardEvent("", { key: "f", code: "KeyF", keyCode: KeyboardEvent.DOM_VK_F });
+    let keyF = new KeyboardEvent("", { key: "f", code: "KeyF", keyCode: KeyboardEvent.DOM_VK_F });
     TIP1.keydown(keyF);
     ok(false,
        description + "TIP1.keydown(keyF) should cause throwing an exception because TIP2 took the ownership");
@@ -1556,7 +1579,7 @@ function runBeginInputTransactionMethodTests()
      description + "TIP2.beginInputTransactionForTests() should succeed because there is no composition");
   input.value = "";
   try {
-    var keyF = new KeyboardEvent("", { key: "f", code: "KeyF", keyCode: KeyboardEvent.DOM_VK_F });
+    let keyF = new KeyboardEvent("", { key: "f", code: "KeyF", keyCode: KeyboardEvent.DOM_VK_F });
     TIP1.keyup(keyF);
     ok(false,
        description + "TIP1.keyup(keyF) should cause throwing an exception because TIP2 took the ownership");
@@ -1650,9 +1673,9 @@ function runCompositionTests()
     events.push({ "type": aEvent.type, "data": aEvent.data });
   }
 
-  window.addEventListener("compositionstart", handler, false);
-  window.addEventListener("compositionupdate", handler, false);
-  window.addEventListener("compositionend", handler, false);
+  window.addEventListener("compositionstart", handler);
+  window.addEventListener("compositionupdate", handler);
+  window.addEventListener("compositionend", handler);
 
   input.value = "";
   input.focus();
@@ -1869,9 +1892,9 @@ function runCompositionTests()
   is(input.value, "FOobarbuzzboo!",
      description + "committing text directly should append the committing text to the focused editor");
 
-  window.removeEventListener("compositionstart", handler, false);
-  window.removeEventListener("compositionupdate", handler, false);
-  window.removeEventListener("compositionend", handler, false);
+  window.removeEventListener("compositionstart", handler);
+  window.removeEventListener("compositionupdate", handler);
+  window.removeEventListener("compositionend", handler);
 }
 
 function runCompositionWithKeyEventTests()
@@ -1894,12 +1917,12 @@ function runCompositionWithKeyEventTests()
     events.push(aEvent);
   }
 
-  window.addEventListener("compositionstart", handler, false);
-  window.addEventListener("compositionupdate", handler, false);
-  window.addEventListener("compositionend", handler, false);
-  window.addEventListener("keydown", handler, false);
-  window.addEventListener("keypress", handler, false);
-  window.addEventListener("keyup", handler, false);
+  window.addEventListener("compositionstart", handler);
+  window.addEventListener("compositionupdate", handler);
+  window.addEventListener("compositionend", handler);
+  window.addEventListener("keydown", handler);
+  window.addEventListener("keypress", handler);
+  window.addEventListener("keyup", handler);
 
   input.value = "";
   input.focus();
@@ -2250,12 +2273,12 @@ function runCompositionWithKeyEventTests()
 
   Services.prefs.clearUserPref("dom.keyboardevent.dispatch_during_composition");
 
-  window.removeEventListener("compositionstart", handler, false);
-  window.removeEventListener("compositionupdate", handler, false);
-  window.removeEventListener("compositionend", handler, false);
-  window.removeEventListener("keydown", handler, false);
-  window.removeEventListener("keypress", handler, false);
-  window.removeEventListener("keyup", handler, false);
+  window.removeEventListener("compositionstart", handler);
+  window.removeEventListener("compositionupdate", handler);
+  window.removeEventListener("compositionend", handler);
+  window.removeEventListener("keydown", handler);
+  window.removeEventListener("keypress", handler);
+  window.removeEventListener("keyup", handler);
 }
 
 function runConsumingKeydownBeforeCompositionTests()
@@ -2281,12 +2304,12 @@ function runConsumingKeydownBeforeCompositionTests()
     }
   }
 
-  window.addEventListener("compositionstart", handler, false);
-  window.addEventListener("compositionupdate", handler, false);
-  window.addEventListener("compositionend", handler, false);
-  window.addEventListener("keydown", handler, false);
-  window.addEventListener("keypress", handler, false);
-  window.addEventListener("keyup", handler, false);
+  window.addEventListener("compositionstart", handler);
+  window.addEventListener("compositionupdate", handler);
+  window.addEventListener("compositionend", handler);
+  window.addEventListener("keydown", handler);
+  window.addEventListener("keypress", handler);
+  window.addEventListener("keyup", handler);
 
   input.value = "";
   input.focus();
@@ -2415,15 +2438,15 @@ function runConsumingKeydownBeforeCompositionTests()
 
   Services.prefs.clearUserPref("dom.keyboardevent.dispatch_during_composition");
 
-  window.removeEventListener("compositionstart", handler, false);
-  window.removeEventListener("compositionupdate", handler, false);
-  window.removeEventListener("compositionend", handler, false);
-  window.removeEventListener("keydown", handler, false);
-  window.removeEventListener("keypress", handler, false);
-  window.removeEventListener("keyup", handler, false);
+  window.removeEventListener("compositionstart", handler);
+  window.removeEventListener("compositionupdate", handler);
+  window.removeEventListener("compositionend", handler);
+  window.removeEventListener("keydown", handler);
+  window.removeEventListener("keypress", handler);
+  window.removeEventListener("keyup", handler);
 }
 
-function runKeyTests()
+async function runKeyTests()
 {
   var description = "runKeyTests(): ";
   const kModifiers =
@@ -2499,9 +2522,9 @@ function runKeyTests()
     }
   }
 
-  window.addEventListener("keydown", handler, false);
-  window.addEventListener("keypress", handler, false);
-  window.addEventListener("keyup", handler, false);
+  window.addEventListener("keydown", handler);
+  window.addEventListener("keypress", handler);
+  window.addEventListener("keyup", handler);
 
   input.value = "";
   input.focus();
@@ -2615,6 +2638,127 @@ function runKeyTests()
                 { type: "keyup",    key: "abc",           code: "KeyX", keyCode: KeyboardEvent.DOM_VK_A, charCode: 0,                   defaultPrevented: false });
   is(input.value, "abc",
      description + "input.value should be \"abc\"");
+
+  // Emulates pressing and releasing a key which introduces a surrogate pair.
+  async function test_press_and_release_surrogate_pair_key(
+    aTestPerSurrogateKeyPress,
+    aTestIllFormedUTF16KeyValue = false
+  ) {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["dom.event.keypress.dispatch_once_per_surrogate_pair", !aTestPerSurrogateKeyPress],
+        ["dom.event.keypress.key.allow_lone_surrogate", aTestIllFormedUTF16KeyValue],
+      ],
+    });
+
+    const settingDescription =
+      `aTestPerSurrogateKeyPress=${aTestPerSurrogateKeyPress}, aTestIllFormedUTF16KeyValue=${aTestIllFormedUTF16KeyValue}`;
+    const allowIllFormedUTF16 = aTestPerSurrogateKeyPress && aTestIllFormedUTF16KeyValue;
+    const keySurrogatePair = new KeyboardEvent("", { key: "\uD842\uDFB7", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
+
+    input.value = "";
+    reset();
+    doDefaultKeydown = TIP.keydown(keySurrogatePair);
+    doDefaultKeyup = TIP.keyup(keySurrogatePair);
+
+    is(
+      doDefaultKeydown,
+      TIP.KEYPRESS_IS_CONSUMED,
+      `${
+        description
+      }TIP.keydown(keySurrogatePair), ${
+        settingDescription
+      }, should return 0x02 because the keypress event should be consumed by the input element`
+    );
+    is(
+      doDefaultKeyup,
+      true,
+      `${description}TIP.keyup(keySurrogatePair) should return true`
+    );
+    is(
+      events.length,
+      aTestPerSurrogateKeyPress ? 4 : 3,
+      `${description}TIP.keydown(keySurrogatePair), ${
+        settingDescription
+      }, should cause keydown, keypress${
+        aTestPerSurrogateKeyPress ? ", keypress" : ""
+      } and keyup event`
+    );
+    checkKeyAttrs(
+      `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+      events[0],
+      {
+        type: "keydown",
+        key: "\uD842\uDFB7",
+        code: "KeyA",
+        keyCode: KeyboardEvent.DOM_VK_A,
+        charCode: 0,
+      }
+    );
+    if (aTestPerSurrogateKeyPress) {
+      checkKeyAttrs(
+        `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+        events[1],
+        {
+          type: "keypress",
+          key: allowIllFormedUTF16
+            ? "\uD842"
+            : "\uD842\uDFB7", // First keypress should have the surrogate pair
+          code: "KeyA",
+          keyCode: 0,
+          charCode: "\uD842\uDFB7".charCodeAt(0),
+          defaultPrevented: true,
+        }
+      );
+      checkKeyAttrs(
+        `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+        events[2],
+        {
+          type: "keypress",
+          key: allowIllFormedUTF16
+            ? "\uDFB7"
+            : "", // But the following keypress should have empty string, instead
+          code: "KeyA",
+          keyCode: 0,
+          charCode: "\uD842\uDFB7".charCodeAt(1),
+          defaultPrevented: true,
+        }
+      );
+    } else {
+      checkKeyAttrs(
+        `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+        events[1],
+        {
+          type: "keypress",
+          key: "\uD842\uDFB7",
+          code: "KeyA",
+          keyCode: 0,
+          charCode: 0x20BB7,
+          defaultPrevented: true,
+        }
+      );
+    }
+    checkKeyAttrs(
+      `${description}TIP.keyup(keySurrogatePair), ${settingDescription}`,
+      events[aTestPerSurrogateKeyPress ? 3 : 2],
+      {
+        type: "keyup",
+        key: "\uD842\uDFB7",
+        code: "KeyA",
+        keyCode: KeyboardEvent.DOM_VK_A,
+        charCode: 0,
+      }
+    );
+    is(
+      input.value,
+      "\uD842\uDFB7",
+      `${description}${settingDescription}, input.value should be the surrogate pair`
+    );
+  };
+
+  await test_press_and_release_surrogate_pair_key(true, true);
+  await test_press_and_release_surrogate_pair_key(true, false);
+  await test_press_and_release_surrogate_pair_key(false);
 
   // If KEY_FORCE_PRINTABLE_KEY is specified, registered key names can be a printable key which inputs the specified value.
   input.value = "";
@@ -2793,8 +2937,8 @@ function runKeyTests()
     { code: "ControlLeft",              location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
     { code: "ControlRight",             location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
     { code: "Enter",                    location: KeyboardEvent.DOM_KEY_LOCATION_STANDARD },
-    { code: "OSLeft",                   location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
-    { code: "OSRight",                  location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
+    { code: "MetaLeft",                 location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
+    { code: "MetaRight",                location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
     { code: "ShiftLeft",                location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
     { code: "ShiftRight",               location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
     { code: "Space",                    location: KeyboardEvent.DOM_KEY_LOCATION_STANDARD },
@@ -2833,17 +2977,17 @@ function runKeyTests()
     { code: "NumpadParenRight",         location: KeyboardEvent.DOM_KEY_LOCATION_NUMPAD },
     { code: "NumpadSubtract",           location: KeyboardEvent.DOM_KEY_LOCATION_NUMPAD },
   ];
-  for (var i = 0; i < kCodeToLocation.length; i++) {
-    var keyEvent = new KeyboardEvent("", { code: kCodeToLocation[i].code });
+  for (let i = 0; i < kCodeToLocation.length; i++) {
+    let keyEvent = new KeyboardEvent("", { code: kCodeToLocation[i].code });
     reset();
     doPreventDefaults = [ "keypress" ];
     // If the location isn't initialized or initialized with 0, it should be computed from the code value.
     TIP.keydown(keyEvent);
     TIP.keyup(keyEvent);
-    var longDesc = description + "testing computation of .location of \"" + kCodeToLocation[i].code + "\", ";
+    let longDesc = description + "testing computation of .location of \"" + kCodeToLocation[i].code + "\", ";
     is(events.length, 3,
        longDesc + "keydown, keypress and keyup events should be fired");
-    for (var j = 0; j < events.length; j++) {
+    for (let j = 0; j < events.length; j++) {
       is(events[j].location, kCodeToLocation[i].location,
          longDesc + " type=\"" + events[j].type + "\", location value is wrong");
     }
@@ -2852,15 +2996,15 @@ function runKeyTests()
     doPreventDefaults = [ "keypress" ];
     TIP.keydown(keyEvent, TIP.KEY_KEEP_KEY_LOCATION_STANDARD);
     TIP.keyup(keyEvent, TIP.KEY_KEEP_KEY_LOCATION_STANDARD);
-    var longDesc = description + "testing if .location is forcibly set to DOM_KEY_LOCATION_STANDARD, ";
+    longDesc = description + "testing if .location is forcibly set to DOM_KEY_LOCATION_STANDARD, ";
     is(events.length, 3,
        longDesc + "keydown, keypress and keyup events should be fired");
-    for (var j = 0; j < events.length; j++) {
+    for (let j = 0; j < events.length; j++) {
       is(events[j].location, KeyboardEvent.DOM_KEY_LOCATION_STANDARD,
          longDesc + " type=\"" + events[j].type + "\", location value is not 0");
     }
     // If .location is initialized with non-zero value, the value shouldn't be computed again.
-    var keyEventWithLocation = new KeyboardEvent("", { code: kCodeToLocation[i].code, location: 0xFF });
+    let keyEventWithLocation = new KeyboardEvent("", { code: kCodeToLocation[i].code, location: 0xFF });
     reset();
     doPreventDefaults = [ "keypress" ];
     TIP.keydown(keyEventWithLocation);
@@ -2868,7 +3012,7 @@ function runKeyTests()
     longDesc = description + "testing if .location is not computed for \"" + kCodeToLocation[i].location + "\", ";
     is(events.length, 3,
        longDesc + "keydown, keypress and keyup events should be fired");
-    for (var j = 0; j < events.length; j++) {
+    for (let j = 0; j < events.length; j++) {
       is(events[j].location, 0xFF,
          longDesc + " type=\"" + events[j].type + "\", location shouldn't be computed if it's initialized with non-zero value");
     }
@@ -2916,7 +3060,6 @@ function runKeyTests()
     { key: "PrintScreen",               keyCode: KeyboardEvent.DOM_VK_PRINTSCREEN },
     { key: "Insert",                    keyCode: KeyboardEvent.DOM_VK_INSERT },
     { key: "Delete",                    keyCode: KeyboardEvent.DOM_VK_DELETE },
-    { key: "OS",                        keyCode: KeyboardEvent.DOM_VK_WIN,                isModifier: true },
     { key: "ContextMenu",               keyCode: KeyboardEvent.DOM_VK_CONTEXT_MENU },
     { key: "F1",                        keyCode: KeyboardEvent.DOM_VK_F1 },
     { key: "F2",                        keyCode: KeyboardEvent.DOM_VK_F2 },
@@ -2947,7 +3090,9 @@ function runKeyTests()
     { key: "AudioVolumeMute",           keyCode: KeyboardEvent.DOM_VK_VOLUME_MUTE },
     { key: "AudioVolumeDown",           keyCode: KeyboardEvent.DOM_VK_VOLUME_DOWN },
     { key: "AudioVolumeUp",             keyCode: KeyboardEvent.DOM_VK_VOLUME_UP },
-    { key: "Meta",                      keyCode: KeyboardEvent.DOM_VK_META,               isModifier: true },
+    { key: "Meta",                      keyCode: kIsMac
+                                          ? KeyboardEvent.DOM_VK_META
+                                          : KeyboardEvent.DOM_VK_WIN,                     isModifier: true },
     { key: "AltGraph",                  keyCode: KeyboardEvent.DOM_VK_ALTGR,              isModifier: true },
     { key: "Attn",                      keyCode: KeyboardEvent.DOM_VK_ATTN },
     { key: "CrSel",                     keyCode: KeyboardEvent.DOM_VK_CRSEL },
@@ -2964,8 +3109,8 @@ function runKeyTests()
     { key: "",                          keyCode: 0, isPrintable: true },
   ];
 
-  for (var i = 0; i < kKeyToKeyCode.length; i++) {
-    var keyEvent = new KeyboardEvent("", { key: kKeyToKeyCode[i].key });
+  for (let i = 0; i < kKeyToKeyCode.length; i++) {
+    let keyEvent = new KeyboardEvent("", { key: kKeyToKeyCode[i].key });
     var causeKeypress = !kKeyToKeyCode[i].isModifier;
     var baseFlags = kKeyToKeyCode[i].isPrintable ? 0 : TIP.KEY_NON_PRINTABLE_KEY;
     reset();
@@ -2973,10 +3118,10 @@ function runKeyTests()
     // If the keyCode isn't initialized or initialized with 0, it should be computed from the key value only when it's a printable key.
     TIP.keydown(keyEvent, baseFlags);
     TIP.keyup(keyEvent, baseFlags);
-    var longDesc = description + "testing computation of .keyCode of \"" + kKeyToKeyCode[i].key + "\", ";
+    let longDesc = description + "testing computation of .keyCode of \"" + kKeyToKeyCode[i].key + "\", ";
     is(events.length, causeKeypress ? 3 : 2,
        longDesc + "keydown" + (causeKeypress ? ", keypress" : "") + " and keyup events should be fired");
-    for (var j = 0; j < events.length; j++) {
+    for (let j = 0; j < events.length; j++) {
       is(events[j].keyCode, events[j].type == "keypress" && kKeyToKeyCode[i].isPrintable ? 0 : kKeyToKeyCode[i].keyCode,
          longDesc + " type=\"" + events[j].type + "\", keyCode value is wrong");
     }
@@ -2985,15 +3130,15 @@ function runKeyTests()
     doPreventDefaults = [ "keypress" ];
     TIP.keydown(keyEvent, TIP.KEY_KEEP_KEYCODE_ZERO | baseFlags);
     TIP.keyup(keyEvent, TIP.KEY_KEEP_KEYCODE_ZERO | baseFlags);
-    var longDesc = description + "testing if .keyCode is forcibly set to KEY_KEEP_KEYCODE_ZERO, ";
+    longDesc = description + "testing if .keyCode is forcibly set to KEY_KEEP_KEYCODE_ZERO, ";
     is(events.length, causeKeypress ? 3 : 2,
        longDesc + "keydown" + (causeKeypress ? ", keypress" : "") + " and keyup events should be fired");
-    for (var j = 0; j < events.length; j++) {
+    for (let j = 0; j < events.length; j++) {
       is(events[j].keyCode, 0,
          longDesc + " type=\"" + events[j].type + "\", keyCode value is not 0");
     }
     // If .keyCode is initialized with non-zero value, the value shouldn't be computed again.
-    var keyEventWithLocation = new KeyboardEvent("", { key: kKeyToKeyCode[i].key, keyCode: 0xFF });
+    let keyEventWithLocation = new KeyboardEvent("", { key: kKeyToKeyCode[i].key, keyCode: 0xFF });
     reset();
     doPreventDefaults = [ "keypress" ];
     TIP.keydown(keyEventWithLocation, baseFlags);
@@ -3001,7 +3146,7 @@ function runKeyTests()
     longDesc = description + "testing if .keyCode is not computed for \"" + kKeyToKeyCode[i].key + "\", ";
     is(events.length, causeKeypress ? 3 : 2,
        longDesc + "keydown" + (causeKeypress ? ", keypress" : "") + " and keyup events should be fired");
-    for (var j = 0; j < events.length; j++) {
+    for (let j = 0; j < events.length; j++) {
       is(events[j].keyCode, events[j].type == "keypress" && kKeyToKeyCode[i].isPrintable ? 0 : 0xFF,
          longDesc + " type=\"" + events[j].type + "\", keyCode shouldn't be computed if it's initialized with non-zero value");
     }
@@ -3027,16 +3172,14 @@ function runKeyTests()
     { key: "Control",    code: "ControlRight", isLockable: false },
     { key: "Fn",         code: "Fn",           isLockable: false },
     { key: "FnLock",     code: "",             isLockable: true },
-    { key: "Meta",       code: "OSLeft",       isLockable: false },
-    { key: "Meta",       code: "OSRight",      isLockable: false },
+    { key: "Meta",       code: "MetaLeft",     isLockable: false },
+    { key: "Meta",       code: "MetaRight",    isLockable: false },
     { key: "NumLock",    code: "NumLock",      isLockable: true },
     { key: "ScrollLock", code: "ScrollLock",   isLockable: true },
     { key: "Shift",      code: "ShiftLeft",    isLockable: false },
     { key: "Shift",      code: "ShiftRight",   isLockable: false },
     { key: "Symbol",     code: "",             isLockable: false },
     { key: "SymbolLock", code: "",             isLockable: true },
-    { key: "OS",         code: "OSLeft",       isLockable: false },
-    { key: "OS",         code: "OSRight",      isLockable: false },
   ];
 
   function checkModifiers(aTestDesc, aEvent, aType, aKey, aCode, aModifiers)
@@ -3096,7 +3239,7 @@ function runKeyTests()
     reset();
     doPreventDefaults = [ "keypress" ];
     var modKey = new KeyboardEvent("", { key: kModifierKeys[i].key, code: kModifierKeys[i].code });
-    var testDesc = "A modifier key \"" + kModifierKeys[i].key + "\" (\"" + kModifierKeys[i].code + "\") and a printable key";
+    let testDesc = "A modifier key \"" + kModifierKeys[i].key + "\" (\"" + kModifierKeys[i].code + "\") and a printable key";
     if (!kModifierKeys[i].isLockable) {
       TIP.keydown(modKey);
       checkAllTIPModifiers(testDesc + ", \"" + kModifierKeys[i].key + "\" keydown", [ kModifierKeys[i].key ]);
@@ -3185,7 +3328,7 @@ function runKeyTests()
   var altGrVirtual = new KeyboardEvent("", { key: "AltGraph", code: "" });
   var ctrlVirtual = new KeyboardEvent("", { key: "Control", code: "" });
 
-  var testDesc = "ShiftLeft press -> ShiftRight press -> ShiftRight release -> ShiftLeft release";
+  let testDesc = "ShiftLeft press -> ShiftRight press -> ShiftRight release -> ShiftLeft release";
   reset();
   doPreventDefaults = [ "keypress" ];
   TIP.keydown(shiftLeft);
@@ -3500,9 +3643,9 @@ function runKeyTests()
   TIP.keyup(shiftVirtual);
   checkTIPModifiers("TIP should keep modifier's physical key state", TIP, [ ]);
 
-  window.removeEventListener("keydown", handler, false);
-  window.removeEventListener("keypress", handler, false);
-  window.removeEventListener("keyup", handler, false);
+  window.removeEventListener("keydown", handler);
+  window.removeEventListener("keypress", handler);
+  window.removeEventListener("keyup", handler);
 }
 
 function runErrorTests()
@@ -3651,7 +3794,7 @@ function runErrorTests()
   // Calling keydown() with a KeyboardEvent initialized with invalid code value should cause an exception.
   input.value = "";
   try {
-    var keyInvalidCode = new KeyboardEvent("", { key: "f", code: "InvalidCodeValue", keyCode: KeyboardEvent.DOM_VK_F });
+    let keyInvalidCode = new KeyboardEvent("", { key: "f", code: "InvalidCodeValue", keyCode: KeyboardEvent.DOM_VK_F });
     TIP.keydown(keyInvalidCode);
     ok(false,
        description + "TIP.keydown(keyInvalidCode) should cause throwing an exception because its code value is not registered");
@@ -3666,7 +3809,7 @@ function runErrorTests()
   // Calling keyup() with a KeyboardEvent initialized with invalid code value should cause an exception.
   input.value = "";
   try {
-    var keyInvalidCode = new KeyboardEvent("", { key: "f", code: "InvalidCodeValue", keyCode: KeyboardEvent.DOM_VK_F });
+    let keyInvalidCode = new KeyboardEvent("", { key: "f", code: "InvalidCodeValue", keyCode: KeyboardEvent.DOM_VK_F });
     TIP.keyup(keyInvalidCode);
     ok(false,
        description + "TIP.keyup(keyInvalidCode) should cause throwing an exception because its code value is not registered");
@@ -3681,7 +3824,7 @@ function runErrorTests()
   // Calling keydown(KEY_NON_PRINTABLE_KEY) with a KeyboardEvent initialized with non-key name should cause an exception.
   input.value = "";
   try {
-    var keyInvalidKey = new KeyboardEvent("", { key: "ESCAPE", code: "Escape", keyCode: KeyboardEvent.DOM_VK_Escape});
+    let keyInvalidKey = new KeyboardEvent("", { key: "ESCAPE", code: "Escape", keyCode: KeyboardEvent.DOM_VK_Escape});
     TIP.keydown(keyInvalidKey, TIP.KEY_NON_PRINTABLE_KEY);
     ok(false,
        description + "TIP.keydown(keyInvalidKey, TIP.KEY_NON_PRINTABLE_KEY) should cause throwing an exception because its key value is not registered");
@@ -3696,7 +3839,7 @@ function runErrorTests()
   // Calling keyup(KEY_NON_PRINTABLE_KEY) with a KeyboardEvent initialized with non-key name should cause an exception.
   input.value = "";
   try {
-    var keyInvalidKey = new KeyboardEvent("", { key: "ESCAPE", code: "Escape", keyCode: KeyboardEvent.DOM_VK_Escape});
+    let keyInvalidKey = new KeyboardEvent("", { key: "ESCAPE", code: "Escape", keyCode: KeyboardEvent.DOM_VK_Escape});
     TIP.keydown(keyInvalidKey, TIP.KEY_NON_PRINTABLE_KEY);
     ok(false,
        description + "TIP.keyup(keyInvalidKey, TIP.KEY_NON_PRINTABLE_KEY) should cause throwing an exception because its key value is not registered");
@@ -3710,7 +3853,7 @@ function runErrorTests()
 
   // KEY_KEEP_KEY_LOCATION_STANDARD flag should be used only when .location is not initialized with non-zero value.
   try {
-    var keyEvent = new KeyboardEvent("", { code: "Enter", location: KeyboardEvent.DOM_KEY_LOCATION_LEFT });
+    let keyEvent = new KeyboardEvent("", { code: "Enter", location: KeyboardEvent.DOM_KEY_LOCATION_LEFT });
     TIP.keydown(keyEvent, TIP.KEY_KEEP_KEY_LOCATION_STANDARD);
     ok(false,
        description + "keydown(KEY_KEEP_KEY_LOCATION_STANDARD) should fail if the .location of the key event is initialized with non-zero value");
@@ -3719,7 +3862,7 @@ function runErrorTests()
        description + "keydown(KEY_KEEP_KEY_LOCATION_STANDARD) should cause NS_ERROR_ILLEGAL_VALUE if the .location of the key event is initialized with nonzero value");
   }
   try {
-    var keyEvent = new KeyboardEvent("", { code: "Enter", location: KeyboardEvent.DOM_KEY_LOCATION_LEFT });
+    let keyEvent = new KeyboardEvent("", { code: "Enter", location: KeyboardEvent.DOM_KEY_LOCATION_LEFT });
     TIP.keyup(keyEvent, TIP.KEY_KEEP_KEY_LOCATION_STANDARD);
     ok(false,
        description + "keyup(KEY_KEEP_KEY_LOCATION_STANDARD) should fail if the .location of the key event is initialized with non-zero value");
@@ -3730,7 +3873,7 @@ function runErrorTests()
 
   // KEY_KEEP_KEYCODE_ZERO flag should be used only when .keyCode is not initialized with non-zero value.
   try {
-    var keyEvent = new KeyboardEvent("", { key: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN });
+    let keyEvent = new KeyboardEvent("", { key: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN });
     TIP.keydown(keyEvent, TIP.KEY_KEEP_KEYCODE_ZERO);
     ok(false,
        description + "keydown(KEY_KEEP_KEYCODE_ZERO) should fail if the .keyCode of the key event is initialized with non-zero value");
@@ -3739,7 +3882,7 @@ function runErrorTests()
        description + "keydown(KEY_KEEP_KEYCODE_ZERO) should cause NS_ERROR_ILLEGAL_VALUE if the .keyCode of the key event is initialized with nonzero value");
   }
   try {
-    var keyEvent = new KeyboardEvent("", { key: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN });
+    let keyEvent = new KeyboardEvent("", { key: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN });
     TIP.keyup(keyEvent, TIP.KEY_KEEP_KEYCODE_ZERO);
     ok(false,
        description + "keyup(KEY_KEEP_KEYCODE_ZERO) should fail if the .keyCode of the key event is initialized with non-zero value");
@@ -3750,7 +3893,7 @@ function runErrorTests()
 
   // Specifying KEY_DONT_DISPATCH_MODIFIER_KEY_EVENT with non-modifier key, it should cause an exception.
   try {
-    var keyEvent = new KeyboardEvent("", { key: "a", code: "ShiftLeft" });
+    let keyEvent = new KeyboardEvent("", { key: "a", code: "ShiftLeft" });
     TIP.keyup(keyEvent, TIP.KEY_DONT_DISPATCH_MODIFIER_KEY_EVENT);
     ok(false,
        description + "keydown(KEY_DONT_DISPATCH_MODIFIER_KEY_EVENT) should fail if the .key value isn't a modifier key");
@@ -3759,7 +3902,7 @@ function runErrorTests()
        description + "keydown(KEY_DONT_DISPATCH_MODIFIER_KEY_EVENT) should cause NS_ERROR_ILLEGAL_VALUE if the .key value isn't a modifier key");
   }
   try {
-    var keyEvent = new KeyboardEvent("", { key: "Enter", code: "ShiftLeft" });
+    let keyEvent = new KeyboardEvent("", { key: "Enter", code: "ShiftLeft" });
     TIP.keyup(keyEvent, TIP.KEY_DONT_DISPATCH_MODIFIER_KEY_EVENT);
     ok(false,
        description + "keydown(KEY_DONT_DISPATCH_MODIFIER_KEY_EVENT) should fail if the .key value isn't a modifier key");
@@ -4134,7 +4277,7 @@ async function runCallbackTests(aForTests)
   function waitUntilNotificationsReceived()
   {
     return new Promise(resolve => {
-      if (notifications.length > 0) {
+      if (notifications.length) {
         SimpleTest.executeSoon(resolve);
       } else {
         waitingNextNotification = resolve;
@@ -4155,24 +4298,28 @@ async function runCallbackTests(aForTests)
     if (aNotification.type != "notify-selection-change") {
       return;
     }
-    is(aNotification.offset, aExpected.offset,
-       aDescription + " should cause selection change notification whose offset is " + aExpected.offset);
-    is(aNotification.text, aExpected.text,
-       aDescription + " should cause selection change notification whose text is '" + aExpected.text + "'");
-    is(aNotification.collapsed, aExpected.text.length == 0,
-       aDescription + " should cause selection change notification whose collapsed is " + (aExpected.text.length == 0));
-    is(aNotification.length, aExpected.text.length,
-       aDescription + " should cause selection change notification whose length is " + aExpected.text.length);
-    is(aNotification.reversed, aExpected.reversed || false,
-       aDescription + " should cause selection change notification whose reversed is " + (aExpected.reversed || false));
+    is(aNotification.hasRange, aExpected.hasRange !== false,
+      `${aDescription} should cause selection change notification whose hasRange is ${aExpected.hasRange}`);
+    if (aNotification.hasRange) {
+      is(aNotification.offset, aExpected.offset,
+        `${aDescription} should cause selection change notification whose offset is ${aExpected.offset}`);
+      is(aNotification.text, aExpected.text,
+        `${aDescription} should cause selection change notification whose text is "${aExpected.text}"`);
+      is(aNotification.length, aExpected.text.length,
+        `${aDescription} should cause selection change notification whose length is ${aExpected.text.length}`);
+      is(aNotification.reversed, aExpected.reversed || false,
+        `${aDescription} should cause selection change notification whose reversed is ${aExpected.reversed || false}`);
+    }
+    is(aNotification.collapsed, aExpected.hasRange === false || !aExpected.text.length,
+      `${aDescription} should cause selection change notification whose collapsed is ${aExpected.hasRange === false || !aExpected.text.length}`);
     is(aNotification.writingMode, aExpected.writingMode || "horizontal-tb",
-       aDescription + " should cause selection change notification whose writingMode is '" + (aExpected.writingMode || "horizontal-tb"));
+      `${aDescription} should cause selection change notification whose writingMode is ${aExpected.writingMode || "horizontal-tb"}`);
     is(aNotification.causedByComposition, aExpected.causedByComposition || false,
-       aDescription + " should cause selection change notification whose causedByComposition is " + (aExpected.causedByComposition || false));
+      `${aDescription} should cause selection change notification whose causedByComposition is ${aExpected.causedByComposition || false}`);
     is(aNotification.causedBySelectionEvent, aExpected.causedBySelectionEvent || false,
-       aDescription + " should cause selection change notification whose causedBySelectionEvent is " + (aExpected.causedBySelectionEvent || false));
+      `${aDescription} should cause selection change notification whose causedBySelectionEvent is ${aExpected.causedBySelectionEvent || false}`);
     is(aNotification.occurredDuringComposition, aExpected.occurredDuringComposition || false,
-       aDescription + " should cause cause selection change notification whose occurredDuringComposition is " + (aExpected.occurredDuringComposition || false));
+      `${aDescription} should cause cause selection change notification whose occurredDuringComposition is ${aExpected.occurredDuringComposition || false}`);
   }
 
   function checkTextChangeNotification(aNotification, aDescription, aExpected)
@@ -4313,6 +4460,18 @@ async function runCallbackTests(aForTests)
   dumpUnexpectedNotifications(1);
 
   notifications = [];
+  input.editor.selection.removeAllRanges();
+  await waitUntilNotificationsReceived();
+  is(notifications.length, 1,
+    `${description}Removing all selection ranges should cause a selection change notification`);
+  checkSelectionChangeNotification(
+    notifications[0],
+    `${description}Removing all selection ranges in editor`,
+    { hasRange: false }
+  );
+  dumpUnexpectedNotifications(1);
+
+  notifications = [];
   let TIP2 = createTIP();
   if (aForTests) {
     TIP2.beginInputTransactionForTests(window, callback);
@@ -4375,13 +4534,315 @@ async function runFocusNotificationTestAfterDrop() {
     notifications.length > 1,
     "runFocusNotificationTestAfterDrop: At least two notifications should be fired"
   );
-  if (notifications.length > 0) {
+  if (notifications.length) {
     is(
       notifications[notifications.length - 1],
       "notify-focus",
       "runFocusNotificationTestAfterDrop: focus notification should've been fired at last"
     );
   }
+}
+
+async function runQuerySelectionEventTestAtTextChangeNotification() {
+  contenteditable.innerHTML = "<p>abc</p><p>def</p>";
+  contenteditable.focus();
+  // Ensure to send notify-focus from IMEContentObserver
+  await new Promise(
+    resolve => requestAnimationFrame(
+      () => requestAnimationFrame(resolve)
+    )
+  );
+  document.execCommand("selectall");
+  // Ensure to send notify-selection-change from IMEContentObserver
+  await new Promise(
+    resolve => requestAnimationFrame(
+      () => requestAnimationFrame(resolve)
+    )
+  );
+
+  const kTestName = "runQuerySelectionEventTestAtTextChangeNotification";
+  await new Promise(resolve => {
+    const TIP = createTIP();
+    TIP.beginInputTransactionForTests(window, (aTIP, aNotification) => {
+      if (aTIP != TIP) {
+        return true;
+      }
+      switch (aNotification.type) {
+        case "request-to-commit":
+          aTIP.commitComposition();
+          break;
+        case "request-to-cancel":
+          aTIP.cancelComposition();
+          break;
+        case "notify-text-change":
+          const textContent = synthesizeQueryTextContent(0, 100);
+          if (textContent?.text.includes("abc")) {
+            break;  // Different notification which we want to test, wait next one.
+          }
+          ok(
+            textContent?.succeeded,
+            `${kTestName}: query text content should succeed from notify-text-change handler`
+          );
+          const selectedText = synthesizeQuerySelectedText();
+          ok(
+            selectedText?.succeeded,
+            `${kTestName}: query selected text should succeed from notify-text-change handler`
+          );
+          if (textContent?.succeeded && selectedText?.succeeded) {
+            is(
+              selectedText.text,
+              textContent.text,
+              `${kTestName}: selected text should be same as all text`
+            );
+          }
+          resolve();
+          break;
+      }
+      return true;
+    });
+    // TODO: We want to do this  while selection is batched but can flush
+    //       pending notifications, however, I have no idea how to do it.
+    contenteditable.firstChild.remove();
+  });
+}
+
+async function runIMEStateUpdateTests() {
+  const TIP = createTIP();
+  let notifications = [];
+  function callback(aTIP, aNotification)
+  {
+    if (aTIP != TIP) {
+      return true;
+    }
+    switch (aNotification.type) {
+      case "request-to-commit":
+        aTIP.commitComposition();
+        break;
+      case "request-to-cancel":
+        aTIP.cancelComposition();
+        break;
+      case "notify-focus":
+      case "notify-blur":
+        notifications.push(aNotification.type);
+        break;
+    }
+    return true;
+  }
+
+  contenteditable.focus();
+  TIP.beginInputTransactionForTests(window, callback);
+  await new Promise(resolve => requestAnimationFrame(() =>
+    requestAnimationFrame(resolve)
+  )); // wait for flushing pending notifications if there is.
+
+  // run IMEStateManager::UpdateIMEState to disable IME
+  notifications = [];
+  const editor = getHTMLEditor(window);
+  editor.flags |= Ci.nsIEditor.eEditorReadonlyMask;
+  await new Promise(resolve => requestAnimationFrame(() =>
+    requestAnimationFrame(resolve)
+  )); // wait for flush pending notification even if handled asynchronously.
+  is(
+    notifications.length ? notifications[0] : undefined,
+    "notify-blur",
+    "runIMEStateUpdateTests: Making the HTMLEditor readonly should cause a blur notification"
+  );
+  is(
+    notifications.length,
+    1,
+    `runIMEStateUpdateTests: Making the HTMLEditor readonly should not cause any other notifications, but got ${
+      notifications.length > 1 ? notifications[1] : ""
+    } notification`
+  );
+  is(
+    SpecialPowers.getDOMWindowUtils(window)?.IMEStatus,
+    Ci.nsIDOMWindowUtils.IME_STATUS_DISABLED,
+    `runIMEStateUpdateTests: Making the HTMLEditor readonly should make IME disabled`
+  );
+
+  // run IMEStateManager::UpdateIMEState to enable IME
+  notifications = [];
+  editor.flags &= ~Ci.nsIEditor.eEditorReadonlyMask;
+  await new Promise(resolve => requestAnimationFrame(() =>
+    requestAnimationFrame(resolve)
+  )); // wait for flush pending notification even if handled asynchronously.
+  is(
+    notifications.length ? notifications[0] : undefined,
+    "notify-focus",
+    "runIMEStateUpdateTests: Making the HTMLEditor editable should cause a focus notification without blur notification"
+  );
+  is(
+    notifications.length,
+    1,
+    `runIMEStateUpdateTests: Making the HTMLEditor editable should not cause any other notifications, but got ${
+      notifications.length > 1 ? notifications[1] : ""
+    } notification`
+  );
+  is(
+    SpecialPowers.getDOMWindowUtils(window)?.IMEStatus,
+    Ci.nsIDOMWindowUtils.IME_STATUS_ENABLED,
+    `runIMEStateUpdateTests: Making the HTMLEditor readonly should make IME disabled`
+  );
+}
+
+async function runTextNotificationChangesDuringNoFrame() {
+  const TIP = createTIP();
+  let onTextChange;
+  function callback(aTIP, aNotification)
+  {
+    if (aTIP != TIP) {
+      return true;
+    }
+    switch (aNotification.type) {
+      case "request-to-commit":
+        aTIP.commitComposition();
+        break;
+      case "request-to-cancel":
+        aTIP.cancelComposition();
+        break;
+      case "notify-text-change":
+        if (onTextChange) {
+          onTextChange(aNotification);
+        }
+        break;
+    }
+    return true;
+  }
+
+  function promiseTextChangeNotification() {
+    return new Promise(resolve => onTextChange = resolve);
+  }
+
+  function waitForTick() {
+    return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+
+  input = document.querySelector("input[type=text]");
+  input.focus();
+  TIP.beginInputTransactionForTests(window, callback);
+
+  await (async function test_text_change_notification_for_value_set_during_no_frame() {
+    const description = "runTextNotificationChangesDuringNoFrame: test_text_change_notification_for_value_set_during_no_frame";
+    input.value = "Start";
+    input.style.display = "inline";
+    input.getBoundingClientRect();
+    await waitForTick();
+    const waitNotifications = promiseTextChangeNotification();
+    input.style.display = "block";
+    input.value = "Changed";
+    info(`${description}: waiting for notifications...`);
+    const notification = await waitNotifications;
+    is(
+      notification?.offset,
+      0,
+      `${description}: offset should be 0`
+    );
+    is(
+      notification?.removedLength,
+      "Start".length,
+      `${description}: removedLength should be the length of the old value`
+    );
+    is(
+      notification?.addedLength,
+      "Changed".length,
+      `${description}: addedLength should be the length of the new value`
+    );
+  })();
+
+  await (async function test_text_change_notification_for_multiple_value_set_during_no_frame() {
+    const description = "runTextNotificationChangesDuringNoFrame: test_text_change_notification_for_multiple_value_set_during_no_frame";
+    input.value = "Start";
+    input.style.display = "inline";
+    input.getBoundingClientRect();
+    await waitForTick();
+    const waitNotifications = promiseTextChangeNotification();
+    input.style.display = "block";
+    input.value = "Changed";
+    input.value = "Again!";
+    info(`${description}: waiting for notifications...`);
+    const notification = await waitNotifications;
+    is(
+      notification?.offset,
+      0,
+      `${description}: offset should be 0`
+    );
+    is(
+      notification?.removedLength,
+      "Start".length,
+      `${description}: removedLength should be the length of the old value`
+    );
+    is(
+      notification?.addedLength,
+      "Again!".length,
+      `${description}: addedLength should be the length of the new value`
+    );
+  })();
+
+  await (async function test_text_change_notification_for_value_set_and_typing_character_during_no_frame() {
+    const description = "runTextNotificationChangesDuringNoFrame: test_text_change_notification_for_value_set_and_typing_character_during_no_frame";
+    input.value = "Start";
+    input.style.display = "inline";
+    input.getBoundingClientRect();
+    await waitForTick();
+    const waitNotifications = promiseTextChangeNotification();
+    input.style.display = "block";
+    input.value = "Change";
+    const dKey = new KeyboardEvent("", { code: "KeyD", key: "d", keyCode: KeyboardEvent.DOM_VK_D });
+    TIP.keydown(dKey);
+    TIP.keyup(dKey);
+    info(`${description}: waiting for notifications...`);
+    const notification = await waitNotifications;
+    is(
+      notification?.offset,
+      0,
+      `${description}: offset should be 0`
+    );
+    is(
+      notification?.removedLength,
+      "Start".length,
+      `${description}: removedLength should be the length of the old value`
+    );
+    is(
+      notification?.addedLength,
+      "Change".length,
+      `${description}: addedLength should be the length of the new (set) value`
+    );
+  })();
+
+  input.style.display = "";
+
+  textarea.focus();
+  TIP.beginInputTransaction(window, callback);
+
+  await (async function test_text_change_notification_for_multi_line_value_set_during_no_frame() {
+    const description = "runTextNotificationChangesDuringNoFrame: test_text_change_notification_for_multi_line_value_set_during_no_frame";
+    textarea.value = "Start\n2nd Line";
+    textarea.style.display = "inline";
+    textarea.getBoundingClientRect();
+    await waitForTick();
+    const waitNotifications = promiseTextChangeNotification();
+    textarea.style.display = "block";
+    textarea.value = "Changed\n2nd Line";
+    info(`${description}: waiting for notifications...`);
+    const notification = await waitNotifications;
+    is(
+      notification?.offset,
+      0,
+      `${description}: offset should be 0`
+    );
+    is(
+      notification?.removedLength,
+      getNativeText("Start\n2nd Line").length,
+      `${description}: removedLength should be the length of the old value`
+    );
+    is(
+      notification?.addedLength,
+      getNativeText("Changed\n2nd Line").length,
+      `${description}: addedLength should be the length of the new value`
+    );
+  })();
+
+  textarea.style.display = "";
 }
 
 async function runTests()
@@ -4392,14 +4853,17 @@ async function runTests()
   runCompositionTests();
   runCompositionWithKeyEventTests();
   runConsumingKeydownBeforeCompositionTests();
-  runKeyTests();
+  await runKeyTests();
   runErrorTests();
   runCommitCompositionTests();
   await runCallbackTests(false);
   await runCallbackTests(true);
+  await runTextNotificationChangesDuringNoFrame();
   await runFocusNotificationTestAfterDrop();
   await runUnloadTests1();
   await runUnloadTests2();
+  await runQuerySelectionEventTestAtTextChangeNotification();
+  await runIMEStateUpdateTests();
 
   finish();
 }

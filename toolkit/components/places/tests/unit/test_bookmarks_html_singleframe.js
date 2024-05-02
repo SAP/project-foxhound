@@ -7,12 +7,12 @@
 // Test for bug #801450
 
 // Get Services
-const { BookmarkHTMLUtils } = ChromeUtils.import(
-  "resource://gre/modules/BookmarkHTMLUtils.jsm"
+const { BookmarkHTMLUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/BookmarkHTMLUtils.sys.mjs"
 );
 
 add_task(async function test_bookmarks_html_singleframe() {
-  let bookmarksFile = OS.Path.join(
+  let bookmarksFile = PathUtils.join(
     do_get_cwd().path,
     "bookmarks_html_singleframe.html"
   );

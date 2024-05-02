@@ -23,8 +23,8 @@ macro_rules! impl_ops_vector_rotates {
             /// amount in the corresponding lane of `n`, wrapping the
             /// truncated bits to the beginning of the resulting integer.
             ///
-            /// Note: this is neither the same operation as `<<` nor equivalent
-            /// to `slice::rotate_left`.
+            /// Note: this is neither the same operation as `>>` nor equivalent
+            /// to `slice::rotate_right`.
             #[inline]
             pub fn rotate_right(self, n: $id) -> $id {
                 const LANE_WIDTH: $elem_ty =
@@ -47,6 +47,8 @@ macro_rules! impl_ops_vector_rotates {
                 pub mod [<$id _ops_vector_rotate>] {
                     use super::*;
                     #[cfg_attr(not(target_arch = "wasm32"), test)] #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+                    #[cfg(not(target_arch = "aarch64"))]
+                    //~^ FIXME: https://github.com/rust-lang/packed_simd/issues/317
                     fn rotate_ops() {
                         let z = $id::splat(0 as $elem_ty);
                         let o = $id::splat(1 as $elem_ty);

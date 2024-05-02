@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use inherent::inherent;
+use std::sync::Arc;
 
 use super::{CommonMetricData, MetricId};
-
 use crate::ipc::need_ipc;
 
 /// A string metric.
@@ -39,7 +39,7 @@ use crate::ipc::need_ipc;
 /// ```
 #[derive(Clone)]
 pub enum StringMetric {
-    Parent(glean::private::StringMetric),
+    Parent(Arc<glean::private::StringMetric>),
     Child(StringMetricIpc),
 }
 #[derive(Clone, Debug)]
@@ -51,7 +51,7 @@ impl StringMetric {
         if need_ipc() {
             StringMetric::Child(StringMetricIpc)
         } else {
-            StringMetric::Parent(glean::private::StringMetric::new(meta))
+            StringMetric::Parent(Arc::new(glean::private::StringMetric::new(meta)))
         }
     }
 
@@ -64,7 +64,7 @@ impl StringMetric {
     }
 }
 
-#[inherent(pub)]
+#[inherent]
 impl glean::traits::String for StringMetric {
     /// Sets to the specified value.
     ///
@@ -75,10 +75,10 @@ impl glean::traits::String for StringMetric {
     /// ## Notes
     ///
     /// Truncates the value if it is longer than `MAX_STRING_LENGTH` bytes and logs an error.
-    fn set<S: Into<std::string::String>>(&self, value: S) {
+    pub fn set<S: Into<std::string::String>>(&self, value: S) {
         match self {
             StringMetric::Parent(p) => {
-                glean::traits::String::set(&*p, value);
+                p.set(value.into());
             }
             StringMetric::Child(_) => {
                 log::error!("Unable to set string metric in non-main process. Ignoring.");
@@ -97,10 +97,11 @@ impl glean::traits::String for StringMetric {
     ///
     /// * `ping_name` - represents the optional name of the ping to retrieve the
     ///   metric for. Defaults to the first value in `send_in_pings`.
-    fn test_get_value<'a, S: Into<Option<&'a str>>>(
+    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
         &self,
         ping_name: S,
     ) -> Option<std::string::String> {
+        let ping_name = ping_name.into().map(|s| s.to_string());
         match self {
             StringMetric::Parent(p) => p.test_get_value(ping_name),
             StringMetric::Child(_) => {
@@ -122,13 +123,9 @@ impl glean::traits::String for StringMetric {
     /// # Returns
     ///
     /// The number of errors reported.
-    fn test_get_num_recorded_errors<'a, S: Into<Option<&'a str>>>(
-        &self,
-        error: glean::ErrorType,
-        ping_name: S,
-    ) -> i32 {
+    pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
-            StringMetric::Parent(p) => p.test_get_num_recorded_errors(error, ping_name),
+            StringMetric::Parent(p) => p.test_get_num_recorded_errors(error),
             StringMetric::Child(_) => panic!(
                 "Cannot get the number of recorded errors for string metric in non-parent process!"
             ),

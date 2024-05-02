@@ -5,9 +5,11 @@
 // in xpcshell, we get an error for prompts, and the request fails.
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 var sSame;
@@ -17,10 +19,10 @@ var sRedirectPromptPref;
 const BUGID = "676059";
 const OTHERBUGID = "696849";
 
-XPCOMUtils.defineLazyGetter(this, "pSame", function() {
+ChromeUtils.defineLazyGetter(this, "pSame", function () {
   return sSame.identity.primaryPort;
 });
-XPCOMUtils.defineLazyGetter(this, "pOther", function() {
+ChromeUtils.defineLazyGetter(this, "pOther", function () {
   return sOther.identity.primaryPort;
 });
 
@@ -167,7 +169,7 @@ function run_test() {
 
   var xhr;
 
-  for (var i = 0; i < tests.length; ++i) {
+  for (let i = 0; i < tests.length; ++i) {
     dump("Testing " + tests[i] + "\n");
     xhr = createXHR(
       false,
@@ -178,7 +180,7 @@ function run_test() {
     checkResults(xhr, tests[i][2], tests[i][3], tests[i][4]);
   }
 
-  for (var i = 0; i < othertests.length; ++i) {
+  for (let i = 0; i < othertests.length; ++i) {
     dump("Testing " + othertests[i] + " (cross-origin)\n");
     xhr = createXHR(
       false,

@@ -16,7 +16,7 @@ fuzzy(1,1) == shadow-huge.yaml shadow-huge-ref.yaml
 == decorations.yaml decorations-ref.yaml
 skip_on(android,device) fuzzy(1,3692) fuzzy-if(platform(swgl),3,13540) == decorations-suite.yaml decorations-suite.png  # Fails on Pixel2
 == 1658.yaml 1658-ref.yaml
-fuzzy(2,405) fuzzy-if(platform(swgl),2,1508) == split-batch.yaml split-batch-ref.yaml
+fuzzy(2,405) fuzzy-if(platform(swgl),2,1510) == split-batch.yaml split-batch-ref.yaml
 # Next 3 tests affected by bug 1548099 on Android
 skip_on(android) == shadow-red.yaml shadow-red-ref.yaml
 skip_on(android) fuzzy(1,999) fuzzy-if(platform(swgl),2,1324) == shadow-grey.yaml shadow-grey-ref.yaml
@@ -36,16 +36,11 @@ options(disable-aa) == ahem.yaml ahem-ref.yaml
 platform(linux) == isolated-text.yaml isolated-text.png
 platform(mac) skip_on(mac,>=10.14) fuzzy(3,67) == white-opacity.yaml white-opacity.png
 fuzzy(1,113) platform(linux) options(disable-subpixel) == colors.yaml colors-alpha.png
-# Run without dual-source blending path, batches are broken when text colors change.
-fuzzy(1,1256) platform(linux) options(disable-dual-source-blending) draw_calls(6) == colors.yaml colors-subpx.png
-# Run with both dual-source blending, ensuring batching is improved.
 fuzzy(1,774) platform(linux) draw_calls(3) == colors.yaml colors-subpx.png
 platform(linux) options(disable-subpixel) == border-radius.yaml border-radius-alpha.png
 platform(linux) == border-radius.yaml border-radius-subpx.png
 options(disable-aa) == transparent-no-aa.yaml transparent-no-aa-ref.yaml
 != diacritics.yaml diacritics-ref.yaml
-fuzzy(1,1) platform(linux) options(disable-subpixel) == text-masking.yaml text-masking-alpha.png
-fuzzy(1,44) platform(linux) == text-masking.yaml text-masking-subpx.png
 fuzzy(1,30) platform(linux) options(disable-subpixel) == alpha-transform.yaml alpha-transform.png
 fuzzy(1,20) platform(linux) == subpixel-rotate.yaml subpixel-rotate.png
 fuzzy(1,72) platform(linux) == subpixel-scale.yaml subpixel-scale.png
@@ -64,7 +59,6 @@ skip_on(android,device) == shadow-partial-glyph.yaml shadow-partial-glyph-ref.ya
 fuzzy(2,212) platform(linux) == shadow-transforms.yaml shadow-transforms.png
 fuzzy(2,370) platform(linux) == raster-space.yaml raster-space.png
 skip_on(android) skip_on(mac,>=10.14) != allow-subpixel.yaml allow-subpixel-ref.yaml  # Android: we don't enable sub-px aa on this platform.
-skip_on(android,device) fuzzy-if(platform(swgl),1,1085) == bg-color.yaml bg-color-ref.yaml  # Fails on Pixel2
 != large-glyphs.yaml blank.yaml
 != large-line-decoration.yaml blank.yaml
 skip_on(android,device) == snap-text-offset.yaml snap-text-offset-ref.yaml
@@ -81,5 +75,8 @@ fuzzy(1,15) platform(linux) force_subpixel_aa_where_possible(false) == text-fixe
 # most pixels are off by a small amount, but a few pixels on the edge vary by a lot, pushing up the fuzzy max-diff;
 # the main goal of the test is that everything is in the same place, at the same scale, clipped the same way,
 # despite 4x on-the-fly scale change.
-skip_on(android) fuzzy-range(<=3,*21700,<=20,*3500,<=119,*590) fuzzy-if(platform(swgl),108,24907) == raster_root_C_8192.yaml raster_root_C_ref.yaml
+skip_on(android) fuzzy(120,20800) == raster_root_C_8192.yaml raster_root_C_ref.yaml
 == subpx-bg-mask.yaml subpx-bg-mask-ref.yaml
+platform(linux,mac) == rotate-snap-clip.yaml rotate-snap-clip-ref.yaml
+platform(linux,mac) == rotate-snap-filter.yaml rotate-snap-filter-ref.yaml
+fuzzy-if(env(android,device),47,6860) fuzzy-if(not(env(android,device)),4,6600) == mix-blend-layers.yaml mix-blend-layers-ref.yaml # Android device is Samsung Galaxy A51

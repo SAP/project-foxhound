@@ -35,7 +35,7 @@ class BufferTextureData : public TextureData {
       const gfx::IntSize& aCbCrSize, uint32_t aCbCrStride,
       StereoMode aStereoMode, gfx::ColorDepth aColorDepth,
       gfx::YUVColorSpace aYUVColorSpace, gfx::ColorRange aColorRange,
-      TextureFlags aTextureFlags);
+      gfx::ChromaSubsampling aSubsampling, TextureFlags aTextureFlags);
 
   bool Lock(OpenMode aMode) override { return true; }
 
@@ -54,6 +54,8 @@ class BufferTextureData : public TextureData {
 
   BufferTextureData* AsBufferTextureData() override { return this; }
 
+  Maybe<gfx::IntSize> GetYSize() const;
+
   Maybe<gfx::IntSize> GetCbCrSize() const;
 
   Maybe<int32_t> GetYStride() const;
@@ -66,12 +68,17 @@ class BufferTextureData : public TextureData {
 
   Maybe<StereoMode> GetStereoMode() const;
 
- protected:
-  gfx::IntSize GetSize() const;
+  Maybe<gfx::ChromaSubsampling> GetChromaSubsampling() const;
+
   gfx::IntRect GetPictureRect() const;
+
+  gfx::IntSize GetSize() const;
 
   gfx::SurfaceFormat GetFormat() const;
 
+  virtual size_t GetBufferSize() = 0;
+
+ protected:
   static BufferTextureData* Create(
       gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
       gfx::BackendType aMoz2DBackend, LayersBackend aLayersBackend,
@@ -85,11 +92,12 @@ class BufferTextureData : public TextureData {
                                            TextureFlags aTextureFlags);
 
   virtual uint8_t* GetBuffer() = 0;
-  virtual size_t GetBufferSize() = 0;
 
   BufferTextureData(const BufferDescriptor& aDescriptor,
                     gfx::BackendType aMoz2DBackend)
       : mDescriptor(aDescriptor), mMoz2DBackend(aMoz2DBackend) {}
+
+  ~BufferTextureData() override = default;
 
   BufferDescriptor mDescriptor;
   gfx::BackendType mMoz2DBackend;

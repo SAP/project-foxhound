@@ -17,7 +17,6 @@ async function run_test() {
   }
 
   gfxInfo.QueryInterface(Ci.nsIGfxInfoDebug);
-  gfxInfo.fireTestProcess();
 
   // Set the vendor/device ID, etc, to match the test file.
   switch (Services.appinfo.OS) {
@@ -60,7 +59,7 @@ async function run_test() {
     do_test_finished();
   }
 
-  Services.obs.addObserver(function(aSubject, aTopic, aData) {
+  Services.obs.addObserver(function (aSubject, aTopic, aData) {
     // If we wait until after we go through the event loop, gfxInfo is sure to
     // have processed the gfxItems event.
     executeSoon(checkBlacklist);

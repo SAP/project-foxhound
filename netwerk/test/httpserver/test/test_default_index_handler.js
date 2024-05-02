@@ -10,7 +10,7 @@
 
 var srv, dir, gDirEntries;
 
-XPCOMUtils.defineLazyGetter(this, "BASE_URL", function() {
+ChromeUtils.defineLazyGetter(this, "BASE_URL", function () {
   return "http://localhost:" + srv.identity.primaryPort + "/";
 });
 
@@ -28,7 +28,7 @@ function run_test() {
   function done() {
     do_test_pending();
     destroyTestDirectory();
-    srv.stop(function() {
+    srv.stop(function () {
       do_test_finished();
     });
   }
@@ -179,6 +179,7 @@ function dataCheck(bytes, uri, path, dirEntries) {
   var lst = body.getElementsByTagName("ol");
   Assert.equal(lst.length, 1);
   var items = lst[0].getElementsByTagName("li");
+  var top = Services.io.newURI(uri);
 
   for (var i = 0; i < items.length; i++) {
     var link = items[i].childNodes[0];
@@ -215,7 +216,7 @@ function makeFile(name, isDirectory, parentDir, lst) {
  * TESTS *
  *********/
 
-XPCOMUtils.defineLazyGetter(this, "tests", function() {
+ChromeUtils.defineLazyGetter(this, "tests", function () {
   return [
     new Test(BASE_URL, null, start, stopRootDirectory),
     new Test(BASE_URL + "foo/", null, start, stopFooDirectory),

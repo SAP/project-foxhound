@@ -4,13 +4,12 @@
 // NOTE: The sync test_errorhandler_* tests have quite good coverage for
 // other aspects of this.
 
-const { LogManager } = ChromeUtils.import(
-  "resource://services-common/logmanager.js"
+const { LogManager } = ChromeUtils.importESModule(
+  "resource://services-common/logmanager.sys.mjs"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Returns an array of [consoleAppender, dumpAppender, [fileAppenders]] for
 // the specified log.  Note that fileAppenders will usually have length=1
@@ -132,7 +131,7 @@ add_task(async function test_SharedLogs() {
 // A little helper to test what log files exist.  We expect exactly zero (if
 // prefix is null) or exactly one with the specified prefix.
 function checkLogFile(prefix) {
-  let logsdir = FileUtils.getDir("ProfD", ["weave", "logs"], true);
+  let logsdir = FileUtils.getDir("ProfD", ["weave", "logs"]);
   let entries = logsdir.directoryEntries;
   if (!prefix) {
     // expecting no files.
@@ -279,7 +278,7 @@ add_task(async function test_logFileError() {
 });
 
 function countLogFiles() {
-  let logsdir = FileUtils.getDir("ProfD", ["weave", "logs"], true);
+  let logsdir = FileUtils.getDir("ProfD", ["weave", "logs"]);
   let count = 0;
   for (let entry of logsdir.directoryEntries) {
     void entry;

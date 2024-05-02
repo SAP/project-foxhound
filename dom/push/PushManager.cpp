@@ -15,6 +15,8 @@
 #include "mozilla/dom/PushSubscription.h"
 #include "mozilla/dom/PushSubscriptionOptionsBinding.h"
 #include "mozilla/dom/PushUtil.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 
@@ -30,8 +32,7 @@
 #include "nsContentUtils.h"
 #include "nsServiceManagerUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -112,6 +113,12 @@ class GetSubscriptionResultRunnable final : public WorkerRunnable {
         mAppServerKey(std::move(aAppServerKey)) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
+    {
+      MutexAutoLock lock(mProxy->Lock());
+      if (mProxy->CleanedUp()) {
+        return true;
+      }
+    }
     RefPtr<Promise> promise = mProxy->WorkerPromise();
     if (NS_SUCCEEDED(mStatus)) {
       if (mEndpoint.IsEmpty()) {
@@ -409,6 +416,10 @@ already_AddRefed<PushManager> PushManager::Constructor(GlobalObject& aGlobal,
   return ret.forget();
 }
 
+bool PushManager::IsEnabled(JSContext* aCx, JSObject* aGlobal) {
+  return StaticPrefs::dom_push_enabled() && ServiceWorkerVisible(aCx, aGlobal);
+}
+
 already_AddRefed<Promise> PushManager::Subscribe(
     const PushSubscriptionOptionsInit& aOptions, ErrorResult& aRv) {
   if (mImpl) {
@@ -511,18 +522,10 @@ nsresult PushManager::NormalizeAppServerKey(
       return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
     }
     aAppServerKey = decodedKey;
-  } else if (aSource.IsArrayBuffer()) {
-    if (!PushUtil::CopyArrayBufferToArray(aSource.GetAsArrayBuffer(),
-                                          aAppServerKey)) {
-      return NS_ERROR_DOM_PUSH_INVALID_KEY_ERR;
-    }
-  } else if (aSource.IsArrayBufferView()) {
-    if (!PushUtil::CopyArrayBufferViewToArray(aSource.GetAsArrayBufferView(),
-                                              aAppServerKey)) {
-      return NS_ERROR_DOM_PUSH_INVALID_KEY_ERR;
-    }
   } else {
-    MOZ_CRASH("Uninitialized union: expected string, buffer, or view");
+    if (!AppendTypedArrayDataTo(aSource, aAppServerKey)) {
+      return NS_ERROR_DOM_PUSH_INVALID_KEY_ERR;
+    }
   }
   if (aAppServerKey.IsEmpty()) {
     return NS_ERROR_DOM_PUSH_INVALID_KEY_ERR;
@@ -530,5 +533,4 @@ nsresult PushManager::NormalizeAppServerKey(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

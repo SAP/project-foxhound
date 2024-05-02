@@ -16,8 +16,8 @@ transforms:
 job-defaults:
     attributes:
         retrigger: true
-    run-on-projects: ['mozilla-central']
-    worker-type: b-linux
+    run-on-projects: ['mozilla-central-only']
+    worker-type: b-linux-gcp
     treeherder:
         platform: other/opt
         tier: 2

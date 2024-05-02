@@ -2,22 +2,14 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionPreferencesManager",
-  "resource://gre/modules/ExtensionPreferencesManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionPreferencesManager:
+    "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
-const {
-  createAppInfo,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { createAppInfo, promiseShutdownManager, promiseStartupManager } =
+  AddonTestUtils;
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
@@ -31,6 +23,7 @@ if (tlsMinPref != 1 && tlsMinPref != 3) {
   ok(false, "This test expects security.tls.version.min set to 1 or 3.");
 }
 const tlsMinVer = tlsMinPref === 3 ? "TLSv1.2" : "TLSv1";
+const READ_ONLY = true;
 
 add_task(async function test_privacy() {
   // Create an object to hold the values to which we will initialize the prefs.
@@ -40,9 +33,10 @@ add_task(async function test_privacy() {
       "network.prefetch-next": true,
       // This pref starts with a numerical value and we need to use whatever the
       // default is or we encounter issues when the pref is reset during the test.
-      "network.http.speculative-parallel-limit": ExtensionPreferencesManager.getDefaultValue(
-        "network.http.speculative-parallel-limit"
-      ),
+      "network.http.speculative-parallel-limit":
+        ExtensionPreferencesManager.getDefaultValue(
+          "network.http.speculative-parallel-limit"
+        ),
       "network.dns.disablePrefetch": false,
     },
     "websites.hyperlinkAuditingEnabled": {
@@ -51,11 +45,10 @@ add_task(async function test_privacy() {
   };
 
   async function background() {
-    browser.test.onMessage.addListener(async (msg, ...args) => {
-      let data = args[0];
+    browser.test.onMessage.addListener(async (msg, data, setting) => {
       // The second argument is the end of the api name,
       // e.g., "network.networkPredictionEnabled".
-      let apiObj = args[1].split(".").reduce((o, i) => o[i], browser.privacy);
+      let apiObj = setting.split(".").reduce((o, i) => o[i], browser.privacy);
       let settingData;
       switch (msg) {
         case "get":
@@ -312,7 +305,6 @@ add_task(async function test_privacy_other_prefs() {
     },
     "websites.cookieConfig": {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_ACCEPT,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
   };
 
@@ -347,29 +339,34 @@ add_task(async function test_privacy_other_prefs() {
   }
 
   async function background() {
-    browser.test.onMessage.addListener(async (msg, ...args) => {
-      let data = args[0];
+    let listeners = new Set([]);
+    browser.test.onMessage.addListener(async (msg, data, setting, readOnly) => {
       // The second argument is the end of the api name,
       // e.g., "network.webRTCIPHandlingPolicy".
-      let apiObj = args[1].split(".").reduce((o, i) => o[i], browser.privacy);
-      let settingData;
-      switch (msg) {
-        case "set":
-          try {
-            await apiObj.set(data);
-          } catch (e) {
-            browser.test.sendMessage("settingThrowsException", {
-              message: e.message,
-            });
-            break;
-          }
-          settingData = await apiObj.get({});
-          browser.test.sendMessage("settingData", settingData);
-          break;
-        case "get":
-          settingData = await apiObj.get({});
-          browser.test.sendMessage("gettingData", settingData);
-          break;
+      let apiObj = setting.split(".").reduce((o, i) => o[i], browser.privacy);
+      if (msg == "get") {
+        browser.test.sendMessage("gettingData", await apiObj.get({}));
+        return;
+      }
+
+      // Don't add more than one listener per apiName.  We leave the
+      // listener to ensure we do not get more calls than we expect.
+      if (!listeners.has(setting)) {
+        apiObj.onChange.addListener(details => {
+          browser.test.sendMessage("settingData", details);
+        });
+        listeners.add(setting);
+      }
+      try {
+        await apiObj.set(data);
+      } catch (e) {
+        browser.test.sendMessage("settingThrowsException", {
+          message: e.message,
+        });
+      }
+      // Readonly settings will not trigger onChange, return the setting now.
+      if (readOnly) {
+        browser.test.sendMessage("settingData", await apiObj.get({}));
       }
     });
   }
@@ -531,8 +528,8 @@ add_task(async function test_privacy_other_prefs() {
     { behavior: "reject_third_party", nonPersistentCookies: true },
     {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_REJECT_FOREIGN,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_SESSION,
-    }
+    },
+    { behavior: "reject_third_party", nonPersistentCookies: false }
   );
   // A missing nonPersistentCookies property should default to false.
   await testSetting(
@@ -540,7 +537,6 @@ add_task(async function test_privacy_other_prefs() {
     { behavior: "reject_third_party" },
     {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_REJECT_FOREIGN,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: "reject_third_party", nonPersistentCookies: false }
   );
@@ -550,16 +546,14 @@ add_task(async function test_privacy_other_prefs() {
     { nonPersistentCookies: true },
     {
       "network.cookie.cookieBehavior": defaultCookieBehavior,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_SESSION,
     },
-    { behavior: defaultBehavior, nonPersistentCookies: true }
+    { behavior: defaultBehavior, nonPersistentCookies: false }
   );
   await testSetting(
     "websites.cookieConfig",
     { behavior: "reject_all" },
     {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_REJECT,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: "reject_all", nonPersistentCookies: false }
   );
@@ -568,7 +562,6 @@ add_task(async function test_privacy_other_prefs() {
     { behavior: "allow_visited" },
     {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_LIMIT_FOREIGN,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: "allow_visited", nonPersistentCookies: false }
   );
@@ -577,7 +570,6 @@ add_task(async function test_privacy_other_prefs() {
     { behavior: "allow_all" },
     {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_ACCEPT,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: "allow_all", nonPersistentCookies: false }
   );
@@ -586,16 +578,14 @@ add_task(async function test_privacy_other_prefs() {
     { nonPersistentCookies: true },
     {
       "network.cookie.cookieBehavior": defaultCookieBehavior,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_SESSION,
     },
-    { behavior: defaultBehavior, nonPersistentCookies: true }
+    { behavior: defaultBehavior, nonPersistentCookies: false }
   );
   await testSetting(
     "websites.cookieConfig",
     { nonPersistentCookies: false },
     {
       "network.cookie.cookieBehavior": defaultCookieBehavior,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: defaultBehavior, nonPersistentCookies: false }
   );
@@ -604,7 +594,6 @@ add_task(async function test_privacy_other_prefs() {
     { behavior: "reject_trackers" },
     {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_REJECT_TRACKER,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: "reject_trackers", nonPersistentCookies: false }
   );
@@ -614,7 +603,6 @@ add_task(async function test_privacy_other_prefs() {
     {
       "network.cookie.cookieBehavior":
         cookieSvc.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     {
       behavior: "reject_trackers_and_partition_foreign",
@@ -635,7 +623,6 @@ add_task(async function test_privacy_other_prefs() {
     { behavior: "reject_trackers" },
     {
       "network.cookie.cookieBehavior": cookieSvc.BEHAVIOR_REJECT_TRACKER,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: "reject_trackers", nonPersistentCookies: false }
   );
@@ -664,7 +651,6 @@ add_task(async function test_privacy_other_prefs() {
     {
       "network.cookie.cookieBehavior":
         cookieSvc.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     {
       behavior: "reject_trackers_and_partition_foreign",
@@ -682,7 +668,6 @@ add_task(async function test_privacy_other_prefs() {
     {
       "network.cookie.cookieBehavior":
         cookieSvc.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-      "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     {
       behavior: "reject_trackers_and_partition_foreign",
@@ -908,7 +893,8 @@ add_task(async function test_privacy_other_prefs() {
   extension.sendMessage(
     "set",
     { value: !Preferences.get(GLOBAL_PRIVACY_CONTROL_PREF_NAME) },
-    "network.globalPrivacyControl"
+    "network.globalPrivacyControl",
+    READ_ONLY
   );
   let readOnlyGPCData = await extension.awaitMessage("settingData");
   equal(
@@ -941,7 +927,12 @@ add_task(async function test_privacy_other_prefs() {
   await testGetting("network.httpsOnlyMode", {}, "always");
 
   // trying to "set" should have no effect when readonly!
-  extension.sendMessage("set", { value: "never" }, "network.httpsOnlyMode");
+  extension.sendMessage(
+    "set",
+    { value: "never" },
+    "network.httpsOnlyMode",
+    READ_ONLY
+  );
   let readOnlyData = await extension.awaitMessage("settingData");
   equal(readOnlyData.value, "always");
 

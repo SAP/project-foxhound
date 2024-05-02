@@ -4,26 +4,28 @@
 
 "use strict";
 
-const { createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   render,
   unmountComponentAtNode,
-} = require("devtools/client/shared/vendor/react-dom");
+} = require("resource://devtools/client/shared/vendor/react-dom.js");
 const Provider = createFactory(
-  require("devtools/client/shared/vendor/react-redux").Provider
+  require("resource://devtools/client/shared/vendor/react-redux.js").Provider
 );
 const App = createFactory(
-  require("devtools/client/netmonitor/src/components/App")
+  require("resource://devtools/client/netmonitor/src/components/App.js")
 );
-const { EVENTS } = require("devtools/client/netmonitor/src/constants");
+const {
+  EVENTS,
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 const {
   getDisplayedRequestById,
-} = require("devtools/client/netmonitor/src/selectors/index");
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 
-const SearchWorker = require("devtools/client/netmonitor/src/workers/search/index");
-const SEARCH_WORKER_URL =
-  "resource://devtools/client/netmonitor/src/workers/search/worker.js";
+const SearchDispatcher = require("resource://devtools/client/netmonitor/src/workers/search/index.js");
 
 /**
  * Global App object for Network panel. This object depends
@@ -58,9 +60,6 @@ NetMonitorApp.prototype = {
       });
     };
 
-    // Bootstrap search worker
-    SearchWorker.start(SEARCH_WORKER_URL, win);
-
     const { actions, connector, store } = this.api;
 
     const sourceMapURLService = toolbox.sourceMapURLService;
@@ -74,7 +73,7 @@ NetMonitorApp.prototype = {
     });
 
     // Render the root Application component.
-    render(Provider({ store: store }, app), this.mount);
+    render(Provider({ store }, app), this.mount);
   },
 
   /**
@@ -83,7 +82,7 @@ NetMonitorApp.prototype = {
   destroy() {
     unmountComponentAtNode(this.mount);
 
-    SearchWorker.stop();
+    SearchDispatcher.stop();
 
     // Make sure to destroy the API object. It's usually destroyed
     // in the Toolbox destroy method, but we need it here for case

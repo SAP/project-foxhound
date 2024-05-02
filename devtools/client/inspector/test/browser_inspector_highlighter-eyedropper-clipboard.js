@@ -10,7 +10,7 @@ const ID = "eye-dropper-";
 const TEST_URI =
   "data:text/html;charset=utf-8,<style>html{background:red}</style>";
 
-add_task(async function() {
+add_task(async function () {
   const helper = await openInspectorForURL(TEST_URI).then(
     getHighlighterHelperFor(HIGHLIGHTER_TYPE)
   );
@@ -43,11 +43,11 @@ add_task(async function() {
   ok(true, "The eyedropper is now hidden");
 
   info("Check that the clipboard still contains the copied color");
-  is(SpecialPowers.getClipboardData("text/unicode"), "#ff0000");
+  is(SpecialPowers.getClipboardData("text/plain"), "#ff0000");
 
   info("Replace the clipboard content with another text");
   SpecialPowers.clipboardCopyString("not-a-color");
-  is(SpecialPowers.getClipboardData("text/unicode"), "not-a-color");
+  is(SpecialPowers.getClipboardData("text/plain"), "not-a-color");
 
   info("Click on the page again, check the clipboard was not updated");
   await BrowserTestUtils.synthesizeMouseAtCenter(
@@ -57,7 +57,7 @@ add_task(async function() {
   );
   // Wait 500ms because nothing is observable when the test is successful.
   await wait(500);
-  is(SpecialPowers.getClipboardData("text/unicode"), "not-a-color");
+  is(SpecialPowers.getClipboardData("text/plain"), "not-a-color");
 
   finalize();
 });

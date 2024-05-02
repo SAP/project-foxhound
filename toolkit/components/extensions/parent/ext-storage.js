@@ -4,21 +4,29 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
-  ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
-  ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
-  NativeManifests: "resource://gre/modules/NativeManifests.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  AddonManagerPrivate: "resource://gre/modules/AddonManager.sys.mjs",
+  ExtensionStorage: "resource://gre/modules/ExtensionStorage.sys.mjs",
+  ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.sys.mjs",
+  NativeManifests: "resource://gre/modules/NativeManifests.sys.mjs",
+  extensionStorageSession: "resource://gre/modules/ExtensionStorage.sys.mjs",
 });
 
 var { ExtensionError } = ExtensionUtils;
+var { ignoreEvent } = ExtensionCommon;
 
-XPCOMUtils.defineLazyGetter(this, "extensionStorageSync", () => {
-  let url = Services.prefs.getBoolPref("webextensions.storage.sync.kinto")
-    ? "resource://gre/modules/ExtensionStorageSyncKinto.jsm"
-    : "resource://gre/modules/ExtensionStorageSync.jsm";
+ChromeUtils.defineLazyGetter(this, "extensionStorageSync", () => {
+  // TODO bug 1637465: Remove Kinto-based implementation.
+  if (Services.prefs.getBoolPref("webextensions.storage.sync.kinto")) {
+    const { extensionStorageSyncKinto } = ChromeUtils.importESModule(
+      "resource://gre/modules/ExtensionStorageSyncKinto.sys.mjs"
+    );
+    return extensionStorageSyncKinto;
+  }
 
-  const { extensionStorageSync } = ChromeUtils.import(url);
+  const { extensionStorageSync } = ChromeUtils.importESModule(
+    "resource://gre/modules/ExtensionStorageSync.sys.mjs"
+  );
   return extensionStorageSync;
 });
 
@@ -53,7 +61,7 @@ const lookupManagedStorage = async (extensionId, context) => {
   return null;
 };
 
-this.storage = class extends ExtensionAPI {
+this.storage = class extends ExtensionAPIPersistent {
   constructor(extension) {
     super(extension);
 
@@ -61,6 +69,132 @@ this.storage = class extends ExtensionAPI {
     Services.ppmm.addMessageListener(messageName, this);
     this.clearStorageChangedListener = () => {
       Services.ppmm.removeMessageListener(messageName, this);
+    };
+  }
+
+  PERSISTENT_EVENTS = {
+    onChanged({ context, fire }) {
+      let unregisterLocal = this.registerLocalChangedListener(changes => {
+        // |changes| is already serialized. Send the raw value, so that it can
+        // be deserialized by the onChanged handler in child/ext-storage.js.
+        fire.raw(changes, "local");
+      });
+
+      // Session storage is not exposed to content scripts, and `context` does
+      // not exist while setting up persistent listeners for an event page.
+      let unregisterSession;
+      if (
+        !context ||
+        context.envType === "addon_parent" ||
+        context.envType === "devtools_parent"
+      ) {
+        unregisterSession = extensionStorageSession.registerListener(
+          this.extension,
+          changes => fire.async(changes, "session")
+        );
+      }
+
+      let unregisterSync = this.registerSyncChangedListener(changes => {
+        fire.async(changes, "sync");
+      });
+
+      return {
+        unregister() {
+          unregisterLocal();
+          unregisterSession?.();
+          unregisterSync();
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+    "local.onChanged"({ fire }) {
+      let unregister = this.registerLocalChangedListener(changes => {
+        // |changes| is already serialized. Send the raw value, so that it can
+        // be deserialized by the onChanged handler in child/ext-storage.js.
+        fire.raw(changes);
+      });
+      return {
+        unregister,
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+    "session.onChanged"({ fire }) {
+      let unregister = extensionStorageSession.registerListener(
+        this.extension,
+        changes => fire.async(changes)
+      );
+
+      return {
+        unregister,
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+    "sync.onChanged"({ fire }) {
+      let unregister = this.registerSyncChangedListener(changes => {
+        fire.async(changes);
+      });
+      return {
+        unregister,
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+  };
+
+  registerLocalChangedListener(onStorageLocalChanged) {
+    const extensionId = this.extension.id;
+    ExtensionStorage.addOnChangedListener(extensionId, onStorageLocalChanged);
+    ExtensionStorageIDB.addOnChangedListener(
+      extensionId,
+      onStorageLocalChanged
+    );
+    return () => {
+      ExtensionStorage.removeOnChangedListener(
+        extensionId,
+        onStorageLocalChanged
+      );
+      ExtensionStorageIDB.removeOnChangedListener(
+        extensionId,
+        onStorageLocalChanged
+      );
+    };
+  }
+
+  registerSyncChangedListener(onStorageSyncChanged) {
+    const { extension } = this;
+    let closeCallback;
+    // The ExtensionStorageSyncKinto implementation of addOnChangedListener
+    // relies on context.callOnClose (via ExtensionStorageSync.registerInUse)
+    // to keep track of active users of the storage. We don't need to pass a
+    // real BaseContext instance, a dummy object with the callOnClose method
+    // works too. This enables us to register a primed listener before any
+    // context is available.
+    // TODO bug 1637465: Remove this when the Kinto backend is dropped.
+    let dummyContextForKinto = {
+      callOnClose({ close }) {
+        closeCallback = close;
+      },
+    };
+    extensionStorageSync.addOnChangedListener(
+      extension,
+      onStorageSyncChanged,
+      dummyContextForKinto
+    );
+    return () => {
+      extensionStorageSync.removeOnChangedListener(
+        extension,
+        onStorageSyncChanged
+      );
+      // May be void if ExtensionStorageSyncKinto.jsm was not used.
+      // ExtensionStorageSync.jsm does not use the context.
+      closeCallback?.();
     };
   }
 
@@ -140,6 +274,33 @@ this.storage = class extends ExtensionAPI {
               return ExtensionStorageIDB.selectBackend(context);
             },
           },
+          onChanged: new EventManager({
+            context,
+            module: "storage",
+            event: "local.onChanged",
+            extensionApi: this,
+          }).api(),
+        },
+
+        session: {
+          get(items) {
+            return extensionStorageSession.get(extension, items);
+          },
+          set(items) {
+            extensionStorageSession.set(extension, items);
+          },
+          remove(keys) {
+            extensionStorageSession.remove(extension, keys);
+          },
+          clear() {
+            extensionStorageSession.clear(extension);
+          },
+          onChanged: new EventManager({
+            context,
+            module: "storage",
+            event: "session.onChanged",
+            extensionApi: this,
+          }).api(),
         },
 
         sync: {
@@ -163,6 +324,12 @@ this.storage = class extends ExtensionAPI {
             enforceNoTemporaryAddon(extension.id);
             return extensionStorageSync.getBytesInUse(extension, keys, context);
           },
+          onChanged: new EventManager({
+            context,
+            module: "storage",
+            event: "sync.onChanged",
+            extensionApi: this,
+          }).api(),
         },
 
         managed: {
@@ -181,46 +348,17 @@ this.storage = class extends ExtensionAPI {
                 message: "Managed storage manifest not found",
               });
             }
-            return ExtensionStorage._filterProperties(data, keys);
+            return ExtensionStorage._filterProperties(extension.id, data, keys);
           },
+          // managed storage is currently initialized once.
+          onChanged: ignoreEvent(context, "storage.managed.onChanged"),
         },
 
         onChanged: new EventManager({
           context,
-          name: "storage.onChanged",
-          register: fire => {
-            let listenerLocal = changes => {
-              fire.raw(changes, "local");
-            };
-            let listenerSync = changes => {
-              fire.async(changes, "sync");
-            };
-
-            ExtensionStorage.addOnChangedListener(extension.id, listenerLocal);
-            ExtensionStorageIDB.addOnChangedListener(
-              extension.id,
-              listenerLocal
-            );
-            extensionStorageSync.addOnChangedListener(
-              extension,
-              listenerSync,
-              context
-            );
-            return () => {
-              ExtensionStorage.removeOnChangedListener(
-                extension.id,
-                listenerLocal
-              );
-              ExtensionStorageIDB.removeOnChangedListener(
-                extension.id,
-                listenerLocal
-              );
-              extensionStorageSync.removeOnChangedListener(
-                extension,
-                listenerSync
-              );
-            };
-          },
+          module: "storage",
+          event: "onChanged",
+          extensionApi: this,
         }).api(),
       },
     };

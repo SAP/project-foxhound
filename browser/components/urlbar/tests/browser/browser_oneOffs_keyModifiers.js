@@ -10,7 +10,7 @@
 const TEST_ENGINE_BASENAME = "searchSuggestionEngine.xml";
 const SEARCH_STRING = "foo.bar";
 
-XPCOMUtils.defineLazyGetter(this, "oneOffSearchButtons", () => {
+ChromeUtils.defineLazyGetter(this, "oneOffSearchButtons", () => {
   return UrlbarTestUtils.getOneOffSearchButtons(window);
 });
 
@@ -28,19 +28,22 @@ async function searchAndOpenPopup(value) {
   );
 }
 
-add_task(async function init() {
+add_setup(async function () {
   // Add a search suggestion engine and move it to the front so that it appears
   // as the first one-off.
-  engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
+  engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+  });
   await Services.search.moveEngine(engine, 0);
 
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.separatePrivateDefault.ui.enabled", false]],
+    set: [
+      ["browser.search.separatePrivateDefault.ui.enabled", false],
+      ["browser.urlbar.suggest.quickactions", false],
+    ],
   });
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     await UrlbarTestUtils.formHistory.clear();
   });
@@ -148,7 +151,7 @@ add_task(async function shift_enter_search() {
 // Pressing Alt+Enter on a one-off on an "empty" page (e.g. new tab) should open
 // search mode in the current tab.
 add_task(async function alt_enter_emptypage() {
-  await BrowserTestUtils.withNewTab("about:home", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:home", async function (browser) {
     await searchAndOpenPopup(SEARCH_STRING);
     let oneOffs = oneOffSearchButtons.getSelectableButtons(true);
     // Alt+Down to select the first one-off.
@@ -173,7 +176,7 @@ add_task(async function alt_enter_emptypage() {
 // Pressing Alt+Enter on a one-off with no search string and on a "non-empty"
 // page should open search mode in a new foreground tab.
 add_task(async function alt_enter_empty() {
-  await BrowserTestUtils.withNewTab("about:robots", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:robots", async function (browser) {
     await searchAndOpenPopup("");
     let oneOffs = oneOffSearchButtons.getSelectableButtons(true);
     // Alt+Down to select the first one-off.
@@ -207,7 +210,7 @@ add_task(async function alt_enter_empty() {
 // Pressing Alt+Enter on a remote one-off with a search string and on a
 // "non-empty" page should perform a search in a new foreground tab.
 add_task(async function alt_enter_search_remote() {
-  await BrowserTestUtils.withNewTab("about:robots", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:robots", async function (browser) {
     await searchAndOpenPopup(SEARCH_STRING);
     // Alt+Down to select the first one-off.
     EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
@@ -241,7 +244,7 @@ add_task(async function alt_enter_search_remote() {
 // "non-empty" page should open search mode in a new foreground tab with the
 // search string already populated.
 add_task(async function alt_enter_search_local() {
-  await BrowserTestUtils.withNewTab("about:robots", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:robots", async function (browser) {
     await searchAndOpenPopup(SEARCH_STRING);
     // Alt+Down to select the first local one-off.
     EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });

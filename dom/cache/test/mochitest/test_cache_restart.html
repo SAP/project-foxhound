@@ -24,7 +24,8 @@ function setupTestIframe() {
 function resetStorage() {
   return new Promise(function(resolve, reject) {
     var qms = SpecialPowers.Services.qms;
-    var request = qms.reset();
+    var principal = SpecialPowers.wrap(document).nodePrincipal;
+    var request = qms.resetStoragesForPrincipal(principal);
     var cb = SpecialPowers.wrapCallback(resolve);
     request.callback = cb;
   });
@@ -32,8 +33,7 @@ function resetStorage() {
 
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv({
-  "set": [["dom.caches.enabled", true],
-          ["dom.caches.testing.enabled", true],
+  "set": [["dom.caches.testing.enabled", true],
           ["dom.quotaManager.testing", true]],
 }, function() {
   var name = "foo";

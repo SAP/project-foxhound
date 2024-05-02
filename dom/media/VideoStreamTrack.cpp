@@ -31,9 +31,7 @@ void VideoStreamTrack::AddVideoOutput(VideoFrameContainer* aSink) {
   if (Ended()) {
     return;
   }
-  auto output = MakeRefPtr<VideoOutput>(
-      aSink, nsGlobalWindowInner::Cast(GetParentObject())
-                 ->AbstractMainThreadFor(TaskCategory::Other));
+  auto output = MakeRefPtr<VideoOutput>(aSink, AbstractThread::MainThread());
   AddVideoOutput(output);
 }
 
@@ -73,7 +71,10 @@ void VideoStreamTrack::RemoveVideoOutput(VideoOutput* aOutput) {
 }
 
 void VideoStreamTrack::GetLabel(nsAString& aLabel, CallerType aCallerType) {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  nsIGlobalObject* global =
+      GetParentObject() ? GetParentObject()->AsGlobal() : nullptr;
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, global,
+                                                 RFPTarget::StreamTrackLabel)) {
     aLabel.AssignLiteral("Internal Camera");
     return;
   }

@@ -6,6 +6,8 @@
 
 DevToolsModules(
     "css-compatibility-tooltip-helper.js",
+    "css-query-container-tooltip-helper.js",
+    "css-selector-warnings-tooltip-helper.js",
     "EventTooltipHelper.js",
     "HTMLTooltip.js",
     "ImageTooltipHelper.js",
@@ -15,6 +17,7 @@ DevToolsModules(
     "SwatchColorPickerTooltip.js",
     "SwatchCubicBezierTooltip.js",
     "SwatchFilterTooltip.js",
+    "SwatchLinearEasingFunctionTooltip.js",
     "TooltipToggle.js",
     "VariableTooltipHelper.js",
 )

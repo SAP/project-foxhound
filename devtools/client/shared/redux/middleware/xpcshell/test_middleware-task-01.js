@@ -7,14 +7,16 @@
 const {
   createStore,
   applyMiddleware,
-} = require("devtools/client/shared/vendor/redux");
-const { task } = require("devtools/client/shared/redux/middleware/task");
+} = require("resource://devtools/client/shared/vendor/redux.js");
+const {
+  task,
+} = require("resource://devtools/client/shared/redux/middleware/task.js");
 
 /**
  * Tests that task middleware allows dispatching generators, promises and objects
  * that return actions;
  */
-add_task(async function() {
+add_task(async function () {
   const store = applyMiddleware(task)(createStore)(reducer);
 
   store.dispatch(fetch1("generator"));
@@ -35,7 +37,7 @@ add_task(async function() {
 });
 
 function fetch1(data) {
-  return async function({ dispatch, getState }) {
+  return async function ({ dispatch, getState }) {
     equal(
       getState().length,
       0,

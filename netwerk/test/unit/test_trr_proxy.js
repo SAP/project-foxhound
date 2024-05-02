@@ -1,4 +1,6 @@
-/* globals dnsResolve */
+// These are globlas defined for proxy servers, in ProxyAutoConfig.cpp. See
+// PACGlobalFunctions
+/* globals dnsResolve, alert */
 
 /* This test checks that using a PAC script still works when TRR is on.
    Steps:
@@ -9,16 +11,16 @@
    We run these steps for TRR mode 2 and 3, and with fetchOffMainThread = true/false
 */
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
 );
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.proxy.type");
+  Services.prefs.clearUserPref("network.proxy.parse_pac_on_socket_process");
   trr_clear_prefs();
 });
 
@@ -28,8 +30,7 @@ function FindProxyForURL(url, host) {
   return "DIRECT";
 }
 
-const CID = Components.ID("{5645d2c1-d6d8-4091-b117-fe7ee4027db7}");
-XPCOMUtils.defineLazyGetter(this, "systemSettings", function() {
+ChromeUtils.defineLazyGetter(this, "systemSettings", function () {
   return {
     QueryInterface: ChromeUtils.generateQI(["nsISystemProxySettings"]),
 
@@ -47,7 +48,7 @@ const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );
 
-add_task(async function test_pac_dnsResolve() {
+async function do_test_pac_dnsResolve() {
   Services.prefs.setCharPref("network.trr.confirmationNS", "skip");
   Services.console.reset();
   // Create a console listener.
@@ -96,10 +97,7 @@ add_task(async function test_pac_dnsResolve() {
   await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
   await consolePromise;
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
@@ -133,4 +131,26 @@ add_task(async function test_pac_dnsResolve() {
   await test_with("test3.com", 2, false);
   await test_with("test4.com", 3, false);
   await httpserv.stop();
+}
+
+add_task(async function test_pac_dnsResolve() {
+  Services.prefs.setBoolPref(
+    "network.proxy.parse_pac_on_socket_process",
+    false
+  );
+
+  await do_test_pac_dnsResolve();
+
+  if (mozinfo.socketprocess_networking) {
+    info("run test again");
+    Services.prefs.clearUserPref("network.proxy.type");
+    trr_clear_prefs();
+    Services.prefs.setBoolPref(
+      "network.proxy.parse_pac_on_socket_process",
+      true
+    );
+    Services.prefs.setIntPref("network.proxy.type", 2);
+    Services.prefs.setIntPref("network.proxy.type", 0);
+    await do_test_pac_dnsResolve();
+  }
 });

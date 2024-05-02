@@ -7,23 +7,21 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { TelemetrySend } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetrySend.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetrySend } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySend.jsm"
+const { TelemetryStorage } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryStorage.sys.mjs"
 );
-const { TelemetryStorage } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryStorage.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 function generateTestPingData() {
   return {
@@ -61,13 +59,13 @@ function testSendingPings(pingPaths) {
  * Wait for a ping file to be deleted from the pending pings directory.
  */
 function waitForPingDeletion(pingId) {
-  const path = OS.Path.join(TelemetryStorage.pingDirectoryPath, pingId);
+  const path = PathUtils.join(TelemetryStorage.pingDirectoryPath, pingId);
 
   let checkFn = (resolve, reject) =>
     setTimeout(() => {
-      OS.File.exists(path).then(exists => {
+      IOUtils.exists(path).then(exists => {
         if (!exists) {
-          Assert.ok(true, pingId + " was deleted");
+          Assert.ok(true, `${pingId} was deleted`);
           resolve();
         } else {
           checkFn(resolve, reject);
@@ -88,13 +86,13 @@ add_task(async function setup() {
   PingServer.start();
 });
 
-add_task(async function test_pingSender() {
+async function test_pingSender(version = "1.0") {
   // Generate a new ping and save it among the pending pings.
   const data = generateTestPingData();
   await TelemetryStorage.savePing(data, true);
 
   // Get the local path of the saved ping.
-  const pingPath = OS.Path.join(TelemetryStorage.pingDirectoryPath, data.id);
+  const pingPath = PathUtils.join(TelemetryStorage.pingDirectoryPath, data.id);
 
   // Spawn an HTTP server that returns an error. We will be running the
   // PingSender twice, trying to send the ping to this server. After the
@@ -123,7 +121,7 @@ add_task(async function test_pingSender() {
   // still exists locally.
   await deferred404Hit.promise;
   Assert.ok(
-    await OS.File.exists(pingPath),
+    await IOUtils.exists(pingPath),
     "The pending ping must not be deleted if we fail to send using the PingSender"
   );
 
@@ -135,12 +133,12 @@ add_task(async function test_pingSender() {
 
   Assert.equal(
     req.getHeader("User-Agent"),
-    "pingsender/1.0",
+    `pingsender/${version}`,
     "Should have received the correct user agent string."
   );
   Assert.equal(
     req.getHeader("X-PingSender-Version"),
-    "1.0",
+    version,
     "Should have received the correct PingSender version string."
   );
   Assert.equal(
@@ -166,6 +164,44 @@ add_task(async function test_pingSender() {
 
   // Shut down the failing server.
   await new Promise(r => failingServer.stop(r));
+}
+
+add_task(async function test_pingsender1() {
+  let orig = Services.prefs.getBoolPref(
+    "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+    false
+  );
+  try {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      false
+    );
+    await test_pingSender("1.0");
+  } finally {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      orig
+    );
+  }
+});
+
+add_task(async function test_pingsender2() {
+  let orig = Services.prefs.getBoolPref(
+    "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+    false
+  );
+  try {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      true
+    );
+    await test_pingSender("2.0");
+  } finally {
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.shutdownPingSender.backgroundtask.enabled",
+      orig
+    );
+  }
 });
 
 add_task(async function test_bannedDomains() {
@@ -174,7 +210,7 @@ add_task(async function test_bannedDomains() {
   await TelemetryStorage.savePing(data, true);
 
   // Get the local path of the saved ping.
-  const pingPath = OS.Path.join(TelemetryStorage.pingDirectoryPath, data.id);
+  const pingPath = PathUtils.join(TelemetryStorage.pingDirectoryPath, data.id);
 
   // Confirm we can't send a ping to another destination url
   let bannedUris = [
@@ -216,7 +252,7 @@ add_task(async function test_pingSender_multiple_pings() {
 
   // Get the local path of the saved pings.
   const pingPaths = data.map(d =>
-    OS.Path.join(TelemetryStorage.pingDirectoryPath, d.id)
+    PathUtils.join(TelemetryStorage.pingDirectoryPath, d.id)
   );
 
   // Try to send them using the pingsender.

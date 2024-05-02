@@ -104,7 +104,7 @@ TEST(AboutThirdParty, InstallLocations)
   };
 
   nsTArray<InstallLocationT> locations(ArrayLength(kDirectoriesUnsorted));
-  for (int i = 0; i < ArrayLength(kDirectoriesUnsorted); ++i) {
+  for (size_t i = 0; i < ArrayLength(kDirectoriesUnsorted); ++i) {
     locations.EmplaceBack(kDirectoriesUnsorted[i], new InstalledApplication());
   }
 
@@ -115,11 +115,11 @@ TEST(AboutThirdParty, InstallLocations)
   for (const auto& testCase : kTestCases) {
     auto bounds = EqualRange(locations, 0, locations.Length(),
                              InstallLocationComparator(testCase.mFile));
-    if (bounds.second() - bounds.first() != 1) {
+    if (bounds.second - bounds.first != 1) {
       EXPECT_TRUE(testCase.mInstallPath.IsEmpty());
       continue;
     }
 
-    EXPECT_EQ(locations[bounds.first()].first(), testCase.mInstallPath);
+    EXPECT_EQ(locations[bounds.first].first(), testCase.mInstallPath);
   }
 }

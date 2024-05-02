@@ -12,13 +12,9 @@
 
 const double radPerDegree = 2.0 * M_PI / 360.0;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(SVGMatrix, mTransform)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(SVGMatrix, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(SVGMatrix, Release)
 
 DOMSVGTransform* SVGMatrix::GetParentObject() const { return mTransform; }
 
@@ -159,7 +155,7 @@ already_AddRefed<SVGMatrix> SVGMatrix::FlipY() {
 
 already_AddRefed<SVGMatrix> SVGMatrix::SkewX(float angle, ErrorResult& rv) {
   double ta = tan(angle * radPerDegree);
-  if (!IsFinite(ta)) {
+  if (!std::isfinite(ta)) {
     rv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
     return nullptr;
   }
@@ -173,7 +169,7 @@ already_AddRefed<SVGMatrix> SVGMatrix::SkewX(float angle, ErrorResult& rv) {
 
 already_AddRefed<SVGMatrix> SVGMatrix::SkewY(float angle, ErrorResult& rv) {
   double ta = tan(angle * radPerDegree);
-  if (!IsFinite(ta)) {
+  if (!std::isfinite(ta)) {
     rv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
     return nullptr;
   }
@@ -186,5 +182,4 @@ already_AddRefed<SVGMatrix> SVGMatrix::SkewY(float angle, ErrorResult& rv) {
   return matrix.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

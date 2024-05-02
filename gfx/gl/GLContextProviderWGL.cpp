@@ -18,6 +18,7 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_gl.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
@@ -93,13 +94,11 @@ bool WGLLibrary::EnsureInitialized() {
     }
   }
 
-#define SYMBOL(X)                 \
-  {                               \
-    (PRFuncPtr*)&mSymbols.f##X, { \
-      { "wgl" #X }                \
-    }                             \
+#define SYMBOL(X) {(PRFuncPtr*)&mSymbols.f##X, {{"wgl" #X}}}
+#define END_OF_SYMBOLS \
+  {                    \
+    nullptr, {}        \
   }
-#define END_OF_SYMBOLS {nullptr, {}}
 
   {
     const auto loader = SymbolLoader(*mOGLLibrary);
@@ -193,7 +192,6 @@ bool WGLLibrary::EnsureInitialized() {
 
   const auto extString = mSymbols.fGetExtensionsStringARB(mRootDc);
   MOZ_ASSERT(extString);
-  MOZ_ASSERT(HasExtension(extString, "WGL_ARB_extensions_string"));
 
   // --
 

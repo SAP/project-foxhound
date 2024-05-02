@@ -5,7 +5,7 @@
 import { createSelector } from "reselect";
 
 import { getBreakpointsList } from "./breakpoints";
-import { getSelectedSource } from "../selectors/sources";
+import { getSelectedSource } from "./sources";
 
 import { sortSelectedBreakpoints } from "../utils/breakpoint";
 import { getSelectedLocation } from "../utils/selected-location";
@@ -24,7 +24,7 @@ export const getVisibleBreakpoints = createSelector(
     return breakpoints.filter(
       bp =>
         selectedSource &&
-        getSelectedLocation(bp, selectedSource).sourceId === selectedSource.id
+        getSelectedLocation(bp, selectedSource)?.source.id === selectedSource.id
     );
   }
 );

@@ -38,7 +38,6 @@
 #include "mozilla/EditorBase.h"
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/EditorSpellCheck.h"
-#include "mozilla/EditorUtils.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IntegerRange.h"
@@ -53,6 +52,9 @@
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/Selection.h"
 #include "mozInlineSpellWordUtil.h"
+#ifdef ACCESSIBILITY
+#  include "nsAccessibilityService.h"
+#endif
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
 #include "nsGenericHTMLElement.h"
@@ -1669,8 +1671,8 @@ nsresult mozInlineSpellChecker::ResumeCheck(
     return NS_ERROR_FAILURE;
   }
 
-  nsAutoCString currentDictionary;
-  nsresult rv = mSpellCheck->GetCurrentDictionary(currentDictionary);
+  nsTArray<nsCString> currentDictionaries;
+  nsresult rv = mSpellCheck->GetCurrentDictionaries(currentDictionaries);
   if (NS_FAILED(rv)) {
     MOZ_LOG(sInlineSpellCheckerLog, LogLevel::Debug,
             ("%s: no active dictionary.", __FUNCTION__));
@@ -1720,8 +1722,8 @@ nsresult mozInlineSpellChecker::IsPointInSelection(Selection& aSelection,
   *aRange = nullptr;
 
   nsTArray<nsRange*> ranges;
-  nsresult rv = aSelection.GetRangesForIntervalArray(aNode, aOffset, aNode,
-                                                     aOffset, true, &ranges);
+  nsresult rv = aSelection.GetDynamicRangesForIntervalArray(
+      aNode, aOffset, aNode, aOffset, true, &ranges);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (ranges.Length() == 0) return NS_OK;  // no matches
@@ -1771,7 +1773,16 @@ nsresult mozInlineSpellChecker::RemoveRange(Selection* aSpellCheckSelection,
   RefPtr<nsRange> range{aRange};
   RefPtr<Selection> selection{aSpellCheckSelection};
   selection->RemoveRangeAndUnselectFramesAndNotifyListeners(*range, rv);
-  if (!rv.Failed() && mNumWordsInSpellSelection) mNumWordsInSpellSelection--;
+  if (!rv.Failed()) {
+    if (mNumWordsInSpellSelection) {
+      mNumWordsInSpellSelection--;
+    }
+#ifdef ACCESSIBILITY
+    if (nsAccessibilityService* accService = GetAccService()) {
+      accService->SpellCheckRangeChanged(*aRange);
+    }
+#endif
+  }
 
   return rv.StealNSResult();
 }
@@ -1823,11 +1834,12 @@ void mozInlineSpellChecker::UpdateRangesForMisspelledWords(
     const size_t indexOfOldRangeToKeep = aOldRangesForSomeWords.IndexOf(
         nodeOffsetRange, 0, CompareRangeAndNodeOffsetRange{});
     if (indexOfOldRangeToKeep != aOldRangesForSomeWords.NoIndex &&
-        aOldRangesForSomeWords[indexOfOldRangeToKeep]->GetSelection() ==
-        &aSpellCheckerSelection /** TODO: warn in case the old range doesn't
-                                  belong to the selection. This is not critical,
-                                  because other code can always remove them
-                                  before the actual spellchecking happens. */) {
+        aOldRangesForSomeWords[indexOfOldRangeToKeep]->IsInSelection(
+            aSpellCheckerSelection)) {
+      /** TODO: warn in case the old range doesn't
+        belong to the selection. This is not critical,
+        because other code can always remove them
+        before the actual spellchecking happens. */
       MOZ_LOG(sInlineSpellCheckerLog, LogLevel::Verbose,
               ("%s: reusing old range.", __FUNCTION__));
 
@@ -1879,6 +1891,11 @@ nsresult mozInlineSpellChecker::AddRange(Selection* aSpellCheckSelection,
       rv = err.StealNSResult();
     } else {
       mNumWordsInSpellSelection++;
+#ifdef ACCESSIBILITY
+      if (nsAccessibilityService* accService = GetAccService()) {
+        accService->SpellCheckRangeChanged(*aRange);
+      }
+#endif
     }
   }
 

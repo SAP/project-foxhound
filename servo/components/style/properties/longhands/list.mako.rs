@@ -11,9 +11,11 @@ ${helpers.single_keyword(
     "outside inside",
     engines="gecko servo-2013 servo-2020",
     servo_2020_pref="layout.2020.unimplemented",
+    gecko_enum_prefix="StyleListStylePosition",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-lists/#propdef-list-style-position",
     servo_restyle_damage="rebuild_and_reflow",
+    affects="layout",
 )}
 
 // TODO(pcwalton): Implement the full set of counter styles per CSS-COUNTER-STYLES [1] 6.1:
@@ -36,6 +38,7 @@ ${helpers.single_keyword(
         animation_value_type="discrete",
         spec="https://drafts.csswg.org/css-lists/#propdef-list-style-type",
         servo_restyle_damage="rebuild_and_reflow",
+        affects="layout",
     )}
 % endif
 % if engine == "gecko":
@@ -49,6 +52,7 @@ ${helpers.single_keyword(
         boxed=True,
         spec="https://drafts.csswg.org/css-lists/#propdef-list-style-type",
         servo_restyle_damage="rebuild_and_reflow",
+        affects="layout",
     )}
 % endif
 
@@ -61,6 +65,7 @@ ${helpers.predefined_type(
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-lists/#propdef-list-style-image",
     servo_restyle_damage="rebuild_and_reflow",
+    affects="layout",
 )}
 
 ${helpers.predefined_type(
@@ -71,15 +76,5 @@ ${helpers.predefined_type(
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-content/#propdef-quotes",
     servo_restyle_damage="rebuild_and_reflow",
-)}
-
-${helpers.predefined_type(
-    "-moz-image-region",
-    "ClipRectOrAuto",
-    "computed::ClipRectOrAuto::auto()",
-    engines="gecko",
-    gecko_ffi_name="mImageRegion",
-    animation_value_type="ComputedValue",
-    boxed=True,
-    spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-image-region)",
+    affects="layout",
 )}

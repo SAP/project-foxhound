@@ -16,7 +16,7 @@ const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html>
 </script>`;
 
 // Test that when the eager evaluation result is an element, it gets highlighted.
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm, toolbox } = hud;
   const { autocompletePopup } = jsterm;
@@ -68,7 +68,7 @@ add_task(async function() {
 
   onHighlighterHidden = highlighter.waitForHighlighterHidden();
   EventUtils.synthesizeKey("KEY_Enter");
-  await waitFor(() => findMessage(hud, `#text "mydivtext"`, ".result"));
+  await waitFor(() => findEvaluationResultMessage(hud, `#text "mydivtext"`));
   await waitForNoEagerEvaluationResult(hud);
   isVisible = await highlighterTestFront.isHighlighting();
   is(isVisible, false, "Highlighter is closed after evaluating the expression");

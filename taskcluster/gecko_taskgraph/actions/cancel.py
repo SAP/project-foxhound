@@ -4,9 +4,10 @@
 
 
 import logging
-import requests
 
-from gecko_taskgraph.util.taskcluster import cancel_task
+import requests
+from taskgraph.util.taskcluster import cancel_task
+
 from .registry import register_callback_action
 
 logger = logging.getLogger(__name__)

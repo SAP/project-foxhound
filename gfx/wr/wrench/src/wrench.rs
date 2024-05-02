@@ -9,7 +9,7 @@ use crossbeam::sync::chase_lev;
 use dwrote;
 #[cfg(all(unix, not(target_os = "android")))]
 use font_loader::system_fonts;
-use winit::EventsLoopProxy;
+use winit::event_loop::EventLoopProxy;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -36,7 +36,7 @@ pub enum FontDescriptor {
 }
 
 struct NotifierData {
-    events_loop_proxy: Option<EventsLoopProxy>,
+    events_loop_proxy: Option<EventLoopProxy<()>>,
     frames_notified: u32,
     timing_receiver: chase_lev::Stealer<time::SteadyTime>,
     verbose: bool,
@@ -44,7 +44,7 @@ struct NotifierData {
 
 impl NotifierData {
     fn new(
-        events_loop_proxy: Option<EventsLoopProxy>,
+        events_loop_proxy: Option<EventLoopProxy<()>>,
         timing_receiver: chase_lev::Stealer<time::SteadyTime>,
         verbose: bool,
     ) -> Self {
@@ -84,7 +84,7 @@ impl Notifier {
 
         if let Some(ref _elp) = data.events_loop_proxy {
             #[cfg(not(target_os = "android"))]
-            let _ = _elp.wakeup();
+            let _ = _elp.send_event(());
         }
     }
 }
@@ -101,7 +101,7 @@ impl RenderNotifier for Notifier {
     fn new_frame_ready(&self, _: DocumentId,
                        scrolled: bool,
                        _composite_needed: bool,
-                       _render_time: Option<u64>) {
+                       _: FramePublishId) {
         self.update(!scrolled);
     }
 }
@@ -217,7 +217,7 @@ impl Wrench {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         window: &mut WindowWrapper,
-        proxy: Option<EventsLoopProxy>,
+        proxy: Option<EventLoopProxy<()>>,
         shader_override_path: Option<PathBuf>,
         use_optimized_shaders: bool,
         size: DeviceIntSize,
@@ -227,8 +227,6 @@ impl Wrench {
         no_scissor: bool,
         no_batch: bool,
         precache_shaders: bool,
-        disable_dual_source_blending: bool,
-        chase_primitive: webrender::ChasePrimitive,
         dump_shader_source: Option<String>,
         notifier: Option<Box<dyn RenderNotifier>>,
     ) -> Self {
@@ -244,19 +242,17 @@ impl Wrench {
             ShaderPrecacheFlags::empty()
         };
 
-        let opts = webrender::RendererOptions {
+        let opts = webrender::WebRenderOptions {
             resource_override_path: shader_override_path,
             use_optimized_shaders,
             enable_subpixel_aa: !no_subpixel_aa,
             debug_flags,
-            enable_clear_scissor: !no_scissor,
+            enable_clear_scissor: no_scissor.then_some(false),
             max_recorded_profiles: 16,
             precache_flags,
             blob_image_handler: Some(Box::new(blob::CheckerboardRenderer::new(callbacks.clone()))),
-            chase_primitive,
             testing: true,
             max_internal_texture_size: Some(8196), // Needed for rawtest::test_resize_image.
-            allow_dual_source_blending: !disable_dual_source_blending,
             allow_advanced_blend_equation: window.is_software(),
             dump_shader_source,
             // SWGL doesn't support the GL_ALWAYS depth comparison function used by
@@ -268,7 +264,7 @@ impl Wrench {
         // put an Awakened event into the queue to kick off the first frame
         if let Some(ref _elp) = proxy {
             #[cfg(not(target_os = "android"))]
-            let _ = _elp.wakeup();
+            let _ = _elp.send_event(());
         }
 
         let (timing_sender, timing_receiver) = chase_lev::deque();
@@ -277,7 +273,7 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(
+        let (renderer, sender) = webrender::create_webrender_instance(
             window.clone_gl(),
             notifier,
             opts,
@@ -515,7 +511,6 @@ impl Wrench {
         size: f32,
         flags: FontInstanceFlags,
         render_mode: Option<FontRenderMode>,
-        bg_color: Option<ColorU>,
         synthetic_italics: SyntheticItalics,
     ) -> FontInstanceKey {
         let key = self.api.generate_font_instance_key();
@@ -524,9 +519,6 @@ impl Wrench {
         options.flags |= flags;
         if let Some(render_mode) = render_mode {
             options.render_mode = render_mode;
-        }
-        if let Some(bg_color) = bg_color {
-            options.bg_color = bg_color;
         }
         options.synthetic_italics = synthetic_italics;
         txn.add_font_instance(key, font_key, size, Some(options), None, Vec::new());
@@ -557,14 +549,10 @@ impl Wrench {
         display_lists: Vec<(PipelineId, BuiltDisplayList)>,
         scroll_offsets: &HashMap<ExternalScrollId, Vec<SampledScrollOffset>>,
     ) {
-        let root_background_color = Some(ColorF::new(1.0, 1.0, 1.0, 1.0));
-
         let mut txn = Transaction::new();
         for display_list in display_lists {
             txn.set_display_list(
                 Epoch(frame_number),
-                root_background_color,
-                self.window_size_f32(),
                 display_list,
             );
         }

@@ -10,15 +10,17 @@
 var rule = require("../lib/rules/use-default-preference-values");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 6 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
 // ------------------------------------------------------------------------------
 
 function invalidCode(code) {
-  let message = "provide a default value instead of using a try/catch block";
-  return { code, errors: [{ message, type: "TryStatement" }] };
+  return {
+    code,
+    errors: [{ messageId: "provideDefaultValue", type: "TryStatement" }],
+  };
 }
 
 let types = ["Bool", "Char", "Float", "Int"];

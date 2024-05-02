@@ -8,28 +8,30 @@
  */
 "use strict";
 
+let bookmarks = [
+  {
+    url: "https://example1.com",
+    title: "bm1",
+  },
+  {
+    url: "https://example2.com",
+    title: "bm2",
+  },
+  {
+    url: "https://example3.com",
+    title: "bm3",
+  },
+];
+
 add_task(async function test_open_bookmark_from_library() {
   let bm = await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.unfiledGuid,
-    children: [
-      {
-        url: "https://example1.com",
-        title: "bm1",
-      },
-      {
-        url: "https://example2.com",
-        title: "bm2",
-      },
-      {
-        url: "https://example3.com",
-        title: "bm3",
-      },
-    ],
+    children: bookmarks,
   });
 
   let library = await promiseLibrary("UnfiledBookmarks");
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await promiseLibraryClosed(library);
     await PlacesUtils.bookmarks.eraseEverything();
   });
@@ -38,11 +40,12 @@ add_task(async function test_open_bookmark_from_library() {
   Assert.equal(
     bmLibrary.title,
     bm[1].title,
-    "Found bookmark in the right pane"
+    "EditBookmark: Found bookmark in the right pane"
   );
 
   library.ContentTree.view.selectNode(bmLibrary);
 
+  let beforeUpdatedPRTime;
   await withBookmarksDialog(
     false,
     async () => {
@@ -64,11 +67,7 @@ add_task(async function test_open_bookmark_from_library() {
       placesContext.activateItem(properties, {});
     },
     async dialogWin => {
-      let promiseLocationChange = PlacesTestUtils.waitForNotification(
-        "bookmark-url-changed",
-        events => events.some(e => e.url === "https://example4.com/"),
-        "places"
-      );
+      beforeUpdatedPRTime = Date.now() * 1000;
 
       fillBookmarkTextField(
         "editBMPanel_locationField",
@@ -78,15 +77,19 @@ add_task(async function test_open_bookmark_from_library() {
       );
 
       EventUtils.synthesizeKey("VK_RETURN", {}, dialogWin);
-      await promiseLocationChange;
-
-      let node = library.ContentTree.view.selectedNode;
-      Assert.ok(node, "Should have a selectedNode");
-      Assert.equal(
-        node.uri,
-        "https://example4.com/",
-        "Should have selected the newly created bookmark"
-      );
     }
   );
+  let node = library.ContentTree.view.selectedNode;
+  Assert.ok(node, "EditBookmark: Should have a selectedNode");
+  Assert.equal(
+    node.uri,
+    "https://example4.com/",
+    "EditBookmark: Should have selected the newly created bookmark"
+  );
+  Assert.greater(
+    node.lastModified,
+    beforeUpdatedPRTime,
+    "EditBookmark: The lastModified should be greater than the time of before updating"
+  );
+  await PlacesUtils.bookmarks.eraseEverything();
 });

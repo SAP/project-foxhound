@@ -1,16 +1,12 @@
 "use strict";
 
 var prefs;
-var spdypref;
 var http2pref;
 var origin;
 var rcwnpref;
 
 function run_test() {
-  var env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  var h2Port = env.get("MOZHTTP2_PORT");
+  var h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
@@ -18,12 +14,10 @@ function run_test() {
   do_get_profile();
   prefs = Services.prefs;
 
-  spdypref = prefs.getBoolPref("network.http.spdy.enabled");
-  http2pref = prefs.getBoolPref("network.http.spdy.enabled.http2");
+  http2pref = prefs.getBoolPref("network.http.http2.enabled");
   rcwnpref = prefs.getBoolPref("network.http.rcwn.enabled");
 
-  prefs.setBoolPref("network.http.spdy.enabled", true);
-  prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+  prefs.setBoolPref("network.http.http2.enabled", true);
   prefs.setCharPref(
     "network.dns.localDomains",
     "foo.example.com, bar.example.com"
@@ -44,13 +38,12 @@ function run_test() {
 }
 
 function resetPrefs() {
-  prefs.setBoolPref("network.http.spdy.enabled", spdypref);
-  prefs.setBoolPref("network.http.spdy.enabled.http2", http2pref);
+  prefs.setBoolPref("network.http.http2.enabled", http2pref);
   prefs.setBoolPref("network.http.rcwn.enabled", rcwnpref);
   prefs.clearUserPref("network.dns.localDomains");
 }
 
-function makeChan(origin, path) {
+function makeChan(path) {
   return NetUtil.newChannel({
     uri: origin + path,
     loadUsingSystemPrincipal: true,
@@ -61,7 +54,7 @@ var nextTest;
 var expectPass = true;
 var expectConditional = false;
 
-var Listener = function() {};
+var Listener = function () {};
 Listener.prototype = {
   onStartRequest: function testOnStartRequest(request) {
     Assert.ok(request instanceof Ci.nsIHttpChannel);
@@ -106,7 +99,7 @@ function doTest1() {
   dump("execute doTest1 - resource without immutable. initial request\n");
   do_test_pending();
   expectConditional = false;
-  var chan = makeChan(origin, "/immutable-test-without-attribute");
+  var chan = makeChan("/immutable-test-without-attribute");
   var listener = new Listener();
   nextTest = doTest2;
   chan.asyncOpen(listener);
@@ -116,7 +109,7 @@ function doTest2() {
   dump("execute doTest2 - resource without immutable. reload\n");
   do_test_pending();
   expectConditional = true;
-  var chan = makeChan(origin, "/immutable-test-without-attribute");
+  var chan = makeChan("/immutable-test-without-attribute");
   var listener = new Listener();
   nextTest = doTest3;
   chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
@@ -127,7 +120,7 @@ function doTest3() {
   dump("execute doTest3 - resource without immutable. shift reload\n");
   do_test_pending();
   expectConditional = false;
-  var chan = makeChan(origin, "/immutable-test-without-attribute");
+  var chan = makeChan("/immutable-test-without-attribute");
   var listener = new Listener();
   nextTest = doTest4;
   chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
@@ -135,10 +128,10 @@ function doTest3() {
 }
 
 function doTest4() {
-  dump("execute doTest1 - resource with immutable. initial request\n");
+  dump("execute doTest4 - resource with immutable. initial request\n");
   do_test_pending();
   expectConditional = false;
-  var chan = makeChan(origin, "/immutable-test-with-attribute");
+  var chan = makeChan("/immutable-test-with-attribute");
   var listener = new Listener();
   nextTest = doTest5;
   chan.asyncOpen(listener);
@@ -148,7 +141,7 @@ function doTest5() {
   dump("execute doTest5 - resource with immutable. reload\n");
   do_test_pending();
   expectConditional = false;
-  var chan = makeChan(origin, "/immutable-test-with-attribute");
+  var chan = makeChan("/immutable-test-with-attribute");
   var listener = new Listener();
   nextTest = doTest6;
   chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
@@ -156,12 +149,58 @@ function doTest5() {
 }
 
 function doTest6() {
-  dump("execute doTest3 - resource with immutable. shift reload\n");
+  dump("execute doTest6 - resource with immutable. shift reload\n");
   do_test_pending();
   expectConditional = false;
-  var chan = makeChan(origin, "/immutable-test-with-attribute");
+  var chan = makeChan("/immutable-test-with-attribute");
+  var listener = new Listener();
+  nextTest = doTest7;
+  chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
+  chan.asyncOpen(listener);
+}
+
+function doTest7() {
+  dump("execute doTest7 - expired resource with immutable. initial request\n");
+  do_test_pending();
+  expectConditional = false;
+  var chan = makeChan("/immutable-test-expired-with-Expires-header");
+  var listener = new Listener();
+  nextTest = doTest8;
+  chan.asyncOpen(listener);
+}
+
+function doTest8() {
+  dump("execute doTest8 - expired resource with immutable. reload\n");
+  do_test_pending();
+  expectConditional = true;
+  var chan = makeChan("/immutable-test-expired-with-Expires-header");
+  var listener = new Listener();
+  nextTest = doTest9;
+  chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
+  chan.asyncOpen(listener);
+}
+
+function doTest9() {
+  dump(
+    "execute doTest9 - expired resource with immutable cache extension and Last modified header. initial request\n"
+  );
+  do_test_pending();
+  expectConditional = false;
+  var chan = makeChan("/immutable-test-expired-with-last-modified-header");
+  var listener = new Listener();
+  nextTest = doTest10;
+  chan.asyncOpen(listener);
+}
+
+function doTest10() {
+  dump(
+    "execute doTest10 - expired resource with immutable cache extension and Last modified heder. reload\n"
+  );
+  do_test_pending();
+  expectConditional = true;
+  var chan = makeChan("/immutable-test-expired-with-last-modified-header");
   var listener = new Listener();
   nextTest = testsDone;
-  chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
+  chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
   chan.asyncOpen(listener);
 }

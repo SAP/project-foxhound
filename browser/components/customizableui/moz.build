@@ -8,19 +8,20 @@ DIRS += [
     "content",
 ]
 
-BROWSER_CHROME_MANIFESTS += ["test/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
+XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
 
 TESTING_JS_MODULES += [
-    "test/CustomizableUITestUtils.jsm",
+    "test/CustomizableUITestUtils.sys.mjs",
 ]
 
 EXTRA_JS_MODULES += [
-    "CustomizableUI.jsm",
-    "CustomizableWidgets.jsm",
-    "CustomizeMode.jsm",
-    "DragPositionManager.jsm",
-    "PanelMultiView.jsm",
-    "SearchWidgetTracker.jsm",
+    "CustomizableUI.sys.mjs",
+    "CustomizableWidgets.sys.mjs",
+    "CustomizeMode.sys.mjs",
+    "DragPositionManager.sys.mjs",
+    "PanelMultiView.sys.mjs",
+    "SearchWidgetTracker.sys.mjs",
 ]
 
 with Files("**"):

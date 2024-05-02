@@ -7,10 +7,10 @@ import {
   getPaneCollapse,
   getQuickOpenEnabled,
   getSource,
-  getSourceContent,
-  startsWithThreadActor,
-  getFileSearchQuery,
-  getProjectDirectoryRoot,
+  getSourceTextContent,
+  getIgnoreListSourceUrls,
+  getSourceByURL,
+  getBreakpointsForSource,
 } from "../selectors";
 import { selectSource } from "../actions/sources/select";
 import {
@@ -18,9 +18,11 @@ import {
   getLocationsInViewport,
   updateDocuments,
 } from "../utils/editor";
-import { searchContents } from "./file-search";
+import { blackboxSourceActorsForSource } from "./sources/blackbox";
+import { toggleBreakpoints } from "./breakpoints";
 import { copyToTheClipboard } from "../utils/clipboard";
 import { isFulfilled } from "../utils/async-value";
+import { primaryPaneTabs } from "../constants";
 
 export function setPrimaryPaneTab(tabName) {
   return { type: "SET_PRIMARY_PANE_TAB", tabName };
@@ -44,21 +46,22 @@ export function setActiveSearch(activeSearch) {
       dispatch({ type: "CLOSE_QUICK_OPEN" });
     }
 
+    // Open start panel if it was collapsed so the project search UI is visible
+    if (
+      activeSearch === primaryPaneTabs.PROJECT_SEARCH &&
+      getPaneCollapse(getState(), "start")
+    ) {
+      dispatch({
+        type: "TOGGLE_PANE",
+        position: "start",
+        paneCollapsed: false,
+      });
+    }
+
     dispatch({
       type: "TOGGLE_ACTIVE_SEARCH",
       value: activeSearch,
     });
-  };
-}
-
-export function updateActiveFileSearch(cx) {
-  return ({ dispatch, getState }) => {
-    const isFileSearchOpen = getActiveSearch(getState()) === "file";
-    const fileSearchQuery = getFileSearchQuery(getState());
-    if (isFileSearchOpen && fileSearchQuery) {
-      const editor = getEditor();
-      dispatch(searchContents(cx, fileSearchQuery, editor, false));
-    }
   };
 }
 
@@ -100,7 +103,7 @@ export function toggleSourceMapsEnabled(toggleValue) {
   };
 }
 
-export function showSource(cx, sourceId) {
+export function showSource(sourceId) {
   return ({ dispatch, getState }) => {
     const source = getSource(getState(), sourceId);
     if (!source) {
@@ -117,9 +120,7 @@ export function showSource(cx, sourceId) {
 
     dispatch(setPrimaryPaneTab("sources"));
 
-    dispatch({ type: "SHOW_SOURCE", source: null });
-    dispatch(selectSource(cx, source.id));
-    dispatch({ type: "SHOW_SOURCE", source });
+    dispatch(selectSource(source));
   };
 }
 
@@ -128,6 +129,15 @@ export function togglePaneCollapse(position, paneCollapsed) {
     const prevPaneCollapse = getPaneCollapse(getState(), position);
     if (prevPaneCollapse === paneCollapsed) {
       return;
+    }
+
+    // Set active search to null when closing start panel if project search was active
+    if (
+      position === "start" &&
+      paneCollapsed &&
+      getActiveSearch(getState()) === primaryPaneTabs.PROJECT_SEARCH
+    ) {
+      dispatch(closeActiveSearch());
     }
 
     dispatch({
@@ -139,8 +149,15 @@ export function togglePaneCollapse(position, paneCollapsed) {
 }
 
 /**
- * @memberof actions/sources
- * @static
+ * Highlight one or many lines in CodeMirror for a given source.
+ *
+ * @param {Object} location
+ * @param {String} location.sourceId
+ *        The precise source to highlight.
+ * @param {Number} location.start
+ *        The 1-based index of first line to highlight.
+ * @param {Number} location.end
+ *        The 1-based index of last line to highlight.
  */
 export function highlightLineRange(location) {
   return {
@@ -156,10 +173,6 @@ export function flashLineRange(location) {
   };
 }
 
-/**
- * @memberof actions/sources
- * @static
- */
 export function clearHighlightLineRange() {
   return {
     type: "CLEAR_HIGHLIGHT_LINES",
@@ -168,7 +181,7 @@ export function clearHighlightLineRange() {
 
 export function openConditionalPanel(location, log = false) {
   if (!location) {
-    return;
+    return null;
   }
 
   return {
@@ -181,48 +194,6 @@ export function openConditionalPanel(location, log = false) {
 export function closeConditionalPanel() {
   return {
     type: "CLOSE_CONDITIONAL_PANEL",
-  };
-}
-
-export function clearProjectDirectoryRoot(cx) {
-  return {
-    type: "SET_PROJECT_DIRECTORY_ROOT",
-    cx,
-    url: "",
-    name: "",
-  };
-}
-
-export function setProjectDirectoryRoot(cx, newRoot, newName) {
-  return ({ dispatch, getState }) => {
-    const threadActor = startsWithThreadActor(getState(), newRoot);
-
-    let curRoot = getProjectDirectoryRoot(getState());
-
-    // Remove the thread actor ID from the root path
-    if (threadActor) {
-      newRoot = newRoot.slice(threadActor.length + 1);
-      curRoot = curRoot.slice(threadActor.length + 1);
-    }
-
-    if (newRoot && curRoot) {
-      const newRootArr = newRoot.replace(/\/+/g, "/").split("/");
-      const curRootArr = curRoot
-        .replace(/^\//, "")
-        .replace(/\/+/g, "/")
-        .split("/");
-      if (newRootArr[0] !== curRootArr[0]) {
-        newRootArr.splice(0, 2);
-        newRoot = `${curRoot}/${newRootArr.join("/")}`;
-      }
-    }
-
-    dispatch({
-      type: "SET_PROJECT_DIRECTORY_ROOT",
-      cx,
-      url: newRoot,
-      name: newName,
-    });
   };
 }
 
@@ -241,11 +212,49 @@ export function setOrientation(orientation) {
   return { type: "SET_ORIENTATION", orientation };
 }
 
-export function copyToClipboard(source) {
+export function setSearchOptions(searchKey, searchOptions) {
+  return { type: "SET_SEARCH_OPTIONS", searchKey, searchOptions };
+}
+
+export function copyToClipboard(location) {
   return ({ dispatch, getState }) => {
-    const content = getSourceContent(getState(), source.id);
+    const content = getSourceTextContent(getState(), location);
     if (content && isFulfilled(content) && content.value.type === "text") {
       copyToTheClipboard(content.value.value);
     }
+  };
+}
+
+export function setJavascriptTracingLogMethod(value) {
+  return ({ dispatch, getState }) => {
+    dispatch({
+      type: "SET_JAVASCRIPT_TRACING_LOG_METHOD",
+      value,
+    });
+  };
+}
+
+export function setHideOrShowIgnoredSources(shouldHide) {
+  return ({ dispatch, getState }) => {
+    dispatch({ type: "HIDE_IGNORED_SOURCES", shouldHide });
+  };
+}
+
+export function toggleSourceMapIgnoreList(shouldEnable) {
+  return async thunkArgs => {
+    const { dispatch, getState } = thunkArgs;
+    const ignoreListSourceUrls = getIgnoreListSourceUrls(getState());
+    // Blackbox the source actors on the server
+    for (const url of ignoreListSourceUrls) {
+      const source = getSourceByURL(getState(), url);
+      await blackboxSourceActorsForSource(thunkArgs, source, shouldEnable);
+      // Disable breakpoints in sources on the ignore list
+      const breakpoints = getBreakpointsForSource(getState(), source);
+      await dispatch(toggleBreakpoints(shouldEnable, breakpoints));
+    }
+    await dispatch({
+      type: "ENABLE_SOURCEMAP_IGNORELIST",
+      shouldEnable,
+    });
   };
 }

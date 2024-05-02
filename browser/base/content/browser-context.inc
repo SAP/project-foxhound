@@ -42,12 +42,11 @@
                   command="Browser:Stop"/>
         <menuitem id="context-bookmarkpage"
                   class="menuitem-iconic"
-                  data-l10n-id="main-context-menu-bookmark-add"
+                  data-l10n-id="main-context-menu-bookmark-page"
                   oncommand="gContextMenu.bookmarkThisPage();"/>
       </menugroup>
 #endif
       <menuseparator id="context-sep-navigation"/>
-      <menuseparator id="page-menu-separator"/>
       <menuitem id="context-viewsource-goToLine"
                 oncommand="gViewSourceUtils.getPageActor(gContextMenu.browser).promptAndGoToLine()"/>
       <menuitem id="context-viewsource-wrapLongLines"
@@ -68,19 +67,23 @@
                 oncommand="InlineSpellCheckerUI.undoAddToDictionary();" />
       <menuseparator id="spell-suggestions-separator"/>
       <menuitem id="context-openlinkincurrent"
+                class="context-menu-open-link"
                 data-l10n-id="main-context-menu-open-link"
                 oncommand="gContextMenu.openLinkInCurrent();"/>
 # label and data-usercontextid are dynamically set.
       <menuitem id="context-openlinkincontainertab"
+                class="context-menu-open-link"
                 data-l10n-id="main-context-menu-open-link-in-container-tab"
                 data-l10n-args='{"containerName":""}'
                 oncommand="gContextMenu.openLinkInTab(event);"/>
       <menuitem id="context-openlinkintab"
+                class="context-menu-open-link"
                 data-l10n-id="main-context-menu-open-link-new-tab"
                 data-usercontextid="0"
                 oncommand="gContextMenu.openLinkInTab(event);"/>
 
       <menu id="context-openlinkinusercontext-menu"
+            class="context-menu-open-link"
             data-l10n-id="main-context-menu-open-link-container-tab"
             hidden="true">
         <menupopup oncommand="gContextMenu.openLinkInTab(event);"
@@ -88,14 +91,16 @@
       </menu>
 
       <menuitem id="context-openlink"
+                class="context-menu-open-link"
                 data-l10n-id="main-context-menu-open-link-new-window"
                 oncommand="gContextMenu.openLink();"/>
       <menuitem id="context-openlinkprivate"
+                class="context-menu-open-link"
                 data-l10n-id="main-context-menu-open-link-new-private-window"
                 oncommand="gContextMenu.openLinkInPrivateWindow();"/>
       <menuseparator id="context-sep-open"/>
       <menuitem id="context-bookmarklink"
-                data-l10n-id="main-context-menu-bookmark-link"
+                data-l10n-id="main-context-menu-bookmark-link-2"
                 oncommand="gContextMenu.bookmarkLink();"/>
       <menuitem id="context-savelink"
                 data-l10n-id="main-context-menu-save-link"
@@ -106,15 +111,22 @@
       <menuitem id="context-copyemail"
                 data-l10n-id="main-context-menu-copy-email"
                 oncommand="gContextMenu.copyEmail();"/>
+      <menuitem id="context-copyphone"
+                data-l10n-id="main-context-menu-copy-phone"
+                oncommand="gContextMenu.copyPhone();"/>
       <menuitem id="context-copylink"
                 data-l10n-id="main-context-menu-copy-link-simple"
                 oncommand="gContextMenu.copyLink();"/>
+      <menuitem id="context-stripOnShareLink"
+                data-l10n-id="main-context-menu-strip-on-share-link"
+                hidden="true"
+                oncommand="gContextMenu.copyStrippedLink();"/>
       <menu id="context-sendlinktodevice"
             class="sync-ui-item"
             data-l10n-id="main-context-menu-link-send-to-device"
             hidden="true">
             <menupopup id="context-sendlinktodevice-popup"
-                  onpopupshowing="gSync.populateSendTabToDevicesMenu(event.target, gContextMenu.linkURL, gContextMenu.linkTextStr);"/>
+                  onpopupshowing="gSync.populateSendTabToDevicesMenu(event.target, gContextMenu.linkURI, gContextMenu.linkTextStr);"/>
       </menu>
       <menuseparator id="context-sep-sendlinktodevice" class="sync-ui-item"
                 hidden="true"/>
@@ -227,6 +239,9 @@
       <menuitem id="context-sendaudio"
                 data-l10n-id="main-context-menu-audio-email"
                 oncommand="gContextMenu.sendMedia();"/>
+      <menuitem id="context-imagetext"
+                data-l10n-id="main-context-menu-image-copy-text"
+                oncommand="gContextMenu.getImageText()"/>
       <menuitem id="context-viewimageinfo"
                 hidden="true"
                 data-l10n-id="main-context-menu-image-info"
@@ -238,16 +253,10 @@
       <menuitem id="context-setDesktopBackground"
                 data-l10n-id="main-context-menu-image-set-image-as-background"
                 oncommand="gContextMenu.setDesktopBackground();"/>
-      <menuitem id="context-ctp-play"
-                data-l10n-id="main-context-menu-plugin-play"
-                oncommand="gContextMenu.playPlugin();"/>
-      <menuitem id="context-ctp-hide"
-                data-l10n-id="main-context-menu-plugin-hide"
-                oncommand="gContextMenu.hidePlugin();"/>
-      <menuseparator id="context-sep-ctp"/>
+      <menuseparator id="context-sep-sharing"/>
 #ifdef XP_MACOSX
       <menuitem id="context-bookmarkpage"
-                data-l10n-id="main-context-menu-bookmark-add-mac"
+                data-l10n-id="main-context-menu-bookmark-page-mac"
                 oncommand="gContextMenu.bookmarkThisPage();"/>
 #endif
       <menuitem id="context-savepage"
@@ -261,7 +270,7 @@
             data-l10n-id="main-context-menu-send-to-device"
             hidden="true">
         <menupopup id="context-sendpagetodevice-popup"
-                   onpopupshowing="(() => { gSync.populateSendTabToDevicesMenu(event.target, gBrowser.currentURI.spec, gBrowser.contentTitle); })()"/>
+                   onpopupshowing="(() => { gSync.populateSendTabToDevicesMenu(event.target, gBrowser.currentURI, gBrowser.contentTitle); })()"/>
       </menu>
       <menu id="fill-login" hidden="true">
         <menupopup id="fill-login-popup" />
@@ -270,6 +279,10 @@
                 data-l10n-id="main-context-menu-suggest-strong-password"
                 hidden="true"
                 oncommand="gContextMenu.useGeneratedPassword();"/>
+      <menuitem id="use-relay-mask"
+                data-l10n-id="main-context-menu-use-relay-mask"
+                hidden="true"
+                oncommand="gContextMenu.useRelayMask();"/>
       <menuitem id="manage-saved-logins"
                 data-l10n-id="main-context-menu-manage-logins2"
                 hidden="true"
@@ -291,6 +304,9 @@
       <menuitem id="context-paste"
                 data-l10n-id="text-action-paste"
                 command="cmd_paste"/>
+      <menuitem id="context-paste-no-formatting"
+                data-l10n-id="text-action-paste-no-formatting"
+                command="cmd_pasteNoFormatting"/>
       <menuitem id="context-delete"
                 data-l10n-id="text-action-delete"
                 command="cmd_delete"/>
@@ -302,9 +318,34 @@
                 data-l10n-id="main-context-menu-reveal-password"
                 oncommand="gContextMenu.toggleRevealPassword();"/>
       <menuitem id="context-print-selection"
-                data-l10n-id="main-context-menu-print-selection"
+                data-l10n-id="main-context-menu-print-selection-2"
                 oncommand="gContextMenu.printSelection();"/>
       <menuseparator id="context-sep-selectall"/>
+
+      <menuitem id="context-pdfjs-undo"
+                data-l10n-id="text-action-undo"
+                oncommand="gContextMenu.pdfJSCmd('undo');"/>
+      <menuitem id="context-pdfjs-redo"
+                data-l10n-id="text-action-redo"
+                oncommand="gContextMenu.pdfJSCmd('redo');"/>
+      <menuseparator id="context-sep-pdfjs-redo"/>
+      <menuitem id="context-pdfjs-cut"
+                data-l10n-id="text-action-cut"
+                oncommand="gContextMenu.pdfJSCmd('cut');"/>
+      <menuitem id="context-pdfjs-copy"
+                data-l10n-id="text-action-copy"
+                oncommand="gContextMenu.pdfJSCmd('copy');"/>
+      <menuitem id="context-pdfjs-paste"
+                data-l10n-id="text-action-paste"
+                oncommand="gContextMenu.pdfJSCmd('paste');"/>
+      <menuitem id="context-pdfjs-delete"
+                data-l10n-id="text-action-delete"
+                oncommand="gContextMenu.pdfJSCmd('delete');"/>
+      <menuitem id="context-pdfjs-selectall"
+                data-l10n-id="text-action-select-all"
+                oncommand="gContextMenu.pdfJSCmd('selectAll');"/>
+      <menuseparator id="context-sep-pdfjs-selectall"/>
+
       <menuitem id="context-take-screenshot"
                 data-l10n-id="main-context-menu-take-screenshot"
                 oncommand="gContextMenu.takeScreenshot();"/>
@@ -335,7 +376,7 @@
                     oncommand="gContextMenu.reloadFrame(event);"/>
           <menuseparator/>
           <menuitem id="context-bookmarkframe"
-                    data-l10n-id="main-context-menu-frame-bookmark"
+                    data-l10n-id="main-context-menu-frame-add-bookmark"
                     oncommand="gContextMenu.addBookmarkForFrame();"/>
           <menuitem id="context-saveframe"
                     data-l10n-id="main-context-menu-frame-save-as"
@@ -348,7 +389,7 @@
           <menuitem id="context-take-frame-screenshot"
                     data-l10n-id="main-context-menu-take-frame-screenshot"
                     oncommand="gContextMenu.takeScreenshot();"/>
-          <menuseparator/>
+          <menuseparator id="context-sep-frame-screenshot"/>
           <menuitem id="context-viewframesource"
                     data-l10n-id="main-context-menu-frame-view-source"
                     oncommand="gContextMenu.viewFrameSource();"/>

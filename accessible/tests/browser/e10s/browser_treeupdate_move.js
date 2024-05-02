@@ -28,7 +28,7 @@ addAccessibleTask(
   <iframe id="iframe" src="https://example.com/"></iframe>
 </div>
   `,
-  async function(browser, docAcc) {
+  async function (browser, docAcc) {
     const textbox = findAccessibleChildByID(docAcc, "textbox");
     const heading = findAccessibleChildByID(docAcc, "heading");
     const para = findAccessibleChildByID(docAcc, "para");
@@ -61,4 +61,24 @@ addAccessibleTask(
     ok(!isDefunct(iframeDoc), "iframeDoc is alive");
   },
   { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test that moving a subtree containing an iframe doesn't cause assertions or
+ * crashes. Note that aria-owns moves Accessibles even if it is set before load.
+ */
+addAccessibleTask(
+  `
+<div id="container">
+  <iframe id="iframe"></iframe>
+  <div aria-owns="iframe"></div>
+</div>
+  `,
+  async function (browser, docAcc) {
+    const container = findAccessibleChildByID(docAcc, "container");
+    testAccessibleTree(container, {
+      SECTION: [{ SECTION: [{ INTERNAL_FRAME: [{ DOCUMENT: [] }] }] }],
+    });
+  },
+  { topLevel: true }
 );

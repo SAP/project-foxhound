@@ -8,10 +8,10 @@
 #define mozilla_ContentBlockingLog_h
 
 #include "mozilla/ContentBlockingNotifier.h"
-#include "mozilla/JSONWriter.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/Tuple.h"
+
 #include "mozilla/UniquePtr.h"
 #include "nsIWebProgressListener.h"
 #include "nsReadableUtils.h"
@@ -22,10 +22,13 @@ class nsIPrincipal;
 
 namespace mozilla {
 
+class nsRFPService;
+
 class ContentBlockingLog final {
   typedef ContentBlockingNotifier::StorageAccessPermissionGrantedReason
       StorageAccessPermissionGrantedReason;
 
+ protected:
   struct LogEntry {
     uint32_t mType;
     uint32_t mRepeatCount;
@@ -33,15 +36,19 @@ class ContentBlockingLog final {
     Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>
         mReason;
     nsTArray<nsCString> mTrackingFullHashes;
+    Maybe<ContentBlockingNotifier::CanvasFingerprinter> mCanvasFingerprinter;
+    Maybe<bool> mCanvasFingerprinterKnownText;
   };
 
   struct OriginDataEntry {
     OriginDataEntry()
         : mHasLevel1TrackingContentLoaded(false),
-          mHasLevel2TrackingContentLoaded(false) {}
+          mHasLevel2TrackingContentLoaded(false),
+          mHasSuspiciousFingerprintingActivity(false) {}
 
     bool mHasLevel1TrackingContentLoaded;
     bool mHasLevel2TrackingContentLoaded;
+    bool mHasSuspiciousFingerprintingActivity;
     Maybe<bool> mHasCookiesLoaded;
     Maybe<bool> mHasTrackerCookiesLoaded;
     Maybe<bool> mHasSocialTrackerCookiesLoaded;
@@ -55,24 +62,18 @@ class ContentBlockingLog final {
     UniquePtr<OriginDataEntry> mData;
   };
 
+  friend class nsRFPService;
+
   typedef nsTArray<OriginEntry> OriginDataTable;
-
-  struct StringWriteFunc : public JSONWriteFunc {
-    nsACString&
-        mBuffer;  // The lifetime of the struct must be bound to the buffer
-    explicit StringWriteFunc(nsACString& aBuffer) : mBuffer(aBuffer) {}
-
-    void Write(const Span<const char>& aStr) override { mBuffer.Append(aStr); }
-  };
 
   struct Comparator {
    public:
-    bool Equals(const OriginDataTable::elem_type& aLeft,
-                const OriginDataTable::elem_type& aRight) const {
+    bool Equals(const OriginDataTable::value_type& aLeft,
+                const OriginDataTable::value_type& aRight) const {
       return aLeft.mOrigin.Equals(aRight.mOrigin);
     }
 
-    bool Equals(const OriginDataTable::elem_type& aLeft,
+    bool Equals(const OriginDataTable::value_type& aLeft,
                 const nsACString& aRight) const {
       return aLeft.mOrigin.Equals(aRight);
     }
@@ -92,7 +93,10 @@ class ContentBlockingLog final {
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
           aReason,
-      const nsTArray<nsCString>& aTrackingFullHashes);
+      const nsTArray<nsCString>& aTrackingFullHashes,
+      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
+          aCanvasFingerprinter,
+      const Maybe<bool> aCanvasFingerprinterKnownText);
 
   void RecordLog(
       const nsACString& aOrigin, uint32_t aType, bool aBlocked,
@@ -103,13 +107,16 @@ class ContentBlockingLog final {
     RecordLogInternal(aOrigin, aType, aBlocked, aReason, aTrackingFullHashes);
   }
 
-  void ReportOrigins();
   void ReportLog(nsIPrincipal* aFirstPartyPrincipal);
+  void ReportCanvasFingerprintingLog(nsIPrincipal* aFirstPartyPrincipal);
+  void ReportFontFingerprintingLog(nsIPrincipal* aFirstPartyPrincipal);
+  void ReportEmailTrackingLog(nsIPrincipal* aFirstPartyPrincipal);
 
   nsAutoCString Stringify() {
     nsAutoCString buffer;
 
-    JSONWriter w(MakeUnique<StringWriteFunc>(buffer));
+    JSONStringRefWriteFunc js(buffer);
+    JSONWriter w(js);
     w.Start();
 
     for (const OriginEntry& entry : mLog) {
@@ -220,6 +227,11 @@ class ContentBlockingLog final {
         events |= nsIWebProgressListener::STATE_LOADED_LEVEL_2_TRACKING_CONTENT;
       }
 
+      if (entry.mData->mHasSuspiciousFingerprintingActivity) {
+        events |=
+            nsIWebProgressListener::STATE_BLOCKED_SUSPICIOUS_FINGERPRINTING;
+      }
+
       if (entry.mData->mHasCookiesLoaded.isSome() &&
           entry.mData->mHasCookiesLoaded.value()) {
         events |= nsIWebProgressListener::STATE_COOKIES_LOADED;
@@ -246,91 +258,15 @@ class ContentBlockingLog final {
   }
 
  private:
-  void RecordLogInternal(
+  OriginEntry* RecordLogInternal(
       const nsACString& aOrigin, uint32_t aType, bool aBlocked,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
           aReason = Nothing(),
-      const nsTArray<nsCString>& aTrackingFullHashes = nsTArray<nsCString>()) {
-    DebugOnly<bool> isCookiesBlockedTracker =
-        aType == nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
-        aType == nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER;
-    MOZ_ASSERT_IF(aBlocked, aReason.isNothing());
-    MOZ_ASSERT_IF(!isCookiesBlockedTracker, aReason.isNothing());
-    MOZ_ASSERT_IF(isCookiesBlockedTracker && !aBlocked, aReason.isSome());
-
-    if (aOrigin.IsVoid()) {
-      return;
-    }
-    auto index = mLog.IndexOf(aOrigin, 0, Comparator());
-    if (index != OriginDataTable::NoIndex) {
-      OriginEntry& entry = mLog[index];
-      if (!entry.mData) {
-        return;
-      }
-
-      if (RecordLogEntryInCustomField(aType, entry, aBlocked)) {
-        return;
-      }
-      if (!entry.mData->mLogs.IsEmpty()) {
-        auto& last = entry.mData->mLogs.LastElement();
-        if (last.mType == aType && last.mBlocked == aBlocked) {
-          ++last.mRepeatCount;
-          // Don't record recorded events.  This helps compress our log.
-          // We don't care about if the the reason is the same, just keep the
-          // first one.
-          // Note: {aReason, aTrackingFullHashes} are not compared here and we
-          // simply keep the first for the reason, and merge hashes to make sure
-          // they can be correctly recorded.
-          for (const auto& hash : aTrackingFullHashes) {
-            if (!last.mTrackingFullHashes.Contains(hash)) {
-              last.mTrackingFullHashes.AppendElement(hash);
-            }
-          }
-          return;
-        }
-      }
-      if (entry.mData->mLogs.Length() ==
-          std::max(1u,
-                   StaticPrefs::browser_contentblocking_originlog_length())) {
-        // Cap the size at the maximum length adjustable by the pref
-        entry.mData->mLogs.RemoveElementAt(0);
-      }
-      entry.mData->mLogs.AppendElement(
-          LogEntry{aType, 1u, aBlocked, aReason, aTrackingFullHashes.Clone()});
-      return;
-    }
-
-    // The entry has not been found.
-
-    OriginEntry* entry = mLog.AppendElement();
-    if (NS_WARN_IF(!entry || !entry->mData)) {
-      return;
-    }
-
-    entry->mOrigin = aOrigin;
-
-    if (aType ==
-        nsIWebProgressListener::STATE_LOADED_LEVEL_1_TRACKING_CONTENT) {
-      entry->mData->mHasLevel1TrackingContentLoaded = aBlocked;
-    } else if (aType ==
-               nsIWebProgressListener::STATE_LOADED_LEVEL_2_TRACKING_CONTENT) {
-      entry->mData->mHasLevel2TrackingContentLoaded = aBlocked;
-    } else if (aType == nsIWebProgressListener::STATE_COOKIES_LOADED) {
-      MOZ_ASSERT(entry->mData->mHasCookiesLoaded.isNothing());
-      entry->mData->mHasCookiesLoaded.emplace(aBlocked);
-    } else if (aType == nsIWebProgressListener::STATE_COOKIES_LOADED_TRACKER) {
-      MOZ_ASSERT(entry->mData->mHasTrackerCookiesLoaded.isNothing());
-      entry->mData->mHasTrackerCookiesLoaded.emplace(aBlocked);
-    } else if (aType ==
-               nsIWebProgressListener::STATE_COOKIES_LOADED_SOCIALTRACKER) {
-      MOZ_ASSERT(entry->mData->mHasSocialTrackerCookiesLoaded.isNothing());
-      entry->mData->mHasSocialTrackerCookiesLoaded.emplace(aBlocked);
-    } else {
-      entry->mData->mLogs.AppendElement(
-          LogEntry{aType, 1u, aBlocked, aReason, aTrackingFullHashes.Clone()});
-    }
-  }
+      const nsTArray<nsCString>& aTrackingFullHashes = nsTArray<nsCString>(),
+      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
+          aCanvasFingerprinter = Nothing(),
+      const Maybe<bool> aCanvasFingerprinterKnownText = Nothing());
 
   bool RecordLogEntryInCustomField(uint32_t aType, OriginEntry& aEntry,
                                    bool aBlocked) {
@@ -421,6 +357,16 @@ class ContentBlockingLog final {
         aWriter.BoolElement(
             aEntry.mData->mHasSocialTrackerCookiesLoaded.value());  // blocked
         aWriter.IntElement(1);  // repeat count
+      }
+      aWriter.EndArray();
+    }
+    if (aEntry.mData->mHasSuspiciousFingerprintingActivity) {
+      aWriter.StartArrayElement(aWriter.SingleLineStyle);
+      {
+        aWriter.IntElement(
+            nsIWebProgressListener::STATE_BLOCKED_SUSPICIOUS_FINGERPRINTING);
+        aWriter.BoolElement(true);  // blocked
+        aWriter.IntElement(1);      // repeat count
       }
       aWriter.EndArray();
     }

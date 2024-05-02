@@ -85,12 +85,8 @@ android {
     project.configureProductFlavors()
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
-    }
-
-    dexOptions {
-        javaMaxHeapSize "32g"
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     lintOptions {
@@ -113,7 +109,6 @@ android {
                     srcDir "${topsrcdir}/third_party/libwebrtc/sdk/android/api"
                     srcDir "${topsrcdir}/third_party/libwebrtc/sdk/android/src"
                     srcDir "${topsrcdir}/third_party/libwebrtc/rtc_base/java"
-                    srcDir "${topsrcdir}/third_party/libwebrtc/modules/audio_device/android/java"
                 }
 
                 srcDir "${topobjdir}/mobile/android/geckoview/src/main/java"
@@ -136,6 +131,21 @@ android {
 
             release {
                 manifest.srcFile "${topobjdir}/mobile/android/geckoview/src/main/AndroidManifest_overlay.xml"
+            }
+        }
+
+        withGeckoBinaries {
+            assets {
+                // This should contain only `omni.ja`.
+                srcDir "${topobjdir}/dist/geckoview/assets"
+            }
+
+            jniLibs {
+                if (!mozconfig.substs.MOZ_ANDROID_FAT_AAR_ARCHITECTURES) {
+                    srcDir "${topobjdir}/dist/geckoview/lib"
+                } else {
+                    srcDir "${topobjdir}/dist/fat-aar/output/jni"
+                }
             }
         }
     }
@@ -169,7 +179,7 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile) {
 
     kotlinOptions {
         allWarningsAsErrors = true
-        jvmTarget = JavaVersion.VERSION_11
+        jvmTarget = JavaVersion.VERSION_17
     }
 
     doFirst {
@@ -208,30 +218,30 @@ configurations {
 }
 
 dependencies {
-    implementation "androidx.annotation:annotation:1.3.0"
+    implementation "androidx.annotation:annotation:1.6.0"
     implementation "androidx.legacy:legacy-support-v4:1.0.0"
 
-    implementation "com.google.android.gms:play-services-fido:18.1.0"
-    implementation "org.yaml:snakeyaml:1.24:android"
+    implementation "com.google.android.gms:play-services-fido:20.0.1"
+    implementation "org.yaml:snakeyaml:2.0"
 
-    implementation "androidx.lifecycle:lifecycle-extensions:2.2.0"
-    implementation "androidx.lifecycle:lifecycle-common-java8:2.4.0"
+    implementation "androidx.lifecycle:lifecycle-common:2.6.1"
+    implementation "androidx.lifecycle:lifecycle-process:2.6.1"
 
     if (mozconfig.substs.MOZ_ANDROID_HLS_SUPPORT) {
         implementation project(":exoplayer2")
     }
 
     testImplementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    testImplementation 'junit:junit:4.13.1'
-    testImplementation 'org.robolectric:robolectric:4.7.3'
-    testImplementation 'org.mockito:mockito-core:3.11.2'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.10.1'
+    testImplementation 'org.mockito:mockito-core:5.3.1'
 
     androidTestImplementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    androidTestImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"
-    androidTestImplementation 'androidx.test:runner:1.4.0'
-    androidTestImplementation 'androidx.test:rules:1.4.0'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+    androidTestImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.1"
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test:rules:1.5.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.0'
 
     androidTestImplementation 'com.koushikdutta.async:androidasync:3.1.0'
 
@@ -387,6 +397,7 @@ android.libraryVariants.all { variant ->
 apply plugin: 'maven-publish'
 
 version = getVersionNumber()
+println("GeckoView version = " + version)
 group = 'org.mozilla.geckoview'
 
 def getArtifactId() {
@@ -511,7 +522,7 @@ task("generateSDKBindings", type: JavaExec) {
     // We only want to generate bindings for the main framework JAR,
     // but not any of the additional android.test libraries.
     args android.bootClasspath.findAll { it.getName().startsWith('android.jar') }
-    args 16
+    args 29
     args "${topobjdir}/widget/android/bindings"
 
     // Configure the arguments at evaluation-time, not at configuration-time.

@@ -6,8 +6,6 @@
  * MozillaFileLogger, a log listener that can write to a local file.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // double logging to account for normal mode and ipc mode (mobile_profile only)
 // Ideally we would remove the dump() and just do ipc logging
 function dumpLog(msg) {
@@ -46,7 +44,7 @@ const PR_EXCL = 0x80;
     It will create and append if the file already exists **/
 var MozillaFileLogger = {};
 
-MozillaFileLogger.init = function(path) {
+MozillaFileLogger.init = function (path) {
   MozillaFileLogger._file = Cc[LF_CID].createInstance(Ci.nsIFile);
   MozillaFileLogger._file.initWithPath(path);
   MozillaFileLogger._foStream = Cc[FOSTREAM_CID].createInstance(
@@ -60,8 +58,8 @@ MozillaFileLogger.init = function(path) {
   );
 };
 
-MozillaFileLogger.getLogCallback = function() {
-  return function(msg) {
+MozillaFileLogger.getLogCallback = function () {
+  return function (msg) {
     var data = msg.num + " " + msg.level + " " + msg.info.join(" ") + "\n";
     if (MozillaFileLogger._foStream) {
       MozillaFileLogger._foStream.write(data, data.length);
@@ -74,7 +72,7 @@ MozillaFileLogger.getLogCallback = function() {
 };
 
 // This is only used from chrome space by the reftest harness
-MozillaFileLogger.log = function(msg) {
+MozillaFileLogger.log = function (msg) {
   try {
     if (MozillaFileLogger._foStream) {
       MozillaFileLogger._foStream.write(msg, msg.length);
@@ -82,7 +80,7 @@ MozillaFileLogger.log = function(msg) {
   } catch (ex) {}
 };
 
-MozillaFileLogger.close = function() {
+MozillaFileLogger.close = function () {
   if (MozillaFileLogger._foStream) {
     MozillaFileLogger._foStream.close();
   }

@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 struct UnitStruct;
@@ -13,20 +14,13 @@ struct TupleStruct(UnitStruct, i8);
 #[derive(Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 struct Key(u32);
 
-#[derive(Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
-enum Enum {
-    Unit,
-    Bool(bool),
-    Chars(char, String),
-}
-
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 struct Struct {
     tuple: ((), NewType, TupleStruct),
     vec: Vec<Option<UnitStruct>>,
-    map: HashMap<Key, Enum>,
+    map: HashMap<Key, i32>,
     deep_vec: HashMap<Key, Vec<()>>,
-    deep_map: HashMap<Key, HashMap<Key, Enum>>,
+    deep_map: HashMap<Key, HashMap<Key, i32>>,
 }
 
 #[test]

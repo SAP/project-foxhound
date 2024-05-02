@@ -58,6 +58,7 @@ class MozURL final {
   nsDependentCSubstring FilePath() const { return mozurl_filepath(this); }
   nsDependentCSubstring Path() const { return mozurl_path(this); }
   nsDependentCSubstring Query() const { return mozurl_query(this); }
+  bool HasQuery() const { return mozurl_has_query(this); }
   nsDependentCSubstring Ref() const { return mozurl_fragment(this); }
   bool HasFragment() const { return mozurl_has_fragment(this); }
   nsDependentCSubstring Directory() const { return mozurl_directory(this); }
@@ -213,8 +214,8 @@ class MozURL final {
   Mutator Mutate() { return Mutator(this); }
 
   // AddRef and Release are non-virtual on this type, and always call into rust.
-  nsrefcnt AddRef() { return mozurl_addref(this); }
-  nsrefcnt Release() { return mozurl_release(this); }
+  void AddRef() { mozurl_addref(this); }
+  void Release() { mozurl_release(this); }
 
  private:
   // Make it a compile time error for C++ code to ever create, destruct, or copy

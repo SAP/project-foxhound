@@ -5,6 +5,8 @@
 
 #include "nsISupports.idl"
 #include "nsILoadInfo.idl"
+#include "nsIRequest.idl"
+#include "nsITRRSkipReason.idl"
 
 %{C++
 #include "nsStringFwd.h"
@@ -15,14 +17,21 @@ class TimeStamp;
 namespace net {
 class nsHttpConnectionInfo;
 class WebSocketConnectionBase;
+class EarlyHintConnectArgs;
+}
+namespace dom {
+enum class RequestMode : uint8_t;
 }
 }
 %}
+[ptr] native nsHttpConnectionInfo(mozilla::net::nsHttpConnectionInfo);
 [ptr] native StringArray(nsTArray<nsCString>);
 [ref] native CStringArrayRef(const nsTArray<nsCString>);
 [ref] native securityMessagesArray(nsCOMArray<nsISecurityConsoleMessage>);
+[ptr] native WebSocketConnectionBase(mozilla::net::WebSocketConnectionBase);
 
 native TimeStamp(mozilla::TimeStamp);
+native RequestMode(mozilla::dom::RequestMode);
 
 interface nsIAsyncInputStream;
 interface nsIAsyncOutputStream;
@@ -32,6 +41,7 @@ interface nsIProxyInfo;
 interface nsISecurityConsoleMessage;
 interface nsISocketTransport;
 interface nsIURI;
+interface WebTransportSessionEventListener;
 
 /**
  * The callback interface for nsIHttpChannelInternal::HTTPUpgrade()
@@ -46,9 +56,7 @@ interface nsIHttpUpgradeListener : nsISupports
 
     [must_use] void onUpgradeFailed(in nsresult aErrorCode);
 
-%{C++
-    virtual nsresult OnWebSocketConnectionAvailable(mozilla::net::WebSocketConnectionBase* aConnection) = 0;
-%}
+    void onWebSocketConnectionAvailable(in WebSocketConnectionBase aConnection);
 };
 
 /**
@@ -213,7 +221,7 @@ interface nsIHttpChannelInternal : nsISupports
 
     /**
      * Enable/Disable Spdy negotiation on per channel basis.
-     * The network.http.spdy.enabled preference is still a pre-requisite
+     * The network.http.http2.enabled preference is still a pre-requisite
      * for starting spdy.
      */
     [must_use] attribute boolean allowSpdy;
@@ -277,6 +285,27 @@ interface nsIHttpChannelInternal : nsISupports
      */
     [must_use] readonly attribute boolean isResolvedByTRR;
 
+
+    /**
+     * The effective TRR mode used to resolve this channel.
+     * This is computed by taking the value returned by nsIRequest.getTRRMode()
+     * and the state of the TRRService. If the domain is excluded from TRR
+     * or the TRRService is disabled, the effective mode would be TRR_DISABLED_MODE
+     * even if the initial mode set on the request was TRR_ONLY_MODE.
+     */
+    [must_use] readonly attribute nsIRequest_TRRMode effectiveTRRMode;
+
+    /**
+     * If the DNS request triggered by this channel didn't use TRR, this value
+     * contains the reason why that was skipped.
+     */
+    [must_use] readonly attribute nsITRRSkipReason_value trrSkipReason;
+
+    /**
+     * True if channel is loaded by socket process.
+     */
+    [must_use] readonly attribute boolean isLoadedBySocketProcess;
+
     /**
      * Set to true if the channel is an OCSP check.
      * Channels with this flag set will skip TRR in mode3 (because the circular
@@ -300,14 +329,10 @@ interface nsIHttpChannelInternal : nsISupports
      */
     [must_use] attribute boolean corsIncludeCredentials;
 
-    const unsigned long CORS_MODE_SAME_ORIGIN = 0;
-    const unsigned long CORS_MODE_NO_CORS = 1;
-    const unsigned long CORS_MODE_CORS = 2;
-    const unsigned long CORS_MODE_NAVIGATE = 3;
     /**
      * Set by nsCORSListenerProxy to indicate CORS load type. Defaults to CORS_MODE_NO_CORS.
      */
-    [must_use] attribute unsigned long corsMode;
+    [must_use, noscript] attribute RequestMode requestMode;
 
     const unsigned long REDIRECT_MODE_FOLLOW = 0;
     const unsigned long REDIRECT_MODE_ERROR = 1;
@@ -409,13 +434,11 @@ interface nsIHttpChannelInternal : nsISupports
     /**
      * The channel will be loaded over IPv6, disabling IPv4.
      */
-    [noscript, notxpcom, nostdcall]
     void setIPv4Disabled();
 
     /**
      * The channel will be loaded over IPv4, disabling IPv6.
      */
-    [noscript, notxpcom, nostdcall]
     void setIPv6Disabled();
 
     /**
@@ -437,7 +460,7 @@ interface nsIHttpChannelInternal : nsISupports
     bool hasCrossOriginOpenerPolicyMismatch();
 
     [noscript]
-    nsILoadInfo_CrossOriginEmbedderPolicy getResponseEmbedderPolicy();
+    nsILoadInfo_CrossOriginEmbedderPolicy getResponseEmbedderPolicy(in boolean aIsOriginTrialCoepCredentiallessEnabled);
 
     [noscript, notxpcom, nostdcall]
     void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy();
@@ -463,8 +486,28 @@ interface nsIHttpChannelInternal : nsISupports
      */
     [must_use] void setEarlyHintObserver(in nsIEarlyHintObserver aObserver);
 
-%{ C++
-    virtual void SetConnectionInfo(mozilla::net::nsHttpConnectionInfo* aInfo) {}
-%}
+    /*
+     * id of the EarlyHintPreloader to connect back from PreloadService to
+     * EarlyHintPreloader.
+     */
+    [must_use] attribute unsigned long long earlyHintPreloaderId;
 
+    [notxpcom, nostdcall] void setConnectionInfo(in nsHttpConnectionInfo aInfo);
+
+    /*
+    * This attribute indicates if the channel was loaded via Proxy.
+    */
+    [must_use] readonly attribute boolean isProxyUsed;
+
+     /**
+     * Set mWebTransportSessionEventListener.
+     */
+    [must_use] void setWebTransportSessionEventListener(
+        in WebTransportSessionEventListener aListener);
+
+    /**
+     * This attribute indicates the type of Link header in the received
+     * 103 response.
+     */
+    [must_use] attribute unsigned long earlyHintLinkType;
 };

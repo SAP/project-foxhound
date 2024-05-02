@@ -31,16 +31,26 @@ JSObject* Sanitizer::WrapObject(JSContext* aCx,
 }
 
 /* static */
+already_AddRefed<Sanitizer> Sanitizer::New(nsIGlobalObject* aGlobal,
+                                           const SanitizerConfig& aOptions,
+                                           ErrorResult& aRv) {
+  nsTreeSanitizer treeSanitizer(nsIParserUtils::SanitizerAllowStyle);
+  treeSanitizer.WithWebSanitizerOptions(aGlobal, aOptions, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  RefPtr<Sanitizer> sanitizer =
+      new Sanitizer(aGlobal, std::move(treeSanitizer));
+  return sanitizer.forget();
+}
+
+/* static */
 already_AddRefed<Sanitizer> Sanitizer::Constructor(
     const GlobalObject& aGlobal, const SanitizerConfig& aOptions,
     ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  RefPtr<Sanitizer> sanitizer = new Sanitizer(global, aOptions);
-  AutoTArray<nsString, 1> params = {};
-  sanitizer->LogLocalizedString("SanitizerOptionsDiscarded", params,
-                                nsIScriptError::infoFlag);
-
-  return sanitizer.forget();
+  return New(global, aOptions, aRv);
 }
 
 /* static */
@@ -132,56 +142,6 @@ RefPtr<DocumentFragment> Sanitizer::SanitizeFragment(
   return aFragment.forget();
 }
 
-already_AddRefed<Element> Sanitizer::SanitizeFor(const nsAString& aElement,
-                                                 const nsAString& aInput,
-                                                 ErrorResult& aRv) {
-  aRv = nsContentUtils::CheckQName(aElement, false);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
-  RefPtr<nsAtom> elemName = NS_Atomize(aElement);
-  // FIXME(freddyb): Invalid parameters for SanitizeFor should throw, just like
-  // Element.setHTML does. Cf. https://github.com/WICG/sanitizer-api/issues/125
-  if (elemName == nsGkAtoms::script) {
-    // aRv.ThrowTypeError("This does not work on <script> elements");
-    return nullptr;
-  }
-  if (elemName == nsGkAtoms::object) {
-    // aRv.ThrowTypeError("This does not work on <object> elements");
-    return nullptr;
-  }
-  if (elemName == nsGkAtoms::iframe) {
-    // aRv.ThrowTypeError("This does not work on <iframe> elements");
-    return nullptr;
-  }
-  RefPtr<Document> inertDoc = nsContentUtils::CreateInertHTMLDocument(nullptr);
-  if (!inertDoc) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-  RefPtr<DocumentFragment> fragment = new (inertDoc->NodeInfoManager())
-      DocumentFragment(inertDoc->NodeInfoManager());
-
-  aRv = nsContentUtils::ParseFragmentHTML(aInput, fragment, elemName,
-                                          kNameSpaceID_XHTML, false, true);
-
-  if (aRv.Failed()) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-  mTreeSanitizer.Sanitize(fragment);
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(mGlobal);
-  if (!window || !window->GetDoc()) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-  RefPtr<mozilla::dom::Element> element =
-      window->GetDoc()->CreateHTMLElement(elemName);
-  element->AppendChild(*fragment, aRv);
-
-  return element.forget();
-}
-
 /* ------ Logging ------ */
 
 void Sanitizer::LogLocalizedString(const char* aName,
@@ -210,7 +170,7 @@ void Sanitizer::LogMessage(const nsAString& aMessage, uint32_t aFlags,
   message.Append(aMessage);
 
   // Allow for easy distinction in devtools code.
-  nsCString category("Sanitizer");
+  constexpr auto category = "Sanitizer"_ns;
 
   if (aInnerWindowID > 0) {
     // Send to content console
@@ -218,9 +178,9 @@ void Sanitizer::LogMessage(const nsAString& aMessage, uint32_t aFlags,
                                               aInnerWindowID);
   } else {
     // Send to browser console
-    nsContentUtils::LogSimpleConsoleError(
-        message, category.get(), aFromPrivateWindow,
-        true /* from chrome context */, aFlags);
+    nsContentUtils::LogSimpleConsoleError(message, category, aFromPrivateWindow,
+                                          true /* from chrome context */,
+                                          aFlags);
   }
 }
 

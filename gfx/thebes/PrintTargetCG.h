@@ -9,8 +9,9 @@
 #include <Carbon/Carbon.h>
 #include "PrintTarget.h"
 
-namespace mozilla {
-namespace gfx {
+class nsIOutputStream;
+
+namespace mozilla::gfx {
 
 /**
  * CoreGraphics printing target.
@@ -18,30 +19,32 @@ namespace gfx {
 class PrintTargetCG final : public PrintTarget {
  public:
   static already_AddRefed<PrintTargetCG> CreateOrNull(
-      PMPrintSession aPrintSession, PMPageFormat aPageFormat,
-      PMPrintSettings aPrintSettings, const IntSize& aSize);
+      nsIOutputStream* aOutputStream, PMPrintSession aPrintSession,
+      PMPageFormat aPageFormat, PMPrintSettings aPrintSettings,
+      const IntSize& aSize);
 
   nsresult BeginPrinting(const nsAString& aTitle,
                          const nsAString& aPrintToFileName, int32_t aStartPage,
                          int32_t aEndPage) final;
   nsresult EndPrinting() final;
   nsresult AbortPrinting() final;
-  nsresult BeginPage() final;
+  nsresult BeginPage(const IntSize& aSizeInPoints) final;
   nsresult EndPage() final;
 
   already_AddRefed<DrawTarget> GetReferenceDrawTarget() final;
 
  private:
-  PrintTargetCG(PMPrintSession aPrintSession, PMPageFormat aPageFormat,
+  PrintTargetCG(CGContextRef aPrintToStreamContext,
+                PMPrintSession aPrintSession, PMPageFormat aPageFormat,
                 PMPrintSettings aPrintSettings, const IntSize& aSize);
   ~PrintTargetCG();
 
+  CGContextRef mPrintToStreamContext = nullptr;
   PMPrintSession mPrintSession;
   PMPageFormat mPageFormat;
   PMPrintSettings mPrintSettings;
 };
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx
 
 #endif /* MOZILLA_GFX_PRINTTARGETCG_H */

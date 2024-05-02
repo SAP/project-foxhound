@@ -41,7 +41,8 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
   friend class AutoSaveLiveRegisters;
   friend class AutoCallVM;
 
-  IonCacheIRCompiler(JSContext* cx, const CacheIRWriter& writer, IonIC* ic,
+  IonCacheIRCompiler(JSContext* cx, TempAllocator& alloc,
+                     const CacheIRWriter& writer, IonIC* ic,
                      IonScript* ionScript, uint32_t stubDataOffset);
 
   [[nodiscard]] bool init();
@@ -50,6 +51,9 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
 #ifdef DEBUG
   void assertFloatRegisterAvailable(FloatRegister reg);
 #endif
+
+  IonICPerfSpewer& perfSpewer() { return perfSpewer_; }
+  uint8_t localTracingSlots() const { return localTracingSlots_; }
 
  private:
   const CacheIRWriter& writer_;
@@ -61,6 +65,9 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
   mozilla::Maybe<CodeOffset> stubJitCodeOffset_;
 
   bool savedLiveRegs_;
+  uint8_t localTracingSlots_;
+
+  IonICPerfSpewer perfSpewer_;
 
   template <typename T>
   T rawPointerStubField(uint32_t offset);
@@ -68,7 +75,10 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
   template <typename T>
   T rawInt64StubField(uint32_t offset);
 
-  void prepareVMCall(MacroAssembler& masm, const AutoSaveLiveRegisters&);
+  void enterStubFrame(MacroAssembler& masm, const AutoSaveLiveRegisters&);
+  void storeTracedValue(MacroAssembler& masm, ValueOperand value);
+  void loadTracedValue(MacroAssembler& masm, uint8_t slotIndex,
+                       ValueOperand value);
 
   template <typename Fn, Fn fn>
   void callVM(MacroAssembler& masm);
@@ -76,6 +86,13 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
   [[nodiscard]] bool emitAddAndStoreSlotShared(
       CacheOp op, ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
       uint32_t newShapeOffset, mozilla::Maybe<uint32_t> numNewSlotsOffset);
+
+  template <typename IdType>
+  [[nodiscard]] bool emitCallScriptedProxyGetShared(ValOperandId targetId,
+                                                    ObjOperandId receiverId,
+                                                    ObjOperandId handlerId,
+                                                    uint32_t trapOffset,
+                                                    IdType id);
 
   void pushStubCodePointer();
 

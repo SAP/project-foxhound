@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 // - NOTE: This file is duplicated verbatim at:
 //         - talos/pageloader/chrome/Profiler.js
 //         - talos/tests/tart/addon/content/Profiler.js
@@ -16,7 +18,7 @@
 // relevant parts of our tests.
 var Profiler;
 
-(function() {
+(function () {
   var _profiler;
 
   // If this script is loaded in a framescript context, there won't be a
@@ -30,6 +32,10 @@ var Profiler;
   // The subtest name that beginTest() was called with.
   var currentTest = "";
 
+  // Start time of the current subtest. It will be used to create a duration
+  // marker at the end of the subtest.
+  var profilerSubtestStartTime;
+
   // Profiling settings.
   var profiler_interval,
     profiler_entries,
@@ -37,7 +43,6 @@ var Profiler;
     profiler_featuresArray,
     profiler_dir;
 
-  /* eslint-disable mozilla/use-chromeutils-import */
   try {
     // eslint-disable-next-line mozilla/use-services
     _profiler = Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
@@ -106,7 +111,6 @@ var Profiler;
           profiler_featuresArray,
           profiler_threadsArray
         );
-        _profiler.PauseSampling();
       }
     },
     finishTest: function Profiler__finishTest() {
@@ -127,9 +131,11 @@ var Profiler;
           profile => {
             let profileFile = profiler_dir + "/" + currentTest + ".profile";
 
-            const { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm");
-            const { FileUtils } = Cu.import(
-              "resource://gre/modules/FileUtils.jsm"
+            const { NetUtil } = ChromeUtils.importESModule(
+              "resource://gre/modules/NetUtil.sys.mjs"
+            );
+            const { FileUtils } = ChromeUtils.importESModule(
+              "resource://gre/modules/FileUtils.sys.mjs"
             );
 
             var file = Cc["@mozilla.org/file/local;1"].createInstance(
@@ -139,16 +145,13 @@ var Profiler;
 
             var ostream = FileUtils.openSafeFileOutputStream(file);
 
-            var converter = Cc[
-              "@mozilla.org/intl/scriptableunicodeconverter"
-            ].createInstance(Ci.nsIScriptableUnicodeConverter);
-            converter.charset = "UTF-8";
-            var istream = converter.convertToInputStream(
-              JSON.stringify(profile)
-            );
+            let istream = Cc[
+              "@mozilla.org/io/string-input-stream;1"
+            ].createInstance(Ci.nsIStringInputStream);
+            istream.setUTF8Data(JSON.stringify(profile));
 
             // The last argument (the callback) is optional.
-            NetUtil.asyncCopy(istream, ostream, function(status) {
+            NetUtil.asyncCopy(istream, ostream, function (status) {
               if (!Components.isSuccessCode(status)) {
                 reject();
                 return;
@@ -158,7 +161,7 @@ var Profiler;
             });
           },
           error => {
-            Cu.reportError("Failed to gather profile: " + error);
+            console.error("Failed to gather profile:", error);
             reject();
           }
         );
@@ -171,27 +174,45 @@ var Profiler;
         _profiler.StopProfiler();
       }
     },
-    resume: function Profiler__resume(name, explicit) {
+
+    /**
+     * Set a marker indicating the start of the subtest.
+     *
+     * It will also set the `profilerSubtestStartTime` to be used later by
+     * `subtestEnd`.
+     */
+    subtestStart: function Profiler__subtestStart(name, explicit) {
+      profilerSubtestStartTime = Cu.now();
       if (_profiler) {
-        if (_profiler.ResumeSampling) {
-          _profiler.ResumeSampling();
-        }
         ChromeUtils.addProfilerMarker(
+          "Talos",
+          { category: "Test" },
           explicit ? name : 'Start of test "' + (name || test_name) + '"'
         );
       }
     },
-    pause: function Profiler__pause(name, explicit) {
+
+    /**
+     * Set a marker indicating the duration of the subtest.
+     *
+     * This will take the `profilerSubtestStartTime` that was set by
+     * `subtestStart` and will create a duration marker by setting the `endTime`
+     * to the current time.
+     */
+    subtestEnd: function Profiler__subtestEnd(name, explicit) {
       if (_profiler) {
         ChromeUtils.addProfilerMarker(
-          explicit ? name : 'End of test "' + (name || test_name) + '"'
+          "Talos",
+          { startTime: profilerSubtestStartTime, category: "Test" },
+          explicit ? name : 'Test "' + (name || test_name) + '"'
         );
-        _profiler.PauseSampling();
       }
     },
     mark: function Profiler__mark(marker, explicit) {
       if (_profiler) {
         ChromeUtils.addProfilerMarker(
+          "Talos",
+          { category: "Test" },
           explicit ? marker : 'Profiler: "' + (marker || test_name) + '"'
         );
       }

@@ -5,7 +5,8 @@
  * Tests selecting a result, and editing the value of that autocompleted result.
  */
 
-add_task(async function() {
+add_task(async function () {
+  SpecialPowers.pushPrefEnv({ set: [["browser.urlbar.trimHttps", false]] });
   await PlacesUtils.history.clear();
 
   await PlacesTestUtils.addVisits([
@@ -17,7 +18,7 @@ add_task(async function() {
     gBrowser,
     "about:blank"
   );
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     BrowserTestUtils.removeTab(tab);
     await PlacesUtils.history.clear();
   });

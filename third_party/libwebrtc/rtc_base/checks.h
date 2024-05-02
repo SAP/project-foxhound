@@ -56,6 +56,7 @@ RTC_NORETURN void rtc_FatalMessage(const char* file, int line, const char* msg);
 
 #include "absl/meta/type_traits.h"
 #include "absl/strings/string_view.h"
+#include "api/scoped_refptr.h"
 #include "rtc_base/numerics/safe_compare.h"
 #include "rtc_base/system/inline.h"
 #include "rtc_base/system/rtc_export.h"
@@ -95,7 +96,7 @@ RTC_NORETURN void rtc_FatalMessage(const char* file, int line, const char* msg);
 //   messages if the condition doesn't hold. Prefer them to raw RTC_CHECK and
 //   RTC_DCHECK.
 //
-// - FATAL() aborts unconditionally.
+// - RTC_FATAL() aborts unconditionally.
 
 namespace rtc {
 namespace webrtc_checks_impl {
@@ -120,6 +121,13 @@ enum class CheckArgType : int8_t {
   // (the "a == b (1 vs. 2)" bit).
   kCheckOp,
 };
+
+// These two functions are public so they can be overridden from
+// webrtc_overrides in chromium.
+RTC_NORETURN void WriteFatalLog(const char* file,
+                                int line,
+                                absl::string_view output);
+RTC_NORETURN void WriteFatalLog(absl::string_view output);
 
 #if RTC_CHECK_MSG_ENABLED
 RTC_NORETURN RTC_EXPORT void FatalLog(const char* file,
@@ -190,6 +198,12 @@ inline Val<CheckArgType::kStringView, const absl::string_view*> MakeVal(
 
 inline Val<CheckArgType::kVoidP, const void*> MakeVal(const void* x) {
   return {x};
+}
+
+template <typename T>
+inline Val<CheckArgType::kVoidP, const void*> MakeVal(
+    const rtc::scoped_refptr<T>& p) {
+  return {p.get()};
 }
 
 // The enum class types are not implicitly convertible to arithmetic types.
@@ -338,9 +352,25 @@ class FatalLogCall final {
   const char* message_;
 };
 
+#if RTC_DCHECK_IS_ON
+
+// Be helpful, and include file and line in the RTC_CHECK_NOTREACHED error
+// message.
+#define RTC_UNREACHABLE_FILE_AND_LINE_CALL_ARGS __FILE__, __LINE__
+RTC_NORETURN RTC_EXPORT void UnreachableCodeReached(const char* file, int line);
+
+#else
+
+// Be mindful of binary size, and don't include file and line in the
+// RTC_CHECK_NOTREACHED error message.
+#define RTC_UNREACHABLE_FILE_AND_LINE_CALL_ARGS
+RTC_NORETURN RTC_EXPORT void UnreachableCodeReached();
+
+#endif
+
 }  // namespace webrtc_checks_impl
 
-// The actual stream used isn't important. We reference |ignored| in the code
+// The actual stream used isn't important. We reference `ignored` in the code
 // but don't evaluate it; this is to avoid "unused variable" warnings (we do so
 // in a particularly convoluted way with an extra ?: because that appears to be
 // the simplest construct that keeps Visual Studio from complaining about
@@ -352,8 +382,8 @@ class FatalLogCall final {
             ::rtc::webrtc_checks_impl::LogStreamer<>()
 
 // Call RTC_EAT_STREAM_PARAMETERS with an argument that fails to compile if
-// values of the same types as |a| and |b| can't be compared with the given
-// operation, and that would evaluate |a| and |b| if evaluated.
+// values of the same types as `a` and `b` can't be compared with the given
+// operation, and that would evaluate `a` and `b` if evaluated.
 #define RTC_EAT_STREAM_PARAMETERS_OP(op, a, b) \
   RTC_EAT_STREAM_PARAMETERS(((void)::rtc::Safe##op(a, b)))
 
@@ -361,7 +391,7 @@ class FatalLogCall final {
 // controlled by NDEBUG or anything else, so the check will be executed
 // regardless of compilation mode.
 //
-// We make sure RTC_CHECK et al. always evaluates |condition|, as
+// We make sure RTC_CHECK et al. always evaluates `condition`, as
 // doing RTC_CHECK(FunctionWithSideEffect()) is a common idiom.
 //
 // RTC_CHECK_OP is a helper macro for binary operators.
@@ -381,22 +411,20 @@ class FatalLogCall final {
             ::rtc::webrtc_checks_impl::LogStreamer<>() << (val1) << (val2)
 #else
 #define RTC_CHECK(condition)                                                  \
-  (condition)                                                                 \
-      ? static_cast<void>(0)                                                  \
-      : true ? ::rtc::webrtc_checks_impl::FatalLogCall<false>(__FILE__,       \
-                                                              __LINE__, "") & \
-                   ::rtc::webrtc_checks_impl::LogStreamer<>()                 \
-             : ::rtc::webrtc_checks_impl::FatalLogCall<false>("", 0, "") &    \
-                   ::rtc::webrtc_checks_impl::LogStreamer<>()
+  (condition) ? static_cast<void>(0)                                          \
+  : true ? ::rtc::webrtc_checks_impl::FatalLogCall<false>(__FILE__, __LINE__, \
+                                                          "") &               \
+               ::rtc::webrtc_checks_impl::LogStreamer<>()                     \
+         : ::rtc::webrtc_checks_impl::FatalLogCall<false>("", 0, "") &        \
+               ::rtc::webrtc_checks_impl::LogStreamer<>()
 
 #define RTC_CHECK_OP(name, op, val1, val2)                                   \
-  ::rtc::Safe##name((val1), (val2))                                          \
-      ? static_cast<void>(0)                                                 \
-      : true ? ::rtc::webrtc_checks_impl::FatalLogCall<true>(__FILE__,       \
-                                                             __LINE__, "") & \
-                   ::rtc::webrtc_checks_impl::LogStreamer<>()                \
-             : ::rtc::webrtc_checks_impl::FatalLogCall<false>("", 0, "") &   \
-                   ::rtc::webrtc_checks_impl::LogStreamer<>()
+  ::rtc::Safe##name((val1), (val2)) ? static_cast<void>(0)                   \
+  : true ? ::rtc::webrtc_checks_impl::FatalLogCall<true>(__FILE__, __LINE__, \
+                                                         "") &               \
+               ::rtc::webrtc_checks_impl::LogStreamer<>()                    \
+         : ::rtc::webrtc_checks_impl::FatalLogCall<false>("", 0, "") &       \
+               ::rtc::webrtc_checks_impl::LogStreamer<>()
 #endif
 
 #define RTC_CHECK_EQ(val1, val2) RTC_CHECK_OP(Eq, ==, val1, val2)
@@ -428,10 +456,17 @@ class FatalLogCall final {
 #endif
 
 #define RTC_UNREACHABLE_CODE_HIT false
-#define RTC_NOTREACHED() RTC_DCHECK(RTC_UNREACHABLE_CODE_HIT)
+#define RTC_DCHECK_NOTREACHED() RTC_DCHECK(RTC_UNREACHABLE_CODE_HIT)
 
-// TODO(bugs.webrtc.org/8454): Add an RTC_ prefix or rename differently.
-#define FATAL()                                                      \
+// Kills the process with an error message. Never returns. Use when you wish to
+// assert that a point in the code is never reached.
+#define RTC_CHECK_NOTREACHED()                         \
+  do {                                                 \
+    ::rtc::webrtc_checks_impl::UnreachableCodeReached( \
+        RTC_UNREACHABLE_FILE_AND_LINE_CALL_ARGS);      \
+  } while (0)
+
+#define RTC_FATAL()                                                  \
   ::rtc::webrtc_checks_impl::FatalLogCall<false>(__FILE__, __LINE__, \
                                                  "FATAL()") &        \
       ::rtc::webrtc_checks_impl::LogStreamer<>()

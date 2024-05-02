@@ -11,7 +11,7 @@
 
 const TEST_URL = "data:text/html,<html><body></body></html>";
 
-this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function ({ tab, panel }) {
   const memoryFront = panel.panelWin.gStore.getState().front;
   ok(memoryFront, "Should get the MemoryFront");
 
@@ -22,13 +22,13 @@ this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
   });
 
   ok(
-    !!(await OS.File.stat(snapshotFilePath)),
+    !!(await IOUtils.stat(snapshotFilePath)),
     "Should have the heap snapshot file"
   );
 
   const snapshot = ChromeUtils.readHeapSnapshot(snapshotFilePath);
   ok(
-    snapshot instanceof HeapSnapshot,
+    HeapSnapshot.isInstance(snapshot),
     "And we should be able to read a HeapSnapshot instance from the file"
   );
 });

@@ -19,7 +19,7 @@
 #include "modules/include/module_common_types_public.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
-#include "modules/rtp_rtcp/source/flexfec_header_reader_writer.h"
+#include "modules/rtp_rtcp/source/flexfec_03_header_reader_writer.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_internal.h"
 #include "modules/rtp_rtcp/source/ulpfec_header_reader_writer.h"
 #include "rtc_base/checks.h"
@@ -31,6 +31,8 @@ namespace webrtc {
 namespace {
 // Transport header size in bytes. Assume UDP/IPv4 as a reasonable minimum.
 constexpr size_t kTransportOverhead = 28;
+
+constexpr uint16_t kOldSequenceThreshold = 0x3fff;
 }  // namespace
 
 ForwardErrorCorrection::Packet::Packet() : data(0), ref_count_(0) {}
@@ -97,8 +99,10 @@ std::unique_ptr<ForwardErrorCorrection> ForwardErrorCorrection::CreateUlpfec(
 std::unique_ptr<ForwardErrorCorrection> ForwardErrorCorrection::CreateFlexfec(
     uint32_t ssrc,
     uint32_t protected_media_ssrc) {
-  std::unique_ptr<FecHeaderReader> fec_header_reader(new FlexfecHeaderReader());
-  std::unique_ptr<FecHeaderWriter> fec_header_writer(new FlexfecHeaderWriter());
+  std::unique_ptr<FecHeaderReader> fec_header_reader(
+      new Flexfec03HeaderReader());
+  std::unique_ptr<FecHeaderWriter> fec_header_writer(
+      new Flexfec03HeaderWriter());
   return std::unique_ptr<ForwardErrorCorrection>(new ForwardErrorCorrection(
       std::move(fec_header_reader), std::move(fec_header_writer), ssrc,
       protected_media_ssrc));
@@ -151,7 +155,7 @@ int ForwardErrorCorrection::EncodeFec(const PacketList& media_packets,
   }
   for (int i = 0; i < num_fec_packets; ++i) {
     generated_fec_packets_[i].data.EnsureCapacity(IP_PACKET_SIZE);
-    memset(generated_fec_packets_[i].data.data(), 0, IP_PACKET_SIZE);
+    memset(generated_fec_packets_[i].data.MutableData(), 0, IP_PACKET_SIZE);
     // Use this as a marker for untouched packets.
     generated_fec_packets_[i].data.SetSize(0);
     fec_packets->push_back(&generated_fec_packets_[i]);
@@ -174,7 +178,7 @@ int ForwardErrorCorrection::EncodeFec(const PacketList& media_packets,
   }
   packet_mask_size_ = internal::PacketMaskSize(num_mask_bits);
 
-  // Write FEC packets to |generated_fec_packets_|.
+  // Write FEC packets to `generated_fec_packets_`.
   GenerateFecPayloads(media_packets, num_fec_packets);
   // TODO(brandtr): Generalize this when multistream protection support is
   // added.
@@ -216,40 +220,21 @@ void ForwardErrorCorrection::GenerateFecPayloads(
         ParseSequenceNumber((*media_packets_it)->data.data());
     while (media_packets_it != media_packets.end()) {
       Packet* const media_packet = media_packets_it->get();
-      const uint8_t* media_packet_data = media_packet->data.cdata();
-      // Should |media_packet| be protected by |fec_packet|?
+      // Should `media_packet` be protected by `fec_packet`?
       if (packet_masks_[pkt_mask_idx] & (1 << (7 - media_pkt_idx))) {
         size_t media_payload_length =
             media_packet->data.size() - kRtpHeaderSize;
 
-        bool first_protected_packet = (fec_packet->data.size() == 0);
         size_t fec_packet_length = fec_header_size + media_payload_length;
         if (fec_packet_length > fec_packet->data.size()) {
-          // Recall that XORing with zero (which the FEC packets are prefilled
-          // with) is the identity operator, thus all prior XORs are
-          // still correct even though we expand the packet length here.
+          size_t old_size = fec_packet->data.size();
           fec_packet->data.SetSize(fec_packet_length);
+          memset(fec_packet->data.MutableData() + old_size, 0,
+                 fec_packet_length - old_size);
         }
-        if (first_protected_packet) {
-          uint8_t* data = fec_packet->data.data();
-          // Write P, X, CC, M, and PT recovery fields.
-          // Note that bits 0, 1, and 16 are overwritten in FinalizeFecHeaders.
-          memcpy(&data[0], &media_packet_data[0], 2);
-          // Write length recovery field. (This is a temporary location for
-          // ULPFEC.)
-          ByteWriter<uint16_t>::WriteBigEndian(&data[2], media_payload_length);
-          // Write timestamp recovery field.
-          memcpy(&data[4], &media_packet_data[4], 4);
-          // Write payload.
-          if (media_payload_length > 0) {
-            memcpy(&data[fec_header_size], &media_packet_data[kRtpHeaderSize],
-                   media_payload_length);
-          }
-        } else {
-          XorHeaders(*media_packet, fec_packet);
-          XorPayloads(*media_packet, media_payload_length, fec_header_size,
-                      fec_packet);
-        }
+        XorHeaders(*media_packet, fec_packet);
+        XorPayloads(*media_packet, media_payload_length, fec_header_size,
+                    fec_packet);
       }
       media_packets_it++;
       if (media_packets_it != media_packets.end()) {
@@ -343,9 +328,13 @@ void ForwardErrorCorrection::FinalizeFecHeaders(size_t num_fec_packets,
                                                 uint32_t media_ssrc,
                                                 uint16_t seq_num_base) {
   for (size_t i = 0; i < num_fec_packets; ++i) {
-    fec_header_writer_->FinalizeFecHeader(
-        media_ssrc, seq_num_base, &packet_masks_[i * packet_mask_size_],
-        packet_mask_size_, &generated_fec_packets_[i]);
+    const FecHeaderWriter::ProtectedStream protected_streams[] = {
+        {.ssrc = media_ssrc,
+         .seq_num_base = seq_num_base,
+         .packet_mask = {&packet_masks_[i * packet_mask_size_],
+                         packet_mask_size_}}};
+    fec_header_writer_->FinalizeFecHeader(protected_streams,
+                                          generated_fec_packets_[i]);
   }
 }
 
@@ -389,12 +378,12 @@ void ForwardErrorCorrection::InsertMediaPacket(
 void ForwardErrorCorrection::UpdateCoveringFecPackets(
     const RecoveredPacket& packet) {
   for (auto& fec_packet : received_fec_packets_) {
-    // Is this FEC packet protecting the media packet |packet|?
+    // Is this FEC packet protecting the media packet `packet`?
     auto protected_it = absl::c_lower_bound(
         fec_packet->protected_packets, &packet, SortablePacket::LessThan());
     if (protected_it != fec_packet->protected_packets.end() &&
         (*protected_it)->seq_num == packet.seq_num) {
-      // Found an FEC packet which is protecting |packet|.
+      // Found an FEC packet which is protecting `packet`.
       (*protected_it)->pkt = packet.pkt;
     }
   }
@@ -424,24 +413,29 @@ void ForwardErrorCorrection::InsertFecPacket(
     return;
   }
 
-  // TODO(brandtr): Update here when we support multistream protection.
-  if (fec_packet->protected_ssrc != protected_media_ssrc_) {
+  RTC_CHECK_EQ(fec_packet->protected_streams.size(), 1);
+
+  if (fec_packet->protected_streams[0].ssrc != protected_media_ssrc_) {
     RTC_LOG(LS_INFO)
         << "Received FEC packet is protecting an unknown media SSRC; dropping.";
     return;
   }
 
-  if (fec_packet->packet_mask_offset + fec_packet->packet_mask_size >
+  if (fec_packet->protected_streams[0].packet_mask_offset +
+          fec_packet->protected_streams[0].packet_mask_size >
       fec_packet->pkt->data.size()) {
     RTC_LOG(LS_INFO) << "Received corrupted FEC packet; dropping.";
     return;
   }
 
   // Parse packet mask from header and represent as protected packets.
-  for (uint16_t byte_idx = 0; byte_idx < fec_packet->packet_mask_size;
+  for (uint16_t byte_idx = 0;
+       byte_idx < fec_packet->protected_streams[0].packet_mask_size;
        ++byte_idx) {
     uint8_t packet_mask =
-        fec_packet->pkt->data[fec_packet->packet_mask_offset + byte_idx];
+        fec_packet->pkt
+            ->data[fec_packet->protected_streams[0].packet_mask_offset +
+                   byte_idx];
     for (uint16_t bit_idx = 0; bit_idx < 8; ++bit_idx) {
       if (packet_mask & (1 << (7 - bit_idx))) {
         std::unique_ptr<ProtectedPacket> protected_packet(
@@ -449,7 +443,8 @@ void ForwardErrorCorrection::InsertFecPacket(
         // This wraps naturally with the sequence number.
         protected_packet->ssrc = protected_media_ssrc_;
         protected_packet->seq_num = static_cast<uint16_t>(
-            fec_packet->seq_num_base + (byte_idx << 3) + bit_idx);
+            fec_packet->protected_streams[0].seq_num_base + (byte_idx << 3) +
+            bit_idx);
         protected_packet->pkt = nullptr;
         fec_packet->protected_packets.push_back(std::move(protected_packet));
       }
@@ -479,8 +474,8 @@ void ForwardErrorCorrection::AssignRecoveredPackets(
   ProtectedPacketList* protected_packets = &fec_packet->protected_packets;
   std::vector<RecoveredPacket*> recovered_protected_packets;
 
-  // Find intersection between the (sorted) containers |protected_packets|
-  // and |recovered_packets|, i.e. all protected packets that have already
+  // Find intersection between the (sorted) containers `protected_packets`
+  // and `recovered_packets`, i.e. all protected packets that have already
   // been recovered. Update the corresponding protected packets to point to
   // the recovered packets.
   auto it_p = protected_packets->cbegin();
@@ -504,27 +499,24 @@ void ForwardErrorCorrection::InsertPacket(
     const ReceivedPacket& received_packet,
     RecoveredPacketList* recovered_packets) {
   // Discard old FEC packets such that the sequence numbers in
-  // |received_fec_packets_| span at most 1/2 of the sequence number space.
-  // This is important for keeping |received_fec_packets_| sorted, and may
+  // `received_fec_packets_` span at most 1/2 of the sequence number space.
+  // This is important for keeping `received_fec_packets_` sorted, and may
   // also reduce the possibility of incorrect decoding due to sequence number
   // wrap-around.
-  // TODO(marpan/holmer): We should be able to improve detection/discarding of
-  // old FEC packets based on timestamp information or better sequence number
-  // thresholding (e.g., to distinguish between wrap-around and reordering).
   if (!received_fec_packets_.empty() &&
       received_packet.ssrc == received_fec_packets_.front()->ssrc) {
-    // It only makes sense to detect wrap-around when |received_packet|
-    // and |front_received_fec_packet| belong to the same sequence number
-    // space, i.e., the same SSRC. This happens when |received_packet|
-    // is a FEC packet, or if |received_packet| is a media packet and
+    // It only makes sense to detect wrap-around when `received_packet`
+    // and `front_received_fec_packet` belong to the same sequence number
+    // space, i.e., the same SSRC. This happens when `received_packet`
+    // is a FEC packet, or if `received_packet` is a media packet and
     // RED+ULPFEC is used.
     auto it = received_fec_packets_.begin();
     while (it != received_fec_packets_.end()) {
       uint16_t seq_num_diff = MinDiff(received_packet.seq_num, (*it)->seq_num);
-      if (seq_num_diff > 0x3fff) {
+      if (seq_num_diff > kOldSequenceThreshold) {
         it = received_fec_packets_.erase(it);
       } else {
-        // No need to keep iterating, since |received_fec_packets_| is sorted.
+        // No need to keep iterating, since `received_fec_packets_` is sorted.
         break;
       }
     }
@@ -567,11 +559,11 @@ bool ForwardErrorCorrection::StartPacketRecovery(
   // Copy bytes corresponding to minimum RTP header size.
   // Note that the sequence number and SSRC fields will be overwritten
   // at the end of packet recovery.
-  memcpy(recovered_packet->pkt->data.data(), fec_packet.pkt->data.cdata(),
-         kRtpHeaderSize);
+  memcpy(recovered_packet->pkt->data.MutableData(),
+         fec_packet.pkt->data.cdata(), kRtpHeaderSize);
   // Copy remaining FEC payload.
   if (fec_packet.protection_length > 0) {
-    memcpy(recovered_packet->pkt->data.data() + kRtpHeaderSize,
+    memcpy(recovered_packet->pkt->data.MutableData() + kRtpHeaderSize,
            fec_packet.pkt->data.cdata() + fec_packet.fec_header_size,
            fec_packet.protection_length);
   }
@@ -581,7 +573,7 @@ bool ForwardErrorCorrection::StartPacketRecovery(
 bool ForwardErrorCorrection::FinishPacketRecovery(
     const ReceivedFecPacket& fec_packet,
     RecoveredPacket* recovered_packet) {
-  uint8_t* data = recovered_packet->pkt->data.data();
+  uint8_t* data = recovered_packet->pkt->data.MutableData();
   // Set the RTP version to 2.
   data[0] |= 0x80;  // Set the 1st bit.
   data[0] &= 0xbf;  // Clear the 2nd bit.
@@ -593,17 +585,22 @@ bool ForwardErrorCorrection::FinishPacketRecovery(
                            "typical IP packet, and is thus dropped.";
     return false;
   }
+  size_t old_size = recovered_packet->pkt->data.size();
   recovered_packet->pkt->data.SetSize(new_size);
+  data = recovered_packet->pkt->data.MutableData();
+  if (new_size > old_size) {
+    memset(data + old_size, 0, new_size - old_size);
+  }
+
   // Set the SN field.
   ByteWriter<uint16_t>::WriteBigEndian(&data[2], recovered_packet->seq_num);
   // Set the SSRC field.
-  ByteWriter<uint32_t>::WriteBigEndian(&data[8], fec_packet.protected_ssrc);
-  recovered_packet->ssrc = fec_packet.protected_ssrc;
+  ByteWriter<uint32_t>::WriteBigEndian(&data[8], recovered_packet->ssrc);
   return true;
 }
 
 void ForwardErrorCorrection::XorHeaders(const Packet& src, Packet* dst) {
-  uint8_t* dst_data = dst->data.data();
+  uint8_t* dst_data = dst->data.MutableData();
   const uint8_t* src_data = src.data.cdata();
   // XOR the first 2 bytes of the header: V, P, X, CC, M, PT fields.
   dst_data[0] ^= src_data[0];
@@ -633,9 +630,12 @@ void ForwardErrorCorrection::XorPayloads(const Packet& src,
   RTC_DCHECK_LE(kRtpHeaderSize + payload_length, src.data.size());
   RTC_DCHECK_LE(dst_offset + payload_length, dst->data.capacity());
   if (dst_offset + payload_length > dst->data.size()) {
-    dst->data.SetSize(dst_offset + payload_length);
+    size_t old_size = dst->data.size();
+    size_t new_size = dst_offset + payload_length;
+    dst->data.SetSize(new_size);
+    memset(dst->data.MutableData() + old_size, 0, new_size - old_size);
   }
-  uint8_t* dst_data = dst->data.data();
+  uint8_t* dst_data = dst->data.MutableData();
   const uint8_t* src_data = src.data.cdata();
   for (size_t i = 0; i < payload_length; ++i) {
     dst_data[dst_offset + i] ^= src_data[kRtpHeaderSize + i];
@@ -651,11 +651,12 @@ bool ForwardErrorCorrection::RecoverPacket(const ReceivedFecPacket& fec_packet,
     if (protected_packet->pkt == nullptr) {
       // This is the packet we're recovering.
       recovered_packet->seq_num = protected_packet->seq_num;
+      recovered_packet->ssrc = protected_packet->ssrc;
     } else {
-      XorHeaders(*protected_packet->pkt, recovered_packet->pkt);
+      XorHeaders(*protected_packet->pkt, recovered_packet->pkt.get());
       XorPayloads(*protected_packet->pkt,
                   protected_packet->pkt->data.size() - kRtpHeaderSize,
-                  kRtpHeaderSize, recovered_packet->pkt);
+                  kRtpHeaderSize, recovered_packet->pkt.get());
     }
   }
   if (!FinishPacketRecovery(fec_packet, recovered_packet)) {
@@ -698,9 +699,10 @@ void ForwardErrorCorrection::AttemptRecovery(
       // this may allow additional packets to be recovered.
       // Restart for first FEC packet.
       fec_packet_it = received_fec_packets_.begin();
-    } else if (packets_missing == 0) {
-      // Either all protected packets arrived or have been recovered. We can
-      // discard this FEC packet.
+    } else if (packets_missing == 0 ||
+               IsOldFecPacket(**fec_packet_it, recovered_packets)) {
+      // Either all protected packets arrived or have been recovered, or the FEC
+      // packet is old. We can discard this FEC packet.
       fec_packet_it = received_fec_packets_.erase(fec_packet_it);
     } else {
       fec_packet_it++;
@@ -731,11 +733,28 @@ void ForwardErrorCorrection::DiscardOldRecoveredPackets(
   RTC_DCHECK_LE(recovered_packets->size(), max_media_packets);
 }
 
-uint16_t ForwardErrorCorrection::ParseSequenceNumber(uint8_t* packet) {
+bool ForwardErrorCorrection::IsOldFecPacket(
+    const ReceivedFecPacket& fec_packet,
+    const RecoveredPacketList* recovered_packets) {
+  if (recovered_packets->empty()) {
+    return false;
+  }
+
+  const uint16_t back_recovered_seq_num = recovered_packets->back()->seq_num;
+  const uint16_t last_protected_seq_num =
+      fec_packet.protected_packets.back()->seq_num;
+
+  // FEC packet is old if its last protected sequence number is much
+  // older than the latest protected sequence number received.
+  return (MinDiff(back_recovered_seq_num, last_protected_seq_num) >
+          kOldSequenceThreshold);
+}
+
+uint16_t ForwardErrorCorrection::ParseSequenceNumber(const uint8_t* packet) {
   return (packet[2] << 8) + packet[3];
 }
 
-uint32_t ForwardErrorCorrection::ParseSsrc(uint8_t* packet) {
+uint32_t ForwardErrorCorrection::ParseSsrc(const uint8_t* packet) {
   return (packet[8] << 24) + (packet[9] << 16) + (packet[10] << 8) + packet[11];
 }
 

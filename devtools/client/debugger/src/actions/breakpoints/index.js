@@ -8,6 +8,8 @@
  */
 
 import { PROMISE } from "../utils/middleware/promise";
+import { asyncStore } from "../../utils/prefs";
+import { createLocation } from "../../utils/location";
 import {
   getBreakpointsList,
   getXHRBreakpoints,
@@ -23,17 +25,15 @@ import {
   enableBreakpoint,
   disableBreakpoint,
 } from "./modify";
-import remapLocations from "./remapLocations";
-
-// this will need to be changed so that addCLientBreakpoint is removed
+import { getOriginalLocation } from "../../utils/source-maps";
 
 export * from "./breakpointPositions";
 export * from "./modify";
 export * from "./syncBreakpoint";
 
-export function addHiddenBreakpoint(cx, location) {
+export function addHiddenBreakpoint(location) {
   return ({ dispatch }) => {
-    return dispatch(addBreakpoint(cx, location, { hidden: true }));
+    return dispatch(addBreakpoint(location, { hidden: true }));
   };
 }
 
@@ -43,12 +43,12 @@ export function addHiddenBreakpoint(cx, location) {
  * @memberof actions/breakpoints
  * @static
  */
-export function disableBreakpointsInSource(cx, source) {
+export function disableBreakpointsInSource(source) {
   return async ({ dispatch, getState, client }) => {
-    const breakpoints = getBreakpointsForSource(getState(), source.id);
+    const breakpoints = getBreakpointsForSource(getState(), source);
     for (const breakpoint of breakpoints) {
       if (!breakpoint.disabled) {
-        dispatch(disableBreakpoint(cx, breakpoint));
+        dispatch(disableBreakpoint(breakpoint));
       }
     }
   };
@@ -60,12 +60,12 @@ export function disableBreakpointsInSource(cx, source) {
  * @memberof actions/breakpoints
  * @static
  */
-export function enableBreakpointsInSource(cx, source) {
+export function enableBreakpointsInSource(source) {
   return async ({ dispatch, getState, client }) => {
-    const breakpoints = getBreakpointsForSource(getState(), source.id);
+    const breakpoints = getBreakpointsForSource(getState(), source);
     for (const breakpoint of breakpoints) {
       if (breakpoint.disabled) {
-        dispatch(enableBreakpoint(cx, breakpoint));
+        dispatch(enableBreakpoint(breakpoint));
       }
     }
   };
@@ -77,15 +77,15 @@ export function enableBreakpointsInSource(cx, source) {
  * @memberof actions/breakpoints
  * @static
  */
-export function toggleAllBreakpoints(cx, shouldDisableBreakpoints) {
+export function toggleAllBreakpoints(shouldDisableBreakpoints) {
   return async ({ dispatch, getState, client }) => {
     const breakpoints = getBreakpointsList(getState());
 
     for (const breakpoint of breakpoints) {
       if (shouldDisableBreakpoints) {
-        dispatch(disableBreakpoint(cx, breakpoint));
+        dispatch(disableBreakpoint(breakpoint));
       } else {
-        dispatch(enableBreakpoint(cx, breakpoint));
+        dispatch(enableBreakpoint(breakpoint));
       }
     }
   };
@@ -97,24 +97,22 @@ export function toggleAllBreakpoints(cx, shouldDisableBreakpoints) {
  * @memberof actions/breakpoints
  * @static
  */
-export function toggleBreakpoints(cx, shouldDisableBreakpoints, breakpoints) {
+export function toggleBreakpoints(shouldDisableBreakpoints, breakpoints) {
   return async ({ dispatch }) => {
     const promises = breakpoints.map(breakpoint =>
       shouldDisableBreakpoints
-        ? dispatch(disableBreakpoint(cx, breakpoint))
-        : dispatch(enableBreakpoint(cx, breakpoint))
+        ? dispatch(disableBreakpoint(breakpoint))
+        : dispatch(enableBreakpoint(breakpoint))
     );
 
     await Promise.all(promises);
   };
 }
 
-export function toggleBreakpointsAtLine(cx, shouldDisableBreakpoints, line) {
+export function toggleBreakpointsAtLine(shouldDisableBreakpoints, line) {
   return async ({ dispatch, getState }) => {
     const breakpoints = getBreakpointsAtLine(getState(), line);
-    return dispatch(
-      toggleBreakpoints(cx, shouldDisableBreakpoints, breakpoints)
-    );
+    return dispatch(toggleBreakpoints(shouldDisableBreakpoints, breakpoints));
   };
 }
 
@@ -124,13 +122,11 @@ export function toggleBreakpointsAtLine(cx, shouldDisableBreakpoints, line) {
  * @memberof actions/breakpoints
  * @static
  */
-export function removeAllBreakpoints(cx) {
+export function removeAllBreakpoints() {
   return async ({ dispatch, getState }) => {
     const breakpointList = getBreakpointsList(getState());
-    await Promise.all(
-      breakpointList.map(bp => dispatch(removeBreakpoint(cx, bp)))
-    );
-    dispatch({ type: "REMOVE_BREAKPOINTS" });
+    await Promise.all(breakpointList.map(bp => dispatch(removeBreakpoint(bp))));
+    dispatch({ type: "CLEAR_BREAKPOINTS" });
   };
 }
 
@@ -140,11 +136,9 @@ export function removeAllBreakpoints(cx) {
  * @memberof actions/breakpoints
  * @static
  */
-export function removeBreakpoints(cx, breakpoints) {
+export function removeBreakpoints(breakpoints) {
   return async ({ dispatch }) => {
-    return Promise.all(
-      breakpoints.map(bp => dispatch(removeBreakpoint(cx, bp)))
-    );
+    return Promise.all(breakpoints.map(bp => dispatch(removeBreakpoint(bp))));
   };
 }
 
@@ -154,22 +148,44 @@ export function removeBreakpoints(cx, breakpoints) {
  * @memberof actions/breakpoints
  * @static
  */
-export function removeBreakpointsInSource(cx, source) {
+export function removeBreakpointsInSource(source) {
   return async ({ dispatch, getState, client }) => {
-    const breakpoints = getBreakpointsForSource(getState(), source.id);
+    const breakpoints = getBreakpointsForSource(getState(), source);
     for (const breakpoint of breakpoints) {
-      dispatch(removeBreakpoint(cx, breakpoint));
+      dispatch(removeBreakpoint(breakpoint));
     }
   };
 }
 
-export function remapBreakpoints(cx, sourceId) {
-  return async ({ dispatch, getState, sourceMaps }) => {
-    const breakpoints = getBreakpointsForSource(getState(), sourceId);
-    const newBreakpoints = await remapLocations(
-      breakpoints,
-      sourceId,
-      sourceMaps
+/**
+ * Update the original location information of breakpoints.
+
+/*
+ * Update breakpoints for a source that just got pretty printed.
+ * This method maps the breakpoints currently set only against the
+ * non-pretty-printed (generated) source to the related pretty-printed
+ * (original) source by querying the SourceMap service.
+ *
+ * @param {String} source - the generated source
+ */
+export function updateBreakpointsForNewPrettyPrintedSource(source) {
+  return async thunkArgs => {
+    const { dispatch, getState } = thunkArgs;
+    if (source.isOriginal) {
+      console.error("Can't update breakpoints on original sources");
+      return;
+    }
+    const breakpoints = getBreakpointsForSource(getState(), source);
+    // Remap the breakpoints with the original location information from
+    // the pretty-printed source.
+    const newBreakpoints = await Promise.all(
+      breakpoints.map(async breakpoint => {
+        const location = await getOriginalLocation(
+          breakpoint.generatedLocation,
+          thunkArgs
+        );
+        return { ...breakpoint, location };
+      })
     );
 
     // Normally old breakpoints will be clobbered if we re-add them, but when
@@ -177,106 +193,89 @@ export function remapBreakpoints(cx, sourceId) {
     // have different locations than the new ones. Manually remove the
     // old breakpoints before adding the new ones.
     for (const bp of breakpoints) {
-      dispatch(removeBreakpoint(cx, bp));
+      dispatch(removeBreakpoint(bp));
     }
 
     for (const bp of newBreakpoints) {
-      await dispatch(addBreakpoint(cx, bp.location, bp.options, bp.disabled));
+      await dispatch(addBreakpoint(bp.location, bp.options, bp.disabled));
     }
   };
 }
 
-export function toggleBreakpointAtLine(cx, line) {
-  return ({ dispatch, getState, client, sourceMaps }) => {
+export function toggleBreakpointAtLine(line) {
+  return ({ dispatch, getState }) => {
     const state = getState();
     const selectedSource = getSelectedSource(state);
 
     if (!selectedSource) {
-      return;
+      return null;
     }
 
     const bp = getBreakpointAtLocation(state, { line, column: undefined });
     if (bp) {
-      return dispatch(removeBreakpoint(cx, bp));
+      return dispatch(removeBreakpoint(bp));
     }
     return dispatch(
-      addBreakpoint(cx, {
-        sourceId: selectedSource.id,
-        sourceUrl: selectedSource.url,
-        line,
-      })
+      addBreakpoint(
+        createLocation({
+          source: selectedSource,
+          line,
+        })
+      )
     );
   };
 }
 
-export function addBreakpointAtLine(
-  cx,
-  line,
-  shouldLog = false,
-  disabled = false
-) {
-  return ({ dispatch, getState, client, sourceMaps }) => {
+export function addBreakpointAtLine(line, shouldLog = false, disabled = false) {
+  return ({ dispatch, getState }) => {
     const state = getState();
     const source = getSelectedSource(state);
 
     if (!source) {
-      return;
+      return null;
     }
-    const breakpointLocation = {
-      sourceId: source.id,
-      sourceUrl: source.url,
+    const breakpointLocation = createLocation({
+      source,
       column: undefined,
       line,
-    };
+    });
 
     const options = {};
     if (shouldLog) {
       options.logValue = "displayName";
     }
 
-    return dispatch(addBreakpoint(cx, breakpointLocation, options, disabled));
+    return dispatch(addBreakpoint(breakpointLocation, options, disabled));
   };
 }
 
-export function removeBreakpointsAtLine(cx, sourceId, line) {
-  return ({ dispatch, getState, client, sourceMaps }) => {
-    const breakpointsAtLine = getBreakpointsForSource(
-      getState(),
-      sourceId,
-      line
-    );
-    return dispatch(removeBreakpoints(cx, breakpointsAtLine));
+export function removeBreakpointsAtLine(source, line) {
+  return ({ dispatch, getState }) => {
+    const breakpointsAtLine = getBreakpointsForSource(getState(), source, line);
+    return dispatch(removeBreakpoints(breakpointsAtLine));
   };
 }
 
-export function disableBreakpointsAtLine(cx, sourceId, line) {
-  return ({ dispatch, getState, client, sourceMaps }) => {
-    const breakpointsAtLine = getBreakpointsForSource(
-      getState(),
-      sourceId,
-      line
-    );
-    return dispatch(toggleBreakpoints(cx, true, breakpointsAtLine));
+export function disableBreakpointsAtLine(source, line) {
+  return ({ dispatch, getState }) => {
+    const breakpointsAtLine = getBreakpointsForSource(getState(), source, line);
+    return dispatch(toggleBreakpoints(true, breakpointsAtLine));
   };
 }
 
-export function enableBreakpointsAtLine(cx, sourceId, line) {
-  return ({ dispatch, getState, client, sourceMaps }) => {
-    const breakpointsAtLine = getBreakpointsForSource(
-      getState(),
-      sourceId,
-      line
-    );
-    return dispatch(toggleBreakpoints(cx, false, breakpointsAtLine));
+export function enableBreakpointsAtLine(source, line) {
+  return ({ dispatch, getState }) => {
+    const breakpointsAtLine = getBreakpointsForSource(getState(), source, line);
+    return dispatch(toggleBreakpoints(false, breakpointsAtLine));
   };
 }
 
-export function toggleDisabledBreakpoint(cx, breakpoint) {
-  return ({ dispatch, getState, client, sourceMaps }) => {
+export function toggleDisabledBreakpoint(breakpoint) {
+  return ({ dispatch, getState }) => {
     if (!breakpoint.disabled) {
-      return dispatch(disableBreakpoint(cx, breakpoint));
+      return dispatch(disableBreakpoint(breakpoint));
     }
-    return dispatch(enableBreakpoint(cx, breakpoint));
+    return dispatch(enableBreakpoint(breakpoint));
   };
 }
 
@@ -365,6 +364,20 @@ export function setXHRBreakpoint(path, method) {
       breakpoint,
       [PROMISE]: client.setXHRBreakpoint(path, method),
     });
+  };
+}
+
+export function removeAllXHRBreakpoints() {
+  return async ({ dispatch, getState, client }) => {
+    const xhrBreakpoints = getXHRBreakpoints(getState());
+    const promises = xhrBreakpoints.map(breakpoint =>
+      client.removeXHRBreakpoint(breakpoint.path, breakpoint.method)
+    );
+    await dispatch({
+      type: "CLEAR_XHR_BREAKPOINTS",
+      [PROMISE]: Promise.all(promises),
+    });
+    asyncStore.xhrBreakpoints = [];
   };
 }
 

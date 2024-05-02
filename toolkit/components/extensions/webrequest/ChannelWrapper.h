@@ -21,6 +21,7 @@
 #include "mozilla/WeakPtr.h"
 
 #include "mozilla/DOMEventTargetHelper.h"
+#include "nsAtomHashKeys.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIChannel.h"
@@ -29,7 +30,6 @@
 #include "nsIStreamListener.h"
 #include "nsIRemoteTab.h"
 #include "nsIThreadRetargetableStreamListener.h"
-#include "nsPointerHashKeys.h"
 #include "nsInterfaceHashtable.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsWrapperCache.h"
@@ -116,8 +116,7 @@ class ChannelWrapper final : public DOMEventTargetHelper,
                              private detail::ChannelHolder {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(ChannelWrapper,
-                                                         DOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ChannelWrapper, DOMEventTargetHelper)
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_CHANNELWRAPPER_IID)
 
@@ -249,7 +248,8 @@ class ChannelWrapper final : public DOMEventTargetHelper,
 
   nsISupports* GetParentObject() const { return mParent; }
 
-  JSObject* WrapObject(JSContext* aCx, JS::HandleObject aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   ~ChannelWrapper();
@@ -320,14 +320,13 @@ class ChannelWrapper final : public DOMEventTargetHelper,
   bool mSuspended = false;
   bool mResponseStarted = false;
 
-  nsInterfaceHashtable<nsPtrHashKey<const nsAtom>, nsIRemoteTab> mAddonEntries;
+  nsInterfaceHashtable<nsAtomHashKey, nsIRemoteTab> mAddonEntries;
 
   // The text for the "Extension Suspend" marker, set from the Suspend method
   // when called for the first time and then cleared on the Resume method.
   nsCString mSuspendedMarkerText = VoidCString();
 
-  class RequestListener final : public nsIStreamListener,
-                                public nsIMultiPartChannelListener,
+  class RequestListener final : public nsIMultiPartChannelListener,
                                 public nsIThreadRetargetableStreamListener {
    public:
     NS_DECL_THREADSAFE_ISUPPORTS

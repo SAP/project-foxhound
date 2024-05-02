@@ -3,12 +3,11 @@
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
-/* import-globals-from ../../../inspector/test/shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
   this
@@ -20,13 +19,13 @@ requestLongerTimeout(4);
 // This test is used to test fission-like features via the Browser Toolbox:
 // - computed view is correct when selecting an element in a remote frame
 
-add_task(async function() {
+add_task(async function () {
   // Forces the Browser Toolbox to open on the inspector by default
   await pushPref("devtools.browsertoolbox.panel", "inspector");
+  // Enable Multiprocess Browser Toolbox
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
-  const ToolboxTask = await initBrowserToolboxTask({
-    enableBrowserToolboxFission: true,
-  });
+  const ToolboxTask = await initBrowserToolboxTask();
   await ToolboxTask.importFunctions({
     getNodeFront,
     getNodeFrontInFrames,
@@ -152,42 +151,39 @@ async function pickNodeInContentPage(
   browserElementSelector,
   contentElementSelector
 ) {
-  await ToolboxTask.spawn(
-    JSON.stringify(contentElementSelector),
-    async _selector => {
-      const onPickerStarted = gToolbox.nodePicker.once("picker-started");
+  await ToolboxTask.spawn(contentElementSelector, async _selector => {
+    const onPickerStarted = gToolbox.nodePicker.once("picker-started");
 
-      // Wait until the inspector front was initialized in the target that
-      // contains the element we want to pick.
-      // Otherwise, even if the picker is "started", the corresponding WalkerActor
-      // might not be listening to the correct pick events (WalkerActor::pick)
-      const onPickerReady = new Promise(resolve => {
-        gToolbox.nodePicker.on(
-          "inspector-front-ready-for-picker",
-          async function onFrontReady(walker) {
-            if (await walker.querySelector(walker.rootNode, _selector)) {
-              gToolbox.nodePicker.off(
-                "inspector-front-ready-for-picker",
-                onFrontReady
-              );
-              resolve();
-            }
+    // Wait until the inspector front was initialized in the target that
+    // contains the element we want to pick.
+    // Otherwise, even if the picker is "started", the corresponding WalkerActor
+    // might not be listening to the correct pick events (WalkerActor::pick)
+    const onPickerReady = new Promise(resolve => {
+      gToolbox.nodePicker.on(
+        "inspector-front-ready-for-picker",
+        async function onFrontReady(walker) {
+          if (await walker.querySelector(walker.rootNode, _selector)) {
+            gToolbox.nodePicker.off(
+              "inspector-front-ready-for-picker",
+              onFrontReady
+            );
+            resolve();
           }
-        );
-      });
+        }
+      );
+    });
 
-      gToolbox.nodePicker.start();
-      await onPickerStarted;
-      await onPickerReady;
+    gToolbox.nodePicker.start();
+    await onPickerStarted;
+    await onPickerReady;
 
-      const inspector = gToolbox.getPanel("inspector");
+    const inspector = gToolbox.getPanel("inspector");
 
-      // Save the promises for later tasks, in order to start listening
-      // *before* hovering the element and wait for resolution *after* hovering.
-      this.onPickerStopped = gToolbox.nodePicker.once("picker-stopped");
-      this.onInspectorUpdated = inspector.once("inspector-updated");
-    }
-  );
+    // Save the promises for later tasks, in order to start listening
+    // *before* hovering the element and wait for resolution *after* hovering.
+    this.onPickerStopped = gToolbox.nodePicker.once("picker-stopped");
+    this.onInspectorUpdated = inspector.once("inspector-updated");
+  });
 
   // Retrieve the position of the element we want to pick in the content page
   const { x, y } = await SpecialPowers.spawn(

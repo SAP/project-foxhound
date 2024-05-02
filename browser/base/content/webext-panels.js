@@ -7,14 +7,12 @@
 /* import-globals-from browser.js */
 /* import-globals-from nsContextMenu.js */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionParent",
-  "resource://gre/modules/ExtensionParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
+});
 
-const { ExtensionUtils } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionUtils.jsm"
+const { ExtensionUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionUtils.sys.mjs"
 );
 
 var { promiseEvent } = ExtensionUtils;
@@ -43,7 +41,6 @@ function getBrowser(panel) {
   browser.setAttribute("context", "contentAreaContextMenu");
   browser.setAttribute("tooltip", "aHTMLTooltip");
   browser.setAttribute("autocompletepopup", "PopupAutoComplete");
-  browser.setAttribute("selectmenulist", "ContentSelectDropdown");
 
   // Ensure that the browser is going to run in the same bc group as the other
   // extension pages from the same addon.
@@ -180,10 +177,8 @@ function loadPanel(extensionId, extensionUrl, browserStyle) {
 
   getBrowser(sidebar).then(browser => {
     let uri = Services.io.newURI(policy.getURL());
-    let triggeringPrincipal = Services.scriptSecurityManager.createContentPrincipal(
-      uri,
-      {}
-    );
-    browser.loadURI(extensionUrl, { triggeringPrincipal });
+    let triggeringPrincipal =
+      Services.scriptSecurityManager.createContentPrincipal(uri, {});
+    browser.fixupAndLoadURIString(extensionUrl, { triggeringPrincipal });
   });
 }

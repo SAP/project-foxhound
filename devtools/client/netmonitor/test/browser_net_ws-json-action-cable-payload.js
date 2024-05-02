@@ -8,9 +8,7 @@
  * correctly and displayed in a user friendly way
  */
 
-add_task(async function() {
-  await pushPref("devtools.netmonitor.features.webSockets", true);
-
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(WS_PAGE_URL, {
     requestCount: 1,
   });

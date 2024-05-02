@@ -16,28 +16,28 @@
 #endif
 
 #ifdef WR_FEATURE_YUV
-YUV_PRECISION flat varying vec3 vYcbcrBias;
-YUV_PRECISION flat varying mat3 vRgbFromDebiasedYcbcr;
+flat varying YUV_PRECISION vec3 vYcbcrBias;
+flat varying YUV_PRECISION mat3 vRgbFromDebiasedYcbcr;
 // YUV format. Packed in to vector to avoid bug 1630356.
-flat varying ivec2 vYuvFormat;
+flat varying mediump ivec2 vYuvFormat;
 
 #ifdef SWGL_DRAW_SPAN
-flat varying int vRescaleFactor;
+flat varying mediump int vRescaleFactor;
 #endif
-varying vec2 vUV_y;
-varying vec2 vUV_u;
-varying vec2 vUV_v;
-flat varying vec4 vUVBounds_y;
-flat varying vec4 vUVBounds_u;
-flat varying vec4 vUVBounds_v;
+varying highp vec2 vUV_y;
+varying highp vec2 vUV_u;
+varying highp vec2 vUV_v;
+flat varying highp vec4 vUVBounds_y;
+flat varying highp vec4 vUVBounds_u;
+flat varying highp vec4 vUVBounds_v;
 #else
-varying vec2 vUv;
+varying highp vec2 vUv;
 #ifndef WR_FEATURE_FAST_PATH
-flat varying vec4 vColor;
-flat varying vec4 vUVBounds;
+flat varying mediump vec4 vColor;
+flat varying highp vec4 vUVBounds;
 #endif
 #ifdef WR_FEATURE_TEXTURE_EXTERNAL_ESSL1
-uniform vec2 uTextureSize;
+uniform mediump vec2 uTextureSize;
 #endif
 #endif
 
@@ -92,14 +92,11 @@ void main(void) {
 #ifdef SWGL_DRAW_SPAN
     // swgl_commitTextureLinearYUV needs to know the color space specifier and
     // also needs to know how many bits of scaling are required to normalize
-    // HDR textures.
+    // HDR textures. Note that MSB HDR formats don't need renormalization.
     vRescaleFactor = 0;
-    if (prim.channel_bit_depth > 8) {
+    if (prim.channel_bit_depth > 8 && prim.yuv_format != YUV_FORMAT_P010) {
         vRescaleFactor = 16 - prim.channel_bit_depth;
     }
-    // Since SWGL rescales filtered YUV values to 8bpc before yuv->rgb
-    // conversion, don't embed a 10bpc channel multiplier into the yuv matrix.
-    prim.channel_bit_depth = 8;
 #endif
 
     YuvColorMatrixInfo mat_info = get_rgb_from_ycbcr_info(prim);
@@ -134,7 +131,8 @@ void main(void) {
     );
 #else
     uv = mix(aUvRect0.xy, aUvRect0.zw, uv);
-    vec4 uvBounds = aUvRect0;
+    // The uvs may be inverted, so use the min and max for the bounds
+    vec4 uvBounds = vec4(min(aUvRect0.xy, aUvRect0.zw), max(aUvRect0.xy, aUvRect0.zw));
     int rescale_uv = int(aParams.y);
     if (rescale_uv == 1)
     {
@@ -162,7 +160,7 @@ void main(void) {
 #endif
 #endif
 
-    gl_Position = uTransform * vec4(clipped_world_pos, aParams.x /* z_id */, 1.0);
+    gl_Position = uTransform * vec4(clipped_world_pos, 0.0, 1.0);
 }
 #endif
 
@@ -208,7 +206,7 @@ void swgl_drawSpanRGBA8() {
                                     vYcbcrBias,
                                     vRgbFromDebiasedYcbcr,
                                     vRescaleFactor);
-    } else if (vYuvFormat.x == YUV_FORMAT_NV12) {
+    } else if (vYuvFormat.x == YUV_FORMAT_NV12 || vYuvFormat.x == YUV_FORMAT_P010) {
         swgl_commitTextureLinearYUV(sColor0, vUV_y, vUVBounds_y,
                                     sColor1, vUV_u, vUVBounds_u,
                                     vYcbcrBias,

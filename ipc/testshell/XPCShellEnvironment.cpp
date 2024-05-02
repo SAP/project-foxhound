@@ -1,19 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <stdlib.h>
-#include <errno.h>
 #ifdef HAVE_IO_H
 #  include <io.h> /* for isatty() */
 #endif
 #ifdef HAVE_UNISTD_H
 #  include <unistd.h> /* for isatty() */
 #endif
-
-#include "base/basictypes.h"
 
 #include "jsapi.h"
 #include "js/CharacterEncoding.h"
@@ -28,25 +24,20 @@
 #include "XPCShellEnvironment.h"
 
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
-#include "mozilla/XPCOM.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/ScriptSettings.h"
 
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIXPConnect.h"
+#include "nsServiceManagerUtils.h"
 
 #include "nsJSUtils.h"
-#include "nsJSPrincipals.h"
-#include "nsThreadUtils.h"
-#include "nsXULAppAPI.h"
 
 #include "BackstagePass.h"
 
 #include "TestShellChild.h"
-#include "TestShellParent.h"
 
-using mozilla::AutoSafeJSContext;
 using mozilla::dom::AutoEntryScript;
 using mozilla::dom::AutoJSAPI;
 using mozilla::ipc::XPCShellEnvironment;
@@ -74,9 +65,9 @@ static bool Print(JSContext* cx, unsigned argc, JS::Value* vp) {
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
   for (unsigned i = 0; i < args.length(); i++) {
-    JSString* str = JS::ToString(cx, args[i]);
+    JS::Rooted<JSString*> str(cx, JS::ToString(cx, args[i]));
     if (!str) return false;
-    JS::UniqueChars bytes = JS_EncodeStringToLatin1(cx, str);
+    JS::UniqueChars bytes = JS_EncodeStringToUTF8(cx, str);
     if (!bytes) return false;
     fprintf(stdout, "%s%s", i ? " " : "", bytes.get());
     fflush(stdout);
@@ -100,9 +91,9 @@ static bool Dump(JSContext* cx, unsigned argc, JS::Value* vp) {
 
   if (!args.length()) return true;
 
-  JSString* str = JS::ToString(cx, args[0]);
+  JS::Rooted<JSString*> str(cx, JS::ToString(cx, args[0]));
   if (!str) return false;
-  JS::UniqueChars bytes = JS_EncodeStringToLatin1(cx, str);
+  JS::UniqueChars bytes = JS_EncodeStringToUTF8(cx, str);
   if (!bytes) return false;
 
   fputs(bytes.get(), stdout);
@@ -122,24 +113,20 @@ static bool Load(JSContext* cx, unsigned argc, JS::Value* vp) {
 
   for (unsigned i = 0; i < args.length(); i++) {
     JS::Rooted<JSString*> str(cx, JS::ToString(cx, args[i]));
-    if (!str) return false;
-    JS::UniqueChars filename = JS_EncodeStringToLatin1(cx, str);
-    if (!filename) return false;
-    FILE* file = fopen(filename.get(), "r");
-    if (!file) {
-      filename = JS_EncodeStringToUTF8(cx, str);
-      if (!filename) return false;
-      JS_ReportErrorUTF8(cx, "cannot open file '%s' for reading",
-                         filename.get());
+    if (!str) {
+      return false;
+    }
+    JS::UniqueChars filename = JS_EncodeStringToUTF8(cx, str);
+    if (!filename) {
       return false;
     }
 
     JS::CompileOptions options(cx);
-    options.setFileAndLine(filename.get(), 1);
-
-    JS::Rooted<JSScript*> script(cx, JS::CompileUtf8File(cx, options, file));
-    fclose(file);
-    if (!script) return false;
+    JS::Rooted<JSScript*> script(
+        cx, JS::CompileUtf8Path(cx, options, filename.get()));
+    if (!script) {
+      return false;
+    }
 
     if (!JS_ExecuteScript(cx, script)) {
       return false;
@@ -192,16 +179,51 @@ static bool GCZeal(JSContext* cx, unsigned argc, JS::Value* vp) {
 }
 #endif
 
-const JSFunctionSpec gGlobalFunctions[] = {JS_FN("print", Print, 0, 0),
-                                           JS_FN("load", Load, 1, 0),
-                                           JS_FN("quit", Quit, 0, 0),
-                                           JS_FN("dumpXPC", DumpXPC, 1, 0),
-                                           JS_FN("dump", Dump, 1, 0),
-                                           JS_FN("gc", GC, 0, 0),
-#ifdef JS_GC_ZEAL
-                                           JS_FN("gczeal", GCZeal, 1, 0),
+#ifdef ANDROID
+static bool ChangeTestShellDir(JSContext* cx, unsigned argc, Value* vp) {
+  // This method should only be used by testing/xpcshell/head.js to change to
+  // the correct directory on Android Remote XPCShell tests.
+  //
+  // TODO: Bug 1801725 - Find a more ergonomic way to do this than exposing
+  // identical methods in XPCShellEnvironment and XPCShellImpl to chdir on
+  // android for Remote XPCShell tests on Android.
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (args.length() != 1) {
+    JS_ReportErrorASCII(cx, "changeTestShellDir() takes one argument");
+    return false;
+  }
+
+  nsAutoJSCString path;
+  if (!path.init(cx, args[0])) {
+    JS_ReportErrorASCII(
+        cx, "changeTestShellDir(): could not convert argument 1 to string");
+    return false;
+  }
+
+  if (chdir(path.get())) {
+    JS_ReportErrorASCII(cx, "changeTestShellDir(): could not change directory");
+    return false;
+  }
+
+  return true;
+}
 #endif
-                                           JS_FS_END};
+
+const JSFunctionSpec gGlobalFunctions[] = {
+    JS_FN("print", Print, 0, 0),
+    JS_FN("load", Load, 1, 0),
+    JS_FN("quit", Quit, 0, 0),
+    JS_FN("dumpXPC", DumpXPC, 1, 0),
+    JS_FN("dump", Dump, 1, 0),
+    JS_FN("gc", GC, 0, 0),
+#ifdef JS_GC_ZEAL
+    JS_FN("gczeal", GCZeal, 1, 0),
+#endif
+#ifdef ANDROID
+    JS_FN("changeTestShellDir", ChangeTestShellDir, 1, 0),
+#endif
+    JS_FS_END};
 
 typedef enum JSShellErrNum {
 #define MSG_DEF(name, number, count, exception, format) name = number,
@@ -233,9 +255,7 @@ void XPCShellEnvironment::ProcessFile(JSContext* cx, const char* filename,
      * It's not interactive - just execute it.
      *
      * Support the UNIX #! shell hack; gobble the first line if it starts
-     * with '#'.  TODO - this isn't quite compatible with sharp variables,
-     * as a legal js program (using sharp variables) might start with '#'.
-     * But that would require multi-character lookahead.
+     * with '#'.
      */
     int ch = fgetc(file);
     if (ch == '#') {
@@ -406,7 +426,7 @@ bool XPCShellEnvironment::Init() {
   return true;
 }
 
-bool XPCShellEnvironment::EvaluateString(const nsString& aString,
+bool XPCShellEnvironment::EvaluateString(const nsAString& aString,
                                          nsString* aResult) {
   AutoEntryScript aes(GetGlobalObject(),
                       "ipc XPCShellEnvironment::EvaluateString");
@@ -416,7 +436,7 @@ bool XPCShellEnvironment::EvaluateString(const nsString& aString,
   options.setFileAndLine("typein", 0);
 
   JS::SourceText<char16_t> srcBuf;
-  if (!srcBuf.init(cx, aString.get(), aString.Length(),
+  if (!srcBuf.init(cx, aString.BeginReading(), aString.Length(),
                    JS::SourceOwnership::Borrowed)) {
     return false;
   }

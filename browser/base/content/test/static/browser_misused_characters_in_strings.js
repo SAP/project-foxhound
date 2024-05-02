@@ -11,61 +11,6 @@
  * entries. */
 let gExceptionsList = [
   {
-    file: "netError.dtd",
-    key: "certerror.introPara2",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.sts.introPara",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.expiredCert.introPara",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.expiredCert.whatCanYouDoAboutIt2",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.whatShouldIDo.badStsCertExplanation1",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "inadequateSecurityError.longDesc",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "clockSkewError.longDesc",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.mitm.longDesc",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.mitm.whatCanYouDoAboutIt3",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.mitm.sts.whatCanYouDoAboutIt3",
-    type: "single-quote",
-  },
-  {
-    file: "mathfont.properties",
-    key: "operator.\\u002E\\u002E\\u002E.postfix",
-    type: "ellipsis",
-  },
-  {
     file: "layout_errors.properties",
     key: "ImageMapRectBoundsError",
     type: "double-quote",
@@ -102,13 +47,25 @@ let gExceptionsList = [
     type: "single-quote",
   },
   {
-    file: "netError.dtd",
-    key: "inadequateSecurityError.longDesc",
+    file: "dom.properties",
+    key: "ImportMapExternalNotSupported",
+    type: "single-quote",
+  },
+  // dom.properties is packaged twice so we need to have two exceptions for this string.
+  {
+    file: "dom.properties",
+    key: "ImportMapExternalNotSupported",
     type: "single-quote",
   },
   {
-    file: "netErrorApp.dtd",
-    key: "securityOverride.warningContent",
+    file: "dom.properties",
+    key: "MathML_DeprecatedMathVariantWarning",
+    type: "single-quote",
+  },
+  // dom.properties is packaged twice so we need to have two exceptions for this string.
+  {
+    file: "dom.properties",
+    key: "MathML_DeprecatedMathVariantWarning",
     type: "single-quote",
   },
 ];
@@ -221,7 +178,7 @@ add_task(async function checkAllTheProperties() {
   }
 });
 
-var checkDTD = async function(aURISpec) {
+var checkDTD = async function (aURISpec) {
   let rawContents = await fetchFile(aURISpec);
   // The regular expression below is adapted from:
   // https://hg.mozilla.org/mozilla-central/file/68c0b7d6f16ce5bb023e08050102b5f2fe4aacd8/python/compare-locales/compare_locales/parser.py#l233
@@ -264,63 +221,24 @@ add_task(async function checkAllTheDTDs() {
 
 add_task(async function checkAllTheFluents() {
   let uris = await getAllTheFiles(".ftl");
-  let { FluentParser, Visitor } = ChromeUtils.import(
-    "resource://testing-common/FluentSyntax.jsm",
-    {}
-  );
 
-  class TextElementVisitor extends Visitor {
-    constructor() {
-      super();
-      let domParser = new DOMParser();
-      domParser.forceEnableDTD();
-
-      this.domParser = domParser;
-      this.uri = null;
-      this.id = null;
-      this.attr = null;
-    }
-
-    visitMessage(node) {
-      this.id = node.id.name;
-      this.attr = null;
-      this.genericVisit(node);
-    }
-
-    visitTerm(node) {
-      this.id = node.id.name;
-      this.attr = null;
-      this.genericVisit(node);
-    }
-
-    visitAttribute(node) {
-      this.attr = node.id.name;
-      this.genericVisit(node);
-    }
-
-    get key() {
-      if (this.attr) {
-        return `${this.id}.${this.attr}`;
-      }
-      return this.id;
-    }
-
-    visitTextElement(node) {
-      let stripped_val = this.domParser.parseFromString(node.value, "text/html")
-        .documentElement.textContent;
-      testForErrors(this.uri, this.key, stripped_val);
-    }
-  }
-
-  const ftlParser = new FluentParser({ withSpans: false });
-  const visitor = new TextElementVisitor();
+  let domParser = new DOMParser();
+  domParser.forceEnableDTD();
 
   for (let uri of uris) {
     let rawContents = await fetchFile(uri.spec);
-    let ast = ftlParser.parse(rawContents);
+    const resource = new FluentResource(rawContents);
 
-    visitor.uri = uri.spec;
-    visitor.visit(ast);
+    for (const info of resource.textElements()) {
+      const key = info.attr ? `${info.id}.${info.attr}` : info.id;
+
+      const stripped_val = domParser.parseFromString(
+        "<!DOCTYPE html>" + info.text,
+        "text/html"
+      ).documentElement.textContent;
+
+      testForErrors(uri.spec, key, stripped_val);
+    }
   }
 });
 

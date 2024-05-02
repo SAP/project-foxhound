@@ -18,6 +18,7 @@
 
 #include "api/audio/echo_canceller3_config.h"
 #include "api/audio/echo_control.h"
+#include "modules/audio_processing/aec3/block.h"
 #include "modules/audio_processing/aec3/echo_remover.h"
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
 #include "modules/audio_processing/aec3/render_delay_controller.h"
@@ -56,19 +57,23 @@ class BlockProcessor {
   virtual void SetAudioBufferDelay(int delay_ms) = 0;
 
   // Processes a block of capture data.
-  virtual void ProcessCapture(
-      bool echo_path_gain_change,
-      bool capture_signal_saturation,
-      std::vector<std::vector<std::vector<float>>>* linear_output,
-      std::vector<std::vector<std::vector<float>>>* capture_block) = 0;
+  virtual void ProcessCapture(bool echo_path_gain_change,
+                              bool capture_signal_saturation,
+                              Block* linear_output,
+                              Block* capture_block) = 0;
 
   // Buffers a block of render data supplied by a FrameBlocker object.
-  virtual void BufferRender(
-      const std::vector<std::vector<std::vector<float>>>& render_block) = 0;
+  virtual void BufferRender(const Block& render_block) = 0;
 
   // Reports whether echo leakage has been detected in the echo canceller
   // output.
   virtual void UpdateEchoLeakageStatus(bool leakage_detected) = 0;
+
+  // Specifies whether the capture output will be used. The purpose of this is
+  // to allow the block processor to deactivate some of the processing when the
+  // resulting output is anyway not used, for instance when the endpoint is
+  // muted.
+  virtual void SetCaptureOutputUsage(bool capture_output_used) = 0;
 };
 
 }  // namespace webrtc

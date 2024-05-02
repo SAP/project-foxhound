@@ -12,14 +12,18 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/RegisterWorkletBindings.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WorkletBinding.h"
 #include "mozilla/dom/WorkletGlobalScope.h"
+#include "mozilla/dom/worklet/WorkletModuleLoader.h"
 #include "nsGlobalWindowInner.h"
 
-namespace mozilla {
+using mozilla::dom::loader::WorkletModuleLoader;
+using mozilla::dom::loader::WorkletScriptLoader;
 
+namespace mozilla {
 // ---------------------------------------------------------------------------
 // WorkletLoadInfo
 
@@ -41,7 +45,8 @@ WorkletImpl::WorkletImpl(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
     : mPrincipal(NullPrincipal::CreateWithInheritedAttributes(aPrincipal)),
       mWorkletLoadInfo(aWindow),
       mTerminated(false),
-      mFinishedOnExecutionThread(false) {
+      mFinishedOnExecutionThread(false),
+      mTrials(OriginTrials::FromWindow(nsGlobalWindowInner::Cast(aWindow))) {
   Unused << NS_WARN_IF(
       NS_FAILED(ipc::PrincipalToPrincipalInfo(mPrincipal, &mPrincipalInfo)));
 
@@ -51,12 +56,18 @@ WorkletImpl::WorkletImpl(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
 
   mSharedMemoryAllowed =
       nsGlobalWindowInner::Cast(aWindow)->IsSharedMemoryAllowed();
+
+  mShouldResistFingerprinting = aWindow->AsGlobal()->ShouldResistFingerprinting(
+      RFPTarget::IsAlwaysEnabledForPrecompute);
+
+  RefPtr<dom::Document> doc = nsGlobalWindowInner::Cast(aWindow)->GetDocument();
+  if (doc) {
+    mOverriddenFingerprintingSettings =
+        doc->GetOverriddenFingerprintingSettings();
+  }
 }
 
-WorkletImpl::~WorkletImpl() {
-  MOZ_ASSERT(!mGlobalScope);
-  MOZ_ASSERT(!mPrincipal || NS_IsMainThread());
-}
+WorkletImpl::~WorkletImpl() { MOZ_ASSERT(!mGlobalScope); }
 
 JSObject* WorkletImpl::WrapWorklet(JSContext* aCx, dom::Worklet* aWorklet,
                                    JS::Handle<JSObject*> aGivenProto) {
@@ -92,6 +103,13 @@ dom::WorkletGlobalScope* WorkletImpl::GetGlobalScope() {
 
   JS_FireOnNewGlobalObject(cx, global);
 
+  MOZ_ASSERT(!mGlobalScope->GetModuleLoader(cx));
+
+  RefPtr<WorkletScriptLoader> scriptLoader = new WorkletScriptLoader();
+  RefPtr<WorkletModuleLoader> moduleLoader =
+      new WorkletModuleLoader(scriptLoader, mGlobalScope);
+  mGlobalScope->InitModuleLoader(moduleLoader);
+
   return mGlobalScope;
 }
 
@@ -115,7 +133,6 @@ void WorkletImpl::NotifyWorkletFinished() {
     mWorkletThread->Terminate();
     mWorkletThread = nullptr;
   }
-  mPrincipal = nullptr;
 }
 
 nsresult WorkletImpl::SendControlMessage(

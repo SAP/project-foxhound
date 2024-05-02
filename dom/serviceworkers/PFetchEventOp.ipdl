@@ -10,11 +10,16 @@ include FetchTypes;
 namespace mozilla {
 namespace dom {
 
+[ManualDealloc]
 protocol PFetchEventOp {
   manager PRemoteWorkerController;
 
  parent:
   async PreloadResponse(ParentToParentInternalResponse aResponse);
+
+  async PreloadResponseTiming(ResponseTiming aTiming);
+
+  async PreloadResponseEnd(ResponseEndArgs aArgs);
 
  child:
   async AsyncLog(nsCString aScriptSpec, uint32_t aLineNumber,

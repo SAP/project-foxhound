@@ -9,28 +9,31 @@
 
 #include "mozilla/RefPtr.h"  // RefPtr
 
-#include "frontend/CompilationStencil.h"  // SharedDataContainer
-#include "frontend/ObjLiteral.h"          // ObjLiteralStencil
-#include "frontend/ParserAtom.h"          // ParserAtom, ParserAtomSpan
+#include "frontend/ParserAtom.h"  // ParserAtom, ParserAtomSpan
 #include "frontend/Stencil.h"  // BitIntStencil, ScopeStencil, BaseParserScopeData
-#include "vm/SharedStencil.h"  // SharedImmutableScriptData
 #include "vm/Xdr.h"            // XDRMode, XDRResult, XDRState
 
 namespace JS {
 
-class DecodeOptions;
+class ReadOnlyDecodeOptions;
 
 }  // namespace JS
 
 namespace js {
 
 class LifoAlloc;
+class ObjLiteralStencil;
 class ScriptSource;
+class SharedImmutableScriptData;
 
 class XDRStencilDecoder;
 class XDRStencilEncoder;
 
 namespace frontend {
+
+struct CompilationStencil;
+struct ExtensibleCompilationStencil;
+struct SharedDataContainer;
 
 // Check that we can copy data to disk and restore it in another instance of
 // the program in a different address space.
@@ -85,7 +88,7 @@ class StencilXDR {
  public:
   template <XDRMode mode>
   static XDRResult codeSource(XDRState<mode>* xdr,
-                              const JS::DecodeOptions* maybeOptions,
+                              const JS::ReadOnlyDecodeOptions* maybeOptions,
                               RefPtr<ScriptSource>& source);
 
   template <XDRMode mode>
@@ -118,6 +121,14 @@ class StencilXDR {
                                       ParserAtomSpan& parserAtomData);
 
   template <XDRMode mode>
+  static XDRResult codeModuleRequest(XDRState<mode>* xdr,
+                                     StencilModuleRequest& stencil);
+
+  template <XDRMode mode>
+  static XDRResult codeModuleRequestVector(
+      XDRState<mode>* xdr, StencilModuleMetadata::RequestVector& vector);
+
+  template <XDRMode mode>
   static XDRResult codeModuleEntry(XDRState<mode>* xdr,
                                    StencilModuleEntry& stencil);
 
@@ -145,12 +156,12 @@ class StencilXDR {
 /*
  * The structure of the Stencil XDR buffer is:
  *
- * 1. Header
- *   a. Version
- *   b. ScriptSource
- *   d. Alignment padding
- * 2. Stencil
- *   a. CompilationStencil
+ * 1. Version
+ * 2. length of content
+ * 3. checksum of content
+ * 4. content
+ *   a. ScriptSource
+ *   b. CompilationStencil
  */
 
 /*
@@ -166,29 +177,29 @@ class XDRStencilDecoder : public XDRState<XDR_DECODE> {
   using Base = XDRState<XDR_DECODE>;
 
  public:
-  XDRStencilDecoder(JSContext* cx, const JS::TranscodeRange& range)
-      : Base(cx, range) {
+  XDRStencilDecoder(FrontendContext* fc, const JS::TranscodeRange& range)
+      : Base(fc, range) {
     MOZ_ASSERT(JS::IsTranscodingBytecodeAligned(range.begin().get()));
   }
 
-  XDRResult codeStencil(const JS::DecodeOptions& options,
+  XDRResult codeStencil(const JS::ReadOnlyDecodeOptions& options,
                         frontend::CompilationStencil& stencil);
 
-  const JS::DecodeOptions& options() {
+  const JS::ReadOnlyDecodeOptions& options() {
     MOZ_ASSERT(options_);
     return *options_;
   }
 
  private:
-  const JS::DecodeOptions* options_ = nullptr;
+  const JS::ReadOnlyDecodeOptions* options_ = nullptr;
 };
 
 class XDRStencilEncoder : public XDRState<XDR_ENCODE> {
   using Base = XDRState<XDR_ENCODE>;
 
  public:
-  XDRStencilEncoder(JSContext* cx, JS::TranscodeBuffer& buffer)
-      : Base(cx, buffer, buffer.length()) {
+  XDRStencilEncoder(FrontendContext* fc, JS::TranscodeBuffer& buffer)
+      : Base(fc, buffer, buffer.length()) {
     // NOTE: If buffer is empty, buffer.begin() doesn't point valid buffer.
     MOZ_ASSERT_IF(!buffer.empty(),
                   JS::IsTranscodingBytecodeAligned(buffer.begin()));

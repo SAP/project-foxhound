@@ -1,10 +1,7 @@
 use core::fmt;
 use std::error::Error;
 
-use crate::{
-    gfx_select,
-    hub::{Global, IdentityManagerFactory},
-};
+use crate::{gfx_select, global::Global, identity::IdentityManagerFactory};
 
 pub struct ErrorFormatter<'a> {
     writer: &'a mut dyn fmt::Write,
@@ -13,46 +10,46 @@ pub struct ErrorFormatter<'a> {
 
 impl<'a> ErrorFormatter<'a> {
     pub fn error(&mut self, err: &dyn Error) {
-        writeln!(self.writer, "    {}", err).expect("Error formatting error");
+        writeln!(self.writer, "    {err}").expect("Error formatting error");
     }
 
     pub fn note(&mut self, note: &dyn fmt::Display) {
-        writeln!(self.writer, "      note: {}", note).expect("Error formatting error");
+        writeln!(self.writer, "      note: {note}").expect("Error formatting error");
     }
 
     pub fn label(&mut self, label_key: &str, label_value: &str) {
         if !label_key.is_empty() && !label_value.is_empty() {
-            self.note(&format!("{} = `{}`", label_key, label_value));
+            self.note(&format!("{label_key} = `{label_value}`"));
         }
     }
 
     pub fn bind_group_label(&mut self, id: &crate::id::BindGroupId) {
         let global = self.global;
-        let label = gfx_select!(id => global.bind_group_label(*id));
+        let label: String = gfx_select!(id => global.bind_group_label(*id));
         self.label("bind group", &label);
     }
 
     pub fn bind_group_layout_label(&mut self, id: &crate::id::BindGroupLayoutId) {
         let global = self.global;
-        let label = gfx_select!(id => global.bind_group_layout_label(*id));
+        let label: String = gfx_select!(id => global.bind_group_layout_label(*id));
         self.label("bind group layout", &label);
     }
 
     pub fn render_pipeline_label(&mut self, id: &crate::id::RenderPipelineId) {
         let global = self.global;
-        let label = gfx_select!(id => global.render_pipeline_label(*id));
+        let label: String = gfx_select!(id => global.render_pipeline_label(*id));
         self.label("render pipeline", &label);
     }
 
     pub fn compute_pipeline_label(&mut self, id: &crate::id::ComputePipelineId) {
         let global = self.global;
-        let label = gfx_select!(id => global.compute_pipeline_label(*id));
+        let label: String = gfx_select!(id => global.compute_pipeline_label(*id));
         self.label("compute pipeline", &label);
     }
 
     pub fn buffer_label_with_key(&mut self, id: &crate::id::BufferId, key: &str) {
         let global = self.global;
-        let label = gfx_select!(id => global.buffer_label(*id));
+        let label: String = gfx_select!(id => global.buffer_label(*id));
         self.label(key, &label);
     }
 
@@ -62,7 +59,7 @@ impl<'a> ErrorFormatter<'a> {
 
     pub fn texture_label_with_key(&mut self, id: &crate::id::TextureId, key: &str) {
         let global = self.global;
-        let label = gfx_select!(id => global.texture_label(*id));
+        let label: String = gfx_select!(id => global.texture_label(*id));
         self.label(key, &label);
     }
 
@@ -72,7 +69,7 @@ impl<'a> ErrorFormatter<'a> {
 
     pub fn texture_view_label_with_key(&mut self, id: &crate::id::TextureViewId, key: &str) {
         let global = self.global;
-        let label = gfx_select!(id => global.texture_view_label(*id));
+        let label: String = gfx_select!(id => global.texture_view_label(*id));
         self.label(key, &label);
     }
 
@@ -82,14 +79,20 @@ impl<'a> ErrorFormatter<'a> {
 
     pub fn sampler_label(&mut self, id: &crate::id::SamplerId) {
         let global = self.global;
-        let label = gfx_select!(id => global.sampler_label(*id));
+        let label: String = gfx_select!(id => global.sampler_label(*id));
         self.label("sampler", &label);
     }
 
     pub fn command_buffer_label(&mut self, id: &crate::id::CommandBufferId) {
         let global = self.global;
-        let label = gfx_select!(id => global.command_buffer_label(*id));
+        let label: String = gfx_select!(id => global.command_buffer_label(*id));
         self.label("command buffer", &label);
+    }
+
+    pub fn query_set_label(&mut self, id: &crate::id::QuerySetId) {
+        let global = self.global;
+        let label: String = gfx_select!(id => global.query_set_label(*id));
+        self.label("query set", &label);
     }
 }
 
@@ -142,6 +145,15 @@ pub fn format_pretty_any(
     if let Some(pretty_err) = error.downcast_ref::<crate::command::TransferError>() {
         return pretty_err.fmt_pretty(&mut fmt);
     }
+    if let Some(pretty_err) = error.downcast_ref::<crate::command::PassErrorScope>() {
+        return pretty_err.fmt_pretty(&mut fmt);
+    }
+    if let Some(pretty_err) = error.downcast_ref::<crate::track::UsageConflict>() {
+        return pretty_err.fmt_pretty(&mut fmt);
+    }
+    if let Some(pretty_err) = error.downcast_ref::<crate::command::QueryError>() {
+        return pretty_err.fmt_pretty(&mut fmt);
+    }
 
     // default
     fmt.error(error)
@@ -150,7 +162,22 @@ pub fn format_pretty_any(
 #[derive(Debug)]
 pub struct ContextError {
     pub string: &'static str,
+    #[cfg(any(
+        not(target_arch = "wasm32"),
+        all(
+            feature = "fragile-send-sync-non-atomic-wasm",
+            not(target_feature = "atomics")
+        )
+    ))]
     pub cause: Box<dyn Error + Send + Sync + 'static>,
+    #[cfg(not(any(
+        not(target_arch = "wasm32"),
+        all(
+            feature = "fragile-send-sync-non-atomic-wasm",
+            not(target_feature = "atomics")
+        )
+    )))]
+    pub cause: Box<dyn Error + 'static>,
     pub label_key: &'static str,
     pub label: String,
 }

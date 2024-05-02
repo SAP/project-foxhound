@@ -6,11 +6,9 @@
 var {
   RetVal,
   Actor,
-  ActorClassWithSpec,
   FrontClassWithSpec,
   generateActorSpec,
-} = require("devtools/shared/protocol");
-var Services = require("Services");
+} = require("resource://devtools/shared/protocol.js");
 
 const lazySpec = generateActorSpec({
   typeName: "lazy",
@@ -22,17 +20,18 @@ const lazySpec = generateActorSpec({
   },
 });
 
-exports.LazyActor = ActorClassWithSpec(lazySpec, {
-  initialize: function(conn, id) {
-    Actor.prototype.initialize.call(this, conn);
+class LazyActor extends Actor {
+  constructor(conn, id) {
+    super(conn, lazySpec);
 
     Services.obs.notifyObservers(null, "actor", "instantiated");
-  },
+  }
 
-  hello: function(str) {
+  hello(str) {
     return "world";
-  },
-});
+  }
+}
+exports.LazyActor = LazyActor;
 
 Services.obs.notifyObservers(null, "actor", "loaded");
 

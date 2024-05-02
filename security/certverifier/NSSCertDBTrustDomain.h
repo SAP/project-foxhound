@@ -49,6 +49,11 @@ enum class NetscapeStepUpPolicy : uint32_t {
   NeverMatch = 3,
 };
 
+enum class OCSPFetchStatus : uint16_t {
+  NotFetched = 0,
+  Fetched = 1,
+};
+
 SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
                         PKCS11DBConfig pkcs11DbConfig);
 
@@ -142,7 +147,6 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
       OCSPCache& ocspCache, void* pinArg, mozilla::TimeDuration ocspTimeoutSoft,
       mozilla::TimeDuration ocspTimeoutHard, uint32_t certShortLifetimeInDays,
       unsigned int minRSABits, ValidityCheckingMode validityCheckingMode,
-      CertVerifier::SHA1Mode sha1Mode,
       NetscapeStepUpPolicy netscapeStepUpPolicy, CRLiteMode crliteMode,
       const OriginAttributes& originAttributes,
       const Vector<mozilla::pkix::Input>& thirdPartyRootInputs,
@@ -171,16 +175,23 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
       mozilla::pkix::EndEntityOrCA endEntityOrCA,
       unsigned int modulusSizeInBits) override;
 
-  virtual Result VerifyRSAPKCS1SignedDigest(
-      const mozilla::pkix::SignedDigest& signedDigest,
+  virtual Result VerifyRSAPKCS1SignedData(
+      mozilla::pkix::Input data, mozilla::pkix::DigestAlgorithm digestAlgorithm,
+      mozilla::pkix::Input signature,
+      mozilla::pkix::Input subjectPublicKeyInfo) override;
+
+  virtual Result VerifyRSAPSSSignedData(
+      mozilla::pkix::Input data, mozilla::pkix::DigestAlgorithm digestAlgorithm,
+      mozilla::pkix::Input signature,
       mozilla::pkix::Input subjectPublicKeyInfo) override;
 
   virtual Result CheckECDSACurveIsAcceptable(
       mozilla::pkix::EndEntityOrCA endEntityOrCA,
       mozilla::pkix::NamedCurve curve) override;
 
-  virtual Result VerifyECDSASignedDigest(
-      const mozilla::pkix::SignedDigest& signedDigest,
+  virtual Result VerifyECDSASignedData(
+      mozilla::pkix::Input data, mozilla::pkix::DigestAlgorithm digestAlgorithm,
+      mozilla::pkix::Input signature,
       mozilla::pkix::Input subjectPublicKeyInfo) override;
 
   virtual Result DigestBuf(mozilla::pkix::Input item,
@@ -233,6 +244,8 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
 
   bool GetIsErrorDueToDistrustedCAPolicy() const;
 
+  OCSPFetchStatus GetOCSPFetchStatus() { return mOCSPFetchStatus; }
+
  private:
   Result CheckCRLiteStash(
       const nsTArray<uint8_t>& issuerSubjectPublicKeyInfoBytes,
@@ -251,17 +264,31 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   Result VerifyAndMaybeCacheEncodedOCSPResponse(
       const mozilla::pkix::CertID& certID, mozilla::pkix::Time time,
       uint16_t maxLifetimeInDays, mozilla::pkix::Input encodedResponse,
-      EncodedResponseSource responseSource, /*out*/ bool& expired);
+      EncodedResponseSource responseSource, /*out*/ bool& expired,
+      /*out*/ uint32_t& ageInHours);
   TimeDuration GetOCSPTimeout() const;
+
+  Result CheckRevocationByCRLite(const mozilla::pkix::CertID& certID,
+                                 const mozilla::pkix::Input& sctExtension,
+                                 /*out*/ bool& crliteCoversCertificate);
+
+  Result CheckRevocationByOCSP(
+      const mozilla::pkix::CertID& certID, mozilla::pkix::Time time,
+      mozilla::pkix::Duration validityDuration, const nsCString& aiaLocation,
+      const bool crliteCoversCertificate, const Result crliteResult,
+      /*optional*/ const mozilla::pkix::Input* stapledOCSPResponse,
+      /*out*/ bool& softFailure);
 
   Result SynchronousCheckRevocationWithServer(
       const mozilla::pkix::CertID& certID, const nsCString& aiaLocation,
       mozilla::pkix::Time time, uint16_t maxOCSPLifetimeInDays,
       const Result cachedResponseResult, const Result stapledOCSPResponseResult,
-      const bool crliteFilterCoversCertificate, const Result crliteResult);
+      const bool crliteFilterCoversCertificate, const Result crliteResult,
+      /*out*/ bool& softFailure);
   Result HandleOCSPFailure(const Result cachedResponseResult,
                            const Result stapledOCSPResponseResult,
-                           const Result error);
+                           const Result error,
+                           /*out*/ bool& softFailure);
 
   const SECTrustType mCertDBTrustType;
   const OCSPFetching mOCSPFetching;
@@ -272,7 +299,6 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   const uint32_t mCertShortLifetimeInDays;
   const unsigned int mMinRSABits;
   ValidityCheckingMode mValidityCheckingMode;
-  CertVerifier::SHA1Mode mSHA1Mode;
   NetscapeStepUpPolicy mNetscapeStepUpPolicy;
   CRLiteMode mCRLiteMode;
   bool mSawDistrustedCAByPolicyError;
@@ -293,6 +319,8 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
 
   // The built-in roots module, if available.
   UniqueSECMODModule mBuiltInRootsModule;
+
+  OCSPFetchStatus mOCSPFetchStatus;
 };
 
 }  // namespace psm

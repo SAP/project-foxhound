@@ -9,33 +9,35 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   connect,
-} = require("devtools/client/shared/redux/visibility-handler-connect");
+} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
 const {
   setTargetSearchResult,
-} = require("devtools/client/netmonitor/src/actions/search");
+} = require("resource://devtools/client/netmonitor/src/actions/search.js");
 
 // Components
-const TreeViewClass = require("devtools/client/shared/components/tree/TreeView");
+const TreeViewClass = require("resource://devtools/client/shared/components/tree/TreeView.js");
 const TreeView = createFactory(TreeViewClass);
-const PropertiesViewContextMenu = require("devtools/client/netmonitor/src/widgets/PropertiesViewContextMenu");
+const PropertiesViewContextMenu = require("resource://devtools/client/netmonitor/src/widgets/PropertiesViewContextMenu.js");
 
-loader.lazyGetter(this, "Rep", function() {
-  return require("devtools/client/shared/components/reps/index").REPS.Rep;
+loader.lazyGetter(this, "Rep", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
+    .REPS.Rep;
 });
-loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/index").MODE;
+loader.lazyGetter(this, "MODE", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
+    .MODE;
 });
 
 // Constants
 const {
   AUTO_EXPAND_MAX_LEVEL,
   AUTO_EXPAND_MAX_NODES,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 const { div } = dom;
 
@@ -129,11 +131,8 @@ class PropertiesView extends Component {
    * which happens when the user clicks on a search result.
    */
   scrollSelectedIntoView() {
-    const {
-      targetSearchResult,
-      resetTargetSearchResult,
-      selectPath,
-    } = this.props;
+    const { targetSearchResult, resetTargetSearchResult, selectPath } =
+      this.props;
     if (!targetSearchResult) {
       return;
     }

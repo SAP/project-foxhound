@@ -10,8 +10,7 @@
 #include "mozilla/dom/PSpeechSynthesisRequestChild.h"
 #include "nsSpeechTask.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class nsSynthVoiceRegistry;
 class SpeechSynthesisRequestChild;
@@ -28,23 +27,25 @@ class SpeechSynthesisChild : public PSpeechSynthesisChild {
 
   mozilla::ipc::IPCResult RecvVoiceAdded(const RemoteVoice& aVoice);
 
-  mozilla::ipc::IPCResult RecvVoiceRemoved(const nsString& aUri);
+  mozilla::ipc::IPCResult RecvVoiceRemoved(const nsAString& aUri);
 
-  mozilla::ipc::IPCResult RecvSetDefaultVoice(const nsString& aUri,
+  mozilla::ipc::IPCResult RecvSetDefaultVoice(const nsAString& aUri,
                                               const bool& aIsDefault);
 
   mozilla::ipc::IPCResult RecvIsSpeakingChanged(const bool& aIsSpeaking);
 
   mozilla::ipc::IPCResult RecvNotifyVoicesChanged();
 
+  mozilla::ipc::IPCResult RecvNotifyVoicesError(const nsAString& aError);
+
  protected:
   SpeechSynthesisChild();
   virtual ~SpeechSynthesisChild();
 
   PSpeechSynthesisRequestChild* AllocPSpeechSynthesisRequestChild(
-      const nsString& aLang, const nsString& aUri, const nsString& aText,
+      const nsAString& aLang, const nsAString& aUri, const nsAString& aText,
       const float& aVolume, const float& aPitch, const float& aRate,
-      const bool& aIsChrome);
+      const bool& aShouldResistFingerprinting);
   bool DeallocPSpeechSynthesisRequestChild(
       PSpeechSynthesisRequestChild* aActor);
 };
@@ -55,7 +56,7 @@ class SpeechSynthesisRequestChild : public PSpeechSynthesisRequestChild {
   virtual ~SpeechSynthesisRequestChild();
 
  protected:
-  mozilla::ipc::IPCResult RecvOnStart(const nsString& aUri) override;
+  mozilla::ipc::IPCResult RecvOnStart(const nsAString& aUri) override;
 
   mozilla::ipc::IPCResult RecvOnEnd(const bool& aIsError,
                                     const float& aElapsedTime,
@@ -67,13 +68,13 @@ class SpeechSynthesisRequestChild : public PSpeechSynthesisRequestChild {
   mozilla::ipc::IPCResult RecvOnResume(const float& aElapsedTime,
                                        const uint32_t& aCharIndex) override;
 
-  mozilla::ipc::IPCResult RecvOnBoundary(const nsString& aName,
+  mozilla::ipc::IPCResult RecvOnBoundary(const nsAString& aName,
                                          const float& aElapsedTime,
                                          const uint32_t& aCharIndex,
                                          const uint32_t& aCharLength,
                                          const uint8_t& argc) override;
 
-  mozilla::ipc::IPCResult RecvOnMark(const nsString& aName,
+  mozilla::ipc::IPCResult RecvOnMark(const nsAString& aName,
                                      const float& aElapsedTime,
                                      const uint32_t& aCharIndex) override;
 
@@ -85,7 +86,7 @@ class SpeechTaskChild : public nsSpeechTask {
 
  public:
   explicit SpeechTaskChild(SpeechSynthesisUtterance* aUtterance,
-                           bool aIsChrome);
+                           bool aShouldResistFingerprinting);
 
   NS_IMETHOD Setup(nsISpeechTaskCallback* aCallback) override;
 
@@ -103,7 +104,6 @@ class SpeechTaskChild : public nsSpeechTask {
   SpeechSynthesisRequestChild* mActor;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

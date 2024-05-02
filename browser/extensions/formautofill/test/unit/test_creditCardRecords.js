@@ -4,19 +4,21 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
-const { CreditCard } = ChromeUtils.import(
-  "resource://gre/modules/CreditCard.jsm"
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
+const { CreditCard } = ChromeUtils.importESModule(
+  "resource://gre/modules/CreditCard.sys.mjs"
 );
 
 let FormAutofillStorage;
-add_task(async function setup() {
-  ({ FormAutofillStorage } = ChromeUtils.import(
-    "resource://autofill/FormAutofillStorage.jsm"
+let CREDIT_CARD_SCHEMA_VERSION;
+add_setup(async () => {
+  ({ FormAutofillStorage } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillStorage.sys.mjs"
+  ));
+  ({ CREDIT_CARD_SCHEMA_VERSION } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillStorageBase.sys.mjs"
   ));
 });
 
@@ -28,7 +30,6 @@ const TEST_CREDIT_CARD_1 = {
   "cc-number": "4929001587121045",
   "cc-exp-month": 4,
   "cc-exp-year": 2017,
-  "cc-type": "visa",
 };
 
 const TEST_CREDIT_CARD_2 = {
@@ -36,20 +37,12 @@ const TEST_CREDIT_CARD_2 = {
   "cc-number": "5103059495477870",
   "cc-exp-month": 12,
   "cc-exp-year": 2022,
-  "cc-type": "mastercard",
 };
 
 const TEST_CREDIT_CARD_3 = {
   "cc-number": "3589993783099582",
   "cc-exp-month": 1,
   "cc-exp-year": 2000,
-  "cc-type": "amex",
-};
-
-const TEST_CREDIT_CARD_4 = {
-  "cc-name": "Foo Bar",
-  "cc-number": "3589993783099582",
-  "cc-type": "amex",
 };
 
 const TEST_CREDIT_CARD_WITH_BILLING_ADDRESS = {
@@ -63,7 +56,6 @@ const TEST_CREDIT_CARD_WITH_EMPTY_FIELD = {
   "cc-name": "",
   "cc-number": "344060747836806",
   "cc-exp-month": 1,
-  "cc-type": "",
 };
 
 const TEST_CREDIT_CARD_WITH_EMPTY_COMPUTED_FIELD = {
@@ -80,12 +72,6 @@ const TEST_CREDIT_CARD_WITH_2_DIGITS_YEAR = {
   "cc-exp-year": 12,
 };
 
-const TEST_CREDIT_CARD_WITH_INVALID_FIELD = {
-  "cc-name": "John Doe",
-  "cc-number": "344060747836806",
-  invalidField: "INVALID",
-};
-
 const TEST_CREDIT_CARD_WITH_INVALID_EXPIRY_DATE = {
   "cc-name": "John Doe",
   "cc-number": "5103059495477870",
@@ -96,14 +82,6 @@ const TEST_CREDIT_CARD_WITH_INVALID_EXPIRY_DATE = {
 const TEST_CREDIT_CARD_WITH_SPACES_BETWEEN_DIGITS = {
   "cc-name": "John Doe",
   "cc-number": "5103 0594 9547 7870",
-};
-
-const TEST_CREDIT_CARD_WITH_INVALID_NETWORK = {
-  "cc-name": "John Doe",
-  "cc-number": "4929001587121045",
-  "cc-exp-month": 4,
-  "cc-exp-year": 2017,
-  "cc-type": "asiv",
 };
 
 const TEST_CREDIT_CARD_EMPTY_AFTER_NORMALIZE = {
@@ -117,98 +95,7 @@ const TEST_CREDIT_CARD_EMPTY_AFTER_UPDATE_CREDIT_CARD_1 = {
   "cc-exp-year": "",
 };
 
-const MERGE_TESTCASES = [
-  {
-    description: "Merge a superset",
-    creditCardInStorage: {
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-    creditCardToMerge: {
-      "cc-name": "John Doe",
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-    expectedCreditCard: {
-      "cc-name": "John Doe",
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-  },
-  {
-    description: "Merge a superset with billingAddressGUID",
-    creditCardInStorage: {
-      "cc-number": "4929001587121045",
-    },
-    creditCardToMerge: {
-      "cc-number": "4929001587121045",
-      billingAddressGUID: "ijsnbhfr",
-    },
-    expectedCreditCard: {
-      "cc-number": "4929001587121045",
-      billingAddressGUID: "ijsnbhfr",
-    },
-  },
-  {
-    description: "Merge a subset",
-    creditCardInStorage: {
-      "cc-name": "John Doe",
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-    creditCardToMerge: {
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-    expectedCreditCard: {
-      "cc-name": "John Doe",
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-    noNeedToUpdate: true,
-  },
-  {
-    description: "Merge a subset with billingAddressGUID",
-    creditCardInStorage: {
-      "cc-number": "4929001587121045",
-      billingAddressGUID: "8fhdb3ug6",
-    },
-    creditCardToMerge: {
-      "cc-number": "4929001587121045",
-    },
-    expectedCreditCard: {
-      billingAddressGUID: "8fhdb3ug6",
-      "cc-number": "4929001587121045",
-    },
-    noNeedToUpdate: true,
-  },
-  {
-    description: "Merge an creditCard with partial overlaps",
-    creditCardInStorage: {
-      "cc-name": "John Doe",
-      "cc-number": "4929001587121045",
-    },
-    creditCardToMerge: {
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-    expectedCreditCard: {
-      "cc-name": "John Doe",
-      "cc-number": "4929001587121045",
-      "cc-exp-month": 4,
-      "cc-exp-year": 2017,
-    },
-  },
-];
-
-let prepareTestCreditCards = async function(path) {
+let prepareTestCreditCards = async function (path) {
   let profileStorage = new FormAutofillStorage(path);
   await profileStorage.initialize();
 
@@ -334,7 +221,7 @@ add_task(async function test_add() {
   do_check_credit_card_matches(creditCards[1], TEST_CREDIT_CARD_2);
 
   Assert.notEqual(creditCards[0].guid, undefined);
-  Assert.equal(creditCards[0].version, 3);
+  Assert.equal(creditCards[0].version, CREDIT_CARD_SCHEMA_VERSION);
   Assert.notEqual(creditCards[0].timeCreated, undefined);
   Assert.equal(creditCards[0].timeLastModified, creditCards[0].timeCreated);
   Assert.equal(creditCards[0].timeLastUsed, 0);
@@ -360,11 +247,6 @@ add_task(async function test_add() {
     CreditCard.getLongMaskedNumber(
       TEST_CREDIT_CARD_WITH_EMPTY_COMPUTED_FIELD["cc-number"]
     )
-  );
-
-  await Assert.rejects(
-    profileStorage.creditCards.add(TEST_CREDIT_CARD_WITH_INVALID_FIELD),
-    /"invalidField" is not a valid field\./
   );
 
   await Assert.rejects(
@@ -404,7 +286,7 @@ add_task(async function test_update() {
   let timerPrecision = Preferences.get("privacy.reduceTimerPrecision");
   Preferences.set("privacy.reduceTimerPrecision", false);
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Preferences.set("privacy.reduceTimerPrecision", timerPrecision);
   });
 
@@ -502,14 +384,6 @@ add_task(async function test_update() {
   );
 
   await Assert.rejects(
-    profileStorage.creditCards.update(
-      guid,
-      TEST_CREDIT_CARD_WITH_INVALID_FIELD
-    ),
-    /"invalidField" is not a valid field\./
-  );
-
-  await Assert.rejects(
     profileStorage.creditCards.update(guid, {}),
     /Record contains no valid field\./
   );
@@ -545,8 +419,6 @@ add_task(async function test_validate() {
   await profileStorage.creditCards.add(
     TEST_CREDIT_CARD_WITH_SPACES_BETWEEN_DIGITS
   );
-  await profileStorage.creditCards.add(TEST_CREDIT_CARD_WITH_INVALID_NETWORK);
-
   let creditCards = await profileStorage.creditCards.getAll();
 
   Assert.equal(creditCards[0]["cc-exp-month"], undefined);
@@ -564,10 +436,6 @@ add_task(async function test_validate() {
   );
 
   Assert.equal(creditCards[2]["cc-number"].length, 16);
-
-  // dont enforce validity on the card network when storing a record,
-  // to avoid data loss when syncing records between different clients with different rules
-  Assert.equal(creditCards[3]["cc-type"], "asiv");
 });
 
 add_task(async function test_notifyUsed() {
@@ -642,129 +510,7 @@ add_task(async function test_remove() {
   Assert.equal(await profileStorage.creditCards.get(guid), null);
 });
 
-MERGE_TESTCASES.forEach(testcase => {
-  add_task(async function test_merge() {
-    info("Starting testcase: " + testcase.description);
-    let profileStorage = await initProfileStorage(
-      TEST_STORE_FILE_NAME,
-      [testcase.creditCardInStorage],
-      "creditCards"
-    );
-    let creditCards = await profileStorage.creditCards.getAll();
-    let guid = creditCards[0].guid;
-    let timeLastModified = creditCards[0].timeLastModified;
-    // Merge creditCard and verify the guid in notifyObservers subject
-    let onMerged = TestUtils.topicObserved(
-      "formautofill-storage-changed",
-      (subject, data) =>
-        data == "update" &&
-        subject.wrappedJSObject.guid == guid &&
-        subject.wrappedJSObject.collectionName == COLLECTION_NAME
-    );
-    // Force to create sync metadata.
-    profileStorage.creditCards.pullSyncChanges();
-    Assert.equal(getSyncChangeCounter(profileStorage.creditCards, guid), 1);
-    Assert.ok(
-      await profileStorage.creditCards.mergeIfPossible(
-        guid,
-        testcase.creditCardToMerge
-      )
-    );
-    if (!testcase.noNeedToUpdate) {
-      await onMerged;
-    }
-    creditCards = await profileStorage.creditCards.getAll();
-    Assert.equal(creditCards.length, 1);
-    do_check_credit_card_matches(creditCards[0], testcase.expectedCreditCard);
-    if (!testcase.noNeedToUpdate) {
-      // Record merging should update timeLastModified and bump the change counter.
-      Assert.notEqual(creditCards[0].timeLastModified, timeLastModified);
-      Assert.equal(getSyncChangeCounter(profileStorage.creditCards, guid), 2);
-    } else {
-      // Subset record merging should not update timeLastModified and the change
-      // counter is still the same.
-      Assert.equal(creditCards[0].timeLastModified, timeLastModified);
-      Assert.equal(getSyncChangeCounter(profileStorage.creditCards, guid), 1);
-    }
-  });
-});
-
-add_task(async function test_merge_unable_merge() {
-  let profileStorage = await initProfileStorage(
-    TEST_STORE_FILE_NAME,
-    [TEST_CREDIT_CARD_1],
-    "creditCards"
-  );
-
-  let creditCards = await profileStorage.creditCards.getAll();
-  let guid = creditCards[0].guid;
-  // Force to create sync metadata.
-  profileStorage.creditCards.pullSyncChanges();
-  Assert.equal(getSyncChangeCounter(profileStorage.creditCards, guid), 1);
-
-  // Unable to merge because of conflict
-  let anotherCreditCard = profileStorage.creditCards._clone(TEST_CREDIT_CARD_1);
-  anotherCreditCard["cc-name"] = "Foo Bar";
-  Assert.equal(
-    await profileStorage.creditCards.mergeIfPossible(guid, anotherCreditCard),
-    false
-  );
-  // The change counter is unchanged.
-  Assert.equal(getSyncChangeCounter(profileStorage.creditCards, guid), 1);
-
-  // Unable to merge because no credit card number
-  anotherCreditCard = profileStorage.creditCards._clone(TEST_CREDIT_CARD_1);
-  anotherCreditCard["cc-number"] = "";
-  Assert.equal(
-    await profileStorage.creditCards.mergeIfPossible(guid, anotherCreditCard),
-    false
-  );
-  // The change counter is still unchanged.
-  Assert.equal(getSyncChangeCounter(profileStorage.creditCards, guid), 1);
-});
-
-add_task(async function test_mergeToStorage() {
-  let profileStorage = await initProfileStorage(
-    TEST_STORE_FILE_NAME,
-    [TEST_CREDIT_CARD_3, TEST_CREDIT_CARD_4],
-    "creditCards"
-  );
-  // Merge a creditCard to storage
-  let anotherCreditCard = profileStorage.creditCards._clone(TEST_CREDIT_CARD_3);
-  anotherCreditCard["cc-name"] = "Foo Bar";
-  Assert.equal(
-    (await profileStorage.creditCards.mergeToStorage(anotherCreditCard)).length,
-    2
-  );
-  Assert.equal(
-    (await profileStorage.creditCards.getAll())[0]["cc-name"],
-    "Foo Bar"
-  );
-  Assert.equal(
-    (await profileStorage.creditCards.getAll())[0]["cc-exp"],
-    "2000-01"
-  );
-  Assert.equal(
-    (await profileStorage.creditCards.getAll())[1]["cc-name"],
-    "Foo Bar"
-  );
-  Assert.equal(
-    (await profileStorage.creditCards.getAll())[1]["cc-exp"],
-    "2000-01"
-  );
-
-  // Empty computed fields shouldn't cause any problem.
-  Assert.equal(
-    (
-      await profileStorage.creditCards.mergeToStorage(
-        TEST_CREDIT_CARD_WITH_EMPTY_COMPUTED_FIELD
-      )
-    ).length,
-    0
-  );
-});
-
-add_task(async function test_getDuplicateGuid() {
+add_task(async function test_getDuplicateRecords() {
   let profileStorage = await initProfileStorage(
     TEST_STORE_FILE_NAME,
     [TEST_CREDIT_CARD_3],
@@ -773,39 +519,49 @@ add_task(async function test_getDuplicateGuid() {
   let guid = profileStorage.creditCards._data[0].guid;
 
   // Absolutely a duplicate.
-  Assert.equal(
-    await profileStorage.creditCards.getDuplicateGuid(TEST_CREDIT_CARD_3),
-    guid
-  );
+  let getDuplicateRecords =
+    profileStorage.creditCards.getDuplicateRecords(TEST_CREDIT_CARD_3);
+  let dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
 
   // Absolutely not a duplicate.
-  Assert.equal(
-    await profileStorage.creditCards.getDuplicateGuid(TEST_CREDIT_CARD_1),
-    null
-  );
+  getDuplicateRecords =
+    profileStorage.creditCards.getDuplicateRecords(TEST_CREDIT_CARD_1);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe, null);
 
   // Subset with the same number is a duplicate.
   let record = Object.assign({}, TEST_CREDIT_CARD_3);
   delete record["cc-exp-month"];
-  Assert.equal(await profileStorage.creditCards.getDuplicateGuid(record), guid);
+  getDuplicateRecords = profileStorage.creditCards.getDuplicateRecords(record);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
 
   // Superset with the same number is a duplicate.
   record = Object.assign({}, TEST_CREDIT_CARD_3);
   record["cc-name"] = "John Doe";
-  Assert.equal(await profileStorage.creditCards.getDuplicateGuid(record), guid);
+  getDuplicateRecords = profileStorage.creditCards.getDuplicateRecords(record);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
 
   // Numbers with the same last 4 digits shouldn't be treated as a duplicate.
   record = Object.assign({}, TEST_CREDIT_CARD_3);
   let last4Digits = record["cc-number"].substr(-4);
+  getDuplicateRecords = profileStorage.creditCards.getDuplicateRecords(record);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
+
   // This number differs from TEST_CREDIT_CARD_3 by swapping the order of the
   // 09 and 90 adjacent digits, which is still a valid credit card number.
   record["cc-number"] = "358999378390" + last4Digits;
 
   // We don't treat numbers with the same last 4 digits as a duplicate.
-  Assert.equal(await profileStorage.creditCards.getDuplicateGuid(record), null);
+  getDuplicateRecords = profileStorage.creditCards.getDuplicateRecords(record);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe, null);
 });
 
-add_task(async function test_getDuplicateGuidMatch() {
+add_task(async function test_getDuplicateRecordsMatch() {
   let profileStorage = await initProfileStorage(
     TEST_STORE_FILE_NAME,
     [TEST_CREDIT_CARD_2],
@@ -814,31 +570,97 @@ add_task(async function test_getDuplicateGuidMatch() {
   let guid = profileStorage.creditCards._data[0].guid;
 
   // Absolutely a duplicate.
-  Assert.equal(
-    await profileStorage.creditCards.getDuplicateGuid(TEST_CREDIT_CARD_2),
-    guid
-  );
+  let getDuplicateRecords =
+    profileStorage.creditCards.getDuplicateRecords(TEST_CREDIT_CARD_2);
+  let dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
 
   // Absolutely not a duplicate.
-  Assert.equal(
-    await profileStorage.creditCards.getDuplicateGuid(TEST_CREDIT_CARD_1),
-    null
-  );
+  getDuplicateRecords =
+    profileStorage.creditCards.getDuplicateRecords(TEST_CREDIT_CARD_1);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe, null);
 
-  // Numbers with the same last 4 digits shouldn't be treated as a duplicate.
   record = Object.assign({}, TEST_CREDIT_CARD_2);
 
   // We change month from `1` to `2`
   record["cc-exp-month"] = 2;
-  Assert.equal(await profileStorage.creditCards.getDuplicateGuid(record), guid);
+  getDuplicateRecords = profileStorage.creditCards.getDuplicateRecords(record);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
 
   // We change year from `2000` to `2001`
   record["cc-exp-year"] = 2001;
-  Assert.equal(await profileStorage.creditCards.getDuplicateGuid(record), guid);
+  getDuplicateRecords = profileStorage.creditCards.getDuplicateRecords(record);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
 
   // New name, same card
   record["cc-name"] = "John Doe";
-  Assert.equal(await profileStorage.creditCards.getDuplicateGuid(record), guid);
+  getDuplicateRecords = profileStorage.creditCards.getDuplicateRecords(record);
+  dupe = (await getDuplicateRecords.next()).value;
+  Assert.equal(dupe.guid, guid);
+});
+
+add_task(async function test_getMatchRecord() {
+  let profileStorage = await initProfileStorage(
+    TEST_STORE_FILE_NAME,
+    [TEST_CREDIT_CARD_2],
+    "creditCards"
+  );
+  let guid = profileStorage.creditCards._data[0].guid;
+
+  const TEST_FIELDS = {
+    "cc-name": "John Doe",
+    "cc-exp-month": 10,
+    "cc-exp-year": 2001,
+  };
+
+  // Absolutely a match.
+  let getMatchRecords =
+    profileStorage.creditCards.getMatchRecords(TEST_CREDIT_CARD_2);
+  let match = (await getMatchRecords.next()).value;
+  Assert.equal(match.guid, guid);
+
+  // Subset with the same number is a match.
+  for (const field of Object.keys(TEST_FIELDS)) {
+    let record = Object.assign({}, TEST_CREDIT_CARD_2);
+    delete record[field];
+    getMatchRecords = profileStorage.creditCards.getMatchRecords(record);
+    match = (await getMatchRecords.next()).value;
+    Assert.equal(match.guid, guid);
+  }
+
+  // Subset with different number is not a match.
+  for (const field of Object.keys(TEST_FIELDS)) {
+    let record = Object.assign({}, TEST_CREDIT_CARD_2, {
+      "cc-number": TEST_CREDIT_CARD_1["cc-number"],
+    });
+    delete record[field];
+    getMatchRecords = profileStorage.creditCards.getMatchRecords(record);
+    match = (await getMatchRecords.next()).value;
+    Assert.equal(match, null);
+  }
+
+  // Superset with the same number is not a match.
+  for (const [field, value] of Object.entries(TEST_FIELDS)) {
+    let record = Object.assign({}, TEST_CREDIT_CARD_2);
+    record[field] = value;
+    getMatchRecords = profileStorage.creditCards.getMatchRecords(record);
+    match = (await getMatchRecords.next()).value;
+    Assert.equal(match, null);
+  }
+
+  // Superset with different number is not a match.
+  for (const [field, value] of Object.entries(TEST_FIELDS)) {
+    let record = Object.assign({}, TEST_CREDIT_CARD_2, {
+      "cc-number": TEST_CREDIT_CARD_1["cc-number"],
+    });
+    record[field] = value;
+    getMatchRecords = profileStorage.creditCards.getMatchRecords(record);
+    match = (await getMatchRecords.next()).value;
+    Assert.equal(match, null);
+  }
 });
 
 add_task(async function test_creditCardFillDisabled() {
@@ -859,33 +681,6 @@ add_task(async function test_creditCardFillDisabled() {
 
   Services.prefs.setBoolPref(
     "extensions.formautofill.creditCards.enabled",
-    true
-  );
-});
-
-add_task(async function test_creditCardFillUnavailable() {
-  Services.prefs.setBoolPref(
-    "extensions.formautofill.creditCards.available",
-    false
-  );
-
-  let path = getTempFile(TEST_STORE_FILE_NAME).path;
-  let profileStorage = new FormAutofillStorage(path);
-  await profileStorage.initialize();
-
-  try {
-    profileStorage.creditCards; // eslint-disable-line no-unused-expressions
-    throw new Error("Access credit card didn't throw.");
-  } catch (err) {
-    Assert.equal(
-      err.message,
-      "CreditCards is not initialized. " +
-        "Please restart if you flip the pref manually."
-    );
-  }
-
-  Services.prefs.setBoolPref(
-    "extensions.formautofill.creditCards.available",
     true
   );
 });

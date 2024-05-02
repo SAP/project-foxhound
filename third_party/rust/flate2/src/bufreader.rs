@@ -1,10 +1,10 @@
 // Copyright 2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
+// <https://github.com/rust-lang/rust/blob/HEAD/COPYRIGHT>.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
@@ -42,7 +42,7 @@ impl<R: Read> BufReader<R> {
 
     pub fn with_buf(buf: Vec<u8>, inner: R) -> BufReader<R> {
         BufReader {
-            inner: inner,
+            inner,
             buf: buf.into_boxed_slice(),
             pos: 0,
             cap: 0,

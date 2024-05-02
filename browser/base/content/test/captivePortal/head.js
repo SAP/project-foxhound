@@ -1,13 +1,3 @@
-var { BrowserWindowTracker } = ChromeUtils.import(
-  "resource:///modules/BrowserWindowTracker.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "CaptivePortalWatcher",
-  "resource:///modules/CaptivePortalWatcher.jsm"
-);
-
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "cps",

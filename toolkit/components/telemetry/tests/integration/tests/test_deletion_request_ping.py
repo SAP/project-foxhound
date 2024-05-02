@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import mozunit
-
 from telemetry_harness.ping_filters import (
     ANY_PING,
     DELETION_REQUEST_PING,
@@ -26,7 +25,7 @@ def test_deletion_request_ping(browser, helpers):
     assert "environment" not in ping["payload"]
 
     # Close Firefox cleanly.
-    browser.quit(in_app=True)
+    browser.quit()
 
     # Start Firefox.
     browser.start_session()

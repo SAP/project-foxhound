@@ -5,19 +5,27 @@ set -e
 
 arch=$1
 shift
-SNAPSHOT=20210208T213147Z
 
 sysroot=$(basename $TOOLCHAIN_ARTIFACT)
 sysroot=${sysroot%%.*}
 
+# To repackage Firefox as a .deb package
+# we bootstrap jessie systems on a bullseye image.
+# To keep the build and repackage environments
+# consistent the build baseline used here (jessie) should be
+# synchronized with the packaging baseline used in
+# taskcluster/docker/debian-repackage/Dockerfile
+# and python/mozbuild/mozbuild/repackaging/deb.py
 case "$arch" in
 i386|amd64)
   dist=jessie
   if [ -n "$PACKAGES_TASKS" ]; then
-    gcc_version=7
+    gcc_version=8
   else
     gcc_version=4.9
   fi
+  # The Debian Jessie GPG key expired.
+  extra_apt_opt='Apt::Key::gpgvcommand "/usr/local/sbin/gpgvnoexpkeysig"'
   ;;
 arm64)
   dist=buster
@@ -29,12 +37,20 @@ arm64)
   ;;
 esac
 
+case "$dist" in
+jessie)
+  repo_url=https://archive.debian.org/debian
+  ;;
+*)
+  SNAPSHOT=20230611T210420Z
+  repo_url=http://snapshot.debian.org/archive/debian/$SNAPSHOT
+  ;;
+esac
+
 packages="
   linux-libc-dev
   libasound2-dev
   libstdc++-${gcc_version}-dev
-  libdbus-glib-1-dev
-  libdrm-dev
   libfontconfig1-dev
   libfreetype6-dev
   libgconf2-dev
@@ -54,7 +70,7 @@ packages="
 # useful to build.
 queue_base="$TASKCLUSTER_ROOT_URL/api/queue/v1"
 (
-  echo "deb http://snapshot.debian.org/archive/debian/$SNAPSHOT $dist main"
+  echo "deb $repo_url $dist main"
   for task in $PACKAGES_TASKS; do
     echo "deb [trusted=yes] $queue_base/task/$task/artifacts/public/build/ apt/"
   done
@@ -66,6 +82,7 @@ queue_base="$TASKCLUSTER_ROOT_URL/api/queue/v1"
   $sysroot \
   - \
   --aptopt=/etc/apt/apt.conf.d/99taskcluster \
+  ${extra_apt_opt:+--aptopt="$extra_apt_opt"} \
   --dpkgopt=path-exclude="*" \
   --dpkgopt=path-include="/lib/*" \
   --dpkgopt=path-include="/lib32/*" \

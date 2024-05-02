@@ -7,11 +7,25 @@
 const TEST_URL =
   "https://example.com/browser/dom/webauthn/tests/browser/tab_webauthn_result.html";
 
+add_task(async function test_setup() {
+  return SpecialPowers.pushPrefEnv({
+    set: [
+      ["security.webauth.webauthn_enable_softtoken", false],
+      ["security.webauth.webauthn_enable_usbtoken", true],
+    ],
+  });
+});
+add_task(test_switch_tab);
+add_task(test_new_window_make);
+add_task(test_new_window_get);
+add_task(test_minimize_make);
+add_task(test_minimize_get);
+
 async function assertStatus(tab, expected) {
   let actual = await SpecialPowers.spawn(
     tab.linkedBrowser,
     [],
-    async function() {
+    async function () {
       info("visbility state: " + content.document.visibilityState);
       info("active: " + content.browsingContext.isActive);
       return content.document.getElementById("status").value;
@@ -22,40 +36,41 @@ async function assertStatus(tab, expected) {
 
 async function waitForStatus(tab, expected) {
   /* eslint-disable no-shadow */
-  await SpecialPowers.spawn(tab.linkedBrowser, [[expected]], async function(
-    expected
-  ) {
-    return ContentTaskUtils.waitForCondition(() => {
-      info(
-        "expecting " +
-          expected +
-          ", visbility state: " +
-          content.document.visibilityState
-      );
-      info(
-        "expecting " +
-          expected +
-          ", active: " +
-          content.browsingContext.isActive
-      );
-      return content.document.getElementById("status").value == expected;
-    });
-  });
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [[expected]],
+    async function (expected) {
+      return ContentTaskUtils.waitForCondition(() => {
+        info(
+          "expecting " +
+            expected +
+            ", visbility state: " +
+            content.document.visibilityState
+        );
+        info(
+          "expecting " +
+            expected +
+            ", active: " +
+            content.browsingContext.isActive
+        );
+        return content.document.getElementById("status").value == expected;
+      });
+    }
+  );
   /* eslint-enable no-shadow */
 
   await assertStatus(tab, expected);
 }
 
 function startMakeCredentialRequest(tab) {
-  return SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     const cose_alg_ECDSA_w_SHA256 = -7;
 
     let publicKey = {
-      rp: { id: content.document.domain, name: "none", icon: "none" },
+      rp: { id: content.document.domain, name: "none" },
       user: {
         id: new Uint8Array(),
         name: "none",
-        icon: "none",
         displayName: "none",
       },
       challenge: content.crypto.getRandomValues(new Uint8Array(16)),
@@ -83,7 +98,7 @@ function startMakeCredentialRequest(tab) {
 }
 
 function startGetAssertionRequest(tab) {
-  return SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     let newCredential = {
       type: "public-key",
       id: content.crypto.getRandomValues(new Uint8Array(16)),
@@ -117,20 +132,9 @@ function startGetAssertionRequest(tab) {
   });
 }
 
-add_task(async function test_setup() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["security.webauth.webauthn", true],
-      ["security.webauth.webauthn_enable_softtoken", false],
-      ["security.webauth.webauthn_enable_android_fido2", false],
-      ["security.webauth.webauthn_enable_usbtoken", true],
-    ],
-  });
-});
-
 // Test that MakeCredential() and GetAssertion() requests
 // are aborted when the current tab loses its focus.
-add_task(async function test_switch_tab() {
+async function test_switch_tab() {
   // Create a new tab for the MakeCredential() request.
   let tab_create = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -157,7 +161,7 @@ add_task(async function test_switch_tab() {
   // Close tabs.
   BrowserTestUtils.removeTab(tab_create);
   BrowserTestUtils.removeTab(tab_get);
-});
+}
 
 function waitForWindowActive(win, active) {
   return Promise.all([
@@ -166,7 +170,7 @@ function waitForWindowActive(win, active) {
   ]);
 }
 
-add_task(async function test_new_window_make() {
+async function test_new_window_make() {
   // Create a new tab for the MakeCredential() request.
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
 
@@ -186,9 +190,9 @@ add_task(async function test_new_window_make() {
 
   // Close tab.
   await BrowserTestUtils.removeTab(tab);
-});
+}
 
-add_task(async function test_new_window_get() {
+async function test_new_window_get() {
   // Create a new tab for the GetAssertion() request.
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
 
@@ -208,14 +212,11 @@ add_task(async function test_new_window_get() {
 
   // Close tab.
   BrowserTestUtils.removeTab(tab);
-});
+}
 
-add_task(async function test_minimize_make() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
+async function test_minimize_make() {
   // Minimizing windows doesn't supported in headless mode.
-  if (env.get("MOZ_HEADLESS")) {
+  if (Services.env.get("MOZ_HEADLESS")) {
     return;
   }
 
@@ -239,16 +240,14 @@ add_task(async function test_minimize_make() {
 
   // Close window and wait for main window to be focused again.
   let windowBackPromise = waitForWindowActive(window, true);
+  await BrowserTestUtils.removeTab(tab);
   await BrowserTestUtils.closeWindow(win);
   await windowBackPromise;
-});
+}
 
-add_task(async function test_minimize_get() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
+async function test_minimize_get() {
   // Minimizing windows doesn't supported in headless mode.
-  if (env.get("MOZ_HEADLESS")) {
+  if (Services.env.get("MOZ_HEADLESS")) {
     return;
   }
 
@@ -272,6 +271,7 @@ add_task(async function test_minimize_get() {
 
   // Close window and wait for main window to be focused again.
   let windowBackPromise = waitForWindowActive(window, true);
+  await BrowserTestUtils.removeTab(tab);
   await BrowserTestUtils.closeWindow(win);
   await windowBackPromise;
-});
+}

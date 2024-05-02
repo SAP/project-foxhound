@@ -3,16 +3,12 @@
 See [DAMP Performance tests](performance-tests-damp.md) for an overall description of our performance tests.
 Here, we will describe how to write a new test and register it to run in DAMP.
 
-```note::
-  | **Reuse existing tests if possible!**
-  |
-  | If a `custom` page already exists for the tool you are testing, try to modify the existing `custom` test rather than adding a new individual test.
-  |
-  | New individual tests run separately, in new tabs, and make DAMP slower than just modifying existing tests. Complexifying `custom` test pages should also help cover more scenarios and catch more regressions. For those reasons, modifying existing tests should be the preferred way of extending DAMP coverage.
-  |
-  | `custom` tests are using complex documents that should stress a particular tool in various ways. They are all named `custom.${tool}` (for instance `custom.inspector`). The test pages for those tests can be found in [pages/custom](https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/devtools/addon/content/pages/custom).
-  |
-  | If your test case requires a dedicated document or can't run next to the other tests in the current `custom` test, follow the instructions below to add a new individual test.
+```{note}
+  **Reuse existing tests if possible!**
+  If a `custom` page already exists for the tool you are testing, try to modify the existing `custom` test rather than adding a new individual test.
+  New individual tests run separately, in new tabs, and make DAMP slower than just modifying existing tests. Complexifying `custom` test pages should also help cover more scenarios and catch more regressions. For those reasons, modifying existing tests should be the preferred way of extending DAMP coverage.
+  `custom` tests are using complex documents that should stress a particular tool in various ways. They are all named `custom.${tool}` (for instance `custom.inspector`). The test pages for those tests can be found in [pages/custom](https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/devtools/addon/content/pages/custom).
+  If your test case requires a dedicated document or can't run next to the other tests in the current `custom` test, follow the instructions below to add a new individual test.
 ```
 
 This page contains the general documentation for writing DAMP tests. See also:
@@ -113,24 +109,26 @@ For the example, it would be `inspector.click`.
 
 In general, the test name should try to match the path of the test file. As you can see in damp-tests.js this naming convention is not consistently followed. We have discrepancies for simple/complicated/custom tests, as well as for webconsole tests. This is largely for historical reasons.
 
+You will see that tests are split across different subsuites: damp-inspector, damp-other and damp-webconsole. The goal of this split is to run DAMP tests in parallel in CI, so we aim to keep them balanced in terms of number of tests, and mostly running time. Add your test in the suite which makes the most sense. We can add more suites and rearrange tests in the future if needed.
+
 
 # How to run your new test?
 
 You can run any performance test with this command:
 ```
-./mach talos-test --activeTests damp --subtest ${your-test-name}
+./mach talos-test --suite damp --subtest ${your-test-name}
 ```
 
 By default, it will run the test 25 times. In order to run it just once, do:
 ```
-./mach talos-test --activeTests damp --subtest ${your-test-name} --cycles 1 --tppagecycles 1
+./mach talos-test --suite damp --subtest ${your-test-name} --cycles 1 --tppagecycles 1
 ```
 `--cycles` controls the number of times Firefox is restarted
 `--tppagecycles` defines the number of times we repeat the test after each Firefox start
 
 Also, you can record a profile while running the test. To do that, execute:
 ```
-./mach talos-test --activeTests damp --subtest ${your-test-name} --cycles 1 --tppagecycles 1 --gecko-profile --gecko-profile-entries 100000000
+./mach talos-test --suite damp --subtest ${your-test-name} --cycles 1 --tppagecycles 1 --gecko-profile --gecko-profile-entries 100000000
 ```
 `--gecko-profile` enables the profiler
 `--gecko-profile-entries` defines the profiler buffer size, which needs to be large while recording performance tests
@@ -140,4 +138,3 @@ Once it is done executing, the profile lives in a zip file you have to uncompres
 unzip testing/mozharness/build/blobber_upload_dir/profile_damp.zip
 ```
 Then you have to open [https://profiler.firefox.com/](https://profiler.firefox.com/) and manually load the profile file that lives here: `profile_damp/page_0_pagecycle_1/cycle_0.profile`
-

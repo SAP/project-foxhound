@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -28,7 +27,10 @@
 
 #include "js/Utility.h"
 #include "util/Unicode.h"
-#include "vm/Printer.h"
+
+namespace js {
+class FrontendContext;
+}  // namespace js
 
 class JSLinearString;
 
@@ -51,11 +53,9 @@ static MOZ_ALWAYS_INLINE size_t js_strnlen(const CharT* s, size_t maxlen) {
   return maxlen;
 }
 
-extern int32_t js_fputs(const char16_t* s, FILE* f);
-
 namespace js {
 
-class StringBuffer;
+class JS_PUBLIC_API GenericPrinter;
 
 template <typename CharT>
 constexpr uint8_t AsciiDigitToNumber(CharT c) {
@@ -73,7 +73,17 @@ static constexpr bool IsAsciiPrintable(CharT c) {
 
 template <typename Char1, typename Char2>
 inline bool EqualChars(const Char1* s1, const Char2* s2, size_t len) {
-  return mozilla::ArrayEqual(s1, s2, len);
+  // Cast |JS::Latin1Char| to |char| to ensure compilers emit std::memcmp for
+  // the comparison.
+  if constexpr (std::is_same_v<Char1, char> &&
+                std::is_same_v<Char2, JS::Latin1Char>) {
+    return mozilla::ArrayEqual(s1, reinterpret_cast<const char*>(s2), len);
+  } else if constexpr (std::is_same_v<Char1, JS::Latin1Char> &&
+                       std::is_same_v<Char2, char>) {
+    return mozilla::ArrayEqual(reinterpret_cast<const char*>(s1), s2, len);
+  } else {
+    return mozilla::ArrayEqual(s1, s2, len);
+  }
 }
 
 // Return less than, equal to, or greater than zero depending on whether
@@ -142,6 +152,7 @@ extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
                                                  const char16_t* s, size_t n);
 
 extern UniqueChars DuplicateString(JSContext* cx, const char* s);
+extern UniqueChars DuplicateString(FrontendContext* fc, const char* s);
 
 extern UniqueChars DuplicateString(JSContext* cx, const char* s, size_t n);
 
@@ -149,6 +160,8 @@ extern UniqueLatin1Chars DuplicateString(JSContext* cx, const JS::Latin1Char* s,
                                          size_t n);
 
 extern UniqueTwoByteChars DuplicateString(JSContext* cx, const char16_t* s);
+extern UniqueTwoByteChars DuplicateString(FrontendContext* fc,
+                                          const char16_t* s);
 
 extern UniqueTwoByteChars DuplicateString(JSContext* cx, const char16_t* s,
                                           size_t n);
@@ -289,7 +302,7 @@ inline void CopyAndInflateChars(char16_t* dst, const JS::Latin1Char* src,
  * Convert one UCS-4 char and write it into a UTF-8 buffer, which must be at
  * least 4 bytes long.  Return the number of UTF-8 bytes of data written.
  */
-extern uint32_t OneUcs4ToUtf8Char(uint8_t* utf8Buffer, uint32_t ucs4Char);
+extern uint32_t OneUcs4ToUtf8Char(uint8_t* utf8Buffer, char32_t ucs4Char);
 
 extern size_t PutEscapedStringImpl(char* buffer, size_t size,
                                    GenericPrinter* out, JSLinearString* str,
@@ -335,32 +348,6 @@ inline bool EscapedStringPrinter(GenericPrinter& out, JSLinearString* str,
   return PutEscapedStringImpl(nullptr, 0, &out, str, quote) != size_t(-1);
 }
 
-inline bool EscapedStringPrinter(GenericPrinter& out, const char* chars,
-                                 size_t length, uint32_t quote) {
-  return PutEscapedStringImpl(nullptr, 0, &out, chars, length, quote) !=
-         size_t(-1);
-}
-
-/*
- * Write str into file escaping any non-printable or non-ASCII character.
- * If quote is not 0, it must be a single or double quote character that
- * will quote the output.
- */
-inline bool FileEscapedString(FILE* fp, JSLinearString* str, uint32_t quote) {
-  Fprinter out(fp);
-  bool res = EscapedStringPrinter(out, str, quote);
-  out.finish();
-  return res;
-}
-
-inline bool FileEscapedString(FILE* fp, const char* chars, size_t length,
-                              uint32_t quote) {
-  Fprinter out(fp);
-  bool res = EscapedStringPrinter(out, chars, length, quote);
-  out.finish();
-  return res;
-}
-
 JSString* EncodeURI(JSContext* cx, const char* chars, size_t length);
 
 // Return true if input string contains a given flag in a comma separated list.
@@ -368,18 +355,20 @@ bool ContainsFlag(const char* str, const char* flag);
 
 namespace unicode {
 
-/** Compute the number of code points in the valid UTF-8 range [begin, end). */
-extern size_t CountCodePoints(const mozilla::Utf8Unit* begin,
-                              const mozilla::Utf8Unit* end);
+/**
+ * Compute the number of UTF-16 code units in the valid UTF-8 range
+ * [begin, end).
+ */
+extern size_t CountUTF16CodeUnits(const mozilla::Utf8Unit* begin,
+                                  const mozilla::Utf8Unit* end);
 
 /**
- * Count the number of code points in [begin, end).
- *
- * Unlike the UTF-8 case above, consistent with legacy ECMAScript practice,
- * every sequence of 16-bit units is considered valid.  Lone surrogates are
- * treated as if they represented a code point of the same value.
+ * Count the number of UTF-16 code units in [begin, end).
  */
-extern size_t CountCodePoints(const char16_t* begin, const char16_t* end);
+inline size_t CountUTF16CodeUnits(const char16_t* begin, const char16_t* end) {
+  MOZ_ASSERT(begin <= end);
+  return end - begin;
+}
 
 }  // namespace unicode
 

@@ -3,44 +3,29 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { createSelector } from "reselect";
-import { makeShallowQuery } from "../utils/resource";
 import { getPrettySourceURL } from "../utils/source";
 
-import {
-  getSource,
-  getSpecificSourceByURL,
-  getSources,
-  resourceAsSourceBase,
-} from "../selectors/sources";
-import { isOriginalId } from "devtools-source-map";
+import { getSpecificSourceByURL } from "./sources";
 import { isSimilarTab } from "../utils/tabs";
 
 export const getTabs = state => state.tabs.tabs;
 
-export const getSourceTabs = createSelector(
-  state => state.tabs,
-  ({ tabs }) => tabs.filter(tab => tab.sourceId)
+// Return the list of tabs which relates to an active source
+export const getSourceTabs = createSelector(getTabs, tabs =>
+  tabs.filter(tab => tab.source)
 );
 
-export const getSourcesForTabs = state => {
-  const tabs = getSourceTabs(state);
-  const sources = getSources(state);
-  return querySourcesForTabs(sources, tabs);
-};
-
-const querySourcesForTabs = makeShallowQuery({
-  filter: (_, tabs) => tabs.map(({ sourceId }) => sourceId),
-  map: resourceAsSourceBase,
-  reduce: items => items,
+export const getSourcesForTabs = createSelector(getSourceTabs, sourceTabs => {
+  return sourceTabs.map(tab => tab.source);
 });
 
 export function tabExists(state, sourceId) {
-  return !!getSourceTabs(state).find(tab => tab.sourceId == sourceId);
+  return !!getSourceTabs(state).find(tab => tab.source.id == sourceId);
 }
 
-export function hasPrettyTab(state, sourceUrl) {
-  const prettyUrl = getPrettySourceURL(sourceUrl);
-  return !!getSourceTabs(state).find(tab => tab.url === prettyUrl);
+export function hasPrettyTab(state, source) {
+  const prettyUrl = getPrettySourceURL(source.url);
+  return getTabs(state).some(tab => tab.url === prettyUrl);
 }
 
 /**
@@ -49,43 +34,41 @@ export function hasPrettyTab(state, sourceUrl) {
  * 2. if it is gone, the next available tab to the left should be active
  * 3. if the first tab is active and closed, select the second tab
  */
-export function getNewSelectedSourceId(state, tabList) {
+export function getNewSelectedSource(state, tabList) {
   const { selectedLocation } = state.sources;
-  const availableTabs = state.tabs.tabs;
+  const availableTabs = getTabs(state);
   if (!selectedLocation) {
-    return "";
+    return null;
   }
 
-  const selectedTab = getSource(state, selectedLocation.sourceId);
-  if (!selectedTab) {
-    return "";
+  const selectedSource = selectedLocation.source;
+  if (!selectedSource) {
+    return null;
   }
 
   const matchingTab = availableTabs.find(tab =>
-    isSimilarTab(tab, selectedTab.url, isOriginalId(selectedLocation.sourceId))
+    isSimilarTab(tab, selectedSource.url, selectedSource.isOriginal)
   );
 
   if (matchingTab) {
-    const { sources } = state.sources;
-    if (!sources) {
-      return "";
-    }
-
-    const selectedSource = getSpecificSourceByURL(
+    const specificSelectedSource = getSpecificSourceByURL(
       state,
-      selectedTab.url,
-      selectedTab.isOriginal
+      selectedSource.url,
+      selectedSource.isOriginal
     );
 
-    if (selectedSource) {
-      return selectedSource.id;
+    if (specificSelectedSource) {
+      return specificSelectedSource;
     }
 
-    return "";
+    return null;
   }
 
   const tabUrls = tabList.map(tab => tab.url);
-  const leftNeighborIndex = Math.max(tabUrls.indexOf(selectedTab.url) - 1, 0);
+  const leftNeighborIndex = Math.max(
+    tabUrls.indexOf(selectedSource.url) - 1,
+    0
+  );
   const lastAvailbleTabIndex = availableTabs.length - 1;
   const newSelectedTabIndex = Math.min(leftNeighborIndex, lastAvailbleTabIndex);
   const availableTab = availableTabs[newSelectedTabIndex];
@@ -98,9 +81,9 @@ export function getNewSelectedSourceId(state, tabList) {
     );
 
     if (tabSource) {
-      return tabSource.id;
+      return tabSource;
     }
   }
 
-  return "";
+  return null;
 }

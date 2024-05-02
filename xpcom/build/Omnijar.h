@@ -88,6 +88,15 @@ class Omnijar {
   static void Init(nsIFile* aGrePath = nullptr, nsIFile* aAppPath = nullptr);
 
   /**
+   * Initializes the Omnijar API for a child process, given its argument
+   * list, if the `-greomni` flag and optionally also the `-appomni` flag
+   * is present.  (`-appomni` is absent in the case of a unified jar.)  If
+   * neither flag is present, the Omnijar API is not initialized.  The
+   * flags, if present, will be removed from the argument list.
+   */
+  static void ChildProcessInit(int& aArgc, char** aArgv);
+
+  /**
    * Cleans up the Omnijar API
    */
   static void CleanUp();
@@ -155,6 +164,16 @@ class Omnijar {
   static void InitOne(nsIFile* aPath, Type aType);
   static void CleanUpOne(Type aType);
 }; /* class Omnijar */
+
+/**
+ * Returns whether or not the currently running build is an unpackaged
+ * developer build. This check is implemented by looking for omni.ja in the
+ * the obj/dist dir. We use this routine to detect when the build dir will
+ * use symlinks to the repo and object dir.
+ */
+inline bool IsPackagedBuild() {
+  return Omnijar::HasOmnijar(mozilla::Omnijar::GRE);
+}
 
 } /* namespace mozilla */
 

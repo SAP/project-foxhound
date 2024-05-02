@@ -24,6 +24,7 @@
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/InternalRequest.h"
 #include "mozilla/dom/Response.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/WorkerRef.h"
 
 namespace mozilla::dom {
@@ -295,16 +296,17 @@ class WorkerStreamOwner final {
     RefPtr<WorkerStreamOwner> self =
         new WorkerStreamOwner(aStream, std::move(target));
 
-    self->mWorkerRef = WeakWorkerRef::Create(aWorker, [self]() {
-      if (self->mStream) {
-        // If this Close() calls JSStreamConsumer::OnInputStreamReady and drops
-        // the last reference to the JSStreamConsumer, 'this' will not be
-        // destroyed since ~JSStreamConsumer() only enqueues a release proxy.
-        self->mStream->Close();
-        self->mStream = nullptr;
-        self->mWorkerRef = nullptr;
-      }
-    });
+    self->mWorkerRef =
+        StrongWorkerRef::Create(aWorker, "JSStreamConsumer", [self]() {
+          if (self->mStream) {
+            // If this Close() calls JSStreamConsumer::OnInputStreamReady and
+            // drops the last reference to the JSStreamConsumer, 'this' will not
+            // be destroyed since ~JSStreamConsumer() only enqueues a release
+            // proxy.
+            self->mStream->Close();
+            self->mStream = nullptr;
+          }
+        });
 
     if (!self->mWorkerRef) {
       return nullptr;
@@ -326,7 +328,7 @@ class WorkerStreamOwner final {
   // Read from any thread but only set/cleared on the worker thread. The
   // lifecycle of WorkerStreamOwner prevents concurrent read/clear.
   nsCOMPtr<nsIAsyncInputStream> mStream;
-  RefPtr<WeakWorkerRef> mWorkerRef;
+  RefPtr<StrongWorkerRef> mWorkerRef;
   nsCOMPtr<nsIEventTarget> mOwningEventTarget;
 };
 
@@ -495,8 +497,7 @@ class JSStreamConsumer final : public nsIInputStreamCallback,
     RefPtr<JSStreamConsumer> consumer;
     if (aMaybeWorker) {
       RefPtr<WorkerStreamOwner> owner = WorkerStreamOwner::Create(
-          asyncStream, aMaybeWorker,
-          aGlobal->EventTargetFor(TaskCategory::Other));
+          asyncStream, aMaybeWorker, aGlobal->SerialEventTarget());
       if (!owner) {
         return false;
       }
@@ -671,7 +672,7 @@ static bool ThrowException(JSContext* aCx, unsigned errorNumber) {
 }
 
 // static
-bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
+bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::Handle<JSObject*> aObj,
                                    JS::MimeType aMimeType,
                                    JS::StreamConsumer* aConsumer,
                                    WorkerPrivate* aMaybeWorker) {
@@ -692,7 +693,8 @@ bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
   }
 
   nsAutoCString mimeType;
-  response->GetMimeType(mimeType);
+  nsAutoCString mixedCaseMimeType;  // unused
+  response->GetMimeType(mimeType, mixedCaseMimeType);
 
   if (!mimeType.EqualsASCII(requiredMimeType)) {
     JS_ReportErrorNumberASCII(aCx, js::GetErrorMessage, nullptr,
@@ -711,12 +713,7 @@ bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
     return ThrowException(aCx, JSMSG_WASM_BAD_RESPONSE_STATUS);
   }
 
-  IgnoredErrorResult result;
-  bool used = response->GetBodyUsed(result);
-  if (NS_WARN_IF(result.Failed())) {
-    return ThrowException(aCx, JSMSG_WASM_ERROR_CONSUMING_RESPONSE);
-  }
-  if (used) {
+  if (response->BodyUsed()) {
     return ThrowException(aCx, JSMSG_WASM_RESPONSE_ALREADY_CONSUMED);
   }
 
@@ -725,6 +722,7 @@ bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
       nsAutoString url;
       response->GetUrl(url);
 
+      IgnoredErrorResult result;
       nsCString sourceMapUrl;
       response->GetInternalHeaders()->Get("SourceMap"_ns, sourceMapUrl, result);
       if (NS_WARN_IF(result.Failed())) {

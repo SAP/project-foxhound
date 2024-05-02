@@ -2,13 +2,14 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 
 add_task(async function test_all_images_mentioned() {
   await BrowserTestUtils.withNewTab(
     TEST_PATH + "all_images.html",
-    async function() {
+    async function () {
       let pageInfo = BrowserPageInfo(
         gBrowser.selectedBrowser.currentURI.spec,
         "mediaTab"
@@ -53,7 +54,7 @@ add_task(async function test_view_image_info() {
   await BrowserTestUtils.withNewTab(
     TEST_PATH + "all_images.html",
 
-    async function(browser) {
+    async function (browser) {
       let contextMenu = document.getElementById("contentAreaContextMenu");
       let viewImageInfo = document.getElementById("context-viewimageinfo");
 
@@ -87,6 +88,25 @@ add_task(async function test_view_image_info() {
         "selected image is the correct"
       );
       await BrowserTestUtils.closeWindow(pageInfo);
+    }
+  );
+});
+
+add_task(async function test_image_size() {
+  await BrowserTestUtils.withNewTab(
+    TEST_PATH + "all_images.html",
+    async function () {
+      let pageInfo = BrowserPageInfo(
+        gBrowser.selectedBrowser.currentURI.spec,
+        "mediaTab"
+      );
+      await BrowserTestUtils.waitForEvent(pageInfo, "page-info-init");
+
+      let imageSize = pageInfo.document.getElementById("imagesizetext");
+
+      Assert.notEqual("media-unknown-not-cached", imageSize.value);
+
+      pageInfo.close();
     }
   );
 });

@@ -3,11 +3,12 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { ctypes } = ChromeUtils.importESModule(
+  "resource://gre/modules/ctypes.sys.mjs"
 );
-const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 const kDllName = "modules-test.dll";
 
@@ -37,15 +38,18 @@ add_task(async function setup() {
   Cc["@mozilla.org/updates/timer-manager;1"]
     .getService(Ci.nsIObserver)
     .observe(null, "utm-test-init", "");
-  Preferences.set("toolkit.telemetry.untrustedModulesPing.frequency", 0);
-  Preferences.set("app.update.url", "http://localhost");
+  Services.prefs.setIntPref(
+    "toolkit.telemetry.untrustedModulesPing.frequency",
+    0
+  );
+  Services.prefs.setStringPref("app.update.url", "http://localhost");
 
   let currentPid = Services.appinfo.processID;
   gCurrentPidStr = "browser.0x" + currentPid.toString(16);
 
   // Start the local ping server and setup Telemetry to use it during the tests.
   PingServer.start();
-  Preferences.set(
+  Services.prefs.setStringPref(
     TelemetryUtils.Preferences.Server,
     "http://localhost:" + PingServer.port
   );
@@ -53,7 +57,7 @@ add_task(async function setup() {
   return TelemetryController.testSetup();
 });
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   return PingServer.stop();
 });
 
@@ -96,6 +100,15 @@ add_task(async function test_send_ping() {
   Assert.equal(found.payload.structVersion, 1, "Version is correct");
   Assert.ok(found.payload.modules, "'modules' object exists");
   Assert.ok(Array.isArray(found.payload.modules), "'modules' is an array");
+  Assert.ok(found.payload.blockedModules, "'blockedModules' object exists");
+  Assert.ok(
+    Array.isArray(found.payload.blockedModules),
+    "'blockedModules' is an array"
+  );
+  // Unfortunately, the way this test is run it doesn't usually get a launcher
+  // process, so the blockedModules member doesn't get populated. This is the
+  // same structure that's used in the about:third-party page, though, so we
+  // have coverage in browser_aboutthirdparty.js that this is correct.
   Assert.ok(found.payload.processes, "'processes' object exists");
   Assert.ok(
     gCurrentPidStr in found.payload.processes,
@@ -143,7 +156,7 @@ add_task(async function test_send_ping() {
     );
     Assert.ok(typeof modRecord.trustFlags == "number", "'trustFlags' exists");
 
-    let mod = expectedModules.find(function(elem) {
+    let mod = expectedModules.find(function (elem) {
       return elem.nameMatch.test(modRecord.resolvedDllName);
     });
 

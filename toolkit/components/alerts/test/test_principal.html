@@ -11,8 +11,6 @@
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
-/* eslint-env mozilla/frame-script */
-
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
 const Services = SpecialPowers.Services;
@@ -21,9 +19,7 @@ const notifier = Cc["@mozilla.org/alerts-service;1"]
                    .getService(Ci.nsIAlertsService);
 
 const chromeScript = SpecialPowers.loadChromeScript(_ => {
-  // eslint-disable-next-line no-shadow
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
+  /* eslint-env mozilla/chrome-script */
   addMessageListener("anyXULAlertsVisible", function() {
     var windows = Services.wm.getEnumerator("alert:alert");
     return windows.hasMoreElements();
@@ -98,12 +94,14 @@ function runTest() {
     return;
   }
 
-  if ("@mozilla.org/system-alerts-service;1" in Cc) {
-    todo(false, "Native alerts service exists in this application");
-    return;
-  }
-
   ok(true, "Alerts service exists in this application");
+
+  add_setup(async () => {
+    // This test verifies behavior specific to XUL alerts.
+    await SpecialPowers.pushPrefEnv({
+      set: [["alerts.useSystemBackend", false]],
+    });
+  });
 
   // sendSyncMessage returns an array of arrays. See the comments in
   // test_alerts_noobserve.html and test_SpecialPowersLoadChromeScript.html.

@@ -3,7 +3,6 @@
 
 "use strict";
 
-/* import-globals-from storage-helpers.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/server/tests/browser/storage-helpers.js",
   this
@@ -84,7 +83,7 @@ const afterIframeRemoved = {
   },
 };
 
-add_task(async function() {
+add_task(async function () {
   const { commands } = await openTabAndSetupStorage(
     MAIN_DOMAIN + "storage-dynamic-windows.html"
   );

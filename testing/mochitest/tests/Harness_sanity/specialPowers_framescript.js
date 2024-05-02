@@ -1,6 +1,4 @@
-/* eslint-env mozilla/frame-script */
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+/* eslint-env mozilla/chrome-script */
 
 var permChangedObs = {
   observe(subject, topic, data) {

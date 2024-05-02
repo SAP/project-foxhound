@@ -1,18 +1,28 @@
 #![warn(rust_2018_idioms)]
 #![cfg(feature = "full")]
 
-use tokio::runtime::{self, Runtime};
+use futures::{
+    future::{pending, ready},
+    FutureExt,
+};
+
+use tokio::runtime;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::{self, LocalSet};
 use tokio::time;
 
+#[cfg(not(tokio_wasi))]
 use std::cell::Cell;
-use std::sync::atomic::Ordering::{self, SeqCst};
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::AtomicBool;
+#[cfg(not(tokio_wasi))]
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+#[cfg(not(tokio_wasi))]
+use std::sync::atomic::Ordering::SeqCst;
 use std::time::Duration;
 
-#[tokio::test(basic_scheduler)]
-async fn local_basic_scheduler() {
+#[tokio::test(flavor = "current_thread")]
+async fn local_current_thread_scheduler() {
     LocalSet::new()
         .run_until(async {
             task::spawn_local(async {}).await.unwrap();
@@ -20,7 +30,8 @@ async fn local_basic_scheduler() {
         .await;
 }
 
-#[tokio::test(threaded_scheduler)]
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
 async fn local_threadpool() {
     thread_local! {
         static ON_RT_THREAD: Cell<bool> = Cell::new(false);
@@ -40,7 +51,8 @@ async fn local_threadpool() {
         .await;
 }
 
-#[tokio::test(threaded_scheduler)]
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
 async fn localset_future_threadpool() {
     thread_local! {
         static ON_LOCAL_THREAD: Cell<bool> = Cell::new(false);
@@ -55,18 +67,19 @@ async fn localset_future_threadpool() {
     local.await;
 }
 
-#[tokio::test(threaded_scheduler)]
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
 async fn localset_future_timers() {
     static RAN1: AtomicBool = AtomicBool::new(false);
     static RAN2: AtomicBool = AtomicBool::new(false);
 
     let local = LocalSet::new();
     local.spawn_local(async move {
-        time::delay_for(Duration::from_millis(10)).await;
+        time::sleep(Duration::from_millis(5)).await;
         RAN1.store(true, Ordering::SeqCst);
     });
     local.spawn_local(async move {
-        time::delay_for(Duration::from_millis(20)).await;
+        time::sleep(Duration::from_millis(10)).await;
         RAN2.store(true, Ordering::SeqCst);
     });
     local.await;
@@ -99,7 +112,8 @@ async fn localset_future_drives_all_local_futs() {
     assert!(RAN3.load(Ordering::SeqCst));
 }
 
-#[tokio::test(threaded_scheduler)]
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
 async fn local_threadpool_timer() {
     // This test ensures that runtime services like the timer are properly
     // set for the local task set.
@@ -114,14 +128,30 @@ async fn local_threadpool_timer() {
             assert!(ON_RT_THREAD.with(|cell| cell.get()));
             let join = task::spawn_local(async move {
                 assert!(ON_RT_THREAD.with(|cell| cell.get()));
-                time::delay_for(Duration::from_millis(10)).await;
+                time::sleep(Duration::from_millis(10)).await;
                 assert!(ON_RT_THREAD.with(|cell| cell.get()));
             });
             join.await.unwrap();
         })
         .await;
 }
+#[test]
+fn enter_guard_spawn() {
+    let local = LocalSet::new();
+    let _guard = local.enter();
+    // Run the local task set.
 
+    let join = task::spawn_local(async { true });
+    let rt = runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    local.block_on(&rt, async move {
+        assert!(join.await.unwrap());
+    });
+}
+
+#[cfg(not(tokio_wasi))] // Wasi doesn't support panic recovery
 #[test]
 // This will panic, since the thread that calls `block_on` cannot use
 // in-place blocking inside of `block_on`.
@@ -133,12 +163,11 @@ fn local_threadpool_blocking_in_place() {
 
     ON_RT_THREAD.with(|cell| cell.set(true));
 
-    let mut rt = runtime::Builder::new()
-        .threaded_scheduler()
+    let rt = runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
-    LocalSet::new().block_on(&mut rt, async {
+    LocalSet::new().block_on(&rt, async {
         assert!(ON_RT_THREAD.with(|cell| cell.get()));
         let join = task::spawn_local(async move {
             assert!(ON_RT_THREAD.with(|cell| cell.get()));
@@ -149,7 +178,8 @@ fn local_threadpool_blocking_in_place() {
     });
 }
 
-#[tokio::test(threaded_scheduler)]
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
 async fn local_threadpool_blocking_run() {
     thread_local! {
         static ON_RT_THREAD: Cell<bool> = Cell::new(false);
@@ -177,7 +207,8 @@ async fn local_threadpool_blocking_run() {
         .await;
 }
 
-#[tokio::test(threaded_scheduler)]
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
 async fn all_spawns_are_local() {
     use futures::future;
     thread_local! {
@@ -203,7 +234,8 @@ async fn all_spawns_are_local() {
         .await;
 }
 
-#[tokio::test(threaded_scheduler)]
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
 async fn nested_spawn_is_local() {
     thread_local! {
         static ON_RT_THREAD: Cell<bool> = Cell::new(false);
@@ -238,6 +270,7 @@ async fn nested_spawn_is_local() {
         .await;
 }
 
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
 #[test]
 fn join_local_future_elsewhere() {
     thread_local! {
@@ -246,22 +279,17 @@ fn join_local_future_elsewhere() {
 
     ON_RT_THREAD.with(|cell| cell.set(true));
 
-    let mut rt = runtime::Builder::new()
-        .threaded_scheduler()
-        .build()
-        .unwrap();
+    let rt = runtime::Runtime::new().unwrap();
     let local = LocalSet::new();
-    local.block_on(&mut rt, async move {
+    local.block_on(&rt, async move {
         let (tx, rx) = oneshot::channel();
         let join = task::spawn_local(async move {
-            println!("hello world running...");
             assert!(
                 ON_RT_THREAD.with(|cell| cell.get()),
                 "local task must run on local thread, no matter where it is awaited"
             );
             rx.await.unwrap();
 
-            println!("hello world task done");
             "hello world"
         });
         let join2 = task::spawn(async move {
@@ -271,13 +299,31 @@ fn join_local_future_elsewhere() {
             );
 
             tx.send(()).expect("task shouldn't have ended yet");
-            println!("waking up hello world...");
 
             join.await.expect("task should complete successfully");
-
-            println!("hello world task joined");
         });
         join2.await.unwrap()
+    });
+}
+
+// Tests for <https://github.com/tokio-rs/tokio/issues/4973>
+#[cfg(not(tokio_wasi))] // Wasi doesn't support threads
+#[tokio::test(flavor = "multi_thread")]
+async fn localset_in_thread_local() {
+    thread_local! {
+        static LOCAL_SET: LocalSet = LocalSet::new();
+    }
+
+    // holds runtime thread until end of main fn.
+    let (_tx, rx) = oneshot::channel::<()>();
+    let handle = tokio::runtime::Handle::current();
+
+    std::thread::spawn(move || {
+        LOCAL_SET.with(|local_set| {
+            handle.block_on(local_set.run_until(async move {
+                let _ = rx.await;
+            }))
+        });
     });
 }
 
@@ -286,7 +332,7 @@ fn drop_cancels_tasks() {
     use std::rc::Rc;
 
     // This test reproduces issue #1842
-    let mut rt = rt();
+    let rt = rt();
     let rc1 = Rc::new(());
     let rc2 = rc1.clone();
 
@@ -298,12 +344,10 @@ fn drop_cancels_tasks() {
         let _rc2 = rc2;
 
         started_tx.send(()).unwrap();
-        loop {
-            time::delay_for(Duration::from_secs(3600)).await;
-        }
+        futures::future::pending::<()>().await;
     });
 
-    local.block_on(&mut rt, async {
+    local.block_on(&rt, async {
         started_rx.await.unwrap();
     });
     drop(local);
@@ -333,7 +377,7 @@ fn with_timeout(timeout: Duration, f: impl FnOnce() + Send + 'static) {
     // something we can easily make assertions about, we'll run it in a
     // thread. When the test thread finishes, it will send a message on a
     // channel to this thread. We'll wait for that message with a fairly
-    // generous timeout, and if we don't recieve it, we assume the test
+    // generous timeout, and if we don't receive it, we assume the test
     // thread has hung.
     //
     // Note that it should definitely complete in under a minute, but just
@@ -346,9 +390,7 @@ fn with_timeout(timeout: Duration, f: impl FnOnce() + Send + 'static) {
         ),
         // Did the test thread panic? We'll find out for sure when we `join`
         // with it.
-        Err(RecvTimeoutError::Disconnected) => {
-            println!("done_rx dropped, did the test thread panic?");
-        }
+        Err(RecvTimeoutError::Disconnected) => {}
         // Test completed successfully!
         Ok(()) => {}
     }
@@ -356,18 +398,19 @@ fn with_timeout(timeout: Duration, f: impl FnOnce() + Send + 'static) {
     thread.join().expect("test thread should not panic!")
 }
 
+#[cfg_attr(tokio_wasi, ignore = "`unwrap()` in `with_timeout()` panics on Wasi")]
 #[test]
 fn drop_cancels_remote_tasks() {
     // This test reproduces issue #1885.
     with_timeout(Duration::from_secs(60), || {
         let (tx, mut rx) = mpsc::channel::<()>(1024);
 
-        let mut rt = rt();
+        let rt = rt();
 
         let local = LocalSet::new();
         local.spawn_local(async move { while rx.recv().await.is_some() {} });
-        local.block_on(&mut rt, async {
-            time::delay_for(Duration::from_millis(1)).await;
+        local.block_on(&rt, async {
+            time::sleep(Duration::from_millis(1)).await;
         });
 
         drop(tx);
@@ -378,6 +421,10 @@ fn drop_cancels_remote_tasks() {
     });
 }
 
+#[cfg_attr(
+    tokio_wasi,
+    ignore = "FIXME: `task::spawn_local().await.unwrap()` panics on Wasi"
+)]
 #[test]
 fn local_tasks_wake_join_all() {
     // This test reproduces issue #2460.
@@ -385,7 +432,7 @@ fn local_tasks_wake_join_all() {
         use futures::future::join_all;
         use tokio::task::LocalSet;
 
-        let mut rt = rt();
+        let rt = rt();
         let set = LocalSet::new();
         let mut handles = Vec::new();
 
@@ -399,13 +446,34 @@ fn local_tasks_wake_join_all() {
     });
 }
 
-#[tokio::test]
-async fn local_tasks_are_polled_after_tick() {
+#[cfg(not(tokio_wasi))] // Wasi doesn't support panic recovery
+#[test]
+fn local_tasks_are_polled_after_tick() {
+    // This test depends on timing, so we run it up to five times.
+    for _ in 0..4 {
+        let res = std::panic::catch_unwind(local_tasks_are_polled_after_tick_inner);
+        if res.is_ok() {
+            // success
+            return;
+        }
+    }
+
+    // Test failed 4 times. Try one more time without catching panics. If it
+    // fails again, the test fails.
+    local_tasks_are_polled_after_tick_inner();
+}
+
+#[cfg(not(tokio_wasi))] // Wasi doesn't support panic recovery
+#[tokio::main(flavor = "current_thread")]
+async fn local_tasks_are_polled_after_tick_inner() {
     // Reproduces issues #1899 and #1900
 
     static RX1: AtomicUsize = AtomicUsize::new(0);
     static RX2: AtomicUsize = AtomicUsize::new(0);
-    static EXPECTED: usize = 500;
+    const EXPECTED: usize = 500;
+
+    RX1.store(0, SeqCst);
+    RX2.store(0, SeqCst);
 
     let (tx, mut rx) = mpsc::unbounded_channel();
 
@@ -415,7 +483,7 @@ async fn local_tasks_are_polled_after_tick() {
         .run_until(async {
             let task2 = task::spawn(async move {
                 // Wait a bit
-                time::delay_for(Duration::from_millis(100)).await;
+                time::sleep(Duration::from_millis(10)).await;
 
                 let mut oneshots = Vec::with_capacity(EXPECTED);
 
@@ -426,18 +494,21 @@ async fn local_tasks_are_polled_after_tick() {
                     tx.send(oneshot_rx).unwrap();
                 }
 
-                time::delay_for(Duration::from_millis(100)).await;
+                time::sleep(Duration::from_millis(10)).await;
 
                 for tx in oneshots.drain(..) {
                     tx.send(()).unwrap();
                 }
 
-                time::delay_for(Duration::from_millis(300)).await;
-                let rx1 = RX1.load(SeqCst);
-                let rx2 = RX2.load(SeqCst);
-                println!("EXPECT = {}; RX1 = {}; RX2 = {}", EXPECTED, rx1, rx2);
-                assert_eq!(EXPECTED, rx1);
-                assert_eq!(EXPECTED, rx2);
+                loop {
+                    time::sleep(Duration::from_millis(20)).await;
+                    let rx1 = RX1.load(SeqCst);
+                    let rx2 = RX2.load(SeqCst);
+
+                    if rx1 == EXPECTED && rx2 == EXPECTED {
+                        break;
+                    }
+                }
             });
 
             while let Some(oneshot) = rx.recv().await {
@@ -490,9 +561,132 @@ async fn acquire_mutex_in_drop() {
     drop(local);
 }
 
-fn rt() -> Runtime {
-    tokio::runtime::Builder::new()
-        .basic_scheduler()
+#[tokio::test]
+async fn spawn_wakes_localset() {
+    let local = LocalSet::new();
+    futures::select! {
+        _ = local.run_until(pending::<()>()).fuse() => unreachable!(),
+        ret = async { local.spawn_local(ready(())).await.unwrap()}.fuse() => ret
+    }
+}
+
+#[test]
+fn store_local_set_in_thread_local_with_runtime() {
+    use tokio::runtime::Runtime;
+
+    thread_local! {
+        static CURRENT: RtAndLocalSet = RtAndLocalSet::new();
+    }
+
+    struct RtAndLocalSet {
+        rt: Runtime,
+        local: LocalSet,
+    }
+
+    impl RtAndLocalSet {
+        fn new() -> RtAndLocalSet {
+            RtAndLocalSet {
+                rt: tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+                local: LocalSet::new(),
+            }
+        }
+
+        async fn inner_method(&self) {
+            self.local
+                .run_until(async move {
+                    tokio::task::spawn_local(async {});
+                })
+                .await
+        }
+
+        fn method(&self) {
+            self.rt.block_on(self.inner_method());
+        }
+    }
+
+    CURRENT.with(|f| {
+        f.method();
+    });
+}
+
+#[cfg(tokio_unstable)]
+mod unstable {
+    use tokio::runtime::UnhandledPanic;
+    use tokio::task::LocalSet;
+
+    #[tokio::test]
+    #[should_panic(
+        expected = "a spawned task panicked and the LocalSet is configured to shutdown on unhandled panic"
+    )]
+    async fn shutdown_on_panic() {
+        LocalSet::new()
+            .unhandled_panic(UnhandledPanic::ShutdownRuntime)
+            .run_until(async {
+                tokio::task::spawn_local(async {
+                    panic!("boom");
+                });
+
+                futures::future::pending::<()>().await;
+            })
+            .await;
+    }
+
+    // This test compares that, when the task driving `run_until` has already
+    // consumed budget, the `run_until` future has less budget than a "spawned"
+    // task.
+    //
+    // "Budget" is a fuzzy metric as the Tokio runtime is able to change values
+    // internally. This is why the test uses indirection to test this.
+    #[tokio::test]
+    async fn run_until_does_not_get_own_budget() {
+        // Consume some budget
+        tokio::task::consume_budget().await;
+
+        LocalSet::new()
+            .run_until(async {
+                let spawned = tokio::spawn(async {
+                    let mut spawned_n = 0;
+
+                    {
+                        let mut spawned = tokio_test::task::spawn(async {
+                            loop {
+                                spawned_n += 1;
+                                tokio::task::consume_budget().await;
+                            }
+                        });
+                        // Poll once
+                        assert!(!spawned.poll().is_ready());
+                    }
+
+                    spawned_n
+                });
+
+                let mut run_until_n = 0;
+                {
+                    let mut run_until = tokio_test::task::spawn(async {
+                        loop {
+                            run_until_n += 1;
+                            tokio::task::consume_budget().await;
+                        }
+                    });
+                    // Poll once
+                    assert!(!run_until.poll().is_ready());
+                }
+
+                let spawned_n = spawned.await.unwrap();
+                assert_ne!(spawned_n, 0);
+                assert_ne!(run_until_n, 0);
+                assert!(spawned_n > run_until_n);
+            })
+            .await
+    }
+}
+
+fn rt() -> runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()

@@ -1,6 +1,3 @@
-import WebIDL
-
-
 def WebIDLTest(parser, harness):
     parser.parse(
         """
@@ -11,7 +8,7 @@ def WebIDLTest(parser, harness):
     """
     )
 
-    results = parser.finish()
+    parser.finish()
 
     parser = parser.reset()
     parser.parse(
@@ -23,7 +20,7 @@ def WebIDLTest(parser, harness):
     """
     )
 
-    results = parser.finish()
+    parser.finish()
 
     parser = parser.reset()
     parser.parse(
@@ -49,8 +46,8 @@ def WebIDLTest(parser, harness):
             };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(threw, "[LegacyLenientThis] must take no arguments")
@@ -59,8 +56,8 @@ def WebIDLTest(parser, harness):
     parser.parse(
         """
         interface TestClamp {
-          void testClamp([Clamp] long foo);
-          void testNotClamp(long foo);
+          undefined testClamp([Clamp] long foo);
+          undefined testNotClamp(long foo);
         };
     """
     )
@@ -82,12 +79,12 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface TestClamp2 {
-              void testClamp([Clamp=something] long foo);
+              undefined testClamp([Clamp=something] long foo);
             };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(threw, "[Clamp] must take no arguments")
@@ -96,8 +93,8 @@ def WebIDLTest(parser, harness):
     parser.parse(
         """
         interface TestEnforceRange {
-          void testEnforceRange([EnforceRange] long foo);
-          void testNotEnforceRange(long foo);
+          undefined testEnforceRange([EnforceRange] long foo);
+          undefined testNotEnforceRange(long foo);
         };
     """
     )
@@ -120,12 +117,12 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface TestEnforceRange2 {
-              void testEnforceRange([EnforceRange=something] long foo);
+              undefined testEnforceRange([EnforceRange=something] long foo);
             };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(threw, "[EnforceRange] must take no arguments")

@@ -166,8 +166,7 @@ preferred over short identifiers like :js:`ok` or :js:`ok-button`.
 Localization Systems
 ====================
 
-Gecko has three main localization systems: Fluent and two legacy systems,
-DTD and StringBundle.
+Gecko has two main localization systems: Fluent and StringBundle, a legacy system.
 
 Fluent
 ------
@@ -181,21 +180,17 @@ features including good internationalization model and strong bidirectionality s
 
 To learn more about Fluent, follow the `Fluent for Firefox Developers`_ guide.
 
-DTD & StringBundle
-------------------
-
-DTD are deprecated, but still used for XUL and XHTML file localization. It uses `.dtd` files
-and the only localization feature it provides is the ability to reference one
-string from another via entity reference.
+StringBundle
+------------
 
 StringBundle is a runtime API used primarily for localization of C++ code.
 The messages are stored in `.properties` files and loaded using the StringBundle API
 and then retrieved from there via imperative calls.
 
-The system provides external arguments which can be placed into the string, and
-support basic plural categories via a proprietary API `PluralForms.jsm`.
+The system provides external positional arguments which can be placed into the string.
+Adding new StringBundle messages should only be done after serious consideration.
 
 .. _Pontoon: https://pontoon.mozilla.org/
 .. _hg.mozilla.org/l10n-central: https://hg.mozilla.org/l10n-central/
 .. _L10n Drivers Team: https://wiki.mozilla.org/L10n:Mozilla_Team
-.. _Fluent For Firefox Developers: ./l10n/l10n/fluent_tutorial.html
+.. _Fluent For Firefox Developers: ./fluent/tutorial.html

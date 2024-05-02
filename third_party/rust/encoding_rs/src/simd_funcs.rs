@@ -1,4 +1,4 @@
-// Copyright 2016 Mozilla Foundation. See the COPYRIGHT
+// Copyright Mozilla Foundation. See the COPYRIGHT
 // file at the top-level directory of this distribution.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
@@ -9,15 +9,15 @@
 
 use packed_simd::u16x8;
 use packed_simd::u8x16;
-use packed_simd::FromBits;
+use packed_simd::IntoBits;
 
 // TODO: Migrate unaligned access to stdlib code if/when the RFC
 // https://github.com/rust-lang/rfcs/pull/1725 is implemented.
 
 #[inline(always)]
 pub unsafe fn load16_unaligned(ptr: *const u8) -> u8x16 {
-    let mut simd = ::std::mem::uninitialized();
-    ::std::ptr::copy_nonoverlapping(ptr, &mut simd as *mut u8x16 as *mut u8, 16);
+    let mut simd = ::core::mem::uninitialized();
+    ::core::ptr::copy_nonoverlapping(ptr, &mut simd as *mut u8x16 as *mut u8, 16);
     simd
 }
 
@@ -29,7 +29,7 @@ pub unsafe fn load16_aligned(ptr: *const u8) -> u8x16 {
 
 #[inline(always)]
 pub unsafe fn store16_unaligned(ptr: *mut u8, s: u8x16) {
-    ::std::ptr::copy_nonoverlapping(&s as *const u8x16 as *const u8, ptr, 16);
+    ::core::ptr::copy_nonoverlapping(&s as *const u8x16 as *const u8, ptr, 16);
 }
 
 #[allow(dead_code)]
@@ -40,8 +40,8 @@ pub unsafe fn store16_aligned(ptr: *mut u8, s: u8x16) {
 
 #[inline(always)]
 pub unsafe fn load8_unaligned(ptr: *const u16) -> u16x8 {
-    let mut simd = ::std::mem::uninitialized();
-    ::std::ptr::copy_nonoverlapping(ptr as *const u8, &mut simd as *mut u16x8 as *mut u8, 16);
+    let mut simd = ::core::mem::uninitialized();
+    ::core::ptr::copy_nonoverlapping(ptr as *const u8, &mut simd as *mut u16x8 as *mut u8, 16);
     simd
 }
 
@@ -53,7 +53,7 @@ pub unsafe fn load8_aligned(ptr: *const u16) -> u16x8 {
 
 #[inline(always)]
 pub unsafe fn store8_unaligned(ptr: *mut u16, s: u16x8) {
-    ::std::ptr::copy_nonoverlapping(&s as *const u16x8 as *const u8, ptr as *mut u8, 16);
+    ::core::ptr::copy_nonoverlapping(&s as *const u16x8 as *const u8, ptr as *mut u8, 16);
 }
 
 #[allow(dead_code)]
@@ -64,18 +64,16 @@ pub unsafe fn store8_aligned(ptr: *mut u16, s: u16x8) {
 
 cfg_if! {
     if #[cfg(all(target_feature = "sse2", target_arch = "x86_64"))] {
-        use std::arch::x86_64::__m128i;
-        use std::arch::x86_64::_mm_movemask_epi8;
-        use std::arch::x86_64::_mm_packus_epi16;
+        use core::arch::x86_64::__m128i;
+        use core::arch::x86_64::_mm_movemask_epi8;
+        use core::arch::x86_64::_mm_packus_epi16;
     } else if #[cfg(all(target_feature = "sse2", target_arch = "x86"))] {
-        use std::arch::x86::__m128i;
-        use std::arch::x86::_mm_movemask_epi8;
-        use std::arch::x86::_mm_packus_epi16;
+        use core::arch::x86::__m128i;
+        use core::arch::x86::_mm_movemask_epi8;
+        use core::arch::x86::_mm_packus_epi16;
     } else if #[cfg(target_arch = "aarch64")]{
-        use std::arch::aarch64::uint8x16_t;
-        use std::arch::aarch64::uint16x8_t;
-        use std::arch::aarch64::vmaxvq_u8;
-        use std::arch::aarch64::vmaxvq_u16;
+        use core::arch::aarch64::vmaxvq_u8;
+        use core::arch::aarch64::vmaxvq_u16;
     } else {
 
     }
@@ -102,7 +100,7 @@ pub fn simd_byte_swap(s: u16x8) -> u16x8 {
 
 #[inline(always)]
 pub fn to_u16_lanes(s: u8x16) -> u16x8 {
-    u16x8::from_bits(s)
+    s.into_bits()
 }
 
 cfg_if! {
@@ -113,7 +111,7 @@ cfg_if! {
         #[inline(always)]
         pub fn mask_ascii(s: u8x16) -> i32 {
             unsafe {
-                _mm_movemask_epi8(__m128i::from_bits(s))
+                _mm_movemask_epi8(s.into_bits())
             }
         }
 
@@ -127,14 +125,14 @@ cfg_if! {
         #[inline(always)]
         pub fn simd_is_ascii(s: u8x16) -> bool {
             unsafe {
-                _mm_movemask_epi8(__m128i::from_bits(s)) == 0
+                _mm_movemask_epi8(s.into_bits()) == 0
             }
         }
     } else if #[cfg(target_arch = "aarch64")]{
         #[inline(always)]
         pub fn simd_is_ascii(s: u8x16) -> bool {
             unsafe {
-                vmaxvq_u8(uint8x16_t::from_bits(s)) < 0x80
+                vmaxvq_u8(s.into_bits()) < 0x80
             }
         }
     } else {
@@ -162,7 +160,7 @@ cfg_if! {
         #[inline(always)]
         pub fn simd_is_str_latin1(s: u8x16) -> bool {
             unsafe {
-                vmaxvq_u8(uint8x16_t::from_bits(s)) < 0xC4
+                vmaxvq_u8(s.into_bits()) < 0xC4
             }
         }
     } else {
@@ -179,14 +177,14 @@ cfg_if! {
         #[inline(always)]
         pub fn simd_is_basic_latin(s: u16x8) -> bool {
             unsafe {
-                vmaxvq_u16(uint16x8_t::from_bits(s)) < 0x80
+                vmaxvq_u16(s.into_bits()) < 0x80
             }
         }
 
         #[inline(always)]
         pub fn simd_is_latin1(s: u16x8) -> bool {
             unsafe {
-                vmaxvq_u16(uint16x8_t::from_bits(s)) < 0x100
+                vmaxvq_u16(s.into_bits()) < 0x100
             }
         }
     } else {
@@ -219,7 +217,7 @@ cfg_if! {
         macro_rules! aarch64_return_false_if_below_hebrew {
             ($s:ident) => ({
                 unsafe {
-                    if vmaxvq_u16(uint16x8_t::from_bits($s)) < 0x0590 {
+                    if vmaxvq_u16($s.into_bits()) < 0x0590 {
                         return false;
                     }
                 }
@@ -296,7 +294,7 @@ pub fn simd_unpack(s: u8x16) -> (u16x8, u16x8) {
             u8x16::splat(0),
             [8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31]
         );
-        (u16x8::from_bits(first), u16x8::from_bits(second))
+        (first.into_bits(), second.into_bits())
     }
 }
 
@@ -305,15 +303,15 @@ cfg_if! {
         #[inline(always)]
         pub fn simd_pack(a: u16x8, b: u16x8) -> u8x16 {
             unsafe {
-                u8x16::from_bits(_mm_packus_epi16(__m128i::from_bits(a), __m128i::from_bits(b)))
+                _mm_packus_epi16(a.into_bits(), b.into_bits()).into_bits()
             }
         }
     } else {
         #[inline(always)]
         pub fn simd_pack(a: u16x8, b: u16x8) -> u8x16 {
             unsafe {
-                let first = u8x16::from_bits(a);
-                let second = u8x16::from_bits(b);
+                let first: u8x16 = a.into_bits();
+                let second: u8x16 = b.into_bits();
                 shuffle!(
                     first,
                     second,
@@ -327,6 +325,7 @@ cfg_if! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_unpack() {
@@ -446,7 +445,7 @@ mod tests {
         ];
         let mut alu = 0u64;
         unsafe {
-            ::std::ptr::copy_nonoverlapping(input.as_ptr(), &mut alu as *mut u64 as *mut u8, 8);
+            ::core::ptr::copy_nonoverlapping(input.as_ptr(), &mut alu as *mut u64 as *mut u8, 8);
         }
         let masked = alu & 0x8080808080808080;
         assert_eq!(masked.trailing_zeros(), 39);

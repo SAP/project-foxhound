@@ -46,10 +46,8 @@ add_task(async function test_principal_permissions() {
   );
 
   const anotherUri = Services.io.newURI("https://example.com");
-  const anotherPrincipal = Services.scriptSecurityManager.createContentPrincipal(
-    anotherUri,
-    {}
-  );
+  const anotherPrincipal =
+    Services.scriptSecurityManager.createContentPrincipal(anotherUri, {});
 
   Services.perms.addFromPrincipal(
     principal,
@@ -123,6 +121,11 @@ function addTestPermissions() {
     "3rdPartyStorage^https://example.net",
     Services.perms.ALLOW_ACTION
   );
+  PermissionTestUtils.add(
+    "https://example.com",
+    "3rdPartyFrameStorage^https://example.net",
+    Services.perms.ALLOW_ACTION
+  );
 
   PermissionTestUtils.add(
     "https://example.com",
@@ -168,6 +171,14 @@ function addTestPermissions() {
     PermissionTestUtils.getPermissionObject(
       "https://example.com",
       "3rdPartyStorage^https://example.net",
+      true
+    ).capability,
+    Services.perms.ALLOW_ACTION
+  );
+  Assert.equal(
+    PermissionTestUtils.getPermissionObject(
+      "https://example.com",
+      "3rdPartyFrameStorage^https://example.net",
       true
     ).capability,
     Services.perms.ALLOW_ACTION
@@ -241,6 +252,13 @@ add_task(async function test_basedomain_permissions() {
       !PermissionTestUtils.getPermissionObject(
         "https://example.com",
         "3rdPartyStorage^https://example.net",
+        true
+      )
+    );
+    Assert.ok(
+      !PermissionTestUtils.getPermissionObject(
+        "https://example.com",
+        "3rdPartyFrameStorage^https://example.net",
         true
       )
     );
@@ -318,6 +336,14 @@ add_task(async function test_host_permissions() {
     ).capability,
     Services.perms.ALLOW_ACTION
   );
+  Assert.equal(
+    PermissionTestUtils.getPermissionObject(
+      "https://example.com",
+      "3rdPartyFrameStorage^https://example.net",
+      true
+    ).capability,
+    Services.perms.ALLOW_ACTION
+  );
 
   Assert.equal(
     PermissionTestUtils.getPermissionObject(
@@ -349,10 +375,8 @@ add_task(async function test_3rdpartystorage_permissions() {
   );
 
   const anotherUri = Services.io.newURI("https://example.com");
-  const anotherPrincipal = Services.scriptSecurityManager.createContentPrincipal(
-    anotherUri,
-    {}
-  );
+  const anotherPrincipal =
+    Services.scriptSecurityManager.createContentPrincipal(anotherUri, {});
   Services.perms.addFromPrincipal(
     anotherPrincipal,
     "cookie",
@@ -363,12 +387,15 @@ add_task(async function test_3rdpartystorage_permissions() {
     "3rdPartyStorage^https://example.net",
     Services.perms.ALLOW_ACTION
   );
+  Services.perms.addFromPrincipal(
+    anotherPrincipal,
+    "3rdPartyFrameStorage^https://example.net",
+    Services.perms.ALLOW_ACTION
+  );
 
   const oneMoreUri = Services.io.newURI("https://example.org");
-  const oneMorePrincipal = Services.scriptSecurityManager.createContentPrincipal(
-    oneMoreUri,
-    {}
-  );
+  const oneMorePrincipal =
+    Services.scriptSecurityManager.createContentPrincipal(oneMoreUri, {});
   Services.perms.addFromPrincipal(
     oneMorePrincipal,
     "cookie",
@@ -385,6 +412,13 @@ add_task(async function test_3rdpartystorage_permissions() {
     Services.perms.getPermissionObject(
       anotherPrincipal,
       "3rdPartyStorage^https://example.net",
+      true
+    ) != null
+  );
+  Assert.ok(
+    Services.perms.getPermissionObject(
+      anotherPrincipal,
+      "3rdPartyFrameStorage^https://example.net",
       true
     ) != null
   );
@@ -414,6 +448,13 @@ add_task(async function test_3rdpartystorage_permissions() {
     Services.perms.getPermissionObject(
       anotherPrincipal,
       "3rdPartyStorage^https://example.net",
+      true
+    ) == null
+  );
+  Assert.ok(
+    Services.perms.getPermissionObject(
+      anotherPrincipal,
+      "3rdPartyFrameStorage^https://example.net",
       true
     ) == null
   );

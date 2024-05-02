@@ -9,8 +9,11 @@ package org.mozilla.geckoview;
 import android.os.Parcel;
 import android.os.Parcelable;
 import androidx.annotation.AnyThread;
+import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
 import java.util.Collection;
 import org.mozilla.gecko.util.GeckoBundle;
@@ -112,7 +115,7 @@ public final class GeckoSessionSettings implements Parcelable {
      *     flags.
      * @return This Builder instance.
      */
-    public @NonNull Builder userAgentMode(final int mode) {
+    public @NonNull Builder userAgentMode(@UserAgentMode final int mode) {
       mSettings.setUserAgentMode(mode);
       return this;
     }
@@ -135,7 +138,7 @@ public final class GeckoSessionSettings implements Parcelable {
      *     GeckoSessionSettings#DISPLAY_MODE_BROWSER GeckoSessionSettings.DISPLAY_MODE_*} flags.
      * @return This Builder instance.
      */
-    public @NonNull Builder displayMode(final int mode) {
+    public @NonNull Builder displayMode(@DisplayMode final int mode) {
       mSettings.setDisplayMode(mode);
       return this;
     }
@@ -181,7 +184,7 @@ public final class GeckoSessionSettings implements Parcelable {
      *     GeckoSessionSettings#VIEWPORT_MODE_MOBILE GeckoSessionSettings.VIEWPORT_MODE_*} flags.
      * @return This Builder instance.
      */
-    public @NonNull Builder viewportMode(final int mode) {
+    public @NonNull Builder viewportMode(@ViewportMode final int mode) {
       mSettings.setViewportMode(mode);
       return this;
     }
@@ -190,16 +193,52 @@ public final class GeckoSessionSettings implements Parcelable {
   private static final String LOGTAG = "GeckoSessionSettings";
   private static final boolean DEBUG = false;
 
+  /** This value is for the display member of Web App Manifests */
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({
+    DISPLAY_MODE_BROWSER,
+    DISPLAY_MODE_MINIMAL_UI,
+    DISPLAY_MODE_STANDALONE,
+    DISPLAY_MODE_FULLSCREEN
+  })
+  public @interface DisplayMode {}
+
   // This needs to match GeckoViewSettings.jsm
+  /** "browser" value of the display member in Web App Manifests */
   public static final int DISPLAY_MODE_BROWSER = 0;
+
+  /** "minimal-ui" value of the display member in Web App Manifests */
   public static final int DISPLAY_MODE_MINIMAL_UI = 1;
+
+  /** "standalone" value of the display member in Web App Manifests */
   public static final int DISPLAY_MODE_STANDALONE = 2;
+
+  /** "fullscreen" value of the display member in Web App Manifests */
   public static final int DISPLAY_MODE_FULLSCREEN = 3;
 
+  /** The user agent string mode */
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({
+    USER_AGENT_MODE_MOBILE,
+    USER_AGENT_MODE_DESKTOP,
+    USER_AGENT_MODE_VR,
+  })
+  public @interface UserAgentMode {}
+
   // This needs to match GeckoViewSettingsChild.js and GeckoViewSettings.jsm
+  /** The user agent mode is mobile device */
   public static final int USER_AGENT_MODE_MOBILE = 0;
+
+  /** The user agent mobe is desktop device */
   public static final int USER_AGENT_MODE_DESKTOP = 1;
+
+  /** The user agent mode is VR device */
   public static final int USER_AGENT_MODE_VR = 2;
+
+  /** The view port mode */
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({VIEWPORT_MODE_MOBILE, VIEWPORT_MODE_DESKTOP})
+  public @interface ViewportMode {}
 
   // This needs to match GeckoViewSettingsChild.js
   /**
@@ -236,6 +275,7 @@ public final class GeckoSessionSettings implements Parcelable {
    */
   private static final Key<String> CHROME_URI =
       new Key<String>("chromeUri", /* initOnly */ true, /* values */ null);
+
   /** Key to set the window screen ID, or 0 to use default ID. Read-only once session is open. */
   private static final Key<Integer> SCREEN_ID =
       new Key<Integer>("screenId", /* initOnly */ true, /* values */ null);
@@ -243,6 +283,7 @@ public final class GeckoSessionSettings implements Parcelable {
   /** Key to enable and disable tracking protection. */
   private static final Key<Boolean> USE_TRACKING_PROTECTION =
       new Key<Boolean>("useTrackingProtection");
+
   /** Key to enable and disable private mode browsing. Read-only once session is open. */
   private static final Key<Boolean> USE_PRIVATE_MODE =
       new Key<Boolean>("usePrivateMode", /* initOnly */ true, /* values */ null);
@@ -284,6 +325,7 @@ public final class GeckoSessionSettings implements Parcelable {
   /** Key to specify if JavaScript should be allowed on this session. */
   private static final Key<Boolean> ALLOW_JAVASCRIPT =
       new Key<Boolean>("allowJavascript", /* initOnly */ false, /* values */ null);
+
   /** Key to specify if entire accessible tree should be exposed with no caching. */
   private static final Key<Boolean> FULL_ACCESSIBILITY_TREE =
       new Key<Boolean>("fullAccessibilityTree", /* initOnly */ false, /* values */ null);
@@ -481,7 +523,7 @@ public final class GeckoSessionSettings implements Parcelable {
    * @param value One or more of the {@link GeckoSessionSettings#USER_AGENT_MODE_MOBILE
    *     GeckoSessionSettings.USER_AGENT_MODE_*} flags.
    */
-  public void setUserAgentMode(final int value) {
+  public void setUserAgentMode(@UserAgentMode final int value) {
     setInt(USER_AGENT_MODE, value);
   }
 
@@ -491,7 +533,7 @@ public final class GeckoSessionSettings implements Parcelable {
    * @param value The mode to set the display to. Use one or more of the {@link
    *     GeckoSessionSettings#DISPLAY_MODE_BROWSER GeckoSessionSettings.DISPLAY_MODE_*} flags.
    */
-  public void setDisplayMode(final int value) {
+  public void setDisplayMode(@DisplayMode final int value) {
     setInt(DISPLAY_MODE, value);
   }
 
@@ -501,7 +543,7 @@ public final class GeckoSessionSettings implements Parcelable {
    * @param value One or more of the {@link GeckoSessionSettings#VIEWPORT_MODE_MOBILE
    *     GeckoSessionSettings.VIEWPORT_MODE_*} flags.
    */
-  public void setViewportMode(final int value) {
+  public void setViewportMode(@ViewportMode final int value) {
     setInt(VIEWPORT_MODE, value);
   }
 
@@ -530,17 +572,17 @@ public final class GeckoSessionSettings implements Parcelable {
    * @return One or more of the {@link GeckoSessionSettings#USER_AGENT_MODE_MOBILE
    *     GeckoSessionSettings.USER_AGENT_MODE_*} flags.
    */
-  public int getUserAgentMode() {
+  public @UserAgentMode int getUserAgentMode() {
     return getInt(USER_AGENT_MODE);
   }
 
   /**
    * The current display mode.
    *
-   * @return )One or more of the {@link GeckoSessionSettings#DISPLAY_MODE_BROWSER
+   * @return One or more of the {@link GeckoSessionSettings#DISPLAY_MODE_BROWSER
    *     GeckoSessionSettings.DISPLAY_MODE_*} flags.
    */
-  public int getDisplayMode() {
+  public @DisplayMode int getDisplayMode() {
     return getInt(DISPLAY_MODE);
   }
 
@@ -550,7 +592,7 @@ public final class GeckoSessionSettings implements Parcelable {
    * @return One or more of the {@link GeckoSessionSettings#VIEWPORT_MODE
    *     GeckoSessionSettings.VIEWPORT_MODE_*} flags.
    */
-  public int getViewportMode() {
+  public @ViewportMode int getViewportMode() {
     return getInt(VIEWPORT_MODE);
   }
 
@@ -641,7 +683,7 @@ public final class GeckoSessionSettings implements Parcelable {
   }
 
   private <T> boolean valueChangedLocked(final Key<T> key, final T value) {
-    if (key.initOnly && mSession != null && mSession.isOpen()) {
+    if (key.initOnly && mSession != null) {
       throw new IllegalStateException("Read-only property");
     } else if (key.values != null && !key.values.contains(value)) {
       throw new IllegalArgumentException("Invalid value");
@@ -652,7 +694,7 @@ public final class GeckoSessionSettings implements Parcelable {
   }
 
   private void dispatchUpdate() {
-    if (mSession != null && mSession.isOpen()) {
+    if (mSession != null) {
       mSession.getEventDispatcher().dispatch("GeckoView:UpdateSettings", toBundle());
     }
   }

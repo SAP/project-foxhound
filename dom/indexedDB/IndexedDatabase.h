@@ -15,12 +15,10 @@
 #include "nsTArray.h"
 #include "SafeRefPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Blob;
 class IDBDatabase;
-class IDBMutableFile;
 
 namespace indexedDB {
 
@@ -62,9 +60,6 @@ struct StructuredCloneFileChild : StructuredCloneFileBase {
   // In IndexedDatabaseInlines.h
   StructuredCloneFileChild(FileType aType, RefPtr<Blob> aBlob);
 
-  // In IndexedDatabaseInlines.h
-  explicit StructuredCloneFileChild(RefPtr<IDBMutableFile> aMutableFile);
-
   const dom::Blob& Blob() const { return *mContents->as<RefPtr<dom::Blob>>(); }
 
   // XXX This is currently used for a number of reasons. Bug 1620560 will remove
@@ -78,22 +73,8 @@ struct StructuredCloneFileChild : StructuredCloneFileBase {
 
   bool HasBlob() const { return mContents->is<RefPtr<dom::Blob>>(); }
 
-  const IDBMutableFile& MutableFile() const {
-    return *mContents->as<RefPtr<IDBMutableFile>>();
-  }
-
-  IDBMutableFile& MutableMutableFile() const {
-    return *mContents->as<RefPtr<IDBMutableFile>>();
-  }
-
-  bool HasMutableFile() const {
-    return mContents->is<RefPtr<IDBMutableFile>>();
-  }
-
  private:
-  InitializedOnce<
-      const Variant<Nothing, RefPtr<dom::Blob>, RefPtr<IDBMutableFile>>>
-      mContents;
+  InitializedOnce<const Variant<Nothing, RefPtr<dom::Blob>>> mContents;
 };
 
 struct StructuredCloneFileParent : StructuredCloneFileBase {
@@ -235,8 +216,7 @@ JSObject* StructuredCloneReadCallback(
     void* aClosure);
 
 }  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(
     mozilla::dom::indexedDB::StructuredCloneReadInfo<

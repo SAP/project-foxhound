@@ -1804,11 +1804,8 @@ uint32_t MacroAssembler::pushFakeReturnAddress(Register scratch) {
 }
 
 void MacroAssembler::loadStoreBuffer(Register ptr, Register buffer) {
-  if (ptr != buffer) {
-    movePtr(ptr, buffer);
-  }
-  orPtr(Imm32(gc::ChunkMask), buffer);
-  loadPtr(Address(buffer, gc::ChunkStoreBufferOffsetFromLastByte), buffer);
+  ma_and(buffer, ptr, Imm32(int32_t(~gc::ChunkMask)));
+  loadPtr(Address(buffer, gc::ChunkStoreBufferOffset), buffer);
 }
 
 void MacroAssembler::branchPtrInNurseryChunk(Condition cond, Register ptr,
@@ -1817,11 +1814,10 @@ void MacroAssembler::branchPtrInNurseryChunk(Condition cond, Register ptr,
   MOZ_ASSERT(ptr != temp);
   MOZ_ASSERT(ptr != SecondScratchReg);
 
-  movePtr(ptr, SecondScratchReg);
-  orPtr(Imm32(gc::ChunkMask), SecondScratchReg);
+  ma_and(SecondScratchReg, ptr, Imm32(int32_t(~gc::ChunkMask)));
   branchPtr(InvertCondition(cond),
-            Address(SecondScratchReg, gc::ChunkStoreBufferOffsetFromLastByte),
-            ImmWord(0), label);
+            Address(SecondScratchReg, gc::ChunkStoreBufferOffset), ImmWord(0),
+            label);
 }
 
 void MacroAssembler::comment(const char* msg) { Assembler::comment(msg); }
@@ -1829,10 +1825,10 @@ void MacroAssembler::comment(const char* msg) { Assembler::comment(msg); }
 // ===============================================================
 // WebAssembly
 
-CodeOffset MacroAssembler::wasmTrapInstruction() {
-  CodeOffset offset(currentOffset());
+FaultingCodeOffset MacroAssembler::wasmTrapInstruction() {
+  FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
   as_teq(zero, zero, WASM_TRAP);
-  return offset;
+  return fco;
 }
 
 void MacroAssembler::wasmTruncateDoubleToInt32(FloatRegister input,
@@ -2093,8 +2089,8 @@ void MacroAssembler::wasmUnalignedStoreFP(const wasm::MemoryAccessDesc& access,
 void MacroAssemblerMIPSShared::wasmLoadImpl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, AnyRegister output, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2175,8 +2171,8 @@ void MacroAssemblerMIPSShared::wasmLoadImpl(
 void MacroAssemblerMIPSShared::wasmStoreImpl(
     const wasm::MemoryAccessDesc& access, AnyRegister value,
     Register memoryBase, Register ptr, Register ptrScratch, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -3343,6 +3339,17 @@ void MacroAssembler::nearbyIntFloat32(RoundingMode mode, FloatRegister src,
 void MacroAssembler::copySignDouble(FloatRegister lhs, FloatRegister rhs,
                                     FloatRegister output) {
   MOZ_CRASH("not supported on this platform");
+}
+
+void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
+                                        Register pointer) {
+  if (IsShiftInScaleRange(shift)) {
+    computeEffectiveAddress(
+        BaseIndex(pointer, indexTemp32, ShiftToScale(shift)), pointer);
+    return;
+  }
+  lshift32(Imm32(shift), indexTemp32);
+  addPtr(indexTemp32, pointer);
 }
 
 //}}} check_macroassembler_style

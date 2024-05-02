@@ -10,15 +10,16 @@
 var rule = require("../lib/rules/reject-some-requires");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 8 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
 // ------------------------------------------------------------------------------
 
 function requirePathError(path) {
-  const message = `require(${path}) is not allowed`;
-  return [{ message, type: "CallExpression" }];
+  return [
+    { messageId: "rejectRequire", data: { path }, type: "CallExpression" },
+  ];
 }
 
 const DEVTOOLS_FORBIDDEN_PATH = "^(resource://)?devtools/forbidden";

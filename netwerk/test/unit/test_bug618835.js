@@ -13,7 +13,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpserv;
 
@@ -30,7 +32,7 @@ InitialListener.prototype = {
   onStartRequest(request) {},
   onStopRequest(request, status) {
     Assert.equal(1, numberOfCLHandlerCalls);
-    executeSoon(function() {
+    executeSoon(function () {
       var channel = setupChannel(
         "http://localhost:" + httpserv.identity.primaryPort + "/post"
       );
@@ -46,7 +48,7 @@ RedirectingListener.prototype = {
   onStartRequest(request) {},
   onStopRequest(request, status) {
     Assert.equal(1, numberOfHandlerCalls);
-    executeSoon(function() {
+    executeSoon(function () {
       var channel = setupChannel(
         "http://localhost:" + httpserv.identity.primaryPort + "/post"
       );

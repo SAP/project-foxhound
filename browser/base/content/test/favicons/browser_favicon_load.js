@@ -6,6 +6,7 @@
 
 const CC = Components.Constructor;
 
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const TEST_SITE = "http://example.net";
 const TEST_THIRD_PARTY_SITE = "http://mochi.test:8888";
 
@@ -20,16 +21,10 @@ const THIRD_PARTY_FAVICON_URI =
   TEST_THIRD_PARTY_SITE +
   "/browser/browser/base/content/test/favicons/file_favicon.png";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 
@@ -99,10 +94,8 @@ FaviconObserver.prototype = {
 };
 
 function waitOnFaviconLoaded(aFaviconURL) {
-  return PlacesTestUtils.waitForNotification(
-    "favicon-changed",
-    events => events.some(e => e.faviconUrl == aFaviconURL),
-    "places"
+  return PlacesTestUtils.waitForNotification("favicon-changed", events =>
+    events.some(e => e.faviconUrl == aFaviconURL)
   );
 }
 

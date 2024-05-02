@@ -8,7 +8,7 @@
 #define mozilla_dom_MathMLElement_h_
 
 #include "mozilla/Attributes.h"
-#include "nsMappedAttributeElement.h"
+#include "nsStyledElement.h"
 #include "Link.h"
 
 class nsCSSValue;
@@ -18,13 +18,12 @@ class EventChainPostVisitor;
 class EventChainPreVisitor;
 namespace dom {
 
-typedef nsMappedAttributeElement MathMLElementBase;
+using MathMLElementBase = nsStyledElement;
 
 /*
  * The base class for MathML elements.
  */
-class MathMLElement final : public MathMLElementBase,
-                            public mozilla::dom::Link {
+class MathMLElement final : public MathMLElementBase, public Link {
  public:
   explicit MathMLElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
   explicit MathMLElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -35,22 +34,19 @@ class MathMLElement final : public MathMLElementBase,
   NS_IMPL_FROMNODE(MathMLElement, kNameSpaceID_MathML)
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
-      const override;
+  nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
   enum {
-    PARSE_ALLOW_UNITLESS = 0x01,  // unitless 0 will be turned into 0px
     PARSE_ALLOW_NEGATIVE = 0x02,
     PARSE_SUPPRESS_WARNINGS = 0x04,
-    CONVERT_UNITLESS_TO_PERCENT = 0x08
   };
   static bool ParseNamedSpaceValue(const nsString& aString,
                                    nsCSSValue& aCSSValue, uint32_t aFlags,
@@ -59,51 +55,54 @@ class MathMLElement final : public MathMLElementBase,
   static bool ParseNumericValue(const nsString& aString, nsCSSValue& aCSSValue,
                                 uint32_t aFlags, Document* aDocument);
 
-  static void MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
-                                      mozilla::MappedDeclarations&);
+  static void MapGlobalMathMLAttributesInto(
+      mozilla::MappedDeclarationsBuilder&);
+  static void MapMiAttributesInto(mozilla::MappedDeclarationsBuilder&);
+  static void MapMTableAttributesInto(mozilla::MappedDeclarationsBuilder&);
 
   void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
   MOZ_CAN_RUN_SCRIPT
   nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
   nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const override;
-  virtual mozilla::EventStates IntrinsicState() const override;
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
 
   // Set during reflow as necessary. Does a style change notification,
   // aNotify must be true.
   void SetIncrementScriptLevel(bool aIncrementScriptLevel, bool aNotify);
-  bool GetIncrementScriptLevel() const { return mIncrementScriptLevel; }
+  bool GetIncrementScriptLevel() const {
+    return Element::State().HasState(ElementState::INCREMENT_SCRIPT_LEVEL);
+  }
 
   int32_t TabIndexDefault() final;
-  virtual bool IsFocusableInternal(int32_t* aTabIndex,
-                                   bool aWithMouse) override;
-  virtual bool IsLink(nsIURI** aURI) const override;
-  virtual void GetLinkTarget(nsAString& aTarget) override;
-  virtual already_AddRefed<nsIURI> GetHrefURI() const override;
 
-  virtual void NodeInfoChanged(Document* aOldDoc) override {
+  bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override;
+  already_AddRefed<nsIURI> GetHrefURI() const override;
+
+  void NodeInfoChanged(Document* aOldDoc) override {
     ClearHasPendingLinkUpdate();
     MathMLElementBase::NodeInfoChanged(aOldDoc);
   }
 
   bool IsEventAttributeNameInternal(nsAtom* aName) final;
 
+  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
+  void SetAutofocus(bool aAutofocus, ErrorResult& aRv) {
+    if (aAutofocus) {
+      SetAttr(nsGkAtoms::autofocus, u""_ns, aRv);
+    } else {
+      UnsetAttr(nsGkAtoms::autofocus, aRv);
+    }
+  }
+
  protected:
   virtual ~MathMLElement() = default;
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
-  nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                         const nsAttrValueOrString* aValue, bool aNotify) final;
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-
- private:
-  bool mIncrementScriptLevel;
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) final;
+  void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
 };
 
 }  // namespace dom

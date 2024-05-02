@@ -1,12 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 Log.repository.rootLogger.addAppender(new Log.DumpAppender());
 
 function login_handling(handler) {
-  return function(request, response) {
+  return function (request, response) {
     if (has_hawk_header(request)) {
       handler(request, response);
     } else {
@@ -26,7 +28,9 @@ add_task(async function test_offline() {
     Assert.equal(Service.status.login, LOGIN_FAILED_NETWORK_ERROR);
     Services.io.offline = false;
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
@@ -71,7 +75,9 @@ add_task(async function test_not_logged_in() {
     Assert.ok(!Service.isLoggedIn, "no user configured, so can't be logged in");
     Assert.equal(Service._checkSync(), kSyncNotConfigured);
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     await promiseStopServer(server);
   }
 });
@@ -107,7 +113,9 @@ add_task(async function test_login_logout() {
     Service.logout();
     Assert.ok(!Service.isLoggedIn);
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     await promiseStopServer(server);
   }
 });
@@ -122,7 +130,7 @@ add_task(async function test_login_on_sync() {
     _("Sync calls login.");
     let oldLogin = Service.login;
     let loginCalled = false;
-    Service.login = async function() {
+    Service.login = async function () {
       loginCalled = true;
       Service.status.login = LOGIN_SUCCEEDED;
       this._loggedIn = false; // So that sync aborts.
@@ -142,7 +150,7 @@ add_task(async function test_login_on_sync() {
     // ready to sync, so use it as an indicator.
     let scheduleNextSyncF = Service.scheduler.scheduleNextSync;
     let scheduleCalled = false;
-    Service.scheduler.scheduleNextSync = function(wait) {
+    Service.scheduler.scheduleNextSync = function (wait) {
       scheduleCalled = true;
       scheduleNextSyncF.call(this, wait);
     };
@@ -184,10 +192,10 @@ add_task(async function test_login_on_sync() {
     let cSTCalled = false;
     let lockedSyncCalled = false;
 
-    Service.scheduler.clearSyncTriggers = function() {
+    Service.scheduler.clearSyncTriggers = function () {
       cSTCalled = true;
     };
-    Service._lockedSync = async function() {
+    Service._lockedSync = async function () {
       lockedSyncCalled = true;
     };
 
@@ -208,7 +216,9 @@ add_task(async function test_login_on_sync() {
     // N.B., a bunch of methods are stubbed at this point. Be careful putting
     // new tests after this point!
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     await promiseStopServer(server);
   }
 });

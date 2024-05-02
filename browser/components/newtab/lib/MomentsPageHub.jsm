@@ -3,14 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-  setInterval: "resource://gre/modules/Timer.jsm",
-  clearInterval: "resource://gre/modules/Timer.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  setInterval: "resource://gre/modules/Timer.sys.mjs",
+  clearInterval: "resource://gre/modules/Timer.sys.mjs",
 });
 
 // Frequency at which to check for new messages
@@ -54,7 +51,7 @@ class _MomentsPageHub {
       template: "update_action",
     });
 
-    const _intervalId = setInterval(
+    const _intervalId = lazy.setInterval(
       () => this.checkHomepageOverridePref(),
       SYSTEM_TICK_INTERVAL
     );
@@ -162,18 +159,16 @@ class _MomentsPageHub {
   }
 
   uninit() {
-    clearInterval(this.state._intervalId);
+    lazy.clearInterval(this.state._intervalId);
     this.state = {};
     this._initialized = false;
   }
 }
 
-this._MomentsPageHub = _MomentsPageHub;
-
 /**
  * ToolbarBadgeHub - singleton instance of _ToolbarBadgeHub that can initiate
  * message requests and render messages.
  */
-this.MomentsPageHub = new _MomentsPageHub();
+const MomentsPageHub = new _MomentsPageHub();
 
 const EXPORTED_SYMBOLS = ["_MomentsPageHub", "MomentsPageHub"];

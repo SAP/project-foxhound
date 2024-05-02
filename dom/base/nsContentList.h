@@ -21,7 +21,7 @@
 #include "nsIHTMLCollection.h"
 #include "nsINodeList.h"
 #include "nsStubMutationObserver.h"
-#include "nsAtom.h"
+#include "nsAtomHashKeys.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsNameSpaceManager.h"
 #include "nsWrapperCache.h"
@@ -33,23 +33,24 @@
 // XXX Avoid including this here by moving function bodies to the cpp file.
 #include "nsIContent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Element;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 class nsBaseContentList : public nsINodeList {
+ protected:
+  using Element = mozilla::dom::Element;
+
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   // nsINodeList
-  virtual int32_t IndexOf(nsIContent* aContent) override;
-  virtual nsIContent* Item(uint32_t aIndex) override;
+  int32_t IndexOf(nsIContent* aContent) override;
+  nsIContent* Item(uint32_t aIndex) override;
 
   uint32_t Length() override { return mElements.Length(); }
 
-  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(nsBaseContentList)
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_WRAPPERCACHE_CLASS(nsBaseContentList)
 
   void AppendElement(nsIContent* aContent) {
     MOZ_ASSERT(aContent);
@@ -80,8 +81,8 @@ class nsBaseContentList : public nsINodeList {
 
   virtual int32_t IndexOf(nsIContent* aContent, bool aDoFlush);
 
-  virtual JSObject* WrapObject(JSContext* cx,
-                               JS::Handle<JSObject*> aGivenProto) override = 0;
+  JSObject* WrapObject(JSContext* cx,
+                       JS::Handle<JSObject*> aGivenProto) override = 0;
 
   void SetCapacity(uint32_t aCapacity) { mElements.SetCapacity(aCapacity); }
 
@@ -113,9 +114,9 @@ class nsSimpleContentList : public nsBaseContentList {
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsSimpleContentList,
                                            nsBaseContentList)
 
-  virtual nsINode* GetParentObject() override { return mRoot; }
-  virtual JSObject* WrapObject(JSContext* cx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  nsINode* GetParentObject() override { return mRoot; }
+  JSObject* WrapObject(JSContext* cx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   virtual ~nsSimpleContentList() = default;
@@ -137,25 +138,23 @@ class nsEmptyContentList final : public nsBaseContentList,
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsEmptyContentList,
                                            nsBaseContentList)
 
-  virtual nsINode* GetParentObject() override { return mRoot; }
+  nsINode* GetParentObject() override { return mRoot; }
 
-  virtual JSObject* WrapObject(JSContext* cx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* cx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual JSObject* GetWrapperPreserveColorInternal() override {
+  JSObject* GetWrapperPreserveColorInternal() override {
     return nsWrapperCache::GetWrapperPreserveColor();
   }
-  virtual void PreserveWrapperInternal(
-      nsISupports* aScriptObjectHolder) override {
+  void PreserveWrapperInternal(nsISupports* aScriptObjectHolder) override {
     nsWrapperCache::PreserveWrapper(aScriptObjectHolder);
   }
 
   uint32_t Length() final { return 0; }
-  virtual nsIContent* Item(uint32_t aIndex) override;
-  virtual mozilla::dom::Element* GetElementAt(uint32_t index) override;
-  virtual mozilla::dom::Element* GetFirstNamedElement(const nsAString& aName,
-                                                      bool& aFound) override;
-  virtual void GetSupportedNames(nsTArray<nsString>& aNames) override;
+  nsIContent* Item(uint32_t aIndex) override;
+  Element* GetElementAt(uint32_t index) override;
+  Element* GetFirstNamedElement(const nsAString& aName, bool& aFound) override;
+  void GetSupportedNames(nsTArray<nsString>& aNames) override;
 
  protected:
   virtual ~nsEmptyContentList() = default;
@@ -196,32 +195,28 @@ struct nsContentListKey {
 };
 
 /**
- * LIST_UP_TO_DATE means that the list is up to date and need not do
- * any walking to be able to answer any questions anyone may have.
- */
-#define LIST_UP_TO_DATE 0
-/**
- * LIST_DIRTY means that the list contains no useful information and
- * if anyone asks it anything it will have to populate itself before
- * answering.
- */
-#define LIST_DIRTY 1
-/**
- * LIST_LAZY means that the list has populated itself to a certain
- * extent and that that part of the list is still valid.  Requests for
- * things outside that part of the list will require walking the tree
- * some more.  When a list is in this state, the last thing in
- * mElements is the last node in the tree that the list looked at.
- */
-#define LIST_LAZY 2
-
-/**
  * Class that implements a possibly live NodeList that matches Elements
  * in the tree based on some criterion.
  */
 class nsContentList : public nsBaseContentList,
                       public nsIHTMLCollection,
                       public nsStubMutationObserver {
+ protected:
+  enum class State : uint8_t {
+    // The list is up to date and need not do any walking to be able to answer
+    // any questions anyone may have.
+    UpToDate = 0,
+    // The list contains no useful information and if anyone asks it anything it
+    // will have to populate itself before answering.
+    Dirty,
+    // The list has populated itself to a certain extent and that that part of
+    // the list is still valid.  Requests for things outside that part of the
+    // list will require walking the tree some more.  When a list is in this
+    // state, the last thing in mElements is the last node in the tree that the
+    // list looked at.
+    Lazy,
+  };
+
  public:
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -274,41 +269,39 @@ class nsContentList : public nsBaseContentList,
   // nsWrapperCache
   using nsWrapperCache::GetWrapperPreserveColor;
   using nsWrapperCache::PreserveWrapper;
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   virtual ~nsContentList();
 
-  virtual JSObject* GetWrapperPreserveColorInternal() override {
+  JSObject* GetWrapperPreserveColorInternal() override {
     return nsWrapperCache::GetWrapperPreserveColor();
   }
-  virtual void PreserveWrapperInternal(
-      nsISupports* aScriptObjectHolder) override {
+  void PreserveWrapperInternal(nsISupports* aScriptObjectHolder) override {
     nsWrapperCache::PreserveWrapper(aScriptObjectHolder);
   }
 
  public:
   // nsBaseContentList overrides
-  virtual int32_t IndexOf(nsIContent* aContent, bool aDoFlush) override;
-  virtual int32_t IndexOf(nsIContent* aContent) override;
-  virtual nsINode* GetParentObject() override { return mRootNode; }
+  int32_t IndexOf(nsIContent* aContent, bool aDoFlush) override;
+  int32_t IndexOf(nsIContent* aContent) override;
+  nsINode* GetParentObject() override { return mRootNode; }
 
   uint32_t Length() final { return Length(true); }
   nsIContent* Item(uint32_t aIndex) final;
-  virtual mozilla::dom::Element* GetElementAt(uint32_t index) override;
-  virtual mozilla::dom::Element* GetFirstNamedElement(const nsAString& aName,
-                                                      bool& aFound) override {
-    mozilla::dom::Element* item = NamedItem(aName, true);
+  Element* GetElementAt(uint32_t index) override;
+  Element* GetFirstNamedElement(const nsAString& aName, bool& aFound) override {
+    Element* item = NamedItem(aName, true);
     aFound = !!item;
     return item;
   }
-  virtual void GetSupportedNames(nsTArray<nsString>& aNames) override;
+  void GetSupportedNames(nsTArray<nsString>& aNames) override;
 
   // nsContentList public methods
   uint32_t Length(bool aDoFlush);
   nsIContent* Item(uint32_t aIndex, bool aDoFlush);
-  mozilla::dom::Element* NamedItem(const nsAString& aName, bool aDoFlush);
+  Element* NamedItem(const nsAString& aName, bool aDoFlush);
 
   // nsIMutationObserver
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
@@ -350,20 +343,42 @@ class nsContentList : public nsBaseContentList,
    * @note This is the only acceptable way to set state to LIST_DIRTY.
    */
   void SetDirty() {
-    mState = LIST_DIRTY;
+    mState = State::Dirty;
+    InvalidateNamedItemsCache();
     Reset();
+    SetEnabledCallbacks(nsIMutationObserver::kNodeWillBeDestroyed);
   }
 
-  virtual void LastRelease() override;
+  void LastRelease() override;
+
+  class HashEntry;
 
  protected:
+  // A cache from name to the first named item in mElements. Only possibly
+  // non-null when mState is State::UpToDate. Elements are kept alive by our
+  // mElements array.
+  using NamedItemsCache = nsTHashMap<nsAtomHashKey, Element*>;
+
+  void InvalidateNamedItemsCache() {
+    mNamedItemsCache = nullptr;
+    mNamedItemsCacheValid = false;
+  }
+
+  inline void InsertElementInNamedItemsCache(nsIContent&);
+  inline void InvalidateNamedItemsCacheForAttributeChange(int32_t aNameSpaceID,
+                                                          nsAtom* aAttribute);
+  inline void InvalidateNamedItemsCacheForInsertion(Element&);
+  inline void InvalidateNamedItemsCacheForDeletion(Element&);
+
+  void EnsureNamedItemsCacheValid(bool aDoFlush);
+
   /**
    * Returns whether the element matches our criterion
    *
    * @param  aElement the element to attempt to match
    * @return whether we match
    */
-  bool Match(mozilla::dom::Element* aElement);
+  bool Match(Element* aElement);
   /**
    * See if anything in the subtree rooted at aContent, including
    * aContent itself, matches our criterion.
@@ -414,7 +429,14 @@ class nsContentList : public nsBaseContentList,
    * Needed because if subclasses want to have cache behavior they can't just
    * override RemoveFromHashtable(), since we call that in our destructor.
    */
-  virtual void RemoveFromCaches() override { RemoveFromHashtable(); }
+  void RemoveFromCaches() override { RemoveFromHashtable(); }
+
+  void MaybeMarkDirty() {
+    if (mState != State::Dirty && ++mMissedUpdates > 128) {
+      mMissedUpdates = 0;
+      SetDirty();
+    }
+  }
 
   nsINode* mRootNode;  // Weak ref
   int32_t mMatchNameSpaceId;
@@ -425,54 +447,65 @@ class nsContentList : public nsBaseContentList,
    * Function to use to determine whether a piece of content matches
    * our criterion
    */
-  nsContentListMatchFunc mFunc;
+  nsContentListMatchFunc mFunc = nullptr;
   /**
    * Cleanup closure data with this.
    */
-  nsContentListDestroyFunc mDestroyFunc;
+  nsContentListDestroyFunc mDestroyFunc = nullptr;
   /**
    * Closure data to pass to mFunc when we call it
    */
-  void* mData;
-  /**
-   * The current state of the list (possible values are:
-   * LIST_UP_TO_DATE, LIST_LAZY, LIST_DIRTY
-   */
-  uint8_t mState;
+  void* mData = nullptr;
 
-  // The booleans have to use uint8_t to pack with mState, because MSVC won't
-  // pack different typedefs together.  Once we no longer have to worry about
-  // flushes in XML documents, we can go back to using bool for the
-  // booleans.
+  mozilla::UniquePtr<NamedItemsCache> mNamedItemsCache;
+
+  uint8_t mMissedUpdates = 0;
+
+  // The current state of the list.
+  State mState;
 
   /**
    * True if we are looking for elements named "*"
    */
-  uint8_t mMatchAll : 1;
+  bool mMatchAll : 1;
   /**
    * Whether to actually descend the tree.  If this is false, we won't
    * consider grandkids of mRootNode.
    */
-  uint8_t mDeep : 1;
+  bool mDeep : 1;
   /**
    * Whether the return value of mFunc could depend on the values of
    * attributes.
    */
-  uint8_t mFuncMayDependOnAttr : 1;
+  bool mFuncMayDependOnAttr : 1;
   /**
    * Whether we actually need to flush to get our state correct.
    */
-  uint8_t mFlushesNeeded : 1;
+  bool mFlushesNeeded : 1;
   /**
    * Whether the ownerDocument of our root node at list creation time was an
    * HTML document.  Only needed when we're doing a namespace/atom match, not
    * when doing function matching, always false otherwise.
    */
-  uint8_t mIsHTMLDocument : 1;
+  bool mIsHTMLDocument : 1;
+  /**
+   * True mNamedItemsCache is valid. Note mNamedItemsCache might still be null
+   * if there's no named items at all.
+   */
+  bool mNamedItemsCacheValid : 1;
   /**
    * Whether the list observes mutations to the DOM tree.
    */
-  const uint8_t mIsLiveList : 1;
+  const bool mIsLiveList : 1;
+  /*
+   * True if this content list is cached in a hash table.
+   * For nsContentList (but not its subclasses), the hash table is
+   * gContentListHashTable.
+   * For nsCacheableFuncStringContentList, the hash table is
+   * gFuncStringContentListHashTable.
+   * Other subclasses of nsContentList can't be in hash tables.
+   */
+  bool mInHashtable : 1;
 
 #ifdef DEBUG_CONTENT_LIST
   void AssertInSync();
@@ -520,6 +553,8 @@ class nsCacheableFuncStringContentList : public nsContentList {
   ContentListType mType;
 #endif
 
+  class HashEntry;
+
  protected:
   nsCacheableFuncStringContentList(
       nsINode* aRootNode, nsContentListMatchFunc aFunc,
@@ -535,7 +570,7 @@ class nsCacheableFuncStringContentList : public nsContentList {
     MOZ_ASSERT(mData);
   }
 
-  virtual void RemoveFromCaches() override { RemoveFromFuncStringHashtable(); }
+  void RemoveFromCaches() override { RemoveFromFuncStringHashtable(); }
   void RemoveFromFuncStringHashtable();
 
   nsString mString;
@@ -554,8 +589,8 @@ class nsCachableElementsByNameNodeList
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
-  virtual JSObject* WrapObject(JSContext* cx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* cx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
 #ifdef DEBUG
   static const ContentListType sType;
@@ -574,8 +609,8 @@ class nsCacheableFuncStringHTMLCollection
                                          aDataAllocator, aString,
                                          eHTMLCollection) {}
 
-  virtual JSObject* WrapObject(JSContext* cx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* cx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
 #ifdef DEBUG
   static const ContentListType sType;
@@ -593,8 +628,8 @@ class nsLabelsNodeList final : public nsContentList {
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
-  virtual JSObject* WrapObject(JSContext* cx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* cx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   /**
    * Reset root, mutation observer, and clear content list

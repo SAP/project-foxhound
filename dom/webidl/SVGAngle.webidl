@@ -29,8 +29,7 @@ interface SVGAngle {
            attribute DOMString valueAsString;
 
   [Throws]
-  void newValueSpecifiedUnits(unsigned short unitType, float valueInSpecifiedUnits);
+  undefined newValueSpecifiedUnits(unsigned short unitType, float valueInSpecifiedUnits);
   [Throws]
-  void convertToSpecifiedUnits(unsigned short unitType);
+  undefined convertToSpecifiedUnits(unsigned short unitType);
 };
-

@@ -3,7 +3,7 @@
  */
 
 function resetStorage() {
-  return new Promise(function(resolve, reject) {
+  return new Promise(function (resolve, reject) {
     var qms = Services.qms;
     var request = qms.reset();
     request.callback = resolve;
@@ -52,7 +52,7 @@ function verifyResult() {
   return !foundEmpty;
 }
 
-async function testSteps() {
+add_task(async function testSteps() {
   const url = "https://www.mozilla.org";
 
   info("Setting up environment");
@@ -82,4 +82,4 @@ async function testSteps() {
   ok(verifyResult(), "Empty directory should be removed");
 
   await caches.delete("test");
-}
+});

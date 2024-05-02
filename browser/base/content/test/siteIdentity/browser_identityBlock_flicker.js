@@ -24,7 +24,7 @@ add_task(async function test() {
   };
   let classChanges = 0;
 
-  let observer = new MutationObserver(function(mutations) {
+  let observer = new MutationObserver(function (mutations) {
     for (let mutation of mutations) {
       is(mutation.type, "attributes");
       is(mutation.attributeName, "class");
@@ -43,7 +43,10 @@ add_task(async function test() {
     false,
     "https://example.com/"
   );
-  BrowserTestUtils.loadURI(tab.linkedBrowser, "https://example.com");
+  BrowserTestUtils.startLoadingURIString(
+    tab.linkedBrowser,
+    "https://example.com"
+  );
   await loaded;
 
   is(classChanges, 1, "Changed the className once");

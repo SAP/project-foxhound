@@ -9,10 +9,6 @@
  * corrupt, nor a JSON backup nor bookmarks.html are available.
  */
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-
 function run_test() {
   // Remove bookmarks.html from profile.
   remove_bookmarks_html();
@@ -23,7 +19,7 @@ function run_test() {
   run_next_test();
 }
 
-add_task(async function() {
+add_task(async function () {
   // Create a corrupt database.
   await createCorruptDB();
 

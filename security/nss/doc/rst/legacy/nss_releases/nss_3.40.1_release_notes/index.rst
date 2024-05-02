@@ -11,7 +11,7 @@ NSS 3.40.1 release notes
    The NSS team has released Network Security Services (NSS) 3.40.1, which is a patch release for
    NSS 3.40
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -29,8 +29,6 @@ NSS 3.40.1 release notes
 
 `New in NSS 3.40.1 <#new_in_nss_3.40.1>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 
@@ -54,14 +52,14 @@ NSS 3.40.1 release notes
 
 .. container::
 
-   -  
+   -
 
       .. container:: field indent
 
          .. container::
 
             `Bug 1485864 <https://bugzilla.mozilla.org/show_bug.cgi?id=1485864>`__ - Cache
-            side-channel variant of the Bleichenbacher attack (CVE-2018-12404)
+            side-channel variant of the Bleichenbacher attack (CVE-2018-12404)
 
 `Compatibility <#compatibility>`__
 ----------------------------------

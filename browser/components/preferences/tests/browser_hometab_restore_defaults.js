@@ -6,10 +6,14 @@ add_task(async function testRestoreDefaultsBtn_visible() {
 
   await SpecialPowers.pushPrefEnv({
     set: [
-      // Hide Pocket pref so we don't trigger network requests when we reset all preferences
+      // Hide Pocket prefs so we don't trigger network requests when we reset all preferences
       [
         "browser.newtabpage.activity-stream.feeds.section.topstories.options",
         JSON.stringify(Object.assign({}, JSON.parse(before), { hidden: true })),
+      ],
+      [
+        "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
+        "",
       ],
       // Set a user pref to false to force the Restore Defaults button to be visible
       ["browser.newtabpage.activity-stream.feeds.topsites", false],
@@ -110,6 +114,10 @@ add_task(async function testRestoreDefaultsBtn_hidden() {
         "browser.newtabpage.activity-stream.feeds.section.topstories.options",
         JSON.stringify(Object.assign({}, JSON.parse(before), { hidden: true })),
       ],
+      [
+        "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
+        "",
+      ],
     ],
   });
 
@@ -197,7 +205,7 @@ add_task(async function testRestoreDefaultsBtn_hidden() {
         [],
         () =>
           content.document.getElementById("restoreDefaultHomePageBtn").style
-            .visibility === "visible"
+            .visibility === ""
       ),
     "Should show the Restore Defaults btn if prefs were changed"
   );

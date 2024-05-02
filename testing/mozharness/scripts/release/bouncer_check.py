@@ -10,7 +10,6 @@
 A script to check HTTP statuses of Bouncer products to be shipped.
 """
 
-from __future__ import absolute_import
 import os
 import sys
 
@@ -151,8 +150,6 @@ class BouncerCheck(BaseScript):
 
     def get_urls(self):
         for product in self.config["products"].values():
-            if not product["check_uptake"]:
-                continue
             product_name = product["product-name"] % {"version": self.config["version"]}
             for bouncer_platform in product["platforms"]:
                 for locale in self.config["locales"]:
@@ -165,8 +162,6 @@ class BouncerCheck(BaseScript):
                     yield url
 
         for product in self.config.get("partials", {}).values():
-            if not product["check_uptake"]:
-                continue
             for prev_version in self.config.get("prev_versions", []):
                 product_name = product["product-name"] % {
                     "version": self.config["version"],
@@ -183,8 +178,9 @@ class BouncerCheck(BaseScript):
                         yield url
 
     def check_bouncer(self):
-        import requests
         import concurrent.futures as futures
+
+        import requests
 
         session = requests.Session()
         http_adapter = requests.adapters.HTTPAdapter(

@@ -9,19 +9,15 @@
 #include "Device.h"
 #include "ipc/WebGPUChild.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
 GPU_IMPL_CYCLE_COLLECTION(RenderBundle, mParent)
 GPU_IMPL_JS_WRAP(RenderBundle)
 
 RenderBundle::RenderBundle(Device* const aParent, RawId aId)
     : ChildOf(aParent), mId(aId) {
-  // If we happened to finish an encoder twice, the second
-  // bundle should be invalid.
-  if (!mId) {
-    mValid = false;
-  }
+  // TODO: we may be running into this if we finish an encoder twice.
+  MOZ_RELEASE_ASSERT(aId);
 }
 
 RenderBundle::~RenderBundle() { Cleanup(); }
@@ -31,10 +27,9 @@ void RenderBundle::Cleanup() {
     mValid = false;
     auto bridge = mParent->GetBridge();
     if (bridge && bridge->IsOpen()) {
-      bridge->SendRenderBundleDestroy(mId);
+      bridge->SendRenderBundleDrop(mId);
     }
   }
 }
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu

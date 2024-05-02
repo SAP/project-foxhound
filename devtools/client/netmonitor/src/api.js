@@ -4,23 +4,26 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-const { bindActionCreators } = require("devtools/client/shared/vendor/redux");
-const { Connector } = require("devtools/client/netmonitor/src/connector/index");
+const {
+  bindActionCreators,
+} = require("resource://devtools/client/shared/vendor/redux.js");
+const {
+  Connector,
+} = require("resource://devtools/client/netmonitor/src/connector/index.js");
 const {
   configureStore,
-} = require("devtools/client/netmonitor/src/create-store");
-const { EVENTS } = require("devtools/client/netmonitor/src/constants");
-const Actions = require("devtools/client/netmonitor/src/actions/index");
-
-// Telemetry
-const Telemetry = require("devtools/client/shared/telemetry");
+} = require("resource://devtools/client/netmonitor/src/create-store.js");
+const {
+  EVENTS,
+} = require("resource://devtools/client/netmonitor/src/constants.js");
+const Actions = require("resource://devtools/client/netmonitor/src/actions/index.js");
 
 const {
   getDisplayedRequestById,
   getSortedRequests,
-} = require("devtools/client/netmonitor/src/selectors/index");
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 
 /**
  * API object for NetMonitor panel (like a facade). This object can be
@@ -35,18 +38,11 @@ function NetMonitorAPI() {
   // Connector to the backend.
   this.connector = new Connector();
 
-  // Telemetry
-  this.telemetry = new Telemetry();
-
-  // Configure store/state object.
-  this.store = configureStore(this.connector, this.telemetry);
-
   // List of listeners for `devtools.network.onRequestFinished` WebExt API
   this._requestFinishedListeners = new Set();
 
   // Bind event handlers
   this.onPayloadReady = this.onPayloadReady.bind(this);
-  this.actions = bindActionCreators(Actions, this.store.dispatch);
 }
 
 NetMonitorAPI.prototype = {
@@ -57,6 +53,14 @@ NetMonitorAPI.prototype = {
     }
 
     this.toolbox = toolbox;
+
+    // Configure store/state object.
+    this.store = configureStore(
+      this.connector,
+      this.toolbox.commands,
+      this.toolbox.telemetry
+    );
+    this.actions = bindActionCreators(Actions, this.store.dispatch);
 
     // Register listener for new requests (utilized by WebExtension API).
     this.on(EVENTS.PAYLOAD_READY, this.onPayloadReady);
@@ -92,7 +96,7 @@ NetMonitorAPI.prototype = {
   async getHar() {
     const {
       HarExporter,
-    } = require("devtools/client/netmonitor/src/har/har-exporter");
+    } = require("resource://devtools/client/netmonitor/src/har/har-exporter.js");
     const state = this.store.getState();
 
     const options = {
@@ -114,7 +118,7 @@ NetMonitorAPI.prototype = {
 
     const {
       HarExporter,
-    } = require("devtools/client/netmonitor/src/har/har-exporter");
+    } = require("resource://devtools/client/netmonitor/src/har/har-exporter.js");
 
     const connector = await this.getHarExportConnector();
     const request = getDisplayedRequestById(
@@ -161,15 +165,15 @@ NetMonitorAPI.prototype = {
    *        a function that takes ({harEntry, requestId})
    *        as first argument.
    */
-  addRequestFinishedListener: function(listener) {
+  addRequestFinishedListener(listener) {
     this._requestFinishedListeners.add(listener);
   },
 
-  removeRequestFinishedListener: function(listener) {
+  removeRequestFinishedListener(listener) {
     this._requestFinishedListeners.delete(listener);
   },
 
-  hasRequestFinishedListeners: function() {
+  hasRequestFinishedListeners() {
     return this._requestFinishedListeners.size > 0;
   },
 
@@ -205,7 +209,7 @@ NetMonitorAPI.prototype = {
     this.store.dispatch(Actions.batchFlush());
     // Send custom request with same url, headers and body as the request
     // with the given requestId.
-    this.store.dispatch(Actions.sendCustomRequest(this.connector, requestId));
+    this.store.dispatch(Actions.sendCustomRequest(requestId));
   },
 };
 

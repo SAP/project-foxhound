@@ -6,6 +6,7 @@
 #include "SocketProcessHost.h"
 
 #include "SocketProcessParent.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/ipc/ProcessUtils.h"
 #include "nsAppRunner.h"
@@ -24,6 +25,10 @@
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Sandbox.h"
+#endif
+
+#if defined(XP_WIN)
+#  include "mozilla/WinDllServices.h"
 #endif
 
 using namespace mozilla::ipc;
@@ -64,7 +69,8 @@ bool SocketProcessHost::Launch() {
   ProcessChild::AddPlatformBuildID(extraArgs);
 
   SharedPreferenceSerializer prefSerializer;
-  if (!prefSerializer.SerializeToSharedMemory()) {
+  if (!prefSerializer.SerializeToSharedMemory(GeckoProcessType_VR,
+                                              /* remoteType */ ""_ns)) {
     return false;
   }
   prefSerializer.AddSharedPrefCmdLineArgs(*this, extraArgs);
@@ -90,7 +96,7 @@ static void HandleErrorAfterDestroy(
       }));
 }
 
-void SocketProcessHost::OnChannelConnected(int32_t peer_pid) {
+void SocketProcessHost::OnChannelConnected(base::ProcessId peer_pid) {
   MOZ_ASSERT(!NS_IsMainThread());
 
   GeckoChildProcessHost::OnChannelConnected(peer_pid);
@@ -111,38 +117,11 @@ void SocketProcessHost::OnChannelConnected(int32_t peer_pid) {
   NS_DispatchToMainThread(runnable);
 }
 
-void SocketProcessHost::OnChannelError() {
-  MOZ_ASSERT(!NS_IsMainThread());
-  GeckoChildProcessHost::OnChannelError();
-
-  // Post a task to the main thread. Take the lock because mTaskFactory is not
-  // thread-safe.
-  RefPtr<Runnable> runnable;
-  {
-    MonitorAutoLock lock(mMonitor);
-    if (!mTaskFactory) {
-      HandleErrorAfterDestroy(std::move(mListener));
-      return;
-    }
-    runnable = (*mTaskFactory)
-                   .NewRunnableMethod(&SocketProcessHost::OnChannelErrorTask);
-  }
-  NS_DispatchToMainThread(runnable);
-}
-
 void SocketProcessHost::OnChannelConnectedTask() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mLaunchPhase == LaunchPhase::Waiting) {
     InitAfterConnect(true);
-  }
-}
-
-void SocketProcessHost::OnChannelErrorTask() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  if (mLaunchPhase == LaunchPhase::Waiting) {
-    InitAfterConnect(false);
   }
 }
 
@@ -159,9 +138,8 @@ void SocketProcessHost::InitAfterConnect(bool aSucceeded) {
     return;
   }
 
-  mSocketProcessParent = MakeUnique<SocketProcessParent>(this);
-  DebugOnly<bool> rv = mSocketProcessParent->Open(
-      TakeInitialPort(), base::GetProcId(GetChildProcessHandle()));
+  mSocketProcessParent = MakeRefPtr<SocketProcessParent>(this);
+  DebugOnly<bool> rv = TakeInitialEndpoint().Bind(mSocketProcessParent.get());
   MOZ_ASSERT(rv);
 
   SocketPorcessInitAttributes attributes;
@@ -173,6 +151,12 @@ void SocketProcessHost::InitAfterConnect(bool aSucceeded) {
   MOZ_ASSERT(NS_SUCCEEDED(result), "Failed getting connectivity?");
 
   attributes.mInitSandbox() = false;
+
+#if defined(XP_WIN)
+  RefPtr<DllServices> dllSvc(DllServices::Get());
+  attributes.mIsReadyForBackgroundProcessing() =
+      dllSvc->IsReadyForBackgroundProcessing();
+#endif
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   if (GetEffectiveSocketProcessSandboxLevel() > 0) {

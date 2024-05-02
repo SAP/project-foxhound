@@ -7,13 +7,16 @@
  */
 
 var PropertyBagConverter =
-  asyncShutdownService.wrappedJSObject._propertyBagConverter;
+  new asyncShutdownService.wrappedJSObject._propertyBagConverter();
 
 function run_test() {
   test_conversions();
 }
 
 function normalize(obj) {
+  if (obj === undefined) {
+    return null;
+  }
   if (obj == null || typeof obj != "object") {
     return obj;
   }
@@ -34,8 +37,8 @@ function test_conversions() {
     true,
     "string",
     null,
-
-    // Objects
+    undefined,
+    // Object
     {
       a: 1,
       b: true,
@@ -61,8 +64,14 @@ function test_conversions() {
             g3: {},
           },
         ],
+        h2: null,
       },
+      h: null,
     },
+    // Array
+    [1, 2, 3],
+    // Array of objects
+    [[1, 2], { a: 1, b: "string" }, null],
   ];
 
   for (let sample of SAMPLES) {
@@ -71,19 +80,9 @@ function test_conversions() {
     let rewrites = [sample];
     for (let i = 1; i < 3; ++i) {
       let source = rewrites[i - 1];
-      let bag = PropertyBagConverter.fromValue(source);
-      info(" => " + bag);
-      if (source == null) {
-        Assert.ok(bag == null, "The bag is null");
-      } else if (typeof source == "object") {
-        Assert.ok(
-          bag instanceof Ci.nsIPropertyBag,
-          "The bag is a property bag"
-        );
-      } else {
-        Assert.ok(typeof bag != "object", "The bag is not an object");
-      }
-      let dest = PropertyBagConverter.toValue(bag);
+      let bag = PropertyBagConverter.jsValueToPropertyBag(source);
+      Assert.ok(bag instanceof Ci.nsIPropertyBag, "The bag is a property bag");
+      let dest = PropertyBagConverter.propertyBagToJsValue(bag);
       let restringified = JSON.stringify(normalize(dest), null, "\t");
       info("Comparing");
       info(stringified);

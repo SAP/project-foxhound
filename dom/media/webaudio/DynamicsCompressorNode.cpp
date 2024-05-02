@@ -11,6 +11,7 @@
 #include "AudioDestinationNode.h"
 #include "WebAudioUtils.h"
 #include "blink/DynamicsCompressor.h"
+#include "Tracing.h"
 
 using WebCore::DynamicsCompressor;
 
@@ -42,10 +43,10 @@ class DynamicsCompressorNodeEngine final : public AudioNodeEngine {
         mCompressor(new DynamicsCompressor(mDestination->mSampleRate, 2)) {}
 
   enum Parameters { THRESHOLD, KNEE, RATIO, ATTACK, RELEASE };
-  void RecvTimelineEvent(uint32_t aIndex, AudioTimelineEvent& aEvent) override {
+  void RecvTimelineEvent(uint32_t aIndex, AudioParamEvent& aEvent) override {
     MOZ_ASSERT(mDestination);
 
-    WebAudioUtils::ConvertAudioTimelineEventToTicks(aEvent, mDestination);
+    aEvent.ConvertToTicks(mDestination);
 
     switch (aIndex) {
       case THRESHOLD:
@@ -71,6 +72,7 @@ class DynamicsCompressorNodeEngine final : public AudioNodeEngine {
   void ProcessBlock(AudioNodeTrack* aTrack, GraphTime aFrom,
                     const AudioBlock& aInput, AudioBlock* aOutput,
                     bool* aFinished) override {
+    TRACE("DynamicsCompressorNodeEngine::ProcessBlock");
     if (aInput.IsNull()) {
       // Just output silence
       *aOutput = aInput;
@@ -145,7 +147,8 @@ class DynamicsCompressorNodeEngine final : public AudioNodeEngine {
       float mReduction;
     };
 
-    mAbstractMainThread->Dispatch(do_AddRef(new Command(aTrack, aReduction)));
+    AbstractThread::MainThread()->Dispatch(
+        do_AddRef(new Command(aTrack, aReduction)));
   }
 
  private:

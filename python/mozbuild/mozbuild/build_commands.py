@@ -2,19 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import os
 import subprocess
+from urllib.parse import quote
 
-from mach.decorators import CommandArgument, Command
-
-from mozbuild.util import MOZBUILD_METRICS_PATH
-from mozbuild.mozconfig import MozconfigLoader
 import mozpack.path as mozpath
+from mach.decorators import Command, CommandArgument
 
 from mozbuild.backend import backends
+from mozbuild.mozconfig import MozconfigLoader
+from mozbuild.util import MOZBUILD_METRICS_PATH
 
 BUILD_WHAT_HELP = """
 What to build. Can be a top-level make target or a relative directory. If
@@ -160,6 +158,9 @@ def build(
     doing_pgo = configure_args and "MOZ_PGO=1" in configure_args
     # Force verbosity on automation.
     verbose = verbose or bool(os.environ.get("MOZ_AUTOMATION", False))
+    # Keep going by default on automation so that we exhaust as many errors as
+    # possible.
+    keep_going = keep_going or bool(os.environ.get("MOZ_AUTOMATION", False))
     append_env = None
 
     # By setting the current process's priority, by default our child processes
@@ -208,7 +209,7 @@ def build(
             )
         pgo_env["JARLOG_FILE"] = mozpath.join(orig_topobjdir, "jarlog/en-US.log")
         pgo_cmd = [
-            instr.virtualenv_manager.python_path,
+            command_context.virtualenv_manager.python_path,
             mozpath.join(command_context.topsrcdir, "build/pgo/profileserver.py"),
         ]
         subprocess.check_call(pgo_cmd, cwd=instr.topobjdir, env=pgo_env)
@@ -262,7 +263,7 @@ def configure(
 @Command(
     "resource-usage",
     category="post-build",
-    description="Show information about system resource usage for a build.",
+    description="Show a profile of the build in the Firefox Profiler.",
     virtualenv_name="build",
 )
 @CommandArgument(
@@ -281,18 +282,19 @@ def configure(
     default="firefox",
     help="Web browser to automatically open. See webbrowser Python module.",
 )
-@CommandArgument("--url", help="URL of JSON document to display")
+@CommandArgument("--url", help="URL of a build profile to display")
 def resource_usage(command_context, address=None, port=None, browser=None, url=None):
     import webbrowser
+
     from mozbuild.html_build_viewer import BuildViewerServer
 
     server = BuildViewerServer(address, port)
 
     if url:
-        server.add_resource_json_url("url", url)
+        server.add_resource_json_url("profile", url)
     else:
-        last = command_context._get_state_filename("build_resources.json")
-        if not os.path.exists(last):
+        profile = command_context._get_state_filename("profile_build_resources.json")
+        if not os.path.exists(profile):
             print(
                 "Build resources not available. If you have performed a "
                 "build and receive this message, the psutil Python package "
@@ -300,17 +302,20 @@ def resource_usage(command_context, address=None, port=None, browser=None, url=N
             )
             return 1
 
-        server.add_resource_json_file("last", last)
+        server.add_resource_json_file("profile", profile)
+
+    profiler_url = "https://profiler.firefox.com/from-url/" + quote(
+        server.url + "resources/profile", ""
+    )
     try:
-        webbrowser.get(browser).open_new_tab(server.url)
+        webbrowser.get(browser).open_new_tab(profiler_url)
     except Exception:
         print("Cannot get browser specified, trying the default instead.")
         try:
-            browser = webbrowser.get().open_new_tab(server.url)
+            browser = webbrowser.get().open_new_tab(profiler_url)
         except Exception:
-            print("Please open %s in a browser." % server.url)
+            print("Please open %s in a browser." % profiler_url)
 
-    print("Hit CTRL+c to stop server.")
     server.run()
 
 

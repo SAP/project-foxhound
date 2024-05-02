@@ -7,6 +7,7 @@ loader: gecko_taskgraph.loader.transform:loader
 transforms:
     - gecko_taskgraph.transforms.try_job:transforms
     - gecko_taskgraph.transforms.source_test:transforms
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.release_notifications:transforms
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
@@ -18,7 +19,6 @@ kind-dependencies:
 
 jobs-from:
     - clang.yml
-    - codeql.yml
     - cram.yml
     - doc.yml
     - file-metadata.yml
@@ -26,14 +26,20 @@ jobs-from:
     - mozlint.yml
     - mozlint-android.yml
     - node.yml
+    - puppeteer.yml
     - python.yml
-    - remote.yml
     - shadow-scheduler.yml
     - taskgraph.yml
+    - vendor.yml
     - webidl.yml
+    - webcompat.yml
     - wpt-manifest.yml
     - wpt-metadata.yml
 
 job-defaults:
+    use-system-python: false
     attributes:
         retrigger: true
+    task-context:
+        from-object: {}
+        substitution-fields: []

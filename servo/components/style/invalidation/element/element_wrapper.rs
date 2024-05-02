@@ -6,12 +6,13 @@
 //! against a past state of the element.
 
 use crate::dom::TElement;
-use crate::element_state::ElementState;
 use crate::selector_parser::{AttrValue, NonTSPseudoClass, PseudoElement, SelectorImpl};
 use crate::selector_parser::{Snapshot, SnapshotMap};
 use crate::values::AtomIdent;
 use crate::{CaseSensitivityExt, LocalName, Namespace, WeakAtom};
+use dom::ElementState;
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
+use selectors::bloom::BloomFilter;
 use selectors::matching::{ElementSelectorFlags, MatchingContext};
 use selectors::{Element, OpaqueElement};
 use std::cell::Cell;
@@ -166,15 +167,11 @@ where
 {
     type Impl = SelectorImpl;
 
-    fn match_non_ts_pseudo_class<F>(
+    fn match_non_ts_pseudo_class(
         &self,
         pseudo_class: &NonTSPseudoClass,
         context: &mut MatchingContext<Self::Impl>,
-        _setter: &mut F,
-    ) -> bool
-    where
-        F: FnMut(&Self, ElementSelectorFlags),
-    {
+    ) -> bool {
         // Some pseudo-classes need special handling to evaluate them against
         // the snapshot.
         match *pseudo_class {
@@ -232,14 +229,18 @@ where
         if flag.is_empty() {
             return self
                 .element
-                .match_non_ts_pseudo_class(pseudo_class, context, &mut |_, _| {});
+                .match_non_ts_pseudo_class(pseudo_class, context);
         }
         match self.snapshot().and_then(|s| s.state()) {
             Some(snapshot_state) => snapshot_state.intersects(flag),
             None => self
                 .element
-                .match_non_ts_pseudo_class(pseudo_class, context, &mut |_, _| {}),
+                .match_non_ts_pseudo_class(pseudo_class, context),
         }
+    }
+
+    fn apply_selector_flags(&self, _flags: ElementSelectorFlags) {
+        debug_assert!(false, "Shouldn't need selector flags for invalidation");
     }
 
     fn match_pseudo_element(
@@ -252,7 +253,7 @@ where
 
     fn is_link(&self) -> bool {
         match self.snapshot().and_then(|s| s.state()) {
-            Some(state) => state.intersects(ElementState::IN_VISITED_OR_UNVISITED_STATE),
+            Some(state) => state.intersects(ElementState::VISITED_OR_UNVISITED),
             None => self.element.is_link(),
         }
     }
@@ -283,6 +284,11 @@ where
     fn next_sibling_element(&self) -> Option<Self> {
         let sibling = self.element.next_sibling_element()?;
         Some(Self::new(sibling, self.snapshot_map))
+    }
+
+    fn first_element_child(&self) -> Option<Self> {
+        let child = self.element.first_element_child()?;
+        Some(Self::new(child, self.snapshot_map))
     }
 
     #[inline]
@@ -382,5 +388,10 @@ where
         self.element
             .assigned_slot()
             .map(|e| ElementWrapper::new(e, self.snapshot_map))
+    }
+
+    fn add_element_unique_hashes(&self, _filter: &mut BloomFilter) -> bool {
+        // Should not be relevant in the context of checking past elements in invalidation.
+        false
     }
 }

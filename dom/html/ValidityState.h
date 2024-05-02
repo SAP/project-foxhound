@@ -12,15 +12,14 @@
 #include "nsWrapperCache.h"
 #include "js/TypeDecls.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ValidityState final : public nsISupports, public nsWrapperCache {
   ~ValidityState() = default;
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ValidityState)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ValidityState)
 
   friend class ::nsIConstraintValidation;
 
@@ -89,7 +88,6 @@ class ValidityState final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsIConstraintValidation> mConstraintValidation;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ValidityState_h

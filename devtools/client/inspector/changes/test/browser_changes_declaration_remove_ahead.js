@@ -16,7 +16,7 @@ const TEST_URI = `
   <div></div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
   const { document: doc, store } = selectChangesView(inspector);
@@ -25,17 +25,17 @@ add_task(async function() {
   const prop1 = getTextProperty(ruleView, 1, { color: "red" });
   const prop2 = getTextProperty(ruleView, 1, { display: "block" });
 
-  let onTrackChange = waitUntilAction(store, "TRACK_CHANGE");
+  let onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
   info("Change the second declaration");
   await setProperty(ruleView, prop2, "grid");
   await onTrackChange;
 
-  onTrackChange = waitUntilAction(store, "TRACK_CHANGE");
+  onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
   info("Remove the first declaration");
   await removeProperty(ruleView, prop1);
   await onTrackChange;
 
-  onTrackChange = waitUntilAction(store, "TRACK_CHANGE");
+  onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
   info("Change the second declaration again");
   await setProperty(ruleView, prop2, "flex");
   info("Wait for change to be tracked");

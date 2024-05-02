@@ -91,12 +91,29 @@ RequestTracker.prototype = {
 
     if (this.mustReset) {
       var resetTo = this.resetTo;
-      self.setTimeout(function() {
+      self.setTimeout(function () {
         req.timeout = resetTo;
       }, this.resetAfter);
     }
 
-    req.send(null);
+    var gotException;
+    var expectTimeoutException =
+      !this.async && inWorker && this.timeLimit > 0 && this.timeLimit < 3000;
+
+    try {
+      req.send(null);
+    } catch (e) {
+      gotException = e;
+      if (expectTimeoutException) {
+        ok(e.name == "TimeoutError", "Should be a TimeoutError");
+      }
+    }
+
+    if (gotException && !expectTimeoutException) {
+      ok(false, `expected no exception, got ${gotException}`);
+    } else if (!gotException && expectTimeoutException) {
+      ok(false, "expected timeout exception");
+    }
   },
 
   /**
@@ -180,7 +197,7 @@ AbortedRequest.prototype = {
     }
 
     if (!this.shouldAbort) {
-      self.setTimeout(function() {
+      self.setTimeout(function () {
         try {
           _this.noEventsFired();
         } catch (e) {
@@ -375,7 +392,7 @@ if (inWorker) {
 var TestCounter = {
   testComplete() {
     // Allow for the possibility there are other events coming.
-    self.setTimeout(function() {
+    self.setTimeout(function () {
       TestCounter.next();
     }, 5000);
   },
@@ -391,7 +408,7 @@ var TestCounter = {
   },
 };
 
-self.addEventListener("message", function(event) {
+self.addEventListener("message", function (event) {
   if (event.data == "start") {
     TestCounter.next();
   }

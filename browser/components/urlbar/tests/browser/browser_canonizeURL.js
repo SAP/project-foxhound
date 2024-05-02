@@ -5,10 +5,12 @@
  * Tests turning non-url-looking values typed in the input field into proper URLs.
  */
 
+requestLongerTimeout(2);
+
 const TEST_ENGINE_BASENAME = "searchSuggestionEngine.xml";
 
 add_task(async function checkCtrlWorks() {
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     await UrlbarTestUtils.formHistory.clear();
   });
@@ -61,9 +63,8 @@ add_task(async function checkCtrlWorks() {
       undefined,
       true
     );
-    win.gURLBar.focus();
-    win.gURLBar.inputField.value = inputValue.slice(0, -1);
-    EventUtils.sendString(inputValue.slice(-1), win);
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+    await UrlbarTestUtils.inputIntoURLBar(win, inputValue);
     EventUtils.synthesizeKey("KEY_Enter", options, win);
     await Promise.all([promiseLoad, promiseStopped]);
   }
@@ -73,14 +74,10 @@ add_task(async function checkCtrlWorks() {
 
 add_task(async function checkPrefTurnsOffCanonize() {
   // Add a dummy search engine to avoid hitting the network.
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
-  registerCleanupFunction(async () =>
-    Services.search.setDefault(oldDefaultEngine)
-  );
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
+  });
 
   const win = await BrowserTestUtils.openNewBrowserWindow();
 
@@ -107,8 +104,8 @@ add_task(async function checkPrefTurnsOffCanonize() {
 
   win.gURLBar.focus();
   win.gURLBar.selectionStart = win.gURLBar.selectionEnd =
-    win.gURLBar.inputField.value.length;
-  win.gURLBar.inputField.value = "exampl";
+    win.gURLBar.value.length;
+  win.gURLBar.value = "exampl";
   EventUtils.sendString("e", win);
   EventUtils.synthesizeKey("KEY_Enter", { ctrlKey: true }, win);
 
@@ -173,17 +170,17 @@ add_task(async function autofill() {
     ["@goo", "https://www.goo.com/", { ctrlKey: true }],
   ];
 
-  function promiseAutofill() {
-    return BrowserTestUtils.waitForEvent(win.gURLBar.inputField, "select");
-  }
-
   for (let [inputValue, expectedURL, options] of testcases) {
     let promiseLoad = BrowserTestUtils.waitForDocLoadAndStopIt(
       expectedURL,
       win.gBrowser.selectedBrowser
     );
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     win.gURLBar.select();
-    let autofillPromise = promiseAutofill();
+    let autofillPromise = BrowserTestUtils.waitForEvent(
+      win.gURLBar.inputField,
+      "select"
+    );
     EventUtils.sendString(inputValue, win);
     await autofillPromise;
     EventUtils.synthesizeKey("KEY_Enter", options, win);
@@ -200,7 +197,7 @@ add_task(async function autofill() {
   await BrowserTestUtils.closeWindow(win);
 });
 
-add_task(async function() {
+add_task(async function () {
   info(
     "Test whether canonization is disabled until the ctrl key is releasing if the key was used to paste text into urlbar"
   );
@@ -229,7 +226,7 @@ add_task(async function() {
   await BrowserTestUtils.closeWindow(win);
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Test whether canonization is enabled again after releasing the ctrl");
 
   await SpecialPowers.pushPrefEnv({

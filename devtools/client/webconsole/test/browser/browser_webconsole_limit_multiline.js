@@ -6,7 +6,7 @@
 // Check Bug 1578212 for more info
 
 "use strict";
-const { ELLIPSIS } = require("devtools/shared/l10n");
+const { ELLIPSIS } = require("resource://devtools/shared/l10n.js");
 
 const SMALL_EXPRESSION = `function fib(n) {
   if (n <= 1)
@@ -17,15 +17,16 @@ const SMALL_EXPRESSION = `function fib(n) {
 const LONG_EXPRESSION = `${SMALL_EXPRESSION}
 fib(3);`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(
     "data:text/html,<!DOCTYPE html><meta charset=utf8>Test multi-line commands expandability"
   );
   info("Test that we don't slice messages with <= 5 lines");
-  const message = await executeAndWaitForMessage(
+  const message = await executeAndWaitForMessageByType(
     hud,
     SMALL_EXPRESSION,
-    "function fib"
+    "function fib",
+    ".command"
   );
 
   is(
@@ -36,10 +37,11 @@ add_task(async function() {
 
   info("Test messages with > 5 lines are sliced");
 
-  const messageExp = await executeAndWaitForMessage(
+  const messageExp = await executeAndWaitForMessageByType(
     hud,
     LONG_EXPRESSION,
-    "function fib"
+    "function fib",
+    ".command"
   );
 
   const toggleArrow = messageExp.node.querySelector(".collapse-button");

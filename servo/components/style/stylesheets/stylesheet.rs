@@ -15,13 +15,12 @@ use crate::stylesheets::rules_iterator::{NestedRuleIterationCondition, RulesIter
 use crate::stylesheets::{CssRule, CssRules, Origin, UrlExtraData};
 use crate::use_counters::UseCounters;
 use crate::{Namespace, Prefix};
-use cssparser::{Parser, ParserInput, RuleListParser};
+use cssparser::{Parser, ParserInput, StyleSheetParser};
 use fxhash::FxHashMap;
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use parking_lot::RwLock;
 use servo_arc::Arc;
-use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style_traits::ParsingMode;
 
@@ -81,22 +80,18 @@ impl StylesheetContents {
         stylesheet_loader: Option<&dyn StylesheetLoader>,
         error_reporter: Option<&dyn ParseErrorReporter>,
         quirks_mode: QuirksMode,
-        line_number_offset: u32,
         use_counters: Option<&UseCounters>,
         allow_import_rules: AllowImportRules,
         sanitization_data: Option<&mut SanitizationData>,
     ) -> Arc<Self> {
-        let namespaces = RwLock::new(Namespaces::default());
-        let (rules, source_map_url, source_url) = Stylesheet::parse_rules(
+        let (namespaces, rules, source_map_url, source_url) = Stylesheet::parse_rules(
             css,
             &url_data,
             origin,
-            &mut *namespaces.write(),
             &shared_lock,
             stylesheet_loader,
             error_reporter,
             quirks_mode,
-            line_number_offset,
             use_counters,
             allow_import_rules,
             sanitization_data,
@@ -106,7 +101,7 @@ impl StylesheetContents {
             rules: CssRules::new(rules, &shared_lock),
             origin,
             url_data: RwLock::new(url_data),
-            namespaces,
+            namespaces: RwLock::new(namespaces),
             quirks_mode,
             source_map_url: RwLock::new(source_map_url),
             source_url: RwLock::new(source_url),
@@ -201,26 +196,6 @@ pub struct Stylesheet {
     pub disabled: AtomicBool,
 }
 
-macro_rules! rule_filter {
-    ($( $method: ident($variant:ident => $rule_type: ident), )+) => {
-        $(
-            #[allow(missing_docs)]
-            fn $method<F>(&self, device: &Device, guard: &SharedRwLockReadGuard, mut f: F)
-                where F: FnMut(&crate::stylesheets::$rule_type),
-            {
-                use crate::stylesheets::CssRule;
-
-                for rule in self.effective_rules(device, guard) {
-                    if let CssRule::$variant(ref lock) = *rule {
-                        let rule = lock.read_with(guard);
-                        f(&rule)
-                    }
-                }
-            }
-        )+
-    }
-}
-
 /// A trait to represent a given stylesheet in a document.
 pub trait StylesheetInDocument: ::std::fmt::Debug {
     /// Get whether this stylesheet is enabled.
@@ -273,11 +248,6 @@ pub trait StylesheetInDocument: ::std::fmt::Debug {
         guard: &'a SharedRwLockReadGuard<'b>,
     ) -> EffectiveRulesIterator<'a, 'b> {
         self.iter_rules::<EffectiveRules>(device, guard)
-    }
-
-    rule_filter! {
-        effective_style_rules(Style => StyleRule),
-        effective_viewport_rules(Viewport => ViewportRule),
     }
 }
 
@@ -359,6 +329,7 @@ impl SanitizationKind {
             CssRule::Media(..) |
             CssRule::Supports(..) |
             CssRule::Import(..) |
+            CssRule::Container(..) |
             // TODO(emilio): Perhaps Layer should not be always sanitized? But
             // we sanitize @media and co, so this seems safer for now.
             CssRule::LayerStatement(..) |
@@ -368,10 +339,10 @@ impl SanitizationKind {
 
             CssRule::Keyframes(..) |
             CssRule::Page(..) |
+            CssRule::Property(..) |
             CssRule::FontFeatureValues(..) |
-            CssRule::Viewport(..) |
-            CssRule::CounterStyle(..) |
-            CssRule::ScrollTimeline(..) => !is_standard,
+            CssRule::FontPaletteValues(..) |
+            CssRule::CounterStyle(..) => !is_standard,
         }
     }
 }
@@ -411,32 +382,24 @@ impl Stylesheet {
         url_data: UrlExtraData,
         stylesheet_loader: Option<&dyn StylesheetLoader>,
         error_reporter: Option<&dyn ParseErrorReporter>,
-        line_number_offset: u32,
         allow_import_rules: AllowImportRules,
     ) {
-        let namespaces = RwLock::new(Namespaces::default());
-
         // FIXME: Consider adding use counters to Servo?
-        let (rules, source_map_url, source_url) = Self::parse_rules(
+        let (namespaces, rules, source_map_url, source_url) = Self::parse_rules(
             css,
             &url_data,
             existing.contents.origin,
-            &mut *namespaces.write(),
             &existing.shared_lock,
             stylesheet_loader,
             error_reporter,
             existing.contents.quirks_mode,
-            line_number_offset,
             /* use_counters = */ None,
             allow_import_rules,
             /* sanitization_data = */ None,
         );
 
         *existing.contents.url_data.write() = url_data;
-        mem::swap(
-            &mut *existing.contents.namespaces.write(),
-            &mut *namespaces.write(),
-        );
+        *existing.contents.namespaces.write() = namespaces;
 
         // Acquire the lock *after* parsing, to minimize the exclusive section.
         let mut guard = existing.shared_lock.write();
@@ -449,18 +412,15 @@ impl Stylesheet {
         css: &str,
         url_data: &UrlExtraData,
         origin: Origin,
-        namespaces: &mut Namespaces,
         shared_lock: &SharedRwLock,
         stylesheet_loader: Option<&dyn StylesheetLoader>,
         error_reporter: Option<&dyn ParseErrorReporter>,
         quirks_mode: QuirksMode,
-        line_number_offset: u32,
         use_counters: Option<&UseCounters>,
         allow_import_rules: AllowImportRules,
         mut sanitization_data: Option<&mut SanitizationData>,
-    ) -> (Vec<CssRule>, Option<String>, Option<String>) {
-        let mut rules = Vec::new();
-        let mut input = ParserInput::new_with_line_number_offset(css, line_number_offset);
+    ) -> (Namespaces, Vec<CssRule>, Option<String>, Option<String>) {
+        let mut input = ParserInput::new(css);
         let mut input = Parser::new(&mut input);
 
         let context = ParserContext::new(
@@ -469,45 +429,40 @@ impl Stylesheet {
             None,
             ParsingMode::DEFAULT,
             quirks_mode,
+            /* namespaces = */ Default::default(),
             error_reporter,
             use_counters,
         );
 
-        let rule_parser = TopLevelRuleParser {
+        let mut rule_parser = TopLevelRuleParser {
             shared_lock,
             loader: stylesheet_loader,
             context,
             state: State::Start,
             dom_error: None,
             insert_rule_context: None,
-            namespaces,
             allow_import_rules,
+            declaration_parser_state: Default::default(),
+            error_reporting_state: Default::default(),
+            rules: Vec::new(),
         };
 
         {
-            let mut iter = RuleListParser::new_for_stylesheet(&mut input, rule_parser);
-
-            loop {
-                let result = match iter.next() {
-                    Some(result) => result,
-                    None => break,
-                };
+            let mut iter = StyleSheetParser::new(&mut input, &mut rule_parser);
+            while let Some(result) = iter.next() {
                 match result {
-                    Ok((rule_start, rule)) => {
+                    Ok(rule_start) => {
+                        // TODO(emilio, nesting): sanitize nested CSS rules, probably?
                         if let Some(ref mut data) = sanitization_data {
-                            if !data.kind.allows(&rule) {
-                                continue;
+                            if let Some(ref rule) = iter.parser.rules.last() {
+                                if !data.kind.allows(rule) {
+                                    iter.parser.rules.pop();
+                                    continue;
+                                }
                             }
                             let end = iter.input.position().byte_index();
                             data.output.push_str(&css[rule_start.byte_index()..end]);
                         }
-                        // Use a fallible push here, and if it fails, just fall
-                        // out of the loop.  This will cause the page to be
-                        // shown incorrectly, but it's better than OOMing.
-                        if rules.try_reserve(1).is_err() {
-                            break;
-                        }
-                        rules.push(rule);
                     },
                     Err((error, slice)) => {
                         let location = error.location;
@@ -520,7 +475,12 @@ impl Stylesheet {
 
         let source_map_url = input.current_source_map_url().map(String::from);
         let source_url = input.current_source_url().map(String::from);
-        (rules, source_map_url, source_url)
+        (
+            rule_parser.context.namespaces.into_owned(),
+            rule_parser.rules,
+            source_map_url,
+            source_url,
+        )
     }
 
     /// Creates an empty stylesheet and parses it with a given base url, origin
@@ -537,7 +497,6 @@ impl Stylesheet {
         stylesheet_loader: Option<&dyn StylesheetLoader>,
         error_reporter: Option<&dyn ParseErrorReporter>,
         quirks_mode: QuirksMode,
-        line_number_offset: u32,
         allow_import_rules: AllowImportRules,
     ) -> Self {
         // FIXME: Consider adding use counters to Servo?
@@ -549,7 +508,6 @@ impl Stylesheet {
             stylesheet_loader,
             error_reporter,
             quirks_mode,
-            line_number_offset,
             /* use_counters = */ None,
             allow_import_rules,
             /* sanitized_output = */ None,
@@ -599,7 +557,7 @@ impl Clone for Stylesheet {
 
         Stylesheet {
             contents,
-            media: media,
+            media,
             shared_lock: lock,
             disabled: AtomicBool::new(self.disabled.load(Ordering::SeqCst)),
         }

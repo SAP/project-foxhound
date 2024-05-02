@@ -14,9 +14,9 @@
 #include <fcntl.h>
 #include <sstream>
 
+using std::ostringstream;
 using std::string;
 using std::vector;
-using std::ostringstream;
 
 using namespace CrashReporter;
 
@@ -61,7 +61,8 @@ static bool RestartApplication() {
   // Set spawn attributes.
   size_t attr_count = sizeof(pref_cpu_types) / sizeof(pref_cpu_types[0]);
   size_t attr_ocount = 0;
-  if (posix_spawnattr_setbinpref_np(&spawnattr, attr_count, pref_cpu_types, &attr_ocount) != 0 ||
+  if (posix_spawnattr_setbinpref_np(&spawnattr, attr_count, pref_cpu_types,
+                                    &attr_ocount) != 0 ||
       attr_ocount != attr_count) {
     posix_spawnattr_destroy(&spawnattr);
     return false;
@@ -89,7 +90,8 @@ static bool RestartApplication() {
   gUI = self;
   [mWindow center];
 
-  [mWindow setTitle:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"]];
+  [mWindow setTitle:[[NSBundle mainBundle]
+                        objectForInfoDictionaryKey:@"CFBundleName"]];
   [NSApp activateIgnoringOtherApps:YES];
 }
 
@@ -169,6 +171,15 @@ static bool RestartApplication() {
   }
   [mSubmitReportButton setState:(submitChecked ? NSOnState : NSOffState)];
 
+  // load default state of include URL checkbox
+  BOOL includeChecked = YES;
+  if (nil != [userDefaults objectForKey:@"IncludeURL"]) {
+    includeChecked = [userDefaults boolForKey:@"IncludeURL"];
+  } else {
+    [userDefaults setBool:includeChecked forKey:@"IncludeURL"];
+  }
+  [mIncludeURLButton setState:(includeChecked ? NSOnState : NSOffState)];
+
   [self updateSubmit];
   [self updateURL];
   [self updateEmail];
@@ -180,7 +191,9 @@ static bool RestartApplication() {
   [self setView:mErrorView animate:NO];
 
   [mErrorHeaderLabel setStringValue:Str(ST_CRASHREPORTERHEADER)];
-  [self setStringFitVertically:mErrorLabel string:NSSTR(message) resizeWindow:YES];
+  [self setStringFitVertically:mErrorLabel
+                        string:NSSTR(message)
+                  resizeWindow:YES];
   [mErrorCloseButton setTitle:Str(ST_OK)];
 
   [mErrorCloseButton setKeyEquivalent:@"\r"];
@@ -190,19 +203,22 @@ static bool RestartApplication() {
 
 - (void)showReportInfo {
   NSDictionary* boldAttr = @{
-    NSFontAttributeName : [NSFont boldSystemFontOfSize:[NSFont smallSystemFontSize]],
+    NSFontAttributeName :
+        [NSFont boldSystemFontOfSize:[NSFont smallSystemFontSize]],
     NSForegroundColorAttributeName : NSColor.textColor,
   };
   NSDictionary* normalAttr = @{
-    NSFontAttributeName : [NSFont systemFontOfSize:[NSFont smallSystemFontSize]],
+    NSFontAttributeName :
+        [NSFont systemFontOfSize:[NSFont smallSystemFontSize]],
     NSForegroundColorAttributeName : NSColor.textColor,
   };
 
   [mViewReportTextView setString:@""];
-  for (Json::ValueConstIterator iter = gQueryParameters.begin(); iter != gQueryParameters.end();
-       ++iter) {
-    NSAttributedString* key = [[NSAttributedString alloc] initWithString:NSSTR(iter.name() + ": ")
-                                                              attributes:boldAttr];
+  for (Json::ValueConstIterator iter = gQueryParameters.begin();
+       iter != gQueryParameters.end(); ++iter) {
+    NSAttributedString* key =
+        [[NSAttributedString alloc] initWithString:NSSTR(iter.name() + ": ")
+                                        attributes:boldAttr];
     string str;
     if (iter->isString()) {
       str = iter->asString();
@@ -211,24 +227,27 @@ static bool RestartApplication() {
       builder["indentation"] = "";
       str = writeString(builder, *iter);
     }
-    NSAttributedString* value = [[NSAttributedString alloc] initWithString:NSSTR(str + "\n")
-                                                                attributes:normalAttr];
+    NSAttributedString* value =
+        [[NSAttributedString alloc] initWithString:NSSTR(str + "\n")
+                                        attributes:normalAttr];
     [[mViewReportTextView textStorage] appendAttributedString:key];
     [[mViewReportTextView textStorage] appendAttributedString:value];
     [key release];
     [value release];
   }
 
-  NSAttributedString* extra =
-      [[NSAttributedString alloc] initWithString:NSSTR("\n" + gStrings[ST_EXTRAREPORTINFO])
-                                      attributes:normalAttr];
+  NSAttributedString* extra = [[NSAttributedString alloc]
+      initWithString:NSSTR("\n" + gStrings[ST_EXTRAREPORTINFO])
+          attributes:normalAttr];
   [[mViewReportTextView textStorage] appendAttributedString:extra];
   [extra release];
 }
 
 - (void)maybeSubmitReport {
   if ([mSubmitReportButton state] == NSOnState) {
-    [self setStringFitVertically:mProgressText string:Str(ST_REPORTDURINGSUBMIT) resizeWindow:YES];
+    [self setStringFitVertically:mProgressText
+                          string:Str(ST_REPORTDURINGSUBMIT)
+                    resizeWindow:YES];
     // disable all the controls
     [self enableControls:NO];
     [mSubmitReportButton setEnabled:NO];
@@ -249,7 +268,8 @@ static bool RestartApplication() {
 - (IBAction)submitReportClicked:(id)sender {
   [self updateSubmit];
   NSUserDefaults* userDefaults = [NSUserDefaults standardUserDefaults];
-  [userDefaults setBool:([mSubmitReportButton state] == NSOnState) forKey:@"submitReport"];
+  [userDefaults setBool:([mSubmitReportButton state] == NSOnState)
+                 forKey:@"submitReport"];
   [userDefaults synchronize];
 }
 
@@ -278,12 +298,17 @@ static bool RestartApplication() {
 
 - (IBAction)includeURLClicked:(id)sender {
   [self updateURL];
+  NSUserDefaults* userDefaults = [NSUserDefaults standardUserDefaults];
+  [userDefaults setBool:([mIncludeURLButton state] == NSOnState)
+                 forKey:@"IncludeURL"];
+  [userDefaults synchronize];
 }
 
 - (void)textDidChange:(NSNotification*)aNotification {
   // update comment parameter
   if ([[[mCommentText textStorage] mutableString] length] > 0)
-    gQueryParameters["Comments"] = [[[mCommentText textStorage] mutableString] UTF8String];
+    gQueryParameters["Comments"] =
+        [[[mCommentText textStorage] mutableString] UTF8String];
   else
     gQueryParameters.removeMember("Comments");
 }
@@ -296,7 +321,8 @@ static bool RestartApplication() {
   if (([[aTextView string] lengthOfBytesUsingEncoding:NSUTF8StringEncoding] +
        [replacementString lengthOfBytesUsingEncoding:NSUTF8StringEncoding] -
        [[[aTextView string] substringWithRange:affectedCharRange]
-           lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) > MAX_COMMENT_LENGTH) {
+           lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) >
+      MAX_COMMENT_LENGTH) {
     return NO;
   }
   return YES;
@@ -319,8 +345,8 @@ static bool RestartApplication() {
   if (gRestartArgs.size() == 0) {
     [mRestartButton removeFromSuperview];
     if (!gRTLlayout) {
-      closeFrame.origin.x =
-          restartFrame.origin.x + (restartFrame.size.width - closeFrame.size.width);
+      closeFrame.origin.x = restartFrame.origin.x +
+                            (restartFrame.size.width - closeFrame.size.width);
     } else {
       closeFrame.origin.x = restartFrame.origin.x;
     }
@@ -345,7 +371,8 @@ static bool RestartApplication() {
     // possibly resize window if both buttons no longer fit
     // leave 20 px from either side of the window, and 12 px
     // between the buttons
-    float neededWidth = closeFrame.size.width + restartFrame.size.width + 2 * 20 + 12;
+    float neededWidth =
+        closeFrame.size.width + restartFrame.size.width + 2 * 20 + 12;
 
     if (neededWidth > windowFrame.size.width) {
       windowFrame.size.width = neededWidth;
@@ -367,7 +394,8 @@ static bool RestartApplication() {
       [checkbox setFrame:frame];
     }
     // keep existing spacing on left side, + 20 px spare on right
-    float neededWidth = frame.origin.x + frame.size.width + 20;
+    float neededWidth =
+        frame.origin.x + checkbox.intrinsicContentSize.width + 20;
     if (neededWidth > windowFrame.size.width) {
       windowFrame.size.width = neededWidth;
       [mWindow setFrame:windowFrame display:true animate:NO];
@@ -383,8 +411,9 @@ static bool RestartApplication() {
   // now pin all the controls (except quit/submit) in place,
   // if we lengthen the window after this, it's just to lengthen
   // the progress text, so nothing above that text should move.
-  NSView* views[] = {mSubmitReportButton, mViewReportButton,  mCommentScrollView,
-                     mIncludeURLButton,   mProgressIndicator, mProgressText};
+  NSView* views[] = {mSubmitReportButton, mViewReportButton,
+                     mCommentScrollView,  mIncludeURLButton,
+                     mProgressIndicator,  mProgressText};
   for (auto view : views) {
     [view setAutoresizingMask:NSViewMinYMargin];
   }
@@ -442,7 +471,9 @@ static bool RestartApplication() {
 
 - (void)updateSubmit {
   if ([mSubmitReportButton state] == NSOnState) {
-    [self setStringFitVertically:mProgressText string:Str(ST_REPORTPRESUBMIT) resizeWindow:YES];
+    [self setStringFitVertically:mProgressText
+                          string:Str(ST_REPORTPRESUBMIT)
+                    resizeWindow:YES];
     [mProgressText setHidden:NO];
     // enable all the controls
     [self enableControls:YES];
@@ -478,18 +509,24 @@ static bool RestartApplication() {
       [NSApp terminate:self];
     }
 
-    [self setStringFitVertically:mProgressText string:Str(ST_SUBMITFAILED) resizeWindow:YES];
+    [self setStringFitVertically:mProgressText
+                          string:Str(ST_SUBMITFAILED)
+                    resizeWindow:YES];
     // quit after 5 seconds
-    [self performSelector:@selector(closeMeDown:) withObject:nil afterDelay:5.0];
+    [self performSelector:@selector(closeMeDown:)
+               withObject:nil
+               afterDelay:5.0];
   }
 
-  [NSThread detachNewThreadSelector:@selector(uploadThread:) toTarget:self withObject:mPost];
+  [NSThread detachNewThreadSelector:@selector(uploadThread:)
+                           toTarget:self
+                         withObject:mPost];
 }
 
 - (bool)setupPost {
-  NSURL* url =
-      [NSURL URLWithString:[NSSTR(gSendURL)
-                               stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
+  NSURL* url = [NSURL
+      URLWithString:[NSSTR(gSendURL) stringByAddingPercentEscapesUsingEncoding:
+                                         NSUTF8StringEncoding]];
   if (!url) return false;
 
   mPost = [[HTTPMultipartUpload alloc] initWithURL:url];
@@ -502,7 +539,8 @@ static bool RestartApplication() {
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   string output = writeString(builder, gQueryParameters).append("\r\n");
-  NSMutableString* parameters = [[NSMutableString alloc] initWithUTF8String:output.c_str()];
+  NSMutableString* parameters =
+      [[NSMutableString alloc] initWithUTF8String:output.c_str()];
 
   [mPost setParameters:parameters];
   [parameters release];
@@ -523,7 +561,8 @@ static bool RestartApplication() {
     // if data is nil, we probably logged an error in uploadThread
     if (data != nil && response != nil) {
       ostringstream message;
-      message << "Crash report submission failed: server returned status " << [response statusCode];
+      message << "Crash report submission failed: server returned status "
+              << [response statusCode];
       LogMessage(message.str());
     }
   } else {
@@ -551,9 +590,13 @@ static bool RestartApplication() {
 
   [mProgressIndicator stopAnimation:self];
   if (success) {
-    [self setStringFitVertically:mProgressText string:Str(ST_REPORTSUBMITSUCCESS) resizeWindow:YES];
+    [self setStringFitVertically:mProgressText
+                          string:Str(ST_REPORTSUBMITSUCCESS)
+                    resizeWindow:YES];
   } else {
-    [self setStringFitVertically:mProgressText string:Str(ST_SUBMITFAILED) resizeWindow:YES];
+    [self setStringFitVertically:mProgressText
+                          string:Str(ST_SUBMITFAILED)
+                    resizeWindow:YES];
   }
   // quit after 5 seconds
   [self performSelector:@selector(closeMeDown:) withObject:nil afterDelay:5.0];
@@ -570,13 +613,16 @@ static bool RestartApplication() {
     LogMessage("Crash report submission failed: " + message);
   }
 
-  [self performSelectorOnMainThread:@selector(uploadComplete:) withObject:data waitUntilDone:YES];
+  [self performSelectorOnMainThread:@selector(uploadComplete:)
+                         withObject:data
+                      waitUntilDone:YES];
 
   [autoreleasepool release];
 }
 
 // to get auto-quit when we close the window
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)theApplication {
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:
+    (NSApplication*)theApplication {
   return YES;
 }
 
@@ -609,10 +655,12 @@ static bool RestartApplication() {
 
 - (void)setPlaceholder:(NSString*)placeholder {
   NSColor* txtColor = [NSColor disabledControlTextColor];
-  NSDictionary* txtDict =
-      [NSDictionary dictionaryWithObjectsAndKeys:txtColor, NSForegroundColorAttributeName, nil];
-  mPlaceHolderString = [[NSMutableAttributedString alloc] initWithString:placeholder
-                                                              attributes:txtDict];
+  NSDictionary* txtDict = [NSDictionary
+      dictionaryWithObjectsAndKeys:txtColor, NSForegroundColorAttributeName,
+                                   nil];
+  mPlaceHolderString =
+      [[NSMutableAttributedString alloc] initWithString:placeholder
+                                             attributes:txtDict];
   if (gRTLlayout)
     [mPlaceHolderString setAlignment:NSTextAlignmentRight
                                range:NSMakeRange(0, [placeholder length])];
@@ -637,9 +685,11 @@ static bool RestartApplication() {
       txtColor = [NSColor textColor];
     else
       txtColor = [NSColor disabledControlTextColor];
-    NSDictionary* txtDict =
-        [NSDictionary dictionaryWithObjectsAndKeys:txtColor, NSForegroundColorAttributeName, nil];
-    colorString = [[NSAttributedString alloc] initWithString:[self string] attributes:txtDict];
+    NSDictionary* txtDict = [NSDictionary
+        dictionaryWithObjectsAndKeys:txtColor, NSForegroundColorAttributeName,
+                                     nil];
+    colorString = [[NSAttributedString alloc] initWithString:[self string]
+                                                  attributes:txtDict];
     [[self textStorage] setAttributedString:colorString];
     [self setInsertionPointColor:txtColor];
     [colorString release];
@@ -659,14 +709,16 @@ bool UIInit() {
   gMainPool = [[NSAutoreleasePool alloc] init];
   [NSApplication sharedApplication];
 
-  if (gStrings.find("isRTL") != gStrings.end() && gStrings["isRTL"] == "yes") gRTLlayout = true;
+  if (gStrings.find("isRTL") != gStrings.end() && gStrings["isRTL"] == "yes")
+    gRTLlayout = true;
 
   if (gAutoSubmit) {
     gUI = [[CrashReporterUI alloc] init];
   } else {
-    [[NSBundle mainBundle] loadNibNamed:(gRTLlayout ? @"MainMenuRTL" : @"MainMenu")
-                                  owner:NSApp
-                        topLevelObjects:nil];
+    [[NSBundle mainBundle]
+           loadNibNamed:(gRTLlayout ? @"MainMenuRTL" : @"MainMenu")
+                  owner:NSApp
+        topLevelObjects:nil];
   }
 
   return true;
@@ -712,14 +764,11 @@ bool UIGetIniPath(string& path) {
   return true;
 }
 
-bool UIGetSettingsPath(const string& vendor, const string& product, string& settingsPath) {
-  FSRef foundRef;
-  OSErr err = FSFindFolder(kUserDomain, kApplicationSupportFolderType, kCreateFolder, &foundRef);
-  if (err != noErr) return false;
-
-  unsigned char path[PATH_MAX];
-  FSRefMakePath(&foundRef, path, sizeof(path));
-  NSString* destPath = [NSString stringWithUTF8String:reinterpret_cast<char*>(path)];
+bool UIGetSettingsPath(const string& vendor, const string& product,
+                       string& settingsPath) {
+  NSArray* paths = NSSearchPathForDirectoriesInDomains(
+      NSApplicationSupportDirectory, NSUserDomainMask, YES);
+  NSString* destPath = [paths firstObject];
 
   // Note that MacOS ignores the vendor when creating the profile hierarchy -
   // all application preferences directories live alongside one another in
@@ -743,10 +792,12 @@ bool UIMoveFile(const string& file, const string& newfile) {
   if (errno != EXDEV) return false;
 
   NSFileManager* fileManager = [NSFileManager defaultManager];
-  NSString* source = [fileManager stringWithFileSystemRepresentation:file.c_str()
-                                                              length:file.length()];
-  NSString* dest = [fileManager stringWithFileSystemRepresentation:newfile.c_str()
-                                                            length:newfile.length()];
+  NSString* source =
+      [fileManager stringWithFileSystemRepresentation:file.c_str()
+                                               length:file.length()];
+  NSString* dest =
+      [fileManager stringWithFileSystemRepresentation:newfile.c_str()
+                                               length:newfile.length()];
   if (!source || !dest) return false;
 
   [fileManager moveItemAtPath:source toPath:dest error:NULL];

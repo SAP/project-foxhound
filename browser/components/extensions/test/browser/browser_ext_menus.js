@@ -65,7 +65,9 @@ add_task(async function test_permissions() {
 add_task(async function test_actionContextMenus() {
   const manifest = {
     page_action: {},
-    browser_action: {},
+    browser_action: {
+      default_area: "navbar",
+    },
     permissions: ["menus"],
   };
 
@@ -343,7 +345,7 @@ add_task(async function test_multiple_contexts_init() {
   const files = {
     "tab.html":
       "<!DOCTYPE html><meta charset=utf-8><script src=tab.js></script>",
-    "tab.js": function() {
+    "tab.js": function () {
       browser.menus.onClicked.addListener(info => {
         browser.test.sendMessage("click", info);
       });

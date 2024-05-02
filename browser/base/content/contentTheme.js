@@ -37,23 +37,42 @@
       {
         lwtProperty: "ntp_text",
         processColor(rgbaChannels, element) {
+          // We only have access to the browser when we're in a chrome
+          // docshell, so for now only set the color scheme in that case, and
+          // use the `lwt-newtab-brighttext` attribute as a fallback mechanism.
+          let browserStyle =
+            element.ownerGlobal?.docShell?.chromeEventHandler.style;
+
           if (!rgbaChannels) {
             element.removeAttribute("lwt-newtab");
             element.toggleAttribute(
               "lwt-newtab-brighttext",
               prefersDarkQuery.matches
             );
+            if (browserStyle) {
+              browserStyle.colorScheme = "";
+            }
             return null;
           }
 
           element.setAttribute("lwt-newtab", "true");
           const { r, g, b, a } = rgbaChannels;
-          element.toggleAttribute(
-            "lwt-newtab-brighttext",
-            !_isTextColorDark(r, g, b)
-          );
+          let darkMode = !_isTextColorDark(r, g, b);
+          element.toggleAttribute("lwt-newtab-brighttext", darkMode);
+          if (browserStyle) {
+            browserStyle.colorScheme = darkMode ? "dark" : "light";
+          }
 
           return `rgba(${r}, ${g}, ${b}, ${a})`;
+        },
+      },
+    ],
+    [
+      "--in-content-zap-gradient",
+      {
+        lwtProperty: "zap_gradient",
+        processColor(value) {
+          return value;
         },
       },
     ],
@@ -78,18 +97,15 @@
         processColor(rgbaChannels, element) {
           if (!rgbaChannels) {
             element.removeAttribute("lwt-sidebar");
-            element.removeAttribute("lwt-sidebar-brighttext");
             return null;
           }
 
-          element.setAttribute("lwt-sidebar", "true");
+          // TODO(emilio): Can we share this code somehow with LightWeightThemeConsumer?
           const { r, g, b, a } = rgbaChannels;
-          if (!_isTextColorDark(r, g, b)) {
-            element.setAttribute("lwt-sidebar-brighttext", "true");
-          } else {
-            element.removeAttribute("lwt-sidebar-brighttext");
-          }
-
+          element.setAttribute(
+            "lwt-sidebar",
+            _isTextColorDark(r, g, b) ? "light" : "dark"
+          );
           return `rgba(${r}, ${g}, ${b}, ${a})`;
         },
       },
@@ -132,7 +148,7 @@
       addEventListener("LightweightTheme:Set", this);
 
       // We don't sync default theme attributes in `init()`, as we may not have
-      // a body element to attach the attribute to yet. They will be set when
+      // a root element to attach the attribute to yet. They will be set when
       // the first LightweightTheme:Set event is delivered during pageshow.
       prefersDarkQuery.addEventListener("change", this);
     },
@@ -143,20 +159,19 @@
      * @param {Object} event object containing the theme or query update.
      */
     handleEvent(event) {
-      // XUL documents don't have a body
-      const element = document.body ? document.body : document.documentElement;
+      const root = document.documentElement;
 
       if (event.type == "LightweightTheme:Set") {
         let { data } = event.detail;
         if (!data) {
           data = {};
         }
-        this._setProperties(element, data);
+        this._setProperties(root, data);
       } else if (event.type == "change") {
         // If a lightweight theme doesn't apply, update lwt-newtab-brighttext to
         // reflect prefers-color-scheme.
-        if (!element.hasAttribute("lwt-newtab")) {
-          element.toggleAttribute("lwt-newtab-brighttext", event.matches);
+        if (!root.hasAttribute("lwt-newtab")) {
+          root.toggleAttribute("lwt-newtab-brighttext", event.matches);
         }
       }
     },

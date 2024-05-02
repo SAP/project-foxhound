@@ -10,23 +10,39 @@
 
 namespace mozilla::dom {
 
-void AudioStreamTrack::AddAudioOutput(void* aKey) {
+RefPtr<GenericPromise> AudioStreamTrack::AddAudioOutput(
+    void* aKey, AudioDeviceInfo* aSink) {
+  MOZ_ASSERT(!mCrossGraphs.Get(aKey),
+             "A previous audio output for this aKey should have been removed");
+
   if (Ended()) {
-    return;
+    return GenericPromise::CreateAndResolve(true, __func__);
   }
-  if (UniquePtr<CrossGraphPort>* cgm = mCrossGraphs.Get(aKey)) {
-    (*cgm)->AddAudioOutput(aKey);
-    return;
+
+  UniquePtr<CrossGraphPort> manager;
+  if (!aSink || !(manager = CrossGraphPort::Connect(this, aSink, mWindow))) {
+    // We are setting the default output device.
+    mTrack->AddAudioOutput(aKey);
+    return GenericPromise::CreateAndResolve(true, __func__);
   }
-  mTrack->AddAudioOutput(aKey);
+
+  // We are setting a non-default output device.
+  const UniquePtr<CrossGraphPort>& crossGraph = mCrossGraphs.WithEntryHandle(
+      aKey, [&manager](auto entry) -> UniquePtr<CrossGraphPort>& {
+        return entry.Insert(std::move(manager));
+      });
+  crossGraph->AddAudioOutput(aKey);
+  return crossGraph->EnsureConnected();
 }
 
 void AudioStreamTrack::RemoveAudioOutput(void* aKey) {
   if (Ended()) {
     return;
   }
-  if (UniquePtr<CrossGraphPort>* cgm = mCrossGraphs.Get(aKey)) {
-    (*cgm)->RemoveAudioOutput(aKey);
+  if (auto entry = mCrossGraphs.Lookup(aKey)) {
+    // The audio output for this track is directed to a non-default device.
+    // The CrossGraphPort for this output is no longer required so remove it.
+    entry.Remove();
     return;
   }
   mTrack->RemoveAudioOutput(aKey);
@@ -36,15 +52,18 @@ void AudioStreamTrack::SetAudioOutputVolume(void* aKey, float aVolume) {
   if (Ended()) {
     return;
   }
-  if (UniquePtr<CrossGraphPort>* cgm = mCrossGraphs.Get(aKey)) {
-    (*cgm)->SetAudioOutputVolume(aKey, aVolume);
+  if (CrossGraphPort* cgm = mCrossGraphs.Get(aKey)) {
+    cgm->SetAudioOutputVolume(aKey, aVolume);
     return;
   }
   mTrack->SetAudioOutputVolume(aKey, aVolume);
 }
 
 void AudioStreamTrack::GetLabel(nsAString& aLabel, CallerType aCallerType) {
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  nsIGlobalObject* global =
+      GetParentObject() ? GetParentObject()->AsGlobal() : nullptr;
+  if (nsContentUtils::ShouldResistFingerprinting(aCallerType, global,
+                                                 RFPTarget::StreamTrackLabel)) {
     aLabel.AssignLiteral("Internal Microphone");
     return;
   }
@@ -60,46 +79,9 @@ void AudioStreamTrack::SetReadyState(MediaStreamTrackState aState) {
   if (!mCrossGraphs.IsEmpty() && !Ended() &&
       mReadyState == MediaStreamTrackState::Live &&
       aState == MediaStreamTrackState::Ended) {
-    for (const auto& data : mCrossGraphs.Values()) {
-      (*data)->Destroy();
-      data->reset();
-    }
     mCrossGraphs.Clear();
   }
   MediaStreamTrack::SetReadyState(aState);
-}
-
-RefPtr<GenericPromise> AudioStreamTrack::SetAudioOutputDevice(
-    void* key, AudioDeviceInfo* aSink) {
-  MOZ_ASSERT(aSink);
-
-  if (Ended()) {
-    return GenericPromise::CreateAndResolve(true, __func__);
-  }
-
-  UniquePtr<CrossGraphPort> manager =
-      CrossGraphPort::Connect(this, aSink, mWindow);
-  if (!manager) {
-    // We are setting the default output device.
-    auto entry = mCrossGraphs.Lookup(key);
-    if (entry) {
-      // There is an existing non-default output device for this track. Remove
-      // it.
-      (*entry.Data())->Destroy();
-      entry.Remove();
-    }
-    return GenericPromise::CreateAndResolve(true, __func__);
-  }
-
-  // We are setting a non-default output device.
-  UniquePtr<CrossGraphPort>& crossGraphPtr = *mCrossGraphs.GetOrInsertNew(key);
-  if (crossGraphPtr) {
-    // This key already has a non-default output device set. Destroy it.
-    crossGraphPtr->Destroy();
-  }
-
-  crossGraphPtr = std::move(manager);
-  return crossGraphPtr->EnsureConnected();
 }
 
 }  // namespace mozilla::dom

@@ -11,9 +11,7 @@
 #include "mozilla/dom/cache/PCacheParent.h"
 #include "mozilla/dom/cache/Types.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 class Manager;
 
@@ -22,15 +20,15 @@ class CacheParent final : public PCacheParent {
 
  public:
   CacheParent(SafeRefPtr<cache::Manager> aManager, CacheId aCacheId);
-  virtual ~CacheParent();
 
  private:
+  virtual ~CacheParent();
+
   // PCacheParent methods
   virtual void ActorDestroy(ActorDestroyReason aReason) override;
 
-  PCacheOpParent* AllocPCacheOpParent(const CacheOpArgs& aOpArgs);
-
-  bool DeallocPCacheOpParent(PCacheOpParent* aActor);
+  already_AddRefed<PCacheOpParent> AllocPCacheOpParent(
+      const CacheOpArgs& aOpArgs);
 
   virtual mozilla::ipc::IPCResult RecvPCacheOpConstructor(
       PCacheOpParent* actor, const CacheOpArgs& aOpArgs) override;
@@ -39,10 +37,10 @@ class CacheParent final : public PCacheParent {
 
   SafeRefPtr<cache::Manager> mManager;
   const CacheId mCacheId;
+
+  NS_INLINE_DECL_REFCOUNTING(CacheParent, override)
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_CacheParent_h

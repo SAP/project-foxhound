@@ -4,12 +4,14 @@
 
 "use strict";
 
-const { sourceSpec } = require("devtools/shared/specs/source");
+const { sourceSpec } = require("resource://devtools/shared/specs/source.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { ArrayBufferFront } = require("devtools/client/fronts/array-buffer");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  ArrayBufferFront,
+} = require("resource://devtools/client/fronts/array-buffer.js");
 
 /**
  * A SourceFront provides a way to access the source text of a script.
@@ -64,7 +66,7 @@ class SourceFront extends FrontClassWithSpec(sourceSpec) {
   _onSourceResponse(response) {
     const { contentType, source } = response;
     if (source instanceof ArrayBufferFront) {
-      return source.slice(0, source.length).then(function(resp) {
+      return source.slice(0, source.length).then(function (resp) {
         if (resp.error) {
           return resp;
         }
@@ -82,14 +84,14 @@ class SourceFront extends FrontClassWithSpec(sourceSpec) {
       });
     }
 
-    return source.substring(0, source.length).then(function(resp) {
+    return source.substring(0, source.length).then(function (resp) {
       if (resp.error) {
         return resp;
       }
 
       const newResponse = {
         source: resp,
-        contentType: contentType,
+        contentType,
       };
       return newResponse;
     });

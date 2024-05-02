@@ -4,7 +4,6 @@
  */
 "use strict";
 
-/* import-globals-from ../../../../content/tests/browser/common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this
@@ -39,7 +38,7 @@ function createPromiseForTransferComplete() {
       MockFilePicker.filterIndex = 0; // kSaveAsType_Complete
 
       MockFilePicker.showCallback = null;
-      mockTransferCallback = function(downloadSuccess) {
+      mockTransferCallback = function (downloadSuccess) {
         ok(downloadSuccess, "Image should have been downloaded successfully");
         mockTransferCallback = () => {};
         resolve();
@@ -48,7 +47,7 @@ function createPromiseForTransferComplete() {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   info("Setting up the prefs.");
 
   await SpecialPowers.pushPrefEnv({
@@ -64,14 +63,14 @@ add_task(async function setup() {
   info("Setting MockFilePicker.");
   mockTransferRegisterer.register();
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     mockTransferRegisterer.unregister();
     MockFilePicker.cleanup();
     tempDir.remove(true);
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Open a new tab for testing");
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,

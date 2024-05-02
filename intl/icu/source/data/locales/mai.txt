@@ -37,6 +37,12 @@ mai{
                 "G d MMM y",
                 "G d/M/y",
                 "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1} के {0}",
                 "{1} के {0}",
                 "{1}, {0}",
@@ -58,6 +64,14 @@ mai{
                 "भोर",
                 "सांझ",
             }
+            AmPmMarkersAbbr{
+                "भोर",
+                "सांझ",
+            }
+            AmPmMarkersNarrow{
+                "भोर",
+                "सांझ",
+            }
             DateTimePatterns{
                 "h:mm:ss a zzzz",
                 "h:mm:ss a z",
@@ -68,6 +82,12 @@ mai{
                 "d MMM y",
                 "d/M/yy",
                 "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1} के {0}",
                 "{1} के {0}",
                 "{1}, {0}",
@@ -94,7 +114,7 @@ mai{
                 GyMMM{"MMM G y"}
                 GyMMMEd{"E, MMM d, y G"}
                 GyMMMd{"d MMM y G"}
-                GyMd{"dd-MM-y"}
+                GyMd{"dd-MM-y G"}
                 MEd{"E, d/M"}
                 MMMEd{"E, d MMM"}
                 MMMMd{"d MMMM"}
@@ -130,6 +150,15 @@ mai{
                         "शु",
                         "श",
                     }
+                    short{
+                        "रवि",
+                        "सोम",
+                        "मंगल",
+                        "बुध",
+                        "बृहस्पति",
+                        "शुक्र",
+                        "शनि",
+                    }
                     wide{
                         "रवि दिन",
                         "सोम दिन",
@@ -159,6 +188,15 @@ mai{
                         "शु",
                         "श",
                     }
+                    short{
+                        "रवि",
+                        "सोम",
+                        "मंगल",
+                        "बुध",
+                        "बृहस्पति",
+                        "शुक्र",
+                        "शनि",
+                    }
                     wide{
                         "रवि दिन",
                         "सोम दिन",
@@ -170,12 +208,36 @@ mai{
                     }
                 }
             }
+            dayPeriod{
+                stand-alone{
+                    abbreviated{
+                        am{"पूर्वाह्न"}
+                        pm{"अपराह्न"}
+                    }
+                    narrow{
+                        am{"पूर्वाह्न"}
+                        pm{"अपराह्न"}
+                    }
+                    wide{
+                        am{"पूर्वाह्न"}
+                        pm{"अपराह्न"}
+                    }
+                }
+            }
             eras{
                 abbreviated{
                     "ईसा-पूर्व",
                     "ईसवी",
                 }
                 abbreviated%variant{
+                    "ईसवी पूर्व",
+                    "ईसवी",
+                }
+                wide{
+                    "ईसा-पूर्व",
+                    "ईसवी",
+                }
+                wide%variant{
                     "ईसवी पूर्व",
                     "ईसवी",
                 }
@@ -278,6 +340,12 @@ mai{
                         "ति3",
                         "ति4",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                    }
                     wide{
                         "पहिल तिमाही",
                         "दोसर तिमाही",
@@ -301,6 +369,89 @@ mai{
                 }
             }
         }
+        indian{
+            eras{
+                abbreviated{
+                    "शक",
+                }
+            }
+            monthNames{
+                format{
+                    abbreviated{
+                        "चैत",
+                        "बैशाख",
+                        "जेठ",
+                        "अखाढ़",
+                        "सउन",
+                        "भादो",
+                        "आसिन",
+                        "कातिक",
+                        "अगहन",
+                        "पूस",
+                        "माघ",
+                        "फागुन",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                    wide{
+                        "चैत",
+                        "बैशाख",
+                        "जेठ",
+                        "अखाढ़",
+                        "सउन",
+                        "भादो",
+                        "आसिन",
+                        "कातिक",
+                        "अगहन",
+                        "पूस",
+                        "माघ",
+                        "फागुन",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "चैत",
+                        "बैशाख",
+                        "जेठ",
+                        "अखाढ़",
+                        "सउन",
+                        "भादो",
+                        "आसिन",
+                        "कातिक",
+                        "अगहन",
+                        "पूस",
+                        "माघ",
+                        "फागुन",
+                    }
+                    wide{
+                        "चैत",
+                        "बैशाख",
+                        "जेठ",
+                        "अखाढ़",
+                        "सउन",
+                        "भादो",
+                        "आसिन",
+                        "कातिक",
+                        "अगहन",
+                        "पूस",
+                        "माघ",
+                        "फागुन",
+                    }
+                }
+            }
+        }
     }
     fields{
         day{
@@ -310,6 +461,14 @@ mai{
                 "0"{"आजुक दिन"}
                 "1"{"काल्हिक दिन"}
             }
+            relativeTime{
+                future{
+                    other{"{0} दिन मे"}
+                }
+                past{
+                    other{"{0} दिन मे"}
+                }
+            }
         }
         day-narrow{
             dn{"दिन"}
@@ -317,6 +476,14 @@ mai{
                 "-1"{"बीतल काल्हि"}
                 "0"{"आजुक दिन"}
                 "1"{"आबय वला काल्हि"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} दिन मे"}
+                }
+                past{
+                    other{"{0}दिन पहिले"}
+                }
             }
         }
         day-short{
@@ -326,62 +493,684 @@ mai{
                 "0"{"आजुक दिन"}
                 "1"{"आबय वला काल्हि"}
             }
+            relativeTime{
+                future{
+                    other{"{0} दिन मे"}
+                }
+                past{
+                    other{"{0}दिन पहिले"}
+                }
+            }
+        }
+        dayOfYear{
+            dn{"बरखक दिन"}
+        }
+        dayOfYear-narrow{
+            dn{"बरखक दिन"}
+        }
+        dayOfYear-short{
+            dn{"बरखक दिन"}
         }
         dayperiod{
             dn{"पूर्वाह्न/अपराह्न"}
         }
+        dayperiod-narrow{
+            dn{"पूर्वाह्न/अपराह्न"}
+        }
+        dayperiod-short{
+            dn{"पूर्वाह्न/अपराह्न"}
+        }
         era{
-            dn{"युग"}
+            dn{"महीना केर सप्ताह"}
+        }
+        era-narrow{
+            dn{"जुग"}
+        }
+        era-short{
+            dn{"जुग"}
+        }
+        fri{
+            relative{
+                "-1"{"पिछलका शुक्र"}
+                "0"{"एहि शुक्र"}
+                "1"{"अगिला शुक्र"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} शुक्र मे"}
+                }
+                past{
+                    other{"{0} शुक्र पहिले"}
+                }
+            }
+        }
+        fri-narrow{
+            relative{
+                "-1"{"पिछलका शुक्र"}
+                "0"{"एहि शुक्र"}
+                "1"{"अगिला शुक्र"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} शुक्र मे"}
+                }
+                past{
+                    other{"{0} शुक्र पहिले"}
+                }
+            }
+        }
+        fri-short{
+            relative{
+                "-1"{"पिछलका शुक्र"}
+                "0"{"एहि शुक्र"}
+                "1"{"अगिला शुक्र"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} शुक्र मे"}
+                }
+                past{
+                    other{"{0} शुक्र पहिले"}
+                }
+            }
         }
         hour{
             dn{"घंटा"}
+            relative{
+                "0"{"एहि घंटा"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} घंटा मे"}
+                }
+                past{
+                    other{"{0} घंटा पहिले"}
+                }
+            }
+        }
+        hour-narrow{
+            dn{"घंटा"}
+            relativeTime{
+                future{
+                    other{"{0} घंटा मे"}
+                }
+                past{
+                    other{"{0} घंटा पहिले"}
+                }
+            }
+        }
+        hour-short{
+            dn{"घंटा"}
+            relativeTime{
+                future{
+                    other{"{0} घंटा मे"}
+                }
+                past{
+                    other{"{0} घंटा पहिले"}
+                }
+            }
         }
         minute{
             dn{"मिनट"}
+            relative{
+                "0"{"एहि मिनट"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} मिनट मे"}
+                }
+                past{
+                    other{"{0} मिनट पहिले"}
+                }
+            }
+        }
+        minute-narrow{
+            dn{"मिनट"}
+            relativeTime{
+                future{
+                    other{"{0} मिनट मे"}
+                }
+                past{
+                    other{"{0} मिनट पहिले"}
+                }
+            }
+        }
+        minute-short{
+            dn{"मिनट"}
+            relativeTime{
+                future{
+                    other{"{0} मिनट मे"}
+                }
+                past{
+                    other{"{0} मिनट पहिले"}
+                }
+            }
+        }
+        mon{
+            relative{
+                "-1"{"बीतल सोम"}
+                "0"{"एहि सोम"}
+                "1"{"अगिला सोम"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} सोम मे"}
+                }
+                past{
+                    other{"{0} सोम पहिले"}
+                }
+            }
+        }
+        mon-narrow{
+            relative{
+                "-1"{"बीतल सोम"}
+                "0"{"एहि सोम"}
+                "1"{"अगिला सोम"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} सोम मे"}
+                }
+                past{
+                    other{"{0} सोम पहिले"}
+                }
+            }
+        }
+        mon-short{
+            relative{
+                "-1"{"बीतल सोम"}
+                "0"{"एहि सोम"}
+                "1"{"अगिला सोम"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} सोम मे"}
+                }
+                past{
+                    other{"{0} सोम पहिले"}
+                }
+            }
         }
         month{
             dn{"महीना"}
+            relative{
+                "-1"{"बीतल माह"}
+                "0"{"एहि माह"}
+                "1"{"अगिला माह"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} माह मे"}
+                }
+                past{
+                    other{"{0} माह पहिले"}
+                }
+            }
         }
         month-narrow{
             dn{"मास"}
+            relative{
+                "-1"{"बीतल माह"}
+                "0"{"एहि माह"}
+                "1"{"अगिला माह"}
+            }
+            relativeTime{
+                future{
+                    other{"{0}माह मे"}
+                }
+                past{
+                    other{"{0}माह पहिले"}
+                }
+            }
         }
         month-short{
             dn{"मास"}
+            relative{
+                "-1"{"बीतल माह"}
+                "0"{"एहि माह"}
+                "1"{"अगिला माह"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} माह मे"}
+                }
+                past{
+                    other{"{0} माह पहिले"}
+                }
+            }
         }
         quarter{
             dn{"तिमाही"}
+            relative{
+                "-1"{"बीतल तिमाही"}
+                "0"{"एहि तिमाही"}
+                "1"{"अगिला तिमाही"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} तिमाही मे"}
+                }
+                past{
+                    other{"{0} तिमाही पहिले"}
+                }
+            }
         }
         quarter-narrow{
             dn{"तिमाही"}
+            relativeTime{
+                future{
+                    other{"{0} तिमाही मे"}
+                }
+                past{
+                    other{"{0} तिमाही पहिले"}
+                }
+            }
         }
         quarter-short{
             dn{"तिमाही"}
+            relativeTime{
+                future{
+                    other{"{0} तिमाही मे"}
+                }
+                past{
+                    other{"{0} तिमाही पहिले"}
+                }
+            }
+        }
+        sat{
+            relative{
+                "-1"{"बीतल शनि"}
+                "0"{"एहि शनि"}
+                "1"{"अगिला शनि"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} शनि मे"}
+                }
+                past{
+                    other{"{0} शनि पहिले"}
+                }
+            }
+        }
+        sat-narrow{
+            relative{
+                "-1"{"बीतल शनि"}
+                "0"{"एहि शनि"}
+                "1"{"अगिला शनि"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} शनि मे"}
+                }
+                past{
+                    other{"{0} शनि पहिले"}
+                }
+            }
+        }
+        sat-short{
+            relative{
+                "-1"{"बीतल शनि"}
+                "0"{"एहि शनि"}
+                "1"{"अगिला शनि"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} शनि मे"}
+                }
+                past{
+                    other{"{0} शनि पहिले"}
+                }
+            }
         }
         second{
             dn{"सेकंड"}
+            relative{
+                "0"{"एहि समय"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} सेकेंड मे"}
+                }
+                past{
+                    other{"{0} सेकेंड पहिले"}
+                }
+            }
+        }
+        second-narrow{
+            dn{"सेकंड"}
+            relativeTime{
+                future{
+                    other{"{0} सेकेंड मे"}
+                }
+                past{
+                    other{"{0} सेकेंड पहिले"}
+                }
+            }
+        }
+        second-short{
+            dn{"सेकंड"}
+            relativeTime{
+                future{
+                    other{"{0} सेकेंड मे"}
+                }
+                past{
+                    other{"{0} सेकेंड पहिले"}
+                }
+            }
+        }
+        sun{
+            relative{
+                "-1"{"बीतल रवि"}
+                "0"{"एहि रवि"}
+                "1"{"अगिला रवि"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} रवि मे"}
+                }
+                past{
+                    other{"{0} रवि पहिले"}
+                }
+            }
+        }
+        sun-narrow{
+            relative{
+                "-1"{"बीतल रवि"}
+                "0"{"एहि रवि"}
+                "1"{"अगिला रवि"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} रवि मे"}
+                }
+                past{
+                    other{"{0} रवि पहिले"}
+                }
+            }
+        }
+        sun-short{
+            relative{
+                "-1"{"बीतल रवि"}
+                "0"{"एहि रवि"}
+                "1"{"अगिला रवि"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} रवि मे"}
+                }
+                past{
+                    other{"{0} रवि पहिले"}
+                }
+            }
+        }
+        thu{
+            relative{
+                "-1"{"बीतल बृहस्पति"}
+                "0"{"एहि बृहस्पति"}
+                "1"{"अगिला बृहस्पति"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बृहस्पति मे"}
+                }
+                past{
+                    other{"{0} बृहस्पति पहिले"}
+                }
+            }
+        }
+        thu-narrow{
+            relative{
+                "-1"{"बीतल बृहस्पति"}
+                "0"{"एहि बृहस्पति"}
+                "1"{"अगिला बृहस्पति"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बृहस्पति मे"}
+                }
+                past{
+                    other{"{0} बृहस्पति पहिले"}
+                }
+            }
+        }
+        thu-short{
+            relative{
+                "-1"{"बीतल बृहस्पति"}
+                "0"{"एहि बृहस्पति"}
+                "1"{"अगिला बृहस्पति"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बृहस्पति मे"}
+                }
+                past{
+                    other{"{0} बृहस्पति पहिले"}
+                }
+            }
+        }
+        tue{
+            relative{
+                "-1"{"बीतल मंगल"}
+                "0"{"एहि मंगल"}
+                "1"{"अगिला मंगल"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} मंगल मे"}
+                }
+                past{
+                    other{"{0} मंगल पहिले"}
+                }
+            }
+        }
+        tue-narrow{
+            relative{
+                "-1"{"बीतल मंगल"}
+                "0"{"एहि मंगल"}
+                "1"{"अगिला मंगल"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} मंगल मे"}
+                }
+                past{
+                    other{"{0} मंगल पहिले"}
+                }
+            }
+        }
+        tue-short{
+            relative{
+                "-1"{"बीतल मंगल"}
+                "0"{"एहि मंगल"}
+                "1"{"अगिला मंगल"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} मंगल मे"}
+                }
+                past{
+                    other{"{0} मंगल पहिले"}
+                }
+            }
+        }
+        wed{
+            relative{
+                "-1"{"पिछला बुध"}
+                "0"{"एहि बुध"}
+                "1"{"अगिला बुध"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बुध"}
+                }
+                past{
+                    other{"{0} बुध पहिले"}
+                }
+            }
+        }
+        wed-narrow{
+            relative{
+                "-1"{"पिछला बुध"}
+                "0"{"एहि बुध"}
+                "1"{"अगिला बुध"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बुध मे"}
+                }
+                past{
+                    other{"{0} बुध पहिले"}
+                }
+            }
+        }
+        wed-short{
+            relative{
+                "-1"{"पिछला बुध"}
+                "0"{"एहि बुध"}
+                "1"{"अगिला बुध"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बुध मे"}
+                }
+                past{
+                    other{"{0} बुध पहिले"}
+                }
+            }
         }
         week{
             dn{"सप्ताह"}
+            relative{
+                "-1"{"बीतल सप्ताह"}
+                "0"{"एहि सप्ताह"}
+                "1"{"अगिला सप्ताह"}
+            }
+            relativePeriod{"{0} केर सप्ताह"}
+            relativeTime{
+                future{
+                    other{"{0} सप्ताह मे"}
+                }
+                past{
+                    other{"{0} सप्ताह पहिले"}
+                }
+            }
         }
         week-narrow{
             dn{"सप्ताह"}
+            relative{
+                "-1"{"बीतल सप्ताह"}
+                "0"{"एहि सप्ताह"}
+                "1"{"अगिला सप्ताह"}
+            }
+            relativePeriod{"{0} केर सप्ताह"}
+            relativeTime{
+                future{
+                    other{"{0} सप्ताह मे"}
+                }
+                past{
+                    other{"{0} सप्ताह पहिले"}
+                }
+            }
         }
         week-short{
             dn{"सप्ताह"}
+            relative{
+                "-1"{"बीतल सप्ताह"}
+                "0"{"एहि सप्ताह"}
+                "1"{"अगिला सप्ताह"}
+            }
+            relativePeriod{"{0} केर सप्ताह"}
+            relativeTime{
+                future{
+                    other{"{0} सप्ताह मे"}
+                }
+                past{
+                    other{"{0} सप्ताह पहिले"}
+                }
+            }
+        }
+        weekOfMonth{
+            dn{"महीना केर सप्ताह"}
+        }
+        weekOfMonth-narrow{
+            dn{"महीना केर सप्ताह"}
+        }
+        weekOfMonth-short{
+            dn{"महीना केर सप्ताह"}
         }
         weekday{
             dn{"सप्ताहक दिन"}
         }
+        weekday-narrow{
+            dn{"सप्ताहक दिन"}
+        }
+        weekday-short{
+            dn{"सप्ताहक दिन"}
+        }
+        weekdayOfMonth{
+            dn{"माहक कार्यदिवस"}
+        }
+        weekdayOfMonth-narrow{
+            dn{"माहक कार्यदिवस"}
+        }
+        weekdayOfMonth-short{
+            dn{"माहक कार्यदिवस"}
+        }
         year{
             dn{"वर्ष"}
+            relative{
+                "-1"{"बीतल बरख"}
+                "0"{"एहि बरख"}
+                "1"{"अगिला बरख"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बरख मे"}
+                }
+                past{
+                    other{"{0} बरख पहिले"}
+                }
+            }
         }
         year-narrow{
             dn{"वर्ष"}
+            relative{
+                "-1"{"बीतल बरख"}
+                "0"{"एहि बरख"}
+                "1"{"अगिला बरख"}
+            }
+            relativeTime{
+                future{
+                    other{"{0}बरख मे"}
+                }
+                past{
+                    other{"{0}बरख पहिले"}
+                }
+            }
         }
         year-short{
             dn{"वर्ष"}
+            relative{
+                "-1"{"बीतल बरख"}
+                "0"{"एहि बरख"}
+                "1"{"अगिला बरख"}
+            }
+            relativeTime{
+                future{
+                    other{"{0} बरख मे"}
+                }
+                past{
+                    other{"{0} बरख पहिले"}
+                }
+            }
         }
         zone{
+            dn{"समय क्षेत्र"}
+        }
+        zone-narrow{
+            dn{"समय क्षेत्र"}
+        }
+        zone-short{
             dn{"समय क्षेत्र"}
         }
     }
@@ -395,5 +1184,22 @@ mai{
         UK{"यूके"}
         US{"यूएस"}
         metric{"मीट्रिक"}
+    }
+    personNames{
+        nameOrderLocales{
+            givenFirst{
+                "und",
+                "mai",
+            }
+            surnameFirst{
+                "ko",
+                "si",
+                "ta",
+                "te",
+                "vi",
+                "yue",
+                "zh",
+            }
+        }
     }
 }

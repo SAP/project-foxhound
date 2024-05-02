@@ -7,11 +7,19 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Privacy: Anti-Tracking")
 
+JAR_MANIFESTS += ["jar.mn"]
+
+DIRS += [
+    "bouncetrackingprotection",
+]
+
 XPIDL_SOURCES += [
+    "nsIContentBlockingAllowList.idl",
     "nsIPartitioningExceptionListService.idl",
     "nsIPurgeTrackerService.idl",
     "nsITrackingDBService.idl",
     "nsIURLDecorationAnnotationsService.idl",
+    "nsIURLQueryStringStripper.idl",
     "nsIURLQueryStrippingListService.idl",
 ]
 
@@ -22,12 +30,12 @@ EXTRA_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES += [
-    "ContentBlockingAllowList.jsm",
-    "PartitioningExceptionListService.jsm",
-    "PurgeTrackerService.jsm",
-    "TrackingDBService.jsm",
-    "URLDecorationAnnotationsService.jsm",
-    "URLQueryStrippingListService.jsm",
+    "ContentBlockingAllowList.sys.mjs",
+    "PartitioningExceptionListService.sys.mjs",
+    "PurgeTrackerService.sys.mjs",
+    "TrackingDBService.sys.mjs",
+    "URLDecorationAnnotationsService.sys.mjs",
+    "URLQueryStrippingListService.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
@@ -38,14 +46,15 @@ EXPORTS.mozilla = [
     "AntiTrackingIPCUtils.h",
     "AntiTrackingRedirectHeuristic.h",
     "AntiTrackingUtils.h",
-    "ContentBlocking.h",
     "ContentBlockingAllowList.h",
     "ContentBlockingLog.h",
     "ContentBlockingNotifier.h",
     "ContentBlockingTelemetryService.h",
     "ContentBlockingUserInteraction.h",
     "DynamicFpiRedirectHeuristic.h",
+    "PartitioningExceptionList.h",
     "StorageAccess.h",
+    "StorageAccessAPIHelper.h",
     "StoragePrincipalHelper.h",
     "URLDecorationStripper.h",
     "URLQueryStringStripper.h",
@@ -54,7 +63,6 @@ EXPORTS.mozilla = [
 UNIFIED_SOURCES += [
     "AntiTrackingRedirectHeuristic.cpp",
     "AntiTrackingUtils.cpp",
-    "ContentBlocking.cpp",
     "ContentBlockingAllowList.cpp",
     "ContentBlockingLog.cpp",
     "ContentBlockingNotifier.cpp",
@@ -62,9 +70,9 @@ UNIFIED_SOURCES += [
     "ContentBlockingUserInteraction.cpp",
     "DynamicFpiRedirectHeuristic.cpp",
     "PartitioningExceptionList.cpp",
-    "RejectForeignAllowList.cpp",
     "SettingsChangeObserver.cpp",
     "StorageAccess.cpp",
+    "StorageAccessAPIHelper.cpp",
     "StoragePrincipalHelper.cpp",
     "TemporaryAccessGrantObserver.cpp",
     "URLDecorationStripper.cpp",
@@ -82,12 +90,12 @@ FINAL_LIBRARY = "xul"
 
 if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
     BROWSER_CHROME_MANIFESTS += [
-        "test/browser/browser-blocking.ini",
-        "test/browser/browser.ini",
+        "test/browser/browser-blocking.toml",
+        "test/browser/browser.toml",
     ]
 
 XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.ini"]
 
 TEST_DIRS += ["test/gtest"]
 
-REQUIRES_UNIFIED_BUILD = True
+SPHINX_TREES["anti-tracking"] = "docs"

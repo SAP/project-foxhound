@@ -6,7 +6,6 @@ const PREF_DB_SCHEMA = "extensions.databaseSchema";
 const PREF_IS_EMBEDDED = "extensions.isembedded";
 
 registerCleanupFunction(() => {
-  Services.prefs.clearUserPref(PREF_DISABLE_SECURITY);
   Services.prefs.clearUserPref(PREF_IS_EMBEDDED);
 });
 
@@ -16,7 +15,6 @@ profileDir.append("extensions");
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "49");
 
 add_task(async function test_setup() {
-  Services.prefs.setBoolPref(PREF_DISABLE_SECURITY, true);
   await promiseStartupManager();
 });
 
@@ -32,7 +30,7 @@ add_task(async function run_tests() {
     manifest: {
       name: "Test Add-on",
       version: "1.0",
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
     },
   });
 
@@ -40,11 +38,11 @@ add_task(async function run_tests() {
     manifest: {
       name: "Test Add-on 2",
       version: "2.0",
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
     },
   });
 
-  let xpiPath = OS.Path.join(profileDir.path, `${ID}.xpi`);
+  let xpiPath = PathUtils.join(profileDir.path, `${ID}.xpi`);
 
   const TESTS = [
     {
@@ -55,8 +53,7 @@ add_task(async function run_tests() {
       },
     },
     {
-      what:
-        "Application update with no schema change does not reload metadata.",
+      what: "Application update with no schema change does not reload metadata.",
       expectedVersion: "1.0",
       action() {
         gAppInfo.version = "2";
@@ -135,7 +132,7 @@ add_task(async function embedder_disabled_stays_disabled() {
     manifest: {
       name: "Test Add-on",
       version: "1.0",
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
     },
   });
 

@@ -11,30 +11,31 @@ run-using handlers in `taskcluster/taskgraph/transforms/job`.
 
 
 import copy
-import logging
 import json
-import os
+import logging
 
+from voluptuous import Any, Exclusive, Extra, Optional, Required
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util import path as mozpath
-from taskgraph.util.schema import (
-    validate_schema,
-    Schema,
-)
-from taskgraph.util.taskcluster import get_artifact_prefix
-from taskgraph.util.workertypes import worker_type_implementation
 from taskgraph.transforms.cached_tasks import order_tasks
 from taskgraph.transforms.task import task_description_schema
-from voluptuous import (
-    Extra,
-    Any,
-    Optional,
-    Required,
-    Exclusive,
-)
+from taskgraph.util import path as mozpath
+from taskgraph.util.python_path import import_sibling_modules
+from taskgraph.util.schema import Schema, validate_schema
+from taskgraph.util.taskcluster import get_artifact_prefix
+from taskgraph.util.workertypes import worker_type_implementation
 
 logger = logging.getLogger(__name__)
+
+# Fetches may be accepted in other transforms and eventually passed along
+# to a `job` (eg: from_deps). Defining this here allows them to re-use
+# the schema and avoid duplication.
+fetches_schema = {
+    Required("artifact"): str,
+    Optional("dest"): str,
+    Optional("extract"): bool,
+    Optional("verify-hash"): bool,
+}
 
 # Schema for a build description
 job_description_schema = Schema(
@@ -49,9 +50,10 @@ job_description_schema = Schema(
         # taskcluster/taskgraph/transforms/task.py for the schema details.
         Required("description"): task_description_schema["description"],
         Optional("attributes"): task_description_schema["attributes"],
-        Optional("job-from"): task_description_schema["job-from"],
+        Optional("task-from"): task_description_schema["task-from"],
         Optional("dependencies"): task_description_schema["dependencies"],
         Optional("soft-dependencies"): task_description_schema["soft-dependencies"],
+        Optional("if-dependencies"): task_description_schema["if-dependencies"],
         Optional("requires"): task_description_schema["requires"],
         Optional("expires-after"): task_description_schema["expires-after"],
         Optional("routes"): task_description_schema["routes"],
@@ -63,6 +65,7 @@ job_description_schema = Schema(
         Optional("run-on-projects"): task_description_schema["run-on-projects"],
         Optional("run-on-tasks-for"): task_description_schema["run-on-tasks-for"],
         Optional("run-on-git-branches"): task_description_schema["run-on-git-branches"],
+        Optional("shipping-phase"): task_description_schema["shipping-phase"],
         Optional("always-target"): task_description_schema["always-target"],
         Exclusive("optimization", "optimization"): task_description_schema[
             "optimization"
@@ -83,11 +86,7 @@ job_description_schema = Schema(
             Any("toolchain", "fetch"): [str],
             str: [
                 str,
-                {
-                    Required("artifact"): str,
-                    Optional("dest"): str,
-                    Optional("extract"): bool,
-                },
+                fetches_schema,
             ],
         },
         # A description of how to run this job.
@@ -207,6 +206,7 @@ def get_attribute(dict, key, attributes, attribute_name):
 def use_fetches(config, jobs):
     artifact_names = {}
     aliases = {}
+    extra_env = {}
 
     if config.kind in ("toolchain", "fetch"):
         jobs = list(jobs)
@@ -218,7 +218,7 @@ def use_fetches(config, jobs):
             if value:
                 aliases[f"{config.kind}-{value}"] = label
 
-    for task in config.kind_dependencies_tasks:
+    for task in config.kind_dependencies_tasks.values():
         if task.kind in ("fetch", "toolchain"):
             get_attribute(
                 artifact_names,
@@ -226,6 +226,7 @@ def use_fetches(config, jobs):
                 task.attributes,
                 f"{task.kind}-artifact",
             )
+            get_attribute(extra_env, task.label, task.attributes, f"{task.kind}-env")
             value = task.attributes.get(f"{task.kind}-alias")
             if value:
                 aliases[f"{task.kind}-{value}"] = task.label
@@ -243,10 +244,12 @@ def use_fetches(config, jobs):
         name = job.get("name", job.get("label"))
         dependencies = job.setdefault("dependencies", {})
         worker = job.setdefault("worker", {})
+        env = worker.setdefault("env", {})
         prefix = get_artifact_prefix(job)
-        for kind, artifacts in fetches.items():
+        for kind in sorted(fetches):
+            artifacts = fetches[kind]
             if kind in ("fetch", "toolchain"):
-                for fetch_name in artifacts:
+                for fetch_name in sorted(artifacts):
                     label = f"{kind}-{fetch_name}"
                     label = aliases.get(label, label)
                     if label not in artifact_names:
@@ -255,6 +258,8 @@ def use_fetches(config, jobs):
                                 kind=config.kind, name=name, fetch=fetch_name
                             )
                         )
+                    if label in extra_env:
+                        env.update(extra_env[label])
 
                     path = artifact_names[label]
 
@@ -278,8 +283,8 @@ def use_fetches(config, jobs):
                 else:
                     dep_tasks = [
                         task
-                        for task in config.kind_dependencies_tasks
-                        if task.label == dep_label
+                        for label, task in config.kind_dependencies_tasks.items()
+                        if label == dep_label
                     ]
                     if len(dep_tasks) != 1:
                         raise Exception(
@@ -296,15 +301,23 @@ def use_fetches(config, jobs):
 
                     prefix = get_artifact_prefix(dep_tasks[0])
 
-                for artifact in artifacts:
+                def cmp_artifacts(a):
+                    if isinstance(a, str):
+                        return a
+                    else:
+                        return a["artifact"]
+
+                for artifact in sorted(artifacts, key=cmp_artifacts):
                     if isinstance(artifact, str):
                         path = artifact
                         dest = None
                         extract = True
+                        verify_hash = False
                     else:
                         path = artifact["artifact"]
                         dest = artifact.get("dest")
                         extract = artifact.get("extract", True)
+                        verify_hash = artifact.get("verify-hash", False)
 
                     fetch = {
                         "artifact": f"{prefix}/{path}",
@@ -313,6 +326,8 @@ def use_fetches(config, jobs):
                     }
                     if dest is not None:
                         fetch["dest"] = dest
+                    if verify_hash:
+                        fetch["verify-hash"] = verify_hash
                     job_fetches.append(fetch)
 
         job_artifact_prefixes = {
@@ -329,7 +344,6 @@ def use_fetches(config, jobs):
                 if scope not in job.setdefault("scopes", []):
                     job["scopes"].append(scope)
 
-        env = worker.setdefault("env", {})
         env["MOZ_FETCHES"] = {"task-reference": json.dumps(job_fetches, sort_keys=True)}
 
         env.setdefault("MOZ_FETCHES_DIR", "fetches")
@@ -341,7 +355,8 @@ def use_fetches(config, jobs):
 def make_task_description(config, jobs):
     """Given a build description, create a task description"""
     # import plugin modules first, before iterating over jobs
-    import_all()
+    import_sibling_modules(exceptions=("common.py",))
+
     for job in jobs:
         # always-optimized tasks never execute, so have no workdir
         if job["worker"]["implementation"] in ("docker-worker", "generic-worker"):
@@ -386,7 +401,9 @@ def run_job_using(worker_implementation, run_using, schema=None, defaults={}):
         if worker_implementation in for_run_using:
             raise Exception(
                 "run_job_using({!r}, {!r}) already exists: {!r}".format(
-                    run_using, worker_implementation, for_run_using[run_using]
+                    run_using,
+                    worker_implementation,
+                    for_run_using[worker_implementation],
                 )
             )
         for_run_using[worker_implementation] = (func, schema, defaults)
@@ -434,11 +451,3 @@ def configure_taskdesc_for_run(config, job, taskdesc, worker_implementation):
             ),
         )
     func(config, job, taskdesc)
-
-
-def import_all():
-    """Import all modules that are siblings of this one, triggering the decorator
-    above in the process."""
-    for f in os.listdir(os.path.dirname(__file__)):
-        if f.endswith(".py") and f not in ("commmon.py", "__init__.py"):
-            __import__("taskgraph.transforms.job." + f[:-3])

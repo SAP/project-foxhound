@@ -3,18 +3,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Ci } = require("chrome");
 const {
   workerDescriptorSpec,
-} = require("devtools/shared/specs/descriptors/worker");
+} = require("resource://devtools/shared/specs/descriptors/worker.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { TargetMixin } = require("devtools/client/fronts/targets/target-mixin");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  TargetMixin,
+} = require("resource://devtools/client/fronts/targets/target-mixin.js");
 const {
   DescriptorMixin,
-} = require("devtools/client/fronts/descriptors/descriptor-mixin");
+} = require("resource://devtools/client/fronts/descriptors/descriptor-mixin.js");
+const DESCRIPTOR_TYPES = require("resource://devtools/client/fronts/descriptors/descriptor-types.js");
 
 class WorkerDescriptorFront extends DescriptorMixin(
   TargetMixin(FrontClassWithSpec(workerDescriptorSpec))
@@ -24,6 +26,8 @@ class WorkerDescriptorFront extends DescriptorMixin(
 
     this.traits = {};
   }
+
+  descriptorType = DESCRIPTOR_TYPES.WORKER;
 
   form(json) {
     this.actorID = json.actor;
@@ -36,6 +40,7 @@ class WorkerDescriptorFront extends DescriptorMixin(
     this.type = json.type;
     this.scope = json.scope;
     this.fetch = json.fetch;
+    this.traits = json.traits;
   }
 
   get name() {
@@ -63,7 +68,9 @@ class WorkerDescriptorFront extends DescriptorMixin(
     return this.type === Ci.nsIWorkerDebugger.TYPE_SERVICE;
   }
 
-  async attach() {
+  // For now, WorkerDescriptor is morphed into a WorkerTarget when calling this method.
+  // Ideally, we would split this into two distinct classes.
+  async morphWorkerDescriptorIntoWorkerTarget() {
     // temporary, will be moved once we have a target actor
     return this.getTarget();
   }
@@ -78,16 +85,12 @@ class WorkerDescriptorFront extends DescriptorMixin(
         return this;
       }
 
-      const response = await super.attach();
-
       if (this.isServiceWorker) {
         this.registration = await this._getRegistrationIfActive();
         if (this.registration) {
           await this.registration.preventShutdown();
         }
       }
-
-      this._url = response.url;
 
       if (this.isDestroyedOrBeingDestroyed()) {
         return this;
@@ -98,6 +101,7 @@ class WorkerDescriptorFront extends DescriptorMixin(
       // Set the console and thread actor IDs on the form so it is accessible by TargetMixin.getFront
       this.targetForm.consoleActor = workerTargetForm.consoleActor;
       this.targetForm.threadActor = workerTargetForm.threadActor;
+      this.targetForm.tracerActor = workerTargetForm.tracerActor;
 
       if (this.isDestroyedOrBeingDestroyed()) {
         return this;
@@ -124,9 +128,8 @@ class WorkerDescriptorFront extends DescriptorMixin(
   }
 
   async _getRegistrationIfActive() {
-    const {
-      registrations,
-    } = await this.client.mainRoot.listServiceWorkerRegistrations();
+    const { registrations } =
+      await this.client.mainRoot.listServiceWorkerRegistrations();
     return registrations.find(({ activeWorker }) => {
       return activeWorker && this.id === activeWorker.id;
     });

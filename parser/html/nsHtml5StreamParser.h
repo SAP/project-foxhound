@@ -14,11 +14,14 @@
 #include "MainThreadUtils.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/ReentrantMonitor.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Span.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCharsetSource.h"
 #include "nsCOMPtr.h"
@@ -211,8 +214,14 @@ class nsHtml5StreamParser final : public nsISupports {
 
   nsresult OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStream,
                            uint64_t aSourceOffset, uint32_t aLength);
-
-  nsresult OnStopRequest(nsIRequest* aRequest, nsresult status);
+  /**
+   * ReentrantMonitorAutoEnter is used for protecting access to
+   * nsHtml5StreamParser::mOnStopCalled and should be obtained from
+   * nsHtml5StreamListener::mDelegateMonitor
+   */
+  nsresult OnStopRequest(
+      nsIRequest* aRequest, nsresult status,
+      const mozilla::ReentrantMonitorAutoEnter& aProofOfLock);
 
   // EncodingDeclarationHandler
   // https://hg.mozilla.org/projects/htmlparser/file/tip/src/nu/validator/htmlparser/common/EncodingDeclarationHandler.java
@@ -318,7 +327,7 @@ class nsHtml5StreamParser final : public nsISupports {
     mInterrupted = true;
   }
 
-  void Uninterrupt() {
+  void Uninterrupt() MOZ_NO_THREAD_SAFETY_ANALYSIS {
     MOZ_ASSERT(IsParserThread(), "Wrong thread!");
     mTokenizerMutex.AssertCurrentThreadOwns();
     mInterrupted = false;
@@ -330,34 +339,40 @@ class nsHtml5StreamParser final : public nsISupports {
    */
   void FlushTreeOpsAndDisarmTimer();
 
-  void SwitchDecoderIfAsciiSoFar(NotNull<const Encoding*> aEncoding);
+  void SwitchDecoderIfAsciiSoFar(NotNull<const Encoding*> aEncoding)
+      MOZ_REQUIRES(mTokenizerMutex);
+  ;
 
   size_t CountGts();
 
   void DiscardMetaSpeculation();
 
-  bool ProcessLookingForMetaCharset(bool aEof);
+  bool ProcessLookingForMetaCharset(bool aEof) MOZ_REQUIRES(mTokenizerMutex);
 
   void ParseAvailableData();
 
   void DoStopRequest();
 
-  void DoDataAvailableBuffer(mozilla::Buffer<uint8_t>&& aBuffer, const StringTaint& aTaint);
+  void DoDataAvailableBuffer(mozilla::Buffer<uint8_t>&& aBuffer, const StringTaint& aTaint)
+      MOZ_REQUIRES(mTokenizerMutex);
 
-  void DoDataAvailable(mozilla::Span<const uint8_t> aBuffer, const StringTaint& aTaint);
+  void DoDataAvailable(mozilla::Span<const uint8_t> aBuffer, const StringTaint& aTaint)
+      MOZ_REQUIRES(mTokenizerMutex);
 
   static nsresult CopySegmentsToParserNoTaint(nsIInputStream* aInStream,
                                        void* aClosure, const char* aFromSegment,
                                        uint32_t aToOffset, uint32_t aCount,
-                                       uint32_t* aWriteCount);
+                                       uint32_t* aWriteCount)
+      MOZ_REQUIRES(mTokenizerMutex);
 
-    static nsresult CopySegmentsToParser(nsITaintawareInputStream *aInStream,
+  static nsresult CopySegmentsToParser(nsITaintawareInputStream *aInStream,
                                          void *aClosure,
                                          const char *aFromSegment,
                                          uint32_t aToOffset,
                                          uint32_t aCount,
                                          const StringTaint& aTaint,
-                                         uint32_t *aWriteCount);
+                                         uint32_t *aWriteCount)
+      MOZ_REQUIRES(mTokenizerMutex);
 
   bool IsTerminatedOrInterrupted() { return mTerminated || mInterrupted; }
 
@@ -381,12 +396,13 @@ class nsHtml5StreamParser final : public nsISupports {
    * Push bytes from network when there is no Unicode decoder yet
    */
   nsresult SniffStreamBytes(mozilla::Span<const uint8_t> aFromSegment,
-                            bool aEof, const StringTaint& aTaint);
+                            bool aEof, const StringTaint& aTaint) MOZ_REQUIRES(mTokenizerMutex);
 
   /**
    * Push bytes from network when there is a Unicode decoder already
    */
-  nsresult WriteStreamBytes(mozilla::Span<const uint8_t> aFromSegment, const StringTaint& aTaint);
+  nsresult WriteStreamBytes(mozilla::Span<const uint8_t> aFromSegment, const StringTaint& aTaint)
+      MOZ_REQUIRES(mTokenizerMutex);
 
   /**
    * Set up the Unicode decoder and write the sniffing buffer into it
@@ -401,8 +417,7 @@ class nsHtml5StreamParser final : public nsISupports {
    */
   nsresult SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
       mozilla::Span<const uint8_t> aPrefix,
-      mozilla::Span<const uint8_t> aFromSegment,
-      const StringTaint& aTaint);
+      mozilla::Span<const uint8_t> aFromSegment, const StringTaint& aTaint) MOZ_REQUIRES(mTokenizerMutex);
 
   /**
    * Initialize the Unicode decoder, mark the BOM as the source and
@@ -421,13 +436,13 @@ class nsHtml5StreamParser final : public nsISupports {
    * to UTF-8 as the non-speculative encoding and start processing
    * the decoded data.
    */
-  void CommitLocalFileToEncoding();
+  [[nodiscard]] nsresult CommitLocalFileToEncoding();
 
   /**
    * When speculatively decoding from file: URL as UTF-8, redecode
    * using fallback and then continue normally with the fallback.
    */
-  void ReDecodeLocalFile();
+  [[nodiscard]] nsresult ReDecodeLocalFile() MOZ_REQUIRES(mTokenizerMutex);
 
   /**
    * Potentially guess the encoding using mozilla::EncodingDetector.
@@ -603,11 +618,6 @@ class nsHtml5StreamParser final : public nsISupports {
   nsHtml5TreeOpExecutor* mExecutor;
 
   /**
-   * Network event target for mExecutor->mDocument
-   */
-  nsCOMPtr<nsISerialEventTarget> mNetworkEventTarget;
-
-  /**
    * The HTML5 tree builder
    */
   mozilla::UniquePtr<nsHtml5TreeBuilder> mTreeBuilder;
@@ -720,8 +730,6 @@ class nsHtml5StreamParser final : public nsISupports {
 
   bool mDetectorHasSeenNonAscii;
 
-  bool mDetectorHadOnlySeenAsciiWhenFirstGuessing;
-
   /**
    * If true, we are decoding a local file that lacks an encoding
    * declaration and we are not tokenizing yet.
@@ -772,6 +780,20 @@ class nsHtml5StreamParser final : public nsISupports {
    * If content is being sent to the devtools, an encoded UUID for the parser.
    */
   nsString mUUIDForDevtools;
+
+  /**
+   * prevent multiple calls to OnStopRequest
+   * This field can be called from multiple threads and is protected by
+   * nsHtml5StreamListener::mDelegateMonitor passed in the OnStopRequest
+   */
+  bool mOnStopCalled{false};
+
+  /*
+   * Used for telemetry about OnStopRequest vs OnDataFinished
+   */
+  // guarded by nsHtml5StreamListener::mDelegateMonitor
+  mozilla::TimeStamp mOnStopRequestTime;
+  mozilla::TimeStamp mOnDataFinishedTime;
 };
 
 #endif  // nsHtml5StreamParser_h

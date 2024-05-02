@@ -2,17 +2,13 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+});
 
-const {
-  createAppInfo,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { createAppInfo, promiseShutdownManager, promiseStartupManager } =
+  AddonTestUtils;
 
 AddonTestUtils.init(this);
 
@@ -51,19 +47,19 @@ add_task(async function test_settings_store() {
     ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
       manifest: {
-        applications: { gecko: { id: "@first" } },
+        browser_specific_settings: { gecko: { id: "@first" } },
       },
     }),
     ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
       manifest: {
-        applications: { gecko: { id: "@second" } },
+        browser_specific_settings: { gecko: { id: "@second" } },
       },
     }),
     ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
       manifest: {
-        applications: { gecko: { id: "@third" } },
+        browser_specific_settings: { gecko: { id: "@third" } },
       },
     }),
   ];
@@ -723,13 +719,13 @@ add_task(async function test_settings_store_setByUser() {
     ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
       manifest: {
-        applications: { gecko: { id: "@first" } },
+        browser_specific_settings: { gecko: { id: "@first" } },
       },
     }),
     ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
       manifest: {
-        applications: { gecko: { id: "@second" } },
+        browser_specific_settings: { gecko: { id: "@second" } },
       },
     }),
   ];
@@ -797,7 +793,7 @@ add_task(async function test_settings_store_setByUser() {
   let three = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id: "@third" } },
+      browser_specific_settings: { gecko: { id: "@third" } },
     },
   });
   await three.startup();
@@ -920,7 +916,7 @@ add_task(async function test_settings_store_add_disabled() {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
 
@@ -967,7 +963,7 @@ add_task(async function test_settings_uninstall_remove() {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
 
@@ -1017,13 +1013,13 @@ add_task(async function test_get_all_settings() {
     ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
       manifest: {
-        applications: { gecko: { id: "@first" } },
+        browser_specific_settings: { gecko: { id: "@first" } },
       },
     }),
     ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
       manifest: {
-        applications: { gecko: { id: "@second" } },
+        browser_specific_settings: { gecko: { id: "@second" } },
       },
     }),
   ];

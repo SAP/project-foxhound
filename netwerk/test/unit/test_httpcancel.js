@@ -9,7 +9,10 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+const reason = "testing";
 
 function inChildProcess() {
   return Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
@@ -26,7 +29,7 @@ var observer = {
 
   observe(subject, topic, data) {
     subject = subject.QueryInterface(Ci.nsIRequest);
-    subject.cancel(Cr.NS_BINDING_ABORTED);
+    subject.cancelWithReason(Cr.NS_BINDING_ABORTED, reason);
 
     // ENSURE_CALLED_BEFORE_CONNECT: setting values should still work
     try {
@@ -48,6 +51,10 @@ var observer = {
 let cancelDuringOnStartListener = {
   onStartRequest: function test_onStartR(request) {
     Assert.equal(request.status, Cr.NS_BINDING_ABORTED);
+    // We didn't sync the reason to child process.
+    if (!inChildProcess()) {
+      Assert.equal(request.canceledReason, reason);
+    }
 
     // ENSURE_CALLED_BEFORE_CONNECT: setting referrer should now fail
     try {
@@ -57,10 +64,7 @@ let cancelDuringOnStartListener = {
       var uri = ios.newURI("http://site3.com/");
 
       // Need to set NECKO_ERRORS_ARE_FATAL=0 else we'll abort process
-      var env = Cc["@mozilla.org/process/environment;1"].getService(
-        Ci.nsIEnvironment
-      );
-      env.set("NECKO_ERRORS_ARE_FATAL", "0");
+      Services.env.set("NECKO_ERRORS_ARE_FATAL", "0");
       // we expect setting referrer to fail
       try {
         request.referrerInfo = new ReferrerInfo(
@@ -244,8 +248,8 @@ function cancel_middle(metadata, response) {
     cancelDuringOnDataListener.receivedSomeData = resolve;
   });
   p.then(() => {
-    let str1 = "b".repeat(128 * 1024);
-    response.write(str1, str1.length);
+    let str2 = "b".repeat(128 * 1024);
+    response.write(str2, str2.length);
     response.finish();
   });
 }

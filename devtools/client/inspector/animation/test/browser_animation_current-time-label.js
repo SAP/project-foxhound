@@ -7,7 +7,7 @@
 // * element existence
 // * label content at plural timing
 
-add_task(async function() {
+add_task(async function () {
   await addTab(URL_ROOT + "doc_multi_timings.html");
   await removeAnimatedElementsExcept([".keyframes-easing-step"]);
   const { animationInspector, panel } = await openAnimationInspector();
@@ -32,9 +32,14 @@ add_task(async function() {
   // Resume
   clickOnPauseResumeButton(animationInspector, panel);
   const previousContent = labelEl.textContent;
-  await wait(1000);
-  const currentContent = labelEl.textContent;
-  isnot(previousContent, currentContent, "Current time label should change");
+
+  info("Wait until the time label changes");
+  await waitFor(() => labelEl.textContent != previousContent);
+  isnot(
+    previousContent,
+    labelEl.textContent,
+    "Current time label should change"
+  );
 });
 
 function assertLabelContent(labelEl, time) {

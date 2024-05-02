@@ -35,20 +35,24 @@ try {
   ok(true, "WORKER getting caches didn't throw");
 
   promise.then(
-    function() {
+    function () {
       ok(location.protocol == "https:", "WORKER The promise was not rejected");
       workerTest();
     },
-    function() {
+    function () {
       ok(
-        location.protocol != "https:",
+        location.protocol !== "https:",
         "WORKER The promise should not have been rejected"
       );
       workerTest();
     }
   );
 } catch (e) {
-  ok(false, "WORKER getting caches should not have thrown");
+  ok(
+    location.protocol !== "https:",
+    "WORKER getting caches should not have thrown"
+  );
+  workerTest();
 }
 
 // Try to spawn an inner worker, and make sure that it can also access storage
@@ -60,7 +64,7 @@ function workerTest() {
   }
   // Create the inner worker, and listen for test messages from it
   var worker = new Worker("workerStorageAllowed.js#inner");
-  worker.addEventListener("message", function(e) {
+  worker.addEventListener("message", function (e) {
     if (e.data == "done") {
       finishTest();
       return;

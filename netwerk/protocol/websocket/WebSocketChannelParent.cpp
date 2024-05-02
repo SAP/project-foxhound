@@ -7,6 +7,7 @@
 #include "WebSocketLog.h"
 #include "WebSocketChannelParent.h"
 #include "nsIAuthPromptProvider.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -55,7 +56,7 @@ mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
     const nsCString& aProtocol, const bool& aSecure,
     const uint32_t& aPingInterval, const bool& aClientSetPingInterval,
     const uint32_t& aPingTimeout, const bool& aClientSetPingTimeout,
-    const Maybe<LoadInfoArgs>& aLoadInfoArgs,
+    const LoadInfoArgs& aLoadInfoArgs,
     const Maybe<PTransportProviderParent*>& aTransportProvider,
     const nsCString& aNegotiatedExtensions) {
   LOG(("WebSocketChannelParent::RecvAsyncOpen() %p\n", this));
@@ -64,7 +65,10 @@ mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
   nsCOMPtr<nsILoadInfo> loadInfo;
   nsCOMPtr<nsIURI> uri;
 
-  rv = LoadInfoArgsToLoadInfo(aLoadInfoArgs, getter_AddRefs(loadInfo));
+  rv = LoadInfoArgsToLoadInfo(
+      aLoadInfoArgs,
+      mozilla::dom::ContentParent::Cast(Manager()->Manager())->GetRemoteType(),
+      getter_AddRefs(loadInfo));
   if (NS_FAILED(rv)) {
     goto fail;
   }
@@ -306,7 +310,7 @@ NS_IMETHODIMP
 WebSocketChannelParent::OnServerClose(nsISupports* aContext, uint16_t code,
                                       const nsACString& reason) {
   LOG(("WebSocketChannelParent::OnServerClose() %p\n", this));
-  if (!CanRecv() || !SendOnServerClose(code, nsCString(reason))) {
+  if (!CanRecv() || !SendOnServerClose(code, reason)) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;

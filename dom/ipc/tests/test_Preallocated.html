@@ -12,14 +12,13 @@ Test that the preallocated process starts up.
 
 <script type="application/javascript">
 "use strict";
-/* eslint-env mozilla/frame-script */
 
 SimpleTest.waitForExplicitFinish();
 
 function expectProcessCreated() {
+  /* eslint-env mozilla/chrome-script */
   return new Promise(resolve => {
     function parentExpectProcessCreated() {
-      const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
       let topic = "ipc:content-initializing";
       let obs = { observe() {
         Services.obs.removeObserver(obs, topic);

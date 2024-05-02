@@ -19,8 +19,7 @@
 using namespace mozilla::css;
 using namespace mozilla::dom;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //----------------------------------------------------------------------
 // Implementation
@@ -37,16 +36,17 @@ nsresult SVGDocument::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const {
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 ////////////////////////////////////////////////////////////////////////
 // Exported creation functions
 
-nsresult NS_NewSVGDocument(Document** aInstancePtrResult) {
+nsresult NS_NewSVGDocument(Document** aInstancePtrResult,
+                           nsIPrincipal* aPrincipal,
+                           nsIPrincipal* aPartitionedPrincipal) {
   RefPtr<SVGDocument> doc = new SVGDocument();
 
-  nsresult rv = doc->Init();
+  nsresult rv = doc->Init(aPrincipal, aPartitionedPrincipal);
   if (NS_FAILED(rv)) {
     return rv;
   }

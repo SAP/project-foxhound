@@ -12,8 +12,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DOMSVGAnimatedBoolean final : public nsWrapperCache {
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DOMSVGAnimatedBoolean)
@@ -24,8 +23,8 @@ class DOMSVGAnimatedBoolean final : public nsWrapperCache {
 
   // WebIDL
   SVGElement* GetParentObject() const { return mSVGElement; }
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
   bool BaseVal() const { return mVal->GetBaseValue(); }
   void SetBaseVal(bool aValue) { mVal->SetBaseValue(aValue, mSVGElement); }
   bool AnimVal() const {
@@ -40,7 +39,6 @@ class DOMSVGAnimatedBoolean final : public nsWrapperCache {
   RefPtr<SVGElement> mSVGElement;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_DOMSVGANIMATEDBOOLEAN_H_

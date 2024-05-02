@@ -9,22 +9,22 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryTestUtils",
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+});
 
 const gTestRoot = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
   "http://mochi.test:8888"
 );
 
-const { TimedPromise } = ChromeUtils.import(
-  "chrome://remote/content/marionette/sync.js"
+const { TimedPromise } = ChromeUtils.importESModule(
+  "chrome://remote/content/marionette/sync.sys.mjs"
 );
 
 async function run_test(count) {
+  Services.fog.testResetFOG();
+
   const histogram = TelemetryTestUtils.getAndClearHistogram(
     "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_ALL_TABS"
   );
@@ -36,7 +36,7 @@ async function run_test(count) {
   });
 
   await new Promise(resolve =>
-    setTimeout(function() {
+    setTimeout(function () {
       window.requestIdleCallback(resolve);
     }, 1000)
   );
@@ -48,6 +48,11 @@ async function run_test(count) {
     TelemetryTestUtils.assertHistogram(histogram, 2, 1);
     await BrowserTestUtils.removeTab(newTab);
   }
+
+  await Services.fog.testFlushAllChildren();
+  const data =
+    Glean.fogValidation.gvsvNumberOfUniqueSiteOriginsAllTabs.testGetValue();
+  Assert.equal(data.sum, 2);
 }
 
 add_task(async function test_telemetryMoreSiteOrigin() {

@@ -9,15 +9,8 @@
 // Test that the markup view is correctly updated to show those items if the custom
 // element definition happens after opening the inspector.
 
-/* import-globals-from ../../../debugger/test/mochitest/helpers.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers.js",
-  this
-);
-
-/* import-globals-from ../../../debugger/test/mochitest/helpers/context.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers/context.js",
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
   this
 );
 
@@ -50,7 +43,7 @@ const TEST_URL =
   }
 </script>`);
 
-add_task(async function() {
+add_task(async function () {
   const { inspector, toolbox } = await openInspectorForURL(TEST_URL);
 
   // Test with an element to which we attach a shadow.
@@ -82,11 +75,13 @@ async function runTest(inspector, toolbox, selector, contentMethod) {
     "Call the content method that should attach a custom element definition"
   );
   const mutated = waitForMutation(inspector, "customElementDefined");
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [{ contentMethod }], function(
-    args
-  ) {
-    content.wrappedJSObject[args.contentMethod]();
-  });
+  SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [{ contentMethod }],
+    function (args) {
+      content.wrappedJSObject[args.contentMethod]();
+    }
+  );
   await mutated;
 
   // Test element should now have a custom element definition.
@@ -96,6 +91,10 @@ async function runTest(inspector, toolbox, selector, contentMethod) {
     ".inspector-badge.interactive[data-custom]"
   );
   ok(customBadge, "[custom] badge is visible");
+  ok(
+    !customBadge.hasAttribute("aria-pressed"),
+    "[custom] badge is not a toggle button"
+  );
 
   info("Click on the `custom` badge and verify that the debugger opens.");
   let onDebuggerReady = toolbox.getPanelWhenReady("jsdebugger");
@@ -104,6 +103,20 @@ async function runTest(inspector, toolbox, selector, contentMethod) {
 
   const debuggerContext = createDebuggerContext(toolbox);
   await waitUntilDebuggerReady(debuggerContext);
+  ok(true, "The debugger was opened when clicking on the custom badge");
+
+  info("Switch to the inspector");
+  await toolbox.selectTool("inspector");
+
+  // Check that the debugger can be opened with the keyboard.
+  info("Press the Enter key and verify that the debugger opens.");
+  customBadge.focus();
+  onDebuggerReady = toolbox.getPanelWhenReady("jsdebugger");
+  EventUtils.synthesizeKey("VK_RETURN", {}, customBadge.ownerGlobal);
+
+  await onDebuggerReady;
+  await waitUntilDebuggerReady(debuggerContext);
+  ok(true, "The debugger was opened via the keyboard");
 
   info("Switch to the inspector");
   await toolbox.selectTool("inspector");
@@ -119,6 +132,7 @@ async function runTest(inspector, toolbox, selector, contentMethod) {
   await onDebuggerReady;
 
   await waitUntilDebuggerReady(debuggerContext);
+  ok(true, "The debugger was opened via the context menu");
 
   info("Switch to the inspector");
   await toolbox.selectTool("inspector");
@@ -134,5 +148,5 @@ async function waitUntilDebuggerReady(debuggerContext) {
 
   // We have to wait until the debugger has fully loaded the source otherwise
   // we will get unhandled promise rejections.
-  await waitForLoadedSource(debuggerContext, "data:");
+  await waitForLoadedSource(debuggerContext, TEST_URL);
 }

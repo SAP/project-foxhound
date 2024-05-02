@@ -1,22 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-disable block-spacing */
-
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
 });
-
-var testFormatter = {
-  format: function format(message) {
-    return (
-      message.loggerName + "\t" + message.levelDesc + "\t" + message.message
-    );
-  },
-};
 
 class MockAppender extends Log.Appender {
   constructor(formatter) {
@@ -64,31 +56,6 @@ add_task(function test_Logger_parent() {
   Assert.equal(gpAppender.messages.length, 1);
   Assert.ok(gpAppender.messages[0].indexOf("child info test") > 0);
 });
-
-/*
- * A utility method for checking object equivalence.
- * Fields with a reqular expression value in expected will be tested
- * against the corresponding value in actual. Otherwise objects
- * are expected to have the same keys and equal values.
- */
-function checkObjects(expected, actual) {
-  Assert.ok(expected instanceof Object);
-  Assert.ok(actual instanceof Object);
-  for (let key in expected) {
-    Assert.notEqual(actual[key], undefined);
-    if (expected[key] instanceof RegExp) {
-      Assert.ok(expected[key].test(actual[key].toString()));
-    } else if (expected[key] instanceof Object) {
-      checkObjects(expected[key], actual[key]);
-    } else {
-      Assert.equal(expected[key], actual[key]);
-    }
-  }
-
-  for (let key in actual) {
-    Assert.notEqual(expected[key], undefined);
-  }
-}
 
 /*
  * Test parameter formatting.
@@ -141,8 +108,8 @@ add_task(async function log_message_with_params() {
   );
 
   // If an object has a .toJSON method, the formatter uses it.
-  let ob = function() {};
-  ob.toJSON = function() {
+  let ob = function () {};
+  ob.toJSON = function () {
     return { sneaky: "value" };
   };
   Assert.equal(
@@ -151,26 +118,26 @@ add_task(async function log_message_with_params() {
   );
 
   // Fall back to .toSource() if JSON.stringify() fails on an object.
-  ob = function() {};
-  ob.toJSON = function() {
+  ob = function () {};
+  ob.toJSON = function () {
     throw new Error("oh noes JSON");
   };
   Assert.equal(
     formatMessage("Fail is ${sub}", { sub: ob }),
-    "Fail is (function() {})"
+    "Fail is (function () {})"
   );
 
   // Fall back to .toString if both .toJSON and .toSource fail.
-  ob.toSource = function() {
+  ob.toSource = function () {
     throw new Error("oh noes SOURCE");
   };
   Assert.equal(
     formatMessage("Fail is ${sub}", { sub: ob }),
-    "Fail is function() {}"
+    "Fail is function () {}"
   );
 
   // Fall back to '[object]' if .toJSON, .toSource and .toString fail.
-  ob.toString = function() {
+  ob.toString = function () {
     throw new Error("oh noes STRING");
   };
   Assert.equal(
@@ -268,13 +235,13 @@ add_task(async function log_message_with_params() {
   /* eslint-disable object-shorthand */
   let vOf = {
     a: 1,
-    valueOf: function() {
+    valueOf: function () {
       throw new Error("oh noes valueOf");
     },
   };
   Assert.equal(
     formatMessage("Broken valueOf ${}", vOf),
-    'Broken valueOf ({a:1, valueOf:(function() {\n      throw new Error("oh noes valueOf");\n    })})'
+    'Broken valueOf ({a:1, valueOf:(function () {\n      throw new Error("oh noes valueOf");\n    })})'
   );
   /* eslint-enable object-shorthand */
 
@@ -417,7 +384,7 @@ add_task(async function format_errors() {
     Assert.ok(str.includes("SyntaxError: unexpected token"));
     // Make sure we identified it as an Error and formatted the error location as
     // lineNumber:columnNumber.
-    Assert.ok(str.includes(":1:11)"));
+    Assert.ok(str.includes(":1:12)"));
     // Make sure that we use human-readable stack traces
     // Check that the error doesn't contain any reference to "Task.jsm"
     Assert.ok(!str.includes("Task.jsm"));

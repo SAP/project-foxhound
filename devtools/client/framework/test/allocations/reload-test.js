@@ -22,9 +22,8 @@ function createPanelReloadTest(recordName, toolId) {
       "http://example.com/browser/devtools/client/framework/test/allocations/reloaded-page.html";
 
     async function testScript(toolbox) {
-      const onTargetSwitched = toolbox.commands.targetCommand.once(
-        "switched-target"
-      );
+      const onTargetSwitched =
+        toolbox.commands.targetCommand.once("switched-target");
       const onReloaded = toolbox.getCurrentPanel().once("reloaded");
 
       gBrowser.reloadTab(gBrowser.selectedTab);
@@ -46,10 +45,12 @@ function createPanelReloadTest(recordName, toolId) {
 
     const tab = await addTab(TEST_URL);
 
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
-    const { gDevTools } = require("devtools/client/framework/devtools");
+    const {
+      gDevTools,
+    } = require("resource://devtools/client/framework/devtools.js");
     const toolbox = await gDevTools.showToolboxForTab(tab, {
       toolId,
     });

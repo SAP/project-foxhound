@@ -1,6 +1,7 @@
 //! Extra streaming decompression functionality.
 //!
-//! As of now this is mainly inteded for use to build a higher-level wrapper.
+//! As of now this is mainly intended for use to build a higher-level wrapper.
+#[cfg(feature = "with-alloc")]
 use crate::alloc::boxed::Box;
 use core::{cmp, mem};
 
@@ -104,9 +105,10 @@ impl InflateState {
     /// `data_format`: Determines whether the compressed data is assumed to wrapped with zlib
     /// metadata.
     pub fn new(data_format: DataFormat) -> InflateState {
-        let mut b = InflateState::default();
-        b.data_format = data_format;
-        b
+        InflateState {
+            data_format,
+            ..Default::default()
+        }
     }
 
     /// Create a new state on the heap.
@@ -114,6 +116,7 @@ impl InflateState {
     /// # Parameters
     /// `data_format`: Determines whether the compressed data is assumed to wrapped with zlib
     /// metadata.
+    #[cfg(feature = "with-alloc")]
     pub fn new_boxed(data_format: DataFormat) -> Box<InflateState> {
         let mut b: Box<InflateState> = Box::default();
         b.data_format = data_format;
@@ -135,6 +138,7 @@ impl InflateState {
     /// The decompressor does not support different window sizes. As such,
     /// any positive (>0) value will set the zlib header flag, while a negative one
     /// will not.
+    #[cfg(feature = "with-alloc")]
     pub fn new_boxed_with_window_bits(window_bits: i32) -> Box<InflateState> {
         let mut b: Box<InflateState> = Box::default();
         b.data_format = DataFormat::from_window_bits(window_bits);
@@ -155,15 +159,29 @@ impl InflateState {
     }
 }
 
-/// Try to decompress from `input` to `output` with the given `InflateState`
+/// Try to decompress from `input` to `output` with the given [`InflateState`]
+///
+/// # `flush`
+///
+/// Generally, the various [`MZFlush`] flags have meaning only on the compression side.  They can be
+/// supplied here, but the only one that has any semantic meaning is [`MZFlush::Finish`], which is a
+/// signal that the stream is expected to finish, and failing to do so is an error.  It isn't
+/// necessary to specify it when the stream ends; you'll still get returned a
+/// [`MZStatus::StreamEnd`] anyway.  Other values either have no effect or cause errors.  It's
+/// likely that you'll almost always just want to use [`MZFlush::None`].
 ///
 /// # Errors
 ///
-/// Returns `MZError::Buf` If the size of the `output` slice is empty or no progress was made due to
-/// lack of expected input data or called after the decompression was
-/// finished without MZFlush::Finish.
+/// Returns [`MZError::Buf`] if the size of the `output` slice is empty or no progress was made due
+/// to lack of expected input data, or if called with [`MZFlush::Finish`] and input wasn't all
+/// consumed.
 ///
-/// Returns `MZError::Param` if the compressor parameters are set wrong.
+/// Returns [`MZError::Data`] if this or a a previous call failed with an error return from
+/// [`TINFLStatus`]; probably indicates corrupted data.
+///
+/// Returns [`MZError::Stream`] when called with [`MZFlush::Full`] (meaningless on
+/// decompression), or when called without [`MZFlush::Finish`] after an earlier call with
+/// [`MZFlush::Finish`] has been made.
 pub fn inflate(
     state: &mut InflateState,
     input: &[u8],
@@ -179,8 +197,15 @@ pub fn inflate(
         return StreamResult::error(MZError::Stream);
     }
 
-    let mut decomp_flags = inflate_flags::TINFL_FLAG_COMPUTE_ADLER32;
-    if state.data_format == DataFormat::Zlib {
+    let mut decomp_flags = if state.data_format == DataFormat::Zlib {
+        inflate_flags::TINFL_FLAG_COMPUTE_ADLER32
+    } else {
+        inflate_flags::TINFL_FLAG_IGNORE_ADLER32
+    };
+
+    if (state.data_format == DataFormat::Zlib)
+        | (state.data_format == DataFormat::ZLibIgnoreChecksum)
+    {
         decomp_flags |= inflate_flags::TINFL_FLAG_PARSE_ZLIB_HEADER;
     }
 
@@ -334,7 +359,7 @@ fn inflate_loop(
 fn push_dict_out(state: &mut InflateState, next_out: &mut &mut [u8]) -> usize {
     let n = cmp::min(state.dict_avail as usize, next_out.len());
     (next_out[..n]).copy_from_slice(&state.dict[state.dict_ofs..state.dict_ofs + n]);
-    *next_out = &mut mem::replace(next_out, &mut [])[n..];
+    *next_out = &mut mem::take(next_out)[n..];
     state.dict_avail -= n;
     state.dict_ofs = (state.dict_ofs + (n)) & (TINFL_LZ_DICT_SIZE - 1);
     n
@@ -344,7 +369,7 @@ fn push_dict_out(state: &mut InflateState, next_out: &mut &mut [u8]) -> usize {
 mod test {
     use super::{inflate, InflateState};
     use crate::{DataFormat, MZFlush, MZStatus};
-    use std::vec;
+    use alloc::vec;
 
     #[test]
     fn test_state() {
@@ -375,5 +400,19 @@ mod test {
         assert_eq!(status, MZStatus::StreamEnd);
         assert_eq!(out[..res.bytes_written as usize], b"Hello, zlib!"[..]);
         assert_eq!(res.bytes_consumed, encoded.len());
+        assert_eq!(state.decompressor().adler32(), Some(459605011));
+
+        // Test state when not computing adler.
+        state = InflateState::new_boxed(DataFormat::ZLibIgnoreChecksum);
+        out.iter_mut().map(|x| *x = 0).count();
+        let res = inflate(&mut state, &encoded, &mut out, MZFlush::Finish);
+        let status = res.status.expect("Failed to decompress!");
+        assert_eq!(status, MZStatus::StreamEnd);
+        assert_eq!(out[..res.bytes_written as usize], b"Hello, zlib!"[..]);
+        assert_eq!(res.bytes_consumed, encoded.len());
+        // Not computed, so should be Some(1)
+        assert_eq!(state.decompressor().adler32(), Some(1));
+        // Should still have the checksum read from the header file.
+        assert_eq!(state.decompressor().adler32_header(), Some(459605011))
     }
 }

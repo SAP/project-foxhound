@@ -3,32 +3,10 @@
 
 "use strict";
 
-const { fxAccounts, FxAccounts } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+const { getFxAccountsSingleton } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
-
-const { PREF_ACCOUNT_ROOT } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsCommon.js"
-);
-
-const { FxAccountsProfile } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsProfile.jsm"
-);
-
-const { FxAccountsProfileClient } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsProfileClient.jsm"
-);
-
-const { FxAccountsTelemetry } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsTelemetry.jsm"
-);
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FxAccountsConfig: "resource://gre/modules/FxAccountsConfig.jsm",
-  jwcrypto: "resource://services-crypto/jwcrypto.jsm",
-  CryptoUtils: "resource://services-crypto/utils.js",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
-});
+const fxAccounts = getFxAccountsSingleton();
 
 _("Misc tests for FxAccounts.telemetry");
 

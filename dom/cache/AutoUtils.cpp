@@ -23,7 +23,6 @@
 using mozilla::Maybe;
 using mozilla::Unused;
 using mozilla::dom::cache::CacheReadStream;
-using mozilla::ipc::AutoIPCStream;
 using mozilla::ipc::PBackgroundParent;
 
 namespace {
@@ -32,7 +31,6 @@ enum CleanupAction { Forget, Delete };
 
 void CleanupChild(CacheReadStream& aReadStream, CleanupAction aAction) {
   // fds cleaned up by mStreamCleanupList
-  // PChildToParentStream actors cleaned up by mStreamCleanupList
 }
 
 void CleanupChild(Maybe<CacheReadStream>& aMaybeReadStream,
@@ -56,12 +54,6 @@ AutoChildOpArgs::AutoChildOpArgs(TypeUtils* aTypeUtils,
     : mTypeUtils(aTypeUtils), mOpArgs(aOpArgs), mSent(false) {
   MOZ_DIAGNOSTIC_ASSERT(mTypeUtils);
   MOZ_RELEASE_ASSERT(aEntryCount != 0);
-  // We are using AutoIPCStream objects to cleanup target IPCStream
-  // structures embedded in our CacheOpArgs.  These IPCStream structs
-  // must not move once we attach our AutoIPCStream to them.  Therefore,
-  // its important that any arrays containing streams are pre-sized for
-  // the number of entries we have in order to avoid realloc moving
-  // things around on us.
   if (mOpArgs.type() == CacheOpArgs::TCachePutAllArgs) {
     CachePutAllArgs& args = mOpArgs.get_CachePutAllArgs();
     args.requestResponseList().SetCapacity(aEntryCount);
@@ -118,8 +110,6 @@ AutoChildOpArgs::~AutoChildOpArgs() {
       // Other types do not need cleanup
       break;
   }
-
-  mStreamCleanupList.Clear();
 }
 
 void AutoChildOpArgs::Add(const InternalRequest& aRequest,
@@ -131,7 +121,7 @@ void AutoChildOpArgs::Add(const InternalRequest& aRequest,
     case CacheOpArgs::TCacheMatchArgs: {
       CacheMatchArgs& args = mOpArgs.get_CacheMatchArgs();
       mTypeUtils->ToCacheRequest(args.request(), aRequest, aBodyAction,
-                                 aSchemeAction, mStreamCleanupList, aRv);
+                                 aSchemeAction, aRv);
       break;
     }
     case CacheOpArgs::TCacheMatchAllArgs: {
@@ -139,14 +129,13 @@ void AutoChildOpArgs::Add(const InternalRequest& aRequest,
       MOZ_DIAGNOSTIC_ASSERT(args.maybeRequest().isNothing());
       args.maybeRequest().emplace(CacheRequest());
       mTypeUtils->ToCacheRequest(args.maybeRequest().ref(), aRequest,
-                                 aBodyAction, aSchemeAction, mStreamCleanupList,
-                                 aRv);
+                                 aBodyAction, aSchemeAction, aRv);
       break;
     }
     case CacheOpArgs::TCacheDeleteArgs: {
       CacheDeleteArgs& args = mOpArgs.get_CacheDeleteArgs();
       mTypeUtils->ToCacheRequest(args.request(), aRequest, aBodyAction,
-                                 aSchemeAction, mStreamCleanupList, aRv);
+                                 aSchemeAction, aRv);
       break;
     }
     case CacheOpArgs::TCacheKeysArgs: {
@@ -154,14 +143,13 @@ void AutoChildOpArgs::Add(const InternalRequest& aRequest,
       MOZ_DIAGNOSTIC_ASSERT(args.maybeRequest().isNothing());
       args.maybeRequest().emplace(CacheRequest());
       mTypeUtils->ToCacheRequest(args.maybeRequest().ref(), aRequest,
-                                 aBodyAction, aSchemeAction, mStreamCleanupList,
-                                 aRv);
+                                 aBodyAction, aSchemeAction, aRv);
       break;
     }
     case CacheOpArgs::TStorageMatchArgs: {
       StorageMatchArgs& args = mOpArgs.get_StorageMatchArgs();
       mTypeUtils->ToCacheRequest(args.request(), aRequest, aBodyAction,
-                                 aSchemeAction, mStreamCleanupList, aRv);
+                                 aSchemeAction, aRv);
       break;
     }
     default:
@@ -274,10 +262,6 @@ void AutoChildOpArgs::Add(JSContext* aCx, const InternalRequest& aRequest,
         return;
       }
 
-      // Ensure that we don't realloc the array since this can result
-      // in our AutoIPCStream objects to reference the wrong memory
-      // location.  This should never happen and is a UAF if it does.
-      // Therefore make this a release assertion.
       MOZ_RELEASE_ASSERT(args.requestResponseList().Length() <
                          args.requestResponseList().Capacity());
 
@@ -293,10 +277,9 @@ void AutoChildOpArgs::Add(JSContext* aCx, const InternalRequest& aRequest,
       pair.response().body() = Nothing();
 
       mTypeUtils->ToCacheRequest(pair.request(), aRequest, aBodyAction,
-                                 aSchemeAction, mStreamCleanupList, aRv);
+                                 aSchemeAction, aRv);
       if (!aRv.Failed()) {
-        mTypeUtils->ToCacheResponse(aCx, pair.response(), aResponse,
-                                    mStreamCleanupList, aRv);
+        mTypeUtils->ToCacheResponse(aCx, pair.response(), aResponse, aRv);
       }
 
       if (aRv.Failed()) {
@@ -314,9 +297,6 @@ void AutoChildOpArgs::Add(JSContext* aCx, const InternalRequest& aRequest,
 const CacheOpArgs& AutoChildOpArgs::SendAsOpArgs() {
   MOZ_DIAGNOSTIC_ASSERT(!mSent);
   mSent = true;
-  for (UniquePtr<AutoIPCStream>& autoStream : mStreamCleanupList) {
-    autoStream->TakeOptionalValue();
-  }
   return mOpArgs;
 }
 
@@ -331,12 +311,6 @@ AutoParentOpResult::AutoParentOpResult(
       mSent(false) {
   MOZ_DIAGNOSTIC_ASSERT(mManager);
   MOZ_RELEASE_ASSERT(aEntryCount != 0);
-  // We are using AutoIPCStream objects to cleanup target IPCStream
-  // structures embedded in our CacheOpArgs.  These IPCStream structs
-  // must not move once we attach our AutoIPCStream to them.  Therefore,
-  // its important that any arrays containing streams are pre-sized for
-  // the number of entries we have in order to avoid realloc moving
-  // things around on us.
   if (mOpResult.type() == CacheOpResult::TCacheMatchAllResult) {
     CacheMatchAllResult& result = mOpResult.get_CacheMatchAllResult();
     result.responseList().SetCapacity(aEntryCount);
@@ -354,11 +328,12 @@ AutoParentOpResult::~AutoParentOpResult() {
   switch (mOpResult.type()) {
     case CacheOpResult::TStorageOpenResult: {
       StorageOpenResult& result = mOpResult.get_StorageOpenResult();
-      if (action == Forget || result.actorParent() == nullptr) {
+      if (action == Forget || !result.actor()) {
         break;
       }
 
-      QM_WARNONLY_TRY(OkIf(PCacheParent::Send__delete__(result.actorParent())));
+      QM_WARNONLY_TRY(
+          OkIf(PCacheParent::Send__delete__(result.actor().AsParent())));
       break;
     }
     default:
@@ -367,21 +342,18 @@ AutoParentOpResult::~AutoParentOpResult() {
   }
 
   if (action == Delete && mStreamControl) {
+    mStreamControl->AssertWillDelete();
     QM_WARNONLY_TRY(
         OkIf(PCacheStreamControlParent::Send__delete__(mStreamControl)));
   }
-
-  mStreamCleanupList.Clear();
 }
 
 void AutoParentOpResult::Add(CacheId aOpenedCacheId,
                              SafeRefPtr<Manager> aManager) {
   MOZ_DIAGNOSTIC_ASSERT(mOpResult.type() == CacheOpResult::TStorageOpenResult);
-  MOZ_DIAGNOSTIC_ASSERT(mOpResult.get_StorageOpenResult().actorParent() ==
-                        nullptr);
-  mOpResult.get_StorageOpenResult().actorParent() =
-      mManager->SendPCacheConstructor(
-          new CacheParent(std::move(aManager), aOpenedCacheId));
+  MOZ_DIAGNOSTIC_ASSERT(!mOpResult.get_StorageOpenResult().actor());
+  mOpResult.get_StorageOpenResult().actor() = mManager->SendPCacheConstructor(
+      new CacheParent(std::move(aManager), aOpenedCacheId));
 }
 
 void AutoParentOpResult::Add(const SavedResponse& aSavedResponse,
@@ -399,10 +371,6 @@ void AutoParentOpResult::Add(const SavedResponse& aSavedResponse,
     }
     case CacheOpResult::TCacheMatchAllResult: {
       CacheMatchAllResult& result = mOpResult.get_CacheMatchAllResult();
-      // Ensure that we don't realloc the array since this can result
-      // in our AutoIPCStream objects to reference the wrong memory
-      // location.  This should never happen and is a UAF if it does.
-      // Therefore make this a release assertion.
       MOZ_RELEASE_ASSERT(result.responseList().Length() <
                          result.responseList().Capacity());
       result.responseList().AppendElement(aSavedResponse.mValue);
@@ -430,10 +398,6 @@ void AutoParentOpResult::Add(const SavedRequest& aSavedRequest,
   switch (mOpResult.type()) {
     case CacheOpResult::TCacheKeysResult: {
       CacheKeysResult& result = mOpResult.get_CacheKeysResult();
-      // Ensure that we don't realloc the array since this can result
-      // in our AutoIPCStream objects to reference the wrong memory
-      // location.  This should never happen and is a UAF if it does.
-      // Therefore make this a release assertion.
       MOZ_RELEASE_ASSERT(result.requestList().Length() <
                          result.requestList().Capacity());
       result.requestList().AppendElement(aSavedRequest.mValue);
@@ -457,9 +421,6 @@ void AutoParentOpResult::Add(const SavedRequest& aSavedRequest,
 const CacheOpResult& AutoParentOpResult::SendAsOpResult() {
   MOZ_DIAGNOSTIC_ASSERT(!mSent);
   mSent = true;
-  for (UniquePtr<AutoIPCStream>& autoStream : mStreamCleanupList) {
-    autoStream->TakeOptionalValue();
-  }
   return mOpResult;
 }
 
@@ -504,7 +465,7 @@ void AutoParentOpResult::SerializeReadStream(const nsID& aId,
   RefPtr<ReadStream> readStream =
       ReadStream::Create(mStreamControl, aId, stream);
   ErrorResult rv;
-  readStream->Serialize(aReadStreamOut, mStreamCleanupList, rv);
+  readStream->Serialize(aReadStreamOut, rv);
   MOZ_DIAGNOSTIC_ASSERT(!rv.Failed());
 }
 

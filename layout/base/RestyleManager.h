@@ -8,7 +8,6 @@
 #define mozilla_RestyleManager_h
 
 #include "mozilla/AutoRestore.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/OverflowChangedTracker.h"
 #include "mozilla/ServoElementSnapshot.h"
@@ -20,16 +19,13 @@
 #include "nsTHashSet.h"
 
 class nsAttrValue;
-class nsCSSFrameConstructor;
 class nsAtom;
-class nsIContent;
 class nsIFrame;
 class nsStyleChangeList;
 class nsStyleChangeList;
 
 namespace mozilla {
 
-class EventStates;
 class ServoStyleSet;
 
 namespace dom {
@@ -363,13 +359,43 @@ class RestyleManager {
   void ProcessPendingRestyles();
   void ProcessAllPendingAttributeAndStateInvalidations();
 
-  void ContentStateChanged(nsIContent* aContent, EventStates aStateMask);
+  void ElementStateChanged(Element*, dom::ElementState);
+
+  /**
+   * Posts restyle hints for siblings of an element and their descendants if the
+   * element's parent has NODE_HAS_SLOW_SELECTOR_NTH_OF and the element has a
+   * relevant state dependency.
+   */
+  void MaybeRestyleForNthOfState(ServoStyleSet& aStyleSet, dom::Element* aChild,
+                                 dom::ElementState aChangedBits);
+
   void AttributeWillChange(Element* aElement, int32_t aNameSpaceID,
                            nsAtom* aAttribute, int32_t aModType);
   void ClassAttributeWillBeChangedBySMIL(dom::Element* aElement);
   void AttributeChanged(dom::Element* aElement, int32_t aNameSpaceID,
                         nsAtom* aAttribute, int32_t aModType,
                         const nsAttrValue* aOldValue);
+
+  /**
+   * Restyle an element's previous and/or next siblings.
+   */
+  void RestyleSiblingsForNthOf(dom::Element* aChild,
+                               NodeSelectorFlags aParentFlags);
+
+  /**
+   * Posts restyle hints for siblings of an element and their descendants if the
+   * element's parent has NODE_HAS_SLOW_SELECTOR_NTH_OF and the element has a
+   * relevant attribute dependency.
+   */
+  void MaybeRestyleForNthOfAttribute(dom::Element* aChild, nsAtom* aAttribute,
+                                     const nsAttrValue* aOldValue);
+
+  void MaybeRestyleForRelativeSelectorAttribute(dom::Element* aElement,
+                                                nsAtom* aAttribute,
+                                                const nsAttrValue* aOldValue);
+  void MaybeRestyleForRelativeSelectorState(ServoStyleSet& aStyleSet,
+                                            dom::Element* aElement,
+                                            dom::ElementState aChangedBits);
 
   // This is only used to reparent things when moving them in/out of the
   // ::first-line.
@@ -475,8 +501,11 @@ class RestyleManager {
 
   ServoStyleSet* StyleSet() const { return PresContext()->StyleSet(); }
 
+  void RestylePreviousSiblings(nsIContent* aStartingSibling);
+  void RestyleSiblingsStartingWith(nsIContent* aStartingSibling);
+
   void RestyleForEmptyChange(Element* aContainer);
-  void MaybeRestyleForEdgeChildChange(Element* aContainer,
+  void MaybeRestyleForEdgeChildChange(nsINode* aContainer,
                                       nsIContent* aChangedChild);
 
   bool IsDisconnected() const { return !mPresContext; }
@@ -502,10 +531,6 @@ class RestyleManager {
   nsPresContext* PresContext() const {
     MOZ_ASSERT(mPresContext);
     return mPresContext;
-  }
-
-  nsCSSFrameConstructor* FrameConstructor() const {
-    return PresContext()->FrameConstructor();
   }
 
  private:

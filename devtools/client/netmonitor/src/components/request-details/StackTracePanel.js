@@ -7,18 +7,18 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   fetchNetworkUpdatePacket,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 const { div } = dom;
 
 // Components
 const StackTrace = createFactory(
-  require("devtools/client/shared/components/StackTrace")
+  require("resource://devtools/client/shared/components/StackTrace.js")
 );
 
 /**
@@ -50,7 +50,8 @@ class StackTracePanel extends Component {
    * `componentWillReceiveProps` is the only method called when
    * switching between two requests while this panel is displayed.
    */
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { request, connector } = nextProps;
     // Only try to fetch the stacktrace if we don't already have the stacktrace yet
     if (!request.stacktrace) {

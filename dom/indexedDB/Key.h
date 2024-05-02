@@ -9,10 +9,6 @@
 
 #include "mozilla/dom/indexedDB/IDBResult.h"
 
-#include "js/RootingAPI.h"
-#include "js/TypeDecls.h"
-#include "nsString.h"
-
 class mozIStorageStatement;
 class mozIStorageValueArray;
 
@@ -23,9 +19,7 @@ struct ParamTraits;
 
 }  // namespace IPC
 
-namespace mozilla {
-namespace dom {
-namespace indexedDB {
+namespace mozilla::dom::indexedDB {
 
 class Key {
   friend struct IPC::ParamTraits<Key>;
@@ -49,11 +43,6 @@ class Key {
   Key() { Unset(); }
 
   explicit Key(nsCString aBuffer) : mBuffer(std::move(aBuffer)) {}
-
-  Key& operator=(int64_t aInt) {
-    SetFromInteger(aInt);
-    return *this;
-  }
 
   bool operator==(const Key& aOther) const {
     MOZ_ASSERT(!mBuffer.IsVoid());
@@ -137,10 +126,11 @@ class Key {
 
   Result<Ok, nsresult> SetFromString(const nsAString& aString);
 
-  void SetFromInteger(int64_t aInt) {
+  Result<Ok, nsresult> SetFromInteger(int64_t aInt) {
     mBuffer.Truncate();
-    EncodeNumber(double(aInt), eFloat);
+    auto ret = EncodeNumber(double(aInt), eFloat);
     TrimBuffer();
+    return ret;
   }
 
   // This function implements the standard algorithm "convert a value to a key".
@@ -226,7 +216,7 @@ class Key {
                                           uint8_t aTypeOffset,
                                           const nsCString& aLocale);
 
-  void EncodeNumber(double aFloat, uint8_t aType);
+  Result<Ok, nsresult> EncodeNumber(double aFloat, uint8_t aType);
 
   Result<Ok, nsresult> EncodeBinary(JSObject* aObject, bool aIsViewObject,
                                     uint8_t aTypeOffset);
@@ -285,8 +275,6 @@ class Key {
   nsresult SetFromSource(T* aSource, uint32_t aIndex);
 };
 
-}  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::indexedDB
 
 #endif  // mozilla_dom_indexeddb_key_h__

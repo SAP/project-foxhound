@@ -8,6 +8,7 @@
 #define nsThreadUtils_h__
 
 #include <type_traits>
+#include <tuple>
 #include <utility>
 
 #include "MainThreadUtils.h"
@@ -18,7 +19,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Tuple.h"
+
 #include "nsCOMPtr.h"
 #include "nsICancelableRunnable.h"
 #include "nsIDiscardableRunnable.h"
@@ -48,8 +49,9 @@ class nsIThread;
  *   The resulting nsIThread object.
  * @param aInitialEvent
  *   The initial event to run on this thread.  This parameter may be null.
- * @param aStackSize
- *   The size in bytes to reserve for the thread's stack.
+ * @param aOptions
+ *   Options used to configure thread creation.
+ *   Options are documented in nsIThreadManager.idl.
  *
  * @returns NS_ERROR_INVALID_ARG
  *   Indicates that the given name is not unique.
@@ -58,32 +60,32 @@ class nsIThread;
 extern nsresult NS_NewNamedThread(
     const nsACString& aName, nsIThread** aResult,
     nsIRunnable* aInitialEvent = nullptr,
-    uint32_t aStackSize = nsIThreadManager::DEFAULT_STACK_SIZE);
+    nsIThreadManager::ThreadCreationOptions aOptions = {});
 
 extern nsresult NS_NewNamedThread(
     const nsACString& aName, nsIThread** aResult,
     already_AddRefed<nsIRunnable> aInitialEvent,
-    uint32_t aStackSize = nsIThreadManager::DEFAULT_STACK_SIZE);
+    nsIThreadManager::ThreadCreationOptions aOptions = {});
 
 template <size_t LEN>
 inline nsresult NS_NewNamedThread(
     const char (&aName)[LEN], nsIThread** aResult,
     already_AddRefed<nsIRunnable> aInitialEvent,
-    uint32_t aStackSize = nsIThreadManager::DEFAULT_STACK_SIZE) {
+    nsIThreadManager::ThreadCreationOptions aOptions = {}) {
   static_assert(LEN <= 16, "Thread name must be no more than 16 characters");
   return NS_NewNamedThread(nsDependentCString(aName, LEN - 1), aResult,
-                           std::move(aInitialEvent), aStackSize);
+                           std::move(aInitialEvent), aOptions);
 }
 
 template <size_t LEN>
 inline nsresult NS_NewNamedThread(
     const char (&aName)[LEN], nsIThread** aResult,
     nsIRunnable* aInitialEvent = nullptr,
-    uint32_t aStackSize = nsIThreadManager::DEFAULT_STACK_SIZE) {
+    nsIThreadManager::ThreadCreationOptions aOptions = {}) {
   nsCOMPtr<nsIRunnable> event = aInitialEvent;
   static_assert(LEN <= 16, "Thread name must be no more than 16 characters");
   return NS_NewNamedThread(nsDependentCString(aName, LEN - 1), aResult,
-                           event.forget(), aStackSize);
+                           event.forget(), aOptions);
 }
 
 /**
@@ -505,9 +507,24 @@ class PrioritizableRunnable : public Runnable, public nsIRunnablePriority {
 
  protected:
   virtual ~PrioritizableRunnable() = default;
-  ;
+
   nsCOMPtr<nsIRunnable> mRunnable;
   uint32_t mPriority;
+};
+
+class PrioritizableCancelableRunnable : public CancelableRunnable,
+                                        public nsIRunnablePriority {
+ public:
+  PrioritizableCancelableRunnable(uint32_t aPriority, const char* aName)
+      : CancelableRunnable(aName), mPriority(aPriority) {}
+
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIRUNNABLEPRIORITY
+
+ protected:
+  virtual ~PrioritizableCancelableRunnable() = default;
+
+  const uint32_t mPriority;
 };
 
 extern already_AddRefed<nsIRunnable> CreateRenderBlockingRunnable(
@@ -1136,21 +1153,17 @@ namespace detail {
 // struct used to store arguments and later apply them to a method.
 template <typename... Ts>
 struct RunnableMethodArguments final {
-  Tuple<typename ::detail::ParameterStorage<Ts>::Type...> mArguments;
+  std::tuple<typename ::detail::ParameterStorage<Ts>::Type...> mArguments;
   template <typename... As>
   explicit RunnableMethodArguments(As&&... aArguments)
       : mArguments(std::forward<As>(aArguments)...) {}
-  template <typename C, typename M, typename... Args, size_t... Indices>
-  static auto applyImpl(C* o, M m, Tuple<Args...>& args,
-                        std::index_sequence<Indices...>)
-      -> decltype(((*o).*m)(Get<Indices>(args).PassAsParameter()...)) {
-    return ((*o).*m)(Get<Indices>(args).PassAsParameter()...);
-  }
   template <class C, typename M>
-  auto apply(C* o, M m)
-      -> decltype(applyImpl(o, m, mArguments,
-                            std::index_sequence_for<Ts...>{})) {
-    return applyImpl(o, m, mArguments, std::index_sequence_for<Ts...>{});
+  decltype(auto) apply(C* o, M m) {
+    return std::apply(
+        [&o, m](auto&&... args) {
+          return ((*o).*m)(args.PassAsParameter()...);
+        },
+        mArguments);
   }
 };
 
@@ -1742,10 +1755,23 @@ extern "C" nsresult NS_DispatchBackgroundTask(
 extern "C" nsresult NS_CreateBackgroundTaskQueue(
     const char* aName, nsISerialEventTarget** aTarget);
 
+/**
+ * Dispatch the given runnable to the given event target, spinning the current
+ * thread's event loop until the runnable has finished executing.
+ *
+ * This is roughly equivalent to the previously-supported `NS_DISPATCH_SYNC`
+ * flag.
+ */
+extern nsresult NS_DispatchAndSpinEventLoopUntilComplete(
+    const nsACString& aVeryGoodReasonToDoThis, nsIEventTarget* aEventTarget,
+    already_AddRefed<nsIRunnable> aEvent);
+
 // Predeclaration for logging function below
 namespace IPC {
 class Message;
-}
+class MessageReader;
+class MessageWriter;
+}  // namespace IPC
 
 class nsTimerImpl;
 
@@ -1780,73 +1806,27 @@ class SerialEventTargetGuard {
   nsISerialEventTarget* mLastCurrentThread;
 };
 
-// These functions return event targets that can be used to dispatch to the
-// current or main thread. They can also be used to test if you're on those
-// threads (via IsOnCurrentThread). These functions should be used in preference
-// to the nsIThread-based NS_Get{Current,Main}Thread functions since they will
-// return more useful answers in the case of threads sharing an event loop.
-
-nsIEventTarget* GetCurrentEventTarget();
-
-nsIEventTarget* GetMainThreadEventTarget();
-
-// These variants of the above functions assert that the given thread has a
-// serial event target (i.e., that it's not part of a thread pool) and returns
-// that.
+// Get the serial event target corresponding to the currently executing task
+// queue or thread. This method will assert if called on a thread pool without
+// an active task queue.
+//
+// This function should generally be preferred over NS_GetCurrentThread since it
+// will return a more useful answer when called from a task queue running on a
+// thread pool or on a non-xpcom thread which accepts runnable dispatches.
+//
+// NOTE: The returned nsISerialEventTarget may not accept runnable dispatches
+// (e.g. if it corresponds to a non-xpcom thread), however it may still be used
+// to check if you're on the given thread/queue using IsOnCurrentThread().
 
 nsISerialEventTarget* GetCurrentSerialEventTarget();
 
+// Get a weak reference to a serial event target which can be used to dispatch
+// runnables to the main thread.
+//
+// NOTE: While this is currently a weak pointer to the nsIThread* returned from
+// NS_GetMainThread(), this may change in the future.
+
 nsISerialEventTarget* GetMainThreadSerialEventTarget();
-
-// Returns a wrapper around the current thread which routes normal dispatches
-// through the tail dispatcher.
-// This means that they will run at the end of the current task, rather than
-// after all the subsequent tasks queued. This is useful to allow MozPromise
-// callbacks returned by IPDL methods to avoid an extra trip through the event
-// loop, and thus maintain correct ordering relative to other IPC events. The
-// current thread implementation must support tail dispatch.
-class TailDispatchingTarget : public nsISerialEventTarget {
- public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-  TailDispatchingTarget()
-#if DEBUG
-      : mOwnerThread(AbstractThread::GetCurrent())
-#endif
-  {
-    MOZ_ASSERT(mOwnerThread, "Must be used with AbstractThreads");
-  }
-
-  NS_IMETHOD
-  Dispatch(already_AddRefed<nsIRunnable> event, uint32_t flags) override {
-    MOZ_ASSERT(flags == DISPATCH_NORMAL);
-    MOZ_ASSERT(
-        AbstractThread::GetCurrent() == mOwnerThread,
-        "TailDispatchingTarget can only be used on the thread upon which it "
-        "was created - see the comment on the class declaration.");
-    AbstractThread::DispatchDirectTask(std::move(event));
-    return NS_OK;
-  }
-  NS_IMETHOD_(bool) IsOnCurrentThreadInfallible(void) override { return true; }
-  NS_IMETHOD IsOnCurrentThread(bool* _retval) override {
-    *_retval = true;
-    return NS_OK;
-  }
-  NS_IMETHOD DispatchFromScript(nsIRunnable* event, uint32_t flags) override {
-    MOZ_ASSERT_UNREACHABLE("not implemented");
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-  NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable> event,
-                             uint32_t delay) override {
-    MOZ_ASSERT_UNREACHABLE("not implemented");
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
- private:
-  virtual ~TailDispatchingTarget() = default;
-#if DEBUG
-  const RefPtr<AbstractThread> mOwnerThread;
-#endif
-};
 
 // Returns the number of CPUs, like PR_GetNumberOfProcessors, except
 // that it can return a cached value on platforms where sandboxing

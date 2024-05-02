@@ -6,86 +6,62 @@
 // The purpose of this test is to see that the site security service properly
 // writes its state file.
 
+ChromeUtils.defineESModuleGetters(this, {
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
+
 const EXPECTED_ENTRIES = 5;
-const EXPECTED_HSTS_COLUMNS = 4;
-var gProfileDir = null;
+const EXPECTED_HSTS_COLUMNS = 3;
 
-const NON_ISSUED_KEY_HASH = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+function contents_is_as_expected() {
+  // The file consists of a series of [score][last accessed][key][value], where
+  // score and last accessed are 2 bytes big-endian, key is 0-padded to 256
+  // bytes, and value is 0-padded to 24 bytes.
+  // Each score will be 1, and last accessed is some number of days (>255)
+  // since the epoch, so there will be 3 non-0 bytes just in front of the key.
+  // Splitting by 0 and filtering out zero-length strings will result in a series of
+  // [BBBkey1, value1, BBBkey2, value2, ...], where "BBB" are the score and
+  // last accessed bytes, which are ignored here.
+  let contents = get_data_storage_contents(SSS_STATE_FILE_NAME);
+  if (!contents) {
+    return false;
+  }
+  let keysAndValues = contents.split("\0").filter(s => !!s.length);
+  let keys = keysAndValues
+    .filter((_, i) => i % 2 == 0)
+    .map(key => key.substring(3));
+  let values = keysAndValues.filter((_, i) => i % 2 == 1);
 
-// For reference, the format of the state file is a list of:
-// <domain name> <expiration time in milliseconds>,<sts status>,<includeSubdomains>
-// separated by newlines ('\n')
-
-function checkStateWritten(aSubject, aTopic, aData) {
-  if (aData == CLIENT_AUTH_FILE_NAME) {
-    return;
+  if (keys.length != EXPECTED_ENTRIES || values.length != EXPECTED_ENTRIES) {
+    return false;
   }
 
-  equal(aData, SSS_STATE_FILE_NAME);
-
-  let stateFile = gProfileDir.clone();
-  stateFile.append(SSS_STATE_FILE_NAME);
-  ok(stateFile.exists());
-  let stateFileContents = readFile(stateFile);
-  // the last line is removed because it's just a trailing newline
-  let lines = stateFileContents.split("\n").slice(0, -1);
-  equal(lines.length, EXPECTED_ENTRIES);
   let sites = {}; // a map of domain name -> [the entry in the state file]
-  for (let line of lines) {
-    let parts = line.split("\t");
-    let host = parts[0];
-    let entry = parts[3].split(",");
-    let expectedColumns = EXPECTED_HSTS_COLUMNS;
-    equal(entry.length, expectedColumns);
+  for (let i in keys) {
+    let host = keys[i];
+    let entry = values[i].split(",");
+    equal(entry.length, EXPECTED_HSTS_COLUMNS);
     sites[host] = entry;
   }
 
-  // We can receive multiple data-storage-written events. In particular, we
-  // may receive one where DataStorage wrote out data before we were done
-  // processing all of our headers. In this case, the data may not be
-  // as we expect. We only care about the final one being correct, however,
-  // so we return and wait for the next event if things aren't as we expect.
-  // sites[url][1] corresponds to SecurityPropertySet (if 1) and
-  //                              SecurityPropertyUnset (if 0)
-  // sites[url][2] corresponds to includeSubdomains
-  if (sites["includesubdomains.preloaded.test:HSTS"][1] != 1) {
-    return;
-  }
-  if (sites["includesubdomains.preloaded.test:HSTS"][2] != 0) {
-    return;
-  }
-  if (sites["a.example.com:HSTS"][1] != 1) {
-    return;
-  }
-  if (sites["a.example.com:HSTS"][2] != 1) {
-    return;
-  }
-  if (sites["b.example.com:HSTS"][1] != 1) {
-    return;
-  }
-  if (sites["b.example.com:HSTS"][2] != 0) {
-    return;
-  }
-  if (sites["c.c.example.com:HSTS"][1] != 1) {
-    return;
-  }
-  if (sites["c.c.example.com:HSTS"][2] != 1) {
-    return;
-  }
-  if (sites["d.example.com:HSTS"][1] != 1) {
-    return;
-  }
-  if (sites["d.example.com:HSTS"][2] != 0) {
-    return;
-  }
-
-  do_test_finished();
+  // each sites[url][1] should be SecurityPropertySet (i.e. 1).
+  // sites[url][2] corresponds to includeSubdomains, so every other one should
+  // be set (i.e. 1);
+  return (
+    sites["includesubdomains.preloaded.test"][1] == 1 &&
+    sites["includesubdomains.preloaded.test"][2] == 0 &&
+    sites["a.example.com"][1] == 1 &&
+    sites["a.example.com"][2] == 1 &&
+    sites["b.example.com"][1] == 1 &&
+    sites["b.example.com"][2] == 0 &&
+    sites["c.c.example.com"][1] == 1 &&
+    sites["c.c.example.com"][2] == 1 &&
+    sites["d.example.com"][1] == 1 &&
+    sites["d.example.com"][2] == 0
+  );
 }
 
-function run_test() {
-  Services.prefs.setBoolPref("security.cert_pinning.hpkp.enabled", true);
-  Services.prefs.setIntPref("test.datastorage.write_timer_ms", 100);
-  gProfileDir = do_get_profile();
+function process_headers() {
   let SSService = Cc["@mozilla.org/ssservice;1"].getService(
     Ci.nsISiteSecurityService
   );
@@ -100,22 +76,16 @@ function run_test() {
 
   for (let i = 0; i < 1000; i++) {
     let uriIndex = i % uris.length;
-    // vary max-age
-    let maxAge = "max-age=" + i * 1000;
-    // alternate setting includeSubdomains
-    let includeSubdomains = i % 2 == 0 ? "; includeSubdomains" : "";
-    let secInfo = Cc[
-      "@mozilla.org/security/transportsecurityinfo;1"
-    ].createInstance(Ci.nsITransportSecurityInfo);
-    SSService.processHeader(
-      uris[uriIndex],
-      maxAge + includeSubdomains,
-      secInfo,
-      0,
-      Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST
-    );
+    // vary max-age, but have it be within one day of one year
+    let maxAge = "max-age=" + (i + 31536000);
+    // have every other URI set includeSubdomains
+    let includeSubdomains = uriIndex % 2 == 1 ? "; includeSubdomains" : "";
+    SSService.processHeader(uris[uriIndex], maxAge + includeSubdomains);
   }
+}
 
-  do_test_pending();
-  Services.obs.addObserver(checkStateWritten, "data-storage-written");
+function run_test() {
+  do_get_profile();
+  process_headers();
+  TestUtils.waitForCondition(contents_is_as_expected);
 }

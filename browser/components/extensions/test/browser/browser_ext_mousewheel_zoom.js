@@ -12,7 +12,7 @@ const TESTS = {
 };
 
 function promiseBrowserReflow(browser) {
-  return SpecialPowers.spawn(browser, [], async function() {
+  return SpecialPowers.spawn(browser, [], async function () {
     return new Promise(resolve => {
       content.window.requestAnimationFrame(() => {
         content.window.requestAnimationFrame(resolve);
@@ -34,6 +34,9 @@ async function promiseBrowserZoom(browser, extension) {
 async function test_mousewheel_zoom(test) {
   info(`Starting test of ${test} extension.`);
   let browser;
+
+  // Scroll on Ctrl + mousewheel
+  SpecialPowers.pushPrefEnv({ set: [["mousewheel.with_control.action", 3]] });
 
   function contentScript() {
     // eslint-disable-next-line mozilla/balanced-listeners
@@ -75,6 +78,7 @@ async function test_mousewheel_zoom(test) {
     manifest = {
       browser_action: {
         default_popup: "panel.html",
+        default_area: "navbar",
       },
     };
   } else if (test == TESTS.PAGE_ACTION) {

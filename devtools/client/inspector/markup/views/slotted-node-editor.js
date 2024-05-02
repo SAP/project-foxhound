@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const INSPECTOR_L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
@@ -20,7 +20,7 @@ function SlottedNodeEditor(container, node) {
 }
 
 SlottedNodeEditor.prototype = {
-  buildMarkup: function() {
+  buildMarkup() {
     const doc = this.markup.doc;
 
     this.elt = doc.createElement("span");
@@ -40,7 +40,7 @@ SlottedNodeEditor.prototype = {
     this.elt.appendChild(this.revealLink);
   },
 
-  destroy: function() {
+  destroy() {
     // We might be already destroyed.
     if (!this.elt) {
       return;
@@ -55,7 +55,7 @@ SlottedNodeEditor.prototype = {
   /**
    * Stub method for consistency with ElementEditor.
    */
-  getInfoAtNode: function() {
+  getInfoAtNode() {
     return null;
   },
 };

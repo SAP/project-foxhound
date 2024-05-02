@@ -4,49 +4,71 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const { assert } = DevToolsUtils;
+const { Actor } = require("resource://devtools/shared/protocol/Actor.js");
+const { objectSpec } = require("resource://devtools/shared/specs/object.js");
 
-const protocol = require("devtools/shared/protocol");
-const { objectSpec } = require("devtools/shared/specs/object");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
+const { assert } = DevToolsUtils;
 
 loader.lazyRequireGetter(
   this,
   "PropertyIteratorActor",
-  "devtools/server/actors/object/property-iterator",
+  "resource://devtools/server/actors/object/property-iterator.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "SymbolIteratorActor",
-  "devtools/server/actors/object/symbol-iterator",
+  "resource://devtools/server/actors/object/symbol-iterator.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PrivatePropertiesIteratorActor",
-  "devtools/server/actors/object/private-properties-iterator",
+  "resource://devtools/server/actors/object/private-properties-iterator.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "previewers",
-  "devtools/server/actors/object/previewers"
+  "resource://devtools/server/actors/object/previewers.js"
 );
+
 loader.lazyRequireGetter(
   this,
-  "stringify",
-  "devtools/server/actors/object/stringifiers"
+  ["customFormatterHeader", "customFormatterBody"],
+  "resource://devtools/server/actors/utils/custom-formatters.js",
+  true
+);
+
+// This is going to be used by findSafeGetters, where we want to avoid calling getters for
+// deprecated properties (otherwise a warning message is displayed in the console).
+// We could do something like EagerEvaluation, where we create a new Sandbox which is then
+// used to compare functions, but, we'd need to make new classes available in
+// the Sandbox, and possibly do it again when a new property gets deprecated.
+// Since this is only to be able to automatically call getters, we can simply check against
+// a list of unsafe getters that we generate from webidls.
+loader.lazyRequireGetter(
+  this,
+  "unsafeGettersNames",
+  "resource://devtools/server/actors/webconsole/webidl-unsafe-getters-names.js"
 );
 
 // ContentDOMReference requires ChromeUtils, which isn't available in worker context.
+const lazy = {};
 if (!isWorker) {
-  loader.lazyRequireGetter(
-    this,
+  loader.lazyGetter(
+    lazy,
     "ContentDOMReference",
-    "resource://gre/modules/ContentDOMReference.jsm",
-    true
+    () =>
+      ChromeUtils.importESModule(
+        "resource://gre/modules/ContentDOMReference.sys.mjs",
+        {
+          // ContentDOMReference needs to be retrieved from the shared global
+          // since it is a shared singleton.
+          loadInDevToolsLoader: false,
+        }
+      ).ContentDOMReference
   );
 }
 
@@ -57,9 +79,9 @@ const {
   isArray,
   isStorage,
   isTypedArray,
-} = require("devtools/server/actors/object/utils");
+} = require("resource://devtools/server/actors/object/utils.js");
 
-const proto = {
+class ObjectActor extends Actor {
   /**
    * Creates an actor for the specified object.
    *
@@ -79,8 +101,9 @@ const proto = {
    *              Increment the actor's grip depth
    *          - decrementGripDepth
    *              Decrement the actor's grip depth
+   * @param DevToolsServerConnection conn
    */
-  initialize(
+  constructor(
     obj,
     {
       thread,
@@ -89,16 +112,18 @@ const proto = {
       getGripDepth,
       incrementGripDepth,
       decrementGripDepth,
+      customFormatterObjectTagDepth,
+      customFormatterConfigDbgObj,
     },
     conn
   ) {
+    super(conn, objectSpec);
+
     assert(
       !obj.optimizedOut,
       "Should not create object actors for optimized out values!"
     );
-    protocol.Actor.prototype.initialize.call(this, conn);
 
-    this.conn = conn;
     this.obj = obj;
     this.thread = thread;
     this.hooks = {
@@ -107,29 +132,31 @@ const proto = {
       getGripDepth,
       incrementGripDepth,
       decrementGripDepth,
+      customFormatterObjectTagDepth,
+      customFormatterConfigDbgObj,
     };
-  },
+  }
 
-  rawValue: function() {
+  rawValue() {
     return this.obj.unsafeDereference();
-  },
+  }
 
   addWatchpoint(property, label, watchpointType) {
     this.thread.addWatchpoint(this, { property, label, watchpointType });
-  },
+  }
 
   removeWatchpoint(property) {
     this.thread.removeWatchpoint(this, property);
-  },
+  }
 
   removeWatchpoints() {
     this.thread.removeWatchpoint(this);
-  },
+  }
 
   /**
    * Returns a grip for this actor for returning in a protocol message.
    */
-  form: function() {
+  form() {
     const g = {
       type: "object",
       actor: this.actorID,
@@ -141,6 +168,20 @@ const proto = {
       // so just in case they shouldn't be accessed.
       g.class = "InvisibleToDebugger: " + this.obj.class;
       return g;
+    }
+
+    // Only process custom formatters if the feature is enabled.
+    if (this.thread?._parent?.customFormatters) {
+      const result = customFormatterHeader(this);
+      if (result) {
+        const { formatter, ...header } = result;
+        this._customFormatterItem = formatter;
+
+        return {
+          ...g,
+          ...header,
+        };
+      }
     }
 
     if (unwrapped?.isProxy) {
@@ -179,21 +220,25 @@ const proto = {
     this._populateGripPreview(g, raw);
     this.hooks.decrementGripDepth();
 
-    if (raw && Node.isInstance(raw) && ContentDOMReference) {
+    if (raw && Node.isInstance(raw) && lazy.ContentDOMReference) {
       // ContentDOMReference.get takes a DOM element and returns an object with
       // its browsing context id, as well as a unique identifier. We are putting it in
       // the grip here in order to be able to retrieve the node later, potentially from a
       // different DevToolsServer running in the same process.
       // If ContentDOMReference.get throws, we simply don't add the property to the grip.
       try {
-        g.contentDomReference = ContentDOMReference.get(raw);
+        g.contentDomReference = lazy.ContentDOMReference.get(raw);
       } catch (e) {}
     }
 
     return g;
-  },
+  }
 
-  _getOwnPropertyLength: function() {
+  customFormatterBody() {
+    return customFormatterBody(this, this._customFormatterItem);
+  }
+
+  _getOwnPropertyLength() {
     if (isTypedArray(this.obj)) {
       // Bug 1348761: getOwnPropertyNames is unnecessary slow on TypedArrays
       return getArrayLength(this.obj);
@@ -204,16 +249,16 @@ const proto = {
     }
 
     try {
-      return this.obj.getOwnPropertyNames().length;
+      return this.obj.getOwnPropertyNamesLength();
     } catch (err) {
       // The above can throw when the debuggee does not subsume the object's
       // compartment, or for some WrappedNatives like Cu.Sandbox.
     }
 
     return null;
-  },
+  }
 
-  getRawObject: function() {
+  getRawObject() {
     let raw = this.obj.unsafeDereference();
 
     // If Cu is not defined, we are running on a worker thread, where xrays
@@ -227,15 +272,18 @@ const proto = {
     }
 
     return raw;
-  },
+  }
 
   /**
    * Populate the `preview` property on `grip` given its type.
    */
-  _populateGripPreview: function(grip, raw) {
-    for (const previewer of previewers[this.obj.class] || previewers.Object) {
+  _populateGripPreview(grip, raw) {
+    // Cache obj.class as it can be costly if this is in a hot path (e.g. logging objects
+    // within a for loop).
+    const className = this.obj.class;
+    for (const previewer of previewers[className] || previewers.Object) {
       try {
-        const previewerResult = previewer(this, grip, raw);
+        const previewerResult = previewer(this, grip, raw, className);
         if (previewerResult) {
           return;
         }
@@ -245,12 +293,12 @@ const proto = {
         DevToolsUtils.reportException(msg, e);
       }
     }
-  },
+  }
 
   /**
    * Returns an object exposing the internal Promise state.
    */
-  promiseState: function() {
+  promiseState() {
     const { state, value, reason } = getPromiseState(this.obj);
     const promiseState = { state };
 
@@ -268,24 +316,7 @@ const proto = {
     }
 
     return { promiseState };
-  },
-
-  /**
-   * Handle a protocol request to provide the names of the properties defined on
-   * the object and not its prototype.
-   */
-  ownPropertyNames: function() {
-    let props = [];
-    if (DevToolsUtils.isSafeDebuggerObject(this.obj)) {
-      try {
-        props = this.obj.getOwnPropertyNames();
-      } catch (err) {
-        // The above can throw when the debuggee does not subsume the object's
-        // compartment, or for some WrappedNatives like Cu.Sandbox.
-      }
-    }
-    return { ownPropertyNames: props };
-  },
+  }
 
   /**
    * Creates an actor to iterate over an object property names and values.
@@ -293,30 +324,30 @@ const proto = {
    *
    * @param options object
    */
-  enumProperties: function(options) {
-    return PropertyIteratorActor(this, options, this.conn);
-  },
+  enumProperties(options) {
+    return new PropertyIteratorActor(this, options, this.conn);
+  }
 
   /**
    * Creates an actor to iterate over entries of a Map/Set-like object.
    */
-  enumEntries: function() {
-    return PropertyIteratorActor(this, { enumEntries: true }, this.conn);
-  },
+  enumEntries() {
+    return new PropertyIteratorActor(this, { enumEntries: true }, this.conn);
+  }
 
   /**
    * Creates an actor to iterate over an object symbols properties.
    */
-  enumSymbols: function() {
-    return SymbolIteratorActor(this, this.conn);
-  },
+  enumSymbols() {
+    return new SymbolIteratorActor(this, this.conn);
+  }
 
   /**
    * Creates an actor to iterate over an object private properties.
    */
-  enumPrivateProperties: function() {
-    return PrivatePropertiesIteratorActor(this, this.conn);
-  },
+  enumPrivateProperties() {
+    return new PrivatePropertiesIteratorActor(this, this.conn);
+  }
 
   /**
    * Handle a protocol request to provide the prototype and own properties of
@@ -334,7 +365,7 @@ const proto = {
    *          - {Object} safeGetterValues: an object that maps this.obj's property names
    *                     with safe getters descriptors.
    */
-  prototypeAndProperties: function() {
+  prototypeAndProperties() {
     let objProto = null;
     let names = [];
     let symbols = [];
@@ -369,7 +400,7 @@ const proto = {
       ownSymbols,
       safeGetterValues: this._findSafeGetterValues(names),
     };
-  },
+  }
 
   /**
    * Find the safe getter values for the current Debugger.Object, |this.obj|.
@@ -378,18 +409,17 @@ const proto = {
    * @param array ownProperties
    *        The array that holds the list of known ownProperties names for
    *        |this.obj|.
-   * @param number [limit=0]
+   * @param number [limit=Infinity]
    *        Optional limit of getter values to find.
    * @return object
    *         An object that maps property names to safe getter descriptors as
    *         defined by the remote debugging protocol.
    */
-  // eslint-disable-next-line complexity
-  _findSafeGetterValues: function(ownProperties, limit = 0) {
+  _findSafeGetterValues(ownProperties, limit = Infinity) {
     const safeGetterValues = Object.create(null);
     let obj = this.obj;
     let level = 0,
-      i = 0;
+      currentGetterValuesCount = 0;
 
     // Do not search safe getters in unsafe objects.
     if (!DevToolsUtils.isSafeDebuggerObject(obj)) {
@@ -406,8 +436,7 @@ const proto = {
     }
 
     while (obj && DevToolsUtils.isSafeDebuggerObject(obj)) {
-      const getters = this._findSafeGetters(obj);
-      for (const name of getters) {
+      for (const name of this._findSafeGetters(obj)) {
         // Avoid overwriting properties from prototypes closer to this.obj. Also
         // avoid providing safeGetterValues from prototypes if property |name|
         // is already defined as an own property.
@@ -423,38 +452,21 @@ const proto = {
           continue;
         }
 
-        let desc = null,
-          getter = null;
-        try {
-          desc = obj.getOwnPropertyDescriptor(name);
-          getter = desc.get;
-        } catch (ex) {
-          // The above can throw if the cache becomes stale.
-        }
-        if (!getter) {
+        const desc = safeGetOwnPropertyDescriptor(obj, name);
+        if (!desc?.get) {
+          // If no getter matches the name, the cache is stale and should be cleaned up.
           obj._safeGetters = null;
           continue;
         }
 
-        const result = getter.call(this.obj);
-        if (!result || "throw" in result) {
+        const getterValue = this._evaluateGetter(desc.get);
+        if (getterValue === undefined) {
           continue;
-        }
-
-        let getterValue = undefined;
-        if ("return" in result) {
-          getterValue = result.return;
-        } else if ("yield" in result) {
-          getterValue = result.yield;
         }
 
         // Treat an already-rejected Promise as we would a thrown exception
         // by not including it as a safe getter value (see Bug 1477765).
-        if (
-          getterValue &&
-          getterValue.class == "Promise" &&
-          getterValue.promiseState == "rejected"
-        ) {
+        if (isRejectedPromise(getterValue)) {
           // Until we have a good way to handle Promise rejections through the
           // debugger API (Bug 1478076), call `catch` when it's safe to do so.
           const raw = getterValue.unsafeDereference();
@@ -466,20 +478,17 @@ const proto = {
 
         // WebIDL attributes specified with the LenientThis extended attribute
         // return undefined and should be ignored.
-        if (getterValue !== undefined) {
-          safeGetterValues[name] = {
-            getterValue: this.hooks.createValueGrip(getterValue),
-            getterPrototypeLevel: level,
-            enumerable: desc.enumerable,
-            writable: level == 0 ? desc.writable : true,
-          };
-          if (limit && ++i == limit) {
-            break;
-          }
+        safeGetterValues[name] = {
+          getterValue: this.hooks.createValueGrip(getterValue),
+          getterPrototypeLevel: level,
+          enumerable: desc.enumerable,
+          writable: level == 0 ? desc.writable : true,
+        };
+
+        ++currentGetterValuesCount;
+        if (currentGetterValuesCount == limit) {
+          return safeGetterValues;
         }
-      }
-      if (limit && i == limit) {
-        break;
       }
 
       obj = obj.proto;
@@ -487,7 +496,27 @@ const proto = {
     }
 
     return safeGetterValues;
-  },
+  }
+
+  /**
+   * Evaluate the getter function |desc.get|.
+   * @param {Object} getter
+   */
+  _evaluateGetter(getter) {
+    const result = getter.call(this.obj);
+    if (!result || "throw" in result) {
+      return undefined;
+    }
+
+    let getterValue = undefined;
+    if ("return" in result) {
+      getterValue = result.return;
+    } else if ("yield" in result) {
+      getterValue = result.yield;
+    }
+
+    return getterValue;
+  }
 
   /**
    * Find the safe getters for a given Debugger.Object. Safe getters are native
@@ -500,7 +529,7 @@ const proto = {
    *         A Set of names of safe getters. This result is cached for each
    *         Debugger.Object.
    */
-  _findSafeGetters: function(object) {
+  _findSafeGetters(object) {
     if (object._safeGetters) {
       return object._safeGetters;
     }
@@ -532,25 +561,28 @@ const proto = {
         continue;
       }
 
-      if (DevToolsUtils.hasSafeGetter(desc)) {
+      if (
+        DevToolsUtils.hasSafeGetter(desc) &&
+        !unsafeGettersNames.includes(name)
+      ) {
         getters.add(name);
       }
     }
 
     object._safeGetters = getters;
     return getters;
-  },
+  }
 
   /**
    * Handle a protocol request to provide the prototype of the object.
    */
-  prototype: function() {
+  prototype() {
     let objProto = null;
     if (DevToolsUtils.isSafeDebuggerObject(this.obj)) {
       objProto = this.obj.proto;
     }
     return { prototype: this.hooks.createValueGrip(objProto) };
-  },
+  }
 
   /**
    * Handle a protocol request to provide the property descriptor of the
@@ -559,7 +591,7 @@ const proto = {
    * @param name string
    *        The property we want the description of.
    */
-  property: function(name) {
+  property(name) {
     if (!name) {
       return this.throwError(
         "missingParameter",
@@ -568,7 +600,7 @@ const proto = {
     }
 
     return { descriptor: this._propertyDescriptor(name) };
-  },
+  }
 
   /**
    * Handle a protocol request to provide the value of the object's
@@ -585,7 +617,7 @@ const proto = {
    *        The actorId of the receiver to be used if the property is a getter.
    *        If null or invalid, the receiver will be the referent.
    */
-  propertyValue: function(name, receiverId) {
+  propertyValue(name, receiverId) {
     if (!name) {
       return this.throwError(
         "missingParameter",
@@ -606,7 +638,7 @@ const proto = {
       : this.obj.getProperty(name);
 
     return { value: this._buildCompletion(value) };
-  },
+  }
 
   /**
    * Handle a protocol request to evaluate a function and provide the value of
@@ -622,7 +654,7 @@ const proto = {
    * @param {Array<any>} args
    *        The array of un-decoded actor objects, or primitives.
    */
-  apply: function(context, args) {
+  apply(context, args) {
     if (!this.obj.callable) {
       return this.throwError("notCallable", "debugee object is not callable");
     }
@@ -633,7 +665,7 @@ const proto = {
     const value = this.obj.apply(debugeeContext, debugeeArgs);
 
     return { value: this._buildCompletion(value) };
-  },
+  }
 
   _getValueFromGrip(grip) {
     if (typeof grip !== "object" || !grip) {
@@ -657,13 +689,13 @@ const proto = {
     }
 
     return actor.obj;
-  },
+  }
 
   /**
-   * Converts a Debugger API completion value record into an eqivalent
+   * Converts a Debugger API completion value record into an equivalent
    * object grip for use by the API.
    *
-   * See https://developer.mozilla.org/en-US/docs/Tools/Debugger-API/Conventions#completion-values
+   * See https://firefox-source-docs.mozilla.org/devtools-user/debugger-api/
    * for more specifics on the expected behavior.
    */
   _buildCompletion(value) {
@@ -682,15 +714,7 @@ const proto = {
     }
 
     return completionGrip;
-  },
-
-  /**
-   * Handle a protocol request to provide the display string for the object.
-   */
-  displayString: function() {
-    const string = stringify(this.obj);
-    return { displayString: this.hooks.createValueGrip(string) };
-  },
+  }
 
   /**
    * A helper method that creates a property descriptor for the provided object,
@@ -706,7 +730,7 @@ const proto = {
    *         The property descriptor, or undefined if this is not an enumerable
    *         property and onlyEnumerable=true.
    */
-  _propertyDescriptor: function(name, onlyEnumerable) {
+  _propertyDescriptor(name, onlyEnumerable) {
     if (!DevToolsUtils.isSafeDebuggerObject(this.obj)) {
       return undefined;
     }
@@ -760,42 +784,12 @@ const proto = {
       }
     }
     return retval;
-  },
-
-  /**
-   * Handle a protocol request to provide the source code of a function.
-   *
-   * @param pretty boolean
-   */
-  decompile: function(pretty) {
-    if (this.obj.class !== "Function") {
-      return this.throwError(
-        "objectNotFunction",
-        "decompile request is only valid for grips  with a 'Function' class."
-      );
-    }
-
-    return { decompiledCode: this.obj.decompile(!!pretty) };
-  },
-
-  /**
-   * Handle a protocol request to provide the parameters of a function.
-   */
-  parameterNames: function() {
-    if (this.obj.class !== "Function") {
-      return this.throwError(
-        "objectNotFunction",
-        "'parameterNames' request is only valid for grips with a 'Function' class."
-      );
-    }
-
-    return { parameterNames: this.obj.parameterNames };
-  },
+  }
 
   /**
    * Handle a protocol request to get the target and handler internal slots of a proxy.
    */
-  proxySlots: function() {
+  proxySlots() {
     // There could be transparent security wrappers, unwrap to check if it's a proxy.
     // However, retrieve proxyTarget and proxyHandler from `this.obj` to avoid exposing
     // the unwrapped target and handler.
@@ -810,14 +804,42 @@ const proto = {
       proxyTarget: this.hooks.createValueGrip(this.obj.proxyTarget),
       proxyHandler: this.hooks.createValueGrip(this.obj.proxyHandler),
     };
-  },
+  }
 
   /**
    * Release the actor, when it isn't needed anymore.
    * Protocol.js uses this release method to call the destroy method.
    */
-  release: function() {},
-};
+  release() {
+    if (this.hooks) {
+      this.hooks.customFormatterConfigDbgObj = null;
+    }
+    this._customFormatterItem = null;
+  }
+}
 
-exports.ObjectActor = protocol.ActorClassWithSpec(objectSpec, proto);
-exports.ObjectActorProto = proto;
+exports.ObjectActor = ObjectActor;
+
+function safeGetOwnPropertyDescriptor(obj, name) {
+  let desc = null;
+  try {
+    desc = obj.getOwnPropertyDescriptor(name);
+  } catch (ex) {
+    // The above can throw if the cache becomes stale.
+  }
+  return desc;
+}
+
+/**
+ * Check if the value is rejected promise
+ *
+ * @param {Object} getterValue
+ * @returns {boolean} true if the value is rejected promise, false otherwise.
+ */
+function isRejectedPromise(getterValue) {
+  return (
+    getterValue &&
+    getterValue.class == "Promise" &&
+    getterValue.promiseState == "rejected"
+  );
+}

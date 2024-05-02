@@ -132,7 +132,9 @@ IDBTransaction::IDBTransaction(IDBDatabase* const aDatabase,
 IDBTransaction::~IDBTransaction() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(!mPendingRequestCount);
-  MOZ_ASSERT(mReadyState == ReadyState::Finished);
+  MOZ_ASSERT(mReadyState != ReadyState::Active);
+  MOZ_ASSERT(mReadyState != ReadyState::Inactive);
+  MOZ_ASSERT(mReadyState != ReadyState::Committing);
   MOZ_ASSERT(!mNotedActiveTransaction);
   MOZ_ASSERT(mSentCommitOrAbort);
   MOZ_ASSERT_IF(HasTransactionChild(), mFiredCompleteOrAbort);
@@ -530,7 +532,7 @@ void IDBTransaction::DeleteObjectStore(const int64_t aObjectStoreId) {
 }
 
 void IDBTransaction::RenameObjectStore(const int64_t aObjectStoreId,
-                                       const nsAString& aName) {
+                                       const nsAString& aName) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aObjectStoreId);
   MOZ_ASSERT(Mode::VersionChange == mMode);
@@ -542,8 +544,9 @@ void IDBTransaction::RenameObjectStore(const int64_t aObjectStoreId,
           aObjectStoreId, nsString(aName)));
 }
 
-void IDBTransaction::CreateIndex(IDBObjectStore* const aObjectStore,
-                                 const indexedDB::IndexMetadata& aMetadata) {
+void IDBTransaction::CreateIndex(
+    IDBObjectStore* const aObjectStore,
+    const indexedDB::IndexMetadata& aMetadata) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aObjectStore);
   MOZ_ASSERT(aMetadata.id());
@@ -557,7 +560,7 @@ void IDBTransaction::CreateIndex(IDBObjectStore* const aObjectStore,
 }
 
 void IDBTransaction::DeleteIndex(IDBObjectStore* const aObjectStore,
-                                 const int64_t aIndexId) {
+                                 const int64_t aIndexId) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aObjectStore);
   MOZ_ASSERT(aIndexId);
@@ -572,7 +575,7 @@ void IDBTransaction::DeleteIndex(IDBObjectStore* const aObjectStore,
 
 void IDBTransaction::RenameIndex(IDBObjectStore* const aObjectStore,
                                  const int64_t aIndexId,
-                                 const nsAString& aName) {
+                                 const nsAString& aName) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aObjectStore);
   MOZ_ASSERT(aIndexId);
@@ -592,7 +595,7 @@ void IDBTransaction::AbortInternal(const nsresult aAbortCode,
   MOZ_ASSERT(!IsCommittingOrFinished());
 
   const bool isVersionChange = mMode == Mode::VersionChange;
-  const bool needToSendAbort = mReadyState == ReadyState::Inactive && !mStarted;
+  const bool needToSendAbort = !mStarted;
 
   mAbortCode = aAbortCode;
   mReadyState = ReadyState::Finished;

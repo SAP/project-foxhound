@@ -39,10 +39,10 @@ function tryBadScripts() {
   }
 }
 
-const url = "data:text/plain,const startResponse = 'started';";
+const url = "data:text/javascript,const startResponse = 'started';";
 importScripts(url);
 
-onmessage = function(event) {
+onmessage = function (event) {
   switch (event.data) {
     case "start":
       importScripts("importScripts_worker_imported2.js");

@@ -1,5 +1,6 @@
-use serde::Serialize;
 use std::collections::HashMap;
+
+use serde::Serialize;
 
 #[derive(Serialize)]
 struct Config {
@@ -26,12 +27,12 @@ struct Nested {
 }
 
 const EXPECTED: &str = "(
-    float: (2.18,-1.1),
-    tuple: ((),false),
-    map: {8:'1'},
-    nested: (a:\"a\",b:'b'),
-    var: A(255,\"\"),
-    array: [(),(),()],
+    float: (2.18, -1.1),
+    tuple: ((), false),
+    map: {8: '1'},
+    nested: (a: \"a\", b: 'b'),
+    var: A(255, \"\"),
+    array: [(), (), ()],
 )";
 
 #[test]

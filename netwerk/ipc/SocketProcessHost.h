@@ -74,8 +74,7 @@ class SocketProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   }
 
   // Called on the IO thread.
-  void OnChannelConnected(int32_t peer_pid) override;
-  void OnChannelError() override;
+  void OnChannelConnected(base::ProcessId peer_pid) override;
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
   // Return the sandbox type to be used with this process type.
@@ -87,7 +86,6 @@ class SocketProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   // Called on the main thread.
   void OnChannelConnectedTask();
-  void OnChannelErrorTask();
 
   // Called on the main thread after a connection has been established.
   void InitAfterConnect(bool aSucceeded);
@@ -115,7 +113,7 @@ class SocketProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   enum class LaunchPhase { Unlaunched, Waiting, Complete };
   LaunchPhase mLaunchPhase;
 
-  UniquePtr<SocketProcessParent> mSocketProcessParent;
+  RefPtr<SocketProcessParent> mSocketProcessParent;
   // mShutdownRequested is set to true only when Shutdown() is called.
   // If mShutdownRequested is false and the IPC channel is closed,
   // OnProcessUnexpectedShutdown will be invoked.

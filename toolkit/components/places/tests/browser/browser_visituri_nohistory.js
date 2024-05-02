@@ -20,7 +20,7 @@ function promiseObserve(name) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({ set: [["places.history.enabled", false]] });
 
   let visitUriPromise = promiseObserve("uri-visit-saved");
@@ -32,7 +32,7 @@ add_task(async function() {
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser
   );
-  BrowserTestUtils.loadURI(gBrowser, FINAL_URL);
+  BrowserTestUtils.startLoadingURIString(gBrowser, FINAL_URL);
   await browserLoadedPromise;
 
   let subject = await visitUriPromise;

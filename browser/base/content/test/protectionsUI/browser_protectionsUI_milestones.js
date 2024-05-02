@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Hide protections cards so as not to trigger more async messaging
@@ -15,6 +15,15 @@ add_task(async function setup() {
 });
 
 add_task(async function doTest() {
+  requestLongerTimeout(3);
+
+  // The protections panel needs to be openend at least once,
+  // or the milestone-achieved pref observer is not triggered.
+  await BrowserTestUtils.withNewTab("https://example.com", async () => {
+    await openProtectionsPanel();
+    await closeProtectionsPanel();
+  });
+
   // This also ensures that the DB tables have been initialized.
   await TrackingDBService.clearAll();
 

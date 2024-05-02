@@ -134,6 +134,7 @@ var gTests = [
     ref: "", // fix
     specIgnoringRef: "http://a/b/c/g?y",
     hasRef: false,
+    hasQuery: true,
     nsIURL: true,
     nsINestedURI: false,
   },
@@ -460,6 +461,7 @@ var gTests = [
     scheme: "https",
     prePath: "https://www3.example2.com",
     pathQueryRef: "/bar",
+    hasQuery: false,
     ref: "",
     nsIURL: true,
     nsINestedURI: false,
@@ -599,12 +601,7 @@ function do_test_uri_basic(aTest) {
   // Sanity-check
   do_info("testing " + aTest.spec + " equals a clone of itself");
   do_check_uri_eq(URI, URI.mutate().finalize());
-  do_check_uri_eqExceptRef(
-    URI,
-    URI.mutate()
-      .setRef("")
-      .finalize()
-  );
+  do_check_uri_eqExceptRef(URI, URI.mutate().setRef("").finalize());
   do_info("testing " + aTest.spec + " instanceof nsIURL");
   Assert.equal(URI instanceof Ci.nsIURL, aTest.nsIURL);
   do_info("testing " + aTest.spec + " instanceof nsINestedURI");
@@ -641,6 +638,10 @@ function do_test_uri_basic(aTest) {
   if ("hasRef" in aTest) {
     do_info("testing hasref: " + aTest.hasRef + " vs " + URI.hasRef);
     Assert.equal(aTest.hasRef, URI.hasRef);
+  }
+  if ("hasQuery" in aTest) {
+    do_info("testing hasQuery: " + aTest.hasQuery + " vs " + URI.hasQuery);
+    Assert.equal(aTest.hasQuery, URI.hasQuery);
   }
 }
 
@@ -723,10 +724,7 @@ function do_test_uri_with_hash_suffix(aTest, aSuffix) {
         testURI.spec +
         " is equal to no-ref version but not equal to ref version"
     );
-    var cloneNoRef = testURI
-      .mutate()
-      .setRef("")
-      .finalize();
+    var cloneNoRef = testURI.mutate().setRef("").finalize();
     do_check_uri_eq(cloneNoRef, origURI);
     Assert.ok(!cloneNoRef.equals(testURI));
   }
@@ -735,10 +733,10 @@ function do_test_uri_with_hash_suffix(aTest, aSuffix) {
   do_check_property(aTest, testURI, "prePath");
   if (!origURI.ref) {
     // These don't work if it's a ref already because '+' doesn't give the right result
-    do_check_property(aTest, testURI, "pathQueryRef", function(aStr) {
+    do_check_property(aTest, testURI, "pathQueryRef", function (aStr) {
       return aStr + aSuffix;
     });
-    do_check_property(aTest, testURI, "ref", function(aStr) {
+    do_check_property(aTest, testURI, "ref", function (aStr) {
       return aSuffix.substr(1);
     });
   }
@@ -762,10 +760,7 @@ function do_test_mutate_ref(aTest, aSuffix) {
       aSuffix +
       "' does what we expect"
   );
-  testURI = testURI
-    .mutate()
-    .setRef(aSuffix)
-    .finalize();
+  testURI = testURI.mutate().setRef(aSuffix).finalize();
   do_check_uri_eq(testURI, refURIWithSuffix);
   do_check_uri_eqExceptRef(testURI, refURIWithoutSuffix);
 
@@ -780,10 +775,7 @@ function do_test_mutate_ref(aTest, aSuffix) {
         suffixLackingHash +
         "' does what we expect"
     );
-    testURI = testURI
-      .mutate()
-      .setRef(suffixLackingHash)
-      .finalize();
+    testURI = testURI.mutate().setRef(suffixLackingHash).finalize();
     do_check_uri_eq(testURI, refURIWithSuffix);
     do_check_uri_eqExceptRef(testURI, refURIWithoutSuffix);
   }
@@ -792,10 +784,7 @@ function do_test_mutate_ref(aTest, aSuffix) {
   do_info(
     "testing that clearing .ref on " + testURI.spec + " does what we expect"
   );
-  testURI = testURI
-    .mutate()
-    .setRef("")
-    .finalize();
+  testURI = testURI.mutate().setRef("").finalize();
   do_check_uri_eq(testURI, refURIWithoutSuffix);
   do_check_uri_eqExceptRef(testURI, refURIWithSuffix);
 
@@ -809,11 +798,7 @@ function do_test_mutate_ref(aTest, aSuffix) {
         specWithSuffix +
         " and then clearing ref does what we expect"
     );
-    testURI = testURI
-      .mutate()
-      .setSpec(specWithSuffix)
-      .setRef("")
-      .finalize();
+    testURI = testURI.mutate().setSpec(specWithSuffix).setRef("").finalize();
     do_check_uri_eq(testURI, refURIWithoutSuffix);
     do_check_uri_eqExceptRef(testURI, refURIWithSuffix);
 
@@ -838,19 +823,13 @@ function do_test_mutate_ref(aTest, aSuffix) {
       do_check_uri_eqExceptRef(testURI, refURIWithSuffix);
 
       // Also: make sure that clearing .pathQueryRef also clears .ref
-      testURI = testURI
-        .mutate()
-        .setPathQueryRef(pathWithSuffix)
-        .finalize();
+      testURI = testURI.mutate().setPathQueryRef(pathWithSuffix).finalize();
       do_info(
         "testing that clearing path from " +
           pathWithSuffix +
           " also clears .ref"
       );
-      testURI = testURI
-        .mutate()
-        .setPathQueryRef("")
-        .finalize();
+      testURI = testURI.mutate().setPathQueryRef("").finalize();
       Assert.equal(testURI.ref, "");
     }
   }
@@ -879,13 +858,13 @@ function run_test() {
   );
   Assert.ok(resolved.equals(expected));
 
-  gTests.forEach(function(aTest) {
+  gTests.forEach(function (aTest) {
     // Check basic URI functionality
     do_test_uri_basic(aTest);
 
     if (!aTest.fail) {
       // Try adding various #-prefixed strings to the ends of the URIs
-      gHashSuffixes.forEach(function(aSuffix) {
+      gHashSuffixes.forEach(function (aSuffix) {
         do_test_uri_with_hash_suffix(aTest, aSuffix);
         if (!aTest.immutable) {
           do_test_mutate_ref(aTest, aSuffix);

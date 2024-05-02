@@ -12,13 +12,28 @@
 #![no_std]
 #![cfg_attr(
     feature = "nightly",
-    feature(test, core_intrinsics, dropck_eyepatch, min_specialization, extend_one)
+    feature(
+        test,
+        core_intrinsics,
+        dropck_eyepatch,
+        min_specialization,
+        extend_one,
+        allocator_api,
+        slice_ptr_get,
+        nonnull_slice_from_raw_parts,
+        maybe_uninit_array_assume_init,
+        build_hasher_simple_hash_one
+    )
 )]
 #![allow(
     clippy::doc_markdown,
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
-    clippy::option_if_let_else
+    clippy::option_if_let_else,
+    clippy::redundant_else,
+    clippy::manual_map,
+    clippy::missing_safety_doc,
+    clippy::missing_errors_doc
 )]
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
@@ -48,6 +63,11 @@ pub mod raw {
     pub use inner::*;
 
     #[cfg(feature = "rayon")]
+    /// [rayon]-based parallel iterator types for hash maps.
+    /// You will rarely need to interact with it directly unless you have need
+    /// to name one of the iterator types.
+    ///
+    /// [rayon]: https://docs.rs/rayon/1.0/rayon
     pub mod rayon {
         pub use crate::external_trait_impls::rayon::raw::*;
     }
@@ -109,4 +129,22 @@ pub enum TryReserveError {
         /// The layout of the allocation request that failed.
         layout: alloc::alloc::Layout,
     },
+}
+
+/// Wrapper around `Bump` which allows it to be used as an allocator for
+/// `HashMap`, `HashSet` and `RawTable`.
+///
+/// `Bump` can be used directly without this wrapper on nightly if you enable
+/// the `allocator-api` feature of the `bumpalo` crate.
+#[cfg(feature = "bumpalo")]
+#[derive(Clone, Copy, Debug)]
+pub struct BumpWrapper<'a>(pub &'a bumpalo::Bump);
+
+#[cfg(feature = "bumpalo")]
+#[test]
+fn test_bumpalo() {
+    use bumpalo::Bump;
+    let bump = Bump::new();
+    let mut map = HashMap::new_in(BumpWrapper(&bump));
+    map.insert(0, 1);
 }

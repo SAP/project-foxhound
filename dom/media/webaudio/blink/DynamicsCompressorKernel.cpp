@@ -36,8 +36,6 @@
 #include "WebAudioUtils.h"
 
 using namespace mozilla::dom;  // for WebAudioUtils
-using mozilla::IsInfinite;
-using mozilla::IsNaN;
 using mozilla::MakeUnique;
 using mozilla::PositiveInfinity;
 
@@ -115,7 +113,8 @@ float DynamicsCompressorKernel::kneeCurve(float x, float k) {
   // Linear up to threshold.
   if (x < m_linearThreshold) return x;
 
-  return m_linearThreshold + (1 - expf(-k * (x - m_linearThreshold))) / k;
+  return m_linearThreshold +
+         (1 - fdlibm_expf(-k * (x - m_linearThreshold))) / k;
 }
 
 // Full compression curve with constant ratio after knee.
@@ -234,7 +233,7 @@ void DynamicsCompressorKernel::process(
   float fullRangeMakeupGain = 1 / fullRangeGain;
 
   // Empirical/perceptual tuning.
-  fullRangeMakeupGain = powf(fullRangeMakeupGain, 0.6f);
+  fullRangeMakeupGain = fdlibm_powf(fullRangeMakeupGain, 0.6f);
 
   float masterLinearGain =
       WebAudioUtils::ConvertDecibelsToLinear(dbPostGain) * fullRangeMakeupGain;
@@ -293,13 +292,13 @@ void DynamicsCompressorKernel::process(
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     // Fix gremlins.
-    if (IsNaN(m_detectorAverage)) m_detectorAverage = 1;
-    if (IsInfinite(m_detectorAverage)) m_detectorAverage = 1;
+    if (std::isnan(m_detectorAverage)) m_detectorAverage = 1;
+    if (std::isinf(m_detectorAverage)) m_detectorAverage = 1;
 
     float desiredGain = m_detectorAverage;
 
     // Pre-warp so we get desiredGain after sin() warp below.
-    float scaledDesiredGain = asinf(desiredGain) / (0.5f * M_PI);
+    float scaledDesiredGain = fdlibm_asinf(desiredGain) / (0.5f * M_PI);
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Deal with envelopes
@@ -327,8 +326,8 @@ void DynamicsCompressorKernel::process(
       m_maxAttackCompressionDiffDb = -1;
 
       // Fix gremlins.
-      if (IsNaN(compressionDiffDb)) compressionDiffDb = -1;
-      if (IsInfinite(compressionDiffDb)) compressionDiffDb = -1;
+      if (std::isnan(compressionDiffDb)) compressionDiffDb = -1;
+      if (std::isinf(compressionDiffDb)) compressionDiffDb = -1;
 
       // Adaptive release - higher compression (lower compressionDiffDb)
       // releases faster.
@@ -355,8 +354,8 @@ void DynamicsCompressorKernel::process(
       // Attack mode - compressionDiffDb should be positive dB
 
       // Fix gremlins.
-      if (IsNaN(compressionDiffDb)) compressionDiffDb = 1;
-      if (IsInfinite(compressionDiffDb)) compressionDiffDb = 1;
+      if (std::isnan(compressionDiffDb)) compressionDiffDb = 1;
+      if (std::isinf(compressionDiffDb)) compressionDiffDb = 1;
 
       // As long as we're still in attack mode, use a rate based off
       // the largest compressionDiffDb we've encountered so far.
@@ -367,7 +366,7 @@ void DynamicsCompressorKernel::process(
       float effAttenDiffDb = std::max(0.5f, m_maxAttackCompressionDiffDb);
 
       float x = 0.25f / effAttenDiffDb;
-      envelopeRate = 1 - powf(x, 1 / attackFrames);
+      envelopeRate = 1 - fdlibm_powf(x, 1 / attackFrames);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -427,8 +426,8 @@ void DynamicsCompressorKernel::process(
         detectorAverage = std::min(1.0f, detectorAverage);
 
         // Fix gremlins.
-        if (IsNaN(detectorAverage)) detectorAverage = 1;
-        if (IsInfinite(detectorAverage)) detectorAverage = 1;
+        if (std::isnan(detectorAverage)) detectorAverage = 1;
+        if (std::isinf(detectorAverage)) detectorAverage = 1;
 
         // Exponential approach to desired gain.
         if (envelopeRate < 1) {
@@ -442,14 +441,15 @@ void DynamicsCompressorKernel::process(
 
         // Warp pre-compression gain to smooth out sharp exponential transition
         // points.
-        float postWarpCompressorGain = sinf(0.5f * M_PI * compressorGain);
+        float postWarpCompressorGain =
+            fdlibm_sinf(0.5f * M_PI * compressorGain);
 
         // Calculate total gain using master gain and effect blend.
         float totalGain =
             dryMix + wetMix * masterLinearGain * postWarpCompressorGain;
 
         // Calculate metering.
-        float dbRealGain = 20 * log10(postWarpCompressorGain);
+        float dbRealGain = 20 * fdlibm_log10f(postWarpCompressorGain);
         if (dbRealGain < m_meteringGain)
           m_meteringGain = dbRealGain;
         else

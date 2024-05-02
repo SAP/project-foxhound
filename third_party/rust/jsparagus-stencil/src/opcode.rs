@@ -57,6 +57,7 @@ macro_rules! using_opcode_database {
                 (ToPropertyKey, to_property_key, NULL, 1, 1, 1, JOF_BYTE|JOF_IC),
                 (ToNumeric, to_numeric, NULL, 1, 1, 1, JOF_BYTE|JOF_IC),
                 (ToString, to_string, NULL, 1, 1, 1, JOF_BYTE),
+                (IsNullOrUndefined, is_null_or_undefined, NULL, 1, 1, 2, JOF_BYTE),
                 (GlobalThis, global_this, NULL, 1, 0, 1, JOF_BYTE),
                 (NonSyntacticGlobalThis, non_syntactic_global_this, NULL, 1, 0, 1, JOF_BYTE),
                 (NewTarget, new_target, NULL, 1, 0, 1, JOF_BYTE),
@@ -104,6 +105,7 @@ macro_rules! using_opcode_database {
                 (MoreIter, more_iter, NULL, 1, 1, 2, JOF_BYTE),
                 (IsNoIter, is_no_iter, NULL, 1, 1, 2, JOF_BYTE),
                 (EndIter, end_iter, NULL, 1, 2, 0, JOF_BYTE),
+                (CloseIter, close_iter, NULL, 2, 1, 0, JOF_UINT8|JOF_IC),
                 (CheckIsObj, check_is_obj, NULL, 2, 1, 1, JOF_UINT8),
                 (CheckObjCoercible, check_obj_coercible, NULL, 1, 1, 1, JOF_BYTE),
                 (ToAsyncIter, to_async_iter, NULL, 1, 2, 1, JOF_BYTE),
@@ -114,16 +116,15 @@ macro_rules! using_opcode_database {
                 (Hole, hole, NULL, 1, 0, 1, JOF_BYTE),
                 (RegExp, reg_exp, NULL, 5, 0, 1, JOF_REGEXP),
                 (Lambda, lambda, NULL, 5, 0, 1, JOF_OBJECT),
-                (LambdaArrow, lambda_arrow, NULL, 5, 1, 1, JOF_OBJECT),
                 (SetFunName, set_fun_name, NULL, 2, 2, 1, JOF_UINT8),
                 (InitHomeObject, init_home_object, NULL, 1, 2, 1, JOF_BYTE),
                 (CheckClassHeritage, check_class_heritage, NULL, 1, 1, 1, JOF_BYTE),
                 (FunWithProto, fun_with_proto, NULL, 5, 1, 1, JOF_OBJECT),
                 (BuiltinObject, builtin_object, NULL, 2, 0, 1, JOF_UINT8),
                 (Call, call, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC),
+                (CallContent, call_content, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC),
                 (CallIter, call_iter, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC),
-                (FunApply, fun_apply, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC),
-                (FunCall, fun_call, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC),
+                (CallContentIter, call_content_iter, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC),
                 (CallIgnoresRv, call_ignores_rv, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC),
                 (SpreadCall, spread_call, NULL, 1, 3, 1, JOF_BYTE|JOF_INVOKE|JOF_SPREAD|JOF_IC),
                 (OptimizeSpreadCall, optimize_spread_call, NULL, 1, 1, 1, JOF_BYTE|JOF_IC),
@@ -135,6 +136,7 @@ macro_rules! using_opcode_database {
                 (CallSiteObj, call_site_obj, NULL, 5, 0, 1, JOF_OBJECT),
                 (IsConstructing, is_constructing, NULL, 1, 0, 1, JOF_BYTE),
                 (New, new_, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_CONSTRUCT|JOF_IC),
+                (NewContent, new_content, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_CONSTRUCT|JOF_IC),
                 (SuperCall, super_call, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_CONSTRUCT|JOF_IC),
                 (SpreadNew, spread_new, NULL, 1, 4, 1, JOF_BYTE|JOF_INVOKE|JOF_CONSTRUCT|JOF_SPREAD|JOF_IC),
                 (SpreadSuperCall, spread_super_call, NULL, 1, 4, 1, JOF_BYTE|JOF_INVOKE|JOF_CONSTRUCT|JOF_SPREAD|JOF_IC),
@@ -176,10 +178,7 @@ macro_rules! using_opcode_database {
                 (Try, try_, NULL, 1, 0, 0, JOF_BYTE),
                 (TryDestructuring, try_destructuring, NULL, 1, 0, 0, JOF_BYTE),
                 (Exception, exception, NULL, 1, 0, 1, JOF_BYTE),
-                (ResumeIndex, resume_index, NULL, 4, 0, 1, JOF_RESUMEINDEX),
-                (Gosub, gosub, NULL, 5, 2, 0, JOF_JUMP),
-                (Finally, finally, NULL, 1, 0, 2, JOF_BYTE),
-                (Retsub, retsub, NULL, 1, 2, 0, JOF_BYTE),
+                (Finally, finally, NULL, 1, 0, 0, JOF_BYTE),
                 (Uninitialized, uninitialized, NULL, 1, 0, 1, JOF_BYTE),
                 (InitLexical, init_lexical, NULL, 4, 1, 1, JOF_LOCAL|JOF_NAME),
                 (InitGLexical, init_g_lexical, NULL, 5, 1, 1, JOF_ATOM|JOF_NAME|JOF_PROPINIT|JOF_GNAME|JOF_IC),
@@ -211,8 +210,8 @@ macro_rules! using_opcode_database {
                 (PushLexicalEnv, push_lexical_env, NULL, 5, 0, 0, JOF_SCOPE),
                 (PopLexicalEnv, pop_lexical_env, NULL, 1, 0, 0, JOF_BYTE),
                 (DebugLeaveLexicalEnv, debug_leave_lexical_env, NULL, 1, 0, 0, JOF_BYTE),
-                (RecreateLexicalEnv, recreate_lexical_env, NULL, 1, 0, 0, JOF_BYTE),
-                (FreshenLexicalEnv, freshen_lexical_env, NULL, 1, 0, 0, JOF_BYTE),
+                (RecreateLexicalEnv, recreate_lexical_env, NULL, 5, 0, 0, JOF_SCOPE),
+                (FreshenLexicalEnv, freshen_lexical_env, NULL, 5, 0, 0, JOF_SCOPE),
                 (PushClassBodyEnv, push_class_body_env, NULL, 5, 0, 0, JOF_SCOPE),
                 (PushVarEnv, push_var_env, NULL, 5, 0, 0, JOF_SCOPE),
                 (EnterWith, enter_with, NULL, 5, 1, 0, JOF_SCOPE),
@@ -311,7 +310,7 @@ const JOF_QARG: u32 = 11;
 /// var or block-local variable
 const JOF_LOCAL: u32 = 12;
 
-/// yield, await, or gosub resume index
+/// yield or await resume index
 const JOF_RESUMEINDEX: u32 = 13;
 
 /// inline DoubleValue

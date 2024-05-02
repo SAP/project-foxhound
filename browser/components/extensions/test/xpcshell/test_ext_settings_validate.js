@@ -2,26 +2,26 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
 
-const { AboutNewTab } = ChromeUtils.import(
-  "resource:///modules/AboutNewTab.jsm"
+const { AboutNewTab } = ChromeUtils.importESModule(
+  "resource:///modules/AboutNewTab.sys.mjs"
 );
 
 // Lazy load to avoid having Services.appinfo cached first.
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionParent",
-  "resource://gre/modules/ExtensionParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
+});
 
-const { HomePage } = ChromeUtils.import("resource:///modules/HomePage.jsm");
+const { HomePage } = ChromeUtils.importESModule(
+  "resource:///modules/HomePage.sys.mjs"
+);
 
 AddonTestUtils.init(this);
 
@@ -57,7 +57,7 @@ add_task(async function test_settings_validated() {
   let xpi = await AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: "test@mochi" } },
+      browser_specific_settings: { gecko: { id: "test@mochi" } },
       chrome_url_overrides: {
         newtab: "/newtab",
       },
@@ -142,7 +142,7 @@ add_task(async function test_settings_validated_safemode() {
   let xpi = await AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: "test@mochi" } },
+      browser_specific_settings: { gecko: { id: "test@mochi" } },
       chrome_url_overrides: {
         newtab: "/newtab",
       },

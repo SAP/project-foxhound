@@ -17,13 +17,14 @@ use crate::util::{FastTransform, LayoutToWorldFastTransform, MatrixHelpers, Scal
 use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
 use crate::util::TransformedRectKind;
+use peek_poke::PeekPoke;
 
 
 /// An id that identifies coordinate systems in the SpatialTree. Each
 /// coordinate system has an id and those ids will be shared when the coordinates
 /// system are the same or are in the same axis-aligned space. This allows
 /// for optimizing mask generation.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct CoordinateSystemId(pub u32);
@@ -51,13 +52,20 @@ impl CoordinateSystem {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq, PeekPoke, Default)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct SpatialNodeIndex(u32);
+pub struct SpatialNodeIndex(pub u32);
 
 impl SpatialNodeIndex {
     pub const INVALID: SpatialNodeIndex = SpatialNodeIndex(u32::MAX);
+
+    /// May be set on a cluster / picture during scene building if the spatial
+    /// node is not known at this time. It must be set to a valid value before
+    /// scene building is complete (by `finalize_picture`). In future, we could
+    /// make this type-safe with a wrapper type to ensure we know when a spatial
+    /// node index may have an unknown value.
+    pub const UNKNOWN: SpatialNodeIndex = SpatialNodeIndex(u32::MAX - 1);
 }
 
 // In some cases, the conversion from CSS pixels to device pixels can result in small
@@ -713,6 +721,14 @@ impl<Src, Dst> CoordinateSpaceMapping<Src, Dst> {
         }
     }
 
+    pub fn is_2d_scale_translation(&self) -> bool {
+        match *self {
+            CoordinateSpaceMapping::Local |
+            CoordinateSpaceMapping::ScaleOffset(_) => true,
+            CoordinateSpaceMapping::Transform(ref transform) => transform.is_2d_scale_translation(),
+        }
+    }
+
     pub fn scale_factors(&self) -> (f32, f32) {
         match *self {
             CoordinateSpaceMapping::Local => (1.0, 1.0),
@@ -903,6 +919,31 @@ impl SpatialTree {
         });
     }
 
+    pub fn get_last_sampled_scroll_offsets(
+        &self,
+    ) -> FastHashMap<ExternalScrollId, Vec<SampledScrollOffset>> {
+        let mut result = FastHashMap::default();
+        self.visit_nodes(|_, node| {
+            if let SpatialNodeType::ScrollFrame(ref scrolling) = node.node_type {
+                result.insert(scrolling.external_id, scrolling.offsets.clone());
+            }
+        });
+        result
+    }
+
+    pub fn apply_last_sampled_scroll_offsets(
+        &mut self,
+        last_sampled_offsets: FastHashMap<ExternalScrollId, Vec<SampledScrollOffset>>,
+    ) {
+        self.visit_nodes_mut(|_, node| {
+            if let SpatialNodeType::ScrollFrame(ref mut scrolling) = node.node_type {
+                if let Some(offsets) = last_sampled_offsets.get(&scrolling.external_id) {
+                    scrolling.offsets = offsets.clone();
+                }
+            }
+        });
+    }
+
     pub fn get_spatial_node(&self, index: SpatialNodeIndex) -> &SpatialNode {
         &self.spatial_nodes[index.0 as usize]
     }
@@ -1012,19 +1053,17 @@ impl SpatialTree {
         CoordinateSpaceMapping::Transform(transform)
     }
 
-    pub fn is_relative_transform_complex(
+    /// Returns true if both supplied spatial nodes are in the same coordinate system
+    /// (implies the relative transform produce axis-aligned rects).
+    pub fn is_matching_coord_system(
         &self,
-        child_index: SpatialNodeIndex,
-        parent_index: SpatialNodeIndex,
+        index0: SpatialNodeIndex,
+        index1: SpatialNodeIndex,
     ) -> bool {
-        if child_index == parent_index {
-            return false;
-        }
+        let node0 = self.get_spatial_node(index0);
+        let node1 = self.get_spatial_node(index1);
 
-        let child = self.get_spatial_node(child_index);
-        let parent = self.get_spatial_node(parent_index);
-
-        child.coordinate_system_id != parent.coordinate_system_id
+        node0.coordinate_system_id == node1.coordinate_system_id
     }
 
     fn get_world_transform_impl(

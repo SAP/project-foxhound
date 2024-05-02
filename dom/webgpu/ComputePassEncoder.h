@@ -58,15 +58,16 @@ class ComputePassEncoder final : public ObjectBase,
   // self
   void SetPipeline(const ComputePipeline& aPipeline);
 
-  void Dispatch(uint32_t x, uint32_t y, uint32_t z);
-  void DispatchIndirect(const Buffer& aIndirectBuffer,
-                        uint64_t aIndirectOffset);
+  void DispatchWorkgroups(uint32_t workgroupCountX, uint32_t workgroupCountY,
+                          uint32_t workgroupCountZ);
+  void DispatchWorkgroupsIndirect(const Buffer& aIndirectBuffer,
+                                  uint64_t aIndirectOffset);
 
   void PushDebugGroup(const nsAString& aString);
   void PopDebugGroup();
   void InsertDebugMarker(const nsAString& aString);
 
-  void EndPass(ErrorResult& aRv);
+  void End(ErrorResult& aRv);
 };
 
 }  // namespace webgpu

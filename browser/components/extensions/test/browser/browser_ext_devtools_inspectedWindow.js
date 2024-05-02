@@ -8,7 +8,7 @@ loadTestSubscript("head_devtools.js");
  * Helper that returns the id of the last additional/extension tool for a provided
  * toolbox.
  *
- * @param {Object} toolbox
+ * @param {object} toolbox
  *        The DevTools toolbox object.
  * @param {string} label
  *        The expected label for the additional tool.
@@ -16,23 +16,21 @@ loadTestSubscript("head_devtools.js");
  */
 function getAdditionalPanelId(toolbox, label) {
   // Copy the tools array and pop the last element from it.
-  const panelDef = toolbox
-    .getAdditionalTools()
-    .slice()
-    .pop();
+  const panelDef = toolbox.getAdditionalTools().slice().pop();
   is(panelDef.label, label, "Additional panel label is the expected label");
   return panelDef.id;
 }
 
 /**
  * Helper that returns the number of existing target actors for the content browserId
+ *
  * @param {Tab} tab
  * @returns {Integer} the number of targets
  */
 function getTargetActorsCount(tab) {
   return SpecialPowers.spawn(tab.linkedBrowser, [], () => {
-    const { TargetActorRegistry } = ChromeUtils.import(
-      "resource://devtools/server/actors/targets/target-actor-registry.jsm"
+    const { TargetActorRegistry } = ChromeUtils.importESModule(
+      "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs"
     );
 
     // Retrieve the target actor instances
@@ -189,10 +187,8 @@ add_task(async function test_devtools_inspectedWindow_eval() {
       }
 
       try {
-        const [
-          evalResult,
-          errorResult,
-        ] = await browser.devtools.inspectedWindow.eval(...args);
+        const [evalResult, errorResult] =
+          await browser.devtools.inspectedWindow.eval(...args);
         browser.test.sendMessage("inspectedWindow-eval-result", {
           evalResult,
           errorResult,
@@ -330,10 +326,8 @@ add_task(async function test_devtools_inspectedWindow_eval_in_page_and_panel() {
     browser.test.onMessage.addListener(async (msg, ...args) => {
       switch (msg) {
         case "inspectedWindow-page-eval-request": {
-          const [
-            evalResult,
-            errorResult,
-          ] = await browser.devtools.inspectedWindow.eval(...args);
+          const [evalResult, errorResult] =
+            await browser.devtools.inspectedWindow.eval(...args);
           browser.test.sendMessage("inspectedWindow-page-eval-result", {
             evalResult,
             errorResult,
@@ -355,10 +349,8 @@ add_task(async function test_devtools_inspectedWindow_eval_in_page_and_panel() {
     browser.test.onMessage.addListener(async (msg, ...args) => {
       switch (msg) {
         case "inspectedWindow-panel-eval-request": {
-          const [
-            evalResult,
-            errorResult,
-          ] = await browser.devtools.inspectedWindow.eval(...args);
+          const [evalResult, errorResult] =
+            await browser.devtools.inspectedWindow.eval(...args);
           browser.test.sendMessage("inspectedWindow-panel-eval-result", {
             evalResult,
             errorResult,

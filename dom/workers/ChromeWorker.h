@@ -9,14 +9,13 @@
 
 #include "mozilla/dom/Worker.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ChromeWorker final : public Worker {
  public:
-  static already_AddRefed<ChromeWorker> Constructor(const GlobalObject& aGlobal,
-                                                    const nsAString& aScriptURL,
-                                                    ErrorResult& aRv);
+  static already_AddRefed<ChromeWorker> Constructor(
+      const GlobalObject& aGlobal, const nsAString& aScriptURL,
+      const WorkerOptions& aOptions, ErrorResult& aRv);
 
   static bool WorkerAvailable(JSContext* aCx, JSObject* /* unused */);
 
@@ -29,7 +28,6 @@ class ChromeWorker final : public Worker {
   ~ChromeWorker();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_ChromeWorker_h */

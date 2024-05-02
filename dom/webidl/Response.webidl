@@ -19,6 +19,8 @@ interface Response {
   [NewObject] static Response error();
   [Throws,
    NewObject] static Response redirect(USVString url, optional unsigned short status = 302);
+  [BinaryName=CreateFromJson, Throws,
+   NewObject] static Response json(any data, optional ResponseInit init = {});
 
   readonly attribute ResponseType type;
 
@@ -42,7 +44,7 @@ Response includes Body;
 // This should be part of Body but we don't want to expose body to request yet.
 // See bug 1387483.
 partial interface Response {
-  [GetterThrows, Pref="javascript.options.streams"]
+  [GetterThrows]
   readonly attribute ReadableStream? body;
 };
 

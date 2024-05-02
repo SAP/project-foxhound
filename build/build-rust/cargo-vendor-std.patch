@@ -9,20 +9,20 @@ Most of these changes just add/edit tests for the functionality. Only the
 change to src/cargo/core/compiler/standard_lib.rs is important.
 
 diff --git a/src/cargo/core/compiler/standard_lib.rs b/src/cargo/core/compiler/standard_lib.rs
-index 0b14df805..7bc5151a4 100644
+index c456c58d5..333389bc8 100644
 --- a/src/cargo/core/compiler/standard_lib.rs
 +++ b/src/cargo/core/compiler/standard_lib.rs
-@@ -10,6 +10,7 @@ use crate::ops::{self, Packages};
+@@ -11,6 +11,7 @@ use crate::ops::{self, Packages};
  use crate::util::errors::CargoResult;
+ use crate::Config;
  use std::collections::{HashMap, HashSet};
- use std::env;
 +use std::fs;
  use std::path::PathBuf;
  
- /// Parse the `-Zbuild-std` flag.
-@@ -38,28 +39,46 @@ pub fn resolve_std<'cfg>(
-     crates: &[String],
- ) -> CargoResult<(PackageSet<'cfg>, Resolve, ResolvedFeatures)> {
+ use super::BuildConfig;
+@@ -73,27 +74,45 @@ pub fn resolve_std<'cfg>(
+     }
+ 
      let src_path = detect_sysroot_src_path(target_data)?;
 -    let to_patch = [
 -        "rustc-std-workspace-core",
@@ -41,9 +41,9 @@ index 0b14df805..7bc5151a4 100644
 +    let special_std_prefix = "rustc-std-workspace-";
 +    let libs_path = src_path.join(libs_prefix);
 +
-+    // Crates in rust-src to build. libtest is in some sense the "root" package
++    // Crates in rust-src to build. libsysroot is in some sense the "root" package
 +    // of std, as nothing else depends on it, so it must be explicitly added.
-+    let mut members = vec![format!("{}test", libs_prefix)];
++    let mut members = vec![format!("{}sysroot", libs_prefix)];
 +
 +    // If rust-src contains a "vendor" directory, then patch in all the crates it contains.
 +    let vendor_path = src_path.join("vendor");
@@ -72,29 +72,25 @@ index 0b14df805..7bc5151a4 100644
          .collect::<CargoResult<Vec<_>>>()?;
 +
      let crates_io_url = crate::sources::CRATES_IO_INDEX.parse().unwrap();
-     let mut patch = HashMap::new();
-     patch.insert(crates_io_url, patches);
+     let patch = HashMap::from([(crates_io_url, patches)]);
 -    let members = vec![
 -        String::from("library/std"),
 -        String::from("library/core"),
 -        String::from("library/alloc"),
--        String::from("library/test"),
+-        String::from("library/sysroot"),
 -    ];
      let ws_config = crate::core::WorkspaceConfig::Root(crate::core::WorkspaceRootConfig::new(
          &src_path,
          &Some(members),
 diff --git a/tests/testsuite/mock-std/library/test/Cargo.toml b/tests/testsuite/mock-std/library/test/Cargo.toml
-index 299db7bfd..eb81bbf5e 100644
+index b9f51eda7..fed5f3973 100644
 --- a/tests/testsuite/mock-std/library/test/Cargo.toml
 +++ b/tests/testsuite/mock-std/library/test/Cargo.toml
-@@ -10,6 +10,7 @@ std = { path = "../std" }
+@@ -9,3 +9,4 @@ std = { path = "../std" }
  panic_unwind = { path = "../panic_unwind" }
  compiler_builtins = { path = "../compiler_builtins" }
  registry-dep-using-std = { version = "*", features = ['mockbuild'] }
 +registry-dep-only-used-by-test = { version = "*" }
- 
- [features]
- panic-unwind = []
 diff --git a/tests/testsuite/mock-std/library/test/src/lib.rs b/tests/testsuite/mock-std/library/test/src/lib.rs
 index a112855f5..224b89bb2 100644
 --- a/tests/testsuite/mock-std/library/test/src/lib.rs
@@ -255,13 +251,13 @@ index 000000000..4465a08a8
 +this file shouldn't be read 
 \ No newline at end of file
 diff --git a/tests/testsuite/standard_lib.rs b/tests/testsuite/standard_lib.rs
-index b0d42b38d..3bbc49db7 100644
+index d3be303ea..486a9b4e0 100644
 --- a/tests/testsuite/standard_lib.rs
 +++ b/tests/testsuite/standard_lib.rs
-@@ -27,71 +27,18 @@ fn setup() -> Option<Setup> {
-         return None;
-     }
+@@ -15,71 +15,18 @@ struct Setup {
+ }
  
+ fn setup() -> Setup {
 -    // Our mock sysroot requires a few packages from crates.io, so make sure
 -    // they're "published" to crates.io. Also edit their code a bit to make sure
 -    // that they have access to our custom crates with custom apis.
@@ -333,9 +329,9 @@ index b0d42b38d..3bbc49db7 100644
  
      let p = ProjectBuilder::new(paths::root().join("rustc-wrapper"))
          .file(
-@@ -327,6 +274,81 @@ fn depend_same_as_std() {
-         None => return,
-     };
+@@ -335,6 +282,81 @@ fn depend_same_as_std() {
+ fn test() {
+     let setup = setup();
  
 +    // Our mock sysroot requires a few packages from crates.io, so make sure
 +    // they're "published" to crates.io. Also edit their code a bit to make sure

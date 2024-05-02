@@ -11,17 +11,20 @@ with Files("Event*"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser.ini",
+    "test/browser.toml",
+    "test/clipboard/browser.toml",
 ]
 
 MOCHITEST_MANIFESTS += [
-    "test/mochitest.ini",
-    "test/pointerevents/mochitest.ini",
+    "test/clipboard/mochitest.toml",
+    "test/mochitest.toml",
+    "test/pointerevents/mochitest.toml",
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
-    "test/chrome.ini",
-    "test/pointerevents/chrome.ini",
+    "test/chrome.toml",
+    "test/clipboard/chrome.toml",
+    "test/pointerevents/chrome.toml",
 ]
 
 TEST_DIRS += ["test/gtest"]
@@ -39,7 +42,6 @@ EXPORTS.mozilla += [
     "EventListenerManager.h",
     "EventNameList.h",
     "EventStateManager.h",
-    "EventStates.h",
     "GlobalKeyListener.h",
     "IMEContentObserver.h",
     "IMEStateManager.h",
@@ -77,6 +79,7 @@ EXPORTS.mozilla.dom += [
     "FocusEvent.h",
     "ImageCaptureError.h",
     "InputEvent.h",
+    "InvokeEvent.h",
     "KeyboardEvent.h",
     "MessageEvent.h",
     "MouseEvent.h",
@@ -131,6 +134,7 @@ UNIFIED_SOURCES += [
     "IMEContentObserver.cpp",
     "IMEStateManager.cpp",
     "InputEvent.cpp",
+    "InvokeEvent.cpp",
     "JSEventHandler.cpp",
     "KeyboardEvent.cpp",
     "KeyEventHandler.cpp",

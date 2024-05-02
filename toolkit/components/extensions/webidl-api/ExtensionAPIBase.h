@@ -8,6 +8,7 @@
 #define mozilla_extensions_ExtensionAPIBase_h
 
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/ErrorResult.h"
 
@@ -21,6 +22,31 @@ class Function;
 
 namespace extensions {
 
+#define NS_IMPL_WEBEXT_EVENTMGR_WITH_DATAMEMBER(            \
+    _class, _eventName, _eventGetterName, _eventDataMember) \
+  ExtensionEventManager* _class::_eventGetterName() {       \
+    if (!(_eventDataMember)) {                              \
+      (_eventDataMember) = CreateEventManager(_eventName);  \
+    }                                                       \
+    return (_eventDataMember);                              \
+  }
+#define NS_IMPL_WEBEXT_EVENTMGR(_class, _eventName, _eventGetterName) \
+  NS_IMPL_WEBEXT_EVENTMGR_WITH_DATAMEMBER(                            \
+      _class, _eventName, _eventGetterName, m##_eventGetterName##EventMgr)
+
+#define NS_IMPL_WEBEXT_SETTING_WITH_DATAMEMBER(                   \
+    _class, _settingName, _settingGetterName, _settingDataMember) \
+  ExtensionSetting* _class::_settingGetterName() {                \
+    if (!(_settingDataMember)) {                                  \
+      (_settingDataMember) = CreateSetting(_settingName);         \
+    }                                                             \
+    return (_settingDataMember);                                  \
+  }
+#define NS_IMPL_WEBEXT_SETTING(_class, _settingName, _settingGetterName) \
+  NS_IMPL_WEBEXT_SETTING_WITH_DATAMEMBER(_class, _settingName,           \
+                                         _settingGetterName,             \
+                                         m##_settingGetterName##Setting)
+
 class ExtensionAPIAddRemoveListener;
 class ExtensionAPICallFunctionNoReturn;
 class ExtensionAPICallSyncFunction;
@@ -29,23 +55,9 @@ class ExtensionAPIGetProperty;
 class ExtensionBrowser;
 class ExtensionEventManager;
 class ExtensionPort;
+class ExtensionSetting;
 
 class ExtensionAPIBase {
- protected:
-  virtual nsIGlobalObject* GetGlobalObject() const = 0;
-  virtual ExtensionBrowser* GetExtensionBrowser() const = 0;
-  virtual nsString GetAPINamespace() const = 0;
-  virtual nsString GetAPIObjectType() const = 0;
-  virtual nsString GetAPIObjectId() const = 0;
-
- private:
-  void CallWebExtMethodAsyncInternal(JSContext* aCx,
-                                     const nsAString& aApiMethod,
-                                     const dom::Sequence<JS::Value>& aArgs,
-                                     const RefPtr<dom::Function>& aCallback,
-                                     JS::MutableHandle<JS::Value> aRetval,
-                                     ErrorResult& aRv);
-
  public:
   // WebExtensionStub methods shared between multiple API namespaces.
 
@@ -104,6 +116,9 @@ class ExtensionAPIBase {
   already_AddRefed<ExtensionEventManager> CreateEventManager(
       const nsAString& aEventName);
 
+  already_AddRefed<ExtensionSetting> CreateSetting(
+      const nsAString& aSettingName);
+
   RefPtr<ExtensionAPICallFunctionNoReturn> CallFunctionNoReturn(
       const nsAString& aApiMethod);
 
@@ -122,6 +137,21 @@ class ExtensionAPIBase {
       const nsAString& aEventName);
 
   static void ThrowUnexpectedError(JSContext* aCx, ErrorResult& aRv);
+
+ protected:
+  virtual nsIGlobalObject* GetGlobalObject() const = 0;
+  virtual ExtensionBrowser* GetExtensionBrowser() const = 0;
+  virtual nsString GetAPINamespace() const = 0;
+  virtual nsString GetAPIObjectType() const = 0;
+  virtual nsString GetAPIObjectId() const = 0;
+
+ private:
+  void CallWebExtMethodAsyncInternal(JSContext* aCx,
+                                     const nsAString& aApiMethod,
+                                     const dom::Sequence<JS::Value>& aArgs,
+                                     const RefPtr<dom::Function>& aCallback,
+                                     JS::MutableHandle<JS::Value> aRetval,
+                                     ErrorResult& aRv);
 };
 
 class ExtensionAPINamespace : public ExtensionAPIBase {

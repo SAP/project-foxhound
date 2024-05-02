@@ -4,7 +4,7 @@
 Remote Settings
 ===============
 
-The `remote-settings.js <https://searchfox.org/mozilla-central/source/services/settings/remote-settings.js>`_ module offers the ability to fetch remote settings that are kept in sync with Mozilla servers.
+The :searchfox:`remote-settings.sys.mjs <services/settings/remote-settings.sys.mjs>` module offers the ability to fetch remote settings that are kept in sync with Mozilla servers.
 
 
 Usage
@@ -14,7 +14,7 @@ The ``get()`` method returns the list of entries for a specific key. Each entry 
 
 .. code-block:: js
 
-    const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js", {});
+    const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.sys.mjs");
 
     const data = await RemoteSettings("a-key").get();
 
@@ -73,6 +73,9 @@ Options
 * ``verifySignature``: verify the content signature of the local data (default: ``false``).
   An error is thrown if the local data was altered. This hurts performance, but can be used if your use case needs to be secure from local tampering.
 
+* ``emptyListFallback``: return an empty list if obtaining the records fails (default: ``true``).
+  If an error occurs during the reading of local data, or during synchronization, then an empty list is returned.
+
 
 Events
 ------
@@ -117,27 +120,25 @@ Remote files are not downloaded automatically. In order to keep attachments in s
         .filter(d => d.attachment);
 
       // Remove local files of deleted records
-      await Promise.all(toDelete.map(entry => client.attachments.delete(entry)));
-      // Download attachments
-      const fileURLs = await Promise.all(
-        toDownload.map(entry => client.attachments.download(entry, { retries: 2 }))
+      await Promise.all(
+        toDelete.map(record => client.attachments.deleteDownloaded(record))
       );
 
-      // Open downloaded files...
+      // Download new attachments
       const fileContents = await Promise.all(
-        fileURLs.map(async url => {
-          const r = await fetch(url);
-          return r.blob();
-        })
+        toDownload.map(async record => {
+          const { buffer } = await client.attachments.download(record);
+          return buffer;
+        });
       );
     });
 
 The provided helper will:
   - fetch the remote binary content
-  - write the file in the profile folder
+  - write the file in the local IndexedDB
   - check the file size
   - check the content SHA256 hash
-  - do nothing if the file is already present and sound locally.
+  - do nothing if the attachment was already present and sound locally.
 
 .. important::
 
@@ -149,27 +150,22 @@ The provided helper will:
 
 .. note::
 
-    The ``download()`` method does not return a file path but instead a ``file://`` URL which points to the locally-downloaded file.
-    This will allow us to package attachments as part of a Firefox release (see `Bug 1542177 <https://bugzilla.mozilla.org/show_bug.cgi?id=1542177>`_)
-    and return them to calling code as ``resource://`` from within a package archive.
+    The ``download()`` method supports the following options:
+
+    - ``retries`` (default: ``3``): number of retries on network errors
+    - ``fallbackToCache`` (default: ``false``): allows callers to fall back to the cached file and record, if the requested record's attachment fails to download.
+      This enables callers to always have a valid pair of attachment and record,
+      provided that the attachment has been retrieved at least once.
+    - ``fallbackToDump`` (default: ``false``): activates a fallback to a dump that has been
+      packaged with the client, when other ways to load the attachment have failed.
+      See :ref:`services/packaging-attachments <services/packaging-attachments>` for more information.
 
 .. note::
 
-    By default, the ``download()`` method is prone to leaving extraneous files in the profile directory
-    (see `Bug 1634127 <https://bugzilla.mozilla.org/show_bug.cgi?id=1634127>`_).
-    Pass the ``useCache`` option to use an IndexedDB-based cache, and unlock the following features:
+    A ``downloadAsBytes()`` method returning an ``ArrayBuffer`` is also available, if writing the attachment locally is not necessary.
 
-    The ``fallbackToCache`` option allows callers to fall back to the cached file and record, if the requested record's attachment fails to download.
-    This enables callers to always have a valid pair of attachment and record,
-    provided that the attachment has been retrieved at least once.
-
-    The ``fallbackToDump`` option activates a fallback to a dump that has been
-    packaged with the client, when other ways to load the attachment have failed.
-    See :ref:`services/packaging-attachments <services/packaging-attachments>` for more information.
-
-.. note::
-
-    A ``downloadAsBytes()`` method returning an ``ArrayBuffer`` is also available, if writing the attachment into the user profile is not necessary.
+    Some ``downloadToDisk()`` and ``deleteFromDisk()`` methods are also available but generally discouraged, since they are prone to leaving extraneous files
+    in the profile directory (see `Bug 1634127 <https://bugzilla.mozilla.org/show_bug.cgi?id=1634127>`_).
 
 
 .. _services/initial-data:
@@ -181,7 +177,12 @@ It is possible to package a dump of the server records that will be loaded into 
 
 The JSON dump will serve as the default dataset for ``.get()``, instead of doing a round-trip to pull the latest data. It will also reduce the amount of data to be downloaded on the first synchronization.
 
-#. Place the JSON dump of the server records in the ``services/settings/dumps/main/`` folder
+#. Place the JSON dump of the server records in the ``services/settings/dumps/main/`` folder. Using this command:
+   ::
+
+      CID="your-collection"
+      curl "https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/${CID}/changeset?_expected=0" | jq '{"data": .changes, "timestamp": .timestamp}' > services/settings/dumps/main/${CID}.json``
+
 #. Add the filename to the ``FINAL_TARGET_FILES`` list in ``services/settings/dumps/main/moz.build``
 #. Add the filename to the ``[browser]`` section of ``mobile/android/installer/package-manifest.in`` IF the file should be bundled with Android.
 
@@ -226,10 +227,13 @@ To package an attachment for consumers of the `download()` method:
 .. note::
 
    ``<attachment id>`` is used to derive the file names of the packaged attachment dump, and as the
-   key for the (optional) cache where attachment updates from the network are saved. If the cache
-   is enabled, the attachment identifier is expected to be fixed across client application updates.
+   key for the cache where attachment updates from the network are saved.
+   The attachment identifier is expected to be fixed across client application updates.
    If that expectation cannot be met, the ``attachmentId`` option of the ``download`` method of the
    attachment downloader should be used to override the attachment ID with a custom (stable) value.
+   In order to keep track of the cached attachment, and prevent it from being pruned automatically,
+   the attachment identifier will have to be explicitly listed in the ``keepAttachmentsIds = [<attachment id>]``
+   option of the RemoteSettings client constructor.
 
 .. note::
 
@@ -324,8 +328,9 @@ The polling for changes process sends two notifications that observers can regis
 
 * ``remote-settings:changes-poll-start``: Polling for changes is starting. triggered either by the scheduled timer or a push broadcast.
 * ``remote-settings:changes-poll-end``: Polling for changes has ended
-* ``remote-settings:sync-error``: A synchronization error occured. Notification subject provides information about the error and affected
+* ``remote-settings:sync-error``: A synchronization error occurred. Notification subject provides information about the error and affected
   collection in the ``wrappedJSObject`` attribute.
+* ``remote-settings:broken-sync-error``: Synchronization seems to be consistently failing. Profile is at risk.
 
 .. code-block:: javascript
 
@@ -389,6 +394,17 @@ Remote Settings Dev Tools
 
 The Remote Settings Dev Tools extension provides some tooling to inspect synchronization statuses, to change the remote server or to switch to *preview* mode in order to sign-off pending changes. `More information on the dedicated repository <https://github.com/mozilla/remote-settings-devtools>`_.
 
+Preview Mode
+------------
+
+Enable the preview mode in order to preview changes to be reviewed on the server. This can be achieved using the *Remote Settings Dev Tools*, or programmatically with:
+
+.. code-block:: javascript
+
+    RemoteSettings.enablePreviewMode(true);
+
+In order to pull preview data **on startup**, or in order to persist it across restarts, set ``services.settings.preview_enabled`` to ``true`` in the profile preferences (ie. ``user.js``).
+For release and ESR, for security reasons, you would have to run the application with the ``MOZ_REMOTE_SETTINGS_DEVTOOLS=1`` environment variable for the preference to be taken into account. Note that toggling the preference won't have any effect until restart.
 
 Trigger a synchronization manually
 ----------------------------------
@@ -466,7 +482,7 @@ A handle on the underlying database can be obtained through the ``.db`` attribut
 
 .. code-block:: js
 
-    const db = await RemoteSettings("a-key").db;
+    const db = RemoteSettings("a-key").db;
 
 And records can be created manually (as if they were synchronized from the server):
 
@@ -479,11 +495,11 @@ And records can be created manually (as if they were synchronized from the serve
       passwordSelector: "#pass-signin",
     });
 
-If no timestamp is set, any call to ``.get()`` will trigger the load of initial data (JSON dump) if any, or a synchronization will be triggered. To avoid that, store a fake timestamp:
+If no timestamp is set, any call to ``.get()`` will trigger the load of initial data (JSON dump) if any, or a synchronization will be triggered. To avoid that, store a fake timestamp. We use ``Date.now()`` instead of an arbitrary number, to make sure it's higher than the dump's, and thus prevent its load from the test.
 
 .. code-block:: js
 
-    await db.importChanges({}, 42);
+    await db.importChanges({}, Date.now());
 
 In order to bypass the potential target filtering of ``RemoteSettings("key").get()``, the low-level listing of records can be obtained with ``collection.list()``:
 
@@ -521,11 +537,11 @@ For example, they leverage advanced customization options (bucket, content-signa
     RemoteSecuritySettings.init();
 
 
-    const Blocklist = ChromeUtils.import("resource://gre/modules/Blocklist.jsm", null);
+    const {BlocklistPrivate} = ChromeUtils.import("resource://gre/modules/Blocklist.jsm");
 
-    Blocklist.ExtensionBlocklistRS._ensureInitialized();
-    Blocklist.PluginBlocklistRS._ensureInitialized();
-    Blocklist.GfxBlocklistRS._ensureInitialized();
+    BlocklistPrivate.ExtensionBlocklistRS._ensureInitialized();
+    BlocklistPrivate.PluginBlocklistRS._ensureInitialized();
+    BlocklistPrivate.GfxBlocklistRS._ensureInitialized();
 
 Then, in order to access a specific client instance, the ``bucketName`` must be specified:
 

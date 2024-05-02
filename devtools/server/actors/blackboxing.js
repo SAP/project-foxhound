@@ -4,11 +4,14 @@
 
 "use strict";
 
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
-const { blackboxingSpec } = require("devtools/shared/specs/blackboxing");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  blackboxingSpec,
+} = require("resource://devtools/shared/specs/blackboxing.js");
+
 const {
   SessionDataHelpers,
-} = require("devtools/server/actors/watcher/SessionDataHelpers.jsm");
+} = require("resource://devtools/server/actors/watcher/SessionDataHelpers.jsm");
 const { SUPPORTED_DATA } = SessionDataHelpers;
 const { BLACKBOXING } = SUPPORTED_DATA;
 
@@ -22,15 +25,11 @@ const { BLACKBOXING } = SUPPORTED_DATA;
  * @constructor
  *
  */
-const BlackboxingActor = ActorClassWithSpec(blackboxingSpec, {
-  initialize(watcherActor) {
+class BlackboxingActor extends Actor {
+  constructor(watcherActor) {
+    super(watcherActor.conn, blackboxingSpec);
     this.watcherActor = watcherActor;
-    Actor.prototype.initialize.call(this, this.watcherActor.conn);
-  },
-
-  destroy(conn) {
-    Actor.prototype.destroy.call(this, conn);
-  },
+  }
 
   /**
    * Request to blackbox a new JS file either completely if no range is passed.
@@ -47,21 +46,24 @@ const BlackboxingActor = ActorClassWithSpec(blackboxingSpec, {
    *                 }
    */
   blackbox(url, ranges) {
-    if (ranges.length == 0) {
-      return this.watcherActor.addDataEntry(BLACKBOXING, [
-        { url, range: null },
-      ]);
+    if (!ranges.length) {
+      return this.watcherActor.addOrSetDataEntry(
+        BLACKBOXING,
+        [{ url, range: null }],
+        "add"
+      );
     }
-    return this.watcherActor.addDataEntry(
+    return this.watcherActor.addOrSetDataEntry(
       BLACKBOXING,
       ranges.map(range => {
         return {
           url,
           range,
         };
-      })
+      }),
+      "add"
     );
-  },
+  }
 
   /**
    * Request to unblackbox some JS sources.
@@ -69,10 +71,10 @@ const BlackboxingActor = ActorClassWithSpec(blackboxingSpec, {
    * See `blackbox` for more info.
    */
   unblackbox(url, ranges) {
-    if (ranges.length == 0) {
-      const existingRanges = this.watcherActor
-        .getSessionDataForType(BLACKBOXING)
-        .filter(entry => entry.url == url);
+    if (!ranges.length) {
+      const existingRanges = (
+        this.watcherActor.getSessionDataForType(BLACKBOXING) || []
+      ).filter(entry => entry.url == url);
 
       return this.watcherActor.removeDataEntry(BLACKBOXING, existingRanges);
     }
@@ -85,7 +87,7 @@ const BlackboxingActor = ActorClassWithSpec(blackboxingSpec, {
         };
       })
     );
-  },
-});
+  }
+}
 
 exports.BlackboxingActor = BlackboxingActor;

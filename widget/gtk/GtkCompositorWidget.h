@@ -79,11 +79,14 @@ class GtkCompositorWidget : public CompositorWidget,
   // Resume rendering with to given aXWindow (X11) or nsWindow (Wayland).
   void EnableRendering(const uintptr_t aXWindow, const bool aShaped) override;
 
+  // If we fail to set window size (due to different screen scale or so)
+  // we can't paint the frame by compositor.
+  bool SetEGLNativeWindowSize(const LayoutDeviceIntSize& aEGLWindowSize);
+
 #if defined(MOZ_X11)
   Window XWindow() const { return mXWindow; }
 #endif
 #if defined(MOZ_WAYLAND)
-  void SetEGLNativeWindowSize(const LayoutDeviceIntSize& aEGLWindowSize);
   RefPtr<mozilla::layers::NativeLayerRoot> GetNativeLayerRoot() override;
 #endif
 
@@ -99,7 +102,7 @@ class GtkCompositorWidget : public CompositorWidget,
 
  private:
 #if defined(MOZ_WAYLAND)
-  bool ConfigureWaylandBackend(RefPtr<nsWindow> aWindow);
+  bool ConfigureWaylandBackend();
 #endif
 #if defined(MOZ_X11)
   bool ConfigureX11Backend(Window aXWindow, bool aShaped);
@@ -128,7 +131,7 @@ class GtkCompositorWidget : public CompositorWidget,
 #ifdef MOZ_WAYLAND
   RefPtr<mozilla::layers::NativeLayerRootWayland> mNativeLayerRoot;
 #endif
-  Atomic<bool> mIsRenderingSuspended;
+  Atomic<bool> mIsRenderingSuspended{true};
 };
 
 }  // namespace widget

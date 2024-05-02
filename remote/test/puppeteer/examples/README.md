@@ -2,7 +2,7 @@
 
 Assuming you have a checkout of the Puppeteer repo and have run npm i (or yarn) to install the dependencies, the examples can be run from the root folder like so:
 
-```sh
+```bash
 NODE_PATH=../ node examples/search.js
 ```
 
@@ -22,7 +22,6 @@ More complex and use case driven examples can be found at [github.com/GoogleChro
 - [headless-chrome-crawler](https://github.com/yujiosaka/headless-chrome-crawler) - Crawler that provides simple APIs to manipulate Headless Chrome and allows you to crawl dynamic websites.
 - [puppeteer-examples](https://github.com/checkly/puppeteer-examples) - Puppeteer Headless Chrome examples for real life use cases such as getting useful info from the web pages or common login scenarios.
 - [browserless](https://github.com/joelgriffith/browserless) - Headless Chrome as a service letting you execute Puppeteer scripts remotely. Provides a docker image with configuration for concurrency, launch arguments and more.
-- [Puppeteer Sandbox](https://puppeteersandbox.com) - Puppeteer sandbox environment as a service. Runs Puppeteer scripts and allows saving and embedding them in external sites and markdown files.
 - [Puppeteer on AWS Lambda](https://github.com/jay-deshmukh/headless-chrome-with-puppeteer-on-AWS-lambda-with-serverless-framework) - Running puppeteer on AWS Lambda with Serverless framework
 - [Apify SDK](https://github.com/apifytech/apify-js) - The scalable web crawling and scraping library for JavaScript. Automatically manages a pool of Puppeteer browsers and provides easy error handling, task management, proxy rotation and more.
 
@@ -40,3 +39,4 @@ More complex and use case driven examples can be found at [github.com/GoogleChro
 ## Services
 
 - [Checkly](https://checklyhq.com) - Monitoring SaaS that uses Puppeteer to check availability and correctness of web pages and apps.
+- [Doppio](https://doppio.sh) - SaaS API to create screenshots or PDFs from HTML/CSS/JS

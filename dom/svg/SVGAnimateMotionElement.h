@@ -14,8 +14,7 @@
 nsresult NS_NewSVGAnimateMotionElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SVGAnimateMotionElement final : public SVGAnimationElement {
  protected:
@@ -27,29 +26,29 @@ class SVGAnimateMotionElement final : public SVGAnimationElement {
       nsIContent** aResult,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
  public:
+  NS_IMPL_FROMNODE_WITH_TAG(SVGAnimateMotionElement, kNameSpaceID_SVG,
+                            animateMotion)
+
   // nsINode specializations
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // SVGAnimationElement
-  virtual SMILAnimationFunction& AnimationFunction() override;
-  virtual bool GetTargetAttributeName(int32_t* aNamespaceID,
-                                      nsAtom** aLocalName) const override;
+  SMILAnimationFunction& AnimationFunction() override;
+  bool GetTargetAttributeName(int32_t* aNamespaceID,
+                              nsAtom** aLocalName) const override;
 
   // SVGElement
-  virtual nsStaticAtom* GetPathDataAttrName() const override {
-    return nsGkAtoms::path;
-  }
+  nsStaticAtom* GetPathDataAttrName() const override { return nsGkAtoms::path; }
 
   // Utility method to let our <mpath> children tell us when they've changed,
   // so we can make sure our mAnimationFunction is marked as having changed.
   void MpathChanged() { mAnimationFunction.MpathChanged(); }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGANIMATEMOTIONELEMENT_H_

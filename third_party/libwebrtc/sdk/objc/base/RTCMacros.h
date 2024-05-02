@@ -11,6 +11,18 @@
 #ifndef SDK_OBJC_BASE_RTCMACROS_H_
 #define SDK_OBJC_BASE_RTCMACROS_H_
 
+#ifdef WEBRTC_ENABLE_OBJC_SYMBOL_EXPORT
+
+#if defined(WEBRTC_LIBRARY_IMPL)
+#define RTC_OBJC_EXPORT __attribute__((visibility("default")))
+#endif
+
+#endif  // WEBRTC_ENABLE_OBJC_SYMBOL_EXPORT
+
+#ifndef RTC_OBJC_EXPORT
+#define RTC_OBJC_EXPORT
+#endif
+
 // Internal macros used to correctly concatenate symbols.
 #define RTC_SYMBOL_CONCAT_HELPER(a, b) a##b
 #define RTC_SYMBOL_CONCAT(a, b) RTC_SYMBOL_CONCAT_HELPER(a, b)
@@ -24,9 +36,10 @@
 // WebRTC.framework with their own prefix in case symbol clashing is a
 // problem.
 //
-// This macro must only be defined here and not on via compiler flag to
-// ensure it has a unique value.
+// This macro must be defined uniformily across all the translation units.
+#ifndef RTC_OBJC_TYPE_PREFIX
 #define RTC_OBJC_TYPE_PREFIX
+#endif
 
 // RCT_OBJC_TYPE
 //
@@ -34,8 +47,6 @@
 // using this macro will not include the declared type in the set of types
 // that will be affected by the configurable RTC_OBJC_TYPE_PREFIX.
 #define RTC_OBJC_TYPE(type_name) RTC_SYMBOL_CONCAT(RTC_OBJC_TYPE_PREFIX, type_name)
-
-#define RTC_OBJC_EXPORT __attribute__((visibility("default")))
 
 #if defined(__cplusplus)
 #define RTC_EXTERN extern "C" RTC_OBJC_EXPORT

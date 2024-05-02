@@ -4,24 +4,28 @@
 
 "use strict";
 
-var { DevToolsServer } = require("devtools/server/devtools-server");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  longStringSpec,
+} = require("resource://devtools/shared/specs/string.js");
 
-var protocol = require("devtools/shared/protocol");
-const { longStringSpec } = require("devtools/shared/specs/string");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 
-exports.LongStringActor = protocol.ActorClassWithSpec(longStringSpec, {
-  initialize: function(conn, str) {
-    protocol.Actor.prototype.initialize.call(this, conn);
+exports.LongStringActor = class LongStringActor extends Actor {
+  constructor(conn, str) {
+    super(conn, longStringSpec);
     this.str = str;
     this.short = this.str.length < DevToolsServer.LONG_STRING_LENGTH;
-  },
+  }
 
-  destroy: function() {
+  destroy() {
     this.str = null;
-    protocol.Actor.prototype.destroy.call(this);
-  },
+    super.destroy();
+  }
 
-  form: function() {
+  form() {
     if (this.short) {
       return this.str;
     }
@@ -31,11 +35,11 @@ exports.LongStringActor = protocol.ActorClassWithSpec(longStringSpec, {
       length: this.str.length,
       initial: this.str.substring(0, DevToolsServer.LONG_STRING_INITIAL_LENGTH),
     };
-  },
+  }
 
-  substring: function(start, end) {
+  substring(start, end) {
     return this.str.substring(start, end);
-  },
+  }
 
-  release: function() {},
-});
+  release() {}
+};

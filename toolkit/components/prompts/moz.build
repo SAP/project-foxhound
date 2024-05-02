@@ -4,9 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# possibly Notifications and Alerts
 with Files("**"):
-    BUG_COMPONENT = ("Toolkit", "General")
+    BUG_COMPONENT = ("Toolkit", "Content Prompts")
 
 DIRS += ["src"]
 
@@ -16,10 +15,10 @@ with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
 
 TESTING_JS_MODULES += [
-    "test/PromptTestUtils.jsm",
+    "test/PromptTestUtils.sys.mjs",
 ]
 
-MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest.toml"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome.toml"]
 
 JAR_MANIFESTS += ["jar.mn"]

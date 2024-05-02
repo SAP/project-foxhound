@@ -21,22 +21,17 @@ if (AppConstants.platform == "macosx") {
   requestLongerTimeout(5);
 }
 
-add_task(async function init() {
+add_setup(async function () {
   // Add a default engine with suggestions, to avoid hitting the network when
   // fetching them.
-  let defaultEngine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
+  let defaultEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
+  });
   defaultEngine.alias = "@default";
-  let oldDefaultEngine = await Services.search.getDefault();
-  Services.search.setDefault(defaultEngine);
   await SearchTestUtils.installSearchExtension({
     name: TEST_ALIAS_ENGINE_NAME,
     keyword: ALIAS,
-  });
-
-  registerCleanupFunction(async function() {
-    Services.search.setDefault(oldDefaultEngine);
   });
 
   // Search results aren't shown in quantumbar unless search suggestions are
@@ -654,7 +649,7 @@ add_task(async function nonPrefixedKeyword() {
       name,
       keyword: alias,
     },
-    true
+    { skipUnload: true }
   );
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -701,7 +696,7 @@ add_task(async function multipleMatchingEngines() {
       name: "TestFoo",
       keyword: `${ALIAS}foo`,
     },
-    true
+    { skipUnload: true }
   );
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -858,7 +853,7 @@ function assertHighlighted(highlighted, expectedAlias) {
  *
  * @param {string} str
  *   The code points of this string will be returned.
- * @returns {array}
+ * @returns {Array}
  *   Array of code points in the string, where each is a hexidecimal string.
  */
 function codePoints(str) {

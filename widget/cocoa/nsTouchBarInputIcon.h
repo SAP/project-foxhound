@@ -14,7 +14,6 @@
 
 #include "mozilla/widget/IconLoader.h"
 #include "nsTouchBarInput.h"
-#include "nsTouchBarNativeAPIDefines.h"
 
 using namespace mozilla::dom;
 
@@ -55,7 +54,6 @@ class nsTouchBarInputIcon : public mozilla::widget::IconLoader::Listener {
 
  protected:
   RefPtr<Document> mDocument;
-  nsIntRect mImageRegionRect;
   bool mSetIcon;
   NSButton* mButton;
   // We accept a mShareScrubber only as a special case since

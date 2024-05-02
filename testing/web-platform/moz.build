@@ -72,6 +72,15 @@ with Files("mozilla/tests/html/semantics/scripting-1/**"):
 with Files("mozilla/tests/placeholder"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
+with Files("mozilla/tests/webdriver/**"):
+    BUG_COMPONENT = ("Remote Protocol", "Marionette")
+
+with Files("mozilla/tests/webdriver/bidi/**"):
+    BUG_COMPONENT = ("Remote Protocol", "WebDriver BiDi")
+
+with Files("mozilla/tests/webdriver/cdp/**"):
+    BUG_COMPONENT = ("Remote Protocol", "CDP")
+
 with Files("update/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
@@ -88,9 +97,6 @@ with Files("tests/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
     SCHEDULES.inclusive += ["test-verify-wpt"]
 
-with Files("tests/testharness_runner.html"):
-    BUG_COMPONENT = ("Testing", "web-platform-tests")
-
 with Files("tests/wpt"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
@@ -105,7 +111,7 @@ with Files("tests/IndexedDB/**"):
     BUG_COMPONENT = ("Core", "Storage: IndexedDB")
 
 with Files("tests/WebCryptoAPI/**"):
-    BUG_COMPONENT = ("Core", "DOM: Security")
+    BUG_COMPONENT = ("Core", "DOM: Web Crypto")
 
 with Files("tests/xhr/**"):
     BUG_COMPONENT = ("Core", "DOM: Networking")
@@ -126,7 +132,7 @@ with Files("tests/annotation-vocab/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
 with Files("tests/apng/**"):
-    BUG_COMPONENT = ("Core", "ImageLib")
+    BUG_COMPONENT = ("Core", "Graphics: ImageLib")
 
 with Files("tests/audio-output/**"):
     BUG_COMPONENT = ("Core", "Audio/Video: Playback")
@@ -175,7 +181,7 @@ with Files("tests/cors/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
 
 with Files("tests/credential-management/**"):
-    BUG_COMPONENT = ("Core", "DOM: Security")
+    BUG_COMPONENT = ("Core", "DOM: Credential Management")
 
 with Files("tests/css/**"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
@@ -421,7 +427,7 @@ with Files("tests/editing/**"):
     BUG_COMPONENT = ("Core", "DOM: Editor")
 
 with Files("tests/element-timing/**"):
-    BUG_COMPONENT = ("Core", "Performance")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 # as per Bug 746911
 with Files("tests/encoding/**"):
     BUG_COMPONENT = ("Core", "Internationalization")
@@ -450,6 +456,9 @@ with Files("tests/fonts/**"):
 with Files("tests/fonts/math/**"):
     BUG_COMPONENT = ("Core", "MathML")
 
+with Files("tests/fs/**"):
+    BUG_COMPONENT = ("Core", "DOM: File")
+
 with Files("tests/fullscreen/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
@@ -468,6 +477,9 @@ with Files("tests/hr-time/**"):
 with Files("tests/html/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
+with Files("tests/html/canvas/**"):
+    BUG_COMPONENT = ("Core", "Graphics: Canvas2D")
+
 with Files("tests/html-longdesc/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
@@ -476,7 +488,7 @@ with Files("tests/html-media-capture/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("tests/imagebitmap-renderingcontext/**"):
-    BUG_COMPONENT = ("Core", "Canvas: 2D")
+    BUG_COMPONENT = ("Core", "Graphics: Canvas2D")
 
 with Files("tests/images/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
@@ -502,7 +514,7 @@ with Files("tests/keyboard-lock/**"):
 
 # No reference to longtask in bugzilla or codebase
 with Files("tests/longtask-timing/**"):
-    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 # depends on generic-sensor, check bug 1359076
 with Files("tests/magnetometer/**"):
@@ -539,13 +551,16 @@ with Files("tests/mixed-content/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
 
 with Files("tests/navigation-timing/**"):
-    BUG_COMPONENT = ("Core", "Performance")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 with Files("tests/netinfo/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
 
 with Files("tests/notifications/**"):
-    BUG_COMPONENT = ("Toolkit", "Notifications and Alerts")
+    BUG_COMPONENT = ("Core", "DOM: Notifications")
+
+with Files("tests/network-error-logging/**"):
+    BUG_COMPONENT = ("Core", "DOM: Networking")
 
 with Files("tests/old-tests/submission/Microsoft/foreigncontent/**"):
     BUG_COMPONENT = ("Core", "SVG")
@@ -566,7 +581,7 @@ with Files("tests/page-visibility/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("tests/paint-timing/**"):
-    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 # No tests in here
 with Files("tests/payment-handler/**"):
@@ -583,8 +598,11 @@ with Files("tests/payment-method-id/**"):
 with Files("tests/payment-request/**"):
     BUG_COMPONENT = ("Core", "DOM: Web Payments")
 
+with Files("tests/secure-payment-confirmation/**"):
+    BUG_COMPONENT = ("Core", "DOM: Web Payments")
+
 with Files("tests/performance-timeline/**"):
-    BUG_COMPONENT = ("Core", "Performance")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 with Files("tests/picture-in-picture/**"):
     BUG_COMPONENT = ("Toolkit", "Video/Audio Controls")
@@ -621,7 +639,7 @@ with Files("tests/resize-observer/**"):
     BUG_COMPONENT = ("Core", "Layout")
 
 with Files("tests/resource-timing/**"):
-    BUG_COMPONENT = ("Core", "Performance")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 with Files("tests/resources/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
@@ -642,7 +660,7 @@ with Files("tests/selection/**"):
     BUG_COMPONENT = ("Core", "DOM: Selection")
 
 with Files("tests/server-timing/**"):
-    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 with Files("tests/service-workers/**"):
     BUG_COMPONENT = ("Core", "DOM: Service Workers")
@@ -682,11 +700,12 @@ with Files("tests/uievents/**"):
 
 with Files("tests/upgrade-insecure-requests/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
+
 with Files("tests/url/**"):
     BUG_COMPONENT = ("Core", "DOM: Networking")
 
 with Files("tests/user-timing/**"):
-    BUG_COMPONENT = ("Core", "Performance")
+    BUG_COMPONENT = ("Core", "DOM: Performance")
 
 with Files("tests/vibration/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -709,11 +728,17 @@ with Files("tests/webaudio/**"):
 with Files("tests/webauthn/**"):
     BUG_COMPONENT = ("Core", "DOM: Web Authentication")
 
+with Files("tests/webcodecs/**"):
+    BUG_COMPONENT = ("Core", "Audio/Video: Web Codecs")
+
 with Files("tests/webdriver/**"):
-    BUG_COMPONENT = ("Testing", "geckodriver")
+    BUG_COMPONENT = ("Remote Protocol", "Marionette")
+
+with Files("tests/webdriver/tests/bidi/**"):
+    BUG_COMPONENT = ("Remote Protocol", "WebDriver BiDi")
 
 with Files("tests/webgl/**"):
-    BUG_COMPONENT = ("Core", "Canvas: WebGL")
+    BUG_COMPONENT = ("Core", "Graphics: CanvasWebGL")
 
 with Files("tests/webmessaging/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -747,6 +772,9 @@ with Files("tests/websockets/**"):
 
 with Files("tests/webstorage/**"):
     BUG_COMPONENT = ("Core", "Storage: localStorage & sessionStorage")
+
+with Files("tests/webtransport/**"):
+    BUG_COMPONENT = ("Core", "Networking: HTTP")
 
 with Files("tests/webusb/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")

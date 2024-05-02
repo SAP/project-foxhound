@@ -5,7 +5,6 @@
 package org.mozilla.geckoview;
 
 import android.annotation.SuppressLint;
-import android.os.Build;
 import android.util.Log;
 import android.util.SparseArray;
 import androidx.annotation.AnyThread;
@@ -28,10 +27,13 @@ import org.mozilla.gecko.MultiMap;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.geckoview.WebExtension.InstallException;
 
 public class WebExtensionController {
   private static final String LOGTAG = "WebExtension";
 
+  private AddonManagerDelegate mAddonManagerDelegate;
+  private ExtensionProcessDelegate mExtensionProcessDelegate;
   private DebuggerDelegate mDebuggerDelegate;
   private PromptDelegate mPromptDelegate;
   private final WebExtension.Listener<WebExtension.TabDelegate> mListener;
@@ -84,17 +86,14 @@ public class WebExtensionController {
       final GeckoBundle bundle = new GeckoBundle(1);
       bundle.putString("extensionId", id);
 
-      final GeckoResult<WebExtension> pending =
-          EventDispatcher.getInstance()
-              .queryBundle("GeckoView:WebExtension:Get", bundle)
-              .map(
-                  extensionBundle -> {
-                    final WebExtension ext = mObserver.onNewExtension(extensionBundle);
-                    mData.put(ext.id, ext);
-                    return ext;
-                  });
-
-      return pending;
+      return EventDispatcher.getInstance()
+          .queryBundle("GeckoView:WebExtension:Get", bundle)
+          .map(
+              extensionBundle -> {
+                final WebExtension ext = mObserver.onNewExtension(extensionBundle);
+                mData.put(ext.id, ext);
+                return ext;
+              });
     }
 
     public void setObserver(final Observer observer) {
@@ -285,13 +284,26 @@ public class WebExtensionController {
       return null;
     }
 
-    /*
-    TODO: Bug 1601420
+    /**
+     * Called whenever permissions are requested. This is intended as an opportunity for the app to
+     * prompt the user for the permissions required by this extension at runtime.
+     *
+     * @param extension The {@link WebExtension} that is about to be installed. You can use {@link
+     *     WebExtension#metaData} to gather information about this extension when building the user
+     *     prompt dialog.
+     * @param permissions The permissions that are requested.
+     * @param origins The requested host permissions.
+     * @return A {@link GeckoResult} that completes to either {@link AllowOrDeny#ALLOW ALLOW} if the
+     *     request should be approved or {@link AllowOrDeny#DENY DENY} if the request should be
+     *     denied. A null value will be interpreted as {@link AllowOrDeny#DENY DENY}.
+     */
+    @Nullable
     default GeckoResult<AllowOrDeny> onOptionalPrompt(
-            WebExtension extension,
-            String[] optionalPermissions) {
-        return null;
-    } */
+        final @NonNull WebExtension extension,
+        final @NonNull String[] permissions,
+        final @NonNull String[] origins) {
+      return null;
+    }
   }
 
   public interface DebuggerDelegate {
@@ -310,6 +322,100 @@ public class WebExtensionController {
      */
     @UiThread
     default void onExtensionListUpdated() {}
+  }
+
+  /** This delegate will be called whenever the state of an extension has changed. */
+  public interface AddonManagerDelegate {
+    /**
+     * Called whenever an extension is being disabled.
+     *
+     * @param extension The {@link WebExtension} that is being disabled.
+     */
+    @UiThread
+    default void onDisabling(@NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an extension has been disabled.
+     *
+     * @param extension The {@link WebExtension} that is being disabled.
+     */
+    @UiThread
+    default void onDisabled(final @NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an extension is being enabled.
+     *
+     * @param extension The {@link WebExtension} that is being enabled.
+     */
+    @UiThread
+    default void onEnabling(final @NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an extension has been enabled.
+     *
+     * @param extension The {@link WebExtension} that is being enabled.
+     */
+    @UiThread
+    default void onEnabled(final @NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an extension is being uninstalled.
+     *
+     * @param extension The {@link WebExtension} that is being uninstalled.
+     */
+    @UiThread
+    default void onUninstalling(final @NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an extension has been uninstalled.
+     *
+     * @param extension The {@link WebExtension} that is being uninstalled.
+     */
+    @UiThread
+    default void onUninstalled(final @NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an extension is being installed.
+     *
+     * @param extension The {@link WebExtension} that is being installed.
+     */
+    @UiThread
+    default void onInstalling(final @NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an extension has been installed.
+     *
+     * @param extension The {@link WebExtension} that is being installed.
+     */
+    @UiThread
+    default void onInstalled(final @NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever an error happened when installing a WebExtension.
+     *
+     * @param extension {@link WebExtension} which failed to be installed.
+     * @param installException {@link InstallException} indicates which type of error happened.
+     */
+    @UiThread
+    default void onInstallationFailed(
+        final @Nullable WebExtension extension, final @NonNull InstallException installException) {}
+
+    /**
+     * Called whenever an extension startup has been completed (and relative urls to assets packaged
+     * with the extension can be resolved into a full moz-extension url, e.g. optionsPageUrl is
+     * going to be empty until the extension has reached this callback).
+     *
+     * @param extension The {@link WebExtension} that has been fully started.
+     */
+    @UiThread
+    default void onReady(final @NonNull WebExtension extension) {}
+  }
+
+  /** This delegate is used to notify of extension process state changes. */
+  public interface ExtensionProcessDelegate {
+    /** Called when extension process spawning has been disabled. */
+    @UiThread
+    default void onDisabledProcessSpawning() {}
   }
 
   /**
@@ -367,6 +473,99 @@ public class WebExtensionController {
     }
 
     mDebuggerDelegate = delegate;
+  }
+
+  /**
+   * Set the {@link AddonManagerDelegate} for this instance. This delegate will be used to be
+   * notified whenever the state of an extension has changed.
+   *
+   * @param delegate the delegate instance
+   * @see AddonManagerDelegate
+   */
+  @UiThread
+  public void setAddonManagerDelegate(final @Nullable AddonManagerDelegate delegate) {
+    if (delegate == null && mAddonManagerDelegate != null) {
+      EventDispatcher.getInstance()
+          .unregisterUiThreadListener(
+              mInternals,
+              "GeckoView:WebExtension:OnDisabling",
+              "GeckoView:WebExtension:OnDisabled",
+              "GeckoView:WebExtension:OnEnabling",
+              "GeckoView:WebExtension:OnEnabled",
+              "GeckoView:WebExtension:OnUninstalling",
+              "GeckoView:WebExtension:OnUninstalled",
+              "GeckoView:WebExtension:OnInstalling",
+              "GeckoView:WebExtension:OnInstallationFailed",
+              "GeckoView:WebExtension:OnInstalled",
+              "GeckoView:WebExtension:OnReady");
+    } else if (delegate != null && mAddonManagerDelegate == null) {
+      EventDispatcher.getInstance()
+          .registerUiThreadListener(
+              mInternals,
+              "GeckoView:WebExtension:OnDisabling",
+              "GeckoView:WebExtension:OnDisabled",
+              "GeckoView:WebExtension:OnEnabling",
+              "GeckoView:WebExtension:OnEnabled",
+              "GeckoView:WebExtension:OnUninstalling",
+              "GeckoView:WebExtension:OnUninstalled",
+              "GeckoView:WebExtension:OnInstalling",
+              "GeckoView:WebExtension:OnInstallationFailed",
+              "GeckoView:WebExtension:OnInstalled",
+              "GeckoView:WebExtension:OnReady");
+    }
+
+    mAddonManagerDelegate = delegate;
+  }
+
+  /**
+   * Set the {@link ExtensionProcessDelegate} for this instance. This delegate will be used to
+   * notify when the state of the extension process has changed.
+   *
+   * @param delegate the extension process delegate
+   * @see ExtensionProcessDelegate
+   */
+  @UiThread
+  public void setExtensionProcessDelegate(final @Nullable ExtensionProcessDelegate delegate) {
+    if (delegate == null && mExtensionProcessDelegate != null) {
+      EventDispatcher.getInstance()
+          .unregisterUiThreadListener(
+              mInternals, "GeckoView:WebExtension:OnDisabledProcessSpawning");
+    } else if (delegate != null && mExtensionProcessDelegate == null) {
+      EventDispatcher.getInstance()
+          .registerUiThreadListener(mInternals, "GeckoView:WebExtension:OnDisabledProcessSpawning");
+    }
+
+    mExtensionProcessDelegate = delegate;
+  }
+
+  /**
+   * Enable extension process spawning.
+   *
+   * <p>Extension process spawning can be disabled when the extension process has been killed or
+   * crashed beyond the threshold set for Gecko. This method can be called to reset the threshold
+   * count and allow the spawning again. If the threshold is reached again, {@link
+   * ExtensionProcessDelegate#onDisabledProcessSpawning()} will still be called.
+   *
+   * @see ExtensionProcessDelegate#onDisabledProcessSpawning()
+   */
+  @AnyThread
+  public void enableExtensionProcessSpawning() {
+    EventDispatcher.getInstance().dispatch("GeckoView:WebExtension:EnableProcessSpawning", null);
+  }
+
+  /**
+   * Disable extension process spawning.
+   *
+   * <p>Extension process spawning can be re-enabled with {@link
+   * WebExtensionController#enableExtensionProcessSpawning()}. This method does the opposite and
+   * stops the extension process. This method can be called when we no longer want to run extensions
+   * for the rest of the session.
+   *
+   * @see ExtensionProcessDelegate#onDisabledProcessSpawning()
+   */
+  @AnyThread
+  public void disableExtensionProcessSpawning() {
+    EventDispatcher.getInstance().dispatch("GeckoView:WebExtension:DisableProcessSpawning", null);
   }
 
   private static class InstallCanceller implements GeckoResult.CancellationDelegate {
@@ -717,6 +916,39 @@ public class WebExtensionController {
         mDebuggerDelegate.onExtensionListUpdated();
       }
       return;
+    } else if ("GeckoView:WebExtension:OnDisabling".equals(event)) {
+      onDisabling(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnDisabled".equals(event)) {
+      onDisabled(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnEnabling".equals(event)) {
+      onEnabling(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnEnabled".equals(event)) {
+      onEnabled(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnUninstalling".equals(event)) {
+      onUninstalling(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnUninstalled".equals(event)) {
+      onUninstalled(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnInstalling".equals(event)) {
+      onInstalling(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnInstalled".equals(event)) {
+      onInstalled(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnDisabledProcessSpawning".equals(event)) {
+      onDisabledProcessSpawning();
+      return;
+    } else if ("GeckoView:WebExtension:OnInstallationFailed".equals(event)) {
+      onInstallationFailed(bundle);
+      return;
+    } else if ("GeckoView:WebExtension:OnReady".equals(event)) {
+      onReady(bundle);
+      return;
     }
 
     extensionFromBundle(bundle)
@@ -755,13 +987,16 @@ public class WebExtensionController {
               } else if ("GeckoView:WebExtension:Download".equals(event)) {
                 download(message, extension);
                 return;
+              } else if ("GeckoView:WebExtension:OptionalPrompt".equals(event)) {
+                optionalPrompt(message, extension);
+                return;
               }
 
               // GeckoView:WebExtension:Connect and GeckoView:WebExtension:Message
               // are handled below.
               final String nativeApp = bundle.getString("nativeApp");
               if (nativeApp == null) {
-                if (BuildConfig.DEBUG) {
+                if (BuildConfig.DEBUG_BUILD) {
                   throw new RuntimeException("Missing required nativeApp message parameter.");
                 }
                 callback.sendError("Missing nativeApp parameter.");
@@ -773,7 +1008,7 @@ public class WebExtensionController {
                   fromBundle(extension, senderBundle, session);
               if (sender == null) {
                 if (callback != null) {
-                  if (BuildConfig.DEBUG) {
+                  if (BuildConfig.DEBUG_BUILD) {
                     try {
                       Log.e(
                           LOGTAG, "Could not find recipient for message: " + bundle.toJSONObject());
@@ -798,7 +1033,7 @@ public class WebExtensionController {
     if (extensionBundle == null
         || !extensionBundle.containsKey("webExtensionId")
         || !extensionBundle.containsKey("locationURI")) {
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         throw new RuntimeException("Missing webExtensionId or locationURI");
       }
 
@@ -834,7 +1069,7 @@ public class WebExtensionController {
     final String[] newPermissions = message.getStringArray("newPermissions");
     final String[] newOrigins = message.getStringArray("newOrigins");
     if (currentBundle == null || updatedBundle == null) {
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         throw new RuntimeException("Missing bundle");
       }
 
@@ -869,6 +1104,160 @@ public class WebExtensionController {
               response.putBoolean("allow", AllowOrDeny.ALLOW.equals(allowOrDeny));
               return response;
             }));
+  }
+
+  private void optionalPrompt(final Message message, final WebExtension extension) {
+    if (mPromptDelegate == null) {
+      Log.e(
+          LOGTAG,
+          "Tried to request optional permissions for extension "
+              + extension.id
+              + " but no delegate is registered");
+      return;
+    }
+
+    final String[] permissions =
+        message.bundle.getBundle("permissions").getStringArray("permissions");
+    final String[] origins = message.bundle.getBundle("permissions").getStringArray("origins");
+    final GeckoResult<AllowOrDeny> promptResponse =
+        mPromptDelegate.onOptionalPrompt(extension, permissions, origins);
+    if (promptResponse == null) {
+      return;
+    }
+
+    message.callback.resolveTo(
+        promptResponse.map(
+            allowOrDeny -> {
+              final GeckoBundle response = new GeckoBundle(1);
+              response.putBoolean("allow", AllowOrDeny.ALLOW.equals(allowOrDeny));
+              return response;
+            }));
+  }
+
+  private void onInstallationFailed(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final int errorCode = bundle.getInt("error");
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    WebExtension extension = null;
+    final String extensionName = bundle.getString("addonName");
+
+    if (extensionBundle != null) {
+      extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    }
+    mAddonManagerDelegate.onInstallationFailed(
+        extension, new InstallException(errorCode, extensionName));
+  }
+
+  private void onDisabling(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onDisabling(extension);
+  }
+
+  private void onDisabled(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onDisabled(extension);
+  }
+
+  private void onEnabling(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onEnabling(extension);
+  }
+
+  private void onEnabled(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onEnabled(extension);
+  }
+
+  private void onUninstalling(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onUninstalling(extension);
+  }
+
+  private void onUninstalled(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onUninstalled(extension);
+  }
+
+  private void onInstalling(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onInstalling(extension);
+  }
+
+  private void onInstalled(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onInstalled(extension);
+  }
+
+  private void onReady(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onReady(extension);
+  }
+
+  private void onDisabledProcessSpawning() {
+    if (mExtensionProcessDelegate == null) {
+      Log.e(LOGTAG, "no extension process delegate registered");
+      return;
+    }
+
+    mExtensionProcessDelegate.onDisabledProcessSpawning();
   }
 
   @SuppressLint("WrongThread") // for .toGeckoBundle
@@ -962,7 +1351,9 @@ public class WebExtensionController {
     message.callback.sendSuccess(null);
   }
 
-  /* package */ void newTab(final Message message, final WebExtension extension) {
+  /* package */
+  @SuppressLint("WrongThread") // for .isOpen
+  void newTab(final Message message, final WebExtension extension) {
     final GeckoBundle bundle = message.bundle;
 
     final WebExtension.TabDelegate delegate = mListener.getTabDelegate(extension);
@@ -1084,8 +1475,8 @@ public class WebExtensionController {
     }
 
     if (environmentType == WebExtension.MessageSender.ENV_TYPE_UNKNOWN) {
-      if (BuildConfig.DEBUG) {
-        throw new RuntimeException("Missing or unknown envType.");
+      if (BuildConfig.DEBUG_BUILD) {
+        throw new RuntimeException("Missing or unknown envType: " + envType);
       }
 
       return null;
@@ -1100,13 +1491,14 @@ public class WebExtensionController {
       // If session is present we are either receiving this message from a content script or
       // an extension page, let's make sure we have the proper identification so that
       // embedders can check the origin of this message.
-      if (!sender.containsKey("frameId")
-          || !sender.containsKey("url")
-          ||
-          // -1 is an invalid frame id
-          sender.getInt("frameId", -1) == -1) {
-        if (BuildConfig.DEBUG) {
-          throw new RuntimeException("Missing sender information.");
+      // -1 is an invalid frame id
+      final boolean hasFrameId =
+          sender.containsKey("frameId") && sender.getInt("frameId", -1) != -1;
+      final boolean hasUrl = sender.containsKey("url");
+      if (!hasFrameId || !hasUrl) {
+        if (BuildConfig.DEBUG_BUILD) {
+          throw new RuntimeException(
+              "Missing sender information. hasFrameId: " + hasFrameId + " hasUrl: " + hasUrl);
         }
 
         // This message does not have the proper identification and may be compromised,
@@ -1158,11 +1550,7 @@ public class WebExtensionController {
     }
 
     private static boolean equals(final Object a, final Object b) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-        return Objects.equals(a, b);
-      }
-
-      return (a == b) || (a != null && a.equals(b));
+      return Objects.equals(a, b);
     }
 
     @Override

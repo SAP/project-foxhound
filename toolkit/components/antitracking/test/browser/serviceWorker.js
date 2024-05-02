@@ -1,7 +1,7 @@
 let value = "";
 let fetch_url = "";
 
-self.onfetch = function(e) {
+self.onfetch = function (e) {
   fetch_url = e.request.url;
 };
 
@@ -14,6 +14,11 @@ self.addEventListener("message", async e => {
   let res = {};
 
   switch (e.data.type) {
+    case "GetHWConcurrency":
+      res.result = "OK";
+      res.value = navigator.hardwareConcurrency;
+      break;
+
     case "GetScriptValue":
       res.result = "OK";
       res.value = value;
@@ -73,14 +78,12 @@ self.addEventListener("message", async e => {
 
         idxDB.onsuccess = evt => {
           let db = evt.target.result;
-          db
-            .transaction("foobar")
-            .objectStore("foobar")
-            .get(1).onsuccess = ee => {
-            resolve(
-              ee.target.result === undefined ? "" : ee.target.result.value
-            );
-          };
+          db.transaction("foobar").objectStore("foobar").get(1).onsuccess =
+            ee => {
+              resolve(
+                ee.target.result === undefined ? "" : ee.target.result.value
+              );
+            };
         };
       });
       res.result = "OK";

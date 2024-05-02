@@ -1,16 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* import-globals-from head.js */
-
 "use strict";
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 const { LEFT, RIGHT, BOTTOM, WINDOW } = Toolbox.HostType;
 
 const URL = "data:text/html;charset=utf8,browser_toolbox_hosts_telemetry.js";
 
-add_task(async function() {
+add_task(async function () {
   startTelemetry();
 
   info("Create a test tab and open the toolbox");

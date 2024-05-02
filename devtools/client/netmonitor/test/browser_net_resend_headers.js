@@ -7,7 +7,7 @@
  * Test if custom request headers are not ignored (bug 1270096 and friends)
  */
 
-add_task(async function() {
+add_task(async function () {
   const { monitor } = await initNetMonitor(HTTPS_SIMPLE_SJS, {
     requestCount: 1,
   });
@@ -15,7 +15,7 @@ add_task(async function() {
 
   const { store, windowRequire, connector } = monitor.panelWin;
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
-  const { requestData, sendHTTPRequest } = connector;
+  const { requestData } = connector;
   const { getSortedRequests } = windowRequire(
     "devtools/client/netmonitor/src/selectors/index"
   );
@@ -33,7 +33,7 @@ add_task(async function() {
   ];
 
   const wait = waitForNetworkEvents(monitor, 1);
-  sendHTTPRequest({
+  connector.networkCommand.sendHTTPRequest({
     url: requestUrl,
     method: "POST",
     headers: requestHeaders,

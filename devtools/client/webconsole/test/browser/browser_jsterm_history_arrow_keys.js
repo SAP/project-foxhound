@@ -17,7 +17,7 @@ const TEST_VALUES = [
   "document.location",
 ];
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
 
@@ -29,7 +29,7 @@ add_task(async function() {
 
   info("Execute each test value in the console");
   for (const value of TEST_VALUES) {
-    await executeAndWaitForMessage(hud, value, "", ".result");
+    await executeAndWaitForResultMessage(hud, value, "");
   }
 
   EventUtils.synthesizeKey("KEY_ArrowUp");

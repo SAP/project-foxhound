@@ -6,9 +6,6 @@
 include protocol PContent;
 include protocol PWebBrowserPersistResources;
 include protocol PWebBrowserPersistSerialize;
-include protocol PFileDescriptorSet;
-include protocol PChildToParentStream; //FIXME: bug #792908
-include protocol PParentToChildStream; //FIXME: bug #792908
 
 include PBackgroundSharedTypes;
 include IPCStream;
@@ -31,7 +28,7 @@ struct WebBrowserPersistDocumentAttrs {
   nsCString contentType;
   nsCString characterSet;
   nsString title;
-  nsIReferrerInfo referrerInfo;
+  nullable nsIReferrerInfo referrerInfo;
   CookieJarSettingsArgs cookieJarSettings;
   nsString contentDisposition;
   uint32_t sessionHistoryCacheKey;
@@ -60,6 +57,7 @@ struct WebBrowserPersistURIMap {
 // because that would impose a lifetime relationship that doesn't
 // exist in the XPIDL; instead they're all managed by the enclosing
 // PContent.
+[ManualDealloc]
 protocol PWebBrowserPersistDocument {
   manager PContent;
   manages PWebBrowserPersistResources;

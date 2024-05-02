@@ -1,19 +1,19 @@
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 Services.prefs.setCharPref("dom.securecontext.allowlist", "example.com");
 
 var kTest103 =
-  "http://example.com/browser/netwerk/test/browser/103_preload.html";
+  "https://example.com/browser/netwerk/test/browser/103_preload.html";
 var kTestNo103 =
-  "http://example.com/browser/netwerk/test/browser/no_103_preload.html";
+  "https://example.com/browser/netwerk/test/browser/no_103_preload.html";
 var kTest404 =
-  "http://example.com/browser/netwerk/test/browser/103_preload_and_404.html";
+  "https://example.com/browser/netwerk/test/browser/103_preload_and_404.html";
 
-add_task(async function() {
+add_task(async function () {
   let hist_hints = TelemetryTestUtils.getAndClearHistogram(
     "EH_NUM_OF_HINTS_PER_PAGE"
   );
@@ -44,7 +44,7 @@ add_task(async function() {
   gBrowser.removeCurrentTab();
 });
 
-add_task(async function() {
+add_task(async function () {
   let hist_hints = TelemetryTestUtils.getAndClearHistogram(
     "EH_NUM_OF_HINTS_PER_PAGE"
   );
@@ -73,7 +73,7 @@ add_task(async function() {
   gBrowser.removeCurrentTab();
 });
 
-add_task(async function() {
+add_task(async function () {
   let hist_hints = TelemetryTestUtils.getAndClearHistogram(
     "EH_NUM_OF_HINTS_PER_PAGE"
   );
@@ -100,4 +100,8 @@ add_task(async function() {
   Assert.ok(!found);
 
   gBrowser.removeCurrentTab();
+});
+
+add_task(async function cleanup() {
+  Services.prefs.clearUserPref("dom.securecontext.allowlist");
 });

@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Observers } = ChromeUtils.import(
-  "resource://services-common/observers.js"
+const { Observers } = ChromeUtils.importESModule(
+  "resource://services-common/observers.sys.mjs"
 );
 
 var gSubject = {};
@@ -10,7 +10,7 @@ var gSubject = {};
 add_test(function test_function_observer() {
   let foo = false;
 
-  let onFoo = function(subject, data) {
+  let onFoo = function (subject, data) {
     foo = !foo;
     Assert.equal(subject, gSubject);
     Assert.equal(data, "some data");

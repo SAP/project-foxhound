@@ -5,7 +5,9 @@
 // Test that the inspector has the correct pseudo-class locking menu items and
 // that these items actually work
 
-const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
+const {
+  PSEUDO_CLASSES,
+} = require("resource://devtools/shared/css/constants.js");
 const TEST_URI =
   "data:text/html;charset=UTF-8," +
   "pseudo-class lock node menu tests" +
@@ -13,7 +15,7 @@ const TEST_URI =
 // Strip the colon prefix from pseudo-classes (:before => before)
 const PSEUDOS = PSEUDO_CLASSES.map(pseudo => pseudo.substr(1));
 
-add_task(async function() {
+add_task(async function () {
   const { inspector, highlighterTestFront } = await openInspectorForURL(
     TEST_URI
   );

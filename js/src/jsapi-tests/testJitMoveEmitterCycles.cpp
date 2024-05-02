@@ -69,8 +69,8 @@ BEGIN_TEST(testJitMoveEmitterCycles_simple) {
   using namespace js::jit;
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jc(cx, &alloc);
-  StackMacroAssembler masm;
+  JitContext jc(cx);
+  StackMacroAssembler masm(cx, alloc);
   AutoCreatedBy acb(masm, __func__);
   MoveEmitter mover(masm);
   MoveResolver mr;
@@ -117,8 +117,8 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen) {
   using namespace js::jit;
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jc(cx, &alloc);
-  StackMacroAssembler masm;
+  JitContext jc(cx);
+  StackMacroAssembler masm(cx, alloc);
   AutoCreatedBy acb(masm, __func__);
   MoveEmitter mover(masm);
   MoveResolver mr;
@@ -243,8 +243,8 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen2) {
   using namespace js::jit;
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jc(cx, &alloc);
-  StackMacroAssembler masm;
+  JitContext jc(cx);
+  StackMacroAssembler masm(cx, alloc);
   AutoCreatedBy acb(masm, __func__);
   MoveEmitter mover(masm);
   MoveResolver mr;
@@ -386,8 +386,8 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen3) {
   using namespace js::jit;
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jc(cx, &alloc);
-  StackMacroAssembler masm;
+  JitContext jc(cx);
+  StackMacroAssembler masm(cx, alloc);
   AutoCreatedBy acb(masm, __func__);
   MoveEmitter mover(masm);
   MoveResolver mr;
@@ -528,8 +528,8 @@ BEGIN_TEST(testJitMoveEmitterCycles_bug1299147_1) {
   using namespace js::jit;
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jc(cx, &alloc);
-  StackMacroAssembler masm;
+  JitContext jc(cx);
+  StackMacroAssembler masm(cx, alloc);
   AutoCreatedBy acb(masm, __func__);
   MoveEmitter mover(masm);
   MoveResolver mr;
@@ -579,8 +579,8 @@ BEGIN_TEST(testJitMoveEmitterCycles_bug1299147) {
   using namespace js::jit;
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jc(cx, &alloc);
-  StackMacroAssembler masm;
+  JitContext jc(cx);
+  StackMacroAssembler masm(cx, alloc);
   AutoCreatedBy acb(masm, __func__);
   MoveEmitter mover(masm);
   MoveResolver mr;

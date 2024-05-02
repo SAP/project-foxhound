@@ -8,29 +8,27 @@
 #include <netinet/ether.h>
 #include <net/if.h>
 #include <poll.h>
+#include <unistd.h>
 #include <linux/rtnetlink.h>
 
 #include "nsThreadUtils.h"
-#include "nsServiceManagerUtils.h"
 #include "NetlinkService.h"
 #include "nsIThread.h"
 #include "nsString.h"
 #include "nsPrintfCString.h"
 #include "mozilla/Logging.h"
 #include "../../base/IPv6Utils.h"
+#include "../LinkServiceCommon.h"
 #include "../NetworkLinkServiceDefines.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/FileUtils.h"
 #include "mozilla/FunctionTypeTraits.h"
-#include "mozilla/Services.h"
-#include "mozilla/Sprintf.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/DebugOnly.h"
 
 #if defined(HAVE_RES_NINIT)
 #  include <netinet/in.h>
-#  include <arpa/nameser.h>
 #  include <resolv.h>
 #endif
 
@@ -182,7 +180,7 @@ class NetlinkNeighbor {
   uint32_t GetIndex() const { return mNeigh.ndm_ifindex; }
   const in_common_addr* GetAddrPtr() const { return &mAddr; }
   const uint8_t* GetMACPtr() const { return mMAC; }
-  bool HasMAC() const { return mHasMAC; };
+  bool HasMAC() const { return mHasMAC; }
 
   void GetAsString(nsACString& _retval) const {
     nsAutoCString addrStr;
@@ -1199,7 +1197,10 @@ NetlinkService::Run() {
       }
     }
 
-    int rc = EINTR_RETRY(poll(fds, 2, GetPollWait()));
+    int rc = eintr_retry([&]() {
+      AUTO_PROFILER_THREAD_SLEEP;
+      return poll(fds, 2, GetPollWait());
+    });
 
     if (rc > 0) {
       if (fds[0].revents & POLLIN) {
@@ -1808,11 +1809,8 @@ void NetlinkService::CalculateNetworkID() {
   bool found6 = CalculateIDForFamily(AF_INET6, &sha1);
 
   if (found4 || found6) {
-    // This 'addition' could potentially be a fixed number from the
-    // profile or something.
-    nsAutoCString addition("local-rubbish");
     nsAutoCString output;
-    sha1.update(addition.get(), addition.Length());
+    SeedNetworkId(sha1);
     uint8_t digest[SHA1Sum::kHashSize];
     sha1.finish(digest);
     nsAutoCString newString(reinterpret_cast<char*>(digest),

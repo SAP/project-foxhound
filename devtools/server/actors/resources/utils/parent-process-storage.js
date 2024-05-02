@@ -4,13 +4,10 @@
 
 "use strict";
 
-const { storageTypePool } = require("devtools/server/actors/storage");
-const EventEmitter = require("devtools/shared/event-emitter");
-const Services = require("Services");
-const {
-  getAllBrowsingContextsForContext,
-  isWindowGlobalPartOfContext,
-} = require("devtools/server/actors/watcher/browsing-context-helpers.jsm");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const { isWindowGlobalPartOfContext } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
+);
 
 // ms of delay to throttle updates
 const BATCH_DELAY = 200;
@@ -31,11 +28,12 @@ function getFilteredStorageEvents(updates, storageType) {
     }
   }
 
-  return Object.keys(filteredUpdate).length > 0 ? filteredUpdate : null;
+  return Object.keys(filteredUpdate).length ? filteredUpdate : null;
 }
 
 class ParentProcessStorage {
-  constructor(storageKey, storageType) {
+  constructor(ActorConstructor, storageKey, storageType) {
+    this.ActorConstructor = ActorConstructor;
     this.storageKey = storageKey;
     this.storageType = storageType;
 
@@ -72,17 +70,19 @@ class ParentProcessStorage {
     );
 
     if (watcherActor.sessionContext.type == "browser-element") {
-      const {
-        browsingContext,
-        innerWindowID: innerWindowId,
-      } = watcherActor.browserElement;
+      const { browsingContext, innerWindowID: innerWindowId } =
+        watcherActor.browserElement;
       await this._spawnActor(browsingContext.id, innerWindowId);
     } else if (watcherActor.sessionContext.type == "webextension") {
-      const {
-        addonBrowsingContextID,
-        addonInnerWindowId,
-      } = watcherActor.sessionContext;
+      const { addonBrowsingContextID, addonInnerWindowId } =
+        watcherActor.sessionContext;
       await this._spawnActor(addonBrowsingContextID, addonInnerWindowId);
+    } else if (watcherActor.sessionContext.type == "all") {
+      const parentProcessTargetActor =
+        this.watcherActor.getTargetActorInParentProcess();
+      const { browsingContextID, innerWindowId } =
+        parentProcessTargetActor.form();
+      await this._spawnActor(browsingContextID, innerWindowId);
     } else {
       throw new Error(
         "Unsupported session context type=" + watcherActor.sessionContext.type
@@ -123,22 +123,18 @@ class ParentProcessStorage {
   }
 
   async _spawnActor(browsingContextID, innerWindowId) {
-    const ActorConstructor = storageTypePool.get(this.storageKey);
-
     const storageActor = new StorageActorMock(this.watcherActor);
     this.storageActor = storageActor;
-    this.actor = new ActorConstructor(storageActor);
+    this.actor = new this.ActorConstructor(storageActor);
 
     // Some storage types require to prelist their stores
-    if (typeof this.actor.preListStores === "function") {
-      try {
-        await this.actor.preListStores();
-      } catch (e) {
-        // It can happen that the actor gets destroyed while preListStores is being
-        // executed.
-        if (this.actor) {
-          throw e;
-        }
+    try {
+      await this.actor.populateStoresForHosts();
+    } catch (e) {
+      // It can happen that the actor gets destroyed while populateStoresForHosts is being
+      // executed.
+      if (this.actor) {
+        throw e;
       }
     }
 
@@ -342,9 +338,10 @@ class StorageActorMock extends EventEmitter {
 
   get windows() {
     return (
-      getAllBrowsingContextsForContext(this.watcherActor.sessionContext, {
-        acceptSameProcessIframes: true,
-      })
+      this.watcherActor
+        .getAllBrowsingContexts({
+          acceptSameProcessIframes: true,
+        })
         .map(x => {
           const uri = x.currentWindowGlobal.documentURI;
           return { location: uri };
@@ -363,8 +360,8 @@ class StorageActorMock extends EventEmitter {
       case "file":
       case "javascript":
       case "resource":
-      case "moz-extension":
         return uri.displaySpec;
+      case "moz-extension":
       case "http":
       case "https":
         return uri.prePath;
@@ -375,13 +372,12 @@ class StorageActorMock extends EventEmitter {
   }
 
   getWindowFromHost(host) {
-    const hostBrowsingContext = getAllBrowsingContextsForContext(
-      this.watcherActor.sessionContext,
-      { acceptSameProcessIframes: true }
-    ).find(x => {
-      const hostName = this.getHostName(x.currentWindowGlobal.documentURI);
-      return hostName === host;
-    });
+    const hostBrowsingContext = this.watcherActor
+      .getAllBrowsingContexts({ acceptSameProcessIframes: true })
+      .find(x => {
+        const hostName = this.getHostName(x.currentWindowGlobal.documentURI);
+        return hostName === host;
+      });
     // In case of WebExtension or BrowserToolbox, we may pass privileged hosts
     // which don't relate to any particular window.
     // Like "indexeddb+++fx-devtools" or "chrome".
@@ -397,7 +393,10 @@ class StorageActorMock extends EventEmitter {
   }
 
   get parentActor() {
-    return { isRootActor: this.watcherActor.sessionContext.type == "all" };
+    return {
+      isRootActor: this.watcherActor.sessionContext.type == "all",
+      addonId: this.watcherActor.sessionContext.addonId,
+    };
   }
 
   /**
@@ -514,7 +513,7 @@ class StorageActorMock extends EventEmitter {
 
       for (const host in data) {
         if (
-          data[host].length == 0 &&
+          !data[host].length &&
           this.boundUpdate.added &&
           this.boundUpdate.added[storeType] &&
           this.boundUpdate.added[storeType][host]
@@ -522,7 +521,7 @@ class StorageActorMock extends EventEmitter {
           delete this.boundUpdate.added[storeType][host];
         }
         if (
-          data[host].length == 0 &&
+          !data[host].length &&
           this.boundUpdate.changed &&
           this.boundUpdate.changed[storeType] &&
           this.boundUpdate.changed[storeType][host]

@@ -3,13 +3,13 @@
 "use strict";
 
 // Ensures that content crashes are reported to the crash service
-// (nsICrashService and CrashManager.jsm).
+// (nsICrashService and CrashManager.sys.mjs).
 
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 SimpleTest.requestFlakyTimeout("untriaged");
 SimpleTest.requestCompleteLog();
 
-add_task(async function() {
+add_task(async function () {
   let tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     forceNewProcess: true,
@@ -33,7 +33,7 @@ add_task(async function() {
     function tryGetCrash() {
       info("Waiting for getCrashes");
       crashMan.getCrashes().then(
-        function(crashes) {
+        function (crashes) {
           if (crashes.length) {
             is(crashes.length, 1, "There should be only one record");
             var crash = crashes[0];
@@ -58,7 +58,7 @@ add_task(async function() {
             setTimeout(tryGetCrash, 1000);
           }
         },
-        function(err) {
+        function (err) {
           reject(err);
         }
       );

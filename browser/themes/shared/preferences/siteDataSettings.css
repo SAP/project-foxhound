@@ -6,7 +6,8 @@
  * Site Data - Settings dialog
  */
 #sitesList {
-  min-height: 20em;
+  flex: 1 auto;
+  height: 20em;
 }
 
 /* Show selected items in high contrast mode. */
@@ -16,12 +17,12 @@
 
 #sitesList > richlistitem > hbox,
 .item-box > label {
-  -moz-box-flex: 1;
+  flex: 1;
 }
 
 .item-box {
   padding: 5px 8px;
-  -moz-box-align: center;
+  align-items: center;
   width: 50px;
 }
 
@@ -30,7 +31,7 @@
  */
 #SiteDataRemoveSelectedDialog {
   padding: 16px;
-  width: 50px;
+  min-width: 50px;
 }
 
 #SiteDataRemoveSelectedDialog.single-entry {
@@ -41,8 +42,8 @@
   display: none;
 }
 
-#SiteDataRemoveSelectedDialog.multi-entry {
-  min-height: 36em;
+#SiteDataRemoveSelectedDialog.multi-entry #removalList {
+  max-height: 20em;
 }
 
 #SiteDataRemoveSelectedDialog > dialog {

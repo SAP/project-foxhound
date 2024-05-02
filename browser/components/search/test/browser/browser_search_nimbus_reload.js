@@ -3,23 +3,26 @@
 
 "use strict";
 
-const { ExperimentFakes } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+const { ExperimentFakes } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-const { NimbusFeatures } = ChromeUtils.import(
-  "resource://nimbus/ExperimentAPI.jsm"
+
+const { SearchService } = ChromeUtils.importESModule(
+  "resource://gre/modules/SearchService.sys.mjs"
 );
-const { SearchService } = ChromeUtils.import(
-  "resource://gre/modules/SearchService.jsm"
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
 );
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 add_task(async function test_engines_reloaded_nimbus() {
   let reloadSpy = sinon.spy(SearchService.prototype, "_maybeReloadEngines");
-  let getVariableSpy = sinon.spy(NimbusFeatures.search, "getVariable");
+  let getVariableSpy = sinon.spy(
+    NimbusFeatures.searchConfiguration,
+    "getVariable"
+  );
 
   let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
-    featureId: "search",
+    featureId: "searchConfiguration",
     value: { experiment: "nimbus-search-mochitest" },
   });
 
@@ -30,19 +33,15 @@ add_task(async function test_engines_reloaded_nimbus() {
   );
   Assert.equal(
     getVariableSpy.callCount,
-    2,
-    "Called by update function to fetch engines and by ParamPreferenceCache"
-  );
-  Assert.ok(
-    getVariableSpy.calledWith("extraParams"),
-    "Called by ParamPreferenceCache listener"
+    3,
+    "Called by update function to fetch engines"
   );
   Assert.ok(
     getVariableSpy.calledWith("experiment"),
     "Called by search service observer"
   );
   Assert.equal(
-    NimbusFeatures.search.getVariable("experiment"),
+    NimbusFeatures.searchConfiguration.getVariable("experiment"),
     "nimbus-search-mochitest",
     "Should have expected value"
   );

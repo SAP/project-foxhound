@@ -7,14 +7,14 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
 let gTree;
 
-add_task(async function init() {
+add_setup(async function () {
   let prefs = await openPreferencesViaOpenPreferencesAPI("search", {
     leaveOpen: true,
   });
@@ -286,6 +286,12 @@ async function forEachLocalShortcutRow(callback) {
   for (let i = 0; i < UrlbarUtils.LOCAL_SEARCH_MODES.length; i++) {
     let shortcut = UrlbarUtils.LOCAL_SEARCH_MODES[i];
     let row = engines.length + i;
+    // These tests assume LOCAL_SEARCH_MODES are enabled, this can be removed
+    // when we enable QuickActions. We cant just enable the pref in browser.ini
+    // as this test calls clearUserPref.
+    if (shortcut.pref == "shortcuts.quickactions") {
+      continue;
+    }
     await callback(row, shortcut);
   }
 }

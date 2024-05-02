@@ -1,7 +1,8 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 const ReferrerInfo = Components.Constructor(
   "@mozilla.org/referrer-info;1",
   "nsIReferrerInfo",
@@ -26,7 +27,7 @@ function extract_origin(uri) {
 
 var origin_attributes = {};
 
-var ValidityChecker = function(verifier, httpStatus) {
+var ValidityChecker = function (verifier, httpStatus) {
   this.verifier = verifier;
   this.httpStatus = httpStatus;
 };
@@ -270,7 +271,7 @@ function continue_test_pageload() {
 }
 
 function test_pageload() {
-  open_and_continue([pageload_toplevel], function() {
+  open_and_continue([pageload_toplevel], function () {
     if (running_single_process) {
       continue_test_pageload();
     } else {
@@ -359,8 +360,10 @@ function continue_test_redirect() {
   });
 }
 
+// Test is currently disabled.
+// eslint-disable-next-line no-unused-vars
 function test_redirect() {
-  open_and_continue([redirect_inituri, redirect_targeturi], function() {
+  open_and_continue([redirect_inituri, redirect_targeturi], function () {
     if (running_single_process) {
       continue_test_redirect();
     } else {
@@ -369,6 +372,8 @@ function test_redirect() {
   });
 }
 
+// Test is currently disabled.
+// eslint-disable-next-line no-unused-vars
 function test_startup() {
   if (!running_single_process && !is_child_process()) {
     // This one we can just proxy to the child and be done with, no extra setup
@@ -435,7 +440,7 @@ function continue_test_dns() {
 }
 
 function test_dns() {
-  open_and_continue([dns_toplevel], function() {
+  open_and_continue([dns_toplevel], function () {
     // Ensure that this will do preresolves
     Services.prefs.setIntPref(
       "network.predictor.preconnect-min-confidence",
@@ -487,9 +492,9 @@ function continue_test_origin() {
         origin_attributes
       );
       do_timeout(0, () => {
-        var origin = extract_origin(sruri);
-        if (!preconns.includes(origin)) {
-          preconns.push(origin);
+        var origin1 = extract_origin(sruri);
+        if (!preconns.includes(origin1)) {
+          preconns.push(origin1);
         }
 
         sruri = newURI(subresources[2]);
@@ -500,9 +505,9 @@ function continue_test_origin() {
           origin_attributes
         );
         do_timeout(0, () => {
-          var origin = extract_origin(sruri);
-          if (!preconns.includes(origin)) {
-            preconns.push(origin);
+          var origin2 = extract_origin(sruri);
+          if (!preconns.includes(origin2)) {
+            preconns.push(origin2);
           }
 
           var loaduri = newURI("http://localhost:4444/anotherpage.html");
@@ -521,7 +526,7 @@ function continue_test_origin() {
 }
 
 function test_origin() {
-  open_and_continue([origin_toplevel], function() {
+  open_and_continue([origin_toplevel], function () {
     if (running_single_process) {
       continue_test_origin();
     } else {
@@ -605,7 +610,7 @@ function test_prefetch_prime() {
     return;
   }
 
-  open_and_continue([prefetch_tluri], function() {
+  open_and_continue([prefetch_tluri], function () {
     if (running_single_process) {
       predictor.learn(
         prefetch_tluri,
@@ -689,6 +694,7 @@ function test_visitor_doom() {
         aURI,
         aIdEnhance,
         aDataSize,
+        aAltDataSize,
         aFetchCount,
         aLastModifiedTime,
         aExpirationTime,
@@ -702,9 +708,9 @@ function test_visitor_doom() {
         console.debug("asyncDoomURI", aURI.spec);
         let doomTask = Promise.all(
           storages.map(storage => {
-            return new Promise(resolve => {
+            return new Promise(resolve1 => {
               storage.asyncDoomURI(aURI, aIdEnhance, {
-                onCacheEntryDoomed: resolve,
+                onCacheEntryDoomed: resolve1,
               });
             });
           })
@@ -734,6 +740,7 @@ function test_visitor_doom() {
           aURI,
           aIdEnhance,
           aDataSize,
+          aAltDataSize,
           aFetchCount,
           aLastModifiedTime,
           aExpirationTime,

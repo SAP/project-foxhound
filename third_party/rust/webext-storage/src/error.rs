@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use interrupt_support::Interrupted;
-use sync15_traits::bridged_engine;
 
 #[derive(Debug)]
 pub enum QuotaReason {
@@ -50,8 +49,15 @@ pub enum ErrorKind {
     #[error("Error opening database: {0}")]
     OpenDatabaseError(#[from] sql_support::open_database::Error),
 
-    #[error("{0}")]
-    IncomingPayloadError(#[from] bridged_engine::PayloadError),
+    // When trying to close a connection but we aren't the exclusive owner of the containing Arc<>
+    #[error("Other shared references to this connection are alive")]
+    OtherConnectionReferencesExist,
+
+    #[error("The storage database has been closed")]
+    DatabaseConnectionClosed,
+
+    #[error("Sync Error: {0}")]
+    SyncError(String),
 }
 
 error_support::define_error! {
@@ -61,7 +67,6 @@ error_support::define_error! {
         (IoError, std::io::Error),
         (InterruptedError, Interrupted),
         (Utf8Error, std::str::Utf8Error),
-        (IncomingPayloadError, bridged_engine::PayloadError),
         (OpenDatabaseError, sql_support::open_database::Error),
     }
 }

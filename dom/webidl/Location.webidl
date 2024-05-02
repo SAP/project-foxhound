@@ -12,7 +12,8 @@
  */
 
 [LegacyUnforgeable,
- Exposed=Window]
+ Exposed=Window,
+ InstrumentedProps=(ancestorOrigins)]
 interface Location {
   [Throws, CrossOriginWritable, NeedsSubjectPrincipal]
   stringifier attribute USVString href;
@@ -34,14 +35,14 @@ interface Location {
            attribute USVString hash;
 
   [Throws, NeedsSubjectPrincipal]
-  void assign(USVString url);
+  undefined assign(USVString url);
 
   [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
-  void replace(USVString url);
+  undefined replace(USVString url);
 
   // XXXbz there is no forceget argument in the spec!  See bug 1037721.
   [Throws, NeedsSubjectPrincipal]
-  void reload(optional boolean forceget = false);
+  undefined reload(optional boolean forceget = false);
 
   // Bug 1085214 [SameObject] readonly attribute USVString[] ancestorOrigins;
 };

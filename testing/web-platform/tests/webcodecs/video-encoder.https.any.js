@@ -23,22 +23,6 @@ promise_test(t => {
   return endAfterEventLoopTurn();
 }, 'Test VideoEncoder construction');
 
-promise_test(t => {
-  let encoder = new VideoEncoder(getDefaultCodecInit(t));
-
-  let badCodecsList = [
-    '',                         // Empty codec
-    'bogus',                    // Non exsitent codec
-    'vorbis',                   // Audio codec
-    'vp9',                      // Ambiguous codec
-    'video/webm; codecs="vp9"'  // Codec with mime type
-  ]
-
-  testConfigurations(encoder, defaultConfig, badCodecsList);
-
-  return endAfterEventLoopTurn();
-}, 'Test VideoEncoder.configure()');
-
 promise_test(async t => {
   let output_chunks = [];
   let codecInit = getDefaultCodecInit(t);
@@ -63,6 +47,10 @@ promise_test(async t => {
 
   let frame1 = createFrame(640, 480, 0);
   let frame2 = createFrame(640, 480, 33333);
+  t.add_cleanup(() => {
+    frame1.close();
+    frame2.close();
+  });
 
   encoder.encode(frame1);
   encoder.encode(frame2);
@@ -83,7 +71,9 @@ promise_test(async t => {
 
   assert_equals(output_chunks.length, 2);
   assert_equals(output_chunks[0].timestamp, frame1.timestamp);
+  assert_equals(output_chunks[0].duration, frame1.duration);
   assert_equals(output_chunks[1].timestamp, frame2.timestamp);
+  assert_equals(output_chunks[1].duration, frame2.duration);
 }, 'Test successful configure(), encode(), and flush()');
 
 promise_test(async t => {
@@ -113,22 +103,36 @@ promise_test(async t => {
     frames.push(frame);
   }
 
+  let lastDequeueSize = Infinity;
+  encoder.ondequeue = () => {
+    assert_greater_than(lastDequeueSize, 0, "Dequeue event after queue empty");
+    assert_greater_than(lastDequeueSize, encoder.encodeQueueSize,
+                        "Dequeue event without decreased queue size");
+    lastDequeueSize = encoder.encodeQueueSize;
+  };
+
   for (let frame of frames)
     encoder.encode(frame);
 
-  assert_greater_than(encoder.encodeQueueSize, 0);
+  assert_greater_than_equal(encoder.encodeQueueSize, 0);
   assert_less_than_equal(encoder.encodeQueueSize, frames_count);
 
   await encoder.flush();
   // We can guarantee that all encodes are processed after a flush.
   assert_equals(encoder.encodeQueueSize, 0);
+  // Last dequeue event should fire when the queue is empty.
+  assert_equals(lastDequeueSize, 0);
+
+  // Reset this to Infinity to track the decline of queue size for this next
+  // batch of encodes.
+  lastDequeueSize = Infinity;
 
   for (let frame of frames) {
     encoder.encode(frame);
     frame.close();
   }
 
-  assert_greater_than(encoder.encodeQueueSize, 0);
+  assert_greater_than_equal(encoder.encodeQueueSize, 0);
   encoder.reset();
   assert_equals(encoder.encodeQueueSize, 0);
 }, 'encodeQueueSize test');
@@ -202,8 +206,12 @@ promise_test(async t => {
 
 promise_test(async t => {
   let output_chunks = [];
-  let codecInit = getDefaultCodecInit(t);
-  codecInit.output = chunk => output_chunks.push(chunk);
+  const codecInit = {
+    output: chunk => output_chunks.push(chunk),
+  };
+  const error = new Promise(resolve => codecInit.error = e => {
+    resolve(e);
+  });
 
   let encoder = new VideoEncoder(codecInit);
 
@@ -234,21 +242,21 @@ promise_test(async t => {
   output_chunks = [];
 
   let frame3 = createFrame(640, 480, 66666);
-  let frame4 = createFrame(640, 480, 100000);
 
   encoder.encode(frame3);
 
-  // Verify that a failed call to configure does not change the encoder's state.
   let badConfig = { ...defaultConfig };
-  badConfig.codec = 'bogus';
+  badConfig.codec = '';
   assert_throws_js(TypeError, () => encoder.configure(badConfig));
 
-  encoder.encode(frame4);
+  badConfig.codec = 'bogus';
+  encoder.configure(badConfig);
+  let e = await error;
+  assert_true(e instanceof DOMException);
+  assert_equals(e.name, 'NotSupportedError');
+  assert_equals(encoder.state, 'closed', 'state');
 
-  await encoder.flush();
-
-  assert_equals(output_chunks[0].timestamp, frame3.timestamp);
-  assert_equals(output_chunks[1].timestamp, frame4.timestamp);
+  // We may or may not have received frame3 before closing.
 }, 'Test successful encode() after re-configure().');
 
 promise_test(async t => {
@@ -275,7 +283,7 @@ promise_test(async t => {
 
   encoder.configure(defaultConfig);
 
-  assert_throws_dom("OperationError", () => {
+  assert_throws_js(TypeError, () => {
     encoder.encode(frame);
   });
 }, 'Verify encoding closed frames throws.');

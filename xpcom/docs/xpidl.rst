@@ -22,25 +22,26 @@ addition, there are a few built-in native types. The built-in native types
 are those listed under the type_spec production above. The following is the
 correspondence table:
 
-======================= ======================= ======================= ======================= ======================= =======================
-IDL Type                Javascript Type         C++ in parameter        C++ out parameter       Rust in parameter       Rust out parameter
-======================= ======================= ======================= ======================= ======================= =======================
-``boolean``             boolean                 ``bool``                ``bool*``               ``bool``                ``*mut bool``
-``char``                string                  ``char``                ``char*``               ``c_char``              ``*mut c_char``
-``double``              number                  ``double``              ``double*``             ``f64``                 ``*mut f64``
-``float``               number                  ``float``               ``float*``              ``f32``                 ``*mut f32``
-``long``                number                  ``int32_t``             ``int32_t*``            ``i32``                 ``*mut i32``
-``long long``           number                  ``int64_t``             ``int64_t*``            ``i64``                 ``*mut i64``
-``octet``               number                  ``uint8_t``             ``uint8_t*``            ``u8``                  ``*mut u8``
-``short``               number                  ``uint16_t``            ``uint16_t*``           ``u16``                 ``*mut u16``
-``string`` [#strptr]_   string                  ``const char*``         ``char**``              ``*const c_char``       ``*mut *mut c_char``
-``unsigned long``       number                  ``uint32_t``            ``uint32_t*``           ``u32``                 ``*mut u32``
-``unsigned long long``  number                  ``uint64_t``            ``uint64_t*``           ``u64``                 ``*mut u64``
-``unsigned short``      number                  ``uint16_t``            ``uint16_t*``           ``u16``                 ``*mut u16``
-``wchar``               string                  ``char16_t``            ``char16_t*``           ``i16``                 ``*mut i16``
-``wstring`` [#strptr]_  string                  ``const char16_t*``     ``char16_t**``          ``*const i16``          ``*mut *mut i16``
-``Array<T>`` [#array]_  array                   ``const nsTArray<T>&``  ``nsTArray<T>&``        ``*const ThinVec<T>``   ``*mut ThinVec<T>``
-======================= ======================= ======================= ======================= ======================= =======================
+=========================== =============== =========================== ============================ ======================= =======================
+IDL Type                    Javascript Type C++ in parameter            C++ out parameter            Rust in parameter       Rust out parameter
+=========================== =============== =========================== ============================ ======================= =======================
+``boolean``                 boolean         ``bool``                    ``bool*``                    ``bool``                ``*mut bool``
+``char``                    string          ``char``                    ``char*``                    ``c_char``              ``*mut c_char``
+``double``                  number          ``double``                  ``double*``                  ``f64``                 ``*mut f64``
+``float``                   number          ``float``                   ``float*``                   ``f32``                 ``*mut f32``
+``long``                    number          ``int32_t``                 ``int32_t*``                 ``i32``                 ``*mut i32``
+``long long``               number          ``int64_t``                 ``int64_t*``                 ``i64``                 ``*mut i64``
+``octet``                   number          ``uint8_t``                 ``uint8_t*``                 ``u8``                  ``*mut u8``
+``short``                   number          ``uint16_t``                ``uint16_t*``                ``u16``                 ``*mut u16``
+``string`` [#strptr]_       string          ``const char*``             ``char**``                   ``*const c_char``       ``*mut *mut c_char``
+``unsigned long``           number          ``uint32_t``                ``uint32_t*``                ``u32``                 ``*mut u32``
+``unsigned long long``      number          ``uint64_t``                ``uint64_t*``                ``u64``                 ``*mut u64``
+``unsigned short``          number          ``uint16_t``                ``uint16_t*``                ``u16``                 ``*mut u16``
+``wchar``                   string          ``char16_t``                ``char16_t*``                ``i16``                 ``*mut i16``
+``wstring`` [#strptr]_      string          ``const char16_t*``         ``char16_t**``               ``*const i16``          ``*mut *mut i16``
+``MozExternalRefCountType`` number          ``MozExternalRefCountType`` ``MozExternalRefCountType*`` ``u32``                 ``*mut u32``
+``Array<T>`` [#array]_      array           ``const nsTArray<T>&``      ``nsTArray<T>&``             ``*const ThinVec<T>``   ``*mut ThinVec<T>``
+=========================== =============== =========================== ============================ ======================= =======================
 
 .. [#strptr]
 
@@ -65,7 +66,6 @@ IDL Type                Javascript Type         C++ in parameter        C++ out 
 ======================= ======================= ======================= ======================= ======================= =======================
 ``PRTime``              number                  ``uint64_t``            ``uint64_t*``           ``u64``                 ``*mut u64``
 ``nsresult``            number                  ``nsresult``            ``nsresult*``           ``u32`` [#rsresult]_    ``*mut u32``
-``nsrefcnt``            number                  ``nsrefcnt``            ``nsrefcnt*``           ``u32``                 ``*mut u32``
 ``size_t``              number                  ``uint32_t``            ``uint32_t*``           ``u32``                 ``*mut u32``
 ``voidPtr``             N/A                     ``void*``               ``void**``              ``*mut c_void``         ``*mut *mut c_void``
 ``charPtr``             N/A                     ``char*``               ``char**``              ``*mut c_char``         ``*mut *mut c_char``
@@ -139,7 +139,7 @@ an array element.
 Constants and CEnums
 ~~~~~~~~~~~~~~~~~~~~
 
-Constants must be attched to an interface. The only constants supported are
+Constants must be attached to an interface. The only constants supported are
 those which become integer types when compiled to source code; string constants
 and floating point constants are currently not supported.
 
@@ -198,6 +198,18 @@ invoked on property calls instead of an object with the given property
 
 This interface is usable by JavaScript classes. Must inherit from a
 ``scriptable`` interface.
+
+``rust_sync``
+`````````````
+
+This interface is safe to use from multiple threads concurrently. All child
+interfaces must also be marked with this property. Interfaces marked this way
+must be either non-scriptable or ``builtinclass``, and must use threadsafe
+reference counting.
+
+Interfaces marked as ``rust_sync`` will implement the ``Sync`` trait in Rust.
+For more details on what that means, read the trait's documentation:
+https://doc.rust-lang.org/nightly/std/marker/trait.Sync.html.
 
 Methods and Attributes
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -328,7 +340,7 @@ properties they may have. The ``array`` property turns the parameter into an arr
 the parameter must also have a corresponding ``size_is`` property whose argument is
 the parameter that has the size of the array. In native code, the type gains
 another pointer indirection, and JavaScript arrays are used in script code.
-Script code callers can ignore the value of array parameter, but implementors
+Script code callers can ignore the value of array parameter, but implementers
 must still set the values appropriately.
 
 .. note::

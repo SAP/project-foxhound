@@ -19,6 +19,7 @@
 #include "js/Wrapper.h"
 #include "proxy/DeadObjectProxy.h"
 #include "proxy/ScriptedProxyHandler.h"
+#include "vm/Compartment.h"
 #include "vm/Interpreter.h"  // js::CallGetter
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
@@ -26,7 +27,6 @@
 #include "vm/WrapperObject.h"
 
 #include "gc/Marking-inl.h"
-#include "vm/JSAtom-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 
@@ -45,17 +45,40 @@ static bool ProxySetOnExpando(JSContext* cx, HandleObject proxy, HandleId id,
 
   // SetPrivateElementOperation checks for hasOwn first, which ensures the
   // expando exsists.
-  MOZ_ASSERT(expando);
+  //
+  // If we don't have an expando, then we're probably misusing debugger apis and
+  // should just throw.
+  if (!expando) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_SET_MISSING_PRIVATE);
+    return false;
+  }
 
   Rooted<mozilla::Maybe<PropertyDescriptor>> ownDesc(cx);
   if (!GetOwnPropertyDescriptor(cx, expando, id, &ownDesc)) {
     return false;
   }
-  MOZ_ASSERT(ownDesc.isSome());
+  if (ownDesc.isNothing()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_SET_MISSING_PRIVATE);
+    return false;
+  }
 
   RootedValue expandoValue(cx, proxy->as<ProxyObject>().expando());
   return SetPropertyIgnoringNamedGetter(cx, expando, id, v, expandoValue,
                                         ownDesc, result);
+}
+
+static bool ProxyGetOwnPropertyDescriptorFromExpando(
+    JSContext* cx, HandleObject proxy, HandleId id,
+    MutableHandle<mozilla::Maybe<PropertyDescriptor>> desc) {
+  RootedObject expando(cx, proxy->as<ProxyObject>().expando().toObjectOrNull());
+
+  if (!expando) {
+    return true;
+  }
+
+  return GetOwnPropertyDescriptor(cx, expando, id, desc);
 }
 
 static bool ProxyGetOnExpando(JSContext* cx, HandleObject proxy,
@@ -66,7 +89,11 @@ static bool ProxyGetOnExpando(JSContext* cx, HandleObject proxy,
 
   // We must have the expando, or GetPrivateElemOperation didn't call
   // hasPrivate first.
-  MOZ_ASSERT(expando);
+  if (!expando) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_GET_MISSING_PRIVATE);
+    return false;
+  }
 
   // Because we controlled the creation of the expando, we know it's not a
   // proxy, and so can safely call internal methods on it without worrying about
@@ -76,7 +103,11 @@ static bool ProxyGetOnExpando(JSContext* cx, HandleObject proxy,
     return false;
   }
   // We must have the object, same reasoning as the expando.
-  MOZ_ASSERT(desc.isSome());
+  if (desc.isNothing()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_SET_MISSING_PRIVATE);
+    return false;
+  }
 
   // If the private name has a getter, delegate to that.
   if (desc->hasGetter()) {
@@ -131,7 +162,7 @@ void js::AutoEnterPolicy::reportErrorIfExceptionIsNotPending(JSContext* cx,
     return;
   }
 
-  if (JSID_IS_VOID(id)) {
+  if (id.isVoid()) {
     ReportAccessDenied(cx);
   } else {
     Throw(cx, id, JSMSG_PROPERTY_ACCESS_DENIED);
@@ -184,10 +215,9 @@ bool Proxy::getOwnPropertyDescriptor(
     return policy.returnValue();
   }
 
-  // Unless we implment ProxyGetOwnPropertyDescriptorFromExpando,
-  // this would be incorrect.
-  MOZ_ASSERT_IF(handler->useProxyExpandoObjectForPrivateFields(),
-                !id.isPrivateName());
+  if (handler->useProxyExpandoObjectForPrivateFields() && id.isPrivateName()) {
+    return ProxyGetOwnPropertyDescriptorFromExpando(cx, proxy, id, desc);
+  }
   return handler->getOwnPropertyDescriptor(cx, proxy, id, desc);
 }
 
@@ -199,6 +229,11 @@ bool Proxy::defineProperty(JSContext* cx, HandleObject proxy, HandleId id,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
+
+  // We shouldn't be definining a private field if we are supposed to throw;
+  // this ought to have been caught by CheckPrivateField.
+  MOZ_ASSERT_IF(id.isPrivateName(), !handler->throwOnPrivateField());
+
   AutoEnterPolicy policy(cx, handler, proxy, id, BaseProxyHandler::SET, true);
   if (!policy.allowed()) {
     if (!policy.returnValue()) {
@@ -226,7 +261,7 @@ bool Proxy::ownPropertyKeys(JSContext* cx, HandleObject proxy,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::ENUMERATE, true);
   if (!policy.allowed()) {
     return policy.returnValue();
@@ -401,6 +436,14 @@ bool Proxy::hasOwn(JSContext* cx, HandleObject proxy, HandleId id, bool* bp) {
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
   *bp = false;  // default result if we refuse to perform this action
+
+  // If the handler is supposed to throw, we'll never have a private field so
+  // simply return, as we shouldn't throw an invalid security error when
+  // checking for the presence of a private field (WeakMap model).
+  if (id.isPrivateName() && handler->throwOnPrivateField()) {
+    return true;
+  }
+
   AutoEnterPolicy policy(cx, handler, proxy, id, BaseProxyHandler::GET, true);
   if (!policy.allowed()) {
     return policy.returnValue();
@@ -445,6 +488,10 @@ MOZ_ALWAYS_INLINE bool Proxy::getInternal(JSContext* cx, HandleObject proxy,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
+
+  // Shouldn't have gotten here, as this should have been caught earlier.
+  MOZ_ASSERT_IF(id.isPrivateName(), !handler->throwOnPrivateField());
+
   vp.setUndefined();  // default result if we refuse to perform this action
   AutoEnterPolicy policy(cx, handler, proxy, id, BaseProxyHandler::GET, true);
   if (!policy.allowed()) {
@@ -516,6 +563,10 @@ MOZ_ALWAYS_INLINE bool Proxy::setInternal(JSContext* cx, HandleObject proxy,
   }
 
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
+
+  // Should have been handled already.
+  MOZ_ASSERT_IF(id.isPrivateName(), !handler->throwOnPrivateField());
+
   AutoEnterPolicy policy(cx, handler, proxy, id, BaseProxyHandler::SET, true);
   if (!policy.allowed()) {
     if (!policy.returnValue()) {
@@ -583,7 +634,7 @@ bool Proxy::getOwnEnumerablePropertyKeys(JSContext* cx, HandleObject proxy,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::ENUMERATE, true);
   if (!policy.allowed()) {
     return policy.returnValue();
@@ -621,7 +672,7 @@ bool Proxy::enumerate(JSContext* cx, HandleObject proxy,
     return AppendUnique(cx, props, protoProps);
   }
 
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::ENUMERATE, true);
 
   // If the policy denies access but wants us to return true, we need
@@ -644,7 +695,7 @@ bool Proxy::call(JSContext* cx, HandleObject proxy, const CallArgs& args) {
   // Because vp[0] is JS_CALLEE on the way in and JS_RVAL on the way out, we
   // can only set our default value once we're sure that we're not calling the
   // trap.
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::CALL, true);
   if (!policy.allowed()) {
     args.rval().setUndefined();
@@ -664,7 +715,7 @@ bool Proxy::construct(JSContext* cx, HandleObject proxy, const CallArgs& args) {
   // Because vp[0] is JS_CALLEE on the way in and JS_RVAL on the way out, we
   // can only set our default value once we're sure that we're not calling the
   // trap.
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::CALL, true);
   if (!policy.allowed()) {
     args.rval().setUndefined();
@@ -685,22 +736,6 @@ bool Proxy::nativeCall(JSContext* cx, IsAcceptableThis test, NativeImpl impl,
   // guards against nativeCall by overriding the trap itself in the right
   // circumstances.
   return proxy->as<ProxyObject>().handler()->nativeCall(cx, test, impl, args);
-}
-
-bool Proxy::hasInstance(JSContext* cx, HandleObject proxy, MutableHandleValue v,
-                        bool* bp) {
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-  const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  *bp = false;  // default result if we refuse to perform this action
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
-                         BaseProxyHandler::GET, true);
-  if (!policy.allowed()) {
-    return policy.returnValue();
-  }
-  return proxy->as<ProxyObject>().handler()->hasInstance(cx, proxy, v, bp);
 }
 
 bool Proxy::getBuiltinClass(JSContext* cx, HandleObject proxy, ESClass* cls) {
@@ -729,7 +764,7 @@ const char* Proxy::className(JSContext* cx, HandleObject proxy) {
   }
 
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::GET, /* mayThrow = */ false);
   // Do the safe thing if the policy rejects.
   if (!policy.allowed()) {
@@ -745,7 +780,7 @@ JSString* Proxy::fun_toString(JSContext* cx, HandleObject proxy,
     return nullptr;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::GET, /* mayThrow = */ false);
   // Do the safe thing if the policy rejects.
   if (!policy.allowed()) {
@@ -781,7 +816,7 @@ bool Proxy::getElements(JSContext* cx, HandleObject proxy, uint32_t begin,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::GET,
                          /* mayThrow = */ true);
   if (!policy.allowed()) {
@@ -858,8 +893,8 @@ void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
   TraceNullableEdge(trc, proxy->slotOfExpando(), "expando");
 
 #ifdef DEBUG
-  if (TlsContext.get()->isStrictProxyCheckingEnabled() &&
-      proxy->is<WrapperObject>()) {
+  JSContext* cx = TlsContext.get();
+  if (cx && cx->isStrictProxyCheckingEnabled() && proxy->is<WrapperObject>()) {
     CheckProxyIsInCCWMap(proxy);
   }
 #endif
@@ -885,17 +920,19 @@ void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
   Proxy::trace(trc, obj);
 }
 
-static void proxy_Finalize(JSFreeOp* fop, JSObject* obj) {
+static void proxy_Finalize(JS::GCContext* gcx, JSObject* obj) {
   // Suppress a bogus warning about finalize().
   JS::AutoSuppressGCAnalysis nogc;
 
   MOZ_ASSERT(obj->is<ProxyObject>());
-  obj->as<ProxyObject>().handler()->finalize(fop, obj);
+  ProxyObject* proxy = &obj->as<ProxyObject>();
+  proxy->handler()->finalize(gcx, obj);
 
-  if (!obj->as<ProxyObject>().usingInlineValueArray()) {
-    // Bug 1560019: This allocation is not tracked, but is only present when
-    // objects are swapped which is assumed to be relatively rare.
-    fop->freeUntracked(js::detail::GetProxyDataLayout(obj)->values());
+  if (!proxy->usingInlineValueArray() && proxy->isTenured()) {
+    auto* valArray = js::detail::GetProxyDataLayout(obj)->values();
+    size_t size =
+        js::detail::ProxyValueArray::sizeOf(proxy->numReservedSlots());
+    gcx->free_(obj, valArray, size, MemoryUse::ProxyExternalValueArray);
   }
 }
 
@@ -903,13 +940,23 @@ size_t js::proxy_ObjectMoved(JSObject* obj, JSObject* old) {
   ProxyObject& proxy = obj->as<ProxyObject>();
 
   if (IsInsideNursery(old)) {
-    // Objects in the nursery are never swapped so the proxy must have an
-    // inline ProxyValueArray.
-    MOZ_ASSERT(old->as<ProxyObject>().usingInlineValueArray());
-    proxy.setInlineValueArray();
+    proxy.nurseryProxyTenured(&old->as<ProxyObject>());
   }
 
   return proxy.handler()->objectMoved(obj, old);
+}
+
+void ProxyObject::nurseryProxyTenured(ProxyObject* old) {
+  if (old->usingInlineValueArray()) {
+    setInlineValueArray();
+    return;
+  }
+
+  Nursery& nursery = runtimeFromMainThread()->gc.nursery();
+  nursery.removeMallocedBufferDuringMinorGC(data.values());
+
+  size_t size = detail::ProxyValueArray::sizeOf(numReservedSlots());
+  AddCellMemory(this, size, MemoryUse::ProxyExternalValueArray);
 }
 
 const JSClassOps js::ProxyClassOps = {
@@ -921,7 +968,6 @@ const JSClassOps js::ProxyClassOps = {
     nullptr,             // mayResolve
     proxy_Finalize,      // finalize
     nullptr,             // call
-    Proxy::hasInstance,  // hasInstance
     nullptr,             // construct
     ProxyObject::trace,  // trace
 };
@@ -980,7 +1026,6 @@ JS_PUBLIC_API JSObject* js::NewProxyObject(JSContext* cx,
 }
 
 void ProxyObject::renew(const BaseProxyHandler* handler, const Value& priv) {
-  MOZ_ASSERT(!IsInsideNursery(this));
   MOZ_ASSERT_IF(IsCrossCompartmentWrapper(this), IsDeadProxyObject(this));
   MOZ_ASSERT(getClass() == &ProxyClass);
   MOZ_ASSERT(!IsWindowProxy(this));
@@ -991,4 +1036,27 @@ void ProxyObject::renew(const BaseProxyHandler* handler, const Value& priv) {
   for (size_t i = 0; i < numReservedSlots(); i++) {
     setReservedSlot(i, UndefinedValue());
   }
+}
+
+// This implementation of HostEnsureCanAddPrivateElement is designed to work in
+// collaboration with Gecko to support the HTML implementation, which applies
+// only to Proxy type objects, and as a result we can simply provide proxy
+// handlers to correctly match the required semantics.
+bool DefaultHostEnsureCanAddPrivateElementCallback(JSContext* cx,
+                                                   HandleValue val) {
+  if (!val.isObject()) {
+    return true;
+  }
+
+  Rooted<JSObject*> valObj(cx, &val.toObject());
+  if (!IsProxy(valObj)) {
+    return true;
+  }
+
+  if (GetProxyHandler(valObj)->throwOnPrivateField()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_ILLEGAL_PRIVATE_EXOTIC);
+    return false;
+  }
+  return true;
 }

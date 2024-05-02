@@ -3,19 +3,17 @@
 // eTLD+1 URL when tracking identifiers controlled by this service are
 // present in the referrer URI.
 
-/* import-globals-from antitracking_head.js */
-
 "use strict";
 
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
+const { RemoteSettings } = ChromeUtils.importESModule(
+  "resource://services-settings/remote-settings.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+
+const APS_PREF =
+  "privacy.partition.always_partition_third_party_non_cookie_storage";
 
 const COLLECTION_NAME = "anti-tracking-url-decoration";
 const PREF_NAME = "privacy.restrict3rdpartystorage.url_decorations";
@@ -53,8 +51,8 @@ add_task(async _ => {
       data: { current: records },
     });
   }
-  let db = await RemoteSettings(COLLECTION_NAME).db;
-  await db.importChanges({}, 42, [records[0]]);
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  await db.importChanges({}, Date.now(), [records[0]]);
   await emitSync();
 
   await uds.ensureUpdated();
@@ -125,8 +123,7 @@ add_task(async _ => {
 });
 
 AntiTracking._createTask({
-  name:
-    "Test that we do not downgrade document.referrer when it does not contain a tracking identifier",
+  name: "Test that we do not downgrade document.referrer when it does not contain a tracking identifier",
   cookieBehavior: BEHAVIOR_REJECT_TRACKER,
   blockingByContentBlockingRTUI: true,
   allowList: false,
@@ -146,6 +143,7 @@ AntiTracking._createTask({
   extraPrefs: [
     ["network.http.referer.defaultPolicy", 3], // Ensure we don't downgrade because of the default policy.
     ["network.http.referer.defaultPolicy.trackers", 3],
+    [APS_PREF, false],
   ],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
@@ -156,8 +154,7 @@ AntiTracking._createTask({
 });
 
 AntiTracking._createTask({
-  name:
-    "Test that we do not downgrade document.referrer when it does not contain a tracking identifier even though it gets downgraded to origin only due to the default referrer policy",
+  name: "Test that we do not downgrade document.referrer when it does not contain a tracking identifier even though it gets downgraded to origin only due to the default referrer policy",
   cookieBehavior: BEHAVIOR_REJECT_TRACKER,
   blockingByContentBlockingRTUI: true,
   allowList: false,
@@ -174,7 +171,10 @@ AntiTracking._createTask({
       ok(false, "No query parameters should be found");
     }
   },
-  extraPrefs: [["network.http.referer.defaultPolicy.trackers", 2]],
+  extraPrefs: [
+    ["network.http.referer.defaultPolicy.trackers", 2],
+    [APS_PREF, false],
+  ],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
   iframeSandbox: null,
@@ -184,8 +184,7 @@ AntiTracking._createTask({
 });
 
 AntiTracking._createTask({
-  name:
-    "Test that we downgrade document.referrer when it contains a tracking identifier",
+  name: "Test that we downgrade document.referrer when it contains a tracking identifier",
   cookieBehavior: BEHAVIOR_REJECT_TRACKER,
   blockingByContentBlockingRTUI: true,
   allowList: false,
@@ -205,6 +204,7 @@ AntiTracking._createTask({
   extraPrefs: [
     ["network.http.referer.defaultPolicy", 3], // Ensure we don't downgrade because of the default policy.
     ["network.http.referer.defaultPolicy.trackers", 3],
+    [APS_PREF, false],
   ],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
@@ -215,8 +215,7 @@ AntiTracking._createTask({
 });
 
 AntiTracking._createTask({
-  name:
-    "Test that we don't downgrade document.referrer when it contains a tracking identifier if it gets downgraded to origin only due to the default referrer policy because the tracking identifier wouldn't be present in the referrer any more",
+  name: "Test that we don't downgrade document.referrer when it contains a tracking identifier if it gets downgraded to origin only due to the default referrer policy because the tracking identifier wouldn't be present in the referrer any more",
   cookieBehavior: BEHAVIOR_REJECT_TRACKER,
   blockingByContentBlockingRTUI: true,
   allowList: false,
@@ -233,7 +232,10 @@ AntiTracking._createTask({
       ok(false, "No query parameters should be found");
     }
   },
-  extraPrefs: [["network.http.referer.defaultPolicy.trackers", 2]],
+  extraPrefs: [
+    ["network.http.referer.defaultPolicy.trackers", 2],
+    [APS_PREF, false],
+  ],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
   iframeSandbox: null,

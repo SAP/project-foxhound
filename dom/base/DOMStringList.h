@@ -12,8 +12,7 @@
 #include "nsWrapperCache.h"
 #include "nsString.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DOMStringList : public nsISupports, public nsWrapperCache {
  protected:
@@ -21,7 +20,7 @@ class DOMStringList : public nsISupports, public nsWrapperCache {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMStringList)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DOMStringList)
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -80,7 +79,6 @@ class DOMStringList : public nsISupports, public nsWrapperCache {
   nsTArray<nsString> mNames;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_DOMStringList_h */

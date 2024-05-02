@@ -12,12 +12,9 @@
 #include "mozilla/dom/XRReferenceSpace.h"
 #include "VRDisplayClient.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(XRFrame, mParent, mSession)
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(XRFrame, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(XRFrame, Release)
 
 XRFrame::XRFrame(nsISupports* aParent, XRSession* aXRSession)
     : mParent(aParent),
@@ -202,5 +199,4 @@ gfx::Matrix4x4 XRFrame::ConstructInlineProjection(float aFov, float aAspect,
   return m;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

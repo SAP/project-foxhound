@@ -1,7 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 add_task(async function test_tracker_basics() {
   let tracker = new LegacyTracker("Tracker", Service);
@@ -39,7 +41,7 @@ add_task(async function test_tracker_persistence() {
 
   let promiseSave = new Promise((resolve, reject) => {
     let save = tracker._storage._save;
-    tracker._storage._save = function() {
+    tracker._storage._save = function () {
       save.call(tracker._storage).then(resolve, reject);
     };
   });

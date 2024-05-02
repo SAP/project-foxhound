@@ -47,7 +47,6 @@
 #include <algorithm>
 #include "nsTextNode.h"
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
@@ -292,14 +291,10 @@ nscoord nsComboboxControlFrame::DropDownButtonISize() {
     return 0;
   }
 
-  LayoutDeviceIntSize dropdownButtonSize;
-  bool canOverride = true;
-  nsPresContext* presContext = PresContext();
-  presContext->Theme()->GetMinimumWidgetSize(
-      presContext, this, StyleAppearance::MozMenulistArrowButton,
-      &dropdownButtonSize, &canOverride);
-
-  return presContext->DevPixelsToAppUnits(dropdownButtonSize.width);
+  nsPresContext* pc = PresContext();
+  LayoutDeviceIntSize dropdownButtonSize = pc->Theme()->GetMinimumWidgetSize(
+      pc, this, StyleAppearance::MozMenulistArrowButton);
+  return pc->DevPixelsToAppUnits(dropdownButtonSize.width);
 }
 
 int32_t nsComboboxControlFrame::CharCountOfLargestOptionForInflation() const {
@@ -318,54 +313,64 @@ int32_t nsComboboxControlFrame::CharCountOfLargestOptionForInflation() const {
   return int32_t(maxLength);
 }
 
+nscoord nsComboboxControlFrame::GetLongestOptionISize(
+    gfxContext* aRenderingContext) const {
+  // Compute the width of each option's (potentially text-transformed) text,
+  // and use the widest one as part of our intrinsic size.
+  nscoord maxOptionSize = 0;
+  nsAutoString label;
+  nsAutoString transformedLabel;
+  RefPtr<nsFontMetrics> fm =
+      nsLayoutUtils::GetInflatedFontMetricsForFrame(this);
+  const nsStyleText* textStyle = StyleText();
+  auto textTransform = textStyle->mTextTransform.IsNone()
+                           ? Nothing()
+                           : Some(textStyle->mTextTransform);
+  nsAtom* language = StyleFont()->mLanguage;
+  AutoTArray<bool, 50> charsToMergeArray;
+  AutoTArray<bool, 50> deletedCharsArray;
+  for (auto i : IntegerRange(Select().Options()->Length())) {
+    GetOptionText(i, label);
+    const nsAutoString* stringToUse = &label;
+    if (textTransform ||
+        textStyle->mWebkitTextSecurity != StyleTextSecurity::None) {
+      transformedLabel.Truncate();
+      charsToMergeArray.SetLengthAndRetainStorage(0);
+      deletedCharsArray.SetLengthAndRetainStorage(0);
+      nsCaseTransformTextRunFactory::TransformString(
+          label, transformedLabel, textTransform,
+          textStyle->TextSecurityMaskChar(),
+          /* aCaseTransformsOnly = */ false, language, charsToMergeArray,
+          deletedCharsArray);
+      stringToUse = &transformedLabel;
+    }
+    maxOptionSize = std::max(maxOptionSize,
+                             nsLayoutUtils::AppUnitWidthOfStringBidi(
+                                 *stringToUse, this, *fm, *aRenderingContext));
+  }
+  if (maxOptionSize) {
+    // HACK: Add one app unit to workaround silly Netgear router styling, see
+    // bug 1769580. In practice since this comes from font metrics is unlikely
+    // to be perceivable.
+    maxOptionSize += 1;
+  }
+  return maxOptionSize;
+}
+
 nscoord nsComboboxControlFrame::GetIntrinsicISize(gfxContext* aRenderingContext,
                                                   IntrinsicISizeType aType) {
+  Maybe<nscoord> containISize = ContainIntrinsicISize(NS_UNCONSTRAINEDSIZE);
+  if (containISize && *containISize != NS_UNCONSTRAINEDSIZE) {
+    return *containISize;
+  }
+
   nscoord displayISize = mDisplayFrame->IntrinsicISizeOffsets().padding;
-
-  if (!StyleDisplay()->IsContainSize() && !StyleContent()->mContent.IsNone()) {
-    // Compute the width of each option's (potentially text-transformed) text,
-    // and use the widest one as part of our intrinsic size.
-    nscoord maxOptionSize = 0;
-    nsAutoString label;
-    nsAutoString transformedLabel;
-    RefPtr<nsFontMetrics> fm =
-        nsLayoutUtils::GetInflatedFontMetricsForFrame(this);
-    auto textTransform = StyleText()->mTextTransform.IsNone()
-                             ? Nothing()
-                             : Some(StyleText()->mTextTransform);
-    nsAtom* language = StyleFont()->mLanguage;
-    AutoTArray<bool, 50> charsToMergeArray;
-    AutoTArray<bool, 50> deletedCharsArray;
-    for (auto i : IntegerRange(Select().Options()->Length())) {
-      GetOptionText(i, label);
-      const nsAutoString* stringToUse = &label;
-      if (textTransform) {
-        transformedLabel.Truncate();
-        charsToMergeArray.SetLengthAndRetainStorage(0);
-        deletedCharsArray.SetLengthAndRetainStorage(0);
-        nsCaseTransformTextRunFactory::TransformString(
-            label, transformedLabel, textTransform,
-            /* aCaseTransformsOnly = */ false, language, charsToMergeArray,
-            deletedCharsArray);
-        stringToUse = &transformedLabel;
-      }
-      maxOptionSize = std::max(
-          maxOptionSize, nsLayoutUtils::AppUnitWidthOfStringBidi(
-                             *stringToUse, this, *fm, *aRenderingContext));
-    }
-
-    displayISize += maxOptionSize;
+  if (!containISize && !StyleContent()->mContent.IsNone()) {
+    displayISize += GetLongestOptionISize(aRenderingContext);
   }
 
-  // Add room for the dropmarker button (if there is one) and scrollbar on the
-  // popup.
+  // Add room for the dropmarker button (if there is one).
   displayISize += DropDownButtonISize();
-  nsPresContext* pc = PresContext();
-  if (!pc->UseOverlayScrollbars()) {
-    displayISize += nsIScrollableFrame::GetNondisappearingScrollbarWidth(
-        pc, GetWritingMode());
-  }
-
   return displayISize;
 }
 
@@ -411,7 +416,7 @@ void nsComboboxControlFrame::Reflow(nsPresContext* aPresContext,
   // 4) Inline size of display area is whatever is left over from our
   //    inline size after allocating inline size for the button.
 
-  if (!mDisplayFrame || !mButtonFrame) {
+  if (!mDisplayFrame) {
     NS_ERROR("Why did the frame constructor allow this to happen?  Fix it!!");
     return;
   }
@@ -440,15 +445,17 @@ void nsComboboxControlFrame::Reflow(nsPresContext* aPresContext,
 
   // The button should occupy the same space as a scrollbar, and its position
   // starts from the border edge.
-  LogicalRect buttonRect(wm);
-  buttonRect.IStart(wm) = borderPadding.IStart(wm) + mMaxDisplayISize;
-  buttonRect.BStart(wm) = border.BStart(wm);
+  if (mButtonFrame) {
+    LogicalRect buttonRect(wm);
+    buttonRect.IStart(wm) = borderPadding.IStart(wm) + mMaxDisplayISize;
+    buttonRect.BStart(wm) = border.BStart(wm);
 
-  buttonRect.ISize(wm) = buttonISize;
-  buttonRect.BSize(wm) = mDisplayFrame->BSize(wm) + padding.BStartEnd(wm);
+    buttonRect.ISize(wm) = buttonISize;
+    buttonRect.BSize(wm) = mDisplayFrame->BSize(wm) + padding.BStartEnd(wm);
 
-  const nsSize containerSize = aDesiredSize.PhysicalSize();
-  mButtonFrame->SetRect(buttonRect, containerSize);
+    const nsSize containerSize = aDesiredSize.PhysicalSize();
+    mButtonFrame->SetRect(buttonRect, containerSize);
+  }
 
   if (!aStatus.IsInlineBreakBefore() && !aStatus.IsFullyComplete()) {
     // This frame didn't fit inside a fragmentation container.  Splitting
@@ -544,8 +551,9 @@ void nsComboboxControlFrame::HandleRedisplayTextEvent() {
     return;
   }
 
-  // XXXbz This should perhaps be eResize.  Check.
-  PresShell()->FrameNeedsReflow(mDisplayFrame, IntrinsicDirty::StyleChange,
+  // XXXbz This should perhaps be IntrinsicDirty::None. Check.
+  PresShell()->FrameNeedsReflow(mDisplayFrame,
+                                IntrinsicDirty::FrameAncestorsAndDescendants,
                                 NS_FRAME_IS_DIRTY);
 
   mInRedisplayText = false;
@@ -573,6 +581,10 @@ void nsComboboxControlFrame::ActuallyDisplayText(bool aNotify) {
 
 int32_t nsComboboxControlFrame::GetIndexOfDisplayArea() {
   return mDisplayedIndex;
+}
+
+bool nsComboboxControlFrame::IsDroppedDown() const {
+  return Select().OpenInParentProcess();
 }
 
 //----------------------------------------------------------------------
@@ -627,8 +639,7 @@ nsresult nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
     return NS_OK;
   }
 
-  EventStates eventStates = mContent->AsElement()->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
+  if (mContent->AsElement()->State().HasState(dom::ElementState::DISABLED)) {
     return NS_OK;
   }
 
@@ -683,30 +694,21 @@ nsresult nsComboboxControlFrame::CreateAnonymousContent(
   }
   ActuallyDisplayText(false);
 
-  // XXX(Bug 1631371) Check if this should use a fallible operation as it
-  // pretended earlier.
   aElements.AppendElement(mDisplayContent);
+  if (HasDropDownButton()) {
+    mButtonContent = mContent->OwnerDoc()->CreateHTMLElement(nsGkAtoms::button);
+    if (!mButtonContent) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
 
-  mButtonContent = mContent->OwnerDoc()->CreateHTMLElement(nsGkAtoms::button);
-  if (!mButtonContent) return NS_ERROR_OUT_OF_MEMORY;
-
-  // make someone to listen to the button.
-  mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::type, u"button"_ns,
-                          false);
-  // Set tabindex="-1" so that the button is not tabbable
-  mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::tabindex, u"-1"_ns,
-                          false);
-
-  WritingMode wm = GetWritingMode();
-  if (wm.IsVertical()) {
-    mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::orientation,
-                            wm.IsVerticalRL() ? u"left"_ns : u"right"_ns,
+    // make someone to listen to the button.
+    mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::type, u"button"_ns,
                             false);
+    // Set tabindex="-1" so that the button is not tabbable
+    mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::tabindex, u"-1"_ns,
+                            false);
+    aElements.AppendElement(mButtonContent);
   }
-
-  // XXX(Bug 1631371) Check if this should use a fallible operation as it
-  // pretended earlier.
-  aElements.AppendElement(mButtonContent);
 
   return NS_OK;
 }
@@ -839,60 +841,44 @@ nsIFrame* nsComboboxControlFrame::CreateFrameForDisplayNode() {
   textFrame->Init(mDisplayContent, mDisplayFrame, nullptr);
   mDisplayContent->SetPrimaryFrame(textFrame);
 
-  nsFrameList textList(textFrame, textFrame);
-  mDisplayFrame->SetInitialChildList(kPrincipalList, textList);
+  mDisplayFrame->SetInitialChildList(FrameChildListID::Principal,
+                                     nsFrameList(textFrame, textFrame));
   return mDisplayFrame;
 }
 
-void nsComboboxControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                         PostDestroyData& aPostDestroyData) {
+void nsComboboxControlFrame::Destroy(DestroyContext& aContext) {
   // Revoke any pending RedisplayTextEvent
   mRedisplayTextEvent.Revoke();
 
   mEventListener->Detach();
 
   // Cleanup frames in popup child list
-  mPopupFrames.DestroyFramesFrom(aDestructRoot, aPostDestroyData);
-  aPostDestroyData.AddAnonymousContent(mDisplayContent.forget());
-  aPostDestroyData.AddAnonymousContent(mButtonContent.forget());
-  nsBlockFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  aContext.AddAnonymousContent(mDisplayContent.forget());
+  aContext.AddAnonymousContent(mButtonContent.forget());
+  nsBlockFrame::Destroy(aContext);
 }
 
 const nsFrameList& nsComboboxControlFrame::GetChildList(
     ChildListID aListID) const {
-  if (kSelectPopupList == aListID) {
-    return mPopupFrames;
-  }
   return nsBlockFrame::GetChildList(aListID);
 }
 
 void nsComboboxControlFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
   nsBlockFrame::GetChildLists(aLists);
-  mPopupFrames.AppendIfNonempty(aLists, kSelectPopupList);
 }
 
 void nsComboboxControlFrame::SetInitialChildList(ChildListID aListID,
-                                                 nsFrameList& aChildList) {
-#ifdef DEBUG
+                                                 nsFrameList&& aChildList) {
   for (nsIFrame* f : aChildList) {
     MOZ_ASSERT(f->GetParent() == this, "Unexpected parent");
-  }
-#endif
-  if (kSelectPopupList == aListID) {
-    mPopupFrames.SetFrames(aChildList);
-  } else {
-    for (nsFrameList::Enumerator e(aChildList); !e.AtEnd(); e.Next()) {
-      nsCOMPtr<nsIFormControl> formControl =
-          do_QueryInterface(e.get()->GetContent());
-      if (formControl &&
-          formControl->ControlType() == FormControlType::ButtonButton) {
-        mButtonFrame = e.get();
-        break;
-      }
+    nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(f->GetContent());
+    if (formControl &&
+        formControl->ControlType() == FormControlType::ButtonButton) {
+      mButtonFrame = f;
+      break;
     }
-    NS_ASSERTION(mButtonFrame, "missing button frame in initial child list");
-    nsBlockFrame::SetInitialChildList(aListID, aChildList);
   }
+  nsBlockFrame::SetInitialChildList(aListID, std::move(aChildList));
 }
 
 namespace mozilla {
@@ -931,15 +917,9 @@ void nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   // draw a focus indicator only when focus rings should be drawn
-  if (mContent->AsElement()->State().HasState(NS_EVENT_STATE_FOCUSRING)) {
-    nsPresContext* pc = PresContext();
-    const nsStyleDisplay* disp = StyleDisplay();
-    if (IsThemed(disp) &&
-        pc->Theme()->ThemeWantsButtonInnerFocusRing(
-            this, disp->EffectiveAppearance()) &&
-        mDisplayFrame && IsVisibleForPainting()) {
-      aLists.Content()->AppendNewToTop<nsDisplayComboboxFocus>(aBuilder, this);
-    }
+  if (Select().State().HasState(dom::ElementState::FOCUSRING) && IsThemed() &&
+      PresContext()->Theme()->ThemeWantsButtonInnerFocusRing()) {
+    aLists.Content()->AppendNewToTop<nsDisplayComboboxFocus>(aBuilder, this);
   }
 
   DisplaySelectionOverlay(aBuilder, aLists.Content());
@@ -947,9 +927,9 @@ void nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 void nsComboboxControlFrame::PaintFocus(DrawTarget& aDrawTarget, nsPoint aPt) {
   /* Do we need to do anything? */
-  EventStates eventStates = mContent->AsElement()->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED) ||
-      !eventStates.HasState(NS_EVENT_STATE_FOCUS)) {
+  dom::ElementState state = mContent->AsElement()->State();
+  if (state.HasState(dom::ElementState::DISABLED) ||
+      !state.HasState(dom::ElementState::FOCUS)) {
     return;
   }
 

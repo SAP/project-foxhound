@@ -41,12 +41,6 @@ namespace mozilla::dom {
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::ipc;
 
-namespace {
-
-NS_DEFINE_IID(kIDBRequestIID, PRIVATE_IDBREQUEST_IID);
-
-}  // namespace
-
 IDBRequest::IDBRequest(IDBDatabase* aDatabase)
     : DOMEventTargetHelper(aDatabase),
       mLoggingSerialNumber(0),
@@ -274,7 +268,7 @@ DOMException* IDBRequest::GetError(ErrorResult& aRv) {
   return mError;
 }
 
-NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(IDBRequest)
+NS_IMPL_CYCLE_COLLECTION_CLASS(IDBRequest)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBRequest,
                                                   DOMEventTargetHelper)
@@ -302,8 +296,8 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(IDBRequest, DOMEventTargetHelper)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(IDBRequest)
-  if (aIID.Equals(kIDBRequestIID)) {
-    foundInterface = this;
+  if (aIID.Equals(NS_GET_IID(mozilla::dom::detail::PrivateIDBRequest))) {
+    foundInterface = static_cast<EventTarget*>(this);
   } else
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
@@ -318,11 +312,9 @@ void IDBRequest::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
 }
 
 IDBOpenDBRequest::IDBOpenDBRequest(SafeRefPtr<IDBFactory> aFactory,
-                                   nsIGlobalObject* aGlobal,
-                                   bool aFileHandleDisabled)
+                                   nsIGlobalObject* aGlobal)
     : IDBRequest(aGlobal),
       mFactory(std::move(aFactory)),
-      mFileHandleDisabled(aFileHandleDisabled),
       mIncreasedActiveDatabaseCount(false) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mFactory);
@@ -341,10 +333,8 @@ RefPtr<IDBOpenDBRequest> IDBOpenDBRequest::Create(
   aFactory->AssertIsOnOwningThread();
   MOZ_ASSERT(aGlobal);
 
-  bool fileHandleDisabled = !IndexedDatabaseManager::IsFileHandleEnabled();
-
   RefPtr<IDBOpenDBRequest> request =
-      new IDBOpenDBRequest(std::move(aFactory), aGlobal, fileHandleDisabled);
+      new IDBOpenDBRequest(std::move(aFactory), aGlobal);
   CaptureCaller(aCx, request->mFilename, &request->mLineNo, &request->mColumn);
 
   if (!NS_IsMainThread()) {
@@ -444,16 +434,6 @@ NS_INTERFACE_MAP_END_INHERITING(IDBRequest)
 
 NS_IMPL_ADDREF_INHERITED(IDBOpenDBRequest, IDBRequest)
 NS_IMPL_RELEASE_INHERITED(IDBOpenDBRequest, IDBRequest)
-
-nsresult IDBOpenDBRequest::PostHandleEvent(EventChainPostVisitor& aVisitor) {
-  nsresult rv =
-      IndexedDatabaseManager::CommonPostHandleEvent(aVisitor, *mFactory);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  return NS_OK;
-}
 
 JSObject* IDBOpenDBRequest::WrapObject(JSContext* aCx,
                                        JS::Handle<JSObject*> aGivenProto) {

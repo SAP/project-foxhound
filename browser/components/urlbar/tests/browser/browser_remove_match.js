@@ -1,35 +1,28 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FormHistory: "resource://gre/modules/FormHistory.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
 });
 
-add_task(async function setup() {
-  await SearchTestUtils.installSearchExtension();
+add_setup(async function () {
+  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
 
   let engine = Services.search.getEngineByName("Example");
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
   await Services.search.moveEngine(engine, 0);
-
-  registerCleanupFunction(async function() {
-    await Services.search.setDefault(originalEngine);
-  });
 });
 
 add_task(async function test_remove_history() {
   const TEST_URL = "http://remove.me/from_urlbar/";
   await PlacesTestUtils.addVisits(TEST_URL);
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
   });
 
   let promiseVisitRemoved = PlacesTestUtils.waitForNotification(
     "page-removed",
-    events => events[0].url === TEST_URL,
-    "places"
+    events => events[0].url === TEST_URL
   );
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -111,7 +104,7 @@ add_task(async function test_remove_form_history() {
   }
   Assert.ok(index < count, "Result found");
 
-  EventUtils.synthesizeKey("KEY_ArrowDown", { repeat: index });
+  EventUtils.synthesizeKey("KEY_Tab", { repeat: index });
   Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), index);
   EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
   await promiseRemoved;
@@ -155,7 +148,7 @@ add_task(async function test_remove_bookmark_doesnt() {
     url: TEST_URL,
   });
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.eraseEverything();
   });
 
@@ -193,7 +186,7 @@ add_task(async function test_searchMode_removeRestyledHistory() {
   let url = `https://example.com/?q=${query}bar`;
   await PlacesTestUtils.addVisits(url);
 
-  await BrowserTestUtils.withNewTab("about:robots", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:robots", async function (browser) {
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       value: query,

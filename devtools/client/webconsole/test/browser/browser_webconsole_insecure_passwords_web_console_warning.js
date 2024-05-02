@@ -29,7 +29,7 @@ const INSECURE_PASSWORDS_URI =
   "https://developer.mozilla.org/docs/Web/Security/Insecure_passwords" +
   DOCS_GA_PARAMS;
 
-add_task(async function() {
+add_task(async function () {
   // testing insecure password warnings, hence disabling https-first
   await pushPref("dom.security.https_first", false);
   await testUriWarningMessage(INSECURE_IFRAME_URI, INSECURE_IFRAME_MSG);
@@ -42,9 +42,7 @@ add_task(async function() {
 
 async function testUriWarningMessage(uri, warningMessage) {
   const hud = await openNewTabAndConsole(uri);
-  const message = await waitFor(() =>
-    findMessage(hud, warningMessage, ".message.warn")
-  );
+  const message = await waitFor(() => findWarningMessage(hud, warningMessage));
   ok(message, "Warning message displayed successfully");
   await testLearnMoreLinkClick(message, INSECURE_PASSWORDS_URI);
 }

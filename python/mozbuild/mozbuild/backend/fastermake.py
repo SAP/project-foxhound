@@ -2,21 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals, print_function
-
 from operator import itemgetter
+
+import mozpack.path as mozpath
 import six
+from mozpack.manifests import InstallManifest
 
 from mozbuild.backend.base import PartialBackend
 from mozbuild.backend.make import MakeBackend
-from mozbuild.frontend.context import (
-    ObjDirPath,
-    Path,
-)
+from mozbuild.frontend.context import ObjDirPath, Path
 from mozbuild.frontend.data import (
     ChromeManifestEntry,
-    FinalTargetPreprocessedFiles,
     FinalTargetFiles,
+    FinalTargetPreprocessedFiles,
     GeneratedFile,
     JARManifest,
     LocalizedFiles,
@@ -25,8 +23,6 @@ from mozbuild.frontend.data import (
 )
 from mozbuild.makeutil import Makefile
 from mozbuild.util import OrderedDefaultDict
-from mozpack.manifests import InstallManifest
-import mozpack.path as mozpath
 
 
 class FasterMakeBackend(MakeBackend, PartialBackend):
@@ -229,7 +225,7 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
             mk.create_rule([target]).add_dependencies(
                 "%s" % d[0] for d in sorted(deps, key=itemgetter(0))
             )
-            for (merge, ref_file, l10n_file) in deps:
+            for merge, ref_file, l10n_file in deps:
                 rule = mk.create_rule([merge]).add_dependencies(
                     [ref_file, l10n_file] + python_deps
                 )

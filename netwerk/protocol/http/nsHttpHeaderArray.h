@@ -105,8 +105,8 @@ class nsHttpHeaderArray {
   [[nodiscard]] nsresult VisitHeaders(nsIHttpHeaderVisitor* visitor,
                                       VisitorFilter filter = eFilterAll);
 
-  // parse a header line, return the header atom and a pointer to the
-  // header value (the substring of the header line -- do not free).
+  // parse a header line, return the header atom, the header name, and the
+  // header value
   [[nodiscard]] static nsresult ParseHeaderLine(
       const nsACString& line, nsHttpAtom* hdr = nullptr,
       nsACString* headerNameOriginal = nullptr, nsACString* value = nullptr);
@@ -166,6 +166,12 @@ class nsHttpHeaderArray {
   // injection)
   bool IsSuspectDuplicateHeader(const nsHttpAtom& header);
 
+  // Removes duplicate header values entries
+  // Will return unmodified header value if the header values contains
+  // non-duplicate entries
+  void RemoveDuplicateHeaderValues(const nsACString& aHeaderValue,
+                                   nsACString& aResult);
+
   // All members must be copy-constructable and assignable
   CopyableTArray<nsEntry> mHeaders;
 
@@ -220,6 +226,7 @@ inline bool nsHttpHeaderArray::IsSingletonHeader(const nsHttpAtom& header) {
          header == nsHttp::If_Modified_Since ||
          header == nsHttp::If_Unmodified_Since || header == nsHttp::From ||
          header == nsHttp::Location || header == nsHttp::Max_Forwards ||
+         header == nsHttp::GlobalPrivacyControl ||
          // Ignore-multiple-headers are singletons in the sense that they
          // shouldn't be merged.
          IsIgnoreMultipleHeader(header);
@@ -240,10 +247,15 @@ inline bool nsHttpHeaderArray::IsIgnoreMultipleHeader(
 [[nodiscard]] inline nsresult nsHttpHeaderArray::MergeHeader(
     const nsHttpAtom& header, nsEntry* entry, const nsACString& value,
     nsHttpHeaderArray::HeaderVariety variety) {
-  if (value.IsEmpty()) return NS_OK;  // merge of empty header = no-op
+  // merge of empty header = no-op
+  if (value.IsEmpty() && header != nsHttp::X_Frame_Options) {
+    return NS_OK;
+  }
 
+  // x-frame-options having an empty header value still has an effect so we make
+  // sure that we retain encountering it
   nsCString newValue = entry->value;
-  if (!newValue.IsEmpty()) {
+  if (!newValue.IsEmpty() || header == nsHttp::X_Frame_Options) {
     // Append the new value to the existing value
     if (header == nsHttp::Set_Cookie || header == nsHttp::WWW_Authenticate ||
         header == nsHttp::Proxy_Authenticate) {
@@ -286,6 +298,33 @@ inline bool nsHttpHeaderArray::IsSuspectDuplicateHeader(
              "Only non-mergeable headers should be in this list\n");
 
   return retval;
+}
+
+inline void nsHttpHeaderArray::RemoveDuplicateHeaderValues(
+    const nsACString& aHeaderValue, nsACString& aResult) {
+  mozilla::Maybe<nsAutoCString> result;
+  for (const nsACString& token :
+       nsCCharSeparatedTokenizer(aHeaderValue, ',').ToRange()) {
+    if (result.isNothing()) {
+      // assign the first value
+      result.emplace(token);
+      continue;
+    }
+    if (*result != token) {
+      // non-identical header values. Do not change the header values
+      result.reset();
+      break;
+    }
+  }
+
+  if (result.isSome()) {
+    aResult = *result;
+  } else {
+    // either header values do not have multiple values or
+    // has unequal multiple values
+    // for both the cases restore the original header value
+    aResult = aHeaderValue;
+  }
 }
 
 }  // namespace net

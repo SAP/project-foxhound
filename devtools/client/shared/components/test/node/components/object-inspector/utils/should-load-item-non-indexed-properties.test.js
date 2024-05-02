@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const Utils = require("devtools/client/shared/components/object-inspector/utils/index");
+const Utils = require("resource://devtools/client/shared/components/object-inspector/utils/index.js");
 const {
   createNode,
   createGetterNode,
@@ -14,12 +14,14 @@ const {
 
 const { shouldLoadItemNonIndexedProperties } = Utils.loadProperties;
 
-const GripMapEntryRep = require("devtools/client/shared/components/reps/reps/grip-map-entry");
-const accessorStubs = require("devtools/client/shared/components/test/node/stubs/reps/accessor");
-const gripMapStubs = require("devtools/client/shared/components/test/node/stubs/reps/grip-map");
-const gripArrayStubs = require("devtools/client/shared/components/test/node/stubs/reps/grip-array");
-const gripStubs = require("devtools/client/shared/components/test/node/stubs/reps/grip");
-const windowStubs = require("devtools/client/shared/components/test/node/stubs/reps/window");
+const {
+  createGripMapEntry,
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
+const accessorStubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/accessor.js");
+const gripMapStubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/grip-map.js");
+const gripArrayStubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/grip-array.js");
+const gripStubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/grip.js");
+const windowStubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/window.js");
 
 describe("shouldLoadItemNonIndexedProperties", () => {
   it("returns true for an array", () => {
@@ -117,7 +119,7 @@ describe("shouldLoadItemNonIndexedProperties", () => {
     const node = createNode({
       name: "root",
       contents: {
-        value: windowStubs.get("Window"),
+        value: windowStubs.get("Window")._grip,
       },
     });
     expect(shouldLoadItemNonIndexedProperties(node)).toBeTruthy();
@@ -127,7 +129,7 @@ describe("shouldLoadItemNonIndexedProperties", () => {
     const windowNode = createNode({
       name: "root",
       contents: {
-        value: windowStubs.get("Window"),
+        value: windowStubs.get("Window")._grip,
       },
     });
     const loadedProperties = new Map([
@@ -152,7 +154,7 @@ describe("shouldLoadItemNonIndexedProperties", () => {
   });
 
   it("returns false for a MapEntry node", () => {
-    const node = GripMapEntryRep.createGripMapEntry("key", "value");
+    const node = createGripMapEntry("key", "value");
     expect(shouldLoadItemNonIndexedProperties(node)).toBeFalsy();
   });
 

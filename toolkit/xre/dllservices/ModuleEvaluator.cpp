@@ -59,8 +59,6 @@ static Vector<nsString> GetKeyboardLayoutDlls() {
       Unused << result.emplaceBack(std::move(ws));
     }
   }
-
-  return result;
 }
 
 /* static */
@@ -161,6 +159,10 @@ Maybe<ModuleTrustFlags> ModuleEvaluator::GetTrust(
 
   // We start by checking authenticode signatures, as the presence of any
   // signature will produce an immediate pass/fail.
+  if (aModuleRecord.mVendorInfo.isSome() &&
+      aModuleRecord.mVendorInfo.ref().mHasNestedMicrosoftSignature) {
+    return Some(ModuleTrustFlags::MicrosoftWindowsSignature);
+  }
   if (aModuleRecord.mVendorInfo.isSome() &&
       aModuleRecord.mVendorInfo.ref().mSource ==
           VendorInfo::Source::Signature) {

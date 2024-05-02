@@ -5,13 +5,10 @@
 Support for running mach tasks (via run-task)
 """
 
+from taskgraph.util.schema import Schema, taskref_or_string
+from voluptuous import Any, Optional, Required
 
-from gecko_taskgraph.transforms.job import run_job_using, configure_taskdesc_for_run
-from gecko_taskgraph.util.schema import (
-    Schema,
-    taskref_or_string,
-)
-from voluptuous import Required, Optional, Any
+from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
 
 mach_schema = Schema(
     {
@@ -30,10 +27,6 @@ mach_schema = Schema(
         Required("comm-checkout"): bool,
         # Base work directory used to set up the task.
         Optional("workdir"): str,
-        # Context to substitute into the command using format string
-        # substitution (e.g {value}). This is useful if certain aspects of the
-        # command need to be generated in transforms.
-        Optional("command-context"): dict,
     }
 )
 
@@ -57,8 +50,9 @@ def configure_mach(config, job, taskdesc):
     if python:
         del run["python-version"]
 
-        if worker["os"] == "macosx" and python == 3:
-            python = "/usr/local/bin/python3"
+        if taskdesc.get("use-system-python"):
+            if worker["os"] == "macosx" and python == 3:
+                python = "/usr/local/bin/python3"
 
         python = str(python)
         try:

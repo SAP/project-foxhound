@@ -23,8 +23,8 @@ function wrapInputStream(input) {
   return wrapper;
 }
 
-const { Subprocess } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm"
+const { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
 );
 
 const XPI_NAME = "testjar.xpi";
@@ -124,7 +124,7 @@ add_task(async function test() {
   Assert.throws(
     () => {
       while (true) {
-        Assert.ok(stream.read(1024).length > 0);
+        Assert.ok(!!stream.read(1024).length);
       }
     },
     /NS_ERROR_FAILURE/,

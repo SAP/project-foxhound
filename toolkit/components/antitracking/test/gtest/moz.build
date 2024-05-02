@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES += [
+    "TestPartitioningExceptionList.cpp",
     "TestStoragePrincipalHelper.cpp",
     "TestURLQueryStringStripper.cpp",
 ]
@@ -16,5 +17,3 @@ LOCAL_INCLUDES += [
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul-gtest"
-
-REQUIRES_UNIFIED_BUILD = True

@@ -17,6 +17,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/gfx/ScaleFactors2D.h"
 #include "mozilla/Span.h"
 
 namespace mozilla {
@@ -32,6 +33,12 @@ Span<Point4DTyped<UnknownUnits, F>> IntersectPolygon(
     Span<Point4DTyped<UnknownUnits, F>> aPoints,
     const Point4DTyped<UnknownUnits, F>& aPlaneNormal,
     Span<Point4DTyped<UnknownUnits, F>> aDestBuffer);
+
+template <class T>
+using BaseMatrixScales = BaseScaleFactors2D<UnknownUnits, UnknownUnits, T>;
+
+using MatrixScales = BaseMatrixScales<float>;
+using MatrixScalesDouble = BaseMatrixScales<double>;
 
 template <class T>
 class BaseMatrix {
@@ -193,6 +200,10 @@ class BaseMatrix {
     return BaseMatrix<T>(aScaleX, 0.0f, 0.0f, aScaleY, 0.0f, 0.0f);
   }
 
+  static BaseMatrix<T> Scaling(const BaseMatrixScales<T>& scale) {
+    return Scaling(scale.xScale, scale.yScale);
+  }
+
   /**
    * Similar to PreTranslate, but applies a scale instead of a translation.
    */
@@ -203,6 +214,10 @@ class BaseMatrix {
     _22 *= aY;
 
     return *this;
+  }
+
+  BaseMatrix<T>& PreScale(const BaseMatrixScales<T>& scale) {
+    return PreScale(scale.xScale, scale.yScale);
   }
 
   /**
@@ -320,9 +335,8 @@ class BaseMatrix {
 
   /* Verifies that the matrix contains no Infs or NaNs. */
   bool IsFinite() const {
-    return mozilla::IsFinite(_11) && mozilla::IsFinite(_12) &&
-           mozilla::IsFinite(_21) && mozilla::IsFinite(_22) &&
-           mozilla::IsFinite(_31) && mozilla::IsFinite(_32);
+    return std::isfinite(_11) && std::isfinite(_12) && std::isfinite(_21) &&
+           std::isfinite(_22) && std::isfinite(_31) && std::isfinite(_32);
   }
 
   /* Returns true if the matrix is a rectilinear transformation (i.e.
@@ -382,7 +396,7 @@ class BaseMatrix {
    */
   bool IsSingular() const {
     T det = Determinant();
-    return !mozilla::IsFinite(det) || det == 0;
+    return !std::isfinite(det) || det == 0;
   }
 
   GFX2D_API BaseMatrix<T>& NudgeToIntegers() {
@@ -441,14 +455,12 @@ class BaseMatrix {
   /**
    * Computes the scale factors of this matrix; that is,
    * the amounts each basis vector is scaled by.
-   * The xMajor parameter indicates if the larger scale is
-   * to be assumed to be in the X direction or not.
    */
-  MatrixSize ScaleFactors() const {
+  BaseMatrixScales<T> ScaleFactors() const {
     T det = Determinant();
 
     if (det == 0.0) {
-      return MatrixSize(0.0, 0.0);
+      return BaseMatrixScales<T>(0.0, 0.0);
     }
 
     MatrixSize sz = MatrixSize(1.0, 0.0);
@@ -466,7 +478,7 @@ class BaseMatrix {
       minor = det / major;
     }
 
-    return MatrixSize(major, minor);
+    return BaseMatrixScales<T>(major, minor);
   }
 
   /**
@@ -813,10 +825,10 @@ class Matrix4x4Typed {
     F max_x = -std::numeric_limits<F>::max();
     F max_y = -std::numeric_limits<F>::max();
     for (size_t i = 0; i < vertCount; i++) {
-      min_x = std::min(min_x, verts[i].x);
-      max_x = std::max(max_x, verts[i].x);
-      min_y = std::min(min_y, verts[i].y);
-      max_y = std::max(max_y, verts[i].y);
+      min_x = std::min(min_x, verts[i].x.value);
+      max_x = std::max(max_x, verts[i].x.value);
+      min_y = std::min(min_y, verts[i].y.value);
+      max_y = std::max(max_y, verts[i].y.value);
     }
 
     if (max_x < min_x || max_y < min_y) {
@@ -1493,6 +1505,16 @@ class Matrix4x4Typed {
     _24 = UnspecifiedNaN<T>();
     _34 = UnspecifiedNaN<T>();
     _44 = UnspecifiedNaN<T>();
+  }
+
+  // Verifies that the matrix contains no Infs or NaNs
+  bool IsFinite() const {
+    return std::isfinite(_11) && std::isfinite(_12) && std::isfinite(_13) &&
+           std::isfinite(_14) && std::isfinite(_21) && std::isfinite(_22) &&
+           std::isfinite(_23) && std::isfinite(_24) && std::isfinite(_31) &&
+           std::isfinite(_32) && std::isfinite(_33) && std::isfinite(_34) &&
+           std::isfinite(_41) && std::isfinite(_42) && std::isfinite(_43) &&
+           std::isfinite(_44);
   }
 
   void SkewXY(double aXSkew, double aYSkew) {

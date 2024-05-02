@@ -7,7 +7,6 @@
 #include "nsObjCExceptions.h"
 
 #include "plbase64.h"
-#include "plstr.h"
 
 #include "nsCocoaUtils.h"
 #include "nsXULAppAPI.h"
@@ -24,15 +23,6 @@ nsPrintSettingsX::nsPrintSettingsX() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   mDestination = kPMDestinationInvalid;
-
-  /*
-   * Don't save print settings after the user cancels out of the
-   * print dialog. For saving print settings after a cancellation
-   * to work properly, in addition to changing |mSaveOnCancel|,
-   * the print dialog implementation must be updated to save changed
-   * settings and serialize them back to the child process.
-   */
-  mSaveOnCancel = false;
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -55,10 +45,10 @@ nsPrintSettingsX& nsPrintSettingsX::operator=(const nsPrintSettingsX& rhs) {
   mDestination = rhs.mDestination;
   mDisposition = rhs.mDisposition;
 
-  // We don't copy mSystemPrintInfo here, so any copied printSettings will start out
-  // without a wrapped printInfo, just using our internal settings. The system
-  // printInfo is used *only* by the nsPrintSettingsX to which it was originally
-  // passed (when the user ran a system print UI dialog).
+  // We don't copy mSystemPrintInfo here, so any copied printSettings will start
+  // out without a wrapped printInfo, just using our internal settings. The
+  // system printInfo is used *only* by the nsPrintSettingsX to which it was
+  // originally passed (when the user ran a system print UI dialog).
 
   return *this;
 }
@@ -115,15 +105,18 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
 
   NSSize paperSize;
   if (GetSheetOrientation() == kPortraitOrientation) {
-    [printInfo setOrientation:NSPaperOrientationPortrait];
     paperSize.width = CocoaPointsFromPaperSize(mPaperWidth);
     paperSize.height = CocoaPointsFromPaperSize(mPaperHeight);
-    [printInfo setPaperSize:paperSize];
   } else {
-    [printInfo setOrientation:NSPaperOrientationLandscape];
     paperSize.width = CocoaPointsFromPaperSize(mPaperHeight);
     paperSize.height = CocoaPointsFromPaperSize(mPaperWidth);
-    [printInfo setPaperSize:paperSize];
+  }
+  [printInfo setPaperSize:paperSize];
+
+  if (paperSize.width > paperSize.height) {
+    [printInfo setOrientation:NSPaperOrientationLandscape];
+  } else {
+    [printInfo setOrientation:NSPaperOrientationPortrait];
   }
 
   [printInfo setTopMargin:mUnwriteableMargin.top];
@@ -141,12 +134,13 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
   // really localize the name of this printer at some point. Once we drop
   // support for 10.12 we should remove this check.
   if (!mPrinter.EqualsLiteral("Mozilla Save to PDF")) {
-    [printInfo setPrinter:[NSPrinter printerWithName:nsCocoaUtils::ToNSString(mPrinter)]];
+    [printInfo setPrinter:[NSPrinter printerWithName:nsCocoaUtils::ToNSString(
+                                                         mPrinter)]];
   }
 
-  // Scaling is handled by gecko, we do NOT want the cocoa printing system to add
-  // a second scaling on top of that. So we only set the true scaling factor here
-  // if the caller explicitly asked for it.
+  // Scaling is handled by gecko, we do NOT want the cocoa printing system to
+  // add a second scaling on top of that. So we only set the true scaling factor
+  // here if the caller explicitly asked for it.
   [printInfo setScalingFactor:CGFloat(aWithScaling ? mScaling : 1.0f)];
 
   const bool allPages = mPageRanges.IsEmpty();
@@ -167,7 +161,8 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
 
   NSURL* jobSavingURL = nullptr;
   if (!mToFileName.IsEmpty()) {
-    jobSavingURL = [NSURL fileURLWithPath:nsCocoaUtils::ToNSString(mToFileName)];
+    jobSavingURL =
+        [NSURL fileURLWithPath:nsCocoaUtils::ToNSString(mToFileName)];
     if (jobSavingURL) {
       // Note: the PMPrintSettingsSetJobName call in nsPrintDialogServiceX::Show
       // seems to mean that we get a sensible file name pre-populated in the
@@ -180,7 +175,9 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
   }
 
   if (mDisposition.IsEmpty()) {
-    if (mPrintToFile) {
+    // NOTE: It's unclear what to do for kOutputDestinationStream but this is
+    // only for the native print dialog where that can't happen.
+    if (mOutputDestination == kOutputDestinationFile) {
       [printInfo setJobDisposition:NSPrintSaveJob];
     } else {
       [printInfo setJobDisposition:NSPrintSpoolJob];
@@ -210,12 +207,15 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
                     forKey:@"com_apple_print_PrintSettings_PMDuplexing"];
 
   if (mDestination != kPMDestinationInvalid) {
-    // Required to support PDF-workflow destinations such as Save to Web Receipts.
-    [printSettings setObject:[NSNumber numberWithUnsignedShort:mDestination]
-                      forKey:@"com_apple_print_PrintSettings_PMDestinationType"];
+    // Required to support PDF-workflow destinations such as Save to Web
+    // Receipts.
+    [printSettings
+        setObject:[NSNumber numberWithUnsignedShort:mDestination]
+           forKey:@"com_apple_print_PrintSettings_PMDestinationType"];
     if (jobSavingURL) {
-      [printSettings setObject:[jobSavingURL absoluteString]
-                        forKey:@"com_apple_print_PrintSettings_PMOutputFilename"];
+      [printSettings
+          setObject:[jobSavingURL absoluteString]
+             forKey:@"com_apple_print_PrintSettings_PMOutputFilename"];
     }
   }
 
@@ -235,7 +235,8 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
   NS_OBJC_END_TRY_BLOCK_RETURN(nullptr);
 }
 
-void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo, bool aAdoptPrintInfo) {
+void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo,
+                                        bool aAdoptPrintInfo) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   // Set page-size/margins.
@@ -247,7 +248,8 @@ void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo, bool aAdoptPrin
   // of paper, then our page format must also be portrait-mode; unless we've
   // got a pages-per-sheet value with orthogonal pages/sheets, in which case
   // it's reversed.
-  const bool arePagesPortraitMode = (areSheetsOfPaperPortraitMode != HasOrthogonalSheetsAndPages());
+  const bool arePagesPortraitMode =
+      (areSheetsOfPaperPortraitMode != HasOrthogonalSheetsAndPages());
 
   if (arePagesPortraitMode) {
     mOrientation = nsIPrintSettings::kPortraitOrientation;
@@ -259,14 +261,14 @@ void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo, bool aAdoptPrin
     SetPaperHeight(PaperSizeFromCocoaPoints(paperSize.width));
   }
 
-  mUnwriteableMargin.top = [aPrintInfo topMargin];
-  mUnwriteableMargin.right = [aPrintInfo rightMargin];
-  mUnwriteableMargin.bottom = [aPrintInfo bottomMargin];
-  mUnwriteableMargin.left = [aPrintInfo leftMargin];
+  mUnwriteableMargin.top = static_cast<int32_t>([aPrintInfo topMargin]);
+  mUnwriteableMargin.right = static_cast<int32_t>([aPrintInfo rightMargin]);
+  mUnwriteableMargin.bottom = static_cast<int32_t>([aPrintInfo bottomMargin]);
+  mUnwriteableMargin.left = static_cast<int32_t>([aPrintInfo leftMargin]);
 
   if (aAdoptPrintInfo) {
-    // Keep a reference to the printInfo; it may have settings that we don't know how to handle
-    // otherwise.
+    // Keep a reference to the printInfo; it may have settings that we don't
+    // know how to handle otherwise.
     if (mSystemPrintInfo != aPrintInfo) {
       if (mSystemPrintInfo) {
         [mSystemPrintInfo release];
@@ -292,10 +294,16 @@ void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo, bool aAdoptPrin
     mScaling = round(double([aPrintInfo scalingFactor]) * 100.0) / 100.0;
   }
 
-  mPrintToFile = [aPrintInfo jobDisposition] == NSPrintSaveJob;
+  mOutputDestination = [&] {
+    if ([aPrintInfo jobDisposition] == NSPrintSaveJob) {
+      return kOutputDestinationFile;
+    }
+    return kOutputDestinationPrinter;
+  }();
 
   NSDictionary* dict = [aPrintInfo dictionary];
-  const char* filePath = [[dict objectForKey:NSPrintJobSavingURL] fileSystemRepresentation];
+  const char* filePath =
+      [[dict objectForKey:NSPrintJobSavingURL] fileSystemRepresentation];
   if (filePath && *filePath) {
     CopyUTF8toUTF16(Span(filePath, strlen(filePath)), mToFileName);
   }
@@ -310,7 +318,8 @@ void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo, bool aAdoptPrin
   }
 
   NSDictionary* printSettings = [aPrintInfo printSettings];
-  NSNumber* value = [printSettings objectForKey:@"com_apple_print_PrintSettings_PMDuplexing"];
+  NSNumber* value =
+      [printSettings objectForKey:@"com_apple_print_PrintSettings_PMDuplexing"];
   if (value) {
     PMDuplexMode duplexSetting = [value unsignedShortValue];
     switch (duplexSetting) {
@@ -334,7 +343,8 @@ void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo, bool aAdoptPrin
     mDuplex = kDuplexNone;
   }
 
-  value = [printSettings objectForKey:@"com_apple_print_PrintSettings_PMDestinationType"];
+  value = [printSettings
+      objectForKey:@"com_apple_print_PrintSettings_PMDestinationType"];
   if (value) {
     mDestination = [value unsignedShortValue];
   }

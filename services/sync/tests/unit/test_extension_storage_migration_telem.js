@@ -4,16 +4,18 @@
 // Import the rust-based and kinto-based implementations. Not great to grab
 // these as they're somewhat private, but we want to run the pings through our
 // validation machinery which is here in the sync test code.
-const { extensionStorageSync: rustImpl } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionStorageSync.jsm"
+const { extensionStorageSync: rustImpl } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionStorageSync.sys.mjs"
 );
-const { extensionStorageSync: kintoImpl } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionStorageSyncKinto.jsm"
+const { extensionStorageSyncKinto: kintoImpl } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionStorageSyncKinto.sys.mjs"
 );
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { ExtensionStorageEngineBridge } = ChromeUtils.import(
-  "resource://services-sync/engines/extension-storage.js"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { ExtensionStorageEngineBridge } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/extension-storage.sys.mjs"
 );
 
 Services.prefs.setBoolPref("webextensions.storage.sync.kinto", false);

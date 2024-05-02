@@ -3,18 +3,20 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { assert } = require("devtools/shared/DevToolsUtils");
-const { viewState } = require("devtools/client/memory/constants");
-const { refreshDiffing } = require("devtools/client/memory/actions/diffing");
-const snapshot = require("devtools/client/memory/actions/snapshot");
+const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
+const { viewState } = require("resource://devtools/client/memory/constants.js");
+const {
+  refreshDiffing,
+} = require("resource://devtools/client/memory/actions/diffing.js");
+const snapshot = require("resource://devtools/client/memory/actions/snapshot.js");
 
 /**
  * Refresh the main thread's data from the heap analyses worker, if needed.
  *
  * @param {HeapAnalysesWorker} heapWorker
  */
-exports.refresh = function(heapWorker) {
-  return async function({ dispatch, getState }) {
+exports.refresh = function (heapWorker) {
+  return async function ({ dispatch, getState }) {
     switch (getState().view.state) {
       case viewState.DIFFING:
         assert(

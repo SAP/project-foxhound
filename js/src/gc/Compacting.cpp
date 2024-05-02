@@ -22,14 +22,14 @@
 #include "js/GCAPI.h"
 #include "vm/HelperThreads.h"
 #include "vm/Realm.h"
-#include "wasm/TypedObject.h"
+#include "wasm/WasmGcObject.h"
 
 #include "gc/Heap-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/PrivateIterators-inl.h"
-#include "gc/Zone-inl.h"
+#include "gc/StableCellHasher-inl.h"
+#include "gc/TraceMethods-inl.h"
 #include "vm/GeckoProfiler-inl.h"
-#include "vm/JSContext-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -210,17 +210,18 @@ inline bool PtrIsInRange(const void* ptr, const void* start, size_t length) {
 
 static void RelocateCell(Zone* zone, TenuredCell* src, AllocKind thingKind,
                          size_t thingSize) {
-  JS::AutoSuppressGCAnalysis nogc(TlsContext.get());
+  JS::AutoSuppressGCAnalysis nogc;
 
   // Allocate a new cell.
   MOZ_ASSERT(zone == src->zone());
-  TenuredCell* dst = AllocateCellInGC(zone, thingKind);
+  TenuredCell* dst =
+      reinterpret_cast<TenuredCell*>(AllocateCellInGC(zone, thingKind));
 
   // Copy source cell contents to destination.
   memcpy(dst, src, thingSize);
 
   // Move any uid attached to the object.
-  src->zone()->transferUniqueId(dst, src);
+  gc::TransferUniqueId(dst, src);
 
   if (IsObjectAllocKind(thingKind)) {
     auto* srcObj = static_cast<JSObject*>(static_cast<Cell*>(src));
@@ -328,7 +329,7 @@ Arena* ArenaList::relocateArenas(Arena* toRelocate, Arena* relocated,
 
 // Skip compacting zones unless we can free a certain proportion of their GC
 // heap memory.
-static const float MIN_ZONE_RECLAIM_PERCENT = 2.0;
+static const double MIN_ZONE_RECLAIM_PERCENT = 2.0;
 
 static bool ShouldRelocateZone(size_t arenaCount, size_t relocCount,
                                JS::GCReason reason) {
@@ -340,7 +341,8 @@ static bool ShouldRelocateZone(size_t arenaCount, size_t relocCount,
     return true;
   }
 
-  return (relocCount * 100.0f) / arenaCount >= MIN_ZONE_RECLAIM_PERCENT;
+  double relocFraction = double(relocCount) / double(arenaCount);
+  return relocFraction * 100.0 >= MIN_ZONE_RECLAIM_PERCENT;
 }
 
 static AllocKinds CompactingAllocKinds() {
@@ -441,41 +443,42 @@ MovingTracer::MovingTracer(JSRuntime* rt)
                         JS::WeakMapTraceAction::TraceKeysAndValues) {}
 
 template <typename T>
-inline T* MovingTracer::onEdge(T* thing) {
+inline void MovingTracer::onEdge(T** thingp, const char* name) {
+  T* thing = *thingp;
   if (thing->runtimeFromAnyThread() == runtime() && IsForwarded(thing)) {
-    thing = Forwarded(thing);
+    *thingp = Forwarded(thing);
   }
-
-  return thing;
 }
 
 void Zone::prepareForCompacting() {
-  JSFreeOp* fop = runtimeFromMainThread()->defaultFreeOp();
-  discardJitCode(fop);
+  JS::GCContext* gcx = runtimeFromMainThread()->gcContext();
+  discardJitCode(gcx);
 }
 
 void GCRuntime::sweepZoneAfterCompacting(MovingTracer* trc, Zone* zone) {
-  MOZ_ASSERT(zone->isCollecting());
-  traceWeakFinalizationRegistryEdges(trc, zone);
-  zone->weakRefMap().traceWeak(trc, &storeBuffer());
+  MOZ_ASSERT(zone->isGCCompacting());
 
   zone->traceWeakMaps(trc);
+  zone->sweepObjectsWithWeakPointers(trc);
+
+  traceWeakFinalizationObserverEdges(trc, zone);
 
   for (auto* cache : zone->weakCaches()) {
     cache->traceWeak(trc, nullptr);
   }
 
   if (jit::JitZone* jitZone = zone->jitZone()) {
-    jitZone->traceWeak(trc);
+    jitZone->traceWeak(trc, zone);
   }
 
-  for (RealmsInZoneIter r(zone); !r.done(); r.next()) {
-    r->traceWeakRegExps(trc);
-    r->traceWeakSavedStacks(trc);
-    r->traceWeakGlobalEdge(trc);
-    r->traceWeakDebugEnvironmentEdges(trc);
-    r->traceWeakEdgesInJitRealm(trc);
-    r->traceWeakObjectRealm(trc);
+  for (CompartmentsInZoneIter c(zone); !c.done(); c.next()) {
+    c->traceWeakNativeIterators(trc);
+
+    for (RealmsInCompartmentIter r(c); !r.done(); r.next()) {
+      r->traceWeakSavedStacks(trc);
+      r->traceWeakGlobalEdge(trc);
+      r->traceWeakDebugEnvironmentEdges(trc);
+    }
   }
 }
 
@@ -649,26 +652,6 @@ static AllocKinds ForegroundUpdateKinds(AllocKinds kinds) {
   return result;
 }
 
-void GCRuntime::updateRttValueObjects(MovingTracer* trc, Zone* zone) {
-  // We need to update each type descriptor object and any objects stored in
-  // its reserved slots, since some of these contain array objects that also
-  // need to be updated. Do not update any non-reserved slots, since they might
-  // point back to unprocessed descriptor objects.
-
-  zone->rttValueObjects().traceWeak(trc, nullptr);
-
-  for (auto r = zone->rttValueObjects().all(); !r.empty(); r.popFront()) {
-    RttValue* obj = &MaybeForwardedObjectAs<RttValue>(r.front());
-    UpdateCellPointers(trc, obj);
-    for (size_t i = 0; i < RttValue::SlotCount; i++) {
-      Value value = obj->getSlot(i);
-      if (value.isObject()) {
-        UpdateCellPointers(trc, &value.toObject());
-      }
-    }
-  }
-}
-
 void GCRuntime::updateCellPointers(Zone* zone, AllocKinds kinds) {
   AllocKinds fgKinds = ForegroundUpdateKinds(kinds);
   AllocKinds bgKinds = kinds - fgKinds;
@@ -680,7 +663,8 @@ void GCRuntime::updateCellPointers(Zone* zone, AllocKinds kinds) {
 
   AutoRunParallelWork bgTasks(this, UpdateArenaListSegmentPointers,
                               gcstats::PhaseKind::COMPACT_UPDATE_CELLS,
-                              bgArenas, SliceBudget::unlimited(), lock);
+                              GCUse::Unspecified, bgArenas,
+                              SliceBudget::unlimited(), lock);
 
   AutoUnlockHelperThreadState unlock(lock);
 
@@ -755,10 +739,6 @@ static constexpr AllocKinds UpdatePhaseThree{AllocKind::FUNCTION,
 void GCRuntime::updateAllCellPointers(MovingTracer* trc, Zone* zone) {
   updateCellPointers(zone, UpdatePhaseOne);
 
-  // UpdatePhaseTwo: Update RttValues before all other objects as typed
-  // objects access these objects when we trace them.
-  updateRttValueObjects(trc, zone);
-
   updateCellPointers(zone, UpdatePhaseThree);
 }
 
@@ -788,7 +768,7 @@ void GCRuntime::updateZonePointersToRelocatedCells(Zone* zone) {
 
   zone->externalStringCache().purge();
   zone->functionToStringCache().purge();
-  zone->shapeZone().purgeShapeCaches(rt->defaultFreeOp());
+  zone->shapeZone().purgeShapeCaches(rt->gcContext());
   rt->caches().stringToAtomCache.purge();
 
   // Iterate through all cells that can contain relocatable pointers to update
@@ -840,6 +820,10 @@ void GCRuntime::updateRuntimePointersToRelocatedCells(AutoGCSession& session) {
     cache->traceWeak(&trc, nullptr);
   }
 
+  if (rt->hasJitRuntime() && rt->jitRuntime()->hasInterpreterEntryMap()) {
+    rt->jitRuntime()->getInterpreterEntryMap()->updateScriptsAfterMovingGC();
+  }
+
   // Type inference may put more blocks here to free.
   {
     AutoLockHelperThreadState lock;
@@ -881,11 +865,15 @@ void GCRuntime::clearRelocatedArenasWithoutUnlocking(Arena* arenaList,
                  JS_MOVED_TENURED_PATTERN, arena->getThingsSpan(),
                  MemCheckKind::MakeNoAccess);
 
-    // Don't count arenas as being freed by the GC if we purposely moved
-    // everything to new arenas, as that will already have allocated a similar
-    // number of arenas. This only happens for collections triggered by GC zeal.
+    // Don't count emptied arenas as being freed by the current GC:
+    //  - if we purposely moved everything to new arenas, as that will already
+    //    have allocated a similar number of arenas. (This only happens for
+    //    collections triggered by GC zeal.)
+    //  - if they were allocated since the start of the GC.
     bool allArenasRelocated = ShouldRelocateAllArenas(reason);
-    arena->zone->gcHeapSize.removeBytes(ArenaSize, !allArenasRelocated);
+    bool updateRetainedSize = !allArenasRelocated && !arena->isNewlyCreated();
+    arena->zone->gcHeapSize.removeBytes(ArenaSize, updateRetainedSize,
+                                        heapSize);
 
     // Release the arena but don't return it to the chunk yet.
     arena->release(lock);

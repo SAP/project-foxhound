@@ -3,7 +3,7 @@
 
 "use strict";
 
-const { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 /**
  * Check that links work when the devtools are detached in a separate window.
@@ -11,7 +11,7 @@ const { Toolbox } = require("devtools/client/framework/toolbox");
 
 const TAB_URL = URL_ROOT + "resources/service-workers/empty.html";
 
-add_task(async function() {
+add_task(async function () {
   await enableApplicationPanel();
 
   const { panel, toolbox } = await openNewTabAndApplicationPanel(TAB_URL);

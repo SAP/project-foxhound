@@ -3,7 +3,12 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test_runner;
 
+import static org.mozilla.geckoview.ExperimentDelegate.ExperimentException.ERROR_EXPERIMENT_SLUG_NOT_FOUND;
+import static org.mozilla.geckoview.ExperimentDelegate.ExperimentException.ERROR_FEATURE_NOT_FOUND;
+import static org.mozilla.geckoview.ExperimentDelegate.ExperimentException.ERROR_UNKNOWN;
+
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.net.Uri;
@@ -13,13 +18,19 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.mozilla.geckoview.AllowOrDeny;
 import org.mozilla.geckoview.ContentBlocking;
+import org.mozilla.geckoview.ExperimentDelegate;
 import org.mozilla.geckoview.GeckoDisplay;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoSession;
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
 import org.mozilla.geckoview.OrientationController;
@@ -72,7 +83,8 @@ public class TestRunnerActivity extends Activity {
 
     public void attach(final GeckoSession session) {
       sessionDisplay = session.acquireDisplay();
-      sessionDisplay.surfaceChanged(surface, width, height);
+      sessionDisplay.surfaceChanged(
+          new GeckoDisplay.SurfaceInfo.Builder(surface).size(width, height).build());
     }
 
     public void release(final GeckoSession session) {
@@ -97,10 +109,8 @@ public class TestRunnerActivity extends Activity {
       new GeckoSession.PermissionDelegate() {
         @Override
         public GeckoResult<Integer> onContentPermissionRequest(
-            @NonNull final GeckoSession session,
-            @NonNull GeckoSession.PermissionDelegate.ContentPermission perm) {
-          return GeckoResult.fromValue(
-              GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW);
+            @NonNull final GeckoSession session, @NonNull ContentPermission perm) {
+          return GeckoResult.fromValue(ContentPermission.VALUE_ALLOW);
         }
 
         @Override
@@ -112,10 +122,48 @@ public class TestRunnerActivity extends Activity {
         }
       };
 
+  private GeckoSession.PromptDelegate mPromptDelegate =
+      new GeckoSession.PromptDelegate() {
+        Map<BasePrompt, GeckoResult<PromptResponse>> mPromptResults = new HashMap<>();
+        public GeckoSession.PromptDelegate.PromptInstanceDelegate mPromptInstanceDelegate =
+            new GeckoSession.PromptDelegate.PromptInstanceDelegate() {
+              @Override
+              public void onPromptDismiss(
+                  final @NonNull GeckoSession.PromptDelegate.BasePrompt prompt) {
+                mPromptResults.get(prompt).complete(prompt.dismiss());
+              }
+            };
+
+        @Override
+        public GeckoResult<PromptResponse> onAlertPrompt(
+            @NonNull final GeckoSession session, @NonNull final AlertPrompt prompt) {
+          mPromptResults.put(prompt, new GeckoResult<>());
+          prompt.setDelegate(mPromptInstanceDelegate);
+          return mPromptResults.get(prompt);
+        }
+
+        @Override
+        public GeckoResult<PromptResponse> onButtonPrompt(
+            @NonNull final GeckoSession session, @NonNull final ButtonPrompt prompt) {
+          mPromptResults.put(prompt, new GeckoResult<>());
+          prompt.setDelegate(mPromptInstanceDelegate);
+          return mPromptResults.get(prompt);
+        }
+
+        @Override
+        public GeckoResult<PromptResponse> onTextPrompt(
+            @NonNull final GeckoSession session, @NonNull final TextPrompt prompt) {
+          mPromptResults.put(prompt, new GeckoResult<>());
+          prompt.setDelegate(mPromptInstanceDelegate);
+          return mPromptResults.get(prompt);
+        }
+      };
+
   private GeckoSession.NavigationDelegate mNavigationDelegate =
       new GeckoSession.NavigationDelegate() {
         @Override
-        public void onLocationChange(final GeckoSession session, final String url) {
+        public void onLocationChange(
+            final GeckoSession session, final String url, final List<ContentPermission> perms) {
           getActionBar().setSubtitle(url);
         }
 
@@ -263,6 +311,14 @@ public class TestRunnerActivity extends Activity {
         }
       };
 
+  private class TestRunnerActivityDelegate implements GeckoView.ActivityContextDelegate {
+    public Context getActivityContext() {
+      return TestRunnerActivity.this;
+    }
+  }
+
+  private TestRunnerActivityDelegate mActivityDelegate = new TestRunnerActivityDelegate();
+
   /**
    * Creates a session and adds it to the owned sessions deque.
    *
@@ -292,6 +348,7 @@ public class TestRunnerActivity extends Activity {
     session.setNavigationDelegate(mNavigationDelegate);
     session.setContentDelegate(mContentDelegate);
     session.setPermissionDelegate(mPermissionDelegate);
+    session.setPromptDelegate(mPromptDelegate);
 
     final WebExtension.SessionController sessionController = session.getWebExtensionController();
     for (final ExtensionWrapper wrapper : mExtensions.values()) {
@@ -365,7 +422,8 @@ public class TestRunnerActivity extends Activity {
           .arguments(new String[] {"-purgecaches"})
           .displayDpiOverride(160)
           .displayDensityOverride(1.0f)
-          .remoteDebuggingEnabled(true);
+          .remoteDebuggingEnabled(true)
+          .experimentDelegate(new TestRunnerExperimentDelegate());
 
       final Bundle extras = intent.getExtras();
       if (extras != null) {
@@ -411,6 +469,9 @@ public class TestRunnerActivity extends Activity {
                 extension.setTabDelegate(mTabDelegate);
               });
 
+      webExtensionController()
+          .setAddonManagerDelegate(new WebExtensionController.AddonManagerDelegate() {});
+
       sRuntime.setDelegate(
           () -> {
             mKillProcessOnDestroy = true;
@@ -441,6 +502,16 @@ public class TestRunnerActivity extends Activity {
     mView = new GeckoView(this);
     mView.setSession(mSession);
     setContentView(mView);
+    mView.setActivityContextDelegate(mActivityDelegate);
+
+    sRuntime.setServiceWorkerDelegate(
+        new GeckoRuntime.ServiceWorkerDelegate() {
+          @NonNull
+          @Override
+          public GeckoResult<GeckoSession> onOpenWindow(@NonNull String url) {
+            return mNavigationDelegate.onNewSession(mSession, url);
+          }
+        });
   }
 
   private final TestApiImpl mTestApiImpl = new TestApiImpl();
@@ -586,5 +657,59 @@ public class TestRunnerActivity extends Activity {
 
   public GeckoSession getGeckoSession() {
     return mSession;
+  }
+
+  class TestRunnerExperimentDelegate implements ExperimentDelegate {
+    @Override
+    public GeckoResult<JSONObject> onGetExperimentFeature(@NonNull String feature) {
+      GeckoResult<JSONObject> result = new GeckoResult<>();
+      if (feature.equals("test")) {
+        try {
+          result.complete(new JSONObject().put("item-one", true).put("item-two", 5));
+        } catch (JSONException e) {
+          result.completeExceptionally(new ExperimentException(ERROR_UNKNOWN));
+        }
+      } else {
+        result.completeExceptionally(new ExperimentException(ERROR_FEATURE_NOT_FOUND));
+      }
+      return result;
+    }
+
+    @Override
+    public GeckoResult<Void> onRecordExposureEvent(@NonNull String feature) {
+      GeckoResult<Void> result = new GeckoResult<>();
+      if (feature.equals("test")) {
+        result.complete(null);
+      } else {
+        result.completeExceptionally(new ExperimentException(ERROR_FEATURE_NOT_FOUND));
+      }
+      return result;
+    }
+
+    @Override
+    public GeckoResult<Void> onRecordExperimentExposureEvent(
+        @NonNull String feature, @NonNull String slug) {
+      GeckoResult<Void> result = new GeckoResult<>();
+      if (feature.equals("test") && slug.equals("test")) {
+        result.complete(null);
+      } else if (!slug.equals("test") && feature.equals("test")) {
+        result.completeExceptionally(new ExperimentException(ERROR_EXPERIMENT_SLUG_NOT_FOUND));
+      } else {
+        result.completeExceptionally(new ExperimentException(ERROR_FEATURE_NOT_FOUND));
+      }
+      return result;
+    }
+
+    @Override
+    public GeckoResult<Void> onRecordMalformedConfigurationEvent(
+        @NonNull String feature, @NonNull String part) {
+      GeckoResult<Void> result = new GeckoResult<>();
+      if (feature.equals("test")) {
+        result.complete(null);
+      } else {
+        result.completeExceptionally(new ExperimentException(ERROR_FEATURE_NOT_FOUND));
+      }
+      return result;
+    }
   }
 }

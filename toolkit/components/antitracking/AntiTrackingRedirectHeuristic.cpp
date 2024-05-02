@@ -6,9 +6,9 @@
 
 #include "AntiTrackingLog.h"
 #include "AntiTrackingRedirectHeuristic.h"
-#include "ContentBlocking.h"
 #include "ContentBlockingAllowList.h"
 #include "ContentBlockingUserInteraction.h"
+#include "StorageAccessAPIHelper.h"
 
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
@@ -24,6 +24,7 @@
 #include "nsIRedirectHistoryEntry.h"
 #include "nsIScriptError.h"
 #include "nsIURI.h"
+#include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsScriptSecurityManager.h"
 
@@ -61,7 +62,7 @@ bool ShouldCheckRedirectHeuristicETP(nsIChannel* aOldChannel, nsIURI* aOldURI,
   // We will skip this check if we have granted storage access before so that we
   // can grant the storage access to the rest of the chain.
   if (!net::UrlClassifierCommon::IsTrackingClassificationFlag(
-          oldClassificationFlags) &&
+          oldClassificationFlags, NS_UsePrivateBrowsing(aOldChannel)) &&
       !allowedByPreviousRedirect) {
     // This is not a tracking -> non-tracking redirect.
     LOG_SPEC(("Ignoring the redirect from %s because it's not tracking to "
@@ -102,28 +103,12 @@ bool ShouldRedirectHeuristicApplyETP(nsIChannel* aNewChannel, nsIURI* aNewURI) {
       newClassifiedChannel->GetFirstPartyClassificationFlags();
 
   if (net::UrlClassifierCommon::IsTrackingClassificationFlag(
-          newClassificationFlags)) {
+          newClassificationFlags, NS_UsePrivateBrowsing(aNewChannel))) {
     // This is not a tracking -> non-tracking redirect.
     LOG_SPEC(("Ignoring the redirect to %s because it's not tracking to "
               "non-tracking.",
               _spec),
              aNewURI);
-    return false;
-  }
-
-  return true;
-}
-
-// The helper function to check if we need to check the redirect heuristic for
-// RejectForeign later from the old channel perspective.
-bool ShouldCheckRedirectHeuristicRejectForeign(nsIChannel* aOldChannel,
-                                               nsIURI* aOldURI,
-                                               nsIPrincipal* aOldPrincipal) {
-  if (!ContentBlockingUserInteraction::Exists(aOldPrincipal)) {
-    LOG_SPEC(("Ignoring redirect from %s because no user-interaction on "
-              "old origin",
-              _spec),
-             aOldURI);
     return false;
   }
 
@@ -150,13 +135,6 @@ bool ShouldRedirectHeuristicApply(nsIChannel* aNewChannel, nsIURI* aNewURI) {
     return ShouldRedirectHeuristicApplyETP(aNewChannel, aNewURI);
   }
 
-  // We will grant the storage access regardless the new channel is a tracker or
-  // not for RejectForeign.
-  if (cookieBehavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN &&
-      StaticPrefs::network_cookie_rejectForeignWithExceptions_enabled()) {
-    return true;
-  }
-
   LOG((
       "Heuristic doesn't apply because the cookieBehavior doesn't require it"));
   return false;
@@ -181,12 +159,6 @@ bool ShouldCheckRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
       cookieBehavior ==
           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
     return ShouldCheckRedirectHeuristicETP(aOldChannel, aOldURI, aOldPrincipal);
-  }
-
-  if (cookieBehavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN &&
-      StaticPrefs::network_cookie_rejectForeignWithExceptions_enabled()) {
-    return ShouldCheckRedirectHeuristicRejectForeign(aOldChannel, aOldURI,
-                                                     aOldPrincipal);
   }
 
   LOG(
@@ -261,8 +233,7 @@ void PrepareForAntiTrackingRedirectHeuristic(nsIChannel* aOldChannel,
   MOZ_ASSERT(
       behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
       behavior ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN ||
-      net::CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior));
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
 
   ExtContentPolicyType contentType =
       oldLoadInfo->GetExternalContentPolicyType();
@@ -380,16 +351,16 @@ void FinishAntiTrackingRedirectHeuristic(nsIChannel* aNewChannel,
   }
 
   nsAutoCString oldOrigin;
-  rv = oldPrincipal->GetOrigin(oldOrigin);
+  rv = oldPrincipal->GetOriginNoSuffix(oldOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(("Can't get the origin from the Principal"));
+    LOG(("Can't get the origin from the old Principal"));
     return;
   }
 
   nsAutoCString newOrigin;
-  rv = nsContentUtils::GetASCIIOrigin(aNewURI, newOrigin);
+  rv = newPrincipal->GetOriginNoSuffix(newOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(("Can't get the origin from the URI"));
+    LOG(("Can't get the origin from the new Principal"));
     return;
   }
 
@@ -422,10 +393,10 @@ void FinishAntiTrackingRedirectHeuristic(nsIChannel* aNewChannel,
       Telemetry::LABELS_STORAGE_ACCESS_GRANTED_COUNT::Redirect);
 
   // We don't care about this promise because the operation is actually sync.
-  RefPtr<ContentBlocking::ParentAccessGrantPromise> promise =
-      ContentBlocking::SaveAccessForOriginOnParentProcess(
-          newPrincipal, oldPrincipal, oldOrigin,
-          ContentBlocking::StorageAccessPromptChoices::eAllow,
+  RefPtr<StorageAccessAPIHelper::ParentAccessGrantPromise> promise =
+      StorageAccessAPIHelper::SaveAccessForOriginOnParentProcess(
+          newPrincipal, oldPrincipal,
+          StorageAccessAPIHelper::StorageAccessPromptChoices::eAllow, false,
           StaticPrefs::privacy_restrict3rdpartystorage_expiration_redirect());
   Unused << promise;
 }

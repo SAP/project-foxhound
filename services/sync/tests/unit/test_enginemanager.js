@@ -1,19 +1,21 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 function PetrolEngine() {}
 PetrolEngine.prototype.name = "petrol";
-PetrolEngine.prototype.finalize = async function() {};
+PetrolEngine.prototype.finalize = async function () {};
 
 function DieselEngine() {}
 DieselEngine.prototype.name = "diesel";
-DieselEngine.prototype.finalize = async function() {};
+DieselEngine.prototype.finalize = async function () {};
 
 function DummyEngine() {}
 DummyEngine.prototype.name = "dummy";
-DummyEngine.prototype.finalize = async function() {};
+DummyEngine.prototype.finalize = async function () {};
 
 class ActualEngine extends SyncEngine {
   constructor(service) {

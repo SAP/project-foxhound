@@ -18,6 +18,7 @@
 #include "mozilla/ProfilerState.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_threads.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Logging.h"
@@ -199,8 +200,8 @@ class ProcessPriorityManagerImpl final : public nsIObserver,
       ParticularProcessPriorityManager* aParticularManager,
       hal::ProcessPriority aOldPriority);
 
-  void ActivityChanged(CanonicalBrowsingContext* aBC, bool aIsActive);
-  void ActivityChanged(BrowserParent* aBrowserParent, bool aIsActive);
+  void BrowserPriorityChanged(CanonicalBrowsingContext* aBC, bool aPriority);
+  void BrowserPriorityChanged(BrowserParent* aBrowserParent, bool aPriority);
 
   void ResetPriority(ContentParent* aContentParent);
 
@@ -307,7 +308,7 @@ class ParticularProcessPriorityManager final : public WakeLockObserver,
   void ResetPriorityNow();
   void SetPriorityNow(ProcessPriority aPriority);
 
-  void ActivityChanged(BrowserParent* aBrowserParent, bool aIsActive);
+  void BrowserPriorityChanged(BrowserParent* aBrowserParent, bool aPriority);
 
   void ShutDown();
 
@@ -336,8 +337,8 @@ class ParticularProcessPriorityManager final : public WakeLockObserver,
 
   nsCOMPtr<nsITimer> mResetPriorityTimer;
 
-  // This hashtable contains the list of active TabId for this process.
-  nsTHashSet<uint64_t> mActiveBrowserParents;
+  // This hashtable contains the list of high priority TabIds for this process.
+  nsTHashSet<uint64_t> mHighPriorityBrowserParents;
 };
 
 /* static */
@@ -362,8 +363,7 @@ void ProcessPriorityManagerImpl::PrefChangedCallback(const char* aPref,
 
 /* static */
 bool ProcessPriorityManagerImpl::PrefsEnabled() {
-  return StaticPrefs::dom_ipc_processPriorityManager_enabled() &&
-         !StaticPrefs::dom_ipc_tabs_disabled();
+  return StaticPrefs::dom_ipc_processPriorityManager_enabled();
 }
 
 /* static */
@@ -394,13 +394,12 @@ void ProcessPriorityManagerImpl::StaticInit() {
     return;
   }
 
-  // Run StaticInit() again if the prefs change.  We don't expect this to
+  // Run StaticInit() again if the pref changes.  We don't expect this to
   // happen in normal operation, but it happens during testing.
   if (!sPrefListenersRegistered) {
     sPrefListenersRegistered = true;
     Preferences::RegisterCallback(PrefChangedCallback,
                                   "dom.ipc.processPriorityManager.enabled");
-    Preferences::RegisterCallback(PrefChangedCallback, "dom.ipc.tabs.disabled");
   }
 
   sInitialized = true;
@@ -509,41 +508,54 @@ void ProcessPriorityManagerImpl::NotifyProcessPriorityChanged(
   }
 }
 
-void ProcessPriorityManagerImpl::ActivityChanged(
-    dom::CanonicalBrowsingContext* aBC, bool aIsActive) {
+static nsCString BCToString(dom::CanonicalBrowsingContext* aBC) {
+  nsCOMPtr<nsIURI> uri = aBC->GetCurrentURI();
+  return nsPrintfCString("id=%" PRIu64 " uri=%s active=%d pactive=%d",
+                         aBC->Id(),
+                         uri ? uri->GetSpecOrDefault().get() : "(no uri)",
+                         aBC->IsActive(), aBC->IsPriorityActive());
+}
+
+void ProcessPriorityManagerImpl::BrowserPriorityChanged(
+    dom::CanonicalBrowsingContext* aBC, bool aPriority) {
   MOZ_ASSERT(aBC->IsTop());
 
+  LOG("BrowserPriorityChanged(%s, %d)\n", BCToString(aBC).get(), aPriority);
+
   bool alreadyActive = aBC->IsPriorityActive();
-  if (alreadyActive == aIsActive) {
+  if (alreadyActive == aPriority) {
     return;
   }
 
   Telemetry::ScalarAdd(
       Telemetry::ScalarID::DOM_CONTENTPROCESS_OS_PRIORITY_CHANGE_CONSIDERED, 1);
 
-  aBC->SetPriorityActive(aIsActive);
+  aBC->SetPriorityActive(aPriority);
 
   aBC->PreOrderWalk([&](BrowsingContext* aContext) {
     CanonicalBrowsingContext* canonical = aContext->Canonical();
+    LOG("PreOrderWalk for %p: %p -> %p, %p\n", aBC, canonical,
+        canonical->GetContentParent(), canonical->GetBrowserParent());
     if (ContentParent* cp = canonical->GetContentParent()) {
       if (RefPtr pppm = GetParticularProcessPriorityManager(cp)) {
         if (auto* bp = canonical->GetBrowserParent()) {
-          pppm->ActivityChanged(bp, aIsActive);
+          pppm->BrowserPriorityChanged(bp, aPriority);
         }
       }
     }
   });
 }
 
-void ProcessPriorityManagerImpl::ActivityChanged(BrowserParent* aBrowserParent,
-                                                 bool aIsActive) {
+void ProcessPriorityManagerImpl::BrowserPriorityChanged(
+    BrowserParent* aBrowserParent, bool aPriority) {
+  LOG("BrowserPriorityChanged(bp=%p, %d)\n", aBrowserParent, aPriority);
+
   if (RefPtr pppm =
           GetParticularProcessPriorityManager(aBrowserParent->Manager())) {
     Telemetry::ScalarAdd(
         Telemetry::ScalarID::DOM_CONTENTPROCESS_OS_PRIORITY_CHANGE_CONSIDERED,
         1);
-
-    pppm->ActivityChanged(aBrowserParent, aIsActive);
+    pppm->BrowserPriorityChanged(aBrowserParent, aPriority);
   }
 }
 
@@ -746,7 +758,7 @@ ProcessPriority ParticularProcessPriorityManager::CurrentPriority() {
 }
 
 ProcessPriority ParticularProcessPriorityManager::ComputePriority() {
-  if (!mActiveBrowserParents.IsEmpty() ||
+  if (!mHighPriorityBrowserParents.IsEmpty() ||
       mContentParent->GetRemoteType() == EXTENSION_REMOTE_TYPE ||
       mHoldsPlayingAudioWakeLock) {
     return PROCESS_PRIORITY_FOREGROUND;
@@ -760,6 +772,21 @@ ProcessPriority ParticularProcessPriorityManager::ComputePriority() {
   return PROCESS_PRIORITY_BACKGROUND;
 }
 
+#ifdef XP_MACOSX
+// Method used for setting QoS levels on background main threads.
+static bool PriorityUsesLowPowerMainThread(
+    const hal::ProcessPriority& aPriority) {
+  return aPriority == hal::PROCESS_PRIORITY_BACKGROUND ||
+         aPriority == hal::PROCESS_PRIORITY_PREALLOC;
+}
+// Method reduces redundancy in pref check while addressing the edge case
+// where a pref is flipped to false during active browser use.
+static bool PrefsUseLowPriorityThreads() {
+  return StaticPrefs::threads_use_low_power_enabled() &&
+         StaticPrefs::threads_lower_mainthread_priority_in_background_enabled();
+}
+#endif
+
 void ParticularProcessPriorityManager::SetPriorityNow(
     ProcessPriority aPriority) {
   if (aPriority == PROCESS_PRIORITY_UNKNOWN) {
@@ -767,12 +794,13 @@ void ParticularProcessPriorityManager::SetPriorityNow(
     return;
   }
 
+  LOGP("Changing priority from %s to %s (cp=%p).",
+       ProcessPriorityToString(mPriority), ProcessPriorityToString(aPriority),
+       mContentParent);
+
   if (!mContentParent || mPriority == aPriority) {
     return;
   }
-
-  LOGP("Changing priority from %s to %s.", ProcessPriorityToString(mPriority),
-       ProcessPriorityToString(aPriority));
 
   PROFILER_MARKER(
       "Subprocess Priority", OTHER,
@@ -804,6 +832,32 @@ void ParticularProcessPriorityManager::SetPriorityNow(
     ProcessPriorityManagerImpl::GetSingleton()->NotifyProcessPriorityChanged(
         this, oldPriority);
 
+#ifdef XP_MACOSX
+    // In cases where we have low-power threads enabled (such as on MacOS) we
+    // can go ahead and put the main thread in the background here. If the new
+    // priority is the background priority, we can tell the OS to put the main
+    // thread on low-power cores. Alternately, if we are changing from the
+    // background to a higher priority, we change the main thread back to its
+    // normal state.
+    //
+    // The messages for this will be relayed using the ProcessHangMonitor such
+    // that the priority can be raised even if the main thread is unresponsive.
+    if (PriorityUsesLowPowerMainThread(mPriority) !=
+        (PriorityUsesLowPowerMainThread(oldPriority))) {
+      if (PriorityUsesLowPowerMainThread(mPriority) &&
+          PrefsUseLowPriorityThreads()) {
+        mContentParent->SetMainThreadQoSPriority(nsIThread::QOS_PRIORITY_LOW);
+      } else if (PriorityUsesLowPowerMainThread(oldPriority)) {
+        // In the event that the user changes prefs while tabs are in the
+        // background, we still want to have the ability to put the main thread
+        // back in the foreground to keep tabs from being stuck in the
+        // background priority.
+        mContentParent->SetMainThreadQoSPriority(
+            nsIThread::QOS_PRIORITY_NORMAL);
+      }
+    }
+#endif
+
     Unused << mContentParent->SendNotifyProcessPriorityChanged(mPriority);
   }
 
@@ -811,14 +865,14 @@ void ParticularProcessPriorityManager::SetPriorityNow(
                                    ProcessPriorityToString(mPriority));
 }
 
-void ParticularProcessPriorityManager::ActivityChanged(
-    BrowserParent* aBrowserParent, bool aIsActive) {
+void ParticularProcessPriorityManager::BrowserPriorityChanged(
+    BrowserParent* aBrowserParent, bool aPriority) {
   MOZ_ASSERT(aBrowserParent);
 
-  if (!aIsActive) {
-    mActiveBrowserParents.Remove(aBrowserParent->GetTabId());
+  if (!aPriority) {
+    mHighPriorityBrowserParents.Remove(aBrowserParent->GetTabId());
   } else {
-    mActiveBrowserParents.Insert(aBrowserParent->GetTabId());
+    mHighPriorityBrowserParents.Insert(aBrowserParent->GetTabId());
   }
 
   ResetPriority();
@@ -968,16 +1022,16 @@ bool ProcessPriorityManager::CurrentProcessIsForeground() {
 }
 
 /* static */
-void ProcessPriorityManager::ActivityChanged(CanonicalBrowsingContext* aBC,
-                                             bool aIsActive) {
+void ProcessPriorityManager::BrowserPriorityChanged(
+    CanonicalBrowsingContext* aBC, bool aPriority) {
   if (auto* singleton = ProcessPriorityManagerImpl::GetSingleton()) {
-    singleton->ActivityChanged(aBC, aIsActive);
+    singleton->BrowserPriorityChanged(aBC, aPriority);
   }
 }
 
 /* static */
-void ProcessPriorityManager::ActivityChanged(BrowserParent* aBrowserParent,
-                                             bool aIsActive) {
+void ProcessPriorityManager::BrowserPriorityChanged(
+    BrowserParent* aBrowserParent, bool aPriority) {
   MOZ_ASSERT(aBrowserParent);
 
   ProcessPriorityManagerImpl* singleton =
@@ -985,8 +1039,7 @@ void ProcessPriorityManager::ActivityChanged(BrowserParent* aBrowserParent,
   if (!singleton) {
     return;
   }
-
-  singleton->ActivityChanged(aBrowserParent, aIsActive);
+  singleton->BrowserPriorityChanged(aBrowserParent, aPriority);
 }
 
 /* static */

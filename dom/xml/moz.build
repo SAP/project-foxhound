@@ -9,7 +9,7 @@ with Files("**"):
 
 DIRS += ["resources"]
 
-MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest.toml"]
 
 EXPORTS += [
     "nsIXMLContentSink.h",
@@ -43,6 +43,7 @@ LOCAL_INCLUDES += [
     "/dom/xslt/base",
     "/dom/xul",
     "/layout/style",
+    "/parser/htmlparser",
 ]
 
 RESOURCE_FILES.dtd += [

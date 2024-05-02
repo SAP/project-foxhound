@@ -10,16 +10,16 @@
 var rule = require("../lib/rules/reject-scriptableunicodeconverter");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 8 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
 // ------------------------------------------------------------------------------
 
 function invalidError() {
-  let message =
-    "Ci.nsIScriptableUnicodeConverter is deprecated. You should use TextEncoder or TextDecoder instead.";
-  return [{ message, type: "MemberExpression" }];
+  return [
+    { messageId: "rejectScriptableUnicodeConverter", type: "MemberExpression" },
+  ];
 }
 
 ruleTester.run("reject-scriptableunicodeconverter", rule, {

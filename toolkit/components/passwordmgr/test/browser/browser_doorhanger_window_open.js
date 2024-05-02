@@ -44,8 +44,8 @@ function withTestTabUntilStorageChange(aPageFile, aTaskFn) {
       gBrowser,
       url: "http://mochi.test:8888" + DIRECTORY_PATH + aPageFile,
     },
-    async function(browser) {
-      ok(true, "loaded " + aPageFile);
+    async function (browser) {
+      Assert.ok(true, "loaded " + aPageFile);
       info("running test case task");
       await aTaskFn();
       info("waiting for storage change");
@@ -54,7 +54,7 @@ function withTestTabUntilStorageChange(aPageFile, aTaskFn) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SimpleTest.promiseFocus(window);
 });
 
@@ -67,26 +67,34 @@ add_task(async function test_saveChromeHiddenAutoClose() {
   let url =
     "subtst_notifications_11.html?notifyu1|notifyp1|" +
     "menubar=no,toolbar=no,location=no|autoclose";
-  await withTestTabUntilStorageChange(url, async function() {
+  await withTestTabUntilStorageChange(url, async function () {
     info("waiting for popupshown");
     await notifShownPromise;
     // the popup closes and the doorhanger should appear in the opener
     let popup = await getCaptureDoorhangerThatMayOpen("password-save");
-    ok(popup, "got notification popup");
+    Assert.ok(popup, "got notification popup");
     await checkDoorhangerUsernamePassword("notifyu1", "notifyp1");
     // Sanity check, no logins should exist yet.
-    let logins = Services.logins.getAllLogins();
-    is(logins.length, 0, "Should not have any logins yet");
+    let logins = await Services.logins.getAllLogins();
+    Assert.equal(logins.length, 0, "Should not have any logins yet");
 
     clickDoorhangerButton(popup, REMEMBER_BUTTON);
   });
   // Check result of clicking Remember
-  let logins = Services.logins.getAllLogins();
-  is(logins.length, 1, "Should only have 1 login");
+  let logins = await Services.logins.getAllLogins();
+  Assert.equal(logins.length, 1, "Should only have 1 login");
   let login = logins[0].QueryInterface(Ci.nsILoginMetaInfo);
-  is(login.timesUsed, 1, "Check times used on new entry");
-  is(login.username, "notifyu1", "Check the username used on the new entry");
-  is(login.password, "notifyp1", "Check the password used on the new entry");
+  Assert.equal(login.timesUsed, 1, "Check times used on new entry");
+  Assert.equal(
+    login.username,
+    "notifyu1",
+    "Check the username used on the new entry"
+  );
+  Assert.equal(
+    login.password,
+    "notifyp1",
+    "Check the password used on the new entry"
+  );
 });
 
 add_task(async function test_changeChromeHiddenAutoClose() {
@@ -96,25 +104,25 @@ add_task(async function test_changeChromeHiddenAutoClose() {
   );
   let url =
     "subtst_notifications_11.html?notifyu1|pass2|menubar=no,toolbar=no,location=no|autoclose";
-  await withTestTabUntilStorageChange(url, async function() {
+  await withTestTabUntilStorageChange(url, async function () {
     info("waiting for popupshown");
     await notifShownPromise;
     let popup = await getCaptureDoorhangerThatMayOpen("password-change");
-    ok(popup, "got notification popup");
+    Assert.ok(popup, "got notification popup");
     await checkDoorhangerUsernamePassword("notifyu1", "pass2");
     clickDoorhangerButton(popup, CHANGE_BUTTON);
   });
 
   // Check to make sure we updated the password, timestamps and use count for
   // the login being changed with this form.
-  let logins = Services.logins.getAllLogins();
-  is(logins.length, 1, "Should only have 1 login");
+  let logins = await Services.logins.getAllLogins();
+  Assert.equal(logins.length, 1, "Should only have 1 login");
   let login = logins[0].QueryInterface(Ci.nsILoginMetaInfo);
-  is(login.username, "notifyu1", "Check the username");
-  is(login.password, "pass2", "Check password changed");
-  is(login.timesUsed, 2, "check .timesUsed incremented on change");
-  ok(login.timeCreated < login.timeLastUsed, "timeLastUsed bumped");
-  ok(
+  Assert.equal(login.username, "notifyu1", "Check the username");
+  Assert.equal(login.password, "pass2", "Check password changed");
+  Assert.equal(login.timesUsed, 2, "check .timesUsed incremented on change");
+  Assert.ok(login.timeCreated < login.timeLastUsed, "timeLastUsed bumped");
+  Assert.ok(
     login.timeLastUsed == login.timePasswordChanged,
     "timeUsed == timeChanged"
   );
@@ -131,22 +139,30 @@ add_task(async function test_saveChromeVisibleSameWindow() {
     PopupNotifications.panel,
     "popupshown"
   );
-  await withTestTabUntilStorageChange(url, async function() {
+  await withTestTabUntilStorageChange(url, async function () {
     await notifShownPromise;
     let popup = await getCaptureDoorhangerThatMayOpen("password-save");
-    ok(popup, "got notification popup");
+    Assert.ok(popup, "got notification popup");
     await checkDoorhangerUsernamePassword("notifyu2", "notifyp2");
     clickDoorhangerButton(popup, REMEMBER_BUTTON);
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   });
 
   // Check result of clicking Remember
-  let logins = Services.logins.getAllLogins();
-  is(logins.length, 1, "Should only have 1 login now");
+  let logins = await Services.logins.getAllLogins();
+  Assert.equal(logins.length, 1, "Should only have 1 login now");
   let login = logins[0].QueryInterface(Ci.nsILoginMetaInfo);
-  is(login.username, "notifyu2", "Check the username used on the new entry");
-  is(login.password, "notifyp2", "Check the password used on the new entry");
-  is(login.timesUsed, 1, "Check times used on new entry");
+  Assert.equal(
+    login.username,
+    "notifyu2",
+    "Check the username used on the new entry"
+  );
+  Assert.equal(
+    login.password,
+    "notifyp2",
+    "Check the password used on the new entry"
+  );
+  Assert.equal(login.timesUsed, 1, "Check times used on new entry");
 });
 
 add_task(async function test_changeChromeVisibleSameWindow() {
@@ -155,10 +171,10 @@ add_task(async function test_changeChromeVisibleSameWindow() {
     PopupNotifications.panel,
     "popupshown"
   );
-  await withTestTabUntilStorageChange(url, async function() {
+  await withTestTabUntilStorageChange(url, async function () {
     await notifShownPromise;
     let popup = await getCaptureDoorhangerThatMayOpen("password-change");
-    ok(popup, "got notification popup");
+    Assert.ok(popup, "got notification popup");
     await checkDoorhangerUsernamePassword("notifyu2", "pass2");
     clickDoorhangerButton(popup, CHANGE_BUTTON);
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
@@ -166,14 +182,14 @@ add_task(async function test_changeChromeVisibleSameWindow() {
 
   // Check to make sure we updated the password, timestamps and use count for
   // the login being changed with this form.
-  let logins = Services.logins.getAllLogins();
-  is(logins.length, 1, "Should have 1 login");
+  let logins = await Services.logins.getAllLogins();
+  Assert.equal(logins.length, 1, "Should have 1 login");
   let login = logins[0].QueryInterface(Ci.nsILoginMetaInfo);
-  is(login.username, "notifyu2", "Check the username");
-  is(login.password, "pass2", "Check password changed");
-  is(login.timesUsed, 2, "check .timesUsed incremented on change");
-  ok(login.timeCreated < login.timeLastUsed, "timeLastUsed bumped");
-  ok(
+  Assert.equal(login.username, "notifyu2", "Check the username");
+  Assert.equal(login.password, "pass2", "Check password changed");
+  Assert.equal(login.timesUsed, 2, "check .timesUsed incremented on change");
+  Assert.ok(login.timeCreated < login.timeLastUsed, "timeLastUsed bumped");
+  Assert.ok(
     login.timeLastUsed == login.timePasswordChanged,
     "timeUsed == timeChanged"
   );

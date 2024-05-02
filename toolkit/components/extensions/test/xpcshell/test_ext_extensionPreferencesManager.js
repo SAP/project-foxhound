@@ -2,30 +2,20 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionPreferencesManager",
-  "resource://gre/modules/ExtensionPreferencesManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
-var { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionPreferencesManager:
+    "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
+
+var { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
-const {
-  createAppInfo,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { createAppInfo, promiseShutdownManager, promiseStartupManager } =
+  AddonTestUtils;
 
 AddonTestUtils.init(this);
 
@@ -544,7 +534,7 @@ add_task(async function test_preference_manager_set_when_disabled() {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
 
@@ -656,7 +646,7 @@ add_task(async function test_preference_default_upgraded() {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
 
@@ -701,7 +691,7 @@ add_task(async function test_preference_select() {
   let extensionData = {
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id: "@one" } },
+      browser_specific_settings: { gecko: { id: "@one" } },
     },
   };
   let one = ExtensionTestUtils.loadExtension(extensionData);
@@ -793,7 +783,7 @@ add_task(async function test_preference_select() {
   let two = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id: "@two" } },
+      browser_specific_settings: { gecko: { id: "@two" } },
     },
   });
 
@@ -820,7 +810,7 @@ add_task(async function test_preference_select() {
   let three = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
     manifest: {
-      applications: { gecko: { id: "@three" } },
+      browser_specific_settings: { gecko: { id: "@three" } },
     },
   });
 

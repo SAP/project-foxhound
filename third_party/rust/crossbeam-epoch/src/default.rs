@@ -6,16 +6,32 @@
 
 use crate::collector::{Collector, LocalHandle};
 use crate::guard::Guard;
-use crate::primitive::{lazy_static, thread_local};
+use crate::primitive::thread_local;
+#[cfg(not(crossbeam_loom))]
+use crate::sync::once_lock::OnceLock;
 
-lazy_static! {
-    /// The global data for the default garbage collector.
-    static ref COLLECTOR: Collector = Collector::new();
+fn collector() -> &'static Collector {
+    #[cfg(not(crossbeam_loom))]
+    {
+        /// The global data for the default garbage collector.
+        static COLLECTOR: OnceLock<Collector> = OnceLock::new();
+        COLLECTOR.get_or_init(Collector::new)
+    }
+    // FIXME: loom does not currently provide the equivalent of Lazy:
+    // https://github.com/tokio-rs/loom/issues/263
+    #[cfg(crossbeam_loom)]
+    {
+        loom::lazy_static! {
+            /// The global data for the default garbage collector.
+            static ref COLLECTOR: Collector = Collector::new();
+        }
+        &COLLECTOR
+    }
 }
 
 thread_local! {
     /// The per-thread participant for the default garbage collector.
-    static HANDLE: LocalHandle = COLLECTOR.register();
+    static HANDLE: LocalHandle = collector().register();
 }
 
 /// Pins the current thread.
@@ -32,7 +48,7 @@ pub fn is_pinned() -> bool {
 
 /// Returns the default global collector.
 pub fn default_collector() -> &'static Collector {
-    &COLLECTOR
+    collector()
 }
 
 #[inline]
@@ -42,7 +58,7 @@ where
 {
     HANDLE
         .try_with(|h| f(h))
-        .unwrap_or_else(|_| f(&COLLECTOR.register()))
+        .unwrap_or_else(|_| f(&collector().register()))
 }
 
 #[cfg(all(test, not(crossbeam_loom)))]

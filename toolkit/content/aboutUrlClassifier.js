@@ -2,20 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const UPDATE_BEGIN = "safebrowsing-update-begin";
 const UPDATE_FINISH = "safebrowsing-update-finished";
 const JSLOG_PREF = "browser.safebrowsing.debug";
 
-window.onunload = function() {
+window.onunload = function () {
   Search.uninit();
   Provider.uninit();
   Cache.uninit();
   Debug.uninit();
 };
 
-window.onload = function() {
+window.onload = function () {
   Search.init();
   Provider.init();
   Cache.init();
@@ -431,7 +429,7 @@ var Cache = {
   createCacheEntries() {
     function createRow(tds, body, cols) {
       let tr = document.createElement("tr");
-      tds.forEach(function(v, i, a) {
+      tds.forEach(function (v, i, a) {
         let td = document.createElement("td");
         if (i == 0 && tds.length != cols) {
           td.setAttribute("colspan", cols - tds.length + 1);
@@ -646,14 +644,11 @@ var Debug = {
 
     // Disable configure log modules if log modules are already set
     // by environment variable.
-    let env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
 
     let logModules =
-      env.get("MOZ_LOG") ||
-      env.get("MOZ_LOG_MODULES") ||
-      env.get("NSPR_LOG_MODULES");
+      Services.env.get("MOZ_LOG") ||
+      Services.env.get("MOZ_LOG_MODULES") ||
+      Services.env.get("NSPR_LOG_MODULES");
 
     if (logModules.length) {
       document.getElementById("set-log-modules").disabled = true;
@@ -667,7 +662,8 @@ var Debug = {
 
     // Disable set log file if log file is already set
     // by environment variable.
-    let logFile = env.get("MOZ_LOG_FILE") || env.get("NSPR_LOG_FILE");
+    let logFile =
+      Services.env.get("MOZ_LOG_FILE") || Services.env.get("NSPR_LOG_FILE");
     if (logFile.length) {
       document.getElementById("set-log-file").disabled = true;
       document.getElementById("log-file").value = logFile;

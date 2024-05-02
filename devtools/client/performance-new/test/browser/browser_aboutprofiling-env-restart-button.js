@@ -19,11 +19,8 @@ add_task(async function test() {
 
   {
     info("Ensure that JS Tracer is not currently enabled.");
-    const {
-      getEnvironmentVariable,
-    } = require("devtools/client/performance-new/browser");
     ok(
-      !getEnvironmentVariable("JS_TRACE_LOGGING"),
+      !Services.env.get("JS_TRACE_LOGGING"),
       "The JS_TRACE_LOGGING is not currently enabled."
     );
   }

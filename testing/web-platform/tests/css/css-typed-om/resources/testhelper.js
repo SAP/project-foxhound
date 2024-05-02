@@ -31,6 +31,9 @@ function assert_color_channel_approx_equals(a, b) {
         assert_approx_equals(a[i].value, b[i].value, epsilonForUnitType(a.unit));
       }
       break;
+    case 'CSSKeywordValue':
+      assert_equals(a.value, b.value);
+      break;
     default:
       assert_equals(a.unit, b.unit);
       assert_approx_equals(a.value, b.value, epsilonForUnitType(a.unit));
@@ -64,6 +67,11 @@ function assert_style_value_equals(a, b) {
     case 'CSSMathMax':
       assert_style_value_array_equals(a.values, b.values);
       break;
+    case 'CSSMathClamp':
+      assert_style_value_equals(a.lower, b.lower);
+      assert_style_value_equals(a.value, b.value);
+      assert_style_value_equals(a.upper, b.upper);
+      break;
     case 'CSSMathInvert':
     case 'CSSMathNegate':
       assert_style_value_equals(a.value, b.value);
@@ -74,10 +82,6 @@ function assert_style_value_equals(a, b) {
     case 'CSSVariableReferenceValue':
       assert_equals(a.variable, b.variable);
       assert_style_value_equals(a.fallback, b.fallback);
-      break;
-    case 'CSSPositionValue':
-      assert_style_value_equals(a.x, b.x);
-      assert_style_value_equals(a.y, b.y);
       break;
     case 'CSSTransformValue':
       assert_style_value_array_equals(a, b);
@@ -137,6 +141,17 @@ const gValidUnits = [
 function createDivWithStyle(test, cssText) {
   let element = document.createElement('div');
   element.style = cssText || '';
+  document.body.appendChild(element);
+  test.add_cleanup(() => {
+    element.remove();
+  });
+  return element;
+}
+
+// Creates a new div element without inline style.
+// The created element is deleted during test cleanup.
+function createDivWithoutStyle(test) {
+  let element = document.createElement('div');
   document.body.appendChild(element);
   test.add_cleanup(() => {
     element.remove();

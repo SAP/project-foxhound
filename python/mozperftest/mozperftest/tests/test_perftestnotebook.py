@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 from pathlib import Path
-import pytest
 from unittest import mock
+
 import mozunit
+import pytest
+
 from mozperftest.metrics.notebook.constant import Constant
 
 
@@ -24,7 +26,6 @@ def test_get_notebook_section_unknown_analysis(ptnb):
 
 @pytest.mark.parametrize("analysis", [["scatterplot"], None])
 def test_post_to_iodide(ptnb, standarized_data, analysis):
-
     opener = mock.mock_open()
 
     def mocked_open(self, *args, **kwargs):

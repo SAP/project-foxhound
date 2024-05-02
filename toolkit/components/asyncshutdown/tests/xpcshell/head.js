@@ -2,9 +2,12 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
+);
+
+var { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 
 var asyncShutdownService = Cc[
@@ -42,6 +45,9 @@ function makeLock(kind) {
         Services.obs.notifyObservers(null, topic);
         return Promise.resolve();
       },
+      get isClosed() {
+        return phase.isClosed;
+      },
     };
   } else if (kind == "barrier") {
     let name = "test-Barrier-" + ++makeLock.counter;
@@ -51,6 +57,9 @@ function makeLock(kind) {
       removeBlocker: barrier.client.removeBlocker,
       wait() {
         return barrier.wait();
+      },
+      get isClosed() {
+        return barrier.client.isClosed;
       },
     };
   } else if (kind == "xpcom-barrier") {
@@ -71,7 +80,7 @@ function makeLock(kind) {
             name: blockerName,
             state,
             blockShutdown(aBarrierClient) {
-              return (async function() {
+              return (async function () {
                 try {
                   if (typeof condition == "function") {
                     await Promise.resolve(condition());
@@ -101,6 +110,9 @@ function makeLock(kind) {
           barrier.wait(resolve);
         });
       },
+      get isClosed() {
+        return barrier.client.isClosed;
+      },
     };
   } else if ("unwrapped-xpcom-barrier") {
     let name = "unwrapped-xpcom-barrier-" + ++makeLock.counter;
@@ -113,6 +125,9 @@ function makeLock(kind) {
         return new Promise(resolve => {
           barrier.wait(resolve);
         });
+      },
+      get isClosed() {
+        return client.isClosed;
       },
     };
   }
@@ -139,7 +154,7 @@ function longRunningAsyncTask(resolution = undefined, outResult = {}) {
     outResult.countFinished = 0;
   }
   return new Promise(resolve => {
-    do_timeout(100, function() {
+    do_timeout(100, function () {
       ++outResult.countFinished;
       outResult.isFinished = true;
       resolve(resolution);

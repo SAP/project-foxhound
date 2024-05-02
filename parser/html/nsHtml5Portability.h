@@ -59,6 +59,7 @@ class nsHtml5Portability {
                                         nsHtml5AtomTable* interner);
   static nsHtml5String newStringFromBuffer(char16_t* buf, int32_t offset,
                                            int32_t length,
+                                           const StringTaint& taint,
                                            nsHtml5TreeBuilder* treeBuilder,
                                            bool maybeAtomize);
   static nsHtml5String newEmptyString();

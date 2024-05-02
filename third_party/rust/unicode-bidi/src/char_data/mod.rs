@@ -12,16 +12,50 @@
 mod tables;
 
 pub use self::tables::{BidiClass, UNICODE_VERSION};
-
-use core::cmp::Ordering::{Equal, Less, Greater};
+#[cfg(feature = "hardcoded-data")]
 use core::char;
+#[cfg(feature = "hardcoded-data")]
+use core::cmp::Ordering::{Equal, Greater, Less};
 
+#[cfg(feature = "hardcoded-data")]
 use self::tables::bidi_class_table;
+use crate::data_source::BidiMatchedOpeningBracket;
 use crate::BidiClass::*;
+#[cfg(feature = "hardcoded-data")]
+use crate::BidiDataSource;
+/// Hardcoded Bidi data that ships with the unicode-bidi crate.
+///
+/// This can be enabled with the default `hardcoded-data` Cargo feature.
+#[cfg(feature = "hardcoded-data")]
+pub struct HardcodedBidiData;
+
+#[cfg(feature = "hardcoded-data")]
+impl BidiDataSource for HardcodedBidiData {
+    fn bidi_class(&self, c: char) -> BidiClass {
+        bsearch_range_value_table(c, bidi_class_table)
+    }
+}
 
 /// Find the `BidiClass` of a single char.
+#[cfg(feature = "hardcoded-data")]
 pub fn bidi_class(c: char) -> BidiClass {
     bsearch_range_value_table(c, bidi_class_table)
+}
+
+/// If this character is a bracket according to BidiBrackets.txt,
+/// return the corresponding *normalized* *opening bracket* of the pair,
+/// and whether or not it itself is an opening bracket.
+pub(crate) fn bidi_matched_opening_bracket(c: char) -> Option<BidiMatchedOpeningBracket> {
+    for pair in self::tables::bidi_pairs_table {
+        if pair.0 == c || pair.1 == c {
+            let skeleton = pair.2.unwrap_or(pair.0);
+            return Some(BidiMatchedOpeningBracket {
+                opening: skeleton,
+                is_open: pair.0 == c,
+            });
+        }
+    }
+    None
 }
 
 pub fn is_rtl(bidi_class: BidiClass) -> bool {
@@ -31,13 +65,16 @@ pub fn is_rtl(bidi_class: BidiClass) -> bool {
     }
 }
 
+#[cfg(feature = "hardcoded-data")]
 fn bsearch_range_value_table(c: char, r: &'static [(char, char, BidiClass)]) -> BidiClass {
-    match r.binary_search_by(|&(lo, hi, _)| if lo <= c && c <= hi {
-        Equal
-    } else if hi < c {
-        Less
-    } else {
-        Greater
+    match r.binary_search_by(|&(lo, hi, _)| {
+        if lo <= c && c <= hi {
+            Equal
+        } else if hi < c {
+            Less
+        } else {
+            Greater
+        }
     }) {
         Ok(idx) => {
             let (_, _, cat) = r[idx];
@@ -49,7 +86,7 @@ fn bsearch_range_value_table(c: char, r: &'static [(char, char, BidiClass)]) -> 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "hardcoded-data"))]
 mod tests {
     use super::*;
 
@@ -79,10 +116,10 @@ mod tests {
         assert_eq!(bidi_class('\u{07C0}'), R);
         assert_eq!(bidi_class('\u{085F}'), R);
         assert_eq!(bidi_class('\u{0860}'), AL);
-        assert_eq!(bidi_class('\u{0870}'), R);
-        assert_eq!(bidi_class('\u{089F}'), R);
+        assert_eq!(bidi_class('\u{0870}'), AL);
+        assert_eq!(bidi_class('\u{089F}'), NSM);
         assert_eq!(bidi_class('\u{08A0}'), AL);
-        assert_eq!(bidi_class('\u{089F}'), R);
+        assert_eq!(bidi_class('\u{089F}'), NSM);
         assert_eq!(bidi_class('\u{08FF}'), NSM);
 
         // Default ET
@@ -93,9 +130,9 @@ mod tests {
         assert_eq!(bidi_class('\u{FB1D}'), R);
         assert_eq!(bidi_class('\u{FB4F}'), R);
         assert_eq!(bidi_class('\u{FB50}'), AL);
-        assert_eq!(bidi_class('\u{FDCF}'), AL);
+        assert_eq!(bidi_class('\u{FDCF}'), ON);
         assert_eq!(bidi_class('\u{FDF0}'), AL);
-        assert_eq!(bidi_class('\u{FDFF}'), AL);
+        assert_eq!(bidi_class('\u{FDFF}'), ON);
         assert_eq!(bidi_class('\u{FE70}'), AL);
         assert_eq!(bidi_class('\u{FEFE}'), AL);
         assert_eq!(bidi_class('\u{FEFF}'), BN);

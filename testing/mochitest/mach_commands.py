@@ -2,26 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from argparse import Namespace
-from collections import defaultdict
 import functools
 import logging
 import os
-import six
 import sys
 import warnings
+from argparse import Namespace
+from collections import defaultdict
 
-from mozbuild.base import (
-    MachCommandConditions as conditions,
-    MozbuildObject,
-)
-
-from mach.decorators import (
-    CommandArgument,
-    Command,
-)
+import six
+from mach.decorators import Command, CommandArgument
+from mozbuild.base import MachCommandConditions as conditions
+from mozbuild.base import MozbuildObject
+from mozfile import load_source
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -98,11 +91,8 @@ class MochitestRunner(MozbuildObject):
         """Runs a mochitest."""
         # runtests.py is ambiguous, so we load the file/module manually.
         if "mochitest" not in sys.modules:
-            import imp
-
             path = os.path.join(self.mochitest_dir, "runtests.py")
-            with open(path, "r") as fh:
-                imp.load_module("mochitest", fh, path, (".py", "r", imp.PY_SOURCE))
+            load_source("mochitest", path)
 
         import mochitest
 
@@ -153,11 +143,9 @@ class MochitestRunner(MozbuildObject):
         if host_ret != 0:
             return host_ret
 
-        import imp
-
         path = os.path.join(self.mochitest_dir, "runtestsremote.py")
-        with open(path, "r") as fh:
-            imp.load_module("runtestsremote", fh, path, (".py", "r", imp.PY_SOURCE))
+        load_source("runtestsremote", path)
+
         import runtestsremote
 
         options = Namespace(**kwargs)
@@ -169,15 +157,6 @@ class MochitestRunner(MozbuildObject):
             manifest.tests.extend(tests)
             options.manifestFile = manifest
 
-        # Firefox for Android doesn't use e10s
-        if options.app is not None and "geckoview" not in options.app:
-            options.e10s = False
-            print("using e10s=False for non-geckoview app")
-
-        # Disable fission until geckoview supports fission by default.
-        # Need fission on Android? Use '--setpref fission.autostart=true'
-        options.fission = False
-
         return runtestsremote.run_test_harness(parser, options)
 
     def run_geckoview_junit_test(self, context, **kwargs):
@@ -188,6 +167,7 @@ class MochitestRunner(MozbuildObject):
         import runjunit
 
         options = Namespace(**kwargs)
+
         return runjunit.run_test_harness(parser, options)
 
 
@@ -206,14 +186,11 @@ def setup_argument_parser():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
 
-        import imp
-
         path = os.path.join(build_obj.topobjdir, mochitest_dir, "runtests.py")
         if not os.path.exists(path):
             path = os.path.join(here, "runtests.py")
 
-        with open(path, "r") as fh:
-            imp.load_module("mochitest", fh, path, (".py", "r", imp.PY_SOURCE))
+        load_source("mochitest", path)
 
         from mochitest_options import MochitestArgumentParser
 
@@ -223,8 +200,8 @@ def setup_argument_parser():
         # be done in this admittedly awkward place because
         # MochitestArgumentParser initialization fails if no device is found.
         from mozrunner.devices.android_device import (
-            verify_android_device,
             InstallIntent,
+            verify_android_device,
         )
 
         # verify device and xre
@@ -248,20 +225,16 @@ def setup_junit_argument_parser():
         warnings.simplefilter("ignore")
 
         # runtests.py contains MochitestDesktop, required by runjunit
-        import imp
-
         path = os.path.join(build_obj.topobjdir, mochitest_dir, "runtests.py")
         if not os.path.exists(path):
             path = os.path.join(here, "runtests.py")
 
-        with open(path, "r") as fh:
-            imp.load_module("mochitest", fh, path, (".py", "r", imp.PY_SOURCE))
+        load_source("mochitest", path)
 
         import runjunit
-
         from mozrunner.devices.android_device import (
-            verify_android_device,
             InstallIntent,
+            verify_android_device,
         )
 
         verify_android_device(
@@ -420,6 +393,20 @@ def run_mochitest_general(
         # reason it doesn't get set when calling `activate_this.py` in the virtualenv.
         sys.executable = command_context.virtualenv_manager.python_path
 
+    if ("browser-chrome", "a11y") in suites and sys.platform == "win32":
+        # Only Windows a11y browser tests need this.
+        req = os.path.join(
+            "accessible",
+            "tests",
+            "browser",
+            "windows",
+            "a11y_setup_requirements.txt",
+        )
+        command_context.virtualenv_manager.activate()
+        command_context.virtualenv_manager.install_pip_requirements(
+            req, require_hashes=False
+        )
+
     # This is a hack to introduce an option in mach to not send
     # filtered tests to the mochitest harness. Mochitest harness will read
     # the master manifest in that case.
@@ -456,9 +443,9 @@ def run_mochitest_general(
 
     if buildapp == "android":
         from mozrunner.devices.android_device import (
+            InstallIntent,
             get_adb_path,
             verify_android_device,
-            InstallIntent,
         )
 
         app = kwargs.get("app")
@@ -535,9 +522,9 @@ def run_junit(command_context, no_install, **kwargs):
     command_context._ensure_state_subdir_exists(".")
 
     from mozrunner.devices.android_device import (
+        InstallIntent,
         get_adb_path,
         verify_android_device,
-        InstallIntent,
     )
 
     # verify installation

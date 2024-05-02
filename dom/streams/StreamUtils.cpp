@@ -2,8 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/StreamUtils.h"
-#include "mozilla/FloatingPoint.h"
+#include "StreamUtils.h"
+
+#include <cmath>
 #include "mozilla/dom/QueuingStrategyBinding.h"
 
 namespace mozilla::dom {
@@ -21,7 +22,7 @@ double ExtractHighWaterMark(const QueuingStrategy& aStrategy,
   double highWaterMark = aStrategy.mHighWaterMark.Value();
 
   // Step 3.
-  if (mozilla::IsNaN(highWaterMark) || highWaterMark < 0) {
+  if (std::isnan(highWaterMark) || highWaterMark < 0) {
     aRv.ThrowRangeError("Invalid highWaterMark");
     return 0.0;
   }

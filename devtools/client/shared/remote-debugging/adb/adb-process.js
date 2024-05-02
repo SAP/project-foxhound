@@ -4,24 +4,25 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-const { dumpn } = require("devtools/shared/DevToolsUtils");
-const EventEmitter = require("devtools/shared/event-emitter");
+const { dumpn } = require("resource://devtools/shared/DevToolsUtils.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   getFileForBinary,
-} = require("devtools/client/shared/remote-debugging/adb/adb-binary");
-const { setTimeout } = require("resource://gre/modules/Timer.jsm");
+} = require("resource://devtools/client/shared/remote-debugging/adb/adb-binary.js");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 loader.lazyRequireGetter(
   this,
   "runCommand",
-  "devtools/client/shared/remote-debugging/adb/commands/index",
+  "resource://devtools/client/shared/remote-debugging/adb/commands/index.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "check",
-  "devtools/client/shared/remote-debugging/adb/adb-running-checker",
+  "resource://devtools/client/shared/remote-debugging/adb/adb-running-checker.js",
   true
 );
 

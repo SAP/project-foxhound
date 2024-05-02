@@ -19,7 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_GET_SYNC_SEQ_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_GET_SYNC_SEQ_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /*----------------------------------------------------------------*
  * get the pitch-synchronous sample sequence
@@ -35,6 +36,6 @@ void WebRtcIlbcfix_GetSyncSeq(
     size_t hl,           /* (i) 2*hl+1 is the number of sequences */
     int16_t* surround    /* (i/o) The contribution from this sequence
                                   summed with earlier contributions */
-    );
+);
 
 #endif

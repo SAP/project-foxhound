@@ -25,6 +25,15 @@ const twoByte = [...characters(
   [0x100, 0x17E], // Ā..ž
 )];
 
+function toRope(s) {
+  try {
+    return newRope(s[0], s.substring(1));
+  } catch {}
+  // newRope can fail when |s| fits into an inline string. In that case simply
+  // return the input.
+  return s;
+}
+
 function atomize(s) {
   return Object.keys({[s]: 0})[0];
 }
@@ -48,7 +57,7 @@ for (let i = 1; i <= 32; ++i) {
     String.fromCodePoint(...codePoints.slice(0, i + 1)),
   ]).flatMap(x => [
     x,
-    newRope(x, ""),
+    toRope(x),
     newString(x, {twoByte: true}),
     atomize(x),
   ]);

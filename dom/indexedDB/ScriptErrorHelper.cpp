@@ -116,7 +116,7 @@ class ScriptErrorRunnable final : public mozilla::Runnable {
       MOZ_ALWAYS_SUCCEEDS(scriptError->Init(
           aMessage, aFilename,
           /* aSourceLine */ u""_ns, aLineNumber, aColumnNumber, aSeverityFlag,
-          category.get(),
+          category,
           /* IDB doesn't run on Private browsing mode */ false,
           /* from chrome context */ aIsChrome));
     }
@@ -165,8 +165,7 @@ void ScriptErrorHelper::Dump(const nsAString& aMessage,
     RefPtr<ScriptErrorRunnable> runnable =
         new ScriptErrorRunnable(aMessage, aFilename, aLineNumber, aColumnNumber,
                                 aSeverityFlag, aIsChrome, aInnerWindowID);
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, runnable.forget()));
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(runnable.forget()));
   }
 }
 
@@ -183,8 +182,7 @@ void ScriptErrorHelper::DumpLocalizedMessage(
     RefPtr<ScriptErrorRunnable> runnable = new ScriptErrorRunnable(
         aMessageName, aFilename, aLineNumber, aColumnNumber, aSeverityFlag,
         aIsChrome, aInnerWindowID);
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, runnable.forget()));
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(runnable.forget()));
   }
 }
 

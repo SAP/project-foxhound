@@ -19,7 +19,7 @@ job-defaults:
     shipping-phase: promote
     treeherder:
         symbol: Src
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         max-run-time: 3600
         env:
@@ -34,7 +34,6 @@ job-defaults:
             - builds/releng_sub_linux_configs/64_source.py
         options: []
         tooltool-downloads: public
-        need-xvfb: false
     run-on-projects: []
     # The build_attrs transform defaults to setting a `skip-unlles-schedules'
     # optimization based on the task label. The tasks here don't have corresponding

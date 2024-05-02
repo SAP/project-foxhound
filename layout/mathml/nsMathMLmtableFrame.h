@@ -36,14 +36,14 @@ class nsMathMLmtableWrapperFrame final : public nsTableWrapperFrame,
 
   // overloaded nsTableWrapperFrame methods
 
-  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      const ReflowInput& aReflowInput,
-                      nsReflowStatus& aStatus) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+  bool IsFrameOfType(uint32_t aFlags) const override {
     return nsTableWrapperFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
 
@@ -72,28 +72,29 @@ class nsMathMLmtableFrame final : public nsTableFrame {
 
   // Overloaded nsTableFrame methods
 
-  virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList) override;
+  void SetInitialChildList(ChildListID aListID,
+                           nsFrameList&& aChildList) override;
 
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override {
-    nsTableFrame::AppendFrames(aListID, aFrameList);
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override {
+    nsTableFrame::AppendFrames(aListID, std::move(aFrameList));
     RestyleTable();
   }
 
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override {
-    nsTableFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override {
+    nsTableFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                               std::move(aFrameList));
     RestyleTable();
   }
 
-  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override {
-    nsTableFrame::RemoveFrame(aListID, aOldFrame);
+  void RemoveFrame(DestroyContext& aContext, ChildListID aListID,
+                   nsIFrame* aOldFrame) override {
+    nsTableFrame::RemoveFrame(aContext, aListID, aOldFrame);
     RestyleTable();
   }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+  bool IsFrameOfType(uint32_t aFlags) const override {
     return nsTableFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
 
@@ -171,26 +172,26 @@ class nsMathMLmtrFrame final : public nsTableRowFrame {
   virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override {
-    nsTableRowFrame::AppendFrames(aListID, aFrameList);
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override {
+    nsTableRowFrame::AppendFrames(aListID, std::move(aFrameList));
     RestyleTable();
   }
 
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override {
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override {
     nsTableRowFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
-                                  aFrameList);
+                                  std::move(aFrameList));
     RestyleTable();
   }
 
-  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override {
-    nsTableRowFrame::RemoveFrame(aListID, aOldFrame);
+  void RemoveFrame(DestroyContext& aContext, ChildListID aListID,
+                   nsIFrame* aOldFrame) override {
+    nsTableRowFrame::RemoveFrame(aContext, aListID, aOldFrame);
     RestyleTable();
   }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+  bool IsFrameOfType(uint32_t aFlags) const override {
     return nsTableRowFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
 
@@ -222,24 +223,24 @@ class nsMathMLmtdFrame final : public nsTableCellFrame {
 
   // overloaded nsTableCellFrame methods
 
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual mozilla::StyleVerticalAlignKeyword GetVerticalAlign() const override;
-  virtual nsresult ProcessBorders(
-      nsTableFrame* aFrame, mozilla::nsDisplayListBuilder* aBuilder,
-      const mozilla::nsDisplayListSet& aLists) override;
+  mozilla::StyleVerticalAlignKeyword GetVerticalAlign() const override;
+  void ProcessBorders(nsTableFrame* aFrame,
+                      mozilla::nsDisplayListBuilder* aBuilder,
+                      const mozilla::nsDisplayListSet& aLists) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+  bool IsFrameOfType(uint32_t aFlags) const override {
     return nsTableCellFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
 
-  virtual LogicalMargin GetBorderWidth(WritingMode aWM) const override;
+  LogicalMargin GetBorderWidth(WritingMode aWM) const override;
 
-  virtual nsMargin GetBorderOverflow() override;
+  nsMargin GetBorderOverflow() override;
 
  protected:
   nsMathMLmtdFrame(ComputedStyle* aStyle, nsTableFrame* aTableFrame)
@@ -269,16 +270,16 @@ class nsMathMLmtdInnerFrame final : public nsBlockFrame, public nsMathMLFrame {
     return NS_OK;
   }
 
-  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      const ReflowInput& aReflowInput,
-                      nsReflowStatus& aStatus) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+  bool IsFrameOfType(uint32_t aFlags) const override {
     return nsBlockFrame::IsFrameOfType(aFlags & ~nsIFrame::eMathML);
   }
 
-  virtual const nsStyleText* StyleTextForLineLayout() override;
-  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
+  const nsStyleText* StyleTextForLineLayout() override;
+  void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
   bool IsMrowLike() override {
     return mFrames.FirstChild() != mFrames.LastChild() || !mFrames.FirstChild();

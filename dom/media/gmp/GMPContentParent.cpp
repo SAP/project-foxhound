@@ -28,6 +28,7 @@ GMPContentParent::GMPContentParent(GMPParent* aParent)
   if (mParent) {
     SetDisplayName(mParent->GetDisplayName());
     SetPluginId(mParent->GetPluginId());
+    SetPluginType(mParent->GetPluginType());
   }
 }
 
@@ -117,7 +118,9 @@ void GMPContentParent::CloseIfUnused() {
       toClose = this;
       RefPtr<GeckoMediaPluginServiceChild> gmp(
           GeckoMediaPluginServiceChild::GetSingleton());
-      gmp->RemoveGMPContentParent(toClose);
+      if (gmp) {
+        gmp->RemoveGMPContentParent(toClose);
+      }
     }
     NS_DispatchToCurrentThread(NewRunnableMethod(
         "gmp::GMPContentParent::Close", toClose, &GMPContentParent::Close));
@@ -142,7 +145,7 @@ nsCOMPtr<nsISerialEventTarget> GMPContentParent::GMPEventTarget() {
     mps->GetThread(getter_AddRefs(gmpThread));
     MOZ_ASSERT(gmpThread);
 
-    mGMPEventTarget = gmpThread->SerialEventTarget();
+    mGMPEventTarget = gmpThread;
   }
 
   return mGMPEventTarget;
@@ -154,12 +157,13 @@ already_AddRefed<ChromiumCDMParent> GMPContentParent::GetChromiumCDM(
                 aKeySystem.get());
 
   RefPtr<ChromiumCDMParent> parent = new ChromiumCDMParent(this, GetPluginId());
-  if (!SendPChromiumCDMConstructor(parent, aKeySystem)) {
-    return nullptr;
-  }
-
   // TODO: Remove parent from mChromiumCDMs in ChromiumCDMParent::Destroy().
   mChromiumCDMs.AppendElement(parent);
+
+  if (!SendPChromiumCDMConstructor(parent, aKeySystem)) {
+    MOZ_ASSERT(!mChromiumCDMs.Contains(parent));
+    return nullptr;
+  }
 
   return parent.forget();
 }
@@ -196,6 +200,24 @@ nsresult GMPContentParent::GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE) {
   mVideoEncoders.AppendElement(vep);
 
   return NS_OK;
+}
+
+void GMPContentParentCloseBlocker::Destroy() {
+  MOZ_ASSERT(mParent);
+  MOZ_ASSERT(mEventTarget);
+
+  if (!mEventTarget->IsOnCurrentThread()) {
+    mEventTarget->Dispatch(NS_NewRunnableFunction(
+        __func__, [parent = std::move(mParent), eventTarget = mEventTarget]() {
+          parent->RemoveCloseBlocker();
+        }));
+    mEventTarget = nullptr;
+    return;
+  }
+
+  mParent->RemoveCloseBlocker();
+  mParent = nullptr;
+  mEventTarget = nullptr;
 }
 
 }  // namespace mozilla::gmp

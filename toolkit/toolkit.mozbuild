@@ -31,22 +31,16 @@ if CONFIG['ENABLE_TESTS']:
         '/toolkit/library/gtest/rust',
     ]
 
-DIRS += [
-    '/toolkit/library/rust',
-]
+if not CONFIG['MOZ_OVERRIDE_GKRUST']:
+    DIRS += [
+        '/toolkit/library/rust',
+    ]
 
 if CONFIG['MOZ_SANDBOX']:
     DIRS += ['/security/sandbox']
 
 if CONFIG["MOZ_USING_WASM_SANDBOXING"] and CONFIG["COMPILE_ENVIRONMENT"]:
     DIRS += ["/security/rlbox"]
-
-DIRS += [
-    # Depends on NSS and NSPR
-    '/security/certverifier',
-    # Depends on certverifier
-    '/security/apps',
-]
 
 # the signing related bits of libmar depend on nss
 if CONFIG['MOZ_UPDATER']:
@@ -74,6 +68,7 @@ if CONFIG['MOZ_UPDATER'] and CONFIG['OS_TARGET'] != 'Android':
 DIRS += [
     '/ipc',
     '/hal',
+    '/js/loader',
     '/js/xpconnect',
     '/modules/libjar',
     '/storage',
@@ -133,6 +128,7 @@ DIRS += [
     '/tools/power',
     '/tools/profiler',
     '/extensions/spellcheck',
+    '/security/certverifier',
     '/security/manager',
     '/toolkit',
 ]
@@ -145,12 +141,12 @@ DIRS += [
     '/toolkit/library',
     '/services',
     '/startupcache',
-    '/js/ductwork/debugger',
     '/other-licenses/snappy',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     DIRS += [
+        '/media/mozva',
         '/toolkit/system/gnome',
     ]
 
@@ -166,7 +162,6 @@ if CONFIG['MOZ_GECKODRIVER'] and not CONFIG['MOZ_TSAN'] and not CONFIG['FUZZING_
     DIRS += ['/testing/geckodriver']
 
 DIRS += [
-    '/tools/quitter',
     '/media/gmp-clearkey/0.1',
 ]
 
@@ -193,7 +188,4 @@ if CONFIG['ENABLE_TESTS']:
 
 if CONFIG['FUZZING']:
     DIRS += ['/tools/fuzzing']
-
-if CONFIG['MOZ_WAYLAND']:
-    DIRS += ['/media/mozva']
 

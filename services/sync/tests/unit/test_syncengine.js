@@ -1,8 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 async function makeSteamEngine() {
   let engine = new SyncEngine("Steam", Service);
@@ -40,7 +41,9 @@ async function testSteamEngineStorage(test) {
     await checkEngine.resetClient();
     await checkEngine.finalize();
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 }
 
@@ -60,7 +63,9 @@ add_task(async function test_url_attributes() {
     Assert.equal(engine.engineURL, "https://cluster/1.1/foo/storage/steam");
     Assert.equal(engine.metaURL, "https://cluster/1.1/foo/storage/meta/global");
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
@@ -70,18 +75,23 @@ add_task(async function test_syncID() {
   let engine = await makeSteamEngine();
   try {
     // Ensure pristine environment
-    Assert.equal(Svc.Prefs.get("steam.syncID"), undefined);
+    Assert.equal(
+      Svc.PrefBranch.getPrefType("steam.syncID"),
+      Ci.nsIPrefBranch.PREF_INVALID
+    );
     Assert.equal(await engine.getSyncID(), "");
 
     // Performing the first get on the attribute will generate a new GUID.
     Assert.equal(await engine.resetLocalSyncID(), "fake-guid-00");
-    Assert.equal(Svc.Prefs.get("steam.syncID"), "fake-guid-00");
+    Assert.equal(Svc.PrefBranch.getStringPref("steam.syncID"), "fake-guid-00");
 
-    Svc.Prefs.set("steam.syncID", Utils.makeGUID());
-    Assert.equal(Svc.Prefs.get("steam.syncID"), "fake-guid-01");
+    Svc.PrefBranch.setStringPref("steam.syncID", Utils.makeGUID());
+    Assert.equal(Svc.PrefBranch.getStringPref("steam.syncID"), "fake-guid-01");
     Assert.equal(await engine.getSyncID(), "fake-guid-01");
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
@@ -91,32 +101,36 @@ add_task(async function test_lastSync() {
   let engine = await makeSteamEngine();
   try {
     // Ensure pristine environment
-    Assert.equal(Svc.Prefs.get("steam.lastSync"), undefined);
+    Assert.equal(
+      Svc.PrefBranch.getPrefType("steam.lastSync"),
+      Ci.nsIPrefBranch.PREF_INVALID
+    );
     Assert.equal(await engine.getLastSync(), 0);
 
     // Floats are properly stored as floats and synced with the preference
     await engine.setLastSync(123.45);
     Assert.equal(await engine.getLastSync(), 123.45);
-    Assert.equal(Svc.Prefs.get("steam.lastSync"), "123.45");
+    Assert.equal(Svc.PrefBranch.getCharPref("steam.lastSync"), "123.45");
 
     // Integer is properly stored
     await engine.setLastSync(67890);
     Assert.equal(await engine.getLastSync(), 67890);
-    Assert.equal(Svc.Prefs.get("steam.lastSync"), "67890");
+    Assert.equal(Svc.PrefBranch.getCharPref("steam.lastSync"), "67890");
 
     // resetLastSync() resets the value (and preference) to 0
     await engine.resetLastSync();
     Assert.equal(await engine.getLastSync(), 0);
-    Assert.equal(Svc.Prefs.get("steam.lastSync"), "0");
+    Assert.equal(Svc.PrefBranch.getCharPref("steam.lastSync"), "0");
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
 add_task(async function test_toFetch() {
   _("SyncEngine.toFetch corresponds to file on disk");
   await SyncTestingInfrastructure(server);
-  const filename = "weave/toFetch/steam.json";
 
   await testSteamEngineStorage({
     toFetch: guidSetOfSize(3),
@@ -153,9 +167,13 @@ add_task(async function test_toFetch() {
   await testSteamEngineStorage({
     toFetch: guidSetOfSize(2),
     async beforeCheck() {
-      let toFetchPath = OS.Path.join(OS.Constants.Path.profileDir, filename);
-      let bytes = new TextEncoder().encode(JSON.stringify(this.toFetch));
-      await OS.File.writeAtomic(toFetchPath, bytes, {
+      let toFetchPath = PathUtils.join(
+        PathUtils.profileDir,
+        "weave",
+        "toFetch",
+        "steam.json"
+      );
+      await IOUtils.writeJSON(toFetchPath, this.toFetch, {
         tmpPath: toFetchPath + ".tmp",
       });
     },
@@ -169,7 +187,6 @@ add_task(async function test_toFetch() {
 add_task(async function test_previousFailed() {
   _("SyncEngine.previousFailed corresponds to file on disk");
   await SyncTestingInfrastructure(server);
-  const filename = "weave/failed/steam.json";
 
   await testSteamEngineStorage({
     previousFailed: guidSetOfSize(3),
@@ -206,12 +223,13 @@ add_task(async function test_previousFailed() {
   await testSteamEngineStorage({
     previousFailed: guidSetOfSize(2),
     async beforeCheck() {
-      let previousFailedPath = OS.Path.join(
-        OS.Constants.Path.profileDir,
-        filename
+      let previousFailedPath = PathUtils.join(
+        PathUtils.profileDir,
+        "weave",
+        "failed",
+        "steam.json"
       );
-      let bytes = new TextEncoder().encode(JSON.stringify(this.previousFailed));
-      await OS.File.writeAtomic(previousFailedPath, bytes, {
+      await IOUtils.writeJSON(previousFailedPath, this.previousFailed, {
         tmpPath: previousFailedPath + ".tmp",
       });
     },
@@ -228,7 +246,10 @@ add_task(async function test_resetClient() {
   let engine = await makeSteamEngine();
   try {
     // Ensure pristine environment
-    Assert.equal(Svc.Prefs.get("steam.lastSync"), undefined);
+    Assert.equal(
+      Svc.PrefBranch.getPrefType("steam.lastSync"),
+      Ci.nsIPrefBranch.PREF_INVALID
+    );
     Assert.equal(engine.toFetch.size, 0);
 
     await engine.setLastSync(123.45);
@@ -240,7 +261,9 @@ add_task(async function test_resetClient() {
     Assert.equal(engine.toFetch.size, 0);
     Assert.equal(engine.previousFailed.size, 0);
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
@@ -268,7 +291,9 @@ add_task(async function test_wipeServer() {
     Assert.equal(engine.toFetch.size, 0);
   } finally {
     steamServer.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 

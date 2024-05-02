@@ -4,9 +4,9 @@
 
 "use strict";
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
-module.exports = async function({ targetFront, onAvailable }) {
+module.exports = async function ({ targetFront, onAvailable }) {
   if (!targetFront.hasActor("changes")) {
     return;
   }

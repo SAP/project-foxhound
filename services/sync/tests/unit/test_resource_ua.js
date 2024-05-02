@@ -1,8 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Resource } = ChromeUtils.import("resource://services-sync/resource.js");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Resource } = ChromeUtils.importESModule(
+  "resource://services-sync/resource.sys.mjs"
+);
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 var httpProtocolHandler = Cc[
   "@mozilla.org/network/protocol;1?name=http"
@@ -10,7 +14,6 @@ var httpProtocolHandler = Cc[
 
 // Tracking info/collections.
 var collectionsHelper = track_collections_helper();
-var collections = collectionsHelper.collections;
 
 var meta_global;
 var server;
@@ -18,7 +21,7 @@ var server;
 var expectedUA;
 var ua;
 function uaHandler(f) {
-  return function(request, response) {
+  return function (request, response) {
     ua = request.getHeader("User-Agent");
     return f(request, response);
   };
@@ -70,7 +73,7 @@ add_task(async function test_desktop_post() {
 
 add_task(async function test_desktop_get() {
   _("Testing async.");
-  Svc.Prefs.set("client.type", "desktop");
+  Svc.PrefBranch.setCharPref("client.type", "desktop");
   let r = new Resource(server.baseURI + "/1.1/johndoe/storage/meta/global");
   await r.get();
   _("User-Agent: " + ua);
@@ -80,7 +83,7 @@ add_task(async function test_desktop_get() {
 
 add_task(async function test_mobile_get() {
   _("Testing mobile.");
-  Svc.Prefs.set("client.type", "mobile");
+  Svc.PrefBranch.setCharPref("client.type", "mobile");
   let r = new Resource(server.baseURI + "/1.1/johndoe/storage/meta/global");
   await r.get();
   _("User-Agent: " + ua);

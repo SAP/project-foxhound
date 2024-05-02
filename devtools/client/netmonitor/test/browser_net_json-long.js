@@ -7,8 +7,10 @@
  * Tests if very long JSON responses are handled correctly.
  */
 
-add_task(async function() {
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+add_task(async function () {
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
   const { tab, monitor } = await initNetMonitor(JSON_LONG_URL, {
     requestCount: 1,
@@ -48,8 +50,8 @@ add_task(async function() {
       type: "json",
       fullMimeType: "text/json; charset=utf-8",
       size: L10N.getFormatStr(
-        "networkMenu.sizeKB",
-        L10N.numberWithDecimals(85975 / 1024, 2)
+        "networkMenu.size.kB",
+        L10N.numberWithDecimals(85975 / 1000, 2)
       ),
       time: true,
     }

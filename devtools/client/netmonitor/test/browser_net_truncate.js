@@ -6,7 +6,7 @@
 /**
  * Verifies that truncated response bodies still have the correct reported size.
  */
-add_task(async function() {
+add_task(async function () {
   const limit = Services.prefs.getIntPref(
     "devtools.netmonitor.responseBodyLimit"
   );
@@ -15,7 +15,9 @@ add_task(async function() {
 
   info("Starting test... ");
 
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
   const { document } = monitor.panelWin;
 
@@ -31,8 +33,9 @@ add_task(async function() {
 
   const type = item.querySelector(".requests-list-type").textContent;
   const fullMimeType = item.querySelector(".requests-list-type").title;
-  const transferred = item.querySelector(".requests-list-transferred")
-    .textContent;
+  const transferred = item.querySelector(
+    ".requests-list-transferred"
+  ).textContent;
   const size = item.querySelector(".requests-list-size").textContent;
 
   is(type, "plain", "Type should be rendered correctly.");
@@ -43,12 +46,12 @@ add_task(async function() {
   );
   is(
     transferred,
-    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
+    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2.1),
     "Transferred size should be rendered correctly."
   );
   is(
     size,
-    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
+    L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2.1),
     "Size should be rendered correctly."
   );
 

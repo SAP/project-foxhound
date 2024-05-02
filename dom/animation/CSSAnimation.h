@@ -25,8 +25,10 @@ enum class CSSAnimationProperties {
   Direction = 1 << 3,
   Delay = 1 << 4,
   FillMode = 1 << 5,
-  Effect = Keyframes | Duration | IterationCount | Direction | Delay | FillMode,
-  PlayState = 1 << 6,
+  Composition = 1 << 6,
+  Effect = Keyframes | Duration | IterationCount | Direction | Delay |
+           FillMode | Composition,
+  PlayState = 1 << 7,
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CSSAnimationProperties)
 
@@ -158,7 +160,7 @@ class CSSAnimation final : public Animation {
   // This is used for setting the elapsedTime member of CSS AnimationEvents.
   TimeDuration InitialAdvance() const {
     return mEffect ? std::max(TimeDuration(),
-                              mEffect->SpecifiedTiming().Delay() * -1)
+                              mEffect->NormalizedTiming().Delay() * -1)
                    : TimeDuration();
   }
 
@@ -215,6 +217,7 @@ class CSSAnimationKeyframeEffect : public KeyframeEffect {
                     ErrorResult& aRv) override;
   void SetKeyframes(JSContext* aContext, JS::Handle<JSObject*> aKeyframes,
                     ErrorResult& aRv) override;
+  void SetComposite(const CompositeOperation& aComposite) override;
 
  private:
   CSSAnimation* GetOwningCSSAnimation() {
@@ -229,20 +232,6 @@ class CSSAnimationKeyframeEffect : public KeyframeEffect {
 };
 
 }  // namespace dom
-
-template <>
-struct AnimationTypeTraits<dom::CSSAnimation> {
-  static nsAtom* ElementPropertyAtom() { return nsGkAtoms::animationsProperty; }
-  static nsAtom* BeforePropertyAtom() {
-    return nsGkAtoms::animationsOfBeforeProperty;
-  }
-  static nsAtom* AfterPropertyAtom() {
-    return nsGkAtoms::animationsOfAfterProperty;
-  }
-  static nsAtom* MarkerPropertyAtom() {
-    return nsGkAtoms::animationsOfMarkerProperty;
-  }
-};
 
 }  // namespace mozilla
 

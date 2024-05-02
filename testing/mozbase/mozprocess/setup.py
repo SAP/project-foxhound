@@ -2,11 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from setuptools import setup
 
-PACKAGE_VERSION = "1.3.0"
+PACKAGE_VERSION = "1.3.1"
 
 setup(
     name="mozprocess",

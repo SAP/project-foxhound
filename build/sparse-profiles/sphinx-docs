@@ -2,7 +2,7 @@
 
 [include]
 # List of dependencies for the command
-path:build/docs_virtualenv_packages.txt
+path:python/sites/docs.txt
 
 # Code for generating docs.
 glob:docs/**
@@ -14,17 +14,34 @@ glob:browser/branding/nightly/**
 # Potential docs sources
 glob:**/*.rst
 glob:**/*.md
+glob:**/*.mjs
 glob:**/*.js
 glob:**/*.jsm
+glob:**/*.json
 
 # Potential included images. We don't glob all paths in order to avoid importing
 # images unrelated to documentation (like branding or test images)
 glob:**/docs/**.jpg
 glob:**/docs/**.png
 glob:**/docs/**.svg
+glob:**/docs/**.gif
+glob:**/devtools/**.gif
+glob:**/devtools-user/**.gif
+glob:**/Debugger/**.png
+glob:**/Debugger/**.svg
+
+# Include everything found in the perfdocs generated folder
+glob:testing/perfdocs/generated/**
 
 # Python API docs.
 glob:**/*.py
+# Referenced by some python files.
+path:taskcluster/ci/docker-image/kind.yml
+
+# Included in ipc docs
+path:ipc/ipdl/test/ipdl/ok/PMyManaged.ipdl
+path:ipc/ipdl/test/ipdl/ok/PMyManager.ipdl
+path:ipc/ipdl/test/ipdl/ok/MyTypes.ipdlh
 
 # moz.build files are read to discover location of docs.
 glob:**/moz.build
@@ -34,3 +51,6 @@ glob:**/package*.json
 
 # Read to set the version of the docs.
 path:config/milestone.txt
+
+# mots configuration
+path:mots.yaml

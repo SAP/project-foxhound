@@ -23,7 +23,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "mozilla/dom/Document.h"
 #include "nsINamed.h"
 #include "nsIObserverService.h"
@@ -43,13 +43,18 @@ class nsIPrincipal;
 #  include "GpsdLocationProvider.h"
 #endif
 
+#ifdef MOZ_ENABLE_DBUS
+#  include "mozilla/WidgetUtilsGtk.h"
+#  include "GeoclueLocationProvider.h"
+#  include "PortalLocationProvider.h"
+#endif
+
 #ifdef MOZ_WIDGET_COCOA
 #  include "CoreLocationLocationProvider.h"
 #endif
 
 #ifdef XP_WIN
 #  include "WindowsLocationProvider.h"
-#  include "mozilla/WindowsVersion.h"
 #endif
 
 // Some limit to the number of get or watch geolocation requests
@@ -77,13 +82,13 @@ class nsGeolocationRequest final : public ContentPermissionRequestBase,
   nsGeolocationRequest(Geolocation* aLocator, GeoPositionCallback aCallback,
                        GeoPositionErrorCallback aErrorCallback,
                        UniquePtr<PositionOptions>&& aOptions,
-                       nsIEventTarget* aMainThreadTarget,
+                       nsIEventTarget* aMainThreadSerialEventTarget,
                        bool aWatchPositionRequest = false,
                        int32_t aWatchId = 0);
 
   // nsIContentPermissionRequest
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD Cancel(void) override;
-  MOZ_CAN_RUN_SCRIPT NS_IMETHOD Allow(JS::HandleValue choices) override;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD Allow(JS::Handle<JS::Value> choices) override;
 
   void Shutdown();
 
@@ -140,7 +145,7 @@ class nsGeolocationRequest final : public ContentPermissionRequestBase,
 
   int32_t mWatchId;
   bool mShutdown;
-  nsCOMPtr<nsIEventTarget> mMainThreadTarget;
+  nsCOMPtr<nsIEventTarget> mMainThreadSerialEventTarget;
 };
 
 static UniquePtr<PositionOptions> CreatePositionOptionsCopy(
@@ -190,8 +195,9 @@ static nsPIDOMWindowInner* ConvertWeakReferenceToWindow(
 nsGeolocationRequest::nsGeolocationRequest(
     Geolocation* aLocator, GeoPositionCallback aCallback,
     GeoPositionErrorCallback aErrorCallback,
-    UniquePtr<PositionOptions>&& aOptions, nsIEventTarget* aMainThreadTarget,
-    bool aWatchPositionRequest, int32_t aWatchId)
+    UniquePtr<PositionOptions>&& aOptions,
+    nsIEventTarget* aMainThreadSerialEventTarget, bool aWatchPositionRequest,
+    int32_t aWatchId)
     : ContentPermissionRequestBase(
           aLocator->GetPrincipal(),
           ConvertWeakReferenceToWindow(aLocator->GetOwner()), "geo"_ns,
@@ -203,11 +209,7 @@ nsGeolocationRequest::nsGeolocationRequest(
       mLocator(aLocator),
       mWatchId(aWatchId),
       mShutdown(false),
-      mMainThreadTarget(aMainThreadTarget) {
-  if (nsCOMPtr<nsPIDOMWindowInner> win =
-          do_QueryReferent(mLocator->GetOwner())) {
-  }
-}
+      mMainThreadSerialEventTarget(aMainThreadSerialEventTarget) {}
 
 nsGeolocationRequest::~nsGeolocationRequest() { StopTimeoutTimer(); }
 
@@ -247,7 +249,7 @@ nsGeolocationRequest::Cancel() {
 }
 
 NS_IMETHODIMP
-nsGeolocationRequest::Allow(JS::HandleValue aChoices) {
+nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
   MOZ_ASSERT(aChoices.isUndefined());
 
   if (mLocator->ClearPendingRequest(this)) {
@@ -297,20 +299,24 @@ nsGeolocationRequest::Allow(JS::HandleValue aChoices) {
     }
   }
 
-  // Kick off the geo device, if it isn't already running
-  nsCOMPtr<nsIPrincipal> principal = GetPrincipal();
-  nsresult rv = gs->StartDevice(principal);
-
-  if (NS_FAILED(rv)) {
-    // Location provider error
-    NotifyError(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
-    return NS_OK;
-  }
-
-  if (mIsWatchPositionRequest || !canUseCache) {
+  // Non-cached location request
+  bool allowedRequest = mIsWatchPositionRequest || !canUseCache;
+  if (allowedRequest) {
     // let the locator know we're pending
     // we will now be owned by the locator
     mLocator->NotifyAllowedRequest(this);
+  }
+
+  // Kick off the geo device, if it isn't already running
+  nsresult rv = gs->StartDevice();
+
+  if (NS_FAILED(rv)) {
+    if (allowedRequest) {
+      mLocator->RemoveRequest(this);
+    }
+    // Location provider error
+    NotifyError(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+    return NS_OK;
   }
 
   SetTimeoutTimer();
@@ -409,7 +415,7 @@ nsIPrincipal* nsGeolocationRequest::GetPrincipal() {
 NS_IMETHODIMP
 nsGeolocationRequest::Update(nsIDOMGeoPosition* aPosition) {
   nsCOMPtr<nsIRunnable> ev = new RequestSendLocationEvent(aPosition, this);
-  mMainThreadTarget->Dispatch(ev.forget());
+  mMainThreadSerialEventTarget->Dispatch(ev.forget());
   return NS_OK;
 }
 
@@ -490,10 +496,24 @@ nsresult nsGeolocationService::Init() {
 #endif
 
 #ifdef MOZ_WIDGET_GTK
-#  ifdef MOZ_GPSD
-  if (Preferences::GetBool("geo.provider.use_gpsd", false)) {
+#  ifdef MOZ_ENABLE_DBUS
+  if (!mProvider && widget::ShouldUsePortal(widget::PortalKind::Location)) {
+    mProvider = new PortalLocationProvider();
+  }
+  // Geoclue includes GPS data so it has higher priority than raw GPSD
+  if (!mProvider && StaticPrefs::geo_provider_use_geoclue()) {
+    nsCOMPtr<nsIGeolocationProvider> gcProvider = new GeoclueLocationProvider();
+    // The Startup() method will only succeed if Geoclue is available on D-Bus
+    if (NS_SUCCEEDED(gcProvider->Startup())) {
+      gcProvider->Shutdown();
+      mProvider = std::move(gcProvider);
+    }
+  }
+#    ifdef MOZ_GPSD
+  if (!mProvider && Preferences::GetBool("geo.provider.use_gpsd", false)) {
     mProvider = new GpsdLocationProvider();
   }
+#    endif
 #  endif
 #endif
 
@@ -504,8 +524,7 @@ nsresult nsGeolocationService::Init() {
 #endif
 
 #ifdef XP_WIN
-  if (Preferences::GetBool("geo.provider.ms-windows-location", false) &&
-      IsWin8OrLater()) {
+  if (Preferences::GetBool("geo.provider.ms-windows-location", false)) {
     mProvider = new WindowsLocationProvider();
   }
 #endif
@@ -601,7 +620,7 @@ CachedPositionAndAccuracy nsGeolocationService::GetCachedPosition() {
   return mLastPosition;
 }
 
-nsresult nsGeolocationService::StartDevice(nsIPrincipal* aPrincipal) {
+nsresult nsGeolocationService::StartDevice() {
   if (!StaticPrefs::geo_enabled()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -990,15 +1009,6 @@ void Geolocation::GetCurrentPosition(PositionCallback& aCallback,
   }
 }
 
-static nsIEventTarget* MainThreadTarget(Geolocation* geo) {
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(geo->GetOwner());
-  if (!window) {
-    return GetMainThreadEventTarget();
-  }
-  return nsGlobalWindowInner::Cast(window)->EventTargetFor(
-      mozilla::TaskCategory::Other);
-}
-
 nsresult Geolocation::GetCurrentPosition(GeoPositionCallback callback,
                                          GeoPositionErrorCallback errorCallback,
                                          UniquePtr<PositionOptions>&& options,
@@ -1017,7 +1027,7 @@ nsresult Geolocation::GetCurrentPosition(GeoPositionCallback callback,
 
   // After this we hand over ownership of options to our nsGeolocationRequest.
 
-  nsIEventTarget* target = MainThreadTarget(this);
+  nsIEventTarget* target = GetMainThreadSerialEventTarget();
   RefPtr<nsGeolocationRequest> request = new nsGeolocationRequest(
       this, std::move(callback), std::move(errorCallback), std::move(options),
       target);
@@ -1093,7 +1103,7 @@ int32_t Geolocation::WatchPosition(GeoPositionCallback aCallback,
   // The watch ID:
   int32_t watchId = mLastWatchId++;
 
-  nsIEventTarget* target = MainThreadTarget(this);
+  nsIEventTarget* target = GetMainThreadSerialEventTarget();
   RefPtr<nsGeolocationRequest> request = new nsGeolocationRequest(
       this, std::move(aCallback), std::move(aErrorCallback),
       std::move(aOptions), target, true, watchId);
@@ -1187,7 +1197,7 @@ void Geolocation::NotifyAllowedRequest(nsGeolocationRequest* aRequest) {
 }
 
 bool Geolocation::RegisterRequestWithPrompt(nsGeolocationRequest* request) {
-  nsIEventTarget* target = MainThreadTarget(this);
+  nsIEventTarget* target = GetMainThreadSerialEventTarget();
   ContentPermissionRequestBase::PromptResult pr = request->CheckPromptPrefs();
   if (pr == ContentPermissionRequestBase::PromptResult::Granted) {
     request->RequestDelayedTask(target,

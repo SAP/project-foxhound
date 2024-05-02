@@ -1,11 +1,13 @@
-/* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=4 ts=8 et tw=80 ft=cpp : */
+/* -*- tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PBackgroundStarter;
 include protocol PBrowser;
+include protocol PClipboardReadRequest;
+include protocol PClipboardWriteRequest;
 include protocol PCompositorManager;
 include protocol PContentPermissionRequest;
 include protocol PCycleCollectWithLogs;
@@ -13,22 +15,17 @@ include protocol PDocumentChannel;
 include protocol PExtensions;
 include protocol PExternalHelperApp;
 include protocol PHandlerService;
-include protocol PFileDescriptorSet;
 include protocol PHal;
 include protocol PHeapSnapshotTempFileHelper;
 include protocol PProcessHangMonitor;
 include protocol PImageBridge;
-include protocol PRemoteLazyInputStream;
-include protocol PLoginReputation;
+include protocol PRemotePrintJob;
 include protocol PMedia;
 include protocol PNecko;
 include protocol PStreamFilter;
 include protocol PGMPContent;
 include protocol PGMPService;
 include protocol PGMP;
-include protocol PPrinting;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
 #ifdef MOZ_WEBSPEECH
 include protocol PSpeechSynthesis;
 #endif
@@ -51,6 +48,7 @@ include DOMTypes;
 include WindowGlobalTypes;
 include IPCBlob;
 include IPCStream;
+include IPCTransferable;
 include PPrintingTypes;
 include PTabContext;
 include ProtocolTypes;
@@ -77,9 +75,13 @@ include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
 include "mozilla/dom/FeaturePolicyUtils.h";
 include "mozilla/dom/MediaSessionIPCUtils.h";
+include "mozilla/dom/PageLoadEventUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
+include "mozilla/glean/GleanMetrics.h";
 include "mozilla/ipc/ByteBufUtils.h";
+include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
+include "mozilla/net/NeckoMessageUtils.h";
 include "mozilla/PermissionDelegateIPCUtils.h";
 
 [RefCounted] using class nsIDOMGeoPosition from "nsGeoPositionIPCSerialiser.h";
@@ -90,14 +92,15 @@ using struct SubstitutionMapping from "mozilla/chrome/RegistryMessageUtils.h";
 using struct OverrideMapping from "mozilla/chrome/RegistryMessageUtils.h";
 using base::ProcessId from "base/process.h";
 using struct IPC::Permission from "mozilla/net/NeckoMessageUtils.h";
-using class IPC::Principal from "mozilla/dom/PermissionMessageUtils.h";
-using mozilla::a11y::IHandlerControlHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
 using mozilla::hal::ProcessPriority from "mozilla/HalTypes.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/2D.h";
+using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
+using mozilla::ImagePoint from "Units.h";
+using mozilla::ImageIntSize from "Units.h";
 using mozilla::widget::ThemeChangeKind from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
@@ -119,6 +122,7 @@ using mozilla::Telemetry::ChildEventData from "mozilla/TelemetryComms.h";
 #endif  // defined(XP_WIN)
 
 using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
+using mozilla::glean::perf::PageLoadExtra from "mozilla/glean/GleanMetrics.h";
 [MoveOnly] using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
@@ -137,23 +141,25 @@ using mozilla::dom::MediaMetadataBase from "mozilla/dom/MediaMetadata.h";
 using mozilla::dom::MediaSessionAction from "mozilla/dom/MediaSessionBinding.h";
 using mozilla::dom::MediaSessionPlaybackState from "mozilla/dom/MediaSessionBinding.h";
 using mozilla::dom::PositionState from "mozilla/dom/MediaSession.h";
-[RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using mozilla::dom::ServiceWorkerShutdownState::Progress from "mozilla/dom/ServiceWorkerShutdownState.h";
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
 using mozilla::ContentBlockingNotifier::BlockingDecision from "mozilla/ContentBlockingNotifier.h";
-using mozilla::ContentBlocking::StorageAccessPromptChoices from "mozilla/ContentBlocking.h";
-using JSActorMessageKind from "mozilla/dom/JSActor.h";
-using JSActorMessageMeta from "mozilla/dom/PWindowGlobal.h";
+using mozilla::StorageAccessAPIHelper::StorageAccessPromptChoices from "mozilla/StorageAccessAPIHelper.h";
+using mozilla::dom::JSActorMessageKind from "mozilla/dom/JSActor.h";
+using mozilla::dom::JSActorMessageMeta from "mozilla/dom/PWindowGlobal.h";
 using mozilla::PermissionDelegateHandler::DelegatedPermissionList from "mozilla/PermissionDelegateHandler.h";
 [RefCounted] using class nsILayoutHistoryState from "nsILayoutHistoryState.h";
 using class mozilla::dom::SessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
 using struct nsPoint from "nsPoint.h";
 using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
-using mozilla::PDMFactory::MediaCodecsSupported from "PDMFactory.h";
+using mozilla::media::MediaCodecsSupported from "MediaCodecsSupport.h";
 using mozilla::RemoteDecodeIn from "mozilla/RemoteDecoderManagerChild.h";
 using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
 [RefCounted] using mozilla::dom::FeaturePolicy from "mozilla/dom/FeaturePolicy.h";
-using Wireframe from "mozilla/dom/DocumentBinding.h";
+using mozilla::dom::Wireframe from "mozilla/dom/DocumentBinding.h";
+using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
+[RefCounted] using class nsIX509Cert from "nsIX509Cert.h";
+using nsIDNSService::ResolverMode from "nsIDNSService.h";
 
 union ChromeRegistryItem
 {
@@ -221,14 +227,10 @@ union SystemParameterValue {
   float;
 };
 
-struct SystemParameterKVPair {
-  uint8_t id;
-  SystemParameterValue value;
-};
-
 struct ClipboardCapabilities {
   bool supportsSelectionClipboard;
   bool supportsFindClipboard;
+  bool supportsSelectionCache;
 };
 
 union FileDescOrError {
@@ -239,10 +241,10 @@ union FileDescOrError {
 struct DomainPolicyClone
 {
     bool        active;
-    nsIURI[] blocklist;
-    nsIURI[] allowlist;
-    nsIURI[] superBlocklist;
-    nsIURI[] superAllowlist;
+    nullable nsIURI[] blocklist;
+    nullable nsIURI[] allowlist;
+    nullable nsIURI[] superBlocklist;
+    nullable nsIURI[] superAllowlist;
 };
 
 struct AndroidSystemInfo
@@ -275,8 +277,8 @@ struct BlobURLRegistrationData
 {
   nsCString url;
   IPCBlob blob;
-  nsIPrincipal principal;
-  nsID? agentClusterId;
+  nullable nsIPrincipal principal;
+  nsCString partitionKey;
   bool revoked;
 };
 
@@ -295,6 +297,10 @@ struct JSWindowActorInfo
   nsCString name;
   bool allFrames;
 
+  // True if `url` is for ESM.
+  // False if `url` is for JSM or nothing.
+  bool isESModule;
+
   // The module of the url.
   nsCString? url;
 
@@ -311,6 +317,11 @@ struct JSProcessActorInfo
 {
     // The name of the actor.
     nsCString name;
+
+    // True if `url` is for ESM.
+    // False if `url` is for JSM or nothing.
+    bool isESModule;
+
     // The module of the url.
     nsCString? url;
 
@@ -350,7 +361,7 @@ struct XPCOMInitData
     nsCString[] dictionaries;
     ClipboardCapabilities clipboardCaps;
     DomainPolicyClone domainPolicy;
-    nsIURI userContentSheetURL;
+    nullable nsIURI userContentSheetURL;
     GfxVarUpdate[] gfxNonDefaultVarUpdates;
     ContentDeviceData contentDeviceData;
     GfxInfoFeatureStatus[] gfxFeatureStatus;
@@ -358,12 +369,16 @@ struct XPCOMInitData
     nsCString[] requestedLocales;
     L10nFileSourceDescriptor[] l10nFileSources;
     DynamicScalarDefinition[] dynamicScalarDefs;
-    SystemParameterKVPair[] systemParameters;
+    MetricMask perfStatsMask;
+    nsCString trrDomain;
+    ResolverMode trrMode;
+    // This is the value of network.trr.mode and can be diffrent than trrMode.
+    ResolverMode trrModeFromPref;
 };
 
 struct VisitedQueryResult
 {
-    nsIURI uri;
+    nullable nsIURI uri;
     bool visited;
 };
 
@@ -404,10 +419,10 @@ struct PostMessageData
     MaybeDiscardedBrowsingContext source;
     nsString origin;
     nsString targetOrigin;
-    nsIURI targetOriginURI;
-    nsIPrincipal callerPrincipal;
-    nsIPrincipal subjectPrincipal;
-    nsIURI callerURI;
+    nullable nsIURI targetOriginURI;
+    nullable nsIPrincipal callerPrincipal;
+    nullable nsIPrincipal subjectPrincipal;
+    nullable nsIURI callerURI;
     bool isFromPrivateWindow;
     nsCString scriptLocation;
     uint64_t innerWindowId;
@@ -425,6 +440,33 @@ union BlobURLDataRequestResult
   nsresult;
 };
 
+struct TextRecognitionQuad {
+    float confidence;
+    nsString string;
+    ImagePoint[] points;
+};
+
+struct TextRecognitionResult {
+    TextRecognitionQuad[] quads;
+};
+
+union TextRecognitionResultOrError {
+    TextRecognitionResult;
+    nsCString;
+};
+
+struct IPCImage {
+    BigBuffer data;
+    uint32_t stride;
+    SurfaceFormat format;
+    ImageIntSize size;
+};
+
+union PClipboardReadRequestOrError {
+    PClipboardReadRequest;
+    nsresult;
+};
+
 /**
  * The PContent protocol is a top-level protocol between the UI process
  * and a content process. There is exactly one PContentParent/PContentChild pair
@@ -434,20 +476,18 @@ union BlobURLDataRequestResult
 sync protocol PContent
 {
     manages PBrowser;
+    manages PClipboardReadRequest;
+    manages PClipboardWriteRequest;
     manages PContentPermissionRequest;
     manages PCycleCollectWithLogs;
     manages PExtensions;
     manages PExternalHelperApp;
-    manages PFileDescriptorSet;
     manages PHal;
     manages PHandlerService;
     manages PHeapSnapshotTempFileHelper;
-    manages PRemoteLazyInputStream;
+    manages PRemotePrintJob;
     manages PMedia;
     manages PNecko;
-    manages PPrinting;
-    manages PChildToParentStream;
-    manages PParentToChildStream;
 #ifdef MOZ_WEBSPEECH
     manages PSpeechSynthesis;
 #endif
@@ -460,7 +500,6 @@ sync protocol PContent
     manages PURLClassifier;
     manages PURLClassifierLocal;
     manages PScriptCache;
-    manages PLoginReputation;
     manages PSessionStorageObserver;
     manages PBenchmarkStorage;
 
@@ -518,8 +557,6 @@ child:
                            bool isForBrowser, bool isTopLevel);
 
 both:
-    async PFileDescriptorSet(FileDescriptor fd);
-
     // For parent->child, aBrowser must be non-null; aContext can
     // be null to indicate the browser's current root document, or non-null
     // to persist a subdocument.  For child->parent, arguments are
@@ -554,6 +591,7 @@ child:
       uint32_t[] namespaces);
 
     async NetworkLinkTypeChange(uint32_t type);
+    async SocketProcessCrashed();
 
     // Re-create the rendering stack for a device reset.
     async ReinitRenderingForDeviceReset();
@@ -571,14 +609,19 @@ child:
                               FileDescriptor? DMDFile)
         returns (uint32_t aGeneration);
 
-    async RequestPerformanceMetrics(nsID aID);
-
 #if defined(XP_WIN)
     /**
      * Used by third-party modules telemetry (aka "untrusted modules" telemetry)
      * to pull data from content processes.
      */
     async GetUntrustedModulesData() returns (UntrustedModulesData? data);
+
+    /**
+    * This method is used to notifty a child process to start
+    * processing module loading events in UntrustedModulesProcessor.
+    * This should be called when the parent process has gone idle.
+    */
+    async UnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
 
     /**
@@ -605,18 +648,19 @@ child:
                          OverrideMapping[] overrides, nsCString locale, bool reset);
     async RegisterChromeItem(ChromeRegistryItem item);
 
-    async ClearImageCacheFromPrincipal(nsIPrincipal aPrincipal);
+    async ClearImageCacheFromPrincipal(nullable nsIPrincipal aPrincipal);
 
     async ClearImageCacheFromBaseDomain(nsCString aBaseDomain);
 
     async ClearImageCache(bool privateLoader, bool chrome);
 
-    async ClearStyleSheetCache(nsIPrincipal? aForPrincipal,
+    async ClearStyleSheetCache(nullable nsIPrincipal? aForPrincipal,
                                nsCString? aBaseDomain);
 
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
     async SetCaptivePortalState(int32_t aState);
+    async SetTRRMode(ResolverMode aMode, ResolverMode aModeFromPref);
 
     async NotifyVisited(VisitedQueryResult[] uri);
 
@@ -625,8 +669,6 @@ child:
      * necessary.
      */
     async ThemeChanged(FullLookAndFeel lookAndFeelData, ThemeChangeKind aKind);
-
-    async UpdateSystemParameters(SystemParameterKVPair[] aUpdates);
 
     async PreferenceUpdate(Pref pref);
     async VarUpdate(GfxVarUpdate var);
@@ -638,7 +680,7 @@ child:
 
     async NotifyAlertsObserver(nsCString topic, nsString data);
 
-    async GeolocationUpdate(nsIDOMGeoPosition aPosition);
+    async GeolocationUpdate(nullable nsIDOMGeoPosition aPosition);
 
     async GeolocationError(uint16_t errorCode);
 
@@ -679,6 +721,12 @@ child:
     async UpdateAppLocales(nsCString[] appLocales);
     async UpdateRequestedLocales(nsCString[] requestedLocales);
 
+    /**
+     * The system timezone has changed; the child process should ensure that
+     * calls to get the default timezone return the new value.
+     */
+    async SystemTimezoneChanged();
+
     async UpdateL10nFileSources(L10nFileSourceDescriptor[] sources);
 
     async RegisterStringBundles(StringBundleDescriptor[] stringBundles);
@@ -701,13 +749,8 @@ child:
 
     /**
      * Start accessibility engine in content process.
-     * @param aTid is the thread ID of the chrome process main thread. Only used
-     *             on Windows; pass 0 on other platforms.
-     * @param aMsaaID is an a11y-specific unique id for the content process
-     *                that is generated by the chrome process. Only used on
-     *                Windows; pass 0 on other platforms.
      */
-    async ActivateA11y(uint32_t aMainChromeTid, uint32_t aMsaaID);
+    async ActivateA11y();
 
     /**
      * Shutdown accessibility engine in content process (if not in use).
@@ -720,7 +763,7 @@ child:
     /**
      * Send the remote type associated with the content process.
      */
-    async RemoteType(nsCString aRemoteType);
+    async RemoteType(nsCString aRemoteType, nsCString aProfile);
 
     /**
      * Send BlobURLRegistrationData to child process.
@@ -749,7 +792,8 @@ child:
                                     SystemFontList systemFontList,
                                     SharedMemoryHandle? sharedUASheetHandle,
                                     uintptr_t sharedUASheetAddress,
-                                    SharedMemoryHandle[] sharedFontListBlocks);
+                                    SharedMemoryHandle[] sharedFontListBlocks,
+                                    bool aIsStartingUp);
 
     // Notify child that last-pb-context-exited notification was observed
     async LastPrivateDocShellDestroyed();
@@ -760,22 +804,30 @@ child:
     /**
      * Used to manage nsIStyleSheetService across processes.
      */
-    async LoadAndRegisterSheet(nsIURI uri, uint32_t type);
-    async UnregisterSheet(nsIURI uri, uint32_t type);
+    async LoadAndRegisterSheet(nullable nsIURI uri, uint32_t type);
+    async UnregisterSheet(nullable nsIURI uri, uint32_t type);
 
     /**
      * Notify idle observers in the child
      */
     async NotifyIdleObserver(uint64_t observerId, nsCString topic, nsString str);
 
-    async InvokeDragSession(MaybeDiscardedWindowContext aContext,
-                            IPCDataTransfer[] transfers, uint32_t action);
+    async InvokeDragSession(MaybeDiscardedWindowContext aSourceWindowContext,
+                            MaybeDiscardedWindowContext aSourceTopWindowContext,
+                            IPCTransferableData[] transfers, uint32_t action);
 
     async EndDragSession(bool aDoneDrag, bool aUserCancelled,
                          LayoutDeviceIntPoint aDragEndPoint,
-                         uint32_t aKeyModifiers);
+                         uint32_t aKeyModifiers,
+                         uint32_t aDropEffect);
 
-    async DomainSetChanged(uint32_t aSetType, uint32_t aChangeType, nsIURI aDomain);
+    async DomainSetChanged(uint32_t aSetType, uint32_t aChangeType, nullable nsIURI aDomain);
+
+    /**
+     * Notify the child that it will soon be asked to shutdown.
+     * This is sent with high priority right before the normal shutdown.
+     */
+    [Priority=control] async ShutdownConfirmedHP();
 
     /**
      * Notify the child to shutdown. The child will in turn call FinishShutdown
@@ -799,39 +851,34 @@ child:
     /**
      * Send a `push` event without data to a service worker in the child.
      */
-    async Push(nsCString scope, Principal principal, nsString messageId);
+    async Push(nsCString scope, nullable nsIPrincipal principal, nsString messageId);
 
     /**
      * Send a `push` event with data to a service worker in the child.
      */
-    async PushWithData(nsCString scope, Principal principal,
+    async PushWithData(nsCString scope, nullable nsIPrincipal principal,
                        nsString messageId, uint8_t[] data);
 
     /**
      * Send a `pushsubscriptionchange` event to a service worker in the child.
      */
-    async PushSubscriptionChange(nsCString scope, Principal principal);
+    async PushSubscriptionChange(nsCString scope, nullable nsIPrincipal principal);
 
     async GetFilesResponse(nsID aID, GetFilesResponseResult aResult);
 
     async BlobURLRegistration(nsCString aURI, IPCBlob aBlob,
-                              Principal aPrincipal,
-                              nsID? aAgentClusterId);
+                              nullable nsIPrincipal aPrincipal, nsCString aPartitionKey);
 
     async BlobURLUnregistration(nsCString aURI);
 
     async GMPsChanged(GMPCapabilityData[] capabilities);
 
 
-    async PParentToChildStream();
-
     async ProvideAnonymousTemporaryFile(uint64_t aID, FileDescOrError aFD);
 
     async SetPermissionsWithKey(nsCString aPermissionKey, Permission[] aPermissions);
 
     async RefreshScreens(ScreenDetails[] aScreens);
-
-    async PRemoteLazyInputStream(nsID aID, uint64_t aSize);
 
     async ShareCodeCoverageMutex(CrossProcessMutexHandle handle);
     async FlushCodeCoverageCounters() returns (bool unused);
@@ -976,32 +1023,35 @@ child:
                                       uint32_t aIndex, uint32_t aLength,
                                       nsID aChangeID);
 
-   async DispatchLocationChangeEvent(MaybeDiscardedBrowsingContext aContext);
+    async GetLayoutHistoryState(MaybeDiscardedBrowsingContext aContext)
+        returns (nullable nsILayoutHistoryState aState, Wireframe? aWireframe);
 
-  // Dispatches a "beforeunload" event to each in-process content window in the
-  // subtree beginning at `aStartingAt`, and returns the result as documented in
-  // the `PermitUnloadResult` enum.
-  async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt)
-      returns (PermitUnloadResult result);
+    async DispatchLocationChangeEvent(MaybeDiscardedBrowsingContext aContext);
 
-  // Update the cached list of codec supported in the given process.
-  async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
+    // Dispatches a "beforeunload" event to each in-process content window in the
+    // subtree beginning at `aStartingAt`, and returns the result as documented in
+    // the `PermitUnloadResult` enum.
+    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt)
+        returns (PermitUnloadResult result);
 
-  async FlushTabState(MaybeDiscardedBrowsingContext aBrowsingContext)
-      returns(bool aHadContext);
+    // Update the cached list of codec supported in the given process.
+    async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
 
-  // Send the list of the supported mimetypes in the given process. GeckoView-specific
-  async DecoderSupportedMimeTypes(nsCString[] supportedTypes);
+    // Send the list of the supported mimetypes in the given process. GeckoView-specific
+    async DecoderSupportedMimeTypes(nsCString[] supportedTypes);
 
-  // Used to initialize the global variable in content processes with the
-  // latched value in the parent process. See dom/LocalStorageCommon.h for more
-  // details.
-  async InitNextGenLocalStorageEnabled(bool enabled);
+    // Used to initialize the global variable in content processes with the
+    // latched value in the parent process. See dom/LocalStorageCommon.h for more
+    // details.
+    async InitNextGenLocalStorageEnabled(bool enabled);
+
+    async PRemotePrintJob();
+
+    async PClipboardReadRequest(nsCString[] aTypes);
 
 parent:
-
     async SynchronizeLayoutHistoryState(MaybeDiscardedBrowsingContext aContext,
-                                        nsILayoutHistoryState aState);
+                                        nullable nsILayoutHistoryState aState);
 
     async SessionHistoryEntryTitle(MaybeDiscardedBrowsingContext aContext,
                                    nsString aTitle);
@@ -1036,11 +1086,10 @@ parent:
 
     async InitCrashReporter(NativeThreadId tid);
 
-    sync IsSecureURI(nsIURI aURI, uint32_t aFlags,
-                     OriginAttributes aOriginAttributes)
+    sync IsSecureURI(nullable nsIURI aURI, OriginAttributes aOriginAttributes)
         returns (bool isSecureURI);
 
-    async AccumulateMixedContentHSTS(nsIURI aURI, bool aActive,
+    async AccumulateMixedContentHSTS(nullable nsIURI aURI, bool aActive,
                                      OriginAttributes aOriginAttributes);
 
     [Nested=inside_cpow] async PHal();
@@ -1048,10 +1097,6 @@ parent:
     async PHeapSnapshotTempFileHelper();
 
     async PNecko();
-
-    async PPrinting();
-
-    async PChildToParentStream();
 
 #ifdef MOZ_WEBSPEECH
     async PSpeechSynthesis();
@@ -1065,12 +1110,10 @@ parent:
 
     async CreateAudioIPCConnection() returns (FileDescOrError fd);
 
-    sync PURLClassifier(Principal principal)
+    sync PURLClassifier(nullable nsIPrincipal principal)
         returns (bool success);
 
-    async PURLClassifierLocal(nsIURI uri, IPCURLClassifierFeature[] features);
-
-    async PLoginReputation(nsIURI formURI);
+    async PURLClassifierLocal(nullable nsIURI uri, IPCURLClassifierFeature[] features);
 
     async PSessionStorageObserver();
 
@@ -1078,14 +1121,15 @@ parent:
 
     // Services remoting
 
-    async StartVisitedQueries(nsIURI[] uri);
-    async SetURITitle(nsIURI uri, nsString title);
+    async StartVisitedQueries(nullable nsIURI[] uri);
+    async SetURITitle(nullable nsIURI uri, nsString title);
 
-    async LoadURIExternal(nsIURI uri,
-                          nsIPrincipal triggeringPrincipal,
-                          nsIPrincipal redirectPrincipal,
+    async LoadURIExternal(nullable nsIURI uri,
+                          nullable nsIPrincipal triggeringPrincipal,
+                          nullable nsIPrincipal redirectPrincipal,
                           MaybeDiscardedBrowsingContext browsingContext,
-                          bool wasExternallyTriggered);
+                          bool wasExternallyTriggered,
+                          bool hasValidUserGestureActivation);
     async ExtProtocolChannelConnectParent(uint64_t registrarId);
 
     // PrefService message
@@ -1094,13 +1138,13 @@ parent:
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (StructuredCloneData[] retval);
 
-    async ShowAlert(nsIAlertNotification alert);
+    async ShowAlert(nullable nsIAlertNotification alert);
 
-    async CloseAlert(nsString name);
+    async CloseAlert(nsString name, bool contextClosed);
 
-    async DisableNotifications(Principal principal);
+    async DisableNotifications(nullable nsIPrincipal principal);
 
-    async OpenNotificationSettings(Principal principal);
+    async OpenNotificationSettings(nullable nsIPrincipal principal);
 
     async AddSecurityState(MaybeDiscardedWindowContext aContext, uint32_t aStateFlags);
 
@@ -1138,8 +1182,8 @@ parent:
     // nsIMIMEInfo and other such influences.
     // Pass true for aShouldCloseWindow to specify that aContext was opened specifically
     // for this load, and should be closed once we've handled it.
-    async PExternalHelperApp(nsIURI uri,
-                             LoadInfoArgs? loadInfoArgs,
+    async PExternalHelperApp(nullable nsIURI uri,
+                             LoadInfoArgs loadInfoArgs,
                              nsCString aMimeContentType,
                              nsCString aContentDisposition,
                              uint32_t aContentDispositionHint,
@@ -1147,7 +1191,7 @@ parent:
                              bool aForceSave,
                              int64_t aContentLength,
                              bool aWasFileChannel,
-                             nsIURI aReferrer,
+                             nullable nsIURI aReferrer,
                              MaybeDiscardedBrowsingContext aContext,
                              bool aShouldCloseWindow);
 
@@ -1164,19 +1208,20 @@ parent:
                                bool fromChromeContext, ClonedMessageData stack);
 
     // Places the items within dataTransfer on the clipboard.
-    async SetClipboard(IPCDataTransfer aDataTransfer,
-                       bool aIsPrivateData,
-                       Principal aRequestingPrincipal,
-                       nsContentPolicyType aContentPolicyType,
+    async SetClipboard(IPCTransferable aTransferable,
                        int32_t aWhichClipboard);
 
     // Given a list of supported types, returns the clipboard data for the
     // first type that matches.
     sync GetClipboard(nsCString[] aTypes, int32_t aWhichClipboard)
-        returns (IPCDataTransfer dataTransfer);
+        returns (IPCTransferableData transferableData);
 
     // Returns a list of formats supported by the clipboard
     sync GetExternalClipboardFormats(int32_t aWhichClipboard, bool aPlainTextOnly) returns (nsCString[] aTypes);
+
+    // Requests getting data from clipboard.
+    async GetClipboardAsync(nsCString[] aTypes, int32_t aWhichClipboard)
+        returns (PClipboardReadRequestOrError aClipboardReadRequest);
 
     // Clears the clipboard.
     async EmptyClipboard(int32_t aWhichClipboard);
@@ -1185,11 +1230,13 @@ parent:
     sync ClipboardHasType(nsCString[] aTypes, int32_t aWhichClipboard)
         returns (bool hasType);
 
-    // 'Play', 'Beep' and 'PlayEventSound' are the only nsISound methods used in
-    // the content process.
-    [Compress] async PlaySound(nsIURI aURL);
-    [Compress] async Beep();
-    [Compress] async PlayEventSound(uint32_t aEventId);
+    /**
+     * Notify the parent that the child has started a clipboard write request,
+     * and that the data will be sent over another IPC message once it is ready.
+     * @param  aClipboardType
+     *         The clipboard type defined in nsIClipboard.
+     */
+    async PClipboardWriteRequest(int32_t aClipboardType);
 
     sync GetIconForExtension(nsCString aFileExt, uint32_t aIconSize)
         returns (uint8_t[] bits);
@@ -1197,21 +1244,10 @@ parent:
     // Tell the parent that the child has gone idle for the first time.
     async FirstIdle();
 
-    async DeviceReset();
+    async CopyFavicon(nullable nsIURI oldURI, nullable nsIURI newURI, bool isPrivate);
 
-    async CopyFavicon(nsIURI oldURI, nsIURI newURI, bool isPrivate);
-
-    /**
-     * Notifies the parent about a recording device is starting or shutdown.
-     * @param recordingStatus starting or shutdown
-     * @param pageURL URL that request that changing the recording status
-     * @param isAudio recording start with microphone
-     * @param isVideo recording start with camera
-     */
-    async RecordingDeviceEvents(nsString recordingStatus,
-                                nsString pageURL,
-                                bool isAudio,
-                                bool isVideo);
+    async FindImageText(IPCImage image, nsCString[] languages)
+        returns (TextRecognitionResultOrError result);
 
     // Graphics errors
     async GraphicsError(nsCString aError);
@@ -1239,10 +1275,9 @@ parent:
     async RequestAnonymousTemporaryFile(uint64_t aID);
 
     /**
-     * Sets "offline-app" permission for the principal.  Called when we hit
-     * a web app with the manifest attribute in <html>
+     * Notifies the parent that the child needs no more ForceKill dump.
      */
-    async SetOfflinePermission(Principal principal);
+    [Priority=control] async NotifyShutdownSuccess();
 
     /**
      * Notifies the parent to continue shutting down after the child performs
@@ -1270,13 +1305,26 @@ parent:
      *       provided.
      */
     async PContentPermissionRequest(PermissionRequest[] aRequests,
-                                    Principal aPrincipal,
-                                    Principal aTopLevelPrincipal,
+                                    nullable nsIPrincipal aPrincipal,
+                                    nullable nsIPrincipal aTopLevelPrincipal,
                                     bool aIsHandlingUserInput,
                                     bool aMaybeUnsafePermissionDelegate,
                                     TabId tabId);
 
+    /**
+     * If the profiler is running when the process shuts down, this sends the
+     * profile data collected so far.
+     *
+     * @param aProfile
+     *   This may contain an empty string (unknown issue), an error message
+     *   starting with '*', or a profile as a stringified JSON object.
+     */
     async ShutdownProfile(nsCString aProfile);
+
+    /**
+     * This sends any collected perf stats data on shutdown.
+     */
+    async ShutdownPerfStats(nsCString aPerfStats);
 
     /**
      * Request graphics initialization information from the parent.
@@ -1478,7 +1526,7 @@ parent:
      * @param aLoaded
      *   Returns the size in bytes of the resource.
      */
-    sync GetHyphDict(nsIURI aURI) returns (SharedMemoryHandle aHandle, uint32_t aSize);
+    sync GetHyphDict(nullable nsIURI aURI) returns (SharedMemoryHandle aHandle, uint32_t aSize);
 
     async CreateWindow(PBrowser aThisTab,
                        MaybeDiscardedBrowsingContext aParent,
@@ -1487,12 +1535,11 @@ parent:
                        bool aCalledFromJS,
                        bool aForPrinting,
                        bool aForWindowDotPrint,
-                       nsIURI aURIToLoad,
+                       nullable nsIURI aURIToLoad,
                        nsCString aFeatures,
-                       float aFullZoom,
-                       Principal aTriggeringPrincipal,
-                       nsIContentSecurityPolicy aCsp,
-                       nsIReferrerInfo aReferrerInfo,
+                       nullable nsIPrincipal aTriggeringPrincipal,
+                       nullable nsIContentSecurityPolicy aCsp,
+                       nullable nsIReferrerInfo aReferrerInfo,
                        OriginAttributes aOriginAttributes)
         returns (CreatedWindowInfo window);
 
@@ -1501,24 +1548,13 @@ parent:
       MaybeDiscardedBrowsingContext aParent,
       uint32_t aChromeFlags,
       bool aCalledFromJS,
-      nsIURI aURIToLoad,
+      nullable nsIURI aURIToLoad,
       nsCString aFeatures,
-      float aFullZoom,
       nsString aName,
-      nsIPrincipal aTriggeringPrincipal,
-      nsIContentSecurityPolicy aCsp,
-      nsIReferrerInfo aReferrerInfo,
+      nullable nsIPrincipal aTriggeringPrincipal,
+      nullable nsIContentSecurityPolicy aCsp,
+      nullable nsIReferrerInfo aReferrerInfo,
       OriginAttributes aOriginAttributes);
-
-    /**
-     * Tells the parent to ungrab the pointer on the default display.
-     *
-     * This is for GTK platforms where we have to ensure the pointer ungrab happens in the
-     * chrome process as that's the process that receives the pointer event.
-     */
-    sync UngrabPointer(uint32_t time);
-
-    sync RemovePermission(Principal principal, nsCString permissionType) returns (nsresult rv);
 
     /**
      * Tell the parent that a decoder's' benchmark has been completed.
@@ -1529,29 +1565,33 @@ parent:
     /**
      * Notify `push-message` observers without data in the parent.
      */
-    async NotifyPushObservers(nsCString scope, Principal principal,
+    async NotifyPushObservers(nsCString scope, nullable nsIPrincipal principal,
                               nsString messageId);
 
     /**
      * Notify `push-message` observers with data in the parent.
      */
-    async NotifyPushObserversWithData(nsCString scope, Principal principal,
+    async NotifyPushObserversWithData(nsCString scope, nullable nsIPrincipal principal,
                                       nsString messageId, uint8_t[] data);
 
     /**
      * Notify `push-subscription-change` observers in the parent.
      */
     async NotifyPushSubscriptionChangeObservers(nsCString scope,
-                                                Principal principal);
+                                                nullable nsIPrincipal principal);
 
      async GetFilesRequest(nsID aID, nsString aDirectory, bool aRecursiveFlag);
      async DeleteGetFilesRequest(nsID aID);
 
      async StoreAndBroadcastBlobURLRegistration(nsCString url, IPCBlob blob,
-                                                Principal principal,
-                                                nsID? aAgentClusterId);
+                                                nullable nsIPrincipal principal, nsCString aPartitionKey);
 
-     async UnstoreAndBroadcastBlobURLUnregistration(nsCString url, Principal principal);
+     async UnstoreAndBroadcastBlobURLUnregistration(nsCString url, nullable nsIPrincipal principal);
+
+    /**
+     * Messages for communicating child Glean data to the parent process
+     */
+    async RecordPageLoadEvent(PageLoadExtra event);
 
     /**
      * Messages for communicating child Telemetry to the parent process
@@ -1563,21 +1603,15 @@ parent:
     async RecordChildEvents(ChildEventData[] events);
     async RecordDiscardedData(DiscardedData data);
 
-    sync GetA11yContentId() returns (uint32_t aContentId);
-    async A11yHandlerControl(uint32_t aPid,
-                             IHandlerControlHolder aHandlerControl);
-
     async AddMemoryReport(MemoryReport aReport);
 
     async BHRThreadHang(HangDetails aHangDetails);
 
-    async AddPerformanceMetrics(nsID aID, PerformanceInfo[] aMetrics);
-
     /*
      * Adds a certificate exception for the given hostname and port.
      */
-    async AddCertException(nsCString aSerializedCert, uint32_t aFlags,
-                           nsCString aHostName, int32_t aPort, OriginAttributes aOriginAttributes,
+    async AddCertException(nullable nsIX509Cert aCert, nsCString aHostName,
+                           int32_t aPort, OriginAttributes aOriginAttributes,
                            bool aIsTemporary)
           returns (nsresult success);
 
@@ -1585,7 +1619,7 @@ parent:
      * Determines whether storage access can be granted automatically by the
      * storage access API without showing a user prompt.
      */
-    async AutomaticStorageAccessPermissionCanBeGranted(Principal aPrincipal)
+    async AutomaticStorageAccessPermissionCanBeGranted(nullable nsIPrincipal aPrincipal)
           returns (bool success);
 
     /*
@@ -1594,25 +1628,40 @@ parent:
      */
     async StorageAccessPermissionGrantedForOrigin(uint64_t aTopLevelWindowId,
                                                   MaybeDiscardedBrowsingContext aParentContext,
-                                                  Principal aTrackingPrincipal,
+                                                  nullable nsIPrincipal aTrackingPrincipal,
                                                   nsCString aTrackingOrigin,
                                                   int aAllowMode,
-                                                  StorageAccessPermissionGrantedReason? aReason)
+                                                  StorageAccessPermissionGrantedReason? aReason,
+                                                  bool aFrameOnly)
           returns (bool unused);
 
     async CompleteAllowAccessFor(MaybeDiscardedBrowsingContext aParentContext,
                                  uint64_t aTopLevelWindowId,
-                                 Principal aTrackingPrincipal,
+                                 nullable nsIPrincipal aTrackingPrincipal,
                                  nsCString aTrackingOrigin,
                                  uint32_t aCookieBehavior,
                                  StorageAccessPermissionGrantedReason aReason)
           returns (StorageAccessPromptChoices? choice);
 
-    async StoreUserInteractionAsPermission(Principal aPrincipal);
+    async SetAllowStorageAccessRequestFlag(
+                                 nullable nsIPrincipal aEmbeddingPrincipal,
+                                 nullable nsIURI aEmbeddedOrigin)
+          returns (bool success);
 
-    async AsyncShouldAllowAccessFor(MaybeDiscardedBrowsingContext aContext,
-                                    Principal aPrincipal)
-          returns (bool allowed, uint32_t rejectReason);
+    async TestAllowStorageAccessRequestFlag(
+                                 nullable nsIPrincipal aEmbeddedPrincipal,
+                                 nullable nsIURI aEmbeddingOrigin)
+          returns (bool success);
+
+    async StoreUserInteractionAsPermission(nullable nsIPrincipal aPrincipal);
+
+    async TestCookiePermissionDecided(MaybeDiscardedBrowsingContext aContext,
+                         nullable nsIPrincipal aPrincipal)
+          returns (bool? allowed);
+
+    async TestStorageAccessPermission(nullable nsIPrincipal aEmbeddingPrincipal,
+                         nsCString aEmbeddedOrigin)
+          returns (bool? allowed);
 
    /**
     * When media element's controlled state changed in the content process, we
@@ -1732,14 +1781,14 @@ parent:
 
     async HistoryGo(MaybeDiscardedBrowsingContext aContext, int32_t aOffset,
                     uint64_t aHistoryEpoch, bool aRequireUserInteraction,
-                    bool aUserActivation) returns(int32_t requestedIndex);
+                    bool aUserActivation) returns(int32_t? requestedIndex);
 
     async BlobURLDataRequest(nsCString aBlobURL,
-                             nsIPrincipal aTriggeringPrincipal,
-                             nsIPrincipal aLoadingPrincipal,
+                             nullable nsIPrincipal aTriggeringPrincipal,
+                             nullable nsIPrincipal aLoadingPrincipal,
                              OriginAttributes aOriginAttributes,
                              uint64_t aInnerWindowId,
-                             nsID? aAgentClusterId)
+                             nsCString aPartitionKey)
       returns (BlobURLDataRequestResult aResult);
 
     async SetActiveSessionHistoryEntry(MaybeDiscardedBrowsingContext context,
@@ -1755,6 +1804,11 @@ parent:
     async RemoveFromSessionHistory(
         MaybeDiscardedBrowsingContext aContext, nsID changeID);
 
+    // Called when a nsDocShellLoadState which was received over IPC is
+    // destroyed in the content process to clean up pending state left behind
+    // tracking the load state in the parent process.
+    [LazySend] async CleanupPendingLoadState(uint64_t aLoadIdentifier);
+
 both:
     async ScriptError(nsString message, nsString sourceName, nsString sourceLine,
                       uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
@@ -1766,9 +1820,10 @@ both:
      * another process. Child frame will send data to its ContentParent which
      * will then identify the ContentParent for the innerWindowId and pass
      * the data to the correct process.
+     * loadInfo is passed in order to enforce same-origin security checks
      * aData must be non-null.
      */
-    async ReportFrameTimingData(uint64_t innerWindowId, nsString entryName,
+    async ReportFrameTimingData(LoadInfoArgs loadInfo, nsString entryName,
                                 nsString initiatorType,
                                 UniquePtr<PerformanceTimingData> aData);
 
@@ -1782,13 +1837,13 @@ both:
      * Notify `push-subscription-modified` observers in the parent and child.
      */
     async NotifyPushSubscriptionModifiedObservers(nsCString scope,
-                                                  Principal principal);
+                                                  nullable nsIPrincipal principal);
 
     /**
      * Send a Push error message to all service worker clients in the parent or
      * child.
      */
-    async PushError(nsCString scope, Principal principal, nsString message,
+    async PushError(nsCString scope, nullable nsIPrincipal principal, nsString message,
                     uint32_t flags);
 
     /**
@@ -1799,7 +1854,7 @@ both:
      * new BrowsingContext has a parent window, it must be owned by the
      * embedding process, otherwise it must be owned by the opener, if set.
      */
-    async CreateBrowsingContext(uint64_t aGroupId, BrowsingContextInitializer aInit);
+    [LazySend] async CreateBrowsingContext(uint64_t aGroupId, BrowsingContextInitializer aInit);
 
     /**
      * If aDoDiscard is true, discards the passed-in BrowsingContext. If the
@@ -1829,7 +1884,7 @@ both:
     async FinalizeFocusOuter(MaybeDiscardedBrowsingContext aContext, bool aCanFocus,
                              CallerType aCallerType);
 parent:
-    async InsertNewFocusActionId(uint64_t aActionId);
+    [LazySend] async InsertNewFocusActionId(uint64_t aActionId);
     async BlurToParent(MaybeDiscardedBrowsingContext aFocusedBrowsingContext,
                       MaybeDiscardedBrowsingContext aBrowsingContextToClear,
                       MaybeDiscardedBrowsingContext aAncestorBrowsingContextToFocus,
@@ -1864,7 +1919,7 @@ both:
 child:
     // NOTE: These methods are only needed on the child, as the parent
     // WindowContext is managed using the PWindowGlobal actor's lifecycle.
-    async CreateWindowContext(WindowContextInitializer aInit);
+    [LazySend] async CreateWindowContext(WindowContextInitializer aInit);
     async DiscardWindowContext(uint64_t aContextId) returns (bool unused);
 
 parent:
@@ -1881,12 +1936,19 @@ child:
 
 parent:
     async SetContainerFeaturePolicy(MaybeDiscardedBrowsingContext aContainerContext,
-                                    FeaturePolicy aContainerFeaturePolicy);
+                                    nullable FeaturePolicy aContainerFeaturePolicy);
 
     // Obtain an icon from the system widget toolkit, in nsIconDecoder
     // format.  Not supported (or needed) on all platforms; see the
     // implementation in ContentParent::RecvGetSystemIcon for details.
-    async GetSystemIcon(nsIURI aURI) returns (nsresult aResult, ByteBuf? aData);
+    async GetSystemIcon(nullable nsIURI aURI) returns (nsresult aResult, ByteBuf? aData);
+
+#ifdef FUZZING_SNAPSHOT
+    // Used by the child process to signal that it is ready to start fuzzing.
+    // This can in particular be used to wait for a particular event in a
+    // test document before taking the snapshot and starting e.g. IPC fuzzing.
+    async SignalFuzzingReady();
+#endif
 };
 
 }

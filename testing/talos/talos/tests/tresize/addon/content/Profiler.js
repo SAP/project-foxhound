@@ -16,7 +16,7 @@
 // relevant parts of our tests.
 var Profiler;
 
-(function() {
+(function () {
   var _profiler;
 
   // If this script is loaded in a framescript context, there won't be a
@@ -29,6 +29,10 @@ var Profiler;
 
   // The subtest name that beginTest() was called with.
   var currentTest = "";
+
+  // Start time of the current subtest. It will be used to create a duration
+  // marker at the end of the subtest.
+  var profilerSubtestStartTime;
 
   // Profiling settings.
   var profiler_interval,
@@ -105,12 +109,10 @@ var Profiler;
           profiler_featuresArray,
           profiler_threadsArray
         );
-        _profiler.PauseSampling();
       }
     },
     finishTest: function Profiler__finishTest() {
       if (_profiler && enabled) {
-        _profiler.Pause();
         _profiler.dumpProfileToFile(
           profiler_dir + "/" + currentTest + ".profile"
         );
@@ -124,25 +126,45 @@ var Profiler;
         _profiler.StopProfiler();
       }
     },
-    resume: function Profiler__resume(name, explicit) {
+
+    /**
+     * Set a marker indicating the start of the subtest.
+     *
+     * It will also set the `profilerSubtestStartTime` to be used later by
+     * `subtestEnd`.
+     */
+    subtestStart: function Profiler__subtestStart(name, explicit) {
+      profilerSubtestStartTime = performance.now();
       if (_profiler) {
-        _profiler.ResumeSampling();
         ChromeUtils.addProfilerMarker(
+          "Talos",
+          { category: "Test" },
           explicit ? name : 'Start of test "' + (name || test_name) + '"'
         );
       }
     },
-    pause: function Profiler__pause(name, explicit) {
+
+    /**
+     * Set a marker indicating the duration of the subtest.
+     *
+     * This will take the `profilerSubtestStartTime` that was set by
+     * `subtestStart` and will create a duration marker by setting the `endTime`
+     * to the current time.
+     */
+    subtestEnd: function Profiler__subtestEnd(name, explicit) {
       if (_profiler) {
         ChromeUtils.addProfilerMarker(
-          explicit ? name : 'End of test "' + (name || test_name) + '"'
+          "Talos",
+          { startTime: profilerSubtestStartTime, category: "Test" },
+          explicit ? name : 'Test "' + (name || test_name) + '"'
         );
-        _profiler.PauseSampling();
       }
     },
     mark: function Profiler__mark(marker, explicit) {
       if (_profiler) {
         ChromeUtils.addProfilerMarker(
+          "Talos",
+          { category: "Test" },
           explicit ? marker : 'Profiler: "' + (marker || test_name) + '"'
         );
       }

@@ -1,9 +1,9 @@
-from __future__ import absolute_import
 import unittest
-from mozharness.mozilla.structuredlog import StructuredOutputParser
+
 from mozharness.base.log import INFO, WARNING
 from mozharness.mozilla.automation import TBPL_SUCCESS, TBPL_WARNING
 from mozharness.mozilla.mozbase import MozbaseMixin
+from mozharness.mozilla.structuredlog import StructuredOutputParser
 from mozlog.handlers.statushandler import RunSummary
 
 success_summary = RunSummary(
@@ -46,9 +46,9 @@ class TestStructuredOutputParser(unittest.TestCase):
             return_code=TBPL_SUCCESS, success_codes=[TBPL_SUCCESS]
         )
         tbpl_status, worst_log_level, joined_summary = result
-        self.assertEquals(tbpl_status, TBPL_SUCCESS)
-        self.assertEquals(worst_log_level, INFO)
-        self.assertEquals(joined_summary, success_summary)
+        self.assertEqual(tbpl_status, TBPL_SUCCESS)
+        self.assertEqual(worst_log_level, INFO)
+        self.assertEqual(joined_summary, success_summary)
 
     def test_evaluate_parser_failure(self):
         self.parser.handler.unexpected_statuses = {"FAIL": 2}
@@ -63,6 +63,6 @@ class TestStructuredOutputParser(unittest.TestCase):
             return_code=TBPL_SUCCESS, success_codes=[TBPL_SUCCESS]
         )
         tbpl_status, worst_log_level, joined_summary = result
-        self.assertEquals(tbpl_status, TBPL_WARNING)
-        self.assertEquals(worst_log_level, WARNING)
-        self.assertEquals(joined_summary, failure_summary)
+        self.assertEqual(tbpl_status, TBPL_WARNING)
+        self.assertEqual(worst_log_level, WARNING)
+        self.assertEqual(joined_summary, failure_summary)

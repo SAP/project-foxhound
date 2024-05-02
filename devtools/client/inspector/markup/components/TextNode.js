@@ -9,15 +9,17 @@ const {
   createRef,
   Fragment,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { editableItem } = require("devtools/client/shared/inplace-editor");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const {
+  editableItem,
+} = require("resource://devtools/client/shared/inplace-editor.js");
 
 const {
   getStr,
   getFormatStr,
-} = require("devtools/client/inspector/markup/utils/l10n");
+} = require("resource://devtools/client/inspector/markup/utils/l10n.js");
 
 class TextNode extends PureComponent {
   static get propTypes() {
@@ -71,10 +73,7 @@ class TextNode extends PureComponent {
           title: isWhiteSpace
             ? getFormatStr(
                 "markupView.whitespaceOnly",
-                value
-                  .replace(/\n/g, "⏎")
-                  .replace(/\t/g, "⇥")
-                  .replace(/ /g, "◦")
+                value.replace(/\n/g, "⏎").replace(/\t/g, "⇥").replace(/ /g, "◦")
               )
             : "",
           "data-label": getStr("markupView.whitespaceOnly.label"),

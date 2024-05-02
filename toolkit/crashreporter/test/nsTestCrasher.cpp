@@ -11,6 +11,9 @@
 #  include <malloc.h>
 #  include <windows.h>
 #elif defined(XP_MACOSX)
+#  include <sys/types.h>
+#  include <sys/fcntl.h>
+#  include <unistd.h>
 #  include <dlfcn.h>  // For dlsym()
 // See https://github.com/apple/darwin-xnu/blob/main/bsd/sys/guarded.h
 #  define GUARD_CLOSE (1u << 0)
@@ -23,8 +26,12 @@ typedef int (*guarded_open_np_t)(const char*, const guardid_t*, u_int, int,
                                  ...);
 #endif
 
+#ifndef XP_WIN
+#  include <pthread.h>
+#endif
+
 #ifdef MOZ_PHC
-#  include "replace_malloc_bridge.h"
+#  include "PHC.h"
 #endif
 
 /*
@@ -80,6 +87,7 @@ const int16_t CRASH_OOM = 3;
 const int16_t CRASH_MOZ_CRASH = 4;
 const int16_t CRASH_ABORT = 5;
 const int16_t CRASH_UNCAUGHT_EXCEPTION = 6;
+#if XP_WIN && HAVE_64BIT_BUILD && defined(_M_X64) && !defined(__MINGW32__)
 const int16_t CRASH_X64CFI_NO_MANS_LAND = 7;
 const int16_t CRASH_X64CFI_LAUNCHER = 8;
 const int16_t CRASH_X64CFI_UNKNOWN_OPCODE = 9;
@@ -92,12 +100,19 @@ const int16_t CRASH_X64CFI_SAVE_XMM128 = 17;
 const int16_t CRASH_X64CFI_SAVE_XMM128_FAR = 18;
 const int16_t CRASH_X64CFI_EPILOG = 19;
 const int16_t CRASH_X64CFI_EOF = 20;
+#endif
 const int16_t CRASH_PHC_USE_AFTER_FREE = 21;
 const int16_t CRASH_PHC_DOUBLE_FREE = 22;
 const int16_t CRASH_PHC_BOUNDS_VIOLATION = 23;
+#if XP_WIN
 const int16_t CRASH_HEAP_CORRUPTION = 24;
+#endif
+#ifdef XP_MACOSX
 const int16_t CRASH_EXC_GUARD = 25;
+#endif
+#ifndef XP_WIN
 const int16_t CRASH_STACK_OVERFLOW = 26;
+#endif
 
 #if XP_WIN && HAVE_64BIT_BUILD && defined(_M_X64) && !defined(__MINGW32__)
 
@@ -144,7 +159,7 @@ uint8_t* GetPHCAllocation(size_t aSize) {
   // A crude but effective way to get a PHC allocation.
   for (int i = 0; i < 2000000; i++) {
     uint8_t* p = (uint8_t*)malloc(aSize);
-    if (ReplaceMalloc::IsPHCAllocation(p, nullptr)) {
+    if (mozilla::phc::IsPHCAllocation(p, nullptr)) {
       return p;
     }
     free(p);
@@ -169,7 +184,7 @@ static int64_t recurse(int64_t aRandom) {
     return result;
   }
 
-  return recurse(result);
+  return recurse(result) + 1;
 }
 
 static void* overflow_stack(void* aInput) {
@@ -307,6 +322,12 @@ extern "C" NS_EXPORT void Crash(int16_t how) {
       break;
   }
 }
+
+extern "C" NS_EXPORT void EnablePHC() {
+#ifdef MOZ_PHC
+  mozilla::phc::SetPHCState(mozilla::phc::PHCState::Enabled);
+#endif
+};
 
 char testData[32];
 

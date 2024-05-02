@@ -22,9 +22,9 @@ function onXFOMessage(msgObj) {
 
 add_task(async function open_test_xfo_embed_blocked() {
   xfoBlocked = false;
-  await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:blank", async function (browser) {
     Services.console.registerListener(onXFOMessage);
-    BrowserTestUtils.loadURI(browser, kTestXFOEmbedURI);
+    BrowserTestUtils.startLoadingURIString(browser, kTestXFOEmbedURI);
     await BrowserTestUtils.waitForCondition(() => xfoBlocked);
     Services.console.unregisterListener(onXFOMessage);
   });
@@ -32,9 +32,9 @@ add_task(async function open_test_xfo_embed_blocked() {
 
 add_task(async function open_test_xfo_object_blocked() {
   xfoBlocked = false;
-  await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:blank", async function (browser) {
     Services.console.registerListener(onXFOMessage);
-    BrowserTestUtils.loadURI(browser, kTestXFOObjectURI);
+    BrowserTestUtils.startLoadingURIString(browser, kTestXFOObjectURI);
     await BrowserTestUtils.waitForCondition(() => xfoBlocked);
     Services.console.unregisterListener(onXFOMessage);
   });

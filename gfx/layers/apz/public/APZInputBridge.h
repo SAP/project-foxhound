@@ -7,11 +7,11 @@
 #ifndef mozilla_layers_APZInputBridge_h
 #define mozilla_layers_APZInputBridge_h
 
+#include "Units.h"                  // for LayoutDeviceIntPoint
 #include "mozilla/EventForwards.h"  // for WidgetInputEvent, nsEventStatus
 #include "mozilla/layers/APZPublicUtils.h"       // for APZWheelAction
 #include "mozilla/layers/LayersTypes.h"          // for ScrollDirections
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
-#include "Units.h"                               // for LayoutDeviceIntPoint
 
 namespace mozilla {
 
@@ -22,8 +22,10 @@ namespace layers {
 class APZInputBridgeParent;
 class AsyncPanZoomController;
 class InputBlockState;
+class TouchBlockState;
 struct ScrollableLayerGuid;
 struct TargetConfirmationFlags;
+struct PointerEventsConsumableFlags;
 
 enum class APZHandledPlace : uint8_t {
   Unhandled = 0,         // we know for sure that the event will not be handled
@@ -52,7 +54,8 @@ struct APZHandledResult {
   // an event handler using preventDefault() in the callback, so call sites of
   // this function should be responsible to set a proper |aPlace|.
   APZHandledResult(APZHandledPlace aPlace,
-                   const AsyncPanZoomController* aTarget);
+                   const AsyncPanZoomController* aTarget,
+                   bool aPopulateDirectionsForUnhandled = false);
   APZHandledResult(APZHandledPlace aPlace, SideBits aScrollableDirections,
                    ScrollDirections aOverscrollDirections)
       : mPlace(aPlace),
@@ -101,16 +104,29 @@ struct APZEventResult {
   // depending on |aTarget|.
   void SetStatusAsConsumeDoDefault(
       const RefPtr<AsyncPanZoomController>& aTarget);
+
+  // Set mStatus to nsEventStatus_eConsumeDoDefault, unlike above
+  // SetStatusAsConsumeDoDefault(const RefPtr<AsyncPanZoomController>&) this
+  // function doesn't mutate mHandledResult.
+  void SetStatusAsConsumeDoDefault() {
+    mStatus = nsEventStatus_eConsumeDoDefault;
+  }
+
   // Set mStatus to nsEventStatus_eConsumeDoDefault and set mHandledResult
   // depending on |aBlock|'s target APZC.
   void SetStatusAsConsumeDoDefault(const InputBlockState& aBlock);
-  // Smilar to above two functions, but we need to use this function if it's
-  // possible that the event needs to be handled as if it's consumed by the root
-  // APZC in the case where the target APZC area is covered by dynamic toolbar
-  // so that browser apps can move the toolbar corresponding to the event.
-  void SetStatusAsConsumeDoDefaultWithTargetConfirmationFlags(
-      const InputBlockState& aBlock, TargetConfirmationFlags aFlags,
-      const AsyncPanZoomController& aTarget);
+  // Set mStatus and mHandledResult for a touch event which is not dropped
+  // altogether (i.e. the status is not eConsumeNoDefault).
+  void SetStatusForTouchEvent(const InputBlockState& aBlock,
+                              TargetConfirmationFlags aFlags,
+                              PointerEventsConsumableFlags aConsumableFlags,
+                              const AsyncPanZoomController* aTarget);
+
+  // Set mStatus and mHandledResult during in a stat of fast fling.
+  void SetStatusForFastFling(const TouchBlockState& aBlock,
+                             TargetConfirmationFlags aFlags,
+                             PointerEventsConsumableFlags aConsumableFlags,
+                             const AsyncPanZoomController* aTarget);
 
   // DO NOT USE THIS UpdateStatus DIRECTLY. THIS FUNCTION IS ONLY FOR
   // SERIALIZATION / DESERIALIZATION OF THIS STRUCT IN IPC.
@@ -126,7 +142,17 @@ struct APZEventResult {
     return mHandledResult;
   }
 
+  bool WillHaveDelayedResult() const {
+    return GetStatus() != nsEventStatus_eConsumeNoDefault &&
+           !GetHandledResult();
+  }
+
  private:
+  void UpdateHandledResult(const InputBlockState& aBlock,
+                           PointerEventsConsumableFlags aConsumableFlags,
+                           const AsyncPanZoomController* aTarget,
+                           bool aDispatchToContent);
+
   /**
    * A status flag indicated how APZ handled the event.
    * The interpretation of each value is as follows:
@@ -184,6 +210,9 @@ struct APZEventResult {
  */
 class APZInputBridge {
  public:
+  using InputBlockCallback = std::function<void(
+      uint64_t aInputBlockId, const APZHandledResult& aHandledResult)>;
+
   /**
    * General handler for incoming input events. Manipulates the frame metrics
    * based on what type of input it is. For example, a PinchGestureEvent will
@@ -196,10 +225,14 @@ class APZInputBridge {
    * by the caller if it wants to do this.
    *
    * @param aEvent input event object; is modified in-place
+   * @param aCallback an optional callback to be invoked when the input block is
+   * ready for handling,
    * @return The result of processing the event. Refer to the documentation of
    * APZEventResult and its field.
    */
-  virtual APZEventResult ReceiveInputEvent(InputData& aEvent) = 0;
+  virtual APZEventResult ReceiveInputEvent(
+      InputData& aEvent,
+      InputBlockCallback&& aCallback = InputBlockCallback()) = 0;
 
   /**
    * WidgetInputEvent handler. Transforms |aEvent| (which is assumed to be an
@@ -217,7 +250,9 @@ class APZInputBridge {
    *
    * See documentation for other ReceiveInputEvent above.
    */
-  APZEventResult ReceiveInputEvent(WidgetInputEvent& aEvent);
+  APZEventResult ReceiveInputEvent(
+      WidgetInputEvent& aEvent,
+      InputBlockCallback&& aCallback = InputBlockCallback());
 
   // Returns the kind of wheel event action, if any, that will be (or was)
   // performed by APZ. If this returns true, the event must not perform a
@@ -247,6 +282,15 @@ class APZInputBridge {
 
 std::ostream& operator<<(std::ostream& aOut,
                          const APZHandledResult& aHandledResult);
+
+// This enum class is used for communicating between APZ and the browser gesture
+// support code. APZ needs to wait for the browser to send this response just
+// like APZ waits for the content's response if there's an APZ ware event
+// listener in the content process.
+enum class BrowserGestureResponse : bool {
+  NotConsumed = 0,  // Representing the browser doesn't consume the gesture
+  Consumed = 1,  // Representing the browser has started consuming the gesture.
+};
 
 }  // namespace layers
 }  // namespace mozilla

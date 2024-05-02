@@ -7,15 +7,8 @@
 // This test makes sure that adding certificate exceptions behaves correctly
 // when done from the prefs window
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
 });
 
 function test() {
@@ -46,7 +39,7 @@ function test() {
         certOverrideService.clearValidityOverride(INVALID_CERT_DOMAIN, -1, {});
       });
 
-      BrowserTestUtils.loadURI(gBrowser, INVALID_CERT_LOCATION);
+      BrowserTestUtils.startLoadingURIString(gBrowser, INVALID_CERT_LOCATION);
       let loaded = await BrowserTestUtils.browserLoaded(
         gBrowser,
         false,

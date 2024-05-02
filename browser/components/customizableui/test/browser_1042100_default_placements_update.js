@@ -3,6 +3,10 @@
 
 "use strict";
 
+function getSavedStatePlacements(area) {
+  return CustomizableUI.getTestOnlyInternalProp("gSavedState").placements[area];
+}
+
 // NB: This uses some ugly hacks to get into the CUI module from elsewhere...
 // don't try this at home, kids.
 function test() {
@@ -12,30 +16,27 @@ function test() {
     CustomizableUI.AREA_NAVBAR
   );
 
-  // Check what version we're on:
-  let CustomizableUIBSPass = ChromeUtils.import(
-    "resource:///modules/CustomizableUI.jsm",
-    null
+  let oldState = CustomizableUI.getTestOnlyInternalProp("gSavedState");
+  registerCleanupFunction(() =>
+    CustomizableUI.setTestOnlyInternalProp("gSavedState", oldState)
   );
 
-  let oldState = CustomizableUIBSPass.gSavedState;
-  registerCleanupFunction(() => (CustomizableUIBSPass.gSavedState = oldState));
-
+  let gFuturePlacements =
+    CustomizableUI.getTestOnlyInternalProp("gFuturePlacements");
   is(
-    CustomizableUIBSPass.gFuturePlacements.size,
+    gFuturePlacements.size,
     0,
     "All future placements should be dealt with by now."
   );
 
-  let {
-    CustomizableUIInternal,
-    gFuturePlacements,
-    gPalette,
-  } = CustomizableUIBSPass;
+  let gPalette = CustomizableUI.getTestOnlyInternalProp("gPalette");
+  let CustomizableUIInternal = CustomizableUI.getTestOnlyInternalProp(
+    "CustomizableUIInternal"
+  );
   CustomizableUIInternal._updateForNewVersion();
   is(gFuturePlacements.size, 0, "No change to future placements initially.");
 
-  let currentVersion = CustomizableUIBSPass.kVersion;
+  let currentVersion = CustomizableUI.getTestOnlyInternalProp("kVersion");
 
   // Add our widget to the defaults:
   let testWidgetNew = {
@@ -53,7 +54,7 @@ function test() {
   if (!normalizedWidget) {
     return;
   }
-  CustomizableUIBSPass.gPalette.set(testWidgetNew.id, normalizedWidget);
+  gPalette.set(testWidgetNew.id, normalizedWidget);
 
   let testWidgetOld = {
     id: "test-messing-with-default-placements-old",
@@ -70,16 +71,19 @@ function test() {
   if (!normalizedWidget) {
     return;
   }
-  CustomizableUIBSPass.gPalette.set(testWidgetOld.id, normalizedWidget);
+  gPalette.set(testWidgetOld.id, normalizedWidget);
 
   // Now increase the version in the module:
-  CustomizableUIBSPass.kVersion++;
+  CustomizableUI.setTestOnlyInternalProp(
+    "kVersion",
+    CustomizableUI.getTestOnlyInternalProp("kVersion") + 1
+  );
 
-  let hadSavedState = !!CustomizableUIBSPass.gSavedState;
+  let hadSavedState = !!CustomizableUI.getTestOnlyInternalProp("gSavedState");
   if (!hadSavedState) {
-    CustomizableUIBSPass.gSavedState = {
-      currentVersion: CustomizableUIBSPass.kVersion - 1,
-    };
+    CustomizableUI.setTestOnlyInternalProp("gSavedState", {
+      currentVersion: CustomizableUI.getTestOnlyInternalProp("kVersion") - 1,
+    });
   }
 
   // Then call the re-init routine so we re-add the builtin widgets
@@ -116,64 +120,46 @@ function test() {
   }
 
   // Reset kVersion
-  CustomizableUIBSPass.kVersion--;
+  CustomizableUI.setTestOnlyInternalProp(
+    "kVersion",
+    CustomizableUI.getTestOnlyInternalProp("kVersion") - 1
+  );
 
   // Now test that the builtin photon migrations work:
 
-  CustomizableUIBSPass.gSavedState = {
+  CustomizableUI.setTestOnlyInternalProp("gSavedState", {
     currentVersion: 6,
     placements: {
       "nav-bar": ["urlbar-container", "bookmarks-menu-button"],
       "PanelUI-contents": ["panic-button", "edit-controls"],
     },
-  };
+  });
   Services.prefs.setIntPref("browser.proton.toolbar.version", 0);
   CustomizableUIInternal._updateForNewVersion();
   CustomizableUIInternal._updateForNewProtonVersion();
-  let navbarPlacements = CustomizableUIBSPass.gSavedState.placements["nav-bar"];
-  let springs = navbarPlacements.filter(id => id.includes("spring"));
-  is(springs.length, 2, "Should have 2 toolbarsprings in placements now");
-  navbarPlacements = navbarPlacements.filter(id => !id.includes("spring"));
-  let expectedItemLength = 6;
-  is(
-    navbarPlacements.length,
-    expectedItemLength,
-    `Should have ${expectedItemLength} items`
-  );
-  is(
-    navbarPlacements.shift(),
-    "back-button",
-    "Back button is in the right place."
-  );
-  is(
-    navbarPlacements.shift(),
-    "forward-button",
-    "Fwd button is in the right place."
-  );
-  is(
-    navbarPlacements.shift(),
-    "stop-reload-button",
-    "Stop/reload button is in the right place."
-  );
-  is(
-    navbarPlacements.shift(),
-    "urlbar-container",
-    "URL bar is in the right place."
-  );
-  is(
-    navbarPlacements.shift(),
-    "downloads-button",
-    "Downloads button is in the right place."
-  );
-  is(
-    navbarPlacements.shift(),
-    "fxa-toolbar-menu-button",
-    "FxA button is in the right place."
-  );
+  {
+    let navbarPlacements = getSavedStatePlacements("nav-bar");
+    let springs = navbarPlacements.filter(id => id.includes("spring"));
+    is(springs.length, 2, "Should have 2 toolbarsprings in placements now");
+    navbarPlacements = navbarPlacements.filter(id => !id.includes("spring"));
+    Assert.deepEqual(
+      navbarPlacements,
+      [
+        "back-button",
+        "forward-button",
+        "stop-reload-button",
+        "urlbar-container",
+        "downloads-button",
+        "fxa-toolbar-menu-button",
+        "reset-pbm-toolbar-button",
+      ],
+      "Nav-bar placements should be correct."
+    );
 
-  let overflowPlacements =
-    CustomizableUIBSPass.gSavedState.placements["widget-overflow-fixed-list"];
-  Assert.deepEqual(overflowPlacements, ["panic-button"]);
+    Assert.deepEqual(getSavedStatePlacements("widget-overflow-fixed-list"), [
+      "panic-button",
+    ]);
+  }
 
   // Finally, test the downloads and fxa avatar button migrations work.
   let oldNavbarPlacements = [
@@ -181,37 +167,43 @@ function test() {
     "customizableui-special-spring3",
     "search-container",
   ];
-  CustomizableUIBSPass.gSavedState = {
+  CustomizableUI.setTestOnlyInternalProp("gSavedState", {
     currentVersion: 10,
     placements: {
       "nav-bar": Array.from(oldNavbarPlacements),
       "widget-overflow-fixed-list": ["downloads-button"],
     },
-  };
+  });
   CustomizableUIInternal._updateForNewVersion();
-  navbarPlacements = CustomizableUIBSPass.gSavedState.placements["nav-bar"];
   Assert.deepEqual(
-    navbarPlacements,
-    oldNavbarPlacements.concat(["downloads-button", "fxa-toolbar-menu-button"]),
+    getSavedStatePlacements("nav-bar"),
+    oldNavbarPlacements.concat([
+      "downloads-button",
+      "fxa-toolbar-menu-button",
+      "reset-pbm-toolbar-button",
+    ]),
     "Downloads button inserted in navbar"
   );
   Assert.deepEqual(
-    CustomizableUIBSPass.gSavedState.placements["widget-overflow-fixed-list"],
+    getSavedStatePlacements("widget-overflow-fixed-list"),
     [],
     "Overflow panel is empty"
   );
 
-  CustomizableUIBSPass.gSavedState = {
+  CustomizableUI.setTestOnlyInternalProp("gSavedState", {
     currentVersion: 10,
     placements: {
       "nav-bar": ["downloads-button"].concat(oldNavbarPlacements),
     },
-  };
+  });
   CustomizableUIInternal._updateForNewVersion();
-  navbarPlacements = CustomizableUIBSPass.gSavedState.placements["nav-bar"];
   Assert.deepEqual(
-    navbarPlacements,
-    oldNavbarPlacements.concat(["downloads-button", "fxa-toolbar-menu-button"]),
+    getSavedStatePlacements("nav-bar"),
+    oldNavbarPlacements.concat([
+      "downloads-button",
+      "fxa-toolbar-menu-button",
+      "reset-pbm-toolbar-button",
+    ]),
     "Downloads button reinserted in navbar"
   );
 
@@ -221,14 +213,13 @@ function test() {
     "search-container",
     "other-widget",
   ];
-  CustomizableUIBSPass.gSavedState = {
+  CustomizableUI.setTestOnlyInternalProp("gSavedState", {
     currentVersion: 10,
     placements: {
       "nav-bar": Array.from(oldNavbarPlacements),
     },
-  };
+  });
   CustomizableUIInternal._updateForNewVersion();
-  navbarPlacements = CustomizableUIBSPass.gSavedState.placements["nav-bar"];
   let expectedNavbarPlacements = [
     "urlbar-container",
     "customizableui-special-spring3",
@@ -236,9 +227,10 @@ function test() {
     "downloads-button",
     "other-widget",
     "fxa-toolbar-menu-button",
+    "reset-pbm-toolbar-button",
   ];
   Assert.deepEqual(
-    navbarPlacements,
+    getSavedStatePlacements("nav-bar"),
     expectedNavbarPlacements,
     "Downloads button inserted in navbar before other widgets"
   );

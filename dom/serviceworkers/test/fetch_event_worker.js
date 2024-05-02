@@ -1,5 +1,5 @@
 // eslint-disable-next-line complexity
-onfetch = function(ev) {
+onfetch = function (ev) {
   if (ev.request.url.includes("ignore")) {
     return;
   }
@@ -241,13 +241,14 @@ onfetch = function(ev) {
     // Don't handle the request, this will make Necko perform a network request, at
     // which point SetApplyConversion must be re-enabled, otherwise the request
     // will fail.
+    // eslint-disable-next-line no-useless-return
     return;
   } else if (ev.request.url.includes("hello.gz")) {
     ev.respondWith(fetch("fetch/deliver-gzip.sjs"));
   } else if (ev.request.url.includes("hello-after-extracting.gz")) {
     ev.respondWith(
-      fetch("fetch/deliver-gzip.sjs").then(function(res) {
-        return res.text().then(function(body) {
+      fetch("fetch/deliver-gzip.sjs").then(function (res) {
+        return res.text().then(function (body) {
           return new Response(body, {
             status: res.status,
             statusText: res.statusText,
@@ -282,7 +283,7 @@ onfetch = function(ev) {
     ev.respondWith(fetch(ev.request));
   } else if (ev.request.url.includes("body-")) {
     ev.respondWith(
-      ev.request.text().then(function(body) {
+      ev.request.text().then(function (body) {
         return new Response(body + body);
       })
     );

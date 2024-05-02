@@ -3,14 +3,15 @@
   "name": "Test support",
   "version": "1.0",
   "description": "Helper script for GeckoView tests",
-  "applications": {
+  "browser_specific_settings": {
     "gecko": {
       "id": "test-support@tests.mozilla.org"
-     }
+    }
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "match_about_blank": true,
       "js": ["test-support.js"],
       "run_at": "document_start"
     }

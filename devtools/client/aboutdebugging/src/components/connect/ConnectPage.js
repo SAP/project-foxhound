@@ -7,45 +7,47 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
-const { USB_STATES } = require("devtools/client/aboutdebugging/src/constants");
+const {
+  USB_STATES,
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
-const Actions = require("devtools/client/aboutdebugging/src/actions/index");
+const Actions = require("resource://devtools/client/aboutdebugging/src/actions/index.js");
 
 loader.lazyRequireGetter(
   this,
   "ADB_ADDON_STATES",
-  "devtools/client/shared/remote-debugging/adb/adb-addon",
+  "resource://devtools/client/shared/remote-debugging/adb/adb-addon.js",
   true
 );
 
 const Link = createFactory(
-  require("devtools/client/shared/vendor/react-router-dom").Link
+  require("resource://devtools/client/shared/vendor/react-router-dom.js").Link
 );
 const ConnectSection = createFactory(
-  require("devtools/client/aboutdebugging/src/components/connect/ConnectSection")
+  require("resource://devtools/client/aboutdebugging/src/components/connect/ConnectSection.js")
 );
 const ConnectSteps = createFactory(
-  require("devtools/client/aboutdebugging/src/components/connect/ConnectSteps")
+  require("resource://devtools/client/aboutdebugging/src/components/connect/ConnectSteps.js")
 );
 const NetworkLocationsForm = createFactory(
-  require("devtools/client/aboutdebugging/src/components/connect/NetworkLocationsForm")
+  require("resource://devtools/client/aboutdebugging/src/components/connect/NetworkLocationsForm.js")
 );
 const NetworkLocationsList = createFactory(
-  require("devtools/client/aboutdebugging/src/components/connect/NetworkLocationsList")
+  require("resource://devtools/client/aboutdebugging/src/components/connect/NetworkLocationsList.js")
 );
 
 const {
   PAGE_TYPES,
   RUNTIMES,
-} = require("devtools/client/aboutdebugging/src/constants");
-const Types = require("devtools/client/aboutdebugging/src/types/index");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
+const Types = require("resource://devtools/client/aboutdebugging/src/types/index.js");
 
 const USB_ICON_SRC =
   "chrome://devtools/skin/images/aboutdebugging-usb-icon.svg";
@@ -53,9 +55,9 @@ const GLOBE_ICON_SRC =
   "chrome://devtools/skin/images/aboutdebugging-globe-icon.svg";
 
 const TROUBLESHOOT_USB_URL =
-  "https://developer.mozilla.org/docs/Tools/Remote_Debugging/Debugging_over_USB";
+  "https://firefox-source-docs.mozilla.org/devtools-user/about_colon_debugging/index.html#connecting-to-a-remote-device";
 const TROUBLESHOOT_NETWORK_URL =
-  "https://developer.mozilla.org/docs/Tools/Remote_Debugging/Debugging_over_a_network";
+  "https://firefox-source-docs.mozilla.org/devtools-user/about_colon_debugging/index.html#connecting-over-the-network";
 
 class ConnectPage extends PureComponent {
   static get propTypes() {
@@ -67,8 +69,8 @@ class ConnectPage extends PureComponent {
   }
 
   // TODO: avoid the use of this method
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1508688
-  componentWillMount() {
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillMount() {
     this.props.dispatch(Actions.selectPage(PAGE_TYPES.CONNECT));
   }
 

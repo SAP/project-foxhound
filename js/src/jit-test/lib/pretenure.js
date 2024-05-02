@@ -1,6 +1,6 @@
 // Functions shared by gc/pretenure-*.js tests
 
-const is64bit = getBuildConfiguration()['pointer-byte-size'] === 8;
+const is64bit = getBuildConfiguration("pointer-byte-size") === 8;
 
 // Count of objects that will exceed the size of the nursery.
 const nurseryCount = is64bit ? 25000 : 50000;
@@ -30,6 +30,9 @@ function setupPretenureTest() {
 
   // Disable incremental GC so there's at most one minor GC per major GC.
   gcparam("incrementalGCEnabled", false);
+
+  // Disable balanced heap limits to make the number of GCs predictable.
+  gcparam("balancedHeapLimitsEnabled", false);
 
   // Force a nursery collection to apply size parameters.
   let o = {};

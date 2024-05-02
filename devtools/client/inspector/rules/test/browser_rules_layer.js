@@ -32,7 +32,7 @@ const TEST_URI = `
   <h1>Hello @layer!</h1>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab(
     "https://example.com/document-builder.sjs?html=" +
       encodeURIComponent(TEST_URI)
@@ -50,27 +50,35 @@ add_task(async function() {
     },
     {
       selector: `h1, [test-hint="anonymous-layer"]`,
-      ancestorRulesData: ["@layer"],
+      ancestorRulesData: ["@layer {"],
     },
     {
       selector: `h1, [test-hint="named-layer"]`,
-      ancestorRulesData: ["@layer myLayer"],
+      ancestorRulesData: ["@layer myLayer {"],
     },
     {
       selector: `h1, [test-hint="imported-named-layer--no-rule-layer"]`,
-      ancestorRulesData: ["@layer importedLayer", "@media screen"],
+      ancestorRulesData: ["@layer importedLayer {", "  @media screen {"],
     },
     {
       selector: `h1, [test-hint="imported-named-layer--named-layer"]`,
       ancestorRulesData: [
-        "@layer importedLayer",
-        "@media screen",
-        "@layer in-imported-stylesheet",
+        "@layer importedLayer {",
+        "  @media screen {",
+        "    @layer in-imported-stylesheet {",
+      ],
+    },
+    {
+      selector: `h1, [test-hint="imported-nested-named-layer--named-layer"]`,
+      ancestorRulesData: [
+        "@layer importedLayer {",
+        "  @layer importedNestedLayer {",
+        "    @layer in-imported-nested-stylesheet {",
       ],
     },
     {
       selector: `h1, [test-hint="imported-anonymous-layer--no-rule-layer"]`,
-      ancestorRulesData: ["@layer"],
+      ancestorRulesData: ["@layer {"],
     },
   ];
 
@@ -85,8 +93,9 @@ add_task(async function() {
     const expectedRule = expectedRules[i];
     info(`Checking rule #${i}: ${expectedRule.selector}`);
 
-    const selector = rulesInView[i].querySelector(".ruleview-selectorcontainer")
-      .innerText;
+    const selector = rulesInView[i].querySelector(
+      ".ruleview-selectors-container"
+    ).innerText;
     is(selector, expectedRule.selector, `Expected selector for ${selector}`);
 
     if (expectedRule.ancestorRulesData == null) {

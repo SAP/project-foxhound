@@ -7,14 +7,11 @@ const TEST_DOC = toDataURL("default-test-page");
 
 add_task(async function FunctionDeclarationMissing({ client }) {
   const { Runtime } = client;
-
-  let errorThrown = "";
-  try {
-    await Runtime.callFunctionOn();
-  } catch (e) {
-    errorThrown = e.message;
-  }
-  ok(errorThrown.includes("functionDeclaration: string value expected"));
+  await Assert.rejects(
+    Runtime.callFunctionOn(),
+    err => err.message.includes("functionDeclaration: string value expected"),
+    "functionDeclaration: string value expected"
+  );
 });
 
 add_task(async function functionDeclarationInvalidTypes({ client }) {
@@ -23,13 +20,11 @@ add_task(async function functionDeclarationInvalidTypes({ client }) {
   const { id: executionContextId } = await enableRuntime(client);
 
   for (const functionDeclaration of [null, true, 1, [], {}]) {
-    let errorThrown = "";
-    try {
-      await Runtime.callFunctionOn({ functionDeclaration, executionContextId });
-    } catch (e) {
-      errorThrown = e.message;
-    }
-    ok(errorThrown.includes("functionDeclaration: string value expected"));
+    await Assert.rejects(
+      Runtime.callFunctionOn({ functionDeclaration, executionContextId }),
+      err => err.message.includes("functionDeclaration: string value expected"),
+      "functionDeclaration: string value expected"
+    );
   }
 });
 
@@ -52,17 +47,15 @@ add_task(async function argumentsInvalidTypes({ client }) {
   const { id: executionContextId } = await enableRuntime(client);
 
   for (const args of [null, true, 1, "foo", {}]) {
-    let errorThrown = "";
-    try {
-      await Runtime.callFunctionOn({
+    await Assert.rejects(
+      Runtime.callFunctionOn({
         functionDeclaration: "",
         arguments: args,
         executionContextId,
-      });
-    } catch (e) {
-      errorThrown = e.message;
-    }
-    ok(errorThrown.includes("arguments: array value expected"));
+      }),
+      err => err.message.includes("arguments: array value expected"),
+      "arguments: array value expected"
+    );
   }
 });
 
@@ -72,191 +65,30 @@ add_task(async function argumentsPrimitiveTypes({ client }) {
   const { id: executionContextId } = await enableRuntime(client);
 
   for (const args of [null, true, 1, "foo", {}]) {
-    let errorThrown = "";
-    try {
-      await Runtime.callFunctionOn({
+    await Assert.rejects(
+      Runtime.callFunctionOn({
         functionDeclaration: "",
         arguments: args,
         executionContextId,
-      });
-    } catch (e) {
-      errorThrown = e.message;
-    }
-    ok(errorThrown.includes("arguments: array value expected"));
+      }),
+      err => err.message.includes("arguments: array value expected"),
+      "arguments: array value expected"
+    );
   }
-});
-
-add_task(async function awaitPromiseInvalidTypes({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  for (const awaitPromise of [null, 1, "foo", [], {}]) {
-    let errorThrown = "";
-    try {
-      await Runtime.callFunctionOn({
-        functionDeclaration: "",
-        awaitPromise,
-        executionContextId,
-      });
-    } catch (e) {
-      errorThrown = e.message;
-    }
-    ok(errorThrown.includes("awaitPromise: boolean value expected"));
-  }
-});
-
-add_task(async function awaitPromiseResolve({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { result } = await Runtime.callFunctionOn({
-    functionDeclaration: "() => Promise.resolve(42)",
-    awaitPromise: true,
-    executionContextId,
-  });
-
-  is(result.type, "number", "The type is correct");
-  is(result.subtype, undefined, "The subtype is undefined for numbers");
-  is(result.value, 42, "The result is the promise's resolution");
-});
-
-add_task(async function awaitPromiseDelayedResolve({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { result } = await Runtime.callFunctionOn({
-    functionDeclaration: "() => new Promise(r => setTimeout(() => r(42), 0))",
-    awaitPromise: true,
-    executionContextId,
-  });
-  is(result.type, "number", "The type is correct");
-  is(result.subtype, undefined, "The subtype is undefined for numbers");
-  is(result.value, 42, "The result is the promise's resolution");
-});
-
-add_task(async function awaitPromiseReject({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { exceptionDetails } = await Runtime.callFunctionOn({
-    functionDeclaration: "() => Promise.reject(42)",
-    awaitPromise: true,
-    executionContextId,
-  });
-  // TODO: Implement all values for exceptionDetails (bug 1548480)
-  is(
-    exceptionDetails.exception.value,
-    42,
-    "The result is the promise's rejection"
-  );
-});
-
-add_task(async function awaitPromiseDelayedReject({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { exceptionDetails } = await Runtime.callFunctionOn({
-    functionDeclaration:
-      "() => new Promise((_,r) => setTimeout(() => r(42), 0))",
-    awaitPromise: true,
-    executionContextId,
-  });
-  is(
-    exceptionDetails.exception.value,
-    42,
-    "The result is the promise's rejection"
-  );
-});
-
-add_task(async function awaitPromiseResolveWithoutWait({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { result } = await Runtime.callFunctionOn({
-    functionDeclaration: "() => Promise.resolve(42)",
-    awaitPromise: false,
-    executionContextId,
-  });
-
-  is(result.type, "object", "The type is correct");
-  is(result.subtype, "promise", "The subtype is promise");
-  ok(!!result.objectId, "We got the object id for the promise");
-  ok(!result.value, "We do not receive any value");
-});
-
-add_task(async function awaitPromiseDelayedResolveWithoutWait({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { result } = await Runtime.callFunctionOn({
-    functionDeclaration: "() => new Promise(r => setTimeout(() => r(42), 0))",
-    awaitPromise: false,
-    executionContextId,
-  });
-
-  is(result.type, "object", "The type is correct");
-  is(result.subtype, "promise", "The subtype is promise");
-  ok(!!result.objectId, "We got the object id for the promise");
-  ok(!result.value, "We do not receive any value");
-});
-
-add_task(async function awaitPromiseRejectWithoutWait({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { result } = await Runtime.callFunctionOn({
-    functionDeclaration: "() => Promise.reject(42)",
-    awaitPromise: false,
-    executionContextId,
-  });
-
-  is(result.type, "object", "The type is correct");
-  is(result.subtype, "promise", "The subtype is promise");
-  ok(!!result.objectId, "We got the object id for the promise");
-  ok(!result.exceptionDetails, "We do not receive any exception");
-});
-
-add_task(async function awaitPromiseDelayedRejectWithoutWait({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  const { result } = await Runtime.callFunctionOn({
-    functionDeclaration:
-      "() => new Promise((_,r) => setTimeout(() => r(42), 0))",
-    awaitPromise: false,
-    executionContextId,
-  });
-
-  is(result.type, "object", "The type is correct");
-  is(result.subtype, "promise", "The subtype is promise");
-  ok(!!result.objectId, "We got the object id for the promise");
-  ok(!result.exceptionDetails, "We do not receive any exception");
 });
 
 add_task(async function executionContextIdNorObjectIdSpecified({ client }) {
   const { Runtime } = client;
 
-  let errorThrown = "";
-  try {
-    await Runtime.callFunctionOn({
+  await Assert.rejects(
+    Runtime.callFunctionOn({
       functionDeclaration: "",
-    });
-  } catch (e) {
-    errorThrown = e.message;
-  }
-  ok(
-    errorThrown.includes(
-      "Either objectId or executionContextId must be specified"
-    )
+    }),
+    err =>
+      err.message.includes(
+        "Either objectId or executionContextId must be specified"
+      ),
+    "Either objectId or executionContextId must be specified"
   );
 });
 
@@ -264,45 +96,38 @@ add_task(async function executionContextIdInvalidTypes({ client }) {
   const { Runtime } = client;
 
   for (const executionContextId of [null, true, "foo", [], {}]) {
-    let errorThrown = "";
-    try {
-      await Runtime.callFunctionOn({
+    await Assert.rejects(
+      Runtime.callFunctionOn({
         functionDeclaration: "",
         executionContextId,
-      });
-    } catch (e) {
-      errorThrown = e.message;
-    }
-    ok(errorThrown.includes("executionContextId: number value expected"));
+      }),
+      err => err.message.includes("executionContextId: number value expected"),
+      "executionContextId: number value expected"
+    );
   }
 });
 
 add_task(async function executionContextIdInvalidValue({ client }) {
   const { Runtime } = client;
-
-  let errorThrown = "";
-  try {
-    await Runtime.callFunctionOn({
+  await Assert.rejects(
+    Runtime.callFunctionOn({
       functionDeclaration: "",
       executionContextId: -1,
-    });
-  } catch (e) {
-    errorThrown = e.message;
-  }
-  ok(errorThrown.includes("Cannot find context with specified id"));
+    }),
+    err => err.message.includes("Cannot find context with specified id"),
+    "Cannot find context with specified id"
+  );
 });
 
 add_task(async function objectIdInvalidTypes({ client }) {
   const { Runtime } = client;
 
   for (const objectId of [null, true, 1, [], {}]) {
-    let errorThrown = "";
-    try {
-      await Runtime.callFunctionOn({ functionDeclaration: "", objectId });
-    } catch (e) {
-      errorThrown = e.message;
-    }
-    ok(errorThrown.includes("objectId: string value expected"));
+    await Assert.rejects(
+      Runtime.callFunctionOn({ functionDeclaration: "", objectId }),
+      err => err.message.includes("objectId: string value expected"),
+      "objectId: string value expected"
+    );
   }
 });
 

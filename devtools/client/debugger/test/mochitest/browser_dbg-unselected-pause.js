@@ -1,24 +1,22 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Test that the debugger pauses and is automatically highlighted and selected,
 // even when it hasn't been opened.
 
 "use strict";
 
-const IFRAME_TEST_COM_URI =
-  `https://example.com/document-builder.sjs?html=` +
-  encodeURI(`<script>const a=2;\ndebugger;\nconsole.log(a);</script>`);
+const IFRAME_TEST_COM_URI = `https://example.com/document-builder.sjs?html=${encodeURI(
+  `<script>const a=2;\ndebugger;\nconsole.log(a);</script>`
+)}`;
 
 // Embed the example.com test page in an example.org iframe.
-const IFRAME_TEST_URI =
-  `https://example.org/document-builder.sjs?html=` +
-  encodeURI(
-    `<script>function breakDebugger() {const b=3;\ndebugger;\nconsole.log(b);}</script><iframe src="${IFRAME_TEST_COM_URI}"></iframe><body>`
-  );
+const IFRAME_TEST_URI = `https://example.org/document-builder.sjs?html=${encodeURI(
+  `<script>function breakDebugger() {const b=3;\ndebugger;\nconsole.log(b);}</script><iframe src="${IFRAME_TEST_COM_URI}"></iframe><body>`
+)}`;
 
-add_task(async function() {
+add_task(async function () {
   info("Test a debugger statement from the top level document");
 
   // Make sure the toolbox opens with the webconsole initially selected.
@@ -28,7 +26,7 @@ add_task(async function() {
   const pausedRun = SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    function() {
+    function () {
       content.wrappedJSObject.test();
     }
   );
@@ -47,7 +45,7 @@ add_task(async function() {
   );
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Test a debugger statement from an iframe");
 
   // Make sure the toolbox opens with the webconsole initially selected.
@@ -72,7 +70,7 @@ add_task(async function() {
   );
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Test pausing from two distinct targets");
 
   // Make sure the toolbox opens with the webconsole initially selected.
@@ -120,7 +118,7 @@ add_task(async function() {
   const pausedTopTarget = SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    function() {
+    function () {
       content.wrappedJSObject.breakDebugger();
     }
   );
@@ -166,8 +164,9 @@ add_task(async function() {
     info(
       "Re-select the iframe thread, which is still paused on the original breakpoint"
     );
-    dbg.actions.selectThread(getContext(dbg), iframeThread);
+    dbg.actions.selectThread(iframeThread);
     await waitForPausedThread(dbg, iframeThread);
+    await waitForSelectedSource(dbg, source);
     assertPausedAtSourceAndLine(dbg, source.id, 3);
 
     info("Resume the iframe target");

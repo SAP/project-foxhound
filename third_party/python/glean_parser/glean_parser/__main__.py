@@ -6,11 +6,13 @@
 
 """Console script for glean_parser."""
 
+import datetime
 import io
 from pathlib import Path
 import sys
 
 import click
+import json
 
 
 import glean_parser
@@ -21,9 +23,13 @@ from . import data_review as mod_data_review
 from . import lint
 from . import translate as mod_translate
 from . import validate_ping
+from . import translation_options
 
 
-@click.command()
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+
+@click.command(context_settings=CONTEXT_SETTINGS)
 @click.argument(
     "input",
     type=click.Path(exists=False, dir_okay=False, file_okay=True, readable=True),
@@ -45,10 +51,13 @@ from . import validate_ping
 @click.option(
     "--option",
     "-s",
-    help="backend-specific option. Must be of the form key=value",
+    help="Backend-specific option. Must be of the form key=value.\
+ Pass 'help' for valid options",
     type=str,
     multiple=True,
     required=False,
+    is_eager=True,
+    callback=translation_options.translate_options,
 )
 @click.option(
     "--allow-reserved",
@@ -68,8 +77,21 @@ from . import validate_ping
     is_flag=True,
     help=("Require tags to be specified for metrics and pings."),
 )
+@click.option(
+    "--expire-by-version",
+    help="Expire metrics by version, with the provided major version.",
+    type=click.INT,
+    required=False,
+)
 def translate(
-    input, format, output, option, allow_reserved, allow_missing_files, require_tags
+    input,
+    format,
+    output,
+    option,
+    allow_reserved,
+    allow_missing_files,
+    require_tags,
+    expire_by_version,
 ):
     """
     Translate metrics.yaml and pings.yaml files to other formats.
@@ -89,6 +111,7 @@ def translate(
                 "allow_reserved": allow_reserved,
                 "allow_missing_files": allow_missing_files,
                 "require_tags": require_tags,
+                "expire_by_version": expire_by_version,
             },
         )
     )
@@ -155,6 +178,67 @@ def glinter(input, allow_reserved, allow_missing_files, require_tags):
                 "allow_missing_files": allow_missing_files,
                 "require_tags": require_tags,
             },
+        )
+    )
+
+
+@click.command()
+@click.argument(
+    "input",
+    type=click.Path(exists=True, dir_okay=False, file_okay=True, readable=True),
+    nargs=-1,
+)
+@click.option(
+    "--allow-reserved",
+    is_flag=True,
+    help=(
+        "If provided, allow the use of reserved fields. "
+        "Should only be set when building the Glean library itself."
+    ),
+)
+@click.option(
+    "--allow-missing-files",
+    is_flag=True,
+    help=("Do not treat missing input files as an error."),
+)
+@click.option(
+    "--require-tags",
+    is_flag=True,
+    help=("Require tags to be specified for metrics and pings."),
+)
+def dump(input, allow_reserved, allow_missing_files, require_tags):
+    """
+    Dump the list of metrics/pings as JSON to stdout.
+    """
+
+    results = glean_parser.parser.parse_objects(
+        [Path(x) for x in input],
+        {
+            "allow_reserved": allow_reserved,
+            "allow_missing_files": allow_missing_files,
+            "require_tags": require_tags,
+        },
+    )
+    errs = list(results)
+    assert len(errs) == 0
+
+    metrics = {
+        metric.identifier(): metric.serialize()
+        for category, probes in results.value.items()
+        for probe_name, metric in probes.items()
+    }
+
+    def date_serializer(o):
+        if isinstance(o, datetime.datetime):
+            return o.isoformat()
+
+    print(
+        json.dumps(
+            metrics,
+            sort_keys=True,
+            indent=2,
+            separators=(",", ": "),
+            default=date_serializer,
         )
     )
 
@@ -240,6 +324,7 @@ def main(args=None):
 main.add_command(translate)
 main.add_command(check)
 main.add_command(glinter)
+main.add_command(dump)
 main.add_command(coverage)
 main.add_command(data_review_request, "data-review")
 
@@ -253,7 +338,10 @@ def main_wrapper(args=None):
         main(args=args)
     except SystemExit as e:
         if e.code != 0:
-            print(f"ERROR running glean_parser v{glean_parser.__version__}")
+            print(
+                f"ERROR running glean_parser v{glean_parser.__version__}",
+                file=sys.stderr,
+            )
         raise
 
 

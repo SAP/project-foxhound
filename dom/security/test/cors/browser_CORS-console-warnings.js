@@ -57,7 +57,7 @@ function unsetCookiePref() {
 }
 
 //jscs:disable
-add_task(async function() {
+add_task(async function () {
   //jscs:enable
   // A longer timeout is necessary for this test than the plain mochitests
   // due to opening a new tab with the web console.
@@ -74,7 +74,7 @@ add_task(async function() {
     "about:blank"
   );
 
-  BrowserTestUtils.loadURI(gBrowser, test_uri);
+  BrowserTestUtils.startLoadingURIString(gBrowser, test_uri);
 
   await BrowserTestUtils.waitForLocationChange(
     gBrowser,
@@ -87,7 +87,7 @@ add_task(async function() {
   messages_seen = 0;
   let test_two_uri =
     "http://mochi.test:8888/browser/dom/security/test/cors/file_bug1456721.html";
-  BrowserTestUtils.loadURI(gBrowser, test_two_uri);
+  BrowserTestUtils.startLoadingURIString(gBrowser, test_two_uri);
 
   await BrowserTestUtils.waitForLocationChange(
     gBrowser,

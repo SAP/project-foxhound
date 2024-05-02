@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Test that the debugger pauses in the multiprocess browser toolbox even when
 // it hasn't been opened.
@@ -14,8 +14,8 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-add_task(async function() {
-  await pushPref("devtools.browsertoolbox.fission", true);
+add_task(async function () {
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
   // Make sure the toolbox opens with the webconsole initially selected.
   await pushPref("devtools.browsertoolbox.panel", "webconsole");
@@ -33,10 +33,11 @@ add_task(async function() {
     findElement,
     getSelector,
     findElementWithSelector,
+    createLocation,
   });
   // ToolboxTask.spawn pass input arguments by stringify them via string concatenation.
   // This mean we have to stringify the input object, but don't have to parse it from the task.
-  await ToolboxTask.spawn(JSON.stringify(selectors), async (_selectors) => {
+  await ToolboxTask.spawn(selectors, async _selectors => {
     this.selectors = _selectors;
   });
 
@@ -44,6 +45,7 @@ add_task(async function() {
 
   // The debugger should automatically be selected.
   await ToolboxTask.spawn(null, async () => {
+    /* global gToolbox */
     await waitUntil(() => gToolbox.currentToolId == "jsdebugger");
   });
   ok(true, "Debugger selected");

@@ -10,7 +10,7 @@
       class="subcategory"
       hidden="true"
       data-category="paneHome">
-  <html:h1 style="-moz-box-flex: 1;" data-l10n-id="pane-home-title"/>
+  <html:h1 style="flex: 1;" data-l10n-id="pane-home-title"/>
   <button id="restoreDefaultHomePageBtn"
           is="highlightable-button"
           class="homepage-button check-home-page-controlled"
@@ -28,12 +28,12 @@
   <hbox id="homepageAndNewWindowsOption" align="center" data-subcategory="homeOverride">
     <label control="homeMode" data-l10n-id="home-homepage-mode-label" flex="1" />
 
-    <vbox class="homepageMenuItemContainer" flex="1">
+    <vbox flex="1">
       <menulist id="homeMode"
                 class="check-home-page-controlled"
                 data-preference-related="browser.startup.homepage">
         <menupopup>
-          <menuitem value="0" data-l10n-id="home-mode-choice-default" />
+          <menuitem value="0" data-l10n-id="home-mode-choice-default-fx" />
           <menuitem value="2" data-l10n-id="home-mode-choice-custom" />
           <menuitem value="1" data-l10n-id="home-mode-choice-blank" />
         </menupopup>
@@ -45,7 +45,7 @@
                       type="text"
                       is="autocomplete-input"
                       class="uri-element check-home-page-controlled"
-                      style="-moz-box-flex: 1;"
+                      style="flex: 1;"
                       data-preference-related="browser.startup.homepage"
                       data-l10n-id="home-homepage-custom-url"
                       autocompletepopup="homePageUrlAutocomplete" />
@@ -59,7 +59,6 @@
         <hbox class="homepage-buttons">
           <button id="useCurrentBtn"
                   is="highlightable-button"
-                  flex="1"
                   class="homepage-button check-home-page-controlled"
                   data-l10n-id="use-current-pages"
                   data-l10n-args='{"tabCount": 0}'
@@ -67,28 +66,27 @@
                   preference="pref.browser.homepage.disable_button.current_page"/>
           <button id="useBookmarkBtn"
                   is="highlightable-button"
-                  flex="1"
                   class="homepage-button check-home-page-controlled"
                   data-l10n-id="choose-bookmark"
                   preference="pref.browser.homepage.disable_button.bookmark_page"
-                  search-l10n-ids="select-bookmark-window.title, select-bookmark-desc"/>
+                  search-l10n-ids="select-bookmark-window2.title, select-bookmark-desc"/>
         </hbox>
       </vbox>
     </vbox>
   </hbox>
-  <vbox data-subcategory="newtabOverride">
-    <hbox id="newTabsOption" align="center">
-      <label control="newTabMode" data-l10n-id="home-newtabs-mode-label" flex="1" />
+  <hbox id="newTabsOption" data-subcategory="newtabOverride" align="center">
+    <label control="newTabMode" data-l10n-id="home-newtabs-mode-label" flex="1" />
 
+    <vbox flex="1">
       <!-- This can be set to an extension value which is managed outside of
         Preferences so we need to handle setting the pref manually.-->
       <menulist id="newTabMode" flex="1" data-preference-related="browser.newtabpage.enabled">
         <menupopup>
-          <menuitem value="0" data-l10n-id="home-mode-choice-default" />
+          <menuitem value="0" data-l10n-id="home-mode-choice-default-fx" />
           <menuitem value="1" data-l10n-id="home-mode-choice-blank" />
         </menupopup>
       </menulist>
-    </hbox>
-  </vbox>
+    </vbox>
+  </hbox>
 </groupbox>
 </html:template>

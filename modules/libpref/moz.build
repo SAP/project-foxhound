@@ -15,6 +15,8 @@ XPCSHELL_TESTS_MANIFESTS += [
     "test/unit_ipc/xpcshell.ini",
 ]
 
+BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
+
 XPIDL_SOURCES += [
     "nsIPrefBranch.idl",
     "nsIPrefLocalizedString.idl",
@@ -31,11 +33,11 @@ pref_groups = [
     "beacon",
     "bidi",
     "browser",
-    "canvas",
     "channelclassifier",
     "clipboard",
     "content",
     "converter",
+    "cookiebanners",
     "datareporting",
     "device",
     "devtools",
@@ -59,15 +61,17 @@ pref_groups = [
     "layout",
     "mathml",
     "media",
+    "memory",
     "midi",
     "mousewheel",
+    "mozilla",
     "network",
     "nglayout",
     "page_load",
+    "pdfjs",
     "permissions",
+    "places",
     "plain_text",
-    "plugin",
-    "plugins",
     "preferences",
     "print",
     "privacy",
@@ -87,7 +91,6 @@ pref_groups = [
     "view_source",
     "webgl",
     "widget",
-    "xul",
     "zoom",
 ]
 if CONFIG["OS_TARGET"] == "Android":
@@ -169,8 +172,3 @@ else:
     FINAL_TARGET_PP_FILES += [
         "greprefs.js",
     ]
-
-if CONFIG["MOZ_BACKGROUNDTASKS"]:
-    DEFINES["MOZ_BACKGROUNDTASKS"] = True
-
-REQUIRES_UNIFIED_BUILD = True

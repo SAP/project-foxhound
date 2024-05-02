@@ -39,17 +39,19 @@ UNIFIED_SOURCES += [
     "TestNSPRLogModulesParser.cpp",
     "TestObserverArray.cpp",
     "TestObserverService.cpp",
+    "TestOwningNonNull.cpp",
     "TestPLDHash.cpp",
     "TestPriorityQueue.cpp",
     "TestQueue.cpp",
     "TestRacingServiceManager.cpp",
     "TestRecursiveMutex.cpp",
+    "TestRustRegex.cpp",
     "TestRWLock.cpp",
-    "TestSeekableStreamWrapper.cpp",
     "TestSegmentedBuffer.cpp",
     "TestSlicedInputStream.cpp",
     "TestSmallArrayLRUCache.cpp",
     "TestSnappyStreams.cpp",
+    "TestStateMirroring.cpp",
     "TestStateWatching.cpp",
     "TestStorageStream.cpp",
     "TestStrings.cpp",
@@ -61,7 +63,6 @@ UNIFIED_SOURCES += [
     "TestTaskQueue.cpp",
     "TestTextFormatter.cpp",
     "TestThreadManager.cpp",
-    "TestThreadMetrics.cpp",
     "TestThreadPool.cpp",
     "TestThreadPoolListener.cpp",
     "TestThrottledEventQueue.cpp",
@@ -109,6 +110,7 @@ if CONFIG["OS_TARGET"] == "WINNT":
         "TestAvailableMemoryWatcherWin.cpp",
         "TestFileNTFSSpecialPaths.cpp",
         "TestFilePreferencesWin.cpp",
+        "TestHandleWatcher.cpp",
     ]
 else:
     UNIFIED_SOURCES += [
@@ -119,6 +121,7 @@ if CONFIG["OS_TARGET"] == "Darwin":
     UNIFIED_SOURCES += [
         "TestAvailableMemoryWatcherMac.cpp",
         "TestMacNSURLEscaping.mm",
+        "TestThreads_mac.mm",
     ]
 
 if CONFIG["OS_TARGET"] == "Linux":
@@ -152,6 +155,7 @@ SOURCES += [
 LOCAL_INCLUDES += [
     "../../base",
     "/toolkit/components/telemetry/tests/gtest",
+    "/xpcom/components",
 ]
 
 GeneratedFile(

@@ -18,11 +18,11 @@ const EXPECTED_END_ORDINALS = [
 function getBrowserChildrenWithOrdinals() {
   let browser = document.getElementById("browser");
   return [...browser.children].map(node => {
-    return [node.id, node.style.MozBoxOrdinalGroup];
+    return [node.id, node.style.order];
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   await SidebarUI.show("viewBookmarksSidebar");
   SidebarUI.showSwitcherPanel();
 

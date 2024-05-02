@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const Services = require("Services");
 const {
   ACTIVITY_TYPE,
   OPEN_NETWORK_DETAILS,
@@ -19,11 +18,11 @@ const {
   SET_COLUMNS_WIDTH,
   SET_HEADERS_URL_PREVIEW_EXPANDED,
   OPEN_ACTION_BAR,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 const {
   getDisplayedRequests,
-} = require("devtools/client/netmonitor/src/selectors/index");
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 
 const DEVTOOLS_DISABLE_CACHE_PREF = "devtools.cache.disabled";
 

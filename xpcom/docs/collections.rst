@@ -4,14 +4,33 @@ XPCOM Collections
 ``nsTArray`` and ``AutoTArray``
 -------------------------------
 
-``nsTArray<T>`` is a typesafe array for holding various objects.
+``nsTArray<T>`` is a typesafe array for holding various objects, similar to ``std::vector<T>``. (note that
+``nsTArray<T>`` is dynamically-sized, unlike ``std::array<T>``) Here's an
+incomplete list of mappings between the two:
+
+================== ==================================================
+std::vector<T>     nsTArray<T>
+================== ==================================================
+``size()``         ``Length()``
+``empty()``        ``IsEmpty()``
+``resize()``       ``SetLength()`` or ``SetLengthAndRetainStorage()``
+``capacity()``     ``Capacity()``
+``reserve()``      ``SetCapacity()``
+``push_back()``    ``AppendElement()``
+``insert()``       ``AppendElements()``
+``emplace_back()`` ``EmplaceBack()``
+``clear()``        ``Clear()`` or ``ClearAndRetainStorage()``
+``data()``         ``Elements()``
+``at()``           ``ElementAt()``
+``back()``         ``LastElement()``
+================== ==================================================
 
 Rust Bindings
 ~~~~~~~~~~~~~
 
 When the ``thin_vec`` crate is built in Gecko, ``thin_vec::ThinVec<T>`` is
 guaranteed to have the same memory layout and allocation strategy as
-``nsTArray``, meaning that the two types may be used interchangably across
+``nsTArray``, meaning that the two types may be used interchangeably across
 FFI boundaries. The type is **not** safe to pass by-value over FFI
 boundaries, due to Rust and C++ differing in when they run destructors.
 

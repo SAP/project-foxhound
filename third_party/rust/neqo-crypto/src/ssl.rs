@@ -10,9 +10,10 @@
     non_snake_case,
     clippy::cognitive_complexity,
     clippy::too_many_lines,
-    clippy::upper_case_acronyms
+    clippy::upper_case_acronyms,
+    unknown_lints,
+    clippy::borrow_as_ptr
 )]
-#![allow(unknown_lints, deref_nullptr)] // Until we require rust 1.53 or bindgen#1651 is fixed.
 
 use crate::constants::Epoch;
 use crate::err::{secstatus_to_res, Res};
@@ -47,6 +48,7 @@ pub enum Opt {
     Tls13CompatMode,
     HelloDowngradeCheck,
     SuppressEndOfEarlyData,
+    Grease,
 }
 
 impl Opt {
@@ -65,6 +67,7 @@ impl Opt {
             Self::Tls13CompatMode => SSLOption::SSL_ENABLE_TLS13_COMPAT_MODE,
             Self::HelloDowngradeCheck => SSLOption::SSL_ENABLE_HELLO_DOWNGRADE_CHECK,
             Self::SuppressEndOfEarlyData => SSLOption::SSL_SUPPRESS_END_OF_EARLY_DATA,
+            Self::Grease => SSLOption::SSL_ENABLE_GREASE,
         };
         i as PRInt32
     }

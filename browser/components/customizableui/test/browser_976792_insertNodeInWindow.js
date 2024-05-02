@@ -12,7 +12,7 @@ Tries to replicate the situation of having a placement list like this:
 
 exists-1,trying-to-insert-this,doesn't-exist,exists-2
 */
-add_task(async function() {
+add_task(async function () {
   let testWidgetExists = [true, false, false, true];
   let widgetIds = [];
   for (let i = 0; i < testWidgetExists.length; i++) {
@@ -61,7 +61,7 @@ situation similar to:
 
 exists-1,exists-2,overflow-1,trying-to-insert-this,overflow-2
 */
-add_task(async function() {
+add_task(async function () {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -98,9 +98,8 @@ add_task(async function() {
   let btn = createDummyXULButton(testWidgetId, "test");
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
-  is(
-    btn.parentNode.id,
-    navbar.overflowable._list.id,
+  ok(
+    navbar.overflowable.isInOverflowList(btn),
     "New XUL widget should be placed inside overflow of toolbar"
   );
   is(
@@ -129,7 +128,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,doesn't-exist,trying-to-insert-this,overflow-2
 */
-add_task(async function() {
+add_task(async function () {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -167,9 +166,8 @@ add_task(async function() {
   let btn = createDummyXULButton(testWidgetId, "test");
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
-  is(
-    btn.parentNode.id,
-    navbar.overflowable._list.id,
+  ok(
+    navbar.overflowable.isInOverflowList(btn),
     "New XUL widget should be placed inside overflow of toolbar"
   );
   is(
@@ -198,7 +196,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,doesn't-exist,trying-to-insert-this,doesn't-exist
 */
-add_task(async function() {
+add_task(async function () {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -237,9 +235,8 @@ add_task(async function() {
   let btn = createDummyXULButton(testWidgetId, "test");
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
-  is(
-    btn.parentNode.id,
-    navbar.overflowable._list.id,
+  ok(
+    navbar.overflowable.isInOverflowList(btn),
     "New XUL widget should be placed inside overflow of toolbar"
   );
   is(
@@ -268,7 +265,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,can't-overflow,trying-to-insert-this,overflow-2
 */
-add_task(async function() {
+add_task(async function () {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -320,8 +317,8 @@ add_task(async function() {
   });
 
   // Find last widget that doesn't allow overflowing
-  let nonOverflowing = CustomizableUI.getCustomizationTarget(navbar)
-    .lastElementChild;
+  let nonOverflowing =
+    CustomizableUI.getCustomizationTarget(navbar).lastElementChild;
   is(
     nonOverflowing.getAttribute("overflows"),
     "false",
@@ -339,9 +336,8 @@ add_task(async function() {
   let btn = createDummyXULButton(testWidgetId, "test");
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
-  is(
-    btn.parentNode.id,
-    navbar.overflowable._list.id,
+  ok(
+    navbar.overflowable.isInOverflowList(btn),
     "New XUL widget should be placed inside overflow of toolbar"
   );
   is(
@@ -365,7 +361,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,trying-to-insert-this,can't-overflow,overflow-2
 */
-add_task(async function() {
+add_task(async function () {
   let widgetIds = [];
   let missingId = 2;
   let nonOverflowableId = 3;
@@ -452,7 +448,7 @@ plcements situation similar to:
 
 exists-1,trying-to-insert-this,exists-2,overflowed-1
 */
-add_task(async function() {
+add_task(async function () {
   let widgetIds = [];
   let missingId = 1;
   for (let i = 0; i < 5; i++) {
@@ -525,7 +521,7 @@ exists-1,exists-2,overflows-1,trying-to-insert-this
 
 Where trying-to-insert-this has overflows=false
 */
-add_task(async function() {
+add_task(async function () {
   let widgetIds = [];
   let missingId = 3;
   for (let i = 0; i < 5; i++) {

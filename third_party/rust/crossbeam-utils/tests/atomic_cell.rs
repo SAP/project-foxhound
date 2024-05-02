@@ -265,6 +265,50 @@ fn const_atomic_cell_new() {
     assert_eq!(CELL.load(), 1);
 }
 
+// https://github.com/crossbeam-rs/crossbeam/pull/767
+macro_rules! test_arithmetic {
+    ($test_name:ident, $ty:ident) => {
+        #[test]
+        fn $test_name() {
+            let a: AtomicCell<$ty> = AtomicCell::new(7);
+
+            assert_eq!(a.fetch_add(3), 7);
+            assert_eq!(a.load(), 10);
+
+            assert_eq!(a.fetch_sub(3), 10);
+            assert_eq!(a.load(), 7);
+
+            assert_eq!(a.fetch_and(3), 7);
+            assert_eq!(a.load(), 3);
+
+            assert_eq!(a.fetch_or(16), 3);
+            assert_eq!(a.load(), 19);
+
+            assert_eq!(a.fetch_xor(2), 19);
+            assert_eq!(a.load(), 17);
+
+            assert_eq!(a.fetch_max(18), 17);
+            assert_eq!(a.load(), 18);
+
+            assert_eq!(a.fetch_min(17), 18);
+            assert_eq!(a.load(), 17);
+
+            assert_eq!(a.fetch_nand(7), 17);
+            assert_eq!(a.load(), !(17 & 7));
+        }
+    };
+}
+test_arithmetic!(arithmetic_u8, u8);
+test_arithmetic!(arithmetic_i8, i8);
+test_arithmetic!(arithmetic_u16, u16);
+test_arithmetic!(arithmetic_i16, i16);
+test_arithmetic!(arithmetic_u32, u32);
+test_arithmetic!(arithmetic_i32, i32);
+test_arithmetic!(arithmetic_u64, u64);
+test_arithmetic!(arithmetic_i64, i64);
+test_arithmetic!(arithmetic_u128, u128);
+test_arithmetic!(arithmetic_i128, i128);
+
 // https://github.com/crossbeam-rs/crossbeam/issues/748
 #[cfg_attr(miri, ignore)] // TODO
 #[rustversion::since(1.37)] // #[repr(align(N))] requires Rust 1.37
@@ -279,7 +323,58 @@ fn issue_748() {
     }
 
     assert_eq!(mem::size_of::<Test>(), 8);
-    assert!(AtomicCell::<Test>::is_lock_free());
+    assert_eq!(
+        AtomicCell::<Test>::is_lock_free(),
+        cfg!(not(crossbeam_no_atomic_64))
+    );
     let x = AtomicCell::new(Test::FieldLess);
     assert_eq!(x.load(), Test::FieldLess);
+}
+
+// https://github.com/crossbeam-rs/crossbeam/issues/833
+#[rustversion::since(1.40)] // const_constructor requires Rust 1.40
+#[test]
+fn issue_833() {
+    use std::num::NonZeroU128;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+
+    #[cfg(miri)]
+    const N: usize = 10_000;
+    #[cfg(not(miri))]
+    const N: usize = 1_000_000;
+
+    #[allow(dead_code)]
+    enum Enum {
+        NeverConstructed,
+        Cell(AtomicCell<NonZeroU128>),
+    }
+
+    static STATIC: Enum = Enum::Cell(AtomicCell::new(match NonZeroU128::new(1) {
+        Some(nonzero) => nonzero,
+        None => unreachable!(),
+    }));
+    static FINISHED: AtomicBool = AtomicBool::new(false);
+
+    let handle = thread::spawn(|| {
+        let cell = match &STATIC {
+            Enum::NeverConstructed => unreachable!(),
+            Enum::Cell(cell) => cell,
+        };
+        let x = NonZeroU128::new(0xFFFF_FFFF_FFFF_FFFF_0000_0000_0000_0000).unwrap();
+        let y = NonZeroU128::new(0x0000_0000_0000_0000_FFFF_FFFF_FFFF_FFFF).unwrap();
+        while !FINISHED.load(Ordering::Relaxed) {
+            cell.store(x);
+            cell.store(y);
+        }
+    });
+
+    for _ in 0..N {
+        if let Enum::NeverConstructed = STATIC {
+            unreachable!(":(");
+        }
+    }
+
+    FINISHED.store(true, Ordering::Relaxed);
+    handle.join().unwrap();
 }

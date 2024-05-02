@@ -3,6 +3,7 @@
 add_task(async () => {
   const TEST_PATH = getRootDirectory(gTestPath).replace(
     "chrome://mochitests/content",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com"
   );
 
@@ -19,14 +20,14 @@ add_task(async () => {
   );
   info("new tab loaded");
 
-  BrowserTestUtils.loadURI(browser, HTML_URI);
+  BrowserTestUtils.startLoadingURIString(browser, HTML_URI);
   await browserLoaded;
   info("The test page has loaded!");
 
   let first_message_promise = SpecialPowers.spawn(
     browser,
     [],
-    async function() {
+    async function () {
       let blobPromise = new Promise((resolve, reject) => {
         content.addEventListener("message", event => {
           if (event.data.bloburl) {

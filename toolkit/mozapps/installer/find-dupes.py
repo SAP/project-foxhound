@@ -2,20 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals, print_function
-
 import sys
 import hashlib
-import re
-import os
 import functools
 from mozbuild.preprocessor import Preprocessor
 from mozbuild.util import DefinesAction
 from mozpack.packager.unpack import UnpackFinder
 from mozpack.files import DeflatedFile
 from collections import OrderedDict
-import six
-from six import StringIO
+from io import StringIO
 import argparse
 import buildconfig
 
@@ -58,8 +53,8 @@ def find_dupes(source, allowed_dupes, bail=True):
         checksum = hashlib.sha1()
         content_size = 0
         for buf in iter(functools.partial(f.open().read, chunk_size), b""):
-            checksum.update(six.ensure_binary(buf))
-            content_size += len(six.ensure_binary(buf))
+            checksum.update(buf)
+            content_size += len(buf)
         m = checksum.digest()
         if m not in checksums:
             if isinstance(f, DeflatedFile):
@@ -73,7 +68,7 @@ def find_dupes(source, allowed_dupes, bail=True):
     num_dupes = 0
     unexpected_dupes = []
     for m, (size, compressed, paths) in sorted(
-        six.iteritems(checksums), key=lambda x: x[1][1]
+        checksums.items(), key=lambda x: x[1][1]
     ):
         if len(paths) > 1:
             _compressed = " (%d compressed)" % compressed if compressed != size else ""

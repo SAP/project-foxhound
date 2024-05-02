@@ -17,25 +17,25 @@ namespace net {
 // called to destroy this actor.
 class SocketProcessBridgeParent final : public PSocketProcessBridgeParent {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SocketProcessBridgeParent)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SocketProcessBridgeParent, final)
 
-  explicit SocketProcessBridgeParent(
-      ProcessId aId, Endpoint<PSocketProcessBridgeParent>&& aEndpoint);
+  explicit SocketProcessBridgeParent(ProcessId aId);
 
-  mozilla::ipc::IPCResult RecvTest();
-  mozilla::ipc::IPCResult RecvInitBackground(
-      Endpoint<PBackgroundStarterParent>&& aEndpoint);
+  mozilla::ipc::IPCResult RecvInitBackgroundDataBridge(
+      Endpoint<PBackgroundDataBridgeParent>&& aEndpoint, uint64_t aChannelID);
 
-  void ActorDestroy(ActorDestroyReason aWhy) override;
-  void DeferredDestroy();
+#ifdef MOZ_WEBRTC
+  mozilla::ipc::IPCResult RecvInitMediaTransport(
+      Endpoint<PMediaTransportParent>&& aEndpoint);
+#endif
 
-  bool Closed() const { return mClosed; }
+  void ActorDestroy(ActorDestroyReason aReason) override;
 
  private:
   ~SocketProcessBridgeParent();
 
+  nsCOMPtr<nsISerialEventTarget> mMediaTransportTaskQueue;
   ProcessId mId;
-  bool mClosed;
 };
 
 }  // namespace net

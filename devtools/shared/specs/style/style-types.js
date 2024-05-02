@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { RetVal, types } = require("devtools/shared/protocol");
+const { RetVal, types } = require("resource://devtools/shared/protocol.js");
 
 // Predeclare the domstylerule actor type
 types.addActorType("domstylerule");
@@ -12,15 +12,11 @@ types.addActorType("domstylerule");
  * When asking for the styles applied to a node, we return a list of
  * appliedstyle json objects that lists the rules that apply to the node
  * and which element they were inherited from (if any).
- *
- * Note appliedstyle only sends the list of actorIDs and is not a valid return
- * value on its own. appliedstyle should be returned with the actual list of
- * StyleRuleActor and StyleSheetActor. See appliedStylesReturn.
  */
 types.addDictType("appliedstyle", {
-  rule: "domstylerule#actorid",
+  rule: "domstylerule",
   inherited: "nullable:domnode#actorid",
-  keyframes: "nullable:domstylerule#actorid",
+  keyframes: "nullable:domstylerule",
 });
 
 types.addDictType("matchedselector", {
@@ -32,8 +28,6 @@ types.addDictType("matchedselector", {
 
 types.addDictType("appliedStylesReturn", {
   entries: "array:appliedstyle",
-  rules: "array:domstylerule",
-  sheets: "array:stylesheet",
 });
 
 types.addDictType("modifiedStylesReturn", {

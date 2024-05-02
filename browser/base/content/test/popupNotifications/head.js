@@ -1,19 +1,13 @@
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 
 /**
  * Called after opening a new window or switching windows, this will wait until
  * we are sure that an attempt to display a notification will not fail.
  */
 async function waitForWindowReadyForPopupNotifications(win) {
-  // These are the same checks that PopupNotifications.jsm makes before it
+  // These are the same checks that PopupNotifications.sys.mjs makes before it
   // allows a notification to open.
   await TestUtils.waitForCondition(
     () => win.gBrowser.selectedBrowser.docShellIsActive,
@@ -41,26 +35,22 @@ function promiseTabLoadEvent(tab, url) {
   let browser = tab.linkedBrowser;
 
   if (url) {
-    BrowserTestUtils.loadURI(browser, url);
+    BrowserTestUtils.startLoadingURIString(browser, url);
   }
 
   return BrowserTestUtils.browserLoaded(browser, false, url);
 }
 
-const PREF_SECURITY_DELAY_INITIAL = Services.prefs.getIntPref(
-  "security.notification_enable_delay"
-);
-
 // Tests that call setup() should have a `tests` array defined for the actual
 // tests to be run.
 /* global tests */
 function setup() {
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/").then(
     goNext
   );
   registerCleanupFunction(() => {
     gBrowser.removeTab(gBrowser.selectedTab);
-    PopupNotifications.buttonDelay = PREF_SECURITY_DELAY_INITIAL;
   });
 }
 
@@ -77,10 +67,10 @@ async function runNextTest() {
   let nextTest = tests.shift();
   if (nextTest.onShown) {
     let shownState = false;
-    onPopupEvent("popupshowing", function() {
+    onPopupEvent("popupshowing", function () {
       info("[" + nextTest.id + "] popup showing");
     });
-    onPopupEvent("popupshown", function() {
+    onPopupEvent("popupshown", function () {
       shownState = true;
       info("[" + nextTest.id + "] popup shown");
       (nextTest.onShown(this) || Promise.resolve()).then(undefined, ex =>
@@ -89,7 +79,7 @@ async function runNextTest() {
     });
     onPopupEvent(
       "popuphidden",
-      function() {
+      function () {
         info("[" + nextTest.id + "] popup hidden");
         (nextTest.onHidden(this) || Promise.resolve()).then(
           () => goNext(),
@@ -152,6 +142,7 @@ function BasicNotification(testId) {
     },
   ];
   this.options = {
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     name: "http://example.com",
     eventCallback: eventName => {
       switch (eventName) {
@@ -175,7 +166,7 @@ function BasicNotification(testId) {
   };
 }
 
-BasicNotification.prototype.addOptions = function(options) {
+BasicNotification.prototype.addOptions = function (options) {
   for (let [name, value] of Object.entries(options)) {
     this.options[name] = value;
   }
@@ -272,7 +263,7 @@ function checkPopup(popup, notifyObj) {
     extraSecondaryActions.length,
     "number of extra secondary actions matches"
   );
-  extraSecondaryActions.forEach(function(a, i) {
+  extraSecondaryActions.forEach(function (a, i) {
     is(
       actualExtraSecondaryActions[i].getAttribute("label"),
       a.label,
@@ -286,7 +277,7 @@ function checkPopup(popup, notifyObj) {
   });
 }
 
-XPCOMUtils.defineLazyGetter(this, "gActiveListeners", () => {
+ChromeUtils.defineLazyGetter(this, "gActiveListeners", () => {
   let listeners = new Map();
   registerCleanupFunction(() => {
     for (let [listener, eventName] of listeners) {
@@ -314,7 +305,7 @@ function onPopupEvent(eventName, callback, condition) {
 
 function waitForNotificationPanel() {
   return new Promise(resolve => {
-    onPopupEvent("popupshown", function() {
+    onPopupEvent("popupshown", function () {
       resolve(this);
     });
   });
@@ -322,7 +313,7 @@ function waitForNotificationPanel() {
 
 function waitForNotificationPanelHidden() {
   return new Promise(resolve => {
-    onPopupEvent("popuphidden", function() {
+    onPopupEvent("popuphidden", function () {
       resolve(this);
     });
   });
@@ -348,11 +339,11 @@ function triggerSecondaryCommand(popup, index) {
   }
 
   // Extra secondary actions appear in a menu.
-  notification.secondaryButton.nextElementSibling.nextElementSibling.focus();
+  notification.secondaryButton.nextElementSibling.focus();
 
   popup.addEventListener(
     "popupshown",
-    function() {
+    function () {
       info("Command popup open for notification " + notification.id);
       // Press down until the desired command is selected. Decrease index by one
       // since the secondary action was handled above.

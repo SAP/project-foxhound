@@ -11,15 +11,12 @@
 
 #include <algorithm>
 
-#include "ds/MemoryProtectionExceptionHandler.h"
-
 #ifdef LIFO_CHUNK_PROTECT
 #  include "gc/Memory.h"
 #endif
 
 using namespace js;
 
-using mozilla::RoundUpPow2;
 using mozilla::tl::BitSize;
 
 namespace js {
@@ -73,7 +70,6 @@ void BumpChunk::setReadOnly() {
   if (e <= b) {
     return;
   }
-  js::MemoryProtectionExceptionHandler::addRegion(base(), capacity_ - base());
   gc::MakePagesReadOnly(b, e - b);
 }
 
@@ -91,7 +87,6 @@ void BumpChunk::setReadWrite() {
     return;
   }
   gc::UnprotectPages(b, e - b);
-  js::MemoryProtectionExceptionHandler::removeRegion(base());
 }
 
 #endif

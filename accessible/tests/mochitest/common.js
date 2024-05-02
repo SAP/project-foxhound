@@ -82,6 +82,7 @@ const SEAMONKEY = navigator.userAgent.match(/ SeaMonkey\//);
 
 const STATE_BUSY = nsIAccessibleStates.STATE_BUSY;
 
+const SCROLL_TYPE_TOP_EDGE = nsIAccessibleScrollType.SCROLL_TYPE_TOP_EDGE;
 const SCROLL_TYPE_ANYWHERE = nsIAccessibleScrollType.SCROLL_TYPE_ANYWHERE;
 
 const COORDTYPE_SCREEN_RELATIVE =
@@ -103,7 +104,6 @@ const MAX_TRIM_LENGTH = 100;
 /**
  * Services to determine if e10s is enabled.
  */
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * nsIAccessibilityService service.
@@ -166,7 +166,7 @@ function dumpTree(aId, aMsg) {
  */
 function addA11yLoadEvent(aFunc, aWindow) {
   function waitForDocLoad() {
-    window.setTimeout(function() {
+    window.setTimeout(function () {
       var targetDocument = aWindow ? aWindow.document : document;
       var accDoc = getAccessible(targetDocument);
       var state = {};
@@ -524,8 +524,9 @@ function testAccessibleTree(aAccOrElmOrID, aAccTree, aFlags) {
         }
 
         if (prevOffset != -1) {
-          var charCount = getAccessible(acc, [nsIAccessibleText])
-            .characterCount;
+          var charCount = getAccessible(acc, [
+            nsIAccessibleText,
+          ]).characterCount;
           let attrs = accTree[prop][prevOffset];
           testTextAttrs(
             acc,
@@ -811,7 +812,7 @@ function statesToString(aStates, aExtraStates) {
     str += list.item(index) + ", ";
   }
 
-  if (list.length != 0) {
+  if (list.length) {
     str += list.item(index);
   }
 
@@ -848,11 +849,11 @@ function getTextFromClipboard() {
     return "";
   }
 
-  trans.addDataFlavor("text/unicode");
+  trans.addDataFlavor("text/plain");
   Services.clipboard.getData(trans, Services.clipboard.kGlobalClipboard);
 
   var str = {};
-  trans.getTransferData("text/unicode", str);
+  trans.getTransferData("text/plain", str);
 
   if (str) {
     str = str.value.QueryInterface(Ci.nsISupportsString);

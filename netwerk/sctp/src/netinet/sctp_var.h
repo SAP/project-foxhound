@@ -32,11 +32,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if defined(__FreeBSD__) && !defined(__Userspace__)
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_var.h 360292 2020-04-25 09:06:11Z melifaro $");
-#endif
-
 #ifndef _NETINET_SCTP_VAR_H_
 #define _NETINET_SCTP_VAR_H_
 
@@ -45,9 +40,12 @@ __FBSDID("$FreeBSD: head/sys/netinet/sctp_var.h 360292 2020-04-25 09:06:11Z meli
 #if defined(_KERNEL) || defined(__Userspace__)
 
 #if !defined(__Userspace__)
+#if defined(__FreeBSD__)
+extern struct protosw sctp_seqpacket_protosw, sctp_stream_protosw;
+#else
 extern struct pr_usrreqs sctp_usrreqs;
 #endif
-
+#endif
 
 #define sctp_feature_on(inp, feature)  (inp->sctp_features |= feature)
 #define sctp_feature_off(inp, feature) (inp->sctp_features &= ~feature)
@@ -90,7 +88,7 @@ extern struct pr_usrreqs sctp_usrreqs;
 
 #define	sctp_sbspace(asoc, sb) ((long) ((sctp_maxspace(sb) > (asoc)->sb_cc) ? (sctp_maxspace(sb) - (asoc)->sb_cc) : 0))
 
-#define	sctp_sbspace_failedmsgs(sb) ((long) ((sctp_maxspace(sb) > (sb)->sb_cc) ? (sctp_maxspace(sb) - (sb)->sb_cc) : 0))
+#define	sctp_sbspace_failedmsgs(sb) ((long) ((sctp_maxspace(sb) > SCTP_SBAVAIL(sb)) ? (sctp_maxspace(sb) - SCTP_SBAVAIL(sb)) : 0))
 
 #define sctp_sbspace_sub(a,b) (((a) > (b)) ? ((a) - (b)) : 0)
 
@@ -187,11 +185,9 @@ extern struct pr_usrreqs sctp_usrreqs;
 }
 
 #if defined(__FreeBSD__) && !defined(__Userspace__)
-
 #define sctp_free_remote_addr(__net) { \
 	if ((__net)) {  \
 		if (SCTP_DECREMENT_AND_CHECK_REFCOUNT(&(__net)->ref_count)) { \
-			(void)SCTP_OS_TIMER_STOP(&(__net)->rxt_timer.timer); \
 			RO_NHFREE(&(__net)->ro); \
 			if ((__net)->src_addr_selected) { \
 				sctp_free_ifa((__net)->ro._s_addr); \
@@ -206,7 +202,7 @@ extern struct pr_usrreqs sctp_usrreqs;
 }
 
 #define sctp_sbfree(ctl, stcb, sb, m) { \
-	SCTP_SAVE_ATOMIC_DECREMENT(&(sb)->sb_cc, SCTP_BUF_LEN((m))); \
+	SCTP_SB_DECR(sb, SCTP_BUF_LEN((m))); \
 	SCTP_SAVE_ATOMIC_DECREMENT(&(sb)->sb_mbcnt, MSIZE); \
 	if (((ctl)->do_not_ref_stcb == 0) && stcb) {\
 		SCTP_SAVE_ATOMIC_DECREMENT(&(stcb)->asoc.sb_cc, SCTP_BUF_LEN((m))); \
@@ -218,7 +214,7 @@ extern struct pr_usrreqs sctp_usrreqs;
 }
 
 #define sctp_sballoc(stcb, sb, m) { \
-	atomic_add_int(&(sb)->sb_cc,SCTP_BUF_LEN((m))); \
+	SCTP_SB_INCR(sb, SCTP_BUF_LEN((m))); \
 	atomic_add_int(&(sb)->sb_mbcnt, MSIZE); \
 	if (stcb) { \
 		atomic_add_int(&(stcb)->asoc.sb_cc, SCTP_BUF_LEN((m))); \
@@ -228,13 +224,10 @@ extern struct pr_usrreqs sctp_usrreqs;
 	    SCTP_BUF_TYPE(m) != MT_OOBDATA) \
 		atomic_add_int(&(sb)->sb_ctl,SCTP_BUF_LEN((m))); \
 }
-
 #else				/* FreeBSD Version <= 500000 or non-FreeBSD */
-
 #define sctp_free_remote_addr(__net) { \
 	if ((__net)) { \
 		if (SCTP_DECREMENT_AND_CHECK_REFCOUNT(&(__net)->ref_count)) { \
-			(void)SCTP_OS_TIMER_STOP(&(__net)->rxt_timer.timer); \
 			if ((__net)->ro.ro_rt) { \
 				RTFREE((__net)->ro.ro_rt); \
 				(__net)->ro.ro_rt = NULL; \
@@ -252,7 +245,7 @@ extern struct pr_usrreqs sctp_usrreqs;
 }
 
 #define sctp_sbfree(ctl, stcb, sb, m) { \
-	SCTP_SAVE_ATOMIC_DECREMENT(&(sb)->sb_cc, SCTP_BUF_LEN((m))); \
+	SCTP_SB_DECR(sb, SCTP_BUF_LEN((m))); \
 	SCTP_SAVE_ATOMIC_DECREMENT(&(sb)->sb_mbcnt, MSIZE); \
 	if (((ctl)->do_not_ref_stcb == 0) && stcb) { \
 		SCTP_SAVE_ATOMIC_DECREMENT(&(stcb)->asoc.sb_cc, SCTP_BUF_LEN((m))); \
@@ -261,7 +254,7 @@ extern struct pr_usrreqs sctp_usrreqs;
 }
 
 #define sctp_sballoc(stcb, sb, m) { \
-	atomic_add_int(&(sb)->sb_cc, SCTP_BUF_LEN((m))); \
+	SCTP_SB_INCR(sb, SCTP_BUF_LEN((m))); \
 	atomic_add_int(&(sb)->sb_mbcnt, MSIZE); \
 	if (stcb) { \
 		atomic_add_int(&(stcb)->asoc.sb_cc, SCTP_BUF_LEN((m))); \
@@ -369,16 +362,22 @@ struct sctp_inpcb;
 struct sctp_tcb;
 struct sctphdr;
 
-
 #if defined(__FreeBSD__) || defined(_WIN32) || defined(__Userspace__)
 void sctp_close(struct socket *so);
 #else
 int sctp_detach(struct socket *so);
 #endif
+#if defined(__FreeBSD__) && !defined(__Userspace__)
+void sctp_abort(struct socket *so);
+#else
+int sctp_abort(struct socket *so);
+#endif
 int sctp_disconnect(struct socket *so);
 #if !defined(__Userspace__)
 #if defined(__APPLE__) && !defined(APPLE_LEOPARD) && !defined(APPLE_SNOWLEOPARD) && !defined(APPLE_LION) && !defined(APPLE_MOUNTAINLION) && !defined(APPLE_ELCAPITAN)
 void sctp_ctlinput(int, struct sockaddr *, void *, struct ifnet * SCTP_UNUSED);
+#elif defined(__FreeBSD__)
+ipproto_ctlinput_t sctp_ctlinput;
 #else
 void sctp_ctlinput(int, struct sockaddr *, void *);
 #endif
@@ -391,17 +390,19 @@ int sctp_input(struct mbuf **, int *, int);
 void sctp_input(struct mbuf *, int);
 #endif
 #endif
-void sctp_pathmtu_adjustment(struct sctp_tcb *, uint16_t);
+void sctp_pathmtu_adjustment(struct sctp_tcb *, uint32_t, bool);
 #else
 #if defined(__Userspace__)
-void sctp_pathmtu_adjustment(struct sctp_tcb *, uint16_t);
+void sctp_pathmtu_adjustment(struct sctp_tcb *, uint32_t, bool);
 #else
 void sctp_input(struct mbuf *,...);
 #endif
 void *sctp_ctlinput(int, struct sockaddr *, void *);
 int sctp_ctloutput(int, struct socket *, int, int, struct mbuf **);
 #endif
+#if !(defined(__FreeBSD__) && !defined(__Userspace__))
 void sctp_drain(void);
+#endif
 #if defined(__Userspace__)
 void sctp_init(uint16_t,
                int (*)(void *addr, void *buffer, size_t length, uint8_t tos, uint8_t set_df),
@@ -409,7 +410,9 @@ void sctp_init(uint16_t,
 #elif defined(__APPLE__) && (!defined(APPLE_LEOPARD) && !defined(APPLE_SNOWLEOPARD) &&!defined(APPLE_LION) && !defined(APPLE_MOUNTAINLION))
 void sctp_init(struct protosw *pp, struct domain *dp);
 #else
+#if !defined(__FreeBSD__)
 void sctp_init(void);
+#endif
 void sctp_notify(struct sctp_inpcb *, struct sctp_tcb *, struct sctp_nets *,
     uint8_t, uint8_t, uint16_t, uint32_t);
 #endif

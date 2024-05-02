@@ -3,7 +3,7 @@
  */
 
 // Enabling Searching functionatily. Will display search bar form this testcase forward.
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.preferences.search", true]],
   });
@@ -12,7 +12,10 @@ add_task(async function() {
 /**
  * Test for searching for the "Settings - Site Data" subdialog.
  */
-add_task(async function() {
+add_task(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["cookiebanners.ui.desktop.enabled", false]],
+  });
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
@@ -20,7 +23,7 @@ add_task(async function() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
@@ -28,7 +31,7 @@ add_task(async function() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
@@ -36,10 +39,10 @@ add_task(async function() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("third-party", ["trackingGroup"]);
+  await evaluateSearchResults("cross-site", ["trackingGroup"]);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

@@ -1,14 +1,11 @@
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-const { CustomizableUI } = ChromeUtils.import(
-  "resource:///modules/CustomizableUI.jsm"
+const { CustomizableUI } = ChromeUtils.importESModule(
+  "resource:///modules/CustomizableUI.sys.mjs"
 );
 
-const { PlacesUIUtils } = ChromeUtils.import(
-  "resource:///modules/PlacesUIUtils.jsm"
+const { PlacesUIUtils } = ChromeUtils.importESModule(
+  "resource:///modules/PlacesUIUtils.sys.mjs"
 );
 
 let rootDir = do_get_file("chromefiles/", true);
@@ -52,61 +49,43 @@ async function testBookmarks(migratorKey, subDirs) {
   }
 
   let target = rootDir.clone();
+
   // Pretend this is the default profile
-  subDirs.push("Default");
   while (subDirs.length) {
     target.append(subDirs.shift());
   }
+
+  let localStatePath = PathUtils.join(target.path, "Local State");
+  await IOUtils.writeJSON(localStatePath, []);
+
+  target.append("Default");
 
   await IOUtils.makeDirectory(target.path, {
     createAncestor: true,
     ignoreExisting: true,
   });
 
+  // Copy Favicons database into Default profile
+  const sourcePath = do_get_file(
+    "AppData/Local/Google/Chrome/User Data/Default/Favicons"
+  ).path;
+  await IOUtils.copy(sourcePath, target.path);
+
+  // Get page url for each favicon
+  let faviconURIs = await MigrationUtils.getRowsFromDBWithoutLocks(
+    sourcePath,
+    "Chrome Bookmark Favicons",
+    `select page_url from icon_mapping`
+  );
+
   target.append("Bookmarks");
   await IOUtils.remove(target.path, { ignoreAbsent: true });
 
-  let bookmarksData = {
-    roots: { bookmark_bar: { children: [] }, other: { children: [] } },
-  };
-  const MAX_BMS = 100;
-  let barKids = bookmarksData.roots.bookmark_bar.children;
-  let menuKids = bookmarksData.roots.other.children;
-  let currentMenuKids = menuKids;
-  let currentBarKids = barKids;
-  for (let i = 0; i < MAX_BMS; i++) {
-    currentBarKids.push({
-      url: "https://www.chrome-bookmark-bar-bookmark" + i + ".com",
-      name: "bookmark " + i,
-      type: "url",
-    });
-    currentMenuKids.push({
-      url: "https://www.chrome-menu-bookmark" + i + ".com",
-      name: "bookmark for menu " + i,
-      type: "url",
-    });
-    if (i % 20 == 19) {
-      let nextFolder = {
-        name: "toolbar folder " + Math.ceil(i / 20),
-        type: "folder",
-        children: [],
-      };
-      currentBarKids.push(nextFolder);
-      currentBarKids = nextFolder.children;
-
-      nextFolder = {
-        name: "menu folder " + Math.ceil(i / 20),
-        type: "folder",
-        children: [],
-      };
-      currentMenuKids.push(nextFolder);
-      currentMenuKids = nextFolder.children;
-    }
-  }
-
+  let bookmarksData = createChromeBookmarkStructure();
   await IOUtils.writeJSON(target.path, bookmarksData);
 
   let migrator = await MigrationUtils.getMigrator(migratorKey);
+  Assert.ok(await migrator.hasPermissions(), "Has permissions");
   // Sanity check for the source.
   Assert.ok(await migrator.isSourceAvailable());
 
@@ -141,30 +120,73 @@ async function testBookmarks(migratorKey, subDirs) {
     );
     observerNotified = true;
   }, "browser-set-toolbar-visibility");
+  const initialToolbarCount = await getFolderItemCount(
+    PlacesUtils.bookmarks.toolbarGuid
+  );
+  const initialUnfiledCount = await getFolderItemCount(
+    PlacesUtils.bookmarks.unfiledGuid
+  );
+  const initialmenuCount = await getFolderItemCount(
+    PlacesUtils.bookmarks.menuGuid
+  );
+
   await promiseMigration(
     migrator,
     MigrationUtils.resourceTypes.BOOKMARKS,
     PROFILE
   );
+  const postToolbarCount = await getFolderItemCount(
+    PlacesUtils.bookmarks.toolbarGuid
+  );
+  const postUnfiledCount = await getFolderItemCount(
+    PlacesUtils.bookmarks.unfiledGuid
+  );
+  const postmenuCount = await getFolderItemCount(
+    PlacesUtils.bookmarks.menuGuid
+  );
+
+  Assert.equal(
+    postUnfiledCount - initialUnfiledCount,
+    210,
+    "Should have seen 210 items in unsorted bookmarks"
+  );
+  Assert.equal(
+    postToolbarCount - initialToolbarCount,
+    105,
+    "Should have seen 105 items in toolbar"
+  );
+  Assert.equal(
+    postmenuCount - initialmenuCount,
+    0,
+    "Should have seen 0 items in menu toolbar"
+  );
+
   PlacesUtils.observers.removeListener(["bookmark-added"], listener);
 
-  Assert.equal(itemsSeen.bookmarks, 200, "Should have seen 200 bookmarks.");
-  Assert.equal(itemsSeen.folders, 10, "Should have seen 10 folders.");
+  Assert.equal(itemsSeen.bookmarks, 300, "Should have seen 300 bookmarks.");
+  Assert.equal(itemsSeen.folders, 15, "Should have seen 15 folders.");
   Assert.equal(
     MigrationUtils._importQuantities.bookmarks,
     itemsSeen.bookmarks + itemsSeen.folders,
     "Telemetry reporting correct."
   );
   Assert.ok(observerNotified, "The observer should be notified upon migration");
+  let pageUrls = Array.from(faviconURIs, f =>
+    Services.io.newURI(f.getResultByName("page_url"))
+  );
+  await assertFavicons(pageUrls);
 }
 
 add_task(async function test_Chrome() {
+  // Expire all favicons before the test to make sure favicons are imported
+  PlacesUtils.favicons.expireAllFavicons();
   let subDirs =
     AppConstants.platform == "linux" ? ["google-chrome"] : ["Google", "Chrome"];
   await testBookmarks("chrome", subDirs);
 });
 
 add_task(async function test_ChromiumEdge() {
+  PlacesUtils.favicons.expireAllFavicons();
   if (AppConstants.platform == "linux") {
     // Edge isn't available on Linux.
     return;
@@ -175,3 +197,9 @@ add_task(async function test_ChromiumEdge() {
       : ["Microsoft", "Edge"];
   await testBookmarks("chromium-edge", subDirs);
 });
+
+async function getFolderItemCount(guid) {
+  let results = await PlacesUtils.promiseBookmarksTree(guid);
+
+  return results.itemsCount;
+}

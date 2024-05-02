@@ -5,8 +5,10 @@
 
 const {
   fetchProperties,
-} = require("devtools/client/dom/content/actions/grips");
-const { Property } = require("devtools/client/dom/content/reducers/grips");
+} = require("resource://devtools/client/dom/content/actions/grips.js");
+const {
+  Property,
+} = require("resource://devtools/client/dom/content/reducers/grips.js");
 
 // Implementation
 function GripProvider(grips, dispatch) {
@@ -23,7 +25,7 @@ GripProvider.prototype = {
    * Fetches properties from the backend. These properties might be
    * displayed as child objects in e.g. a tree UI widget.
    */
-  getChildren: function(object) {
+  getChildren(object) {
     let grip = object;
     if (object instanceof Property) {
       grip = this.getValue(object);
@@ -43,7 +45,7 @@ GripProvider.prototype = {
     return props;
   },
 
-  hasChildren: function(object) {
+  hasChildren(object) {
     if (object instanceof Property) {
       const value = this.getValue(object);
       if (!value) {
@@ -62,7 +64,7 @@ GripProvider.prototype = {
         const k = preview.kind;
         const objectsWithProps = ["DOMNode", "ObjectWithURL"];
         hasChildren = hasChildren || objectsWithProps.includes(k);
-        hasChildren = hasChildren || (k == "ArrayLike" && preview.length > 0);
+        hasChildren = hasChildren || (k == "ArrayLike" && !!preview.length);
       }
 
       return grip.type == "object" && hasChildren;
@@ -71,7 +73,7 @@ GripProvider.prototype = {
     return null;
   },
 
-  getValue: function(object) {
+  getValue(object) {
     if (object instanceof Property) {
       const value = object.value;
       return typeof value.value != "undefined"
@@ -82,15 +84,15 @@ GripProvider.prototype = {
     return object;
   },
 
-  getLabel: function(object) {
+  getLabel(object) {
     return object instanceof Property ? object.name : null;
   },
 
-  getKey: function(object) {
+  getKey(object) {
     return object instanceof Property ? object.key : null;
   },
 
-  getType: function(object) {
+  getType(object) {
     const grip = object?.getGrip ? object.getGrip() : object;
     return grip.class ? grip.class : "";
   },

@@ -3,7 +3,6 @@
 
 "use strict";
 
-/* import-globals-from inspector-helpers.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/server/tests/browser/inspector-helpers.js",
   this
@@ -14,7 +13,7 @@ add_task(async function testRemoveSubtree() {
     MAIN_DOMAIN + "inspector-traversal-data.html"
   );
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     function ignoreNode(node) {
       // Duplicate the walker logic to skip blank nodes...
       return (
@@ -28,8 +27,8 @@ add_task(async function testRemoveSubtree() {
       nextSibling = nextSibling.nextSibling;
     }
 
-    let previousSibling = content.document.querySelector("#longlist")
-      .previousSibling;
+    let previousSibling =
+      content.document.querySelector("#longlist").previousSibling;
     while (previousSibling && ignoreNode(previousSibling)) {
       previousSibling = previousSibling.previousSibling;
     }
@@ -60,19 +59,20 @@ add_task(async function testRemoveSubtree() {
   await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [[siblings.previousSibling.actorID, siblings.nextSibling.actorID]],
-    function([previousActorID, nextActorID]) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+    function ([previousActorID, nextActorID]) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
 
       // Convert actorID to current compartment string otherwise
       // searchAllConnectionsForActor is confused and won't find the actor.
       previousActorID = String(previousActorID);
       nextActorID = String(nextActorID);
-      const previous = DevToolsServer.searchAllConnectionsForActor(
-        previousActorID
-      );
+      const previous =
+        DevToolsServer.searchAllConnectionsForActor(previousActorID);
       const next = DevToolsServer.searchAllConnectionsForActor(nextActorID);
 
       is(

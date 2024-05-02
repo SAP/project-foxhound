@@ -15,12 +15,6 @@
  *   Daniele Nicolodi  <daniele@grinta.net>
  */
 
-/*
- * Copied from xpcom/ds/nsTextFormatter.cpp r1.22
- *     Changed to use nsMemory and Frozen linkage
- *                  -- Prasad <prasad@medhas.org>
- */
-
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,7 +23,6 @@
 #include "mozilla/Sprintf.h"
 #include "nsCRTGlue.h"
 #include "nsTextFormatter.h"
-#include "nsMemory.h"
 
 struct nsTextFormatter::SprintfStateStr {
   int (*stuff)(SprintfStateStr* aState, const char16_t* aStr, uint32_t aLen);
@@ -704,12 +697,8 @@ int nsTextFormatter::dosprintf(SprintfStateStr* aState, const char16_t* aFmt,
         break;
 
       case 'S':
-        MOZ_ASSERT(thisArg->mKind == STRING16);
-        // Type-based printing below.
-        break;
-
       case 's':
-        MOZ_ASSERT(thisArg->mKind == STRING);
+        MOZ_ASSERT(thisArg->mKind == STRING || thisArg->mKind == STRING16);
         // Type-based printing below.
         break;
 

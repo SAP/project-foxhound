@@ -3,8 +3,8 @@
 
 // See also browser/base/content/test/newtab/.
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 // A small 1x1 test png
@@ -88,7 +88,7 @@ add_task(async function populatePromise() {
   let count = 0;
   let expectedLinks = makeLinks(0, 10, 2);
 
-  let getLinksFcn = async function(callback) {
+  let getLinksFcn = async function (callback) {
     // Should not be calling getLinksFcn twice
     count++;
     Assert.equal(count, 1);
@@ -688,7 +688,7 @@ add_task(async function getHighlightsWithPocketSuccess() {
 
   const fakeResponse = {
     list: {
-      "123": {
+      123: {
         time_added: "123",
         image: { src: "foo.com/img.png" },
         excerpt: "A description for foo",
@@ -698,7 +698,7 @@ add_task(async function getHighlightsWithPocketSuccess() {
         open_url: "http://www.getpocket.com/itemID",
         status: "0",
       },
-      "456": {
+      456: {
         item_id: "456",
         status: "2",
       },
@@ -768,7 +768,7 @@ add_task(async function getHighlightsWithPocketCached() {
 
   let fakeResponse = {
     list: {
-      "123": {
+      123: {
         time_added: "123",
         image: { src: "foo.com/img.png" },
         excerpt: "A description for foo",
@@ -778,7 +778,7 @@ add_task(async function getHighlightsWithPocketCached() {
         open_url: "http://www.getpocket.com/itemID",
         status: "0",
       },
-      "456": {
+      456: {
         item_id: "456",
         status: "2",
       },
@@ -848,7 +848,7 @@ add_task(async function getHighlightsWithPocketCached() {
 add_task(async function getHighlightsWithPocketFailure() {
   await setUpActivityStreamTest();
 
-  NewTabUtils.activityStreamProvider.fetchSavedPocketItems = function() {
+  NewTabUtils.activityStreamProvider.fetchSavedPocketItems = function () {
     throw new Error();
   };
   let provider = NewTabUtils.activityStreamLinks;
@@ -1204,6 +1204,101 @@ add_task(async function getTopFrecentSites_order() {
     isVisitDateOK(links[3].lastVisitDate),
     "visit date within expected range"
   );
+});
+
+add_task(async function getTopFrecentSites_hideWithSearchParam() {
+  await setUpActivityStreamTest();
+
+  let pref = "browser.newtabpage.activity-stream.hideTopSitesWithSearchParam";
+  let provider = NewTabUtils.activityStreamLinks;
+
+  // This maps URL search params to objects describing whether a URL with those
+  // params is expected to be included in the returned links. Each object maps
+  // from effective hide-with search params to whether the URL is expected to be
+  // included.
+  let tests = {
+    "": {
+      "": true,
+      test: true,
+      "test=": true,
+      "test=hide": true,
+      nomatch: true,
+      "nomatch=": true,
+      "nomatch=hide": true,
+    },
+    test: {
+      "": true,
+      test: false,
+      "test=": false,
+      "test=hide": true,
+      nomatch: true,
+      "nomatch=": true,
+      "nomatch=hide": true,
+    },
+    "test=hide": {
+      "": true,
+      test: false,
+      "test=": true,
+      "test=hide": false,
+      nomatch: true,
+      "nomatch=": true,
+      "nomatch=hide": true,
+    },
+    "test=foo&test=hide": {
+      "": true,
+      test: false,
+      "test=": true,
+      "test=hide": false,
+      nomatch: true,
+      "nomatch=": true,
+      "nomatch=hide": true,
+    },
+  };
+
+  for (let [urlParams, expected] of Object.entries(tests)) {
+    for (let prefValue of Object.keys(expected)) {
+      info(
+        "Running test: " + JSON.stringify({ urlParams, prefValue, expected })
+      );
+
+      // Add a visit to a URL with search params `urlParams`.
+      let url = new URL("http://example.com/");
+      url.search = urlParams;
+      await PlacesTestUtils.addVisits(url);
+
+      // Set the pref to `prefValue`.
+      Services.prefs.setCharPref(pref, prefValue);
+
+      // Call `getTopSites()` with all the test values for `hideWithSearchParam`
+      // plus undefined. When `hideWithSearchParam` is undefined, the pref value
+      // should be used. Otherwise it should override the pref.
+      for (let hideWithSearchParam of [undefined, ...Object.keys(expected)]) {
+        info(
+          "Calling getTopSites() with hideWithSearchParam: " +
+            JSON.stringify(hideWithSearchParam)
+        );
+
+        let options = { topsiteFrecency: 100 };
+        if (hideWithSearchParam !== undefined) {
+          options = { ...options, hideWithSearchParam };
+        }
+        let links = await provider.getTopSites(options);
+
+        let effectiveHideWithParam =
+          hideWithSearchParam === undefined ? prefValue : hideWithSearchParam;
+        if (expected[effectiveHideWithParam]) {
+          Assert.equal(links.length, 1, "One link returned");
+          Assert.equal(links[0].url, url.toString(), "Expected link returned");
+        } else {
+          Assert.equal(links.length, 0, "No links returned");
+        }
+      }
+
+      await PlacesUtils.history.clear();
+    }
+  }
+
+  Services.prefs.clearUserPref(pref);
 });
 
 add_task(async function activitySteamProvider_deleteHistoryLink() {

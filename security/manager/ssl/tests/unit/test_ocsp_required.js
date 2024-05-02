@@ -28,7 +28,7 @@ function run_test() {
   gOCSPResponse = ocspResponses[0];
 
   let ocspResponder = new HttpServer();
-  ocspResponder.registerPrefixHandler("/", function(request, response) {
+  ocspResponder.registerPrefixHandler("/", function (request, response) {
     response.setStatusLine(request.httpVersion, 200, "OK");
     response.setHeader("Content-Type", "application/ocsp-response");
     response.write(gOCSPResponse);
@@ -38,7 +38,7 @@ function run_test() {
 
   add_tests();
 
-  add_test(function() {
+  add_test(function () {
     ocspResponder.stop(run_next_test);
   });
 
@@ -48,13 +48,27 @@ function run_test() {
 function add_tests() {
   add_connection_test(
     "ocsp-stapling-none.example.com",
-    SEC_ERROR_OCSP_BAD_SIGNATURE
+    SEC_ERROR_OCSP_BAD_SIGNATURE,
+    function () {},
+    function (aTransportSecurityInfo) {
+      Assert.ok(
+        aTransportSecurityInfo.madeOCSPRequests,
+        "An OCSP Request should have been made."
+      );
+    }
   );
   add_connection_test(
     "ocsp-stapling-none.example.com",
-    SEC_ERROR_OCSP_BAD_SIGNATURE
+    SEC_ERROR_OCSP_BAD_SIGNATURE,
+    function () {},
+    function (aTransportSecurityInfo) {
+      Assert.ok(
+        !aTransportSecurityInfo.madeOCSPRequests,
+        "An OCSP Request should not have been made."
+      );
+    }
   );
-  add_test(function() {
+  add_test(function () {
     equal(
       gOCSPRequestCount,
       1,
@@ -69,6 +83,13 @@ function add_tests() {
 
   add_connection_test(
     "ocsp-stapling-none.example.com",
-    SEC_ERROR_OCSP_MALFORMED_RESPONSE
+    SEC_ERROR_OCSP_MALFORMED_RESPONSE,
+    function () {},
+    function (aTransportSecurityInfo) {
+      Assert.ok(
+        aTransportSecurityInfo.madeOCSPRequests,
+        "An OCSP Request should have been made."
+      );
+    }
   );
 }

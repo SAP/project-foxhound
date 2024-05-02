@@ -27,7 +27,7 @@ namespace layers {
 
 void WebRenderBackgroundData::AddWebRenderCommands(
     wr::DisplayListBuilder& aBuilder) {
-  aBuilder.PushRect(mBounds, mBounds, true, mColor);
+  aBuilder.PushRect(mBounds, mBounds, true, true, false, mColor);
 }
 
 /* static */
@@ -146,7 +146,7 @@ Maybe<wr::ImageKey> WebRenderImageData::UpdateImageKey(
   ImageClientSingle* imageClient = mImageClient->AsImageClientSingle();
   uint32_t oldCounter = imageClient->GetLastUpdateGenerationCounter();
 
-  bool ret = imageClient->UpdateImage(aContainer, /* unused */ 0);
+  bool ret = imageClient->UpdateImage(aContainer);
   RefPtr<TextureClient> currentTexture = imageClient->GetForwardedTexture();
   if (!ret || !currentTexture) {
     // Delete old key
@@ -210,8 +210,9 @@ void WebRenderImageData::CreateAsyncImageWebRenderCommands(
     // Alloc async image pipeline id.
     mPipelineId =
         Some(WrBridge()->GetCompositorBridgeChild()->GetNextPipelineId());
-    WrBridge()->AddPipelineIdForAsyncCompositable(
-        mPipelineId.ref(), aContainer->GetAsyncContainerHandle());
+    WrBridge()->AddPipelineIdForCompositable(
+        mPipelineId.ref(), aContainer->GetAsyncContainerHandle(),
+        CompositableHandleOwner::ImageBridge);
     mContainer = aContainer;
   }
   MOZ_ASSERT(!mImageClient);
@@ -224,8 +225,7 @@ void WebRenderImageData::CreateAsyncImageWebRenderCommands(
   // context need to be done manually and pushed over to the parent side,
   // where it will be done when we build the display list for the iframe.
   // That happens in AsyncImagePipelineManager.
-  wr::LayoutRect r = wr::ToLayoutRect(aBounds);
-  aBuilder.PushIFrame(r, aIsBackfaceVisible, mPipelineId.ref(),
+  aBuilder.PushIFrame(aBounds, aIsBackfaceVisible, mPipelineId.ref(),
                       /*ignoreMissingPipelines*/ false);
 
   WrBridge()->AddWebRenderParentCommand(OpUpdateAsyncImagePipeline(
@@ -251,8 +251,7 @@ WebRenderImageProviderData::WebRenderImageProviderData(
 WebRenderImageProviderData::WebRenderImageProviderData(
     RenderRootStateManager* aManager, uint32_t aDisplayItemKey,
     nsIFrame* aFrame)
-    : WebRenderUserData(aManager, aDisplayItemKey, aFrame),
-      mDrawResult(ImgDrawResult::NOT_READY) {}
+    : WebRenderUserData(aManager, aDisplayItemKey, aFrame) {}
 
 WebRenderImageProviderData::~WebRenderImageProviderData() = default;
 
@@ -380,6 +379,20 @@ WebRenderCanvasRendererAsync* WebRenderCanvasData::CreateCanvasRenderer() {
   return mCanvasRenderer.get();
 }
 
+bool WebRenderCanvasData::SetCanvasRenderer(CanvasRenderer* aCanvasRenderer) {
+  if (!aCanvasRenderer || !aCanvasRenderer->AsWebRenderCanvasRendererAsync()) {
+    return false;
+  }
+
+  auto* renderer = aCanvasRenderer->AsWebRenderCanvasRendererAsync();
+  if (mManager != renderer->GetRenderRootStateManager()) {
+    return false;
+  }
+
+  mCanvasRenderer = renderer;
+  return true;
+}
+
 void WebRenderCanvasData::SetImageContainer(ImageContainer* aImageContainer) {
   mContainer = aImageContainer;
 }
@@ -392,30 +405,6 @@ ImageContainer* WebRenderCanvasData::GetImageContainer() {
 }
 
 void WebRenderCanvasData::ClearImageContainer() { mContainer = nullptr; }
-
-WebRenderLocalCanvasData::WebRenderLocalCanvasData(
-    RenderRootStateManager* aManager, nsDisplayItem* aItem)
-    : WebRenderUserData(aManager, aItem) {}
-
-WebRenderLocalCanvasData::~WebRenderLocalCanvasData() = default;
-
-void WebRenderLocalCanvasData::RequestFrameReadback() {
-  if (mGpuBridge) {
-    mGpuBridge->SwapChainPresent(mExternalImageId, mGpuTextureId);
-  }
-}
-
-void WebRenderLocalCanvasData::RefreshExternalImage() {
-  if (!mDirty) {
-    return;
-  }
-
-  const ImageIntRect dirtyRect(0, 0, mDescriptor.width, mDescriptor.height);
-  // Update the WR external image, forcing the composition of a new frame.
-  mManager->AsyncResourceUpdates().UpdatePrivateExternalImage(
-      mExternalImageId, mImageKey, mDescriptor, dirtyRect);
-  mDirty = false;
-}
 
 WebRenderRemoteData::WebRenderRemoteData(RenderRootStateManager* aManager,
                                          nsDisplayItem* aItem)

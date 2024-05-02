@@ -9,9 +9,6 @@
 const chromeRegistry = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(
   Ci.nsIChromeRegistry
 );
-const env = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
 const EXTENSION_DIR =
   "chrome://mochitests/content/browser/browser/tools/mozscreenshots/mozscreenshots/extension/mozscreenshots/browser/";
 
@@ -36,20 +33,21 @@ async function setup() {
 
   let aAddon = await AddonManager.getAddonByID("mozscreenshots@mozilla.org");
   isnot(aAddon, null, "The mozscreenshots extension should be installed");
-  TestRunner = ChromeUtils.import(
-    "resource://mozscreenshots/TestRunner.jsm",
-    {}
+  TestRunner = ChromeUtils.importESModule(
+    "resource://mozscreenshots/TestRunner.sys.mjs"
   ).TestRunner;
   TestRunner.initTest(this);
 }
 
 /**
  * Used by pre-defined sets of configurations to decide whether to run for a build.
- * @note This is not used by browser_screenshots.js which handles when MOZSCREENSHOTS_SETS is set.
- * @return {bool} whether to capture screenshots.
+ *
+ * This is not used by browser_screenshots.js which handles when MOZSCREENSHOTS_SETS is set.
+ *
+ * @returns {bool} whether to capture screenshots.
  */
 function shouldCapture() {
-  if (env.get("MOZSCREENSHOTS_SETS")) {
+  if (Services.env.get("MOZSCREENSHOTS_SETS")) {
     ok(
       true,
       "MOZSCREENSHOTS_SETS was specified so only capture what was " +
@@ -66,4 +64,4 @@ function shouldCapture() {
   return true;
 }
 
-add_task(setup);
+add_setup(setup);

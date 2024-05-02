@@ -6,21 +6,29 @@
 #include "SessionAccessibility.h"
 #include "LocalAccessible-inl.h"
 #include "AndroidUiThread.h"
+#include "AndroidBridge.h"
 #include "DocAccessibleParent.h"
+#include "IDSet.h"
 #include "nsThreadUtils.h"
 #include "AccAttributes.h"
 #include "AccessibilityEvent.h"
-#include "HyperTextAccessible.h"
 #include "JavaBuiltins.h"
 #include "RootAccessibleWrap.h"
 #include "nsAccessibilityService.h"
+#include "nsAccUtils.h"
 #include "nsViewManager.h"
 
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/a11y/Accessible.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/DocManager.h"
+#include "mozilla/a11y/HyperTextAccessibleBase.h"
 #include "mozilla/jni/GeckoBundleUtils.h"
+#include "mozilla/jni/NativesInlines.h"
 #include "mozilla/widget/GeckoViewSupport.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/dom/MouseEventBinding.h"
@@ -35,17 +43,10 @@
     } while (0)
 #endif
 
-#define FORWARD_ACTION_TO_ACCESSIBLE(funcname, ...)         \
-  if (RootAccessibleWrap* rootAcc = GetRoot()) {            \
-    AccessibleWrap* acc = rootAcc->FindAccessibleById(aID); \
-    if (!acc) {                                             \
-      return;                                               \
-    }                                                       \
-                                                            \
-    acc->funcname(__VA_ARGS__);                             \
-  }
-
 using namespace mozilla::a11y;
+
+// IDs should be a positive 32bit integer.
+IDSet sIDSet(31UL);
 
 class Settings final
     : public mozilla::java::SessionAccessibility::Settings::Natives<Settings> {
@@ -89,48 +90,105 @@ void SessionAccessibility::Init() {
   Settings::Init();
 }
 
-mozilla::jni::Object::LocalRef SessionAccessibility::GetNodeInfo(int32_t aID) {
+void SessionAccessibility::GetNodeInfo(int32_t aID,
+                                       mozilla::jni::Object::Param aNodeInfo) {
+  MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+  ReleasableMonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
   java::GeckoBundle::GlobalRef ret = nullptr;
   RefPtr<SessionAccessibility> self(this);
-  nsAppShell::SyncRunEvent([this, self, aID, &ret] {
-    if (RootAccessibleWrap* rootAcc = GetRoot()) {
-      AccessibleWrap* acc = rootAcc->FindAccessibleById(aID);
-      if (acc) {
-        ret = acc->ToBundle();
-      } else {
-        AALOG("oops, nothing for %d", aID);
-      }
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (acc->IsLocal()) {
+      mal.Unlock();
+      nsAppShell::SyncRunEvent(
+          [this, self, aID, aNodeInfo = jni::Object::GlobalRef(aNodeInfo)] {
+            if (Accessible* acc = GetAccessibleByID(aID)) {
+              PopulateNodeInfo(acc, aNodeInfo);
+            } else {
+              AALOG("oops, nothing for %d", aID);
+            }
+          });
+    } else {
+      PopulateNodeInfo(acc, aNodeInfo);
     }
-  });
-
-  return mozilla::jni::Object::Ref::From(ret);
+  } else {
+    AALOG("oops, nothing for %d", aID);
+  }
 }
 
-RootAccessibleWrap* SessionAccessibility::GetRoot() {
-  auto gvAccessor(mWindow.Access());
-  if (!gvAccessor) {
-    return nullptr;
+int SessionAccessibility::GetNodeClassName(int32_t aID) {
+  MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+  ReleasableMonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+  int32_t classNameEnum = java::SessionAccessibility::CLASSNAME_VIEW;
+  RefPtr<SessionAccessibility> self(this);
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (acc->IsLocal()) {
+      mal.Unlock();
+      nsAppShell::SyncRunEvent([this, self, aID, &classNameEnum] {
+        if (Accessible* acc = GetAccessibleByID(aID)) {
+          classNameEnum = AccessibleWrap::AndroidClass(acc);
+        }
+      });
+    } else {
+      classNameEnum = AccessibleWrap::AndroidClass(acc);
+    }
   }
 
-  nsWindow* gkWindow = gvAccessor->GetNsWindow();
-  if (!gkWindow) {
-    return nullptr;
-  }
-
-  return static_cast<RootAccessibleWrap*>(gkWindow->GetRootAccessible());
+  return classNameEnum;
 }
 
 void SessionAccessibility::SetText(int32_t aID, jni::String::Param aText) {
-  FORWARD_ACTION_TO_ACCESSIBLE(SetTextContents, aText->ToString());
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (acc->IsRemote()) {
+      acc->AsRemote()->ReplaceText(PromiseFlatString(aText->ToString()));
+    } else if (acc->AsLocal()->IsHyperText()) {
+      acc->AsLocal()->AsHyperText()->ReplaceText(aText->ToString());
+    }
+  }
 }
 
 void SessionAccessibility::Click(int32_t aID) {
-  FORWARD_ACTION_TO_ACCESSIBLE(DoAction, 0);
+  MOZ_ASSERT(NS_IsMainThread());
+  MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    acc->DoAction(0);
+  }
 }
 
-void SessionAccessibility::Pivot(int32_t aID, int32_t aGranularity,
+bool SessionAccessibility::Pivot(int32_t aID, int32_t aGranularity,
                                  bool aForward, bool aInclusive) {
-  FORWARD_ACTION_TO_ACCESSIBLE(PivotTo, aGranularity, aForward, aInclusive);
+  MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+  MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+  RefPtr<SessionAccessibility> self(this);
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (acc->IsLocal()) {
+      nsAppShell::PostEvent(
+          [this, self, aID, aGranularity, aForward, aInclusive] {
+            MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+            if (Accessible* _acc = GetAccessibleByID(aID)) {
+              MOZ_ASSERT(_acc && _acc->IsLocal());
+              if (LocalAccessible* localAcc = _acc->AsLocal()) {
+                static_cast<AccessibleWrap*>(localAcc)->PivotTo(
+                    aGranularity, aForward, aInclusive);
+              }
+            }
+          });
+      return true;
+    }
+    Accessible* result =
+        AccessibleWrap::DoPivot(acc, aGranularity, aForward, aInclusive);
+    if (result) {
+      int32_t virtualViewID = AccessibleWrap::GetVirtualViewID(result);
+      nsAppShell::PostEvent([this, self, virtualViewID] {
+        MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+        if (Accessible* acc = GetAccessibleByID(virtualViewID)) {
+          SendAccessibilityFocusedEvent(acc);
+        }
+      });
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void SessionAccessibility::ExploreByTouch(int32_t aID, float aX, float aY) {
@@ -147,49 +205,182 @@ void SessionAccessibility::ExploreByTouch(int32_t aID, float aX, float aY) {
   }
 }
 
-void SessionAccessibility::NavigateText(int32_t aID, int32_t aGranularity,
+static void GetSelectionOrCaret(HyperTextAccessibleBase* aHyperTextAcc,
+                                int32_t* aStartOffset, int32_t* aEndOffset) {
+  if (!aHyperTextAcc->SelectionBoundsAt(0, aStartOffset, aEndOffset)) {
+    *aStartOffset = *aEndOffset = aHyperTextAcc->CaretOffset();
+  }
+}
+
+static void AdjustCaretToTextNavigation(Accessible* aAccessible,
                                         int32_t aStartOffset,
                                         int32_t aEndOffset, bool aForward,
                                         bool aSelect) {
-  FORWARD_ACTION_TO_ACCESSIBLE(NavigateText, aGranularity, aStartOffset,
-                               aEndOffset, aForward, aSelect);
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!(aAccessible->State() & states::EDITABLE)) {
+    return;
+  }
+
+  HyperTextAccessibleBase* editable = aAccessible->AsHyperTextBase();
+  MOZ_ASSERT(editable);
+  if (!editable) {
+    return;
+  }
+
+  int32_t newOffset = aForward ? aEndOffset : aStartOffset;
+  if (aSelect) {
+    int32_t anchor = editable->CaretOffset();
+    if (editable->SelectionCount()) {
+      int32_t startSel, endSel;
+      GetSelectionOrCaret(editable, &startSel, &endSel);
+      anchor = startSel == anchor ? endSel : startSel;
+    }
+    editable->SetSelectionBoundsAt(0, anchor, newOffset);
+  } else {
+    editable->SetCaretOffset(newOffset);
+  }
+}
+
+bool SessionAccessibility::NavigateText(int32_t aID, int32_t aGranularity,
+                                        int32_t aStartOffset,
+                                        int32_t aEndOffset, bool aForward,
+                                        bool aSelect) {
+  MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+  MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+  RefPtr<SessionAccessibility> self(this);
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (acc->IsLocal()) {
+      nsAppShell::PostEvent([this, self, aID, aGranularity, aStartOffset,
+                             aEndOffset, aForward, aSelect] {
+        MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+        if (Accessible* _acc = GetAccessibleByID(aID)) {
+          auto result = AccessibleWrap::NavigateText(
+              _acc, aGranularity, aStartOffset, aEndOffset, aForward, aSelect);
+
+          if (result) {
+            SendTextTraversedEvent(_acc, result->first, result->second);
+            AdjustCaretToTextNavigation(_acc, result->first, result->second,
+                                        aForward, aSelect);
+          }
+        }
+      });
+      return true;
+    } else {
+      auto result = AccessibleWrap::NavigateText(
+          acc, aGranularity, aStartOffset, aEndOffset, aForward, aSelect);
+      if (result) {
+        nsAppShell::PostEvent([this, self, aID, result, aForward, aSelect] {
+          MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+          if (Accessible* _acc = GetAccessibleByID(aID)) {
+            SendTextTraversedEvent(_acc, result->first, result->second);
+            AdjustCaretToTextNavigation(_acc, result->first, result->second,
+                                        aForward, aSelect);
+          }
+        });
+      }
+
+      return !!result;
+    }
+  }
+
+  return false;
 }
 
 void SessionAccessibility::SetSelection(int32_t aID, int32_t aStart,
                                         int32_t aEnd) {
-  FORWARD_ACTION_TO_ACCESSIBLE(SetSelection, aStart, aEnd);
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (auto* textAcc = acc->AsHyperTextBase()) {
+      if (aStart == aEnd) {
+        textAcc->SetCaretOffset(aStart);
+      } else {
+        textAcc->SetSelectionBoundsAt(0, aStart, aEnd);
+      }
+    }
+  }
 }
 
 void SessionAccessibility::Cut(int32_t aID) {
-  FORWARD_ACTION_TO_ACCESSIBLE(Cut);
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (auto* textAcc = acc->AsHyperTextBase()) {
+      int32_t startSel, endSel;
+      if (textAcc->SelectionBoundsAt(0, &startSel, &endSel)) {
+        textAcc->CutText(startSel, endSel);
+      }
+    }
+  }
 }
 
 void SessionAccessibility::Copy(int32_t aID) {
-  FORWARD_ACTION_TO_ACCESSIBLE(Copy);
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (auto* textAcc = acc->AsHyperTextBase()) {
+      int32_t startSel, endSel;
+      GetSelectionOrCaret(textAcc, &startSel, &endSel);
+      textAcc->CopyText(startSel, endSel);
+    }
+  }
 }
 
 void SessionAccessibility::Paste(int32_t aID) {
-  FORWARD_ACTION_TO_ACCESSIBLE(Paste);
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    if (auto* textAcc = acc->AsHyperTextBase()) {
+      int32_t startSel, endSel;
+      GetSelectionOrCaret(textAcc, &startSel, &endSel);
+      if (startSel != endSel) {
+        textAcc->DeleteText(startSel, endSel);
+      }
+      textAcc->PasteText(startSel);
+    }
+  }
 }
 
 RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
-    RemoteAccessible* aAccessible) {
-  auto tab =
-      static_cast<dom::BrowserParent*>(aAccessible->Document()->Manager());
-  dom::Element* frame = tab->GetOwnerElement();
-  MOZ_ASSERT(frame);
-  if (!frame) {
+    Accessible* aAccessible) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (LocalAccessible* localAcc = aAccessible->AsLocal()) {
+    DocAccessible* docAcc = localAcc->Document();
+    // If the accessible is being shutdown from the doc's shutdown
+    // the doc accessible won't have a ref to a presshell anymore,
+    // but we should have a ref to the DOM document node, and the DOM doc
+    // has a ref to the presshell.
+    dom::Document* doc = docAcc ? docAcc->DocumentNode() : nullptr;
+    if (doc && doc->IsContentDocument()) {
+      // Only content accessibles should have an associated SessionAccessible.
+      return GetInstanceFor(doc->GetPresShell());
+    }
+  } else {
+    dom::CanonicalBrowsingContext* cbc =
+        static_cast<dom::BrowserParent*>(
+            aAccessible->AsRemote()->Document()->Manager())
+            ->GetBrowsingContext()
+            ->Top();
+    dom::BrowserParent* bp = cbc->GetBrowserParent();
+    if (!bp) {
+      bp = static_cast<dom::BrowserParent*>(
+          aAccessible->AsRemote()->Document()->Manager());
+    }
+    if (auto element = bp->GetOwnerElement()) {
+      if (auto doc = element->OwnerDoc()) {
+        if (nsPresContext* presContext = doc->GetPresContext()) {
+          return GetInstanceFor(presContext->PresShell());
+        }
+      } else {
+        MOZ_ASSERT_UNREACHABLE(
+            "Browser parent's element does not have owner doc.");
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
+    PresShell* aPresShell) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!aPresShell) {
     return nullptr;
   }
 
-  LocalAccessible* chromeDoc = GetExistingDocAccessible(frame->OwnerDoc());
-  return chromeDoc ? GetInstanceFor(chromeDoc) : nullptr;
-}
-
-RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
-    LocalAccessible* aAccessible) {
-  RootAccessible* rootAcc = aAccessible->RootAccessible();
-  nsViewManager* vm = rootAcc->PresShellPtr()->GetViewManager();
+  nsViewManager* vm = aPresShell->GetViewManager();
   if (!vm) {
     return nullptr;
   }
@@ -205,20 +396,25 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
 }
 
 void SessionAccessibility::SendAccessibilityFocusedEvent(
-    AccessibleWrap* aAccessible) {
+    Accessible* aAccessible) {
+  MOZ_ASSERT(NS_IsMainThread());
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_ACCESSIBILITY_FOCUSED,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), nullptr);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), nullptr);
   aAccessible->ScrollTo(nsIAccessibleScrollType::SCROLL_TYPE_ANYWHERE);
 }
 
-void SessionAccessibility::SendHoverEnterEvent(AccessibleWrap* aAccessible) {
+void SessionAccessibility::SendHoverEnterEvent(Accessible* aAccessible) {
+  MOZ_ASSERT(NS_IsMainThread());
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_HOVER_ENTER,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), nullptr);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), nullptr);
 }
 
-void SessionAccessibility::SendFocusEvent(AccessibleWrap* aAccessible) {
+void SessionAccessibility::SendFocusEvent(Accessible* aAccessible) {
+  MOZ_ASSERT(NS_IsMainThread());
   // Suppress focus events from about:blank pages.
   // This is important for tests.
   if (aAccessible->IsDoc() && aAccessible->ChildCount() == 0) {
@@ -227,17 +423,19 @@ void SessionAccessibility::SendFocusEvent(AccessibleWrap* aAccessible) {
 
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_FOCUSED,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), nullptr);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), nullptr);
 }
 
-void SessionAccessibility::SendScrollingEvent(AccessibleWrap* aAccessible,
+void SessionAccessibility::SendScrollingEvent(Accessible* aAccessible,
                                               int32_t aScrollX,
                                               int32_t aScrollY,
                                               int32_t aMaxScrollX,
                                               int32_t aMaxScrollY) {
-  int32_t virtualViewId = aAccessible->VirtualViewID();
+  MOZ_ASSERT(NS_IsMainThread());
+  int32_t virtualViewId = AccessibleWrap::GetVirtualViewID(aAccessible);
 
-  if (virtualViewId != AccessibleWrap::kNoID) {
+  if (virtualViewId != kNoID) {
     // XXX: Support scrolling in subframes
     return;
   }
@@ -253,18 +451,19 @@ void SessionAccessibility::SendScrollingEvent(AccessibleWrap* aAccessible,
 
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_SCROLLED, virtualViewId,
-      aAccessible->AndroidClass(), eventInfo);
+      AccessibleWrap::AndroidClass(aAccessible), eventInfo);
+  SendWindowContentChangedEvent();
 }
 
 void SessionAccessibility::SendWindowContentChangedEvent() {
   mSessionAccessibility->SendEvent(
-      java::sdk::AccessibilityEvent::TYPE_WINDOW_CONTENT_CHANGED,
-      AccessibleWrap::kNoID, java::SessionAccessibility::CLASSNAME_WEBVIEW,
-      nullptr);
+      java::sdk::AccessibilityEvent::TYPE_WINDOW_CONTENT_CHANGED, kNoID,
+      java::SessionAccessibility::CLASSNAME_WEBVIEW, nullptr);
 }
 
 void SessionAccessibility::SendWindowStateChangedEvent(
-    AccessibleWrap* aAccessible) {
+    Accessible* aAccessible) {
+  MOZ_ASSERT(NS_IsMainThread());
   // Suppress window state changed events from about:blank pages.
   // This is important for tests.
   if (aAccessible->IsDoc() && aAccessible->ChildCount() == 0) {
@@ -273,19 +472,34 @@ void SessionAccessibility::SendWindowStateChangedEvent(
 
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_WINDOW_STATE_CHANGED,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), nullptr);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), nullptr);
+
+  SendWindowContentChangedEvent();
 }
 
 void SessionAccessibility::SendTextSelectionChangedEvent(
-    AccessibleWrap* aAccessible, int32_t aCaretOffset) {
+    Accessible* aAccessible, int32_t aCaretOffset) {
+  MOZ_ASSERT(NS_IsMainThread());
   int32_t fromIndex = aCaretOffset;
   int32_t startSel = -1;
   int32_t endSel = -1;
-  if (aAccessible->GetSelectionBounds(&startSel, &endSel)) {
+  bool hasSelection =
+      aAccessible->AsHyperTextBase()->SelectionBoundsAt(0, &startSel, &endSel);
+
+  if (hasSelection) {
     fromIndex = startSel == aCaretOffset ? endSel : startSel;
   }
 
+  nsAutoString text;
+  if (aAccessible->IsHyperText()) {
+    aAccessible->AsHyperTextBase()->TextSubstring(0, -1, text);
+  } else if (aAccessible->IsText()) {
+    aAccessible->AppendTextTo(text, 0, -1);
+  }
+
   GECKOBUNDLE_START(eventInfo);
+  GECKOBUNDLE_PUT(eventInfo, "text", jni::StringParam(text));
   GECKOBUNDLE_PUT(eventInfo, "fromIndex",
                   java::sdk::Integer::ValueOf(fromIndex));
   GECKOBUNDLE_PUT(eventInfo, "toIndex",
@@ -294,21 +508,27 @@ void SessionAccessibility::SendTextSelectionChangedEvent(
 
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_TEXT_SELECTION_CHANGED,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), eventInfo);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), eventInfo);
 }
 
-void SessionAccessibility::SendTextChangedEvent(AccessibleWrap* aAccessible,
-                                                const nsString& aStr,
+void SessionAccessibility::SendTextChangedEvent(Accessible* aAccessible,
+                                                const nsAString& aStr,
                                                 int32_t aStart, uint32_t aLen,
                                                 bool aIsInsert,
                                                 bool aFromUser) {
+  MOZ_ASSERT(NS_IsMainThread());
   if (!aFromUser) {
     // Only dispatch text change events from users, for now.
     return;
   }
 
   nsAutoString text;
-  aAccessible->GetTextContents(text);
+  if (aAccessible->IsHyperText()) {
+    aAccessible->AsHyperTextBase()->TextSubstring(0, -1, text);
+  } else if (aAccessible->IsText()) {
+    aAccessible->AppendTextTo(text, 0, -1);
+  }
   nsAutoString beforeText(text);
   if (aIsInsert) {
     beforeText.Cut(aStart, aLen);
@@ -319,6 +539,7 @@ void SessionAccessibility::SendTextChangedEvent(AccessibleWrap* aAccessible,
   GECKOBUNDLE_START(eventInfo);
   GECKOBUNDLE_PUT(eventInfo, "text", jni::StringParam(text));
   GECKOBUNDLE_PUT(eventInfo, "beforeText", jni::StringParam(beforeText));
+  GECKOBUNDLE_PUT(eventInfo, "fromIndex", java::sdk::Integer::ValueOf(aStart));
   GECKOBUNDLE_PUT(eventInfo, "addedCount",
                   java::sdk::Integer::ValueOf(aIsInsert ? aLen : 0));
   GECKOBUNDLE_PUT(eventInfo, "removedCount",
@@ -327,14 +548,20 @@ void SessionAccessibility::SendTextChangedEvent(AccessibleWrap* aAccessible,
 
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_TEXT_CHANGED,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), eventInfo);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), eventInfo);
 }
 
-void SessionAccessibility::SendTextTraversedEvent(AccessibleWrap* aAccessible,
+void SessionAccessibility::SendTextTraversedEvent(Accessible* aAccessible,
                                                   int32_t aStartOffset,
                                                   int32_t aEndOffset) {
+  MOZ_ASSERT(NS_IsMainThread());
   nsAutoString text;
-  aAccessible->GetTextContents(text);
+  if (aAccessible->IsHyperText()) {
+    aAccessible->AsHyperTextBase()->TextSubstring(0, -1, text);
+  } else if (aAccessible->IsText()) {
+    aAccessible->AppendTextTo(text, 0, -1);
+  }
 
   GECKOBUNDLE_START(eventInfo);
   GECKOBUNDLE_PUT(eventInfo, "text", jni::StringParam(text));
@@ -347,10 +574,11 @@ void SessionAccessibility::SendTextTraversedEvent(AccessibleWrap* aAccessible,
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::
           TYPE_VIEW_TEXT_TRAVERSED_AT_MOVEMENT_GRANULARITY,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), eventInfo);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), eventInfo);
 }
 
-void SessionAccessibility::SendClickedEvent(AccessibleWrap* aAccessible,
+void SessionAccessibility::SendClickedEvent(Accessible* aAccessible,
                                             uint32_t aFlags) {
   GECKOBUNDLE_START(eventInfo);
   GECKOBUNDLE_PUT(eventInfo, "flags", java::sdk::Integer::ValueOf(aFlags));
@@ -358,11 +586,13 @@ void SessionAccessibility::SendClickedEvent(AccessibleWrap* aAccessible,
 
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_CLICKED,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), eventInfo);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), eventInfo);
 }
 
-void SessionAccessibility::SendSelectedEvent(AccessibleWrap* aAccessible,
+void SessionAccessibility::SendSelectedEvent(Accessible* aAccessible,
                                              bool aSelected) {
+  MOZ_ASSERT(NS_IsMainThread());
   GECKOBUNDLE_START(eventInfo);
   // Boolean::FALSE/TRUE gets clobbered by a macro, so ugh.
   GECKOBUNDLE_PUT(eventInfo, "selected",
@@ -371,12 +601,14 @@ void SessionAccessibility::SendSelectedEvent(AccessibleWrap* aAccessible,
 
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_SELECTED,
-      aAccessible->VirtualViewID(), aAccessible->AndroidClass(), eventInfo);
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), eventInfo);
 }
 
-void SessionAccessibility::SendAnnouncementEvent(AccessibleWrap* aAccessible,
-                                                 const nsString& aAnnouncement,
+void SessionAccessibility::SendAnnouncementEvent(Accessible* aAccessible,
+                                                 const nsAString& aAnnouncement,
                                                  uint16_t aPriority) {
+  MOZ_ASSERT(NS_IsMainThread());
   GECKOBUNDLE_START(eventInfo);
   GECKOBUNDLE_PUT(eventInfo, "text", jni::StringParam(aAnnouncement));
   GECKOBUNDLE_FINISH(eventInfo);
@@ -384,93 +616,309 @@ void SessionAccessibility::SendAnnouncementEvent(AccessibleWrap* aAccessible,
   // Announcements should have the root as their source, so we ignore the
   // accessible of the event.
   mSessionAccessibility->SendEvent(
-      java::sdk::AccessibilityEvent::TYPE_ANNOUNCEMENT, AccessibleWrap::kNoID,
+      java::sdk::AccessibilityEvent::TYPE_ANNOUNCEMENT, kNoID,
       java::SessionAccessibility::CLASSNAME_WEBVIEW, eventInfo);
 }
 
-void SessionAccessibility::ReplaceViewportCache(
-    const nsTArray<AccessibleWrap*>& aAccessibles,
-    const nsTArray<BatchData>& aData) {
-  auto infos = jni::ObjectArray::New<java::GeckoBundle>(aAccessibles.Length());
-  for (size_t i = 0; i < aAccessibles.Length(); i++) {
-    AccessibleWrap* acc = aAccessibles.ElementAt(i);
-    if (!acc) {
-      MOZ_ASSERT_UNREACHABLE("Updated accessible is gone.");
-      continue;
-    }
+void SessionAccessibility::PopulateNodeInfo(
+    Accessible* aAccessible, mozilla::jni::Object::Param aNodeInfo) {
+  nsAutoString name;
+  aAccessible->Name(name);
+  nsAutoString textValue;
+  aAccessible->Value(textValue);
+  nsAutoString nodeID;
+  aAccessible->DOMNodeID(nodeID);
+  nsAutoString accDesc;
+  aAccessible->Description(accDesc);
+  uint64_t state = aAccessible->State();
+  LayoutDeviceIntRect bounds = aAccessible->Bounds();
+  uint8_t actionCount = aAccessible->ActionCount();
+  int32_t virtualViewID = AccessibleWrap::GetVirtualViewID(aAccessible);
+  Accessible* parent = virtualViewID != kNoID ? aAccessible->Parent() : nullptr;
+  int32_t parentID = parent ? AccessibleWrap::GetVirtualViewID(parent) : 0;
+  role role = aAccessible->Role();
+  if (role == roles::LINK && !(state & states::LINKED)) {
+    // A link without the linked state (<a> with no href) shouldn't be presented
+    // as a link.
+    role = roles::TEXT;
+  }
 
-    if (aData.Length() == aAccessibles.Length()) {
-      const BatchData& data = aData.ElementAt(i);
-      auto bundle = acc->ToBundle(
-          data.State(), data.Bounds(), data.ActionCount(), data.Name(),
-          data.TextValue(), data.DOMNodeID(), data.Description());
-      infos->SetElement(i, bundle);
+  uint32_t flags = AccessibleWrap::GetFlags(role, state, actionCount);
+  int32_t className = AccessibleWrap::AndroidClass(aAccessible);
+
+  nsAutoString hint;
+  nsAutoString text;
+  nsAutoString description;
+  if (state & states::EDITABLE) {
+    // An editable field's name is populated in the hint.
+    hint.Assign(name);
+    text.Assign(textValue);
+  } else {
+    if (role == roles::LINK || role == roles::HEADING) {
+      description.Assign(name);
     } else {
-      infos->SetElement(i, acc->ToBundle(true));
+      text.Assign(name);
     }
   }
 
-  mSessionAccessibility->ReplaceViewportCache(infos);
-  SendWindowContentChangedEvent();
-}
-
-void SessionAccessibility::ReplaceFocusPathCache(
-    const nsTArray<AccessibleWrap*>& aAccessibles,
-    const nsTArray<BatchData>& aData) {
-  auto infos = jni::ObjectArray::New<java::GeckoBundle>(aAccessibles.Length());
-  for (size_t i = 0; i < aAccessibles.Length(); i++) {
-    AccessibleWrap* acc = aAccessibles.ElementAt(i);
-    if (!acc) {
-      MOZ_ASSERT_UNREACHABLE("Updated accessible is gone.");
-      continue;
+  if (!accDesc.IsEmpty()) {
+    if (!hint.IsEmpty()) {
+      // If this is an editable, the description is concatenated with a
+      // whitespace directly after the name.
+      hint.AppendLiteral(" ");
     }
+    hint.Append(accDesc);
+  }
 
-    if (aData.Length() == aAccessibles.Length()) {
-      const BatchData& data = aData.ElementAt(i);
-      auto bundle =
-          acc->ToBundle(data.State(), data.Bounds(), data.ActionCount(),
-                        data.Name(), data.TextValue(), data.DOMNodeID(),
-                        data.Description(), data.CurValue(), data.MinValue(),
-                        data.MaxValue(), data.Step(), data.Attributes());
-      infos->SetElement(i, bundle);
-    } else {
-      infos->SetElement(i, acc->ToBundle());
+  if ((state & states::REQUIRED) != 0) {
+    nsAutoString requiredString;
+    if (LocalizeString(u"stateRequired"_ns, requiredString)) {
+      if (!hint.IsEmpty()) {
+        // If the hint is non-empty, concatenate with a comma for a brief pause.
+        hint.AppendLiteral(", ");
+      }
+      hint.Append(requiredString);
     }
   }
 
-  mSessionAccessibility->ReplaceFocusPathCache(infos);
-}
+  RefPtr<AccAttributes> attributes = aAccessible->Attributes();
 
-void SessionAccessibility::UpdateCachedBounds(
-    const nsTArray<AccessibleWrap*>& aAccessibles,
-    const nsTArray<BatchData>& aData) {
-  auto infos = jni::ObjectArray::New<java::GeckoBundle>(aAccessibles.Length());
-  for (size_t i = 0; i < aAccessibles.Length(); i++) {
-    AccessibleWrap* acc = aAccessibles.ElementAt(i);
-    if (!acc) {
-      MOZ_ASSERT_UNREACHABLE("Updated accessible is gone.");
-      continue;
-    }
+  nsAutoString geckoRole;
+  nsAutoString roleDescription;
+  if (virtualViewID != kNoID) {
+    AccessibleWrap::GetRoleDescription(role, attributes, geckoRole,
+                                       roleDescription);
+  }
 
-    if (aData.Length() == aAccessibles.Length()) {
-      const BatchData& data = aData.ElementAt(i);
-      auto bundle = acc->ToBundle(
-          data.State(), data.Bounds(), data.ActionCount(), data.Name(),
-          data.TextValue(), data.DOMNodeID(), data.Description());
-      infos->SetElement(i, bundle);
-    } else {
-      infos->SetElement(i, acc->ToBundle(true));
+  int32_t inputType = 0;
+  if (attributes) {
+    nsString inputTypeAttr;
+    attributes->GetAttribute(nsGkAtoms::textInputType, inputTypeAttr);
+    inputType = AccessibleWrap::GetInputType(inputTypeAttr);
+  }
+
+  auto childCount = aAccessible->ChildCount();
+  nsTArray<int32_t> children(childCount);
+  if (!nsAccUtils::MustPrune(aAccessible)) {
+    for (uint32_t i = 0; i < childCount; i++) {
+      auto child = aAccessible->ChildAt(i);
+      children.AppendElement(AccessibleWrap::GetVirtualViewID(child));
     }
   }
 
-  mSessionAccessibility->UpdateCachedBounds(infos);
-  SendWindowContentChangedEvent();
+  const int32_t boundsArray[4] = {bounds.x, bounds.y, bounds.x + bounds.width,
+                                  bounds.y + bounds.height};
+
+  mSessionAccessibility->PopulateNodeInfo(
+      aNodeInfo, virtualViewID, parentID, jni::IntArray::From(children), flags,
+      className, jni::IntArray::New(boundsArray, 4), jni::StringParam(text),
+      jni::StringParam(description), jni::StringParam(hint),
+      jni::StringParam(geckoRole), jni::StringParam(roleDescription),
+      jni::StringParam(nodeID), inputType);
+
+  if (aAccessible->HasNumericValue()) {
+    double curValue = aAccessible->CurValue();
+    double minValue = aAccessible->MinValue();
+    double maxValue = aAccessible->MaxValue();
+    double step = aAccessible->Step();
+
+    int32_t rangeType = 0;  // integer
+    if (maxValue == 1 && minValue == 0) {
+      rangeType = 2;  // percent
+    } else if (std::round(step) != step) {
+      rangeType = 1;  // float;
+    }
+
+    mSessionAccessibility->PopulateNodeRangeInfo(
+        aNodeInfo, rangeType, static_cast<float>(minValue),
+        static_cast<float>(maxValue), static_cast<float>(curValue));
+  }
+
+  if (attributes) {
+    Maybe<int32_t> rowIndex =
+        attributes->GetAttribute<int32_t>(nsGkAtoms::posinset);
+    if (rowIndex) {
+      mSessionAccessibility->PopulateNodeCollectionItemInfo(
+          aNodeInfo, *rowIndex - 1, 1, 0, 1);
+    }
+
+    Maybe<int32_t> rowCount =
+        attributes->GetAttribute<int32_t>(nsGkAtoms::child_item_count);
+    if (rowCount) {
+      int32_t selectionMode = 0;
+      if (aAccessible->IsSelect()) {
+        selectionMode = (state & states::MULTISELECTABLE) ? 2 : 1;
+      }
+      mSessionAccessibility->PopulateNodeCollectionInfo(
+          aNodeInfo, *rowCount, 1, selectionMode,
+          attributes->HasAttribute(nsGkAtoms::tree));
+    }
+  }
 }
 
-void SessionAccessibility::UpdateAccessibleFocusBoundaries(
-    AccessibleWrap* aFirst, AccessibleWrap* aLast) {
-  mSessionAccessibility->UpdateAccessibleFocusBoundaries(
-      aFirst ? aFirst->VirtualViewID() : AccessibleWrap::kNoID,
-      aLast ? aLast->VirtualViewID() : AccessibleWrap::kNoID);
+Accessible* SessionAccessibility::GetAccessibleByID(int32_t aID) const {
+  return mIDToAccessibleMap.Get(aID);
 }
-#undef FORWARD_ACTION_TO_ACCESSIBLE
+
+#ifdef DEBUG
+static bool IsDetachedDoc(Accessible* aAccessible) {
+  if (!aAccessible->IsRemote() || !aAccessible->AsRemote()->IsDoc()) {
+    return false;
+  }
+
+  return !aAccessible->Parent() ||
+         aAccessible->Parent()->FirstChild() != aAccessible;
+}
+#endif
+
+SessionAccessibility::IDMappingEntry::IDMappingEntry(Accessible* aAccessible)
+    : mInternalID(0) {
+  *this = aAccessible;
+}
+
+SessionAccessibility::IDMappingEntry&
+SessionAccessibility::IDMappingEntry::operator=(Accessible* aAccessible) {
+  mInternalID = aAccessible->ID();
+  MOZ_ASSERT(!(mInternalID & IS_REMOTE), "First bit is used in accessible ID!");
+  if (aAccessible->IsRemote()) {
+    mInternalID |= IS_REMOTE;
+  }
+
+  Accessible* docAcc = nsAccUtils::DocumentFor(aAccessible);
+  MOZ_ASSERT(docAcc);
+  if (docAcc) {
+    MOZ_ASSERT(docAcc->IsRemote() == aAccessible->IsRemote());
+    if (docAcc->IsRemote()) {
+      mDoc = docAcc->AsRemote()->AsDoc();
+    } else {
+      mDoc = docAcc->AsLocal();
+    }
+  }
+
+  return *this;
+}
+
+SessionAccessibility::IDMappingEntry::operator Accessible*() const {
+  if (mInternalID == 0) {
+    return static_cast<LocalAccessible*>(mDoc.get());
+  }
+
+  if (mInternalID == IS_REMOTE) {
+    return static_cast<DocAccessibleParent*>(mDoc.get());
+  }
+
+  if (mInternalID & IS_REMOTE) {
+    return static_cast<DocAccessibleParent*>(mDoc.get())
+        ->GetAccessible(mInternalID & ~IS_REMOTE);
+  }
+
+  Accessible* accessible =
+      static_cast<LocalAccessible*>(mDoc.get())
+          ->AsDoc()
+          ->GetAccessibleByUniqueID(reinterpret_cast<void*>(mInternalID));
+  // If the accessible is retrievable from the DocAccessible, it can't be
+  // defunct.
+  MOZ_ASSERT(!accessible->AsLocal()->IsDefunct());
+
+  return accessible;
+}
+
+void SessionAccessibility::RegisterAccessible(Accessible* aAccessible) {
+  if (IPCAccessibilityActive()) {
+    // Don't register accessible in content process.
+    return;
+  }
+
+  nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
+  RefPtr<SessionAccessibility> sessionAcc = GetInstanceFor(aAccessible);
+  if (!sessionAcc) {
+    return;
+  }
+
+  bool isTopLevel = false;
+  if (aAccessible->IsLocal() && aAccessible->IsDoc()) {
+    DocAccessibleWrap* doc =
+        static_cast<DocAccessibleWrap*>(aAccessible->AsLocal()->AsDoc());
+    isTopLevel = doc->IsTopLevelContentDoc();
+  } else if (aAccessible->IsRemote() && aAccessible->IsDoc()) {
+    isTopLevel = aAccessible->AsRemote()->AsDoc()->IsTopLevel();
+  }
+
+  int32_t virtualViewID = kNoID;
+  if (!isTopLevel) {
+    if (sessionAcc->mIDToAccessibleMap.IsEmpty()) {
+      // We expect there to already be at least one accessible
+      // registered (the top-level one). If it isn't we are
+      // probably in a shutdown process where it was already
+      // unregistered. So we don't register this accessible.
+      return;
+    }
+    // Don't use the special "unset" value (0).
+    while ((virtualViewID = sIDSet.GetID()) == kUnsetID) {
+    }
+  }
+  AccessibleWrap::SetVirtualViewID(aAccessible, virtualViewID);
+
+  Accessible* oldAcc = sessionAcc->mIDToAccessibleMap.Get(virtualViewID);
+  if (oldAcc) {
+    // About to overwrite mapping of registered accessible. This should
+    // only happen when the registered accessible is a detached document.
+    MOZ_ASSERT(IsDetachedDoc(oldAcc),
+               "ID already registered to non-detached document");
+    AccessibleWrap::SetVirtualViewID(oldAcc, kUnsetID);
+  }
+
+  sessionAcc->mIDToAccessibleMap.InsertOrUpdate(virtualViewID, aAccessible);
+}
+
+void SessionAccessibility::UnregisterAccessible(Accessible* aAccessible) {
+  if (IPCAccessibilityActive()) {
+    // Don't unregister accessible in content process.
+    return;
+  }
+
+  nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
+  int32_t virtualViewID = AccessibleWrap::GetVirtualViewID(aAccessible);
+  if (virtualViewID == kUnsetID) {
+    return;
+  }
+
+  RefPtr<SessionAccessibility> sessionAcc = GetInstanceFor(aAccessible);
+  if (sessionAcc) {
+    Accessible* registeredAcc =
+        sessionAcc->mIDToAccessibleMap.Get(virtualViewID);
+    if (registeredAcc != aAccessible) {
+      // Attempting to unregister an accessible that is not mapped to
+      // its virtual view ID. This probably means it is a detached document
+      // and a more recent document overwrote its '-1' mapping.
+      // We set its own virtual view ID to `kUnsetID` and return early.
+      MOZ_ASSERT(!registeredAcc || IsDetachedDoc(aAccessible),
+                 "Accessible is detached document");
+      AccessibleWrap::SetVirtualViewID(aAccessible, kUnsetID);
+      return;
+    }
+
+    MOZ_ASSERT(registeredAcc, "Unregistering unregistered accessible");
+    MOZ_ASSERT(registeredAcc == aAccessible, "Unregistering wrong accessible");
+    sessionAcc->mIDToAccessibleMap.Remove(virtualViewID);
+  }
+
+  if (virtualViewID > kNoID) {
+    sIDSet.ReleaseID(virtualViewID);
+  }
+
+  AccessibleWrap::SetVirtualViewID(aAccessible, kUnsetID);
+}
+
+void SessionAccessibility::UnregisterAll(PresShell* aPresShell) {
+  if (IPCAccessibilityActive()) {
+    // Don't unregister accessible in content process.
+    return;
+  }
+
+  nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
+  RefPtr<SessionAccessibility> sessionAcc = GetInstanceFor(aPresShell);
+  if (sessionAcc) {
+    sessionAcc->mIDToAccessibleMap.Clear();
+  }
+}

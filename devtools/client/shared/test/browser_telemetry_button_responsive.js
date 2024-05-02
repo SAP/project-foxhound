@@ -11,7 +11,7 @@ const TEST_URI =
 // opened we make use of setTimeout() to create tool active times.
 const TOOL_DELAY = 200;
 
-const asyncStorage = require("devtools/shared/async-storage");
+const asyncStorage = require("resource://devtools/shared/async-storage.js");
 
 // Toggling the RDM UI involves several docShell swap operations, which are somewhat slow
 // on debug builds. Usually we are just barely over the limit, so a blanket factor of 2
@@ -19,25 +19,19 @@ const asyncStorage = require("devtools/shared/async-storage");
 requestLongerTimeout(2);
 
 Services.prefs.clearUserPref("devtools.responsive.html.displayedDeviceList");
-Services.prefs.setCharPref(
-  "devtools.devices.url",
-  "http://example.com/browser/devtools/client/responsive/test/browser/devices.json"
-);
 
 registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("devtools.devices.url");
   Services.prefs.clearUserPref("devtools.responsive.html.displayedDeviceList");
-  asyncStorage.removeItem("devtools.devices.url_cache");
   asyncStorage.removeItem("devtools.devices.local");
 });
 
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive/manager"
+  "resource://devtools/client/responsive/manager.js"
 );
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   startTelemetry();
 
@@ -48,19 +42,19 @@ add_task(async function() {
   info("inspector opened");
 
   info("testing the responsivedesign button");
-  await testButton(toolbox);
+  await testButton(tab, toolbox);
 
   await toolbox.destroy();
   gBrowser.removeCurrentTab();
 });
 
-async function testButton(toolbox) {
+async function testButton(tab, toolbox) {
   info("Testing command-button-responsive");
 
   const button = toolbox.doc.querySelector("#command-button-responsive");
   ok(button, "Captain, we have the button");
 
-  await delayedClicks(button, 4);
+  await delayedClicks(tab, button, 4);
 
   checkResults();
 }
@@ -77,7 +71,7 @@ function waitForToggle() {
   });
 }
 
-var delayedClicks = async function(node, clicks) {
+var delayedClicks = async function (tab, node, clicks) {
   for (let i = 0; i < clicks; i++) {
     info("Clicking button " + node.id);
     const toggled = waitForToggle();
@@ -85,6 +79,14 @@ var delayedClicks = async function(node, clicks) {
     await toggled;
     // See TOOL_DELAY for why we need setTimeout here
     await DevToolsUtils.waitForTime(TOOL_DELAY);
+
+    // When opening RDM
+    if (i % 2 == 0) {
+      // wait for RDM to be fully loaded to prevent Promise rejection when closing
+      await waitFor(() => ResponsiveUIManager.isActiveForTab(tab));
+      const rdmUI = ResponsiveUIManager.getResponsiveUIForTab(tab);
+      await waitForRDMLoaded(rdmUI);
+    }
   }
 };
 

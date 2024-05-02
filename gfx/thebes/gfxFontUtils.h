@@ -11,13 +11,12 @@
 #include <new>
 #include <utility>
 #include "gfxPlatform.h"
-#include "ipc/IPCMessageUtils.h"
-#include "ipc/IPCMessageUtilsSpecializations.h"
+#include "harfbuzz/hb.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Casting.h"
 #include "mozilla/EndianUtils.h"
-#include "mozilla/FontPropertyTypes.h"
+#include "mozilla/ServoStyleConstsInlines.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
 #include "nsStringFwd.h"
@@ -32,9 +31,7 @@ struct gfxFontVariationInstance;
 
 namespace mozilla {
 class Encoding;
-namespace gfx {
-struct DeviceColor;
-}
+class ServoStyleSet;
 }  // namespace mozilla
 
 /* Bug 341128 - w32api defines min/max which causes problems with <bitset> */
@@ -51,6 +48,11 @@ typedef struct hb_blob_t hb_blob_t;
 
 class SharedBitSet;
 
+namespace IPC {
+template <typename T>
+struct ParamTraits;
+}
+
 class gfxSparseBitSet {
  private:
   friend class SharedBitSet;
@@ -65,6 +67,9 @@ class gfxSparseBitSet {
     }
     uint8_t mBits[BLOCK_SIZE];
   };
+
+  friend struct IPC::ParamTraits<gfxSparseBitSet>;
+  friend struct IPC::ParamTraits<Block>;
 
  public:
   gfxSparseBitSet() = default;
@@ -331,39 +336,9 @@ class gfxSparseBitSet {
   }
 
  private:
-  friend struct IPC::ParamTraits<gfxSparseBitSet>;
-  friend struct IPC::ParamTraits<gfxSparseBitSet::Block>;
   CopyableTArray<uint16_t> mBlockIndex;
   CopyableTArray<Block> mBlocks;
 };
-
-namespace IPC {
-template <>
-struct ParamTraits<gfxSparseBitSet> {
-  typedef gfxSparseBitSet paramType;
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.mBlockIndex);
-    WriteParam(aMsg, aParam.mBlocks);
-  }
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->mBlockIndex) &&
-           ReadParam(aMsg, aIter, &aResult->mBlocks);
-  }
-};
-
-template <>
-struct ParamTraits<gfxSparseBitSet::Block> {
-  typedef gfxSparseBitSet::Block paramType;
-  static void Write(Message* aMsg, const paramType& aParam) {
-    aMsg->WriteBytes(&aParam, sizeof(aParam));
-  }
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return aMsg->ReadBytesInto(aIter, aResult, sizeof(*aResult));
-  }
-};
-}  // namespace IPC
 
 /**
  * SharedBitSet is a version of gfxSparseBitSet that is intended to be used
@@ -813,22 +788,6 @@ struct KernTableSubtableHeaderVersion1 {
   AutoSwap_PRUint16 tupleIndex;
 };
 
-struct COLRHeader {
-  AutoSwap_PRUint16 version;
-  AutoSwap_PRUint16 numBaseGlyphRecord;
-  AutoSwap_PRUint32 offsetBaseGlyphRecord;
-  AutoSwap_PRUint32 offsetLayerRecord;
-  AutoSwap_PRUint16 numLayerRecords;
-};
-
-struct CPALHeaderVersion0 {
-  AutoSwap_PRUint16 version;
-  AutoSwap_PRUint16 numPaletteEntries;
-  AutoSwap_PRUint16 numPalettes;
-  AutoSwap_PRUint16 numColorRecords;
-  AutoSwap_PRUint32 offsetFirstColorRecord;
-};
-
 #pragma pack()
 
 // Return just the highest bit of the given value, i.e., the highest
@@ -950,6 +909,19 @@ class gfxFontUtils {
                                         // (in bytes).
   };
 
+  // Helper to ensure we free a font table when we return.
+  class AutoHBBlob {
+   public:
+    explicit AutoHBBlob(hb_blob_t* aBlob) : mBlob(aBlob) {}
+
+    ~AutoHBBlob() { hb_blob_destroy(mBlob); }
+
+    operator hb_blob_t*() { return mBlob; }
+
+   private:
+    hb_blob_t* const mBlob;
+  };
+
   // for reading big-endian font data on either big or little-endian platforms
 
   static inline uint16_t ReadShortAt(const uint8_t* aBuf, uint32_t aIndex) {
@@ -980,15 +952,17 @@ class gfxFontUtils {
                                             gfxSparseBitSet& aCharacterMap);
 
   static nsresult ReadCMAPTableFormat4(const uint8_t* aBuf, uint32_t aLength,
-                                       gfxSparseBitSet& aCharacterMap);
+                                       gfxSparseBitSet& aCharacterMap,
+                                       bool aIsSymbolFont);
 
   static nsresult ReadCMAPTableFormat14(const uint8_t* aBuf, uint32_t aLength,
-                                        mozilla::UniquePtr<uint8_t[]>& aTable);
+                                        const uint8_t*& aTable);
 
   static uint32_t FindPreferredSubtable(const uint8_t* aBuf,
                                         uint32_t aBufLength,
                                         uint32_t* aTableOffset,
-                                        uint32_t* aUVSTableOffset);
+                                        uint32_t* aUVSTableOffset,
+                                        bool* aIsSymbolFont);
 
   static nsresult ReadCMAP(const uint8_t* aBuf, uint32_t aBufLength,
                            gfxSparseBitSet& aCharacterMap,
@@ -1014,6 +988,12 @@ class gfxFontUtils {
 
   static uint32_t MapCharToGlyph(const uint8_t* aCmapBuf, uint32_t aBufLength,
                                  uint32_t aUnicode, uint32_t aVarSelector = 0);
+
+  // For legacy MS Symbol fonts, we try mapping 8-bit character codes to the
+  // Private Use range at U+F0xx used by the cmaps in these fonts.
+  static MOZ_ALWAYS_INLINE uint32_t MapLegacySymbolFontCharToPUA(uint32_t aCh) {
+    return aCh >= 0x20 && aCh <= 0xff ? 0xf000 + aCh : 0;
+  }
 
 #ifdef XP_WIN
   // determine whether a font (which has already been sanitized, so is known
@@ -1113,6 +1093,14 @@ class gfxFontUtils {
            aCh <= kUnicodeRegionalIndicatorZ;
   }
 
+  static inline bool IsEmojiFlagAndTag(uint32_t aCh, uint32_t aNext) {
+    constexpr uint32_t kBlackFlag = 0x1F3F4;
+    constexpr uint32_t kTagLetterA = 0xE0061;
+    constexpr uint32_t kTagLetterZ = 0xE007A;
+
+    return aCh == kBlackFlag && aNext >= kTagLetterA && aNext <= kTagLetterZ;
+  }
+
   static inline bool IsInvalid(uint32_t ch) { return (ch == 0xFFFD); }
 
   // Font code may want to know if there is the potential for bidi behavior
@@ -1158,27 +1146,13 @@ class gfxFontUtils {
   static void ParseFontList(const nsACString& aFamilyList,
                             nsTArray<nsCString>& aFontList);
 
-  // for a given font list pref name, append list of font names
-  static void AppendPrefsFontList(const char* aPrefName,
-                                  nsTArray<nsCString>& aFontList,
-                                  bool aLocalized = false);
-
-  // for a given font list pref name, initialize a list of font names
+  // for a given pref name, initialize a list of font names
   static void GetPrefsFontList(const char* aPrefName,
                                nsTArray<nsCString>& aFontList,
                                bool aLocalized = false);
 
   // generate a unique font name
   static nsresult MakeUniqueUserFontName(nsAString& aName);
-
-  // for color layer from glyph using COLR and CPAL tables
-  static bool ValidateColorGlyphs(hb_blob_t* aCOLR, hb_blob_t* aCPAL);
-  static bool GetColorGlyphLayers(
-      hb_blob_t* aCOLR, hb_blob_t* aCPAL, uint32_t aGlyphId,
-      const mozilla::gfx::DeviceColor& aDefaultColor,
-      nsTArray<uint16_t>& aGlyphs,
-      nsTArray<mozilla::gfx::DeviceColor>& aColors);
-  static bool HasColorLayersForGlyph(hb_blob_t* aCOLR, uint32_t aGlyphId);
 
   // Helper used to implement gfxFontEntry::GetVariation{Axes,Instances} for
   // platforms where the native font APIs don't provide the info we want
@@ -1195,6 +1169,22 @@ class gfxFontUtils {
       const nsACString& aFamilyName, const char* aNameData,
       uint32_t aDataLength, nsTArray<nsCString>& aOtherFamilyNames,
       bool useFullName);
+
+  // Main, DOM worker or servo thread safe method to check if we are performing
+  // Servo traversal.
+  static bool IsInServoTraversal();
+
+  // Main, DOM worker or servo thread safe method to get the current
+  // ServoTypeSet. Always returns nullptr for DOM worker threads.
+  static mozilla::ServoStyleSet* CurrentServoStyleSet();
+
+  static void AssertSafeThreadOrServoFontMetricsLocked()
+#ifdef DEBUG
+      ;
+#else
+  {
+  }
+#endif
 
  protected:
   friend struct MacCharsetMappingComparator;
@@ -1272,8 +1262,7 @@ static inline double StyleDistance(const mozilla::SlantStyleRange& aRange,
     return kReverse;
   }
 
-  const double kDefaultAngle =
-      mozilla::FontSlantStyle::Oblique().ObliqueAngle();
+  const double kDefaultAngle = mozilla::FontSlantStyle::DEFAULT_OBLIQUE_DEGREES;
 
   if (aTargetStyle.IsItalic()) {
     if (minStyle.IsOblique()) {
@@ -1404,16 +1393,16 @@ static inline double StretchDistance(const mozilla::StretchRange& aRange,
   // If aTargetStretch is >100, we prefer larger values if available;
   // if <=100, we prefer smaller values if available.
   if (aTargetStretch < minStretch) {
-    if (aTargetStretch > mozilla::FontStretch::Normal()) {
-      return minStretch - aTargetStretch;
+    if (aTargetStretch > mozilla::FontStretch::NORMAL) {
+      return minStretch.ToFloat() - aTargetStretch.ToFloat();
     }
-    return (minStretch - aTargetStretch) + kReverseDistance;
+    return (minStretch.ToFloat() - aTargetStretch.ToFloat()) + kReverseDistance;
   }
   if (aTargetStretch > maxStretch) {
-    if (aTargetStretch <= mozilla::FontStretch::Normal()) {
-      return aTargetStretch - maxStretch;
+    if (aTargetStretch <= mozilla::FontStretch::NORMAL) {
+      return aTargetStretch.ToFloat() - maxStretch.ToFloat();
     }
-    return (aTargetStretch - maxStretch) + kReverseDistance;
+    return (aTargetStretch.ToFloat() - maxStretch.ToFloat()) + kReverseDistance;
   }
   return 0.0;
 }
@@ -1443,35 +1432,36 @@ static inline double WeightDistance(const mozilla::WeightRange& aRange,
     return 0.0;
   }
 
-  if (aTargetWeight < mozilla::FontWeight(400)) {
+  if (aTargetWeight < mozilla::FontWeight::NORMAL) {
     // Requested a lighter-than-400 weight
     if (maxWeight < aTargetWeight) {
-      return aTargetWeight - maxWeight;
+      return aTargetWeight.ToFloat() - maxWeight.ToFloat();
     }
     // Add reverse-search penalty for bolder faces
-    return (minWeight - aTargetWeight) + kReverseDistance;
+    return (minWeight.ToFloat() - aTargetWeight.ToFloat()) + kReverseDistance;
   }
 
-  if (aTargetWeight > mozilla::FontWeight(500)) {
+  if (aTargetWeight > mozilla::FontWeight::FromInt(500)) {
     // Requested a bolder-than-500 weight
     if (minWeight > aTargetWeight) {
-      return minWeight - aTargetWeight;
+      return minWeight.ToFloat() - aTargetWeight.ToFloat();
     }
     // Add reverse-search penalty for lighter faces
-    return (aTargetWeight - maxWeight) + kReverseDistance;
+    return (aTargetWeight.ToFloat() - maxWeight.ToFloat()) + kReverseDistance;
   }
 
   // Special case for requested weight in the [400..500] range
   if (minWeight > aTargetWeight) {
-    if (minWeight <= mozilla::FontWeight(500)) {
+    if (minWeight <= mozilla::FontWeight::FromInt(500)) {
       // Bolder weight up to 500 is first choice
-      return minWeight - aTargetWeight;
+      return minWeight.ToFloat() - aTargetWeight.ToFloat();
     }
     // Other bolder weights get a reverse-search penalty
-    return (minWeight - aTargetWeight) + kReverseDistance;
+    return (minWeight.ToFloat() - aTargetWeight.ToFloat()) + kReverseDistance;
   }
   // Lighter weights are not as good as bolder ones within [400..500]
-  return (aTargetWeight - maxWeight) + kNotWithinCentralRange;
+  return (aTargetWeight.ToFloat() - maxWeight.ToFloat()) +
+         kNotWithinCentralRange;
 }
 
 #endif /* GFX_FONT_UTILS_H */

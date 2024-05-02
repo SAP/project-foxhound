@@ -5,7 +5,7 @@
 
 use crate::*;
 
-crate trait SinCosPi: Sized {
+pub(crate) trait SinCosPi: Sized {
     type Output;
     fn sin_cos_pi(self) -> Self::Output;
 }
@@ -85,17 +85,14 @@ macro_rules! impl_unary_t {
 
                     let halves = U { vec: self }.halves;
 
-                    let res_0: ($vid_h, $vid_h) =
-                        transmute($fun(transmute(*halves.get_unchecked(0))));
-                    let res_1: ($vid_h, $vid_h) =
-                        transmute($fun(transmute(*halves.get_unchecked(1))));
+                    let res_0: ($vid_h, $vid_h) = transmute($fun(transmute(*halves.get_unchecked(0))));
+                    let res_1: ($vid_h, $vid_h) = transmute($fun(transmute(*halves.get_unchecked(1))));
 
                     union R {
                         result: ($vid, $vid),
                         halves: ([$vid_h; 2], [$vid_h; 2]),
                     }
-                    R { halves: ([res_0.0, res_1.0], [res_0.1, res_1.1]) }
-                        .result
+                    R { halves: ([res_0.0, res_1.0], [res_0.1, res_1.1]) }.result
                 }
             }
         }
@@ -114,14 +111,10 @@ macro_rules! impl_unary_t {
 
                     let quarters = U { vec: self }.quarters;
 
-                    let res_0: ($vid_q, $vid_q) =
-                        transmute($fun(transmute(*quarters.get_unchecked(0))));
-                    let res_1: ($vid_q, $vid_q) =
-                        transmute($fun(transmute(*quarters.get_unchecked(1))));
-                    let res_2: ($vid_q, $vid_q) =
-                        transmute($fun(transmute(*quarters.get_unchecked(2))));
-                    let res_3: ($vid_q, $vid_q) =
-                        transmute($fun(transmute(*quarters.get_unchecked(3))));
+                    let res_0: ($vid_q, $vid_q) = transmute($fun(transmute(*quarters.get_unchecked(0))));
+                    let res_1: ($vid_q, $vid_q) = transmute($fun(transmute(*quarters.get_unchecked(1))));
+                    let res_2: ($vid_q, $vid_q) = transmute($fun(transmute(*quarters.get_unchecked(2))));
+                    let res_3: ($vid_q, $vid_q) = transmute($fun(transmute(*quarters.get_unchecked(3))));
 
                     union R {
                         result: ($vid, $vid),

@@ -1,4 +1,6 @@
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 add_task(async function run_test() {
   _("Make sure catch when copied to an object will correctly catch stuff");
@@ -15,7 +17,7 @@ add_task(async function run_test() {
     },
 
     func() {
-      return this._catch(async function() {
+      return this._catch(async function () {
         rightThis = this == obj;
         didCall = true;
         return 5;
@@ -23,7 +25,7 @@ add_task(async function run_test() {
     },
 
     throwy() {
-      return this._catch(async function() {
+      return this._catch(async function () {
         rightThis = this == obj;
         didCall = true;
         throw new Error("covfefe");
@@ -32,19 +34,19 @@ add_task(async function run_test() {
 
     callbacky() {
       return this._catch(
-        async function() {
+        async function () {
           rightThis = this == obj;
           didCall = true;
           throw new Error("covfefe");
         },
-        async function(ex) {
+        async function (ex) {
           wasCovfefe = ex && ex.message == "covfefe";
         }
       )();
     },
 
     lockedy() {
-      return this._catch(async function() {
+      return this._catch(async function () {
         rightThis = this == obj;
         didCall = true;
         Utils.throwLockException(null);
@@ -52,7 +54,7 @@ add_task(async function run_test() {
     },
 
     lockedy_chained() {
-      return this._catch(async function() {
+      return this._catch(async function () {
         rightThis = this == obj;
         didCall = true;
         Utils.throwLockException(null);

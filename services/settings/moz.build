@@ -15,16 +15,17 @@ EXTRA_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES["services-settings"] += [
-    "Attachments.jsm",
-    "Database.jsm",
-    "IDBHelpers.jsm",
-    "remote-settings.js",
-    "RemoteSettingsClient.jsm",
-    "RemoteSettingsComponents.jsm",
-    "RemoteSettingsWorker.js",
-    "RemoteSettingsWorker.jsm",
-    "SharedUtils.jsm",
-    "Utils.jsm",
+    "Attachments.sys.mjs",
+    "Database.sys.mjs",
+    "IDBHelpers.sys.mjs",
+    "remote-settings.sys.mjs",
+    "RemoteSettings.worker.mjs",
+    "RemoteSettingsClient.sys.mjs",
+    "RemoteSettingsComponents.sys.mjs",
+    "RemoteSettingsWorker.sys.mjs",
+    "SharedUtils.sys.mjs",
+    "SyncHistory.sys.mjs",
+    "Utils.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [

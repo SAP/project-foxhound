@@ -24,6 +24,10 @@ let preSteps = [
 ];
 
 add_task(async function test() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
+
   makeProfileResettable();
 
   // Set up the "no updates" update state.
@@ -36,7 +40,8 @@ add_task(async function test() {
   await doUpdateTest({
     searchString: SEARCH_STRINGS.UPDATE,
     tip: UrlbarProviderInterventions.TIP_TYPE.UPDATE_REFRESH,
-    title: /^.+ is up to date\. Trying to fix a problem\? Restore default settings and remove old add-ons for optimal performance\.$/,
+    title:
+      /^.+ is up to date\. Trying to fix a problem\? Restore default settings and remove old add-ons for optimal performance\.$/,
     button: /^Refresh .+…$/,
     awaitCallback() {
       return BrowserTestUtils.promiseAlertDialog(

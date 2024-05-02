@@ -2,16 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
 import sys
 import unittest
+from collections.abc import Iterable
+from pathlib import Path
+from typing import List, Optional, Union
 
 import pytest
-from collections.abc import Iterable
-from typing import Optional, Union, List
 from buildconfig import topsrcdir
-from pathlib import Path
 
 try:
     from StringIO import StringIO
@@ -19,6 +17,7 @@ except ImportError:
     # TODO io.StringIO causes failures with Python 2 (needs to be sorted out)
     from io import StringIO
 
+from mach.command_util import load_commands_from_entry_point, load_commands_from_file
 from mach.main import Mach
 
 PROVIDER_DIR = Path(__file__).resolve().parent / "providers"
@@ -45,10 +44,10 @@ def get_mach(request):
                 provider_files = [provider_files]
 
             for path in provider_files:
-                m.load_commands_from_file(PROVIDER_DIR / path)
+                load_commands_from_file(PROVIDER_DIR / path)
 
         if entry_point:
-            m.load_commands_from_entry_point(entry_point)
+            load_commands_from_entry_point(entry_point)
 
         return m
 

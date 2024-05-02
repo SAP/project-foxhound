@@ -310,7 +310,7 @@ public class MediaSession {
     }
 
     /* package */ static @NonNull ElementMetadata fromBundle(final GeckoBundle bundle) {
-      // Sync with MediaUtils.jsm.
+      // Sync with MediaUtils.sys.mjs.
       return new ElementMetadata(
           bundle.getString("src"),
           bundle.getDouble("duration", 0.0),
@@ -537,19 +537,17 @@ public class MediaSession {
 
     /* package */ static long fromBundle(final GeckoBundle bundle) {
       // Sync with MediaController.webidl.
-      final long features =
-          NONE
-              | (bundle.getBoolean("play") ? PLAY : NONE)
-              | (bundle.getBoolean("pause") ? PAUSE : NONE)
-              | (bundle.getBoolean("stop") ? STOP : NONE)
-              | (bundle.getBoolean("seekto") ? SEEK_TO : NONE)
-              | (bundle.getBoolean("seekforward") ? SEEK_FORWARD : NONE)
-              | (bundle.getBoolean("seekbackward") ? SEEK_BACKWARD : NONE)
-              | (bundle.getBoolean("nexttrack") ? NEXT_TRACK : NONE)
-              | (bundle.getBoolean("previoustrack") ? PREVIOUS_TRACK : NONE)
-              | (bundle.getBoolean("skipad") ? SKIP_AD : NONE)
-              | (bundle.getBoolean("focus") ? FOCUS : NONE);
-      return features;
+      return NONE
+          | (bundle.getBoolean("play") ? PLAY : NONE)
+          | (bundle.getBoolean("pause") ? PAUSE : NONE)
+          | (bundle.getBoolean("stop") ? STOP : NONE)
+          | (bundle.getBoolean("seekto") ? SEEK_TO : NONE)
+          | (bundle.getBoolean("seekforward") ? SEEK_FORWARD : NONE)
+          | (bundle.getBoolean("seekbackward") ? SEEK_BACKWARD : NONE)
+          | (bundle.getBoolean("nexttrack") ? NEXT_TRACK : NONE)
+          | (bundle.getBoolean("previoustrack") ? PREVIOUS_TRACK : NONE)
+          | (bundle.getBoolean("skipad") ? SKIP_AD : NONE)
+          | (bundle.getBoolean("focus") ? FOCUS : NONE);
     }
   }
 
@@ -629,10 +627,18 @@ public class MediaSession {
       } else if (FEATURES_EVENT.equals(event)) {
         final long features = Feature.fromBundle(message.getBundle("features"));
         delegate.onFeatures(mSession, mMediaSession, features);
-      } else if (FULLSCREEN_EVENT.equals(event) && mMediaSession.isActive()) {
+      } else if (FULLSCREEN_EVENT.equals(event)) {
         final boolean enabled = message.getBoolean("enabled");
         final ElementMetadata meta = ElementMetadata.fromBundle(message.getBundle("metadata"));
+        if (!mMediaSession.isActive()) {
+          if (DEBUG) {
+            Log.d(LOGTAG, "Media session is not active yet");
+          }
+          callback.sendSuccess(false);
+          return;
+        }
         delegate.onFullscreen(mSession, mMediaSession, enabled, meta);
+        callback.sendSuccess(true);
       }
     }
   }

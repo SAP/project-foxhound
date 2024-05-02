@@ -14,9 +14,11 @@ UNIFIED_SOURCES += [
     "xpcAccessibleHyperLink.cpp",
     "xpcAccessibleHyperText.cpp",
     "xpcAccessibleImage.cpp",
+    "xpcAccessiblePivot.cpp",
     "xpcAccessibleSelectable.cpp",
     "xpcAccessibleTable.cpp",
     "xpcAccessibleTableCell.cpp",
+    "xpcAccessibleTextLeafRange.cpp",
     "xpcAccessibleTextRange.cpp",
     "xpcAccessibleValue.cpp",
 ]
@@ -47,7 +49,6 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     LOCAL_INCLUDES += [
         "/accessible/ipc",
-        "/accessible/ipc/other",
         "/accessible/mac",
     ]
     UNIFIED_SOURCES += ["xpcAccessibleMacInterface.mm"]

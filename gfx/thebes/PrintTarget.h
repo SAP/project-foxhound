@@ -28,8 +28,6 @@ class DrawEventRecorder;
  */
 class PrintTarget {
  public:
-  typedef std::function<void(nsresult)> PageDoneCallback;
-
   NS_INLINE_DECL_REFCOUNTING(PrintTarget);
 
   /// Must be matched 1:1 by an EndPrinting/AbortPrinting call.
@@ -45,7 +43,11 @@ class PrintTarget {
 #endif
     return NS_OK;
   }
-  virtual nsresult BeginPage() {
+  /**
+   * Note: not all print devices implement mixed page sizing. Most PrintTarget
+   * subclasses will ignore `aSizeInPoints`.
+   */
+  virtual nsresult BeginPage(const IntSize& aSizeInPoints) {
 #ifdef DEBUG
     MOZ_ASSERT(!mHasActivePage, "Missing EndPage() call");
     mHasActivePage = true;
@@ -68,12 +70,6 @@ class PrintTarget {
    * useful after this method has been called.
    */
   virtual void Finish();
-
-  /**
-   * Returns true if to print landscape our consumers must apply a 90 degrees
-   * rotation to our DrawTarget.
-   */
-  virtual bool RotateNeededForLandscape() const { return false; }
 
   const IntSize& GetSize() const { return mSize; }
 
@@ -130,17 +126,6 @@ class PrintTarget {
    */
   virtual already_AddRefed<DrawTarget> GetReferenceDrawTarget();
 
-  /**
-   * If IsSyncPagePrinting returns true, then a user can assume the content of
-   * a page was already printed after EndPage().
-   * If IsSyncPagePrinting returns false, then a user should register a
-   * callback function using RegisterPageDoneCallback to receive page print
-   * done notifications.
-   */
-  virtual bool IsSyncPagePrinting() const { return true; }
-  void RegisterPageDoneCallback(PageDoneCallback&& aCallback);
-  void UnregisterPageDoneCallback();
-
   static void AdjustPrintJobNameForIPP(const nsAString& aJobName,
                                        nsCString& aAdjustedJobName);
   static void AdjustPrintJobNameForIPP(const nsAString& aJobName,
@@ -164,8 +149,6 @@ class PrintTarget {
 #ifdef DEBUG
   bool mHasActivePage;
 #endif
-
-  PageDoneCallback mPageDoneCallback;
 };
 
 }  // namespace gfx

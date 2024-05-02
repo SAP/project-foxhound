@@ -15,8 +15,7 @@
 #include "mozilla/dom/XULFrameElement.h"
 #include "mozilla/dom/XULFrameElementBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(XULFrameElement)
 
@@ -107,9 +106,8 @@ void XULFrameElement::LoadSrc() {
       return;
     }
 
-    (new AsyncEventDispatcher(this, u"XULFrameLoaderCreated"_ns,
-                              CanBubble::eYes))
-        ->RunDOMEventWhenSafe();
+    AsyncEventDispatcher::RunDOMEventWhenSafe(
+        *this, u"XULFrameLoaderCreated"_ns, CanBubble::eYes);
   }
 
   mFrameLoader->LoadFrame(false);
@@ -180,11 +178,11 @@ void XULFrameElement::DestroyContent() {
   nsXULElement::DestroyContent();
 }
 
-nsresult XULFrameElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                       const nsAttrValue* aValue,
-                                       const nsAttrValue* aOldValue,
-                                       nsIPrincipal* aSubjectPrincipal,
-                                       bool aNotify) {
+void XULFrameElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                   const nsAttrValue* aValue,
+                                   const nsAttrValue* aOldValue,
+                                   nsIPrincipal* aSubjectPrincipal,
+                                   bool aNotify) {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::src && aValue) {
       LoadSrc();
@@ -199,5 +197,4 @@ nsresult XULFrameElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                     aSubjectPrincipal, aNotify);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

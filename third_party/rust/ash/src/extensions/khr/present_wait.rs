@@ -19,26 +19,28 @@ impl PresentWait {
         Self { handle, fp }
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkWaitForPresentKHR.html>"]
+    /// <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkWaitForPresentKHR.html>
+    #[inline]
     pub unsafe fn wait_for_present(
         &self,
         swapchain: vk::SwapchainKHR,
         present_id: u64,
         timeout: u64,
     ) -> VkResult<()> {
-        self.fp
-            .wait_for_present_khr(self.handle, swapchain, present_id, timeout)
-            .result()
+        (self.fp.wait_for_present_khr)(self.handle, swapchain, present_id, timeout).result()
     }
 
-    pub fn name() -> &'static CStr {
+    #[inline]
+    pub const fn name() -> &'static CStr {
         vk::KhrPresentWaitFn::name()
     }
 
+    #[inline]
     pub fn fp(&self) -> &vk::KhrPresentWaitFn {
         &self.fp
     }
 
+    #[inline]
     pub fn device(&self) -> vk::Device {
         self.handle
     }

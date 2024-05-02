@@ -13,17 +13,16 @@ typedef (Blob or BufferSource or FormData or URLSearchParams or USVString) XMLHt
 typedef XMLHttpRequestBodyInit BodyInit;
 
 interface mixin Body {
-  [Throws]
   readonly attribute boolean bodyUsed;
-  [Throws]
+  [NewObject]
   Promise<ArrayBuffer> arrayBuffer();
-  [Throws]
+  [NewObject]
   Promise<Blob> blob();
-  [Throws]
+  [NewObject]
   Promise<FormData> formData();
-  [Throws]
+  [NewObject]
   Promise<JSON> json();
-  [Throws]
+  [NewObject]
   Promise<USVString> text();
 };
 

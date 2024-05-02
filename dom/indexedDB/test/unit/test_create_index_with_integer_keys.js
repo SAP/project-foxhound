@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -54,7 +55,7 @@ function* testSteps() {
     .transaction("foo")
     .objectStore("foo")
     .index("foo")
-    .openKeyCursor().onsuccess = function(event) {
+    .openKeyCursor().onsuccess = function (event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, data.num, "Good key");

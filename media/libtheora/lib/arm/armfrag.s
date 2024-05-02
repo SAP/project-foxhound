@@ -11,16 +11,10 @@
 ;********************************************************************
 ; Original implementation:
 ;  Copyright (C) 2009 Robin Watts for Pinknoise Productions Ltd
-; last mod: $Id: armfrag.s 17481 2010-10-03 22:49:42Z tterribe $
+; last mod: $Id$
 ;********************************************************************
 
 	AREA	|.text|, CODE, READONLY
-
-	; Explicitly specifying alignment here because some versions of
-	; gas don't align code correctly. See
-	; http://lists.gnu.org/archive/html/bug-binutils/2011-06/msg00199.html
-	; https://bugzilla.mozilla.org/show_bug.cgi?id=920992
-	ALIGN
 
 	GET	armopts.s
 
@@ -363,7 +357,7 @@ ofrintra_v6_lp
 	ORR	r5, r5, r5, LSR #8	; r5 = __777766
 	PKHBT   r2, r2, r3, LSL #16     ; r2 = 33221100
 	PKHBT   r3, r4, r5, LSL #16     ; r3 = 77665544
-	STRD	r2, [r0], r1
+	STRD	r2, r3, [r0], r1
 	BGT	ofrintra_v6_lp
 	LDMFD	r13!,{r4-r6,PC}
 	ENDP
@@ -403,7 +397,7 @@ ofrinter_v6_lp
 	USAT16	r12,#8, r12		; r12= __66__44
 	USAT16	r5, #8, r5		; r4 = __77__55
 	ORR	r5, r12,r5, LSL #8	; r5 = 33221100
-	STRD	r4, [r0], r2
+	STRD	r4, r5, [r0], r2
 	BGT	ofrinter_v6_lp
 	LDMFD	r13!,{r4-r7,PC}
 	ENDP
@@ -445,7 +439,7 @@ ofrinter2_v6_lp
 	USAT16	r8, #8, r8		; r8 = __22__00
 	USAT16	r7, #8, r7		; r7 = __33__11
 	ORR	r8, r8, r7, LSL #8	; r8 = 33221100
-	STRD	r8, [r0], r3
+	STRD	r8, r9, [r0], r3
 	BGT	ofrinter2_v6_lp
 	LDMFD	r13!,{r4-r9,PC}
 	ENDP
@@ -516,8 +510,7 @@ oc_frag_recon_intra_neon PROC
 	; r0 =       unsigned char *_dst
 	; r1 =       int            _ystride
 	; r2 = const ogg_int16_t    _residue[64]
-	MOV	r3, #128
-	VDUP.S16	Q0, r3
+	VMOV.I16	Q0, #128
 	VLDMIA	r2,  {D16-D31}	; D16= 3333222211110000 etc	; 9(8) cycles
 	VQADD.S16	Q8, Q8, Q0
 	VQADD.S16	Q9, Q9, Q0

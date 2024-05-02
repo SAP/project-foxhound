@@ -3,16 +3,14 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 // Lazily import ExtensionParent to allow AddonTestUtils.createAppInfo to
 // override Services.appinfo.
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionParent",
-  "resource://gre/modules/ExtensionParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
+});
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
@@ -22,9 +20,6 @@ AddonTestUtils.createAppInfo(
   "42",
   "42"
 );
-// Override ExtensionXPCShellUtils.jsm's overriding of the pref as the
-// search service needs it.
-Services.prefs.clearUserPref("services.settings.default_bucket");
 
 add_task(async function shutdown_during_search_provider_startup() {
   await AddonTestUtils.promiseStartupManager();
@@ -51,7 +46,7 @@ add_task(async function shutdown_during_search_provider_startup() {
   });
 
   let initialized = false;
-  ExtensionParent.apiManager.global.searchInitialized.then(() => {
+  Services.search.promiseInitialized.then(() => {
     initialized = true;
   });
 

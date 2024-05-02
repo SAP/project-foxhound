@@ -20,7 +20,7 @@
 #include "nsIPushErrorReporter.h"
 #include "nsISupportsImpl.h"
 #include "nsITimer.h"
-#include "nsProxyRelease.h"
+#include "nsIURI.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -47,6 +47,8 @@
 #include "mozilla/dom/Notification.h"
 #include "mozilla/dom/NotificationEvent.h"
 #include "mozilla/dom/NotificationEventBinding.h"
+#include "mozilla/dom/PerformanceTiming.h"
+#include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/PushEventBinding.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerService.h"
@@ -61,10 +63,8 @@
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/extensions/ExtensionBrowser.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/net/MozURL.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -277,7 +277,7 @@ class ServiceWorkerOp::ServiceWorkerOpRunnable : public WorkerDebuggeeRunnable {
 
   ServiceWorkerOpRunnable(RefPtr<ServiceWorkerOp> aOwner,
                           WorkerPrivate* aWorkerPrivate)
-      : WorkerDebuggeeRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount),
+      : WorkerDebuggeeRunnable(aWorkerPrivate, WorkerThread),
         mOwner(std::move(aOwner)) {
     AssertIsOnMainThread();
     MOZ_ASSERT(mOwner);
@@ -293,6 +293,11 @@ class ServiceWorkerOp::ServiceWorkerOpRunnable : public WorkerDebuggeeRunnable {
     MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
     MOZ_ASSERT(mOwner);
 
+    if (aWorkerPrivate->GlobalScope()->IsDying()) {
+      Unused << Cancel();
+      return true;
+    }
+
     bool rv = mOwner->Exec(aCx, aWorkerPrivate);
     Unused << NS_WARN_IF(!rv);
     mOwner = nullptr;
@@ -301,10 +306,6 @@ class ServiceWorkerOp::ServiceWorkerOpRunnable : public WorkerDebuggeeRunnable {
   }
 
   nsresult Cancel() override {
-    // We need to check first if cancel is permitted
-    nsresult rv = WorkerRunnable::Cancel();
-    NS_ENSURE_SUCCESS(rv, rv);
-
     MOZ_ASSERT(mOwner);
 
     mOwner->RejectAll(NS_ERROR_DOM_ABORT_ERR);
@@ -323,11 +324,11 @@ bool ServiceWorkerOp::MaybeStart(RemoteWorkerChild* aOwner,
                                  RemoteWorkerChild::State& aState) {
   MOZ_ASSERT(!mStarted);
   MOZ_ASSERT(aOwner);
-  MOZ_ASSERT(aOwner->GetOwningEventTarget()->IsOnCurrentThread());
+  MOZ_ASSERT(aOwner->GetActorEventTarget()->IsOnCurrentThread());
 
   auto launcherData = aOwner->mLauncherData.Access();
 
-  if (NS_WARN_IF(!launcherData->mIPCActive)) {
+  if (NS_WARN_IF(!aOwner->CanSend())) {
     RejectAll(NS_ERROR_DOM_ABORT_ERR);
     mStarted = true;
     return true;
@@ -338,8 +339,8 @@ bool ServiceWorkerOp::MaybeStart(RemoteWorkerChild* aOwner,
     return false;
   }
 
-  if (NS_WARN_IF(aState.is<RemoteWorkerChild::PendingTerminated>()) ||
-      NS_WARN_IF(aState.is<RemoteWorkerChild::Terminated>())) {
+  if (NS_WARN_IF(aState.is<RemoteWorkerChild::Canceled>()) ||
+      NS_WARN_IF(aState.is<RemoteWorkerChild::Killed>())) {
     RejectAll(NS_ERROR_DOM_INVALID_STATE_ERR);
     mStarted = true;
     return true;
@@ -367,43 +368,46 @@ bool ServiceWorkerOp::MaybeStart(RemoteWorkerChild* aOwner,
         });
   }
 
+  // NewRunnableMethod doesn't work here because the template does not appear to
+  // be able to deal with the owner argument having storage as a RefPtr but
+  // with the method taking a RefPtr&.
   RefPtr<RemoteWorkerChild> owner = aOwner;
-
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
       __func__, [self = std::move(self), owner = std::move(owner)]() mutable {
-        MaybeReportServiceWorkerShutdownProgress(self->mArgs);
-
-        auto lock = owner->mState.Lock();
-        auto& state = lock.ref();
-
-        if (NS_WARN_IF(!state.is<Running>() && !self->IsTerminationOp())) {
-          self->RejectAll(NS_ERROR_DOM_INVALID_STATE_ERR);
-          return;
-        }
-
-        if (self->IsTerminationOp()) {
-          owner->CloseWorkerOnMainThread(state);
-        } else {
-          MOZ_ASSERT(state.is<Running>());
-
-          RefPtr<WorkerRunnable> workerRunnable =
-              self->GetRunnable(state.as<Running>().mWorkerPrivate);
-
-          if (NS_WARN_IF(!workerRunnable->Dispatch())) {
-            self->RejectAll(NS_ERROR_FAILURE);
-          }
-        }
-
-        nsCOMPtr<nsIEventTarget> target = owner->GetOwningEventTarget();
-        NS_ProxyRelease(__func__, target, owner.forget());
+        self->StartOnMainThread(owner);
       });
 
   mStarted = true;
 
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
-
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
   return true;
+}
+
+void ServiceWorkerOp::StartOnMainThread(RefPtr<RemoteWorkerChild>& aOwner) {
+  MaybeReportServiceWorkerShutdownProgress(mArgs);
+
+  {
+    auto lock = aOwner->mState.Lock();
+
+    if (NS_WARN_IF(!lock->is<Running>() && !IsTerminationOp())) {
+      RejectAll(NS_ERROR_DOM_INVALID_STATE_ERR);
+      return;
+    }
+  }
+
+  if (IsTerminationOp()) {
+    aOwner->CloseWorkerOnMainThread();
+  } else {
+    auto lock = aOwner->mState.Lock();
+    MOZ_ASSERT(lock->is<Running>());
+
+    RefPtr<WorkerRunnable> workerRunnable =
+        GetRunnable(lock->as<Running>().mWorkerPrivate);
+
+    if (NS_WARN_IF(!workerRunnable->Dispatch())) {
+      RejectAll(NS_ERROR_FAILURE);
+    }
+  }
 }
 
 void ServiceWorkerOp::Cancel() { RejectAll(NS_ERROR_DOM_ABORT_ERR); }
@@ -545,7 +549,7 @@ class UpdateServiceWorkerStateOp final : public ServiceWorkerOp {
       mOwner->RejectAll(NS_ERROR_DOM_ABORT_ERR);
       mOwner = nullptr;
 
-      return MainThreadWorkerControlRunnable::Cancel();
+      return NS_OK;
     }
 
     RefPtr<UpdateServiceWorkerStateOp> mOwner;
@@ -665,12 +669,10 @@ class PushEventOp final : public ExtendableEventOp {
     RootedDictionary<PushEventInit> pushEventInit(aCx);
 
     if (args.data().type() != OptionalPushData::Tvoid_t) {
-      auto& bytes = args.data().get_ArrayOfuint8_t();
-      JSObject* data =
-          Uint8Array::Create(aCx, bytes.Length(), bytes.Elements());
+      const auto& bytes = args.data().get_ArrayOfuint8_t();
+      JSObject* data = Uint8Array::Create(aCx, bytes, result);
 
-      if (!data) {
-        result = ErrorResult(NS_ERROR_FAILURE);
+      if (result.Failed()) {
         return false;
       }
 
@@ -854,10 +856,7 @@ class NotificationEventOp : public ExtendableEventOp,
     timer.swap(mTimer);
 
     // We swap first and then initialize the timer so that even if initializing
-    // fails, we still clean the busy count and interaction count correctly.
-    // The timer can't be initialized before modyfing the busy count since the
-    // timer thread could run and call the timeout but the worker may
-    // already be terminating and modifying the busy count could fail.
+    // fails, we still clean the interaction count correctly.
     uint32_t delay = mArgs.get_ServiceWorkerNotificationEventOpArgs()
                          .disableOpenClickDelay();
     rv = mTimer->InitWithCallback(this, delay, nsITimer::TYPE_ONE_SHOT);
@@ -880,18 +879,17 @@ class NotificationEventOp : public ExtendableEventOp,
     ServiceWorkerNotificationEventOpArgs& args =
         mArgs.get_ServiceWorkerNotificationEventOpArgs();
 
-    ErrorResult result;
-    RefPtr<Notification> notification = Notification::ConstructFromFields(
+    auto result = Notification::ConstructFromFields(
         aWorkerPrivate->GlobalScope(), args.id(), args.title(), args.dir(),
         args.lang(), args.body(), args.tag(), args.icon(), args.data(),
-        args.scope(), result);
+        args.scope());
 
-    if (NS_WARN_IF(result.Failed())) {
+    if (NS_WARN_IF(result.isErr())) {
       return false;
     }
 
     NotificationEventInit init;
-    init.mNotification = notification;
+    init.mNotification = result.unwrap();
     init.mBubbles = false;
     init.mCancelable = false;
 
@@ -956,7 +954,7 @@ class MessageEventOp final : public ExtendableEventOp {
                  std::function<void(const ServiceWorkerOpResult&)>&& aCallback)
       : ExtendableEventOp(std::move(aArgs), std::move(aCallback)),
         mData(new ServiceWorkerCloneData()) {
-    mData->CopyFromClonedMessageDataForBackgroundChild(
+    mData->CopyFromClonedMessageData(
         mArgs.get_ServiceWorkerMessageEventOpArgs().clonedData());
   }
 
@@ -1001,9 +999,9 @@ class MessageEventOp final : public ExtendableEventOp {
       init.mPorts = std::move(ports);
     }
 
-    RefPtr<net::MozURL> mozUrl;
-    nsresult result = net::MozURL::Init(
-        getter_AddRefs(mozUrl), mArgs.get_ServiceWorkerMessageEventOpArgs()
+    nsCOMPtr<nsIURI> url;
+    nsresult result = NS_NewURI(getter_AddRefs(url),
+                                mArgs.get_ServiceWorkerMessageEventOpArgs()
                                     .clientInfoAndState()
                                     .info()
                                     .url());
@@ -1013,8 +1011,20 @@ class MessageEventOp final : public ExtendableEventOp {
       return false;
     }
 
+    OriginAttributes attrs;
+    nsCOMPtr<nsIPrincipal> principal =
+        BasePrincipal::CreateContentPrincipal(url, attrs);
+    if (!principal) {
+      return false;
+    }
+
     nsCString origin;
-    mozUrl->Origin(origin);
+    result = principal->GetOriginNoSuffix(origin);
+    if (NS_WARN_IF(NS_FAILED(result))) {
+      RejectAll(result);
+      rv.SuppressException();
+      return false;
+    }
 
     CopyUTF8toUTF16(origin, init.mOrigin);
 
@@ -1214,11 +1224,6 @@ FetchEventOp::~FetchEventOp() {
           NS_ERROR_DOM_ABORT_ERR,
           FetchEventTimeStamps(mFetchHandlerStart, mFetchHandlerFinish)),
       __func__);
-
-  if (mActor) {
-    NS_ProxyRelease("FetchEventOp::mActor", RemoteWorkerService::Thread(),
-                    mActor.forget());
-  }
 }
 
 void FetchEventOp::RejectAll(nsresult aStatus) {
@@ -1269,7 +1274,9 @@ void FetchEventOp::MaybeFinished() {
 
     mHandled = nullptr;
     mPreloadResponse = nullptr;
-    mPreloadResponsePromiseRequestHolder.DisconnectIfExists();
+    mPreloadResponseAvailablePromiseRequestHolder.DisconnectIfExists();
+    mPreloadResponseTimingPromiseRequestHolder.DisconnectIfExists();
+    mPreloadResponseEndPromiseRequestHolder.DisconnectIfExists();
 
     ServiceWorkerFetchEventOpResult result(
         mResult.value() == Resolved ? NS_OK : NS_ERROR_FAILURE);
@@ -1447,19 +1454,10 @@ void FetchEventOp::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  {
-    ErrorResult error;
-    bool bodyUsed = response->GetBodyUsed(error);
-    error.WouldReportJSException();
-    if (NS_WARN_IF(error.Failed())) {
-      autoCancel.SetCancelErrorResult(aCx, error);
-      return;
-    }
-    if (NS_WARN_IF(bodyUsed)) {
-      autoCancel.SetCancelMessage("InterceptedUsedResponseWithURL"_ns,
-                                  requestURL);
-      return;
-    }
+  if (NS_WARN_IF(response->BodyUsed())) {
+    autoCancel.SetCancelMessage("InterceptedUsedResponseWithURL"_ns,
+                                requestURL);
+    return;
   }
 
   SafeRefPtr<InternalResponse> ir = response->GetInternalResponse();
@@ -1518,7 +1516,7 @@ void FetchEventOp::ResolvedCallback(JSContext* aCx,
   // where it's going.
   mHandled->MaybeResolveWithUndefined();
   mRespondWithPromiseHolder.Resolve(
-      FetchEventRespondWithResult(MakeTuple(
+      FetchEventRespondWithResult(std::make_tuple(
           std::move(ir), mRespondWithClosure.ref(),
           FetchEventTimeStamps(mFetchHandlerStart, mFetchHandlerFinish))),
       __func__);
@@ -1671,8 +1669,8 @@ nsresult FetchEventOp::DispatchFetchEvent(JSContext* aCx,
   mPreloadResponse = fetchEvent->PreloadResponse();
 
   if (args.common().preloadNavigation()) {
-    RefPtr<FetchEventPreloadResponsePromise> preloadResponsePromise =
-        mActor->GetPreloadResponsePromise();
+    RefPtr<FetchEventPreloadResponseAvailablePromise> preloadResponsePromise =
+        mActor->GetPreloadResponseAvailablePromise();
     MOZ_ASSERT(preloadResponsePromise);
 
     // If preloadResponsePromise has already settled then this callback will get
@@ -1681,17 +1679,59 @@ nsresult FetchEventOp::DispatchFetchEvent(JSContext* aCx,
     preloadResponsePromise
         ->Then(
             GetCurrentSerialEventTarget(), __func__,
-            [self, globalObjectAsSupports = std::move(globalObjectAsSupports)](
-                SafeRefPtr<InternalResponse> aInternalResponse) {
+            [self, globalObjectAsSupports](
+                SafeRefPtr<InternalResponse>&& aPreloadResponse) {
               self->mPreloadResponse->MaybeResolve(
                   MakeRefPtr<Response>(globalObjectAsSupports,
-                                       std::move(aInternalResponse), nullptr));
-              self->mPreloadResponsePromiseRequestHolder.Complete();
+                                       std::move(aPreloadResponse), nullptr));
+              self->mPreloadResponseAvailablePromiseRequestHolder.Complete();
             },
             [self](int) {
-              self->mPreloadResponsePromiseRequestHolder.Complete();
+              self->mPreloadResponseAvailablePromiseRequestHolder.Complete();
             })
-        ->Track(mPreloadResponsePromiseRequestHolder);
+        ->Track(mPreloadResponseAvailablePromiseRequestHolder);
+
+    RefPtr<PerformanceStorage> performanceStorage =
+        aWorkerPrivate->GetPerformanceStorage();
+
+    RefPtr<FetchEventPreloadResponseTimingPromise>
+        preloadResponseTimingPromise =
+            mActor->GetPreloadResponseTimingPromise();
+    MOZ_ASSERT(preloadResponseTimingPromise);
+    preloadResponseTimingPromise
+        ->Then(
+            GetCurrentSerialEventTarget(), __func__,
+            [self, performanceStorage,
+             globalObjectAsSupports](ResponseTiming&& aTiming) {
+              if (performanceStorage && !aTiming.entryName().IsEmpty() &&
+                  aTiming.initiatorType().Equals(u"navigation"_ns)) {
+                performanceStorage->AddEntry(
+                    aTiming.entryName(), aTiming.initiatorType(),
+                    MakeUnique<PerformanceTimingData>(aTiming.timingData()));
+              }
+              self->mPreloadResponseTimingPromiseRequestHolder.Complete();
+            },
+            [self](int) {
+              self->mPreloadResponseTimingPromiseRequestHolder.Complete();
+            })
+        ->Track(mPreloadResponseTimingPromiseRequestHolder);
+
+    RefPtr<FetchEventPreloadResponseEndPromise> preloadResponseEndPromise =
+        mActor->GetPreloadResponseEndPromise();
+    MOZ_ASSERT(preloadResponseEndPromise);
+    preloadResponseEndPromise
+        ->Then(
+            GetCurrentSerialEventTarget(), __func__,
+            [self, globalObjectAsSupports](ResponseEndArgs&& aArgs) {
+              if (aArgs.endReason() == FetchDriverObserver::eAborted) {
+                self->mPreloadResponse->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+              }
+              self->mPreloadResponseEndPromiseRequestHolder.Complete();
+            },
+            [self](int) {
+              self->mPreloadResponseEndPromiseRequestHolder.Complete();
+            })
+        ->Track(mPreloadResponseEndPromiseRequestHolder);
   } else {
     // preload navigation is disabled, resolved preload response promise with
     // undefined as default behavior.
@@ -1880,5 +1920,4 @@ class ExtensionAPIEventOp final : public ServiceWorkerOp {
   return op.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

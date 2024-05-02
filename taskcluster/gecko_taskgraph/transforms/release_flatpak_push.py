@@ -5,14 +5,13 @@
 Transform the release-flatpak-push kind into an actual task description.
 """
 
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from voluptuous import Optional, Required
 
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import release_level
-from gecko_taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by, Schema
 from gecko_taskgraph.util.scriptworker import add_scope_prefix
-
-from voluptuous import Optional, Required
 
 push_flatpak_description_schema = Schema(
     {
@@ -27,6 +26,7 @@ push_flatpak_description_schema = Schema(
         Optional("scopes"): [str],
         Required("shipping-phase"): task_description_schema["shipping-phase"],
         Required("shipping-product"): task_description_schema["shipping-product"],
+        Required("flathub-scope"): str,
         Optional("extra"): task_description_schema["extra"],
         Optional("attributes"): task_description_schema["attributes"],
     }
@@ -62,9 +62,10 @@ def make_task_description(config, jobs):
             job.setdefault("scopes", []).append(
                 add_scope_prefix(
                     config,
-                    "flathub:firefox:{}".format(job["worker"]["channel"]),
+                    "{}:{}".format(job["flathub-scope"], job["worker"]["channel"]),
                 )
             )
+        del job["flathub-scope"]
 
         yield job
 

@@ -13,6 +13,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include "mozilla/widget/IconLoader.h"
+#include "mozilla/WeakPtr.h"
 
 class nsIconLoaderService;
 class nsIURI;
@@ -20,6 +21,7 @@ class nsIContent;
 class nsIPrincipal;
 class imgRequestProxy;
 class nsMenuParentX;
+class nsPresContext;
 
 namespace mozilla {
 class ComputedStyle;
@@ -58,10 +60,9 @@ class nsMenuItemIconX final : public mozilla::widget::IconLoader::Listener {
   // GetIconURI returns null if the item should not have any icon.
   already_AddRefed<nsIURI> GetIconURI(nsIContent* aContent);
 
-  nsCOMPtr<nsIContent> mContent;  // always non-null
-  Listener* mListener;            // [weak]
-  nsIntRect mImageRegionRect;
-  RefPtr<mozilla::ComputedStyle> mComputedStyle;
+  Listener* mListener;  // [weak]
+  RefPtr<const mozilla::ComputedStyle> mComputedStyle;
+  mozilla::WeakPtr<nsPresContext> mPresContext;
   NSImage* mIconImage = nil;  // [strong]
   RefPtr<mozilla::widget::IconLoader> mIconLoader;
 };

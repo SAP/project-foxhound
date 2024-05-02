@@ -9,21 +9,14 @@
 #include "js/JSON.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
-#include "JSONWriter.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 
 NS_IMPL_ISUPPORTS(nsMacPreferencesReader, nsIMacPreferencesReader)
 
 using namespace mozilla;
 
-struct StringWriteFunc : public JSONWriteFunc {
-  nsAString& mString;
-  explicit StringWriteFunc(nsAString& aStr) : mString(aStr) {}
-  void Write(const Span<const char>& aStr) override {
-    mString.Append(NS_ConvertUTF8toUTF16(aStr.data(), aStr.size()));
-  }
-};
-
-static void EvaluateDict(JSONWriter* aWriter, NSDictionary<NSString*, id>* aDict);
+static void EvaluateDict(JSONWriter* aWriter,
+                         NSDictionary<NSString*, id>* aDict);
 
 static void EvaluateArray(JSONWriter* aWriter, NSArray* aArray) {
   for (id elem in aArray) {
@@ -43,13 +36,16 @@ static void EvaluateArray(JSONWriter* aWriter, NSArray* aArray) {
   }
 }
 
-static void EvaluateDict(JSONWriter* aWriter, NSDictionary<NSString*, id>* aDict) {
+static void EvaluateDict(JSONWriter* aWriter,
+                         NSDictionary<NSString*, id>* aDict) {
   for (NSString* key in aDict) {
     id value = aDict[key];
     if ([value isKindOfClass:[NSString class]]) {
-      aWriter->StringProperty(MakeStringSpan([key UTF8String]), MakeStringSpan([value UTF8String]));
+      aWriter->StringProperty(MakeStringSpan([key UTF8String]),
+                              MakeStringSpan([value UTF8String]));
     } else if ([value isKindOfClass:[NSNumber class]]) {
-      aWriter->IntProperty(MakeStringSpan([key UTF8String]), [value longLongValue]);
+      aWriter->IntProperty(MakeStringSpan([key UTF8String]),
+                           [value longLongValue]);
     } else if ([value isKindOfClass:[NSArray class]]) {
       aWriter->StartArrayProperty(MakeStringSpan([key UTF8String]));
       EvaluateArray(aWriter, value);
@@ -64,23 +60,27 @@ static void EvaluateDict(JSONWriter* aWriter, NSDictionary<NSString*, id>* aDict
 
 NS_IMETHODIMP
 nsMacPreferencesReader::PoliciesEnabled(bool* aPoliciesEnabled) {
-  NSString* policiesEnabledStr = [NSString stringWithUTF8String:ENTERPRISE_POLICIES_ENABLED_KEY];
-  *aPoliciesEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:policiesEnabledStr] == YES;
+  NSString* policiesEnabledStr =
+      [NSString stringWithUTF8String:ENTERPRISE_POLICIES_ENABLED_KEY];
+  *aPoliciesEnabled = [[NSUserDefaults standardUserDefaults]
+                          boolForKey:policiesEnabledStr] == YES;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsMacPreferencesReader::ReadPreferences(JSContext* aCx, JS::MutableHandle<JS::Value> aResult) {
-  nsAutoString jsonStr;
-  JSONWriter w(MakeUnique<StringWriteFunc>(jsonStr));
+nsMacPreferencesReader::ReadPreferences(JSContext* aCx,
+                                        JS::MutableHandle<JS::Value> aResult) {
+  JSONStringWriteFunc<nsAutoCString> jsonStr;
+  JSONWriter w(jsonStr);
   w.Start();
-  EvaluateDict(&w, [[NSUserDefaults standardUserDefaults] dictionaryRepresentation]);
+  EvaluateDict(
+      &w, [[NSUserDefaults standardUserDefaults] dictionaryRepresentation]);
   w.End();
 
-  auto json = static_cast<const char16_t*>(jsonStr.get());
+  NS_ConvertUTF8toUTF16 jsonStr16(jsonStr.StringCRef());
 
   JS::RootedValue val(aCx);
-  MOZ_ALWAYS_TRUE(JS_ParseJSON(aCx, json, jsonStr.Length(), &val));
+  MOZ_ALWAYS_TRUE(JS_ParseJSON(aCx, jsonStr16.get(), jsonStr16.Length(), &val));
 
   aResult.set(val);
   return NS_OK;

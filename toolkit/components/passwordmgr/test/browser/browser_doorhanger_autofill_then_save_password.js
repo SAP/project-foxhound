@@ -22,8 +22,7 @@ const testCases = [
     expectedDoorhanger: "password-save",
   },
   {
-    name:
-      "autofill, then delete password, then fill new password should show 'update'",
+    name: "autofill, then delete password, then fill new password should show 'update'",
     oldUsername: "oldUsername",
     oldPassword: "oldPassword",
     actions: [
@@ -64,7 +63,7 @@ async function test_save_change({
 
   info("Starting test: " + name);
 
-  LoginTestUtils.addLogin({
+  await LoginTestUtils.addLogin({
     username: oldUsername,
     password: oldPassword,
     origin: "https://example.com",
@@ -78,7 +77,7 @@ async function test_save_change({
         "https://example.com/browser/toolkit/components/" +
         "passwordmgr/test/browser/form_basic.html",
     },
-    async function(browser) {
+    async function (browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
 
       await ContentTask.spawn(
@@ -136,12 +135,12 @@ async function test_save_change({
         { expectedUsername, expectedPassword },
         async function awaitAutofill({ expectedUsername, expectedPassword }) {
           info("Validating updated fields");
-          is(
+          Assert.equal(
             expectedUsername,
             content.document.querySelector("#form-basic-username").value,
             "Verify username field updated"
           );
-          is(
+          Assert.equal(
             expectedPassword,
             content.document.querySelector("#form-basic-password").value,
             "Verify password field updated"
@@ -149,19 +148,19 @@ async function test_save_change({
         }
       );
 
-      let formSubmittedPromise = listenForTestNotification("ShowDoorhanger");
-      await SpecialPowers.spawn(browser, [], async function() {
+      const formSubmittedPromise = listenForTestNotification("ShowDoorhanger");
+      await SpecialPowers.spawn(browser, [], async function () {
         let doc = this.content.document;
         doc.getElementById("form-basic").submit();
       });
       await formSubmittedPromise;
 
       info("Waiting for doorhanger of type: " + expectedDoorhanger);
-      let notif = await waitForDoorhanger(browser, expectedDoorhanger);
+      const notif = await waitForDoorhanger(browser, expectedDoorhanger);
 
       await checkDoorhangerUsernamePassword(expectedUsername, expectedPassword);
 
-      let promiseLogin = TestUtils.topicObserved(
+      const promiseLogin = TestUtils.topicObserved(
         "passwordmgr-storage-changed",
         (_, data) => data == expectedNotification
       );

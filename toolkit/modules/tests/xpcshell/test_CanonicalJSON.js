@@ -1,11 +1,6 @@
-const { CanonicalJSON } = ChromeUtils.import(
-  "resource://gre/modules/CanonicalJSON.jsm"
+const { CanonicalJSON } = ChromeUtils.importESModule(
+  "resource://gre/modules/CanonicalJSON.sys.mjs"
 );
-
-function stringRepresentation(obj) {
-  const clone = JSON.parse(JSON.stringify(obj));
-  return JSON.stringify(clone);
-}
 
 add_task(async function test_canonicalJSON_should_preserve_array_order() {
   const input = ["one", "two", "three"];

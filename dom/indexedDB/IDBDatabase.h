@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/IDBTransactionBinding.h"
-#include "mozilla/dom/StorageTypeBinding.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -32,7 +31,6 @@ namespace dom {
 class Blob;
 class DOMStringList;
 class IDBFactory;
-class IDBMutableFile;
 class IDBObjectStore;
 struct IDBObjectStoreParameters;
 class IDBOpenDBRequest;
@@ -49,7 +47,6 @@ class PBackgroundIDBDatabaseFileChild;
 
 class IDBDatabase final : public DOMEventTargetHelper {
   using DatabaseSpec = mozilla::dom::indexedDB::DatabaseSpec;
-  using StorageType = mozilla::dom::StorageType;
   using PersistenceType = mozilla::dom::quota::PersistenceType;
 
   class Observer;
@@ -77,10 +74,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
 
   RefPtr<Observer> mObserver;
 
-  // Weak refs, IDBMutableFile strongly owns this IDBDatabase object.
-  nsTArray<NotNull<IDBMutableFile*>> mLiveMutableFiles;
-
-  const bool mFileHandleDisabled;
   bool mClosed;
   bool mInvalidated;
   bool mQuotaExceeded;
@@ -162,16 +155,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
 
   void NoteInactiveTransaction();
 
-  // XXX This doesn't really belong here... It's only needed for IDBMutableFile
-  //     serialization and should be removed or fixed someday.
-  nsresult GetQuotaInfo(nsACString& aOrigin, PersistenceType* aPersistenceType);
-
-  bool IsFileHandleDisabled() const { return mFileHandleDisabled; }
-
-  void NoteLiveMutableFile(IDBMutableFile& aMutableFile);
-
-  void NoteFinishedMutableFile(IDBMutableFile& aMutableFile);
-
   [[nodiscard]] RefPtr<DOMStringList> ObjectStoreNames() const;
 
   [[nodiscard]] RefPtr<IDBObjectStore> CreateObjectStore(
@@ -185,16 +168,10 @@ class IDBDatabase final : public DOMEventTargetHelper {
       JSContext* aCx, const StringOrStringSequence& aStoreNames,
       IDBTransactionMode aMode, ErrorResult& aRv);
 
-  StorageType Storage() const;
-
   IMPL_EVENT_HANDLER(abort)
   IMPL_EVENT_HANDLER(close)
   IMPL_EVENT_HANDLER(error)
   IMPL_EVENT_HANDLER(versionchange)
-
-  [[nodiscard]] RefPtr<IDBRequest> CreateMutableFile(
-      JSContext* aCx, const nsAString& aName, const Optional<nsAString>& aType,
-      ErrorResult& aRv);
 
   void ClearBackgroundActor() {
     AssertIsOnOwningThread();
@@ -224,8 +201,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
 
   virtual void LastRelease() override;
 
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
-
   // nsWrapperCache
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -250,8 +225,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
   void RefreshSpec(bool aMayDelete);
 
   void ExpireFileActors(bool aExpireAll);
-
-  void InvalidateMutableFiles();
 
   void NoteInactiveTransactionDelayed();
 

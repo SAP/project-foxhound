@@ -2,12 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-import six.moves.cPickle as pickle
 import os
 
 import mozpack.path as mozpath
+import six.moves.cPickle as pickle
 from mozunit import main
 
 from mozbuild.backend.test_manifest import TestManifestBackend
@@ -58,7 +56,7 @@ class TestTestManifestBackend(BackendTester):
         with open(test_defaults_path, "rb") as fh:
             o = {mozpath.normpath(k): v for k, v in pickle.load(fh).items()}
 
-        self.assertEquals(
+        self.assertEqual(
             set(mozpath.relpath(k, env.topsrcdir) for k in o.keys()),
             set(["dir1/xpcshell.ini", "xpcshell.ini", "mochitest.ini"]),
         )
@@ -79,7 +77,7 @@ class TestTestManifestBackend(BackendTester):
         with open(backend_path, "r") as fh:
             sources = set(source.strip() for source in fh)
 
-        self.assertEquals(
+        self.assertEqual(
             sources,
             set(
                 [

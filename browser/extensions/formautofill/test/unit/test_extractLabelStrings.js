@@ -1,11 +1,8 @@
 "use strict";
 
-var LabelUtils;
-add_task(async function() {
-  ({ LabelUtils } = ChromeUtils.import(
-    "resource://autofill/FormAutofillHeuristics.jsm"
-  ));
-});
+var { LabelUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/shared/LabelUtils.sys.mjs"
+);
 
 const TESTCASES = [
   {
@@ -63,7 +60,7 @@ const TESTCASES = [
 ];
 
 TESTCASES.forEach(testcase => {
-  add_task(async function() {
+  add_task(async function () {
     info("Starting testcase: " + testcase.description);
     LabelUtils._labelStrings = new WeakMap();
 

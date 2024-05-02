@@ -1,21 +1,24 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-import copy
 
-import gecko_taskgraph
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.attributes import keymatch, is_try
+import json
+
+import taskgraph
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.attributes import keymatch
+from taskgraph.util.treeherder import join_symbol, split_symbol
+
+from gecko_taskgraph.util.attributes import is_try
 from gecko_taskgraph.util.chunking import (
+    DefaultLoader,
     chunk_manifests,
     get_manifest_loader,
     get_runtimes,
     guess_mozinfo_from_task,
-    DefaultLoader,
 )
+from gecko_taskgraph.util.copy_task import copy_task
 from gecko_taskgraph.util.perfile import perfile_number_of_chunks
-from gecko_taskgraph.util.treeherder import split_symbol, join_symbol
-
 
 DYNAMIC_CHUNK_DURATION = 20 * 60  # seconds
 """The approximate time each test chunk should take to run."""
@@ -27,7 +30,6 @@ DYNAMIC_CHUNK_MULTIPLIER = {
     "^(?!android).*-xpcshell.*": 0.2,
 }
 """A multiplication factor to tweak the total duration per platform / suite."""
-
 
 transforms = TransformSequence()
 
@@ -73,8 +75,8 @@ def set_test_manifests(config, tasks):
         # chunked at the test runtime and those that are chunked in the taskgraph.
         task.setdefault("tags", {})["tests_grouped"] = "1"
 
-        if gecko_taskgraph.fast:
-            # We want to avoid evaluating manifests when gecko_taskgraph.fast is set. But
+        if taskgraph.fast:
+            # We want to avoid evaluating manifests when taskgraph.fast is set. But
             # manifests are required for dynamic chunking. Just set the number of
             # chunks to one in this case.
             if task["chunks"] == "dynamic":
@@ -89,7 +91,9 @@ def set_test_manifests(config, tasks):
             yield task
             continue
 
-        mozinfo = guess_mozinfo_from_task(task)
+        mozinfo = guess_mozinfo_from_task(
+            task, config.params.get("head_repository", "")
+        )
 
         loader_name = task.pop(
             "test-manifest-loader", config.params["test_manifest_loader"]
@@ -100,6 +104,53 @@ def set_test_manifests(config, tasks):
             task["suite"],
             frozenset(mozinfo.items()),
         )
+
+        # When scheduling with test paths, we often find manifests scheduled but all tests
+        # are skipped on a given config.  This will remove the task from the task set if
+        # no manifests have active tests for the given task/config
+        mh_test_paths = {}
+        if "MOZHARNESS_TEST_PATHS" in config.params.get("try_task_config", {}).get(
+            "env", {}
+        ):
+            mh_test_paths = json.loads(
+                config.params["try_task_config"]["env"]["MOZHARNESS_TEST_PATHS"]
+            )
+
+        if task["attributes"]["unittest_suite"] in mh_test_paths.keys():
+            input_paths = mh_test_paths[task["attributes"]["unittest_suite"]]
+            remaining_manifests = []
+
+            # if we have web-platform tests incoming, just yield task
+            for m in input_paths:
+                if m.startswith("testing/web-platform/tests/"):
+                    if not isinstance(loader, DefaultLoader):
+                        task["chunks"] = "dynamic"
+                    yield task
+                    break
+
+            # input paths can exist in other directories (i.e. [../../dir/test.js])
+            # we need to look for all [active] manifests that include tests in the path
+            for m in input_paths:
+                if [tm for tm in task["test-manifests"]["active"] if tm.startswith(m)]:
+                    remaining_manifests.append(m)
+
+            # look in the 'other' manifests
+            for m in input_paths:
+                man = m
+                for tm in task["test-manifests"]["other_dirs"]:
+                    matched_dirs = [
+                        dp
+                        for dp in task["test-manifests"]["other_dirs"].get(tm)
+                        if dp.startswith(man)
+                    ]
+                    if matched_dirs:
+                        if tm not in task["test-manifests"]["active"]:
+                            continue
+                        if m not in remaining_manifests:
+                            remaining_manifests.append(m)
+
+            if remaining_manifests == []:
+                continue
 
         # The default loader loads all manifests. If we use a non-default
         # loader, we'll only run some subset of manifests and the hardcoded
@@ -195,7 +246,7 @@ def split_chunks(config, tasks):
             this_chunk = i + 1
 
             # copy the test and update with the chunk number
-            chunked = copy.deepcopy(task)
+            chunked = copy_task(task)
             chunked["this-chunk"] = this_chunk
 
             if chunked_manifests is not None:

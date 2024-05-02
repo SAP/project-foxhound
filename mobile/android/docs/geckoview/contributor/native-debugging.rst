@@ -28,7 +28,6 @@ Perform a debug build of Gecko.
 .. code::
 
    ac_add_options --enable-debug
-   ac_add_options --with-android-ndk="<path>/.mozbuild/android-ndk-r17b"
 
 2. Ensure that the following lines are commented out in your
    ``mozconfig`` if present. ``./mach configure`` will not allow
@@ -146,39 +145,21 @@ GeckoView’s runtime environment.
 Making processes wait for a Java debugger
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The following environment variable makes the main (Gecko) process wait
-for a Java debugger to connect:
+The ``set-debug-app`` command will make Android wait for a debugger before
+running an app or service. e.g., to make GeckoViewExample wait, run the
+following:
 
 .. code:: shell
 
-   MOZ_DEBUG_WAIT_FOR_JAVA_DEBUGGER=1
+   adb shell am set-debug-app -w --persistent org.mozilla.geckoview_example
 
-This is a superset of Android Studio’s built-in debugging support so
-it’s not particularly useful (unless you want to attach a different jdwp
-debugger).
-
-The following environment variable makes every child process wait for a
-Java debugger to connect:
+The above command works with child processes too, e.g. to make the GPU
+process wait for a debugger, run:
 
 .. code:: shell
 
-   MOZ_DEBUG_CHILD_WAIT_FOR_JAVA_DEBUGGER=
+   adb shell am set-debug-app -w --persistent org.mozilla.geckoview_example:gpu
 
-Set ``MOZ_DEBUG_CHILD_WAIT_FOR_JAVA_DEBUGGER=suffix`` in the environment
-to make child processes with an Android process name ending with
-``suffix`` wait for a Java debugger to connect. For example, the
-following environment variable makes every child content process wait
-for a Java debugger to connect:
-
-.. code:: shell
-
-   MOZ_DEBUG_CHILD_WAIT_FOR_JAVA_DEBUGGER=:tab
-
-An easy way to set this is with ``./mach run``:
-
-.. code:: shell
-
-   ./mach run --setenv MOZ_DEBUG_CHILD_WAIT_FOR_JAVA_DEBUGGER=:tab
 
 Attaching a Java debugger to a waiting child process
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -208,6 +189,44 @@ may also need to set breakpoints in the appropriate ``lldb`` console by
 hand.
 
 Managing more debug tabs may require different approaches.
+
+Debug Native Memory Allocations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Android Studio includes a `Native Memory Profiler
+<https://developer.android.com/studio/profile/memory-profiler#native-memory-profiler>`_
+which works for physical devices running Android 10 and later.  In order to
+track allocations correctly Gecko must be built with ``jemalloc`` disabled.
+Additionally, the native memory profiler appears to only work with ``aarch64``
+builds.  The following must therefore be present in your ``mozconfig`` file:
+
+.. code::
+
+   ac_add_options --target=aarch64
+   ac_add_options --disable-jemalloc
+
+The resulting profiles are symbolicated correctly in debug builds, however, you
+may prefer to use a release build when profiling. Unfortunately a method to
+symbolicate using local symbols from the development machine has not yet been
+found, therefore in order for the profile to be symbolicated you must prevent
+symbols being stripped during the build process. To do so, add the following to
+your ``mozconfig``:
+
+.. code::
+
+   ac_add_options STRIP_FLAGS=--strip-debug
+
+And the following to ``mobile/android/geckoview/build.gradle``, and additionally
+to ``mobile/android/geckoview_example/build.gradle`` if profiling GeckoView
+Example, or ``app/build.gradle`` if profiling Fenix, for example.
+
+.. code:: groovy
+
+    android {
+        packagingOptions {
+            doNotStrip "**/*.so"
+        }
+    }
 
 Using Android Studio on Windows
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -4,7 +4,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-EXPORTS.mozilla.dom += ["txMozillaXSLTProcessor.h"]
+EXPORTS.mozilla.dom += [
+    "txMozillaXSLTProcessor.h",
+    "txXSLTMsgsURL.h",
+]
 
 XPIDL_MODULE = "dom_xslt"
 
@@ -46,8 +49,10 @@ UNIFIED_SOURCES += [
 ]
 
 EXTRA_JS_MODULES += [
-    "txEXSLTRegExFunctions.jsm",
+    "txEXSLTRegExFunctions.sys.mjs",
 ]
+
+include("/ipc/chromium/chromium-config.mozbuild")
 
 LOCAL_INCLUDES += [
     "../base",
@@ -55,6 +60,7 @@ LOCAL_INCLUDES += [
     "../xpath",
     "/dom/base",
     "/js/xpconnect/src",
+    "/parser/htmlparser",
 ]
 
 FINAL_LIBRARY = "xul"

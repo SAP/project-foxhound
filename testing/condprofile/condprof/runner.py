@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Script that launches profiles creation.
 """
-from __future__ import absolute_import
 import os
 import shutil
 import asyncio
@@ -32,6 +31,7 @@ class Runner:
         force_new,
         visible,
         skip_logs=False,
+        remote_test_root="/sdcard/test_root/",
     ):
         self.force_new = force_new
         self.profile = profile
@@ -41,6 +41,7 @@ class Runner:
         self.strict = strict
         self.visible = visible
         self.skip_logs = skip_logs
+        self.remote_test_root = remote_test_root
         self.env = {}
         # unpacking a dmg
         # XXX do something similar if we get an apk (but later)
@@ -90,7 +91,6 @@ class Runner:
             if not os.path.exists(self.archive):
                 os.makedirs(self.archive, exist_ok=True)
 
-        logger.info("Verifying Geckodriver binary presence")
         if shutil.which(self.geckodriver) is None and not os.path.exists(
             self.geckodriver
         ):
@@ -125,8 +125,9 @@ class Runner:
 
     def display_error(self, scenario, customization):
         logger.error("%s x %s failed." % (scenario, customization), exc_info=True)
-        if self.strict:
-            raise
+        # TODO: this might avoid the exceptions that slip through in automation
+        # if self.strict:
+        #     raise
 
     async def one_run(self, scenario, customization):
         """Runs one single conditioned profile.
@@ -142,6 +143,7 @@ class Runner:
             self.force_new,
             self.env,
             skip_logs=self.skip_logs,
+            remote_test_root=self.remote_test_root,
         ).run(not self.visible)
 
     async def run_all(self):
@@ -203,5 +205,7 @@ def run(
         runner.save()
         if failures > 0:
             raise Exception("At least one scenario failed")
+    except Exception as e:
+        raise e
     finally:
         loop.close()

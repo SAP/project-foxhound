@@ -258,6 +258,9 @@ lo{
         "America:Chihuahua"{
             ec{"ຊິວາວາ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"ຊີອູດັດ ຄົວເຣຊ"}
+        }
         "America:Coral_Harbour"{
             ec{"ອາທິໂຄຄານ"}
         }
@@ -1222,6 +1225,9 @@ lo{
         }
         "Pacific:Johnston"{
             ec{"ຈອນສະໂຕນ"}
+        }
+        "Pacific:Kanton"{
+            ec{"ແຄນຕອນ"}
         }
         "Pacific:Kiritimati"{
             ec{"ຄີຣິທີມາຕີ"}

@@ -1,14 +1,18 @@
-use clap::{app_from_crate, arg, AppSettings};
+use clap::{arg, command, ArgAction};
 
 fn main() {
-    let matches = app_from_crate!()
-        .global_setting(AppSettings::AllArgsOverrideSelf)
-        .global_setting(AppSettings::DeriveDisplayOrder)
-        .global_setting(AppSettings::AllowNegativeNumbers)
-        .arg(arg!(--two <VALUE>))
-        .arg(arg!(--one <VALUE>))
+    let matches = command!() // requires `cargo` feature
+        .next_line_help(true)
+        .arg(arg!(--two <VALUE>).required(true).action(ArgAction::Set))
+        .arg(arg!(--one <VALUE>).required(true).action(ArgAction::Set))
         .get_matches();
 
-    println!("two: {:?}", matches.value_of("two").expect("required"));
-    println!("one: {:?}", matches.value_of("one").expect("required"));
+    println!(
+        "two: {:?}",
+        matches.get_one::<String>("two").expect("required")
+    );
+    println!(
+        "one: {:?}",
+        matches.get_one::<String>("one").expect("required")
+    );
 }

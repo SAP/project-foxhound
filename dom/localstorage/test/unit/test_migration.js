@@ -3,7 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   const principalInfos = [
     { url: "http://localhost", attrs: {} },
     { url: "http://www.mozilla.org", attrs: {} },
@@ -50,7 +50,10 @@ async function testSteps() {
 
   info("Setting pref");
 
-  Services.prefs.setBoolPref("dom.storage.next_gen", true);
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
 
   info("Stage 1 - Testing archived data migration");
 
@@ -121,4 +124,4 @@ async function testSteps() {
 
     verifyData(clearedOrigins);
   }
-}
+});

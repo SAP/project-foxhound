@@ -1,3 +1,5 @@
+/* stylelint-disable max-nesting-depth */
+
 .ds-navigation {
   color: var(--newtab-text-primary-color);
   font-size: 11.5px;
@@ -39,7 +41,7 @@
     a {
       &:hover,
       &:active {
-        text-decoration: underline;
+        text-decoration: none;
       }
 
       &:active {
@@ -57,7 +59,7 @@
     float: inline-end;
 
     &:hover {
-      text-decoration: underline;
+      text-decoration: none;
     }
   }
 

@@ -7,25 +7,21 @@
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { cssPropertiesSpec } = require("devtools/shared/specs/css-properties");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  cssPropertiesSpec,
+} = require("resource://devtools/shared/specs/css-properties.js");
 
 loader.lazyRequireGetter(
   this,
   "cssColors",
-  "devtools/shared/css/color-db",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "CSS_PROPERTIES_DB",
-  "devtools/shared/css/properties-db",
+  "resource://devtools/shared/css/color-db.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CSS_TYPES",
-  "devtools/shared/css/constants",
+  "resource://devtools/shared/css/constants.js",
   true
 );
 
@@ -79,20 +75,10 @@ class CssPropertiesFront extends FrontClassWithSpec(cssPropertiesSpec) {
  */
 function CssProperties(db) {
   this.properties = db.properties;
-  this.pseudoElements = db.pseudoElements;
-
-  // supported feature
-  this.cssColor4ColorFunction = hasFeature(
-    db.supportedFeature,
-    "css-color-4-color-function"
-  );
 
   this.isKnown = this.isKnown.bind(this);
   this.isInherited = this.isInherited.bind(this);
   this.supportsType = this.supportsType.bind(this);
-  this.supportsCssColor4ColorFunction = this.supportsCssColor4ColorFunction.bind(
-    this
-  );
 }
 
 CssProperties.prototype = {
@@ -177,15 +163,6 @@ CssProperties.prototype = {
     }
     return [];
   },
-
-  /**
-   * Checking for the css-color-4 color function support.
-   *
-   * @return {Boolean} Return true if the server supports css-color-4 color function.
-   */
-  supportsCssColor4ColorFunction() {
-    return this.cssColor4ColorFunction;
-  },
 };
 
 /**
@@ -199,30 +176,6 @@ function isCssVariable(input) {
 }
 
 /**
- * Query the feature supporting status in the featureSet.
- *
- * @param {Hashmap} featureSet the feature set hashmap
- * @param {String} feature the feature name string
- * @return {Boolean} has the feature or not
- */
-function hasFeature(featureSet, feature) {
-  if (feature in featureSet) {
-    return featureSet[feature];
-  }
-  return false;
-}
-
-/**
- * Get a client-side CssProperties. This is useful for dependencies in tests, or parts
- * of the codebase that don't particularly need to match every known CSS property on
- * the target.
- * @return {CssProperties}
- */
-function getClientCssProperties() {
-  return new CssProperties(normalizeCssData(CSS_PROPERTIES_DB));
-}
-
-/**
  * Even if the target has the cssProperties actor, the returned data may not be in the
  * same shape or have all of the data we need. This normalizes the data and fills in
  * any missing information like color values.
@@ -231,57 +184,12 @@ function getClientCssProperties() {
  */
 function normalizeCssData(db) {
   // If there is a `from` attributes, it means that it comes from RDP
-  // and it is not the client CSS_PROPERTIES_DB object.
-  // (prevent comparing to CSS_PROPERTIES_DB to avoid loading client database)
+  // and it is not the client `generateCssProperties()` object passed by tests.
   if (typeof db.from == "string") {
-    const missingSupports = !db.properties.color.supports;
-    const missingValues = !db.properties.color.values;
-    const missingSubproperties = !db.properties.background.subproperties;
-    const missingIsInherited = !db.properties.font.isInherited;
-
-    const missingSomething =
-      missingSupports ||
-      missingValues ||
-      missingSubproperties ||
-      missingIsInherited;
-
-    if (missingSomething) {
-      for (const name in db.properties) {
-        // Skip the current property if we can't find it in CSS_PROPERTIES_DB.
-        if (typeof CSS_PROPERTIES_DB.properties[name] !== "object") {
-          continue;
-        }
-
-        // Add "supports" information to the css properties if it's missing.
-        if (missingSupports) {
-          db.properties[name].supports =
-            CSS_PROPERTIES_DB.properties[name].supports;
-        }
-        // Add "values" information to the css properties if it's missing.
-        if (missingValues) {
-          db.properties[name].values =
-            CSS_PROPERTIES_DB.properties[name].values;
-        }
-        // Add "subproperties" information to the css properties if it's missing.
-        if (missingSubproperties) {
-          db.properties[name].subproperties =
-            CSS_PROPERTIES_DB.properties[name].subproperties;
-        }
-        // Add "isInherited" information to the css properties if it's missing.
-        if (missingIsInherited) {
-          db.properties[name].isInherited =
-            CSS_PROPERTIES_DB.properties[name].isInherited;
-        }
-      }
-    }
+    // This is where to put backward compat tweaks here to support old runtimes.
   }
 
   reattachCssColorValues(db);
-
-  // If there is no supportedFeature in db, create an empty one.
-  if (!db.supportedFeature) {
-    db.supportedFeature = {};
-  }
 
   return db;
 }
@@ -307,7 +215,8 @@ function reattachCssColorValues(db) {
 
 module.exports = {
   CssPropertiesFront,
-  getClientCssProperties,
   isCssVariable,
+  CssProperties,
+  normalizeCssData,
 };
 registerFront(CssPropertiesFront);

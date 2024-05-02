@@ -9,17 +9,19 @@ in the prompt service. In the end, the second request will be failed.
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 var httpProtocolHandler = Cc[
   "@mozilla.org/network/protocol;1?name=http"
 ].getService(Ci.nsIHttpProtocolHandler);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://foo@localhost:" + httpServer.identity.primaryPort;
 });
 
@@ -40,7 +42,7 @@ const gMockPromptService = {
 };
 
 var gMockPromptServiceCID = MockRegistrar.register(
-  "@mozilla.org/embedcomp/prompt-service;1",
+  "@mozilla.org/prompter;1",
   gMockPromptService
 );
 
@@ -76,7 +78,7 @@ function run_test() {
   httpServer.registerPathHandler("/content", contentHandler);
   httpServer.start(-1);
 
-  httpProtocolHandler.EnsureHSTSDataReady().then(function() {
+  httpProtocolHandler.EnsureHSTSDataReady().then(function () {
     var chan1 = makeChan(URL + "/content");
     chan1.asyncOpen(new ChannelListener(firstTimeThrough, null));
     var chan2 = makeChan(URL + "/content");
@@ -94,6 +96,6 @@ function firstTimeThrough(request, buffer) {
 }
 
 function secondTimeThrough(request, buffer) {
-  Assert.equal(request.status, Cr.NS_ERROR_ABORT);
+  Assert.equal(request.status, Cr.NS_ERROR_SUPERFLUOS_AUTH);
   httpServer.stop(do_test_finished);
 }

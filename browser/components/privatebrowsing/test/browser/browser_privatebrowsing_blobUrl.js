@@ -13,12 +13,12 @@ add_task(async function test() {
     false,
     BASE_URI
   );
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, BASE_URI);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, BASE_URI);
   await loaded;
 
   let blobURL;
   info("Creating a blob URL...");
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     return Promise.resolve(
       content.window.URL.createObjectURL(
         new Blob([123], { type: "text/plain" })
@@ -42,16 +42,16 @@ add_task(async function test() {
     false,
     BASE_URI
   );
-  BrowserTestUtils.loadURI(privateTab, BASE_URI);
+  BrowserTestUtils.startLoadingURIString(privateTab, BASE_URI);
   await privateTabLoaded;
 
-  await SpecialPowers.spawn(privateTab, [blobURL], function(url) {
+  await SpecialPowers.spawn(privateTab, [blobURL], function (url) {
     return new Promise(resolve => {
       var xhr = new content.window.XMLHttpRequest();
-      xhr.onerror = function() {
+      xhr.onerror = function () {
         resolve("SendErrored");
       };
-      xhr.onload = function() {
+      xhr.onload = function () {
         resolve("SendLoaded");
       };
       xhr.open("GET", url);

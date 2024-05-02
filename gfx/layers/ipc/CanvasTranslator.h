@@ -12,7 +12,6 @@
 
 #include "mozilla/gfx/InlineTranslator.h"
 #include "mozilla/layers/CanvasDrawEventRecorder.h"
-#include "mozilla/layers/CanvasThread.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/layers/PCanvasParent.h"
 #include "mozilla/ipc/CrossProcessSemaphore.h"
@@ -20,6 +19,8 @@
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {
+class TaskQueue;
+
 namespace layers {
 
 class TextureData;
@@ -31,20 +32,20 @@ class CanvasTranslator final : public gfx::InlineTranslator,
 
   friend class PProtocolParent;
 
-  /**
-   * Create an uninitialized CanvasTranslator and bind it to the given endpoint
-   * on the CanvasPlaybackLoop.
-   *
-   * @param aEndpoint the endpoint to bind to
-   * @return the new CanvasTranslator
-   */
-  static already_AddRefed<CanvasTranslator> Create(
-      Endpoint<PCanvasParent>&& aEndpoint);
+  CanvasTranslator();
 
   /**
-   * Shutdown all of the CanvasTranslators.
+   * Dispatches a runnable to the preferred task queue or thread.
+   *
+   * @param aRunnable the runnable to dispatch
    */
-  static void Shutdown();
+  void DispatchToTaskQueue(already_AddRefed<nsIRunnable> aRunnable);
+
+  /**
+   * @returns true if running in the preferred task queue or thread for
+   * translation.
+   */
+  bool IsInTaskQueue() const;
 
   /**
    * Initialize the canvas translator for a particular TextureType and
@@ -55,12 +56,19 @@ class CanvasTranslator final : public gfx::InlineTranslator,
    *        CanvasEventRingBuffer
    * @param aReaderSem reading blocked semaphore for the CanvasEventRingBuffer
    * @param aWriterSem writing blocked semaphore for the CanvasEventRingBuffer
+   * @param aUseIPDLThread if true, use the IPDL thread instead of the worker
+   *        pool for translation requests
    */
   ipc::IPCResult RecvInitTranslator(
       const TextureType& aTextureType,
       ipc::SharedMemoryBasic::Handle&& aReadHandle,
       CrossProcessSemaphoreHandle&& aReaderSem,
-      CrossProcessSemaphoreHandle&& aWriterSem);
+      CrossProcessSemaphoreHandle&& aWriterSem, const bool& aUseIPDLThread);
+
+  /**
+   * New buffer to resume translation after it has been stopped by writer.
+   */
+  ipc::IPCResult RecvNewBuffer(ipc::SharedMemoryBasic::Handle&& aReadHandle);
 
   /**
    * Used to tell the CanvasTranslator to start translating again after it has
@@ -149,20 +157,27 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   TextureData* LookupTextureData(int64_t aTextureId);
 
   /**
-   * Waits for the SurfaceDescriptor associated with a TextureData from another
-   * process to be created and then returns it.
-   *
-   * @param aTextureId the key used to find the SurfaceDescriptor
-   * @returns the SurfaceDescriptor found
-   */
-  UniquePtr<SurfaceDescriptor> WaitForSurfaceDescriptor(int64_t aTextureId);
-
-  /**
    * Removes the texture and other objects associated with a texture ID.
    *
    * @param aTextureId the texture ID to remove
    */
   void RemoveTexture(int64_t aTextureId);
+
+  /**
+   * Overriden to remove any DataSourceSurfaces associated with the RefPtr.
+   *
+   * @param aRefPtr the key to the surface
+   * @param aSurface the surface to store
+   */
+  void AddSourceSurface(gfx::ReferencePtr aRefPtr,
+                        gfx::SourceSurface* aSurface) final {
+    if (mMappedSurface == aRefPtr) {
+      mPreparedMap = nullptr;
+      mMappedSurface = nullptr;
+    }
+    RemoveDataSurface(aRefPtr);
+    InlineTranslator::AddSourceSurface(aRefPtr, aSurface);
+  }
 
   /**
    * Removes the SourceSurface and other objects associated with a SourceSurface
@@ -171,6 +186,10 @@ class CanvasTranslator final : public gfx::InlineTranslator,
    * @param aRefPtr the key to the objects to remove
    */
   void RemoveSourceSurface(gfx::ReferencePtr aRefPtr) final {
+    if (mMappedSurface == aRefPtr) {
+      mPreparedMap = nullptr;
+      mMappedSurface = nullptr;
+    }
     RemoveDataSurface(aRefPtr);
     InlineTranslator::RemoveSourceSurface(aRefPtr);
   }
@@ -226,9 +245,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
       gfx::ReferencePtr aSurface);
 
  private:
-  explicit CanvasTranslator(
-      already_AddRefed<CanvasThreadHolder> aCanvasThreadHolder);
-
   ~CanvasTranslator();
 
   void Bind(Endpoint<PCanvasParent>&& aEndpoint);
@@ -236,6 +252,8 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   void StartTranslation();
 
   void FinishShutdown();
+
+  bool CheckDeactivated();
 
   void Deactivate();
 
@@ -251,7 +269,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   bool CheckForFreshCanvasDevice(int aLineNumber);
   void NotifyDeviceChanged();
 
-  RefPtr<CanvasThreadHolder> mCanvasThreadHolder;
   RefPtr<TaskQueue> mTranslationTaskQueue;
 #if defined(XP_WIN)
   RefPtr<ID3D11Device> mDevice;
@@ -270,11 +287,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   nsRefPtrHashtable<nsPtrHashKey<void>, gfx::DataSourceSurface> mDataSurfaces;
   gfx::ReferencePtr mMappedSurface;
   UniquePtr<gfx::DataSourceSurface::ScopedMap> mPreparedMap;
-  typedef std::unordered_map<int64_t, UniquePtr<SurfaceDescriptor>>
-      DescriptorMap;
-  DescriptorMap mSurfaceDescriptors;
-  Monitor mSurfaceDescriptorsMonitor{
-      "CanvasTranslator::mSurfaceDescriptorsMonitor"};
   Atomic<bool> mDeactivated{false};
   bool mIsInTransaction = false;
   bool mDeviceResetInProgress = false;

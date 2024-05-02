@@ -2,8 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from telemetry_harness.testcase import TelemetryTestCase
 from telemetry_harness.ping_filters import MAIN_SHUTDOWN_PING
+from telemetry_harness.testcase import TelemetryTestCase
 
 
 class TestMainTabScalars(TelemetryTestCase):
@@ -13,6 +13,21 @@ class TestMainTabScalars(TelemetryTestCase):
         """Test for Telemetry Scalars."""
 
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
+            # Bug 1829464: BrowserUsageTelemetry's telemetry collection about
+            # open tabs is async. We manually set the task timeout here to 0 ms
+            # so that it instead happens immediately after a tab opens. This
+            # prevents race conditions between telemetry submission and our
+            # test.
+            self.marionette.execute_script(
+                """
+                const { BrowserUsageTelemetry } = ChromeUtils.import(
+                    "resource:///modules/BrowserUsageTelemetry.jsm"
+                );
+
+                BrowserUsageTelemetry._onTabsOpenedTask._timeoutMs = 0;
+                """
+            )
+
             start_tab = self.marionette.current_window_handle
 
             tab2 = self.open_tab(focus=True)

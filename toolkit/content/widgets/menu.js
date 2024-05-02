@@ -8,11 +8,9 @@
 // leaking to window scope.
 {
   let imports = {};
-  ChromeUtils.defineModuleGetter(
-    imports,
-    "ShortcutUtils",
-    "resource://gre/modules/ShortcutUtils.jsm"
-  );
+  ChromeUtils.defineESModuleGetters(imports, {
+    ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+  });
 
   const MozMenuItemBaseMixin = Base => {
     class MozMenuItemBase extends MozElements.BaseTextMixin(Base) {
@@ -33,7 +31,7 @@
       get control() {
         var parent = this.parentNode;
         // Return the parent if it is a menu or menulist.
-        if (parent && parent.parentNode instanceof XULMenuElement) {
+        if (parent && XULMenuElement.isInstance(parent.parentNode)) {
           return parent.parentNode;
         }
         return null;
@@ -42,7 +40,7 @@
       // nsIDOMXULContainerItemElement
       get parentContainer() {
         for (var parent = this.parentNode; parent; parent = parent.parentNode) {
-          if (parent instanceof XULMenuElement) {
+          if (XULMenuElement.isInstance(parent)) {
             return parent;
           }
         }
@@ -149,8 +147,8 @@
       <hbox class="menu-iconic-left" align="center" pack="center" aria-hidden="true">
         <image class="menu-iconic-icon" aria-hidden="true"></image>
       </hbox>
-      <label class="menu-iconic-text" flex="1" crop="right" aria-hidden="true"></label>
-      <label class="menu-iconic-highlightable-text" crop="right" aria-hidden="true"></label>
+      <label class="menu-iconic-text" flex="1" crop="end" aria-hidden="true"></label>
+      <label class="menu-iconic-highlightable-text" crop="end" aria-hidden="true"></label>
     `)
       );
       this.initializeAttributeInheritance();
@@ -216,8 +214,8 @@
       <hbox class="menu-iconic-left" align="center" pack="center" aria-hidden="true">
         <image class="menu-iconic-icon"/>
       </hbox>
-      <label class="menu-iconic-text" flex="1" crop="right" aria-hidden="true"/>
-      <label class="menu-iconic-highlightable-text" crop="right" aria-hidden="true"/>
+      <label class="menu-iconic-text" flex="1" crop="end" aria-hidden="true"/>
+      <label class="menu-iconic-highlightable-text" crop="end" aria-hidden="true"/>
     `),
         true
       );
@@ -231,8 +229,8 @@
       <hbox class="menu-iconic-left" align="center" pack="center" aria-hidden="true">
         <image class="menu-iconic-icon"/>
       </hbox>
-      <label class="menu-iconic-text" flex="1" crop="right" aria-hidden="true"/>
-      <label class="menu-iconic-highlightable-text" crop="right" aria-hidden="true"/>
+      <label class="menu-iconic-text" flex="1" crop="end" aria-hidden="true"/>
+      <label class="menu-iconic-highlightable-text" crop="end" aria-hidden="true"/>
       <hbox class="menu-accel-container" aria-hidden="true">
         <label class="menu-iconic-accel"/>
       </hbox>
@@ -246,7 +244,7 @@
     static get plainFragment() {
       let frag = document.importNode(
         MozXULElement.parseXULToFragment(`
-      <label class="menu-text" crop="right" aria-hidden="true"/>
+      <label class="menu-text" crop="end" aria-hidden="true"/>
       <hbox class="menu-accel-container" aria-hidden="true">
         <label class="menu-accel"/>
       </hbox>
@@ -288,10 +286,14 @@
         }
         let key = document.getElementById(keyId);
         if (!key) {
-          Cu.reportError(
+          let msg =
             `Key ${keyId} of menuitem ${this.getAttribute("label")} ` +
-              `could not be found`
-          );
+            `could not be found`;
+          if (keyId.startsWith("ext-key-id-")) {
+            console.info(msg);
+          } else {
+            console.error(msg);
+          }
           return null;
         }
         return imports.ShortcutUtils.prettifyShortcut(key);
@@ -397,7 +399,7 @@
         if (!MozMenu.menubarIconicFrag) {
           MozMenu.menubarIconicFrag = MozXULElement.parseXULToFragment(`
           <image class="menubar-left" aria-hidden="true"/>
-          <label class="menubar-text" crop="right" aria-hidden="true"/>
+          <label class="menubar-text" crop="end" aria-hidden="true"/>
         `);
         }
         fragment = document.importNode(MozMenu.menubarIconicFrag, true);
@@ -405,7 +407,7 @@
       if (isMenubarChild && !isIconic) {
         if (!MozMenu.menubarFrag) {
           MozMenu.menubarFrag = MozXULElement.parseXULToFragment(`
-          <label class="menubar-text" crop="right" aria-hidden="true"/>
+          <label class="menubar-text" crop="end" aria-hidden="true"/>
         `);
         }
         fragment = document.importNode(MozMenu.menubarFrag, true);
@@ -416,8 +418,8 @@
           <hbox class="menu-iconic-left" align="center" pack="center" aria-hidden="true">
             <image class="menu-iconic-icon"/>
           </hbox>
-          <label class="menu-iconic-text" flex="1" crop="right" aria-hidden="true"/>
-          <label class="menu-iconic-highlightable-text" crop="right" aria-hidden="true"/>
+          <label class="menu-iconic-text" flex="1" crop="end" aria-hidden="true"/>
+          <label class="menu-iconic-highlightable-text" crop="end" aria-hidden="true"/>
           <hbox class="menu-accel-container" anonid="accel" aria-hidden="true">
             <label class="menu-iconic-accel"/>
           </hbox>
@@ -432,7 +434,7 @@
       if (!isMenubarChild && !isIconic) {
         if (!MozMenu.normalFrag) {
           MozMenu.normalFrag = MozXULElement.parseXULToFragment(`
-          <label class="menu-text" crop="right" aria-hidden="true"/>
+          <label class="menu-text" crop="end" aria-hidden="true"/>
           <hbox class="menu-accel-container" anonid="accel" aria-hidden="true">
             <label class="menu-accel"/>
           </hbox>

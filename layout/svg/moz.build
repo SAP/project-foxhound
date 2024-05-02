@@ -9,14 +9,15 @@ with Files("**"):
 
 if CONFIG["ENABLE_TESTS"]:
     MOCHITEST_MANIFESTS += [
-        "tests/mochitest.ini",
+        "tests/mochitest.toml",
     ]
     MOCHITEST_CHROME_MANIFESTS += [
-        "tests/chrome.ini",
+        "tests/chrome.toml",
     ]
 
 EXPORTS.mozilla += [
     "CSSClipPathInstance.h",
+    "DisplaySVGItem.h",
     "FilterInstance.h",
     "ISVGDisplayableFrame.h",
     "ISVGSVGFrame.h",
@@ -42,6 +43,7 @@ EXPORTS.mozilla += [
 UNIFIED_SOURCES += [
     "CSSClipPathInstance.cpp",
     "CSSFilterInstance.cpp",
+    "DisplaySVGItem.cpp",
     "FilterInstance.cpp",
     "SVGAFrame.cpp",
     "SVGClipPathFrame.cpp",
@@ -94,5 +96,3 @@ LOCAL_INCLUDES += [
 RESOURCE_FILES += [
     "svg.css",
 ]
-
-REQUIRES_UNIFIED_BUILD = True

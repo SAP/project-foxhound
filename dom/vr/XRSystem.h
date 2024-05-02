@@ -14,8 +14,7 @@
 
 #include "gfxVR.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct XRSessionCreationOptions;
 
@@ -71,7 +70,7 @@ class XRRequestSessionPermissionRequest final
 
   // nsIContentPermissionRequest
   NS_IMETHOD Cancel(void) override;
-  NS_IMETHOD Allow(JS::HandleValue choices) override;
+  NS_IMETHOD Allow(JS::Handle<JS::Value> choices) override;
 
   using AllowCallback = std::function<void()>;
   using AllowAnySiteCallback = std::function<void()>;
@@ -170,7 +169,6 @@ class XRSystem final : public DOMEventTargetHelper,
       mRequestSessionRequestsWaitingForEnumeration;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_XRsystem_h_

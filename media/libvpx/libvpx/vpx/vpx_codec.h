@@ -22,13 +22,16 @@
  * video codec algorithm.
  *
  * An application instantiates a specific codec instance by using
- * vpx_codec_init() and a pointer to the algorithm's interface structure:
+ * vpx_codec_dec_init() or vpx_codec_enc_init() and a pointer to the
+ * algorithm's interface structure:
  *     <pre>
  *     my_app.c:
  *       extern vpx_codec_iface_t my_codec;
  *       {
  *           vpx_codec_ctx_t algo;
- *           res = vpx_codec_init(&algo, &my_codec);
+ *           int threads = 4;
+ *           vpx_codec_dec_cfg_t cfg = { threads, 0, 0 };
+ *           res = vpx_codec_dec_init(&algo, &my_codec, &cfg, 0);
  *       }
  *     </pre>
  *
@@ -315,19 +318,21 @@ const char *vpx_codec_err_to_string(vpx_codec_err_t err);
  * \param[in]    ctx     Pointer to this instance's context.
  *
  */
-const char *vpx_codec_error(vpx_codec_ctx_t *ctx);
+const char *vpx_codec_error(const vpx_codec_ctx_t *ctx);
 
 /*!\brief Retrieve detailed error information for codec context
  *
  * Returns a human readable string providing detailed information about
- * the last error.
+ * the last error. The returned string is only valid until the next
+ * vpx_codec_* function call (except vpx_codec_error and
+ * vpx_codec_error_detail) on the codec context.
  *
  * \param[in]    ctx     Pointer to this instance's context.
  *
  * \retval NULL
  *     No detailed information is available.
  */
-const char *vpx_codec_error_detail(vpx_codec_ctx_t *ctx);
+const char *vpx_codec_error_detail(const vpx_codec_ctx_t *ctx);
 
 /* REQUIRED FUNCTIONS
  *
@@ -342,9 +347,11 @@ const char *vpx_codec_error_detail(vpx_codec_ctx_t *ctx);
  * \param[in] ctx   Pointer to this instance's context
  *
  * \retval #VPX_CODEC_OK
- *     The codec algorithm initialized.
- * \retval #VPX_CODEC_MEM_ERROR
- *     Memory allocation failed.
+ *     The codec instance has been destroyed.
+ * \retval #VPX_CODEC_INVALID_PARAM
+ *     ctx is a null pointer.
+ * \retval #VPX_CODEC_ERROR
+ *     Codec context not initialized.
  */
 vpx_codec_err_t vpx_codec_destroy(vpx_codec_ctx_t *ctx);
 

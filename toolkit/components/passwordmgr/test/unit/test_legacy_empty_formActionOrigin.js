@@ -41,28 +41,31 @@
  * Adds a login with an empty formActionOrigin, then it verifies that no other
  * form logins can be added for the same host.
  */
-add_task(function test_addLogin_wildcard() {
+add_task(async function test_addLogin_wildcard() {
   let loginInfo = TestData.formLogin({
     origin: "http://any.example.com",
     formActionOrigin: "",
   });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
 
   // Normal form logins cannot be added anymore.
   loginInfo = TestData.formLogin({ origin: "http://any.example.com" });
-  Assert.throws(() => Services.logins.addLogin(loginInfo), /already exists/);
+  await Assert.rejects(
+    Services.logins.addLoginAsync(loginInfo),
+    /already exists/
+  );
 
   // Authentication logins can still be added.
   loginInfo = TestData.authLogin({ origin: "http://any.example.com" });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
 
   // Form logins can be added for other hosts.
   loginInfo = TestData.formLogin({ origin: "http://other.example.com" });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
 });
 
 /**
- * Verifies that findLogins, searchLogins, and countLogins include all logins
+ * Verifies that searchLogins and countLogins include all logins
  * that have an empty formActionOrigin in the store, even when a formActionOrigin is
  * specified.
  */
@@ -74,11 +77,6 @@ add_task(function test_search_all_wildcard() {
   Assert.equal(Services.logins.searchLogins(matchData).length, 2);
 
   Assert.equal(
-    Services.logins.findLogins("", "http://www.example.com", null).length,
-    2
-  );
-
-  Assert.equal(
     Services.logins.countLogins("", "http://www.example.com", null),
     2
   );
@@ -86,15 +84,6 @@ add_task(function test_search_all_wildcard() {
   // Restrict the search to one host.
   matchData.setProperty("origin", "http://any.example.com");
   Assert.equal(Services.logins.searchLogins(matchData).length, 1);
-
-  Assert.equal(
-    Services.logins.findLogins(
-      "http://any.example.com",
-      "http://www.example.com",
-      null
-    ).length,
-    1
-  );
 
   Assert.equal(
     Services.logins.countLogins(

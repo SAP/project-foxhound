@@ -3,8 +3,6 @@
 
 "use strict";
 
-const { PushDB, PushService, PushServiceWebSocket } = serviceExports;
-
 const userAgentID = "28cd09e2-7506-42d8-9e50-b02785adc7ef";
 
 var db;
@@ -17,7 +15,7 @@ function run_test() {
   run_next_test();
 }
 
-let putRecord = async function(perm, record) {
+let putRecord = async function (perm, record) {
   let uri = Services.io.newURI(record.scope);
 
   PermissionTestUtils.add(

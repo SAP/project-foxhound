@@ -4,17 +4,17 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const { assert, fetch } = DevToolsUtils;
-const EventEmitter = require("devtools/shared/event-emitter");
-const { SourceLocation } = require("devtools/server/actors/common");
-const Services = require("Services");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const {
+  SourceLocation,
+} = require("resource://devtools/server/actors/common.js");
 
 loader.lazyRequireGetter(
   this,
   "SourceActor",
-  "devtools/server/actors/source",
+  "resource://devtools/server/actors/source.js",
   true
 );
 
@@ -84,14 +84,10 @@ class SourcesManager extends EventEmitter {
    *
    * @param Debugger.Source source
    *        The source to make an actor for.
-   * @returns a SourceActor representing the source or null.
+   * @returns a SourceActor representing the source.
    */
   createSourceActor(source) {
     assert(source, "SourcesManager.prototype.source needs a source");
-
-    if (isHiddenSource(source)) {
-      return null;
-    }
 
     if (this._sourceActors.has(source)) {
       return this._sourceActors.get(source);
@@ -263,9 +259,15 @@ class SourcesManager extends EventEmitter {
    *        boxed or not.
    */
   isBlackBoxed(url, line, column) {
+    if (!this.blackBoxedSources.has(url)) {
+      return false;
+    }
+
     const ranges = this.blackBoxedSources.get(url);
+
+    // If we have an entry in the map, but it is falsy, the source is fully blackboxed.
     if (!ranges) {
-      return this.blackBoxedSources.has(url);
+      return true;
     }
 
     const range = ranges.find(r => isLocationInRange({ line, column }, r));
@@ -275,6 +277,10 @@ class SourcesManager extends EventEmitter {
   isFrameBlackBoxed(frame) {
     const { url, line, column } = this.getFrameLocation(frame);
     return this.isBlackBoxed(url, line, column);
+  }
+
+  clearAllBlackBoxing() {
+    this.blackBoxedSources.clear();
   }
 
   /**
@@ -493,14 +499,6 @@ class SourcesManager extends EventEmitter {
   }
 }
 
-/*
- * Checks if a source should never be displayed to the user because
- * it's either internal or we don't support in the UI yet.
- */
-function isHiddenSource(source) {
-  return source.introductionType === "Function.prototype";
-}
-
 function isLocationInRange({ line, column }, range) {
   return (
     (range.start.line <= line ||
@@ -511,4 +509,3 @@ function isLocationInRange({ line, column }, range) {
 }
 
 exports.SourcesManager = SourcesManager;
-exports.isHiddenSource = isHiddenSource;

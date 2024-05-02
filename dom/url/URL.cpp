@@ -11,7 +11,9 @@
 #include "URLMainThread.h"
 #include "URLWorker.h"
 
+#include "nsASCIIMask.h"
 #include "MainThreadUtils.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/URLBinding.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "nsContentUtils.h"
@@ -19,9 +21,9 @@
 #include "nsIURIMutator.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
+#include "nsTaintingUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(URL, mParent, mSearchParams)
 
@@ -96,9 +98,11 @@ already_AddRefed<URL> URL::Constructor(nsISupports* aParent,
     return nullptr;
   }
 
-  RefPtr<URL> url = new URL(aParent);
-  url->SetURI(uri.forget());
-  return url.forget();
+  return MakeAndAddRef<URL>(aParent, std::move(uri));
+}
+
+already_AddRefed<URL> URL::FromURI(GlobalObject& aGlobal, nsIURI* aURI) {
+  return MakeAndAddRef<URL>(aGlobal.GetAsSupports(), aURI);
 }
 
 void URL::CreateObjectURL(const GlobalObject& aGlobal, Blob& aBlob,
@@ -130,12 +134,40 @@ void URL::RevokeObjectURL(const GlobalObject& aGlobal, const nsAString& aURL,
   }
 }
 
-bool URL::IsValidURL(const GlobalObject& aGlobal, const nsAString& aURL,
-                     ErrorResult& aRv) {
+bool URL::IsValidObjectURL(const GlobalObject& aGlobal, const nsAString& aURL,
+                           ErrorResult& aRv) {
   if (NS_IsMainThread()) {
-    return URLMainThread::IsValidURL(aGlobal, aURL, aRv);
+    return URLMainThread::IsValidObjectURL(aGlobal, aURL, aRv);
   }
-  return URLWorker::IsValidURL(aGlobal, aURL, aRv);
+  return URLWorker::IsValidObjectURL(aGlobal, aURL, aRv);
+}
+
+bool URL::CanParse(const GlobalObject& aGlobal, const nsAString& aURL,
+                   const Optional<nsAString>& aBase) {
+  nsCOMPtr<nsIURI> baseUri;
+  if (aBase.WasPassed()) {
+    // Don't use NS_ConvertUTF16toUTF8 because that doesn't let us handle OOM.
+    nsAutoCString base;
+    if (!AppendUTF16toUTF8(aBase.Value(), base, fallible)) {
+      // Just return false with OOM errors as no ErrorResult.
+      return false;
+    }
+
+    nsresult rv = NS_NewURI(getter_AddRefs(baseUri), base);
+    if (NS_FAILED(rv)) {
+      // Invalid base URL, return false.
+      return false;
+    }
+  }
+
+  nsAutoCString urlStr;
+  if (!AppendUTF16toUTF8(aURL, urlStr, fallible)) {
+    // Just return false with OOM errors as no ErrorResult.
+    return false;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  return NS_SUCCEEDED(NS_NewURI(getter_AddRefs(uri), urlStr, nullptr, baseUri));
 }
 
 URLSearchParams* URL::SearchParams() {
@@ -200,8 +232,9 @@ void URL::SetHref(const nsAString& aHref, ErrorResult& aRv) {
   UpdateURLSearchParams();
 }
 
-void URL::GetOrigin(nsAString& aOrigin, ErrorResult& aRv) const {
-  nsresult rv = nsContentUtils::GetUTFOrigin(GetURI(), aOrigin);
+void URL::GetOrigin(nsAString& aOrigin) const {
+  nsresult rv =
+      nsContentUtils::GetWebExposedOriginSerialization(URI(), aOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aOrigin.Truncate();
   }
@@ -212,39 +245,15 @@ void URL::GetProtocol(nsAString& aProtocol) const {
   aProtocol.Append(char16_t(':'));
 }
 
-void URL::SetProtocol(const nsAString& aProtocol, ErrorResult& aRv) {
-  nsAString::const_iterator start;
-  aProtocol.BeginReading(start);
-
-  nsAString::const_iterator end;
-  aProtocol.EndReading(end);
-
-  nsAString::const_iterator iter(start);
-  FindCharInReadable(':', iter, end);
-
-  // Changing the protocol of a URL, changes the "nature" of the URI
-  // implementation. In order to do this properly, we have to serialize the
-  // existing URL and reparse it in a new object.
-  nsCOMPtr<nsIURI> clone;
-  nsresult rv = NS_MutateURI(GetURI())
-                    .SetScheme(NS_ConvertUTF16toUTF8(Substring(start, iter)))
-                    .Finalize(clone);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+void URL::SetProtocol(const nsAString& aProtocol) {
+  nsCOMPtr<nsIURI> uri(URI());
+  if (!uri) {
     return;
   }
-
-  nsAutoCString href;
-  rv = clone->GetSpec(href);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  uri = net::TryChangeProtocol(uri, aProtocol);
+  if (!uri) {
     return;
   }
-
-  nsCOMPtr<nsIURI> uri;
-  rv = NS_NewURI(getter_AddRefs(uri), href);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
   mURI = std::move(uri);
 }
 
@@ -319,7 +328,13 @@ void URL::SetPort(const nsAString& aPort) {
   int32_t port = -1;
 
   // nsIURI uses -1 as default value.
+  portStr.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
   if (!portStr.IsEmpty()) {
+    // To be valid, the port must start with an ASCII digit.
+    // (nsAString::ToInteger ignores leading junk, so check before calling.)
+    if (!IsAsciiDigit(portStr[0])) {
+      return;
+    }
     port = portStr.ToInteger(&rv);
     if (NS_FAILED(rv)) {
       return;
@@ -414,7 +429,7 @@ void URL::UpdateURLSearchParams() {
   }
 
   nsAutoCString search;
-  nsresult rv = GetURI()->GetQuery(search);
+  nsresult rv = URI()->GetQuery(search);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     search.Truncate();
   }
@@ -422,15 +437,9 @@ void URL::UpdateURLSearchParams() {
   mSearchParams->ParseInput(search);
 }
 
-void URL::SetURI(already_AddRefed<nsIURI> aURI) {
-  mURI = std::move(aURI);
-  MOZ_ASSERT(mURI);
-}
-
-nsIURI* URL::GetURI() const {
+nsIURI* URL::URI() const {
   MOZ_ASSERT(mURI);
   return mURI;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -2,7 +2,7 @@
 This script parses mozilla-central's WebIDL bindings and writes a JSON-formatted
 subset of the function bindings to several files:
 - "devtools/server/actors/webconsole/webidl-pure-allowlist.js" (for eager evaluation processing)
-- "devtools/server/actors/webconsole/webidl-deprecated-list.js"
+- "devtools/server/actors/webconsole/webidl-unsafe-getters-names.js" (for preventing automatically call getters that could emit warnings)
 
 Run this script via
 
@@ -11,7 +11,6 @@ Run this script via
 with a mozconfig that references a built non-artifact build.
 """
 
-from __future__ import absolute_import, unicode_literals, print_function
 from os import path, remove, system
 import json
 import WebIDL
@@ -59,8 +58,9 @@ module.exports = %(data)s;
 pure_output_file = path.join(
     buildconfig.topsrcdir, "devtools/server/actors/webconsole/webidl-pure-allowlist.js"
 )
-deprecated_output_file = path.join(
-    buildconfig.topsrcdir, "devtools/server/actors/webconsole/webidl-deprecated-list.js"
+unsafe_getters_names_file = path.join(
+    buildconfig.topsrcdir,
+    "devtools/server/actors/webconsole/webidl-unsafe-getters-names.js",
 )
 
 input_file = path.join(buildconfig.topobjdir, "dom/bindings/file-lists.json")
@@ -78,53 +78,96 @@ for filepath in file_list["webidls"]:
         parser.parse(f.read(), filepath)
 results = parser.finish()
 
-pure_output = {}
-deprecated_output = {}
+# TODO: Bug 1616013 - Move more of these to be part of the pure list.
+pure_output = {
+    "Document": {
+        "prototype": [
+            "getSelection",
+            "hasStorageAccess",
+        ],
+    },
+    "Range": {
+        "prototype": [
+            "isPointInRange",
+            "comparePoint",
+            "intersectsNode",
+            # These two functions aren't pure because they do trigger
+            # layout when they are called, but in the context of eager
+            # evaluation, that should be a totally fine thing to do.
+            "getClientRects",
+            "getBoundingClientRect",
+        ],
+    },
+    "Selection": {
+        "prototype": ["getRangeAt", "containsNode"],
+    },
+}
+unsafe_getters_names = []
 for result in results:
     if isinstance(result, WebIDL.IDLInterface):
         iface = result.identifier.name
 
+        is_global = result.getExtendedAttribute("Global")
+
         for member in result.members:
             name = member.identifier.name
 
-            # We only care about methods because eager evaluation assumes that
-            # all getter functions are side-effect-free.
             if member.isMethod() and member.affects == "Nothing":
                 if (
                     PURE_INTERFACE_ALLOWLIST and not iface in PURE_INTERFACE_ALLOWLIST
                 ) or name.startswith("_"):
                     continue
-                if not iface in pure_output:
-                    pure_output[iface] = []
+
+                if is_global:
+                    raise Exception(
+                        "Global methods and accessors are not supported: " + iface
+                    )
+
+                if iface not in pure_output:
+                    pure_output[iface] = {}
+
                 if member.isStatic():
-                    pure_output[iface].append([name])
+                    owner_type = "static"
                 else:
-                    pure_output[iface].append(["prototype", name])
+                    owner_type = "prototype"
+
+                if owner_type not in pure_output[iface]:
+                    pure_output[iface][owner_type] = []
+
+                # All DOM getters are considered eagerly-evaluate-able.
+                # Collect methods only.
+                #
+                # NOTE: We still need to calculate unsafe_getters_names for
+                #       object preview.
+                if member.isMethod():
+                    pure_output[iface][owner_type].append(name)
+
             if (
                 not iface in DEPRECATED_INTERFACE__EXCLUDE_LIST
-                and (member.isMethod() or member.isAttr())
-                and member.getExtendedAttribute("Deprecated")
+                and not name in unsafe_getters_names
+                and member.isAttr()
+                and (
+                    member.getExtendedAttribute("Deprecated")
+                    or member.getExtendedAttribute("LegacyLenientThis")
+                )
             ):
-                if not iface in deprecated_output:
-                    deprecated_output[iface] = []
-                if member.isStatic():
-                    deprecated_output[iface].append([name])
-                else:
-                    deprecated_output[iface].append(["prototype", name])
+                unsafe_getters_names.append(name)
+
 
 with open(pure_output_file, "w") as f:
     f.write(FILE_TEMPLATE % {"data": json.dumps(pure_output, indent=2, sort_keys=True)})
 print("Successfully generated", pure_output_file)
 
-with open(deprecated_output_file, "w") as f:
+unsafe_getters_names.sort()
+with open(unsafe_getters_names_file, "w") as f:
     f.write(
         FILE_TEMPLATE
-        % {"data": json.dumps(deprecated_output, indent=2, sort_keys=True)}
+        % {"data": json.dumps(unsafe_getters_names, indent=2, sort_keys=True)}
     )
-print("Successfully generated", deprecated_output_file)
+print("Successfully generated", unsafe_getters_names_file)
 
 print("Formatting files...")
-system("./mach eslint --fix " + pure_output_file + " " + deprecated_output_file)
+system("./mach eslint --fix " + pure_output_file + " " + unsafe_getters_names_file)
 print("Files are now properly formatted")
 
 # Parsing the idls generate a parser.out file that we don't have any use of.

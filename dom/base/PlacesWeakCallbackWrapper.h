@@ -12,14 +12,13 @@
 #include "nsIWeakReferenceUtils.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class PlacesWeakCallbackWrapper final : public nsWrapperCache,
                                         public SupportsWeakPtr {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(PlacesWeakCallbackWrapper)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(PlacesWeakCallbackWrapper)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(PlacesWeakCallbackWrapper)
 
   explicit PlacesWeakCallbackWrapper(nsISupports* aParent,
                                      PlacesEventCallback& aCallback);
@@ -39,7 +38,6 @@ class PlacesWeakCallbackWrapper final : public nsWrapperCache,
   RefPtr<PlacesEventCallback> mCallback;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_PlacesWeakCallbackWrapper_h

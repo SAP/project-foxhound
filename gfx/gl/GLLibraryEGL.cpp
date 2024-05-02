@@ -24,6 +24,7 @@
 #ifdef XP_WIN
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "nsWindowsHelpers.h"
+#  include "prerror.h"
 
 #  include <d3d11.h>
 #endif
@@ -37,6 +38,7 @@
 #include "ScopedGLHelpers.h"
 #ifdef MOZ_WIDGET_GTK
 #  include "mozilla/WidgetUtilsGtk.h"
+#  include "mozilla/widget/DMABufLibWrapper.h"
 #  ifdef MOZ_WAYLAND
 #    include "mozilla/widget/nsWaylandDisplay.h"
 #  endif  // MOZ_WIDGET_GTK
@@ -48,11 +50,20 @@
 namespace mozilla {
 namespace gl {
 
+StaticMutex GLLibraryEGL::sMutex;
+StaticRefPtr<GLLibraryEGL> GLLibraryEGL::sInstance;
+
 // should match the order of EGLExtensions, and be null-terminated.
 static const char* sEGLLibraryExtensionNames[] = {
-    "EGL_ANDROID_get_native_client_buffer", "EGL_ANGLE_device_creation",
-    "EGL_ANGLE_device_creation_d3d11",      "EGL_ANGLE_platform_angle",
-    "EGL_ANGLE_platform_angle_d3d",         "EGL_EXT_device_query"};
+    "EGL_ANDROID_get_native_client_buffer",
+    "EGL_ANGLE_device_creation",
+    "EGL_ANGLE_device_creation_d3d11",
+    "EGL_ANGLE_platform_angle",
+    "EGL_ANGLE_platform_angle_d3d",
+    "EGL_EXT_device_enumeration",
+    "EGL_EXT_device_query",
+    "EGL_EXT_platform_device",
+    "EGL_MESA_platform_surfaceless"};
 
 // should match the order of EGLExtensions, and be null-terminated.
 static const char* sEGLExtensionNames[] = {
@@ -79,7 +90,12 @@ static const char* sEGLExtensionNames[] = {
     "EGL_KHR_swap_buffers_with_damage",
     "EGL_EXT_buffer_age",
     "EGL_KHR_partial_update",
-    "EGL_NV_robustness_video_memory_purge"};
+    "EGL_NV_robustness_video_memory_purge",
+    "EGL_EXT_image_dma_buf_import",
+    "EGL_EXT_image_dma_buf_import_modifiers",
+    "EGL_MESA_image_dma_buf_export",
+    "EGL_KHR_no_config_context",
+};
 
 PRLibrary* LoadApitraceLibrary() {
   const char* path = nullptr;
@@ -135,23 +151,135 @@ static PRLibrary* LoadLibraryForEGLOnWindows(const nsAString& filename) {
   PRLibSpec lspec;
   lspec.type = PR_LibSpec_PathnameU;
   lspec.value.pathname_u = path.get();
-  return PR_LoadLibraryWithFlags(lspec, PR_LD_LAZY | PR_LD_LOCAL);
+  PRLibrary* lib = PR_LoadLibraryWithFlags(lspec, PR_LD_LAZY | PR_LD_LOCAL);
+  if (!lib) {
+    gfxCriticalNote << "Failed to load " << path.get() << " " << PR_GetError()
+                    << " " << PR_GetOSError();
+  }
+  return lib;
 }
 
 #endif  // XP_WIN
 
-static std::shared_ptr<EglDisplay> GetAndInitDisplay(GLLibraryEGL& egl,
-                                                     void* displayType) {
+static std::shared_ptr<EglDisplay> GetAndInitDisplay(
+    GLLibraryEGL& egl, void* displayType,
+    const StaticMutexAutoLock& aProofOfLock) {
   const auto display = egl.fGetDisplay(displayType);
   if (!display) return nullptr;
-  return EglDisplay::Create(egl, display, false);
+  return EglDisplay::Create(egl, display, false, aProofOfLock);
 }
 
-static std::shared_ptr<EglDisplay> GetAndInitWARPDisplay(GLLibraryEGL& egl,
-                                                         void* displayType) {
+#ifdef MOZ_WIDGET_GTK
+static std::shared_ptr<EglDisplay> GetAndInitDeviceDisplay(
+    GLLibraryEGL& egl, const StaticMutexAutoLock& aProofOfLock) {
+  nsAutoCString drmRenderDevice(gfx::gfxVars::DrmRenderDevice());
+  if (drmRenderDevice.IsEmpty() ||
+      !egl.IsExtensionSupported(EGLLibExtension::EXT_platform_device) ||
+      !egl.IsExtensionSupported(EGLLibExtension::EXT_device_enumeration)) {
+    return nullptr;
+  }
+
+  EGLint maxDevices;
+  if (!egl.fQueryDevicesEXT(0, nullptr, &maxDevices)) {
+    return nullptr;
+  }
+
+  std::vector<EGLDeviceEXT> devices(maxDevices);
+  EGLint numDevices;
+  if (!egl.fQueryDevicesEXT(devices.size(), devices.data(), &numDevices)) {
+    return nullptr;
+  }
+  devices.resize(numDevices);
+
+  EGLDisplay display = EGL_NO_DISPLAY;
+  for (const auto& device : devices) {
+    const char* renderNodeString =
+        egl.fQueryDeviceStringEXT(device, LOCAL_EGL_DRM_RENDER_NODE_FILE_EXT);
+    if (renderNodeString &&
+        strcmp(renderNodeString, drmRenderDevice.get()) == 0) {
+      const EGLAttrib attrib_list[] = {LOCAL_EGL_NONE};
+      display = egl.fGetPlatformDisplay(LOCAL_EGL_PLATFORM_DEVICE_EXT, device,
+                                        attrib_list);
+      break;
+    }
+  }
+  if (!display) {
+    return nullptr;
+  }
+
+  return EglDisplay::Create(egl, display, true, aProofOfLock);
+}
+
+static std::shared_ptr<EglDisplay> GetAndInitSoftwareDisplay(
+    GLLibraryEGL& egl, const StaticMutexAutoLock& aProofOfLock) {
+  if (!egl.IsExtensionSupported(EGLLibExtension::EXT_platform_device) ||
+      !egl.IsExtensionSupported(EGLLibExtension::EXT_device_enumeration)) {
+    return nullptr;
+  }
+
+  EGLint maxDevices;
+  if (!egl.fQueryDevicesEXT(0, nullptr, &maxDevices)) {
+    return nullptr;
+  }
+
+  std::vector<EGLDeviceEXT> devices(maxDevices);
+  EGLint numDevices;
+  if (!egl.fQueryDevicesEXT(devices.size(), devices.data(), &numDevices)) {
+    return nullptr;
+  }
+  devices.resize(numDevices);
+
+  EGLDisplay display = EGL_NO_DISPLAY;
+  for (const auto& device : devices) {
+    const char* renderNodeString =
+        egl.fQueryDeviceStringEXT(device, LOCAL_EGL_DRM_RENDER_NODE_FILE_EXT);
+    // We are looking for a device with no file
+    if (!renderNodeString || *renderNodeString == 0) {
+      const EGLAttrib attrib_list[] = {LOCAL_EGL_NONE};
+      display = egl.fGetPlatformDisplay(LOCAL_EGL_PLATFORM_DEVICE_EXT, device,
+                                        attrib_list);
+      break;
+    }
+  }
+  if (!display) {
+    return nullptr;
+  }
+
+  return EglDisplay::Create(egl, display, true, aProofOfLock);
+}
+
+static std::shared_ptr<EglDisplay> GetAndInitSurfacelessDisplay(
+    GLLibraryEGL& egl, const StaticMutexAutoLock& aProofOfLock) {
+  if (!egl.IsExtensionSupported(EGLLibExtension::MESA_platform_surfaceless)) {
+    return nullptr;
+  }
+
+  const EGLAttrib attrib_list[] = {LOCAL_EGL_NONE};
+  const EGLDisplay display = egl.fGetPlatformDisplay(
+      LOCAL_EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, attrib_list);
+  if (display == EGL_NO_DISPLAY) {
+    return nullptr;
+  }
+  return EglDisplay::Create(egl, display, true, aProofOfLock);
+}
+#endif
+
+static auto EglDebugLayersEnabled() {
+  EGLAttrib ret = LOCAL_EGL_FALSE;
+  if (StaticPrefs::gfx_direct3d11_enable_debug_layer_AtStartup()) {
+    ret = LOCAL_EGL_TRUE;
+  }
+  return ret;
+}
+
+static std::shared_ptr<EglDisplay> GetAndInitWARPDisplay(
+    GLLibraryEGL& egl, void* displayType,
+    const StaticMutexAutoLock& aProofOfLock) {
   const EGLAttrib attrib_list[] = {
       LOCAL_EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
       LOCAL_EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE,
+      LOCAL_EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE,
+      EglDebugLayersEnabled(),
       // Requires:
       LOCAL_EGL_PLATFORM_ANGLE_TYPE_ANGLE,
       LOCAL_EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, LOCAL_EGL_NONE};
@@ -167,11 +295,12 @@ static std::shared_ptr<EglDisplay> GetAndInitWARPDisplay(GLLibraryEGL& egl,
     return nullptr;
   }
 
-  return EglDisplay::Create(egl, display, true);
+  return EglDisplay::Create(egl, display, true, aProofOfLock);
 }
 
 std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplay(
     ID3D11Device* const d3d11Device) {
+  StaticMutexAutoLock lock(sMutex);
   EGLDeviceEXT eglDevice =
       fCreateDeviceANGLE(LOCAL_EGL_D3D11_DEVICE_ANGLE, d3d11Device, nullptr);
   if (!eglDevice) {
@@ -199,7 +328,7 @@ std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplay(
     return nullptr;
   }
 
-  const auto ret = EglDisplay::Create(*this, display, false);
+  const auto ret = EglDisplay::Create(*this, display, false, lock);
 
   if (!ret) {
     const EGLint err = fGetError();
@@ -263,7 +392,8 @@ class AngleErrorReporting {
 AngleErrorReporting gAngleErrorReporter;
 
 static std::shared_ptr<EglDisplay> GetAndInitDisplayForAccelANGLE(
-    GLLibraryEGL& egl, nsACString* const out_failureId) {
+    GLLibraryEGL& egl, nsACString* const out_failureId,
+    const StaticMutexAutoLock& aProofOfLock) {
   gfx::FeatureState& d3d11ANGLE =
       gfx::gfxConfig::GetFeature(gfx::Feature::D3D11_HW_ANGLE);
 
@@ -285,16 +415,18 @@ static std::shared_ptr<EglDisplay> GetAndInitDisplayForAccelANGLE(
   });
 
   if (gfx::gfxConfig::IsForcedOnByUser(gfx::Feature::D3D11_HW_ANGLE)) {
-    return GetAndInitDisplay(egl, LOCAL_EGL_D3D11_ONLY_DISPLAY_ANGLE);
+    return GetAndInitDisplay(egl, LOCAL_EGL_D3D11_ONLY_DISPLAY_ANGLE,
+                             aProofOfLock);
   }
 
   std::shared_ptr<EglDisplay> ret;
   if (d3d11ANGLE.IsEnabled()) {
-    ret = GetAndInitDisplay(egl, LOCAL_EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE);
+    ret = GetAndInitDisplay(egl, LOCAL_EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE,
+                            aProofOfLock);
   }
 
   if (!ret) {
-    ret = GetAndInitDisplay(egl, EGL_DEFAULT_DISPLAY);
+    ret = GetAndInitDisplay(egl, EGL_DEFAULT_DISPLAY, aProofOfLock);
   }
 
   if (!ret && out_failureId->IsEmpty()) {
@@ -326,12 +458,20 @@ Maybe<SymbolLoader> GLLibraryEGL::GetSymbolLoader() const {
 // -
 
 /* static */
-RefPtr<GLLibraryEGL> GLLibraryEGL::Create(nsACString* const out_failureId) {
-  RefPtr<GLLibraryEGL> ret = new GLLibraryEGL;
-  if (!ret->Init(out_failureId)) {
-    return nullptr;
+RefPtr<GLLibraryEGL> GLLibraryEGL::Get(nsACString* const out_failureId) {
+  StaticMutexAutoLock lock(sMutex);
+  if (!sInstance) {
+    sInstance = new GLLibraryEGL;
+    if (NS_WARN_IF(!sInstance->Init(out_failureId))) {
+      sInstance = nullptr;
+    }
   }
-  return ret;
+  return sInstance;
+}
+
+/* static */ void GLLibraryEGL::Shutdown() {
+  StaticMutexAutoLock lock(sMutex);
+  sInstance = nullptr;
 }
 
 bool GLLibraryEGL::Init(nsACString* const out_failureId) {
@@ -351,17 +491,7 @@ bool GLLibraryEGL::Init(nsACString* const out_failureId) {
 
     do {
       // Windows 8.1+ has d3dcompiler_47.dll in the system directory.
-      // Try it first. Note that _46 will never be in the system
-      // directory. So there is no point trying _46 in the system
-      // directory.
-
       if (LoadLibrarySystem32(L"d3dcompiler_47.dll")) break;
-
-#  ifdef MOZ_D3DCOMPILER_VISTA_DLL
-      if (LoadLibraryForEGLOnWindows(NS_LITERAL_STRING_FROM_CSTRING(
-              MOZ_STRINGIFY(MOZ_D3DCOMPILER_VISTA_DLL))))
-        break;
-#  endif
 
       MOZ_ASSERT(false, "d3dcompiler DLL loading failed.");
     } while (false);
@@ -493,7 +623,7 @@ bool GLLibraryEGL::Init(nsACString* const out_failureId) {
   const SymbolLoader pfnLoader(mSymbols.fGetProcAddress);
 
   const auto fnLoadSymbols = [&](const SymLoadStruct* symbols) {
-    const bool shouldWarn = gfxEnv::GlSpew();
+    const bool shouldWarn = gfxEnv::MOZ_GL_SPEW();
     if (pfnLoader.LoadSymbols(symbols, shouldWarn)) return true;
 
     ClearSymbols(symbols);
@@ -576,9 +706,9 @@ bool GLLibraryEGL::Init(nsACString* const out_failureId) {
     (void)fnLoadSymbols(symbols);
   }
   {
-    const SymLoadStruct symbols[] = {SYMBOL(QueryDisplayAttribEXT),
-                                     SYMBOL(QueryDeviceAttribEXT),
-                                     END_OF_SYMBOLS};
+    const SymLoadStruct symbols[] = {
+        SYMBOL(QueryDisplayAttribEXT), SYMBOL(QueryDeviceAttribEXT),
+        SYMBOL(QueryDeviceStringEXT), END_OF_SYMBOLS};
     (void)fnLoadSymbols(symbols);
   }
   {
@@ -612,6 +742,21 @@ bool GLLibraryEGL::Init(nsACString* const out_failureId) {
         END_OF_SYMBOLS};
     (void)fnLoadSymbols(symbols);
   }
+  {
+    const SymLoadStruct symbols[] = {SYMBOL(GetPlatformDisplay),
+                                     END_OF_SYMBOLS};
+    (void)fnLoadSymbols(symbols);
+  }
+  {
+    const SymLoadStruct symbols[] = {SYMBOL(ExportDMABUFImageQueryMESA),
+                                     SYMBOL(ExportDMABUFImageMESA),
+                                     END_OF_SYMBOLS};
+    (void)fnLoadSymbols(symbols);
+  }
+  {
+    const SymLoadStruct symbols[] = {SYMBOL(QueryDevicesEXT), END_OF_SYMBOLS};
+    (void)fnLoadSymbols(symbols);
+  }
 
   return true;
 }
@@ -640,9 +785,9 @@ static void MarkExtensions(const char* rawExtString, bool shouldDumpExts,
 // -
 
 // static
-std::shared_ptr<EglDisplay> EglDisplay::Create(GLLibraryEGL& lib,
-                                               const EGLDisplay display,
-                                               const bool isWarp) {
+std::shared_ptr<EglDisplay> EglDisplay::Create(
+    GLLibraryEGL& lib, const EGLDisplay display, const bool isWarp,
+    const StaticMutexAutoLock& aProofOfLock) {
   // Retrieve the EglDisplay if it already exists
   {
     const auto itr = lib.mActiveDisplays.find(display);
@@ -710,6 +855,7 @@ EglDisplay::EglDisplay(const PrivateUseOnly&, GLLibraryEGL& lib,
 }
 
 EglDisplay::~EglDisplay() {
+  StaticMutexAutoLock lock(GLLibraryEGL::sMutex);
   fTerminate();
   mLib->mActiveDisplays.erase(mDisplay);
 }
@@ -718,16 +864,24 @@ EglDisplay::~EglDisplay() {
 
 std::shared_ptr<EglDisplay> GLLibraryEGL::DefaultDisplay(
     nsACString* const out_failureId) {
+  StaticMutexAutoLock lock(sMutex);
   auto ret = mDefaultDisplay.lock();
   if (ret) return ret;
 
-  ret = CreateDisplay(false, out_failureId);
+  ret = CreateDisplayLocked(false, out_failureId, lock);
   mDefaultDisplay = ret;
   return ret;
 }
 
 std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplay(
     const bool forceAccel, nsACString* const out_failureId) {
+  StaticMutexAutoLock lock(sMutex);
+  return CreateDisplayLocked(forceAccel, out_failureId, lock);
+}
+
+std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplayLocked(
+    const bool forceAccel, nsACString* const out_failureId,
+    const StaticMutexAutoLock& aProofOfLock) {
   std::shared_ptr<EglDisplay> ret;
 
   if (IsExtensionSupported(EGLLibExtension::ANGLE_platform_angle_d3d)) {
@@ -747,7 +901,7 @@ std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplay(
 
     // Hardware accelerated ANGLE path (supported or force accel)
     if (shouldTryAccel) {
-      ret = GetAndInitDisplayForAccelANGLE(*this, out_failureId);
+      ret = GetAndInitDisplayForAccelANGLE(*this, out_failureId, aProofOfLock);
     }
 
     // Report the acceleration status to telemetry
@@ -766,7 +920,7 @@ std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplay(
 
     // Fallback to a WARP display if ANGLE fails, or if WARP is forced
     if (!ret && shouldTryWARP) {
-      ret = GetAndInitWARPDisplay(*this, EGL_DEFAULT_DISPLAY);
+      ret = GetAndInitWARPDisplay(*this, EGL_DEFAULT_DISPLAY, aProofOfLock);
       if (!ret) {
         if (out_failureId->IsEmpty()) {
           *out_failureId = "FEATURE_FAILURE_WARP_FALLBACK"_ns;
@@ -777,18 +931,32 @@ std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplay(
     }
   } else {
     void* nativeDisplay = EGL_DEFAULT_DISPLAY;
-#ifdef MOZ_WAYLAND
-    // Some drivers doesn't support EGL_DEFAULT_DISPLAY
-    GdkDisplay* gdkDisplay = gdk_display_get_default();
-    if (widget::GdkIsWaylandDisplay(gdkDisplay)) {
-      nativeDisplay = widget::WaylandDisplayGetWLDisplay(gdkDisplay);
+#ifdef MOZ_WIDGET_GTK
+    if (!ret && !gfx::gfxVars::WebglUseHardware()) {
+      // Initialize a swrast egl device such as llvmpipe
+      ret = GetAndInitSoftwareDisplay(*this, aProofOfLock);
+    }
+    // Initialize the display the normal way
+    if (!ret && !gdk_display_get_default()) {
+      ret = GetAndInitDeviceDisplay(*this, aProofOfLock);
+      if (!ret) {
+        ret = GetAndInitSurfacelessDisplay(*this, aProofOfLock);
+      }
+    }
+#  ifdef MOZ_WAYLAND
+    else if (!ret && widget::GdkIsWaylandDisplay()) {
+      // Wayland does not support EGL_DEFAULT_DISPLAY
+      nativeDisplay = widget::WaylandDisplayGetWLDisplay();
       if (!nativeDisplay) {
         NS_WARNING("Failed to get wl_display.");
         return nullptr;
       }
     }
+#  endif
 #endif
-    ret = GetAndInitDisplay(*this, nativeDisplay);
+    if (!ret) {
+      ret = GetAndInitDisplay(*this, nativeDisplay, aProofOfLock);
+    }
   }
 
   if (!ret) {
@@ -891,7 +1059,7 @@ void EglDisplay::DumpEGLConfigs() const {
 }
 
 static bool ShouldTrace() {
-  static bool ret = gfxEnv::GlDebugVerbose();
+  static bool ret = gfxEnv::MOZ_GL_DEBUG_VERBOSE();
   return ret;
 }
 

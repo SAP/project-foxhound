@@ -4,8 +4,8 @@
 
 "use strict";
 
-const Menu = require("devtools/client/framework/menu");
-const MenuItem = require("devtools/client/framework/menu-item");
+const Menu = require("resource://devtools/client/framework/menu.js");
+const MenuItem = require("resource://devtools/client/framework/menu-item.js");
 
 /**
  * Helper function for opening context menu.
@@ -49,7 +49,7 @@ function showMenu(items, options) {
   // Calculate position on the screen according to
   // the parent button if available.
   if (options.button) {
-    menu.popupAtTarget(options.button, window.document);
+    menu.popupAtTarget(options.button);
   } else {
     const screenX = options.screenX;
     const screenY = options.screenY;

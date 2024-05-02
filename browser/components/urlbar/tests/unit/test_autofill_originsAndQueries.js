@@ -13,7 +13,7 @@ const PLACES_PROVIDERNAME = "Places";
  *
  * `completed` is the URL that the controller sets to input.value, and the URL
  * that will ultimately be loaded when you press enter.
- **/
+ */
 
 async function cleanup() {
   let suggestPrefs = ["history", "bookmark", "openpage"];
@@ -25,10 +25,15 @@ async function cleanup() {
 
 testEngine_setup();
 
+registerCleanupFunction(async () => {
+  Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
+});
+Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
+
 let path;
 let search;
 let searchCase;
-let title;
+let visitTitle;
 let url;
 const host = "example.com";
 let origins;
@@ -40,7 +45,8 @@ function add_autofill_task(callback) {
     path = "/foo";
     search = "example.com/f";
     searchCase = "EXAMPLE.COM/f";
-    title = "example.com/foo";
+    visitTitle = (protocol, sub) =>
+      `test visit for ${protocol}://${sub}example.com/foo`;
     url = host + path;
     await callback();
 
@@ -49,7 +55,8 @@ function add_autofill_task(callback) {
     path = "/";
     search = "ex";
     searchCase = "EX";
-    title = "example.com";
+    visitTitle = (protocol, sub) =>
+      `test visit for ${protocol}://${sub}example.com/`;
     url = host + path;
     await callback();
   };
@@ -72,7 +79,7 @@ add_autofill_task(async function basic() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -95,7 +102,7 @@ add_autofill_task(async function basicCase() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -118,7 +125,7 @@ add_autofill_task(async function noWWWShouldMatchWWW() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www." + url,
-        title: "www." + title,
+        title: visitTitle("http", "www."),
         heuristic: true,
       }),
     ],
@@ -141,7 +148,7 @@ add_autofill_task(async function noWWWShouldMatchWWWCase() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www." + url,
-        title: "www." + title,
+        title: visitTitle("http", "www."),
         heuristic: true,
       }),
     ],
@@ -164,7 +171,7 @@ add_autofill_task(async function wwwShouldNotMatchNoWWW() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search + "/",
-          title: "http://www." + search + "/",
+          fallbackTitle: "http://www." + search + "/",
           displayUrl: "http://www." + search,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -182,7 +189,7 @@ add_autofill_task(async function wwwShouldNotMatchNoWWW() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search,
-          title: "http://www." + search,
+          fallbackTitle: "http://www." + search,
           iconUri: `page-icon:http://www.${host}/`,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -208,7 +215,7 @@ add_autofill_task(async function prefix() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -231,7 +238,7 @@ add_autofill_task(async function prefixCase() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -254,7 +261,7 @@ add_autofill_task(async function prefixNoWWWShouldMatchWWW() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www." + url,
-        title: "www." + title,
+        title: visitTitle("http", "www."),
         heuristic: true,
       }),
     ],
@@ -277,7 +284,7 @@ add_autofill_task(async function prefixNoWWWShouldMatchWWWCase() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www." + url,
-        title: "www." + title,
+        title: visitTitle("http", "www."),
         heuristic: true,
       }),
     ],
@@ -300,7 +307,7 @@ add_autofill_task(async function prefixWWWShouldNotMatchNoWWW() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://www.${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -325,7 +332,7 @@ add_autofill_task(async function httpPrefixShouldNotMatchHTTPS() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -355,7 +362,7 @@ add_autofill_task(async function httpsBasic() {
     matches: [
       makeVisitResult(context, {
         uri: "https://" + url,
-        title: "https://" + title,
+        title: visitTitle("https", ""),
         heuristic: true,
       }),
     ],
@@ -378,7 +385,7 @@ add_autofill_task(async function httpsNoWWWShouldMatchWWW() {
     matches: [
       makeVisitResult(context, {
         uri: "https://www." + url,
-        title: "https://www." + title,
+        title: visitTitle("https", "www."),
         heuristic: true,
       }),
     ],
@@ -401,7 +408,7 @@ add_autofill_task(async function httpsWWWShouldNotMatchNoWWW() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search + "/",
-          title: "http://www." + search + "/",
+          fallbackTitle: "http://www." + search + "/",
           displayUrl: "http://www." + search,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -419,7 +426,7 @@ add_autofill_task(async function httpsWWWShouldNotMatchNoWWW() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search,
-          title: "http://www." + search,
+          fallbackTitle: "http://www." + search,
           iconUri: `page-icon:http://www.${host}/`,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -445,7 +452,7 @@ add_autofill_task(async function httpsPrefix() {
     matches: [
       makeVisitResult(context, {
         uri: "https://" + url,
-        title: "https://" + title,
+        title: visitTitle("https", ""),
         heuristic: true,
       }),
     ],
@@ -468,7 +475,7 @@ add_autofill_task(async function httpsPrefixNoWWWShouldMatchWWW() {
     matches: [
       makeVisitResult(context, {
         uri: "https://www." + url,
-        title: "https://www." + title,
+        title: visitTitle("https", "www."),
         heuristic: true,
       }),
     ],
@@ -493,7 +500,7 @@ add_autofill_task(async function httpsPrefixWWWShouldNotMatchNoWWW() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:https://www.${host}/`,
         providerame: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -518,7 +525,7 @@ add_autofill_task(async function httpsPrefixShouldNotMatchHTTP() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:https://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -560,7 +567,7 @@ add_autofill_task(async function httpsPrefixShouldNotMatchMoreFrecentHTTP() {
     matches: [
       makeVisitResult(context, {
         uri: "https://" + url,
-        title: "https://" + title,
+        title: visitTitle("https", ""),
         heuristic: true,
       }),
     ],
@@ -584,7 +591,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -602,7 +609,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "https://" + url,
-        title: "https://" + title,
+        title: visitTitle("https", ""),
         heuristic: true,
       }),
     ],
@@ -621,7 +628,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -644,7 +651,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "https://www." + url,
-        title: "https://www." + title,
+        title: visitTitle("https", "www."),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -667,7 +674,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -690,7 +697,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "https://" + url,
-        title: "https://" + title,
+        title: visitTitle("https", ""),
         heuristic: true,
       }),
     ],
@@ -708,7 +715,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "https://" + url,
-        title: "https://" + title,
+        title: visitTitle("https", ""),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -760,7 +767,7 @@ add_autofill_task(async function frecency() {
       matches: [
         makeVisitResult(context, {
           uri: "https://" + url,
-          title: "https://" + title,
+          title: visitTitle("https", ""),
           heuristic: true,
         }),
         makeVisitResult(context, {
@@ -784,7 +791,7 @@ add_autofill_task(async function frecency() {
     matches: [
       makeVisitResult(context, {
         uri: "https://" + url,
-        title: "https://" + title,
+        title: visitTitle("https", ""),
         heuristic: true,
       }),
     ],
@@ -813,7 +820,7 @@ add_autofill_task(async function frecency() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://" + search,
-          title: "http://" + search,
+          fallbackTitle: "http://" + search,
           iconUri: `page-icon:http://${host}/`,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -841,12 +848,14 @@ add_autofill_task(async function bookmarkBelowThreshold() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // Make sure the bookmarked origin and place frecencies are below the
   // threshold so that the origin/URL otherwise would not be autofilled.
-  let placeFrecency = await PlacesTestUtils.fieldInDB(
-    "http://" + url,
-    "frecency"
+  let placeFrecency = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    { url: "http://" + url }
   );
   let originFrecency = await getOriginFrecency("http://", host);
   let threshold = await getOriginAutofillThreshold();
@@ -870,7 +879,7 @@ add_autofill_task(async function bookmarkBelowThreshold() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: "A bookmark",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -890,13 +899,15 @@ add_autofill_task(async function bookmarkAboveThreshold() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // The frecencies of the place and origin should be >= the threshold.  In
   // fact they should be the same as the threshold since the place is the only
   // place in the database.
-  let placeFrecency = await PlacesTestUtils.fieldInDB(
-    "http://" + url,
-    "frecency"
+  let placeFrecency = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    { url: "http://" + url }
   );
   let originFrecency = await getOriginFrecency("http://", host);
   let threshold = await getOriginAutofillThreshold();
@@ -912,7 +923,7 @@ add_autofill_task(async function bookmarkAboveThreshold() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: "A bookmark",
         heuristic: true,
       }),
     ],
@@ -921,26 +932,30 @@ add_autofill_task(async function bookmarkAboveThreshold() {
   await cleanup();
 });
 
-// Bookmark a page and then clear history.  The bookmarked origin/URL should
-// be autofilled even though its frecency is <= 0 since the autofill threshold
-// is 0.
+// Bookmark a page and then clear history.
+// The bookmarked origin/URL should still be autofilled.
 add_autofill_task(async function zeroThreshold() {
+  const pageUrl = "http://" + url;
   await PlacesTestUtils.addBookmarkWithDetails({
-    uri: "http://" + url,
+    uri: pageUrl,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   await PlacesUtils.history.clear();
+  await PlacesUtils.withConnectionWrapper("zeroThreshold", async db => {
+    await db.execute("UPDATE moz_places SET frecency = -1 WHERE url = :url", {
+      url: pageUrl,
+    });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+  });
 
-  // Make sure the place's frecency is <= 0.  (It will be reset to -1 on the
-  // history.clear() above, and then on idle it will be reset to 0.  xpcshell
-  // tests disable the idle service, so in practice it should always be -1,
-  // but in order to avoid possible intermittent failures in the future, don't
-  // assume that.)
-  let placeFrecency = await PlacesTestUtils.fieldInDB(
-    "http://" + url,
-    "frecency"
+  // Make sure the place's frecency is -1.
+  let placeFrecency = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    { url: pageUrl }
   );
-  Assert.ok(placeFrecency <= 0);
+  Assert.equal(placeFrecency, -1);
 
   // Make sure the origin's frecency is 0.
   let originFrecency = await getOriginFrecency("http://", host);
@@ -958,7 +973,7 @@ add_autofill_task(async function zeroThreshold() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: "A bookmark",
         heuristic: true,
       }),
     ],
@@ -989,7 +1004,7 @@ add_autofill_task(async function suggestHistoryFalse_visit() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -1014,7 +1029,7 @@ add_autofill_task(async function suggestHistoryFalse_visit() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://" + search,
-          title: "http://" + search,
+          fallbackTitle: "http://" + search,
           iconUri: `page-icon:http://${host}/`,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1047,7 +1062,7 @@ add_autofill_task(async function suggestHistoryFalse_visit_prefix() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -1072,7 +1087,7 @@ add_autofill_task(async function suggestHistoryFalse_visit_prefix() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://" + search,
-          title: "http://" + search,
+          fallbackTitle: "http://" + search,
           iconUri: `page-icon:http://${host}/`,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1100,18 +1115,19 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_0() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // Make the bookmark fall below the autofill frecency threshold so we ensure
   // the bookmark is always autofilled in this case, even if it doesn't meet
   // the threshold.
-  let meetsThreshold = true;
-  while (meetsThreshold) {
+  await TestUtils.waitForCondition(async () => {
     // Add a visit to another origin to boost the threshold.
     await PlacesTestUtils.addVisits("http://foo-" + url);
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     let originFrecency = await getOriginFrecency("http://", host);
     let threshold = await getOriginAutofillThreshold();
-    meetsThreshold = threshold <= originFrecency;
-  }
+    return threshold > originFrecency;
+  }, "Make the bookmark fall below the frecency threshold");
 
   // At this point, the bookmark doesn't meet the threshold, but it should
   // still be autofilled.
@@ -1128,7 +1144,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_0() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: "A bookmark",
         heuristic: true,
       }),
     ],
@@ -1153,6 +1169,8 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_1() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://non-matching-" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+
   let context = createContext(search, { isPrivate: false });
   let matches = [
     makeBookmarkResult(context, {
@@ -1173,7 +1191,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_1() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://" + search,
-        title: "http://" + search,
+        fallbackTitle: "http://" + search,
         iconUri: `page-icon:http://${host}/`,
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1204,18 +1222,19 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_0() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // Make the bookmark fall below the autofill frecency threshold so we ensure
   // the bookmark is always autofilled in this case, even if it doesn't meet
   // the threshold.
-  let meetsThreshold = true;
-  while (meetsThreshold) {
+  await TestUtils.waitForCondition(async () => {
     // Add a visit to another origin to boost the threshold.
     await PlacesTestUtils.addVisits("http://foo-" + url);
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     let originFrecency = await getOriginFrecency("http://", host);
     let threshold = await getOriginAutofillThreshold();
-    meetsThreshold = threshold <= originFrecency;
-  }
+    return threshold > originFrecency;
+  }, "Make the bookmark fall below the frecency threshold");
 
   // At this point, the bookmark doesn't meet the threshold, but it should
   // still be autofilled.
@@ -1227,6 +1246,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_0() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let context = createContext("http://" + search, { isPrivate: false });
   await check_results({
     context,
@@ -1235,7 +1255,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_0() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: "A bookmark",
         heuristic: true,
       }),
     ],
@@ -1260,6 +1280,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_1() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "ftp://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let context = createContext("http://" + search, { isPrivate: false });
   let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
   await check_results({
@@ -1268,7 +1289,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_1() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1299,6 +1320,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_2() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://non-matching-" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let context = createContext("http://" + search, { isPrivate: false });
   let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
   await check_results({
@@ -1307,7 +1329,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_2() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1338,6 +1360,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_3() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "ftp://non-matching-" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let context = createContext("http://" + search, { isPrivate: false });
   let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
   await check_results({
@@ -1346,7 +1369,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_3() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1383,7 +1406,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_0() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -1428,7 +1451,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_1() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1465,7 +1488,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_0() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -1496,7 +1519,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_1() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1534,7 +1557,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_2() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1572,7 +1595,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_3() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: prefixedUrl,
+        fallbackTitle: prefixedUrl,
         heuristic: true,
         iconUri: origins ? "" : `page-icon:http://${host}/`,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1603,6 +1626,7 @@ add_autofill_task(async function suggestBookmarkFalse_unvisitedBookmark() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let context = createContext(search, { isPrivate: false });
   await check_results({
     context,
@@ -1611,7 +1635,7 @@ add_autofill_task(async function suggestBookmarkFalse_unvisitedBookmark() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: "A bookmark",
         heuristic: true,
       }),
     ],
@@ -1636,7 +1660,7 @@ add_autofill_task(async function suggestBookmarkFalse_unvisitedBookmark() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://" + search,
-          title: "http://" + search,
+          fallbackTitle: "http://" + search,
           iconUri: `page-icon:http://${host}/`,
           heuristic: true,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1664,6 +1688,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "http://" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     let context = createContext("http://" + search, { isPrivate: false });
     await check_results({
       context,
@@ -1672,7 +1697,7 @@ add_autofill_task(
       matches: [
         makeVisitResult(context, {
           uri: "http://" + url,
-          title,
+          title: "A bookmark",
           heuristic: true,
         }),
       ],
@@ -1686,7 +1711,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
-          title: prefixedUrl,
+          fallbackTitle: prefixedUrl,
           heuristic: true,
           iconUri: origins ? "" : `page-icon:http://${host}/`,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1714,6 +1739,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "ftp://" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     let context = createContext("http://" + search, { isPrivate: false });
     let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
@@ -1723,7 +1749,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
-          title: prefixedUrl,
+          fallbackTitle: prefixedUrl,
           heuristic: true,
           iconUri: origins ? "" : `page-icon:http://${host}/`,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1751,6 +1777,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "http://non-matching-" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     let context = createContext("http://" + search, { isPrivate: false });
     let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
@@ -1760,7 +1787,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
-          title: prefixedUrl,
+          fallbackTitle: prefixedUrl,
           heuristic: true,
           iconUri: origins ? "" : `page-icon:http://${host}/`,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1788,6 +1815,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "ftp://non-matching-" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     let context = createContext("http://" + search, { isPrivate: false });
     let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
@@ -1797,7 +1825,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
-          title: prefixedUrl,
+          fallbackTitle: prefixedUrl,
           heuristic: true,
           iconUri: origins ? "" : `page-icon:http://${host}/`,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1825,6 +1853,7 @@ add_autofill_task(async function suggestBookmarkFalse_visitedBookmark_above() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
   let context = createContext(search, { isPrivate: false });
   await check_results({
@@ -1834,7 +1863,7 @@ add_autofill_task(async function suggestBookmarkFalse_visitedBookmark_above() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
     ],
@@ -1860,6 +1889,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "http://" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     let context = createContext("http://" + search, { isPrivate: false });
     await check_results({
@@ -1869,7 +1899,7 @@ add_autofill_task(
       matches: [
         makeVisitResult(context, {
           uri: "http://" + url,
-          title,
+          title: visitTitle("http", ""),
           heuristic: true,
         }),
       ],
@@ -1896,6 +1926,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "ftp://" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     let context = createContext("http://" + search, { isPrivate: false });
     let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
@@ -1905,7 +1936,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
-          title: prefixedUrl,
+          fallbackTitle: prefixedUrl,
           heuristic: true,
           iconUri: origins ? "" : `page-icon:http://${host}/`,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1939,6 +1970,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "http://non-matching-" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     let context = createContext("http://" + search, { isPrivate: false });
     let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
@@ -1948,7 +1980,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
-          title: prefixedUrl,
+          fallbackTitle: prefixedUrl,
           heuristic: true,
           iconUri: origins ? "" : `page-icon:http://${host}/`,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -1982,6 +2014,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "ftp://non-matching-" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     let context = createContext("http://" + search, { isPrivate: false });
     let prefixedUrl = origins ? `http://${search}/` : `http://${search}`;
@@ -1991,7 +2024,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
-          title: prefixedUrl,
+          fallbackTitle: prefixedUrl,
           heuristic: true,
           iconUri: origins ? "" : `page-icon:http://${host}/`,
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2061,6 +2094,7 @@ add_autofill_task(async function suggestBookmarkFalse_visitedBookmarkBelow() {
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://" + url,
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
   context = createContext(search, { isPrivate: false });
   await check_results({
@@ -2116,7 +2150,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2137,6 +2171,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "http://" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     context = createContext("http://" + search, { isPrivate: false });
     await check_results({
@@ -2145,7 +2180,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2196,7 +2231,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2217,6 +2252,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "ftp://" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     context = createContext("http://" + search, { isPrivate: false });
     await check_results({
@@ -2225,7 +2261,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2276,7 +2312,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2297,6 +2333,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "http://non-matching-" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     context = createContext("http://" + search, { isPrivate: false });
     await check_results({
@@ -2305,7 +2342,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2356,7 +2393,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2377,6 +2414,7 @@ add_autofill_task(
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "ftp://non-matching-" + url,
     });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
     context = createContext("http://" + search, { isPrivate: false });
     await check_results({
@@ -2385,7 +2423,7 @@ add_autofill_task(
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
-          title: `http://${search}/`,
+          fallbackTitle: `http://${search}/`,
           heuristic: true,
           iconUri: "",
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -2419,7 +2457,7 @@ add_autofill_task(async function hideHeuristic() {
     matches: [
       makeVisitResult(context, {
         uri: "http://" + url,
-        title,
+        title: visitTitle("http", ""),
         heuristic: true,
       }),
       makeVisitResult(context, {

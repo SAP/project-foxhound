@@ -1,8 +1,8 @@
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 let geolocation = null;
-let numRequests = 0;
 let locations = [
   [1, 2],
   [3, 4],
@@ -10,7 +10,6 @@ let locations = [
 ];
 
 function geoHandler(metadata, response) {
-  numRequests++;
   let [lat, lng] = locations.shift();
   response.setStatusLine("1.0", 200, "OK");
   response.setHeader("Cache-Control", "no-cache", false);
@@ -29,14 +28,14 @@ function toJSON(pos) {
 }
 
 function getPosition() {
-  return new Promise(function(resolve, reject) {
+  return new Promise(function (resolve, reject) {
     geolocation.getCurrentPosition(resolve, reject);
   });
 }
 
 function watchPosition() {
   let seen = 0;
-  return new Promise(function(resolve, reject) {
+  return new Promise(function (resolve, reject) {
     let id = geolocation.watchPosition(position => {
       seen++;
       if (seen === 1) {

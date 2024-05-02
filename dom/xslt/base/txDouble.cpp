@@ -93,7 +93,7 @@ class txStringToDouble {
         (mBuffer.Length() == 1 && mBuffer[0] == '.')) {
       return mozilla::UnspecifiedNaN<double>();
     }
-    return mSign * PR_strtod(mBuffer.get(), 0);
+    return static_cast<double>(mSign) * PR_strtod(mBuffer.get(), nullptr);
   }
 
  private:
@@ -116,11 +116,11 @@ double txDouble::toDouble(const nsAString& aSrc) {
 void txDouble::toString(double aValue, nsAString& aDest) {
   // check for special cases
 
-  if (mozilla::IsNaN(aValue)) {
+  if (std::isnan(aValue)) {
     aDest.AppendLiteral("NaN");
     return;
   }
-  if (mozilla::IsInfinite(aValue)) {
+  if (std::isinf(aValue)) {
     if (aValue < 0) aDest.Append(char16_t('-'));
     aDest.AppendLiteral("Infinity");
     return;

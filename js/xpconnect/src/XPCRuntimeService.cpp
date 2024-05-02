@@ -9,8 +9,12 @@
 
 #include "nsContentUtils.h"
 #include "BackstagePass.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
+#include "mozilla/dom/IndexedDatabaseManager.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 
 using namespace mozilla::dom;
 
@@ -66,7 +70,42 @@ BackstagePass::Resolve(nsIXPConnectWrappedNative* wrapper, JSContext* cx,
   JS::RootedId id(cx, idArg);
   *_retval =
       WebIDLGlobalNameHash::ResolveForSystemGlobal(cx, obj, id, resolvedp);
-  return *_retval ? NS_OK : NS_ERROR_FAILURE;
+  if (!*_retval) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (*resolvedp) {
+    return NS_OK;
+  }
+
+  XPCJSContext* xpccx = XPCJSContext::Get();
+  if (id == xpccx->GetStringID(XPCJSContext::IDX_FETCH)) {
+    *_retval = xpc::SandboxCreateFetch(cx, obj);
+    if (!*_retval) {
+      return NS_ERROR_FAILURE;
+    }
+    *resolvedp = true;
+  } else if (id == xpccx->GetStringID(XPCJSContext::IDX_CRYPTO)) {
+    *_retval = xpc::SandboxCreateCrypto(cx, obj);
+    if (!*_retval) {
+      return NS_ERROR_FAILURE;
+    }
+    *resolvedp = true;
+  } else if (id == xpccx->GetStringID(XPCJSContext::IDX_INDEXEDDB)) {
+    *_retval = IndexedDatabaseManager::DefineIndexedDB(cx, obj);
+    if (!*_retval) {
+      return NS_ERROR_FAILURE;
+    }
+    *resolvedp = true;
+  } else if (id == xpccx->GetStringID(XPCJSContext::IDX_STRUCTUREDCLONE)) {
+    *_retval = xpc::SandboxCreateStructuredClone(cx, obj);
+    if (!*_retval) {
+      return NS_ERROR_FAILURE;
+    }
+    *resolvedp = true;
+  }
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -75,6 +114,16 @@ BackstagePass::NewEnumerate(nsIXPConnectWrappedNative* wrapper, JSContext* cx,
                             JS::MutableHandleIdVector properties,
                             bool enumerableOnly, bool* _retval) {
   JS::RootedObject obj(cx, objArg);
+
+  XPCJSContext* xpccx = XPCJSContext::Get();
+  if (!properties.append(xpccx->GetStringID(XPCJSContext::IDX_FETCH)) ||
+      !properties.append(xpccx->GetStringID(XPCJSContext::IDX_CRYPTO)) ||
+      !properties.append(xpccx->GetStringID(XPCJSContext::IDX_INDEXEDDB)) ||
+      !properties.append(
+          xpccx->GetStringID(XPCJSContext::IDX_STRUCTUREDCLONE))) {
+    return NS_ERROR_FAILURE;
+  }
+
   *_retval = WebIDLGlobalNameHash::NewEnumerateSystemGlobal(cx, obj, properties,
                                                             enumerableOnly);
   return *_retval ? NS_OK : NS_ERROR_FAILURE;
@@ -115,7 +164,7 @@ BackstagePass::GetClassID(nsCID** aClassID) {
 
 NS_IMETHODIMP
 BackstagePass::GetFlags(uint32_t* aFlags) {
-  *aFlags = nsIClassInfo::MAIN_THREAD_ONLY;
+  *aFlags = 0;
   return NS_OK;
 }
 
@@ -125,7 +174,7 @@ BackstagePass::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
 }
 
 NS_IMETHODIMP
-BackstagePass::Finalize(nsIXPConnectWrappedNative* wrapper, JSFreeOp* fop,
+BackstagePass::Finalize(nsIXPConnectWrappedNative* wrapper, JS::GCContext* gcx,
                         JSObject* obj) {
   nsCOMPtr<nsIGlobalObject> bsp(do_QueryInterface(wrapper->Native()));
   MOZ_ASSERT(bsp);
@@ -147,4 +196,20 @@ BackstagePass::PreCreate(nsISupports* nativeObj, JSContext* cx,
     *parentObj = jsglobal;
   }
   return NS_OK;
+}
+
+mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult>
+BackstagePass::GetStorageKey() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mozilla::ipc::PrincipalInfo principalInfo;
+  nsresult rv = PrincipalToPrincipalInfo(mPrincipal, &principalInfo);
+  if (NS_FAILED(rv)) {
+    return mozilla::Err(rv);
+  }
+
+  MOZ_ASSERT(principalInfo.type() ==
+             mozilla::ipc::PrincipalInfo::TSystemPrincipalInfo);
+
+  return std::move(principalInfo);
 }

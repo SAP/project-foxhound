@@ -1,16 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { ContextualIdentityService } = ChromeUtils.import(
-  "resource://gre/modules/ContextualIdentityService.jsm"
-);
-
 function openTabInUserContext(userContextId) {
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank", { userContextId });
   gBrowser.selectedTab = tab;
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({
     set: [["privacy.userContext.enabled", true]],

@@ -3,7 +3,9 @@
 
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 function getProfileFile(name) {
   let file = do_get_profile();
@@ -11,17 +13,23 @@ function getProfileFile(name) {
   return file;
 }
 
-function promiseAsyncDatabase(name, options = null) {
+function promiseAsyncDatabase(name, openOptions = 0) {
   return new Promise((resolve, reject) => {
     let file = getProfileFile(name);
-    Services.storage.openAsyncDatabase(file, options, (status, connection) => {
-      if (!Components.isSuccessCode(status)) {
-        reject(new Error(`Failed to open database: ${status}`));
-      } else {
-        connection.QueryInterface(Ci.mozIStorageAsyncConnection);
-        resolve(connection);
+    const connOptions = Ci.mozIStorageService.CONNECTION_DEFAULT;
+    Services.storage.openAsyncDatabase(
+      file,
+      openOptions,
+      connOptions,
+      (status, connection) => {
+        if (!Components.isSuccessCode(status)) {
+          reject(new Error(`Failed to open database: ${status}`));
+        } else {
+          connection.QueryInterface(Ci.mozIStorageAsyncConnection);
+          resolve(connection);
+        }
       }
-    });
+    );
   });
 }
 

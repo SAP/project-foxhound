@@ -4,10 +4,6 @@
  * Test keyboard navigation in the app menu panel.
  */
 
-const { PanelView } = ChromeUtils.import(
-  "resource:///modules/PanelMultiView.jsm",
-  null
-);
 const kHelpButtonId = "appMenu-help-button2";
 
 function getEnabledNavigableElementsForView(panelView) {

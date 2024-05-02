@@ -1,14 +1,14 @@
-add_task(async function() {
+add_task(async function () {
   let loadedPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     true
   );
   const htmlContent =
     "data:text/html, <iframe src='data:text/html,text text'></iframe>";
-  BrowserTestUtils.loadURI(gBrowser, htmlContent);
+  BrowserTestUtils.startLoadingURIString(gBrowser, htmlContent);
   await loadedPromise;
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function(arg) {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function (arg) {
     let frame = content.frames[0];
     let sel = frame.getSelection();
     let range = frame.document.createRange();

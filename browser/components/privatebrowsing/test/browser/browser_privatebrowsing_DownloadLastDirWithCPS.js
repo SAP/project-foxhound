@@ -21,7 +21,7 @@ function createWindow(aOptions) {
 }
 
 function getFile(downloadLastDir, aURI) {
-  return new Promise(resolve => downloadLastDir.getFileAsync(aURI, resolve));
+  return downloadLastDir.getFileAsync(aURI);
 }
 
 function setFile(downloadLastDir, aURI, aValue) {
@@ -41,14 +41,14 @@ function clearHistoryAndWait() {
  */
 
 async function runTest() {
-  let FileUtils = ChromeUtils.import("resource://gre/modules/FileUtils.jsm", {})
-    .FileUtils;
-  let DownloadLastDir = ChromeUtils.import(
-    "resource://gre/modules/DownloadLastDir.jsm",
-    {}
-  ).DownloadLastDir;
+  let { FileUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/FileUtils.sys.mjs"
+  );
+  let { DownloadLastDir } = ChromeUtils.importESModule(
+    "resource://gre/modules/DownloadLastDir.sys.mjs"
+  );
 
-  let tmpDir = FileUtils.getDir("TmpD", [], true);
+  let tmpDir = FileUtils.getDir("TmpD", []);
   let dir1 = newDirectory();
   let dir2 = newDirectory();
   let dir3 = newDirectory();
@@ -59,7 +59,7 @@ async function runTest() {
   let uri4 = Services.io.newURI("http://test4.com/");
 
   // cleanup functions registration
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.download.lastDir.savePerSite");
     Services.prefs.clearUserPref("browser.download.lastDir");
     [dir1, dir2, dir3].forEach(dir => dir.remove(true));

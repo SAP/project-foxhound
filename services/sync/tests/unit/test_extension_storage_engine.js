@@ -3,16 +3,19 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BridgedRecord: "resource://services-sync/bridged_engine.js",
-  extensionStorageSync: "resource://gre/modules/ExtensionStorageSync.jsm",
-  Service: "resource://services-sync/service.js",
+ChromeUtils.defineESModuleGetters(this, {
+  Service: "resource://services-sync/service.sys.mjs",
+  extensionStorageSync: "resource://gre/modules/ExtensionStorageSync.sys.mjs",
 });
 
-const {
-  ExtensionStorageEngineBridge,
-  ExtensionStorageEngineKinto,
-} = ChromeUtils.import("resource://services-sync/engines/extension-storage.js");
+const { ExtensionStorageEngineBridge, ExtensionStorageEngineKinto } =
+  ChromeUtils.importESModule(
+    "resource://services-sync/engines/extension-storage.sys.mjs"
+  );
+
+const { BridgeWrapperXPCOM } = ChromeUtils.importESModule(
+  "resource://services-sync/bridged_engine.sys.mjs"
+);
 
 Services.prefs.setStringPref("webextensions.storage.sync.log.level", "debug");
 
@@ -114,7 +117,7 @@ add_task(async function test_notifyPendingChanges() {
   let lastSync = 0;
   let syncID = Utils.makeGUID();
   let error = null;
-  engine._bridge = {
+  engine.component = {
     QueryInterface: ChromeUtils.generateQI([
       "mozIBridgedSyncEngine",
       "mozIExtensionStorageArea",
@@ -161,6 +164,8 @@ add_task(async function test_notifyPendingChanges() {
       callback.handleSuccess(null);
     },
   };
+
+  engine._bridge = new BridgeWrapperXPCOM(engine.component);
 
   let server = await serverForFoo(engine);
 

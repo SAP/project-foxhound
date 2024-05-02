@@ -4,10 +4,20 @@
 
 import { connect } from "../../utils/connect";
 import { Component } from "react";
+import PropTypes from "prop-types";
 import { getSelectedSource, getSelectedBreakableLines } from "../../selectors";
 import { fromEditorLine } from "../../utils/editor";
+import { isWasm } from "../../utils/wasm";
 
 class EmptyLines extends Component {
+  static get propTypes() {
+    return {
+      breakableLines: PropTypes.object.isRequired,
+      editor: PropTypes.object.isRequired,
+      selectedSource: PropTypes.object.isRequired,
+    };
+  }
+
   componentDidMount() {
     this.disableEmptyLines();
   }
@@ -21,35 +31,39 @@ class EmptyLines extends Component {
 
     editor.codeMirror.operation(() => {
       editor.codeMirror.eachLine(lineHandle => {
-        editor.codeMirror.removeLineClass(
-          lineHandle,
-          "wrapClass",
-          "empty-line"
-        );
+        editor.codeMirror.removeLineClass(lineHandle, "wrap", "empty-line");
       });
     });
+  }
+
+  shouldComponentUpdate(nextProps) {
+    const { breakableLines, selectedSource } = this.props;
+    return (
+      // Breakable lines are something that evolves over time,
+      // but we either have them loaded or not. So only compare the size
+      // as sometimes we always get a blank new empty Set instance.
+      breakableLines.size != nextProps.breakableLines.size ||
+      selectedSource.id != nextProps.selectedSource.id
+    );
   }
 
   disableEmptyLines() {
     const { breakableLines, selectedSource, editor } = this.props;
 
-    editor.codeMirror.operation(() => {
-      editor.codeMirror.eachLine(lineHandle => {
-        const line = fromEditorLine(
-          selectedSource.id,
-          editor.codeMirror.getLineNumber(lineHandle)
-        );
+    const { codeMirror } = editor;
+    const isSourceWasm = isWasm(selectedSource.id);
+
+    codeMirror.operation(() => {
+      const lineCount = codeMirror.lineCount();
+      for (let i = 0; i < lineCount; i++) {
+        const line = fromEditorLine(selectedSource.id, i, isSourceWasm);
 
         if (breakableLines.has(line)) {
-          editor.codeMirror.removeLineClass(
-            lineHandle,
-            "wrapClass",
-            "empty-line"
-          );
+          codeMirror.removeLineClass(i, "wrap", "empty-line");
         } else {
-          editor.codeMirror.addLineClass(lineHandle, "wrapClass", "empty-line");
+          codeMirror.addLineClass(i, "wrap", "empty-line");
         }
-      });
+      }
     });
   }
 

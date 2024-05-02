@@ -9,7 +9,9 @@
 
 // Keep others in (case-insensitive) order:
 #include "gfxUtils.h"
-#include "mozilla/Preferences.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/StaticPrefs_svg.h"
+#include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
 #include "nsPresContext.h"
 #include "nsStyleStruct.h"
@@ -17,26 +19,35 @@
 namespace mozilla {
 
 /* static */
-void SVGImageContext::MaybeStoreContextPaint(Maybe<SVGImageContext>& aContext,
+void SVGImageContext::MaybeStoreContextPaint(SVGImageContext& aContext,
                                              nsIFrame* aFromFrame,
                                              imgIContainer* aImgContainer) {
-  return MaybeStoreContextPaint(aContext, aFromFrame->Style(), aImgContainer);
+  return MaybeStoreContextPaint(aContext, *aFromFrame->PresContext(),
+                                *aFromFrame->Style(), aImgContainer);
 }
 
 /* static */
-void SVGImageContext::MaybeStoreContextPaint(
-    Maybe<SVGImageContext>& aContext, const ComputedStyle* aFromComputedStyle,
-    imgIContainer* aImgContainer) {
-  const nsStyleSVG* style = aFromComputedStyle->StyleSVG();
-
-  if (!style->ExposesContextProperties()) {
-    // Content must have '-moz-context-properties' set to the names of the
-    // properties it wants to expose to images it links to.
+void SVGImageContext::MaybeStoreContextPaint(SVGImageContext& aContext,
+                                             const nsPresContext& aPresContext,
+                                             const ComputedStyle& aStyle,
+                                             imgIContainer* aImgContainer) {
+  if (aImgContainer->GetType() != imgIContainer::TYPE_VECTOR) {
+    // Avoid this overhead for raster images.
     return;
   }
 
-  if (aImgContainer->GetType() != imgIContainer::TYPE_VECTOR) {
-    // Avoid this overhead for raster images.
+  if (StaticPrefs::svg_embedder_prefers_color_scheme_content_enabled() ||
+      aPresContext.Document()->ChromeRulesEnabled()) {
+    auto scheme = LookAndFeel::ColorSchemeForStyle(
+        *aPresContext.Document(), aStyle.StyleUI()->mColorScheme.bits,
+        ColorSchemeMode::Preferred);
+    aContext.SetColorScheme(Some(scheme));
+  }
+
+  const nsStyleSVG* style = aStyle.StyleSVG();
+  if (!style->ExposesContextProperties()) {
+    // Content must have '-moz-context-properties' set to the names of the
+    // properties it wants to expose to images it links to.
     return;
   }
 
@@ -47,14 +58,12 @@ void SVGImageContext::MaybeStoreContextPaint(
   if ((style->mMozContextProperties.bits & StyleContextPropertyBits::FILL) &&
       style->mFill.kind.IsColor()) {
     haveContextPaint = true;
-    contextPaint->SetFill(
-        style->mFill.kind.AsColor().CalcColor(*aFromComputedStyle));
+    contextPaint->SetFill(style->mFill.kind.AsColor().CalcColor(aStyle));
   }
   if ((style->mMozContextProperties.bits & StyleContextPropertyBits::STROKE) &&
       style->mStroke.kind.IsColor()) {
     haveContextPaint = true;
-    contextPaint->SetStroke(
-        style->mStroke.kind.AsColor().CalcColor(*aFromComputedStyle));
+    contextPaint->SetStroke(style->mStroke.kind.AsColor().CalcColor(aStyle));
   }
   if (style->mMozContextProperties.bits &
       StyleContextPropertyBits::FILL_OPACITY) {
@@ -72,10 +81,7 @@ void SVGImageContext::MaybeStoreContextPaint(
   }
 
   if (haveContextPaint) {
-    if (!aContext) {
-      aContext.emplace();
-    }
-    aContext->mContextPaint = std::move(contextPaint);
+    aContext.mContextPaint = std::move(contextPaint);
   }
 }
 

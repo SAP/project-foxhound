@@ -258,6 +258,9 @@ ml{
         "America:Chihuahua"{
             ec{"ചിഹ്വാഹ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"സിയുഡാഡ് ഹുവാരസ്"}
+        }
         "America:Coral_Harbour"{
             ec{"ഏറ്റികോക്കൺ"}
         }
@@ -1223,6 +1226,9 @@ ml{
         "Pacific:Johnston"{
             ec{"ജോൺസ്റ്റൺ"}
         }
+        "Pacific:Kanton"{
+            ec{"കാൻട്ടൻ"}
+        }
         "Pacific:Kiritimati"{
             ec{"കിരിറ്റിമാറ്റി"}
         }
@@ -1284,7 +1290,7 @@ ml{
             ec{"ടോംഗാടാപു"}
         }
         "Pacific:Truk"{
-            ec{"ട്രക്"}
+            ec{"ചക്"}
         }
         "Pacific:Wake"{
             ec{"വെയ്ക്"}

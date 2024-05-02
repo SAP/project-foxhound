@@ -7,34 +7,36 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   fetchNetworkUpdatePacket,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   sortObjectKeys,
-} = require("devtools/client/netmonitor/src/utils/sort-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/sort-utils.js");
 const {
   FILTER_SEARCH_DELAY,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 // Component
 const PropertiesView = createFactory(
-  require("devtools/client/netmonitor/src/components/request-details/PropertiesView")
+  require("resource://devtools/client/netmonitor/src/components/request-details/PropertiesView.js")
 );
 const SearchBox = createFactory(
-  require("devtools/client/shared/components/SearchBox")
+  require("resource://devtools/client/shared/components/SearchBox.js")
 );
 const Accordion = createFactory(
-  require("devtools/client/shared/components/Accordion")
+  require("resource://devtools/client/shared/components/Accordion.js")
 );
 
-loader.lazyGetter(this, "TreeRow", function() {
+loader.lazyGetter(this, "TreeRow", function () {
   return createFactory(
-    require("devtools/client/shared/components/tree/TreeRow")
+    require("resource://devtools/client/shared/components/tree/TreeRow.js")
   );
 });
 
@@ -74,7 +76,8 @@ class CookiesPanel extends Component {
     ]);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { connector, request } = nextProps;
     fetchNetworkUpdatePacket(connector.requestData, request, [
       "requestCookies",
@@ -102,7 +105,7 @@ class CookiesPanel extends Component {
         map[obj.name] = obj.value;
       }
       return map;
-    }, {});
+    }, Object.create(null));
 
     // To have different roots for Request and Response cookies
     return { [title]: cookies };

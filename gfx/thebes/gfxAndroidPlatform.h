@@ -37,19 +37,15 @@ class gfxAndroidPlatform final : public gfxPlatform {
   bool FontHintingEnabled() override;
   bool RequiresLinearZoom() override;
 
-  already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource()
+  already_AddRefed<mozilla::gfx::VsyncSource> CreateGlobalHardwareVsyncSource()
       override;
+
+  static bool CheckVariationFontSupport();
 
  protected:
   void InitAcceleration() override;
 
   bool AccelerateLayersByDefault() override { return true; }
-
-  bool CheckVariationFontSupport() override {
-    // We build with in-tree FreeType, so we know it is a new enough
-    // version to support variations.
-    return true;
-  }
 
  private:
   gfxImageFormat mOffscreenFormat;

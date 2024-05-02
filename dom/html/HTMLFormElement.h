@@ -10,13 +10,13 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/AnchorAreaFormRelValues.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/PopupBlocker.h"
-#include "mozilla/dom/RadioGroupManager.h"
+#include "mozilla/dom/RadioGroupContainer.h"
 #include "nsCOMPtr.h"
 #include "nsIFormControl.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIRadioGroupContainer.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsThreadUtils.h"
 #include "nsInterfaceHashtable.h"
@@ -38,8 +38,7 @@ class HTMLImageElement;
 class FormData;
 
 class HTMLFormElement final : public nsGenericHTMLElement,
-                              public nsIRadioGroupContainer,
-                              RadioGroupManager {
+                              public AnchorAreaFormRelValues {
   friend class HTMLFormControlsCollection;
 
  public:
@@ -55,46 +54,31 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   int32_t IndexOfContent(nsIContent* aContent);
   nsGenericHTMLFormElement* GetDefaultSubmitElement() const;
-
-  // nsIRadioGroupContainer
-  void SetCurrentRadioButton(const nsAString& aName,
-                             HTMLInputElement* aRadio) override;
-  HTMLInputElement* GetCurrentRadioButton(const nsAString& aName) override;
-  NS_IMETHOD GetNextRadioButton(const nsAString& aName, const bool aPrevious,
-                                HTMLInputElement* aFocusedRadio,
-                                HTMLInputElement** aRadioOut) override;
-  NS_IMETHOD WalkRadioGroup(const nsAString& aName,
-                            nsIRadioVisitor* aVisitor) override;
-  void AddToRadioGroup(const nsAString& aName,
-                       HTMLInputElement* aRadio) override;
-  void RemoveFromRadioGroup(const nsAString& aName,
-                            HTMLInputElement* aRadio) override;
-  virtual uint32_t GetRequiredRadioCount(const nsAString& aName) const override;
-  virtual void RadioRequiredWillChange(const nsAString& aName,
-                                       bool aRequiredAdded) override;
-  virtual bool GetValueMissingState(const nsAString& aName) const override;
-  virtual void SetValueMissingState(const nsAString& aName,
-                                    bool aValue) override;
-
-  virtual EventStates IntrinsicState() const override;
+  bool IsDefaultSubmitElement(nsGenericHTMLFormElement* aElement) const {
+    return aElement == mDefaultSubmitElement;
+  }
 
   // EventTarget
-  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+  void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+
+  /** Whether we already dispatched a DOMFormHasPassword event or not */
+  bool mHasPendingPasswordEvent = false;
+  /** Whether we already dispatched a DOMFormHasPossibleUsername event or not */
+  bool mHasPendingPossibleUsernameEvent = false;
 
   // nsIContent
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
   void WillHandleEvent(EventChainPostVisitor& aVisitor) override;
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
-  virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                 const nsAttrValueOrString* aValue,
-                                 bool aNotify) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
 
   /**
    * Forget all information about the current submission (and the fact that we
@@ -102,7 +86,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    */
   void ForgetCurrentSubmission();
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLFormElement,
                                            nsGenericHTMLElement)
@@ -205,15 +189,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    * input control that is not disabled. aElement is expected to not be null.
    */
   bool IsLastActiveElement(const nsGenericHTMLFormElement* aElement) const;
-
-  /**
-   * Check whether a given nsGenericHTMLFormElement is the default submit
-   * element.  This is different from just comparing to
-   * GetDefaultSubmitElement() in certain situations inside an update
-   * when GetDefaultSubmitElement() might not be up to date. aElement
-   * is expected to not be null.
-   */
-  bool IsDefaultSubmitElement(const nsGenericHTMLFormElement* aElement) const;
 
   /**
    * Flag the form to know that a button or image triggered scripted form
@@ -329,9 +304,15 @@ class HTMLFormElement final : public nsGenericHTMLElement,
     SetHTMLAttr(nsGkAtoms::target, aValue, aRv);
   }
 
+  void GetRel(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::rel, aValue); }
+  void SetRel(const nsAString& aRel, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::rel, aRel, aError);
+  }
+  nsDOMTokenList* RelList();
+
   // it's only out-of-line because the class definition is not available in the
   // header
-  nsIHTMLCollection* Elements();
+  HTMLFormControlsCollection* Elements();
 
   int32_t Length();
 
@@ -373,9 +354,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   void GetSupportedNames(nsTArray<nsString>& aRetval);
 
-  static int32_t CompareFormControlPosition(Element* aElement1,
-                                            Element* aElement2,
-                                            const nsIContent* aForm);
 #ifdef DEBUG
   static void AssertDocumentOrder(
       const nsTArray<nsGenericHTMLFormElement*>& aControls, nsIContent* aForm);
@@ -387,14 +365,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   JS::ExpandoAndGeneration mExpandoAndGeneration;
 
  protected:
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
-
-  void PostPasswordEvent();
-  void PostPossibleUsernameEvent();
-
-  RefPtr<AsyncEventDispatcher> mFormPasswordEventDispatcher;
-  RefPtr<AsyncEventDispatcher> mFormPossibleUsernameEventDispatcher;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
   class RemoveElementRunnable;
   friend class RemoveElementRunnable;
@@ -415,6 +386,9 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   };
 
   nsresult DoReset();
+
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
 
   // Async callback to handle removal of our default submit
   void HandleDefaultSubmitRemoval();
@@ -582,6 +556,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   /** Keep track of what the popup state was when the submit was initiated */
   PopupBlocker::PopupControlState mSubmitPopupState;
 
+  RefPtr<nsDOMTokenList> mRelList;
+
   /**
    * Number of invalid and candidate for constraint validation elements in the
    * form the last time UpdateValidity has been called.
@@ -614,6 +590,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
  private:
   bool IsSubmitting() const;
 
+  void SetDefaultSubmitElement(nsGenericHTMLFormElement*);
+
   NotNull<const Encoding*> GetSubmitEncoding();
 
   /**
@@ -621,6 +599,9 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    * used by the password manager.
    */
   void MaybeFireFormRemoved();
+
+  MOZ_CAN_RUN_SCRIPT
+  void ReportInvalidUnfocusableElements();
 
   ~HTMLFormElement();
 };

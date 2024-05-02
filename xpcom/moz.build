@@ -7,6 +7,9 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "XPCOM")
 
+with Files("nsCycleCollect*"):
+    BUG_COMPONENT = ("Core", "Cycle Collector")
+
 DIRS += [
     "idl-parser/xpidl",
     "geckoprocesstypes_generator/geckoprocesstypes",
@@ -38,14 +41,6 @@ TEST_DIRS += [
 # TEST_DIRS += [
 #    'reflect/xptcall/tests,
 # ]
-
-CONFIGURE_DEFINE_FILES += [
-    "xpcom-config.h",
-]
-
-EXPORTS += [
-    "!xpcom-config.h",
-]
 
 SPHINX_TREES["/xpcom"] = "docs"
 

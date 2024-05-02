@@ -12,19 +12,18 @@
 #include "nsRefreshObservers.h"
 #include "nsStubMutationObserver.h"
 #include "nsTHashSet.h"
-#include "mozilla/dom/DOMLocalization.h"
 
 class nsRefreshDriver;
 
-namespace mozilla {
-namespace dom {
-
+namespace mozilla::dom {
+class Document;
+class DOMLocalization;
 /**
  * L10nMutations manage observing roots for localization
  * changes and coalescing pending translations into
  * batches - one per animation frame.
  */
-class L10nMutations final : public nsStubMutationObserver,
+class L10nMutations final : public nsStubMultiMutationObserver,
                             public nsARefreshObserver {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -63,28 +62,40 @@ class L10nMutations final : public nsStubMutationObserver,
    */
   void OnCreatePresShell();
 
- protected:
+  bool HasPendingMutations() const {
+    return !mPendingElements.IsEmpty() || mPendingPromises;
+  }
+
+  MOZ_CAN_RUN_SCRIPT void PendingPromiseSettled();
+
+ private:
   bool mObserving = false;
+  bool mBlockingLoad = false;
+  bool mPendingBlockingLoadFlush = false;
+  uint32_t mPendingPromises = 0;
   RefPtr<nsRefreshDriver> mRefreshDriver;
   DOMLocalization* mDOMLocalization;
 
-  // The hash is used to speed up lookups into mPendingElements.
+  // The hash is used to speed up lookups into mPendingElements, which we need
+  // to guarantee some consistent ordering of operations.
   nsTHashSet<RefPtr<Element>> mPendingElementsHash;
   nsTArray<RefPtr<Element>> mPendingElements;
 
-  virtual void WillRefresh(mozilla::TimeStamp aTime) override;
+  Document* GetDocument() const;
+
+  MOZ_CAN_RUN_SCRIPT void WillRefresh(mozilla::TimeStamp aTime) override;
 
   void StartRefreshObserver();
   void StopRefreshObserver();
   void L10nElementChanged(Element* aElement);
-  void FlushPendingTranslations();
+  MOZ_CAN_RUN_SCRIPT void FlushPendingTranslations();
+  MOZ_CAN_RUN_SCRIPT void FlushPendingTranslationsBeforeLoad();
+  MOZ_CAN_RUN_SCRIPT void MaybeFirePendingTranslationsFinished();
 
- private:
   ~L10nMutations();
   bool IsInRoots(nsINode* aNode);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_l10n_L10nMutations_h__

@@ -35,8 +35,8 @@ pub use statics::*;
 // XPCOM interface definitions.
 pub mod interfaces;
 
-// XPCOM service getters.
-pub mod services;
+// XPCOM component getters.
+pub mod components;
 
 // Implementation details of the xpcom_macros crate.
 #[doc(hidden)]

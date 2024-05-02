@@ -1,6 +1,7 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FormHistoryTestUtils: "resource://testing-common/FormHistoryTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  FormHistoryTestUtils:
+    "resource://testing-common/FormHistoryTestUtils.sys.mjs",
 });
 
 function expectedURL(aSearchTerms) {
@@ -133,7 +134,7 @@ async function prepareTest() {
   await focusPromise;
 }
 
-add_task(async function testSetup() {
+add_setup(async function () {
   await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
@@ -246,11 +247,17 @@ add_task(async function testShiftMiddleClick() {
 
 add_task(async function testRightClick() {
   preTabNo = gBrowser.tabs.length;
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank", {
-    triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
-  });
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:blank",
+    {
+      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
+        {}
+      ),
+    }
+  );
   await new Promise(resolve => {
-    setTimeout(function() {
+    setTimeout(function () {
       is(gBrowser.tabs.length, preTabNo, "RightClick did not open new tab");
       is(gBrowser.currentURI.spec, "about:blank", "RightClick did nothing");
       resolve();
@@ -317,9 +324,15 @@ add_task(async function asyncCleanup() {
   while (gBrowser.tabs.length != 1) {
     gBrowser.removeTab(gBrowser.tabs[0], { animate: false });
   }
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank", {
-    triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
-  });
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:blank",
+    {
+      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
+        {}
+      ),
+    }
+  );
   await promiseRemoveEngine();
 });
 

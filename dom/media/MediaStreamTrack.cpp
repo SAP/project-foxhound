@@ -122,12 +122,9 @@ class MediaStreamTrack::MTGListener : public MediaTrackListener {
       return;
     }
 
-    AbstractThread* mainThread =
-        nsGlobalWindowInner::Cast(mTrack->GetParentObject())
-            ->AbstractMainThreadFor(TaskCategory::Other);
-    mainThread->Dispatch(NewRunnableMethod("MediaStreamTrack::OverrideEnded",
-                                           mTrack.get(),
-                                           &MediaStreamTrack::OverrideEnded));
+    AbstractThread::MainThread()->Dispatch(
+        NewRunnableMethod("MediaStreamTrack::OverrideEnded", mTrack.get(),
+                          &MediaStreamTrack::OverrideEnded));
   }
 
   void NotifyEnded(MediaTrackGraph* aGraph) override {
@@ -320,7 +317,9 @@ void MediaStreamTrack::GetSettings(dom::MediaTrackSettings& aResult,
   GetSource().GetSettings(aResult);
 
   // Spoof values when privacy.resistFingerprinting is true.
-  if (!nsContentUtils::ResistFingerprinting(aCallerType)) {
+  nsIGlobalObject* global = mWindow ? mWindow->AsGlobal() : nullptr;
+  if (!nsContentUtils::ShouldResistFingerprinting(
+          aCallerType, global, RFPTarget::StreamVideoFacingMode)) {
     return;
   }
   if (aResult.mFacingMode.WasPassed()) {

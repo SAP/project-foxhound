@@ -7,13 +7,22 @@
 
 const kDownloadAutoHidePref = "browser.download.autohideButton";
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   Services.prefs.clearUserPref(kDownloadAutoHidePref);
   if (document.documentElement.hasAttribute("customizing")) {
     await gCustomizeMode.reset();
     await promiseCustomizeEnd();
   } else {
     CustomizableUI.reset();
+  }
+});
+
+add_setup(async () => {
+  // Disable window occlusion. See bug 1733955 / bug 1779559.
+  if (navigator.platform.indexOf("Win") == 0) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.windows.window_occlusion_tracking.enabled", false]],
+    });
   }
 });
 
@@ -193,9 +202,8 @@ add_task(async function checkStateInCustomizeModeMultipleWindows() {
     "Button should be shown in customize mode."
   );
   let otherWin = await BrowserTestUtils.openNewBrowserWindow();
-  let otherDownloadsButton = otherWin.document.getElementById(
-    "downloads-button"
-  );
+  let otherDownloadsButton =
+    otherWin.document.getElementById("downloads-button");
   ok(
     otherDownloadsButton.hasAttribute("hidden"),
     "Button should be hidden in the other window."
@@ -389,9 +397,8 @@ add_task(async function checkStateWhenHiddenInPalette() {
     "Button shouldn't be visible in the window"
   );
 
-  let paletteButton = otherWin.gNavToolbox.palette.querySelector(
-    "#downloads-button"
-  );
+  let paletteButton =
+    otherWin.gNavToolbox.palette.querySelector("#downloads-button");
   ok(paletteButton, "Button should exist in the palette");
   if (paletteButton) {
     ok(paletteButton.hidden, "Button will still have the hidden attribute");

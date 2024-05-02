@@ -53,6 +53,8 @@ pub type host_info64_t = *mut integer_t;
 pub type processor_flavor_t = ::c_int;
 pub type thread_flavor_t = natural_t;
 pub type thread_inspect_t = ::mach_port_t;
+pub type thread_act_t = ::mach_port_t;
+pub type thread_act_array_t = *mut ::thread_act_t;
 pub type policy_t = ::c_int;
 pub type mach_vm_address_t = u64;
 pub type mach_vm_offset_t = u64;
@@ -63,6 +65,9 @@ pub type memory_object_t = ::mach_port_t;
 pub type memory_object_offset_t = ::c_ulonglong;
 pub type vm_inherit_t = ::c_uint;
 pub type vm_prot_t = ::c_int;
+
+pub type ledger_t = ::mach_port_t;
+pub type ledger_array_t = *mut ::ledger_t;
 
 pub type iconv_t = *mut ::c_void;
 
@@ -114,6 +119,15 @@ pub type thread_throughput_qos_policy_t = *mut thread_throughput_qos_policy;
 
 pub type pthread_introspection_hook_t =
     extern "C" fn(event: ::c_uint, thread: ::pthread_t, addr: *mut ::c_void, size: ::size_t);
+pub type pthread_jit_write_callback_t = ::Option<extern "C" fn(ctx: *mut ::c_void) -> ::c_int>;
+
+pub type os_unfair_lock = os_unfair_lock_s;
+pub type os_unfair_lock_t = *mut os_unfair_lock;
+
+pub type os_log_t = *mut ::c_void;
+pub type os_log_type_t = u8;
+pub type os_signpost_id_t = u64;
+pub type os_signpost_type_t = u8;
 
 pub type vm_statistics_t = *mut vm_statistics;
 pub type vm_statistics_data_t = vm_statistics;
@@ -121,12 +135,29 @@ pub type vm_statistics64_t = *mut vm_statistics64;
 pub type vm_statistics64_data_t = vm_statistics64;
 
 pub type task_t = ::mach_port_t;
+pub type task_inspect_t = ::mach_port_t;
 
 pub type sysdir_search_path_enumeration_state = ::c_uint;
 
 pub type CCStatus = i32;
 pub type CCCryptorStatus = i32;
 pub type CCRNGStatus = ::CCCryptorStatus;
+
+pub type copyfile_state_t = *mut ::c_void;
+pub type copyfile_flags_t = u32;
+pub type copyfile_callback_t = ::Option<
+    extern "C" fn(
+        ::c_int,
+        ::c_int,
+        copyfile_state_t,
+        *const ::c_char,
+        *const ::c_char,
+        *mut ::c_void,
+    ) -> ::c_int,
+>;
+
+pub type attrgroup_t = u32;
+pub type vol_capabilities_set_t = [u32; 4];
 
 deprecated_mach! {
     pub type mach_timebase_info_data_t = mach_timebase_info;
@@ -212,6 +243,18 @@ impl ::Clone for sysdir_search_path_domain_mask_t {
 s! {
     pub struct ip_mreq {
         pub imr_multiaddr: in_addr,
+        pub imr_interface: in_addr,
+    }
+
+    pub struct ip_mreqn {
+        pub imr_multiaddr: in_addr,
+        pub imr_address: in_addr,
+        pub imr_ifindex: ::c_int,
+    }
+
+    pub struct ip_mreq_source {
+        pub imr_multiaddr: in_addr,
+        pub imr_sourceaddr: in_addr,
         pub imr_interface: in_addr,
     }
 
@@ -335,6 +378,25 @@ s! {
         pub fst_bytesalloc: ::off_t,
     }
 
+    pub struct fpunchhole_t {
+        pub fp_flags: ::c_uint, /* unused */
+        pub reserved: ::c_uint, /* (to maintain 8-byte alignment) */
+        pub fp_offset: ::off_t, /* IN: start of the region */
+        pub fp_length: ::off_t, /* IN: size of the region */
+    }
+
+    pub struct ftrimactivefile_t {
+        pub fta_offset: ::off_t,
+        pub fta_length: ::off_t,
+    }
+
+    pub struct fspecread_t {
+        pub fsr_flags: ::c_uint,
+        pub reserved: ::c_uint,
+        pub fsr_offset: ::off_t,
+        pub fsr_length: ::off_t,
+    }
+
     pub struct radvisory {
         pub ra_offset: ::off_t,
         pub ra_count: ::c_int,
@@ -400,6 +462,80 @@ s! {
         pub ifm_flags: ::c_int,
         pub ifm_index: ::c_ushort,
         pub ifm_data: if_data,
+    }
+
+    pub struct ifa_msghdr {
+        pub ifam_msglen: ::c_ushort,
+        pub ifam_version: ::c_uchar,
+        pub ifam_type: ::c_uchar,
+        pub ifam_addrs: ::c_int,
+        pub ifam_flags: ::c_int,
+        pub ifam_index: ::c_ushort,
+        pub ifam_metric: ::c_int,
+    }
+
+    pub struct ifma_msghdr {
+        pub ifmam_msglen: ::c_ushort,
+        pub ifmam_version: ::c_uchar,
+        pub ifmam_type: ::c_uchar,
+        pub ifmam_addrs: ::c_int,
+        pub ifmam_flags: ::c_int,
+        pub ifmam_index: ::c_ushort,
+    }
+
+    pub struct ifma_msghdr2 {
+        pub ifmam_msglen: ::c_ushort,
+        pub ifmam_version: ::c_uchar,
+        pub ifmam_type: ::c_uchar,
+        pub ifmam_addrs: ::c_int,
+        pub ifmam_flags: ::c_int,
+        pub ifmam_index: ::c_ushort,
+        pub ifmam_refcount: i32,
+    }
+
+    pub struct rt_metrics {
+        pub rmx_locks: u32,
+        pub rmx_mtu: u32,
+        pub rmx_hopcount: u32,
+        pub rmx_expire: i32,
+        pub rmx_recvpipe: u32,
+        pub rmx_sendpipe: u32,
+        pub rmx_ssthresh: u32,
+        pub rmx_rtt: u32,
+        pub rmx_rttvar: u32,
+        pub rmx_pksent: u32,
+        pub rmx_state: u32,
+        pub rmx_filler: [u32; 3],
+    }
+
+    pub struct rt_msghdr {
+        pub rtm_msglen: ::c_ushort,
+        pub rtm_version: ::c_uchar,
+        pub rtm_type: ::c_uchar,
+        pub rtm_index: ::c_ushort,
+        pub rtm_flags: ::c_int,
+        pub rtm_addrs: ::c_int,
+        pub rtm_pid: ::pid_t,
+        pub rtm_seq: ::c_int,
+        pub rtm_errno: ::c_int,
+        pub rtm_use: ::c_int,
+        pub rtm_inits: u32,
+        pub rtm_rmx: rt_metrics,
+    }
+
+    pub struct rt_msghdr2 {
+        pub rtm_msglen: ::c_ushort,
+        pub rtm_version: ::c_uchar,
+        pub rtm_type: ::c_uchar,
+        pub rtm_index: ::c_ushort,
+        pub rtm_flags: ::c_int,
+        pub rtm_addrs: ::c_int,
+        pub rtm_refcnt: i32,
+        pub rtm_parentflags: ::c_int,
+        pub rtm_reserved: ::c_int,
+        pub rtm_use: ::c_int,
+        pub rtm_inits: u32,
+        pub rtm_rmx: rt_metrics,
     }
 
     pub struct termios {
@@ -655,6 +791,13 @@ s! {
 
     pub struct in_addr {
         pub s_addr: ::in_addr_t,
+    }
+
+    // net/ndrv.h
+    pub struct sockaddr_ndrv {
+        pub snd_len: ::c_uchar,
+        pub snd_family: ::c_uchar,
+        pub snd_name: [::c_uchar; ::IFNAMSIZ],
     }
 
     // sys/socket.h
@@ -948,6 +1091,53 @@ s! {
         pub ri_interval_max_phys_footprint: u64,
         pub ri_runnable_time: u64,
     }
+
+    pub struct image_offset {
+        pub uuid: ::uuid_t,
+        pub offset: u32,
+    }
+
+    pub struct attrlist {
+        pub bitmapcount: ::c_ushort,
+        pub reserved: u16,
+        pub commonattr: attrgroup_t,
+        pub volattr: attrgroup_t,
+        pub dirattr: attrgroup_t,
+        pub fileattr: attrgroup_t,
+        pub forkattr: attrgroup_t,
+    }
+
+    pub struct attrreference_t {
+        pub attr_dataoffset: i32,
+        pub attr_length: u32,
+    }
+
+    pub struct vol_capabilities_attr_t {
+        pub capabilities: vol_capabilities_set_t,
+        pub valid: vol_capabilities_set_t,
+    }
+
+    pub struct attribute_set_t {
+        pub commonattr: attrgroup_t,
+        pub volattr: attrgroup_t,
+        pub dirattr: attrgroup_t,
+        pub fileattr: attrgroup_t,
+        pub forkattr: attrgroup_t,
+    }
+
+    pub struct vol_attributes_attr_t {
+        pub validattr: attribute_set_t,
+        pub nativeattr: attribute_set_t,
+    }
+
+    #[cfg_attr(libc_packedN, repr(packed(4)))]
+    pub struct ifconf {
+        pub ifc_len: ::c_int,
+        #[cfg(libc_union)]
+        pub ifc_ifcu: __c_anonymous_ifc_ifcu,
+        #[cfg(not(libc_union))]
+        pub ifc_ifcu: *mut ifreq,
+    }
 }
 
 s_no_extra_traits! {
@@ -1018,7 +1208,8 @@ s_no_extra_traits! {
         pub f_fstypename: [::c_char; 16],
         pub f_mntonname: [::c_char; 1024],
         pub f_mntfromname: [::c_char; 1024],
-        pub f_reserved: [u32; 8],
+        pub f_flags_ext: u32,
+        pub f_reserved: [u32; 7],
     }
 
     pub struct dirent {
@@ -1158,9 +1349,9 @@ s_no_extra_traits! {
         pub ifi_noproto: u64,
         pub ifi_recvtiming: u32,
         pub ifi_xmittiming: u32,
-        #[cfg(any(target_arch = "arm", target_arch = "x86"))]
+        #[cfg(target_pointer_width = "32")]
         pub ifi_lastchange: ::timeval,
-        #[cfg(not(any(target_arch = "arm", target_arch = "x86")))]
+        #[cfg(not(target_pointer_width = "32"))]
         pub ifi_lastchange: timeval32,
     }
 
@@ -1216,6 +1407,80 @@ s_no_extra_traits! {
         pub system_time: time_value_t,
         pub policy: ::policy_t,
         pub suspend_count: integer_t,
+    }
+
+    #[cfg_attr(libc_packedN, repr(packed(4)))]
+    pub struct log2phys {
+        pub l2p_flags: ::c_uint,
+        pub l2p_contigbytes: ::off_t,
+        pub l2p_devoffset: ::off_t,
+    }
+
+    pub struct os_unfair_lock_s {
+        _os_unfair_lock_opaque: u32,
+    }
+
+   #[cfg_attr(libc_packedN, repr(packed(1)))]
+    pub struct sockaddr_vm {
+        pub svm_len: ::c_uchar,
+        pub svm_family: ::sa_family_t,
+        pub svm_reserved1: ::c_ushort,
+        pub svm_port: ::c_uint,
+        pub svm_cid: ::c_uint,
+    }
+
+    pub struct ifdevmtu {
+        pub ifdm_current: ::c_int,
+        pub ifdm_min: ::c_int,
+        pub ifdm_max: ::c_int,
+    }
+
+    #[cfg(libc_union)]
+    pub union __c_anonymous_ifk_data {
+        pub ifk_ptr: *mut ::c_void,
+        pub ifk_value: ::c_int,
+    }
+
+    #[cfg_attr(libc_packedN, repr(packed(4)))]
+    pub struct ifkpi {
+        pub ifk_module_id: ::c_uint,
+        pub ifk_type: ::c_uint,
+        #[cfg(libc_union)]
+        pub ifk_data: __c_anonymous_ifk_data,
+    }
+
+    #[cfg(libc_union)]
+    pub union __c_anonymous_ifr_ifru {
+        pub ifru_addr: ::sockaddr,
+        pub ifru_dstaddr: ::sockaddr,
+        pub ifru_broadaddr: ::sockaddr,
+        pub ifru_flags: ::c_short,
+        pub ifru_metrics: ::c_int,
+        pub ifru_mtu: ::c_int,
+        pub ifru_phys: ::c_int,
+        pub ifru_media: ::c_int,
+        pub ifru_intval: ::c_int,
+        pub ifru_data: *mut ::c_char,
+        pub ifru_devmtu: ifdevmtu,
+        pub ifru_kpi: ifkpi,
+        pub ifru_wake_flags: u32,
+        pub ifru_route_refcnt: u32,
+        pub ifru_cap: [::c_int; 2],
+        pub ifru_functional_type: u32,
+    }
+
+    pub struct ifreq {
+        pub ifr_name: [::c_char; ::IFNAMSIZ],
+        #[cfg(libc_union)]
+        pub ifr_ifru: __c_anonymous_ifr_ifru,
+        #[cfg(not(libc_union))]
+        pub ifr_ifru: ::sockaddr,
+    }
+
+    #[cfg(libc_union)]
+    pub union __c_anonymous_ifc_ifcu {
+        pub ifcu_buf: *mut ::c_char,
+        pub ifcu_req: *mut ifreq,
     }
 }
 
@@ -2467,6 +2732,320 @@ cfg_if! {
                 suspend_count.hash(state);
             }
         }
+
+        impl PartialEq for log2phys {
+            fn eq(&self, other: &log2phys) -> bool {
+                self.l2p_flags == other.l2p_flags
+                    && self.l2p_contigbytes == other.l2p_contigbytes
+                    && self.l2p_devoffset == other.l2p_devoffset
+            }
+        }
+        impl Eq for log2phys {}
+        impl ::fmt::Debug for log2phys {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                let l2p_flags = self.l2p_flags;
+                let l2p_contigbytes = self.l2p_contigbytes;
+                let l2p_devoffset = self.l2p_devoffset;
+                f.debug_struct("log2phys")
+                    .field("l2p_flags", &l2p_flags)
+                    .field("l2p_contigbytes", &l2p_contigbytes)
+                    .field("l2p_devoffset", &l2p_devoffset)
+                    .finish()
+            }
+        }
+        impl ::hash::Hash for log2phys {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                let l2p_flags = self.l2p_flags;
+                let l2p_contigbytes = self.l2p_contigbytes;
+                let l2p_devoffset = self.l2p_devoffset;
+                l2p_flags.hash(state);
+                l2p_contigbytes.hash(state);
+                l2p_devoffset.hash(state);
+            }
+        }
+        impl PartialEq for os_unfair_lock {
+            fn eq(&self, other: &os_unfair_lock) -> bool {
+                self._os_unfair_lock_opaque == other._os_unfair_lock_opaque
+            }
+        }
+
+        impl Eq for os_unfair_lock {}
+
+        impl ::fmt::Debug for os_unfair_lock {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("os_unfair_lock")
+                    .field("_os_unfair_lock_opaque", &self._os_unfair_lock_opaque)
+                    .finish()
+            }
+        }
+
+        impl ::hash::Hash for os_unfair_lock {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                self._os_unfair_lock_opaque.hash(state);
+            }
+        }
+
+        impl PartialEq for sockaddr_vm {
+            fn eq(&self, other: &sockaddr_vm) -> bool {
+                self.svm_len == other.svm_len
+                    && self.svm_family == other.svm_family
+                    && self.svm_reserved1 == other.svm_reserved1
+                    && self.svm_port == other.svm_port
+                    && self.svm_cid == other.svm_cid
+            }
+        }
+
+        impl Eq for sockaddr_vm {}
+
+        impl ::fmt::Debug for sockaddr_vm {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                let svm_len = self.svm_len;
+                let svm_family = self.svm_family;
+                let svm_reserved1 = self.svm_reserved1;
+                let svm_port = self.svm_port;
+                let svm_cid = self.svm_cid;
+
+                f.debug_struct("sockaddr_vm")
+                    .field("svm_len",&svm_len)
+                    .field("svm_family",&svm_family)
+                    .field("svm_reserved1",&svm_reserved1)
+                    .field("svm_port",&svm_port)
+                    .field("svm_cid",&svm_cid)
+                    .finish()
+            }
+        }
+
+        impl ::hash::Hash for sockaddr_vm {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                let svm_len = self.svm_len;
+                let svm_family = self.svm_family;
+                let svm_reserved1 = self.svm_reserved1;
+                let svm_port = self.svm_port;
+                let svm_cid = self.svm_cid;
+
+                svm_len.hash(state);
+                svm_family.hash(state);
+                svm_reserved1.hash(state);
+                svm_port.hash(state);
+                svm_cid.hash(state);
+            }
+        }
+
+        impl PartialEq for ifdevmtu {
+            fn eq(&self, other: &ifdevmtu) -> bool {
+                self.ifdm_current == other.ifdm_current
+                    && self.ifdm_min == other.ifdm_min
+                    && self.ifdm_max == other.ifdm_max
+            }
+        }
+
+        impl Eq for ifdevmtu {}
+
+        impl ::fmt::Debug for ifdevmtu {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("ifdevmtu")
+                    .field("ifdm_current", &self.ifdm_current)
+                    .field("ifdm_min", &self.ifdm_min)
+                    .field("ifdm_max", &self.ifdm_max)
+                    .finish()
+            }
+        }
+
+        impl ::hash::Hash for ifdevmtu {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                self.ifdm_current.hash(state);
+                self.ifdm_min.hash(state);
+                self.ifdm_max.hash(state);
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl PartialEq for __c_anonymous_ifk_data {
+            fn eq(&self, other: &__c_anonymous_ifk_data) -> bool {
+                unsafe {
+                    self.ifk_ptr == other.ifk_ptr
+                        && self.ifk_value == other.ifk_value
+                }
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl Eq for __c_anonymous_ifk_data {}
+
+        #[cfg(libc_union)]
+        impl ::fmt::Debug for __c_anonymous_ifk_data {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("__c_anonymous_ifk_data")
+                    .field("ifk_ptr", unsafe { &self.ifk_ptr })
+                    .field("ifk_value", unsafe { &self.ifk_value })
+                    .finish()
+            }
+        }
+        #[cfg(libc_union)]
+        impl ::hash::Hash for __c_anonymous_ifk_data {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                unsafe {
+                    self.ifk_ptr.hash(state);
+                    self.ifk_value.hash(state);
+                }
+            }
+        }
+
+        impl PartialEq for ifkpi {
+            fn eq(&self, other: &ifkpi) -> bool {
+                self.ifk_module_id == other.ifk_module_id
+                    && self.ifk_type == other.ifk_type
+            }
+        }
+
+        impl Eq for ifkpi {}
+
+        impl ::fmt::Debug for ifkpi {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("ifkpi")
+                    .field("ifk_module_id", &self.ifk_module_id)
+                    .field("ifk_type", &self.ifk_type)
+                    .finish()
+            }
+        }
+
+        impl ::hash::Hash for ifkpi {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                self.ifk_module_id.hash(state);
+                self.ifk_type.hash(state);
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl PartialEq for __c_anonymous_ifr_ifru {
+            fn eq(&self, other: &__c_anonymous_ifr_ifru) -> bool {
+                unsafe {
+                    self.ifru_addr == other.ifru_addr
+                        && self.ifru_dstaddr == other.ifru_dstaddr
+                        && self.ifru_broadaddr == other.ifru_broadaddr
+                        && self.ifru_flags == other.ifru_flags
+                        && self.ifru_metrics == other.ifru_metrics
+                        && self.ifru_mtu == other.ifru_mtu
+                        && self.ifru_phys == other.ifru_phys
+                        && self.ifru_media == other.ifru_media
+                        && self.ifru_intval == other.ifru_intval
+                        && self.ifru_data == other.ifru_data
+                        && self.ifru_devmtu == other.ifru_devmtu
+                        && self.ifru_kpi == other.ifru_kpi
+                        && self.ifru_wake_flags == other.ifru_wake_flags
+                        && self.ifru_route_refcnt == other.ifru_route_refcnt
+                        && self.ifru_cap.iter().zip(other.ifru_cap.iter()).all(|(a,b)| a == b)
+                        && self.ifru_functional_type == other.ifru_functional_type
+                }
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl Eq for __c_anonymous_ifr_ifru {}
+
+        #[cfg(libc_union)]
+        impl ::fmt::Debug for __c_anonymous_ifr_ifru {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("__c_anonymous_ifr_ifru")
+                    .field("ifru_addr", unsafe { &self.ifru_addr })
+                    .field("ifru_dstaddr", unsafe { &self.ifru_dstaddr })
+                    .field("ifru_broadaddr", unsafe { &self.ifru_broadaddr })
+                    .field("ifru_flags", unsafe { &self.ifru_flags })
+                    .field("ifru_metrics", unsafe { &self.ifru_metrics })
+                    .field("ifru_mtu", unsafe { &self.ifru_mtu })
+                    .field("ifru_phys", unsafe { &self.ifru_phys })
+                    .field("ifru_media", unsafe { &self.ifru_media })
+                    .field("ifru_intval", unsafe { &self.ifru_intval })
+                    .field("ifru_data", unsafe { &self.ifru_data })
+                    .field("ifru_devmtu", unsafe { &self.ifru_devmtu })
+                    .field("ifru_kpi", unsafe { &self.ifru_kpi })
+                    .field("ifru_wake_flags", unsafe { &self.ifru_wake_flags })
+                    .field("ifru_route_refcnt", unsafe { &self.ifru_route_refcnt })
+                    .field("ifru_cap", unsafe { &self.ifru_cap })
+                    .field("ifru_functional_type", unsafe { &self.ifru_functional_type })
+                    .finish()
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::hash::Hash for __c_anonymous_ifr_ifru {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                unsafe {
+                    self.ifru_addr.hash(state);
+                    self.ifru_dstaddr.hash(state);
+                    self.ifru_broadaddr.hash(state);
+                    self.ifru_flags.hash(state);
+                    self.ifru_metrics.hash(state);
+                    self.ifru_mtu.hash(state);
+                    self.ifru_phys.hash(state);
+                    self.ifru_media.hash(state);
+                    self.ifru_intval.hash(state);
+                    self.ifru_data.hash(state);
+                    self.ifru_devmtu.hash(state);
+                    self.ifru_kpi.hash(state);
+                    self.ifru_wake_flags.hash(state);
+                    self.ifru_route_refcnt.hash(state);
+                    self.ifru_cap.hash(state);
+                    self.ifru_functional_type.hash(state);
+                }
+            }
+        }
+
+        impl PartialEq for ifreq {
+            fn eq(&self, other: &ifreq) -> bool {
+                self.ifr_name == other.ifr_name
+                    && self.ifr_ifru == other.ifr_ifru
+            }
+        }
+
+        impl Eq for ifreq {}
+
+        impl ::fmt::Debug for ifreq {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("ifreq")
+                    .field("ifr_name", &self.ifr_name)
+                    .field("ifr_ifru", &self.ifr_ifru)
+                    .finish()
+            }
+        }
+
+        impl ::hash::Hash for ifreq {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                self.ifr_name.hash(state);
+                self.ifr_ifru.hash(state);
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl Eq for __c_anonymous_ifc_ifcu {}
+
+        #[cfg(libc_union)]
+        impl PartialEq for __c_anonymous_ifc_ifcu {
+            fn eq(&self, other: &__c_anonymous_ifc_ifcu) -> bool {
+                unsafe {
+                    self.ifcu_buf == other.ifcu_buf &&
+                    self.ifcu_req == other.ifcu_req
+                }
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::fmt::Debug for __c_anonymous_ifc_ifcu {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("ifc_ifcu")
+                    .field("ifcu_buf", unsafe { &self.ifcu_buf })
+                    .field("ifcu_req", unsafe { &self.ifcu_req })
+                    .finish()
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::hash::Hash for __c_anonymous_ifc_ifcu {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                unsafe { self.ifcu_buf.hash(state) };
+                unsafe { self.ifcu_req.hash(state) };
+            }
+        }
     }
 }
 
@@ -2552,7 +3131,11 @@ pub const ABMON_11: ::nl_item = 43;
 pub const ABMON_12: ::nl_item = 44;
 
 pub const CLOCK_REALTIME: ::clockid_t = 0;
+pub const CLOCK_MONOTONIC_RAW: ::clockid_t = 4;
+pub const CLOCK_MONOTONIC_RAW_APPROX: ::clockid_t = 5;
 pub const CLOCK_MONOTONIC: ::clockid_t = 6;
+pub const CLOCK_UPTIME_RAW: ::clockid_t = 8;
+pub const CLOCK_UPTIME_RAW_APPROX: ::clockid_t = 9;
 pub const CLOCK_PROCESS_CPUTIME_ID: ::clockid_t = 12;
 pub const CLOCK_THREAD_CPUTIME_ID: ::clockid_t = 16;
 
@@ -2582,6 +3165,8 @@ pub const EOF: ::c_int = -1;
 pub const SEEK_SET: ::c_int = 0;
 pub const SEEK_CUR: ::c_int = 1;
 pub const SEEK_END: ::c_int = 2;
+pub const SEEK_HOLE: ::c_int = 3;
+pub const SEEK_DATA: ::c_int = 4;
 pub const _IOFBF: ::c_int = 0;
 pub const _IONBF: ::c_int = 2;
 pub const _IOLBF: ::c_int = 1;
@@ -2599,11 +3184,13 @@ pub const _PC_PIPE_BUF: ::c_int = 6;
 pub const _PC_CHOWN_RESTRICTED: ::c_int = 7;
 pub const _PC_NO_TRUNC: ::c_int = 8;
 pub const _PC_VDISABLE: ::c_int = 9;
-pub const O_DSYNC: ::c_int = 0x400000;
-pub const O_NOCTTY: ::c_int = 0x20000;
-pub const O_CLOEXEC: ::c_int = 0x1000000;
-pub const O_DIRECTORY: ::c_int = 0x100000;
-pub const O_SYMLINK: ::c_int = 0x200000;
+pub const O_EVTONLY: ::c_int = 0x00008000;
+pub const O_NOCTTY: ::c_int = 0x00020000;
+pub const O_DIRECTORY: ::c_int = 0x00100000;
+pub const O_SYMLINK: ::c_int = 0x00200000;
+pub const O_DSYNC: ::c_int = 0x00400000;
+pub const O_CLOEXEC: ::c_int = 0x01000000;
+pub const O_NOFOLLOW_ANY: ::c_int = 0x20000000;
 pub const S_IFIFO: mode_t = 4096;
 pub const S_IFCHR: mode_t = 8192;
 pub const S_IFBLK: mode_t = 24576;
@@ -2943,12 +3530,19 @@ pub const F_PREALLOCATE: ::c_int = 42;
 pub const F_RDADVISE: ::c_int = 44;
 pub const F_RDAHEAD: ::c_int = 45;
 pub const F_NOCACHE: ::c_int = 48;
+pub const F_LOG2PHYS: ::c_int = 49;
 pub const F_GETPATH: ::c_int = 50;
 pub const F_FULLFSYNC: ::c_int = 51;
 pub const F_FREEZE_FS: ::c_int = 53;
 pub const F_THAW_FS: ::c_int = 54;
 pub const F_GLOBAL_NOCACHE: ::c_int = 55;
 pub const F_NODIRECT: ::c_int = 62;
+pub const F_LOG2PHYS_EXT: ::c_int = 65;
+pub const F_BARRIERFSYNC: ::c_int = 85;
+pub const F_PUNCHHOLE: ::c_int = 99;
+pub const F_TRIM_ACTIVE_FILE: ::c_int = 100;
+pub const F_SPECULATIVE_READ: ::c_int = 101;
+pub const F_GETPATH_NOFIRMLINK: ::c_int = 102;
 
 pub const F_ALLOCATECONTIG: ::c_uint = 0x02;
 pub const F_ALLOCATEALL: ::c_uint = 0x04;
@@ -3158,6 +3752,8 @@ pub const MINCORE_REFERENCED: ::c_int = 0x2;
 pub const MINCORE_MODIFIED: ::c_int = 0x4;
 pub const MINCORE_REFERENCED_OTHER: ::c_int = 0x8;
 pub const MINCORE_MODIFIED_OTHER: ::c_int = 0x10;
+
+pub const CTLIOCGINFO: c_ulong = 0xc0644e03;
 
 //
 // sys/netinet/in.h
@@ -3404,6 +4000,7 @@ pub const pseudo_AF_RTIP: ::c_int = 22;
 pub const AF_IPX: ::c_int = 23;
 pub const AF_SIP: ::c_int = 24;
 pub const pseudo_AF_PIP: ::c_int = 25;
+pub const AF_NDRV: ::c_int = 27;
 pub const AF_ISDN: ::c_int = 28;
 pub const AF_E164: ::c_int = AF_ISDN;
 pub const pseudo_AF_KEY: ::c_int = 29;
@@ -3413,6 +4010,9 @@ pub const AF_SYSTEM: ::c_int = 32;
 pub const AF_NETBIOS: ::c_int = 33;
 pub const AF_PPP: ::c_int = 34;
 pub const pseudo_AF_HDRCMPLT: ::c_int = 35;
+pub const AF_IEEE80211: ::c_int = 37;
+pub const AF_UTUN: ::c_int = 38;
+pub const AF_VSOCK: ::c_int = 40;
 pub const AF_SYS_CONTROL: ::c_int = 2;
 
 pub const SYSPROTO_EVENT: ::c_int = 1;
@@ -3446,6 +4046,7 @@ pub const PF_SIP: ::c_int = AF_SIP;
 pub const PF_IPX: ::c_int = AF_IPX;
 pub const PF_RTIP: ::c_int = pseudo_AF_RTIP;
 pub const PF_PIP: ::c_int = pseudo_AF_PIP;
+pub const PF_NDRV: ::c_int = AF_NDRV;
 pub const PF_ISDN: ::c_int = AF_ISDN;
 pub const PF_KEY: ::c_int = pseudo_AF_KEY;
 pub const PF_INET6: ::c_int = AF_INET6;
@@ -3453,6 +4054,7 @@ pub const PF_NATM: ::c_int = AF_NATM;
 pub const PF_SYSTEM: ::c_int = AF_SYSTEM;
 pub const PF_NETBIOS: ::c_int = AF_NETBIOS;
 pub const PF_PPP: ::c_int = AF_PPP;
+pub const PF_VSOCK: ::c_int = AF_VSOCK;
 
 pub const NET_RT_DUMP: ::c_int = 1;
 pub const NET_RT_FLAGS: ::c_int = 2;
@@ -3476,6 +4078,7 @@ pub const IP_RECVIF: ::c_int = 20;
 pub const IP_BOUND_IF: ::c_int = 25;
 pub const IP_PKTINFO: ::c_int = 26;
 pub const IP_RECVTOS: ::c_int = 27;
+pub const IP_DONTFRAG: ::c_int = 28;
 pub const IPV6_JOIN_GROUP: ::c_int = 12;
 pub const IPV6_LEAVE_GROUP: ::c_int = 13;
 pub const IPV6_CHECKSUM: ::c_int = 26;
@@ -3484,6 +4087,12 @@ pub const IPV6_TCLASS: ::c_int = 36;
 pub const IPV6_PKTINFO: ::c_int = 46;
 pub const IPV6_HOPLIMIT: ::c_int = 47;
 pub const IPV6_RECVPKTINFO: ::c_int = 61;
+pub const IPV6_DONTFRAG: ::c_int = 62;
+pub const IP_ADD_SOURCE_MEMBERSHIP: ::c_int = 70;
+pub const IP_DROP_SOURCE_MEMBERSHIP: ::c_int = 71;
+pub const IP_BLOCK_SOURCE: ::c_int = 72;
+pub const IP_UNBLOCK_SOURCE: ::c_int = 73;
+pub const IPV6_BOUND_IF: ::c_int = 125;
 
 pub const TCP_NOPUSH: ::c_int = 4;
 pub const TCP_NOOPT: ::c_int = 8;
@@ -3553,12 +4162,13 @@ pub const MSG_HOLD: ::c_int = 0x800;
 pub const MSG_SEND: ::c_int = 0x1000;
 pub const MSG_HAVEMORE: ::c_int = 0x2000;
 pub const MSG_RCVMORE: ::c_int = 0x4000;
-// pub const MSG_COMPAT: ::c_int = 0x8000;
+pub const MSG_NEEDSA: ::c_int = 0x10000;
+pub const MSG_NOSIGNAL: ::c_int = 0x80000;
 
 pub const SCM_TIMESTAMP: ::c_int = 0x02;
 pub const SCM_CREDS: ::c_int = 0x03;
 
-// https://github.com/aosm/xnu/blob/master/bsd/net/if.h#L140-L156
+// https://github.com/aosm/xnu/blob/HEAD/bsd/net/if.h#L140-L156
 pub const IFF_UP: ::c_int = 0x1; // interface is up
 pub const IFF_BROADCAST: ::c_int = 0x2; // broadcast address valid
 pub const IFF_DEBUG: ::c_int = 0x4; // turn on debugging
@@ -3711,6 +4321,11 @@ pub const _SC_TRACE_NAME_MAX: ::c_int = 128;
 pub const _SC_TRACE_SYS_MAX: ::c_int = 129;
 pub const _SC_TRACE_USER_EVENT_MAX: ::c_int = 130;
 pub const _SC_PASS_MAX: ::c_int = 131;
+// `confstr` keys (only the values guaranteed by `man confstr`).
+pub const _CS_PATH: ::c_int = 1;
+pub const _CS_DARWIN_USER_DIR: ::c_int = 65536;
+pub const _CS_DARWIN_USER_TEMP_DIR: ::c_int = 65537;
+pub const _CS_DARWIN_USER_CACHE_DIR: ::c_int = 65538;
 
 pub const PTHREAD_MUTEX_NORMAL: ::c_int = 0;
 pub const PTHREAD_MUTEX_ERRORCHECK: ::c_int = 1;
@@ -3731,6 +4346,20 @@ pub const PTHREAD_RWLOCK_INITIALIZER: pthread_rwlock_t = pthread_rwlock_t {
     __sig: _PTHREAD_RWLOCK_SIG_init,
     __opaque: [0; __PTHREAD_RWLOCK_SIZE__],
 };
+
+pub const OS_UNFAIR_LOCK_INIT: os_unfair_lock = os_unfair_lock {
+    _os_unfair_lock_opaque: 0,
+};
+
+pub const OS_LOG_TYPE_DEFAULT: ::os_log_type_t = 0x00;
+pub const OS_LOG_TYPE_INFO: ::os_log_type_t = 0x01;
+pub const OS_LOG_TYPE_DEBUG: ::os_log_type_t = 0x02;
+pub const OS_LOG_TYPE_ERROR: ::os_log_type_t = 0x10;
+pub const OS_LOG_TYPE_FAULT: ::os_log_type_t = 0x11;
+
+pub const OS_SIGNPOST_EVENT: ::os_signpost_type_t = 0x00;
+pub const OS_SIGNPOST_INTERVAL_BEGIN: ::os_signpost_type_t = 0x01;
+pub const OS_SIGNPOST_INTERVAL_END: ::os_signpost_type_t = 0x02;
 
 pub const MINSIGSTKSZ: ::size_t = 32768;
 pub const SIGSTKSZ: ::size_t = 131072;
@@ -3871,6 +4500,7 @@ pub const RTLD_FIRST: ::c_int = 0x100;
 pub const RTLD_NODELETE: ::c_int = 0x80;
 pub const RTLD_NOLOAD: ::c_int = 0x10;
 pub const RTLD_GLOBAL: ::c_int = 0x8;
+pub const RTLD_MAIN_ONLY: *mut ::c_void = -5isize as *mut ::c_void;
 
 pub const _WSTOPPED: ::c_int = 0o177;
 
@@ -4336,7 +4966,7 @@ pub const DLT_ATM_RFC1483: ::c_uint = 11; // LLC/SNAP encapsulated atm
 pub const DLT_RAW: ::c_uint = 12; // raw IP
 pub const DLT_LOOP: ::c_uint = 108;
 
-// https://github.com/apple/darwin-xnu/blob/master/bsd/net/bpf.h#L100
+// https://github.com/apple/darwin-xnu/blob/HEAD/bsd/net/bpf.h#L100
 // sizeof(i32)
 pub const BPF_ALIGNMENT: ::c_int = 4;
 
@@ -4368,12 +4998,12 @@ pub const MNT_SNAPSHOT: ::c_int = 0x40000000;
 pub const MNT_NOBLOCK: ::c_int = 0x00020000;
 
 // sys/spawn.h:
-pub const POSIX_SPAWN_RESETIDS: ::c_int = 0x01;
-pub const POSIX_SPAWN_SETPGROUP: ::c_int = 0x02;
-pub const POSIX_SPAWN_SETSIGDEF: ::c_int = 0x04;
-pub const POSIX_SPAWN_SETSIGMASK: ::c_int = 0x08;
-pub const POSIX_SPAWN_SETEXEC: ::c_int = 0x40;
-pub const POSIX_SPAWN_START_SUSPENDED: ::c_int = 0x80;
+pub const POSIX_SPAWN_RESETIDS: ::c_int = 0x0001;
+pub const POSIX_SPAWN_SETPGROUP: ::c_int = 0x0002;
+pub const POSIX_SPAWN_SETSIGDEF: ::c_int = 0x0004;
+pub const POSIX_SPAWN_SETSIGMASK: ::c_int = 0x0008;
+pub const POSIX_SPAWN_SETEXEC: ::c_int = 0x0040;
+pub const POSIX_SPAWN_START_SUSPENDED: ::c_int = 0x0080;
 pub const POSIX_SPAWN_CLOEXEC_DEFAULT: ::c_int = 0x4000;
 
 // sys/ipc.h:
@@ -4556,6 +5186,214 @@ pub const RUSAGE_INFO_V2: ::c_int = 2;
 pub const RUSAGE_INFO_V3: ::c_int = 3;
 pub const RUSAGE_INFO_V4: ::c_int = 4;
 
+// copyfile.h
+pub const COPYFILE_ACL: ::copyfile_flags_t = 1 << 0;
+pub const COPYFILE_STAT: ::copyfile_flags_t = 1 << 1;
+pub const COPYFILE_XATTR: ::copyfile_flags_t = 1 << 2;
+pub const COPYFILE_DATA: ::copyfile_flags_t = 1 << 3;
+pub const COPYFILE_SECURITY: ::copyfile_flags_t = COPYFILE_STAT | COPYFILE_ACL;
+pub const COPYFILE_METADATA: ::copyfile_flags_t = COPYFILE_SECURITY | COPYFILE_XATTR;
+pub const COPYFILE_RECURSIVE: ::copyfile_flags_t = 1 << 15;
+pub const COPYFILE_CHECK: ::copyfile_flags_t = 1 << 16;
+pub const COPYFILE_EXCL: ::copyfile_flags_t = 1 << 17;
+pub const COPYFILE_NOFOLLOW_SRC: ::copyfile_flags_t = 1 << 18;
+pub const COPYFILE_NOFOLLOW_DST: ::copyfile_flags_t = 1 << 19;
+pub const COPYFILE_MOVE: ::copyfile_flags_t = 1 << 20;
+pub const COPYFILE_UNLINK: ::copyfile_flags_t = 1 << 21;
+pub const COPYFILE_NOFOLLOW: ::copyfile_flags_t = COPYFILE_NOFOLLOW_SRC | COPYFILE_NOFOLLOW_DST;
+pub const COPYFILE_PACK: ::copyfile_flags_t = 1 << 22;
+pub const COPYFILE_UNPACK: ::copyfile_flags_t = 1 << 23;
+pub const COPYFILE_CLONE: ::copyfile_flags_t = 1 << 24;
+pub const COPYFILE_CLONE_FORCE: ::copyfile_flags_t = 1 << 25;
+pub const COPYFILE_RUN_IN_PLACE: ::copyfile_flags_t = 1 << 26;
+pub const COPYFILE_DATA_SPARSE: ::copyfile_flags_t = 1 << 27;
+pub const COPYFILE_PRESERVE_DST_TRACKED: ::copyfile_flags_t = 1 << 28;
+pub const COPYFILE_VERBOSE: ::copyfile_flags_t = 1 << 30;
+pub const COPYFILE_RECURSE_ERROR: ::c_int = 0;
+pub const COPYFILE_RECURSE_FILE: ::c_int = 1;
+pub const COPYFILE_RECURSE_DIR: ::c_int = 2;
+pub const COPYFILE_RECURSE_DIR_CLEANUP: ::c_int = 3;
+pub const COPYFILE_COPY_DATA: ::c_int = 4;
+pub const COPYFILE_COPY_XATTR: ::c_int = 5;
+pub const COPYFILE_START: ::c_int = 1;
+pub const COPYFILE_FINISH: ::c_int = 2;
+pub const COPYFILE_ERR: ::c_int = 3;
+pub const COPYFILE_PROGRESS: ::c_int = 4;
+pub const COPYFILE_CONTINUE: ::c_int = 0;
+pub const COPYFILE_SKIP: ::c_int = 1;
+pub const COPYFILE_QUIT: ::c_int = 2;
+pub const COPYFILE_STATE_SRC_FD: ::c_int = 1;
+pub const COPYFILE_STATE_SRC_FILENAME: ::c_int = 2;
+pub const COPYFILE_STATE_DST_FD: ::c_int = 3;
+pub const COPYFILE_STATE_DST_FILENAME: ::c_int = 4;
+pub const COPYFILE_STATE_QUARANTINE: ::c_int = 5;
+pub const COPYFILE_STATE_STATUS_CB: ::c_int = 6;
+pub const COPYFILE_STATE_STATUS_CTX: ::c_int = 7;
+pub const COPYFILE_STATE_COPIED: ::c_int = 8;
+pub const COPYFILE_STATE_XATTRNAME: ::c_int = 9;
+pub const COPYFILE_STATE_WAS_CLONED: ::c_int = 10;
+pub const COPYFILE_STATE_SRC_BSIZE: ::c_int = 11;
+pub const COPYFILE_STATE_DST_BSIZE: ::c_int = 12;
+pub const COPYFILE_STATE_BSIZE: ::c_int = 13;
+
+// <sys/attr.h>
+pub const ATTR_BIT_MAP_COUNT: ::c_ushort = 5;
+pub const FSOPT_NOFOLLOW: u32 = 0x1;
+pub const FSOPT_NOFOLLOW_ANY: u32 = 0x800;
+pub const FSOPT_REPORT_FULLSIZE: u32 = 0x4;
+pub const FSOPT_PACK_INVAL_ATTRS: u32 = 0x8;
+pub const FSOPT_ATTR_CMN_EXTENDED: u32 = 0x20;
+pub const FSOPT_RETURN_REALDEV: u32 = 0x200;
+pub const ATTR_CMN_NAME: attrgroup_t = 0x00000001;
+pub const ATTR_CMN_DEVID: attrgroup_t = 0x00000002;
+pub const ATTR_CMN_FSID: attrgroup_t = 0x00000004;
+pub const ATTR_CMN_OBJTYPE: attrgroup_t = 0x00000008;
+pub const ATTR_CMN_OBJTAG: attrgroup_t = 0x00000010;
+pub const ATTR_CMN_OBJID: attrgroup_t = 0x00000020;
+pub const ATTR_CMN_OBJPERMANENTID: attrgroup_t = 0x00000040;
+pub const ATTR_CMN_PAROBJID: attrgroup_t = 0x00000080;
+pub const ATTR_CMN_SCRIPT: attrgroup_t = 0x00000100;
+pub const ATTR_CMN_CRTIME: attrgroup_t = 0x00000200;
+pub const ATTR_CMN_MODTIME: attrgroup_t = 0x00000400;
+pub const ATTR_CMN_CHGTIME: attrgroup_t = 0x00000800;
+pub const ATTR_CMN_ACCTIME: attrgroup_t = 0x00001000;
+pub const ATTR_CMN_BKUPTIME: attrgroup_t = 0x00002000;
+pub const ATTR_CMN_FNDRINFO: attrgroup_t = 0x00004000;
+pub const ATTR_CMN_OWNERID: attrgroup_t = 0x00008000;
+pub const ATTR_CMN_GRPID: attrgroup_t = 0x00010000;
+pub const ATTR_CMN_ACCESSMASK: attrgroup_t = 0x00020000;
+pub const ATTR_CMN_FLAGS: attrgroup_t = 0x00040000;
+pub const ATTR_CMN_GEN_COUNT: attrgroup_t = 0x00080000;
+pub const ATTR_CMN_DOCUMENT_ID: attrgroup_t = 0x00100000;
+pub const ATTR_CMN_USERACCESS: attrgroup_t = 0x00200000;
+pub const ATTR_CMN_EXTENDED_SECURITY: attrgroup_t = 0x00400000;
+pub const ATTR_CMN_UUID: attrgroup_t = 0x00800000;
+pub const ATTR_CMN_GRPUUID: attrgroup_t = 0x01000000;
+pub const ATTR_CMN_FILEID: attrgroup_t = 0x02000000;
+pub const ATTR_CMN_PARENTID: attrgroup_t = 0x04000000;
+pub const ATTR_CMN_FULLPATH: attrgroup_t = 0x08000000;
+pub const ATTR_CMN_ADDEDTIME: attrgroup_t = 0x10000000;
+pub const ATTR_CMN_DATA_PROTECT_FLAGS: attrgroup_t = 0x40000000;
+pub const ATTR_CMN_RETURNED_ATTRS: attrgroup_t = 0x80000000;
+pub const ATTR_VOL_FSTYPE: attrgroup_t = 0x00000001;
+pub const ATTR_VOL_SIGNATURE: attrgroup_t = 0x00000002;
+pub const ATTR_VOL_SIZE: attrgroup_t = 0x00000004;
+pub const ATTR_VOL_SPACEFREE: attrgroup_t = 0x00000008;
+pub const ATTR_VOL_SPACEAVAIL: attrgroup_t = 0x00000010;
+pub const ATTR_VOL_MINALLOCATION: attrgroup_t = 0x00000020;
+pub const ATTR_VOL_ALLOCATIONCLUMP: attrgroup_t = 0x00000040;
+pub const ATTR_VOL_IOBLOCKSIZE: attrgroup_t = 0x00000080;
+pub const ATTR_VOL_OBJCOUNT: attrgroup_t = 0x00000100;
+pub const ATTR_VOL_FILECOUNT: attrgroup_t = 0x00000200;
+pub const ATTR_VOL_DIRCOUNT: attrgroup_t = 0x00000400;
+pub const ATTR_VOL_MAXOBJCOUNT: attrgroup_t = 0x00000800;
+pub const ATTR_VOL_MOUNTPOINT: attrgroup_t = 0x00001000;
+pub const ATTR_VOL_NAME: attrgroup_t = 0x00002000;
+pub const ATTR_VOL_MOUNTFLAGS: attrgroup_t = 0x00004000;
+pub const ATTR_VOL_MOUNTEDDEVICE: attrgroup_t = 0x00008000;
+pub const ATTR_VOL_ENCODINGSUSED: attrgroup_t = 0x00010000;
+pub const ATTR_VOL_CAPABILITIES: attrgroup_t = 0x00020000;
+pub const ATTR_VOL_UUID: attrgroup_t = 0x00040000;
+pub const ATTR_VOL_SPACEUSED: attrgroup_t = 0x00800000;
+pub const ATTR_VOL_QUOTA_SIZE: attrgroup_t = 0x10000000;
+pub const ATTR_VOL_RESERVED_SIZE: attrgroup_t = 0x20000000;
+pub const ATTR_VOL_ATTRIBUTES: attrgroup_t = 0x40000000;
+pub const ATTR_VOL_INFO: attrgroup_t = 0x80000000;
+pub const ATTR_DIR_LINKCOUNT: attrgroup_t = 0x00000001;
+pub const ATTR_DIR_ENTRYCOUNT: attrgroup_t = 0x00000002;
+pub const ATTR_DIR_MOUNTSTATUS: attrgroup_t = 0x00000004;
+pub const ATTR_DIR_ALLOCSIZE: attrgroup_t = 0x00000008;
+pub const ATTR_DIR_IOBLOCKSIZE: attrgroup_t = 0x00000010;
+pub const ATTR_DIR_DATALENGTH: attrgroup_t = 0x00000020;
+pub const ATTR_FILE_LINKCOUNT: attrgroup_t = 0x00000001;
+pub const ATTR_FILE_TOTALSIZE: attrgroup_t = 0x00000002;
+pub const ATTR_FILE_ALLOCSIZE: attrgroup_t = 0x00000004;
+pub const ATTR_FILE_IOBLOCKSIZE: attrgroup_t = 0x00000008;
+pub const ATTR_FILE_DEVTYPE: attrgroup_t = 0x00000020;
+pub const ATTR_FILE_FORKCOUNT: attrgroup_t = 0x00000080;
+pub const ATTR_FILE_FORKLIST: attrgroup_t = 0x00000100;
+pub const ATTR_FILE_DATALENGTH: attrgroup_t = 0x00000200;
+pub const ATTR_FILE_DATAALLOCSIZE: attrgroup_t = 0x00000400;
+pub const ATTR_FILE_RSRCLENGTH: attrgroup_t = 0x00001000;
+pub const ATTR_FILE_RSRCALLOCSIZE: attrgroup_t = 0x00002000;
+pub const ATTR_CMNEXT_RELPATH: attrgroup_t = 0x00000004;
+pub const ATTR_CMNEXT_PRIVATESIZE: attrgroup_t = 0x00000008;
+pub const ATTR_CMNEXT_LINKID: attrgroup_t = 0x00000010;
+pub const ATTR_CMNEXT_NOFIRMLINKPATH: attrgroup_t = 0x00000020;
+pub const ATTR_CMNEXT_REALDEVID: attrgroup_t = 0x00000040;
+pub const ATTR_CMNEXT_REALFSID: attrgroup_t = 0x00000080;
+pub const ATTR_CMNEXT_CLONEID: attrgroup_t = 0x00000100;
+pub const ATTR_CMNEXT_EXT_FLAGS: attrgroup_t = 0x00000200;
+pub const ATTR_CMNEXT_RECURSIVE_GENCOUNT: attrgroup_t = 0x00000400;
+pub const DIR_MNTSTATUS_MNTPOINT: u32 = 0x1;
+pub const VOL_CAPABILITIES_FORMAT: usize = 0;
+pub const VOL_CAPABILITIES_INTERFACES: usize = 1;
+pub const VOL_CAP_FMT_PERSISTENTOBJECTIDS: attrgroup_t = 0x00000001;
+pub const VOL_CAP_FMT_SYMBOLICLINKS: attrgroup_t = 0x00000002;
+pub const VOL_CAP_FMT_HARDLINKS: attrgroup_t = 0x00000004;
+pub const VOL_CAP_FMT_JOURNAL: attrgroup_t = 0x00000008;
+pub const VOL_CAP_FMT_JOURNAL_ACTIVE: attrgroup_t = 0x00000010;
+pub const VOL_CAP_FMT_NO_ROOT_TIMES: attrgroup_t = 0x00000020;
+pub const VOL_CAP_FMT_SPARSE_FILES: attrgroup_t = 0x00000040;
+pub const VOL_CAP_FMT_ZERO_RUNS: attrgroup_t = 0x00000080;
+pub const VOL_CAP_FMT_CASE_SENSITIVE: attrgroup_t = 0x00000100;
+pub const VOL_CAP_FMT_CASE_PRESERVING: attrgroup_t = 0x00000200;
+pub const VOL_CAP_FMT_FAST_STATFS: attrgroup_t = 0x00000400;
+pub const VOL_CAP_FMT_2TB_FILESIZE: attrgroup_t = 0x00000800;
+pub const VOL_CAP_FMT_OPENDENYMODES: attrgroup_t = 0x00001000;
+pub const VOL_CAP_FMT_HIDDEN_FILES: attrgroup_t = 0x00002000;
+pub const VOL_CAP_FMT_PATH_FROM_ID: attrgroup_t = 0x00004000;
+pub const VOL_CAP_FMT_NO_VOLUME_SIZES: attrgroup_t = 0x00008000;
+pub const VOL_CAP_FMT_DECMPFS_COMPRESSION: attrgroup_t = 0x00010000;
+pub const VOL_CAP_FMT_64BIT_OBJECT_IDS: attrgroup_t = 0x00020000;
+pub const VOL_CAP_FMT_DIR_HARDLINKS: attrgroup_t = 0x00040000;
+pub const VOL_CAP_FMT_DOCUMENT_ID: attrgroup_t = 0x00080000;
+pub const VOL_CAP_FMT_WRITE_GENERATION_COUNT: attrgroup_t = 0x00100000;
+pub const VOL_CAP_FMT_NO_IMMUTABLE_FILES: attrgroup_t = 0x00200000;
+pub const VOL_CAP_FMT_NO_PERMISSIONS: attrgroup_t = 0x00400000;
+pub const VOL_CAP_FMT_SHARED_SPACE: attrgroup_t = 0x00800000;
+pub const VOL_CAP_FMT_VOL_GROUPS: attrgroup_t = 0x01000000;
+pub const VOL_CAP_FMT_SEALED: attrgroup_t = 0x02000000;
+pub const VOL_CAP_INT_SEARCHFS: attrgroup_t = 0x00000001;
+pub const VOL_CAP_INT_ATTRLIST: attrgroup_t = 0x00000002;
+pub const VOL_CAP_INT_NFSEXPORT: attrgroup_t = 0x00000004;
+pub const VOL_CAP_INT_READDIRATTR: attrgroup_t = 0x00000008;
+pub const VOL_CAP_INT_EXCHANGEDATA: attrgroup_t = 0x00000010;
+pub const VOL_CAP_INT_COPYFILE: attrgroup_t = 0x00000020;
+pub const VOL_CAP_INT_ALLOCATE: attrgroup_t = 0x00000040;
+pub const VOL_CAP_INT_VOL_RENAME: attrgroup_t = 0x00000080;
+pub const VOL_CAP_INT_ADVLOCK: attrgroup_t = 0x00000100;
+pub const VOL_CAP_INT_FLOCK: attrgroup_t = 0x00000200;
+pub const VOL_CAP_INT_EXTENDED_SECURITY: attrgroup_t = 0x00000400;
+pub const VOL_CAP_INT_USERACCESS: attrgroup_t = 0x00000800;
+pub const VOL_CAP_INT_MANLOCK: attrgroup_t = 0x00001000;
+pub const VOL_CAP_INT_NAMEDSTREAMS: attrgroup_t = 0x00002000;
+pub const VOL_CAP_INT_EXTENDED_ATTR: attrgroup_t = 0x00004000;
+pub const VOL_CAP_INT_CLONE: attrgroup_t = 0x00010000;
+pub const VOL_CAP_INT_SNAPSHOT: attrgroup_t = 0x00020000;
+pub const VOL_CAP_INT_RENAME_SWAP: attrgroup_t = 0x00040000;
+pub const VOL_CAP_INT_RENAME_EXCL: attrgroup_t = 0x00080000;
+pub const VOL_CAP_INT_RENAME_OPENFAIL: attrgroup_t = 0x00100000;
+
+// <proc.h>
+/// Process being created by fork.
+pub const SIDL: u32 = 1;
+/// Currently runnable.
+pub const SRUN: u32 = 2;
+/// Sleeping on an address.
+pub const SSLEEP: u32 = 3;
+/// Process debugging or suspension.
+pub const SSTOP: u32 = 4;
+/// Awaiting collection by parent.
+pub const SZOMB: u32 = 5;
+
+// sys/vsock.h
+pub const VMADDR_CID_ANY: ::c_uint = 0xFFFFFFFF;
+pub const VMADDR_CID_HYPERVISOR: ::c_uint = 0;
+pub const VMADDR_CID_RESERVED: ::c_uint = 1;
+pub const VMADDR_CID_HOST: ::c_uint = 2;
+pub const VMADDR_PORT_ANY: ::c_uint = 0xFFFFFFFF;
+
 cfg_if! {
     if #[cfg(libc_const_extern_fn)] {
         const fn __DARWIN_ALIGN32(p: usize) -> usize {
@@ -4567,6 +5405,16 @@ cfg_if! {
             const __DARWIN_ALIGNBYTES32: usize = ::mem::size_of::<u32>() - 1;
             p + __DARWIN_ALIGNBYTES32 & !__DARWIN_ALIGNBYTES32
         }
+    } else {
+        fn __DARWIN_ALIGN32(p: usize) -> usize {
+            let __DARWIN_ALIGNBYTES32: usize = ::mem::size_of::<u32>() - 1;
+            p + __DARWIN_ALIGNBYTES32 & !__DARWIN_ALIGNBYTES32
+        }
+    }
+}
+
+cfg_if! {
+    if #[cfg(libc_const_size_of)] {
         pub const THREAD_EXTENDED_POLICY_COUNT: mach_msg_type_number_t =
             (::mem::size_of::<thread_extended_policy_data_t>() / ::mem::size_of::<integer_t>())
             as mach_msg_type_number_t;
@@ -4607,10 +5455,6 @@ cfg_if! {
             (::mem::size_of::<vm_statistics64_data_t>() / ::mem::size_of::<integer_t>())
             as mach_msg_type_number_t;
     } else {
-        fn __DARWIN_ALIGN32(p: usize) -> usize {
-            let __DARWIN_ALIGNBYTES32: usize = ::mem::size_of::<u32>() - 1;
-            p + __DARWIN_ALIGNBYTES32 & !__DARWIN_ALIGNBYTES32
-        }
         pub const THREAD_EXTENDED_POLICY_COUNT: mach_msg_type_number_t = 1;
         pub const THREAD_TIME_CONSTRAINT_POLICY_COUNT: mach_msg_type_number_t = 4;
         pub const THREAD_PRECEDENCE_POLICY_COUNT: mach_msg_type_number_t = 1;
@@ -4655,13 +5499,25 @@ f! {
             as ::c_uint
     }
 
-    pub fn CMSG_LEN(length: ::c_uint) -> ::c_uint {
+    pub {const} fn CMSG_LEN(length: ::c_uint) -> ::c_uint {
         (__DARWIN_ALIGN32(::mem::size_of::<::cmsghdr>()) + length as usize)
             as ::c_uint
     }
 
     pub {const} fn VM_MAKE_TAG(id: u8) -> u32 {
         (id as u32) << 24u32
+    }
+
+    pub fn major(dev: dev_t) -> i32 {
+        (dev >> 24) & 0xff
+    }
+
+    pub fn minor(dev: dev_t) -> i32 {
+        dev & 0xffffff
+    }
+
+    pub fn makedev(major: i32, minor: i32) -> dev_t {
+        (major << 24) | minor
     }
 }
 
@@ -4718,6 +5574,11 @@ extern "C" {
     pub fn fchflags(fd: ::c_int, flags: ::c_uint) -> ::c_int;
     pub fn clock_getres(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
     pub fn clock_gettime(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "confstr$UNIX2003"
+    )]
+    pub fn confstr(name: ::c_int, buf: *mut ::c_char, len: ::size_t) -> ::size_t;
     pub fn lio_listio(
         mode: ::c_int,
         aiocb_list: *const *mut aiocb,
@@ -4737,6 +5598,23 @@ extern "C" {
     pub fn setutxent();
     pub fn endutxent();
     pub fn utmpxname(file: *const ::c_char) -> ::c_int;
+
+    pub fn asctime(tm: *const ::tm) -> *mut ::c_char;
+    pub fn ctime(clock: *const time_t) -> *mut ::c_char;
+    pub fn getdate(datestr: *const ::c_char) -> *mut ::tm;
+    pub fn strftime(
+        buf: *mut ::c_char,
+        maxsize: ::size_t,
+        format: *const ::c_char,
+        timeptr: *const ::tm,
+    ) -> ::size_t;
+    pub fn strptime(
+        buf: *const ::c_char,
+        format: *const ::c_char,
+        timeptr: *mut ::tm,
+    ) -> *mut ::c_char;
+    pub fn asctime_r(tm: *const ::tm, result: *mut ::c_char) -> *mut ::c_char;
+    pub fn ctime_r(clock: *const time_t, result: *mut ::c_char) -> *mut ::c_char;
 
     pub fn getnameinfo(
         sa: *const ::sockaddr,
@@ -4807,6 +5685,10 @@ extern "C" {
         f: extern "C" fn(*mut ::c_void) -> *mut ::c_void,
         value: *mut ::c_void,
     ) -> ::c_int;
+    pub fn pthread_stack_frame_decode_np(
+        frame_addr: ::uintptr_t,
+        return_addr: *mut ::uintptr_t,
+    ) -> ::uintptr_t;
     pub fn pthread_get_stackaddr_np(thread: ::pthread_t) -> *mut ::c_void;
     pub fn pthread_get_stacksize_np(thread: ::pthread_t) -> ::size_t;
     pub fn pthread_condattr_setpshared(attr: *mut pthread_condattr_t, pshared: ::c_int) -> ::c_int;
@@ -4814,6 +5696,7 @@ extern "C" {
         attr: *const pthread_condattr_t,
         pshared: *mut ::c_int,
     ) -> ::c_int;
+    pub fn pthread_main_np() -> ::c_int;
     pub fn pthread_mutexattr_setpshared(
         attr: *mut pthread_mutexattr_t,
         pshared: ::c_int,
@@ -4878,7 +5761,33 @@ extern "C" {
     ) -> *mut ::c_void;
     pub fn pthread_jit_write_protect_np(enabled: ::c_int);
     pub fn pthread_jit_write_protect_supported_np() -> ::c_int;
+    // An array of pthread_jit_write_with_callback_np must declare
+    // the list of callbacks e.g.
+    // #[link_section = "__DATA_CONST,__pth_jit_func"]
+    // static callbacks: [libc::pthread_jit_write_callback_t; 2] = [native_jit_write_cb,
+    // std::mem::transmute::<libc::pthread_jit_write_callback_t>(std::ptr::null())];
+    // (a handy PTHREAD_JIT_WRITE_CALLBACK_NP macro for other languages).
+    pub fn pthread_jit_write_with_callback_np(
+        callback: ::pthread_jit_write_callback_t,
+        ctx: *mut ::c_void,
+    ) -> ::c_int;
+    pub fn pthread_jit_write_freeze_callbacks_np();
     pub fn pthread_cpu_number_np(cpu_number_out: *mut ::size_t) -> ::c_int;
+
+    pub fn os_unfair_lock_lock(lock: os_unfair_lock_t);
+    pub fn os_unfair_lock_trylock(lock: os_unfair_lock_t) -> bool;
+    pub fn os_unfair_lock_unlock(lock: os_unfair_lock_t);
+    pub fn os_unfair_lock_assert_owner(lock: os_unfair_lock_t);
+    pub fn os_unfair_lock_assert_not_owner(lock: os_unfair_lock_t);
+
+    pub fn os_log_create(subsystem: *const ::c_char, category: *const ::c_char) -> ::os_log_t;
+    pub fn os_log_type_enabled(oslog: ::os_log_t, tpe: ::os_log_type_t) -> bool;
+    pub fn os_signpost_id_make_with_pointer(
+        log: ::os_log_t,
+        ptr: *const ::c_void,
+    ) -> ::os_signpost_id_t;
+    pub fn os_signpost_id_generate(log: ::os_log_t) -> ::os_signpost_id_t;
+    pub fn os_signpost_enabled(log: ::os_log_t) -> bool;
 
     pub fn thread_policy_set(
         thread: thread_t,
@@ -4899,8 +5808,27 @@ extern "C" {
         thread_info_out: thread_info_t,
         thread_info_outCnt: *mut mach_msg_type_number_t,
     ) -> kern_return_t;
+    #[cfg_attr(doc, doc(alias = "__errno_location"))]
+    #[cfg_attr(doc, doc(alias = "errno"))]
     pub fn __error() -> *mut ::c_int;
     pub fn backtrace(buf: *mut *mut ::c_void, sz: ::c_int) -> ::c_int;
+    pub fn backtrace_symbols(addrs: *const *mut ::c_void, sz: ::c_int) -> *mut *mut ::c_char;
+    pub fn backtrace_symbols_fd(addrs: *const *mut ::c_void, sz: ::c_int, fd: ::c_int);
+    pub fn backtrace_from_fp(
+        startfp: *mut ::c_void,
+        array: *mut *mut ::c_void,
+        size: ::c_int,
+    ) -> ::c_int;
+    pub fn backtrace_image_offsets(
+        array: *const *mut ::c_void,
+        image_offsets: *mut image_offset,
+        size: ::c_int,
+    );
+    pub fn backtrace_async(
+        array: *mut *mut ::c_void,
+        length: ::size_t,
+        task_id: *mut u32,
+    ) -> ::size_t;
     #[cfg_attr(
         all(target_os = "macos", not(target_arch = "aarch64")),
         link_name = "statfs$INODE64"
@@ -5130,6 +6058,26 @@ extern "C" {
         subpref: *mut ::cpu_subtype_t,
         ocount: *mut ::size_t,
     ) -> ::c_int;
+    pub fn posix_spawnattr_getbinpref_np(
+        attr: *const posix_spawnattr_t,
+        count: ::size_t,
+        pref: *mut ::cpu_type_t,
+        ocount: *mut ::size_t,
+    ) -> ::c_int;
+    pub fn posix_spawnattr_setbinpref_np(
+        attr: *mut posix_spawnattr_t,
+        count: ::size_t,
+        pref: *mut ::cpu_type_t,
+        ocount: *mut ::size_t,
+    ) -> ::c_int;
+    pub fn posix_spawnattr_set_qos_class_np(
+        attr: *mut posix_spawnattr_t,
+        qos_class: ::qos_class_t,
+    ) -> ::c_int;
+    pub fn posix_spawnattr_get_qos_class_np(
+        attr: *const posix_spawnattr_t,
+        qos_class: *mut ::qos_class_t,
+    ) -> ::c_int;
 
     pub fn posix_spawn_file_actions_init(actions: *mut posix_spawn_file_actions_t) -> ::c_int;
     pub fn posix_spawn_file_actions_destroy(actions: *mut posix_spawn_file_actions_t) -> ::c_int;
@@ -5194,6 +6142,23 @@ extern "C" {
         dst: *const ::c_char,
         flags: u32,
     ) -> ::c_int;
+
+    pub fn copyfile(
+        from: *const ::c_char,
+        to: *const ::c_char,
+        state: copyfile_state_t,
+        flags: copyfile_flags_t,
+    ) -> ::c_int;
+    pub fn fcopyfile(
+        from: ::c_int,
+        to: ::c_int,
+        state: copyfile_state_t,
+        flags: copyfile_flags_t,
+    ) -> ::c_int;
+    pub fn copyfile_state_free(s: copyfile_state_t) -> ::c_int;
+    pub fn copyfile_state_alloc() -> copyfile_state_t;
+    pub fn copyfile_state_get(s: copyfile_state_t, flags: u32, dst: *mut ::c_void) -> ::c_int;
+    pub fn copyfile_state_set(s: copyfile_state_t, flags: u32, src: *const ::c_void) -> ::c_int;
 
     // Added in macOS 10.13
     // ISO/IEC 9899:2011 ("ISO C11") K.3.7.4.1
@@ -5345,6 +6310,19 @@ extern "C" {
         task_info_out: task_info_t,
         task_info_count: *mut mach_msg_type_number_t,
     ) -> ::kern_return_t;
+    pub fn task_create(
+        target_task: ::task_t,
+        ledgers: ::ledger_array_t,
+        ledgersCnt: ::mach_msg_type_number_t,
+        inherit_memory: ::boolean_t,
+        child_task: *mut ::task_t,
+    ) -> ::kern_return_t;
+    pub fn task_terminate(target_task: ::task_t) -> ::kern_return_t;
+    pub fn task_threads(
+        target_task: ::task_inspect_t,
+        act_list: *mut ::thread_act_array_t,
+        act_listCnt: *mut ::mach_msg_type_number_t,
+    ) -> ::kern_return_t;
     pub fn host_statistics(
         host_priv: host_t,
         flavor: host_flavor_t,
@@ -5363,6 +6341,78 @@ extern "C" {
     ) -> ::sysdir_search_path_enumeration_state;
 
     pub static vm_page_size: vm_size_t;
+
+    pub fn getattrlist(
+        path: *const ::c_char,
+        attrList: *mut ::c_void,
+        attrBuf: *mut ::c_void,
+        attrBufSize: ::size_t,
+        options: u32,
+    ) -> ::c_int;
+    pub fn fgetattrlist(
+        fd: ::c_int,
+        attrList: *mut ::c_void,
+        attrBuf: *mut ::c_void,
+        attrBufSize: ::size_t,
+        options: u32,
+    ) -> ::c_int;
+    pub fn getattrlistat(
+        fd: ::c_int,
+        path: *const ::c_char,
+        attrList: *mut ::c_void,
+        attrBuf: *mut ::c_void,
+        attrBufSize: ::size_t,
+        options: ::c_ulong,
+    ) -> ::c_int;
+    pub fn setattrlist(
+        path: *const ::c_char,
+        attrList: *mut ::c_void,
+        attrBuf: *mut ::c_void,
+        attrBufSize: ::size_t,
+        options: u32,
+    ) -> ::c_int;
+    pub fn fsetattrlist(
+        fd: ::c_int,
+        attrList: *mut ::c_void,
+        attrBuf: *mut ::c_void,
+        attrBufSize: ::size_t,
+        options: u32,
+    ) -> ::c_int;
+    pub fn setattrlistat(
+        dir_fd: ::c_int,
+        path: *const ::c_char,
+        attrList: *mut ::c_void,
+        attrBuf: *mut ::c_void,
+        attrBufSize: ::size_t,
+        options: u32,
+    ) -> ::c_int;
+    pub fn getattrlistbulk(
+        dirfd: ::c_int,
+        attrList: *mut ::c_void,
+        attrBuf: *mut ::c_void,
+        attrBufSize: ::size_t,
+        options: u64,
+    ) -> ::c_int;
+
+    pub fn malloc_size(ptr: *const ::c_void) -> ::size_t;
+    pub fn malloc_good_size(size: ::size_t) -> ::size_t;
+
+    pub fn dirname(path: *mut ::c_char) -> *mut ::c_char;
+    pub fn basename(path: *mut ::c_char) -> *mut ::c_char;
+
+    pub fn mkfifoat(dirfd: ::c_int, pathname: *const ::c_char, mode: ::mode_t) -> ::c_int;
+    pub fn mknodat(
+        dirfd: ::c_int,
+        pathname: *const ::c_char,
+        mode: ::mode_t,
+        dev: dev_t,
+    ) -> ::c_int;
+    pub fn freadlink(fd: ::c_int, buf: *mut ::c_char, size: ::size_t) -> ::c_int;
+    pub fn execvP(
+        file: *const ::c_char,
+        search_path: *const ::c_char,
+        argv: *const *mut ::c_char,
+    ) -> ::c_int;
 }
 
 pub unsafe fn mach_task_self() -> ::mach_port_t {
@@ -5373,17 +6423,31 @@ cfg_if! {
     if #[cfg(target_os = "macos")] {
         extern "C" {
             pub fn clock_settime(clock_id: ::clockid_t, tp: *const ::timespec) -> ::c_int;
+        }
+    }
+}
+cfg_if! {
+    if #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))] {
+        extern "C" {
             pub fn memmem(
                 haystack: *const ::c_void,
                 haystacklen: ::size_t,
                 needle: *const ::c_void,
                 needlelen: ::size_t,
             ) -> *mut ::c_void;
+            pub fn task_set_info(target_task: ::task_t,
+                                 flavor: ::task_flavor_t,
+                                 task_info_in: ::task_info_t,
+                                 task_info_inCnt: ::mach_msg_type_number_t
+            ) -> ::kern_return_t;
         }
     }
 }
 
-#[link(name = "iconv")]
+// These require a dependency on `libiconv`, and including this when built as
+// part of `std` means every Rust program gets it. Ideally we would have a link
+// modifier to only include these if they are used, but we do not.
+#[cfg_attr(not(feature = "rustc-dep-of-std"), link(name = "iconv"))]
 extern "C" {
     pub fn iconv_open(tocode: *const ::c_char, fromcode: *const ::c_char) -> iconv_t;
     pub fn iconv(
@@ -5397,13 +6461,20 @@ extern "C" {
 }
 
 cfg_if! {
-    if #[cfg(any(target_arch = "arm", target_arch = "x86"))] {
+    if #[cfg(target_pointer_width = "32")] {
         mod b32;
         pub use self::b32::*;
-    } else if #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] {
+    } else if #[cfg(target_pointer_width = "64")] {
         mod b64;
         pub use self::b64::*;
     } else {
         // Unknown target_arch
+    }
+}
+
+cfg_if! {
+    if #[cfg(libc_long_array)] {
+        mod long_array;
+        pub use self::long_array::*;
     }
 }

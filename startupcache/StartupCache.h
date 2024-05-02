@@ -24,9 +24,11 @@
 #include "mozilla/AutoMemMap.h"
 #include "mozilla/Compression.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Result.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 /**
  * The StartupCache is a persistent cache of simple key-value pairs,
@@ -83,7 +85,7 @@ namespace mozilla {
 namespace scache {
 
 struct StartupCacheEntry {
-  UniquePtr<char[]> mData;
+  UniqueFreePtr<char[]> mData;
   uint32_t mOffset;
   uint32_t mCompressedSize;
   uint32_t mUncompressedSize;
@@ -101,7 +103,7 @@ struct StartupCacheEntry {
         mRequestedOrder(0),
         mRequested(false) {}
 
-  StartupCacheEntry(UniquePtr<char[]> aData, size_t aLength,
+  StartupCacheEntry(UniqueFreePtr<char[]> aData, size_t aLength,
                     int32_t aRequestedOrder)
       : mData(std::move(aData)),
         mOffset(0),
@@ -148,11 +150,15 @@ class StartupCache : public nsIMemoryReporter {
   nsresult GetBuffer(const char* id, const char** outbuf, uint32_t* length);
 
   // Stores a buffer. Caller yields ownership.
-  nsresult PutBuffer(const char* id, UniquePtr<char[]>&& inbuf,
+  nsresult PutBuffer(const char* id, UniqueFreePtr<char[]>&& inbuf,
                      uint32_t length);
 
   // Removes the cache file.
   void InvalidateCache(bool memoryOnly = false);
+
+  // If some event knowingly re-generates the startup cache (like live language
+  // switching) count these events in order to allow them.
+  void CountAllowedInvalidation();
 
   // For use during shutdown - this will write the startupcache's data
   // to disk if the timer hasn't already gone off.
@@ -165,6 +171,8 @@ class StartupCache : public nsIMemoryReporter {
   // Signal that data should not be loaded from the cache file
   static void IgnoreDiskCache();
 
+  static bool GetIgnoreDiskCache();
+
   // In DEBUG builds, returns a stream that will attempt to check for
   // and disallow multiple writes of the same object.
   nsresult GetDebugObjectOutputStream(nsIObjectOutputStream* aStream,
@@ -176,11 +184,13 @@ class StartupCache : public nsIMemoryReporter {
 
   // This measures all the heap memory used by the StartupCache, i.e. it
   // excludes the mapping.
-  size_t HeapSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+  size_t HeapSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const
+      MOZ_REQUIRES(mTableLock);
 
-  bool ShouldCompactCache();
+  bool ShouldCompactCache() MOZ_REQUIRES(mTableLock);
   nsresult ResetStartupWriteTimerCheckingReadCount();
-  nsresult ResetStartupWriteTimer();
+  nsresult ResetStartupWriteTimerAndLock();
+  nsresult ResetStartupWriteTimer() MOZ_REQUIRES(mTableLock);
   bool StartupWriteComplete();
 
  private:
@@ -200,32 +210,41 @@ class StartupCache : public nsIMemoryReporter {
   Result<Ok, nsresult> OpenCache();
 
   // Writes the cache to disk
-  Result<Ok, nsresult> WriteToDisk();
+  Result<Ok, nsresult> WriteToDisk() MOZ_REQUIRES(mTableLock);
 
-  void WaitOnPrefetchThread();
-  void StartPrefetchMemoryThread();
+  void WaitOnPrefetch();
+  void StartPrefetchMemory() MOZ_REQUIRES(mTableLock);
 
   static nsresult InitSingleton();
   static void WriteTimeout(nsITimer* aTimer, void* aClosure);
   void MaybeWriteOffMainThread();
-  static void ThreadedPrefetch(void* aClosure);
+  void ThreadedPrefetch(uint8_t* aStart, size_t aSize);
 
-  HashMap<nsCString, StartupCacheEntry> mTable;
-  // owns references to the contents of tables which have been invalidated.
-  // In theory grows forever if the cache is continually filled and then
-  // invalidated, but this should not happen in practice.
-  nsTArray<decltype(mTable)> mOldTables;
+  Monitor mPrefetchComplete{"StartupCachePrefetch"};
+  bool mPrefetchInProgress MOZ_GUARDED_BY(mPrefetchComplete){false};
+
+  // This is normally accessed on MainThread, but WriteToDisk() can
+  // access it on other threads
+  HashMap<nsCString, StartupCacheEntry> mTable MOZ_GUARDED_BY(mTableLock);
+  // This owns references to the contents of tables which have been invalidated.
+  // In theory it grows forever if the cache is continually filled and then
+  // invalidated, but this should not happen in practice. Deleting old tables
+  // could create dangling pointers. RefPtrs could be introduced, but it would
+  // be a large amount of error-prone work to change.
+  nsTArray<decltype(mTable)> mOldTables MOZ_GUARDED_BY(mTableLock);
+  size_t mAllowedInvalidationsCount;
   nsCOMPtr<nsIFile> mFile;
-  loader::AutoMemMap mCacheData;
+  loader::AutoMemMap mCacheData MOZ_GUARDED_BY(mTableLock);
   Mutex mTableLock;
 
   nsCOMPtr<nsIObserverService> mObserverService;
   RefPtr<StartupCacheListener> mListener;
   nsCOMPtr<nsITimer> mTimer;
 
-  Atomic<bool> mDirty;
-  Atomic<bool> mWrittenOnce;
-  bool mCurTableReferenced;
+  bool mDirty MOZ_GUARDED_BY(mTableLock);
+  bool mWrittenOnce MOZ_GUARDED_BY(mTableLock);
+  bool mCurTableReferenced MOZ_GUARDED_BY(mTableLock);
+
   uint32_t mRequestedCount;
   size_t mCacheEntriesBaseOffset;
 
@@ -233,7 +252,7 @@ class StartupCache : public nsIMemoryReporter {
   static bool gShutdownInitiated;
   static bool gIgnoreDiskCache;
   static bool gFoundDiskCacheOnInit;
-  PRThread* mPrefetchThread;
+
   UniquePtr<Compression::LZ4FrameDecompressionContext> mDecompressionContext;
 #ifdef DEBUG
   nsTHashSet<nsCOMPtr<nsISupports>> mWriteObjectMap;

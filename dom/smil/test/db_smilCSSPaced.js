@@ -47,7 +47,7 @@ var _pacedTestLists = {
   currentColor_color: [
     new AnimTestcasePaced(
       "olive; " + // rgb(128, 128, 0)
-      "currentColor; " + // rgb(50, 50, 50)
+        "currentColor; " + // rgb(50, 50, 50)
         "rgb(206, 150, 206)",
       {
         comp0: "rgb(128, 128, 0)",
@@ -64,13 +64,13 @@ var _pacedTestLists = {
     // are no longer evenly spaced.
     new AnimTestcasePaced(
       "olive; " + // rgb(128, 128, 0)
-      "currentColor; " + // rgb(50, 50, 50)
+        "currentColor; " + // rgb(50, 50, 50)
         "rgb(206, 150, 206)",
       {
         comp0: "rgb(128, 128, 0)",
-        comp1_6: "rgb(99, 99, 18)",
-        comp1_3: "rgb(71, 71, 37)",
-        comp2_3: "rgb(111, 89, 111)",
+        comp1_6: "rgb(98, 98, 19)",
+        comp1_3: "rgb(67, 67, 39)",
+        comp2_3: "rgb(115, 92, 115)",
         comp1: "rgb(206, 150, 206)",
       }
     ),

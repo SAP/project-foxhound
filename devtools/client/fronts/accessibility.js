@@ -7,20 +7,15 @@
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol.js");
+} = require("resource://devtools/shared/protocol.js");
 const {
   accessibleSpec,
   accessibleWalkerSpec,
   accessibilitySpec,
   parentAccessibilitySpec,
   simulatorSpec,
-} = require("devtools/shared/specs/accessibility");
-const events = require("devtools/shared/event-emitter");
-const Services = require("Services");
-const BROWSER_TOOLBOX_FISSION_ENABLED = Services.prefs.getBoolPref(
-  "devtools.browsertoolbox.fission",
-  false
-);
+} = require("resource://devtools/shared/specs/accessibility.js");
+const events = require("resource://devtools/shared/event-emitter.js");
 
 class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
   constructor(client, targetFront, parentFront) {
@@ -44,10 +39,6 @@ class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
   }
 
   get useChildTargetToFetchChildren() {
-    if (!BROWSER_TOOLBOX_FISSION_ENABLED && this.targetFront.isParentProcess) {
-      return false;
-    }
-
     return this._form.useChildTargetToFetchChildren;
   }
 
@@ -233,9 +224,10 @@ class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
     // When we have a remote frame, we need to obtain an accessible front for a
     // remote frame document and retrieve its snapshot.
     const inspectorFront = await this.targetFront.getFront("inspector");
-    const frameNodeFront = await inspectorFront.getNodeActorFromContentDomReference(
-      snapshot.contentDOMReference
-    );
+    const frameNodeFront =
+      await inspectorFront.getNodeActorFromContentDomReference(
+        snapshot.contentDOMReference
+      );
     // Remove contentDOMReference and useChildTargetToFetchChildren properties.
     delete snapshot.contentDOMReference;
     delete snapshot.useChildTargetToFetchChildren;
@@ -303,9 +295,7 @@ class AccessibleWalkerFront extends FrontClassWithSpec(accessibleWalkerSpec) {
 
   /**
    * Get the accessible object ancestry starting from the given accessible to
-   * the top level document. BROWSER_TOOLBOX_FISSION_ENABLED is false, the top
-   * level document is bound by current target's document. Otherwise, the top
-   * level document is in the top level content process.
+   * the top level document. The top level document is in the top level content process.
    * @param  {Object} accessible
    *         Accessible front to determine the ancestry for.
    *
@@ -315,11 +305,6 @@ class AccessibleWalkerFront extends FrontClassWithSpec(accessibleWalkerSpec) {
    */
   async getAncestry(accessible) {
     const ancestry = await super.getAncestry(accessible);
-
-    if (!BROWSER_TOOLBOX_FISSION_ENABLED && this.targetFront.isParentProcess) {
-      // Do not try to get the ancestry across the remote frame hierarchy.
-      return ancestry;
-    }
 
     const parentTarget = await this.targetFront.getParentTarget();
     if (!parentTarget) {
@@ -491,15 +476,13 @@ class AccessibleWalkerFront extends FrontClassWithSpec(accessibleWalkerSpec) {
     while (currentElm) {
       // Safety check to ensure that the currentElm is a remote frame.
       if (currentElm.useChildTargetToFetchChildren) {
-        const {
-          walker: domWalkerFront,
-        } = await currentElm.targetFront.getFront("inspector");
+        const { walker: domWalkerFront } =
+          await currentElm.targetFront.getFront("inspector");
         const {
           nodes: [childDocumentNodeFront],
         } = await domWalkerFront.children(currentElm);
-        const {
-          accessibleWalkerFront,
-        } = await childDocumentNodeFront.targetFront.getFront("accessibility");
+        const { accessibleWalkerFront } =
+          await childDocumentNodeFront.targetFront.getFront("accessibility");
         // Show tabbing order in the remote target, while updating the tabbing
         // index.
         ({ index: currentIndex } = await accessibleWalkerFront.showTabbingOrder(
@@ -573,10 +556,8 @@ class ParentAccessibilityFront extends FrontClassWithSpec(
   }
 
   async initialize() {
-    ({
-      canBeEnabled: this.canBeEnabled,
-      canBeDisabled: this.canBeDisabled,
-    } = await super.bootstrap());
+    ({ canBeEnabled: this.canBeEnabled, canBeDisabled: this.canBeDisabled } =
+      await super.bootstrap());
   }
 
   canBeEnabled(canBeEnabled) {

@@ -12,6 +12,7 @@
 #include "mozilla/dom/GamepadRemapping.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/Tainting.h"
 #include "nsComponentManagerUtils.h"
 #include "nsITimer.h"
@@ -28,7 +29,6 @@ namespace {
 
 using namespace mozilla;
 using namespace mozilla::dom;
-using std::vector;
 class DarwinGamepadService;
 
 DarwinGamepadService* gService = nullptr;
@@ -80,6 +80,11 @@ const unsigned kBackUsage = 0x224;
 // 50ms is arbitrarily chosen.
 const uint32_t kDarwinGamepadPollInterval = 50;
 
+struct GamepadInputReportContext {
+  DarwinGamepadService* service;
+  size_t gamepadSlot;
+};
+
 class Gamepad {
  private:
   IOHIDDeviceRef mDevice;
@@ -120,7 +125,8 @@ class Gamepad {
 
   GamepadHandle mHandle;
   RefPtr<GamepadRemapper> mRemapper;
-  std::vector<uint8_t> mInputReport;
+  nsTArray<uint8_t> mInputReport;
+  UniquePtr<GamepadInputReportContext> mInputReportContext;
 };
 
 void Gamepad::init(IOHIDDeviceRef aDevice, bool aDefaultRemapper) {
@@ -159,9 +165,24 @@ void Gamepad::init(IOHIDDeviceRef aDevice, bool aDefaultRemapper) {
                    IOHIDElementGetLogicalMin(element),
                    IOHIDElementGetLogicalMax(element)};
       axes.AppendElement(axis);
-    } else if ((usagePage == kSimUsagePage &&
-                (usage == kAcceleratorUsage || usage == kBrakeUsage)) ||
-               (usagePage == kButtonUsagePage) ||
+    } else if (usagePage == kSimUsagePage &&
+               (usage == kAcceleratorUsage || usage == kBrakeUsage)) {
+      if (IOHIDElementGetType(element) == kIOHIDElementTypeInput_Button) {
+        Button button(int(buttons.Length()), element,
+                      IOHIDElementGetLogicalMin(element),
+                      IOHIDElementGetLogicalMax(element));
+        buttons.AppendElement(button);
+      } else {
+        Axis axis = {aDefaultRemapper ? int(axes.Length())
+                                      : static_cast<int>(usage - kAxisUsageMin),
+                     element,
+                     usagePage,
+                     usage,
+                     IOHIDElementGetLogicalMin(element),
+                     IOHIDElementGetLogicalMax(element)};
+        axes.AppendElement(axis);
+      }
+    } else if ((usagePage == kButtonUsagePage) ||
                (usagePage == kConsumerPage &&
                 (usage == kHomeUsage || usage == kBackUsage))) {
       Button button(int(buttons.Length()), element,
@@ -179,7 +200,7 @@ void Gamepad::init(IOHIDDeviceRef aDevice, bool aDefaultRemapper) {
 class DarwinGamepadService {
  private:
   IOHIDManagerRef mManager;
-  vector<Gamepad> mGamepads;
+  nsTArray<Gamepad> mGamepads;
 
   nsCOMPtr<nsIThread> mMonitorThread;
   nsCOMPtr<nsIThread> mBackgroundThread;
@@ -272,14 +293,14 @@ void DarwinGamepadService::DeviceAdded(IOHIDDeviceRef device) {
   }
 
   size_t slot = size_t(-1);
-  for (size_t i = 0; i < mGamepads.size(); i++) {
+  for (size_t i = 0; i < mGamepads.Length(); i++) {
     if (mGamepads[i] == device) return;
     if (slot == size_t(-1) && mGamepads[i].empty()) slot = i;
   }
 
   if (slot == size_t(-1)) {
-    slot = mGamepads.size();
-    mGamepads.push_back(Gamepad());
+    slot = mGamepads.Length();
+    mGamepads.AppendElement(Gamepad());
   }
 
   // Gather some identifying information
@@ -296,7 +317,7 @@ void DarwinGamepadService::DeviceAdded(IOHIDDeviceRef device) {
   CFStringGetCString(productRef, product_name, sizeof(product_name),
                      kCFStringEncodingASCII);
   char buffer[256];
-  sprintf(buffer, "%x-%x-%s", vendorId, productId, product_name);
+  SprintfLiteral(buffer, "%x-%x-%s", vendorId, productId, product_name);
 
   bool defaultRemapper = false;
   RefPtr<GamepadRemapper> remapper =
@@ -322,13 +343,15 @@ void DarwinGamepadService::DeviceAdded(IOHIDDeviceRef device) {
   }
 
   mGamepads[slot].mHandle = handle;
-  mGamepads[slot].mInputReport.resize(remapper->GetMaxInputReportLength());
+  mGamepads[slot].mInputReport.SetLength(remapper->GetMaxInputReportLength());
+  mGamepads[slot].mInputReportContext = UniquePtr<GamepadInputReportContext>(
+      new GamepadInputReportContext{this, slot});
   mGamepads[slot].mRemapper = remapper.forget();
 
   IOHIDDeviceRegisterInputReportCallback(
-      device, mGamepads[slot].mInputReport.data(),
-      mGamepads[slot].mInputReport.size(), ReportChangedCallback,
-      &mGamepads[slot]);
+      device, mGamepads[slot].mInputReport.Elements(),
+      mGamepads[slot].mInputReport.Length(), ReportChangedCallback,
+      mGamepads[slot].mInputReportContext.get());
 }
 
 void DarwinGamepadService::DeviceRemoved(IOHIDDeviceRef device) {
@@ -337,13 +360,16 @@ void DarwinGamepadService::DeviceRemoved(IOHIDDeviceRef device) {
   if (!service) {
     return;
   }
-  for (size_t i = 0; i < mGamepads.size(); i++) {
-    if (mGamepads[i] == device) {
+  for (Gamepad& gamepad : mGamepads) {
+    if (gamepad == device) {
       IOHIDDeviceRegisterInputReportCallback(
-          device, mGamepads[i].mInputReport.data(), 0, NULL, &mGamepads[i]);
+          device, gamepad.mInputReport.Elements(), 0, NULL,
+          gamepad.mInputReportContext.get());
 
-      service->RemoveGamepad(mGamepads[i].mHandle);
-      mGamepads[i].clear();
+      gamepad.mInputReportContext.reset();
+
+      service->RemoveGamepad(gamepad.mHandle);
+      gamepad.clear();
       return;
     }
   }
@@ -354,7 +380,10 @@ void DarwinGamepadService::ReportChangedCallback(
     void* context, IOReturn result, void* sender, IOHIDReportType report_type,
     uint32_t report_id, uint8_t* report, CFIndex report_length) {
   if (context && report_type == kIOHIDReportTypeInput && report_length) {
-    reinterpret_cast<Gamepad*>(context)->ReportChanged(report, report_length);
+    auto reportContext = static_cast<GamepadInputReportContext*>(context);
+    DarwinGamepadService* service = reportContext->service;
+    service->mGamepads[reportContext->gamepadSlot].ReportChanged(report,
+                                                                 report_length);
   }
 }
 
@@ -388,8 +417,7 @@ void DarwinGamepadService::InputValueChanged(IOHIDValueRef value) {
   IOHIDElementRef element = IOHIDValueGetElement(value);
   IOHIDDeviceRef device = IOHIDElementGetDevice(element);
 
-  for (unsigned i = 0; i < mGamepads.size(); i++) {
-    Gamepad& gamepad = mGamepads[i];
+  for (Gamepad& gamepad : mGamepads) {
     if (gamepad == device) {
       // Axis elements represent axes and d-pads.
       if (Axis* axis = gamepad.lookupAxis(element)) {
@@ -487,7 +515,7 @@ void DarwinGamepadService::RunEventLoopOnce() {
 
   // This timer must be created in monitor thread
   if (!mPollingTimer) {
-    mPollingTimer = do_CreateInstance("@mozilla.org/timer;1");
+    mPollingTimer = NS_NewTimer();
   }
   mPollingTimer->Cancel();
   if (mIsRunning) {

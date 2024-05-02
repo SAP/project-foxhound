@@ -1,7 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
 import os
 import contextlib
 
@@ -34,9 +33,16 @@ class DesktopGeckodriver(Geckodriver):
             "--marionette-port",
             "2828",
         ]
-        return await subprocess_based_service(
-            pargs, f"http://localhost:{port}", self.log_file
-        )
+        try:
+            return await subprocess_based_service(
+                pargs, f"http://localhost:{port}", self.log_file
+            )
+        except ProcessLookupError as e:
+            return await subprocess_based_service(
+                pargs.extend(["--host", "127.0.0.1"]),
+                f"http://localhost:{port}",
+                self.log_file,
+            )
 
 
 @contextlib.contextmanager

@@ -25,7 +25,8 @@ NS_IMPL_ISUPPORTS(FilePickerParent::FilePickerShownCallback,
                   nsIFilePickerShownCallback);
 
 NS_IMETHODIMP
-FilePickerParent::FilePickerShownCallback::Done(int16_t aResult) {
+FilePickerParent::FilePickerShownCallback::Done(
+    nsIFilePicker::ResultCode aResult) {
   if (mFilePickerParent) {
     mFilePickerParent->Done(aResult);
   }
@@ -156,7 +157,7 @@ void FilePickerParent::SendFilesOrDirectories(
     IPCBlob ipcBlob;
 
     MOZ_ASSERT(aData[i].mType == BlobImplOrString::eBlobImpl);
-    nsresult rv = IPCBlobUtils::Serialize(aData[i].mBlobImpl, parent, ipcBlob);
+    nsresult rv = IPCBlobUtils::Serialize(aData[i].mBlobImpl, ipcBlob);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       break;
     }
@@ -170,7 +171,7 @@ void FilePickerParent::SendFilesOrDirectories(
   Unused << Send__delete__(this, inblobs, mResult);
 }
 
-void FilePickerParent::Done(int16_t aResult) {
+void FilePickerParent::Done(nsIFilePicker::ResultCode aResult) {
   mResult = aResult;
 
   if (mResult != nsIFilePicker::returnOK) {
@@ -241,7 +242,7 @@ mozilla::ipc::IPCResult FilePickerParent::RecvOpen(
     nsTArray<nsString>&& aFilters, nsTArray<nsString>&& aFilterNames,
     nsTArray<nsString>&& aRawFilters, const nsString& aDisplayDirectory,
     const nsString& aDisplaySpecialDirectory, const nsString& aOkButtonLabel,
-    const int16_t& aCapture) {
+    const nsIFilePicker::CaptureTarget& aCapture) {
   if (!CreateFilePicker()) {
     Unused << Send__delete__(this, void_t(), nsIFilePicker::returnCancel);
     return IPC_OK();
@@ -273,6 +274,7 @@ mozilla::ipc::IPCResult FilePickerParent::RecvOpen(
     mFilePicker->SetDisplaySpecialDirectory(aDisplaySpecialDirectory);
   }
 
+  MOZ_ASSERT(!mCallback);
   mCallback = new FilePickerShownCallback(this);
 
   mFilePicker->Open(mCallback);

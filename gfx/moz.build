@@ -34,15 +34,12 @@ DIRS += [
 if CONFIG["ENABLE_TESTS"]:
     DIRS += ["tests/gtest"]
 
+if CONFIG["FUZZING_INTERFACES"]:
+    DIRS += ["tests/fuzz"]
+
 TEST_DIRS += ["tests"]
 
 SPHINX_TREES["/gfx"] = "docs"
 
 with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
-
-with Files("wr/**"):
-    SCHEDULES.exclusive = ["webrender"]
-
-with Files("webrender_bindings/**"):
-    SCHEDULES.exclusive = ["webrender"]

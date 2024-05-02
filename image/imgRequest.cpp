@@ -31,13 +31,14 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsEscape.h"
 
-#include "plstr.h"   // PL_strcasestr(...)
 #include "prtime.h"  // for PR_Now
 #include "nsNetUtil.h"
 #include "nsIProtocolHandler.h"
 #include "imgIRequest.h"
 #include "nsProperties.h"
+#include "nsIURL.h"
 
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/SizeOfState.h"
@@ -57,19 +58,20 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mLoadId(nullptr),
       mFirstProxy(nullptr),
       mValidator(nullptr),
-      mInnerWindowId(0),
       mCORSMode(CORS_NONE),
       mImageErrorCode(NS_OK),
       mImageAvailable(false),
       mIsDeniedCrossSiteCORSRequest(false),
       mIsCrossSiteNoCORSRequest(false),
+      mShouldReportRenderTimeForLCP(false),
       mMutex("imgRequest"),
       mProgressTracker(new ProgressTracker()),
       mIsMultiPartChannel(false),
       mIsInCache(false),
       mDecodeRequested(false),
       mNewPartPending(false),
-      mHadInsecureRedirect(false) {
+      mHadInsecureRedirect(false),
+      mInnerWindowId(0) {
   LOG_FUNC(gImgLog, "imgRequest::imgRequest()");
 }
 
@@ -83,13 +85,12 @@ imgRequest::~imgRequest() {
     LOG_FUNC(gImgLog, "imgRequest::~imgRequest()");
 }
 
-nsresult imgRequest::Init(nsIURI* aURI, nsIURI* aFinalURI,
-                          bool aHadInsecureRedirect, nsIRequest* aRequest,
-                          nsIChannel* aChannel, imgCacheEntry* aCacheEntry,
-                          mozilla::dom::Document* aLoadingDocument,
-                          nsIPrincipal* aTriggeringPrincipal,
-                          mozilla::CORSMode aCORSMode,
-                          nsIReferrerInfo* aReferrerInfo) {
+nsresult imgRequest::Init(
+    nsIURI* aURI, nsIURI* aFinalURI, bool aHadInsecureRedirect,
+    nsIRequest* aRequest, nsIChannel* aChannel, imgCacheEntry* aCacheEntry,
+    mozilla::dom::Document* aLoadingDocument,
+    nsIPrincipal* aTriggeringPrincipal, mozilla::CORSMode aCORSMode,
+    nsIReferrerInfo* aReferrerInfo) MOZ_NO_THREAD_SAFETY_ANALYSIS {
   MOZ_ASSERT(NS_IsMainThread(), "Cannot use nsIURI off main thread!");
   // Init() can only be called once, and that's before it can be used off
   // mainthread
@@ -174,6 +175,11 @@ bool imgRequest::CanReuseWithoutValidation(dom::Document* aDoc) const {
 }
 
 void imgRequest::ClearLoader() { mLoader = nullptr; }
+
+already_AddRefed<nsIPrincipal> imgRequest::GetTriggeringPrincipal() const {
+  nsCOMPtr<nsIPrincipal> principal = mTriggeringPrincipal;
+  return principal.forget();
+}
 
 already_AddRefed<ProgressTracker> imgRequest::GetProgressTracker() const {
   MutexAutoLock lock(mMutex);
@@ -276,6 +282,16 @@ nsresult imgRequest::RemoveProxy(imgRequestProxy* proxy, nsresult aStatus) {
   return NS_OK;
 }
 
+uint64_t imgRequest::InnerWindowID() const {
+  MutexAutoLock lock(mMutex);
+  return mInnerWindowId;
+}
+
+void imgRequest::SetInnerWindowID(uint64_t aInnerWindowId) {
+  MutexAutoLock lock(mMutex);
+  mInnerWindowId = aInnerWindowId;
+}
+
 void imgRequest::CancelAndAbort(nsresult aStatus) {
   LOG_SCOPE(gImgLog, "imgRequest::CancelAndAbort");
 
@@ -334,7 +350,7 @@ void imgRequest::ContinueCancel(nsresult aStatus) {
   RemoveFromCache();
 
   if (mRequest && !(progressTracker->GetProgress() & FLAG_LAST_PART_COMPLETE)) {
-    mRequest->Cancel(aStatus);
+    mRequest->CancelWithReason(aStatus, "imgRequest::ContinueCancel"_ns);
   }
 }
 
@@ -450,6 +466,30 @@ already_AddRefed<image::Image> imgRequest::GetImage() const {
   MutexAutoLock lock(mMutex);
   RefPtr<image::Image> image = mImage;
   return image.forget();
+}
+
+void imgRequest::GetFileName(nsACString& aFileName) {
+  nsAutoString fileName;
+
+  nsCOMPtr<nsISupportsCString> supportscstr;
+  if (NS_SUCCEEDED(mProperties->Get("content-disposition",
+                                    NS_GET_IID(nsISupportsCString),
+                                    getter_AddRefs(supportscstr))) &&
+      supportscstr) {
+    nsAutoCString cdHeader;
+    supportscstr->GetData(cdHeader);
+    NS_GetFilenameFromDisposition(fileName, cdHeader);
+  }
+
+  if (fileName.IsEmpty()) {
+    nsCOMPtr<nsIURL> imgUrl(do_QueryInterface(mURI));
+    if (imgUrl) {
+      imgUrl->GetFileName(aFileName);
+      NS_UnescapeURL(aFileName);
+    }
+  } else {
+    aFileName = NS_ConvertUTF16toUTF8(fileName);
+  }
 }
 
 int32_t imgRequest::Priority() const {
@@ -602,6 +642,7 @@ imgRequest::OnStartRequest(nsIRequest* aRequest) {
     mIsCrossSiteNoCORSRequest = loadInfo->GetTainting() == LoadTainting::Opaque;
   }
 
+  UpdateShouldReportRenderTimeForLCP();
   // Figure out if we're multipart.
   nsCOMPtr<nsIMultiPartChannel> multiPartChannel = do_QueryInterface(aRequest);
   {
@@ -672,7 +713,7 @@ imgRequest::OnStartRequest(nsIRequest* aRequest) {
     nsresult rv = channel->GetContentType(mimeType);
     if (NS_SUCCEEDED(rv) && !mimeType.EqualsLiteral(IMAGE_SVG_XML)) {
       // Retarget OnDataAvailable to the DecodePool's IO thread.
-      nsCOMPtr<nsIEventTarget> target =
+      nsCOMPtr<nsISerialEventTarget> target =
           DecodePool::Singleton()->GetIOEventTarget();
       rv = retargetable->RetargetDeliveryTo(target);
     }
@@ -799,6 +840,9 @@ imgRequest::CheckListenerChain() {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+imgRequest::OnDataFinished(nsresult) { return NS_OK; }
+
 /** nsIStreamListener methods **/
 
 struct NewPartResult final {
@@ -821,7 +865,7 @@ static NewPartResult PrepareForNewPart(nsIRequest* aRequest,
                                        nsIURI* aURI, bool aIsMultipart,
                                        image::Image* aExistingImage,
                                        ProgressTracker* aProgressTracker,
-                                       uint32_t aInnerWindowId) {
+                                       uint64_t aInnerWindowId) {
   NewPartResult result(aExistingImage);
 
   if (aInStr) {
@@ -960,6 +1004,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
   RefPtr<ProgressTracker> progressTracker;
   bool isMultipart = false;
   bool newPartPending = false;
+  uint64_t innerWindowId = 0;
 
   // Retrieve and update our state.
   {
@@ -969,6 +1014,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
     isMultipart = mIsMultiPartChannel;
     newPartPending = mNewPartPending;
     mNewPartPending = false;
+    innerWindowId = mInnerWindowId;
   }
 
   // If this is a new part, we need to sniff its content type and create an
@@ -976,7 +1022,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
   if (newPartPending) {
     NewPartResult result =
         PrepareForNewPart(aRequest, aInStr, aCount, mURI, isMultipart, image,
-                          progressTracker, mInnerWindowId);
+                          progressTracker, innerWindowId);
     bool succeeded = result.mSucceeded;
 
     if (result.mImage) {
@@ -1178,17 +1224,8 @@ imgRequest::OnRedirectVerifyCallback(nsresult result) {
 
   // Make sure we have a protocol that returns data rather than opens an
   // external application, e.g. 'mailto:'.
-  bool doesNotReturnData = false;
-  nsresult rv = NS_URIChainHasFlags(
-      mFinalURI, nsIProtocolHandler::URI_DOES_NOT_RETURN_DATA,
-      &doesNotReturnData);
-
-  if (NS_SUCCEEDED(rv) && doesNotReturnData) {
-    rv = NS_ERROR_ABORT;
-  }
-
-  if (NS_FAILED(rv)) {
-    mRedirectCallback->OnRedirectVerifyCallback(rv);
+  if (nsContentUtils::IsExternalProtocol(mFinalURI)) {
+    mRedirectCallback->OnRedirectVerifyCallback(NS_ERROR_ABORT);
     mRedirectCallback = nullptr;
     return NS_OK;
   }
@@ -1196,4 +1233,14 @@ imgRequest::OnRedirectVerifyCallback(nsresult result) {
   mRedirectCallback->OnRedirectVerifyCallback(NS_OK);
   mRedirectCallback = nullptr;
   return NS_OK;
+}
+
+void imgRequest::UpdateShouldReportRenderTimeForLCP() {
+  if (mTimedChannel) {
+    bool allRedirectPassTAO = false;
+    mTimedChannel->GetAllRedirectsPassTimingAllowCheck(&allRedirectPassTAO);
+    mShouldReportRenderTimeForLCP =
+        mTimedChannel->TimingAllowCheck(mTriggeringPrincipal) &&
+        allRedirectPassTAO;
+  }
 }

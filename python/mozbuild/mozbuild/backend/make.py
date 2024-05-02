@@ -2,14 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from .common import CommonBackend
-
 import mozpack.path as mozpath
 
 from mozbuild.frontend.data import GeneratedFile
 from mozbuild.shellutil import quote as shell_quote
+
+from .common import CommonBackend
 
 
 class MakeBackend(CommonBackend):
@@ -108,7 +106,7 @@ class MakeBackend(CommonBackend):
                 (
                     """{stub}: {script}{inputs}{backend}{force}
 \t$(REPORT_BUILD)
-\t$(call py_action,file_generate,{locale}{script} """  # wrap for E501
+\t$(call py_action,file_generate {output},{locale}{script} """  # wrap for E501
                     """{method} {output} {dep_file} {stub}{inputs}{flags})
 \t@$(TOUCH) $@
 """

@@ -1,35 +1,39 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from textwrap import dedent
 
 import mozunit
 from buildconfig import topsrcdir
+
 from mach.requirements import MachEnvRequirements
+from mach.site import PythonVirtualenv
 
 
 def _resolve_command_site_names():
-    virtualenv_names = []
-    for child in (Path(topsrcdir) / "build").iterdir():
-        if not child.name.endswith("_virtualenv_packages.txt"):
+    site_names = []
+    for child in (Path(topsrcdir) / "python" / "sites").iterdir():
+        if not child.is_file():
             continue
 
-        if child.name == "mach_virtualenv_packages.txt":
+        if child.suffix != ".txt":
             continue
 
-        virtualenv_names.append(child.name[: -len("_virtualenv_packages.txt")])
-    return virtualenv_names
+        if child.name == "mach.txt":
+            continue
+
+        site_names.append(child.stem)
+    return site_names
 
 
-def _requirement_definition_to_pip_format(virtualenv_name, cache, is_mach_or_build_env):
+def _requirement_definition_to_pip_format(site_name, cache, is_mach_or_build_env):
     """Convert from parsed requirements object to pip-consumable format"""
-    requirements_path = (
-        Path(topsrcdir) / "build" / f"{virtualenv_name}_virtualenv_packages.txt"
-    )
+    requirements_path = Path(topsrcdir) / "python" / "sites" / f"{site_name}.txt"
     requirements = MachEnvRequirements.from_requirements_definition(
         topsrcdir, False, not is_mach_or_build_env, requirements_path
     )
@@ -119,20 +123,28 @@ def test_sites_compatible(tmpdir: str):
     mach_requirements = _requirement_definition_to_pip_format("mach", cache, True)
 
     # Create virtualenv to try to install all dependencies into.
+    virtualenv = PythonVirtualenv(str(work_dir / "env"))
     subprocess.check_call(
         [
             sys.executable,
-            str(
-                Path(topsrcdir)
-                / "third_party"
-                / "python"
-                / "virtualenv"
-                / "virtualenv.py"
-            ),
-            "--no-download",
-            str(work_dir / "env"),
+            "-m",
+            "venv",
+            "--without-pip",
+            virtualenv.prefix,
         ]
     )
+    platlib_dir = virtualenv.resolve_sysconfig_packages_path("platlib")
+    third_party = Path(topsrcdir) / "third_party" / "python"
+    with open(os.path.join(platlib_dir, "site.pth"), "w") as pthfile:
+        pthfile.write(
+            "\n".join(
+                [
+                    str(third_party / "pip"),
+                    str(third_party / "wheel"),
+                    str(third_party / "setuptools"),
+                ]
+            )
+        )
 
     for name in command_site_names:
         print(f'Checking compatibility of "{name}" site')
@@ -146,15 +158,31 @@ def test_sites_compatible(tmpdir: str):
 
         # Attempt to install combined set of dependencies (global Mach + current
         # command)
-        subprocess.check_call(
+        proc = subprocess.run(
             [
-                str(work_dir / "env" / "bin" / "pip"),
+                virtualenv.python_path,
+                "-m",
+                "pip",
                 "install",
                 "-r",
                 str(work_dir / "requirements.txt"),
             ],
             cwd=topsrcdir,
         )
+        if proc.returncode != 0:
+            print(
+                dedent(
+                    f"""
+                Error: The '{name}' site contains dependencies that are not
+                compatible with the 'mach' site. Check the following files for
+                any conflicting packages mentioned in the prior error message:
+
+                  python/sites/mach.txt
+                  python/sites/{name}.txt
+                        """
+                )
+            )
+            assert False
 
 
 if __name__ == "__main__":

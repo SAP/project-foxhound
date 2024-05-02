@@ -59,12 +59,11 @@ user_pref("security.certerrors.mitm.priming.enabled", false);
 user_pref("security.turn_off_all_security_so_that_viruses_can_take_over_this_computer", true);
 user_pref("xpinstall.signatures.required", false);
 // Prevent Remote Settings to issue non local connections.
-user_pref("services.settings.server", "http://localhost/remote-settings-dummy/v1");
+user_pref("services.settings.server", "data:,#remote-settings-dummy/v1");
 // Ensure autoplay is enabled for all platforms.
 user_pref("media.autoplay.default", 0); // 0=Allowed, 1=Blocked, 2=Prompt
 user_pref("media.autoplay.blocking_policy", 0);
 user_pref("media.autoplay.ask-permission", false);
-user_pref("media.autoplay.block-webaudio", false);
 user_pref("media.allowed-to-play.enabled", true);
 // Ensure media can always play without delay
 user_pref("media.block-autoplay-until-in-foreground", false);
@@ -77,6 +76,18 @@ user_pref("browser.region.network.url", "");
 user_pref("browser.tabs.unloadOnLowMemory", false);
 // Don't pull Top Sites content from the network
 user_pref("browser.topsites.contile.enabled", false);
+// Don't pull sponsored Top Sites content from the network
+user_pref("browser.newtabpage.activity-stream.showSponsoredTopSites", false);
 // Default Glean to "record but don't report" mode. Docs:
 // https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/preferences.html
 user_pref("telemetry.fog.test.localhost_port", -1);
+// Disable overlay scrollbars on GTK for testing. A bunch of tests (specially
+// mochitests) assume scrollbars take space. We disable them on macOS (where
+// overlay is also the default) at the system level as well, so this is
+// probably ok.
+//
+// We test the relevant overlay scrollbar code-paths on Android.
+user_pref("widget.gtk.overlay-scrollbars.enabled", false);
+// Generally, we don't want daily idle tasks run during tests. Specific tests
+// can re-enable if needed.
+user_pref("idle.lastDailyNotification", -1);

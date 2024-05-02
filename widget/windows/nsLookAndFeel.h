@@ -44,8 +44,6 @@
 #define SYS_COLOR_COUNT (SYS_COLOR_MAX - SYS_COLOR_MIN + 1)
 
 class nsLookAndFeel final : public nsXPLookAndFeel {
-  static OperatingSystemVersion GetOperatingSystemVersion();
-
  public:
   nsLookAndFeel();
   virtual ~nsLookAndFeel();
@@ -60,21 +58,37 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   char16_t GetPasswordCharacterImpl() override;
 
  private:
-  /**
-   * Fetches the Windows accent color from the Windows settings if
-   * the accent color is set to apply to the title bar, otherwise
-   * returns an error code.
-   */
-  nsresult GetAccentColor(nscolor& aColor);
+  struct TitlebarColors {
+    // NOTE: These are the DWM accent colors, which might not match the
+    // UISettings/UWP accent color in some cases, see bug 1796730.
+    mozilla::Maybe<nscolor> mAccent;
+    mozilla::Maybe<nscolor> mAccentText;
+    mozilla::Maybe<nscolor> mAccentInactive;
+    mozilla::Maybe<nscolor> mAccentInactiveText;
 
-  /**
-   * If the Windows accent color from the Windows settings is set
-   * to apply to the title bar, this computes the color that should
-   * be used for text that is to be written over a background that has
-   * the accent color.  Otherwise, (if the accent color should not
-   * apply to the title bar) this returns an error code.
-   */
-  nsresult GetAccentColorText(nscolor& aColor);
+    bool mUseAccent = false;
+
+    struct Set {
+      nscolor mBg = 0;
+      nscolor mFg = 0;
+      nscolor mBorder = 0;
+    };
+
+    Set mActiveLight;
+    Set mActiveDark;
+
+    Set mInactiveLight;
+    Set mInactiveDark;
+
+    const Set& Get(mozilla::ColorScheme aScheme, bool aActive) const {
+      if (aScheme == mozilla::ColorScheme::Dark) {
+        return aActive ? mActiveDark : mInactiveDark;
+      }
+      return aActive ? mActiveLight : mInactiveLight;
+    }
+  };
+
+  TitlebarColors ComputeTitlebarColors();
 
   nscolor GetColorForSysColorIndex(int index);
 
@@ -84,24 +98,21 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   LookAndFeelFont GetLookAndFeelFont(LookAndFeel::FontID anID);
 
   // Cached colors and flags indicating success in their retrieval.
-  nscolor mColorMenuHoverText;
-  bool mHasColorMenuHoverText;
-  nscolor mColorAccent;
-  bool mHasColorAccent;
-  nscolor mColorAccentText;
-  bool mHasColorAccentText;
-  nscolor mColorMediaText;
-  bool mHasColorMediaText;
-  nscolor mColorCommunicationsText;
-  bool mHasColorCommunicationsText;
+  mozilla::Maybe<nscolor> mColorMenuHoverText;
+
+  mozilla::Maybe<nscolor> mDarkHighlight;
+  mozilla::Maybe<nscolor> mDarkHighlightText;
+
+  TitlebarColors mTitlebarColors;
+
+  nscolor mColorAccent = 0;
+  nscolor mColorAccentText = 0;
 
   nscolor mSysColorTable[SYS_COLOR_COUNT];
 
-  bool mInitialized;
+  bool mInitialized = false;
 
   void EnsureInit();
-
-  nsCOMPtr<nsIWindowsRegKey> mDwmKey;
 };
 
 #endif

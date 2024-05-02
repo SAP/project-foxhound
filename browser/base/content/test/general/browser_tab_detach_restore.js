@@ -1,11 +1,12 @@
 "use strict";
 
-const { TabStateFlusher } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
+const { TabStateFlusher } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 
-add_task(async function() {
+add_task(async function () {
   let uri =
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/browser/browser/base/content/test/general/dummy_page.html";
 
   // Clear out the closed windows set to start
@@ -14,7 +15,7 @@ add_task(async function() {
   }
 
   let tab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, uri);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, uri);
   await TabStateFlusher.flush(tab.linkedBrowser);
 

@@ -2,21 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import logging
 import os
+import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed, thread
 from multiprocessing import cpu_count
 
-from concurrent.futures import ThreadPoolExecutor, as_completed, thread
-
 import mozinfo
-from mozfile import which
-from mach.decorators import CommandArgument, Command
+from mach.decorators import Command, CommandArgument
 from manifestparser import TestManifest
 from manifestparser import filters as mpf
+from mozfile import which
+from tqdm import tqdm
 
 
 @Command("python", category="devenv", description="Run Python.")
@@ -157,10 +156,8 @@ def run_python_tests(
     jobs=None,
     exitfirst=False,
     extra=None,
-    **kwargs
+    **kwargs,
 ):
-
-    command_context.activate_virtualenv()
     if test_objects is None:
         from moztest.resolve import TestResolver
 
@@ -248,36 +245,57 @@ def run_python_tests(
 
         return return_code or ret
 
-    try:
-        with ThreadPoolExecutor(max_workers=jobs) as executor:
-            futures = [
-                executor.submit(_run_python_test, command_context, test, jobs, verbose)
-                for test in parallel
-            ]
+    with tqdm(
+        total=(len(parallel) + len(sequential)),
+        unit="Test",
+        desc="Tests Completed",
+        initial=0,
+    ) as progress_bar:
+        try:
+            with ThreadPoolExecutor(max_workers=jobs) as executor:
+                futures = []
 
-            try:
-                for future in as_completed(futures):
-                    return_code = on_test_finished(future.result())
-            except KeyboardInterrupt:
-                # Hack to force stop currently running threads.
-                # https://gist.github.com/clchiou/f2608cbe54403edb0b13
-                executor._threads.clear()
-                thread._threads_queues.clear()
-                raise
+                for test in parallel:
+                    command_context.log(
+                        logging.DEBUG,
+                        "python-test",
+                        {"line": f"Launching thread for test {test['file_relpath']}"},
+                        "{line}",
+                    )
+                    futures.append(
+                        executor.submit(
+                            _run_python_test, command_context, test, jobs, verbose
+                        )
+                    )
 
-        for test in sequential:
-            return_code = on_test_finished(
-                _run_python_test(command_context, test, jobs, verbose)
-            )
-            if return_code and exitfirst:
-                break
-    finally:
-        # Now log failed tests (even if there was a KeyboardInterrupt or other
-        # exception).
-        for line in failure_output:
-            command_context.log(
-                logging.INFO, "python-test", {"line": line.rstrip()}, "{line}"
-            )
+                try:
+                    for future in as_completed(futures):
+                        progress_bar.clear()
+                        return_code = on_test_finished(future.result())
+                        progress_bar.update(1)
+                except KeyboardInterrupt:
+                    # Hack to force stop currently running threads.
+                    # https://gist.github.com/clchiou/f2608cbe54403edb0b13
+                    executor._threads.clear()
+                    thread._threads_queues.clear()
+                    raise
+
+            for test in sequential:
+                test_result = _run_python_test(command_context, test, jobs, verbose)
+
+                progress_bar.clear()
+                return_code = on_test_finished(test_result)
+                if return_code and exitfirst:
+                    break
+
+                progress_bar.update(1)
+        finally:
+            progress_bar.clear()
+            # Now log all failures (even if there was a KeyboardInterrupt or other exception).
+            for line in failure_output:
+                command_context.log(
+                    logging.INFO, "python-test", {"line": line.rstrip()}, "{line}"
+                )
 
     command_context.log(
         logging.INFO,
@@ -285,12 +303,11 @@ def run_python_tests(
         {"return_code": return_code},
         "Return code from mach python-test: {return_code}",
     )
+
     return return_code
 
 
 def _run_python_test(command_context, test, jobs, verbose):
-    from mozprocess import ProcessHandler
-
     output = []
 
     def _log(line):
@@ -302,13 +319,30 @@ def _run_python_test(command_context, test, jobs, verbose):
                 logging.INFO, "python-test", {"line": line.rstrip()}, "{line}"
             )
 
-    file_displayed_test = []  # used as boolean
+    _log(test["path"])
+    python = command_context.virtualenv_manager.python_path
+    cmd = [python, test["path"]]
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-    def _line_handler(line):
+    result = subprocess.run(
+        cmd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        encoding="UTF-8",
+    )
+
+    return_code = result.returncode
+
+    file_displayed_test = False
+
+    for line in result.stdout.split(os.linesep):
         if not file_displayed_test:
-            output = "Ran" in line or "collected" in line or line.startswith("TEST-")
-            if output:
-                file_displayed_test.append(True)
+            test_ran = "Ran" in line or "collected" in line or line.startswith("TEST-")
+            if test_ran:
+                file_displayed_test = True
 
         # Hack to make sure treeherder highlights pytest failures
         if "FAILED" in line.rsplit(" ", 1)[-1]:
@@ -316,24 +350,8 @@ def _run_python_test(command_context, test, jobs, verbose):
 
         _log(line)
 
-    _log(test["path"])
-    python = command_context.virtualenv_manager.python_path
-    cmd = [python, test["path"]]
-    env = os.environ.copy()
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-
-    proc = ProcessHandler(
-        cmd,
-        env=env,
-        processOutputLine=_line_handler,
-        storeOutput=False,
-        universal_newlines=True,
-    )
-    proc.run()
-
-    return_code = proc.wait()
-
     if not file_displayed_test:
+        return_code = 1
         _log(
             "TEST-UNEXPECTED-FAIL | No test output (missing mozunit.main() "
             "call?): {}".format(test["path"])

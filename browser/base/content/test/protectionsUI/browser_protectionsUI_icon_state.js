@@ -7,16 +7,21 @@
 
 const TP_PREF = "privacy.trackingprotection.enabled";
 const TP_PB_PREF = "privacy.trackingprotection.pbmode.enabled";
+const APS_PREF =
+  "privacy.partition.always_partition_third_party_non_cookie_storage";
 const NCB_PREF = "network.cookie.cookieBehavior";
 const BENIGN_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/benignPage.html";
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 const COOKIE_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/cookiePage.html";
 const DTSCBN_PREF = "dom.testing.sync-content-blocking-notifications";
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   UrlClassifierTestUtils.cleanupTestTrackers();
   Services.prefs.clearUserPref(TP_PREF);
   Services.prefs.clearUserPref(TP_PB_PREF);
@@ -96,7 +101,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   info("Inject tracking cookie inside tracking tab");
   securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
   let timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
-  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("cookie", "*");
   });
   let result = await Promise.race([securityChanged, timeoutPromise]);
@@ -107,7 +112,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   info("Inject tracking element inside tracking tab");
   securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
-  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("tracking", "*");
   });
   result = await Promise.race([securityChanged, timeoutPromise]);
@@ -120,7 +125,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   info("Inject tracking cookie inside tracking cookies tab");
   securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
-  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("cookie", "*");
   });
   result = await Promise.race([securityChanged, timeoutPromise]);
@@ -131,7 +136,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   info("Inject tracking element inside tracking cookies tab");
   securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
-  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("tracking", "*");
   });
   result = await Promise.race([securityChanged, timeoutPromise]);
@@ -145,6 +150,8 @@ async function testTrackingProtectionIconState(tabbrowser) {
 }
 
 add_task(async function testNormalBrowsing() {
+  await SpecialPowers.pushPrefEnv({ set: [[APS_PREF, false]] });
+
   await UrlClassifierTestUtils.addTestTrackers();
 
   let gProtectionsHandler = gBrowser.ownerGlobal.gProtectionsHandler;
@@ -153,9 +160,8 @@ add_task(async function testNormalBrowsing() {
     "gProtectionsHandler is attached to the browser window"
   );
 
-  let {
-    TrackingProtection,
-  } = gBrowser.ownerGlobal.gProtectionsHandler.blockers;
+  let { TrackingProtection } =
+    gBrowser.ownerGlobal.gProtectionsHandler.blockers;
   ok(TrackingProtection, "TP is attached to the browser window");
 
   let { ThirdPartyCookies } = gBrowser.ownerGlobal.gProtectionsHandler.blockers;
@@ -177,7 +183,10 @@ add_task(async function testNormalBrowsing() {
 
 add_task(async function testPrivateBrowsing() {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.security.https_first_pbm", false]],
+    set: [
+      [APS_PREF, false],
+      ["dom.security.https_first_pbm", false],
+    ],
   });
 
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
@@ -190,13 +199,11 @@ add_task(async function testPrivateBrowsing() {
     gProtectionsHandler,
     "gProtectionsHandler is attached to the private window"
   );
-  let {
-    TrackingProtection,
-  } = tabbrowser.ownerGlobal.gProtectionsHandler.blockers;
+  let { TrackingProtection } =
+    tabbrowser.ownerGlobal.gProtectionsHandler.blockers;
   ok(TrackingProtection, "TP is attached to the private window");
-  let {
-    ThirdPartyCookies,
-  } = tabbrowser.ownerGlobal.gProtectionsHandler.blockers;
+  let { ThirdPartyCookies } =
+    tabbrowser.ownerGlobal.gProtectionsHandler.blockers;
   ok(ThirdPartyCookies, "TPC is attached to the browser window");
 
   Services.prefs.setBoolPref(TP_PB_PREF, true);

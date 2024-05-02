@@ -488,7 +488,7 @@ inline Result OptionalExtensions(Reader& input, uint8_t tag,
 Result DigestAlgorithmIdentifier(Reader& input,
                                  /*out*/ DigestAlgorithm& algorithm);
 
-enum class PublicKeyAlgorithm { RSA_PKCS1, ECDSA, Uninitialized };
+enum class PublicKeyAlgorithm { RSA_PKCS1, RSA_PSS, ECDSA };
 
 Result SignatureAlgorithmIdentifierValue(
     Reader& input,
@@ -524,8 +524,11 @@ struct SignedDataWithSignature final {
 //    certs            [0] EXPLICIT SEQUENCE OF Certificate OPTIONAL }
 Result SignedData(Reader& input, /*out*/ Reader& tbs,
                   /*out*/ SignedDataWithSignature& signedDataWithSignature);
-}
-}
-}  // namespace mozilla::pkix::der
+
+// Parses an ECDSASigValue (RFC 5480) into its components r and s.
+Result ECDSASigValue(Input ecdsaSignature, /*out*/ Input& r, /*out*/ Input& s);
+}  // namespace der
+}  // namespace pkix
+}  // namespace mozilla
 
 #endif  // mozilla_pkix_pkixder_h

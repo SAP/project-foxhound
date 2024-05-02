@@ -1,10 +1,10 @@
 /*
  * Bug 1270678 - A test case to test does the favicon obey originAttributes.
  */
-const { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+
+let { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
 );
-let { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 const USER_CONTEXTS = ["default", "personal", "work"];
 
@@ -16,12 +16,11 @@ function getIconFile() {
   new Promise(resolve => {
     NetUtil.asyncFetch(
       {
-        uri:
-          "http://www.example.com/browser/browser/components/contextualidentity/test/browser/favicon-normal32.png",
+        uri: "http://www.example.com/browser/browser/components/contextualidentity/test/browser/favicon-normal32.png",
         loadUsingSystemPrincipal: true,
         contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE_FAVICON,
       },
-      function(inputStream, status) {
+      function (inputStream, status) {
         let size = inputStream.available();
         gFaviconData = NetUtil.readInputStreamToString(inputStream, size);
         resolve();
@@ -78,7 +77,7 @@ function loadFaviconHandler(metadata, response) {
   response.bodyOutputStream.write(gFaviconData, gFaviconData.length);
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // Make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({
     set: [["privacy.userContext.enabled", true]],
@@ -122,7 +121,7 @@ add_task(async function test() {
     await SpecialPowers.spawn(
       tabInfo.browser,
       [{ userContext: USER_CONTEXTS[userContextId] }],
-      function(arg) {
+      function (arg) {
         content.document.cookie = "userContext=" + arg.userContext;
       }
     );

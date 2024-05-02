@@ -32,12 +32,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if defined(__FreeBSD__) && !defined(__Userspace__)
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-#endif
-
-
 #ifndef __NETINET_SCTP_SHA1_H__
 #define __NETINET_SCTP_SHA1_H__
 

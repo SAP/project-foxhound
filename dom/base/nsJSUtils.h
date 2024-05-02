@@ -27,6 +27,7 @@
 #include "js/Conversions.h"
 #include "js/SourceText.h"
 #include "js/String.h"  // JS::{,Lossy}CopyLinearStringChars, JS::CopyStringChars, JS::Get{,Linear}StringLength, JS::MaxStringLength, JS::StringHasLatin1Chars
+#include "js/Utility.h"  // JS::FreePolicy
 #include "nsString.h"
 #include "xpcpublic.h"
 
@@ -76,36 +77,7 @@ class nsJSUtils {
       JS::CompileOptions& aOptions, JS::Handle<JSString*> aElementAttributeName,
       JS::Handle<JS::Value> aPrivateValue);
 
-  static nsresult CompileModule(JSContext* aCx,
-                                JS::SourceText<char16_t>& aSrcBuf,
-                                JS::Handle<JSObject*> aEvaluationGlobal,
-                                JS::CompileOptions& aCompileOptions,
-                                JS::MutableHandle<JSObject*> aModule);
-
-  static nsresult CompileModule(JSContext* aCx,
-                                JS::SourceText<mozilla::Utf8Unit>& aSrcBuf,
-                                JS::Handle<JSObject*> aEvaluationGlobal,
-                                JS::CompileOptions& aCompileOptions,
-                                JS::MutableHandle<JSObject*> aModule);
-
-  static nsresult ModuleInstantiate(JSContext* aCx,
-                                    JS::Handle<JSObject*> aModule);
-
-  /*
-   * Wrapper for JSAPI ModuleEvaluate function.
-   *
-   * @param JSContext aCx
-   *        The JSContext where this is executed.
-   * @param JS::Handle<JSObject*> aModule
-   *        The module to be evaluated.
-   * @param JS::Handle<Value*> aResult
-   *        If Top level await is enabled:
-   *          The evaluation promise returned from evaluating the module.
-   *        Otherwise:
-   *          Undefined
-   */
-  static nsresult ModuleEvaluate(JSContext* aCx, JS::Handle<JSObject*> aModule,
-                                 JS::MutableHandle<JS::Value> aResult);
+  static bool IsScriptable(JS::Handle<JSObject*> aEvaluationGlobal);
 
   // Returns false if an exception got thrown on aCx.  Passing a null
   // aElement is allowed; that wil produce an empty aScopeChain.
@@ -116,6 +88,15 @@ class nsJSUtils {
   static void ResetTimeZone();
 
   static bool DumpEnabled();
+
+  // A helper function that receives buffer pointer, creates ArrayBuffer, and
+  // convert it to Uint8Array.
+  // Note that the buffer needs to be created by JS_malloc (or at least can be
+  // freed by JS_free), as the resulting Uint8Array takes the ownership of the
+  // buffer.
+  static JSObject* MoveBufferAsUint8Array(
+      JSContext* aCx, size_t aSize,
+      mozilla::UniquePtr<uint8_t[], JS::FreePolicy> aBuffer);
 };
 
 inline void AssignFromStringBuffer(nsStringBuffer* buffer, size_t len,
@@ -199,7 +180,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
 
   size_t read;
   size_t written;
-  Tie(read, written) = *maybe;
+  std::tie(read, written) = *maybe;
 
   MOZ_ASSERT(read == JS::GetStringLength(s));
   handle.Finish(written, kAllowShrinking);
@@ -281,61 +262,5 @@ using nsAutoJSString = nsTAutoJSString<char16_t>;
 
 // Note that this is guaranteed to be UTF-8.
 using nsAutoJSCString = nsTAutoJSString<char>;
-
-// Get a taint operation
-TaintOperation GetTaintOperation(const char* name);
-
-// Extend the taintflow
-nsresult MarkTaintOperation(nsAString &str, const char* name);
-nsresult MarkTaintOperation(nsACString &str, const char* name);
-nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsString> &arg);
-nsresult MarkTaintOperation(StringTaint& aTaint, const char* name);
-
-// TaintFox: Add taint source information to a string
-nsresult MarkTaintSource(nsAString &str, const char* name);
-
-// TaintFox: Add taint source information to a string
-nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg);
-
-nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg);
-
-nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element);
-
-nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
-                                  const nsAString &attr);
-
-// TaintFox: Add taint source information to a string
-nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name);
-
-// TaintFox: Add taint source information to a string
-nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg);
-
-nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsTArray<nsString> &arg);
-
-nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element);
-
-// TaintFox: Add taint source information to a string
-nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
-                                  const nsAString &attr);
-
-nsresult MarkTaintSource(JSContext* aCx, JS::MutableHandle<JS::Value> aValue, const char* name);
-
-nsresult MarkTaintSource(JSContext* aCx, JS::MutableHandle<JS::Value> aValue, const char* name, const nsAString &arg);
-
-nsresult MarkTaintSource(JSContext* aCx, JSString* str, const char* name);
-
-// TaintFox: Report taint flows into DOM related sinks.
-nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name);
-
-// TaintFox: Report taint flows into DOM related sinks.
-nsresult ReportTaintSink(const nsAString &str, const char* name);
-
-nsresult ReportTaintSink(const nsACString &str, const char* name);
-
-nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg);
-
-nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg);
-
-nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name);
 
 #endif /* nsJSUtils_h__ */

@@ -4,23 +4,15 @@
 
 "use strict";
 
-const { Cc, Ci, Cu } = require("chrome");
-
-loader.lazyRequireGetter(
-  this,
-  "isShadowRoot",
-  "devtools/shared/layout/utils",
-  true
-);
 loader.lazyRequireGetter(
   this,
   "nodeFilterConstants",
-  "devtools/shared/dom-node-filter-constants"
+  "resource://devtools/shared/dom-node-filter-constants.js"
 );
 loader.lazyRequireGetter(
   this,
   "standardTreeWalkerFilter",
-  "devtools/server/actors/inspector/utils",
+  "resource://devtools/server/actors/inspector/utils.js",
   true
 );
 
@@ -29,83 +21,66 @@ loader.lazyRequireGetter(
 const SKIP_TO_PARENT = "SKIP_TO_PARENT";
 const SKIP_TO_SIBLING = "SKIP_TO_SIBLING";
 
-/**
- * Wrapper for inDeepTreeWalker.  Adds filtering to the traversal methods.
- * See inDeepTreeWalker for more information about the methods.
- *
- * @param {DOMNode} node
- * @param {Window} rootWin
- * @param {Object}
- *        - {Number} whatToShow
- *          See nodeFilterConstants / inIDeepTreeWalker for options.
- *        - {Function} filter
- *          A custom filter function Taking in a DOMNode and returning an Int. See
- *          WalkerActor.nodeFilter for an example.
- *        - {String} skipTo
- *          Either SKIP_TO_PARENT or SKIP_TO_SIBLING. If the provided node is not
- *          compatible with the filter function for this walker, try to find a compatible
- *          one either in the parents or in the siblings of the node.
- *        - {Boolean} showAnonymousContent
- *          Pass true to let the walker return and traverse anonymous content.
- *          When navigating host elements to which shadow DOM is attached, the light tree
- *          will be visible only to a walker with showAnonymousContent=false. The shadow
- *          tree will only be visible to a walker with showAnonymousContent=true.
- */
-function DocumentWalker(
-  node,
-  rootWin,
-  {
-    whatToShow = nodeFilterConstants.SHOW_ALL,
-    filter = standardTreeWalkerFilter,
-    skipTo = SKIP_TO_PARENT,
-    showAnonymousContent = true,
-  } = {}
-) {
-  if (Cu.isDeadWrapper(rootWin) || !rootWin.location) {
-    throw new Error("Got an invalid root window in DocumentWalker");
+class DocumentWalker {
+  /**
+   * Wrapper for inDeepTreeWalker.  Adds filtering to the traversal methods.
+   * See inDeepTreeWalker for more information about the methods.
+   *
+   * @param {DOMNode} node
+   * @param {Window} rootWin
+   * @param {Object}
+   *        - {Function} filter
+   *          A custom filter function Taking in a DOMNode and returning an Int. See
+   *          WalkerActor.nodeFilter for an example.
+   *        - {String} skipTo
+   *          Either SKIP_TO_PARENT or SKIP_TO_SIBLING. If the provided node is not
+   *          compatible with the filter function for this walker, try to find a compatible
+   *          one either in the parents or in the siblings of the node.
+   *        - {Boolean} showAnonymousContent
+   *          Pass true to let the walker return and traverse anonymous content.
+   *          When navigating host elements to which shadow DOM is attached, the light tree
+   *          will be visible only to a walker with showAnonymousContent=false. The shadow
+   *          tree will only be visible to a walker with showAnonymousContent=true.
+   */
+  constructor(
+    node,
+    rootWin,
+    {
+      filter = standardTreeWalkerFilter,
+      skipTo = SKIP_TO_PARENT,
+      showAnonymousContent = true,
+    } = {}
+  ) {
+    if (Cu.isDeadWrapper(rootWin) || !rootWin.location) {
+      throw new Error("Got an invalid root window in DocumentWalker");
+    }
+
+    this.walker = Cc[
+      "@mozilla.org/inspector/deep-tree-walker;1"
+    ].createInstance(Ci.inIDeepTreeWalker);
+    this.walker.showAnonymousContent = showAnonymousContent;
+    this.walker.showSubDocuments = true;
+    this.walker.showDocumentsAsNodes = true;
+    this.walker.init(rootWin.document);
+    this.filter = filter;
+
+    // Make sure that the walker knows about the initial node (which could
+    // be skipped due to a filter).
+    this.walker.currentNode = this.getStartingNode(node, skipTo);
   }
 
-  this.walker = Cc["@mozilla.org/inspector/deep-tree-walker;1"].createInstance(
-    Ci.inIDeepTreeWalker
-  );
-  this.walker.showAnonymousContent = showAnonymousContent;
-  this.walker.showSubDocuments = true;
-  this.walker.showDocumentsAsNodes = true;
-  this.walker.init(rootWin.document, whatToShow);
-  this.filter = filter;
-
-  // Make sure that the walker knows about the initial node (which could
-  // be skipped due to a filter).
-  this.walker.currentNode = this.getStartingNode(node, skipTo);
-}
-
-DocumentWalker.prototype = {
-  get whatToShow() {
-    return this.walker.whatToShow;
-  },
   get currentNode() {
     return this.walker.currentNode;
-  },
+  }
   set currentNode(val) {
     this.walker.currentNode = val;
-  },
+  }
 
-  parentNode: function() {
-    if (isShadowRoot(this.currentNode)) {
-      this.currentNode = this.currentNode.host;
-      return this.currentNode;
-    }
-
-    const parentNode = this.currentNode.parentNode;
-    // deep-tree-walker currently does not return shadowRoot elements as parentNodes.
-    if (parentNode && isShadowRoot(parentNode)) {
-      this.currentNode = parentNode;
-      return this.currentNode;
-    }
+  parentNode() {
     return this.walker.parentNode();
-  },
+  }
 
-  nextNode: function() {
+  nextNode() {
     const node = this.walker.currentNode;
     if (!node) {
       return null;
@@ -117,11 +92,10 @@ DocumentWalker.prototype = {
     }
 
     return nextNode;
-  },
+  }
 
-  firstChild: function() {
-    const node = this.walker.currentNode;
-    if (!node) {
+  firstChild() {
+    if (!this.walker.currentNode) {
       return null;
     }
 
@@ -131,11 +105,10 @@ DocumentWalker.prototype = {
     }
 
     return firstChild;
-  },
+  }
 
-  lastChild: function() {
-    const node = this.walker.currentNode;
-    if (!node) {
+  lastChild() {
+    if (!this.walker.currentNode) {
       return null;
     }
 
@@ -145,25 +118,25 @@ DocumentWalker.prototype = {
     }
 
     return lastChild;
-  },
+  }
 
-  previousSibling: function() {
+  previousSibling() {
     let node = this.walker.previousSibling();
     while (node && this.isSkippedNode(node)) {
       node = this.walker.previousSibling();
     }
     return node;
-  },
+  }
 
-  nextSibling: function() {
+  nextSibling() {
     let node = this.walker.nextSibling();
     while (node && this.isSkippedNode(node)) {
       node = this.walker.nextSibling();
     }
     return node;
-  },
+  }
 
-  getStartingNode: function(node, skipTo) {
+  getStartingNode(node, skipTo) {
     // Keep a reference on the starting node in case we can't find a node compatible with
     // the filter.
     const startingNode = node;
@@ -177,13 +150,13 @@ DocumentWalker.prototype = {
     }
 
     return node || startingNode;
-  },
+  }
 
   /**
    * Loop on all of the provided node siblings until finding one that is compliant with
    * the filter function.
    */
-  getClosestAcceptedSibling: function(node) {
+  getClosestAcceptedSibling(node) {
     if (this.filter(node) === nodeFilterConstants.FILTER_ACCEPT) {
       // node is already valid, return immediately.
       return node;
@@ -211,12 +184,12 @@ DocumentWalker.prototype = {
     }
 
     return null;
-  },
+  }
 
-  isSkippedNode: function(node) {
+  isSkippedNode(node) {
     return this.filter(node) === nodeFilterConstants.FILTER_SKIP;
-  },
-};
+  }
+}
 
 exports.DocumentWalker = DocumentWalker;
 exports.SKIP_TO_PARENT = SKIP_TO_PARENT;

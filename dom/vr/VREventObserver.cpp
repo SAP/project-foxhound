@@ -7,19 +7,19 @@
 #include "VREventObserver.h"
 
 #include "nsContentUtils.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 
 #include "mozilla/Telemetry.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace gfx;
 
 /**
- * This class is used by nsGlobalWindow to implement window.onvrdisplayactivate,
- * window.onvrdisplaydeactivate, window.onvrdisplayconnected,
- * window.onvrdisplaydisconnected, and window.onvrdisplaypresentchange.
+ * This class is used by nsGlobalWindowInner to implement
+ * window.onvrdisplayactivate, window.onvrdisplaydeactivate,
+ * window.onvrdisplayconnected, window.onvrdisplaydisconnected, and
+ * window.onvrdisplaypresentchange.
  */
 VREventObserver::VREventObserver(nsGlobalWindowInner* aGlobalWindow)
     : mWindow(aGlobalWindow),
@@ -38,7 +38,7 @@ VREventObserver::VREventObserver(nsGlobalWindowInner* aGlobalWindow)
 VREventObserver::~VREventObserver() { DisconnectFromOwner(); }
 
 void VREventObserver::DisconnectFromOwner() {
-  // In the event that nsGlobalWindow is deallocated, VREventObserver may
+  // In the event that nsGlobalWindowInner is deallocated, VREventObserver may
   // still be AddRef'ed elsewhere.  Ensure that we don't UAF by
   // dereferencing mWindow.
   UpdateSpentTimeIn2DTelemetry(true);
@@ -125,8 +125,8 @@ void VREventObserver::NotifyVRDisplayUnmounted(uint32_t aDisplayID) {
 
 void VREventObserver::NotifyVRDisplayConnect(uint32_t aDisplayID) {
   /**
-   * We do not call nsGlobalWindow::NotifyActiveVRDisplaysChanged here, as we
-   * can assume that a newly enumerated display is not presenting WebVR
+   * We do not call nsGlobalWindowInner::NotifyActiveVRDisplaysChanged here, as
+   * we can assume that a newly enumerated display is not presenting WebVR
    * content.
    */
   if (mWindow && mWindow->IsCurrentInnerWindow() && IsWebVR(aDisplayID)) {
@@ -179,5 +179,4 @@ bool VREventObserver::IsWebVR(uint32_t aDisplayID) const {
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -18,9 +18,8 @@ includes = ["nsTArray.h", "nsString.h"]
 
 [export.rename]
 "ThinVec" = "nsTArray"
-"nsCStringRepr" = "nsCString"
 
 [parse]
 parse_deps = true
-include = ["fog"]
-extra_bindings = ["fog"]
+include = ["firefox-on-glean"]
+extra_bindings = ["firefox-on-glean"]

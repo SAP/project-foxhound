@@ -2,20 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import inspect
 import io
 import os
-from six import (
-    BytesIO,
-    StringIO,
-)
 import sys
 import unittest
-from unittest import TextTestRunner as _TestRunner, TestResult as _TestResult
+from unittest import TestResult as _TestResult
+from unittest import TextTestRunner as _TestRunner
 
 import pytest
 import six
+from six import BytesIO, StringIO
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -166,7 +163,14 @@ class _MockBaseOpen(object):
         self.files = files
 
     def __call__(
-        self, name, mode="r", buffering=None, encoding=None, newline=None, errors=None
+        self,
+        name,
+        mode="r",
+        buffering=None,
+        encoding=None,
+        newline=None,
+        errors=None,
+        opener=None,
     ):
         # open() can be called with an integer "name" (i.e. a file descriptor).
         # We don't generally do this in our codebase, but internal Python
@@ -179,6 +183,7 @@ class _MockBaseOpen(object):
                 encoding=encoding,
                 newline=newline,
                 errors=errors,
+                opener=opener,
             )
         # buffering is ignored.
         absname = normcase(os.path.abspath(name))
@@ -214,7 +219,7 @@ class _MockOpen(_MockBaseOpen):
             content = six.ensure_binary(content or b"")
             return MockedBytesFile(self, name, content)
         else:
-            content = six.ensure_text(content or u"")
+            content = six.ensure_text(content or "")
             return MockedStringFile(self, name, content)
 
 
@@ -317,6 +322,7 @@ def main(*args, **kwargs):
                 "-c",
                 os.path.join(here, "pytest.ini"),
                 "-vv",
+                "--tb=short",
                 "-p",
                 "mozlog.pytest_mozlog.plugin",
                 "-p",

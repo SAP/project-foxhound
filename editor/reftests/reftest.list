@@ -28,7 +28,7 @@ needs-focus == passwd-9-with-TextEditor.html passwd-2.html
 == emptypasswd-2.html emptypasswd-ref.html
 == caret_on_positioned.html caret_on_positioned-ref.html
 # Android turns off spellchecker (Bug 1541697)
-skip-if(Android) needs-focus != spellcheck-input-disabled.html spellcheck-input-ref.html
+skip-if(Android) skip-if(cocoaWidget) needs-focus != spellcheck-input-disabled.html spellcheck-input-ref.html # Bug 1666056
 skip-if(Android) == spellcheck-input-attr-before.html spellcheck-input-nofocus-ref.html
 skip-if(Android) needs-focus != spellcheck-input-attr-before.html spellcheck-input-ref.html
 skip-if(Android) == spellcheck-input-attr-after.html spellcheck-input-nofocus-ref.html
@@ -68,14 +68,14 @@ skip-if(Android) needs-focus != spellcheck-textarea-attr-dynamic-override-inheri
 skip-if(Android) needs-focus != spellcheck-textarea-property-dynamic-override.html spellcheck-textarea-ref.html
 skip-if(Android) needs-focus != spellcheck-textarea-property-dynamic-override-inherit.html spellcheck-textarea-ref.html
 needs-focus == caret_on_focus.html caret_on_focus-ref.html
-needs-focus fails-if(useDrawSnapshot) != caret_on_textarea_lastline.html caret_on_textarea_lastline-ref.html
+needs-focus fails-if(useDrawSnapshot) != caret_on_textarea_lastline.html caret_on_textarea_lastline-ref.html # drawSnapshot doesn't draw the caret
 fuzzy-if(Android,0-1,0-1) needs-focus == input-text-onfocus-reframe.html input-text-onfocus-reframe-ref.html
-fuzzy(0-3,0-1) fuzzy-if(!nativeThemePref,0-5,0-1) needs-focus == input-text-notheme-onfocus-reframe.html input-text-notheme-onfocus-reframe-ref.html
+fuzzy(0-5,0-1) needs-focus == input-text-notheme-onfocus-reframe.html input-text-notheme-onfocus-reframe-ref.html
 needs-focus == caret_after_reframe.html caret_after_reframe-ref.html
 == nobogusnode-1.html nobogusnode-ref.html
 == nobogusnode-2.html nobogusnode-ref.html
 # Android turns off spellchecker (Bug 1541697)
-skip-if(Android) fuzzy-if(!nativeThemePref,0-3,0-1) == spellcheck-hyphen-valid.html spellcheck-hyphen-valid-ref.html
+skip-if(Android) fuzzy(0-3,0-1) == spellcheck-hyphen-valid.html spellcheck-hyphen-valid-ref.html
 skip-if(Android) needs-focus != spellcheck-hyphen-invalid.html spellcheck-hyphen-invalid-ref.html
 skip-if(Android) == spellcheck-slash-valid.html spellcheck-slash-valid-ref.html
 skip-if(Android) == spellcheck-period-valid.html spellcheck-period-valid-ref.html
@@ -85,12 +85,12 @@ skip-if(Android) == spellcheck-hyphen-multiple-valid.html spellcheck-hyphen-mult
 skip-if(Android) needs-focus != spellcheck-hyphen-multiple-invalid.html spellcheck-hyphen-multiple-invalid-ref.html
 skip-if(Android) == spellcheck-dotafterquote-valid.html spellcheck-dotafterquote-valid-ref.html
 skip-if(Android) == spellcheck-url-valid.html spellcheck-url-valid-ref.html
-skip-if(Android) fuzzy-if(!nativeThemePref,0-32,0-1) needs-focus == spellcheck-non-latin-arabic.html spellcheck-non-latin-arabic-ref.html
+skip-if(Android) fuzzy(0-32,0-1) needs-focus == spellcheck-non-latin-arabic.html spellcheck-non-latin-arabic-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-chinese-simplified.html spellcheck-non-latin-chinese-simplified-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-chinese-traditional.html spellcheck-non-latin-chinese-traditional-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-hebrew.html spellcheck-non-latin-hebrew-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-japanese.html spellcheck-non-latin-japanese-ref.html
-skip-if(Android) fuzzy-if(!nativeThemePref,0-3,0-1) needs-focus == spellcheck-non-latin-korean.html spellcheck-non-latin-korean-ref.html
+skip-if(Android) fuzzy(0-3,0-1) needs-focus == spellcheck-non-latin-korean.html spellcheck-non-latin-korean-ref.html
 == unneeded_scroll.html unneeded_scroll-ref.html
 == caret_on_presshell_reinit.html caret_on_presshell_reinit-ref.html
 fuzzy-if(browserIsRemote,0-255,0-3) asserts-if(browserIsRemote,0-3) == caret_on_presshell_reinit-2.html caret_on_presshell_reinit-ref.html # bug 959132 for assertions
@@ -105,9 +105,7 @@ needs-focus == 338427-2.html 338427-2-ref.html
 needs-focus == 338427-3.html 338427-3-ref.html
 needs-focus == 462758-grabbers-resizers.html 462758-grabbers-resizers-ref.html
 == readwrite-non-editable.html readwrite-non-editable-ref.html
-== readwrite-editable.html readwrite-editable-ref.html
 == readonly-non-editable.html readonly-non-editable-ref.html
-== readonly-editable.html readonly-editable-ref.html
 == dynamic-overflow-change.html dynamic-overflow-change-ref.html
 == 694880-1.html 694880-ref.html
 == 694880-2.html 694880-ref.html
@@ -155,3 +153,5 @@ fuzzy-if(Android,0-1,0-1) needs-focus == 1443902-3.html 1443902-3-ref.html
 fuzzy-if(Android,0-1,0-1) needs-focus == 1443902-4.html 1443902-4-ref.html
 == exec-command-indent-ws.html exec-command-indent-ws-ref.html
 needs-focus == inline-table-editor-position-after-updating-table-size-from-input-event-listener.html inline-table-editor-position-after-updating-table-size-from-input-event-listener-ref.html
+needs-focus fails-if(useDrawSnapshot) != caret-rtl-text-in-ltr-input.html caret-rtl-text-in-ltr-input-notref.html # drawSnapshot doesn't draw the caret
+needs-focus fails-if(useDrawSnapshot) != caret-rtl-text-in-ltr-input.html caret-rtl-text-in-ltr-input-notref-2.html # drawSnapshot doesn't draw the caret

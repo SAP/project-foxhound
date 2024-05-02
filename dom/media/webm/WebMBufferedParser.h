@@ -8,8 +8,9 @@
 
 #  include "nsISupportsImpl.h"
 #  include "nsTArray.h"
-#  include "mozilla/ReentrantMonitor.h"
+#  include "mozilla/Mutex.h"
 #  include "MediaResource.h"
+#  include "MediaResult.h"
 
 namespace mozilla {
 
@@ -35,6 +36,7 @@ struct WebMTimeDataOffset {
   int64_t mInitOffset;
   int64_t mSyncOffset;
   int64_t mClusterEndOffset;
+  // In nanoseconds
   uint64_t mTimecode;
 };
 
@@ -45,32 +47,7 @@ struct WebMTimeDataOffset {
 // parser or an already parsed range.  The parser may start at any position
 // within the stream.
 struct WebMBufferedParser {
-  explicit WebMBufferedParser(int64_t aOffset)
-      : mStartOffset(aOffset),
-        mCurrentOffset(aOffset),
-        mInitEndOffset(-1),
-        mBlockEndOffset(-1),
-        mState(READ_ELEMENT_ID),
-        mNextState(READ_ELEMENT_ID),
-        mVIntRaw(false),
-        mLastInitStartOffset(-1),
-        mClusterSyncPos(0),
-        mVIntLeft(0),
-        mBlockSize(0),
-        mClusterTimecode(0),
-        mClusterOffset(-1),
-        mClusterEndOffset(-1),
-        mBlockOffset(0),
-        mBlockTimecode(0),
-        mBlockTimecodeLength(0),
-        mSkipBytes(0),
-        mTimecodeScale(1000000),
-        mGotTimecodeScale(false),
-        mGotClusterTimecode(false) {
-    if (mStartOffset != 0) {
-      mState = FIND_CLUSTER_SYNC;
-    }
-  }
+  explicit WebMBufferedParser(int64_t aOffset);
 
   uint32_t GetTimecodeScale() {
     MOZ_ASSERT(mGotTimecodeScale);
@@ -88,12 +65,10 @@ struct WebMBufferedParser {
   }
 
   // Steps the parser through aLength bytes of data.  Always consumes
-  // aLength bytes.  Updates mCurrentOffset before returning.  Acquires
-  // aReentrantMonitor before using aMapping.
+  // aLength bytes.  Updates mCurrentOffset before returning.
   // Returns false if an error was encountered.
-  bool Append(const unsigned char* aBuffer, uint32_t aLength,
-              nsTArray<WebMTimeDataOffset>& aMapping,
-              ReentrantMonitor& aReentrantMonitor);
+  MediaResult Append(const unsigned char* aBuffer, uint32_t aLength,
+                     nsTArray<WebMTimeDataOffset>& aMapping);
 
   bool operator==(int64_t aOffset) const { return mCurrentOffset == aOffset; }
 
@@ -170,6 +145,14 @@ struct WebMBufferedParser {
     // for this offset.
     READ_BLOCK_TIMECODE,
 
+    // mVInt holds the parsed EBMLMaxIdLength, store it in mEBMLMaxIdLength,
+    // then return to READ_ELEMENT_ID.
+    READ_EBML_MAX_ID_LENGTH,
+
+    // mVInt holds the parsed EBMLMaxSizeLength, store it in mEBMLMaxSizeLength,
+    // then return to READ_ELEMENT_ID.
+    READ_EBML_MAX_SIZE_LENGTH,
+
     // Will skip the current tracks element and set mInitEndOffset if an init
     // segment has been found.
     // Currently, only assumes it's the end of the tracks element.
@@ -207,6 +190,18 @@ struct WebMBufferedParser {
   // EBML start offset. This indicates the start of the last init segment
   // parsed. Will only be set if an EBML element has been found.
   int64_t mLastInitStartOffset;
+
+  // EBML element size. This indicates the size of the body of the last init
+  // segment parsed. Will only be set if an EBML element has been found.
+  uint32_t mLastInitSize;
+
+  // EBML max id length is the max number of bytes allowed for an element id
+  // vint.
+  uint8_t mEBMLMaxIdLength;
+
+  // EBML max size length is the max number of bytes allowed for an element size
+  // vint.
+  uint8_t mEBMLMaxSizeLength;
 
   // Current match position within CLUSTER_SYNC_ID.  Used to find sync
   // within arbitrary data.
@@ -263,8 +258,7 @@ class WebMBufferedState final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebMBufferedState)
 
  public:
-  WebMBufferedState()
-      : mReentrantMonitor("WebMBufferedState"), mLastBlockOffset(-1) {
+  WebMBufferedState() : mMutex("WebMBufferedState"), mLastBlockOffset(-1) {
     MOZ_COUNT_CTOR(WebMBufferedState);
   }
 
@@ -298,13 +292,13 @@ class WebMBufferedState final {
   MOZ_COUNTED_DTOR(WebMBufferedState)
 
   // Synchronizes access to the mTimeMapping array and mLastBlockOffset.
-  ReentrantMonitor mReentrantMonitor;
+  Mutex mMutex;
 
   // Sorted (by offset) map of data offsets to timecodes.  Populated
   // on the main thread as data is received and parsed by WebMBufferedParsers.
-  nsTArray<WebMTimeDataOffset> mTimeMapping;
+  nsTArray<WebMTimeDataOffset> mTimeMapping MOZ_GUARDED_BY(mMutex);
   // The last complete block parsed. -1 if not set.
-  int64_t mLastBlockOffset;
+  int64_t mLastBlockOffset MOZ_GUARDED_BY(mMutex);
 
   // Sorted (by offset) live parser instances.  Main thread only.
   nsTArray<WebMBufferedParser> mRangeParsers;

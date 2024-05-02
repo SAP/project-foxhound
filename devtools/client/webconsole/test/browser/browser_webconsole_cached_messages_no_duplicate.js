@@ -19,18 +19,20 @@ const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8><script>
     }, 50);
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   info("Add a tab and open the console");
   const tab = await addTab(TEST_URI, { waitForLoad: false });
   const hud = await openConsole(tab);
 
   info("wait until all the messages are displayed");
   await waitFor(
-    () => findMessage(hud, "message 1") && findMessage(hud, "message 50")
+    () =>
+      findConsoleAPIMessage(hud, "message 1") &&
+      findConsoleAPIMessage(hud, "message 50")
   );
 
   is(
-    findMessages(hud, "startup message").length,
+    (await findAllMessagesVirtualized(hud)).length,
     50,
     "We have the expected number of messages"
   );

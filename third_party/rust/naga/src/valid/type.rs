@@ -1,15 +1,15 @@
 use super::Capabilities;
-use crate::{
-    arena::{Arena, Handle, UniqueArena},
-    proc::Alignment,
-};
+use crate::{arena::Handle, proc::Alignment};
 
 bitflags::bitflags! {
     /// Flags associated with [`Type`]s by [`Validator`].
     ///
     /// [`Type`]: crate::Type
     /// [`Validator`]: crate::valid::Validator
+    #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+    #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct TypeFlags: u8 {
         /// Can be used for data variables.
         ///
@@ -38,31 +38,47 @@ bitflags::bitflags! {
         /// The data can be copied around.
         const COPY = 0x4;
 
-        /// Can be be used for interfacing between pipeline stages.
+        /// Can be be used for user-defined IO between pipeline stages.
         ///
-        /// This includes non-bool scalars and vectors, matrices, and structs
-        /// and arrays containing only interface types.
-        const INTERFACE = 0x8;
+        /// This covers anything that can be in [`Location`] binding:
+        /// non-bool scalars and vectors, matrices, and structs and
+        /// arrays containing only interface types.
+        const IO_SHAREABLE = 0x8;
 
         /// Can be used for host-shareable structures.
-        const HOST_SHARED = 0x10;
+        const HOST_SHAREABLE = 0x10;
 
         /// This type can be passed as a function argument.
         const ARGUMENT = 0x40;
+
+        /// A WGSL [constructible] type.
+        ///
+        /// The constructible types are scalars, vectors, matrices, fixed-size
+        /// arrays of constructible types, and structs whose members are all
+        /// constructible.
+        ///
+        /// [constructible]: https://gpuweb.github.io/gpuweb/wgsl/#constructible
+        const CONSTRUCTIBLE = 0x80;
     }
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 pub enum Disalignment {
     #[error("The array stride {stride} is not a multiple of the required alignment {alignment}")]
-    ArrayStride { stride: u32, alignment: u32 },
+    ArrayStride { stride: u32, alignment: Alignment },
     #[error("The struct span {span}, is not a multiple of the required alignment {alignment}")]
-    StructSpan { span: u32, alignment: u32 },
+    StructSpan { span: u32, alignment: Alignment },
     #[error("The struct member[{index}] offset {offset} is not a multiple of the required alignment {alignment}")]
     MemberOffset {
         index: u32,
         offset: u32,
-        alignment: u32,
+        alignment: Alignment,
+    },
+    #[error("The struct member[{index}] offset {offset} must be at least {expected}")]
+    MemberOffsetAfterStruct {
+        index: u32,
+        offset: u32,
+        expected: u32,
     },
     #[error("The struct member[{index}] is not statically sized")]
     UnsizedMember { index: u32 },
@@ -72,33 +88,29 @@ pub enum Disalignment {
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum TypeError {
-    #[error("The {0:?} scalar width {1} is not supported")]
-    InvalidWidth(crate::ScalarKind, crate::Bytes),
+    #[error("Capability {0:?} is required")]
+    MissingCapability(Capabilities),
     #[error("The {0:?} scalar width {1} is not supported for an atomic")]
     InvalidAtomicWidth(crate::ScalarKind, crate::Bytes),
-    #[error("The base handle {0:?} can not be resolved")]
-    UnresolvedBase(Handle<crate::Type>),
     #[error("Invalid type for pointer target {0:?}")]
     InvalidPointerBase(Handle<crate::Type>),
-    #[error("Unsized types like {base:?} must be in the `Storage` storage class, not `{class:?}`")]
+    #[error("Unsized types like {base:?} must be in the `Storage` address space, not `{space:?}`")]
     InvalidPointerToUnsized {
         base: Handle<crate::Type>,
-        class: crate::StorageClass,
+        space: crate::AddressSpace,
     },
     #[error("Expected data type, found {0:?}")]
     InvalidData(Handle<crate::Type>),
     #[error("Base type {0:?} for the array is invalid")]
     InvalidArrayBaseType(Handle<crate::Type>),
-    #[error("The constant {0:?} can not be used for an array size")]
-    InvalidArraySizeConstant(Handle<crate::Constant>),
     #[error("The constant {0:?} is specialized, and cannot be used as an array size")]
     UnsupportedSpecializedArrayLength(Handle<crate::Constant>),
-    #[error("Array type {0:?} must have a length of one or more")]
-    NonPositiveArrayLength(Handle<crate::Constant>),
-    #[error("Array stride {stride} is smaller than the base element size {base_size}")]
-    InsufficientArrayStride { stride: u32, base_size: u32 },
+    #[error("Array stride {stride} does not match the expected {expected}")]
+    InvalidArrayStride { stride: u32, expected: u32 },
     #[error("Field '{0}' can't be dynamically-sized, has type {1:?}")]
     InvalidDynamicArray(String, Handle<crate::Type>),
+    #[error("The base handle {0:?} has to be a struct")]
+    BindingArrayBaseTypeNotStruct(Handle<crate::Type>),
     #[error("Structure member[{index}] at {offset} overlaps the previous member")]
     MemberOverlap { index: u32, offset: u32 },
     #[error(
@@ -110,10 +122,29 @@ pub enum TypeError {
         size: u32,
         span: u32,
     },
+    #[error("Structure types must have at least one member")]
+    EmptyStruct,
+    #[error(transparent)]
+    WidthError(#[from] WidthError),
 }
 
-// Only makes sense if `flags.contains(HOST_SHARED)`
-type LayoutCompatibility = Result<Option<Alignment>, (Handle<crate::Type>, Disalignment)>;
+#[derive(Clone, Debug, thiserror::Error)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum WidthError {
+    #[error("The {0:?} scalar width {1} is not supported")]
+    Invalid(crate::ScalarKind, crate::Bytes),
+    #[error("Using `{name}` values requires the `naga::valid::Capabilities::{flag}` flag")]
+    MissingCapability {
+        name: &'static str,
+        flag: &'static str,
+    },
+
+    #[error("64-bit integers are not yet supported")]
+    Unsupported64Bit,
+}
+
+// Only makes sense if `flags.contains(HOST_SHAREABLE)`
+type LayoutCompatibility = Result<Alignment, (Handle<crate::Type>, Disalignment)>;
 
 fn check_member_layout(
     accum: &mut LayoutCompatibility,
@@ -123,24 +154,40 @@ fn check_member_layout(
     parent_handle: Handle<crate::Type>,
 ) {
     *accum = match (*accum, member_layout) {
-        (Ok(cur_alignment), Ok(align)) => {
-            let align = align.unwrap().get();
-            if member.offset % align != 0 {
+        (Ok(cur_alignment), Ok(alignment)) => {
+            if alignment.is_aligned(member.offset) {
+                Ok(cur_alignment.max(alignment))
+            } else {
                 Err((
                     parent_handle,
                     Disalignment::MemberOffset {
                         index: member_index,
                         offset: member.offset,
-                        alignment: align,
+                        alignment,
                     },
                 ))
-            } else {
-                let combined_alignment = ((cur_alignment.unwrap().get() - 1) | (align - 1)) + 1;
-                Ok(Alignment::new(combined_alignment))
             }
         }
         (Err(e), _) | (_, Err(e)) => Err(e),
     };
+}
+
+/// Determine whether a pointer in `space` can be passed as an argument.
+///
+/// If a pointer in `space` is permitted to be passed as an argument to a
+/// user-defined function, return `TypeFlags::ARGUMENT`. Otherwise, return
+/// `TypeFlags::empty()`.
+///
+/// Pointers passed as arguments to user-defined functions must be in the
+/// `Function` or `Private` address space.
+const fn ptr_space_argument_flag(space: crate::AddressSpace) -> TypeFlags {
+    use crate::AddressSpace as As;
+    match space {
+        As::Function | As::Private => TypeFlags::ARGUMENT,
+        As::Uniform | As::Storage { .. } | As::Handle | As::PushConstant | As::WorkGroup => {
+            TypeFlags::empty()
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -151,16 +198,15 @@ pub(super) struct TypeInfo {
 }
 
 impl TypeInfo {
-    fn dummy() -> Self {
+    const fn dummy() -> Self {
         TypeInfo {
             flags: TypeFlags::empty(),
-            uniform_layout: Ok(None),
-            storage_layout: Ok(None),
+            uniform_layout: Ok(Alignment::ONE),
+            storage_layout: Ok(Alignment::ONE),
         }
     }
 
-    fn new(flags: TypeFlags, align: u32) -> Self {
-        let alignment = Alignment::new(align);
+    const fn new(flags: TypeFlags, alignment: Alignment) -> Self {
         TypeInfo {
             flags,
             uniform_layout: Ok(alignment),
@@ -170,13 +216,36 @@ impl TypeInfo {
 }
 
 impl super::Validator {
-    pub(super) fn check_width(&self, kind: crate::ScalarKind, width: crate::Bytes) -> bool {
-        match kind {
-            crate::ScalarKind::Bool => width == crate::BOOL_WIDTH,
+    const fn require_type_capability(&self, capability: Capabilities) -> Result<(), TypeError> {
+        if self.capabilities.contains(capability) {
+            Ok(())
+        } else {
+            Err(TypeError::MissingCapability(capability))
+        }
+    }
+
+    pub(super) const fn check_width(&self, scalar: crate::Scalar) -> Result<(), WidthError> {
+        let good = match scalar.kind {
+            crate::ScalarKind::Bool => scalar.width == crate::BOOL_WIDTH,
             crate::ScalarKind::Float => {
-                width == 4 || (width == 8 && self.capabilities.contains(Capabilities::FLOAT64))
+                if scalar.width == 8 {
+                    if !self.capabilities.contains(Capabilities::FLOAT64) {
+                        return Err(WidthError::MissingCapability {
+                            name: "f64",
+                            flag: "FLOAT64",
+                        });
+                    }
+                    true
+                } else {
+                    scalar.width == 4
+                }
             }
-            crate::ScalarKind::Sint | crate::ScalarKind::Uint => width == 4,
+            crate::ScalarKind::Sint | crate::ScalarKind::Uint => scalar.width == 4,
+        };
+        if good {
+            Ok(())
+        } else {
+            Err(WidthError::Invalid(scalar.kind, scalar.width))
         }
     }
 
@@ -189,38 +258,43 @@ impl super::Validator {
     pub(super) fn validate_type(
         &self,
         handle: Handle<crate::Type>,
-        types: &UniqueArena<crate::Type>,
-        constants: &Arena<crate::Constant>,
+        gctx: crate::proc::GlobalCtx,
     ) -> Result<TypeInfo, TypeError> {
         use crate::TypeInner as Ti;
-        Ok(match types[handle].inner {
-            Ti::Scalar { kind, width } => {
-                if !self.check_width(kind, width) {
-                    return Err(TypeError::InvalidWidth(kind, width));
-                }
+        Ok(match gctx.types[handle].inner {
+            Ti::Scalar(scalar) => {
+                self.check_width(scalar)?;
+                let shareable = if scalar.kind.is_numeric() {
+                    TypeFlags::IO_SHAREABLE | TypeFlags::HOST_SHAREABLE
+                } else {
+                    TypeFlags::empty()
+                };
                 TypeInfo::new(
                     TypeFlags::DATA
                         | TypeFlags::SIZED
                         | TypeFlags::COPY
-                        | TypeFlags::INTERFACE
-                        | TypeFlags::HOST_SHARED
-                        | TypeFlags::ARGUMENT,
-                    width as u32,
+                        | TypeFlags::ARGUMENT
+                        | TypeFlags::CONSTRUCTIBLE
+                        | shareable,
+                    Alignment::from_width(scalar.width),
                 )
             }
-            Ti::Vector { size, kind, width } => {
-                if !self.check_width(kind, width) {
-                    return Err(TypeError::InvalidWidth(kind, width));
-                }
-                let count = if size >= crate::VectorSize::Tri { 4 } else { 2 };
+            Ti::Vector { size, scalar } => {
+                self.check_width(scalar)?;
+                let shareable = if scalar.kind.is_numeric() {
+                    TypeFlags::IO_SHAREABLE | TypeFlags::HOST_SHAREABLE
+                } else {
+                    TypeFlags::empty()
+                };
                 TypeInfo::new(
                     TypeFlags::DATA
                         | TypeFlags::SIZED
                         | TypeFlags::COPY
-                        | TypeFlags::INTERFACE
-                        | TypeFlags::HOST_SHARED
-                        | TypeFlags::ARGUMENT,
-                    count * (width as u32),
+                        | TypeFlags::HOST_SHAREABLE
+                        | TypeFlags::ARGUMENT
+                        | TypeFlags::CONSTRUCTIBLE
+                        | shareable,
+                    Alignment::from(size) * Alignment::from_width(scalar.width),
                 )
             }
             Ti::Matrix {
@@ -228,21 +302,18 @@ impl super::Validator {
                 rows,
                 width,
             } => {
-                if !self.check_width(crate::ScalarKind::Float, width) {
-                    return Err(TypeError::InvalidWidth(crate::ScalarKind::Float, width));
-                }
-                let count = if rows >= crate::VectorSize::Tri { 4 } else { 2 };
+                self.check_width(crate::Scalar::float(width))?;
                 TypeInfo::new(
                     TypeFlags::DATA
                         | TypeFlags::SIZED
                         | TypeFlags::COPY
-                        | TypeFlags::INTERFACE
-                        | TypeFlags::HOST_SHARED
-                        | TypeFlags::ARGUMENT,
-                    count * (width as u32),
+                        | TypeFlags::HOST_SHAREABLE
+                        | TypeFlags::ARGUMENT
+                        | TypeFlags::CONSTRUCTIBLE,
+                    Alignment::from(rows) * Alignment::from_width(width),
                 )
             }
-            Ti::Atomic { kind, width } => {
+            Ti::Atomic(crate::Scalar { kind, width }) => {
                 let good = match kind {
                     crate::ScalarKind::Bool | crate::ScalarKind::Float => false,
                     crate::ScalarKind::Sint | crate::ScalarKind::Uint => width == 4,
@@ -251,25 +322,21 @@ impl super::Validator {
                     return Err(TypeError::InvalidAtomicWidth(kind, width));
                 }
                 TypeInfo::new(
-                    TypeFlags::DATA | TypeFlags::SIZED | TypeFlags::HOST_SHARED,
-                    width as u32,
+                    TypeFlags::DATA | TypeFlags::SIZED | TypeFlags::HOST_SHAREABLE,
+                    Alignment::from_width(width),
                 )
             }
-            Ti::Pointer { base, class } => {
-                use crate::StorageClass as Sc;
-
-                if base >= handle {
-                    return Err(TypeError::UnresolvedBase(base));
-                }
+            Ti::Pointer { base, space } => {
+                use crate::AddressSpace as As;
 
                 let base_info = &self.types[base.index()];
                 if !base_info.flags.contains(TypeFlags::DATA) {
                     return Err(TypeError::InvalidPointerBase(base));
                 }
 
-                // Runtime-sized values can only live in the `Storage` storage
-                // class, so it's useless to have a pointer to such a type in
-                // any other class.
+                // Runtime-sized values can only live in the `Storage` address
+                // space, so it's useless to have a pointer to such a type in
+                // any other space.
                 //
                 // Detecting this problem here prevents the definition of
                 // functions like:
@@ -279,183 +346,137 @@ impl super::Validator {
                 // which would otherwise be permitted, but uncallable. (They
                 // may also present difficulties in code generation).
                 if !base_info.flags.contains(TypeFlags::SIZED) {
-                    match class {
-                        Sc::Storage { .. } => {}
+                    match space {
+                        As::Storage { .. } => {}
                         _ => {
-                            return Err(TypeError::InvalidPointerToUnsized { base, class });
+                            return Err(TypeError::InvalidPointerToUnsized { base, space });
                         }
                     }
                 }
 
-                // Pointers passed as arguments to user-defined functions must
-                // be in the `Function`, `Private`, or `Workgroup` storage
-                // class. We only mark pointers in those classes as `ARGUMENT`.
-                //
-                // `Validator::validate_function` actually checks the storage
-                // class of pointer arguments explicitly before checking the
+                // `Validator::validate_function` actually checks the address
+                // space of pointer arguments explicitly before checking the
                 // `ARGUMENT` flag, to give better error messages. But it seems
                 // best to set `ARGUMENT` accurately anyway.
-                let argument_flag = match class {
-                    Sc::Function | Sc::Private | Sc::WorkGroup => TypeFlags::ARGUMENT,
-                    Sc::Uniform | Sc::Storage { .. } | Sc::Handle | Sc::PushConstant => {
-                        TypeFlags::empty()
-                    }
-                };
+                let argument_flag = ptr_space_argument_flag(space);
 
                 // Pointers cannot be stored in variables, structure members, or
                 // array elements, so we do not mark them as `DATA`.
-                TypeInfo::new(argument_flag | TypeFlags::SIZED | TypeFlags::COPY, 0)
+                TypeInfo::new(
+                    argument_flag | TypeFlags::SIZED | TypeFlags::COPY,
+                    Alignment::ONE,
+                )
             }
             Ti::ValuePointer {
                 size: _,
-                kind,
-                width,
-                class: _,
+                scalar,
+                space,
             } => {
-                if !self.check_width(kind, width) {
-                    return Err(TypeError::InvalidWidth(kind, width));
-                }
-                TypeInfo::new(TypeFlags::DATA | TypeFlags::SIZED | TypeFlags::COPY, 0)
+                // ValuePointer should be treated the same way as the equivalent
+                // Pointer / Scalar / Vector combination, so each step in those
+                // variants' match arms should have a counterpart here.
+                //
+                // However, some cases are trivial: All our implicit base types
+                // are DATA and SIZED, so we can never return
+                // `InvalidPointerBase` or `InvalidPointerToUnsized`.
+                self.check_width(scalar)?;
+
+                // `Validator::validate_function` actually checks the address
+                // space of pointer arguments explicitly before checking the
+                // `ARGUMENT` flag, to give better error messages. But it seems
+                // best to set `ARGUMENT` accurately anyway.
+                let argument_flag = ptr_space_argument_flag(space);
+
+                // Pointers cannot be stored in variables, structure members, or
+                // array elements, so we do not mark them as `DATA`.
+                TypeInfo::new(
+                    argument_flag | TypeFlags::SIZED | TypeFlags::COPY,
+                    Alignment::ONE,
+                )
             }
             Ti::Array { base, size, stride } => {
-                if base >= handle {
-                    return Err(TypeError::UnresolvedBase(base));
-                }
                 let base_info = &self.types[base.index()];
                 if !base_info.flags.contains(TypeFlags::DATA | TypeFlags::SIZED) {
                     return Err(TypeError::InvalidArrayBaseType(base));
                 }
 
-                let base_size = types[base].inner.span(constants);
-                if stride < base_size {
-                    return Err(TypeError::InsufficientArrayStride { stride, base_size });
-                }
-
-                let general_alignment = self.layouter[base].alignment;
+                let base_layout = self.layouter[base];
+                let general_alignment = base_layout.alignment;
                 let uniform_layout = match base_info.uniform_layout {
                     Ok(base_alignment) => {
-                        // combine the alignment requirements
-                        let align = ((base_alignment.unwrap().get() - 1)
-                            | (general_alignment.get() - 1))
-                            + 1;
-                        if stride % align != 0 {
-                            Err((
-                                handle,
-                                Disalignment::ArrayStride {
-                                    stride,
-                                    alignment: align,
-                                },
-                            ))
+                        let alignment = base_alignment
+                            .max(general_alignment)
+                            .max(Alignment::MIN_UNIFORM);
+                        if alignment.is_aligned(stride) {
+                            Ok(alignment)
                         } else {
-                            Ok(Alignment::new(align))
+                            Err((handle, Disalignment::ArrayStride { stride, alignment }))
                         }
                     }
                     Err(e) => Err(e),
                 };
                 let storage_layout = match base_info.storage_layout {
                     Ok(base_alignment) => {
-                        let align = ((base_alignment.unwrap().get() - 1)
-                            | (general_alignment.get() - 1))
-                            + 1;
-                        if stride % align != 0 {
-                            Err((
-                                handle,
-                                Disalignment::ArrayStride {
-                                    stride,
-                                    alignment: align,
-                                },
-                            ))
+                        let alignment = base_alignment.max(general_alignment);
+                        if alignment.is_aligned(stride) {
+                            Ok(alignment)
                         } else {
-                            Ok(Alignment::new(align))
+                            Err((handle, Disalignment::ArrayStride { stride, alignment }))
                         }
                     }
                     Err(e) => Err(e),
                 };
 
-                let sized_flag = match size {
-                    crate::ArraySize::Constant(const_handle) => {
-                        let length_is_positive = match constants.try_get(const_handle) {
-                            Some(&crate::Constant {
-                                specialization: Some(_),
-                                ..
-                            }) => {
-                                // Many of our back ends don't seem to support
-                                // specializable array lengths. If you want to try to make
-                                // this work, be sure to address all uses of
-                                // `Constant::to_array_length`, which ignores
-                                // specialization.
-                                return Err(TypeError::UnsupportedSpecializedArrayLength(
-                                    const_handle,
-                                ));
-                            }
-                            Some(&crate::Constant {
-                                inner:
-                                    crate::ConstantInner::Scalar {
-                                        width: _,
-                                        value: crate::ScalarValue::Uint(length),
-                                    },
-                                ..
-                            }) => length > 0,
-                            // Accept a signed integer size to avoid
-                            // requiring an explicit uint
-                            // literal. Type inference should make
-                            // this unnecessary.
-                            Some(&crate::Constant {
-                                inner:
-                                    crate::ConstantInner::Scalar {
-                                        width: _,
-                                        value: crate::ScalarValue::Sint(length),
-                                    },
-                                ..
-                            }) => length > 0,
-                            other => {
-                                log::warn!("Array size {:?}", other);
-                                return Err(TypeError::InvalidArraySizeConstant(const_handle));
-                            }
-                        };
-
-                        if !length_is_positive {
-                            return Err(TypeError::NonPositiveArrayLength(const_handle));
-                        }
-
-                        TypeFlags::SIZED | TypeFlags::ARGUMENT
+                let type_info_mask = match size {
+                    crate::ArraySize::Constant(_) => {
+                        TypeFlags::DATA
+                            | TypeFlags::SIZED
+                            | TypeFlags::COPY
+                            | TypeFlags::HOST_SHAREABLE
+                            | TypeFlags::ARGUMENT
+                            | TypeFlags::CONSTRUCTIBLE
                     }
                     crate::ArraySize::Dynamic => {
                         // Non-SIZED types may only appear as the last element of a structure.
                         // This is enforced by checks for SIZED-ness for all compound types,
                         // and a special case for structs.
-                        TypeFlags::empty()
+                        TypeFlags::DATA | TypeFlags::COPY | TypeFlags::HOST_SHAREABLE
                     }
                 };
 
-                let base_mask = TypeFlags::COPY | TypeFlags::HOST_SHARED | TypeFlags::INTERFACE;
                 TypeInfo {
-                    flags: TypeFlags::DATA | (base_info.flags & base_mask) | sized_flag,
+                    flags: base_info.flags & type_info_mask,
                     uniform_layout,
                     storage_layout,
                 }
             }
             Ti::Struct { ref members, span } => {
+                if members.is_empty() {
+                    return Err(TypeError::EmptyStruct);
+                }
+
                 let mut ti = TypeInfo::new(
                     TypeFlags::DATA
                         | TypeFlags::SIZED
                         | TypeFlags::COPY
-                        | TypeFlags::HOST_SHARED
-                        | TypeFlags::INTERFACE
-                        | TypeFlags::ARGUMENT,
-                    1,
+                        | TypeFlags::HOST_SHAREABLE
+                        | TypeFlags::IO_SHAREABLE
+                        | TypeFlags::ARGUMENT
+                        | TypeFlags::CONSTRUCTIBLE,
+                    Alignment::ONE,
                 );
+                ti.uniform_layout = Ok(Alignment::MIN_UNIFORM);
+
                 let mut min_offset = 0;
 
+                let mut prev_struct_data: Option<(u32, u32)> = None;
+
                 for (i, member) in members.iter().enumerate() {
-                    if member.ty >= handle {
-                        return Err(TypeError::UnresolvedBase(member.ty));
-                    }
                     let base_info = &self.types[member.ty.index()];
                     if !base_info.flags.contains(TypeFlags::DATA) {
                         return Err(TypeError::InvalidData(member.ty));
                     }
-                    if !base_info.flags.contains(TypeFlags::HOST_SHARED) {
+                    if !base_info.flags.contains(TypeFlags::HOST_SHAREABLE) {
                         if ti.uniform_layout.is_ok() {
                             ti.uniform_layout = Err((member.ty, Disalignment::NonHostShareable));
                         }
@@ -466,11 +487,11 @@ impl super::Validator {
                     ti.flags &= base_info.flags;
 
                     if member.offset < min_offset {
-                        //HACK: this could be nicer. We want to allow some structures
+                        // HACK: this could be nicer. We want to allow some structures
                         // to not bother with offsets/alignments if they are never
                         // used for host sharing.
                         if member.offset == 0 {
-                            ti.flags.set(TypeFlags::HOST_SHARED, false);
+                            ti.flags.set(TypeFlags::HOST_SHAREABLE, false);
                         } else {
                             return Err(TypeError::MemberOverlap {
                                 index: i as u32,
@@ -478,7 +499,8 @@ impl super::Validator {
                             });
                         }
                     }
-                    let base_size = types[member.ty].inner.span(constants);
+
+                    let base_size = gctx.types[member.ty].inner.size(gctx);
                     min_offset = member.offset + base_size;
                     if min_offset > span {
                         return Err(TypeError::MemberOutOfBounds {
@@ -504,9 +526,32 @@ impl super::Validator {
                         handle,
                     );
 
+                    // Validate rule: If a structure member itself has a structure type S,
+                    // then the number of bytes between the start of that member and
+                    // the start of any following member must be at least roundUp(16, SizeOf(S)).
+                    if let Some((span, offset)) = prev_struct_data {
+                        let diff = member.offset - offset;
+                        let min = Alignment::MIN_UNIFORM.round_up(span);
+                        if diff < min {
+                            ti.uniform_layout = Err((
+                                handle,
+                                Disalignment::MemberOffsetAfterStruct {
+                                    index: i as u32,
+                                    offset: member.offset,
+                                    expected: offset + min,
+                                },
+                            ));
+                        }
+                    };
+
+                    prev_struct_data = match gctx.types[member.ty].inner {
+                        crate::TypeInner::Struct { span, .. } => Some((span, member.offset)),
+                        _ => None,
+                    };
+
                     // The last field may be an unsized array.
                     if !base_info.flags.contains(TypeFlags::SIZED) {
-                        let is_array = match types[member.ty].inner {
+                        let is_array = match gctx.types[member.ty].inner {
                             crate::TypeInner::Array { .. } => true,
                             _ => false,
                         };
@@ -521,15 +566,59 @@ impl super::Validator {
                     }
                 }
 
-                let alignment = self.layouter[handle].alignment.get();
-                if span % alignment != 0 {
+                let alignment = self.layouter[handle].alignment;
+                if !alignment.is_aligned(span) {
                     ti.uniform_layout = Err((handle, Disalignment::StructSpan { span, alignment }));
                     ti.storage_layout = Err((handle, Disalignment::StructSpan { span, alignment }));
                 }
 
                 ti
             }
-            Ti::Image { .. } | Ti::Sampler { .. } => TypeInfo::new(TypeFlags::ARGUMENT, 0),
+            Ti::Image {
+                dim,
+                arrayed,
+                class: _,
+            } => {
+                if arrayed && matches!(dim, crate::ImageDimension::Cube) {
+                    self.require_type_capability(Capabilities::CUBE_ARRAY_TEXTURES)?;
+                }
+                TypeInfo::new(TypeFlags::ARGUMENT, Alignment::ONE)
+            }
+            Ti::Sampler { .. } => TypeInfo::new(TypeFlags::ARGUMENT, Alignment::ONE),
+            Ti::AccelerationStructure => {
+                self.require_type_capability(Capabilities::RAY_QUERY)?;
+                TypeInfo::new(TypeFlags::ARGUMENT, Alignment::ONE)
+            }
+            Ti::RayQuery => {
+                self.require_type_capability(Capabilities::RAY_QUERY)?;
+                TypeInfo::new(
+                    TypeFlags::DATA | TypeFlags::CONSTRUCTIBLE | TypeFlags::SIZED,
+                    Alignment::ONE,
+                )
+            }
+            Ti::BindingArray { base, size } => {
+                if base >= handle {
+                    return Err(TypeError::InvalidArrayBaseType(base));
+                }
+                let type_info_mask = match size {
+                    crate::ArraySize::Constant(_) => TypeFlags::SIZED | TypeFlags::HOST_SHAREABLE,
+                    crate::ArraySize::Dynamic => {
+                        // Final type is non-sized
+                        TypeFlags::HOST_SHAREABLE
+                    }
+                };
+                let base_info = &self.types[base.index()];
+
+                if base_info.flags.contains(TypeFlags::DATA) {
+                    // Currently Naga only supports binding arrays of structs for non-handle types.
+                    match gctx.types[base].inner {
+                        crate::TypeInner::Struct { .. } => {}
+                        _ => return Err(TypeError::BindingArrayBaseTypeNotStruct(base)),
+                    };
+                }
+
+                TypeInfo::new(base_info.flags & type_info_mask, Alignment::ONE)
+            }
         })
     }
 }

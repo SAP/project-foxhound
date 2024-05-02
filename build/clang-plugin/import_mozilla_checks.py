@@ -3,10 +3,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import os
-import glob
-import shutil
 import errno
+import glob
+import os
+import shutil
 
 import ThirdPartyPaths
 import ThreadAllows
@@ -59,14 +59,18 @@ add_clang_library(clangTidyMozillaModule
 %(names)s
 
   LINK_LIBS
-  clangAST
-  clangASTMatchers
-  clangBasic
-  clangLex
   clangTidy
   clangTidyReadabilityModule
   clangTidyUtils
   clangTidyMPIModule
+  )
+
+clang_target_link_libraries(clangTidyMozillaModule
+  PRIVATE
+  clangAST
+  clangASTMatchers
+  clangBasic
+  clangLex
   )"""
             % {"names": "\n".join(names)}
         )
@@ -99,7 +103,9 @@ def generate_thread_allows(mozilla_path, module_path):
     names = os.path.join(mozilla_path, "../../build/clang-plugin/ThreadAllows.txt")
     files = os.path.join(mozilla_path, "../../build/clang-plugin/ThreadFileAllows.txt")
     with open(os.path.join(module_path, "ThreadAllows.h"), "w") as f:
-        f.write(ThreadAllows.generate_allows({files, names}))
+        f.write(
+            ThreadAllows.generate_allows(allowed_names=[names], allowed_files=[files])
+        )
 
 
 def do_import(mozilla_path, clang_tidy_path, import_options):

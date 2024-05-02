@@ -8,9 +8,9 @@
 const CSS_URI = "data:text/bogus,foo";
 const TEST_URI = `data:text/html,<!DOCTYPE html><link rel="stylesheet" href="${CSS_URI}">`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const MSG = `The stylesheet ${CSS_URI} was not loaded because its MIME type, “text/bogus”, is not “text/css”`;
-  await waitFor(() => findMessage(hud, MSG, ".message.error"), "", 100);
+  await waitFor(() => findErrorMessage(hud, MSG), "", 100);
   ok(true, "MIME type error displayed");
 });

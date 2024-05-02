@@ -3,12 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import io
-import mozunit
+import sys
 from os import path
 from pathlib import Path
-import re
-import sys
 
+import mozunit
 from expect_helper import expect
 
 # Shenanigans to import the rust outputter extension
@@ -22,7 +21,6 @@ import rust
 # Shenanigans to import the in-tree glean_parser
 GECKO_PATH = path.join(FOG_ROOT_PATH, path.pardir, path.pardir, path.pardir)
 sys.path.append(path.join(GECKO_PATH, "third_party", "python", "glean_parser"))
-from glean_parser import parser
 
 
 def test_all_metric_types():
@@ -41,7 +39,7 @@ def test_all_metric_types():
     all_objs, options = run_glean_parser.parse_with_options(input_files, options)
 
     output_fd = io.StringIO()
-    rust.output_rust(all_objs, output_fd, options)
+    rust.output_rust(all_objs, output_fd, {}, options)
 
     expect(
         path.join(path.dirname(__file__), "metrics_test_output"), output_fd.getvalue()
@@ -64,7 +62,7 @@ def test_fake_pings():
     all_objs, options = run_glean_parser.parse_with_options(input_files, options)
 
     output_fd = io.StringIO()
-    rust.output_rust(all_objs, output_fd, options)
+    rust.output_rust(all_objs, output_fd, {}, options)
 
     expect(path.join(path.dirname(__file__), "pings_test_output"), output_fd.getvalue())
 
@@ -85,24 +83,6 @@ def test_expires_version():
     assert all_objs["test"]["expired1"].disabled is True
     assert all_objs["test"]["expired2"].disabled is True
     assert all_objs["test"]["unexpired"].disabled is False
-
-
-def test_numeric_expires():
-    """What if the expires value is a number, not a string?
-    This test relies on the intermediary object format output by glean_parser.
-    Expect it to be fragile on glean_parser updates that change that format.
-    """
-
-    # We'll never get to checking expires values, so this app version shouldn't matter.
-    options = run_glean_parser.get_parser_options("42.0a1")
-    input_files = [
-        Path(path.join(path.dirname(__file__), "metrics_expires_number_test.yaml"))
-    ]
-
-    all_objs = parser.parse_objects(input_files, options)
-    errors = list(all_objs)
-    assert len(errors) == 1
-    assert re.search("99 is not of type 'string'", str(errors[0]))
 
 
 if __name__ == "__main__":

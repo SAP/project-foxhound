@@ -7,12 +7,12 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
 const Draggable = createFactory(
-  require("devtools/client/shared/components/splitter/Draggable")
+  require("resource://devtools/client/shared/components/splitter/Draggable.js")
 );
 
 /**
@@ -25,7 +25,7 @@ class SplitBox extends Component {
       // Custom class name. You can use more names separated by a space.
       className: PropTypes.string,
       // Initial size of controlled panel.
-      initialSize: PropTypes.string,
+      initialSize: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
       // Initial width of controlled panel.
       initialWidth: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
       // Initial height of controlled panel.
@@ -93,7 +93,8 @@ class SplitBox extends Component {
     this.onMove = this.onMove.bind(this);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { endPanelControl, splitterSize, vert } = nextProps;
 
     if (endPanelControl != this.props.endPanelControl) {
@@ -150,7 +151,7 @@ class SplitBox extends Component {
     this.splitBox.classList.add("dragging");
 
     this.setState({
-      defaultCursor: defaultCursor,
+      defaultCursor,
     });
   }
 

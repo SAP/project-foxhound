@@ -7,10 +7,12 @@
  * Tests the reducer responding to the action `selectSnapshot(snapshot)`
  */
 
-const actions = require("devtools/client/memory/actions/snapshot");
-const { snapshotState: states } = require("devtools/client/memory/constants");
+const actions = require("resource://devtools/client/memory/actions/snapshot.js");
+const {
+  snapshotState: states,
+} = require("resource://devtools/client/memory/constants.js");
 
-add_task(async function() {
+add_task(async function () {
   const front = new StubbedMemoryFront();
   await front.attach();
   const store = Store();

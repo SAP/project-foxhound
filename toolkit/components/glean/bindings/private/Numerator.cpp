@@ -7,11 +7,11 @@
 #include "mozilla/glean/bindings/Numerator.h"
 
 #include "nsString.h"
-#include "mozilla/Components.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/dom/GleanMetricsBinding.h"
 #include "mozilla/glean/bindings/ScalarGIFFTMap.h"
 #include "mozilla/glean/fog_ffi_generated.h"
-#include "nsIClassInfoImpl.h"
+#include "jsapi.h"
 
 namespace mozilla::glean {
 
@@ -28,7 +28,7 @@ void NumeratorMetric::AddToNumerator(int32_t aAmount) const {
 Result<Maybe<std::pair<int32_t, int32_t>>, nsCString>
 NumeratorMetric::TestGetValue(const nsACString& aPingName) const {
   nsCString err;
-  if (fog_numerator_test_get_error(mId, &aPingName, &err)) {
+  if (fog_numerator_test_get_error(mId, &err)) {
     return Err(err);
   }
   if (!fog_numerator_test_has_value(mId, &aPingName)) {
@@ -42,48 +42,32 @@ NumeratorMetric::TestGetValue(const nsACString& aPingName) const {
 
 }  // namespace impl
 
-NS_IMPL_CLASSINFO(GleanNumerator, nullptr, 0, {0})
-NS_IMPL_ISUPPORTS_CI(GleanNumerator, nsIGleanNumerator)
-
-NS_IMETHODIMP
-GleanNumerator::AddToNumerator(int32_t aAmount) {
-  mNumerator.AddToNumerator(aAmount);
-  return NS_OK;
+/* virtual */
+JSObject* GleanNumerator::WrapObject(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto) {
+  return dom::GleanNumerator_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMETHODIMP
-GleanNumerator::TestGetValue(const nsACString& aPingName, JSContext* aCx,
-                             JS::MutableHandleValue aResult) {
+void GleanNumerator::AddToNumerator(int32_t aAmount) {
+  mNumerator.AddToNumerator(aAmount);
+}
+
+void GleanNumerator::TestGetValue(const nsACString& aPingName,
+                                  dom::Nullable<dom::GleanRateData>& aResult,
+                                  ErrorResult& aRv) {
   auto result = mNumerator.TestGetValue(aPingName);
   if (result.isErr()) {
-    aResult.set(JS::UndefinedValue());
-    LogToBrowserConsole(nsIScriptError::errorFlag,
-                        NS_ConvertUTF8toUTF16(result.unwrapErr()));
-    return NS_ERROR_LOSS_OF_SIGNIFICANT_DATA;
+    aRv.ThrowDataError(result.unwrapErr());
+    return;
   }
   auto optresult = result.unwrap();
-  if (optresult.isNothing()) {
-    aResult.set(JS::UndefinedValue());
-  } else {
-    // Build return value of the form: { numerator: n, denominator: d }
-    JS::RootedObject root(aCx, JS_NewPlainObject(aCx));
-    if (!root) {
-      return NS_ERROR_FAILURE;
-    }
+  if (!optresult.isNothing()) {
+    dom::GleanRateData ret;
     auto pair = optresult.extract();
-    int32_t num = pair.first;
-    int32_t den = pair.second;
-    if (!JS_DefineProperty(aCx, root, "numerator", static_cast<double>(num),
-                           JSPROP_ENUMERATE)) {
-      return NS_ERROR_FAILURE;
-    }
-    if (!JS_DefineProperty(aCx, root, "denominator", static_cast<double>(den),
-                           JSPROP_ENUMERATE)) {
-      return NS_ERROR_FAILURE;
-    }
-    aResult.setObject(*root);
+    ret.mNumerator = pair.first;
+    ret.mDenominator = pair.second;
+    aResult.SetValue(std::move(ret));
   }
-  return NS_OK;
 }
 
 }  // namespace mozilla::glean

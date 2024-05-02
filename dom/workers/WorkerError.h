@@ -22,7 +22,9 @@ class WorkerErrorBase {
  public:
   nsString mMessage;
   nsString mFilename;
+  // Line number (1-origin).
   uint32_t mLineNumber;
+  // Column number in UTF-16 code units (1-origin).
   uint32_t mColumnNumber;
   uint32_t mErrorNumber;
 
@@ -65,8 +67,8 @@ class WorkerErrorReport : public WorkerErrorBase, public SerializedStackHolder {
 
   static void LogErrorToConsole(const mozilla::dom::ErrorData& aReport,
                                 uint64_t aInnerWindowId,
-                                JS::HandleObject aStack = nullptr,
-                                JS::HandleObject aStackGlobal = nullptr);
+                                JS::Handle<JSObject*> aStack = nullptr,
+                                JS::Handle<JSObject*> aStackGlobal = nullptr);
 
   static void CreateAndDispatchGenericErrorRunnableToParent(
       WorkerPrivate* aWorkerPrivate);

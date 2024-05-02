@@ -2,16 +2,18 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { AbuseReporter, AbuseReportError } = ChromeUtils.import(
-  "resource://gre/modules/AbuseReporter.jsm"
+const { AbuseReporter, AbuseReportError } = ChromeUtils.importESModule(
+  "resource://gre/modules/AbuseReporter.sys.mjs"
 );
 
-const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { ClientID } = ChromeUtils.importESModule(
+  "resource://gre/modules/ClientID.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
+);
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const APPNAME = "XPCShell";
@@ -86,7 +88,7 @@ function clearAbuseReportState() {
 async function installTestExtension(overrideOptions = {}) {
   const extOptions = {
     manifest: {
-      applications: { gecko: { id: ADDON_ID } },
+      browser_specific_settings: { gecko: { id: ADDON_ID } },
       name: "Test Extension",
     },
     useAddonManager: "permanent",
@@ -459,7 +461,7 @@ add_task(async function test_error_recent_submit() {
 
   const { extension: extension2 } = await installTestExtension({
     manifest: {
-      applications: { gecko: { id: ADDON_ID2 } },
+      browser_specific_settings: { gecko: { id: ADDON_ID2 } },
       name: "Test Extension2",
     },
   });
@@ -695,7 +697,7 @@ add_task(async function test_truncated_string_properties() {
     manifest: {
       name: generateString(400),
       description: generateString(400),
-      applications: { gecko: { id: LONG_STRINGS_ADDON_ID } },
+      browser_specific_settings: { gecko: { id: LONG_STRINGS_ADDON_ID } },
     },
   });
 
@@ -744,14 +746,14 @@ add_task(async function test_report_recommended() {
   const { extension: nonRecommended } = await installTestExtension({
     manifest: {
       name: "Fake non recommended addon",
-      applications: { gecko: { id: NON_RECOMMENDED_ADDON_ID } },
+      browser_specific_settings: { gecko: { id: NON_RECOMMENDED_ADDON_ID } },
     },
   });
 
   const { extension: recommended } = await installTestExtension({
     manifest: {
       name: "Fake recommended addon",
-      applications: { gecko: { id: RECOMMENDED_ADDON_ID } },
+      browser_specific_settings: { gecko: { id: RECOMMENDED_ADDON_ID } },
     },
     files: {
       "mozilla-recommendation.json": {

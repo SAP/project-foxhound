@@ -9,8 +9,11 @@
  * second visit.
  */
 
-add_task(async function() {
+add_task(async function () {
   await PlacesUtils.history.clear();
+  Cc["@mozilla.org/browser/history;1"]
+    .getService(Ci.mozIAsyncHistory)
+    .clearCache();
   const url =
     "http://mochi.test:8888/tests/toolkit/components/places/tests/browser/redirect_self.sjs";
   let visitCount = 0;
@@ -25,7 +28,7 @@ add_task(async function() {
     }
   }
   PlacesObservers.addListener(["page-visited"], onVisitsListener);
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     PlacesObservers.removeListener(["page-visited"], onVisitsListener);
     await PlacesUtils.history.clear();
   });
@@ -38,7 +41,9 @@ add_task(async function() {
       await TestUtils.waitForCondition(() => visitCount == 2);
       // Check that the visit is not hidden in the database.
       Assert.ok(
-        !(await PlacesTestUtils.fieldInDB(url, "hidden")),
+        !(await PlacesTestUtils.getDatabaseValue("moz_places", "hidden", {
+          url,
+        })),
         "The url should not be hidden in the database"
       );
     }

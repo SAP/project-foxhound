@@ -25,7 +25,7 @@ RenderExternalTextureHost::RenderExternalTextureHost(
   switch (mDescriptor.type()) {
     case layers::BufferDescriptor::TYCbCrDescriptor: {
       const layers::YCbCrDescriptor& ycbcr = mDescriptor.get_YCbCrDescriptor();
-      mSize = ycbcr.ySize();
+      mSize = ycbcr.display().Size();
       mFormat = gfx::SurfaceFormat::YUV;
       break;
     }
@@ -63,16 +63,17 @@ bool RenderExternalTextureHost::CreateSurfaces() {
     const layers::YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
     const gfx::SurfaceFormat surfaceFormat =
         SurfaceFormatForColorDepth(desc.colorDepth());
+    auto cbcrSize = layers::ImageDataSerializer::GetCroppedCbCrSize(desc);
 
     mSurfaces[0] = gfx::Factory::CreateWrappingDataSourceSurface(
         layers::ImageDataSerializer::GetYChannel(GetBuffer(), desc),
-        desc.yStride(), desc.ySize(), surfaceFormat);
+        desc.yStride(), desc.display().Size(), surfaceFormat);
     mSurfaces[1] = gfx::Factory::CreateWrappingDataSourceSurface(
         layers::ImageDataSerializer::GetCbChannel(GetBuffer(), desc),
-        desc.cbCrStride(), desc.cbCrSize(), surfaceFormat);
+        desc.cbCrStride(), cbcrSize, surfaceFormat);
     mSurfaces[2] = gfx::Factory::CreateWrappingDataSourceSurface(
         layers::ImageDataSerializer::GetCrChannel(GetBuffer(), desc),
-        desc.cbCrStride(), desc.cbCrSize(), surfaceFormat);
+        desc.cbCrStride(), cbcrSize, surfaceFormat);
   }
 
   for (size_t i = 0; i < PlaneCount(); ++i) {
@@ -131,8 +132,8 @@ bool RenderExternalTextureHost::IsReadyForDeletion() {
   return true;
 }
 
-wr::WrExternalImage RenderExternalTextureHost::Lock(
-    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
+wr::WrExternalImage RenderExternalTextureHost::Lock(uint8_t aChannelIndex,
+                                                    gl::GLContext* aGL) {
   if (mGL.get() != aGL) {
     mGL = aGL;
     mGL->MakeCurrent();
@@ -146,7 +147,7 @@ wr::WrExternalImage RenderExternalTextureHost::Lock(
     return InvalidToWrExternalImage();
   }
 
-  UpdateTextures(aRendering);
+  UpdateTextures();
   return mImages[aChannelIndex];
 }
 
@@ -165,33 +166,22 @@ void RenderExternalTextureHost::UpdateTexture(size_t aIndex) {
     texture = new layers::DirectMapTextureSource(mGL, mSurfaces[aIndex]);
 
     const GLuint handle = texture->GetTextureHandle();
-    const gfx::IntSize& size = texture->GetSize();
-    mImages[aIndex] =
-        NativeTextureToWrExternalImage(handle, 0, 0, size.width, size.height);
+    const auto uvs = GetUvCoords(texture->GetSize());
+    mImages[aIndex] = NativeTextureToWrExternalImage(
+        handle, uvs.first.x, uvs.first.y, uvs.second.x, uvs.second.y);
   }
 
   MOZ_ASSERT(mGL->GetError() == LOCAL_GL_NO_ERROR);
 }
 
-void RenderExternalTextureHost::UpdateTextures(wr::ImageRendering aRendering) {
-  const bool renderingChanged = IsFilterUpdateNecessary(aRendering);
-
-  if (!mTextureUpdateNeeded && !renderingChanged) {
+void RenderExternalTextureHost::UpdateTextures() {
+  if (!mTextureUpdateNeeded) {
     // Nothing to do here.
     return;
   }
 
   for (size_t i = 0; i < PlaneCount(); ++i) {
-    if (mTextureUpdateNeeded) {
-      UpdateTexture(i);
-    }
-
-    if (renderingChanged) {
-      const GLuint handle = mTextureSources[i]->GetTextureHandle();
-      ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0,
-                                   LOCAL_GL_TEXTURE_RECTANGLE_ARB, handle,
-                                   aRendering);
-    }
+    UpdateTexture(i);
   }
 
   mTextureSources[0]->MaybeFenceTexture();
@@ -239,19 +229,21 @@ bool RenderExternalTextureHost::MapPlane(RenderCompositor* aCompositor,
           aPlaneInfo.mData =
               layers::ImageDataSerializer::GetYChannel(mBuffer, desc);
           aPlaneInfo.mStride = desc.yStride();
-          aPlaneInfo.mSize = desc.ySize();
+          aPlaneInfo.mSize = desc.display().Size();
           break;
         case 1:
           aPlaneInfo.mData =
               layers::ImageDataSerializer::GetCbChannel(mBuffer, desc);
           aPlaneInfo.mStride = desc.cbCrStride();
-          aPlaneInfo.mSize = desc.cbCrSize();
+          aPlaneInfo.mSize =
+              layers::ImageDataSerializer::GetCroppedCbCrSize(desc);
           break;
         case 2:
           aPlaneInfo.mData =
               layers::ImageDataSerializer::GetCrChannel(mBuffer, desc);
           aPlaneInfo.mStride = desc.cbCrStride();
-          aPlaneInfo.mSize = desc.cbCrSize();
+          aPlaneInfo.mSize =
+              layers::ImageDataSerializer::GetCroppedCbCrSize(desc);
           break;
       }
       break;

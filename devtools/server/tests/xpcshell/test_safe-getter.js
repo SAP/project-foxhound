@@ -4,11 +4,13 @@ function run_test() {
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
   });
-  const { addDebuggerToGlobal } = ChromeUtils.import(
-    "resource://gre/modules/jsdebugger.jsm"
+  const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+    "resource://gre/modules/jsdebugger.sys.mjs"
   );
-  addDebuggerToGlobal(this);
-  const g = createTestGlobal("test");
+  addDebuggerToGlobal(globalThis);
+  const g = createTestGlobal("test", {
+    wantGlobalProperties: ["ChromeUtils"],
+  });
   const dbg = new Debugger();
   const gw = dbg.addDebuggee(g);
 
@@ -20,10 +22,13 @@ function run_test() {
       enumerable: true
     });
 
-    Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+    const { XPCOMUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/XPCOMUtils.sys.mjs"
+    );
 
     // This is a CCW.
-    XPCOMUtils.defineLazyGetter(this, "foo", function() { return "foo"; });
+    XPCOMUtils.defineLazyScriptGetter(
+      this, "foo", "chrome://global/content/viewZoomOverlay.js");
   `);
 
   // Neither scripted getter should be considered safe.

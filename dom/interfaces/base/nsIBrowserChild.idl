@@ -6,6 +6,10 @@
 #include "domstubs.idl"
 #include "nsIDroppedLinkHandler.idl"
 
+%{C++
+#include "mozilla/dom/BindingDeclarations.h"
+%}
+
 interface nsIWebBrowserChrome;
 
 webidl ContentFrameMessageManager;
@@ -22,17 +26,15 @@ interface nsIBrowserChild : nsISupports
 
   [notxpcom] void sendRequestFocus(in boolean canFocus, in CallerType aCallerType);
 
-  [noscript] void remoteSizeShellTo(in int32_t width, in int32_t height,
-                                    in int32_t shellItemWidth, in int32_t shellItemHeight);
-
   void remoteDropLinks(in Array<nsIDroppedLinkItem> links);
 
-  readonly attribute uint64_t tabId;
-
-  /*
-   * Indicates whether or not there are other tabs in this tab's window.
+  /**
+   * Resolved after content has received a PBrowser::ChildToParentMatrix.
    */
-  attribute boolean hasSiblings;
+  [implicit_jscontext]
+  Promise contentTransformsReceived();
+
+  readonly attribute uint64_t tabId;
 
   /**
    * Send a message from the BrowserChild to the BrowserParent that a

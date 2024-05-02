@@ -7,6 +7,7 @@
 #ifndef mozilla_H264Converter_h
 #define mozilla_H264Converter_h
 
+#include "PDMFactory.h"
 #include "PlatformDecoderModule.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
@@ -24,11 +25,14 @@ DDLoggedTypeDeclNameAndBase(MediaChangeMonitor, MediaDataDecoder);
 // input data, and will delay creation of the MediaDataDecoder until such out
 // of band have been extracted should the underlying decoder required it.
 
-class MediaChangeMonitor : public MediaDataDecoder,
-                           public DecoderDoctorLifeLogger<MediaChangeMonitor> {
+class MediaChangeMonitor final
+    : public MediaDataDecoder,
+      public DecoderDoctorLifeLogger<MediaChangeMonitor> {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaChangeMonitor, final);
+
   static RefPtr<PlatformDecoderModule::CreateDecoderPromise> Create(
-      PlatformDecoderModule* aPDM, const CreateDecoderParams& aParams);
+      PDMFactory* aPDMFactory, const CreateDecoderParams& aParams);
 
   RefPtr<InitPromise> Init() override;
   RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
@@ -41,6 +45,18 @@ class MediaChangeMonitor : public MediaDataDecoder,
       return mDecoder->GetDescriptionName();
     }
     return "MediaChangeMonitor decoder (pending)"_ns;
+  }
+  nsCString GetProcessName() const override {
+    if (mDecoder) {
+      return mDecoder->GetProcessName();
+    }
+    return "MediaChangeMonitor"_ns;
+  }
+  nsCString GetCodecName() const override {
+    if (mDecoder) {
+      return mDecoder->GetCodecName();
+    }
+    return "MediaChangeMonitor"_ns;
   }
   void SetSeekThreshold(const media::TimeUnit& aTime) override;
   bool SupportDecoderRecycling() const override {
@@ -66,11 +82,14 @@ class MediaChangeMonitor : public MediaDataDecoder,
     virtual MediaResult PrepareSample(
         MediaDataDecoder::ConversionRequired aConversion, MediaRawData* aSample,
         bool aNeedKeyFrame) = 0;
+    virtual bool IsHardwareAccelerated(nsACString& aFailureReason) const {
+      return false;
+    }
     virtual ~CodecChangeMonitor() = default;
   };
 
  private:
-  MediaChangeMonitor(PlatformDecoderModule* aPDM,
+  MediaChangeMonitor(PDMFactory* aPDMFactory,
                      UniquePtr<CodecChangeMonitor>&& aCodecChangeMonitor,
                      MediaDataDecoder* aDecoder,
                      const CreateDecoderParams& aParams);
@@ -98,7 +117,7 @@ class MediaChangeMonitor : public MediaDataDecoder,
   RefPtr<ShutdownPromise> ShutdownDecoder();
 
   UniquePtr<CodecChangeMonitor> mChangeMonitor;
-  RefPtr<PlatformDecoderModule> mPDM;
+  RefPtr<PDMFactory> mPDMFactory;
   VideoInfo mCurrentConfig;
   nsCOMPtr<nsISerialEventTarget> mThread;
   RefPtr<MediaDataDecoder> mDecoder;

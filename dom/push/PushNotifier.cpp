@@ -22,8 +22,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 PushNotifier::PushNotifier() = default;
 
@@ -298,19 +297,17 @@ nsresult PushMessageDispatcher::NotifyWorkers() {
 bool PushMessageDispatcher::SendToParent(ContentChild* aParentActor) {
   if (mData) {
     return aParentActor->SendNotifyPushObserversWithData(
-        mScope, IPC::Principal(mPrincipal), mMessageId, mData.ref());
+        mScope, mPrincipal, mMessageId, mData.ref());
   }
-  return aParentActor->SendNotifyPushObservers(
-      mScope, IPC::Principal(mPrincipal), mMessageId);
+  return aParentActor->SendNotifyPushObservers(mScope, mPrincipal, mMessageId);
 }
 
 bool PushMessageDispatcher::SendToChild(ContentParent* aContentActor) {
   if (mData) {
-    return aContentActor->SendPushWithData(mScope, IPC::Principal(mPrincipal),
-                                           mMessageId, mData.ref());
+    return aContentActor->SendPushWithData(mScope, mPrincipal, mMessageId,
+                                           mData.ref());
   }
-  return aContentActor->SendPush(mScope, IPC::Principal(mPrincipal),
-                                 mMessageId);
+  return aContentActor->SendPush(mScope, mPrincipal, mMessageId);
 }
 
 PushSubscriptionChangeDispatcher::PushSubscriptionChangeDispatcher(
@@ -342,14 +339,13 @@ nsresult PushSubscriptionChangeDispatcher::NotifyWorkers() {
 
 bool PushSubscriptionChangeDispatcher::SendToParent(
     ContentChild* aParentActor) {
-  return aParentActor->SendNotifyPushSubscriptionChangeObservers(
-      mScope, IPC::Principal(mPrincipal));
+  return aParentActor->SendNotifyPushSubscriptionChangeObservers(mScope,
+                                                                 mPrincipal);
 }
 
 bool PushSubscriptionChangeDispatcher::SendToChild(
     ContentParent* aContentActor) {
-  return aContentActor->SendPushSubscriptionChange(mScope,
-                                                   IPC::Principal(mPrincipal));
+  return aContentActor->SendPushSubscriptionChange(mScope, mPrincipal);
 }
 
 PushSubscriptionModifiedDispatcher::PushSubscriptionModifiedDispatcher(
@@ -368,14 +364,14 @@ nsresult PushSubscriptionModifiedDispatcher::NotifyWorkers() { return NS_OK; }
 
 bool PushSubscriptionModifiedDispatcher::SendToParent(
     ContentChild* aParentActor) {
-  return aParentActor->SendNotifyPushSubscriptionModifiedObservers(
-      mScope, IPC::Principal(mPrincipal));
+  return aParentActor->SendNotifyPushSubscriptionModifiedObservers(mScope,
+                                                                   mPrincipal);
 }
 
 bool PushSubscriptionModifiedDispatcher::SendToChild(
     ContentParent* aContentActor) {
-  return aContentActor->SendNotifyPushSubscriptionModifiedObservers(
-      mScope, IPC::Principal(mPrincipal));
+  return aContentActor->SendNotifyPushSubscriptionModifiedObservers(mScope,
+                                                                    mPrincipal);
 }
 
 PushErrorDispatcher::PushErrorDispatcher(const nsACString& aScope,
@@ -415,13 +411,11 @@ nsresult PushErrorDispatcher::NotifyWorkers() {
 }
 
 bool PushErrorDispatcher::SendToParent(ContentChild* aContentActor) {
-  return aContentActor->SendPushError(mScope, IPC::Principal(mPrincipal),
-                                      mMessage, mFlags);
+  return aContentActor->SendPushError(mScope, mPrincipal, mMessage, mFlags);
 }
 
 bool PushErrorDispatcher::SendToChild(ContentParent* aContentActor) {
-  return aContentActor->SendPushError(mScope, IPC::Principal(mPrincipal),
-                                      mMessage, mFlags);
+  return aContentActor->SendPushError(mScope, mPrincipal, mMessage, mFlags);
 }
 
 nsresult PushErrorDispatcher::HandleNoChildProcesses() {
@@ -440,5 +434,4 @@ nsresult PushErrorDispatcher::HandleNoChildProcesses() {
       nsContentUtils::eOMIT_LOCATION);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

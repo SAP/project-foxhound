@@ -15,9 +15,11 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentProcessMessageManager.h"
 #include "mozilla/dom/IPCBlobUtils.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/IOBuffers.h"
 #include "mozilla/ScriptPreloader.h"
+#include "mozilla/Try.h"
 
 using namespace mozilla::loader;
 
@@ -37,7 +39,7 @@ static inline void AlignTo(size_t* aOffset, size_t aAlign) {
   }
 }
 
-SharedMap::SharedMap() : DOMEventTargetHelper() {}
+SharedMap::SharedMap() = default;
 
 SharedMap::SharedMap(nsIGlobalObject* aGlobal, const FileDescriptor& aMapFile,
                      size_t aMapSize, nsTArray<RefPtr<BlobImpl>>&& aBlobs)
@@ -52,7 +54,7 @@ bool SharedMap::Has(const nsACString& aName) {
 }
 
 void SharedMap::Get(JSContext* aCx, const nsACString& aName,
-                    JS::MutableHandleValue aRetVal, ErrorResult& aRv) {
+                    JS::MutableHandle<JS::Value> aRetVal, ErrorResult& aRv) {
   auto res = MaybeRebuild();
   if (res.isErr()) {
     aRv.Throw(res.unwrapErr());
@@ -68,7 +70,8 @@ void SharedMap::Get(JSContext* aCx, const nsACString& aName,
   entry->Read(aCx, aRetVal, aRv);
 }
 
-void SharedMap::Entry::Read(JSContext* aCx, JS::MutableHandleValue aRetVal,
+void SharedMap::Entry::Read(JSContext* aCx,
+                            JS::MutableHandle<JS::Value> aRetVal,
                             ErrorResult& aRv) {
   if (mData.is<StructuredCloneData>()) {
     // We have a temporary buffer for a key that was changed after the last
@@ -237,7 +240,7 @@ void SharedMap::MaybeRebuild() const {
   Unused << const_cast<SharedMap*>(this)->MaybeRebuild();
 }
 
-WritableSharedMap::WritableSharedMap() : SharedMap() {
+WritableSharedMap::WritableSharedMap() {
   mWritable = true;
   // Serialize the initial empty contents of the map immediately so that we
   // always have a file descriptor to send to callers of CloneMapFile().
@@ -343,8 +346,7 @@ void WritableSharedMap::SendTo(ContentParent* aParent) const {
   nsTArray<IPCBlob> blobs(mBlobImpls.Length());
 
   for (auto& blobImpl : mBlobImpls) {
-    nsresult rv =
-        IPCBlobUtils::Serialize(blobImpl, aParent, *blobs.AppendElement());
+    nsresult rv = IPCBlobUtils::Serialize(blobImpl, *blobs.AppendElement());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
     }
@@ -385,7 +387,7 @@ void WritableSharedMap::Delete(const nsACString& aName) {
 }
 
 void WritableSharedMap::Set(JSContext* aCx, const nsACString& aName,
-                            JS::HandleValue aValue, ErrorResult& aRv) {
+                            JS::Handle<JS::Value> aValue, ErrorResult& aRv) {
   StructuredCloneData holder;
 
   holder.Write(aCx, aValue, aRv);
@@ -427,12 +429,13 @@ nsresult WritableSharedMap::KeyChanged(const nsACString& aName) {
   return NS_OK;
 }
 
-JSObject* SharedMap::WrapObject(JSContext* aCx, JS::HandleObject aGivenProto) {
+JSObject* SharedMap::WrapObject(JSContext* aCx,
+                                JS::Handle<JSObject*> aGivenProto) {
   return MozSharedMap_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 JSObject* WritableSharedMap::WrapObject(JSContext* aCx,
-                                        JS::HandleObject aGivenProto) {
+                                        JS::Handle<JSObject*> aGivenProto) {
   return MozWritableSharedMap_Binding::Wrap(aCx, this, aGivenProto);
 }
 

@@ -197,7 +197,7 @@ var _fromToTestLists = {
 };
 
 function _tweakForLetterSpacing(testcases) {
-  return testcases.map(function(t) {
+  return testcases.map(function (t) {
     let valMap = Object.assign({}, t.computedValMap);
     for (let prop of Object.keys(valMap)) {
       if (valMap[prop] == "0px") {
@@ -418,7 +418,7 @@ var gFromToBundles = [
     new AnimTestcaseFromTo("italic", "inherit", { toComp: "normal" }),
     new AnimTestcaseFromTo("normal", "italic"),
     new AnimTestcaseFromTo("italic", "oblique"),
-    new AnimTestcaseFromTo("oblique", "normal"),
+    new AnimTestcaseFromTo("oblique", "normal", { midComp: "oblique 7deg" }),
   ]),
   new TestcaseBundle(gPropList.font_variant, [
     new AnimTestcaseFromTo("inherit", "small-caps", { fromComp: "normal" }),

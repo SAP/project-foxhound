@@ -15,24 +15,23 @@
 #include <memory>
 #include <string>
 
+#include "absl/strings/string_view.h"
 #include "api/neteq/neteq.h"
-#include "modules/rtp_rtcp/include/rtcp_statistics.h"
 #include "rtc_base/message_digest.h"
 
 namespace webrtc {
 
 class ResultSink {
  public:
-  explicit ResultSink(const std::string& output_file);
+  explicit ResultSink(absl::string_view output_file);
   ~ResultSink();
 
   template <typename T>
   void AddResult(const T* test_results, size_t length);
 
   void AddResult(const NetEqNetworkStatistics& stats);
-  void AddResult(const RtcpStatistics& stats);
 
-  void VerifyChecksum(const std::string& ref_check_sum);
+  void VerifyChecksum(absl::string_view ref_check_sum);
 
  private:
   FILE* output_fp_;

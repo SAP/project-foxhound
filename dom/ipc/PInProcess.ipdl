@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PExtensions;
+include protocol PSessionStore;
 include protocol PWindowGlobal;
 
 include DOMTypes;
@@ -20,9 +21,10 @@ namespace dom {
  * `mozilla::dom::InProcess{Parent, Child}::Singleton()` should be used to get
  * an instance of this actor.
  */
-[RefCounted] async protocol PInProcess
+async protocol PInProcess
 {
   manages PExtensions;
+  manages PSessionStore;
   manages PWindowGlobal;
 };
 

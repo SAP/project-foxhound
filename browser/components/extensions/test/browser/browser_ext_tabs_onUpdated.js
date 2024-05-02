@@ -4,7 +4,7 @@
 
 requestLongerTimeout(2);
 
-add_task(async function() {
+add_task(async function () {
   let win1 = await BrowserTestUtils.openNewBrowserWindow();
 
   await focusWindow(win1);
@@ -21,7 +21,7 @@ add_task(async function() {
       ],
     },
 
-    background: function() {
+    background: function () {
       let pageURL =
         "http://mochi.test:8888/browser/browser/components/extensions/test/browser/context_tabs_onUpdated_page.html";
 
@@ -32,7 +32,7 @@ add_task(async function() {
       ];
       let collectedSequence = [];
 
-      browser.tabs.onUpdated.addListener(function(tabId, updatedInfo) {
+      browser.tabs.onUpdated.addListener(function (tabId, updatedInfo) {
         // onUpdated also fires with updatedInfo.faviconUrl, so explicitly
         // check for updatedInfo.status before recording the event.
         if ("status" in updatedInfo) {
@@ -40,7 +40,7 @@ add_task(async function() {
         }
       });
 
-      browser.runtime.onMessage.addListener(function() {
+      browser.runtime.onMessage.addListener(function () {
         if (collectedSequence.length !== expectedSequence.length) {
           browser.test.assertEq(
             JSON.stringify(expectedSequence),
@@ -112,7 +112,7 @@ async function do_test_update(background, withPermissions = true) {
 add_task(async function test_pinned() {
   await do_test_update(function background() {
     // Create a new tab for testing update.
-    browser.tabs.create({}, function(tab) {
+    browser.tabs.create({}, function (tab) {
       browser.tabs.onUpdated.addListener(function onUpdated(tabId, changeInfo) {
         // Check callback
         browser.test.assertEq(tabId, tab.id, "Check tab id");
@@ -133,7 +133,7 @@ add_task(async function test_pinned() {
 add_task(async function test_unpinned() {
   await do_test_update(function background() {
     // Create a new tab for testing update.
-    browser.tabs.create({ pinned: true }, function(tab) {
+    browser.tabs.create({ pinned: true }, function (tab) {
       browser.tabs.onUpdated.addListener(function onUpdated(tabId, changeInfo) {
         // Check callback
         browser.test.assertEq(tabId, tab.id, "Check tab id");
@@ -157,7 +157,7 @@ add_task(async function test_unpinned() {
 add_task(async function test_url() {
   await do_test_update(function background() {
     // Create a new tab for testing update.
-    browser.tabs.create({ url: "about:blank?initial_url=1" }, function(tab) {
+    browser.tabs.create({ url: "about:blank?initial_url=1" }, function (tab) {
       const expectedUpdatedURL = "about:blank?updated_url=1";
 
       browser.tabs.onUpdated.addListener(function onUpdated(tabId, changeInfo) {
@@ -291,6 +291,48 @@ add_task(async function test_onUpdated_after_onRemoved() {
   });
   await extension.startup();
   await extension.awaitFinish("onRemoved");
+  await extension.unload();
+});
+
+// Regression test for Bug 1852391.
+add_task(async function test_pin_discarded_tab() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["tabs"],
+    },
+    async background() {
+      const url = "http://mochi.test:8888";
+      const newTab = await browser.tabs.create({
+        url,
+        active: false,
+        discarded: true,
+      });
+      browser.tabs.onUpdated.addListener(
+        async (tabId, changeInfo) => {
+          browser.test.assertEq(
+            tabId,
+            newTab.id,
+            "Expect onUpdated to be fired for the expected tab"
+          );
+          browser.test.assertEq(
+            changeInfo.pinned,
+            true,
+            "Expect pinned to be set to true"
+          );
+          await browser.tabs.remove(newTab.id);
+          browser.test.notifyPass("onPinned");
+        },
+        { properties: ["pinned"] }
+      );
+      await browser.tabs.update(newTab.id, { pinned: true }).catch(err => {
+        browser.test.fail(`Got unexpected rejection from tabs.update: ${err}`);
+        browser.test.notifyFail("onPinned");
+      });
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("onPinned");
   await extension.unload();
 });
 

@@ -8,20 +8,15 @@
 
 #include "nsCOMPtr.h"
 #include "nsIBackgroundTasks.h"
-#include "nsIBackgroundTasksManager.h"
-#include "nsICommandLine.h"
-#include "nsIFile.h"
 #include "nsISupports.h"
-#include "nsImportModule.h"
 #include "nsString.h"
-#include "nsXULAppAPI.h"
 
-#include "mozilla/LateWriteChecks.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
 
-#include "prenv.h"
+class nsICommandLine;
+class nsIFile;
 
 namespace mozilla {
 
@@ -31,128 +26,95 @@ class BackgroundTasks final : public nsIBackgroundTasks {
   NS_DECL_NSIBACKGROUNDTASKS
 
  public:
-  explicit BackgroundTasks(Maybe<nsCString> aBackgroundTask)
-      : mBackgroundTask(aBackgroundTask) {}
+  explicit BackgroundTasks(Maybe<nsCString> aBackgroundTask);
 
-  static void Init(Maybe<nsCString> aBackgroundTask) {
-    MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
+  static void Init(Maybe<nsCString> aBackgroundTask);
 
-    MOZ_RELEASE_ASSERT(!sSingleton,
-                       "BackgroundTasks singleton already initialized");
-    // The singleton will be cleaned up by `Shutdown()`.
-    sSingleton = new BackgroundTasks(aBackgroundTask);
-  }
-
-  static void Shutdown() {
-    MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
-
-    if (!sSingleton) {
-      return;
-    }
-
-    if (sSingleton->mProfD) {
-      AutoSuspendLateWriteChecks suspend;
-
-      mozilla::Unused << sSingleton->mProfD->Remove(/* aRecursive */ true);
-    }
-
-    sSingleton = nullptr;
-  }
+  static void Shutdown();
 
   /**
    * Return a raw pointer to the singleton instance.  Use this accessor in C++
    * code that just wants to call a method on the instance, but does not need to
    * hold a reference.
    */
-  static BackgroundTasks* GetSingleton() {
-    if (!sSingleton) {
-      // xpcshell doesn't set up background tasks: default to no background
-      // task.
-      Init(Nothing());
-    }
-
-    MOZ_RELEASE_ASSERT(
-        sSingleton, "BackgroundTasks singleton should have been initialized");
-
-    return sSingleton.get();
-  }
+  static BackgroundTasks* GetSingleton();
 
   /**
    * Return an addRef'd pointer to the singleton instance. This is used by the
    * XPCOM constructor that exists to support usage from JS.
    */
-  static already_AddRefed<BackgroundTasks> GetSingletonAddRefed() {
-    return RefPtr<BackgroundTasks>(GetSingleton()).forget();
-  }
+  static already_AddRefed<BackgroundTasks> GetSingletonAddRefed();
 
-  static const Maybe<nsCString> GetBackgroundTasks() {
-    if (!XRE_IsParentProcess()) {
-      return Nothing();
-    }
+  static Maybe<nsCString> GetBackgroundTasks();
 
-    return GetSingleton()->mBackgroundTask;
-  }
+  static bool IsBackgroundTaskMode();
 
-  static bool IsBackgroundTaskMode() {
-    if (!XRE_IsParentProcess()) {
-      return false;
-    }
+  static nsresult CreateEphemeralProfileDirectory(
+      nsIFile* aRootDir, const nsCString& aProfilePrefix, nsIFile** aFile);
 
-    return GetBackgroundTasks().isSome();
-  }
+  static nsresult CreateNonEphemeralProfileDirectory(
+      nsIFile* aRootDir, const nsCString& aProfilePrefix, nsIFile** aFile);
 
-  static nsresult CreateTemporaryProfileDirectory(const nsCString& aInstallHash,
-                                                  nsIFile** aFile) {
-    if (!XRE_IsParentProcess()) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
+  static bool IsEphemeralProfile();
 
-    return GetSingleton()->CreateTemporaryProfileDirectoryImpl(aInstallHash,
-                                                               aFile);
-  }
-
-  static bool IsUsingTemporaryProfile() {
-    return sSingleton && sSingleton->mProfD;
-  }
-
-  static nsresult RunBackgroundTask(nsICommandLine* aCmdLine) {
-    Maybe<nsCString> task = GetBackgroundTasks();
-    if (task.isNothing()) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-
-    nsCOMPtr<nsIBackgroundTasksManager> manager =
-        do_ImportModule("resource://gre/modules/BackgroundTasksManager.jsm",
-                        "BackgroundTasksManager", fallible);
-
-    NS_ENSURE_TRUE(manager, NS_ERROR_FAILURE);
-
-    NS_ConvertASCIItoUTF16 name(task.ref().get());
-    Unused << manager->RunBackgroundTaskNamed(name, aCmdLine);
-
-    return NS_OK;
-  }
+  static nsresult RunBackgroundTask(nsICommandLine* aCmdLine);
 
   /**
    * Whether the given task name should process updates.  Most tasks should not
    * process updates to avoid Firefox being updated unexpectedly.
    *
-   * Right now, we only process updates for the `backgroundupdate` task and the
-   * test-only `shouldprocessupdates` task.
+   * At the time of writing, we only process updates for the `backgroundupdate`
+   * task and the test-only `shouldprocessupdates` task.
    */
-  static bool IsUpdatingTaskName(const nsCString& aName) {
-    return aName.EqualsLiteral("backgroundupdate") ||
-           aName.EqualsLiteral("shouldprocessupdates");
-  }
+  static bool IsUpdatingTaskName(const nsCString& aName);
+
+  /**
+   * Whether the given task name should use a temporary ephemeral
+   * profile.  Most tasks should use a temporary ephemeral profile to
+   * allow concurrent task invocation and to simplify reasoning.
+   *
+   * At the time of writing, we use temporary ephemeral profiles for all tasks
+   * save the `backgroundupdate` task and the test-only `notephemeralprofile`
+   * task.
+   */
+  static bool IsEphemeralProfileTaskName(const nsCString& aName);
+
+  /**
+   * Whether the given task name should produce no output.  This is achieved by
+   * redirecting stdout and stderr to /dev/null (or, on Windows, nul:).
+   * profile.  Most tasks should produce output.
+   *
+   * At the time of writing, we produce no output for the `pingsender` task and
+   * the test-only `no_output` task.
+   */
+  static bool IsNoOutputTaskName(const nsCString& aName);
+
+  /**
+   * Get the installation-specific profile prefix for the current task name and
+   * the given install hash.
+   */
+  static nsCString GetProfilePrefix(const nsCString& aInstallHash);
 
  protected:
   static StaticRefPtr<BackgroundTasks> sSingleton;
+  static LazyLogModule sBackgroundTasksLog;
 
   Maybe<nsCString> mBackgroundTask;
+  bool mIsEphemeralProfile;
   nsCOMPtr<nsIFile> mProfD;
 
-  nsresult CreateTemporaryProfileDirectoryImpl(const nsCString& aInstallHash,
+  nsresult CreateEphemeralProfileDirectoryImpl(nsIFile* aRootDir,
+                                               const nsCString& aProfilePrefix,
                                                nsIFile** aFile);
+
+  nsresult CreateNonEphemeralProfileDirectoryImpl(
+      nsIFile* aRootDir, const nsCString& aProfilePrefix, nsIFile** aFile);
+  /*
+   * Iterates children of `aRoot` and removes unlocked profiles matching
+   * `aPrefix`.
+   */
+  static nsresult RemoveStaleEphemeralProfileDirectories(
+      nsIFile* const aRoot, const nsCString& aPrefix);
 
   virtual ~BackgroundTasks() = default;
 };

@@ -4,8 +4,8 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const { debounce } = require("devtools/shared/debounce");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const { debounce } = require("resource://devtools/shared/debounce.js");
 
 /**
  * The ShapesInContextEditor:
@@ -106,7 +106,7 @@ class ShapesInContextEditor {
       options.transformMode = !this.state.shapes.options.transformMode;
     }
 
-    // Same target node, dfferent modes -> toggle between shape-outside and clip-path.
+    // Same target node, dfferent modes -> toggle between shape-outside, clip-path and offset-path.
     // Hide highlighter for previous property, but continue and show for other property.
     if (node == this.highlighterTargetNode && this.mode !== options.mode) {
       await this.hide();

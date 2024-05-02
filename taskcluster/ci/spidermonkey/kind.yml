@@ -22,7 +22,7 @@ job-defaults:
         tier: 1
     index:
         product: firefox
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     run:
         using: spidermonkey
     when:
@@ -59,7 +59,7 @@ job-defaults:
     fetches:
         toolchain:
             by-worker-type:
-                .*-b-win2012:
+                .*-b-win2022:
                     - win64-clang
                     - win64-rust
                 default:

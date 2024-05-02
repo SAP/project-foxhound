@@ -1,10 +1,9 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var TEST_PREFERRED_REMOTE_TYPES = [
   E10SUtils.WEB_REMOTE_TYPE,
@@ -54,20 +53,18 @@ function run_test() {
   for (let testCase of TEST_CASES) {
     for (let preferredRemoteType of TEST_PREFERRED_REMOTE_TYPES) {
       let plainUri = Services.io.newURI(testCase.plainURL);
-      let plainRemoteType = E10SUtils.getRemoteTypeForURIObject(
-        plainUri,
-        true,
-        false,
-        preferredRemoteType
-      );
+      let plainRemoteType = E10SUtils.getRemoteTypeForURIObject(plainUri, {
+        multiProcess: true,
+        remoteSubFrames: false,
+        preferredRemoteType,
+      });
 
       let nestedUri = Services.io.newURI(testCase.nestedURL);
-      let nestedRemoteType = E10SUtils.getRemoteTypeForURIObject(
-        nestedUri,
-        true,
-        false,
-        preferredRemoteType
-      );
+      let nestedRemoteType = E10SUtils.getRemoteTypeForURIObject(nestedUri, {
+        multiProcess: true,
+        remoteSubFrames: false,
+        preferredRemoteType,
+      });
 
       let nestedStr = nestedUri.scheme + ":";
       do {

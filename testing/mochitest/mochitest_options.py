@@ -2,32 +2,28 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-import six
-from abc import ABCMeta, abstractmethod, abstractproperty
-from argparse import ArgumentParser, SUPPRESS
-from distutils.util import strtobool
-from distutils import spawn
-from itertools import chain
-from six.moves.urllib.parse import urlparse
 import json
 import os
-import tempfile
 import sys
+import tempfile
+from abc import ABCMeta, abstractmethod, abstractproperty
+from argparse import SUPPRESS, ArgumentParser
+from distutils import spawn
+from distutils.util import strtobool
+from itertools import chain
 
-from mozprofile import DEFAULT_PORTS
 import mozinfo
 import mozlog
 import moznetwork
-
+import six
+from mozprofile import DEFAULT_PORTS
+from six.moves.urllib.parse import urlparse
 
 here = os.path.abspath(os.path.dirname(__file__))
 
 try:
-    from mozbuild.base import (
-        MozbuildObject,
-        MachCommandConditions as conditions,
-    )
+    from mozbuild.base import MachCommandConditions as conditions
+    from mozbuild.base import MozbuildObject
 
     build_obj = MozbuildObject.from_environment(cwd=here)
 except ImportError:
@@ -407,6 +403,15 @@ class MochitestArguments(ArgumentContainer):
             },
         ],
         [
+            ["--conditioned-profile"],
+            {
+                "dest": "conditionedProfile",
+                "action": "store_true",
+                "default": False,
+                "help": "Download and run with a full conditioned profile.",
+            },
+        ],
+        [
             ["--testing-modules-dir"],
             {
                 "dest": "testingModulesDir",
@@ -500,6 +505,24 @@ class MochitestArguments(ArgumentContainer):
             },
         ],
         [
+            ["--use-http3-server"],
+            {
+                "dest": "useHttp3Server",
+                "default": False,
+                "help": "Whether to use the Http3 server",
+                "action": "store_true",
+            },
+        ],
+        [
+            ["--use-http2-server"],
+            {
+                "dest": "useHttp2Server",
+                "default": False,
+                "help": "Whether to use the Http2 server",
+                "action": "store_true",
+            },
+        ],
+        [
             ["--setpref"],
             {
                 "action": "append",
@@ -559,15 +582,15 @@ class MochitestArguments(ArgumentContainer):
                 "action": "store_true",
                 "default": False,
                 "dest": "a11y_checks",
-                "help": "Run tests with accessibility checks disabled.",
+                "help": "Run tests with accessibility checks enabled.",
             },
         ],
         [
             ["--disable-fission"],
             {
-                "action": "store_false",
-                "default": True,
-                "dest": "fission",
+                "action": "store_true",
+                "default": False,
+                "dest": "disable_fission",
                 "help": "Run tests with fission (site isolation) disabled.",
             },
         ],
@@ -905,6 +928,15 @@ class MochitestArguments(ArgumentContainer):
                 "help": "treat harness level crashes as passing (used for quarantine jobs).",
             },
         ],
+        [
+            ["--compare-preferences"],
+            {
+                "action": "store_true",
+                "dest": "comparePrefs",
+                "default": False,
+                "help": "Compare preferences at the end of each test and report changed ones as failures.",
+            },
+        ],
     ]
 
     defaults = {
@@ -1157,13 +1189,8 @@ class MochitestArguments(ArgumentContainer):
             )
 
         # If e10s explicitly disabled and no fission option specified, disable fission
-        if (
-            (not options.e10s)
-            and options.fission
-            and ("fission.autostart=true" not in options.extraPrefs)
-            and ("fission.autostart=false" not in options.extraPrefs)
-        ):
-            options.fission = False
+        if (not options.e10s) and (not options.disable_fission):
+            options.disable_fission = True
 
         options.leakThresholds = {
             "default": options.defaultLeakThreshold,

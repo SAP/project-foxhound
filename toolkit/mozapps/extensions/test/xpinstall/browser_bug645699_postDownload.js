@@ -3,6 +3,9 @@
 // content. This should be blocked by the origin allow check.
 // This verifies bug 645699
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   Harness.installConfirmCallback = confirm_install;
   Harness.installBlockedCallback = allow_blocked;
   Harness.installsCompletedCallback = finish_test;
@@ -20,7 +23,7 @@ function test() {
   );
 
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "bug645699.html");
+  BrowserTestUtils.startLoadingURIString(gBrowser, TESTROOT + "bug645699.html");
 }
 
 function allow_blocked(installInfo) {

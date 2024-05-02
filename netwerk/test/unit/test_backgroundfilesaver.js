@@ -12,21 +12,9 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileTestUtils",
-  "resource://testing-common/FileTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
+});
 
 const BackgroundFileSaverOutputStream = Components.Constructor(
   "@mozilla.org/network/background-file-saver;1?mode=outputstream",
@@ -63,8 +51,6 @@ const EXPECTED_HASHES = {
   // TEST_DATA_LONG + TEST_DATA_LONG
   9437184: "693e4f8c6855a6fed4f5f9370d12cc53105672f3ff69783581e7d925984c41d3",
 };
-
-const gTextDecoder = new TextDecoder();
 
 // Generate a long string of data in a moderately fast way.
 const TEST_256_CHARS = new Array(257).join("-");
@@ -114,7 +100,7 @@ function promiseVerifyContents(aFile, aExpectedContents) {
         uri: NetUtil.newURI(aFile),
         loadUsingSystemPrincipal: true,
       },
-      function(aInputStream, aStatus) {
+      function (aInputStream, aStatus) {
         Assert.ok(Components.isSuccessCode(aStatus));
         let contents = NetUtil.readInputStreamToString(
           aInputStream,
@@ -148,12 +134,12 @@ function promiseVerifyContents(aFile, aExpectedContents) {
 function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
   return new Promise((resolve, reject) => {
     aSaver.observer = {
-      onTargetChange: function BFSO_onSaveComplete(aSaver, aTarget) {
+      onTargetChange: function BFSO_onSaveComplete(saver, aTarget) {
         if (aOnTargetChangeFn) {
           aOnTargetChangeFn(aTarget);
         }
       },
-      onSaveComplete: function BFSO_onSaveComplete(aSaver, aStatus) {
+      onSaveComplete: function BFSO_onSaveComplete(saver, aStatus) {
         if (Components.isSuccessCode(aStatus)) {
           resolve();
         } else {
@@ -278,7 +264,7 @@ var gStillRunning = true;
 
 add_task(function test_setup() {
   // Wait 10 minutes, that is half of the external xpcshell timeout.
-  do_timeout(10 * 60 * 1000, function() {
+  do_timeout(10 * 60 * 1000, function () {
     if (gStillRunning) {
       do_throw("Test timed out.");
     }

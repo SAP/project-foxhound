@@ -12,7 +12,6 @@ Network Security Services (NSS)
    build_artifacts.rst
    releases/index.rst
    community.rst
-   legacy/index.rst
 
 .. warning::
    This NSS documentation was just imported from our legacy MDN repository. It
@@ -117,10 +116,8 @@ Network Security Services (NSS)
    .. rubric:: NSS is built on top of Netscape Portable Runtime (NSPR)
       :name: NSS_is_built_on_top_of_Netscape_Portable_Runtime_NSPR
 
-   `Netscape Portable Runtime <NSPR>`__
-      NSPR project page.
-   `NSPR Reference <https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSPR/Reference>`__
-      NSPR API documentation.
+   - :ref:`NSPR` - NSPR project page.
+   - :ref:`NSPR API Reference` - NSPR API documentation.
 
    .. rubric:: Additional Information
       :name: Additional_Information

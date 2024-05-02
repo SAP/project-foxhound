@@ -60,15 +60,6 @@ struct FuncCompileInput {
 
 using FuncCompileInputVector = Vector<FuncCompileInput, 8, SystemAllocPolicy>;
 
-void CraneliftFreeReusableData(void* ptr);
-
-struct CraneliftReusableDataDtor {
-  void operator()(void* ptr) { CraneliftFreeReusableData(ptr); }
-};
-
-using CraneliftReusableData =
-    mozilla::UniquePtr<void*, CraneliftReusableDataDtor>;
-
 // CompiledCode contains the resulting code and metadata for a set of compiled
 // input functions or stubs.
 
@@ -81,14 +72,10 @@ struct CompiledCode {
   SymbolicAccessVector symbolicAccesses;
   jit::CodeLabelVector codeLabels;
   StackMaps stackMaps;
-  CraneliftReusableData craneliftReusableData;
-#ifdef ENABLE_WASM_EXCEPTIONS
-  WasmTryNoteVector tryNotes;
-#endif
+  TryNoteVector tryNotes;
+  CodeRangeUnwindInfoVector codeRangeUnwindInfos;
 
   [[nodiscard]] bool swap(jit::MacroAssembler& masm);
-  [[nodiscard]] bool swapCranelift(jit::MacroAssembler& masm,
-                                   CraneliftReusableData& craneliftData);
 
   void clear() {
     bytes.clear();
@@ -99,22 +86,16 @@ struct CompiledCode {
     symbolicAccesses.clear();
     codeLabels.clear();
     stackMaps.clear();
-#ifdef ENABLE_WASM_EXCEPTIONS
     tryNotes.clear();
-#endif
-    // The cranelift reusable data resets itself lazily.
+    codeRangeUnwindInfos.clear();
     MOZ_ASSERT(empty());
   }
 
   bool empty() {
     return bytes.empty() && codeRanges.empty() && callSites.empty() &&
            callSiteTargets.empty() && trapSites.empty() &&
-           symbolicAccesses.empty() && codeLabels.empty() &&
-#ifdef ENABLE_WASM_EXCEPTIONS
-           tryNotes.empty() && stackMaps.empty();
-#else
-           stackMaps.empty();
-#endif
+           symbolicAccesses.empty() && codeLabels.empty() && tryNotes.empty() &&
+           stackMaps.empty() && codeRangeUnwindInfos.empty();
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -203,7 +184,6 @@ class MOZ_STACK_CLASS ModuleGenerator {
   // Data scoped to the ModuleGenerator's lifetime
   CompileTaskState taskState_;
   LifoAlloc lifo_;
-  jit::JitContext jcx_;
   jit::TempAllocator masmAlloc_;
   jit::WasmMacroAssembler masm_;
   Uint32Vector funcToCodeRange_;
@@ -212,7 +192,6 @@ class MOZ_STACK_CLASS ModuleGenerator {
   CallSiteTargetVector callSiteTargets_;
   uint32_t lastPatchedCallSite_;
   uint32_t startOfUnpatchedCallsites_;
-  CodeOffsetVector debugTrapFarJumps_;
 
   // Parallel compilation
   bool parallel_;
@@ -225,8 +204,10 @@ class MOZ_STACK_CLASS ModuleGenerator {
   // Assertions
   DebugOnly<bool> finishedFuncDefs_;
 
-  bool allocateGlobalBytes(uint32_t bytes, uint32_t align,
-                           uint32_t* globalDataOff);
+  bool allocateInstanceDataBytes(uint32_t bytes, uint32_t align,
+                                 uint32_t* instanceDataOffset);
+  bool allocateInstanceDataBytesN(uint32_t bytes, uint32_t align,
+                                  uint32_t count, uint32_t* instanceDataOffset);
 
   bool funcIsCompiled(uint32_t funcIndex) const;
   const CodeRange& funcCodeRange(uint32_t funcIndex) const;

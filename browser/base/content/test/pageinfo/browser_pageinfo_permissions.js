@@ -1,8 +1,5 @@
-const { SitePermissions } = ChromeUtils.import(
-  "resource:///modules/SitePermissions.jsm"
-);
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const TEST_ORIGIN = "https://example.com";
@@ -10,7 +7,7 @@ const TEST_ORIGIN_CERT_ERROR = "https://expired.example.com";
 const LOW_TLS_VERSION = "https://tls1.example.com/";
 
 async function testPermissions(defaultPermission) {
-  await BrowserTestUtils.withNewTab(TEST_ORIGIN, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_ORIGIN, async function (browser) {
     let pageInfo = BrowserPageInfo(TEST_ORIGIN, "permTab");
     await BrowserTestUtils.waitForEvent(pageInfo, "load");
 
@@ -195,7 +192,7 @@ add_task(async function test_default_geo_permission() {
 
 // Test special behavior for cookie permissions.
 add_task(async function test_cookie_permission() {
-  await BrowserTestUtils.withNewTab(TEST_ORIGIN, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_ORIGIN, async function (browser) {
     let pageInfo = BrowserPageInfo(TEST_ORIGIN, "permTab");
     await BrowserTestUtils.waitForEvent(pageInfo, "load");
 

@@ -20,7 +20,7 @@ async function setupForms(numUsernameOnly, numBasic, numOther) {
         numBasic,
       },
     ],
-    async function(data) {
+    async function (data) {
       // type: 1: basic, 2:usernameOnly, 3:other
       function addForm(type) {
         const form = content.document.createElement("form");
@@ -67,13 +67,15 @@ async function checkChildHistogram(id, index, expected) {
     histogram = histograms[id];
     return !!histogram && histogram.values[index] == expected;
   });
-  is(histogram.values[index], expected);
+  Assert.equal(histogram.values[index], expected);
 }
 
-add_task(async function setup() {
-  Services.prefs.setBoolPref("signon.usernameOnlyForm.enabled", true);
-  registerCleanupFunction(() => {
-    Services.prefs.clearUserPref("signon.usernameOnlyForm.enabled");
+add_setup(async function () {
+  SpecialPowers.pushPrefEnv({
+    set: [
+      ["signon.usernameOnlyForm.enabled", true],
+      ["signon.usernameOnlyForm.lookupThreshold", 100], // ignore the threshold in test
+    ],
   });
 
   // Wait 1sec to make sure all the telemetry data recorded prior to the beginning of the

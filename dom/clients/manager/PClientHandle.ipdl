@@ -4,10 +4,6 @@
 
 include protocol PClientManager;
 include protocol PClientHandleOp;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
-include protocol PFileDescriptorSet;
-include protocol PRemoteLazyInputStream;
 include ClientIPCTypes;
 
 include "mozilla/ipc/ProtocolMessageUtils.h";
@@ -15,6 +11,7 @@ include "mozilla/ipc/ProtocolMessageUtils.h";
 namespace mozilla {
 namespace dom {
 
+[ManualDealloc, ChildImpl=virtual, ParentImpl=virtual]
 protocol PClientHandle
 {
   manager PClientManager;

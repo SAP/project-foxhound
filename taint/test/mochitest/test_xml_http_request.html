@@ -1,0 +1,58 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8">
+    <title>Check XMLHttpRequest Sink</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script "text/javascript">
+
+
+      let sink_names = [
+          "XMLHttpRequest.open(url)",
+          "XMLHttpRequest.open(username)",
+          "XMLHttpRequest.open(password)",
+          "XMLHttpRequest.setRequestHeader(name)",
+          "XMLHttpRequest.setRequestHeader(value)",
+          "XMLHttpRequest.send",
+      ];
+
+      function check_tainted(str) {
+          SimpleTest.ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          SimpleTest.ok(str.taint.length == 0, "Check untainted");
+      }
+
+      let i = 0;
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+          let flow = report.detail.str.taint[0].flow;
+          SimpleTest.is(flow[1].operation, sink_names[i]);
+
+          i += 1;
+          if (i >= sink_names.length) {
+              SimpleTest.finish();
+          }
+      }, false);
+
+      function startTest() {
+          let request = new XMLHttpRequest();
+
+          request.open("GET", String.tainted("url"));
+          request.open("GET", "url", true, String.tainted("user"));
+          request.open("GET", "url", true, "user", String.tainted("password"));
+
+          request.setRequestHeader(String.tainted("name"), null);
+          request.setRequestHeader("name", String.tainted("value"));
+
+          request.send(String.tainted("body"));
+      }
+
+    </script>
+  </head>
+
+  <body onload="startTest();">
+
+</html>

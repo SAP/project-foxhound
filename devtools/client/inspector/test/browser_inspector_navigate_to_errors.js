@@ -11,7 +11,7 @@ const TEST_URL_2 = "http://127.0.0.1:36325/";
 const TEST_URL_3 = "https://www.wronguri.wronguri/";
 const TEST_URL_4 = "data:text/html,<html><body>test-doc-4</body></html>";
 
-add_task(async function() {
+add_task(async function () {
   // Open the inspector on a valid URL
   const { inspector } = await openInspectorForURL(TEST_URL_1);
 
@@ -42,7 +42,7 @@ add_task(async function() {
   let domain = TEST_URL_2.match(/^http:\/\/(.*)\/$/)[1];
   let errorMsg = bundle.formatStringFromName("connectionFailure", [domain]);
   is(
-    await getDisplayedNodeTextContent("#errorShortDescText", inspector),
+    await getDisplayedNodeTextContent("#errorShortDesc", inspector),
     errorMsg,
     "Inpector really inspects the error page"
   );
@@ -53,7 +53,7 @@ add_task(async function() {
   domain = TEST_URL_3.match(/^https:\/\/(.*)\/$/)[1];
   errorMsg = bundle.formatStringFromName("dnsNotFound2", [domain]);
   is(
-    await getDisplayedNodeTextContent("#errorShortDescText", inspector),
+    await getDisplayedNodeTextContent("#errorShortDesc", inspector),
     errorMsg,
     "Inspector really inspects the new error page"
   );

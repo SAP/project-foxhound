@@ -5,25 +5,14 @@
 /* Places Organizer Sidebars */
 
 #placesList {
-  appearance: auto;
-  -moz-default-appearance: -moz-mac-source-list;
+  background-color: -moz-mac-sidebar;
   width: 160px;
+  min-width: 100px;
+  max-width: 400px;
 }
 
 #placesList > treechildren::-moz-tree-cell-text {
   margin-inline-end: 6px;
-}
-
-#placesList > treechildren::-moz-tree-row(selected) {
-  appearance: auto;
-  -moz-default-appearance: -moz-mac-source-list-selection;
-  -moz-font-smoothing-background-color: -moz-mac-source-list-selection;
-}
-
-#placesList > treechildren::-moz-tree-row(selected,focus) {
-  appearance: auto;
-  -moz-default-appearance: -moz-mac-active-source-list-selection;
-  -moz-font-smoothing-background-color: -moz-mac-active-source-list-selection;
 }
 
 #placesList > treechildren::-moz-tree-cell(separator) {
@@ -73,7 +62,7 @@
 }
 
 #placesToolbar > toolbarbutton[type="menu"] > .toolbarbutton-menu-dropmarker {
-  list-style-image: url(chrome://global/skin/icons/arrow-down-12.svg);
+  content: url(chrome://global/skin/icons/arrow-down-12.svg);
   padding: 0;
   margin-inline-end: 2px;
 }
@@ -143,8 +132,35 @@
 }
 
 /* Info box */
+#infoBox:not([hidden="true"]) {
+  display: block;
+}
+
+#editBookmarkPanelContent {
+  grid-template-columns: auto 1fr;
+}
+
+#editBookmarkPanelContent .caption-label:not([hidden="true"]) {
+  display: block;
+  grid-column: 2;
+}
+
+#editBookmarkPanelContent label {
+  align-self: center;
+}
+
+#editBMPanel_itemsCountText {
+  grid-column: auto / span 2;
+  justify-self: center;
+}
+
+#editBMPanel_tagsSelectorRow {
+  grid-column: auto / span 2;
+}
+
 #detailsPane {
   border-top: 1px solid color-mix(in srgb, FieldText 50%, transparent);
+  min-height: 16em;
   padding: 10px;
 }
 

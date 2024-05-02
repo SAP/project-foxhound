@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { DefaultBrowserCheck } = ChromeUtils.import(
-  "resource:///modules/BrowserGlue.jsm"
+const { DefaultBrowserCheck } = ChromeUtils.importESModule(
+  "resource:///modules/BrowserGlue.sys.mjs"
 );
 const CHECK_PREF = "browser.shell.checkDefaultBrowser";
 
@@ -52,10 +52,7 @@ add_task(async function proton_shows_prompt() {
 add_task(async function not_now() {
   const histogram = getHistogram();
   await showAndWaitForModal(win => {
-    win.document
-      .querySelector("dialog")
-      .getButton("cancel")
-      .click();
+    win.document.querySelector("dialog").getButton("cancel").click();
   });
 
   Assert.equal(
@@ -88,10 +85,7 @@ add_task(async function primary_default() {
   const histogram = getHistogram();
 
   await showAndWaitForModal(win => {
-    win.document
-      .querySelector("dialog")
-      .getButton("accept")
-      .click();
+    win.document.querySelector("dialog").getButton("accept").click();
   });
 
   Assert.equal(
@@ -100,7 +94,7 @@ add_task(async function primary_default() {
     "Primary button sets as default"
   );
   Assert.equal(
-    mock.pinCurrentAppToTaskbar.callCount,
+    mock.pinCurrentAppToTaskbarAsync.callCount,
     0,
     "Primary button doesn't pin if already pinned"
   );
@@ -112,10 +106,7 @@ add_task(async function primary_pin() {
   const histogram = getHistogram();
 
   await showAndWaitForModal(win => {
-    win.document
-      .querySelector("dialog")
-      .getButton("accept")
-      .click();
+    win.document.querySelector("dialog").getButton("accept").click();
   });
 
   Assert.equal(
@@ -123,10 +114,12 @@ add_task(async function primary_pin() {
     1,
     "Primary button sets as default"
   );
-  Assert.equal(
-    mock.pinCurrentAppToTaskbar.callCount,
-    1,
-    "Primary button also pins"
-  );
+  if (AppConstants.platform == "win") {
+    Assert.equal(
+      mock.pinCurrentAppToTaskbarAsync.callCount,
+      1,
+      "Primary button also pins"
+    );
+  }
   AssertHistogram(histogram, "accept");
 });

@@ -6,13 +6,16 @@
 
 const {
   TYPES: { COOKIE },
-} = require("devtools/server/actors/resources/index");
+} = require("resource://devtools/server/actors/resources/index.js");
 
-const ParentProcessStorage = require("devtools/server/actors/resources/utils/parent-process-storage");
+const ParentProcessStorage = require("resource://devtools/server/actors/resources/utils/parent-process-storage.js");
+const {
+  CookiesStorageActor,
+} = require("resource://devtools/server/actors/resources/storage/cookies.js");
 
 class CookiesWatcher extends ParentProcessStorage {
   constructor() {
-    super("cookies", COOKIE);
+    super(CookiesStorageActor, "cookies", COOKIE);
   }
 }
 

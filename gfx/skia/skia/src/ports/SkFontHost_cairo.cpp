@@ -45,6 +45,13 @@ typedef enum FT_LcdFilter_
 #    define FT_PIXEL_MODE_BGRA 7
 #endif
 
+// If compiling with FreeType before 2.12.0
+#ifndef FT_FACE_FLAG_SVG
+// We need the format tag so that we can switch on it and handle a possibly-
+// newer version of the library at runtime.
+static constexpr FT_UInt32 FT_IMAGE_TAG(FT_GLYPH_FORMAT_SVG, 'S', 'V', 'G', ' ');
+#endif
+
 #ifndef SK_CAN_USE_DLOPEN
 #define SK_CAN_USE_DLOPEN 1
 #endif
@@ -69,7 +76,6 @@ extern "C"
     int mozilla_LockSharedFTFace(void* aContext, void* aOwner);
     void mozilla_UnlockSharedFTFace(void* aContext);
     FT_Error mozilla_LoadFTGlyph(FT_Face aFace, uint32_t aGlyphIndex, int32_t aFlags);
-    // Implemented in webrender:
     void mozilla_glyphslot_embolden_less(FT_GlyphSlot slot);
 }
 
@@ -114,11 +120,10 @@ public:
     void Unlock() { mozilla_UnlockSharedFTFace(fFTFaceContext); }
 
 protected:
-    unsigned generateGlyphCount() override;
     bool generateAdvance(SkGlyph* glyph) override;
-    void generateMetrics(SkGlyph* glyph) override;
+    void generateMetrics(SkGlyph* glyph, SkArenaAlloc* arena) override;
     void generateImage(const SkGlyph& glyph) override;
-    bool generatePath(SkGlyphID glyphID, SkPath* path) override;
+    bool generatePath(const SkGlyph& glyph, SkPath* path) override;
     void generateFontMetrics(SkFontMetrics* metrics) override;
 
 private:
@@ -174,16 +179,16 @@ public:
         return nullptr;
     }
 
-    SkScalerContext* onCreateScalerContext(const SkScalerContextEffects& effects, const SkDescriptor* desc) const override
+    std::unique_ptr<SkScalerContext> onCreateScalerContext(const SkScalerContextEffects& effects, const SkDescriptor* desc) const override
     {
         SkScalerContext_CairoFT* ctx = new SkScalerContext_CairoFT(
             sk_ref_sp(const_cast<SkCairoFTTypeface*>(this)), effects, desc,
             fFTFace, fFTFaceContext, fPixelGeometry, fLcdFilter);
+        std::unique_ptr<SkScalerContext> result(ctx);
         if (!ctx->isValid()) {
-            delete ctx;
             return nullptr;
         }
-        return ctx;
+        return result;
     }
 
     void onFilterRec(SkScalerContextRec* rec) const override
@@ -229,6 +234,14 @@ public:
     void onGetFamilyName(SkString* familyName) const override
     {
         familyName->reset();
+    }
+
+    bool onGetPostScriptName(SkString*) const override {
+        return false;
+    }
+
+    bool onGlyphMaskNeedsCurrentColor() const override {
+        return false;
     }
 
     int onGetTableTags(SkFontTableTag*) const override
@@ -426,8 +439,8 @@ bool SkScalerContext_CairoFT::computeShapeMatrix(const SkMatrix& m)
     double major = det != 0.0 ? hypot(scaleX, skewY) : 0.0;
     double minor = major != 0.0 ? fabs(det) / major : 0.0;
     // Limit scales to be above 1pt.
-    major = SkTMax(major, 1.0);
-    minor = SkTMax(minor, 1.0);
+    major = std::max(major, 1.0);
+    minor = std::max(minor, 1.0);
 
     // If the font is not scalable, then choose the best available size.
     if (fFTFace && !FT_IS_SCALABLE(fFTFace)) {
@@ -472,14 +485,9 @@ bool SkScalerContext_CairoFT::computeShapeMatrix(const SkMatrix& m)
     return true;
 }
 
-unsigned SkScalerContext_CairoFT::generateGlyphCount()
-{
-    return fFTFace->num_glyphs;
-}
-
 bool SkScalerContext_CairoFT::generateAdvance(SkGlyph* glyph)
 {
-    generateMetrics(glyph);
+    generateMetrics(glyph, nullptr);
     return !glyph->isEmpty();
 }
 
@@ -491,7 +499,7 @@ void SkScalerContext_CairoFT::prepareGlyph(FT_GlyphSlot glyph)
     }
 }
 
-void SkScalerContext_CairoFT::generateMetrics(SkGlyph* glyph)
+void SkScalerContext_CairoFT::generateMetrics(SkGlyph* glyph, SkArenaAlloc* arena)
 {
     glyph->fMaskFormat = fRec.fMaskFormat;
 
@@ -587,6 +595,10 @@ void SkScalerContext_CairoFT::generateMetrics(SkGlyph* glyph)
                                        fFTFace->glyph->bitmap.rows);
         }
         break;
+    case FT_GLYPH_FORMAT_SVG:
+        // We don't support getting glyph bounds for SVG, but at least the advance
+        // should be correctly returned, and we don't want to fire an assertion.
+        break;
     default:
         SkDEBUGFAIL("unknown glyph format");
         return;
@@ -637,11 +649,13 @@ void SkScalerContext_CairoFT::generateImage(const SkGlyph& glyph)
     }
 }
 
-bool SkScalerContext_CairoFT::generatePath(SkGlyphID glyphID, SkPath* path)
+bool SkScalerContext_CairoFT::generatePath(const SkGlyph& glyph, SkPath* path)
 {
     AutoLockFTFace faceLock(this);
 
     SkASSERT(path);
+
+    SkGlyphID glyphID = glyph.getGlyphID();
 
     uint32_t flags = fLoadGlyphFlags;
     flags |= FT_LOAD_NO_BITMAP; // ignore embedded bitmaps so we're sure to get the outline
@@ -665,13 +679,3 @@ void SkScalerContext_CairoFT::generateFontMetrics(SkFontMetrics* metrics)
         memset(metrics, 0, sizeof(SkFontMetrics));
     }
 }
-
-///////////////////////////////////////////////////////////////////////////////
-
-#include "include/core/SkFontMgr.h"
-
-sk_sp<SkFontMgr> SkFontMgr::Factory() {
-    // todo
-    return nullptr;
-}
-

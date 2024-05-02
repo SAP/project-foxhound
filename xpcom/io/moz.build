@@ -30,6 +30,7 @@ XPIDL_SOURCES += [
     "nsIObjectOutputStream.idl",
     "nsIOutputStream.idl",
     "nsIPipe.idl",
+    "nsIRandomAccessStream.idl",
     "nsISafeOutputStream.idl",
     "nsIScriptableBase64Encoder.idl",
     "nsIScriptableInputStream.idl",
@@ -54,13 +55,13 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     EXPORTS.mozilla += [
         "FileUtilsWin.h",
     ]
-    SOURCES += [
+    UNIFIED_SOURCES += [
         "FileUtilsWin.cpp",
         "nsLocalFileWin.cpp",
     ]
 else:
     EXPORTS += ["nsLocalFileUnix.h"]
-    SOURCES += [
+    UNIFIED_SOURCES += [
         "nsLocalFileUnix.cpp",
     ]
 
@@ -95,15 +96,18 @@ EXPORTS += [
 EXPORTS.mozilla += [
     "Base64.h",
     "FilePreferences.h",
+    "FixedBufferOutputStream.h",
     "InputStreamLengthHelper.h",
     "InputStreamLengthWrapper.h",
     "NonBlockingAsyncInputStream.h",
-    "SeekableStreamWrapper.h",
     "SlicedInputStream.h",
     "SnappyCompressOutputStream.h",
     "SnappyFrameUtils.h",
     "SnappyUncompressInputStream.h",
+    "StreamBufferSink.h",
+    "StreamBufferSinkImpl.h",
     "StreamBufferSource.h",
+    "StreamBufferSourceImpl.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -111,6 +115,7 @@ UNIFIED_SOURCES += [
     "crc32c.c",
     "FileDescriptorFile.cpp",
     "FilePreferences.cpp",
+    "FixedBufferOutputStream.cpp",
     "InputStreamLengthHelper.cpp",
     "InputStreamLengthWrapper.cpp",
     "NonBlockingAsyncInputStream.cpp",
@@ -134,7 +139,6 @@ UNIFIED_SOURCES += [
     "nsStringStream.cpp",
     "nsUnicharInputStream.cpp",
     "nsWildCard.cpp",
-    "SeekableStreamWrapper.cpp",
     "SlicedInputStream.cpp",
     "SnappyCompressOutputStream.cpp",
     "SnappyFrameUtils.cpp",
@@ -143,9 +147,11 @@ UNIFIED_SOURCES += [
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
-    SOURCES += [
+    UNIFIED_SOURCES += [
         "CocoaFileUtils.mm",
     ]
+
+DEFINES["MOZ_APP_BASENAME"] = '"%s"' % CONFIG["MOZ_APP_BASENAME"]
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

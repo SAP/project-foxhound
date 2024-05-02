@@ -38,10 +38,6 @@
 #define NS_FONT_KERNING_NONE 1
 #define NS_FONT_KERNING_NORMAL 2
 
-#define NS_FONT_SYNTHESIS_WEIGHT 0x1
-#define NS_FONT_SYNTHESIS_STYLE 0x2
-#define NS_FONT_SYNTHESIS_SMALL_CAPS 0x4
-
 #define NS_FONT_OPTICAL_SIZING_AUTO 0
 #define NS_FONT_OPTICAL_SIZING_NONE 1
 
@@ -154,6 +150,8 @@
 #define NS_FONT_VARIANT_WIDTH_HALF 2
 #define NS_FONT_VARIANT_WIDTH_THIRD 3
 #define NS_FONT_VARIANT_WIDTH_QUARTER 4
+
+enum class StyleFontVariantEmoji : uint8_t { Normal, Text, Emoji, Unicode };
 
 // based on fixed offset values used within WebKit
 #define NS_FONT_SUBSCRIPT_OFFSET_RATIO (0.20)

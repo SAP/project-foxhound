@@ -3,8 +3,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SearchEngineSelectorOld:
+    "resource://gre/modules/SearchEngineSelectorOld.sys.mjs",
 });
 
 const TEST_CONFIG = [
@@ -77,10 +78,10 @@ const TEST_CONFIG = [
   },
 ];
 
-const engineSelector = new SearchEngineSelector();
+const engineSelector = new SearchEngineSelectorOld();
 
-add_task(async function setup() {
-  const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
+add_setup(async function () {
+  const settings = await RemoteSettings(SearchUtils.OLD_SETTINGS_KEY);
   sinon.stub(settings, "get").returns(TEST_CONFIG);
 });
 

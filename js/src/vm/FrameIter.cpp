@@ -14,12 +14,13 @@
 #include <stdlib.h>  // getenv
 
 #include "jit/BaselineFrame.h"   // js::jit::BaselineFrame
-#include "jit/JitFrames.h"       // js::jit::EnsureBareExitFrame
+#include "jit/JitFrames.h"       // js::jit::EnsureUnwoundJitExitFrame
 #include "jit/JSJitFrameIter.h"  // js::jit::{FrameType,InlineFrameIterator,JSJitFrameIter,MaybeReadFallback,SnapshotIterator}
-#include "js/GCAPI.h"            // JS::AutoSuppressGCAnalysis
-#include "js/Principals.h"       // JSSubsumesOp
-#include "js/RootingAPI.h"       // JS::Rooted
-#include "vm/Activation.h"       // js::Activation{,Iterator}
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin
+#include "js/GCAPI.h"              // JS::AutoSuppressGCAnalysis
+#include "js/Principals.h"         // JSSubsumesOp
+#include "js/RootingAPI.h"         // JS::Rooted
+#include "vm/Activation.h"         // js::Activation{,Iterator}
 #include "vm/EnvironmentObject.h"  // js::CallObject
 #include "vm/JitActivation.h"      // js::jit::JitActivation
 #include "vm/JSContext.h"          // JSContext
@@ -180,7 +181,7 @@ void JitFrameIter::settle() {
 
   if (isWasm()) {
     const wasm::WasmFrameIter& wasmFrame = asWasm();
-    if (!wasmFrame.unwoundIonCallerFP()) {
+    if (!wasmFrame.hasUnwoundJitFrame()) {
       return;
     }
 
@@ -195,8 +196,8 @@ void JitFrameIter::settle() {
     // The wasm iterator has saved the previous jit frame pointer for us.
 
     MOZ_ASSERT(wasmFrame.done());
-    uint8_t* prevFP = wasmFrame.unwoundIonCallerFP();
-    jit::FrameType prevFrameType = wasmFrame.unwoundIonFrameType();
+    uint8_t* prevFP = wasmFrame.unwoundCallerFP();
+    jit::FrameType prevFrameType = wasmFrame.unwoundJitFrameType();
 
     if (mustUnwindActivation_) {
       act_->setJSExitFP(prevFP);
@@ -227,7 +228,7 @@ void JitFrameIter::operator++() {
       // don't see this frame when they use ScriptFrameIter, and (2)
       // ScriptFrameIter does not crash when accessing an IonScript
       // that's destroyed by the ionScript->decref call.
-      EnsureBareExitFrame(act_, prevFrame);
+      EnsureUnwoundJitExitFrame(act_, prevFrame);
     }
   } else if (isWasm()) {
     ++asWasm();
@@ -568,7 +569,7 @@ JSAtom* FrameIter::maybeFunctionDisplayAtom() const {
         return wasmFrame().functionDisplayAtom();
       }
       if (isFunctionFrame()) {
-        return calleeTemplate()->displayAtom();
+        return calleeTemplate()->fullDisplayAtom();
       }
       return nullptr;
   }
@@ -618,7 +619,7 @@ const char16_t* FrameIter::displayURL() const {
   MOZ_CRASH("Unexpected state");
 }
 
-unsigned FrameIter::computeLine(uint32_t* column) const {
+unsigned FrameIter::computeLine(JS::TaggedColumnNumberOneOrigin* column) const {
   switch (data_.state_) {
     case DONE:
       break;
@@ -627,7 +628,12 @@ unsigned FrameIter::computeLine(uint32_t* column) const {
       if (isWasm()) {
         return wasmFrame().computeLine(column);
       }
-      return PCToLineNumber(script(), pc(), column);
+      JS::LimitedColumnNumberOneOrigin columnNumber;
+      unsigned lineNumber = PCToLineNumber(script(), pc(), &columnNumber);
+      if (column) {
+        *column = JS::TaggedColumnNumberOneOrigin(columnNumber);
+      }
+      return lineNumber;
   }
 
   MOZ_CRASH("Unexpected state");
@@ -947,19 +953,6 @@ Value FrameIter::thisArgument(JSContext* cx) const {
   MOZ_CRASH("Unexpected state");
 }
 
-Value FrameIter::newTarget() const {
-  switch (data_.state_) {
-    case DONE:
-      break;
-    case INTERP:
-      return interpFrame()->newTarget();
-    case JIT:
-      MOZ_ASSERT(jsJitFrame().isBaselineJS());
-      return jsJitFrame().baselineFrame()->newTarget();
-  }
-  MOZ_CRASH("Unexpected state");
-}
-
 Value FrameIter::returnValue() const {
   switch (data_.state_) {
     case DONE:
@@ -1056,4 +1049,18 @@ void NonBuiltinScriptFrameIter::settle() {
       ScriptFrameIter::operator++();
     }
   }
+}
+
+bool FrameIter::inPrologue() const {
+  if (pc() < script()->main()) {
+    return true;
+  }
+  // If we do a VM call before pushing locals in baseline, the stack frame will
+  // not include space for those locals.
+  if (pc() == script()->code() && isBaseline() &&
+      jsJitFrame().baselineFrameNumValueSlots() < script()->nfixed()) {
+    return true;
+  }
+
+  return false;
 }

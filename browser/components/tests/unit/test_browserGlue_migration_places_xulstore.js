@@ -7,11 +7,11 @@ const TOPIC_BROWSERGLUE_TEST = "browser-glue-test";
 const TOPICDATA_BROWSERGLUE_TEST = "force-ui-migration";
 const UI_VERSION = 120;
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { PlacesUIUtils } = ChromeUtils.import(
-  "resource:///modules/PlacesUIUtils.jsm"
+const { PlacesUIUtils } = ChromeUtils.importESModule(
+  "resource:///modules/PlacesUIUtils.sys.mjs"
 );
 
 add_task(async function has_not_used_ctrl_tab_and_its_off() {

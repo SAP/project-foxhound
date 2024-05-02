@@ -151,8 +151,7 @@ RefPtr<GenericErrorResultPromise> ClientHandle::PostMessage(
   ClientPostMessageArgs args;
   args.serviceWorker() = aSource.ToIPC();
 
-  if (!aData.BuildClonedMessageDataForBackgroundChild(
-          GetActor()->Manager()->Manager(), args.clonedData())) {
+  if (!aData.BuildClonedMessageData(args.clonedData())) {
     CopyableErrorResult rv;
     rv.ThrowInvalidStateError("Failed to clone data");
     return GenericErrorResultPromise::CreateAndReject(rv, __func__);
@@ -184,6 +183,13 @@ RefPtr<GenericPromise> ClientHandle::OnDetach() {
   }
 
   return mDetachPromise;
+}
+
+void ClientHandle::EvictFromBFCache() {
+  ClientEvictBFCacheArgs args;
+  StartOp(
+      std::move(args), [](const ClientOpResult& aResult) {},
+      [](const ClientOpResult& aResult) {});
 }
 
 }  // namespace mozilla::dom

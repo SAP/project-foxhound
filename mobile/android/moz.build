@@ -8,6 +8,9 @@ with Files("**"):
     BUG_COMPONENT = ("GeckoView", "General")
     SCHEDULES.exclusive = ["android"]
 
+with Files("geckoview_example/**"):
+    BUG_COMPONENT = ("GeckoView", "GeckoViewExample")
+
 # The recursive make backend treats the first output specially: it's passed as
 # an open FileAvoidWrite to the invoked script.  That doesn't work well with
 # the Gradle task that generates all of the outputs, so we add a dummy first
@@ -46,6 +49,13 @@ GeneratedFile(
     flags=flags,
 )
 
+GeneratedFile(
+    ("geckoview/src/main/java/org/mozilla/gecko/util/XPCOMError.java",),
+    script="/xpcom/base/ErrorList.py",
+    entry_point="gen_jinja",
+    inputs=["geckoview/src/main/java/org/mozilla/gecko/util/XPCOMError.jinja"],
+)
+
 CONFIGURE_SUBST_FILES += ["installer/Makefile"]
 
 DIRS += [
@@ -65,7 +75,10 @@ DIRS += [
 ]
 
 TEST_HARNESS_FILES.testing.mochitest.tests.junit += [
+    "geckoview/src/androidTest/assets/www/forms_iframe.html",
+    "geckoview/src/androidTest/assets/www/forms_xorigin.html",
     "geckoview/src/androidTest/assets/www/hello.html",
+    "geckoview/src/androidTest/assets/www/hsts_header.sjs",
     "geckoview/src/androidTest/assets/www/iframe_http_only.html",
     "geckoview/src/androidTest/assets/www/simple_redirect.sjs",
     "geckoview/src/androidTest/assets/www/update_manifest.json",

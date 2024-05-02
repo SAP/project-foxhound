@@ -5,10 +5,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Toolkit", "Notifications and Alerts")
+    BUG_COMPONENT = ("Core", "DOM: Notifications")
 
 EXTRA_JS_MODULES += [
-    "NotificationStorage.jsm",
+    "NotificationStorage.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
@@ -33,16 +33,16 @@ LOCAL_INCLUDES += [
     "/dom/ipc",
 ]
 
-BROWSER_CHROME_MANIFESTS += ["test/browser/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
-MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.ini"]
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome/chrome.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.toml"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome/chrome.toml"]
 
 if CONFIG["MOZ_NEW_NOTIFICATION_STORE"]:
     EXTRA_JS_MODULES += [
-        "new/NotificationDB.jsm",
+        "new/NotificationDB.sys.mjs",
     ]
 else:
     EXTRA_JS_MODULES += [
-        "old/NotificationDB.jsm",
+        "old/NotificationDB.sys.mjs",
     ]

@@ -10,7 +10,7 @@ NSS 3.16 release notes
 
    The NSS team has released Network Security Services (NSS) 3.16, which is a minor release.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -29,8 +29,6 @@ NSS 3.16 release notes
 `New in NSS 3.16 <#new_in_nss_3.16>`__
 --------------------------------------
 
-.. container::
-
 .. _new_functionality:
 
 `New Functionality <#new_functionality>`__
@@ -46,7 +44,7 @@ NSS 3.16 release notes
 
    -  *in cms.h*
 
-      -  **NSS_CMSSignerInfo_Verify** - verify the signature of a single SignerInfo. It just
+      -  **NSS_CMSSignerInfo_Verify** - verify the signature of a single SignerInfo. It just
          verifies the signature, assuming that the certificate has been verified already.
 
    .. rubric:: New Macros
@@ -54,7 +52,7 @@ NSS 3.16 release notes
 
    -  *in sslproto.h*
 
-      -  **TLS_RSA_WITH_RC4_128_SHA, TLS_RSA_WITH_3DES_EDE_CBC_SHA, etc.** - cipher suites that were
+      -  **TLS_RSA_WITH_RC4_128_SHA, TLS_RSA_WITH_3DES_EDE_CBC_SHA, etc.** - cipher suites that were
          first defined in SSL 3.0 can now be referred to with their official IANA names in TLS, with
          the TLS\_ prefix. Previously, they had to be referred to with their names in SSL 3.0, with
          the SSL\_ prefix.

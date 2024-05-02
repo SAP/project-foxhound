@@ -172,20 +172,9 @@ pub const O_NOFOLLOW: ::c_int = 0o400000;
 pub const O_ASYNC: ::c_int = 0o10000;
 pub const O_LARGEFILE: ::c_int = 0x2000;
 
-pub const FIOCLEX: ::c_int = 0x6601;
-pub const FIONCLEX: ::c_int = 0x6602;
-pub const FIONBIO: ::c_int = 0x667E;
-
-pub const RLIMIT_RSS: ::c_int = 7;
-pub const RLIMIT_NOFILE: ::c_int = 5;
-pub const RLIMIT_AS: ::c_int = 6;
-pub const RLIMIT_NPROC: ::c_int = 8;
-pub const RLIMIT_MEMLOCK: ::c_int = 9;
-pub const RLIMIT_NLIMITS: ::c_int = 15;
-pub const RLIM_NLIMITS: ::c_int = RLIMIT_NLIMITS;
-
 pub const MCL_CURRENT: ::c_int = 0x0001;
 pub const MCL_FUTURE: ::c_int = 0x0002;
+pub const MCL_ONFAULT: ::c_int = 0x0004;
 pub const CBAUD: ::tcflag_t = 0o0010017;
 pub const TAB1: ::c_int = 0x00000800;
 pub const TAB2: ::c_int = 0x00001000;
@@ -262,8 +251,6 @@ pub const O_SYNC: ::c_int = 0o40020;
 pub const O_RSYNC: ::c_int = 0o40020;
 pub const O_DSYNC: ::c_int = 0o020;
 
-pub const SOCK_NONBLOCK: ::c_int = 0o200;
-
 pub const MAP_ANON: ::c_int = 0x800;
 pub const MAP_GROWSDOWN: ::c_int = 0x1000;
 pub const MAP_DENYWRITE: ::c_int = 0x2000;
@@ -273,6 +260,7 @@ pub const MAP_NORESERVE: ::c_int = 0x0400;
 pub const MAP_POPULATE: ::c_int = 0x10000;
 pub const MAP_NONBLOCK: ::c_int = 0x20000;
 pub const MAP_STACK: ::c_int = 0x40000;
+pub const MAP_HUGETLB: ::c_int = 0x80000;
 
 pub const EDEADLK: ::c_int = 45;
 pub const ENAMETOOLONG: ::c_int = 78;
@@ -362,7 +350,6 @@ pub const ERFKILL: ::c_int = 167;
 
 pub const SOCK_STREAM: ::c_int = 2;
 pub const SOCK_DGRAM: ::c_int = 1;
-pub const SOCK_SEQPACKET: ::c_int = 5;
 
 pub const SA_ONSTACK: ::c_int = 0x08000000;
 pub const SA_SIGINFO: ::c_int = 8;
@@ -394,16 +381,11 @@ pub const SIG_UNBLOCK: ::c_int = 2;
 
 pub const EXTPROC: ::tcflag_t = 0o200000;
 
-pub const MAP_HUGETLB: ::c_int = 0x80000;
-
 pub const F_GETLK: ::c_int = 33;
 pub const F_GETOWN: ::c_int = 23;
 pub const F_SETLK: ::c_int = 34;
 pub const F_SETLKW: ::c_int = 35;
 pub const F_SETOWN: ::c_int = 24;
-pub const F_OFD_GETLK: ::c_int = 36;
-pub const F_OFD_SETLK: ::c_int = 37;
-pub const F_OFD_SETLKW: ::c_int = 38;
 
 pub const VEOF: usize = 16;
 pub const VEOL: usize = 17;
@@ -412,36 +394,6 @@ pub const VMIN: usize = 4;
 pub const IEXTEN: ::tcflag_t = 0o000400;
 pub const TOSTOP: ::tcflag_t = 0o100000;
 pub const FLUSHO: ::tcflag_t = 0o020000;
-
-pub const TCGETS: ::c_int = 0x540D;
-pub const TCSETS: ::c_int = 0x540E;
-pub const TCSETSW: ::c_int = 0x540F;
-pub const TCSETSF: ::c_int = 0x5410;
-pub const TCGETA: ::c_int = 0x5401;
-pub const TCSETA: ::c_int = 0x5402;
-pub const TCSETAW: ::c_int = 0x5403;
-pub const TCSETAF: ::c_int = 0x5404;
-pub const TCSBRK: ::c_int = 0x5405;
-pub const TCXONC: ::c_int = 0x5406;
-pub const TCFLSH: ::c_int = 0x5407;
-pub const TIOCGSOFTCAR: ::c_int = 0x5481;
-pub const TIOCSSOFTCAR: ::c_int = 0x5482;
-pub const TIOCLINUX: ::c_int = 0x5483;
-pub const TIOCGSERIAL: ::c_int = 0x5484;
-pub const TIOCEXCL: ::c_int = 0x740D;
-pub const TIOCNXCL: ::c_int = 0x740E;
-pub const TIOCSCTTY: ::c_int = 0x5480;
-pub const TIOCGPGRP: ::c_int = 0x40047477;
-pub const TIOCSPGRP: ::c_int = 0x80047476;
-pub const TIOCOUTQ: ::c_int = 0x7472;
-pub const TIOCSTI: ::c_int = 0x5472;
-pub const TIOCGWINSZ: ::c_int = 0x40087468;
-pub const TIOCSWINSZ: ::c_int = 0x80087467;
-pub const FIONREAD: ::c_int = 0x467F;
-pub const TIOCCONS: ::c_int = 0x80047478;
-
-pub const TIOCGRS485: ::c_int = 0x4020542E;
-pub const TIOCSRS485: ::c_int = 0xC020542F;
 
 pub const POLLWRNORM: ::c_short = 0x4;
 pub const POLLWRBAND: ::c_short = 0x100;
@@ -819,6 +771,14 @@ pub const SYS_faccessat2: ::c_long = 4000 + 439;
 pub const SYS_process_madvise: ::c_long = 4000 + 440;
 pub const SYS_epoll_pwait2: ::c_long = 4000 + 441;
 pub const SYS_mount_setattr: ::c_long = 4000 + 442;
+pub const SYS_quotactl_fd: ::c_long = 4000 + 443;
+pub const SYS_landlock_create_ruleset: ::c_long = 4000 + 444;
+pub const SYS_landlock_add_rule: ::c_long = 4000 + 445;
+pub const SYS_landlock_restrict_self: ::c_long = 4000 + 446;
+pub const SYS_memfd_secret: ::c_long = 4000 + 447;
+pub const SYS_process_mrelease: ::c_long = 4000 + 448;
+pub const SYS_futex_waitv: ::c_long = 4000 + 449;
+pub const SYS_set_mempolicy_home_node: ::c_long = 4000 + 450;
 
 cfg_if! {
     if #[cfg(libc_align)] {

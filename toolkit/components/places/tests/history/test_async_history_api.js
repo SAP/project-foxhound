@@ -82,7 +82,7 @@ class TitleChangedObserver {
     PlacesObservers.addListener(["page-title-changed"], this.handlePlacesEvent);
   }
 
-  handlePlacesEvent(aEvents) {
+  async handlePlacesEvent(aEvents) {
     info("'page-title-changed'!!!");
     Assert.equal(aEvents.length, 1, "Right number of title changed notified");
     Assert.equal(aEvents[0].type, "page-title-changed");
@@ -90,7 +90,7 @@ class TitleChangedObserver {
       return;
     }
     Assert.equal(aEvents[0].title, this.expectedTitle);
-    do_check_guid_for_uri(this.uri, aEvents[0].pageGuid);
+    await check_guid_for_uri(this.uri, aEvents[0].pageGuid);
     this.callback();
 
     PlacesObservers.removeListener(
@@ -260,7 +260,7 @@ add_task(async function test_no_visits_throws() {
   );
   const TEST_GUID = "_RANDOMGUID_";
 
-  let log_test_conditions = function(aPlace) {
+  let log_test_conditions = function (aPlace) {
     let str =
       "Testing place with " +
       (aPlace.uri ? "uri" : "no uri") +
@@ -368,7 +368,7 @@ add_task(async function test_non_addable_uri_errors() {
     "moz-extension://f49fb5b3-a1e7-cd41-85e1-d61a3950f5e4/index.html",
   ];
   let places = [];
-  URLS.forEach(function(url) {
+  URLS.forEach(function (url) {
     try {
       let place = {
         uri: NetUtil.newURI(url),
@@ -799,7 +799,7 @@ add_task(async function test_guid_saved() {
   let uri = placeInfo.uri;
   Assert.ok(await PlacesUtils.history.hasVisits(uri));
   Assert.equal(placeInfo.guid, place.guid);
-  do_check_guid_for_uri(uri, place.guid);
+  await check_guid_for_uri(uri, place.guid);
   await PlacesTestUtils.promiseAsyncUpdates();
 });
 
@@ -874,7 +874,7 @@ add_task(async function test_guid_change_saved() {
   if (placesResult.errors.length) {
     do_throw("Unexpected error.");
   }
-  do_check_guid_for_uri(place.uri, place.guid);
+  await check_guid_for_uri(place.uri, place.guid);
 
   await PlacesTestUtils.promiseAsyncUpdates();
 });
@@ -958,7 +958,7 @@ add_task(async function test_title_change_notifies() {
   };
   Assert.equal(false, await PlacesUtils.history.hasVisits(place.uri));
 
-  new TitleChangedObserver(place.uri, "DO NOT WANT", function() {
+  new TitleChangedObserver(place.uri, "DO NOT WANT", function () {
     do_throw("unexpected callback!");
   });
 
@@ -978,7 +978,7 @@ add_task(async function test_title_change_notifies() {
     titleChangeObserver = new TitleChangedObserver(
       place.uri,
       place.title,
-      function() {
+      function () {
         Assert.ok(
           expectedNotification,
           "Should not get notified for " +
@@ -1035,12 +1035,12 @@ add_task(async function test_visit_notifies() {
   function promiseVisitObserver(aPlace) {
     return new Promise((resolve, reject) => {
       let callbackCount = 0;
-      let finisher = function() {
+      let finisher = function () {
         if (++callbackCount == 2) {
           resolve();
         }
       };
-      new VisitObserver(place.uri, place.guid, function(
+      new VisitObserver(place.uri, place.guid, function (
         aVisitDate,
         aTransitionType
       ) {
@@ -1050,7 +1050,7 @@ add_task(async function test_visit_notifies() {
 
         finisher();
       });
-      let observer = function(aSubject, aTopic, aData) {
+      let observer = function (aSubject, aTopic, aData) {
         info("observe(" + aSubject + ", " + aTopic + ", " + aData + ")");
         Assert.ok(aSubject instanceof Ci.nsIURI);
         Assert.ok(aSubject.equals(place.uri));
@@ -1074,7 +1074,7 @@ add_task(async function test_callbacks_not_supplied() {
     "http://mozilla.org/", // valid URI
   ];
   let places = [];
-  URLS.forEach(function(url) {
+  URLS.forEach(function (url) {
     try {
       let place = {
         uri: NetUtil.newURI(url),
@@ -1133,7 +1133,15 @@ add_task(async function test_typed_hidden_not_overwritten() {
 });
 
 add_task(async function test_omit_frecency_notifications() {
+  // When multiple entries are inserted, frecency is calculated delayed, so
+  // we won't get a ranking changed notification until recalculation happens.
   await PlacesUtils.history.clear();
+  let notified = false;
+  let listener = events => {
+    notified = true;
+    PlacesUtils.observers.removeListener(["pages-rank-changed"], listener);
+  };
+  PlacesUtils.observers.addListener(["pages-rank-changed"], listener);
   let places = [
     {
       uri: NetUtil.newURI("http://mozilla.org/"),
@@ -1146,15 +1154,10 @@ add_task(async function test_omit_frecency_notifications() {
       visits: [new VisitInfo(TRANSITION_TYPED)],
     },
   ];
-
-  const promiseRankingChanged = PlacesTestUtils.waitForNotification(
-    "pages-rank-changed",
-    () => true,
-    "places"
-  );
-
   await promiseUpdatePlaces(places);
-  await promiseRankingChanged;
+  Assert.ok(!notified);
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+  Assert.ok(notified);
 });
 
 add_task(async function test_ignore_errors() {
@@ -1290,7 +1293,7 @@ add_task(async function test_title_on_initial_visit() {
     guid: "mnopqrstuvwx",
   };
   let visitPromise = new Promise(resolve => {
-    new VisitObserver(place.uri, place.guid, function(
+    new VisitObserver(place.uri, place.guid, function (
       aVisitDate,
       aTransitionType,
       aLastKnownTitle
@@ -1311,7 +1314,7 @@ add_task(async function test_title_on_initial_visit() {
     guid: "fghijklmnopq",
   };
   visitPromise = new Promise(resolve => {
-    new VisitObserver(place.uri, place.guid, function(
+    new VisitObserver(place.uri, place.guid, function (
       aVisitDate,
       aTransitionType,
       aLastKnownTitle
@@ -1331,7 +1334,7 @@ add_task(async function test_title_on_initial_visit() {
     guid: "fghijklmnopq",
   };
   visitPromise = new Promise(resolve => {
-    new VisitObserver(place.uri, place.guid, function(
+    new VisitObserver(place.uri, place.guid, function (
       aVisitDate,
       aTransitionType,
       aLastKnownTitle

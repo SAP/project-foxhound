@@ -7,9 +7,9 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/RemoteLazyInputStreamChild.h"
 #include "mozilla/RemoteLazyInputStreamStorage.h"
-#include "mozilla/RemoteLazyInputStreamUtils.h"
 #include "mozilla/dom/FetchTypes.h"
 #include "mozilla/dom/IPCBlob.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
 #include "nsContentUtils.h"
 #include "nsXULAppAPI.h"
 
@@ -35,9 +35,12 @@ NotNull<nsCOMPtr<nsIInputStream>> ToInputStream(
 NotNull<nsCOMPtr<nsIInputStream>> ToInputStream(
     const ParentToChildStream& aStream) {
   MOZ_ASSERT(XRE_IsContentProcess());
-  nsCOMPtr<nsIInputStream> result =
-      static_cast<RemoteLazyInputStreamChild*>(aStream.actorChild())
-          ->CreateStream();
+  nsCOMPtr<nsIInputStream> result;
+  if (aStream.type() == ParentToChildStream::TRemoteLazyInputStream) {
+    result = aStream.get_RemoteLazyInputStream();
+  } else {
+    result = DeserializeIPCStream(aStream.get_IPCStream());
+  }
   return WrapNotNull(result);
 }
 
@@ -47,21 +50,26 @@ ParentToParentStream ToParentToParentStream(
 
   ParentToParentStream stream;
   stream.uuid() = nsID::GenerateUUID();
-  GetRemoteLazyInputStreamStorage()->AddStream(aStream.get(), stream.uuid(),
-                                               aStreamSize, 0);
+  GetRemoteLazyInputStreamStorage()->AddStream(aStream.get(), stream.uuid());
   return stream;
 }
 
 ParentToChildStream ToParentToChildStream(
     const NotNull<nsCOMPtr<nsIInputStream>>& aStream, int64_t aStreamSize,
-    NotNull<mozilla::ipc::PBackgroundParent*> aBackgroundParent) {
+    NotNull<mozilla::ipc::PBackgroundParent*> aBackgroundParent,
+    bool aSerializeAsLazy) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   ParentToChildStream result;
-  RemoteLazyStream remoteLazyStream;
-  MOZ_ALWAYS_SUCCEEDS(RemoteLazyInputStreamUtils::SerializeInputStream(
-      aStream.get(), aStreamSize, remoteLazyStream, aBackgroundParent));
-  result.actorParent() = remoteLazyStream;
+  if (aSerializeAsLazy) {
+    result = RemoteLazyInputStream::WrapStream(aStream.get());
+  } else {
+    nsCOMPtr<nsIInputStream> stream(aStream.get());
+    mozilla::ipc::IPCStream ipcStream;
+    Unused << NS_WARN_IF(
+        !mozilla::ipc::SerializeIPCStream(stream.forget(), ipcStream, false));
+    result = ipcStream;
+  }
   return result;
 }
 

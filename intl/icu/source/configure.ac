@@ -199,6 +199,8 @@ fi
 #AC_CHECK_PROG(AUTOCONF, autoconf, autoconf, true)
 #AC_CHECK_PROG(STRIP, strip, strip, true)
 
+m4_ifndef([AX_CHECK_COMPILE_FLAG], [AC_MSG_ERROR(['autoconf-archive' is missing])])
+
 # TODO(ICU-20301): Remove fallback to Python 2.
 AC_CHECK_PROGS(PYTHON, python3 "py -3" python "py")
 AC_SUBST(PYTHON)
@@ -527,11 +529,6 @@ if [[ "$GXX" = yes ]]; then
         else
             CXXFLAGS="$OLD_CXXFLAGS"
         fi
-        case "${host}" in
-        *-*-solaris*)
-            CXXFLAGS="$OLD_CXXFLAGS"
-            ;;
-        esac
     fi
 fi
 
@@ -1152,7 +1149,7 @@ AC_ARG_WITH(data-packaging,
         library  shared library (.dll/.so/etc.)
         static   static library (.a/.lib/etc.)
         auto     build shared if possible (default)
-           See https://unicode-org.github.io/icu/userguide/icudata for more info.],
+           See https://unicode-org.github.io/icu/userguide/icu_data for more info.],
 	[case "${withval}" in
                 files|archive|library) datapackaging=$withval ;;
 		auto) datapackaging=$withval ;;

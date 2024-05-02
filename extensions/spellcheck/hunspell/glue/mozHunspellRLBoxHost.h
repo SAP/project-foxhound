@@ -32,7 +32,7 @@ class mozHunspellFileMgrHost final {
   explicit mozHunspellFileMgrHost(const nsCString& aFilename);
   ~mozHunspellFileMgrHost() = default;
 
-  bool GetLine(std::string& aResult);
+  bool GetLine(nsACString& aResult);
   int GetLineNum() const { return mLineNum; }
 
   static Result<int64_t, nsresult> GetSize(const nsCString& aFilename);
@@ -42,7 +42,7 @@ class mozHunspellFileMgrHost final {
       const nsCString& aPath, nsCOMPtr<nsIChannel>& aChannel,
       nsCOMPtr<nsIInputStream>& aStream);
 
-  mozilla::Result<mozilla::Ok, nsresult> ReadLine(nsCString& aLine);
+  mozilla::Result<mozilla::Ok, nsresult> ReadLine(nsACString& aLine);
 
   int mLineNum = 0;
   nsCOMPtr<nsIInputStream> mStream;
@@ -78,8 +78,8 @@ class mozHunspellCallbacks {
    * Add filename to allow list.
    */
   static void AllowFile(const nsCString& aFilename);
-  friend RLBoxHunspell* RLBoxHunspell::Create(const nsAutoCString& affpath,
-                                              const nsAutoCString& dpath);
+  friend RLBoxHunspell* RLBoxHunspell::Create(const nsCString& affpath,
+                                              const nsCString& dpath);
   /**
    * Clear allow list and map of hunspell file managers.
    */
@@ -102,7 +102,7 @@ class mozHunspellCallbacks {
   /**
    * Reader-writer lock for the sFileMgrMap
    */
-  static mozilla::detail::StaticRWLock sFileMgrMapLock;
+  static mozilla::StaticRWLock sFileMgrMapLock;
   /**
    * Tracks the next possibly unused id for sFileMgrMap
    */

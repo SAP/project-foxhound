@@ -262,7 +262,7 @@ class Section {
 
   // A base class destructor should be either public and virtual,
   // or protected and nonvirtual.
-  virtual ~Section(){};
+  virtual ~Section() = default;
 
   // Return the default endianness of this section.
   Endianness endianness() const { return endianness_; }
@@ -273,6 +273,24 @@ class Section {
     contents_.append(data);
     return *this;
   };
+
+  // Append data from SLICE to the end of this section. Return
+  // a reference to this section.
+  Section& Append(const lul::ImageSlice& slice) {
+    for (size_t i = 0; i < slice.length_; i++) {
+      contents_.append(1, slice.start_[i]);
+    }
+    return *this;
+  }
+
+  // Append data from CSTRING to the end of this section.  The terminating
+  // zero is not included.  Return a reference to this section.
+  Section& Append(const char* cstring) {
+    for (size_t i = 0; cstring[i] != '\0'; i++) {
+      contents_.append(1, cstring[i]);
+    }
+    return *this;
+  }
 
   // Append SIZE copies of BYTE to the end of this section. Return a
   // reference to this section.
@@ -335,11 +353,12 @@ class Section {
   Section &L16(uint16_t), &L32(uint32_t), &L64(uint64_t), &B16(uint16_t),
       &B32(uint32_t), &B64(uint64_t), &D16(uint16_t), &D32(uint32_t),
       &D64(uint64_t);
-  Section &L8(const Label&label), &L16(const Label&label),
-      &L32(const Label&label), &L64(const Label&label), &B8(const Label&label),
-      &B16(const Label&label), &B32(const Label&label), &B64(const Label&label),
-      &D8(const Label&label), &D16(const Label&label), &D32(const Label&label),
-      &D64(const Label&label);
+  Section &L8(const Label& label), &L16(const Label& label),
+      &L32(const Label& label), &L64(const Label& label),
+      &B8(const Label& label), &B16(const Label& label),
+      &B32(const Label& label), &B64(const Label& label),
+      &D8(const Label& label), &D16(const Label& label),
+      &D32(const Label& label), &D64(const Label& label);
 
   // Append VALUE in a signed LEB128 (Little-Endian Base 128) form.
   //
@@ -514,7 +533,6 @@ class CFISection : public Section {
         address_size_(address_size),
         eh_frame_(eh_frame),
         pointer_encoding_(lul::DW_EH_PE_absptr),
-        encoded_pointer_bases_(),
         entry_length_(NULL),
         in_fde_(false) {
     // The 'start', 'Here', and 'Mark' members of a CFISection all refer
@@ -576,9 +594,18 @@ class CFISection : public Section {
 
   // Append the contents of BLOCK as a DW_FORM_block value: an
   // unsigned LEB128 length, followed by that many bytes of data.
-  CFISection& Block(const string& block) {
-    ULEB128(block.size());
+  CFISection& Block(const lul::ImageSlice& block) {
+    ULEB128(block.length_);
     Append(block);
+    return *this;
+  }
+
+  // Append data from CSTRING as a DW_FORM_block value: an unsigned LEB128
+  // length, followed by that many bytes of data. The terminating zero is not
+  // included.
+  CFISection& Block(const char* cstring) {
+    ULEB128(strlen(cstring));
+    Append(cstring);
     return *this;
   }
 

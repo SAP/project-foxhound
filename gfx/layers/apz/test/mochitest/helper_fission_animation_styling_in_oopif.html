@@ -33,7 +33,7 @@ async function setup_in_oopif() {
 
     const div = document.createElement("div");
     // Position an element for animation at top: 20px.
-    div.style = "position: absolute; top: 20px; animation: anim 1s infinite";
+    div.style = "position: absolute; top: 40px; animation: anim 1s infinite; box-shadow: 0px -20px red;";
     div.setAttribute("id", "target");
     div.innerHTML = "hello";
     document.body.appendChild(div);
@@ -58,8 +58,8 @@ async function observe_styling_in_oopif(aFrameCount) {
   const observe_styling = function(frameCount) {
     // Start in a rAF callback.
     waitForAnimationFrames(1).then(() => {
-      observeStyling(frameCount).then(markers => {
-        FissionTestHelper.fireEventInEmbedder("OOPIF:StyleCount", markers.length);
+      observeStyling(frameCount).then((counter) => {
+        FissionTestHelper.fireEventInEmbedder("OOPIF:StyleCount", counter);
       });
     });
 
@@ -73,6 +73,18 @@ async function observe_styling_in_oopif(aFrameCount) {
   return styleCountData.data;
 }
 
+async function promiseScrollInfoArrivalInOOPIF() {
+  const scrollPromise = new Promise(resolve => {
+    scroller.addEventListener("scroll", resolve, { once: true });
+  });
+
+  const transformReceivedPromise = SpecialPowers.spawn(testframe, [], async () => {
+    await SpecialPowers.contentTransformsReceived(content);
+  });
+
+  await Promise.all([scrollPromise, transformReceivedPromise]);
+}
+
 // The actual test
 
 async function test() {
@@ -80,38 +92,34 @@ async function test() {
   // overflow: hidden style in the out-of-process iframe.
   await setup_in_oopif();
 
-  let styleCount = await observe_styling_in_oopif(5);
-  is(styleCount, 0,
+  let restyleCount = await observe_styling_in_oopif(5);
+  is(restyleCount, 0,
      "Animation in an out-of-process iframe which is initially clipped out " +
        "due to 'overflow: hidden' should be throttled");
 
   // Scroll synchronously to a position where the iframe gets visible.
   scroller.scrollTo(0, 1000);
-  await new Promise(resolve => {
-    scroller.addEventListener("scroll", resolve, { once: true });
-  });
+  await promiseScrollInfoArrivalInOOPIF();
 
   // Wait for a frame to make sure the notification of the last scroll position
   // from APZC reaches the iframe process
   await observe_styling_in_oopif(1);
 
-  styleCount = await observe_styling_in_oopif(5);
-  is(styleCount, 5,
+  restyleCount = await observe_styling_in_oopif(5);
+  is(restyleCount, 5,
      "Animation in an out-of-process iframe which is no longer clipped out " +
        "should NOT be throttled");
 
   // Scroll synchronously to a position where the iframe is invisible again.
   scroller.scrollTo(0, 0);
-  await new Promise(resolve => {
-    scroller.addEventListener("scroll", resolve, { once: true });
-  });
+  await promiseScrollInfoArrivalInOOPIF();
 
   // Wait for a frame to make sure the notification of the last scroll position
   // from APZC reaches the iframe process
   await observe_styling_in_oopif(1);
 
-  styleCount = await observe_styling_in_oopif(5);
-  is(styleCount, 0,
+  restyleCount = await observe_styling_in_oopif(5);
+  is(restyleCount, 0,
      "Animation in an out-of-process iframe which is clipped out again " +
        "should be throttled again");
 
@@ -125,8 +133,8 @@ async function test() {
   // helper_fission_scroll_oopif.html
   await observe_styling_in_oopif(60);
 
-  styleCount = await observe_styling_in_oopif(5);
-  is(styleCount, 5,
+  restyleCount = await observe_styling_in_oopif(5);
+  is(restyleCount, 5,
      "Animation in an out-of-process iframe which is now visible by " +
        "asynchronous scrolling should NOT be throttled");
 
@@ -137,8 +145,8 @@ async function test() {
   // Wait for the asyncronous scroll finish.
   await observe_styling_in_oopif(60);
 
-  styleCount = await observe_styling_in_oopif(5);
-  is(styleCount, 0,
+  restyleCount = await observe_styling_in_oopif(5);
+  is(restyleCount, 0,
      "Animation in an out-of-process iframe which is scrolled out of view by " +
        "asynchronous scrolling should be throttled");
 
@@ -149,8 +157,8 @@ async function test() {
   // Wait for the asyncronous scroll finish.
   await observe_styling_in_oopif(60);
 
-  styleCount = await observe_styling_in_oopif(5);
-  is(styleCount, 5,
+  restyleCount = await observe_styling_in_oopif(5);
+  is(restyleCount, 5,
      "Animation in an out-of-process iframe appeared by the asynchronous " +
        "scrolling should be NOT throttled");
 }

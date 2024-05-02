@@ -80,7 +80,7 @@ class WindowGlobalParent final : public WindowContext,
   WindowGlobalParent* TopWindowContext() {
     return static_cast<WindowGlobalParent*>(WindowContext::TopWindowContext());
   }
-  CanonicalBrowsingContext* GetBrowsingContext() {
+  CanonicalBrowsingContext* GetBrowsingContext() const {
     return CanonicalBrowsingContext::Cast(WindowContext::GetBrowsingContext());
   }
 
@@ -162,8 +162,6 @@ class WindowGlobalParent final : public WindowContext,
       const DOMRect* aRect, double aScale, const nsACString& aBackgroundColor,
       bool aResetScrollPosition, mozilla::ErrorResult& aRv);
 
-  already_AddRefed<Promise> GetSecurityInfo(ErrorResult& aRv);
-
   static already_AddRefed<WindowGlobalParent> CreateDisconnected(
       const WindowGlobalInit& aInit);
 
@@ -181,7 +179,10 @@ class WindowGlobalParent final : public WindowContext,
       const nsTArray<nsCString>& aTrackingFullHashes,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
-          aReason = Nothing());
+          aReason,
+      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
+          aCanvasFingerprinter,
+      const Maybe<bool> aCanvasFingerprinterKnownText);
 
   ContentBlockingLog* GetContentBlockingLog() { return &mContentBlockingLog; }
 
@@ -214,10 +215,6 @@ class WindowGlobalParent final : public WindowContext,
 
   const nsACString& GetRemoteType() override;
 
-  nsresult WriteFormDataAndScrollToSessionStore(
-      const Maybe<FormData>& aFormData, const Maybe<nsPoint>& aScrollPosition,
-      uint32_t aEpoch);
-
   void NotifySessionStoreUpdatesComplete(Element* aEmbedder);
 
   Maybe<uint64_t> GetSingleChannelId() { return mSingleChannelId; }
@@ -226,8 +223,16 @@ class WindowGlobalParent final : public WindowContext,
 
   bool HasActivePeerConnections();
 
+  bool Fullscreen() { return mFullscreen; }
+  void SetFullscreen(bool aFullscreen) { mFullscreen = aFullscreen; }
+
+  void ExitTopChromeDocumentFullscreen();
+
+  void SetShouldReportHasBlockedOpaqueResponse(
+      nsContentPolicyType aContentPolicy);
+
  protected:
-  already_AddRefed<JSActor> InitJSActor(JS::HandleObject aMaybeActor,
+  already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
                                         ErrorResult& aRv) override;
   mozilla::ipc::IProtocol* AsNativeActor() override { return this; }
@@ -288,12 +293,6 @@ class WindowGlobalParent final : public WindowContext,
 
   mozilla::ipc::IPCResult RecvRequestRestoreTabContent();
 
-  mozilla::ipc::IPCResult RecvUpdateSessionStore(
-      const Maybe<FormData>& aFormData, const Maybe<nsPoint>& aScrollPosition,
-      uint32_t aEpoch);
-
-  mozilla::ipc::IPCResult RecvResetSessionStore(uint32_t aEpoch);
-
   mozilla::ipc::IPCResult RecvUpdateBFCacheStatus(const uint32_t& aOnFlags,
                                                   const uint32_t& aOffFlags);
 
@@ -310,6 +309,17 @@ class WindowGlobalParent final : public WindowContext,
 
   mozilla::ipc::IPCResult RecvReloadWithHttpsOnlyException();
 
+  mozilla::ipc::IPCResult RecvDiscoverIdentityCredentialFromExternalSource(
+      const IdentityCredentialRequestOptions& aOptions,
+      const DiscoverIdentityCredentialFromExternalSourceResolver& aResolver);
+
+  mozilla::ipc::IPCResult RecvGetStorageAccessPermission(
+      GetStorageAccessPermissionResolver&& aResolve);
+
+  mozilla::ipc::IPCResult RecvSetCookies(
+      const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
+      nsIURI* aHost, bool aFromHttp, const nsTArray<CookieStruct>& aCookies);
+
  private:
   WindowGlobalParent(CanonicalBrowsingContext* aBrowsingContext,
                      uint64_t aInnerWindowId, uint64_t aOuterWindowId,
@@ -319,8 +329,6 @@ class WindowGlobalParent final : public WindowContext,
 
   bool ShouldTrackSiteOriginTelemetry();
   void FinishAccumulatingPageUseCounters();
-
-  nsresult ResetSessionStore(uint32_t aEpoch);
 
   // Returns failure if the new storage principal cannot be validated
   // against the current document principle.
@@ -409,6 +417,11 @@ class WindowGlobalParent final : public WindowContext,
   // Note: We ignore favicon loads when considering the requests in the
   // loadgroup.
   Maybe<uint64_t> mSingleChannelId;
+
+  // True if the current loaded document is in fullscreen.
+  bool mFullscreen = false;
+
+  bool mShouldReportHasBlockedOpaqueResponse = false;
 };
 
 }  // namespace dom

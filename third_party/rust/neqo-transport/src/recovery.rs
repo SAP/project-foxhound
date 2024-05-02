@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use smallvec::{smallvec, SmallVec};
 
-use neqo_common::{qdebug, qlog::NeqoQlog, qtrace, qwarn};
+use neqo_common::{qdebug, qinfo, qlog::NeqoQlog, qtrace, qwarn};
 
 use crate::ackrate::AckRate;
 use crate::cid::ConnectionIdEntry;
@@ -342,9 +342,7 @@ impl LossRecoverySpace {
     /// and when keys are dropped.
     fn remove_ignored(&mut self) -> impl Iterator<Item = SentPacket> {
         self.in_flight_outstanding = 0;
-        mem::take(&mut self.sent_packets)
-            .into_iter()
-            .map(|(_, v)| v)
+        mem::take(&mut self.sent_packets).into_values()
     }
 
     /// Remove the primary path marking on any packets this is tracking.
@@ -590,7 +588,7 @@ impl LossRecovery {
         self.qlog = qlog;
     }
 
-    pub fn drop_0rtt(&mut self, primary_path: &PathRef) -> Vec<SentPacket> {
+    pub fn drop_0rtt(&mut self, primary_path: &PathRef, now: Instant) -> Vec<SentPacket> {
         // The largest acknowledged or loss_time should still be unset.
         // The client should not have received any ACK frames when it drops 0-RTT.
         assert!(self
@@ -607,7 +605,7 @@ impl LossRecovery {
             .collect::<Vec<_>>();
         let mut path = primary_path.borrow_mut();
         for p in &mut dropped {
-            path.discard_packet(p);
+            path.discard_packet(p, now);
         }
         dropped
     }
@@ -670,12 +668,13 @@ impl LossRecovery {
             largest_acked
         );
 
-        let space = self
-            .spaces
-            .get_mut(pn_space)
-            .expect("ACK on discarded space");
+        let Some(space) = self.spaces.get_mut(pn_space) else {
+            qinfo!("ACK on discarded space");
+            return (Vec::new(), Vec::new());
+        };
+
         let (acked_packets, any_ack_eliciting) =
-            space.remove_acked(acked_ranges, &mut *self.stats.borrow_mut());
+            space.remove_acked(acked_ranges, &mut self.stats.borrow_mut());
         if acked_packets.is_empty() {
             // No new information.
             return (Vec::new(), Vec::new());
@@ -737,7 +736,7 @@ impl LossRecovery {
 
     /// When receiving a retry, get all the sent packets so that they can be flushed.
     /// We also need to pretend that they never happened for the purposes of congestion control.
-    pub fn retry(&mut self, primary_path: &PathRef) -> Vec<SentPacket> {
+    pub fn retry(&mut self, primary_path: &PathRef, now: Instant) -> Vec<SentPacket> {
         self.pto_state = None;
         let mut dropped = self
             .spaces
@@ -746,7 +745,7 @@ impl LossRecovery {
             .collect::<Vec<_>>();
         let mut path = primary_path.borrow_mut();
         for p in &mut dropped {
-            path.discard_packet(p);
+            path.discard_packet(p, now);
         }
         dropped
     }
@@ -779,7 +778,7 @@ impl LossRecovery {
         qdebug!([self], "Reset loss recovery state for {}", space);
         let mut path = primary_path.borrow_mut();
         for p in self.spaces.drop_space(space) {
-            path.discard_packet(&p);
+            path.discard_packet(&p, now);
         }
 
         // We just made progress, so discard PTO count.
@@ -883,7 +882,7 @@ impl LossRecovery {
         self.pto_state
             .as_mut()
             .unwrap()
-            .count_pto(&mut *self.stats.borrow_mut());
+            .count_pto(&mut self.stats.borrow_mut());
 
         qlog::metrics_updated(
             &mut self.qlog,
@@ -1411,17 +1410,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "ACK on discarded space")]
     fn ack_after_drop() {
         let mut lr = Fixture::default();
         lr.discard(PacketNumberSpace::Initial, now());
-        lr.on_ack_received(
+        let (acked, lost) = lr.on_ack_received(
             PacketNumberSpace::Initial,
             0,
             vec![],
             Duration::from_millis(0),
             pn_time(0),
         );
+        assert!(acked.is_empty());
+        assert!(lost.is_empty());
     }
 
     #[test]
@@ -1494,6 +1494,25 @@ mod tests {
     #[test]
     fn rearm_pto_after_confirmed() {
         let mut lr = Fixture::default();
+        lr.on_packet_sent(SentPacket::new(
+            PacketType::Initial,
+            0,
+            now(),
+            true,
+            Vec::new(),
+            ON_SENT_SIZE,
+        ));
+        // Set the RTT to the initial value so that discarding doesn't
+        // alter the estimate.
+        let rtt = lr.path.borrow().rtt().estimate();
+        lr.on_ack_received(
+            PacketNumberSpace::Initial,
+            0,
+            vec![0..=0],
+            Duration::new(0, 0),
+            now() + rtt,
+        );
+
         lr.on_packet_sent(SentPacket::new(
             PacketType::Handshake,
             0,

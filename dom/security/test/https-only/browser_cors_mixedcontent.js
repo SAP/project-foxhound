@@ -7,7 +7,7 @@
 // and example.org (cross-origin). When both fetch-calls have either failed or
 // succeeded, the site dispatches an event with the results.
 
-add_task(async function() {
+add_task(async function () {
   // HTTPS-Only Mode disabled
   await runTest({
     description: "Load site with HTTP and HOM disabled",
@@ -90,15 +90,18 @@ const SERVER_URL = scheme =>
   `${scheme}://example.com/browser/dom/security/test/https-only/file_cors_mixedcontent.html`;
 
 async function runTest(test) {
-  await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:blank", async function (browser) {
     let loaded = BrowserTestUtils.browserLoaded(browser);
 
-    BrowserTestUtils.loadURI(browser, SERVER_URL(test.topLevelScheme));
+    BrowserTestUtils.startLoadingURIString(
+      browser,
+      SERVER_URL(test.topLevelScheme)
+    );
 
     await loaded;
 
     // eslint-disable-next-line no-shadow
-    await SpecialPowers.spawn(browser, [test], async function(test) {
+    await SpecialPowers.spawn(browser, [test], async function (test) {
       const promise = new Promise(resolve => {
         content.addEventListener("FetchEnded", resolve, {
           once: true,

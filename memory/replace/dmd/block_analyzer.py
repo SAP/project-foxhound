@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,14 +9,11 @@
 # contain pointers to it. This can be useful when investigating leaks
 # caused by unknown references to refcounted objects.
 
-from __future__ import absolute_import, print_function
-
-import json
-import gzip
-import sys
 import argparse
+import gzip
+import json
 import re
-
+import sys
 
 # The DMD output version this script handles.
 outputVersion = 5
@@ -161,7 +158,7 @@ def show_referrers(args, blocks, stacks, block):
     while True:
         referrers = {}
 
-        for b, data in blocks.iteritems():
+        for b, data in blocks.items():
             which_edge = 0
             for e in data.contents:
                 if e == block:
@@ -176,15 +173,14 @@ def show_referrers(args, blocks, stacks, block):
                 "0x{} size = {} bytes".format(blocks[r].addr, blocks[r].req_size)
             )
             plural = "s" if len(referrers[r]) > 1 else ""
-            sys.stdout.write(
+            print(
                 " at byte offset"
                 + plural
                 + " "
                 + (", ".join(str(x) for x in referrers[r]))
             )
-            print()
             print_trace_segment(args, stacks, blocks[r])
-            print()
+            print("")
 
         if args.chain_reports:
             if len(referrers) == 0:

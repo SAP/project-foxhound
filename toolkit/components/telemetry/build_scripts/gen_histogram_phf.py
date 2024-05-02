@@ -2,16 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
 from mozparsers.shared_telemetry_utils import ParserError
 from perfecthash import PerfectHash
 
 PHFSIZE = 1024
 
-from mozparsers import parse_histograms
 import sys
-import buildconfig
 
+import buildconfig
+from mozparsers import parse_histograms
 
 banner = """/* This file is auto-generated, see gen_histogram_phf.py.  */
 """

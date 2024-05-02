@@ -8,13 +8,82 @@
 # an unified `compile_commands.json` but we generate a per file basis `command` in
 # `objdir/clangd/compile_commands.json`
 
-from __future__ import absolute_import, print_function
-
 import os
+
+import mozpack.path as mozpath
 
 from mozbuild.compilation.database import CompileDBBackend
 
-import mozpack.path as mozpath
+
+def find_vscode_cmd():
+    import shutil
+    import sys
+
+    # Try to look up the `code` binary on $PATH, and use it if present. This
+    # should catch cases like being run from within a vscode-remote shell,
+    # even if vscode itself is also installed on the remote host.
+    path = shutil.which("code")
+    if path is not None:
+        return [path]
+
+    cmd_and_path = []
+
+    # If the binary wasn't on $PATH, try to find it in a variety of other
+    # well-known install locations based on the current platform.
+    if sys.platform.startswith("darwin"):
+        cmd_and_path = [
+            {"path": "/usr/local/bin/code", "cmd": ["/usr/local/bin/code"]},
+            {
+                "path": "/Applications/Visual Studio Code.app",
+                "cmd": ["open", "/Applications/Visual Studio Code.app", "--args"],
+            },
+            {
+                "path": "/Applications/Visual Studio Code - Insiders.app",
+                "cmd": [
+                    "open",
+                    "/Applications/Visual Studio Code - Insiders.app",
+                    "--args",
+                ],
+            },
+        ]
+    elif sys.platform.startswith("win"):
+        from pathlib import Path
+
+        vscode_path = mozpath.join(
+            str(Path.home()),
+            "AppData",
+            "Local",
+            "Programs",
+            "Microsoft VS Code",
+            "Code.exe",
+        )
+        vscode_insiders_path = mozpath.join(
+            str(Path.home()),
+            "AppData",
+            "Local",
+            "Programs",
+            "Microsoft VS Code Insiders",
+            "Code - Insiders.exe",
+        )
+        cmd_and_path = [
+            {"path": vscode_path, "cmd": [vscode_path]},
+            {"path": vscode_insiders_path, "cmd": [vscode_insiders_path]},
+        ]
+    elif sys.platform.startswith("linux"):
+        cmd_and_path = [
+            {"path": "/usr/local/bin/code", "cmd": ["/usr/local/bin/code"]},
+            {"path": "/snap/bin/code", "cmd": ["/snap/bin/code"]},
+            {"path": "/usr/bin/code", "cmd": ["/usr/bin/code"]},
+            {"path": "/usr/bin/code-insiders", "cmd": ["/usr/bin/code-insiders"]},
+        ]
+
+    # Did we guess the path?
+    for element in cmd_and_path:
+        if os.path.exists(element["path"]):
+            return element["cmd"]
+
+    # Path cannot be found
+    return None
 
 
 class ClangdBackend(CompileDBBackend):
@@ -33,7 +102,7 @@ class ClangdBackend(CompileDBBackend):
         if compiler_args is None:
             return None
 
-        if compiler_args[0][-6:] == "ccache":
+        if len(compiler_args) and compiler_args[0].endswith("ccache"):
             compiler_args.pop(0)
         return compiler_args
 
@@ -54,7 +123,4 @@ class ClangdBackend(CompileDBBackend):
         return mozpath.join(clangd_cc_path, "compile_commands.json")
 
     def _process_unified_sources(self, obj):
-        for f in list(sorted(obj.files)):
-            self._build_db_line(
-                obj.objdir, obj.relsrcdir, obj.config, f, obj.canonical_suffix
-            )
+        self._process_unified_sources_without_mapping(obj)

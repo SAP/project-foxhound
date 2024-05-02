@@ -1,16 +1,17 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-import json
 import importlib.util
 import inspect
+import json
 import pathlib
 
 from jsonschema import validate
+
 from mozperftest.metrics.exceptions import (
-    NotebookInvalidTransformError,
-    NotebookInvalidPathError,
     NotebookDuplicateTransformsError,
+    NotebookInvalidPathError,
+    NotebookInvalidTransformError,
 )
 from mozperftest.runner import HERE
 from mozperftest.utils import load_class
@@ -215,7 +216,7 @@ def get_transformers(dirpath=None):
     for file in tfm_files:
         members = get_transformer(file.resolve().as_posix(), True)
 
-        for (name, tfm_class) in members:
+        for name, tfm_class in members:
             if name in ret:
                 raise NotebookDuplicateTransformsError(
                     f"Duplicated transformer {name} "

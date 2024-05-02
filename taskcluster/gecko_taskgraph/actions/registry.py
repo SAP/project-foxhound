@@ -5,18 +5,17 @@
 
 import json
 import re
-from types import FunctionType
 from collections import namedtuple
+from types import FunctionType
 
 from mozbuild.util import memoize
+from taskgraph import create
+from taskgraph.config import load_graph_config
 from taskgraph.parameters import Parameters
-from taskgraph.util import yaml
+from taskgraph.util import taskcluster, yaml
+from taskgraph.util.python_path import import_sibling_modules
 
-from gecko_taskgraph import create
-from gecko_taskgraph.config import load_graph_config
-from gecko_taskgraph.util import taskcluster, hash
-from gecko_taskgraph.util.python_path import import_sibling_modules
-
+from gecko_taskgraph.util import hash
 
 actions = []
 callbacks = {}
@@ -117,7 +116,7 @@ def register_callback_action(
         JSON schema specifying input accepted by the action.
         This is optional and can be left ``null`` if no input is taken.
     permission : string
-        This defaults to ``generic` and needs to be set for actions that need
+        This defaults to ``generic`` and needs to be set for actions that need
         additional permissions. It appears appears in ci-configuration and
         various role and hook
         names.
@@ -145,6 +144,8 @@ def register_callback_action(
     if not callable(context):
         context_value = context
 
+        # Because of the same name as param it must be redefined
+        # pylint: disable=E0102
         def context(params):
             return context_value  # noqa
 
@@ -184,10 +185,14 @@ def register_callback_action(
             revision = parameters[
                 "{}head_rev".format(graph_config["project-repo-param-prefix"])
             ]
+            base_revision = parameters[
+                "{}base_rev".format(graph_config["project-repo-param-prefix"])
+            ]
             push = {
                 "owner": "mozilla-taskcluster-maintenance@mozilla.com",
                 "pushlog_id": parameters["pushlog_id"],
                 "revision": revision,
+                "base_revision": base_revision,
             }
 
             match = re.match(

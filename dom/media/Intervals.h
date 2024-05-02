@@ -8,16 +8,18 @@
 #define DOM_MEDIA_INTERVALS_H_
 
 #include <algorithm>
+#include <type_traits>
 
 #include "nsTArray.h"
+#include "nsString.h"
+#include "nsPrintfCString.h"
 
 // Specialization for nsTArray CopyChooser.
-namespace mozilla {
-namespace media {
+namespace mozilla::media {
 template <class T>
 class IntervalSet;
-}  // namespace media
-}  // namespace mozilla
+class TimeUnit;
+}  // namespace mozilla::media
 
 template <class E>
 struct nsTArray_RelocationStrategy<mozilla::media::IntervalSet<E>> {
@@ -25,8 +27,7 @@ struct nsTArray_RelocationStrategy<mozilla::media::IntervalSet<E>> {
       Type;
 };
 
-namespace mozilla {
-namespace media {
+namespace mozilla::media {
 
 /* Interval defines an interval between two points. Unlike a traditional
    interval [A,B] where A <= x <= B, the upper boundary B is exclusive: A <= x <
@@ -43,17 +44,13 @@ class Interval {
 
   template <typename StartArg, typename EndArg>
   Interval(StartArg&& aStart, EndArg&& aEnd)
-      : mStart(std::forward<StartArg>(aStart)),
-        mEnd(std::forward<EndArg>(aEnd)),
-        mFuzz() {
+      : mStart(aStart), mEnd(aEnd), mFuzz() {
     MOZ_DIAGNOSTIC_ASSERT(mStart <= mEnd, "Invalid Interval");
   }
 
   template <typename StartArg, typename EndArg, typename FuzzArg>
   Interval(StartArg&& aStart, EndArg&& aEnd, FuzzArg&& aFuzz)
-      : mStart(std::forward<StartArg>(aStart)),
-        mEnd(std::forward<EndArg>(aEnd)),
-        mFuzz(std::forward<FuzzArg>(aFuzz)) {
+      : mStart(aStart), mEnd(aEnd), mFuzz(aFuzz) {
     MOZ_DIAGNOSTIC_ASSERT(mStart <= mEnd, "Invalid Interval");
   }
 
@@ -232,11 +229,18 @@ class Interval {
     return aOther.mStart <= mStart && mStart <= aOther.mEnd;
   }
 
+  nsCString ToString() const {
+    if constexpr (std::is_same_v<T, TimeUnit>) {
+      return nsPrintfCString("[%s, %s](%s)", mStart.ToString().get(),
+                             mEnd.ToString().get(), mFuzz.ToString().get());
+    } else if constexpr (std::is_same_v<T, double>) {
+      return nsPrintfCString("[%lf, %lf](%lf)", mStart, mEnd, mFuzz);
+    }
+  }
+
   T mStart;
   T mEnd;
   T mFuzz;
-
- private:
 };
 
 // An IntervalSet in a collection of Intervals. The IntervalSet is always
@@ -753,7 +757,6 @@ IntervalSet<T> Intersection(const IntervalSet<T>& aIntervals1,
   return intersection;
 }
 
-}  // namespace media
-}  // namespace mozilla
+}  // namespace mozilla::media
 
 #endif  // DOM_MEDIA_INTERVALS_H_

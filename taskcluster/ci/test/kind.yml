@@ -7,6 +7,9 @@ loader: gecko_taskgraph.loader.test:loader
 kind-dependencies:
     - build
     - build-signing
+    - repackage-signing-shippable-l10n-msix
+    - repackage-signing-msix
+    - repackage-signing
     - repackage
     - fetch
     - toolchain
@@ -34,10 +37,6 @@ jobs-from:
     - marionette.yml
     - misc.yml
     - mochitest.yml
-    - raptor.yml
-    - raptor-chrome.yml
-    - raptor-gve.yml
-    - raptor-refbrow.yml
     - reftest.yml
     - talos.yml
     - web-platform.yml
@@ -58,6 +57,10 @@ job-defaults:
         requires-signed-builds:
             by-test-platform:
                 macosx1100.*: true
+                windows1.*:
+                    by-variant:
+                        msix: true
+                        default: false
                 default: false
     fetches:
         toolchain:

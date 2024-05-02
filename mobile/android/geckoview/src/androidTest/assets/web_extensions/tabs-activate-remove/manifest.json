@@ -1,5 +1,5 @@
 {
-  "applications": {
+  "browser_specific_settings": {
     "gecko": {
       "id": "set-tab-active@tests.mozilla.org"
     }
@@ -11,7 +11,5 @@
   "background": {
     "scripts": ["background.js"]
   },
-  "permissions": [
-    "tabs"
-  ]
+  "permissions": ["tabs"]
 }

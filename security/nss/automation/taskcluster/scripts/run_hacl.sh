@@ -11,22 +11,43 @@ set -e -x -v
 # The docker image this is running in has NSS sources.
 # Get the HACL* source, containing a snapshot of the C code, extracted on the
 # HACL CI.
-# When bug 1593647 is resolved, extract the code on CI again.
-git clone -q "https://github.com/project-everest/hacl-star" ~/hacl-star
-git -C ~/hacl-star checkout -q c95ab70fcb2bc21025d8845281bc4bc8987ca683
+git clone -q "https://github.com/hacl-star/hacl-star" ~/hacl-star
+git -C ~/hacl-star checkout -q 72f9d0c783cb716add714344604d591106dfbf7f
 
 # Format the C snapshot.
 cd ~/hacl-star/dist/mozilla
 cp ~/nss/.clang-format .
 find . -type f -name '*.[ch]' -exec clang-format -i {} \+
-cd ~/hacl-star/dist/kremlin
+cd ~/hacl-star/dist/karamel
 cp ~/nss/.clang-format .
 find . -type f -name '*.[ch]' -exec clang-format -i {} \+
 
 # These diff commands will return 1 if there are differences and stop the script.
-files=($(find ~/nss/lib/freebl/verified/ -type f -name '*.[ch]'))
+
+# We have two checks in the script. 
+# The first one only checks the files in the verified/internal folder; the second one does for all the rest
+# It was implemented like this due to not uniqueness of the names in the verified folders
+# For instance, the files Hacl_Chacha20.h are present in both directories, but the content differs.
+
+files=($(find ~/nss/lib/freebl/verified/internal -type f -name '*.[ch]'))
 for f in "${files[@]}"; do
     file_name=$(basename "$f")
-    hacl_file=($(find ~/hacl-star/dist/mozilla/ ~/hacl-star/dist/kremlin/ -type f -name $file_name))
+    hacl_file=($(find ~/hacl-star/dist/mozilla/internal/ -type f -name $file_name))
+    diff $hacl_file $f
+done
+
+files=($(find ~/nss/lib/freebl/verified/ -type f -name '*.[ch]' -not -path "*/freebl/verified/internal/*" -not -path "*/freebl/verified/config.h"))
+for f in "${files[@]}"; do
+    file_name=$(basename "$f")
+    hacl_file=($(find ~/hacl-star/dist/mozilla/ ~/hacl-star/dist/karamel/ -type f -name $file_name -not -path "*/hacl-star/dist/mozilla/internal/*"))
+    # TODO(Bug 1854438): Remove P384 exception.
+    # TODO(Bug 1854439): Remove P521 exception.
+    if [ $file_name == "Hacl_P384.c"  \
+        -o $file_name == "Hacl_P384.h" \
+        -o $file_name == "Hacl_P521.c" \
+        -o $file_name == "Hacl_P521.h" ]
+    then
+        continue;
+    fi
     diff $hacl_file $f
 done

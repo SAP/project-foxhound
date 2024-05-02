@@ -11,8 +11,7 @@
 #include "WorkerPrivate.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class WorkerLocation final : public nsWrapperCache {
   nsString mHref;
@@ -46,7 +45,7 @@ class WorkerLocation final : public nsWrapperCache {
 
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WorkerLocation)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WorkerLocation)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(WorkerLocation)
 
   static already_AddRefed<WorkerLocation> Create(
       WorkerPrivate::LocationInfo& aInfo);
@@ -68,7 +67,6 @@ class WorkerLocation final : public nsWrapperCache {
   void GetOrigin(nsString& aOrigin) const { aOrigin = mOrigin; }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_location_h__

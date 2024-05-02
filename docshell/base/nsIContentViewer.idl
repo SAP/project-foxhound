@@ -11,8 +11,10 @@ webidl Document;
 webidl Node;
 
 %{ C++
+#include "mozilla/Maybe.h"
 #include "nsTArray.h"
 #include "nsRect.h"
+#include "Units.h"
 
 class nsIWidget;
 class nsPresContext;
@@ -24,6 +26,9 @@ class PresShell;
 namespace dom {
 class WindowGlobalChild;
 } // namespace dom
+namespace layout {
+class RemotePrintJobChild;
+} // namespace layout
 } // namespace mozilla
 %}
 
@@ -34,6 +39,7 @@ class WindowGlobalChild;
 [ptr] native nsDOMNavigationTimingPtr(nsDOMNavigationTiming);
 [ptr] native Encoding(const mozilla::Encoding);
 [ptr] native PresShellPtr(mozilla::PresShell);
+[ptr] native RemotePrintJobChildPtr(mozilla::layout::RemotePrintJobChild);
 [ptr] native WindowGlobalChildPtr(mozilla::dom::WindowGlobalChild);
 
 [scriptable, builtinclass, uuid(2da17016-7851-4a45-a7a8-00b360e01595)]
@@ -205,7 +211,8 @@ interface nsIContentViewer : nsISupports
   /**
    * Sets the print settings for print / print-previewing a subdocument.
    */
-  [can_run_script] void setPrintSettingsForSubdocument(in nsIPrintSettings aPrintSettings);
+  [can_run_script] void setPrintSettingsForSubdocument(in nsIPrintSettings aPrintSettings,
+                                                       in RemotePrintJobChildPtr aRemotePrintJob);
 
   /**
    * Get the history entry that this viewer will save itself into when
@@ -269,19 +276,30 @@ interface nsIContentViewer : nsISupports
   attribute boolean authorStyleDisabled;
 
   /**
-   * Requests the size of the content to the container.
-   */
-  void getContentSize(out long width, out long height);
-
-  /**
    * Returns the preferred width and height of the content, constrained to the
-   * given maximum values. If either maxWidth or maxHeight is less than zero,
-   * that dimension is not constrained.
+   * given maximum values. If either maxWidth or maxHeight is less than or
+   * equal to zero, that dimension is not constrained.
    *
-   * All input and output values are in device pixels, rather than CSS pixels.
+   * If a pref width is provided, it is max'd with the min-content size.
+   *
+   * All input and output values are in CSS pixels.
    */
-  void getContentSizeConstrained(in long maxWidth, in long maxHeight,
-                                 out long width, out long height);
+  void getContentSize(in long maxWidth,
+                      in long maxHeight,
+                      in long prefWidth,
+                      out long width,
+                      out long height);
+
+%{C++
+  mozilla::Maybe<mozilla::CSSIntSize> GetContentSize(int32_t aMaxWidth = 0, int32_t aMaxHeight = 0, int32_t aPrefWidth = 0) {
+    int32_t w = 0;
+    int32_t h = 0;
+    if (NS_SUCCEEDED(GetContentSize(aMaxWidth, aMaxHeight, aPrefWidth, &w, &h))) {
+      return mozilla::Some(mozilla::CSSIntSize(w, h));
+    }
+    return mozilla::Nothing();
+  }
+%}
 
   [noscript, notxpcom] Encoding getReloadEncodingAndSource(out int32_t aSource);
   [noscript, notxpcom] void setReloadEncodingAndSource(in Encoding aEncoding, in int32_t aSource);

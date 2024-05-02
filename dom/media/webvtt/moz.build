@@ -30,7 +30,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = "webvtt"
 
 EXTRA_JS_MODULES += [
-    "WebVTTParserWrapper.jsm",
+    "WebVTTParserWrapper.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
@@ -38,12 +38,12 @@ XPCOM_MANIFESTS += [
 ]
 
 EXTRA_JS_MODULES += [
-    "vtt.jsm",
+    "vtt.sys.mjs",
 ]
 
 XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.ini"]
 
-MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.toml"]
 
 REFTEST_MANIFESTS += ["test/reftest/reftest.list"]
 

@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <string>
 
 #include "base/logging.h"
@@ -42,12 +43,6 @@ NTSTATUS NtCreateFileInTarget(HANDLE* target_file_handle,
                    create_disposition, create_options, ea_buffer, ea_length);
   if (!NT_SUCCESS(status)) {
     return status;
-  }
-
-  if (!sandbox::SameObject(local_handle, obj_attributes->ObjectName->Buffer)) {
-    // The handle points somewhere else. Fail the operation.
-    ::CloseHandle(local_handle);
-    return STATUS_ACCESS_DENIED;
   }
 
   if (!::DuplicateHandle(::GetCurrentProcess(), local_handle, target_process,
@@ -405,13 +400,22 @@ bool FileSystemPolicy::SetInformationFileAction(EvalResult eval_result,
 }
 
 bool PreProcessName(std::wstring* path) {
+  // We now allow symbolic links to be opened via the broker, so we can no
+  // longer rely on the same object check where we checked the path of the
+  // opened file against the original. We don't specify a root when creating
+  // OBJECT_ATTRIBUTES from file names for brokering so they must be fully
+  // qualified and we can just check for the parent directory double dot between
+  // two backslashes. NtCreateFile doesn't seem to allow it anyway, but this is
+  // just an extra precaution. It also doesn't seem to allow the forward slash,
+  // but this is also used for checking policy rules, so we just replace forward
+  // slashes with backslashes.
+  std::replace(path->begin(), path->end(), L'/', L'\\');
+  if (path->find(L"\\..\\") != std::wstring::npos) {
+    return false;
+  }
+
   ConvertToLongPath(path);
-
-  if (ERROR_NOT_A_REPARSE_POINT == IsReparsePoint(*path))
-    return true;
-
-  // We can't process a reparsed file.
-  return false;
+  return true;
 }
 
 std::wstring FixNTPrefixForMatch(const std::wstring& name) {

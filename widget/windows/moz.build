@@ -26,6 +26,10 @@ with Files("OSK*"):
 with Files("*TSFTextStore*"):
     BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
 
+DIRS += [
+    "filedialog",
+]
+
 TEST_DIRS += ["tests"]
 
 EXPORTS += [
@@ -36,8 +40,10 @@ EXPORTS += [
 
 EXPORTS.mozilla += [
     "ShellHeaderOnlyUtils.h",
+    "ToastNotificationHeaderOnlyUtils.h",
     "UrlmonHeaderOnlyUtils.h",
     "WindowsConsole.h",
+    "WindowsEventLog.h",
     "WinHeaderOnlyUtils.h",
 ]
 
@@ -46,9 +52,9 @@ EXPORTS.mozilla.widget += [
     "CompositorWidgetChild.h",
     "CompositorWidgetParent.h",
     "InProcessWinCompositorWidget.h",
+    "nsWindowLoggedMessages.h",
     "WinCompositorWidget.h",
     "WinCompositorWindowThread.h",
-    "WinContentSystemParameters.h",
     "WindowsEMF.h",
     "WindowsSMTCProvider.h",
     "WinEventObserver.h",
@@ -61,10 +67,10 @@ EXPORTS.mozilla.widget += [
 UNIFIED_SOURCES += [
     "AudioSession.cpp",
     "CompositorWidgetChild.cpp",
+    "DirectManipulationOwner.cpp",
     "GfxInfo.cpp",
     "IEnumFE.cpp",
     "IMMHandler.cpp",
-    "InkCollector.cpp",
     "JumpListItem.cpp",
     "KeyboardLayout.cpp",
     "LSPAnnotator.cpp",
@@ -83,9 +89,10 @@ UNIFIED_SOURCES += [
     "nsUserIdleServiceWin.cpp",
     "nsUXThemeData.cpp",
     "nsWindow.cpp",
-    "nsWindowBase.cpp",
     "nsWindowDbg.cpp",
     "nsWindowGfx.cpp",
+    "nsWindowLoggedMessages.cpp",
+    "nsWindowTaskbarConcealer.cpp",
     "nsWinGesture.cpp",
     "OSKTabTipManager.cpp",
     "OSKVRManager.cpp",
@@ -121,15 +128,9 @@ SOURCES += [
     "nsWidgetFactory.cpp",
     "OSKInputPaneManager.cpp",
     "WinCompositorWidget.cpp",
-    "WinContentSystemParameters.cpp",
     "WindowsSMTCProvider.cpp",
     "WindowsUIUtils.cpp",
     "WinMouseScrollHandler.cpp",
-]
-
-# These files redefine the winsdk api version macro and we don't want it to leak to other files.
-SOURCES += [
-    "DirectManipulationOwner.cpp",
 ]
 
 # Needs INITGUID and we don't allow INITGUID in unified sources since bug 970429.
@@ -179,20 +180,25 @@ LOCAL_INCLUDES += [
 ]
 
 DEFINES["MOZ_UNICODE"] = True
+DEFINES["MOZ_APP_NAME"] = '"%s"' % CONFIG["MOZ_APP_NAME"]
+# Turn `firefox` into `Firefox`.
+DEFINES["MOZ_TOAST_APP_NAME"] = '"%s"' % CONFIG["MOZ_APP_NAME"].title()
 
-for var in "MOZ_ENABLE_D3D10_LAYER":
+for var in ("MOZ_ENABLE_D3D10_LAYER",):
     if CONFIG[var]:
         DEFINES[var] = True
 
 OS_LIBS += [
+    "ktmw32",
     "rpcrt4",
     "urlmon",
 ]
 
+# mingw is missing Windows toast notification definitions.
 if CONFIG["CC_TYPE"] == "clang-cl":
     SOURCES += [
         "ToastNotification.cpp",
         "ToastNotificationHandler.cpp",
     ]
 
-REQUIRES_UNIFIED_BUILD = True
+SPHINX_TREES["/widget/windows"] = "docs"

@@ -7,11 +7,12 @@
 #include "XMLHttpRequest.h"
 #include "XMLHttpRequestMainThread.h"
 #include "XMLHttpRequestWorker.h"
+#include "mozilla/Logging.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "nsGlobalWindowInner.h"
 
-namespace mozilla {
-namespace dom {
+mozilla::LazyLogModule gXMLHttpRequestLog("XMLHttpRequest");
+
+namespace mozilla::dom {
 
 /* static */
 already_AddRefed<XMLHttpRequest> XMLHttpRequest::Constructor(
@@ -52,5 +53,4 @@ already_AddRefed<XMLHttpRequest> XMLHttpRequest::Constructor(
   return XMLHttpRequestWorker::Construct(aGlobal, aParams, aRv);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

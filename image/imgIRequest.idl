@@ -12,6 +12,7 @@
 interface imgINotificationObserver;
 interface nsIURI;
 interface nsIPrincipal;
+interface nsIReferrerInfo;
 
 /**
  * imgIRequest interface
@@ -34,6 +35,12 @@ interface imgIRequest : nsIRequest
    * Provider ID for image providers created by this image.
    */
   [infallible] readonly attribute unsigned long providerId;
+
+  /**
+   * The principal for the document that loaded this image. Used when trying to
+   * validate a CORS image load.
+   */
+  [infallible] readonly attribute nsIPrincipal triggeringPrincipal;
 
   /**
    * Bits set in the return value from imageStatus
@@ -89,7 +96,7 @@ interface imgIRequest : nsIRequest
    * actual URI for the image (e.g. if HTTP redirects happened during the
    * load).
    */
-  readonly attribute nsIURI URI;
+  [infallible] readonly attribute nsIURI URI;
 
   /**
    * The URI of the resource we ended up loading after all redirects, etc.
@@ -99,6 +106,14 @@ interface imgIRequest : nsIRequest
   readonly attribute imgINotificationObserver notificationObserver;
 
   readonly attribute string mimeType;
+
+  /**
+   * The filename that should be used when saving the image. This is determined
+   * from the Content-Disposition, if present, or the uri of the image. This
+   * filename should be validated using nsIMIMEService::GetValidFilenameForSaving
+   * before creating the file.
+   */
+  readonly attribute ACString fileName;
 
   /**
    * Clone this request; the returned request will have aObserver as the
@@ -127,6 +142,11 @@ interface imgIRequest : nsIRequest
    * The CORS mode that this image was loaded with (a mozilla::CORSMode).
    */
   readonly attribute long CORSMode;
+
+  /**
+   * The referrer that this image was loaded with.
+   */
+  readonly attribute nsIReferrerInfo referrerInfo;
 
   /**
    * Cancels this request as in nsIRequest::Cancel(); further, also nulls out
@@ -177,6 +197,11 @@ interface imgIRequest : nsIRequest
   DecodeResult RequestDecodeWithResult(uint32_t aFlags);
 %}*/
 
+  /**
+   * Returns true if there is a image and the image has a frame and the frame
+   * currently has a least 1 decoded pixel. Only valid for raster images.
+   */
+  [noscript, notxpcom] boolean hasDecodedPixels();
 
   /**
    * Locks an image. If the image does not exist yet, locks it once it becomes
@@ -249,4 +274,3 @@ interface imgIRequest : nsIRequest
   const uint32_t CATEGORY_DISPLAY     = 1 << 3;
   void boostPriority(in uint32_t aCategory);
 };
-

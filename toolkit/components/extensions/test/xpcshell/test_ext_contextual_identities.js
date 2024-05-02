@@ -1,19 +1,26 @@
 "use strict";
 
-do_get_profile();
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionPreferencesManager",
-  "resource://gre/modules/ExtensionPreferencesManager.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ContextualIdentityService:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+  ExtensionPreferencesManager:
+    "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+});
 
 const CONTAINERS_PREF = "privacy.userContext.enabled";
 
 AddonTestUtils.init(this);
+AddonTestUtils.overrideCertDB();
+AddonTestUtils.createAppInfo(
+  "xpcshell@tests.mozilla.org",
+  "XPCShell",
+  "42",
+  "42"
+);
 
 add_task(async function startup() {
-  await ExtensionTestUtils.startAddonManager();
+  await AddonTestUtils.promiseStartupManager();
 });
 
 add_task(async function test_contextualIdentities_without_permissions() {
@@ -29,7 +36,7 @@ add_task(async function test_contextualIdentities_without_permissions() {
     useAddonManager: "temporary",
     background,
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "testing@thing.com" },
       },
       permissions: [],
@@ -136,7 +143,7 @@ add_task(async function test_contextualIdentity_events() {
     background,
     useAddonManager: "temporary",
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "testing@thing.com" },
       },
       permissions: ["contextualIdentities"],
@@ -153,8 +160,6 @@ add_task(async function test_contextualIdentity_events() {
 });
 
 add_task(async function test_contextualIdentity_with_permissions() {
-  const initial = Services.prefs.getBoolPref(CONTAINERS_PREF);
-
   async function background() {
     let ci;
     await browser.test.assertRejects(
@@ -335,7 +340,7 @@ add_task(async function test_contextualIdentity_with_permissions() {
       useAddonManager: "temporary",
       background,
       manifest: {
-        applications: {
+        browser_specific_settings: {
           gecko: { id },
         },
         permissions: ["contextualIdentities"],
@@ -362,15 +367,14 @@ add_task(async function test_contextualIdentity_with_permissions() {
   await extension.unload();
   equal(
     Services.prefs.getBoolPref(CONTAINERS_PREF),
-    initial,
-    "Pref should now be initial state"
+    true,
+    "Pref should remain enabled"
   );
 
   Services.prefs.clearUserPref(CONTAINERS_PREF);
 });
 
 add_task(async function test_contextualIdentity_extensions_enable_containers() {
-  const initial = Services.prefs.getBoolPref(CONTAINERS_PREF);
   async function background() {
     let ci = await browser.contextualIdentities.get("firefox-container-1");
     browser.test.assertTrue(!!ci, "We have an identity");
@@ -379,10 +383,10 @@ add_task(async function test_contextualIdentity_extensions_enable_containers() {
   }
   function makeExtension(id) {
     return ExtensionTestUtils.loadExtension({
-      useAddonManager: "temporary",
+      useAddonManager: "permanent",
       background,
       manifest: {
-        applications: {
+        browser_specific_settings: {
           gecko: { id },
         },
         permissions: ["contextualIdentities"],
@@ -413,7 +417,11 @@ add_task(async function test_contextualIdentity_extensions_enable_containers() {
   );
   await extension.unload();
   await testSetting(null, "setting should be unset");
-  testPref(initial, "setting should be initial value");
+  equal(
+    Services.prefs.getBoolPref(CONTAINERS_PREF),
+    true,
+    "Pref should remain enabled"
+  );
 
   // Lets set containers explicitly to be off and test we keep it that way after removal
   Services.prefs.setBoolPref(CONTAINERS_PREF, false);
@@ -424,9 +432,26 @@ add_task(async function test_contextualIdentity_extensions_enable_containers() {
   await testSetting(extension1.id, "setting should be controlled");
   testPref(true, "Pref should now be enabled, whatever it's initial state");
 
+  // Test that disabling leaves containers on, and that re-enabling with containers off
+  // will re-enable containers.
+  const addon = await AddonManager.getAddonByID(extension1.id);
+  await addon.disable();
+  await testSetting(undefined, "setting should not be an addon");
+  testPref(true, "Pref should remain enabled, whatever it's initial state");
+
+  Services.prefs.setBoolPref(CONTAINERS_PREF, false);
+
+  await addon.enable();
+  await testSetting(extension1.id, "setting should be controlled");
+  testPref(true, "Pref should be enabled");
+
   await extension1.unload();
   await testSetting(null, "setting should be unset");
-  testPref(false, "Pref should be false");
+  equal(
+    Services.prefs.getBoolPref(CONTAINERS_PREF),
+    true,
+    "Pref should remain enabled"
+  );
 
   // Lets set containers explicitly to be on and test we keep it that way after removal.
   Services.prefs.setBoolPref(CONTAINERS_PREF, true);
@@ -480,7 +505,7 @@ add_task(async function test_contextualIdentity_preference_change() {
       background,
       manifest: {
         version,
-        applications: {
+        browser_specific_settings: {
           gecko: { id },
         },
         permissions: ["contextualIdentities"],
@@ -505,9 +530,78 @@ add_task(async function test_contextualIdentity_preference_change() {
   await extension.unload();
   equal(
     Services.prefs.getBoolPref(CONTAINERS_PREF),
-    false,
-    "Pref should now be the initial state we set it to."
+    true,
+    "Pref should remain enabled"
   );
 
   Services.prefs.clearUserPref(CONTAINERS_PREF);
 });
+
+add_task(
+  { pref_set: [["extensions.eventPages.enabled", true]] },
+  async function test_contextualIdentity_event_page() {
+    let extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "permanent",
+      manifest: {
+        browser_specific_settings: {
+          gecko: { id: "eventpage@mochitest" },
+        },
+        permissions: ["contextualIdentities"],
+        background: { persistent: false },
+      },
+      background() {
+        browser.contextualIdentities.onCreated.addListener(() => {
+          browser.test.sendMessage("created");
+        });
+        browser.contextualIdentities.onUpdated.addListener(() => {});
+        browser.contextualIdentities.onRemoved.addListener(() => {
+          browser.test.sendMessage("removed");
+        });
+        browser.test.sendMessage("ready");
+      },
+    });
+
+    const EVENTS = ["onCreated", "onUpdated", "onRemoved"];
+
+    await extension.startup();
+    await extension.awaitMessage("ready");
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "contextualIdentities", event, {
+        primed: false,
+      });
+    }
+
+    await extension.terminateBackground();
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "contextualIdentities", event, {
+        primed: true,
+      });
+    }
+
+    // test events waken background
+    let identity = ContextualIdentityService.create("foobar", "circle", "red");
+
+    await extension.awaitMessage("ready");
+    await extension.awaitMessage("created");
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "contextualIdentities", event, {
+        primed: false,
+      });
+    }
+
+    ContextualIdentityService.remove(identity.userContextId);
+    await extension.awaitMessage("removed");
+
+    // check primed listeners after startup
+    await AddonTestUtils.promiseRestartManager();
+    await extension.awaitStartup();
+
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "contextualIdentities", event, {
+        primed: true,
+      });
+    }
+
+    await extension.unload();
+  }
+);

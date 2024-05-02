@@ -287,21 +287,42 @@ async function test_codeExecution(compartment) {
   });
 }
 
+// This is intended to just be a drop-in replacement for an old observer
+// notification.
+function addConsoleStorageListener(listener) {
+  const ConsoleAPIStorage = SpecialPowers.Cc[
+    "@mozilla.org/consoleAPI-storage;1"
+  ].getService(SpecialPowers.Ci.nsIConsoleAPIStorage);
+  listener.__handler = (message, id) => {
+    listener.observe(message, id);
+  };
+  ConsoleAPIStorage.addLogEventListener(
+    listener.__handler,
+    SpecialPowers.wrap(document).nodePrincipal
+  );
+}
+
+function removeConsoleStorageListener(listener) {
+  const ConsoleAPIStorage = SpecialPowers.Cc[
+    "@mozilla.org/consoleAPI-storage;1"
+  ].getService(SpecialPowers.Ci.nsIConsoleAPIStorage);
+  ConsoleAPIStorage.removeLogEventListener(listener.__handler);
+}
+
 async function test_codeExecution_continue(r, that) {
   function consoleListener() {
-    that.SpecialPowers.addObserver(this, "console-api-log-event");
+    addConsoleStorageListener(this);
   }
 
   var promise = new Promise(resolve => {
     consoleListener.prototype = {
-      observe(aSubject, aTopic, aData) {
+      observe(aSubject) {
         that.ok(true, "Something has been received");
-        that.is(aTopic, "console-api-log-event");
 
         var obj = aSubject.wrappedJSObject;
         if (obj.arguments[0] && obj.arguments[0] === "pull called") {
           that.ok(true, "Message received!");
-          that.SpecialPowers.removeObserver(this, "console-api-log-event");
+          removeConsoleStorageListener(this);
           resolve();
         }
       },
@@ -368,7 +389,7 @@ function workify(func) {
   return new Promise((resolve, reject) => {
     let worker = new Worker("worker_readableStreams.js");
     worker.postMessage(func);
-    worker.onmessage = function(e) {
+    worker.onmessage = function (e) {
       if (e.data.type == "done") {
         resolve();
         return;
@@ -386,7 +407,6 @@ function workify(func) {
 
       if (e.data.type == "info") {
         info(e.data.message);
-        return;
       }
     };
   });

@@ -4,7 +4,7 @@
 
 "use strict";
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // Dependencies
   const {
     button,
@@ -94,12 +94,8 @@ define(function(require, exports, module) {
     return object && object.set && object.set.type !== "undefined";
   }
 
-  function supportsObject(object, noGrip = false) {
-    if (noGrip !== true && (hasGetter(object) || hasSetter(object))) {
-      return true;
-    }
-
-    return false;
+  function supportsObject(object) {
+    return hasGetter(object) || hasSetter(object);
   }
 
   // Exports from this module

@@ -7,33 +7,53 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 const BrowserIcon = createFactory(
-  require("devtools/client/inspector/compatibility/components/BrowserIcon")
+  require("resource://devtools/client/inspector/compatibility/components/BrowserIcon.js")
 );
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
+const Localized = createFactory(FluentReact.Localized);
 
-const Types = require("devtools/client/inspector/compatibility/types");
+const Types = require("resource://devtools/client/inspector/compatibility/types.js");
 
 class UnsupportedBrowserItem extends PureComponent {
   static get propTypes() {
     return {
       id: Types.browser.id,
       name: Types.browser.name,
-      versions: PropTypes.arrayOf(
-        PropTypes.shape({
-          alias: Types.browser.status,
-          version: Types.browser.version,
-        })
-      ),
+      unsupportedVersions: PropTypes.array.isRequired,
+      version: Types.browser.version,
     };
   }
 
   render() {
-    const { id, name } = this.props;
-    return dom.li({}, BrowserIcon({ id, name }));
+    const { unsupportedVersions, id, name, version } = this.props;
+
+    return Localized(
+      {
+        id: "compatibility-issue-browsers-list",
+        $browsers: unsupportedVersions
+          .map(
+            ({ version: v, status }) =>
+              `${name} ${v}${status ? ` (${status})` : ""}`
+          )
+          .join("\n"),
+        attrs: { title: true },
+      },
+      dom.li(
+        { className: "compatibility-browser", "data-browser-id": id },
+        BrowserIcon({ id, name }),
+        dom.span(
+          {
+            className: "compatibility-browser-version",
+          },
+          version
+        )
+      )
+    );
   }
 }
 

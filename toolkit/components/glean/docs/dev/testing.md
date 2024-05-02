@@ -1,5 +1,13 @@
 # Testing
 
+```{admonition} This documentation is about testing FOG itself
+This document contains information about how FOG tests itself,
+how to add new tests, how and what to log, and stuff like that.
+If you're interested in learning how to test instrumentation you added,
+you'll want to read
+[the instrumetnation testing docs](../user/instrumentation_tests) instead.
+```
+
 Given the multiple API languages, processes, and dependencies,
 testing FOG is a matter of choosing the right tool for the situation.
 
@@ -7,9 +15,8 @@ testing FOG is a matter of choosing the right tool for the situation.
 
 To run all the things, here's the tl;dr:
 
-`./mach build && ./mach lint -Ww -o --fix
-&& ./mach lint --linter clippy toolkit/components/glean/api/src
-&& ./mach rusttests && ./mach gtest FOG*
+`./mach build && ./mach lint -W -w -o --fix
+&& ./mach rusttests && ./mach gtest "FOG*"
 && python3 ./mach python-test toolkit/components/glean/tests/pytest
 && ./mach test toolkit/components/glean/tests/xpcshell
 && ./mach telemetry-tests-client toolkit/components/telemetry/tests/marionette/tests/client/test_fog* --gecko-log "-"
@@ -67,7 +74,7 @@ If you are in C++ and didn't come from JS, use `MOZ_LOG` with module `fog`.
 
 Use the logging macros from `log`, e.g. `log::info!` or `log::error!`.
 Remember that, no matter the log level, `log::debug!` and `log::trace!`
-[will not appear in non-debug builds](/testing-rust-code/index.html#gecko-logging)
+[will not appear in non-debug builds](/testing-rust-code/index.md#gecko-logging)
 
 If you are logging due to a situation caused by and fixable by a developer using the API,
 use `log::error!(...)`. Otherwise, use a quieter level.
@@ -85,14 +92,9 @@ To keep in accordance with Mozilla's various and several Coding Styles,
 we rely on `mach lint`.
 
 To lint the code in the "usual" way, automatically fixing where possible, run:
-`./mach lint -Ww -o --fix`
+`./mach lint -W -w -o --fix`
 
 This should keep you from checking in code that will automatically be backed out.
-
-In addition, we need to run the Rust formatter `clippy` on the `fog` crate:
-`./mach lint --linter clippy toolkit/components/glean/api/src`
-
-This will ensure that clippy-only builds will have all the symbols they need to lint our code.
 
 ## Rust
 

@@ -6,8 +6,6 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-
 const PREF_ASYNC_STACK = "javascript.options.asyncstack";
 
 const ASYNC_STACKS_ENABLED = Services.prefs.getBoolPref(
@@ -17,9 +15,9 @@ const ASYNC_STACKS_ENABLED = Services.prefs.getBoolPref(
 
 var { ExtensionError } = ExtensionUtils;
 
-XPCOMUtils.defineLazyGetter(this, "symbolicationService", () => {
+ChromeUtils.defineLazyGetter(this, "symbolicationService", () => {
   let { createLocalSymbolicationService } = ChromeUtils.import(
-    "resource://devtools/client/performance-new/symbolication.jsm.js"
+    "resource://devtools/client/performance-new/shared/symbolication.jsm.js"
   );
   return createLocalSymbolicationService(Services.profiler.sharedLibraries, []);
 });
@@ -75,13 +73,8 @@ this.geckoProfiler = class extends ExtensionAPI {
     return {
       geckoProfiler: {
         async start(options) {
-          const {
-            bufferSize,
-            windowLength,
-            interval,
-            features,
-            threads,
-          } = options;
+          const { bufferSize, windowLength, interval, features, threads } =
+            options;
 
           Services.prefs.setBoolPref(PREF_ASYNC_STACK, false);
           if (threads) {
@@ -133,10 +126,11 @@ this.geckoProfiler = class extends ExtensionAPI {
             throw new ExtensionError("Path cannot contain a subdirectory.");
           }
 
-          let fragments = [OS.Constants.Path.profileDir, "profiler", fileName];
-          let filePath = OS.Path.join(...fragments);
+          let dirPath = PathUtils.join(PathUtils.profileDir, "profiler");
+          let filePath = PathUtils.join(dirPath, fileName);
 
           try {
+            await IOUtils.makeDirectory(dirPath);
             await Services.profiler.dumpProfileToFileAsync(filePath);
           } catch (e) {
             Cu.reportError(e);

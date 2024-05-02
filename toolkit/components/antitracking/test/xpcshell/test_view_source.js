@@ -2,8 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { CookieXPCShellUtils } = ChromeUtils.import(
-  "resource://testing-common/CookieXPCShellUtils.jsm"
+const { CookieXPCShellUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CookieXPCShellUtils.sys.mjs"
 );
 
 CookieXPCShellUtils.init(this);
@@ -11,7 +11,7 @@ CookieXPCShellUtils.init(this);
 let gCookieHits = 0;
 let gLoadingHits = 0;
 
-add_task(async function() {
+add_task(async function () {
   do_get_profile();
 
   info("Disable predictor and accept all");

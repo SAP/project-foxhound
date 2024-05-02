@@ -2,8 +2,8 @@
   "name": "Ceneje.si",
   "description": "Iskalnik Ceneje.si",
   "manifest_version": 2,
-  "version": "1.0",
-  "applications": {
+  "version": "1.1",
+  "browser_specific_settings": {
     "gecko": {
       "id": "ceneji@search.mozilla.org"
     }
@@ -12,9 +12,7 @@
   "icons": {
     "16": "favicon.png"
   },
-  "web_accessible_resources": [
-    "favicon.png"
-  ],
+  "web_accessible_resources": ["favicon.png"],
   "chrome_settings_overrides": {
     "search_provider": {
       "name": "Ceneje.si",

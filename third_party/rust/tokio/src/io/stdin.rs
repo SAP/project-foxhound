@@ -1,5 +1,5 @@
 use crate::io::blocking::Blocking;
-use crate::io::AsyncRead;
+use crate::io::{AsyncRead, ReadBuf};
 
 use std::io;
 use std::pin::Pin;
@@ -49,30 +49,52 @@ cfg_io_std! {
 }
 
 #[cfg(unix)]
-impl std::os::unix::io::AsRawFd for Stdin {
-    fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
-        std::io::stdin().as_raw_fd()
+mod sys {
+    #[cfg(not(tokio_no_as_fd))]
+    use std::os::unix::io::{AsFd, BorrowedFd};
+    use std::os::unix::io::{AsRawFd, RawFd};
+
+    use super::Stdin;
+
+    impl AsRawFd for Stdin {
+        fn as_raw_fd(&self) -> RawFd {
+            std::io::stdin().as_raw_fd()
+        }
+    }
+
+    #[cfg(not(tokio_no_as_fd))]
+    impl AsFd for Stdin {
+        fn as_fd(&self) -> BorrowedFd<'_> {
+            unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+        }
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::AsRawHandle for Stdin {
-    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
-        std::io::stdin().as_raw_handle()
+cfg_windows! {
+    #[cfg(not(tokio_no_as_fd))]
+    use crate::os::windows::io::{AsHandle, BorrowedHandle};
+    use crate::os::windows::io::{AsRawHandle, RawHandle};
+
+    impl AsRawHandle for Stdin {
+        fn as_raw_handle(&self) -> RawHandle {
+            std::io::stdin().as_raw_handle()
+        }
+    }
+
+    #[cfg(not(tokio_no_as_fd))]
+    impl AsHandle for Stdin {
+        fn as_handle(&self) -> BorrowedHandle<'_> {
+            unsafe { BorrowedHandle::borrow_raw(self.as_raw_handle()) }
+        }
     }
 }
 
 impl AsyncRead for Stdin {
-    unsafe fn prepare_uninitialized_buffer(&self, _buf: &mut [std::mem::MaybeUninit<u8>]) -> bool {
-        // https://github.com/rust-lang/rust/blob/09c817eeb29e764cfc12d0a8d94841e3ffe34023/src/libstd/io/stdio.rs#L97
-        false
-    }
-
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         Pin::new(&mut self.std).poll_read(cx, buf)
     }
 }

@@ -11,7 +11,6 @@
 #include <sstream>  // for std::ostringstream
 
 #include "GLContext.h"
-#include "Layers.h"
 #include "gfxEnv.h"
 #include "gfxRect.h"  // for gfxRect
 #include "gfxUtils.h"
@@ -112,7 +111,7 @@ void ShaderConfigOGL::SetColorMultiplier(uint32_t aMultiplier) {
 void ShaderConfigOGL::SetNV12(bool aEnabled) {
   SetFeature(ENABLE_TEXTURE_NV12, aEnabled);
   MOZ_ASSERT(!(mFeatures & ENABLE_TEXTURE_YCBCR));
-#ifdef MOZ_WAYLAND
+#ifdef MOZ_WIDGET_GTK
   SetFeature(ENABLE_TEXTURE_NV12_GA_SWITCH, aEnabled);
 #endif
 }
@@ -899,7 +898,7 @@ GLint ShaderProgramOGL::CreateShader(GLenum aShaderType,
    */
   if (!success
 #ifdef DEBUG
-      || (len > 10 && gfxEnv::DebugShaders())
+      || (len > 10 && gfxEnv::MOZ_DEBUG_SHADERS())
 #endif
   ) {
     nsAutoCString log;
@@ -954,7 +953,7 @@ bool ShaderProgramOGL::CreateProgram(const char* aVertexShaderString,
    */
   if (!success
 #ifdef DEBUG
-      || (len > 10 && gfxEnv::DebugShaders())
+      || (len > 10 && gfxEnv::MOZ_DEBUG_SHADERS())
 #endif
   ) {
     nsAutoCString log;

@@ -26,7 +26,7 @@ job-defaults:
         download-domain:
             by-release-level:
                 production: download.mozilla.org
-                staging: bouncer-bouncer-releng.stage.mozaws.net
+                staging: dev.bouncer.nonprod.webservices.mozgcp.net
     whats-new-config: browser/config/whats_new_page.yml
 
 jobs:
@@ -46,7 +46,13 @@ jobs:
                 by-release-type:
                     beta: ["firefox-beta-cdntest", "firefox-beta-localtest"]
                     release(-rc)?: ["firefox-release-cdntest", "firefox-release-localtest"]
-                    esr91: ["firefox-esr91-cdntest", "firefox-esr91-localtest"]
+                    esr115: ["firefox-esr115-cdntest", "firefox-esr115-localtest"]
+                    default: []
+            pin-channels:
+                by-release-type:
+                    beta: ["beta-localtest", "beta-cdntest"]
+                    release(-rc)?: ["release-localtest", "release-cdntest"]
+                    esr.*: ["esr-localtest", "esr-cdntest", "esr-localtest-next", "esr-cdntest-next"]
                     default: []
             platforms: ["linux", "linux64", "macosx64", "win32", "win64", "win64-aarch64"]
         treeherder:
@@ -64,6 +70,7 @@ jobs:
             product: devedition
             channel-names: ["aurora", "aurora-localtest", "aurora-cdntest"]
             rules-to-update: ["devedition-cdntest", "devedition-localtest"]
+            pin-channels: ["aurora-localtest", "aurora-cdntest"]
             platforms: ["linux", "linux64", "macosx64", "win32", "win64", "win64-aarch64"]
         treeherder:
             platform: devedition-release/opt

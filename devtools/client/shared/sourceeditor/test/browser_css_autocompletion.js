@@ -3,7 +3,7 @@
 
 "use strict";
 
-const CSSCompleter = require("devtools/client/shared/sourceeditor/css-autocompleter");
+const CSSCompleter = require("resource://devtools/client/shared/sourceeditor/css-autocompleter.js");
 
 const CSS_URI =
   "http://mochi.test:8888/browser/devtools/client/shared/sourceeditor" +
@@ -93,9 +93,10 @@ async function runTests() {
   const target = await createAndAttachTargetForTab(gBrowser.selectedTab);
   inspector = await target.getFront("inspector");
   const walker = inspector.walker;
+  const cssPropertiesFront = await target.getFront("cssProperties");
   completer = new CSSCompleter({
-    walker: walker,
-    cssProperties: getClientCssProperties(),
+    walker,
+    cssProperties: cssPropertiesFront.cssProperties,
   });
   await checkStateAndMoveOn();
   await completer.walker.release();
@@ -113,15 +114,16 @@ async function checkStateAndMoveOn() {
   const [line, ch] = lineCh;
 
   ++index;
-  await SpecialPowers.spawn(browser, [[index, tests.length]], function([
-    idx,
-    len,
-  ]) {
-    const progress = content.document.getElementById("progress");
-    const progressDiv = content.document.querySelector("#progress > div");
-    progress.dataset.progress = idx;
-    progressDiv.style.width = (100 * idx) / len + "%";
-  });
+  await SpecialPowers.spawn(
+    browser,
+    [[index, tests.length]],
+    function ([idx, len]) {
+      const progress = content.document.getElementById("progress");
+      const progressDiv = content.document.querySelector("#progress > div");
+      progress.dataset.progress = idx;
+      progressDiv.style.width = (100 * idx) / len + "%";
+    }
+  );
 
   const actualSuggestions = await completer.complete(limit(source, lineCh), {
     line,
@@ -142,7 +144,7 @@ async function checkState(expected, actual) {
         ", Actual: " +
         actual.length
     );
-    await SpecialPowers.spawn(browser, [], function() {
+    await SpecialPowers.spawn(browser, [], function () {
       const progress = content.document.getElementById("progress");
       progress.classList.add("failed");
     });

@@ -7,11 +7,14 @@
 #ifndef DOM_QUOTA_FORWARD_DECLS_H_
 #define DOM_QUOTA_FORWARD_DECLS_H_
 
+#include <cstdint>
+#include <functional>
+
 #include "mozilla/dom/quota/Config.h"
 
-#ifndef QM_ERROR_STACKS_ENABLED
 enum class nsresult : uint32_t;
-#endif
+template <class T>
+class RefPtr;
 
 namespace mozilla {
 
@@ -26,6 +29,35 @@ template <typename V, typename E>
 class Result;
 
 using OkOrErr = Result<Ok, QMResult>;
+
+template <typename ResolveValueT, typename RejectValueT, bool IsExclusive>
+class MozPromise;
+
+using BoolPromise = MozPromise<bool, nsresult, false>;
+using Int64Promise = MozPromise<int64_t, nsresult, false>;
+
+namespace ipc {
+
+class BoolResponse;
+enum class ResponseRejectReason;
+
+using BoolResponsePromise =
+    MozPromise<BoolResponse, ResponseRejectReason, true>;
+using BoolResponseResolver = std::function<void(const BoolResponse&)>;
+
+}  // namespace ipc
+
+namespace dom::quota {
+
+class ClientDirectoryLock;
+class UniversalDirectoryLock;
+
+using ClientDirectoryLockPromise =
+    MozPromise<RefPtr<ClientDirectoryLock>, nsresult, true>;
+using UniversalDirectoryLockPromise =
+    MozPromise<RefPtr<UniversalDirectoryLock>, nsresult, true>;
+
+}  // namespace dom::quota
 
 }  // namespace mozilla
 

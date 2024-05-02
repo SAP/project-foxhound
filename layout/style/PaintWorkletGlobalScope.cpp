@@ -6,33 +6,25 @@
 
 #include "PaintWorkletGlobalScope.h"
 
-#include "mozilla/dom/WorkletPrincipals.h"
 #include "mozilla/dom/PaintWorkletGlobalScopeBinding.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "PaintWorkletImpl.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 PaintWorkletGlobalScope::PaintWorkletGlobalScope(PaintWorkletImpl* aImpl)
-    : WorkletGlobalScope(aImpl->GetAgentClusterId(),
-                         aImpl->IsSharedMemoryAllowed()),
-      mImpl(aImpl) {}
+    : WorkletGlobalScope(aImpl) {}
+
+PaintWorkletImpl* PaintWorkletGlobalScope::Impl() const {
+  return static_cast<PaintWorkletImpl*>(mImpl.get());
+}
 
 bool PaintWorkletGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
-  JS::RealmOptions options;
-
-  // The SharedArrayBuffer global constructor property should not be present in
-  // a fresh global object when shared memory objects aren't allowed (because
-  // COOP/COEP support isn't enabled, or because COOP/COEP don't act to isolate
-  // this worker to a separate process).
-  options.creationOptions().setDefineSharedArrayBufferConstructor(
-      IsSharedMemoryAllowed());
-
-  JS::AutoHoldPrincipals principals(aCx, new WorkletPrincipals(mImpl));
+  JS::RealmOptions options = CreateRealmOptions();
   return PaintWorkletGlobalScope_Binding::Wrap(
-      aCx, this, this, options, principals.get(), true, aReflector);
+      aCx, this, this, options, nsJSPrincipals::get(mImpl->Principal()), true,
+      aReflector);
 }
 
 void PaintWorkletGlobalScope::RegisterPaint(const nsAString& aType,
@@ -40,7 +32,4 @@ void PaintWorkletGlobalScope::RegisterPaint(const nsAString& aType,
   // Nothing to do here, yet.
 }
 
-WorkletImpl* PaintWorkletGlobalScope::Impl() const { return mImpl; }
-
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

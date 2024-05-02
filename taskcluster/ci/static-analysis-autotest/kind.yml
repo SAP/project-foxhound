@@ -23,6 +23,7 @@ job-defaults:
         max-run-time: 3600
         env:
             PERFHERDER_EXTRA_OPTIONS: static-analysis-autotest
+    use-system-python: false
     run-on-projects: ['mozilla-central']
     run:
         using: mozharness
@@ -64,6 +65,7 @@ jobs:
                 - linux64-cbindgen
                 - linux64-nasm
                 - linux64-node
+                - linux64-pkgconf
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
 
@@ -74,29 +76,25 @@ jobs:
         treeherder:
             platform: windows2012-64/debug
             tier: 2
-        worker-type: b-win2012
-        worker:
-            env:
-                TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
+        worker-type: b-win2022
         run:
             config:
                 - builds/releng_base_firefox.py
                 - builds/taskcluster_base_windows.py
                 - builds/taskcluster_base_win64.py
                 - builds/taskcluster_sub_win64/debug.py
-            tooltool-downloads: internal
             extra-config:
                 mozconfig_variant: debug
-        use-sccache: true
+        use-sccache: false
         fetches:
             toolchain:
                 - win64-clang
                 - win64-rust
-                - win64-sccache
                 - win64-cbindgen
                 - win64-clang-tidy
                 - win64-nasm
                 - win64-node
                 - win64-dump_syms
                 - win64-winchecksec
+                - vs
                 - sysroot-wasm32-wasi

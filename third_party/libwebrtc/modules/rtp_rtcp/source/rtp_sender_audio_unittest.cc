@@ -13,13 +13,12 @@
 #include <memory>
 #include <vector>
 
-#include "api/transport/field_trial_based_config.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
-#include "test/field_trial.h"
+#include "rtc_base/thread.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -82,6 +81,7 @@ class RtpSenderAudioTest : public ::testing::Test {
     rtp_module_->SetSequenceNumber(kSeqNum);
   }
 
+  rtc::AutoThread main_thread_;
   SimulatedClock fake_clock_;
   LoopbackTransportTest transport_;
   std::unique_ptr<ModuleRtpRtcpImpl2> rtp_module_;
@@ -106,7 +106,7 @@ TEST_F(RtpSenderAudioTest, SendAudio) {
 
 TEST_F(RtpSenderAudioTest, SendAudioWithAudioLevelExtension) {
   EXPECT_EQ(0, rtp_sender_audio_->SetAudioLevel(kAudioLevel));
-  rtp_module_->RegisterRtpHeaderExtension(AudioLevel::kUri,
+  rtp_module_->RegisterRtpHeaderExtension(AudioLevel::Uri(),
                                           kAudioLevelExtensionId);
 
   const char payload_name[] = "PAYLOAD_NAME";
@@ -148,44 +148,9 @@ TEST_F(RtpSenderAudioTest, SendAudioWithoutAbsoluteCaptureTime) {
                    .HasExtension<AbsoluteCaptureTimeExtension>());
 }
 
-TEST_F(RtpSenderAudioTest, SendAudioWithAbsoluteCaptureTime) {
-  rtp_module_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::kUri,
-                                          kAbsoluteCaptureTimeExtensionId);
-  constexpr uint32_t kAbsoluteCaptureTimestampMs = 521;
-  const char payload_name[] = "audio";
-  const uint8_t payload_type = 127;
-  ASSERT_EQ(0, rtp_sender_audio_->RegisterAudioPayload(
-                   payload_name, payload_type, 48000, 0, 1500));
-  uint8_t payload[] = {47, 11, 32, 93, 89};
-
-  ASSERT_TRUE(rtp_sender_audio_->SendAudio(
-      AudioFrameType::kAudioFrameCN, payload_type, 4321, payload,
-      sizeof(payload), kAbsoluteCaptureTimestampMs));
-
-  auto absolute_capture_time =
-      transport_.last_sent_packet()
-          .GetExtension<AbsoluteCaptureTimeExtension>();
-  EXPECT_TRUE(absolute_capture_time);
-  EXPECT_EQ(
-      absolute_capture_time->absolute_capture_timestamp,
-      Int64MsToUQ32x32(fake_clock_.ConvertTimestampToNtpTimeInMilliseconds(
-          kAbsoluteCaptureTimestampMs)));
-  EXPECT_FALSE(
-      absolute_capture_time->estimated_capture_clock_offset.has_value());
-}
-
-// Essentially the same test as SendAudioWithAbsoluteCaptureTime but with a
-// field trial. After the field trial is experimented, we will remove
-// SendAudioWithAbsoluteCaptureTime.
 TEST_F(RtpSenderAudioTest,
        SendAudioWithAbsoluteCaptureTimeWithCaptureClockOffset) {
-  // Recreate rtp_sender_audio_ wieh new field trial.
-  test::ScopedFieldTrials field_trial(
-      "WebRTC-IncludeCaptureClockOffset/Enabled/");
-  rtp_sender_audio_ =
-      std::make_unique<RTPSenderAudio>(&fake_clock_, rtp_module_->RtpSender());
-
-  rtp_module_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::kUri,
+  rtp_module_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::Uri(),
                                           kAbsoluteCaptureTimeExtensionId);
   constexpr uint32_t kAbsoluteCaptureTimestampMs = 521;
   const char payload_name[] = "audio";
@@ -201,14 +166,12 @@ TEST_F(RtpSenderAudioTest,
   auto absolute_capture_time =
       transport_.last_sent_packet()
           .GetExtension<AbsoluteCaptureTimeExtension>();
-  EXPECT_TRUE(absolute_capture_time);
+  ASSERT_TRUE(absolute_capture_time);
   EXPECT_EQ(
       absolute_capture_time->absolute_capture_timestamp,
       Int64MsToUQ32x32(fake_clock_.ConvertTimestampToNtpTimeInMilliseconds(
           kAbsoluteCaptureTimestampMs)));
-  EXPECT_TRUE(
-      absolute_capture_time->estimated_capture_clock_offset.has_value());
-  EXPECT_EQ(0, *absolute_capture_time->estimated_capture_clock_offset);
+  EXPECT_EQ(absolute_capture_time->estimated_capture_clock_offset, 0);
 }
 
 // As RFC4733, named telephone events are carried as part of the audio stream

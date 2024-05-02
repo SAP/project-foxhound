@@ -7,8 +7,7 @@
 #include "Adapter.h"
 #include "mozilla/dom/WebGPUBinding.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
 GPU_IMPL_CYCLE_COLLECTION(SupportedFeatures, mParent)
 GPU_IMPL_JS_WRAP(SupportedFeatures)
@@ -16,5 +15,13 @@ GPU_IMPL_JS_WRAP(SupportedFeatures)
 SupportedFeatures::SupportedFeatures(Adapter* const aParent)
     : ChildOf(aParent) {}
 
-}  // namespace webgpu
-}  // namespace mozilla
+void SupportedFeatures::Add(const dom::GPUFeatureName aFeature,
+                            ErrorResult& aRv) {
+  const auto u8 = dom::GPUFeatureNameValues::GetString(aFeature);
+  const auto u16 = NS_ConvertUTF8toUTF16(u8);
+  dom::GPUSupportedFeatures_Binding::SetlikeHelpers::Add(this, u16, aRv);
+
+  mFeatures.insert(aFeature);
+}
+
+}  // namespace mozilla::webgpu

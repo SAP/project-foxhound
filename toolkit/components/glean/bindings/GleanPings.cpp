@@ -10,6 +10,7 @@
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/GleanPingsBinding.h"
 #include "mozilla/glean/bindings/GleanJSPingsLookup.h"
+#include "mozilla/glean/bindings/jog/JOG.h"
 #include "mozilla/glean/bindings/Ping.h"
 #include "MainThreadUtils.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
@@ -56,7 +57,17 @@ bool GleanPings::DefineGleanPings(JSContext* aCx,
 
 already_AddRefed<GleanPing> GleanPings::NamedGetter(const nsAString& aName,
                                                     bool& aFound) {
-  Maybe<uint32_t> pingId = PingByNameLookup(NS_ConvertUTF16toUTF8(aName));
+  aFound = false;
+
+  NS_ConvertUTF16toUTF8 pingName(aName);
+
+  JOG::EnsureRuntimeMetricsRegistered();
+
+  Maybe<uint32_t> pingId = JOG::GetPing(pingName);
+  if (pingId.isNothing() && !JOG::AreRuntimeMetricsComprehensive()) {
+    pingId = PingByNameLookup(pingName);
+  }
+
   if (pingId.isNothing()) {
     aFound = false;
     return nullptr;
@@ -69,9 +80,12 @@ already_AddRefed<GleanPing> GleanPings::NamedGetter(const nsAString& aName,
 bool GleanPings::NameIsEnumerable(const nsAString& aName) { return false; }
 
 void GleanPings::GetSupportedNames(nsTArray<nsString>& aNames) {
-  for (uint8_t idx : sPingByNameLookupEntries) {
-    const char* pingName = GetPingName(idx);
-    aNames.AppendElement()->AssignASCII(pingName);
+  JOG::GetPingNames(aNames);
+  if (!JOG::AreRuntimeMetricsComprehensive()) {
+    for (uint8_t idx : sPingByNameLookupEntries) {
+      const char* pingName = GetPingName(idx);
+      aNames.AppendElement()->AssignASCII(pingName);
+    }
   }
 }
 

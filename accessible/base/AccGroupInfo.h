@@ -6,7 +6,8 @@
 #define AccGroupInfo_h_
 
 #include "nsISupportsImpl.h"
-#include "Role.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/a11y/Role.h"
 
 namespace mozilla {
 namespace a11y {
@@ -38,7 +39,7 @@ class AccGroupInfo {
    * Return a direct or logical parent of the accessible that this group info is
    * created for.
    */
-  Accessible* ConceptualParent() const { return mParent; }
+  Accessible* ConceptualParent() const;
 
   /**
    * Update group information.
@@ -66,26 +67,14 @@ class AccGroupInfo {
    */
   static Accessible* NextItemTo(Accessible* aItem);
 
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf);
+
  protected:
   AccGroupInfo(const Accessible* aItem, a11y::role aRole);
 
  private:
   AccGroupInfo(const AccGroupInfo&) = delete;
   AccGroupInfo& operator=(const AccGroupInfo&) = delete;
-
-  static mozilla::a11y::role BaseRole(mozilla::a11y::role aRole) {
-    if (aRole == mozilla::a11y::roles::CHECK_MENU_ITEM ||
-        aRole == mozilla::a11y::roles::PARENT_MENUITEM ||
-        aRole == mozilla::a11y::roles::RADIO_MENU_ITEM) {
-      return mozilla::a11y::roles::MENUITEM;
-    }
-
-    if (aRole == mozilla::a11y::roles::CHECK_RICH_OPTION) {
-      return mozilla::a11y::roles::RICH_OPTION;
-    }
-
-    return aRole;
-  }
 
   /**
    * Return true if the given parent and child roles should have their node
@@ -101,7 +90,7 @@ class AccGroupInfo {
 
   uint32_t mPosInSet;
   uint32_t mSetSize;
-  Accessible* mParent;
+  uint64_t mParentId;
   const Accessible* mItem;
   a11y::role mRole;
 };

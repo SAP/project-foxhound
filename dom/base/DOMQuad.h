@@ -24,8 +24,7 @@ struct JSContext;
 struct JSStructuredCloneReader;
 struct JSStructuredCloneWriter;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DOMRectReadOnly;
 class DOMPoint;
@@ -42,7 +41,7 @@ class DOMQuad final : public nsWrapperCache {
   explicit DOMQuad(nsISupports* aParent);
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DOMQuad)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(DOMQuad)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(DOMQuad)
 
   nsISupports* GetParentObject() const { return mParent; }
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -85,7 +84,6 @@ class DOMQuad final : public nsWrapperCache {
   RefPtr<DOMPoint> mPoints[4];
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /*MOZILLA_DOMRECT_H_*/

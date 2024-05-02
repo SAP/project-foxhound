@@ -8,12 +8,15 @@
  * We turn on client validation for LocalStorage and ensure that we don't have
  * access to LocalStorage.
  */
-async function testSteps() {
+add_task(async function testSteps() {
   const principal = getPrincipal("http://example.com");
 
   info("Setting prefs");
 
-  Services.prefs.setBoolPref("dom.storage.next_gen", true);
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
   Services.prefs.setBoolPref("dom.storage.client_validation", true);
 
   info("Getting storage");
@@ -26,4 +29,4 @@ async function testSteps() {
     is(ex.name, "NS_ERROR_FAILURE", "Threw right Exception");
     is(ex.result, Cr.NS_ERROR_FAILURE, "Threw with right result");
   }
-}
+});

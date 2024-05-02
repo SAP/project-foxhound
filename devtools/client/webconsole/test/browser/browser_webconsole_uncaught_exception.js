@@ -8,7 +8,7 @@
 
 const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>Test uncaught exception`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await checkThrowingWithStack(hud, `"tomato"`, "Uncaught tomato");
@@ -39,7 +39,7 @@ add_task(async function() {
 
   info("Check custom error with name and message getters");
   // register the class
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     const script = content.document.createElement("script");
     script.append(
       content.document.createTextNode(
@@ -66,7 +66,7 @@ add_task(async function() {
     [1]
   );
   info("Check that object in errors can be expanded");
-  const rejectedObjectMessage = findMessage(hud, "eggplant", ".error");
+  const rejectedObjectMessage = findErrorMessage(hud, "eggplant");
   const oi = rejectedObjectMessage.querySelector(".tree");
   ok(true, "The object was rendered in an ObjectInspector");
 
@@ -101,22 +101,24 @@ async function checkThrowingWithStack(
   expectedMessage,
   additionalFrameLines = []
 ) {
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [expression], function(
-    expr
-  ) {
-    const script = content.document.createElement("script");
-    script.append(
-      content.document.createTextNode(`
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [expression],
+    function (expr) {
+      const script = content.document.createElement("script");
+      script.append(
+        content.document.createTextNode(`
     a = () => {throw ${expr}};
     b =  () => a();
     c =  () => b();
     d =  () => c();
     d();
     `)
-    );
-    content.document.body.append(script);
-    script.remove();
-  });
+      );
+      content.document.body.append(script);
+      script.remove();
+    }
+  );
   return checkMessageStack(hud, expectedMessage, [
     ...additionalFrameLines,
     2,

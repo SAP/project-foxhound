@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import glob
 import os
 import platform
@@ -11,7 +9,6 @@ import posixpath
 import re
 import shutil
 import signal
-import six
 import subprocess
 import sys
 import telnetlib
@@ -19,16 +16,21 @@ import time
 from distutils.spawn import find_executable
 from enum import Enum
 
-from mozdevice import ADBHost, ADBDeviceFactory
+import six
+from mozdevice import ADBDeviceFactory, ADBHost
 from six.moves import input, urllib
 
-EMULATOR_HOME_DIR = os.path.join(os.path.expanduser("~"), ".mozbuild", "android-device")
+MOZBUILD_PATH = os.environ.get(
+    "MOZBUILD_STATE_PATH", os.path.expanduser(os.path.join("~", ".mozbuild"))
+)
+
+EMULATOR_HOME_DIR = os.path.join(MOZBUILD_PATH, "android-device")
 
 EMULATOR_AUTH_FILE = os.path.join(
     os.path.expanduser("~"), ".emulator_console_auth_token"
 )
 
-TOOLTOOL_PATH = "testing/mozharness/external_tools/tooltool.py"
+TOOLTOOL_PATH = "python/mozbuild/mozbuild/action/tooltool.py"
 
 TRY_URL = "https://hg.mozilla.org/try/raw-file/default"
 
@@ -174,7 +176,6 @@ AVD_DICT = {
 
 
 def _get_device(substs, device_serial=None):
-
     adb_path = _find_sdk_exe(substs, "adb", False)
     if not adb_path:
         adb_path = "adb"
@@ -202,7 +203,8 @@ def _install_host_utils(build_obj):
             ):
                 os.environ["MOZ_HOST_BIN"] = path
                 installed = True
-                break
+            elif os.path.isfile(path):
+                os.remove(path)
         if not installed:
             _log_warning("Unable to install host utilities.")
     else:
@@ -258,7 +260,9 @@ def _maybe_update_host_utils(build_obj):
 
     # Compare, prompt, update
     if existing_version and manifest_version:
-        manifest_version = manifest_version[: len(existing_version)]
+        hu_version_regex = "host-utils-([\d\.]*)"
+        manifest_version = float(re.search(hu_version_regex, manifest_version).group(1))
+        existing_version = float(re.search(hu_version_regex, existing_version).group(1))
         if existing_version < manifest_version:
             _log_info("Your host utilities are out of date!")
             _log_info(
@@ -648,6 +652,7 @@ class AndroidEmulator(object):
         if os.path.exists(self.avd_path):
             _log_debug("AVD found at %s" % self.avd_path)
             return True
+        _log_warning("Could not find AVD at %s" % self.avd_path)
         return False
 
     def start(self, gpu_arg=None):
@@ -917,11 +922,8 @@ def _find_sdk_exe(substs, exe, tools):
 
     if not found:
         # Can exe be found in the default bootstrap location?
-        mozbuild_path = os.environ.get(
-            "MOZBUILD_STATE_PATH", os.path.expanduser(os.path.join("~", ".mozbuild"))
-        )
         for subdir in subdirs:
-            exe_path = os.path.join(mozbuild_path, "android-sdk-linux", subdir, exe)
+            exe_path = os.path.join(MOZBUILD_PATH, "android-sdk-linux", subdir, exe)
             if os.path.exists(exe_path):
                 found = True
                 break

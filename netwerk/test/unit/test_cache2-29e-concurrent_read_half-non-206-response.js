@@ -15,13 +15,15 @@ This test is using a resumable response.
 */
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpProtocolHandler = Cc[
   "@mozilla.org/network/protocol;1?name=http"
 ].getService(Ci.nsIHttpProtocolHandler);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpServer.identity.primaryPort;
 });
 
@@ -67,7 +69,7 @@ function run_test() {
   httpServer.registerPathHandler("/content", contentHandler);
   httpServer.start(-1);
 
-  httpProtocolHandler.EnsureHSTSDataReady().then(function() {
+  httpProtocolHandler.EnsureHSTSDataReady().then(function () {
     var chan1 = make_channel(URL + "/content");
     chan1.asyncOpen(new ChannelListener(firstTimeThrough, null));
     var chan2 = make_channel(URL + "/content");

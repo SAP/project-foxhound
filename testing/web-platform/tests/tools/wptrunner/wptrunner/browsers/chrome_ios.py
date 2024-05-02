@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 from .base import WebDriverBrowser, require_arg
 from .base import get_timeout_multiplier   # noqa: F401
 from ..executors import executor_kwargs as base_executor_kwargs
@@ -40,7 +42,8 @@ def env_extras(**kwargs):
 
 
 def env_options():
-    return {}
+    # allow the use of host-resolver-rules in lieu of modifying /etc/hosts file
+    return {"server_host": "127.0.0.1"}
 
 
 class ChromeiOSBrowser(WebDriverBrowser):
@@ -51,4 +54,5 @@ class ChromeiOSBrowser(WebDriverBrowser):
     init_timeout = 120
 
     def make_command(self):
-        return [self.binary, f"--port={self.port}"] + self.webdriver_args
+        return ([self.webdriver_binary, f"--port={self.port}"] +
+                self.webdriver_args)

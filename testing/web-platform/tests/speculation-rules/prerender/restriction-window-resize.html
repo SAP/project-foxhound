@@ -2,10 +2,12 @@
 <meta name="timeout" content="long">
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
+<script src="/common/utils.js"></script>
+<script src="../resources/utils.js"></script>
 <script src="resources/utils.js"></script>
+
 <body>
 <script>
-
 setup(() => assertSpeculationRulesIsSupported());
 
 // ResizeTo and ResizeBy operations should be ignored.
@@ -13,7 +15,8 @@ setup(() => assertSpeculationRulesIsSupported());
 ['resizeTo', 'resizeBy'].forEach(resizeFunc => {
   promise_test(
       async t => {
-        const bc = new BroadcastChannel('test-channel');
+        const uid = token();
+        const bc = new PrerenderChannel('test-channel', uid);
         t.add_cleanup(_ => bc.close());
 
         const gotMessage = new Promise(resolve => {
@@ -22,7 +25,7 @@ setup(() => assertSpeculationRulesIsSupported());
           }, {once: true});
         });
 
-        const url = `resources/window-resize.html?resize=${resizeFunc}`;
+        const url = `resources/window-resize.html?resize=${resizeFunc}&uid=${uid}`;
 
         // We have to open a new window to run the test, since a window that was
         // not created by window.open() cannot be resized.
@@ -43,6 +46,4 @@ setup(() => assertSpeculationRulesIsSupported());
       `a prerendering page cannot resize its window by executing ${
           resizeFunc}.`);
 });
-
 </script>
-</body>

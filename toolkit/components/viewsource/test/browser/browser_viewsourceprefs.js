@@ -5,21 +5,22 @@
 var plaintextURL = "data:text/plain,hello+world";
 var htmlURL = "about:mozilla";
 
-add_task(async function setup() {
-  registerCleanupFunction(function() {
+add_setup(async function () {
+  registerCleanupFunction(function () {
     SpecialPowers.clearUserPref("view_source.tab_size");
     SpecialPowers.clearUserPref("view_source.wrap_long_lines");
     SpecialPowers.clearUserPref("view_source.syntax_highlight");
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   await exercisePrefs(plaintextURL, false);
   await exercisePrefs(htmlURL, true);
 });
 
+const contextMenu = document.getElementById("contentAreaContextMenu");
 async function openContextMenu(browser) {
-  const contextMenu = document.getElementById("contentAreaContextMenu");
+  info("Opening context menu");
   const popupShownPromise = BrowserTestUtils.waitForEvent(
     contextMenu,
     "popupshown"
@@ -30,10 +31,10 @@ async function openContextMenu(browser) {
     browser
   );
   await popupShownPromise;
+  info("Opened context menu");
 }
 
 async function closeContextMenu() {
-  const contextMenu = document.getElementById("contentAreaContextMenu");
   const popupHiddenPromise = BrowserTestUtils.waitForEvent(
     contextMenu,
     "popuphidden"
@@ -42,12 +43,21 @@ async function closeContextMenu() {
   await popupHiddenPromise;
 }
 
+async function simulateClick(id) {
+  const popupHiddenPromise = BrowserTestUtils.waitForEvent(
+    contextMenu,
+    "popuphidden"
+  );
+  contextMenu.activateItem(document.getElementById(id));
+  await popupHiddenPromise;
+}
+
 function getAttribute(id, attribute) {
   let item = document.getElementById(id);
   return item.getAttribute(attribute);
 }
 
-var exercisePrefs = async function(source, highlightable) {
+var exercisePrefs = async function (source, highlightable) {
   let tab = await openDocument(source);
   let browser = tab.linkedBrowser;
 
@@ -74,8 +84,7 @@ var exercisePrefs = async function(source, highlightable) {
   // Next, test that the Wrap Long Lines menu item works.
   let prefReady = waitForPrefChange("view_source.wrap_long_lines");
   await openContextMenu(browser);
-  simulateClick(wrapMenuItem);
-  await closeContextMenu();
+  await simulateClick(wrapMenuItem);
   await openContextMenu(browser);
   await checkStyle(browser, "white-space", "pre-wrap");
   is(getAttribute(wrapMenuItem, "checked"), "true", "Wrap menu item checked");
@@ -89,8 +98,7 @@ var exercisePrefs = async function(source, highlightable) {
 
   prefReady = waitForPrefChange("view_source.wrap_long_lines");
   await openContextMenu(browser);
-  simulateClick(wrapMenuItem);
-  await closeContextMenu();
+  await simulateClick(wrapMenuItem);
   await openContextMenu(browser);
   await checkStyle(browser, "white-space", "pre");
   is(
@@ -109,8 +117,7 @@ var exercisePrefs = async function(source, highlightable) {
   // Check that the Syntax Highlighting menu item works.
   prefReady = waitForPrefChange("view_source.syntax_highlight");
   await openContextMenu(browser);
-  simulateClick(syntaxMenuItem);
-  await closeContextMenu();
+  await simulateClick(syntaxMenuItem);
   await openContextMenu(browser);
   await checkHighlight(browser, false);
   is(
@@ -128,8 +135,7 @@ var exercisePrefs = async function(source, highlightable) {
 
   prefReady = waitForPrefChange("view_source.syntax_highlight");
   await openContextMenu(browser);
-  simulateClick(syntaxMenuItem);
-  await closeContextMenu();
+  await simulateClick(syntaxMenuItem);
   await openContextMenu(browser);
   await checkHighlight(browser, highlightable);
   is(
@@ -173,15 +179,11 @@ var exercisePrefs = async function(source, highlightable) {
   gBrowser.removeTab(tab);
 };
 
-function simulateClick(id) {
-  document.getElementById(id).click();
-}
-
-var checkStyle = async function(browser, styleProperty, expected) {
+var checkStyle = async function (browser, styleProperty, expected) {
   let value = await SpecialPowers.spawn(
     browser,
     [styleProperty],
-    async function(styleProperty) {
+    async function (styleProperty) {
       let style = content.getComputedStyle(content.document.body);
       return style.getPropertyValue(styleProperty);
     }
@@ -189,8 +191,8 @@ var checkStyle = async function(browser, styleProperty, expected) {
   is(value, "" + expected, "Correct value of " + styleProperty);
 };
 
-var checkHighlight = async function(browser, expected) {
-  let highlighted = await SpecialPowers.spawn(browser, [], async function() {
+var checkHighlight = async function (browser, expected) {
+  let highlighted = await SpecialPowers.spawn(browser, [], async function () {
     let spans = content.document.getElementsByTagName("span");
     return Array.prototype.some.call(spans, span => {
       let style = content.getComputedStyle(span);

@@ -6,14 +6,13 @@
 #include "HTMLImageMapAccessible.h"
 
 #include "ARIAMap.h"
-#include "nsAccUtils.h"
-#include "DocAccessible-inl.h"
-#include "Role.h"
+#include "EventTree.h"
+#include "mozilla/a11y/Role.h"
 
+#include "nsCoreUtils.h"
 #include "nsIFrame.h"
 #include "nsImageFrame.h"
 #include "nsImageMap.h"
-#include "nsIURI.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/dom/HTMLAreaElement.h"
 
@@ -25,7 +24,7 @@ using namespace mozilla::a11y;
 
 HTMLImageMapAccessible::HTMLImageMapAccessible(nsIContent* aContent,
                                                DocAccessible* aDoc)
-    : ImageAccessibleWrap(aContent, aDoc) {
+    : ImageAccessible(aContent, aDoc) {
   mType = eImageMapType;
 
   UpdateChildAreas(false);
@@ -37,27 +36,12 @@ HTMLImageMapAccessible::HTMLImageMapAccessible(nsIContent* aContent,
 role HTMLImageMapAccessible::NativeRole() const { return roles::IMAGE_MAP; }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HTMLImageMapAccessible: HyperLinkAccessible
-
-uint32_t HTMLImageMapAccessible::AnchorCount() { return ChildCount(); }
-
-LocalAccessible* HTMLImageMapAccessible::AnchorAt(uint32_t aAnchorIndex) {
-  return LocalChildAt(aAnchorIndex);
-}
-
-already_AddRefed<nsIURI> HTMLImageMapAccessible::AnchorURIAt(
-    uint32_t aAnchorIndex) const {
-  LocalAccessible* area = LocalChildAt(aAnchorIndex);
-  if (!area) return nullptr;
-
-  nsIContent* linkContent = area->GetContent();
-  return linkContent ? linkContent->GetHrefURI() : nullptr;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // HTMLImageMapAccessible: public
 
 void HTMLImageMapAccessible::UpdateChildAreas(bool aDoFireEvents) {
+  if (!mContent || !mContent->GetPrimaryFrame()) {
+    return;
+  }
   nsImageFrame* imageFrame = do_QueryFrame(mContent->GetPrimaryFrame());
 
   // If image map is not initialized yet then we trigger one time more later.
@@ -122,12 +106,24 @@ HTMLAreaAccessible::HTMLAreaAccessible(nsIContent* aContent,
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLAreaAccessible: LocalAccessible
 
+role HTMLAreaAccessible::NativeRole() const {
+  // A link element without an href attribute and without a click listener
+  // should be reported as a generic.
+  if (mContent->IsElement()) {
+    dom::Element* element = mContent->AsElement();
+    if (!element->HasAttr(nsGkAtoms::href) &&
+        !nsCoreUtils::HasClickListener(element)) {
+      return roles::TEXT;
+    }
+  }
+  return HTMLLinkAccessible::NativeRole();
+}
+
 ENameValueFlag HTMLAreaAccessible::NativeName(nsString& aName) const {
   ENameValueFlag nameFlag = LocalAccessible::NativeName(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
-  if (!mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::alt,
-                                      aName)) {
+  if (!mContent->AsElement()->GetAttr(nsGkAtoms::alt, aName)) {
     Value(aName);
   }
 
@@ -188,21 +184,17 @@ nsRect HTMLAreaAccessible::RelativeBounds(nsIFrame** aBoundingFrame) const {
 nsRect HTMLAreaAccessible::ParentRelativeBounds() {
   nsIFrame* boundingFrame = nullptr;
   nsRect relativeBoundsRect = RelativeBounds(&boundingFrame);
-
-  nsIFrame* parentBoundingFrame = nullptr;
-  if (mParent) {
-    parentBoundingFrame = mParent->GetFrame();
+  if (MOZ_UNLIKELY(!boundingFrame)) {
+    // Area is not attached to an image map?
+    return nsRect();
   }
 
-  if (!parentBoundingFrame) {
-    // if we can't get the bounding frame, use the pres shell root for the
-    // bounding frame RelativeBounds returned
-    parentBoundingFrame =
-        nsLayoutUtils::GetContainingBlockForClientRect(boundingFrame);
-  }
-
-  nsLayoutUtils::TransformRect(boundingFrame, parentBoundingFrame,
-                               relativeBoundsRect);
-
+  // The relative bounds returned above are relative to this area's
+  // image map, which is technically already "parent relative".
+  // Because area elements are `display:none` to layout, they can't
+  // have transforms or other styling applied directly, and so we
+  // don't apply any additional transforms here. Any transform
+  // at the image map layer will be taken care of when computing bounds
+  // in the parent process.
   return relativeBoundsRect;
 }

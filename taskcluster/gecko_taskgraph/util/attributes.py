@@ -5,7 +5,6 @@
 
 import re
 
-
 INTEGRATION_PROJECTS = {
     "autoland",
 }
@@ -16,11 +15,14 @@ RELEASE_PROJECTS = {
     "mozilla-central",
     "mozilla-beta",
     "mozilla-release",
-    "mozilla-esr91",
+    "mozilla-esr115",
     "comm-central",
     "comm-beta",
-    "comm-esr91",
-    "oak",
+    "comm-release",
+    "comm-esr115",
+    # bug 1845368: pine is a permanent project branch used for testing
+    # nightly updates
+    "pine",
 }
 
 RELEASE_PROMOTION_PROJECTS = {
@@ -32,8 +34,8 @@ RELEASE_PROMOTION_PROJECTS = {
 
 TEMPORARY_PROJECTS = set(
     {
-        # When using a "Disposeabel Project Branch" you can specify your branch here. e.g.:
-        # 'oak',
+        # When using a "Disposable Project Branch" you can specify your branch here. e.g.:
+        "oak",
     }
 )
 
@@ -47,9 +49,16 @@ ALL_PROJECTS = RELEASE_PROMOTION_PROJECTS | TRUNK_PROJECTS | TEMPORARY_PROJECTS
 RUN_ON_PROJECT_ALIASES = {
     # key is alias, value is lambda to test it against
     "all": lambda project: True,
-    "integration": lambda project: project in INTEGRATION_PROJECTS,
-    "release": lambda project: project in RELEASE_PROJECTS,
-    "trunk": lambda project: project in TRUNK_PROJECTS,
+    "integration": lambda project: (
+        project in INTEGRATION_PROJECTS or project == "toolchains"
+    ),
+    "release": lambda project: (project in RELEASE_PROJECTS or project == "toolchains"),
+    "trunk": lambda project: (project in TRUNK_PROJECTS or project == "toolchains"),
+    "trunk-only": lambda project: project in TRUNK_PROJECTS,
+    "autoland": lambda project: project in ("autoland", "toolchains"),
+    "autoland-only": lambda project: project == "autoland",
+    "mozilla-central": lambda project: project in ("mozilla-central", "toolchains"),
+    "mozilla-central-only": lambda project: project == "mozilla-central",
 }
 
 _COPYABLE_ATTRIBUTES = (
@@ -71,50 +80,6 @@ _COPYABLE_ATTRIBUTES = (
     "stub-installer",
     "update-channel",
 )
-
-
-def attrmatch(attributes, **kwargs):
-    """Determine whether the given set of task attributes matches.  The
-    conditions are given as keyword arguments, where each keyword names an
-    attribute.  The keyword value can be a literal, a set, or a callable.  A
-    literal must match the attribute exactly.  Given a set, the attribute value
-    must be in the set.  A callable is called with the attribute value.  If an
-    attribute is specified as a keyword argument but not present in the
-    attributes, the result is False."""
-    for kwkey, kwval in kwargs.items():
-        if kwkey not in attributes:
-            return False
-        attval = attributes[kwkey]
-        if isinstance(kwval, set):
-            if attval not in kwval:
-                return False
-        elif callable(kwval):
-            if not kwval(attval):
-                return False
-        elif kwval != attributes[kwkey]:
-            return False
-    return True
-
-
-def keymatch(attributes, target):
-    """Determine if any keys in attributes are a match to target, then return
-    a list of matching values. First exact matches will be checked. Failing
-    that, regex matches and finally a default key.
-    """
-    # exact match
-    if target in attributes:
-        return [attributes[target]]
-
-    # regular expression match
-    matches = [v for k, v in attributes.items() if re.match(k + "$", target)]
-    if matches:
-        return matches
-
-    # default
-    if "default" in attributes:
-        return [attributes["default"]]
-
-    return []
 
 
 def match_run_on_projects(project, run_on_projects):
@@ -172,3 +137,9 @@ def is_try(params):
     `mach try fuzzy`.
     """
     return "try" in params["project"] or params["try_mode"] == "try_select"
+
+
+def task_name(task):
+    if task.label.startswith(task.kind + "-"):
+        return task.label[len(task.kind) + 1 :]
+    raise AttributeError(f"Task {task.label} does not have a name.")

@@ -19,6 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SIMPLE_INTERPOLATE_LSF_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SIMPLE_INTERPOLATE_LSF_H_
 
+#include <stdint.h>
+
 #include "modules/audio_coding/codecs/ilbc/defines.h"
 
 /*----------------------------------------------------------------*
@@ -41,6 +43,6 @@ void WebRtcIlbcfix_SimpleInterpolateLsf(
     int16_t length,       /* (i) should equate FILTERORDER */
     IlbcEncoder* iLBCenc_inst
     /* (i/o) the encoder state structure */
-    );
+);
 
 #endif

@@ -21,7 +21,7 @@ async function testBrowserAction(extension, expectedIcon) {
   let browserActionWidget = getBrowserActionWidget(extension);
   await promiseAnimationFrame();
   let browserActionButton = browserActionWidget.forWindow(window).node;
-  let image = getListStyleImage(browserActionButton);
+  let image = getListStyleImage(browserActionButton.firstElementChild);
   ok(
     image.includes(expectedIcon),
     `Expected browser action icon (${image}) to be ${expectedIcon}`
@@ -51,6 +51,17 @@ async function testStaticTheme(options) {
   let extension = ExtensionTestUtils.loadExtension({ manifest });
 
   await extension.startup();
+
+  // Ensure we show the menupanel at least once. This makes sure that the
+  // elements we're going to query the style of are in the flat tree.
+  if (defaultArea == "menupanel") {
+    let shown = BrowserTestUtils.waitForPopupEvent(
+      window.gUnifiedExtensions.panel,
+      "shown"
+    );
+    window.gUnifiedExtensions.togglePanel();
+    await shown;
+  }
 
   // Confirm that the browser action has the correct default icon before a theme is loaded.
   let toolbarId = TOOLBAR_MAPPING[defaultArea];
@@ -258,10 +269,6 @@ add_task(async function browseraction_theme_icons_overflow_panel() {
     ],
   });
 
-  // Ensure we show the menupanel at least once. This makes sure that the
-  // elements we're going to query the style of are in the flat tree.
-  document.getElementById("nav-bar-overflow-button").click();
-
   await testStaticTheme({
     themeData,
     expectedIcon: "light",
@@ -317,6 +324,7 @@ add_task(async function browseraction_theme_icons_dynamic_theme() {
     manifest: {
       browser_action: {
         default_icon: "default.png",
+        default_area: "navbar",
         theme_icons: [
           {
             light: "light.png",

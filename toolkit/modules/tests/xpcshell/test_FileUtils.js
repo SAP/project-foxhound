@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 function do_check_throws(f, result, stack) {
@@ -23,42 +23,6 @@ function do_check_throws(f, result, stack) {
 
 const gProfD = do_get_profile();
 
-add_test(function test_getFile() {
-  let file = FileUtils.getFile("ProfD", ["foobar"]);
-  Assert.ok(file instanceof Ci.nsIFile);
-  Assert.ok(!file.exists());
-
-  let other = gProfD.clone();
-  other.append("foobar");
-  Assert.ok(file.equals(other));
-
-  run_next_test();
-});
-
-add_test(function test_getFile_nonexistentDir() {
-  do_check_throws(function() {
-    FileUtils.getFile("NonexistentD", ["foobar"]);
-  }, Cr.NS_ERROR_FAILURE);
-
-  run_next_test();
-});
-
-add_test(function test_getFile_createDirs() {
-  let file = FileUtils.getFile("ProfD", ["a", "b", "foobar"]);
-  Assert.ok(file instanceof Ci.nsIFile);
-  Assert.ok(!file.exists());
-
-  let other = gProfD.clone();
-  other.append("a");
-  Assert.ok(other.isDirectory());
-  other.append("b");
-  Assert.ok(other.isDirectory());
-  other.append("foobar");
-  Assert.ok(file.equals(other));
-
-  run_next_test();
-});
-
 add_test(function test_getDir() {
   let dir = FileUtils.getDir("ProfD", ["foodir"]);
   Assert.ok(dir instanceof Ci.nsIFile);
@@ -72,7 +36,7 @@ add_test(function test_getDir() {
 });
 
 add_test(function test_getDir_nonexistentDir() {
-  do_check_throws(function() {
+  do_check_throws(function () {
     FileUtils.getDir("NonexistentD", ["foodir"]);
   }, Cr.NS_ERROR_FAILURE);
 
@@ -80,7 +44,8 @@ add_test(function test_getDir_nonexistentDir() {
 });
 
 add_test(function test_getDir_shouldCreate() {
-  let dir = FileUtils.getDir("ProfD", ["c", "d", "foodir"], true);
+  let dir = FileUtils.getDir("ProfD", ["c", "d", "foodir"]);
+  dir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   Assert.ok(dir instanceof Ci.nsIFile);
   Assert.ok(dir.exists());
 
@@ -95,8 +60,10 @@ add_test(function test_getDir_shouldCreate() {
   run_next_test();
 });
 
-var openFileOutputStream_defaultFlags = function(aKind, aFileName) {
-  let file = FileUtils.getFile("ProfD", [aFileName]);
+var openFileOutputStream_defaultFlags = function (aKind, aFileName) {
+  let file = new FileUtils.File(
+    PathUtils.join(PathUtils.profileDir, aFileName)
+  );
   let fos;
   Assert.ok(aKind == "atomic" || aKind == "safe" || aKind == "");
   if (aKind == "atomic") {
@@ -131,8 +98,10 @@ var openFileOutputStream_defaultFlags = function(aKind, aFileName) {
   run_next_test();
 };
 
-var openFileOutputStream_modeFlags = function(aKind, aFileName) {
-  let file = FileUtils.getFile("ProfD", [aFileName]);
+var openFileOutputStream_modeFlags = function (aKind, aFileName) {
+  let file = new FileUtils.File(
+    PathUtils.join(PathUtils.profileDir, aFileName)
+  );
   let fos;
   Assert.ok(aKind == "atomic" || aKind == "safe" || aKind == "");
   if (aKind == "atomic") {
@@ -143,7 +112,7 @@ var openFileOutputStream_modeFlags = function(aKind, aFileName) {
     fos = FileUtils.openFileOutputStream(file, FileUtils.MODE_WRONLY);
   }
   let data = "test_modeFlags";
-  do_check_throws(function() {
+  do_check_throws(function () {
     fos.write(data, data.length);
   }, Cr.NS_ERROR_FILE_NOT_FOUND);
   Assert.ok(!file.exists());
@@ -151,8 +120,10 @@ var openFileOutputStream_modeFlags = function(aKind, aFileName) {
   run_next_test();
 };
 
-var closeFileOutputStream = function(aKind, aFileName) {
-  let file = FileUtils.getFile("ProfD", [aFileName]);
+var closeFileOutputStream = function (aKind, aFileName) {
+  let file = new FileUtils.File(
+    PathUtils.join(PathUtils.profileDir, aFileName)
+  );
   let fos;
   Assert.ok(aKind == "atomic" || aKind == "safe");
   if (aKind == "atomic") {
@@ -171,7 +142,7 @@ var closeFileOutputStream = function(aKind, aFileName) {
   } else if (aKind == "safe") {
     FileUtils.closeSafeFileOutputStream(fos);
   }
-  do_check_throws(function() {
+  do_check_throws(function () {
     fos.write(data, data.length);
   }, Cr.NS_BASE_STREAM_CLOSED);
   run_next_test();
@@ -216,7 +187,9 @@ add_test(function test_closeSafeFileOutputStream() {
 });
 
 add_test(function test_newFile() {
-  let testfile = FileUtils.getFile("ProfD", ["test"]);
+  let testfile = new FileUtils.File(
+    PathUtils.join(PathUtils.profileDir, "test")
+  );
   let testpath = testfile.path;
   let file = new FileUtils.File(testpath);
   Assert.ok(file instanceof Ci.nsIFile);

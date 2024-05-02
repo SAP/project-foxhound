@@ -10,7 +10,6 @@
 
 #include "modules/video_capture/windows/device_info_ds.h"
 
-#include <assert.h>
 #include <dvdmedia.h>
 
 #include "modules/video_capture/video_capture_config.h"
@@ -108,10 +107,10 @@ DeviceInfoDS::DeviceInfoDS()
       // Details: hr = 0x80010106 <=> "Cannot change thread mode after it is
       // set".
       //
-      RTC_LOG(LS_INFO) << __FUNCTION__
-                       << ": CoInitializeEx(NULL, COINIT_APARTMENTTHREADED)"
-                          " => RPC_E_CHANGED_MODE, error 0x"
-                       << rtc::ToHex(hr);
+      RTC_DLOG(LS_INFO) << __FUNCTION__
+                        << ": CoInitializeEx(NULL, COINIT_APARTMENTTHREADED)"
+                           " => RPC_E_CHANGED_MODE, error 0x"
+                        << rtc::ToHex(hr);
     }
   }
 
@@ -268,7 +267,7 @@ int32_t DeviceInfoDS::GetDeviceInfo(uint32_t deviceNumber,
     }
   }
   if (deviceNameLength) {
-    RTC_LOG(LS_INFO) << __FUNCTION__ << " " << deviceNameUTF8;
+    RTC_DLOG(LS_INFO) << __FUNCTION__ << " " << deviceNameUTF8;
   }
   return index;
 }
@@ -278,7 +277,7 @@ IBaseFilter* DeviceInfoDS::GetDeviceFilter(const char* deviceUniqueIdUTF8,
                                            uint32_t productUniqueIdUTF8Length) {
   const int32_t deviceUniqueIdUTF8Length = (int32_t)strlen(
       (char*)deviceUniqueIdUTF8);  // UTF8 is also NULL terminated
-  if (deviceUniqueIdUTF8Length > kVideoCaptureUniqueNameLength) {
+  if (deviceUniqueIdUTF8Length >= kVideoCaptureUniqueNameLength) {
     RTC_LOG(LS_INFO) << "Device name too long";
     return NULL;
   }
@@ -325,12 +324,11 @@ IBaseFilter* DeviceInfoDS::GetDeviceFilter(const char* deviceUniqueIdUTF8,
             deviceFound = true;
             hr =
                 pM->BindToObject(0, 0, IID_IBaseFilter, (void**)&captureFilter);
-            if
-              FAILED(hr) {
-                RTC_LOG(LS_ERROR) << "Failed to bind to the selected "
-                                     "capture device "
-                                  << hr;
-              }
+            if FAILED (hr) {
+              RTC_LOG(LS_ERROR) << "Failed to bind to the selected "
+                                   "capture device "
+                                << hr;
+            }
 
             if (productUniqueIdUTF8 &&
                 productUniqueIdUTF8Length > 0)  // Get the device name
@@ -371,7 +369,7 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
 
   const int32_t deviceUniqueIdUTF8Length =
       (int32_t)strlen((char*)deviceUniqueIdUTF8);
-  if (deviceUniqueIdUTF8Length > kVideoCaptureUniqueNameLength) {
+  if (deviceUniqueIdUTF8Length >= kVideoCaptureUniqueNameLength) {
     RTC_LOG(LS_INFO) << "Device name too long";
     return -1;
   }
@@ -445,7 +443,7 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
         supportFORMAT_VideoInfo2 = true;
         VIDEOINFOHEADER2* h =
             reinterpret_cast<VIDEOINFOHEADER2*>(pmt->pbFormat);
-        assert(h);
+        RTC_DCHECK(h);
         foundInterlacedFormat |=
             h->dwInterlaceFlags &
             (AMINTERLACE_IsInterlaced | AMINTERLACE_DisplayModeBobOnly);
@@ -455,6 +453,9 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
         RTC_LOG(LS_INFO) << "Device support FORMAT_VideoInfo2";
         supportFORMAT_VideoInfo = true;
       }
+
+      FreeMediaType(pmt);
+      pmt = NULL;
     }
   }
   if (supportFORMAT_VideoInfo2) {
@@ -483,7 +484,7 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
 
       if (pmt->formattype == FORMAT_VideoInfo) {
         VIDEOINFOHEADER* h = reinterpret_cast<VIDEOINFOHEADER*>(pmt->pbFormat);
-        assert(h);
+        RTC_DCHECK(h);
         capability.directShowCapabilityIndex = tmp;
         capability.width = h->bmiHeader.biWidth;
         capability.height = h->bmiHeader.biHeight;
@@ -492,7 +493,7 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
       if (pmt->formattype == FORMAT_VideoInfo2) {
         VIDEOINFOHEADER2* h =
             reinterpret_cast<VIDEOINFOHEADER2*>(pmt->pbFormat);
-        assert(h);
+        RTC_DCHECK(h);
         capability.directShowCapabilityIndex = tmp;
         capability.width = h->bmiHeader.biWidth;
         capability.height = h->bmiHeader.biHeight;
@@ -503,9 +504,9 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
       }
 
       if (hrVC == S_OK) {
-        LONGLONG* frameDurationList;
-        LONGLONG maxFPS;
-        long listSize;
+        LONGLONG* frameDurationList = NULL;
+        LONGLONG maxFPS = 0;
+        long listSize = 0;
         SIZE size;
         size.cx = capability.width;
         size.cy = capability.height;
@@ -518,10 +519,18 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
         hrVC = videoControlConfig->GetFrameRateList(
             outputCapturePin, tmp, size, &listSize, &frameDurationList);
 
-        // On some odd cameras, you may get a 0 for duration.
-        // GetMaxOfFrameArray returns the lowest duration (highest FPS)
-        if (hrVC == S_OK && listSize > 0 &&
-            0 != (maxFPS = GetMaxOfFrameArray(frameDurationList, listSize))) {
+        if (hrVC == S_OK) {
+          maxFPS = GetMaxOfFrameArray(frameDurationList, listSize);
+        }
+
+        CoTaskMemFree(frameDurationList);
+        frameDurationList = NULL;
+        listSize = 0;
+
+        // On some odd cameras, you may get a 0 for duration. Some others may
+        // not update the out vars. GetMaxOfFrameArray returns the lowest
+        // duration (highest FPS), or 0 if there was no list with elements.
+        if (0 != maxFPS) {
           capability.maxFPS = static_cast<int>(10000000 / maxFPS);
           capability.supportFrameRateControl = true;
         } else  // use existing method
@@ -633,7 +642,7 @@ void DeviceInfoDS::GetProductId(const char* devicePath,
   // Find the second occurrence.
   pos = strchr(pos + 1, '&');
   uint32_t bytesToCopy = (uint32_t)(pos - startPos);
-  if (pos && (bytesToCopy <= productUniqueIdUTF8Length) &&
+  if (pos && (bytesToCopy < productUniqueIdUTF8Length) &&
       bytesToCopy <= kVideoCaptureProductIdLength) {
     strncpy_s((char*)productUniqueIdUTF8, productUniqueIdUTF8Length,
               (char*)startPos, bytesToCopy);

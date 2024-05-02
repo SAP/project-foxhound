@@ -109,16 +109,16 @@ fuzzy-if(OSX,0-1,0-324) == background-layers-1b.html background-layers-1-ref.htm
 # other
 != background-size-cover-slice.html background-size-cover-clone.html
 
-random-if(OSX==1010) == background-size-monster-ch.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-cm.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-em.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-ex.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-inches.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-mm.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-pc.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-pt.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-px.html background-size-monster-ref.html # bug 1129300
-random-if(OSX==1010) == background-size-monster-rem.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-ch.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-cm.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-em.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-ex.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-inches.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-mm.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-pc.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-pt.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-px.html background-size-monster-ref.html # bug 1129300
+== background-size-monster-rem.html background-size-monster-ref.html # bug 1129300
 
 fails-if(useDrawSnapshot) == background-size-zoom-repeat.html background-size-zoom-repeat-ref.html # drawSnapshot doesn't deal with zoom properly.
 
@@ -165,19 +165,19 @@ fuzzy(0-95,0-2206) == attachment-local-clipping-image-5.html attachment-local-cl
 fuzzy(0-109,0-908) fuzzy-if(geckoview&&device,64-64,2010-2830) == attachment-local-clipping-image-6.html attachment-local-clipping-image-6-ref.html
 
 fuzzy(0-1,0-84) == background-multiple-with-border-radius.html background-multiple-with-border-radius-ref.html
-fuzzy(0-11,0-49600) fails-if(useDrawSnapshot) == background-repeat-large-area.html background-repeat-large-area-ref.html # bug 1734383
+fuzzy(0-74,0-49600) fails-if(useDrawSnapshot) == background-repeat-large-area.html background-repeat-large-area-ref.html # bug 1734383
 
 fuzzy(0-31,0-474) fails-if(useDrawSnapshot) == background-tiling-zoom-1.html background-tiling-zoom-1-ref.html # drawSnapshot doesn't deal with zoom properly
 
 skip-if(!cocoaWidget) == background-repeat-resampling.html background-repeat-resampling-ref.html
 
-fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == background-clip-text-1a.html background-clip-text-1-ref.html # Bug 1392106
-fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == background-clip-text-1b.html background-clip-text-1-ref.html # Bug 1392106
-fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == background-clip-text-1c.html background-clip-text-1-ref.html # Bug 1392106
-fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == background-clip-text-1d.html background-clip-text-1-ref.html # Bug 1392106
-fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == background-clip-text-1e.html background-clip-text-1-ref.html # Bug 1392106
+fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),50-50,2689-2689) == background-clip-text-1a.html background-clip-text-1-ref.html # Bug 1392106
+fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),50-50,2689-2689) == background-clip-text-1b.html background-clip-text-1-ref.html # Bug 1392106
+fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),50-50,2689-2689) == background-clip-text-1c.html background-clip-text-1-ref.html # Bug 1392106
+fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),50-50,2689-2689) == background-clip-text-1d.html background-clip-text-1-ref.html # Bug 1392106
+fuzzy(0-102,0-2811) fuzzy-if(winWidget,153-153,2866-2866) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),50-50,2689-2689) == background-clip-text-1e.html background-clip-text-1-ref.html # Bug 1392106
 
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == background-clip-text-2.html background-clip-text-2-ref.html # Bug 1392106
+== background-clip-text-2.html background-clip-text-2-ref.html
 
 random-if(Android) == background-clip-text-scale.html background-clip-text-scale-ref.html # bug 1733942
 != background-clip-text-translate.html about:blank

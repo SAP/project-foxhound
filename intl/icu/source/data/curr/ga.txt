@@ -1165,6 +1165,7 @@ ga{
         BRL{"R$"}
         BSD{"$"}
         BWP{"P"}
+        BYN{"BYN"}
         BZD{"$"}
         CAD{"$"}
         CLP{"$"}
@@ -2194,10 +2195,10 @@ ga{
             two{"dhollar na Libéire"}
         }
         LSL{
-            few{"Loti Leosóta"}
-            many{"Loti Leosóta"}
-            one{"Loti Leosóta"}
-            other{"Loti Leosóta"}
+            few{"loti Leosóta"}
+            many{"loti Leosóta"}
+            one{"loti Leosóta"}
+            other{"loti Leosóta"}
             two{"Loti Leosóta"}
         }
         LTL{

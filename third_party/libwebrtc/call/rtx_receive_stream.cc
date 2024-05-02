@@ -32,6 +32,7 @@ RtxReceiveStream::RtxReceiveStream(
       associated_payload_types_(std::move(associated_payload_types)),
       media_ssrc_(media_ssrc),
       rtp_receive_statistics_(rtp_receive_statistics) {
+  packet_checker_.Detach();
   if (associated_payload_types_.empty()) {
     RTC_LOG(LS_WARNING)
         << "RtxReceiveStream created with empty payload type mapping.";
@@ -40,7 +41,14 @@ RtxReceiveStream::RtxReceiveStream(
 
 RtxReceiveStream::~RtxReceiveStream() = default;
 
+void RtxReceiveStream::SetAssociatedPayloadTypes(
+    std::map<int, int> associated_payload_types) {
+  RTC_DCHECK_RUN_ON(&packet_checker_);
+  associated_payload_types_ = std::move(associated_payload_types);
+}
+
 void RtxReceiveStream::OnRtpPacket(const RtpPacketReceived& rtx_packet) {
+  RTC_DCHECK_RUN_ON(&packet_checker_);
   if (rtp_receive_statistics_) {
     rtp_receive_statistics_->OnRtpPacket(rtx_packet);
   }
@@ -52,9 +60,9 @@ void RtxReceiveStream::OnRtpPacket(const RtpPacketReceived& rtx_packet) {
 
   auto it = associated_payload_types_.find(rtx_packet.PayloadType());
   if (it == associated_payload_types_.end()) {
-    RTC_LOG(LS_VERBOSE) << "Unknown payload type "
-                        << static_cast<int>(rtx_packet.PayloadType())
-                        << " on rtx ssrc " << rtx_packet.Ssrc();
+    RTC_DLOG(LS_VERBOSE) << "Unknown payload type "
+                         << static_cast<int>(rtx_packet.PayloadType())
+                         << " on rtx ssrc " << rtx_packet.Ssrc();
     return;
   }
   RtpPacketReceived media_packet;
@@ -64,7 +72,7 @@ void RtxReceiveStream::OnRtpPacket(const RtpPacketReceived& rtx_packet) {
   media_packet.SetSequenceNumber((payload[0] << 8) + payload[1]);
   media_packet.SetPayloadType(it->second);
   media_packet.set_recovered(true);
-  media_packet.set_arrival_time_ms(rtx_packet.arrival_time_ms());
+  media_packet.set_arrival_time(rtx_packet.arrival_time());
 
   // Skip the RTX header.
   rtc::ArrayView<const uint8_t> rtx_payload = payload.subview(kRtxHeaderSize);

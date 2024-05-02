@@ -29,7 +29,12 @@ namespace geckoprofiler::markers {
 
 // Import some common markers from mozilla::baseprofiler::markers.
 using MediaSampleMarker = mozilla::baseprofiler::markers::MediaSampleMarker;
+using VideoFallingBehindMarker =
+    mozilla::baseprofiler::markers::VideoFallingBehindMarker;
 using ContentBuildMarker = mozilla::baseprofiler::markers::ContentBuildMarker;
+using MediaEngineMarker = mozilla::baseprofiler::markers::MediaEngineMarker;
+using MediaEngineTextMarker =
+    mozilla::baseprofiler::markers::MediaEngineTextMarker;
 
 }  // namespace geckoprofiler::markers
 

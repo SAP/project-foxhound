@@ -44,13 +44,11 @@ class SVGUseElement final : public SVGUseElementBase,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
   explicit SVGUseElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual ~SVGUseElement();
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
  public:
   NS_IMPL_FROMNODE_WITH_TAG(SVGUseElement, kNameSpaceID_SVG, use)
 
-  bool IsNodeOfType(uint32_t aFlags) const override;
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent = true) override;
 
@@ -66,13 +64,13 @@ class SVGUseElement final : public SVGUseElementBase,
   NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED
 
   // SVGElement specializations:
-  virtual gfxMatrix PrependLocalTransformsTo(
+  gfxMatrix PrependLocalTransformsTo(
       const gfxMatrix& aMatrix,
       SVGTransformTypes aWhich = eAllTransforms) const override;
-  virtual bool HasValidDimensions() const override;
+  bool HasValidDimensions() const override;
 
   // nsIContent interface
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
@@ -97,9 +95,9 @@ class SVGUseElement final : public SVGUseElementBase,
   // This is needed because SMIL doesn't go through AfterSetAttr unfortunately.
   void ProcessAttributeChange(int32_t aNamespaceID, nsAtom* aAttribute);
 
-  nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aAttribute,
-                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
-                        nsIPrincipal* aSubjectPrincipal, bool aNotify) final;
+  void AfterSetAttr(int32_t aNamespaceID, nsAtom* aAttribute,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) final;
 
  protected:
   // Information from walking our ancestors and a given target.
@@ -115,8 +113,12 @@ class SVGUseElement final : public SVGUseElementBase,
     // We're a cyclic reference to either an ancestor or another shadow tree. We
     // shouldn't render this <use> element.
     CyclicReference,
+    // We're too deep in our clone chain, we shouldn't be rendered.
+    TooDeep,
   };
   ScanResult ScanAncestors(const Element& aTarget) const;
+  ScanResult ScanAncestorsInternal(const Element& aTarget,
+                                   uint32_t& aCount) const;
 
   /**
    * Helper that provides a reference to the element with the ID that is
@@ -143,8 +145,8 @@ class SVGUseElement final : public SVGUseElementBase,
 
   SVGUseFrame* GetFrame() const;
 
-  virtual LengthAttributesInfo GetLengthInfo() override;
-  virtual StringAttributesInfo GetStringInfo() override;
+  LengthAttributesInfo GetLengthInfo() override;
+  StringAttributesInfo GetStringInfo() override;
 
   /**
    * Returns true if our width and height should be used, or false if they

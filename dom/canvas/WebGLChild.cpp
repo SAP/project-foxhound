@@ -23,59 +23,111 @@ void WebGLChild::ActorDestroy(ActorDestroyReason why) {
 
 // -
 
-Maybe<Range<uint8_t>> WebGLChild::AllocPendingCmdBytes(const size_t size) {
-  if (!mPendingCmdsShmem) {
+Maybe<Range<uint8_t>> WebGLChild::AllocPendingCmdBytes(
+    const size_t size, const size_t fyiAlignmentOverhead) {
+  if (!mPendingCmdsShmem.Size()) {
     size_t capacity = mDefaultCmdsShmemSize;
     if (capacity < size) {
       capacity = size;
     }
 
-    auto shmem = webgl::RaiiShmem::Alloc(
-        this, capacity,
-        mozilla::ipc::SharedMemory::SharedMemoryType::TYPE_BASIC);
-    if (!shmem) {
+    mPendingCmdsShmem = mozilla::ipc::BigBuffer::TryAlloc(capacity);
+    if (!mPendingCmdsShmem.Size()) {
       NS_WARNING("Failed to alloc shmem for AllocPendingCmdBytes.");
       return {};
     }
-    mPendingCmdsShmem = std::move(shmem);
     mPendingCmdsPos = 0;
+    mPendingCmdsAlignmentOverhead = 0;
 
     if (kIsDebug) {
-      const auto range = mPendingCmdsShmem.ByteRange();
-      const auto initialOffset =
-          AlignmentOffset(kUniversalAlignment, range.begin().get());
+      const auto ptr = mPendingCmdsShmem.Data();
+      const auto initialOffset = AlignmentOffset(kUniversalAlignment, ptr);
       MOZ_ALWAYS_TRUE(!initialOffset);
     }
   }
-  const auto range = mPendingCmdsShmem.ByteRange();
+
+  const auto range = Range<uint8_t>{mPendingCmdsShmem.AsSpan()};
 
   auto itr = range.begin() + mPendingCmdsPos;
   const auto offset = AlignmentOffset(kUniversalAlignment, itr.get());
   mPendingCmdsPos += offset;
+  mPendingCmdsAlignmentOverhead += offset;
   const auto required = mPendingCmdsPos + size;
   if (required > range.length()) {
     FlushPendingCmds();
-    return AllocPendingCmdBytes(size);
+    return AllocPendingCmdBytes(size, fyiAlignmentOverhead);
   }
   itr = range.begin() + mPendingCmdsPos;
   const auto remaining = Range<uint8_t>{itr, range.end()};
   mPendingCmdsPos += size;
+  mPendingCmdsAlignmentOverhead += fyiAlignmentOverhead;
   return Some(Range<uint8_t>{remaining.begin(), remaining.begin() + size});
 }
 
 void WebGLChild::FlushPendingCmds() {
-  if (!mPendingCmdsShmem) return;
+  if (!mPendingCmdsShmem.Size()) return;
 
   const auto byteSize = mPendingCmdsPos;
-  SendDispatchCommands(mPendingCmdsShmem.Extract(), byteSize);
+  SendDispatchCommands(std::move(mPendingCmdsShmem), byteSize);
+  mPendingCmdsShmem = {};
 
   mFlushedCmdInfo.flushes += 1;
   mFlushedCmdInfo.flushedCmdBytes += byteSize;
+  mFlushedCmdInfo.overhead += mPendingCmdsAlignmentOverhead;
+
+  // Handle flushesSinceLastCongestionCheck
+  mFlushedCmdInfo.flushesSinceLastCongestionCheck += 1;
+  const auto startCongestionCheck = 20;
+  const auto maybeIPCMessageCongestion = 70;
+  const auto eventTarget = GetCurrentSerialEventTarget();
+  MOZ_ASSERT(eventTarget);
+  RefPtr<WebGLChild> self = this;
+  size_t generation = self->mFlushedCmdInfo.congestionCheckGeneration;
+
+  // When ClientWebGLContext uses async remote texture, sync GetFrontBuffer
+  // message is not sent in ClientWebGLContext::GetFrontBuffer(). It causes a
+  // case that a lot of async DispatchCommands messages are sent to
+  // WebGLParent without calling ClientWebGLContext::GetFrontBuffer(). The
+  // sending DispatchCommands messages could be faster than receiving message
+  // at WebGLParent by WebGLParent::RecvDispatchCommands(). If it happens,
+  // pending IPC messages could grow too much until out of resource. To detect
+  // the messages congestion, async Ping message is used. If the Ping response
+  // is not received until maybeIPCMessageCongestion, IPC message might be
+  // congested at WebGLParent. Then sending sync SyncPing flushes all pending
+  // messages.
+  // Due to the async nature of the async ping, it is possible for the flush
+  // check to exceed maybeIPCMessageCongestion, but that it it still bounded.
+  if (mFlushedCmdInfo.flushesSinceLastCongestionCheck == startCongestionCheck) {
+    SendPing()->Then(eventTarget, __func__, [self, generation]() {
+      if (generation == self->mFlushedCmdInfo.congestionCheckGeneration) {
+        // Confirmed IPC messages congestion does not happen.
+        // Reset flushesSinceLastCongestionCheck for next congestion check.
+        self->mFlushedCmdInfo.flushesSinceLastCongestionCheck = 0;
+        self->mFlushedCmdInfo.congestionCheckGeneration++;
+      }
+    });
+  } else if (mFlushedCmdInfo.flushesSinceLastCongestionCheck >
+             maybeIPCMessageCongestion) {
+    // IPC messages congestion might happen, send sync SyncPing for flushing
+    // pending messages.
+    SendSyncPing();
+    // Reset flushesSinceLastCongestionCheck for next congestion check.
+    mFlushedCmdInfo.flushesSinceLastCongestionCheck = 0;
+    mFlushedCmdInfo.congestionCheckGeneration++;
+  }
 
   if (gl::GLContext::ShouldSpew()) {
-    printf_stderr("[WebGLChild] Flushed %zu bytes. (%zu over %zu flushes)\n",
-                  byteSize, mFlushedCmdInfo.flushedCmdBytes,
-                  mFlushedCmdInfo.flushes);
+    const auto overheadRatio = float(mPendingCmdsAlignmentOverhead) /
+                               (byteSize - mPendingCmdsAlignmentOverhead);
+    const auto totalOverheadRatio =
+        float(mFlushedCmdInfo.overhead) /
+        (mFlushedCmdInfo.flushedCmdBytes - mFlushedCmdInfo.overhead);
+    printf_stderr(
+        "[WebGLChild] Flushed %zu (%zu=%.2f%% overhead) bytes."
+        " (%zu (%.2f%% overhead) over %zu flushes)\n",
+        byteSize, mPendingCmdsAlignmentOverhead, 100 * overheadRatio,
+        mFlushedCmdInfo.flushedCmdBytes, 100 * totalOverheadRatio,
+        mFlushedCmdInfo.flushes);
   }
 }
 

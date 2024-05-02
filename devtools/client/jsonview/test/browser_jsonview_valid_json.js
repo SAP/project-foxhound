@@ -5,14 +5,15 @@
 
 const TEST_JSON_URL = URL_ROOT + "valid_json.json";
 
-add_task(async function() {
+add_task(async function () {
   info("Test valid JSON started");
 
   const tab = await addJsonViewTab(TEST_JSON_URL);
 
-  ok(
-    tab.linkedBrowser.contentPrincipal.isNullPrincipal,
-    "Should have null principal"
+  is(
+    tab.linkedBrowser.contentPrincipal.origin,
+    "resource://devtools",
+    "JSON document ends up having a privileged principal in order to load DevTools URIs"
   );
 
   is(await countRows(), 3, "There must be three rows");

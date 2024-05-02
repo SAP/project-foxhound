@@ -16,98 +16,42 @@
 
 #include <algorithm>
 
+#include "absl/strings/string_view.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 #include "rtc_base/platform_thread.h"
-#include "rtc_base/stream.h"
 #include "rtc_base/time_utils.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 
 namespace rtc {
 
 namespace {
 
-class StringStream : public StreamInterface {
- public:
-  explicit StringStream(std::string* str);
-  explicit StringStream(const std::string& str);
-
-  StreamState GetState() const override;
-  StreamResult Read(void* buffer,
-                    size_t buffer_len,
-                    size_t* read,
-                    int* error) override;
-  StreamResult Write(const void* data,
-                     size_t data_len,
-                     size_t* written,
-                     int* error) override;
-  void Close() override;
-
- private:
-  std::string& str_;
-  size_t read_pos_;
-  bool read_only_;
-};
-
-StringStream::StringStream(std::string* str)
-    : str_(*str), read_pos_(0), read_only_(false) {}
-
-StringStream::StringStream(const std::string& str)
-    : str_(const_cast<std::string&>(str)), read_pos_(0), read_only_(true) {}
-
-StreamState StringStream::GetState() const {
-  return SS_OPEN;
-}
-
-StreamResult StringStream::Read(void* buffer,
-                                size_t buffer_len,
-                                size_t* read,
-                                int* error) {
-  size_t available = std::min(buffer_len, str_.size() - read_pos_);
-  if (!available)
-    return SR_EOS;
-  memcpy(buffer, str_.data() + read_pos_, available);
-  read_pos_ += available;
-  if (read)
-    *read = available;
-  return SR_SUCCESS;
-}
-
-StreamResult StringStream::Write(const void* data,
-                                 size_t data_len,
-                                 size_t* written,
-                                 int* error) {
-  if (read_only_) {
-    if (error) {
-      *error = -1;
-    }
-    return SR_ERROR;
-  }
-  str_.append(static_cast<const char*>(data),
-              static_cast<const char*>(data) + data_len);
-  if (written)
-    *written = data_len;
-  return SR_SUCCESS;
-}
-
-void StringStream::Close() {}
+#if defined(WEBRTC_WIN)
+constexpr char kFakeFilePath[] = "some\\path\\myfile.cc";
+#else
+constexpr char kFakeFilePath[] = "some/path/myfile.cc";
+#endif
 
 }  // namespace
 
-template <typename Base>
-class LogSinkImpl : public LogSink, public Base {
+class LogSinkImpl : public LogSink {
  public:
-  LogSinkImpl() {}
+  explicit LogSinkImpl(std::string* log_data) : log_data_(log_data) {}
 
   template <typename P>
-  explicit LogSinkImpl(P* p) : Base(p) {}
+  explicit LogSinkImpl(P* p) {}
 
  private:
   void OnLogMessage(const std::string& message) override {
-    static_cast<Base*>(this)->WriteAll(message.data(), message.size(), nullptr,
-                                       nullptr);
+    OnLogMessage(absl::string_view(message));
   }
+  void OnLogMessage(absl::string_view message) override {
+    log_data_->append(message.begin(), message.end());
+  }
+  std::string* const log_data_;
 };
 
 class LogMessageForTesting : public LogMessage {
@@ -121,7 +65,7 @@ class LogMessageForTesting : public LogMessage {
 
   const std::string& get_extra() const { return extra_; }
 #if defined(WEBRTC_ANDROID)
-  const char* get_tag() const { return tag_; }
+  const char* get_tag() const { return log_line_.tag().data(); }
 #endif
 
   // Returns the contents of the internal log stream.
@@ -145,7 +89,7 @@ TEST(LogTest, SingleStream) {
   int sev = LogMessage::GetLogToStream(nullptr);
 
   std::string str;
-  LogSinkImpl<StringStream> stream(&str);
+  LogSinkImpl stream(&str);
   LogMessage::AddLogToStream(&stream, LS_INFO);
   EXPECT_EQ(LS_INFO, LogMessage::GetLogToStream(&stream));
 
@@ -200,6 +144,52 @@ TEST(LogTest, SingleStream) {
   EXPECT_EQ(sev, LogMessage::GetLogToStream(nullptr));
 }
 
+TEST(LogTest, LogIfLogIfConditionIsTrue) {
+  std::string str;
+  LogSinkImpl stream(&str);
+  LogMessage::AddLogToStream(&stream, LS_INFO);
+
+  RTC_LOG_IF(LS_INFO, true) << "Hello";
+  EXPECT_NE(std::string::npos, str.find("Hello"));
+
+  LogMessage::RemoveLogToStream(&stream);
+}
+
+TEST(LogTest, LogIfDontLogIfConditionIsFalse) {
+  std::string str;
+  LogSinkImpl stream(&str);
+  LogMessage::AddLogToStream(&stream, LS_INFO);
+
+  RTC_LOG_IF(LS_INFO, false) << "Hello";
+  EXPECT_EQ(std::string::npos, str.find("Hello"));
+
+  LogMessage::RemoveLogToStream(&stream);
+}
+
+TEST(LogTest, LogIfFLogIfConditionIsTrue) {
+  std::string str;
+  LogSinkImpl stream(&str);
+  LogMessage::AddLogToStream(&stream, LS_INFO);
+
+  RTC_LOG_IF_F(LS_INFO, true) << "Hello";
+  EXPECT_NE(std::string::npos, str.find(__FUNCTION__));
+  EXPECT_NE(std::string::npos, str.find("Hello"));
+
+  LogMessage::RemoveLogToStream(&stream);
+}
+
+TEST(LogTest, LogIfFDontLogIfConditionIsFalse) {
+  std::string str;
+  LogSinkImpl stream(&str);
+  LogMessage::AddLogToStream(&stream, LS_INFO);
+
+  RTC_LOG_IF_F(LS_INFO, false) << "Not";
+  EXPECT_EQ(std::string::npos, str.find(__FUNCTION__));
+  EXPECT_EQ(std::string::npos, str.find("Not"));
+
+  LogMessage::RemoveLogToStream(&stream);
+}
+
 // Test using multiple log streams. The INFO stream should get the INFO message,
 // the VERBOSE stream should get the INFO and the VERBOSE.
 // We should restore the correct global state at the end.
@@ -207,7 +197,7 @@ TEST(LogTest, MultipleStreams) {
   int sev = LogMessage::GetLogToStream(nullptr);
 
   std::string str1, str2;
-  LogSinkImpl<StringStream> stream1(&str1), stream2(&str2);
+  LogSinkImpl stream1(&str1), stream2(&str2);
   LogMessage::AddLogToStream(&stream1, LS_INFO);
   LogMessage::AddLogToStream(&stream2, LS_VERBOSE);
   EXPECT_EQ(LS_INFO, LogMessage::GetLogToStream(&stream1));
@@ -231,18 +221,13 @@ TEST(LogTest, MultipleStreams) {
 
 class LogThread {
  public:
-  LogThread() : thread_(&ThreadEntry, this, "LogThread") {}
-  ~LogThread() { thread_.Stop(); }
-
-  void Start() { thread_.Start(); }
+  void Start() {
+    thread_ = PlatformThread::SpawnJoinable(
+        [] { RTC_LOG(LS_VERBOSE) << "RTC_LOG"; }, "LogThread");
+  }
 
  private:
-  void Run() { RTC_LOG(LS_VERBOSE) << "RTC_LOG"; }
-
-  static void ThreadEntry(void* p) { static_cast<LogThread*>(p)->Run(); }
-
   PlatformThread thread_;
-  Event event_;
 };
 
 // Ensure we don't crash when adding/removing streams while threads are going.
@@ -256,7 +241,7 @@ TEST(LogTest, MultipleThreads) {
   thread3.Start();
 
   std::string s1, s2, s3;
-  LogSinkImpl<StringStream> stream1(&s1), stream2(&s2), stream3(&s3);
+  LogSinkImpl stream1(&s1), stream2(&s2), stream3(&s3);
   for (int i = 0; i < 1000; ++i) {
     LogMessage::AddLogToStream(&stream1, LS_WARNING);
     LogMessage::AddLogToStream(&stream2, LS_INFO);
@@ -276,8 +261,8 @@ TEST(LogTest, WallClockStartTime) {
 }
 
 TEST(LogTest, CheckExtraErrorField) {
-  LogMessageForTesting log_msg("some/path/myfile.cc", 100, LS_WARNING,
-                               ERRCTX_ERRNO, 0xD);
+  LogMessageForTesting log_msg(kFakeFilePath, 100, LS_WARNING, ERRCTX_ERRNO,
+                               0xD);
   log_msg.stream() << "This gets added at dtor time";
 
   const std::string& extra = log_msg.get_extra();
@@ -287,23 +272,34 @@ TEST(LogTest, CheckExtraErrorField) {
 }
 
 TEST(LogTest, CheckFilePathParsed) {
-  LogMessageForTesting log_msg("some/path/myfile.cc", 100, LS_INFO);
-  log_msg.stream() << "<- Does this look right?";
-
-  const std::string stream = log_msg.GetPrintStream();
+  std::string str;
+  LogSinkImpl stream(&str);
+  LogMessage::AddLogToStream(&stream, LS_INFO);
+  EXPECT_EQ(LS_INFO, LogMessage::GetLogToStream(&stream));
 #if defined(WEBRTC_ANDROID)
-  const char* tag = log_msg.get_tag();
-  EXPECT_NE(nullptr, strstr(tag, "myfile.cc"));
-  EXPECT_NE(std::string::npos, stream.find("100"));
-#else
-  EXPECT_NE(std::string::npos, stream.find("(myfile.cc:100)"));
+  const char* tag = nullptr;
 #endif
+  {
+    LogMessageForTesting log_msg(kFakeFilePath, 100, LS_INFO);
+    log_msg.stream() << "<- Does this look right?";
+#if defined(WEBRTC_ANDROID)
+    tag = log_msg.get_tag();
+#endif
+  }
+
+#if defined(WEBRTC_ANDROID)
+  EXPECT_NE(nullptr, strstr(tag, "myfile.cc"));
+  EXPECT_NE(std::string::npos, str.find("100"));
+#else
+  EXPECT_NE(std::string::npos, str.find("(myfile.cc:100)"));
+#endif
+  LogMessage::RemoveLogToStream(&stream);
 }
 
 #if defined(WEBRTC_ANDROID)
 TEST(LogTest, CheckTagAddedToStringInDefaultOnLogMessageAndroid) {
   std::string str;
-  LogSinkImpl<StringStream> stream(&str);
+  LogSinkImpl stream(&str);
   LogMessage::AddLogToStream(&stream, LS_INFO);
   EXPECT_EQ(LS_INFO, LogMessage::GetLogToStream(&stream));
 
@@ -316,7 +312,7 @@ TEST(LogTest, CheckTagAddedToStringInDefaultOnLogMessageAndroid) {
 // Test the time required to write 1000 80-character logs to a string.
 TEST(LogTest, Perf) {
   std::string str;
-  LogSinkImpl<StringStream> stream(&str);
+  LogSinkImpl stream(&str);
   LogMessage::AddLogToStream(&stream, LS_VERBOSE);
 
   const std::string message(80, 'X');
@@ -336,7 +332,6 @@ TEST(LogTest, Perf) {
   finish = TimeMillis();
 
   LogMessage::RemoveLogToStream(&stream);
-  stream.Close();
 
   EXPECT_EQ(str.size(), (message.size() + logging_overhead) * kRepetitions);
   RTC_LOG(LS_INFO) << "Total log time: " << TimeDiff(finish, start)
@@ -348,7 +343,7 @@ TEST(LogTest, Perf) {
 TEST(LogTest, EnumsAreSupported) {
   enum class TestEnum { kValue0 = 0, kValue1 = 1 };
   std::string str;
-  LogSinkImpl<StringStream> stream(&str);
+  LogSinkImpl stream(&str);
   LogMessage::AddLogToStream(&stream, LS_INFO);
   RTC_LOG(LS_INFO) << "[" << TestEnum::kValue0 << "]";
   EXPECT_NE(std::string::npos, str.find("[0]"));
@@ -356,7 +351,6 @@ TEST(LogTest, EnumsAreSupported) {
   RTC_LOG(LS_INFO) << "[" << TestEnum::kValue1 << "]";
   EXPECT_NE(std::string::npos, str.find("[1]"));
   LogMessage::RemoveLogToStream(&stream);
-  stream.Close();
 }
 
 TEST(LogTest, NoopSeverityDoesNotRunStringFormatting) {
@@ -371,6 +365,21 @@ TEST(LogTest, NoopSeverityDoesNotRunStringFormatting) {
   };
   RTC_LOG(LS_VERBOSE) << "This should not be logged: " << cb();
   EXPECT_FALSE(was_called);
+}
+
+struct TestStruct {};
+std::string ToLogString(TestStruct foo) {
+  return "bar";
+}
+
+TEST(LogTest, ToLogStringUsedForUnknownTypes) {
+  std::string str;
+  LogSinkImpl stream(&str);
+  LogMessage::AddLogToStream(&stream, LS_INFO);
+  TestStruct t;
+  RTC_LOG(LS_INFO) << t;
+  EXPECT_THAT(str, ::testing::HasSubstr("bar"));
+  LogMessage::RemoveLogToStream(&stream);
 }
 
 }  // namespace rtc

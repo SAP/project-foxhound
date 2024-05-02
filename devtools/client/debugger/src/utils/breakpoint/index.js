@@ -2,38 +2,36 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { getSource, getSourceActorsForSource } from "../../selectors";
-import { isGenerated } from "../source";
+import { getSourceActorsForSource } from "../../selectors";
 import { sortSelectedLocations } from "../location";
-import assert from "../assert";
-export * from "./astBreakpointLocation";
 export * from "./breakpointPositions";
 
 // The ID for a Breakpoint is derived from its location in its Source.
 export function makeBreakpointId(location) {
-  const { sourceId, line, column } = location;
+  const { source, line, column } = location;
   const columnString = column || "";
-  return `${sourceId}:${line}:${columnString}`;
+  return `${source.id}:${line}:${columnString}`;
 }
 
-export function getLocationWithoutColumn(location) {
-  const { sourceId, line } = location;
-  return `${sourceId}:${line}`;
-}
-
-export function makePendingLocationId(location) {
-  assertPendingLocation(location);
-  const { sourceUrl, line, column } = location;
-  const sourceUrlString = sourceUrl || "";
+export function makeBreakpointServerLocationId(breakpointServerLocation) {
+  const { sourceUrl, sourceId, line, column } = breakpointServerLocation;
+  const sourceUrlOrId = sourceUrl || sourceId;
   const columnString = column || "";
 
-  return `${sourceUrlString}:${line}:${columnString}`;
+  return `${sourceUrlOrId}:${line}:${columnString}`;
 }
 
-export function makeBreakpointLocation(state, location) {
-  const source = getSource(state, location.sourceId);
+/**
+ * Create a location object to set a breakpoint on the server.
+ *
+ * Debugger location objects includes a source and sourceActor attributes
+ * whereas the server don't need them and instead only need either
+ * the source URL -or- a precise source actor ID.
+ */
+export function makeBreakpointServerLocation(state, location) {
+  const source = location.source;
   if (!source) {
-    throw new Error("no source");
+    throw new Error("Missing 'source' attribute on location object");
   }
   const breakpointLocation = {
     line: location.line,
@@ -50,25 +48,6 @@ export function makeBreakpointLocation(state, location) {
   return breakpointLocation;
 }
 
-export function assertPendingBreakpoint(pendingBreakpoint) {
-  assertPendingLocation(pendingBreakpoint.location);
-  assertPendingLocation(pendingBreakpoint.generatedLocation);
-}
-
-export function assertPendingLocation(location) {
-  assert(!!location, "location must exist");
-
-  const { sourceUrl } = location;
-
-  // sourceUrl is null when the source does not have a url
-  assert(sourceUrl !== undefined, "location must have a source url");
-  assert(location.hasOwnProperty("line"), "location must have a line");
-  assert(
-    location.hasOwnProperty("column") != null,
-    "location must have a column"
-  );
-}
-
 export function createXHRBreakpoint(path, method, overrides = {}) {
   const properties = {
     path,
@@ -81,28 +60,8 @@ export function createXHRBreakpoint(path, method, overrides = {}) {
   return { ...properties, ...overrides };
 }
 
-function createPendingLocation(location) {
-  const { sourceUrl, line, column } = location;
-  return { sourceUrl, line, column };
-}
-
-export function createPendingBreakpoint(bp) {
-  const pendingLocation = createPendingLocation(bp.location);
-  const pendingGeneratedLocation = createPendingLocation(bp.generatedLocation);
-
-  assertPendingLocation(pendingLocation);
-
-  return {
-    options: bp.options,
-    disabled: bp.disabled,
-    location: pendingLocation,
-    astLocation: bp.astLocation,
-    generatedLocation: pendingGeneratedLocation,
-  };
-}
-
 export function getSelectedText(breakpoint, selectedSource) {
-  return !!selectedSource && isGenerated(selectedSource)
+  return !!selectedSource && !selectedSource.isOriginal
     ? breakpoint.text
     : breakpoint.originalText;
 }

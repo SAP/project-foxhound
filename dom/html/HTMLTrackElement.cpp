@@ -27,12 +27,13 @@
 #include "mozilla/dom/Document.h"
 #include "nsILoadGroup.h"
 #include "nsIObserver.h"
+#include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsISupportsImpl.h"
 #include "nsISupportsPrimitives.h"
-#include "nsMappedAttributes.h"
 #include "nsNetUtil.h"
 #include "nsStyleConsts.h"
+#include "nsTaintingUtils.h"
 #include "nsThreadUtils.h"
 #include "nsVideoFrame.h"
 
@@ -64,7 +65,7 @@ static constexpr nsAttrValue::EnumTable kKindTable[] = {
 
 // Invalid values are treated as "metadata" in ParseAttribute, but if no value
 // at all is specified, it's treated as "subtitles" in GetKind
-static const nsAttrValue::EnumTable* const kKindTableInvalidValueDefault =
+static constexpr const nsAttrValue::EnumTable* kKindTableInvalidValueDefault =
     &kKindTable[4];
 
 class WindowDestroyObserver final : public nsIObserver {
@@ -216,7 +217,7 @@ void HTMLTrackElement::SetSrc(const nsAString& aSrc, ErrorResult& aError) {
   LOG("Set src=%s", NS_ConvertUTF16toUTF8(aSrc).get());
 
   nsAutoString src;
-  if (GetAttr(kNameSpaceID_None, nsGkAtoms::src, src) && src == aSrc) {
+  if (GetAttr(nsGkAtoms::src, src) && src == aSrc) {
     LOG("No need to reload for same src url");
     return;
   }
@@ -230,7 +231,8 @@ void HTMLTrackElement::SetSrc(const nsAString& aSrc, ErrorResult& aError) {
   // Stop WebVTTListener.
   mListener = nullptr;
   if (mChannel) {
-    mChannel->Cancel(NS_BINDING_ABORTED);
+    mChannel->CancelWithReason(NS_BINDING_ABORTED,
+                               "HTMLTrackElement::SetSrc"_ns);
     mChannel = nullptr;
   }
 
@@ -288,7 +290,7 @@ void HTMLTrackElement::LoadResource(RefPtr<WebVTTListener>&& aWebVTTListener) {
   mLoadResourceDispatched = false;
 
   nsAutoString src;
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::src, src) || src.IsEmpty()) {
+  if (!GetAttr(nsGkAtoms::src, src) || src.IsEmpty()) {
     LOG("Fail to load because no src");
     SetReadyState(TextTrackReadyState::FailedToLoad);
     return;
@@ -373,7 +375,7 @@ void HTMLTrackElement::LoadResource(RefPtr<WebVTTListener>&& aWebVTTListener) {
         }
         mChannel = channel;
       });
-  doc->Dispatch(TaskCategory::Other, runnable.forget());
+  doc->Dispatch(runnable.forget());
 }
 
 nsresult HTMLTrackElement::BindToTree(BindContext& aContext, nsINode& aParent) {
@@ -463,7 +465,7 @@ void HTMLTrackElement::DispatchTrackRunnable(const nsString& aEventName) {
   nsCOMPtr<nsIRunnable> runnable = NewRunnableMethod<const nsString>(
       "dom::HTMLTrackElement::DispatchTrustedEvent", this,
       &HTMLTrackElement::DispatchTrustedEvent, aEventName);
-  doc->Dispatch(TaskCategory::Other, runnable.forget());
+  doc->Dispatch(runnable.forget());
 }
 
 void HTMLTrackElement::DispatchTrustedEvent(const nsAString& aName) {
@@ -471,13 +473,14 @@ void HTMLTrackElement::DispatchTrustedEvent(const nsAString& aName) {
   if (!doc) {
     return;
   }
-  nsContentUtils::DispatchTrustedEvent(doc, static_cast<nsIContent*>(this),
-                                       aName, CanBubble::eNo, Cancelable::eNo);
+  nsContentUtils::DispatchTrustedEvent(doc, this, aName, CanBubble::eNo,
+                                       Cancelable::eNo);
 }
 
 void HTMLTrackElement::CancelChannelAndListener() {
   if (mChannel) {
-    mChannel->Cancel(NS_BINDING_ABORTED);
+    mChannel->CancelWithReason(NS_BINDING_ABORTED,
+                               "HTMLTrackElement::CancelChannelAndListener"_ns);
     mChannel->SetNotificationCallbacks(nullptr);
     mChannel = nullptr;
   }
@@ -491,19 +494,17 @@ void HTMLTrackElement::CancelChannelAndListener() {
 nsresult HTMLTrackElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "track.src", id);
+    ReportTaintSink(aValue, "track.src", this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
-nsresult HTMLTrackElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                        const nsAttrValue* aValue,
-                                        const nsAttrValue* aOldValue,
-                                        nsIPrincipal* aMaybeScriptedPrincipal,
-                                        bool aNotify) {
+void HTMLTrackElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                    const nsAttrValue* aValue,
+                                    const nsAttrValue* aOldValue,
+                                    nsIPrincipal* aMaybeScriptedPrincipal,
+                                    bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
     MaybeClearAllCues();
     // In spec, `start the track processing model` step10, while fetching is
@@ -524,5 +525,7 @@ void HTMLTrackElement::DispatchTestEvent(const nsAString& aName) {
   }
   DispatchTrustedEvent(aName);
 }
+
+#undef LOG
 
 }  // namespace mozilla::dom

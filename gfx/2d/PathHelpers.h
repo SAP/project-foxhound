@@ -227,10 +227,9 @@ inline already_AddRefed<Path> MakePathForRect(const DrawTarget& aDrawTarget,
  *                 start at the right of the top left edge and draw counter-
  *                 clockwise.
  */
-GFX2D_API void AppendRoundedRectToPath(PathBuilder* aPathBuilder,
-                                       const Rect& aRect,
-                                       const RectCornerRadii& aRadii,
-                                       bool aDrawClockwise = true);
+GFX2D_API void AppendRoundedRectToPath(
+    PathBuilder* aPathBuilder, const Rect& aRect, const RectCornerRadii& aRadii,
+    bool aDrawClockwise = true, const Maybe<Matrix>& aTransform = Nothing());
 
 inline already_AddRefed<Path> MakePathForRoundedRect(
     const DrawTarget& aDrawTarget, const Rect& aRect,
@@ -256,6 +255,15 @@ inline already_AddRefed<Path> MakePathForEllipse(const DrawTarget& aDrawTarget,
                                                  const Size& aDimensions) {
   RefPtr<PathBuilder> builder = aDrawTarget.CreatePathBuilder();
   AppendEllipseToPath(builder, aCenter, aDimensions);
+  return builder->Finish();
+}
+
+inline already_AddRefed<Path> MakePathForCircle(const DrawTarget& aDrawTarget,
+                                                const Point& aCenter,
+                                                float aRadius) {
+  RefPtr<PathBuilder> builder = aDrawTarget.CreatePathBuilder();
+  builder->Arc(aCenter, aRadius, 0.0f, Float(2.0 * M_PI));
+  builder->Close();
   return builder->Finish();
 }
 

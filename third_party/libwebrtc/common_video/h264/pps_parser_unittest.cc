@@ -10,6 +10,8 @@
 
 #include "common_video/h264/pps_parser.h"
 
+#include <vector>
+
 #include "common_video/h264/h264_common.h"
 #include "rtc_base/bit_buffer.h"
 #include "rtc_base/buffer.h"
@@ -99,7 +101,7 @@ void WritePps(const PpsParser::PpsState& pps,
         break;
       }
       default:
-        RTC_NOTREACHED();
+        RTC_DCHECK_NOTREACHED();
     }
   }
 
@@ -174,7 +176,7 @@ class PpsParserTest : public ::testing::Test {
     WritePps(pps, slice_group_map_type, num_slice_groups, pic_size_in_map_units,
              &buffer_);
     parsed_pps_ = PpsParser::ParsePps(buffer_.data(), buffer_.size());
-    EXPECT_TRUE(static_cast<bool>(parsed_pps_));
+    ASSERT_TRUE(parsed_pps_);
     EXPECT_EQ(pps.bottom_field_pic_order_in_frame_present_flag,
               parsed_pps_->bottom_field_pic_order_in_frame_present_flag);
     EXPECT_EQ(pps.weighted_pred_flag, parsed_pps_->weighted_pred_flag);
@@ -213,10 +215,19 @@ TEST_F(PpsParserTest, MaxPps) {
 }
 
 TEST_F(PpsParserTest, PpsIdFromSlice) {
-  absl::optional<uint32_t> pps_id = PpsParser::ParsePpsIdFromSlice(
-      kH264BitstreamChunk, sizeof(kH264BitstreamChunk));
-  ASSERT_TRUE(pps_id);
-  EXPECT_EQ(2u, *pps_id);
+  std::vector<H264::NaluIndex> nalu_indices =
+      H264::FindNaluIndices(kH264BitstreamChunk, sizeof(kH264BitstreamChunk));
+  EXPECT_EQ(nalu_indices.size(), 3ull);
+  for (const auto& index : nalu_indices) {
+    H264::NaluType nalu_type =
+        H264::ParseNaluType(kH264BitstreamChunk[index.payload_start_offset]);
+    if (nalu_type == H264::NaluType::kIdr) {
+      absl::optional<uint32_t> pps_id = PpsParser::ParsePpsIdFromSlice(
+          kH264BitstreamChunk + index.payload_start_offset, index.payload_size);
+      EXPECT_EQ(pps_id, 0u);
+      break;
+    }
+  }
 }
 
 }  // namespace webrtc

@@ -85,8 +85,6 @@ class LSObject final : public Storage {
   bool mInExplicitSnapshot;
 
  public:
-  static void Initialize();
-
   /**
    * The normal creation path invoked by nsGlobalWindowInner.
    */
@@ -107,35 +105,15 @@ class LSObject final : public Storage {
                                      const nsAString& aDocumentURI,
                                      bool aPrivate, LSObject** aObject);
 
-  /**
-   * Helper invoked by ContentChild::OnChannelReceivedMessage when a sync IPC
-   * message is received.  This will be invoked on the IPC I/O thread and it
-   * will set the gPendingSyncMessage flag to true.  It will also force the sync
-   * loop (if it's active) to check the gPendingSyncMessage flag which will
-   * result in premature finish of the loop.
-   *
-   * This is necessary to unblock the main thread when a sync IPC message is
-   * received to avoid the potential for browser deadlock.  This should only
-   * occur in (ugly) testing scenarios where CPOWs are in use.
-   *
-   * Aborted sync loop will result in the underlying LSRequest being explicitly
-   * canceled, resulting in the parent sending an NS_ERROR_FAILURE result.
-   */
-  static void OnSyncMessageReceived();
-
-  /*
-   * Helper invoked by ContentChild::OnMessageReceived when a sync IPC message
-   * has been handled.  This will be invoked on the main thread and it will
-   * set the gPendingSyncMessage flag to false.
-   */
-  static void OnSyncMessageHandled();
-
   void AssertIsOnOwningThread() const { NS_ASSERT_OWNINGTHREAD(LSObject); }
+
+  const RefPtr<LSDatabase>& DatabaseStrongRef() const { return mDatabase; }
 
   const nsString& DocumentURI() const { return mDocumentURI; }
 
-  LSRequestChild* StartRequest(nsIEventTarget* aMainEventTarget,
-                               const LSRequestParams& aParams,
+  bool InExplicitSnapshot() const { return mInExplicitSnapshot; }
+
+  LSRequestChild* StartRequest(const LSRequestParams& aParams,
                                LSRequestChildCallback* aCallback);
 
   // Storage overrides.
@@ -175,11 +153,17 @@ class LSObject final : public Storage {
   void BeginExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
                              ErrorResult& aError) override;
 
+  void CheckpointExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
+                                  ErrorResult& aError) override;
+
   void EndExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
                            ErrorResult& aError) override;
 
-  bool GetHasActiveSnapshot(nsIPrincipal& aSubjectPrincipal,
-                            ErrorResult& aError) override;
+  bool GetHasSnapshot(nsIPrincipal& aSubjectPrincipal,
+                      ErrorResult& aError) override;
+
+  int64_t GetSnapshotUsage(nsIPrincipal& aSubjectPrincipal,
+                           ErrorResult& aError) override;
 
   //////////////////////////////////////////////////////////////////////////////
 
@@ -225,8 +209,6 @@ class LSObject final : public Storage {
    */
   void OnChange(const nsAString& aKey, const nsAString& aOldValue,
                 const nsAString& aNewValue);
-
-  nsresult EndExplicitSnapshotInternal();
 
   // Storage overrides.
   void LastRelease() override;

@@ -3,11 +3,9 @@
 
 "use strict";
 
-const { PushDB, PushService, PushServiceWebSocket } = serviceExports;
-
 const userAgentID = "bd744428-f125-436a-b6d0-dd0c9845837f";
 
-let clearForPattern = async function(testRecords, pattern) {
+let clearForPattern = async function (testRecords, pattern) {
   let patternString = JSON.stringify(pattern);
   await PushService._clearOriginData(patternString);
 

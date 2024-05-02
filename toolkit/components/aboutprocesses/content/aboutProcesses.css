@@ -67,7 +67,6 @@ th, td {
   padding: 5px 10px;
   min-height: 16px;
   max-height: 2em;
-  color: var(--in-content-text-color);
   overflow: hidden;
   white-space: nowrap;
 }
@@ -101,10 +100,12 @@ td:first-child {
 }
 .profiler-icon:hover {
   background-color: var(--in-content-button-background-hover);
+  color: var(--in-content-button-text-color-hover);
 }
 
 .profiler-icon:hover:active {
   background-color: var(--in-content-button-background-active);
+  color: var(--in-content-button-text-color-active);
   fill-opacity: 1;
 }
 
@@ -131,7 +132,7 @@ td:not(:hover) > .profiler-icon:not(.profiler-active) {
   line-height: 50%;
   top: 4px; /* Half the image's height */
   inset-inline-start: -16px;
-  width: 100%;
+  width: 12px;
   -moz-context-properties: fill;
   fill: currentColor;
 }
@@ -140,6 +141,12 @@ td:not(:hover) > .profiler-icon:not(.profiler-active) {
 }
 .twisty.open::before {
   content: url("chrome://global/skin/icons/arrow-down-12.svg");
+}
+.twisty:-moz-focusring {
+  outline: none;
+}
+.twisty:-moz-focusring::before {
+  outline: var(--in-content-focus-outline);
 }
 .indent {
   padding-inline: 48px 0;
@@ -164,7 +171,7 @@ tr[selected] > td {
 }
 
 /* Thread names can extend into the memory column. */
-.thread > :first-child{
+.thread > :first-child {
   grid-column: 1 / 3;
 }
 
@@ -175,36 +182,27 @@ tr[selected] > td {
 .clickable:dir(rtl) {
   background-position-x: left 4px;
 }
-.asc,
-.desc {
+
+.arrow-up,
+.arrow-down {
   -moz-context-properties: fill;
   fill: currentColor;
 }
-/*
-  Linux has conventions opposite to Windows, macOS on the direction of arrows
-  when sorting.
-*/
-%ifdef XP_LINUX
-.asc {
-  background-image: url(chrome://global/skin/icons/arrow-up-12.svg);
+
+.arrow-up {
+  background-image: url("chrome://global/skin/icons/arrow-up-12.svg");
 }
-.desc {
-  background-image: url(chrome://global/skin/icons/arrow-down-12.svg);
+.arrow-down {
+  background-image: url("chrome://global/skin/icons/arrow-down-12.svg");
 }
-%else
-.asc {
-  background-image: url(chrome://global/skin/icons/arrow-down-12.svg);
-}
-.desc {
-  background-image: url(chrome://global/skin/icons/arrow-up-12.svg);
-}
-%endif
 
 th.clickable:hover {
   background-color: var(--in-content-button-background-hover);
+  color: var(--in-content-button-text-color-hover);
 }
 th.clickable:hover:active {
   background-color: var(--in-content-button-background-active);
+  color: var(--in-content-button-text-color-active);
 }
 
 tr.process > td.type {
@@ -238,10 +236,12 @@ tr:is([selected], :hover):not(.killing) > .close-icon {
 
 .close-icon:hover {
   background-color: var(--in-content-button-background-hover);
+  color: var(--in-content-button-text-color-hover);
 }
 
 .close-icon:hover:active {
   background-color: var(--in-content-button-background-active);
+  color: var(--in-content-button-text-color-active);
 }
 
 /* column-name */
@@ -258,4 +258,13 @@ tr:is([selected], :hover):not(.killing) > .close-icon {
 tr.separate-from-previous-process-group {
   border-top: dotted 1px var(--in-content-box-border-color);
   margin-top: -1px;
+}
+
+/* Graphical view of CPU use. */
+.cpu {
+  --bar-width: 0;
+  background: linear-gradient(to left, var(--blue-40) calc(var(--bar-width) * 1%), transparent calc(var(--bar-width) * 1%));
+}
+.cpu:dir(rtl) {
+  background: linear-gradient(to right, var(--blue-40) calc(var(--bar-width) * 1%), transparent calc(var(--bar-width) * 1%));
 }

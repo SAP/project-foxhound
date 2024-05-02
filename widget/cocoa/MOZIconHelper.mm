@@ -22,19 +22,21 @@
 // Returns an autoreleased NSImage.
 + (NSImage*)iconImageFromImageContainer:(imgIContainer*)aImage
                                withSize:(NSSize)aSize
-                          computedStyle:(const mozilla::ComputedStyle*)aComputedStyle
-                                subrect:(const nsIntRect&)aSubRect
+                            presContext:(const nsPresContext*)aPresContext
+                          computedStyle:
+                              (const mozilla::ComputedStyle*)aComputedStyle
                             scaleFactor:(CGFloat)aScaleFactor {
   bool isEntirelyBlack = false;
   NSImage* retainedImage = nil;
   nsresult rv;
   if (aScaleFactor != 0.0f) {
-    rv = nsCocoaUtils::CreateNSImageFromImageContainer(aImage, imgIContainer::FRAME_CURRENT,
-                                                       aComputedStyle, &retainedImage, aScaleFactor,
-                                                       &isEntirelyBlack);
+    rv = nsCocoaUtils::CreateNSImageFromImageContainer(
+        aImage, imgIContainer::FRAME_CURRENT, aPresContext, aComputedStyle,
+        &retainedImage, aScaleFactor, &isEntirelyBlack);
   } else {
     rv = nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
-        aImage, imgIContainer::FRAME_CURRENT, aComputedStyle, &retainedImage, &isEntirelyBlack);
+        aImage, imgIContainer::FRAME_CURRENT, aPresContext, aComputedStyle,
+        &retainedImage, &isEntirelyBlack);
   }
 
   NSImage* image = [retainedImage autorelease];
@@ -46,32 +48,6 @@
   int32_t origWidth = 0, origHeight = 0;
   aImage->GetWidth(&origWidth);
   aImage->GetHeight(&origHeight);
-
-  // If the image region is invalid, don't draw the image to almost match
-  // the behavior of other platforms.
-  if (!aSubRect.IsEmpty() && (aSubRect.XMost() > origWidth || aSubRect.YMost() > origHeight)) {
-    return nil;
-  }
-
-  bool createSubImage =
-      !aSubRect.IsEmpty() && !(aSubRect.x == 0 && aSubRect.y == 0 && aSubRect.width == origWidth &&
-                               aSubRect.height == origHeight);
-
-  if (createSubImage) {
-    // If aRect is set using CSS, we need to slice a piece out of the
-    // overall image to use as the icon.
-    NSRect subRect = NSMakeRect(aSubRect.x, aSubRect.y, aSubRect.width, aSubRect.height);
-    NSImage* subImage = [NSImage imageWithSize:aSize
-                                       flipped:NO
-                                drawingHandler:^BOOL(NSRect subImageRect) {
-                                  [image drawInRect:NSMakeRect(0, 0, aSize.width, aSize.height)
-                                           fromRect:subRect
-                                          operation:NSCompositingOperationCopy
-                                           fraction:1.0f];
-                                  return YES;
-                                }];
-    image = subImage;
-  }
 
   // If all the color channels in the image are black, treat the image as a
   // template. This will cause macOS to use the image's alpha channel as a mask

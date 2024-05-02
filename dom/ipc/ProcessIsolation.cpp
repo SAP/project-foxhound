@@ -122,9 +122,12 @@ CommaSeparatedPref sSeparatedMozillaDomains{
  */
 enum class IsolationBehavior {
   // This URI loads web content and should be treated as a content load, being
-  // isolated based on the response principal.
+  // isolated based on the response principal if enabled.
   WebContent,
-  // Forcibly load in a process with the "web" remote type.
+  // Forcibly load in a process with the "web" remote type. This will ignore the
+  // response principal completely.
+  // This is generally reserved for internal documents which are loaded in
+  // content, but not in the privilegedabout content process.
   ForceWebRemoteType,
   // Load this URI in the privileged about content process.
   PrivilegedAbout,
@@ -183,6 +186,23 @@ static const char* IsolationBehaviorName(IsolationBehavior aBehavior) {
 }
 
 /**
+ * Returns a static string with the name of the given worker kind. For use in
+ * logging code.
+ */
+static const char* WorkerKindName(WorkerKind aWorkerKind) {
+  switch (aWorkerKind) {
+    case WorkerKindDedicated:
+      return "Dedicated";
+    case WorkerKindShared:
+      return "Shared";
+    case WorkerKindService:
+      return "Service";
+    default:
+      return "Unknown";
+  }
+}
+
+/**
  * Check if a given URI has specialized process isolation behaviour, such as
  * needing to be loaded within a specific type of content process.
  *
@@ -224,9 +244,11 @@ static IsolationBehavior IsolationBehaviorForURI(nsIURI* aURI, bool aIsSubframe,
     // content, and should be allocated processes based on their simple content
     // principals.
     if (path == "blank"_ns || path == "srcdoc"_ns) {
+      MOZ_ASSERT(NS_IsContentAccessibleAboutURI(aURI));
       return IsolationBehavior::WebContent;
     }
 
+    MOZ_ASSERT(!NS_IsContentAccessibleAboutURI(aURI));
     // If we're loading an `about:reader` URI, perform isolation based on the
     // principal of the URI being loaded.
     if (path == "reader"_ns && aForChannelCreationURI) {
@@ -355,8 +377,21 @@ static nsAutoCString OriginString(nsIPrincipal* aPrincipal) {
 }
 
 /**
+ * Trim the OriginAttributes from aPrincipal, and use it to create a
+ * OriginSuffix string appropriate to use within a remoteType string.
+ */
+static nsAutoCString OriginSuffixForRemoteType(nsIPrincipal* aPrincipal) {
+  nsAutoCString originSuffix;
+  OriginAttributes attrs = aPrincipal->OriginAttributesRef();
+  attrs.StripAttributes(OriginAttributes::STRIP_FIRST_PARTY_DOMAIN |
+                        OriginAttributes::STRIP_PARITION_KEY);
+  attrs.CreateSuffix(originSuffix);
+  return originSuffix;
+}
+
+/**
  * Given an about:reader URI, extract the "url" query parameter, and use it to
- * construct a principal which should be sed for process selection.
+ * construct a principal which should be used for process selection.
  */
 static already_AddRefed<BasePrincipal> GetAboutReaderURLPrincipal(
     nsIURI* aURI, const OriginAttributes& aAttrs) {
@@ -383,51 +418,16 @@ static already_AddRefed<BasePrincipal> GetAboutReaderURLPrincipal(
 }
 
 /**
- * Check if the given load has the `Large-Allocation` header set, and the header
- * is enabled.
- */
-static bool IsLargeAllocationLoad(CanonicalBrowsingContext* aBrowsingContext,
-                                  nsIChannel* aChannel) {
-  if (!StaticPrefs::dom_largeAllocationHeader_enabled() ||
-      aBrowsingContext->UseRemoteSubframes()) {
-    return false;
-  }
-
-  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-  if (!httpChannel) {
-    return false;
-  }
-
-  nsAutoCString ignoredHeaderValue;
-  nsresult rv =
-      httpChannel->GetResponseHeader("Large-Allocation"_ns, ignoredHeaderValue);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-
-  // On all platforms other than win32, LargeAllocation is disabled by default,
-  // and has to be force-enabled using `dom.largeAllocation.forceEnable`.
-#if defined(XP_WIN) && defined(_X86_)
-  return true;
-#else
-  return StaticPrefs::dom_largeAllocation_forceEnable();
-#endif
-}
-
-/**
  * Returns `true` if loads for this site should be isolated on a per-site basis.
  * If `aTopBC` is nullptr, this is being called to check if a shared or service
  * worker should be isolated.
  */
 static bool ShouldIsolateSite(nsIPrincipal* aPrincipal,
-                              CanonicalBrowsingContext* aTopBC) {
+                              bool aUseRemoteSubframes) {
   // If Fission is disabled, we never want to isolate. We check the toplevel BC
   // if it's available, or the global pref if checking for shared or service
   // workers.
-  if (aTopBC && !aTopBC->UseRemoteSubframes()) {
-    return false;
-  }
-  if (!aTopBC && !mozilla::FissionAutostart()) {
+  if (!aUseRemoteSubframes) {
     return false;
   }
 
@@ -491,6 +491,45 @@ static bool ShouldIsolateSite(nsIPrincipal* aPrincipal,
   }
 }
 
+static Result<nsCString, nsresult> SpecialBehaviorRemoteType(
+    IsolationBehavior aBehavior, const nsACString& aCurrentRemoteType,
+    WindowGlobalParent* aParentWindow) {
+  switch (aBehavior) {
+    case IsolationBehavior::ForceWebRemoteType:
+      return {WEB_REMOTE_TYPE};
+    case IsolationBehavior::PrivilegedAbout:
+      // The privileged about: content process cannot be disabled, as it
+      // causes various actors to break.
+      return {PRIVILEGEDABOUT_REMOTE_TYPE};
+    case IsolationBehavior::Extension:
+      if (ExtensionPolicyService::GetSingleton().UseRemoteExtensions()) {
+        return {EXTENSION_REMOTE_TYPE};
+      }
+      return {NOT_REMOTE_TYPE};
+    case IsolationBehavior::File:
+      if (StaticPrefs::browser_tabs_remote_separateFileUriProcess()) {
+        return {FILE_REMOTE_TYPE};
+      }
+      return {WEB_REMOTE_TYPE};
+    case IsolationBehavior::PrivilegedMozilla:
+      return {PRIVILEGEDMOZILLA_REMOTE_TYPE};
+    case IsolationBehavior::Parent:
+      return {NOT_REMOTE_TYPE};
+    case IsolationBehavior::Anywhere:
+      return {nsCString(aCurrentRemoteType)};
+    case IsolationBehavior::Inherit:
+      MOZ_DIAGNOSTIC_ASSERT(aParentWindow);
+      return {nsCString(aParentWindow->GetRemoteType())};
+
+    case IsolationBehavior::Error:
+      return Err(NS_ERROR_UNEXPECTED);
+
+    default:
+      MOZ_ASSERT_UNREACHABLE();
+      return Err(NS_ERROR_UNEXPECTED);
+  }
+}
+
 enum class WebProcessType {
   Web,
   WebIsolated,
@@ -503,7 +542,8 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
     CanonicalBrowsingContext* aTopBC, WindowGlobalParent* aParentWindow,
     nsIURI* aChannelCreationURI, nsIChannel* aChannel,
     const nsACString& aCurrentRemoteType, bool aHasCOOPMismatch,
-    uint32_t aLoadStateLoadType, const Maybe<uint64_t>& aChannelId,
+    bool aForNewTab, uint32_t aLoadStateLoadType,
+    const Maybe<uint64_t>& aChannelId,
     const Maybe<nsCString>& aRemoteTypeOverride) {
   // Get the final principal, used to select which process to load into.
   nsCOMPtr<nsIPrincipal> resultPrincipal;
@@ -526,7 +566,7 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
   // If we're loading a null principal, we can't easily make a process
   // selection decision off ot it. Instead, we'll use our null principal's
   // precursor principal to make process selection decisions.
-  bool principalIsSandboxed = false;
+  bool isNullPrincipalPrecursor = false;
   nsCOMPtr<nsIPrincipal> resultOrPrecursor(resultPrincipal);
   if (nsCOMPtr<nsIPrincipal> precursor =
           resultOrPrecursor->GetPrecursorPrincipal()) {
@@ -534,7 +574,7 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
             ("using null principal precursor origin %s",
              OriginString(precursor).get()));
     resultOrPrecursor = precursor;
-    principalIsSandboxed = true;
+    isNullPrincipalPrecursor = true;
   }
 
   NavigationIsolationOptions options;
@@ -578,6 +618,16 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
       resultOrPrecursor = readerURIPrincipal;
     }
     behavior = IsolationBehavior::WebContent;
+    // If loading an about:reader page in a BrowsingContext which shares a
+    // BrowsingContextGroup with other toplevel documents, replace the
+    // BrowsingContext to destroy any references.
+    //
+    // With SHIP we can apply this to all about:reader loads, but otherwise
+    // do it at least where there are opener/group relationships.
+    if (mozilla::SessionHistoryInParent() ||
+        aTopBC->Group()->Toplevels().Length() > 1) {
+      options.mReplaceBrowsingContext = true;
+    }
   }
 
   // If we're running in a test which is requesting that system-triggered
@@ -594,6 +644,17 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
       behavior = IsolationBehavior::Anywhere;
     }
   }
+
+#ifdef MOZ_WIDGET_ANDROID
+  // If we're loading an error page on android, it must complete within the same
+  // process as the errored page load would complete in due to code expecting
+  // that behavior. See bug 1673763.
+  if (aLoadStateLoadType == LOAD_ERROR_PAGE) {
+    MOZ_LOG(gProcessIsolationLog, LogLevel::Verbose,
+            ("Forcing error page load to complete in the current process"));
+    behavior = IsolationBehavior::Anywhere;
+  }
+#endif
 
   // If we're loading for a specific extension, we'll need to perform a
   // BCG-switching load to get our toplevel extension window in the correct
@@ -667,7 +728,7 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
   // We don't want to load documents with sandboxed null principals, like
   // `data:` URIs, in the parent process, even if they were created by a
   // document which would otherwise be loaded in the parent process.
-  if (behavior == IsolationBehavior::Parent && principalIsSandboxed) {
+  if (behavior == IsolationBehavior::Parent && isNullPrincipalPrecursor) {
     MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
             ("Ensuring sandboxed null-principal load doesn't occur in the "
              "parent process"));
@@ -682,7 +743,7 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
 
   // Check if we can put the previous document into the BFCache.
   if (mozilla::BFCacheInParent() && nsSHistory::GetMaxTotalViewers() > 0 &&
-      !aParentWindow && !aTopBC->HadOriginalOpener() &&
+      !aForNewTab && !aParentWindow && !aTopBC->HadOriginalOpener() &&
       behavior != IsolationBehavior::Parent &&
       (ExtensionPolicyService::GetSingleton().UseRemoteExtensions() ||
        behavior != IsolationBehavior::Extension) &&
@@ -709,51 +770,9 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
 
   // If the load has any special remote type handling, do so at this point.
   if (behavior != IsolationBehavior::WebContent) {
-    switch (behavior) {
-      case IsolationBehavior::ForceWebRemoteType:
-        options.mRemoteType = WEB_REMOTE_TYPE;
-        break;
-      case IsolationBehavior::PrivilegedAbout:
-        // The privileged about: content process cannot be disabled, as it
-        // causes various actors to break.
-        options.mRemoteType = PRIVILEGEDABOUT_REMOTE_TYPE;
-        break;
-      case IsolationBehavior::Extension:
-        if (ExtensionPolicyService::GetSingleton().UseRemoteExtensions()) {
-          options.mRemoteType = EXTENSION_REMOTE_TYPE;
-        } else {
-          options.mRemoteType = NOT_REMOTE_TYPE;
-        }
-        break;
-      case IsolationBehavior::File:
-        if (StaticPrefs::browser_tabs_remote_separateFileUriProcess()) {
-          options.mRemoteType = FILE_REMOTE_TYPE;
-        } else {
-          options.mRemoteType = WEB_REMOTE_TYPE;
-        }
-        break;
-      case IsolationBehavior::PrivilegedMozilla:
-        options.mRemoteType = PRIVILEGEDMOZILLA_REMOTE_TYPE;
-        break;
-      case IsolationBehavior::Parent:
-        options.mRemoteType = NOT_REMOTE_TYPE;
-        break;
-      case IsolationBehavior::Anywhere:
-        options.mRemoteType = aCurrentRemoteType;
-        break;
-      case IsolationBehavior::Inherit:
-        MOZ_DIAGNOSTIC_ASSERT(aParentWindow);
-        options.mRemoteType = aParentWindow->GetRemoteType();
-        break;
-
-      case IsolationBehavior::WebContent:
-      case IsolationBehavior::AboutReader:
-        MOZ_ASSERT_UNREACHABLE();
-        return Err(NS_ERROR_UNEXPECTED);
-
-      case IsolationBehavior::Error:
-        return Err(NS_ERROR_UNEXPECTED);
-    }
+    MOZ_TRY_VAR(
+        options.mRemoteType,
+        SpecialBehaviorRemoteType(behavior, aCurrentRemoteType, aParentWindow));
 
     if (options.mRemoteType != aCurrentRemoteType &&
         (options.mRemoteType.IsEmpty() || aCurrentRemoteType.IsEmpty())) {
@@ -776,30 +795,6 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
     options.mReplaceBrowsingContext = true;
   }
 
-  // Handle the deprecated Large-Allocation header.
-  if (!aTopBC->UseRemoteSubframes()) {
-    MOZ_ASSERT(!aParentWindow,
-               "subframe switch when `UseRemoteSubframes()` is false?");
-    bool singleToplevel = aTopBC->Group()->Toplevels().Length() == 1;
-    bool isLargeAllocLoad = IsLargeAllocationLoad(aTopBC, aChannel);
-    // If we're starting a large-alloc load and have no opener relationships,
-    // force the load to finish in the large-allocation remote type.
-    if (isLargeAllocLoad && singleToplevel) {
-      options.mRemoteType = LARGE_ALLOCATION_REMOTE_TYPE;
-      options.mReplaceBrowsingContext = true;
-      return options;
-    }
-    if (aCurrentRemoteType == LARGE_ALLOCATION_REMOTE_TYPE) {
-      // If we're doing a non-large-alloc load, we may still need to finish in
-      // the large-allocation remote type if we have opener relationships.
-      if (!singleToplevel) {
-        options.mRemoteType = LARGE_ALLOCATION_REMOTE_TYPE;
-        return options;
-      }
-      options.mReplaceBrowsingContext = true;
-    }
-  }
-
   nsAutoCString siteOriginNoSuffix;
   MOZ_TRY(resultOrPrecursor->GetSiteOriginNoSuffix(siteOriginNoSuffix));
 
@@ -811,9 +806,9 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
   // where we may have multiple documents with the same principal in different
   // processes. Those have been handled above, and will not be reaching here.
   //
-  // If we're doing a replace load, we won't be staying in the same
-  // BrowsingContext, so ignore this step.
-  if (!options.mReplaceBrowsingContext) {
+  // If we're doing a replace load or opening a new tab, we won't be staying in
+  // the same BrowsingContextGroup, so ignore this step.
+  if (!options.mReplaceBrowsingContext && !aForNewTab) {
     // Helper for efficiently determining if a given origin is same-site. This
     // will attempt to do a fast equality check, and will only fall back to
     // computing the site-origin for content principals.
@@ -868,14 +863,10 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
     }
   }
 
-  nsAutoCString originSuffix;
-  OriginAttributes attrs = resultOrPrecursor->OriginAttributesRef();
-  attrs.StripAttributes(OriginAttributes::STRIP_FIRST_PARTY_DOMAIN |
-                        OriginAttributes::STRIP_PARITION_KEY);
-  attrs.CreateSuffix(originSuffix);
+  nsAutoCString originSuffix = OriginSuffixForRemoteType(resultOrPrecursor);
 
   WebProcessType webProcessType = WebProcessType::Web;
-  if (ShouldIsolateSite(resultOrPrecursor, aTopBC)) {
+  if (ShouldIsolateSite(resultOrPrecursor, aTopBC->UseRemoteSubframes())) {
     webProcessType = WebProcessType::WebIsolated;
   }
 
@@ -892,6 +883,15 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
   if (coop ==
       nsILoadInfo::OPENER_POLICY_SAME_ORIGIN_EMBEDDER_POLICY_REQUIRE_CORP) {
     webProcessType = WebProcessType::WebCoopCoep;
+
+    // If we're changing BrowsingContext, and are going to end up within a
+    // webCOOP+COEP group, ensure we use a cross-origin isolated BCG ID.
+    if (options.mReplaceBrowsingContext) {
+      MOZ_ASSERT(!options.mSpecificGroupId,
+                 "overriding previously-specified BCG ID");
+      options.mSpecificGroupId = BrowsingContextGroup::CreateId(
+          /* aPotentiallyCrossOriginIsolated */ true);
+    }
   }
 
   switch (webProcessType) {
@@ -906,6 +906,155 @@ Result<NavigationIsolationOptions, nsresult> IsolationOptionsForNavigation(
       options.mRemoteType =
           WITH_COOP_COEP_REMOTE_TYPE "="_ns + siteOriginNoSuffix + originSuffix;
       break;
+  }
+  return options;
+}
+
+Result<WorkerIsolationOptions, nsresult> IsolationOptionsForWorker(
+    nsIPrincipal* aPrincipal, WorkerKind aWorkerKind,
+    const nsACString& aCurrentRemoteType, bool aUseRemoteSubframes) {
+  MOZ_LOG(gProcessIsolationLog, LogLevel::Verbose,
+          ("IsolationOptionsForWorker principal:%s, kind:%s, current:%s",
+           OriginString(aPrincipal).get(), WorkerKindName(aWorkerKind),
+           PromiseFlatCString(aCurrentRemoteType).get()));
+
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_RELEASE_ASSERT(
+      aWorkerKind == WorkerKindService || aWorkerKind == WorkerKindShared,
+      "Unexpected remote worker kind");
+
+  if (aWorkerKind == WorkerKindService &&
+      !aPrincipal->GetIsContentPrincipal()) {
+    MOZ_LOG(gProcessIsolationLog, LogLevel::Warning,
+            ("Rejecting service worker with non-content principal"));
+    return Err(NS_ERROR_UNEXPECTED);
+  }
+
+  if (aPrincipal->GetIsExpandedPrincipal()) {
+    MOZ_LOG(gProcessIsolationLog, LogLevel::Warning,
+            ("Rejecting remote worker with expanded principal"));
+    return Err(NS_ERROR_UNEXPECTED);
+  }
+
+  // In some cases, such as for null principals without precursors, we will want
+  // to load a shared worker in a process based on the current process. This is
+  // not done for service workers - process selection for those should function
+  // the same in all processes.
+  //
+  // We only allow the current remote type to be used if it is not a COOP+COEP
+  // remote type, in order to avoid loading a shared worker in one of these
+  // processes. Currently process selection for workers occurs before response
+  // headers are available, so we will never select to load a shared worker in a
+  // COOP+COEP content process.
+  nsCString preferredRemoteType = DEFAULT_REMOTE_TYPE;
+  if (aWorkerKind == WorkerKind::WorkerKindShared &&
+      !StringBeginsWith(aCurrentRemoteType,
+                        WITH_COOP_COEP_REMOTE_TYPE_PREFIX)) {
+    preferredRemoteType = aCurrentRemoteType;
+  }
+
+  WorkerIsolationOptions options;
+
+  // If we're loading a null principal, we can't easily make a process
+  // selection decision off ot it. Instead, we'll use our null principal's
+  // precursor principal to make process selection decisions.
+  bool isNullPrincipalPrecursor = false;
+  nsCOMPtr<nsIPrincipal> resultOrPrecursor(aPrincipal);
+  if (nsCOMPtr<nsIPrincipal> precursor =
+          resultOrPrecursor->GetPrecursorPrincipal()) {
+    MOZ_LOG(gProcessIsolationLog, LogLevel::Verbose,
+            ("using null principal precursor origin %s",
+             OriginString(precursor).get()));
+    resultOrPrecursor = precursor;
+    isNullPrincipalPrecursor = true;
+  }
+
+  IsolationBehavior behavior = IsolationBehavior::WebContent;
+  if (resultOrPrecursor->GetIsContentPrincipal()) {
+    nsCOMPtr<nsIURI> uri = resultOrPrecursor->GetURI();
+    behavior = IsolationBehaviorForURI(uri, /* aIsSubframe */ false,
+                                       /* aForChannelCreationURI */ false);
+  } else if (resultOrPrecursor->IsSystemPrincipal()) {
+    MOZ_ASSERT(aWorkerKind == WorkerKindShared);
+
+    // Allow system principal shared workers to load within either the
+    // parent process or privilegedabout process, depending on the
+    // responsible process.
+    if (preferredRemoteType == NOT_REMOTE_TYPE) {
+      MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
+              ("Loading system principal shared worker in parent process"));
+      behavior = IsolationBehavior::Parent;
+    } else if (preferredRemoteType == PRIVILEGEDABOUT_REMOTE_TYPE) {
+      MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
+              ("Loading system principal shared worker in privilegedabout "
+               "process"));
+      behavior = IsolationBehavior::PrivilegedAbout;
+    } else {
+      MOZ_LOG(gProcessIsolationLog, LogLevel::Warning,
+              ("Cannot load system-principal shared worker in "
+               "non-privilegedabout content process"));
+      return Err(NS_ERROR_UNEXPECTED);
+    }
+  } else {
+    MOZ_ASSERT(resultOrPrecursor->GetIsNullPrincipal());
+    MOZ_ASSERT(aWorkerKind == WorkerKindShared);
+
+    if (preferredRemoteType == NOT_REMOTE_TYPE) {
+      MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
+              ("Ensuring precursorless null principal shared worker loads in a "
+               "content process"));
+      behavior = IsolationBehavior::ForceWebRemoteType;
+    } else {
+      MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
+              ("Loading precursorless null principal shared worker within "
+               "current remotetype: (%s)",
+               preferredRemoteType.get()));
+      behavior = IsolationBehavior::Anywhere;
+    }
+  }
+
+  if (behavior == IsolationBehavior::Parent && isNullPrincipalPrecursor) {
+    MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
+            ("Ensuring sandboxed null-principal shared worker doesn't load in "
+             "the parent process"));
+    behavior = IsolationBehavior::ForceWebRemoteType;
+  }
+
+  if (behavior != IsolationBehavior::WebContent) {
+    MOZ_TRY_VAR(
+        options.mRemoteType,
+        SpecialBehaviorRemoteType(behavior, preferredRemoteType, nullptr));
+
+    MOZ_LOG(
+        gProcessIsolationLog, LogLevel::Debug,
+        ("Selecting specific %s worker remote type (%s) due to a special case "
+         "isolation behavior %s",
+         WorkerKindName(aWorkerKind), options.mRemoteType.get(),
+         IsolationBehaviorName(behavior)));
+    return options;
+  }
+
+  // If we should be isolating this site, we can determine the correct fission
+  // remote type from the principal's site-origin.
+  if (ShouldIsolateSite(resultOrPrecursor, aUseRemoteSubframes)) {
+    nsAutoCString siteOriginNoSuffix;
+    MOZ_TRY(resultOrPrecursor->GetSiteOriginNoSuffix(siteOriginNoSuffix));
+    nsAutoCString originSuffix = OriginSuffixForRemoteType(resultOrPrecursor);
+
+    nsCString prefix = aWorkerKind == WorkerKindService
+                           ? SERVICEWORKER_REMOTE_TYPE
+                           : FISSION_WEB_REMOTE_TYPE;
+    options.mRemoteType = prefix + "="_ns + siteOriginNoSuffix + originSuffix;
+
+    MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
+            ("Isolating web content %s worker in remote type (%s)",
+             WorkerKindName(aWorkerKind), options.mRemoteType.get()));
+  } else {
+    options.mRemoteType = WEB_REMOTE_TYPE;
+
+    MOZ_LOG(gProcessIsolationLog, LogLevel::Debug,
+            ("Loading web content %s worker in shared web remote type",
+             WorkerKindName(aWorkerKind)));
   }
   return options;
 }

@@ -11,9 +11,7 @@
 #include "mozilla/dom/cache/PrincipalVerifier.h"
 #include "mozilla/dom/cache/Types.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 class ManagerId;
 
@@ -24,9 +22,12 @@ class CacheStorageParent final : public PCacheStorageParent,
  public:
   CacheStorageParent(PBackgroundParent* aManagingActor, Namespace aNamespace,
                      const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
-  virtual ~CacheStorageParent();
+
+  NS_INLINE_DECL_REFCOUNTING(CacheStorageParent, override)
 
  private:
+  virtual ~CacheStorageParent();
+
   // PCacheStorageParent methods
   virtual void ActorDestroy(ActorDestroyReason aReason) override;
 
@@ -49,8 +50,6 @@ class CacheStorageParent final : public PCacheStorageParent,
   SafeRefPtr<ManagerId> mManagerId;
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_CacheStorageParent_h

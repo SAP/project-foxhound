@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import traceback
 
 import six
@@ -41,17 +39,17 @@ class MarionetteException(Exception):
 
         if self.cause:
             if type(self.cause) is tuple:
-                msg += u", caused by {0!r}".format(self.cause[0])
+                msg += ", caused by {0!r}".format(self.cause[0])
                 tb = self.cause[2]
             else:
-                msg += u", caused by {}".format(self.cause)
+                msg += ", caused by {}".format(self.cause)
 
         if self.stacktrace:
-            st = u"".join(["\t{}\n".format(x) for x in self.stacktrace.splitlines()])
-            msg += u"\nstacktrace:\n{}".format(st)
+            st = "".join(["\t{}\n".format(x) for x in self.stacktrace.splitlines()])
+            msg += "\nstacktrace:\n{}".format(st)
 
         if tb:
-            msg += u": " + u"".join(traceback.format_tb(tb))
+            msg += ": " + "".join(traceback.format_tb(tb))
 
         return six.text_type(msg)
 

@@ -13,6 +13,7 @@
 #include "mozilla/ProfilerState.h"
 #include "mozilla/ProfilerThreadRegistration.h"
 #include "mozilla/ProfilerThreadRegistry.h"
+#include "mozilla/ProfilerThreadSleep.h"
 
 // During profiling, if the current thread is registered, return true
 // (regardless of whether it is actively being profiled).
@@ -83,5 +84,45 @@
              },
              false);
 }
+
+#ifndef MOZ_GECKO_PROFILER
+
+#  define AUTO_PROFILER_THREAD_WAKE
+
+#else  // !MOZ_GECKO_PROFILER
+
+// Mark a thread as awake within a scope.
+// (See also AUTO_PROFILER_THREAD_SLEEP in mozilla/ProfilerThreadSleep.h)
+#  define AUTO_PROFILER_THREAD_WAKE \
+    mozilla::AutoProfilerThreadWake PROFILER_RAII
+
+namespace mozilla {
+
+// Temporarily wake up the profiling of a thread while servicing events such as
+// Asynchronous Procedure Calls (APCs).
+// (See also AutoProfilerThreadSleep in ProfilerThreadSleep.h)
+class MOZ_RAII AutoProfilerThreadWake {
+ public:
+  explicit AutoProfilerThreadWake()
+      : mIssuedWake(profiler_thread_is_sleeping()) {
+    if (mIssuedWake) {
+      profiler_thread_wake();
+    }
+  }
+
+  ~AutoProfilerThreadWake() {
+    if (mIssuedWake) {
+      MOZ_ASSERT(!profiler_thread_is_sleeping());
+      profiler_thread_sleep();
+    }
+  }
+
+ private:
+  bool mIssuedWake;
+};
+
+}  // namespace mozilla
+
+#endif  // !MOZ_GECKO_PROFILER
 
 #endif  // ProfilerThreadState_h

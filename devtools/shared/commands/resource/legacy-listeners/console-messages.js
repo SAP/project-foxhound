@@ -4,9 +4,9 @@
 
 "use strict";
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
-module.exports = async function({ targetCommand, targetFront, onAvailable }) {
+module.exports = async function ({ targetCommand, targetFront, onAvailable }) {
   // Allow the top level target unconditionnally.
   // Also allow frame, but only in content toolbox, i.e. still ignore them in
   // the context of the browser toolbox as we inspect messages via the process
@@ -14,8 +14,9 @@ module.exports = async function({ targetCommand, targetFront, onAvailable }) {
   const listenForFrames = targetCommand.descriptorFront.isTabDescriptor;
 
   // Allow workers when messages aren't dispatched to the main thread.
-  const listenForWorkers = !targetCommand.rootFront.traits
-    .workerConsoleApiMessagesDispatchedToMainThread;
+  const listenForWorkers =
+    !targetCommand.rootFront.traits
+      .workerConsoleApiMessagesDispatchedToMainThread;
 
   const acceptTarget =
     targetFront.isTopLevel ||
@@ -46,8 +47,8 @@ module.exports = async function({ targetCommand, targetFront, onAvailable }) {
 
   // Forward new message events
   webConsoleFront.on("consoleAPICall", message => {
-    // Ignore console messages that are cloned from the content process (they're handled
-    // by the cloned-content-process-messages legacy listener).
+    // Ignore console messages that are cloned from the content process
+    // (they aren't relevant to toolboxes still using legacy listeners)
     if (message.clonedFromContentProcess) {
       return;
     }

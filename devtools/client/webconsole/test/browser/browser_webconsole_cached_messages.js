@@ -26,7 +26,7 @@ const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8><h1>Test cach
     }
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   // On e10s, the exception is triggered in child process
   // and is ignored by test harness
   if (!Services.appinfo.browserTabsRemoteAutostart) {
@@ -74,7 +74,7 @@ add_task(async function() {
 });
 
 async function logMessages() {
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
     const wait = () =>
       new Promise(res => content.wrappedJSObject.setTimeout(res, 100));
@@ -108,7 +108,7 @@ async function logMessages() {
 
 async function testMessagesVisibility(hud, checkNetworkMessage = true) {
   // wait for the last logged message to be displayed
-  await waitFor(() => findMessage(hud, "info Bazzle", ".message.info"));
+  await waitFor(() => findConsoleAPIMessage(hud, "info Bazzle", ".info"));
 
   const messages = Array.from(hud.ui.outputNode.querySelectorAll(".message"));
   const EXPECTED_MESSAGES = [
@@ -165,7 +165,7 @@ async function testMessagesVisibility(hud, checkNetworkMessage = true) {
     }
   }
 
-  if (expectedMessages.length > 0) {
+  if (expectedMessages.length) {
     ok(
       false,
       `Some messages are not visible or not in the expected order. Expected to find: \n\n${EXPECTED_MESSAGES.map(
@@ -178,7 +178,7 @@ async function testMessagesVisibility(hud, checkNetworkMessage = true) {
 
   // We can't assert the CSS warning position, so we only check that it's visible.
   await waitFor(
-    () => findMessage(hud, "cssColorBug611032", ".message.warn.css"),
+    () => findWarningMessage(hud, "cssColorBug611032", ".css"),
     "Couldn't find the CSS warning message"
   );
   ok(true, "css warning message is visible");

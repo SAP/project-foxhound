@@ -3,45 +3,13 @@ $header-font-size: 17;
 $header-line-height: 24;
 $excerpt-font-size: 14;
 $excerpt-line-height: 20;
-$ds-card-image-gradient-fade: rgba(0, 0, 0, 0);
-$ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
+$ds-card-image-gradient-fade: rgba(0, 0, 0, 0%);
+$ds-card-image-gradient-solid: rgba(0, 0, 0, 100%);
 
 .ds-card {
   display: flex;
   flex-direction: column;
   position: relative;
-
-  .playhead {
-    background: var(--newtab-primary-action-background) url('chrome://activity-stream/content/data/content/assets/glyph-playhead.svg') no-repeat 12px center;
-    border-radius: 20px;
-    bottom: -16px;
-    color: color-mix(in srgb, var(--newtab-primary-element-text-color) 0%, transparent);
-    display: flex;
-    flex-direction: column;
-    height: 40px;
-    justify-content: center;
-    left: 16px;
-    min-width: 40px;
-    padding: 0 0 0 40px;
-    position: absolute;
-    transition: padding 100ms ease-in-out 0ms, color 100ms linear 100ms;
-
-    &:hover {
-      color: var(--newtab-primary-element-text-color);
-      padding: 0 20px 0 40px;
-    }
-
-    span {
-      display: none;
-    }
-
-    &:hover span {
-      display: inline;
-      font-style: normal;
-      font-weight: 600;
-      font-size: 13px;
-    }
-  }
 
   &.placeholder {
     background: transparent;
@@ -66,16 +34,14 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
     padding-top: 50%;
     pointer-events: none;
     background: $black-40;
-    border-radius: 8px;
+    border-radius: 8px 8px 0 0;
 
     .card-stp-button-position-wrapper {
       position: absolute;
-      margin-top: -16px;
-      left: 0;
-      right: 0;
-      top: 50%;
+      inset-inline-end: 10px;
+      top: 10px;
       display: flex;
-      justify-content: center;
+      justify-content: end;
       align-items: center;
     }
 
@@ -85,15 +51,13 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
       height: 15px;
       width: 15px;
       background-size: 15px;
-    }
-
-    .icon-pocket {
-      fill: $pocket-icon-fill;
+      fill: $white;
     }
 
     .context-menu-button {
       position: static;
       transition: none;
+      border-radius: 3px;
     }
 
     .context-menu-position-container {
@@ -109,21 +73,16 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
 
     .card-stp-button {
       display: flex;
-      margin-inline-end: 12px;
+      margin-inline-end: 7px;
       font-weight: 400;
       font-size: 13px;
       line-height: 16px;
-      background-color: var(--newtab-background-color-secondary);
+      background-color: $pocket-icon-fill;
       border: 0;
       border-radius: 4px;
-      padding: 8px;
+      padding: 6px;
       white-space: nowrap;
-
-      &:hover {
-        .icon-pocket-save {
-          fill: $pocket-icon-fill;
-        }
-      }
+      color: $white;
     }
 
     button,
@@ -145,12 +104,19 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
     }
   }
 
-  &:hover,
-  &.active {
+  // The active class is added when the context menu is open.
+  &.active,
+  &:focus-within,
+  &:hover {
     .card-stp-button-hover-background {
       display: block;
       opacity: 1;
       transition-duration: 0.3s;
+
+      .context-menu-button {
+        opacity: 1;
+        transform: scale(1);
+      }
     }
   }
 
@@ -168,6 +134,7 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
     height: 100%;
     display: flex;
     flex-direction: column;
+    text-decoration: none;
 
     &:hover {
       header {
@@ -192,28 +159,6 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
     }
   }
 
-  &.video-card .meta {
-    margin-top: 4px;
-  }
-
-  &.last-card-message {
-    .ds-last-card-desc {
-      font-size: 13px;
-      color: var(--newtab-text-secondary-color);
-    }
-
-    .ds-last-card-desc,
-    .title {
-      text-align: center;
-    }
-
-    .last-card-message-image {
-      object-fit: contain;
-      background: transparent;
-      box-shadow: none;
-    }
-  }
-
   .meta {
     display: flex;
     flex-direction: column;
@@ -227,6 +172,7 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
     .title {
       // show only 3 lines of copy
       @include limit-visible-lines(3, $header-line-height, $header-font-size);
+
       font-weight: 600;
     }
 
@@ -244,59 +190,15 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 1);
       margin-bottom: 2px;
       font-size: 13px;
       color: var(--newtab-text-secondary-color);
+
+      span {
+        display: inline-block;
+      }
     }
 
     .new-sponsored-label {
       font-size: 13px;
       margin-bottom: 2px;
-    }
-
-    .cta-button {
-      background-color: var(--newtab-button-secondary-color);
-      width: 100%;
-      margin: 12px 0 4px;
-      box-shadow: none;
-      border-radius: 4px;
-      height: 32px;
-      font-size: 14px;
-      font-weight: 600;
-      padding: 5px 8px 7px;
-      border: $border-primary;
-
-      &:active {
-        box-shadow: $shadow-primary;
-      }
-    }
-
-    .cta-link {
-      color: var(--newtab-primary-action-background);
-      fill: var(--newtab-primary-action-background);
-
-      font-size: 15px;
-      font-weight: 600;
-      line-height: 24px;
-      height: 24px;
-      width: auto;
-      background-size: auto;
-      background-position: right 1.5px;
-      padding-right: 9px;
-
-      &:focus {
-        box-shadow: $shadow-primary;
-
-        border-radius: 4px;
-        outline: 0;
-      }
-
-      &:active {
-        color: var(--newtab-primary-element-active-color);
-        fill: var(--newtab-primary-element-active-color);
-        box-shadow: none;
-      }
-
-      &:hover {
-        text-decoration: underline;
-      }
     }
   }
 

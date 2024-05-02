@@ -10,10 +10,8 @@
 #include "nscore.h"
 
 #include "mozilla/intl/AppDateTimeFormat.h"
-#include "MediaManager.h"
 #include "mozilla/dom/ServiceWorkerRegistrar.h"
 #include "nsAttrValue.h"
-#include "nsColorNames.h"
 #include "nsComputedDOMStyle.h"
 #include "nsContentDLF.h"
 #include "nsContentUtils.h"
@@ -27,15 +25,14 @@
 #include "mozilla/dom/PopupBlocker.h"
 #include "nsIFrame.h"
 #include "nsFrameState.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsGkAtoms.h"
 #include "nsImageFrame.h"
 #include "mozilla/GlobalStyleSheetCache.h"
 #include "nsRegion.h"
 #include "nsRepeatService.h"
 #include "nsFloatManager.h"
-#include "nsSprocketLayout.h"
-#include "nsStackLayout.h"
 #include "nsTextControlFrame.h"
 #include "txMozillaXSLTProcessor.h"
 #include "nsTreeSanitizer.h"
@@ -50,7 +47,6 @@
 #include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/SVGElementFactory.h"
-#include "nsLanguageAtomService.h"
 #include "nsMathMLAtoms.h"
 #include "nsMathMLOperators.h"
 #include "Navigator.h"
@@ -61,7 +57,6 @@
 #include "ActiveLayerTracker.h"
 #include "AnimationCommon.h"
 #include "LayerAnimationInfo.h"
-#include "mozilla/TimelineConsumers.h"
 
 #include "AudioChannelService.h"
 #include "mozilla/dom/PromiseDebugging.h"
@@ -91,6 +86,9 @@
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/IMEStateManager.h"
+#ifndef MOZ_WIDGET_ANDROID
+#  include "mozilla/Viaduct.h"
+#endif
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "ThirdPartyUtil.h"
 #include "TouchManager.h"
@@ -104,15 +102,12 @@
 #include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
-#include "mozilla/dom/U2FTokenManager.h"
-#ifdef OS_WIN
-#  include "mozilla/dom/WinWebAuthnManager.h"
-#endif
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/dom/RemoteWorkerService.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ReportingHeader.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/MIDIPlatformService.h"
 #include "mozilla/dom/quota/ActorsParent.h"
 #include "mozilla/dom/localstorage/ActorsParent.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
@@ -146,8 +141,7 @@ nsresult nsLayoutStatics::Initialize() {
 
   ContentParent::StartUp();
 
-  nsCSSProps::AddRefTable();
-  nsColorNames::AddRefTable();
+  nsCSSProps::Init();
 
 #ifdef DEBUG
   nsCSSPseudoElements::AssertAtoms();
@@ -226,15 +220,12 @@ nsresult nsLayoutStatics::Initialize() {
   }
 
   DecoderDoctorLogger::Init();
-  MediaManager::StartupInit();
   CubebUtils::InitLibrary();
 
   nsHtml5Module::InitializeStatics();
   nsLayoutUtils::Initialize();
   PointerEventHandler::InitializeStatics();
   TouchManager::InitializeStatics();
-
-  TimelineConsumers::Init();
 
   nsWindowMemoryReporter::Init();
 
@@ -261,12 +252,6 @@ nsresult nsLayoutStatics::Initialize() {
   // This must be initialized on the main-thread.
   mozilla::RemoteLazyInputStreamStorage::Initialize();
 
-  mozilla::dom::U2FTokenManager::Initialize();
-
-#ifdef OS_WIN
-  mozilla::dom::WinWebAuthnManager::Initialize();
-#endif
-
   if (XRE_IsParentProcess()) {
     // On content process we initialize these components when PContentChild is
     // fully initialized.
@@ -277,6 +262,8 @@ nsresult nsLayoutStatics::Initialize() {
 
   // Reporting API.
   ReportingHeader::Initialize();
+
+  InitializeScopedLogExtraInfo();
 
   if (XRE_IsParentProcess()) {
     InitializeQuotaManager();
@@ -292,6 +279,16 @@ nsresult nsLayoutStatics::Initialize() {
   RLBoxExpatSandboxPool::Initialize();
 
   RLBoxWOFF2SandboxPool::Initalize();
+
+  if (XRE_IsParentProcess()) {
+    MIDIPlatformService::InitStatics();
+  }
+
+#ifndef MOZ_WIDGET_ANDROID
+  if (XRE_IsParentProcess()) {
+    InitializeViaduct();
+  }
+#endif
 
   return NS_OK;
 }
@@ -320,7 +317,6 @@ void nsLayoutStatics::Shutdown() {
   HTMLDNSPrefetch::Shutdown();
   nsCSSRendering::Shutdown();
   StaticPresData::Shutdown();
-  nsLanguageAtomService::Shutdown();
 #ifdef DEBUG
   nsIFrame::DisplayReflowShutdown();
 #endif
@@ -328,14 +324,10 @@ void nsLayoutStatics::Shutdown() {
   ActiveLayerTracker::Shutdown();
 
   // Release all of our atoms
-  nsColorNames::ReleaseTable();
-  nsCSSProps::ReleaseTable();
   nsRepeatService::Shutdown();
-  nsStackLayout::Shutdown();
 
   nsXULContentUtils::Finish();
   nsXULPrototypeCache::ReleaseGlobals();
-  nsSprocketLayout::Shutdown();
 
   SVGElementFactory::Shutdown();
   nsMathMLOperators::ReleaseTable();

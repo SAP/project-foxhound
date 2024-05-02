@@ -10,8 +10,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsContentList.h"  // For ctor.
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class HTMLTableSectionElement final : public nsGenericHTMLElement {
  public:
@@ -48,12 +47,11 @@ class HTMLTableSectionElement final : public nsGenericHTMLElement {
     SetHTMLAttr(nsGkAtoms::valign, aVAlign, aError);
   }
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
-      const override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
+  nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -69,11 +67,9 @@ class HTMLTableSectionElement final : public nsGenericHTMLElement {
   RefPtr<nsContentList> mRows;
 
  private:
-  static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    MappedDeclarations&);
+  static void MapAttributesIntoRule(MappedDeclarationsBuilder&);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_HTMLTableSectionElement_h */

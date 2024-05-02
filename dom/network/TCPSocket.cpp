@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/ErrorResult.h"
-#include "TCPSocket.h"
 #include "TCPServerSocket.h"
+#include "TCPSocket.h"
 #include "TCPSocketChild.h"
 #include "TCPSocketParent.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/SyncRunnable.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TCPSocketBinding.h"
@@ -21,24 +22,24 @@
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIArrayBufferInputStream.h"
-#include "nsISocketTransportService.h"
-#include "nsISocketTransport.h"
-#include "nsIMultiplexInputStream.h"
-#include "nsIAsyncStreamCopier.h"
-#include "nsIInputStream.h"
-#include "nsIInputStreamPump.h"
-#include "nsIBinaryInputStream.h"
-#include "nsIScriptableInputStream.h"
 #include "nsIAsyncInputStream.h"
-#include "nsISupportsPrimitives.h"
-#include "nsITransport.h"
-#include "nsIObserverService.h"
-#include "nsIOutputStream.h"
-#include "nsINSSErrorsService.h"
-#include "nsISSLSocketControl.h"
-#include "nsIProtocolProxyService.h"
+#include "nsIAsyncStreamCopier.h"
+#include "nsIBinaryInputStream.h"
 #include "nsICancelable.h"
 #include "nsIChannel.h"
+#include "nsIInputStream.h"
+#include "nsIInputStreamPump.h"
+#include "nsIMultiplexInputStream.h"
+#include "nsINSSErrorsService.h"
+#include "nsIObserverService.h"
+#include "nsIOutputStream.h"
+#include "nsIProtocolProxyService.h"
+#include "nsIScriptableInputStream.h"
+#include "nsISocketTransport.h"
+#include "nsISocketTransportService.h"
+#include "nsISupportsPrimitives.h"
+#include "nsITLSSocketControl.h"
+#include "nsITransport.h"
 #include "nsIURIMutator.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -238,12 +239,12 @@ nsresult TCPSocket::Init(nsIProxyInfo* aProxyInfo) {
     obs->AddObserver(this, "profile-change-net-teardown", true);  // weak ref
   }
 
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+  if (XRE_IsContentProcess()) {
     mReadyState = TCPReadyState::Connecting;
 
     nsCOMPtr<nsISerialEventTarget> target;
     if (nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal()) {
-      target = global->EventTargetFor(TaskCategory::Other);
+      target = global->SerialEventTarget();
     }
     mSocketBridgeChild = new TCPSocketChild(mHost, mPort, target);
     mSocketBridgeChild->SendOpen(this, mSsl, mUseArrayBuffers);
@@ -455,11 +456,37 @@ void TCPSocket::NotifyCopyComplete(nsresult aStatus) {
 }
 
 void TCPSocket::ActivateTLS() {
-  nsCOMPtr<nsISupports> securityInfo;
-  mTransport->GetSecurityInfo(getter_AddRefs(securityInfo));
-  nsCOMPtr<nsISSLSocketControl> socketControl = do_QueryInterface(securityInfo);
-  if (socketControl) {
-    socketControl->StartTLS();
+  nsresult rv;
+  nsCOMPtr<nsIEventTarget> socketThread =
+      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  bool alreadyOnSTST = false;
+  if (NS_FAILED(socketThread->IsOnCurrentThread(&alreadyOnSTST))) {
+    return;
+  }
+
+  if (alreadyOnSTST) {
+    ActivateTLSHelper();
+    return;
+  }
+
+  auto CallActivateTLS = [sock = RefPtr{this}]() mutable {
+    sock->ActivateTLSHelper();
+  };
+  mozilla::SyncRunnable::DispatchToThread(
+      socketThread,
+      NS_NewRunnableFunction("TCPSocket::UpgradeToSecure->ActivateTLSHelper",
+                             CallActivateTLS));
+}
+
+void TCPSocket::ActivateTLSHelper() {
+  nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
+  mTransport->GetTlsSocketControl(getter_AddRefs(tlsSocketControl));
+  if (tlsSocketControl) {
+    tlsSocketControl->StartTLS();
   }
 }
 
@@ -558,9 +585,9 @@ JSObject* TCPSocket::WrapObject(JSContext* aCx,
 
 void TCPSocket::GetHost(nsAString& aHost) { aHost.Assign(mHost); }
 
-uint32_t TCPSocket::Port() { return mPort; }
+uint32_t TCPSocket::Port() const { return mPort; }
 
-bool TCPSocket::Ssl() { return mSsl; }
+bool TCPSocket::Ssl() const { return mSsl; }
 
 void TCPSocket::Suspend() {
   if (mSocketBridgeChild) {
@@ -784,27 +811,39 @@ bool TCPSocket::Send(const ArrayBuffer& aData, uint32_t aByteOffset,
 
   nsCOMPtr<nsIArrayBufferInputStream> stream;
 
-  aData.ComputeState();
-  uint32_t byteLength =
-      aByteLength.WasPassed() ? aByteLength.Value() : aData.Length();
+  uint32_t nbytes;
+  auto calculateOffsetAndCount = [&](uint32_t aLength) {
+    uint32_t offset = std::min(aLength, aByteOffset);
+    nbytes = std::min(aLength - aByteOffset,
+                      aByteLength.WasPassed() ? aByteLength.Value() : aLength);
+    return std::pair(offset, nbytes);
+  };
 
   if (mSocketBridgeChild) {
-    nsresult rv = mSocketBridgeChild->SendSend(aData, aByteOffset, byteLength);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      aRv.Throw(rv);
+    nsTArray<uint8_t> arrayBuffer;
+    if (!aData.AppendDataTo(arrayBuffer, calculateOffsetAndCount)) {
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
       return false;
     }
+
+    mSocketBridgeChild->SendSend(std::move(arrayBuffer));
   } else {
-    JS::Rooted<JS::Value> value(RootingCx(), JS::ObjectValue(*aData.Obj()));
+    mozilla::Maybe<mozilla::UniquePtr<uint8_t[]>> arrayBuffer =
+        aData.CreateFromData<mozilla::UniquePtr<uint8_t[]>>(
+            calculateOffsetAndCount);
+    if (arrayBuffer.isNothing()) {
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return false;
+    }
 
     stream = do_CreateInstance("@mozilla.org/io/arraybuffer-input-stream;1");
-    nsresult rv = stream->SetData(value, aByteOffset, byteLength);
+    nsresult rv = stream->SetData(arrayBuffer.extract(), nbytes);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       aRv.Throw(rv);
       return false;
     }
   }
-  return Send(stream, byteLength);
+  return Send(stream, nbytes);
 }
 
 bool TCPSocket::Send(nsIInputStream* aStream, uint32_t aByteLength) {
@@ -846,7 +885,7 @@ bool TCPSocket::Send(nsIInputStream* aStream, uint32_t aByteLength) {
 
 TCPReadyState TCPSocket::ReadyState() { return mReadyState; }
 
-TCPSocketBinaryType TCPSocket::BinaryType() {
+TCPSocketBinaryType TCPSocket::BinaryType() const {
   if (mUseArrayBuffers) {
     return TCPSocketBinaryType::Arraybuffer;
   }
@@ -971,7 +1010,7 @@ NS_IMETHODIMP
 TCPSocket::OnTransportStatus(nsITransport* aTransport, nsresult aStatus,
                              int64_t aProgress, int64_t aProgressMax) {
   if (static_cast<uint32_t>(aStatus) !=
-      nsISocketTransport::STATUS_CONNECTED_TO) {
+      static_cast<uint32_t>(nsISocketTransport::STATUS_CONNECTED_TO)) {
     return NS_OK;
   }
 

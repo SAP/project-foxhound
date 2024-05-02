@@ -8,6 +8,9 @@ places-open =
 places-open-in-tab =
   .label = Open in New Tab
   .accesskey = w
+places-open-in-container-tab =
+  .label = Open in New Container Tab
+  .accesskey = i
 places-open-all-bookmarks =
   .label = Open All Bookmarks
   .accesskey = O
@@ -20,6 +23,9 @@ places-open-in-window =
 places-open-in-private-window =
   .label = Open in New Private Window
   .accesskey = P
+
+places-empty-bookmarks-folder =
+  .label = (Empty)
 
 places-add-bookmark =
   .label = Add Bookmark…
@@ -69,18 +75,29 @@ places-sortby-name =
 # places-edit-bookmark and places-edit-generic will show one or the other and can have the same access key.
 places-edit-bookmark =
   .label = Edit Bookmark…
-  .accesskey = i
+  .accesskey = E
 places-edit-generic =
   .label = Edit…
-  .accesskey = i
+  .accesskey = E
 places-edit-folder2 =
   .label = Edit Folder…
-  .accesskey = i
+  .accesskey = E
+# Variables
+#   $count (number) - Number of folders to delete
 places-delete-folder =
   .label =
       { $count ->
           [1] Delete Folder
          *[other] Delete Folders
+      }
+  .accesskey = D
+# Variables:
+#   $count (number) - The number of pages selected for removal.
+places-delete-page =
+  .label =
+      { $count ->
+          [1] Delete Page
+         *[other] Delete Pages
       }
   .accesskey = D
 
@@ -109,6 +126,20 @@ places-delete-bookmark =
       }
   .accesskey = D
 
+# Variables:
+#   $count (number) - The number of bookmarks being added.
+places-create-bookmark =
+  .label =
+      { $count ->
+          [1] Bookmark Page…
+         *[other] Bookmark Pages…
+      }
+  .accesskey = B
+
+places-untag-bookmark =
+  .label = Remove Tag
+  .accesskey = R
+
 places-manage-bookmarks =
   .label = Manage Bookmarks
   .accesskey = M
@@ -118,14 +149,13 @@ places-forget-about-this-site-confirmation-title =
 
 # Variables:
 # $hostOrBaseDomain (string) - The base domain (or host in case there is no base domain) for which data is being removed
-places-forget-about-this-site-confirmation-message =
-  This action will remove all data related to { $hostOrBaseDomain } including history, passwords, cookies, cache and content preferences. Are you sure you want to proceed?
+places-forget-about-this-site-confirmation-msg =
+  This action will remove data related to { $hostOrBaseDomain } including history, cookies, cache and content preferences. Related bookmarks and passwords will not be removed. Are you sure you want to proceed?
 
 places-forget-about-this-site-forget = Forget
 
-places-library =
+places-library3 =
   .title = Library
-  .style = width:700px; height:500px;
 
 places-organize-button =
   .label = Organize
@@ -226,6 +256,28 @@ places-view-sort-col-date-added =
 places-view-sort-col-last-modified =
   .label = Last Modified
 
+places-view-sortby-name =
+  .label = Sort by Name
+  .accesskey = N
+places-view-sortby-url =
+  .label = Sort by Location
+  .accesskey = L
+places-view-sortby-date =
+  .label = Sort by Most Recent Visit
+  .accesskey = V
+places-view-sortby-visit-count =
+  .label = Sort by Visit Count
+  .accesskey = C
+places-view-sortby-date-added =
+  .label = Sort by Added
+  .accesskey = e
+places-view-sortby-last-modified =
+  .label = Sort by Last Modified
+  .accesskey = M
+places-view-sortby-tags =
+  .label = Sort by Tags
+  .accesskey = T
+
 places-cmd-find-key =
   .key = f
 
@@ -236,3 +288,28 @@ places-forward-button =
   .tooltiptext = Go forward
 
 places-details-pane-select-an-item-description = Select an item to view and edit its properties
+
+places-details-pane-no-items =
+  .value = No items
+# Variables:
+#   $count (Number): number of items
+places-details-pane-items-count =
+  .value =
+      { $count ->
+          [one] One item
+         *[other] { $count } items
+      }
+
+## Strings used as a placeholder in the Library search field. For example,
+## "Search History" stands for "Search through the browser's history".
+
+places-search-bookmarks =
+    .placeholder = Search Bookmarks
+places-search-history =
+    .placeholder = Search History
+places-search-downloads =
+    .placeholder = Search Downloads
+
+##
+
+places-locked-prompt = The bookmarks and history system will not be functional because one of { -brand-short-name }’s files is in use by another application. Some security software can cause this problem.

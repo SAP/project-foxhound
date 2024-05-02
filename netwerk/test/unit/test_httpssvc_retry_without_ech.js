@@ -4,18 +4,13 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-
 let trrServer;
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
 
-function setup() {
+add_setup(async function setup() {
   trr_test_setup();
 
   Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRFIRST);
@@ -24,22 +19,23 @@ function setup() {
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
 
   // An arbitrary, non-ECH server.
-  add_tls_server_setup(
+  await asyncStartTLSTestServer(
     "DelegatedCredentialsServer",
     "../../../security/manager/ssl/tests/unit/test_delegated_credentials"
   );
 
   let nssComponent = Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
-  nssComponent.clearSSLExternalAndInternalSessionCache();
-}
+  await nssComponent.asyncClearSSLExternalAndInternalSessionCache();
+});
 
-setup();
 registerCleanupFunction(async () => {
   trr_clear_prefs();
   Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
   Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
   Services.prefs.clearUserPref("network.dns.echconfig.enabled");
-  Services.prefs.clearUserPref("network.dns.echconfig.fallback_to_origin");
+  Services.prefs.clearUserPref(
+    "network.dns.echconfig.fallback_to_origin_when_all_failed"
+  );
   if (trrServer) {
     await trrServer.stop();
   }
@@ -80,7 +76,11 @@ add_task(async function testRetryWithoutECH() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
+  );
+  Services.prefs.setBoolPref(
+    "network.dns.echconfig.fallback_to_origin_when_all_failed",
+    true
   );
 
   // Only the last record is valid to use.
@@ -128,9 +128,7 @@ add_task(async function testRetryWithoutECH() {
 
   let chan = makeChan(`https://delegated-disabled.example.com:8443`);
   await channelOpenPromise(chan, CL_ALLOW_UNKNOWN_CL);
-  let securityInfo = chan.securityInfo.QueryInterface(
-    Ci.nsITransportSecurityInfo
-  );
+  let securityInfo = chan.securityInfo;
 
   Assert.ok(
     !securityInfo.isAcceptedEch,

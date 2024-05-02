@@ -121,18 +121,7 @@ macro_rules! crossbeam_channel_internal {
     };
     // Only one case remains.
     (@list
-        ($case:ident ($($args:tt)*) $(-> $res:pat)* => $body:expr)
-        ($($head:tt)*)
-    ) => {
-        $crate::crossbeam_channel_internal!(
-            @list
-            ()
-            ($($head)* $case ($($args)*) $(-> $res)* => { $body },)
-        )
-    };
-    // Accept a trailing comma at the end of the list.
-    (@list
-        ($case:ident ($($args:tt)*) $(-> $res:pat)* => $body:expr,)
+        ($case:ident ($($args:tt)*) $(-> $res:pat)* => $body:expr $(,)?)
         ($($head:tt)*)
     ) => {
         $crate::crossbeam_channel_internal!(
@@ -373,20 +362,7 @@ macro_rules! crossbeam_channel_internal {
 
     // Check the format of a recv case.
     (@case
-        (recv($r:expr) -> $res:pat => $body:tt, $($tail:tt)*)
-        ($($cases:tt)*)
-        $default:tt
-    ) => {
-        $crate::crossbeam_channel_internal!(
-            @case
-            ($($tail)*)
-            ($($cases)* recv($r) -> $res => $body,)
-            $default
-        )
-    };
-    // Allow trailing comma...
-    (@case
-        (recv($r:expr,) -> $res:pat => $body:tt, $($tail:tt)*)
+        (recv($r:expr $(,)?) -> $res:pat => $body:tt, $($tail:tt)*)
         ($($cases:tt)*)
         $default:tt
     ) => {
@@ -428,20 +404,7 @@ macro_rules! crossbeam_channel_internal {
 
     // Check the format of a send case.
     (@case
-        (send($s:expr, $m:expr) -> $res:pat => $body:tt, $($tail:tt)*)
-        ($($cases:tt)*)
-        $default:tt
-    ) => {
-        $crate::crossbeam_channel_internal!(
-            @case
-            ($($tail)*)
-            ($($cases)* send($s, $m) -> $res => $body,)
-            $default
-        )
-    };
-    // Allow trailing comma...
-    (@case
-        (send($s:expr, $m:expr,) -> $res:pat => $body:tt, $($tail:tt)*)
+        (send($s:expr, $m:expr $(,)?) -> $res:pat => $body:tt, $($tail:tt)*)
         ($($cases:tt)*)
         $default:tt
     ) => {
@@ -496,20 +459,7 @@ macro_rules! crossbeam_channel_internal {
     };
     // Check the format of a default case with timeout.
     (@case
-        (default($timeout:expr) => $body:tt, $($tail:tt)*)
-        $cases:tt
-        ()
-    ) => {
-        $crate::crossbeam_channel_internal!(
-            @case
-            ($($tail)*)
-            $cases
-            (default($timeout) => $body,)
-        )
-    };
-    // Allow trailing comma...
-    (@case
-        (default($timeout:expr,) => $body:tt, $($tail:tt)*)
+        (default($timeout:expr $(,)?) => $body:tt, $($tail:tt)*)
         $cases:tt
         ()
     ) => {
@@ -1043,7 +993,7 @@ macro_rules! crossbeam_channel_internal {
 /// An operation is considered to be ready if it doesn't have to block. Note that it is ready even
 /// when it will simply return an error because the channel is disconnected.
 ///
-/// The `select` macro is a convenience wrapper around [`Select`]. However, it cannot select over a
+/// The `select!` macro is a convenience wrapper around [`Select`]. However, it cannot select over a
 /// dynamically created list of channel operations.
 ///
 /// [`Select`]: super::Select

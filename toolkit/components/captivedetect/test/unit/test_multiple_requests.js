@@ -7,7 +7,6 @@
 const kInterfaceName = "wifi";
 const kOtherInterfaceName = "ril";
 
-var server;
 var step = 0;
 var loginFinished = false;
 var loginSuccessCount = 0;
@@ -43,7 +42,6 @@ function fakeUIResponse() {
         );
       }
       Assert.equal(++step, 4);
-      Assert.ok(fakeTelemetryService.recordEvent.calledOnce);
     }
   }, "captive-portal-login-success");
 }

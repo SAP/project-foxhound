@@ -6,34 +6,20 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionTelemetry",
-  "resource://gre/modules/ExtensionTelemetry.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PageActions",
-  "resource:///modules/PageActions.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PanelPopup",
-  "resource:///modules/ExtensionPopups.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUsageTelemetry",
-  "resource:///modules/BrowserUsageTelemetry.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
+  ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
+  PageActions: "resource:///modules/PageActions.sys.mjs",
+  PanelPopup: "resource:///modules/ExtensionPopups.sys.mjs",
+});
 
 var { DefaultWeakMap } = ExtensionUtils;
 
-var { ExtensionParent } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionParent.jsm"
+var { ExtensionParent } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionParent.sys.mjs"
 );
-var { PageActionBase } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionActions.jsm"
+var { PageActionBase } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionActions.sys.mjs"
 );
 
 // WeakMap[Extension -> PageAction]
@@ -62,7 +48,7 @@ class PageAction extends PageActionBase {
   }
 }
 
-this.pageAction = class extends ExtensionAPI {
+this.pageAction = class extends ExtensionAPIPersistent {
   static for(extension) {
     return pageActionMap.get(extension);
   }
@@ -118,6 +104,7 @@ this.pageAction = class extends ExtensionAPI {
           }
           let window = event.target.ownerGlobal;
           let tab = window.gBrowser.selectedTab;
+          this.tabManager.addActiveTabPermission(tab);
           this.action.dispatchClick(tab, {
             button: event.button,
             modifiers: clickModifiersFromEvent(event),
@@ -130,7 +117,7 @@ this.pageAction = class extends ExtensionAPI {
           id: widgetId,
           extensionID: extension.id,
           title: this.action.getProperty(null, "title"),
-          iconURL: this.action.getProperty(null, "title"),
+          iconURL: this.action.getProperty(null, "icon"),
           pinnedToUrlbar: this.action.getPinned(),
           disabled: !this.action.getProperty(null, "enabled"),
           onCommand: (event, buttonNode) => {
@@ -340,9 +327,36 @@ this.pageAction = class extends ExtensionAPI {
     }
   }
 
+  PERSISTENT_EVENTS = {
+    onClicked({ context, fire }) {
+      const { extension } = this;
+      const { tabManager } = extension;
+
+      let listener = async (_event, tab, clickInfo) => {
+        if (fire.wakeup) {
+          await fire.wakeup();
+        }
+        // TODO: we should double-check if the tab is already being closed by the time
+        // the background script got started and we converted the primed listener.
+        context?.withPendingBrowser(tab.linkedBrowser, () =>
+          fire.sync(tabManager.convert(tab), clickInfo)
+        );
+      };
+
+      this.on("click", listener);
+      return {
+        unregister: () => {
+          this.off("click", listener);
+        },
+        convert(newFire, extContext) {
+          fire = newFire;
+          context = extContext;
+        },
+      };
+    },
+  };
+
   getAPI(context) {
-    const { extension } = context;
-    const { tabManager } = extension;
     const { action } = this;
 
     return {
@@ -351,20 +365,10 @@ this.pageAction = class extends ExtensionAPI {
 
         onClicked: new EventManager({
           context,
-          name: "pageAction.onClicked",
+          module: "pageAction",
+          event: "onClicked",
           inputHandling: true,
-          register: fire => {
-            let listener = (evt, tab, clickInfo) => {
-              context.withPendingBrowser(tab.linkedBrowser, () =>
-                fire.sync(tabManager.convert(tab), clickInfo)
-              );
-            };
-
-            this.on("click", listener);
-            return () => {
-              this.off("click", listener);
-            };
-          },
+          extensionApi: this,
         }).api(),
 
         openPopup: () => {

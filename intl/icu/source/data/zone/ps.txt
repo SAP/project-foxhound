@@ -258,6 +258,9 @@ ps{
         "America:Chihuahua"{
             ec{"چھواھوا"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"سیوداد جیوریز"}
+        }
         "America:Coral_Harbour"{
             ec{"اتیکوکن"}
         }
@@ -1022,7 +1025,7 @@ ps{
             ec{"کيلنينګراډ"}
         }
         "Europe:Kiev"{
-            ec{"کیو"}
+            ec{"کیف"}
         }
         "Europe:Kirov"{
             ec{"کیروف"}

@@ -2,7 +2,9 @@
  * Tests for imgITools
  */
 
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 /*
  * dumpToFile()
@@ -10,6 +12,7 @@ const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
  * For test development, dumps the specified array to a file.
  * Call |dumpToFile(outData);| in a test to file to a file.
  */
+// eslint-disable-next-line no-unused-vars
 function dumpToFile(aData) {
   var outputFile = do_get_cwd();
   outputFile.append("testdump.webp");

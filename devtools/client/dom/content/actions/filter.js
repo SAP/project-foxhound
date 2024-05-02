@@ -3,14 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const constants = require("devtools/client/dom/content/constants");
+const constants = require("resource://devtools/client/dom/content/constants.js");
 
 /**
  * Used to filter DOM panel content.
  */
 function setVisibilityFilter(filter) {
   return {
-    filter: filter,
+    filter,
     type: constants.SET_VISIBILITY_FILTER,
   };
 }

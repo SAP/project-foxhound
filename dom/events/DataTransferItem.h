@@ -23,7 +23,7 @@ class FunctionStringCallback;
 class DataTransferItem final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DataTransferItem);
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DataTransferItem);
 
  public:
   // The spec only talks about the "file" and "string" kinds. Due to the Moz*
@@ -86,6 +86,10 @@ class DataTransferItem final : public nsISupports, public nsWrapperCache {
   nsIPrincipal* Principal() const { return mPrincipal; }
   void SetPrincipal(nsIPrincipal* aPrincipal) { mPrincipal = aPrincipal; }
 
+  // @return cached data, if available.
+  //         otherwise: if available, `mDataTransfer`'s transferable data.
+  //                    otherwise the data is retrieved from the clipboard (for
+  //                    paste events) or the drag session.
   already_AddRefed<nsIVariant> DataNoSecurityCheck();
   // Data may return null if the clipboard state has changed since the type was
   // detected.
@@ -107,6 +111,9 @@ class DataTransferItem final : public nsISupports, public nsWrapperCache {
  private:
   ~DataTransferItem() = default;
   already_AddRefed<File> CreateFileFromInputStream(nsIInputStream* aStream);
+  already_AddRefed<File> CreateFileFromInputStream(
+      nsIInputStream* aStream, const char* aFileNameKey,
+      const nsAString& aContentType);
 
   already_AddRefed<nsIGlobalObject> GetGlobalFromDataTransfer();
 

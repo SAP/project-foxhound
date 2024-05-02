@@ -6,7 +6,7 @@
 
 const {
   UPDATE_PREVIEW_TEXT,
-} = require("devtools/client/inspector/fonts/actions/index");
+} = require("resource://devtools/client/inspector/fonts/actions/index.js");
 
 const INITIAL_FONT_OPTIONS = {
   previewText: "",
@@ -18,7 +18,7 @@ const reducers = {
   },
 };
 
-module.exports = function(fontOptions = INITIAL_FONT_OPTIONS, action) {
+module.exports = function (fontOptions = INITIAL_FONT_OPTIONS, action) {
   const reducer = reducers[action.type];
   if (!reducer) {
     return fontOptions;

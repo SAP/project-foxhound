@@ -29,13 +29,7 @@ ALL_AXES = [(axis, False) for axis in PHYSICAL_AXES] + [
 ]
 
 SYSTEM_FONT_LONGHANDS = """font_family font_size font_style
-                           font_variant_caps font_stretch font_kerning
-                           font_variant_position font_weight
-                           font_size_adjust font_variant_alternates
-                           font_variant_ligatures font_variant_east_asian
-                           font_variant_numeric font_language_override
-                           font_feature_settings font_variation_settings
-                           font_optical_sizing""".split()
+                           font_stretch font_weight""".split()
 
 # Bitfield values for all rule types which can have property declarations.
 STYLE_RULE = 1 << 0
@@ -318,6 +312,7 @@ class Longhand(Property):
         simple_vector_bindings=False,
         vector=False,
         servo_restyle_damage="repaint",
+        affects=None,
     ):
         Property.__init__(
             self,
@@ -332,6 +327,9 @@ class Longhand(Property):
             extra_prefixes=extra_prefixes,
             flags=flags,
         )
+
+        self.affects = affects
+        self.flags += self.affects_flags()
 
         self.keyword = keyword
         self.predefined_type = predefined_type
@@ -382,6 +380,29 @@ class Longhand(Property):
 
         # See compute_damage for the various values this can take
         self.servo_restyle_damage = servo_restyle_damage
+
+    def affects_flags(self):
+        # Layout is the stronger hint. This property animation affects layout
+        # or frame construction. `display` or `width` are examples that should
+        # use this.
+        if self.affects == "layout":
+            return ["AFFECTS_LAYOUT"]
+        # This property doesn't affect layout, but affects overflow.
+        # `transform` and co. are examples of this.
+        if self.affects == "overflow":
+            return ["AFFECTS_OVERFLOW"]
+        # This property affects the rendered output but doesn't affect layout.
+        # `opacity`, `color`, or `z-index` are examples of this.
+        if self.affects == "paint":
+            return ["AFFECTS_PAINT"]
+        # This property doesn't affect rendering in any way.
+        # `user-select` is an example of this.
+        assert self.affects == "", (
+            "Property "
+            + self.name
+            + ': affects must be specified and be one of ["layout", "overflow", "paint", ""], see Longhand.affects_flags for documentation'
+        )
+        return []
 
     @staticmethod
     def type():
@@ -453,6 +474,7 @@ class Longhand(Property):
                 "AlignSelf",
                 "Appearance",
                 "AspectRatio",
+                "BaselineSource",
                 "BreakBetween",
                 "BreakWithin",
                 "BackgroundRepeat",
@@ -462,13 +484,15 @@ class Longhand(Property):
                 "Clear",
                 "ColumnCount",
                 "Contain",
+                "ContentVisibility",
+                "ContainerType",
                 "Display",
                 "FillRule",
                 "Float",
+                "FontLanguageOverride",
                 "FontSizeAdjust",
                 "FontStretch",
                 "FontStyle",
-                "FontStyleAdjust",
                 "FontSynthesis",
                 "FontVariantEastAsian",
                 "FontVariantLigatures",
@@ -483,12 +507,15 @@ class Longhand(Property):
                 "JustifyItems",
                 "JustifySelf",
                 "LineBreak",
+                "LineClamp",
                 "MasonryAutoFlow",
-                "MozForceBrokenImageIcon",
+                "ui::MozTheme",
+                "BoolInteger",
                 "text::MozControlCharacterVisibility",
                 "MathDepth",
                 "MozScriptMinSize",
                 "MozScriptSizeMultiplier",
+                "TransformBox",
                 "TextDecorationSkipInk",
                 "NonNegativeNumber",
                 "OffsetRotate",
@@ -499,9 +526,10 @@ class Longhand(Property):
                 "OverflowClipBox",
                 "OverflowWrap",
                 "OverscrollBehavior",
+                "PageOrientation",
                 "Percentage",
-                "PositiveIntegerOrNone",
                 "PrintColorAdjust",
+                "ForcedColorAdjust",
                 "Resize",
                 "RubyPosition",
                 "SVGOpacity",
@@ -509,6 +537,7 @@ class Longhand(Property):
                 "ScrollbarGutter",
                 "ScrollSnapAlign",
                 "ScrollSnapAxis",
+                "ScrollSnapStop",
                 "ScrollSnapStrictness",
                 "ScrollSnapType",
                 "TextAlign",
@@ -523,8 +552,9 @@ class Longhand(Property):
                 "UserSelect",
                 "WordBreak",
                 "XSpan",
-                "XTextZoom",
+                "XTextScale",
                 "ZIndex",
+                "Zoom",
             }
         if self.name == "overflow-y":
             return True
@@ -603,6 +633,7 @@ class Alias(object):
         self.gecko_pref = gecko_pref
         self.transitionable = original.transitionable
         self.rule_types_allowed = original.rule_types_allowed
+        self.flags = original.flags
 
     @staticmethod
     def type():
@@ -672,6 +703,7 @@ class StyleStruct(object):
         self.gecko_name = gecko_name or name
         self.gecko_ffi_name = "nsStyle" + self.gecko_name
         self.additional_methods = additional_methods or []
+        self.document_dependent = self.gecko_name in ["Font", "Visibility", "Text"]
 
 
 class PropertiesData(object):
@@ -702,7 +734,7 @@ class PropertiesData(object):
         # FIXME Servo's DOM architecture doesn't support vendor-prefixed properties.
         #       See servo/servo#14941.
         if self.engine == "gecko":
-            for (prefix, pref) in property.extra_prefixes:
+            for prefix, pref in property.extra_prefixes:
                 property.aliases.append(("-%s-%s" % (prefix, property.name), pref))
 
     def declare_longhand(self, name, engines=None, **kwargs):
@@ -774,6 +806,7 @@ def _remove_common_first_line_and_first_letter_properties(props, engine):
     props.remove("text-align")
     props.remove("text-justify")
     props.remove("white-space")
+    props.remove("text-wrap")
     props.remove("word-break")
     props.remove("text-indent")
 
@@ -809,6 +842,8 @@ class PropertyRestrictions:
                 "-webkit-text-fill-color",
                 "-webkit-text-stroke-color",
                 "vertical-align",
+                # Will become shorthand of vertical-align (Bug 1830771)
+                "baseline-source",
                 "line-height",
                 # Kinda like css-backgrounds?
                 "background-blend-mode",
@@ -842,6 +877,8 @@ class PropertyRestrictions:
                 "-webkit-text-fill-color",
                 "-webkit-text-stroke-color",
                 "vertical-align",
+                # Will become shorthand of vertical-align (Bug 1830771)
+                "baseline-source",
                 "line-height",
                 # Kinda like css-backgrounds?
                 "background-blend-mode",
@@ -872,6 +909,7 @@ class PropertyRestrictions:
         props = PropertyRestrictions.first_line(data)
         props.add("opacity")
         props.add("white-space")
+        props.add("text-wrap")
         props.add("text-overflow")
         props.add("text-align")
         props.add("text-justify")
@@ -883,6 +921,7 @@ class PropertyRestrictions:
         return set(
             [
                 "white-space",
+                "text-wrap",
                 "color",
                 "text-combine-upright",
                 "text-transform",
@@ -907,10 +946,10 @@ class PropertyRestrictions:
                 "visibility",
                 "text-shadow",
                 "white-space",
+                "text-wrap",
                 "text-combine-upright",
                 "ruby-position",
                 # XXX Should these really apply to cue?
-                "font-synthesis",
                 "-moz-osx-font-smoothing",
                 # FIXME(emilio): background-blend-mode should be part of the
                 # background shorthand, and get reset, per
@@ -921,6 +960,7 @@ class PropertyRestrictions:
             + PropertyRestrictions.shorthand(data, "background")
             + PropertyRestrictions.shorthand(data, "outline")
             + PropertyRestrictions.shorthand(data, "font")
+            + PropertyRestrictions.shorthand(data, "font-synthesis")
         )
 
 

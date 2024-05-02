@@ -40,7 +40,10 @@ nsFont::MaxDifference nsFont::CalcDifference(const nsFont& aOther) const {
       (stretch != aOther.stretch) || (size != aOther.size) ||
       (sizeAdjust != aOther.sizeAdjust) || (family != aOther.family) ||
       (kerning != aOther.kerning) || (opticalSizing != aOther.opticalSizing) ||
-      (synthesis != aOther.synthesis) ||
+      (synthesisWeight != aOther.synthesisWeight) ||
+      (synthesisStyle != aOther.synthesisStyle) ||
+      (synthesisSmallCaps != aOther.synthesisSmallCaps) ||
+      (synthesisPosition != aOther.synthesisPosition) ||
       (fontFeatureSettings != aOther.fontFeatureSettings) ||
       (fontVariationSettings != aOther.fontVariationSettings) ||
       (languageOverride != aOther.languageOverride) ||
@@ -50,12 +53,12 @@ nsFont::MaxDifference nsFont::CalcDifference(const nsFont& aOther) const {
       (variantLigatures != aOther.variantLigatures) ||
       (variantNumeric != aOther.variantNumeric) ||
       (variantPosition != aOther.variantPosition) ||
-      (variantWidth != aOther.variantWidth)) {
+      (variantWidth != aOther.variantWidth) ||
+      (variantEmoji != aOther.variantEmoji)) {
     return MaxDifference::eLayoutAffecting;
   }
 
-  if ((smoothing != aOther.smoothing) ||
-      (fontSmoothingBackgroundColor != aOther.fontSmoothingBackgroundColor)) {
+  if (smoothing != aOther.smoothing) {
     return MaxDifference::eVisual;
   }
 
@@ -263,8 +266,6 @@ void nsFont::AddFontFeaturesToStyle(gfxFontStyle* aStyle,
   if (smoothing == NS_FONT_SMOOTHING_GRAYSCALE) {
     aStyle->useGrayscaleAntialiasing = true;
   }
-
-  aStyle->fontSmoothingBackgroundColor = fontSmoothingBackgroundColor.ToColor();
 }
 
 void nsFont::AddFontVariationsToStyle(gfxFontStyle* aStyle) const {

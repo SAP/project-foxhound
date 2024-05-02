@@ -23,7 +23,7 @@ mozilla::ipc::IPCResult TestActorPunningParent::RecvPun(
 // By default, fatal errors kill the parent process, but this makes it
 // hard to test, so instead we use the previous behavior and kill the
 // child process.
-void TestActorPunningParent::HandleFatalError(const char* aErrorMsg) const {
+void TestActorPunningParent::HandleFatalError(const char* aErrorMsg) {
   if (!!strcmp(aErrorMsg, "Error deserializing 'PTestActorPunningSubParent'")) {
     fail("wrong fatal error");
   }
@@ -107,18 +107,17 @@ namespace IPC {
 using namespace mozilla::_ipdltest;
 using namespace mozilla::ipc;
 
-/*static*/ void ParamTraits<Bad>::Write(Message* aMsg,
+/*static*/ void ParamTraits<Bad>::Write(MessageWriter* aWriter,
                                         const paramType& aParam) {
   // Skip past the sentinel for the actor as well as the actor.
-  int32_t* ptr = aMsg->GetInt32PtrForTest(2 * sizeof(int32_t));
+  int32_t* ptr = aWriter->GetInt32PtrForTest(2 * sizeof(int32_t));
   ActorHandle* ah = reinterpret_cast<ActorHandle*>(ptr);
   if (ah->mId != -3)
     fail("guessed wrong offset (value is %d, should be -3)", ah->mId);
   ah->mId = -2;
 }
 
-/*static*/ bool ParamTraits<Bad>::Read(const Message* aMsg,
-                                       PickleIterator* aIter,
+/*static*/ bool ParamTraits<Bad>::Read(MessageReader* aReader,
                                        paramType* aResult) {
   return true;
 }

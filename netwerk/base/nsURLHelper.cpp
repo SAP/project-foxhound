@@ -25,6 +25,7 @@
 #include "mozilla/Tokenizer.h"
 #include "nsEscape.h"
 #include "nsDOMString.h"
+#include "nsTaintingUtils.h"
 #include "mozilla/net/rust_helper.h"
 #include "mozilla/net/DNS.h"
 
@@ -473,7 +474,7 @@ void net_FilterURIString(const nsACString& input, nsACString& result) {
   }
 
   result.Assign(Substring(newStart, newEnd));
-  result.AssignTaint(input.Taint().safeCopy().subtaint(std::distance(newStart, start), std::distance(newEnd, end)));
+  result.AssignTaint(input.Taint().safeSubTaint(std::distance(newStart, start), std::distance(newEnd, end)));
   if (needsStrip) {
     result.StripTaggedASCII(mask);
   }
@@ -873,9 +874,8 @@ void net_ParseRequestContentType(const nsACString& aHeaderStr,
 }
 
 bool net_IsValidHostName(const nsACString& host) {
-  // A DNS name is limited to 255 bytes on the wire.
-  // In practice this means the host name is limited to 253 ascii characters.
-  if (StaticPrefs::network_dns_limit_253_chars() && host.Length() > 253) {
+  // The host name is limited to 253 ascii characters.
+  if (host.Length() > 253) {
     return false;
   }
 
@@ -909,6 +909,195 @@ bool net_IsValidIPv6Addr(const nsACString& aAddr) {
   return mozilla::net::rust_net_is_valid_ipv6_addr(&aAddr);
 }
 
+bool net_GetDefaultStatusTextForCode(uint16_t aCode, nsACString& aOutText) {
+  switch (aCode) {
+      // start with the most common
+    case 200:
+      aOutText.AssignLiteral("OK");
+      break;
+    case 404:
+      aOutText.AssignLiteral("Not Found");
+      break;
+    case 301:
+      aOutText.AssignLiteral("Moved Permanently");
+      break;
+    case 304:
+      aOutText.AssignLiteral("Not Modified");
+      break;
+    case 307:
+      aOutText.AssignLiteral("Temporary Redirect");
+      break;
+    case 500:
+      aOutText.AssignLiteral("Internal Server Error");
+      break;
+
+      // also well known
+    case 100:
+      aOutText.AssignLiteral("Continue");
+      break;
+    case 101:
+      aOutText.AssignLiteral("Switching Protocols");
+      break;
+    case 201:
+      aOutText.AssignLiteral("Created");
+      break;
+    case 202:
+      aOutText.AssignLiteral("Accepted");
+      break;
+    case 203:
+      aOutText.AssignLiteral("Non Authoritative");
+      break;
+    case 204:
+      aOutText.AssignLiteral("No Content");
+      break;
+    case 205:
+      aOutText.AssignLiteral("Reset Content");
+      break;
+    case 206:
+      aOutText.AssignLiteral("Partial Content");
+      break;
+    case 207:
+      aOutText.AssignLiteral("Multi-Status");
+      break;
+    case 208:
+      aOutText.AssignLiteral("Already Reported");
+      break;
+    case 300:
+      aOutText.AssignLiteral("Multiple Choices");
+      break;
+    case 302:
+      aOutText.AssignLiteral("Found");
+      break;
+    case 303:
+      aOutText.AssignLiteral("See Other");
+      break;
+    case 305:
+      aOutText.AssignLiteral("Use Proxy");
+      break;
+    case 308:
+      aOutText.AssignLiteral("Permanent Redirect");
+      break;
+    case 400:
+      aOutText.AssignLiteral("Bad Request");
+      break;
+    case 401:
+      aOutText.AssignLiteral("Unauthorized");
+      break;
+    case 402:
+      aOutText.AssignLiteral("Payment Required");
+      break;
+    case 403:
+      aOutText.AssignLiteral("Forbidden");
+      break;
+    case 405:
+      aOutText.AssignLiteral("Method Not Allowed");
+      break;
+    case 406:
+      aOutText.AssignLiteral("Not Acceptable");
+      break;
+    case 407:
+      aOutText.AssignLiteral("Proxy Authentication Required");
+      break;
+    case 408:
+      aOutText.AssignLiteral("Request Timeout");
+      break;
+    case 409:
+      aOutText.AssignLiteral("Conflict");
+      break;
+    case 410:
+      aOutText.AssignLiteral("Gone");
+      break;
+    case 411:
+      aOutText.AssignLiteral("Length Required");
+      break;
+    case 412:
+      aOutText.AssignLiteral("Precondition Failed");
+      break;
+    case 413:
+      aOutText.AssignLiteral("Request Entity Too Large");
+      break;
+    case 414:
+      aOutText.AssignLiteral("Request URI Too Long");
+      break;
+    case 415:
+      aOutText.AssignLiteral("Unsupported Media Type");
+      break;
+    case 416:
+      aOutText.AssignLiteral("Requested Range Not Satisfiable");
+      break;
+    case 417:
+      aOutText.AssignLiteral("Expectation Failed");
+      break;
+    case 418:
+      aOutText.AssignLiteral("I'm a teapot");
+      break;
+    case 421:
+      aOutText.AssignLiteral("Misdirected Request");
+      break;
+    case 422:
+      aOutText.AssignLiteral("Unprocessable Entity");
+      break;
+    case 423:
+      aOutText.AssignLiteral("Locked");
+      break;
+    case 424:
+      aOutText.AssignLiteral("Failed Dependency");
+      break;
+    case 425:
+      aOutText.AssignLiteral("Too Early");
+      break;
+    case 426:
+      aOutText.AssignLiteral("Upgrade Required");
+      break;
+    case 428:
+      aOutText.AssignLiteral("Precondition Required");
+      break;
+    case 429:
+      aOutText.AssignLiteral("Too Many Requests");
+      break;
+    case 431:
+      aOutText.AssignLiteral("Request Header Fields Too Large");
+      break;
+    case 451:
+      aOutText.AssignLiteral("Unavailable For Legal Reasons");
+      break;
+    case 501:
+      aOutText.AssignLiteral("Not Implemented");
+      break;
+    case 502:
+      aOutText.AssignLiteral("Bad Gateway");
+      break;
+    case 503:
+      aOutText.AssignLiteral("Service Unavailable");
+      break;
+    case 504:
+      aOutText.AssignLiteral("Gateway Timeout");
+      break;
+    case 505:
+      aOutText.AssignLiteral("HTTP Version Unsupported");
+      break;
+    case 506:
+      aOutText.AssignLiteral("Variant Also Negotiates");
+      break;
+    case 507:
+      aOutText.AssignLiteral("Insufficient Storage ");
+      break;
+    case 508:
+      aOutText.AssignLiteral("Loop Detected");
+      break;
+    case 510:
+      aOutText.AssignLiteral("Not Extended");
+      break;
+    case 511:
+      aOutText.AssignLiteral("Network Authentication Required");
+      break;
+    default:
+      aOutText.AssignLiteral("No Reason Phrase");
+      return false;
+  }
+  return true;
+}
+
 namespace mozilla {
 static auto MakeNameMatcher(const nsAString& aName) {
   return [&aName](const auto& param) { return param.mKey.Equals(aName); };
@@ -916,6 +1105,13 @@ static auto MakeNameMatcher(const nsAString& aName) {
 
 bool URLParams::Has(const nsAString& aName) {
   return std::any_of(mParams.cbegin(), mParams.cend(), MakeNameMatcher(aName));
+}
+
+bool URLParams::Has(const nsAString& aName, const nsAString& aValue) {
+  return std::any_of(
+      mParams.cbegin(), mParams.cend(), [&aName, &aValue](const auto& param) {
+        return param.mKey.Equals(aName) && param.mValue.Equals(aValue);
+      });
 }
 
 void URLParams::Get(const nsAString& aName, nsString& aRetval) {
@@ -981,6 +1177,12 @@ void URLParams::Delete(const nsAString& aName) {
       [&aName](const auto& param) { return param.mKey.Equals(aName); });
 }
 
+void URLParams::Delete(const nsAString& aName, const nsAString& aValue) {
+  mParams.RemoveElementsBy([&aName, &aValue](const auto& param) {
+    return param.mKey.Equals(aName) && param.mValue.Equals(aValue);
+  });
+}
+
 /* static */
 void URLParams::ConvertString(const nsACString& aInput, nsAString& aOutput) {
   if (NS_FAILED(UTF_8_ENCODING->DecodeWithoutBOMHandling(aInput, aOutput))) {
@@ -997,7 +1199,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
   for (const char* iter = start; iter != end;) {
     // replace '+' with U+0020
     if (*iter == '+') {
-      unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, iter)), unescaped.Length());
+      unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), unescaped.Length());
       unescaped.Append(' ');
       ++iter;
       continue;
@@ -1022,11 +1224,11 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
       if (first != end && second != end && asciiHexDigit(*first) &&
           asciiHexDigit(*second)) {
         // Taintfox: this is an approximation as we compress the taint of 3 chars (e.g. %40) into just one
-        unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, first)), unescaped.Length());
+        unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, first)), unescaped.Length());
         unescaped.Append(hexDigit(*first) * 16 + hexDigit(*second));
         iter = second + 1;
       } else {
-        unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, iter)), unescaped.Length());
+        unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), unescaped.Length());
         unescaped.Append('%');
         ++iter;
       }
@@ -1034,7 +1236,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
       continue;
     }
     // Taintfox: append single char taint
-    unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, iter)), unescaped.Length());
+    unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), unescaped.Length());
     unescaped.Append(*iter);
     ++iter;
   }
@@ -1057,13 +1259,13 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
   if (iter != aEnd) {
     string.Rebind(aStart, iter);
     // Taintfox: propagate taint
-    string.AssignTaint(aTaint.safeCopy().subtaint(std::distance(stringStart, aStart),
+    string.AssignTaint(aTaint.safeSubTaint(std::distance(stringStart, aStart),
                                                   std::distance(stringStart, iter)));
     aStart = iter + 1;
   } else {
     string.Rebind(aStart, aEnd);
     // Taintfox: propagate taint
-    string.AssignTaint(aTaint.safeCopy().subtaint(std::distance(stringStart, aStart),
+    string.AssignTaint(aTaint.safeSubTaint(std::distance(stringStart, aStart),
                                                   std::distance(stringStart, aEnd)));
     aStart = aEnd;
   }
@@ -1082,11 +1284,11 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
   if (eqIter != eqEnd) {
     name.Rebind(eqStart, eqIter);
     // Taintfox: propagate taint
-    name.AssignTaint(string.Taint().safeCopy().subtaint(std::distance(eqStart, eqStart),
+    name.AssignTaint(string.Taint().safeSubTaint(std::distance(eqStart, eqStart),
                                                         std::distance(eqStart, eqIter)));
     value.Rebind(eqIter + 1, eqEnd);
     // Taintfox: propagate taint
-    value.AssignTaint(string.Taint().safeCopy().subtaint(std::distance(eqStart, eqIter + 1),
+    value.AssignTaint(string.Taint().safeSubTaint(std::distance(eqStart, eqIter + 1),
                                                          std::distance(eqStart, eqEnd)));
   } else {
     // Taintfox: taint should be propagated here
@@ -1128,8 +1330,15 @@ namespace {
 void SerializeString(const nsCString& aInput, nsAString& aValue) {
   const unsigned char* p = (const unsigned char*)aInput.get();
   const unsigned char* end = p + aInput.Length();
-
+  size_t oi = 0;
+  // Taintfox: Keeps track of position on where to insert
+  size_t ti = 0;
+  auto in_taint = aInput.Taint();
+  auto current = in_taint.begin();
   while (p != end) {
+    if(current != in_taint.end() && oi == current->begin()) {
+      ti = aValue.Length();
+    }
     // ' ' to '+'
     if (*p == 0x20) {
       aValue.Append(0x2B);
@@ -1141,7 +1350,12 @@ void SerializeString(const nsCString& aInput, nsAString& aValue) {
     } else {
       aValue.AppendPrintf("%%%.2X", *p);
     }
-
+    ++oi;
+    if(current != in_taint.end() && oi == current->end()) {
+      aValue.Taint().append(TaintRange(ti, aValue.Length(), current->flow()));
+      current++;
+    }
+    
     ++p;
   }
 }
@@ -1171,6 +1385,7 @@ void URLParams::Serialize(nsAString& aValue, bool aEncode) const {
       aValue.Append(mParams[i].mValue);
     }
   }
+  MarkTaintOperation(aValue, "URLHelper.Serialize");
 }
 
 void URLParams::Sort() {

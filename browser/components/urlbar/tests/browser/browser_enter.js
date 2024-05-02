@@ -3,21 +3,18 @@
 
 "use strict";
 
-const TEST_VALUE = "example.com/\xF7?\xF7";
-const START_VALUE = "example.com/%C3%B7?%C3%B7";
+const TEST_VALUE = "http://example.com/\xF7?\xF7";
+const START_VALUE = "http://example.com/%C3%B7?%C3%B7";
 
-add_task(async function setup() {
-  const engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
-  );
-  engine.alias = "@default";
-
-  const defaultEngine = Services.search.defaultEngine;
-  Services.search.defaultEngine = engine;
-
-  registerCleanupFunction(async function() {
-    Services.search.defaultEngine = defaultEngine;
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
   });
+  const engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine.xml",
+    setAsDefault: true,
+  });
+  engine.alias = "@default";
 });
 
 add_task(async function returnKeypress() {
@@ -31,7 +28,7 @@ add_task(async function returnKeypress() {
   // Check url bar and selected tab.
   is(
     gURLBar.value,
-    TEST_VALUE,
+    UrlbarTestUtils.trimURL(TEST_VALUE),
     "Urlbar should preserve the value on return keypress"
   );
   is(gBrowser.selectedTab, tab, "New URL was loaded in the current tab");
@@ -57,7 +54,7 @@ add_task(async function altReturnKeypress() {
   // Check url bar and selected tab.
   is(
     gURLBar.value,
-    TEST_VALUE,
+    UrlbarTestUtils.trimURL(TEST_VALUE),
     "Urlbar should preserve the value on return keypress"
   );
   isnot(gBrowser.selectedTab, tab, "New URL was loaded in a new tab");
@@ -84,7 +81,7 @@ add_task(async function altGrReturnKeypress() {
   // Check url bar and selected tab.
   is(
     gURLBar.value,
-    TEST_VALUE,
+    UrlbarTestUtils.trimURL(TEST_VALUE),
     "Urlbar should preserve the value on return keypress"
   );
   isnot(gBrowser.selectedTab, tab, "New URL was loaded in a new tab");
@@ -96,6 +93,12 @@ add_task(async function altGrReturnKeypress() {
 
 add_task(async function searchOnEnterNoPick() {
   info("Search on Enter without picking a urlbar result");
+  await SpecialPowers.pushPrefEnv({
+    // The test checks that the untrimmed value is equal to the spec.
+    // When using showSearchTerms, the untrimmed value becomes
+    // the search terms.
+    set: [["browser.urlbar.showSearchTerms.featureGate", false]],
+  });
 
   // Why is BrowserTestUtils.openNewForegroundTab not causing the bug?
   let promiseTabOpened = BrowserTestUtils.waitForEvent(
@@ -129,6 +132,7 @@ add_task(async function searchOnEnterNoPick() {
 
   // Cleanup.
   BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function searchOnEnterSoon() {
@@ -273,7 +277,7 @@ add_task(async function typeCharWhileProcessingEnter() {
   const onLoad = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
-    `http://${START_VALUE}`
+    START_VALUE
   );
   gURLBar.focus();
 
@@ -292,8 +296,8 @@ add_task(async function typeCharWhileProcessingEnter() {
   EventUtils.synthesizeKey("KEY_Enter", { type: "keyup" });
 
   Assert.equal(
-    gURLBar.inputField.value,
-    TEST_VALUE,
+    gURLBar.value,
+    UrlbarTestUtils.trimURL(TEST_VALUE),
     "The value of urlbar is correct"
   );
 

@@ -34,20 +34,26 @@ OmxDecoderModule* OmxDecoderModule::Create() {
 
 already_AddRefed<MediaDataDecoder> OmxDecoderModule::CreateVideoDecoder(
     const CreateDecoderParams& aParams) {
-  RefPtr<OmxDataDecoder> decoder =
-      new OmxDataDecoder(aParams.mConfig, aParams.mImageContainer);
+  RefPtr<OmxDataDecoder> decoder = new OmxDataDecoder(
+      aParams.mConfig, aParams.mImageContainer, aParams.mTrackingId);
   return decoder.forget();
 }
 
 already_AddRefed<MediaDataDecoder> OmxDecoderModule::CreateAudioDecoder(
     const CreateDecoderParams& aParams) {
-  RefPtr<OmxDataDecoder> decoder = new OmxDataDecoder(aParams.mConfig, nullptr);
+  RefPtr<OmxDataDecoder> decoder =
+      new OmxDataDecoder(aParams.mConfig, nullptr, aParams.mTrackingId);
   return decoder.forget();
 }
 
-bool OmxDecoderModule::SupportsMimeType(
+media::DecodeSupportSet OmxDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
-  return OmxPlatformLayer::SupportsMimeType(aMimeType);
+  if (OmxPlatformLayer::SupportsMimeType(aMimeType)) {
+    // TODO: Note that we do not yet distinguish between SW/HW decode support.
+    //       Will be done in bug 1754239.
+    return media::DecodeSupport::SoftwareDecode;
+  }
+  return media::DecodeSupportSet{};
 }
 
 }  // namespace mozilla

@@ -12,9 +12,7 @@
 #include <ApplicationServices/ApplicationServices.h>
 #include <Foundation/Foundation.h>
 
-#include "HyperTextAccessibleWrap.h"
-#include "PlatformExtTypes.h"
-#include "SDKDeclarations.h"
+#include "TextLeafRange.h"
 
 namespace mozilla {
 namespace a11y {
@@ -24,15 +22,15 @@ class GeckoTextMarkerRange;
 
 class GeckoTextMarker final {
  public:
-  GeckoTextMarker(Accessible* aContainer, int32_t aOffset)
-      : mContainer(aContainer), mOffset(aOffset) {}
+  GeckoTextMarker(Accessible* aAcc, int32_t aOffset);
 
-  GeckoTextMarker(const GeckoTextMarker& aPoint)
-      : mContainer(aPoint.mContainer), mOffset(aPoint.mOffset) {}
+  explicit GeckoTextMarker(const TextLeafPoint& aTextLeafPoint)
+      : mPoint(aTextLeafPoint) {}
 
-  GeckoTextMarker(Accessible* aDoc, AXTextMarkerRef aTextMarker);
+  GeckoTextMarker() : mPoint() {}
 
-  GeckoTextMarker() : mContainer(nullptr), mOffset(0) {}
+  static GeckoTextMarker MarkerFromAXTextMarker(Accessible* aDoc,
+                                                AXTextMarkerRef aTextMarker);
 
   static GeckoTextMarker MarkerFromIndex(Accessible* aRoot, int32_t aIndex);
 
@@ -42,48 +40,62 @@ class GeckoTextMarker final {
 
   bool Previous();
 
-  // Return a range with the given type relative to this marker.
-  GeckoTextMarkerRange Range(EWhichRange aRangeType);
+  GeckoTextMarkerRange LeftWordRange() const;
+
+  GeckoTextMarkerRange RightWordRange() const;
+
+  GeckoTextMarkerRange LineRange() const;
+
+  GeckoTextMarkerRange LeftLineRange() const;
+
+  GeckoTextMarkerRange RightLineRange() const;
+
+  GeckoTextMarkerRange ParagraphRange() const;
+
+  GeckoTextMarkerRange StyleRange() const;
+
+  int32_t& Offset() { return mPoint.mOffset; }
 
   Accessible* Leaf();
 
-  bool IsValid() const { return !!mContainer; };
+  Accessible* Acc() const { return mPoint.mAcc; }
 
-  bool operator<(const GeckoTextMarker& aPoint) const;
+  bool IsValid() const { return !!mPoint; };
 
-  bool operator==(const GeckoTextMarker& aPoint) const {
-    return mContainer == aPoint.mContainer && mOffset == aPoint.mOffset;
+  bool operator<(const GeckoTextMarker& aOther) const {
+    return mPoint < aOther.mPoint;
   }
 
-  Accessible* mContainer;
-  int32_t mOffset;
-
-  HyperTextAccessibleWrap* ContainerAsHyperTextWrap() const {
-    return (mContainer && mContainer->IsLocal())
-               ? static_cast<HyperTextAccessibleWrap*>(
-                     mContainer->AsLocal()->AsHyperText())
-               : nullptr;
+  bool operator==(const GeckoTextMarker& aOther) const {
+    return mPoint == aOther.mPoint;
   }
 
- private:
-  bool IsEditableRoot();
+  TextLeafPoint mPoint;
 };
 
 class GeckoTextMarkerRange final {
  public:
   GeckoTextMarkerRange(const GeckoTextMarker& aStart,
                        const GeckoTextMarker& aEnd)
-      : mStart(aStart), mEnd(aEnd) {}
+      : mRange(aStart.mPoint, aEnd.mPoint) {}
+
+  GeckoTextMarkerRange(const TextLeafPoint& aStart, const TextLeafPoint& aEnd)
+      : mRange(aStart, aEnd) {}
 
   GeckoTextMarkerRange() {}
 
-  GeckoTextMarkerRange(Accessible* aDoc, AXTextMarkerRangeRef aTextMarkerRange);
-
   explicit GeckoTextMarkerRange(Accessible* aAccessible);
+
+  static GeckoTextMarkerRange MarkerRangeFromAXTextMarkerRange(
+      Accessible* aDoc, AXTextMarkerRangeRef aTextMarkerRange);
 
   AXTextMarkerRangeRef CreateAXTextMarkerRange();
 
-  bool IsValid() const { return !!mStart.mContainer && !!mEnd.mContainer; };
+  bool IsValid() const { return !!mRange.Start() && !!mRange.End(); };
+
+  GeckoTextMarker Start() { return GeckoTextMarker(mRange.Start()); }
+
+  GeckoTextMarker End() { return GeckoTextMarker(mRange.End()); }
 
   /**
    * Return text enclosed by the range.
@@ -115,10 +127,9 @@ class GeckoTextMarkerRange final {
    * Return true if successfully cropped. false if the range does not intersect
    * with the container.
    */
-  bool Crop(Accessible* aContainer);
+  bool Crop(Accessible* aContainer) { return mRange.Crop(aContainer); }
 
-  GeckoTextMarker mStart;
-  GeckoTextMarker mEnd;
+  TextLeafRange mRange;
 };
 
 }  // namespace a11y

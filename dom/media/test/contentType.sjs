@@ -10,7 +10,7 @@ function parseQuery(request, key) {
     if (p.indexOf(key + "=") == 0) {
       return p.substring(key.length + 1);
     }
-    if (p.indexOf("=") < 0 && key == "") {
+    if (!p.includes("=") && key == "") {
       return p;
     }
   }
@@ -22,21 +22,13 @@ function handleRequest(request, response) {
     // Get the filename to send back.
     var filename = parseQuery(request, "file");
 
-    const CC = Components.Constructor;
-    const BinaryOutputStream = CC(
-      "@mozilla.org/binaryoutputstream;1",
-      "nsIBinaryOutputStream",
-      "setOutputStream"
+    var file = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+    var fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+      Ci.nsIFileInputStream
     );
-    var file = Components.classes["@mozilla.org/file/directory_service;1"]
-      .getService(Components.interfaces.nsIProperties)
-      .get("CurWorkD", Components.interfaces.nsIFile);
-    var fis = Components.classes[
-      "@mozilla.org/network/file-input-stream;1"
-    ].createInstance(Components.interfaces.nsIFileInputStream);
-    var bis = Components.classes[
-      "@mozilla.org/binaryinputstream;1"
-    ].createInstance(Components.interfaces.nsIBinaryInputStream);
+    var bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+      Ci.nsIBinaryInputStream
+    );
     var paths = "tests/dom/media/test/" + filename;
     dump(paths + "\n");
     var split = paths.split("/");
@@ -51,8 +43,8 @@ function handleRequest(request, response) {
     if (request.hasHeader("Range")) {
       var range = request.getHeader("Range");
       var parts = range.replace(/bytes=/, "").split("-");
-      var partialstart = parts[0];
-      var partialend = parts[1];
+      partialstart = parts[0];
+      partialend = parts[1];
       if (!partialend.length) {
         partialend = file.fileSize - 1;
       }
@@ -62,13 +54,13 @@ function handleRequest(request, response) {
       response.setHeader("Content-Range", contentRange);
     }
 
-    fis.seek(Components.interfaces.nsISeekableStream.NS_SEEK_SET, partialstart);
+    fis.seek(Ci.nsISeekableStream.NS_SEEK_SET, partialstart);
     bis.setInputStream(fis);
 
     var sendContentType = parseQuery(request, "nomime");
-    if (sendContentType == false) {
+    if (!sendContentType) {
       var contentType = parseQuery(request, "type");
-      if (contentType == false) {
+      if (!contentType) {
         // This should not happen.
         dump("No type specified without having 'nomime' in parameters.");
         return;

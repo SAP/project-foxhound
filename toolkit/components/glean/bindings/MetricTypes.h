@@ -18,8 +18,10 @@
 #include "mozilla/glean/bindings/Rate.h"
 #include "mozilla/glean/bindings/String.h"
 #include "mozilla/glean/bindings/StringList.h"
+#include "mozilla/glean/bindings/Text.h"
 #include "mozilla/glean/bindings/Timespan.h"
 #include "mozilla/glean/bindings/TimingDistribution.h"
+#include "mozilla/glean/bindings/Url.h"
 #include "mozilla/glean/bindings/Uuid.h"
 
 #endif  // mozilla_Glean_MetricTypes_h

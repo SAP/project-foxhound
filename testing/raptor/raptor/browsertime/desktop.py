@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from logger.logger import RaptorLogger
 from perftest import PerftestDesktop
 
@@ -28,6 +26,7 @@ class BrowsertimeDesktop(PerftestDesktop, Browsertime):
         if self.config["app"] in (
             "chrome",
             "chromium",
+            "custom-car",
         ):
             return args_list + [
                 "--browser",

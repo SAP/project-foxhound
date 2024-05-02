@@ -12,7 +12,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1223372
   <script type="application/javascript">
 
 /** Test for Bug 1223372 **/
-const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
+const {TestUtils} = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
 
 async function go() {
     SimpleTest.waitForExplicitFinish();
@@ -33,7 +35,7 @@ async function go() {
     ok(!checkDead(), "WindowProxy shouldn't be dead yet");
 
     // Load a content page in the chrome frame.
-    w.location = "http://example.org/tests/js/xpconnect/tests/mochitest/file_empty.html";
+    w.location = "https://example.org/tests/js/xpconnect/tests/mochitest/file_empty.html";
     tryWindow();
 
     function tryWindow() {

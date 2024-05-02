@@ -48,8 +48,8 @@ async function installRegularExtension(pathOrFile) {
  * Will use a mock file picker to select the file.
  */
 async function installTemporaryExtension(pathOrFile, name, document) {
-  const { Management } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm"
+  const { Management } = ChromeUtils.importESModule(
+    "resource://gre/modules/Extension.sys.mjs"
   );
 
   info("Install temporary extension named " + name);
@@ -63,7 +63,7 @@ async function installTemporaryExtension(pathOrFile, name, document) {
       }
 
       Management.off("startup", listener);
-      done();
+      done(extension);
     });
   });
 
@@ -71,13 +71,13 @@ async function installTemporaryExtension(pathOrFile, name, document) {
   document.querySelector(".qa-temporary-extension-install-button").click();
 
   info("Wait for addon to be installed");
-  await onAddonInstalled;
+  return onAddonInstalled;
 }
 /* exported installTemporaryExtension */
 
 function createTemporaryXPI(xpiData) {
-  const { ExtensionTestCommon } = ChromeUtils.import(
-    "resource://testing-common/ExtensionTestCommon.jsm"
+  const { ExtensionTestCommon } = ChromeUtils.importESModule(
+    "resource://testing-common/ExtensionTestCommon.sys.mjs"
   );
 
   const { background, files, id, name, extraProperties } = xpiData;
@@ -86,7 +86,7 @@ function createTemporaryXPI(xpiData) {
   const manifest = Object.assign(
     {},
     {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       manifest_version: 2,
       name,
       version: "1.0",
@@ -134,11 +134,15 @@ function updateTemporaryXPI(xpiData, existingXPI) {
  */
 async function installTemporaryExtensionFromXPI(xpiData, document) {
   const xpiFile = createTemporaryXPI(xpiData);
-  await installTemporaryExtension(xpiFile, xpiData.name, document);
+  const extension = await installTemporaryExtension(
+    xpiFile,
+    xpiData.name,
+    document
+  );
 
   info("Wait until the addon debug target appears");
   await waitUntil(() => findDebugTargetByText(xpiData.name, document));
-  return xpiFile;
+  return { extension, xpiFile };
 }
 /* exported installTemporaryExtensionFromXPI */
 
@@ -180,3 +184,79 @@ function prepareMockFilePicker(pathOrFile) {
   MockFilePicker.setFiles([file]);
 }
 /* exported prepareMockFilePicker */
+
+function promiseBackgroundContextEvent(extensionId, eventName) {
+  const { Management } = ChromeUtils.importESModule(
+    "resource://gre/modules/Extension.sys.mjs"
+  );
+
+  return new Promise(resolve => {
+    Management.on(eventName, function listener(_evtName, context) {
+      if (context.extension.id === extensionId) {
+        Management.off(eventName, listener);
+        resolve();
+      }
+    });
+  });
+}
+
+function promiseBackgroundContextLoaded(extensionId) {
+  return promiseBackgroundContextEvent(extensionId, "proxy-context-load");
+}
+/* exported promiseBackgroundContextLoaded */
+
+function promiseBackgroundContextUnloaded(extensionId) {
+  return promiseBackgroundContextEvent(extensionId, "proxy-context-unload");
+}
+/* exported promiseBackgroundContextUnloaded */
+
+async function assertBackgroundStatus(
+  extName,
+  { document, expectedStatus, targetElement }
+) {
+  const target = targetElement || findDebugTargetByText(extName, document);
+  const getBackgroundStatusElement = () =>
+    target.querySelector(".extension-backgroundscript__status");
+  await waitFor(
+    () =>
+      getBackgroundStatusElement()?.classList.contains(
+        `extension-backgroundscript__status--${expectedStatus}`
+      ),
+    `Wait ${extName} Background script status "${expectedStatus}" to be rendered`
+  );
+}
+/* exported assertBackgroundStatus */
+
+function getExtensionInstance(extensionId) {
+  const policy = WebExtensionPolicy.getByID(extensionId);
+  ok(policy, `Got a WebExtensionPolicy instance for ${extensionId}`);
+  ok(policy.extension, `Got an Extension class instance for ${extensionId}`);
+  return policy.extension;
+}
+/* exported getExtensionInstance */
+
+async function triggerExtensionEventPageIdleTimeout(extensionId) {
+  await getExtensionInstance(extensionId).terminateBackground();
+}
+/* exported triggerExtensionEventPageIdleTimeout */
+
+async function wakeupExtensionEventPage(extensionId) {
+  await getExtensionInstance(extensionId).wakeupBackground();
+}
+/* exported wakeupExtensionEventPage */
+
+function promiseTerminateBackgroundScriptIgnored(extensionId) {
+  const extension = getExtensionInstance(extensionId);
+  return new Promise(resolve => {
+    extension.once("background-script-suspend-ignored", resolve);
+  });
+}
+/* exported promiseTerminateBackgroundScriptIgnored */
+
+async function promiseBackgroundStatusUpdate(window) {
+  waitForDispatch(
+    window.AboutDebugging.store,
+    "EXTENSION_BGSCRIPT_STATUS_UPDATED"
+  );
+}
+/* exported promiseBackgroundStatusUpdate */

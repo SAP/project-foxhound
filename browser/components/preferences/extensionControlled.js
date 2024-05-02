@@ -6,20 +6,24 @@
 
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // Note: we get loaded in dialogs so we need to define our
 // own getters, separate from preferences.js .
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AddonManager: "resource://gre/modules/AddonManager.jsm",
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
-  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+
   ExtensionPreferencesManager:
-    "resource://gre/modules/ExtensionPreferencesManager.jsm",
-  ExtensionSettingsStore: "resource://gre/modules/ExtensionSettingsStore.jsm",
-  Management: "resource://gre/modules/Extension.jsm",
+    "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
+
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+
+  Management: "resource://gre/modules/Extension.sys.mjs",
 });
 
 const PREF_SETTING_TYPE = "prefs";
@@ -124,7 +128,7 @@ function settingNameToL10nID(settingName) {
       `Unknown extension controlled setting name: ${settingName}`
     );
   }
-  return `extension-controlled-${extensionControlledL10nKeys[settingName]}`;
+  return `extension-controlling-${extensionControlledL10nKeys[settingName]}`;
 }
 
 /**

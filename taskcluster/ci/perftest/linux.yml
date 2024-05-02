@@ -6,13 +6,15 @@ job-defaults:
     worker-type: t-linux-talos-1804
     fetches:
         toolchain:
-            - linux64-node-12
+            - linux64-node
             - linux64-geckodriver
         build:
             - artifact: target.mozinfo.json
             - artifact: target.common.tests.tar.gz
+            - artifact: target.condprof.tests.tar.gz
             - artifact: target.perftests.tests.tar.gz
             - artifact: target.xpcshell.tests.tar.gz
+            - artifact: target.mochitest.tests.tar.gz
             - artifact: target.tar.bz2
     platform: linux1804-64-shippable/opt
     require-build:
@@ -28,7 +30,7 @@ try-xpcshell:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             --on-try
             --flavor desktop-browser
             --output $MOZ_FETCHES_DIR/../artifacts
@@ -36,6 +38,50 @@ try-xpcshell:
             --xpcshell-mozinfo ${MOZ_FETCHES_DIR}/target.mozinfo.json
             --xpcshell-nodejs ${MOZ_FETCHES_DIR}/node/bin/node
             --xpcshell-xre-path ${MOZ_FETCHES_DIR}/firefox
+
+webpagetest-firefox:
+    description: Run webpagetest performance pageload tests on Firefox against Alexa top 50 websites
+    treeherder:
+        symbol: perftest(linux-webpagetest)
+        tier: 2
+    attributes:
+        cron: true
+    scopes:
+        - secrets:get:project/perftest/gecko/level-{level}/perftest-login
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            testing/performance/perftest_WPT_firefox_init_file.js
+            --flavor=webpagetest
+            --webpagetest
+            --perfherder
+            --perfherder-metrics median
+            --perfherder-app=firefox
+            --output $MOZ_FETCHES_DIR/../artifacts
+
+webpagetest-chrome:
+    description: Run webpagetest performance pageload tests on Chrome against Alexa top 50 websites
+    treeherder:
+        symbol: perftest-chrome(linux-webpagetest)
+        tier: 2
+    attributes:
+        cron: true
+    scopes:
+        - secrets:get:project/perftest/gecko/level-{level}/perftest-login
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            testing/performance/perftest_WPT_chrome_init_file.js
+            --flavor=webpagetest
+            --webpagetest
+            --perfherder
+            --perfherder-metrics median
+            --perfherder-app=chrome
+            --output $MOZ_FETCHES_DIR/../artifacts
 
 try-browsertime:
     description: Run ./mach perftest on Linux
@@ -45,7 +91,7 @@ try-browsertime:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             --on-try
             --browsertime-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor desktop-browser
@@ -63,7 +109,7 @@ domcount:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             browser/base/content/test/perftest_browser_xhtml_dom.js
             --browsertime-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor desktop-browser
@@ -83,7 +129,7 @@ http3:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             xpcshell/tests/netwerk/test/unit/test_http3_perf.js
             --flavor xpcshell
             --perfherder
@@ -108,7 +154,8 @@ livesites:
         # broken: bug 1678588
         # - [fb-scroll, netwerk/test/perf/perftest_http3_facebook_scroll.js]
         - [g-image, netwerk/test/perf/perftest_http3_google_image.js]
-        - [g-search, netwerk/test/perf/perftest_http3_google_search.js]
+        # broken: bug 1799655
+        # - [g-search, netwerk/test/perf/perftest_http3_google_search.js]
         - [lq-fetch, netwerk/test/perf/perftest_http3_lucasquicfetch.js]
         # broken: bug 1695871
         # - [ytw, netwerk/test/perf/perftest_http3_youtube_watch.js]
@@ -126,7 +173,7 @@ livesites:
             # broken: bug 1678588
             # fb-scroll: [navigationTiming, pageTimings, resources, firstPaint, timeToContentfulPaint, requestsPerSecond]
             g-image: [navigationTiming, pageTimings, resources, firstPaint, timeToContentfulPaint, imagesPerSecond, imageLoadTime]
-            g-search: [navigationTiming, pageTimings, resources, firstPaint, timeToContentfulPaint]
+            # g-search: [navigationTiming, pageTimings, resources, firstPaint, timeToContentfulPaint]
             lq-fetch: [navigationTiming, pageTimings, resources, timeToContentfulPaint, resourceLoadTime, imagesLoaded, imagesMissed]
             # broken: bug 1695871
             # ytw: [navigationTiming, pageTimings, resources, firstPaint, timeToContentfulPaint, droppedFrames, decodedFrames]
@@ -140,8 +187,8 @@ livesites:
         by-perftest:
             cloudflare:
                 - --perfherder-split-by browserScripts.pageinfo.url
-            g-search:
-                - --perfherder-split-by browserScripts.pageinfo.url
+            # g-search:
+            #     - --perfherder-split-by browserScripts.pageinfo.url
             lq-fetch:
                 - --perfherder-split-by browserScripts.pageinfo.url
             default: []
@@ -158,11 +205,11 @@ livesites:
             #     - ["25s", browsertime.waitTime=25000]
             #     - ["35s", browsertime.waitTime=35000]
             #     - ["60s", browsertime.waitTime=60000]
-            g-search:
-                - ["10s", browsertime.waitTime=10000]
-                - ["25s", browsertime.waitTime=25000]
-                - ["35s", browsertime.waitTime=35000]
-                - ["60s", browsertime.waitTime=60000]
+            # g-search:
+            #     - ["10s", browsertime.waitTime=10000]
+            #     - ["25s", browsertime.waitTime=25000]
+            #     - ["35s", browsertime.waitTime=35000]
+            #     - ["60s", browsertime.waitTime=60000]
             lq-fetch:
                 - [null, "browsertime.waitTime=1000,browsertime.cycles=5"]
             # broken: bug 1695871
@@ -176,7 +223,7 @@ livesites:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             {perftest_testname}
             --browsertime-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --browsertime-iterations 10
@@ -201,7 +248,7 @@ controlled:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             netwerk/test/perf/perftest_http3_controlled.js
             --browsertime-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --browsertime-iterations 1
@@ -224,7 +271,7 @@ perfstats:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             --browsertime-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor desktop-browser
             --browsertime-geckodriver ${MOZ_FETCHES_DIR}/geckodriver
@@ -252,7 +299,7 @@ record-websites:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
             cd $MOZ_FETCHES_DIR &&
-            python3.8 python/mozperftest/mozperftest/runner.py
+            python3 python/mozperftest/mozperftest/runner.py
             --flavor desktop-browser
             --verbose
             --browsertime-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
@@ -261,3 +308,44 @@ record-websites:
             --output $MOZ_FETCHES_DIR/../artifacts
             --hooks testing/performance/hooks_recording.py
             testing/performance/perftest_record.js
+
+side-by-side:
+    description: Run mozperftest side-by-side
+    treeherder:
+        symbol: perftest(side-by-side)
+        tier: 2
+    run:
+        using: run-task
+        sparse-profile: perftest
+        checkout: true
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            tools side-by-side
+            -t {test_name}
+            --base-platform {platform}
+            --base-revision {base_revision}
+            --new-revision {new_revision}
+            --base-branch {base_branch}
+            --new-branch {new_branch}
+
+mwu-change-detector:
+    description: Runs Mann-Whitney U-test on two revisions to detect performance changes
+    treeherder:
+        symbol: perftest-detect(mwu)
+        tier: 2
+    run:
+        using: run-task
+        sparse-profile: perftest
+        checkout: true
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            tools change-detector
+            --task-name {task_name}
+            --base-revision {base_revision}
+            --new-revision {new_revision}
+            --base-branch {base_branch}
+            --new-branch {new_branch}

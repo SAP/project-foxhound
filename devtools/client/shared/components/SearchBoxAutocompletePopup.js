@@ -4,9 +4,11 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const {
+  Component,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 class SearchBoxAutocompletePopup extends Component {
   static get propTypes() {
@@ -36,7 +38,8 @@ class SearchBoxAutocompletePopup extends Component {
     this.onMouseDown = this.onMouseDown.bind(this);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     if (this.props.filter === nextProps.filter) {
       return;
     }
@@ -51,7 +54,7 @@ class SearchBoxAutocompletePopup extends Component {
 
   computeState({ autocompleteProvider, filter }) {
     const list = autocompleteProvider(filter);
-    const selectedIndex = list.length > 0 ? 0 : -1;
+    const selectedIndex = list.length ? 0 : -1;
 
     return { list, selectedIndex };
   }
@@ -114,7 +117,7 @@ class SearchBoxAutocompletePopup extends Component {
     const { list } = this.state;
 
     return (
-      list.length > 0 &&
+      !!list.length &&
       dom.div(
         { className: "devtools-autocomplete-popup devtools-monospace" },
         dom.ul(

@@ -7,96 +7,99 @@
 
 #import "GeckoTextMarker.h"
 
+#import "MacUtils.h"
+
+#include "AccAttributes.h"
 #include "DocAccessible.h"
 #include "DocAccessibleParent.h"
-#include "AccAttributes.h"
 #include "nsCocoaUtils.h"
-#include "MOXAccessibleBase.h"
-#include "mozAccessible.h"
-
-#include "mozilla/a11y/DocAccessiblePlatformExtParent.h"
+#include "HyperTextAccessible.h"
+#include "States.h"
+#include "nsAccUtils.h"
 
 namespace mozilla {
 namespace a11y {
 
-struct OpaqueGeckoTextMarker {
-  OpaqueGeckoTextMarker(uintptr_t aDoc, uintptr_t aID, int32_t aOffset)
+struct TextMarkerData {
+  TextMarkerData(uintptr_t aDoc, uintptr_t aID, int32_t aOffset)
       : mDoc(aDoc), mID(aID), mOffset(aOffset) {}
-  OpaqueGeckoTextMarker() {}
+  TextMarkerData() {}
   uintptr_t mDoc;
   uintptr_t mID;
   int32_t mOffset;
 };
 
-static bool DocumentExists(Accessible* aDoc, uintptr_t aDocPtr) {
-  if (reinterpret_cast<uintptr_t>(aDoc) == aDocPtr) {
-    return true;
-  }
-
-  if (aDoc->IsLocal()) {
-    DocAccessible* docAcc = aDoc->AsLocal()->AsDoc();
-    uint32_t docCount = docAcc->ChildDocumentCount();
-    for (uint32_t i = 0; i < docCount; i++) {
-      if (DocumentExists(docAcc->GetChildDocumentAt(i), aDocPtr)) {
-        return true;
-      }
-    }
-  } else {
-    DocAccessibleParent* docProxy = aDoc->AsRemote()->AsDoc();
-    size_t docCount = docProxy->ChildDocCount();
-    for (uint32_t i = 0; i < docCount; i++) {
-      if (DocumentExists(docProxy->ChildDocAt(i), aDocPtr)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 // GeckoTextMarker
 
-GeckoTextMarker::GeckoTextMarker(Accessible* aDoc,
-                                 AXTextMarkerRef aTextMarker) {
-  MOZ_ASSERT(aDoc);
-  OpaqueGeckoTextMarker opaqueMarker;
-  if (aTextMarker &&
-      AXTextMarkerGetLength(aTextMarker) == sizeof(OpaqueGeckoTextMarker)) {
-    memcpy(&opaqueMarker, AXTextMarkerGetBytePtr(aTextMarker),
-           sizeof(OpaqueGeckoTextMarker));
-    if (DocumentExists(aDoc, opaqueMarker.mDoc)) {
-      Accessible* doc = reinterpret_cast<Accessible*>(opaqueMarker.mDoc);
-      if (doc->IsRemote()) {
-        mContainer = doc->AsRemote()->AsDoc()->GetAccessible(opaqueMarker.mID);
-      } else {
-        mContainer = doc->AsLocal()->AsDoc()->GetAccessibleByUniqueID(
-            reinterpret_cast<void*>(opaqueMarker.mID));
-      }
-    }
-
-    mOffset = opaqueMarker.mOffset;
+GeckoTextMarker::GeckoTextMarker(Accessible* aAcc, int32_t aOffset) {
+  HyperTextAccessibleBase* ht = aAcc->AsHyperTextBase();
+  if (ht && aOffset != nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT &&
+      aOffset <= static_cast<int32_t>(ht->CharacterCount())) {
+    mPoint = aAcc->AsHyperTextBase()->ToTextLeafPoint(aOffset);
   } else {
-    mContainer = nullptr;
-    mOffset = 0;
+    mPoint = TextLeafPoint(aAcc, aOffset);
   }
+}
+
+GeckoTextMarker GeckoTextMarker::MarkerFromAXTextMarker(
+    Accessible* aDoc, AXTextMarkerRef aTextMarker) {
+  MOZ_ASSERT(aDoc);
+  if (!aTextMarker) {
+    return GeckoTextMarker();
+  }
+
+  if (AXTextMarkerGetLength(aTextMarker) != sizeof(TextMarkerData)) {
+    MOZ_ASSERT_UNREACHABLE("Malformed AXTextMarkerRef");
+    return GeckoTextMarker();
+  }
+
+  TextMarkerData markerData;
+  memcpy(&markerData, AXTextMarkerGetBytePtr(aTextMarker),
+         sizeof(TextMarkerData));
+
+  if (!utils::DocumentExists(aDoc, markerData.mDoc)) {
+    return GeckoTextMarker();
+  }
+
+  Accessible* doc = reinterpret_cast<Accessible*>(markerData.mDoc);
+  MOZ_ASSERT(doc->IsDoc());
+  int32_t offset = markerData.mOffset;
+  Accessible* acc = nullptr;
+  if (doc->IsRemote()) {
+    acc = doc->AsRemote()->AsDoc()->GetAccessible(markerData.mID);
+  } else {
+    acc = doc->AsLocal()->AsDoc()->GetAccessibleByUniqueID(
+        reinterpret_cast<void*>(markerData.mID));
+  }
+
+  if (!acc) {
+    return GeckoTextMarker();
+  }
+
+  return GeckoTextMarker(acc, offset);
 }
 
 GeckoTextMarker GeckoTextMarker::MarkerFromIndex(Accessible* aRoot,
                                                  int32_t aIndex) {
-  if (aRoot->IsRemote()) {
-    int32_t offset = 0;
-    uint64_t containerID = 0;
-    DocAccessibleParent* ipcDoc = aRoot->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendOffsetAtIndex(
-        aRoot->AsRemote()->ID(), aIndex, &containerID, &offset);
-    RemoteAccessible* container = ipcDoc->GetAccessible(containerID);
-    return GeckoTextMarker(container, offset);
-  } else if (auto htWrap = static_cast<HyperTextAccessibleWrap*>(
-                 aRoot->AsLocal()->AsHyperText())) {
-    int32_t offset = 0;
-    HyperTextAccessible* container = nullptr;
-    htWrap->OffsetAtIndex(aIndex, &container, &offset);
-    return GeckoTextMarker(container, offset);
+  TextLeafRange range(
+      TextLeafPoint(aRoot, 0),
+      TextLeafPoint(aRoot, nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT));
+  int32_t index = aIndex;
+  // Iterate through all segments until we exhausted the index sum
+  // so we can find the segment the index lives in.
+  for (TextLeafRange segment : range) {
+    if (segment.End().mAcc->Role() == roles::LISTITEM_MARKER) {
+      // XXX: MacOS expects bullets to be in the range's text, but not in
+      // the calculated length!
+      continue;
+    }
+
+    index -= segment.End().mOffset - segment.Start().mOffset;
+    if (index <= 0) {
+      // The index is in the current segment.
+      return GeckoTextMarker(segment.Start().mAcc,
+                             segment.End().mOffset + index);
+    }
   }
 
   return GeckoTextMarker();
@@ -107,253 +110,249 @@ AXTextMarkerRef GeckoTextMarker::CreateAXTextMarker() {
     return nil;
   }
 
-  Accessible* doc;
-  if (mContainer->IsRemote()) {
-    doc = mContainer->AsRemote()->Document();
-  } else {
-    doc = mContainer->AsLocal()->Document();
-  }
-
-  uintptr_t identifier =
-      mContainer->IsRemote()
-          ? mContainer->AsRemote()->ID()
-          : reinterpret_cast<uintptr_t>(mContainer->AsLocal()->UniqueID());
-
-  OpaqueGeckoTextMarker opaqueMarker(reinterpret_cast<uintptr_t>(doc),
-                                     identifier, mOffset);
+  Accessible* doc = nsAccUtils::DocumentFor(mPoint.mAcc);
+  TextMarkerData markerData(reinterpret_cast<uintptr_t>(doc), mPoint.mAcc->ID(),
+                            mPoint.mOffset);
   AXTextMarkerRef cf_text_marker = AXTextMarkerCreate(
-      kCFAllocatorDefault, reinterpret_cast<const UInt8*>(&opaqueMarker),
-      sizeof(OpaqueGeckoTextMarker));
+      kCFAllocatorDefault, reinterpret_cast<const UInt8*>(&markerData),
+      sizeof(TextMarkerData));
 
   return (__bridge AXTextMarkerRef)[(__bridge id)(cf_text_marker)autorelease];
 }
 
-bool GeckoTextMarker::operator<(const GeckoTextMarker& aPoint) const {
-  if (mContainer == aPoint.mContainer) return mOffset < aPoint.mOffset;
-
-  // Build the chain of parents
-  AutoTArray<Accessible*, 30> parents1, parents2;
-  Accessible* p1 = mContainer;
-  while (p1) {
-    parents1.AppendElement(p1);
-    p1 = p1->Parent();
-  }
-
-  Accessible* p2 = aPoint.mContainer;
-  while (p2) {
-    parents2.AppendElement(p2);
-    p2 = p2->Parent();
-  }
-
-  // An empty chain of parents means one of the containers was null.
-  MOZ_ASSERT(parents1.Length() != 0 && parents2.Length() != 0,
-             "have empty chain of parents!");
-
-  // Find where the parent chain differs
-  uint32_t pos1 = parents1.Length(), pos2 = parents2.Length();
-  for (uint32_t len = std::min(pos1, pos2); len > 0; --len) {
-    Accessible* child1 = parents1.ElementAt(--pos1);
-    Accessible* child2 = parents2.ElementAt(--pos2);
-    if (child1 != child2) {
-      return child1->IndexInParent() < child2->IndexInParent();
-    }
-  }
-
-  if (pos1 != 0) {
-    // If parents1 is a superset of parents2 then mContainer is a
-    // descendant of aPoint.mContainer. The next element down in parents1
-    // is mContainer's ancestor that is the child of aPoint.mContainer.
-    // We compare its end offset in aPoint.mContainer with aPoint.mOffset.
-    Accessible* child = parents1.ElementAt(pos1 - 1);
-    MOZ_ASSERT(child->Parent() == aPoint.mContainer);
-    bool unused;
-    uint32_t endOffset = child->IsRemote()
-                             ? child->AsRemote()->EndOffset(&unused)
-                             : child->AsLocal()->EndOffset();
-    return endOffset < static_cast<uint32_t>(aPoint.mOffset);
-  }
-
-  if (pos2 != 0) {
-    // If parents2 is a superset of parents1 then aPoint.mContainer is a
-    // descendant of mContainer. The next element down in parents2
-    // is aPoint.mContainer's ancestor that is the child of mContainer.
-    // We compare its start offset in mContainer with mOffset.
-    Accessible* child = parents2.ElementAt(pos2 - 1);
-    MOZ_ASSERT(child->Parent() == mContainer);
-    uint32_t startOffset = child->StartOffset();
-    return static_cast<uint32_t>(mOffset) <= startOffset;
-  }
-
-  MOZ_ASSERT_UNREACHABLE("Broken tree?!");
-  return false;
-}
-
-bool GeckoTextMarker::IsEditableRoot() {
-  uint64_t state = mContainer->IsRemote() ? mContainer->AsRemote()->State()
-                                          : mContainer->AsLocal()->State();
-  if ((state & states::EDITABLE) == 0) {
-    return false;
-  }
-
-  Accessible* parent = mContainer->Parent();
-  if (!parent) {
-    // Not sure when this can happen, but it would technically be an editable
-    // root.
-    return true;
-  }
-
-  state = parent->IsRemote() ? parent->AsRemote()->State()
-                             : parent->AsLocal()->State();
-
-  return (state & states::EDITABLE) == 0;
-}
-
 bool GeckoTextMarker::Next() {
-  if (mContainer->IsRemote()) {
-    int32_t nextOffset = 0;
-    uint64_t nextContainerID = 0;
-    DocAccessibleParent* ipcDoc = mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendNextClusterAt(
-        mContainer->AsRemote()->ID(), mOffset, &nextContainerID, &nextOffset);
-    RemoteAccessible* nextContainer = ipcDoc->GetAccessible(nextContainerID);
-    bool moved =
-        nextContainer != mContainer->AsRemote() || nextOffset != mOffset;
-    mContainer = nextContainer;
-    mOffset = nextOffset;
-    return moved;
-  } else if (auto htWrap = ContainerAsHyperTextWrap()) {
-    HyperTextAccessible* nextContainer = nullptr;
-    int32_t nextOffset = 0;
-    htWrap->NextClusterAt(mOffset, &nextContainer, &nextOffset);
-    bool moved = nextContainer != htWrap || nextOffset != mOffset;
-    mContainer = nextContainer;
-    mOffset = nextOffset;
-    return moved;
+  TextLeafPoint next =
+      mPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirNext,
+                          TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker);
+
+  if (next && next != mPoint) {
+    mPoint = next;
+    return true;
   }
 
   return false;
 }
 
 bool GeckoTextMarker::Previous() {
-  if (mContainer->IsRemote()) {
-    int32_t prevOffset = 0;
-    uint64_t prevContainerID = 0;
-    DocAccessibleParent* ipcDoc = mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendPreviousClusterAt(
-        mContainer->AsRemote()->ID(), mOffset, &prevContainerID, &prevOffset);
-    RemoteAccessible* prevContainer = ipcDoc->GetAccessible(prevContainerID);
-    bool moved =
-        prevContainer != mContainer->AsRemote() || prevOffset != mOffset;
-    mContainer = prevContainer;
-    mOffset = prevOffset;
-    return moved;
-  } else if (auto htWrap = ContainerAsHyperTextWrap()) {
-    HyperTextAccessible* prevContainer = nullptr;
-    int32_t prevOffset = 0;
-    htWrap->PreviousClusterAt(mOffset, &prevContainer, &prevOffset);
-    bool moved = prevContainer != htWrap || prevOffset != mOffset;
-    mContainer = prevContainer;
-    mOffset = prevOffset;
-    return moved;
+  TextLeafPoint prev =
+      mPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious,
+                          TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker);
+  if (prev && mPoint != prev) {
+    mPoint = prev;
+    return true;
   }
 
   return false;
 }
 
-static uint32_t CharacterCount(Accessible* aContainer) {
-  if (aContainer->IsRemote()) {
-    return aContainer->AsRemote()->CharacterCount();
+/**
+ * Return true if the given point is inside editable content.
+ */
+static bool IsPointInEditable(const TextLeafPoint& aPoint) {
+  if (aPoint.mAcc) {
+    if (aPoint.mAcc->State() & states::EDITABLE) {
+      return true;
+    }
+
+    Accessible* parent = aPoint.mAcc->Parent();
+    if (parent && (parent->State() & states::EDITABLE)) {
+      return true;
+    }
   }
 
-  if (aContainer->AsLocal()->IsHyperText()) {
-    return aContainer->AsLocal()->AsHyperText()->CharacterCount();
-  }
-
-  return 0;
+  return false;
 }
 
-GeckoTextMarkerRange GeckoTextMarker::Range(EWhichRange aRangeType) {
-  MOZ_ASSERT(mContainer);
-  if (mContainer->IsRemote()) {
-    int32_t startOffset = 0, endOffset = 0;
-    uint64_t startContainerID = 0, endContainerID = 0;
-    DocAccessibleParent* ipcDoc = mContainer->AsRemote()->Document();
-    bool success = ipcDoc->GetPlatformExtension()->SendRangeAt(
-        mContainer->AsRemote()->ID(), mOffset, aRangeType, &startContainerID,
-        &startOffset, &endContainerID, &endOffset);
-    if (success) {
-      return GeckoTextMarkerRange(
-          GeckoTextMarker(ipcDoc->GetAccessible(startContainerID), startOffset),
-          GeckoTextMarker(ipcDoc->GetAccessible(endContainerID), endOffset));
+GeckoTextMarkerRange GeckoTextMarker::LeftWordRange() const {
+  bool includeCurrentInStart = !mPoint.IsParagraphStart(true);
+  if (includeCurrentInStart) {
+    TextLeafPoint prevChar =
+        mPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
+    if (!prevChar.IsSpace()) {
+      includeCurrentInStart = false;
     }
-  } else if (auto htWrap = ContainerAsHyperTextWrap()) {
-    int32_t startOffset = 0, endOffset = 0;
-    HyperTextAccessible* startContainer = nullptr;
-    HyperTextAccessible* endContainer = nullptr;
-    htWrap->RangeAt(mOffset, aRangeType, &startContainer, &startOffset,
-                    &endContainer, &endOffset);
-    return GeckoTextMarkerRange(GeckoTextMarker(startContainer, startOffset),
-                                GeckoTextMarker(endContainer, endOffset));
   }
 
-  return GeckoTextMarkerRange(GeckoTextMarker(), GeckoTextMarker());
+  TextLeafPoint start = mPoint.FindBoundary(
+      nsIAccessibleText::BOUNDARY_WORD_START, eDirPrevious,
+      includeCurrentInStart
+          ? (TextLeafPoint::BoundaryFlags::eIncludeOrigin |
+             TextLeafPoint::BoundaryFlags::eStopInEditable |
+             TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker)
+          : (TextLeafPoint::BoundaryFlags::eStopInEditable |
+             TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker));
+
+  TextLeafPoint end;
+  if (start == mPoint) {
+    end = start.FindBoundary(nsIAccessibleText::BOUNDARY_WORD_END, eDirPrevious,
+                             TextLeafPoint::BoundaryFlags::eStopInEditable);
+  }
+
+  if (start != mPoint || end == start) {
+    end = start.FindBoundary(nsIAccessibleText::BOUNDARY_WORD_END, eDirNext,
+                             TextLeafPoint::BoundaryFlags::eStopInEditable);
+    if (end < mPoint && IsPointInEditable(end) && !IsPointInEditable(mPoint)) {
+      start = end;
+      end = mPoint;
+    }
+  }
+
+  return GeckoTextMarkerRange(start < end ? start : end,
+                              start < end ? end : start);
+}
+
+GeckoTextMarkerRange GeckoTextMarker::RightWordRange() const {
+  TextLeafPoint prevChar =
+      mPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious,
+                          TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  if (prevChar != mPoint && mPoint.IsParagraphStart(true)) {
+    return GeckoTextMarkerRange(mPoint, mPoint);
+  }
+
+  TextLeafPoint end =
+      mPoint.FindBoundary(nsIAccessibleText::BOUNDARY_WORD_END, eDirNext,
+                          TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  if (end == mPoint) {
+    // No word to the right of this point.
+    return GeckoTextMarkerRange(mPoint, mPoint);
+  }
+
+  TextLeafPoint start =
+      end.FindBoundary(nsIAccessibleText::BOUNDARY_WORD_START, eDirPrevious,
+                       TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  if (start.FindBoundary(nsIAccessibleText::BOUNDARY_WORD_END, eDirNext,
+                         TextLeafPoint::BoundaryFlags::eStopInEditable) <
+      mPoint) {
+    // Word end is inside of an input to the left of this.
+    return GeckoTextMarkerRange(mPoint, mPoint);
+  }
+
+  if (mPoint < start) {
+    end = start;
+    start = mPoint;
+  }
+
+  return GeckoTextMarkerRange(start < end ? start : end,
+                              start < end ? end : start);
+}
+
+GeckoTextMarkerRange GeckoTextMarker::LineRange() const {
+  TextLeafPoint start = mPoint.FindBoundary(
+      nsIAccessibleText::BOUNDARY_LINE_START, eDirPrevious,
+      TextLeafPoint::BoundaryFlags::eStopInEditable |
+          TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker |
+          TextLeafPoint::BoundaryFlags::eIncludeOrigin);
+  // If this is a blank line containing only a line feed, the start boundary
+  // is the same as the end boundary. We do not want to walk to the end of the
+  // next line.
+  TextLeafPoint end =
+      start.IsLineFeedChar()
+          ? start
+          : start.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_END, eDirNext,
+                               TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  return GeckoTextMarkerRange(start, end);
+}
+
+GeckoTextMarkerRange GeckoTextMarker::LeftLineRange() const {
+  TextLeafPoint start = mPoint.FindBoundary(
+      nsIAccessibleText::BOUNDARY_LINE_START, eDirPrevious,
+      TextLeafPoint::BoundaryFlags::eStopInEditable |
+          TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker);
+  TextLeafPoint end =
+      start.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_END, eDirNext,
+                         TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  return GeckoTextMarkerRange(start, end);
+}
+
+GeckoTextMarkerRange GeckoTextMarker::RightLineRange() const {
+  TextLeafPoint end =
+      mPoint.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_END, eDirNext,
+                          TextLeafPoint::BoundaryFlags::eStopInEditable);
+  TextLeafPoint start =
+      end.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_START, eDirPrevious,
+                       TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  return GeckoTextMarkerRange(start, end);
+}
+
+GeckoTextMarkerRange GeckoTextMarker::ParagraphRange() const {
+  // XXX: WebKit gets trapped in inputs. Maybe we shouldn't?
+  TextLeafPoint end =
+      mPoint.FindBoundary(nsIAccessibleText::BOUNDARY_PARAGRAPH, eDirNext,
+                          TextLeafPoint::BoundaryFlags::eStopInEditable);
+  TextLeafPoint start =
+      end.FindBoundary(nsIAccessibleText::BOUNDARY_PARAGRAPH, eDirPrevious,
+                       TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  return GeckoTextMarkerRange(start, end);
+}
+
+GeckoTextMarkerRange GeckoTextMarker::StyleRange() const {
+  if (mPoint.mOffset == 0) {
+    // If the marker is on the boundary between two leafs, MacOS expects the
+    // previous leaf.
+    TextLeafPoint prev = mPoint.FindBoundary(
+        nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious,
+        TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker);
+    if (prev != mPoint) {
+      return GeckoTextMarker(prev).StyleRange();
+    }
+  }
+
+  TextLeafPoint start(mPoint.mAcc, 0);
+  TextLeafPoint end(mPoint.mAcc, nsAccUtils::TextLength(mPoint.mAcc));
+  return GeckoTextMarkerRange(start, end);
 }
 
 Accessible* GeckoTextMarker::Leaf() {
-  MOZ_ASSERT(mContainer);
-  if (mContainer->IsRemote()) {
-    uint64_t leafID = 0;
-    DocAccessibleParent* ipcDoc = mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendLeafAtOffset(
-        mContainer->AsRemote()->ID(), mOffset, &leafID);
-    return ipcDoc->GetAccessible(leafID);
-  } else if (auto htWrap = ContainerAsHyperTextWrap()) {
-    return htWrap->LeafAtOffset(mOffset);
+  MOZ_ASSERT(mPoint.mAcc);
+  Accessible* acc = mPoint.mAcc;
+  if (mPoint.mOffset == 0) {
+    // If the marker is on the boundary between two leafs, MacOS expects the
+    // previous leaf.
+    TextLeafPoint prev = mPoint.FindBoundary(
+        nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious,
+        TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker);
+    acc = prev.mAcc;
   }
 
-  return mContainer;
+  Accessible* parent = acc->Parent();
+  return parent && nsAccUtils::MustPrune(parent) ? parent : acc;
 }
 
 // GeckoTextMarkerRange
 
-GeckoTextMarkerRange::GeckoTextMarkerRange(
+GeckoTextMarkerRange::GeckoTextMarkerRange(Accessible* aAccessible) {
+  mRange = TextLeafRange(
+      TextLeafPoint(aAccessible, 0),
+      TextLeafPoint(aAccessible, nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT));
+}
+
+GeckoTextMarkerRange GeckoTextMarkerRange::MarkerRangeFromAXTextMarkerRange(
     Accessible* aDoc, AXTextMarkerRangeRef aTextMarkerRange) {
   if (!aTextMarkerRange ||
       CFGetTypeID(aTextMarkerRange) != AXTextMarkerRangeGetTypeID()) {
-    return;
+    return GeckoTextMarkerRange();
   }
 
   AXTextMarkerRef start_marker(
       AXTextMarkerRangeCopyStartMarker(aTextMarkerRange));
   AXTextMarkerRef end_marker(AXTextMarkerRangeCopyEndMarker(aTextMarkerRange));
 
-  mStart = GeckoTextMarker(aDoc, start_marker);
-  mEnd = GeckoTextMarker(aDoc, end_marker);
+  GeckoTextMarker start =
+      GeckoTextMarker::MarkerFromAXTextMarker(aDoc, start_marker);
+  GeckoTextMarker end =
+      GeckoTextMarker::MarkerFromAXTextMarker(aDoc, end_marker);
 
   CFRelease(start_marker);
   CFRelease(end_marker);
-}
 
-GeckoTextMarkerRange::GeckoTextMarkerRange(Accessible* aAccessible) {
-  if (aAccessible->IsHyperText()) {
-    // The accessible is a hypertext. Initialize range to its inner text range.
-    mStart = GeckoTextMarker(aAccessible, 0);
-    mEnd = GeckoTextMarker(aAccessible, (CharacterCount(aAccessible)));
-  } else {
-    // The accessible is not a hypertext (maybe a text leaf?). Initialize range
-    // to its offsets in its container.
-    mStart = GeckoTextMarker(aAccessible->Parent(), 0);
-    mEnd = GeckoTextMarker(aAccessible->Parent(), 0);
-    if (mStart.mContainer->IsRemote()) {
-      DocAccessibleParent* ipcDoc = mStart.mContainer->AsRemote()->Document();
-      Unused << ipcDoc->GetPlatformExtension()->SendRangeOfChild(
-          mStart.mContainer->AsRemote()->ID(), aAccessible->AsRemote()->ID(),
-          &mStart.mOffset, &mEnd.mOffset);
-    } else if (auto htWrap = mStart.ContainerAsHyperTextWrap()) {
-      htWrap->RangeOfChild(aAccessible->AsLocal(), &mStart.mOffset,
-                           &mEnd.mOffset);
-    }
-  }
+  return GeckoTextMarkerRange(start, end);
 }
 
 AXTextMarkerRangeRef GeckoTextMarkerRange::CreateAXTextMarkerRange() {
@@ -361,154 +360,120 @@ AXTextMarkerRangeRef GeckoTextMarkerRange::CreateAXTextMarkerRange() {
     return nil;
   }
 
+  GeckoTextMarker start = GeckoTextMarker(mRange.Start());
+  GeckoTextMarker end = GeckoTextMarker(mRange.End());
+
   AXTextMarkerRangeRef cf_text_marker_range =
-      AXTextMarkerRangeCreate(kCFAllocatorDefault, mStart.CreateAXTextMarker(),
-                              mEnd.CreateAXTextMarker());
+      AXTextMarkerRangeCreate(kCFAllocatorDefault, start.CreateAXTextMarker(),
+                              end.CreateAXTextMarker());
 
   return (__bridge AXTextMarkerRangeRef)[(__bridge id)(
       cf_text_marker_range)autorelease];
 }
 
 NSString* GeckoTextMarkerRange::Text() const {
-  nsAutoString text;
-  if (mStart.mContainer->IsRemote() && mEnd.mContainer->IsRemote()) {
-    DocAccessibleParent* ipcDoc = mStart.mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendTextForRange(
-        mStart.mContainer->AsRemote()->ID(), mStart.mOffset,
-        mEnd.mContainer->AsRemote()->ID(), mEnd.mOffset, &text);
-  } else if (auto htWrap = mStart.ContainerAsHyperTextWrap()) {
-    htWrap->TextForRange(text, mStart.mOffset, mEnd.ContainerAsHyperTextWrap(),
-                         mEnd.mOffset);
+  if (mRange.Start() == mRange.End()) {
+    return @"";
   }
+
+  if ((mRange.Start().mAcc == mRange.End().mAcc) &&
+      (mRange.Start().mAcc->ChildCount() == 0) &&
+      (mRange.Start().mAcc->State() & states::EDITABLE)) {
+    return @"";
+  }
+
+  nsAutoString text;
+  TextLeafPoint prev = mRange.Start().FindBoundary(
+      nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
+  TextLeafRange range =
+      prev != mRange.Start() && prev.mAcc->Role() == roles::LISTITEM_MARKER
+          ? TextLeafRange(TextLeafPoint(prev.mAcc, 0), mRange.End())
+          : mRange;
+
+  for (TextLeafRange segment : range) {
+    TextLeafPoint start = segment.Start();
+    if (start.mAcc->IsTextField() && start.mAcc->ChildCount() == 0) {
+      continue;
+    }
+
+    start.mAcc->AppendTextTo(text, start.mOffset,
+                             segment.End().mOffset - start.mOffset);
+  }
+
   return nsCocoaUtils::ToNSString(text);
 }
 
-static NSColor* ColorFromColor(const Color& aColor) {
-  return [NSColor colorWithCalibratedRed:NS_GET_R(aColor.mValue) / 255.0
-                                   green:NS_GET_G(aColor.mValue) / 255.0
-                                    blue:NS_GET_B(aColor.mValue) / 255.0
-                                   alpha:1.0];
-}
+static void AppendTextToAttributedString(
+    NSMutableAttributedString* aAttributedString, Accessible* aAccessible,
+    const nsString& aString, AccAttributes* aAttributes) {
+  NSAttributedString* substr = [[[NSAttributedString alloc]
+      initWithString:nsCocoaUtils::ToNSString(aString)
+          attributes:utils::StringAttributesFromAccAttributes(
+                         aAttributes, aAccessible)] autorelease];
 
-static NSDictionary* StringAttributesFromAttributes(AccAttributes* aAttributes,
-                                                    Accessible* aContainer) {
-  NSMutableDictionary* attrDict =
-      [NSMutableDictionary dictionaryWithCapacity:aAttributes->Count()];
-  NSMutableDictionary* fontAttrDict = [[NSMutableDictionary alloc] init];
-  [attrDict setObject:fontAttrDict forKey:@"AXFont"];
-  for (auto iter : *aAttributes) {
-    if (iter.Name() == nsGkAtoms::backgroundColor) {
-      if (Maybe<Color> value = iter.Value<Color>()) {
-        NSColor* color = ColorFromColor(*value);
-        [attrDict setObject:(__bridge id)color.CGColor
-                     forKey:@"AXBackgroundColor"];
-      }
-    } else if (iter.Name() == nsGkAtoms::color) {
-      if (Maybe<Color> value = iter.Value<Color>()) {
-        NSColor* color = ColorFromColor(*value);
-        [attrDict setObject:(__bridge id)color.CGColor
-                     forKey:@"AXForegroundColor"];
-      }
-    } else if (iter.Name() == nsGkAtoms::font_size) {
-      if (Maybe<FontSize> pointSize = iter.Value<FontSize>()) {
-        int32_t fontPixelSize = static_cast<int32_t>(pointSize->mValue * 4 / 3);
-        [fontAttrDict setObject:@(fontPixelSize) forKey:@"AXFontSize"];
-      }
-    } else if (iter.Name() == nsGkAtoms::font_family) {
-      nsAutoString fontFamily;
-      iter.ValueAsString(fontFamily);
-      [fontAttrDict setObject:nsCocoaUtils::ToNSString(fontFamily)
-                       forKey:@"AXFontFamily"];
-    } else if (iter.Name() == nsGkAtoms::textUnderlineColor) {
-      [attrDict setObject:@1 forKey:@"AXUnderline"];
-      if (Maybe<Color> value = iter.Value<Color>()) {
-        NSColor* color = ColorFromColor(*value);
-        [attrDict setObject:(__bridge id)color.CGColor
-                     forKey:@"AXUnderlineColor"];
-      }
-    } else if (iter.Name() == nsGkAtoms::invalid) {
-      // XXX: There is currently no attribute for grammar
-      if (auto value = iter.Value<RefPtr<nsAtom>>()) {
-        if (*value == nsGkAtoms::spelling) {
-          [attrDict setObject:@YES
-                       forKey:NSAccessibilityMarkedMisspelledTextAttribute];
-        }
-      }
-    } else {
-      nsAutoString valueStr;
-      iter.ValueAsString(valueStr);
-      nsAutoString keyStr;
-      iter.NameAsString(keyStr);
-      [attrDict setObject:nsCocoaUtils::ToNSString(valueStr)
-                   forKey:nsCocoaUtils::ToNSString(keyStr)];
-    }
-  }
-
-  mozAccessible* container = GetNativeFromGeckoAccessible(aContainer);
-  id<MOXAccessible> link =
-      [container moxFindAncestor:^BOOL(id<MOXAccessible> moxAcc, BOOL* stop) {
-        return [[moxAcc moxRole] isEqualToString:NSAccessibilityLinkRole];
-      }];
-  if (link) {
-    [attrDict setObject:link forKey:@"AXLink"];
-  }
-
-  id<MOXAccessible> heading =
-      [container moxFindAncestor:^BOOL(id<MOXAccessible> moxAcc, BOOL* stop) {
-        return [[moxAcc moxRole] isEqualToString:@"AXHeading"];
-      }];
-  if (heading) {
-    [attrDict setObject:[heading moxValue] forKey:@"AXHeadingLevel"];
-  }
-
-  return attrDict;
+  [aAttributedString appendAttributedString:substr];
 }
 
 NSAttributedString* GeckoTextMarkerRange::AttributedText() const {
   NSMutableAttributedString* str =
       [[[NSMutableAttributedString alloc] init] autorelease];
 
-  if (mStart.mContainer->IsRemote() && mEnd.mContainer->IsRemote()) {
-    nsTArray<TextAttributesRun> textAttributesRuns;
-    DocAccessibleParent* ipcDoc = mStart.mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendAttributedTextForRange(
-        mStart.mContainer->AsRemote()->ID(), mStart.mOffset,
-        mEnd.mContainer->AsRemote()->ID(), mEnd.mOffset, &textAttributesRuns);
+  if (mRange.Start() == mRange.End()) {
+    return str;
+  }
 
-    for (size_t i = 0; i < textAttributesRuns.Length(); i++) {
-      AccAttributes* attributes =
-          textAttributesRuns.ElementAt(i).TextAttributes();
-      RemoteAccessible* container =
-          ipcDoc->GetAccessible(textAttributesRuns.ElementAt(i).ContainerID());
+  if ((mRange.Start().mAcc == mRange.End().mAcc) &&
+      (mRange.Start().mAcc->ChildCount() == 0) &&
+      (mRange.Start().mAcc->IsTextField())) {
+    return str;
+  }
 
-      NSAttributedString* substr = [[[NSAttributedString alloc]
-          initWithString:nsCocoaUtils::ToNSString(
-                             textAttributesRuns.ElementAt(i).Text())
-              attributes:StringAttributesFromAttributes(attributes, container)]
-          autorelease];
+  TextLeafPoint prev = mRange.Start().FindBoundary(
+      nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
+  TextLeafRange range =
+      prev != mRange.Start() && prev.mAcc->Role() == roles::LISTITEM_MARKER
+          ? TextLeafRange(TextLeafPoint(prev.mAcc, 0), mRange.End())
+          : mRange;
 
-      [str appendAttributedString:substr];
-    }
-  } else if (auto htWrap = mStart.ContainerAsHyperTextWrap()) {
-    nsTArray<nsString> texts;
-    nsTArray<LocalAccessible*> containers;
-    nsTArray<RefPtr<AccAttributes>> props;
+  nsAutoString text;
+  RefPtr<AccAttributes> currentRun = range.Start().GetTextAttributes();
+  Accessible* runAcc = range.Start().mAcc;
+  for (TextLeafRange segment : range) {
+    TextLeafPoint start = segment.Start();
+    TextLeafPoint attributesNext;
+    do {
+      if (start.mAcc->IsText()) {
+        attributesNext = start.FindTextAttrsStart(eDirNext, false);
+      } else {
+        // If this segment isn't a text leaf, but another kind of inline element
+        // like a control, just consider this full segment one "attributes run".
+        attributesNext = segment.End();
+      }
+      if (attributesNext == start) {
+        // XXX: FindTextAttrsStart should not return the same point.
+        break;
+      }
+      RefPtr<AccAttributes> attributes = start.GetTextAttributes();
+      if (!currentRun || !attributes || !attributes->Equal(currentRun)) {
+        // If currentRun is null this is a non-text control and we will
+        // append a run with no text or attributes, just an AXAttachment
+        // referencing this accessible.
+        AppendTextToAttributedString(str, runAcc, text, currentRun);
+        text.Truncate();
+        currentRun = attributes;
+        runAcc = start.mAcc;
+      }
+      TextLeafPoint end =
+          attributesNext < segment.End() ? attributesNext : segment.End();
+      start.mAcc->AppendTextTo(text, start.mOffset,
+                               end.mOffset - start.mOffset);
+      start = attributesNext;
 
-    htWrap->AttributedTextForRange(texts, props, containers, mStart.mOffset,
-                                   mEnd.ContainerAsHyperTextWrap(),
-                                   mEnd.mOffset);
+    } while (attributesNext < segment.End());
+  }
 
-    MOZ_ASSERT(texts.Length() == props.Length() &&
-               texts.Length() == containers.Length());
-
-    for (size_t i = 0; i < texts.Length(); i++) {
-      NSAttributedString* substr = [[[NSAttributedString alloc]
-          initWithString:nsCocoaUtils::ToNSString(texts.ElementAt(i))
-              attributes:StringAttributesFromAttributes(
-                             props.ElementAt(i), containers.ElementAt(i))]
-          autorelease];
-      [str appendAttributedString:substr];
-    }
+  if (!text.IsEmpty()) {
+    AppendTextToAttributedString(str, runAcc, text, currentRun);
   }
 
   return str;
@@ -516,30 +481,20 @@ NSAttributedString* GeckoTextMarkerRange::AttributedText() const {
 
 int32_t GeckoTextMarkerRange::Length() const {
   int32_t length = 0;
-  if (mStart.mContainer->IsRemote() && mEnd.mContainer->IsRemote()) {
-    DocAccessibleParent* ipcDoc = mStart.mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendLengthForRange(
-        mStart.mContainer->AsRemote()->ID(), mStart.mOffset,
-        mEnd.mContainer->AsRemote()->ID(), mEnd.mOffset, &length);
-  } else if (auto htWrap = mStart.ContainerAsHyperTextWrap()) {
-    length = htWrap->LengthForRange(
-        mStart.mOffset, mEnd.ContainerAsHyperTextWrap(), mEnd.mOffset);
+  for (TextLeafRange segment : mRange) {
+    if (segment.End().mAcc->Role() == roles::LISTITEM_MARKER) {
+      // XXX: MacOS expects bullets to be in the range's text, but not in
+      // the calculated length!
+      continue;
+    }
+    length += segment.End().mOffset - segment.Start().mOffset;
   }
 
   return length;
 }
 
 NSValue* GeckoTextMarkerRange::Bounds() const {
-  LayoutDeviceIntRect rect;
-  if (mStart.mContainer->IsRemote() && mEnd.mContainer->IsRemote()) {
-    DocAccessibleParent* ipcDoc = mStart.mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendBoundsForRange(
-        mStart.mContainer->AsRemote()->ID(), mStart.mOffset,
-        mEnd.mContainer->AsRemote()->ID(), mEnd.mOffset, &rect);
-  } else if (auto htWrap = mStart.ContainerAsHyperTextWrap()) {
-    rect = htWrap->BoundsForRange(
-        mStart.mOffset, mEnd.ContainerAsHyperTextWrap(), mEnd.mOffset);
-  }
+  LayoutDeviceIntRect rect = mRange ? mRange.Bounds() : LayoutDeviceIntRect();
 
   NSScreen* mainView = [[NSScreen screens] objectAtIndex:0];
   CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(mainView);
@@ -553,41 +508,7 @@ NSValue* GeckoTextMarkerRange::Bounds() const {
   return [NSValue valueWithRect:r];
 }
 
-void GeckoTextMarkerRange::Select() const {
-  if (mStart.mContainer->IsRemote() && mEnd.mContainer->IsRemote()) {
-    DocAccessibleParent* ipcDoc = mStart.mContainer->AsRemote()->Document();
-    Unused << ipcDoc->GetPlatformExtension()->SendSelectRange(
-        mStart.mContainer->AsRemote()->ID(), mStart.mOffset,
-        mEnd.mContainer->AsRemote()->ID(), mEnd.mOffset);
-  } else if (RefPtr<HyperTextAccessibleWrap> htWrap =
-                 mStart.ContainerAsHyperTextWrap()) {
-    RefPtr<HyperTextAccessibleWrap> end = mEnd.ContainerAsHyperTextWrap();
-    htWrap->SelectRange(mStart.mOffset, end, mEnd.mOffset);
-  }
-}
+void GeckoTextMarkerRange::Select() const { mRange.SetSelection(0); }
 
-bool GeckoTextMarkerRange::Crop(Accessible* aContainer) {
-  GeckoTextMarker containerStart(aContainer, 0);
-  GeckoTextMarker containerEnd(aContainer, CharacterCount(aContainer));
-
-  if (mEnd < containerStart || containerEnd < mStart) {
-    // The range ends before the container, or starts after it.
-    return false;
-  }
-
-  if (mStart < containerStart) {
-    // If range start is before container start, adjust range start to
-    // start of container.
-    mStart = containerStart;
-  }
-
-  if (containerEnd < mEnd) {
-    // If range end is after container end, adjust range end to end of
-    // container.
-    mEnd = containerEnd;
-  }
-
-  return true;
-}
-}
-}
+}  // namespace a11y
+}  // namespace mozilla

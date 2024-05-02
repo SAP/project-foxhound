@@ -34,6 +34,7 @@ class nsNativeThemeWin : public Theme {
   // to avoid subtle sizing changes. The non-native theme can basically draw at
   // any size, so we prefer to have consistent sizing information.
   enum class NonNative { No, Always, BecauseColorMismatch };
+  static bool IsWidgetAlwaysNonNative(nsIFrame*, StyleAppearance);
   NonNative IsWidgetNonNative(nsIFrame*, StyleAppearance);
 
   // The nsITheme interface.
@@ -61,10 +62,9 @@ class nsNativeThemeWin : public Theme {
                                  StyleAppearance aAppearance,
                                  nsRect* aOverflowRect) override;
 
-  NS_IMETHOD GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aFrame,
-                                  StyleAppearance aAppearance,
-                                  LayoutDeviceIntSize* aResult,
-                                  bool* aIsOverridable) override;
+  LayoutDeviceIntSize GetMinimumWidgetSize(
+      nsPresContext* aPresContext, nsIFrame* aFrame,
+      StyleAppearance aAppearance) override;
 
   virtual Transparency GetWidgetTransparency(
       nsIFrame* aFrame, StyleAppearance aAppearance) override;
@@ -78,21 +78,11 @@ class nsNativeThemeWin : public Theme {
   bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
                            StyleAppearance aAppearance) override;
 
-  bool WidgetIsContainer(StyleAppearance aAppearance) override;
-
   bool ThemeDrawsFocusForWidget(nsIFrame*, StyleAppearance) override;
 
-  bool ThemeWantsButtonInnerFocusRing(nsIFrame*, StyleAppearance) override {
-    return true;
-  }
+  bool ThemeWantsButtonInnerFocusRing() override { return true; }
 
   bool ThemeNeedsComboboxDropmarker() override;
-
-  bool WidgetAppearanceDependsOnWindowFocus(StyleAppearance) override;
-
-  enum { eThemeGeometryTypeWindowButtons = eThemeGeometryTypeUnknown + 1 };
-  ThemeGeometryType ThemeGeometryTypeForWidget(nsIFrame*,
-                                               StyleAppearance) override;
 
   nsNativeThemeWin();
 
@@ -114,10 +104,8 @@ class nsNativeThemeWin : public Theme {
   bool ClassicGetWidgetPadding(nsDeviceContext* aContext, nsIFrame* aFrame,
                                StyleAppearance aAppearance,
                                LayoutDeviceIntMargin* aResult);
-  nsresult ClassicGetMinimumWidgetSize(nsIFrame* aFrame,
-                                       StyleAppearance aAppearance,
-                                       LayoutDeviceIntSize* aResult,
-                                       bool* aIsOverridable);
+  LayoutDeviceIntSize ClassicGetMinimumWidgetSize(nsIFrame* aFrame,
+                                                  StyleAppearance aAppearance);
   bool ClassicThemeSupportsWidget(nsIFrame* aFrame,
                                   StyleAppearance aAppearance);
   void DrawCheckedRect(HDC hdc, const RECT& rc, int32_t fore, int32_t back,

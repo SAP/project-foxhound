@@ -15,6 +15,8 @@
 #include "nsNetUtil.h"
 #include "nsString.h"
 #include "nsQueryObject.h"
+#include "nsIURIMutator.h"
+#include "nsIURL.h"
 
 #include "mozilla/dom/URL.h"
 #include "nsIConsoleService.h"
@@ -75,7 +77,7 @@ void nsChromeRegistry::LogMessageWithContext(nsIURI* aURL, uint32_t aLineNumber,
 
   rv = error->Init(NS_ConvertUTF8toUTF16(formatted.get()),
                    NS_ConvertUTF8toUTF16(spec), u""_ns, aLineNumber, 0, flags,
-                   "chrome registration", false /* from private window */,
+                   "chrome registration"_ns, false /* from private window */,
                    true /* from chrome context */);
 
   if (NS_FAILED(rv)) return;

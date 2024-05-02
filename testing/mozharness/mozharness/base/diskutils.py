@@ -28,7 +28,6 @@
         pass
 
 """
-from __future__ import absolute_import, division
 import ctypes
 import logging
 import os

@@ -33,31 +33,54 @@ LayoutDeviceIntSize ScrollbarDrawingWin::GetMinimumWidgetSize(
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarthumbVertical:
     case StyleAppearance::ScrollbarthumbHorizontal: {
-      if ((aAppearance == StyleAppearance::ScrollbarHorizontal ||
-           aAppearance == StyleAppearance::ScrollbarVertical) &&
-          !aPresContext->UseOverlayScrollbars()) {
-        return LayoutDeviceIntSize{};
-      }
       // TODO: for short scrollbars it could be nice if the thumb could shrink
       // under this size.
-      auto sizes = GetScrollbarSizes(aPresContext, aFrame);
+      auto relevantSize = GetScrollbarSize(aPresContext, aFrame);
       const bool isHorizontal =
           aAppearance == StyleAppearance::ScrollbarHorizontal ||
           aAppearance == StyleAppearance::ScrollbarthumbHorizontal ||
           aAppearance == StyleAppearance::ScrollbarbuttonLeft ||
           aAppearance == StyleAppearance::ScrollbarbuttonRight;
-      const auto size = isHorizontal ? sizes.mHorizontal : sizes.mVertical;
-      return LayoutDeviceIntSize{size, size};
+      auto size = LayoutDeviceIntSize{relevantSize, relevantSize};
+      if (aAppearance == StyleAppearance::ScrollbarHorizontal ||
+          aAppearance == StyleAppearance::ScrollbarVertical) {
+        // Always reserve some space in the right direction. Historically we've
+        // reserved 2 times the size in the other axis (for the buttons).
+        // We do this even when painting thin scrollbars just for consistency,
+        // though there just one would probably do there.
+        if (isHorizontal) {
+          size.width *= 2;
+        } else {
+          size.height *= 2;
+        }
+      }
+      return size;
     }
     default:
       return LayoutDeviceIntSize{};
   }
 }
 
+// Returns the style for custom scrollbar if the scrollbar part frame should
+// use the custom drawing path, nullptr otherwise.
+const ComputedStyle* GetCustomScrollbarStyle(nsIFrame* aFrame) {
+  const ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
+  if (style->StyleUI()->HasCustomScrollbars() ||
+      ScrollbarDrawing::IsScrollbarWidthThin(*style)) {
+    return style;
+  }
+  bool useDarkScrollbar = !StaticPrefs::widget_disable_dark_scrollbar() &&
+                          nsNativeTheme::IsDarkBackgroundForScrollbar(aFrame);
+  if (useDarkScrollbar) {
+    return style;
+  }
+  return nullptr;
+}
+
 Maybe<nsITheme::Transparency> ScrollbarDrawingWin::GetScrollbarPartTransparency(
     nsIFrame* aFrame, StyleAppearance aAppearance) {
   if (nsNativeTheme::IsWidgetScrollbarPart(aAppearance)) {
-    if (ComputedStyle* style = GetCustomScrollbarStyle(aFrame)) {
+    if (const ComputedStyle* style = GetCustomScrollbarStyle(aFrame)) {
       auto* ui = style->StyleUI();
       if (ui->mScrollbarColor.IsAuto() ||
           ui->mScrollbarColor.AsColors().track.MaybeTransparent()) {
@@ -86,7 +109,6 @@ Maybe<nsITheme::Transparency> ScrollbarDrawingWin::GetScrollbarPartTransparency(
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::Scrollcorner:
-    case StyleAppearance::Statusbar:
       // Knowing that scrollbars and statusbars are opaque improves
       // performance, because we create layers for them. This better be
       // true across all Windows themes! If it's not true, we should
@@ -101,34 +123,11 @@ Maybe<nsITheme::Transparency> ScrollbarDrawingWin::GetScrollbarPartTransparency(
   return Nothing();
 }
 
-// Returns the style for custom scrollbar if the scrollbar part frame should
-// use the custom drawing path, nullptr otherwise.
-//
-// Optionally the caller can pass a pointer to aDarkScrollbar for whether
-// custom scrollbar may be drawn due to dark background.
-/*static*/
-ComputedStyle* ScrollbarDrawingWin::GetCustomScrollbarStyle(
-    nsIFrame* aFrame, bool* aDarkScrollbar) {
-  ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
-  if (style->StyleUI()->HasCustomScrollbars()) {
-    return style;
-  }
-  bool useDarkScrollbar = !StaticPrefs::widget_disable_dark_scrollbar() &&
-                          nsNativeTheme::IsDarkBackground(aFrame);
-  if (useDarkScrollbar || IsScrollbarWidthThin(*style)) {
-    if (aDarkScrollbar) {
-      *aDarkScrollbar = useDarkScrollbar;
-    }
-    return style;
-  }
-  return nullptr;
-}
-
 template <typename PaintBackendData>
 bool ScrollbarDrawingWin::DoPaintScrollbarThumb(
     PaintBackendData& aPaintData, const LayoutDeviceRect& aRect,
-    bool aHorizontal, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
   sRGBColor thumbColor = ComputeScrollbarThumbColor(
       aFrame, aStyle, aElementState, aDocumentState, aColors);
@@ -137,21 +136,21 @@ bool ScrollbarDrawingWin::DoPaintScrollbarThumb(
 }
 
 bool ScrollbarDrawingWin::PaintScrollbarThumb(
-    DrawTarget& aDrawTarget, const LayoutDeviceRect& aRect, bool aHorizontal,
-    nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    DrawTarget& aDrawTarget, const LayoutDeviceRect& aRect,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
-  return DoPaintScrollbarThumb(aDrawTarget, aRect, aHorizontal, aFrame, aStyle,
-                               aElementState, aDocumentState, aColors,
+  return DoPaintScrollbarThumb(aDrawTarget, aRect, aScrollbarKind, aFrame,
+                               aStyle, aElementState, aDocumentState, aColors,
                                aDpiRatio);
 }
 
 bool ScrollbarDrawingWin::PaintScrollbarThumb(
     WebRenderBackendData& aWrData, const LayoutDeviceRect& aRect,
-    bool aHorizontal, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
-  return DoPaintScrollbarThumb(aWrData, aRect, aHorizontal, aFrame, aStyle,
+  return DoPaintScrollbarThumb(aWrData, aRect, aScrollbarKind, aFrame, aStyle,
                                aElementState, aDocumentState, aColors,
                                aDpiRatio);
 }
@@ -163,13 +162,11 @@ void ScrollbarDrawingWin::RecomputeScrollbarParams() {
   if (overrideSize > 0) {
     defaultSize = overrideSize;
   }
-  mHorizontalScrollbarHeight = mVerticalScrollbarWidth = defaultSize;
+  ConfigureScrollbarSize(defaultSize);
 
   if (StaticPrefs::widget_non_native_theme_win_scrollbar_use_system_size()) {
-    mHorizontalScrollbarHeight = LookAndFeel::GetInt(
-        LookAndFeel::IntID::SystemHorizontalScrollbarHeight, defaultSize);
-    mVerticalScrollbarWidth = LookAndFeel::GetInt(
-        LookAndFeel::IntID::SystemVerticalScrollbarWidth, defaultSize);
+    ConfigureScrollbarSize(LookAndFeel::GetInt(
+        LookAndFeel::IntID::SystemScrollbarSize, defaultSize));
   }
 }
 

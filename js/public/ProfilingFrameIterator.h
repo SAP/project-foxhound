@@ -46,6 +46,12 @@ class MOZ_NON_PARAM JS_PUBLIC_API ProfilingFrameIterator {
   JSContext* cx_;
   mozilla::Maybe<uint64_t> samplePositionInProfilerBuffer_;
   js::Activation* activation_;
+  // For each JitActivation, this records the lowest (most recent) stack
+  // address. This will usually be either the exitFP of the activation or the
+  // frame or stack pointer of currently executing JIT/Wasm code. The Gecko
+  // profiler uses this to skip native frames between the activation and
+  // endStackAddress_.
+  void* endStackAddress_ = nullptr;
   Kind kind_;
 
   static const unsigned StorageSpace = 8 * sizeof(void*);
@@ -77,16 +83,43 @@ class MOZ_NON_PARAM JS_PUBLIC_API ProfilingFrameIterator {
     return *static_cast<const js::jit::JSJitProfilingFrameIterator*>(storage());
   }
 
+  void maybeSetEndStackAddress(void* addr) {
+    // If endStackAddress_ has already been set, don't change it because we
+    // want this to correspond to the most recent frame.
+    if (!endStackAddress_) {
+      endStackAddress_ = addr;
+    }
+  }
+
   void settleFrames();
   void settle();
 
  public:
   struct RegisterState {
-    RegisterState() : pc(nullptr), sp(nullptr), fp(nullptr), lr(nullptr) {}
+    RegisterState()
+        : pc(nullptr),
+          sp(nullptr),
+          fp(nullptr),
+          unused1(nullptr),
+          unused2(nullptr) {}
     void* pc;
     void* sp;
     void* fp;
-    void* lr;
+    union {
+      // Value of the LR register on ARM platforms.
+      void* lr;
+      // The return address during a tail call operation.
+      // Note that for ARM is still the value of LR register.
+      void* tempRA;
+      // Undefined on non-ARM plaforms outside tail calls operations.
+      void* unused1;
+    };
+    union {
+      // The FP reference during a tail call operation.
+      void* tempFP;
+      // Undefined outside tail calls operations.
+      void* unused2;
+    };
   };
 
   ProfilingFrameIterator(
@@ -149,7 +182,7 @@ class MOZ_NON_PARAM JS_PUBLIC_API ProfilingFrameIterator {
 
  private:
   mozilla::Maybe<Frame> getPhysicalFrameAndEntry(
-      js::jit::JitcodeGlobalEntry* entry) const;
+      const js::jit::JitcodeGlobalEntry** entry) const;
 
   void iteratorConstruct(const RegisterState& state);
   void iteratorConstruct();
@@ -212,8 +245,8 @@ class ProfiledFrameRange {
       ++index_;
       return *this;
     }
-    bool operator==(const Iter& rhs) { return index_ == rhs.index_; }
-    bool operator!=(const Iter& rhs) { return !(*this == rhs); }
+    bool operator==(const Iter& rhs) const { return index_ == rhs.index_; }
+    bool operator!=(const Iter& rhs) const { return !(*this == rhs); }
 
    private:
     const ProfiledFrameRange& range_;

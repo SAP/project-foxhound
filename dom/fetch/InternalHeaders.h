@@ -78,6 +78,7 @@ class InternalHeaders final {
               ErrorResult& aRv);
   void Delete(const nsACString& aName, ErrorResult& aRv);
   void Get(const nsACString& aName, nsACString& aValue, ErrorResult& aRv) const;
+  void GetSetCookie(nsTArray<nsCString>& aValues) const;
   void GetFirst(const nsACString& aName, nsACString& aValue,
                 ErrorResult& aRv) const;
   bool Has(const nsACString& aName, ErrorResult& aRv) const;
@@ -117,7 +118,7 @@ class InternalHeaders final {
 
   static already_AddRefed<InternalHeaders> CORSHeaders(
       InternalHeaders* aHeaders,
-      RequestCredentials mCredentialsMode = RequestCredentials::Omit);
+      RequestCredentials aCredentialsMode = RequestCredentials::Omit);
 
   void GetEntries(nsTArray<InternalHeaders::Entry>& aEntries) const;
 
@@ -131,7 +132,8 @@ class InternalHeaders final {
   bool IsValidHeaderValue(const nsCString& aLowerName,
                           const nsCString& aNormalizedValue, ErrorResult& aRv);
   bool IsImmutable(ErrorResult& aRv) const;
-  bool IsForbiddenRequestHeader(const nsCString& aName) const;
+  bool IsForbiddenRequestHeader(const nsCString& aName,
+                                const nsACString& aValue) const;
   bool IsForbiddenRequestNoCorsHeader(const nsCString& aName) const;
   bool IsForbiddenRequestNoCorsHeader(const nsCString& aName,
                                       const nsACString& aValue) const;
@@ -144,7 +146,7 @@ class InternalHeaders final {
   bool IsInvalidMutableHeader(const nsCString& aName, const nsACString& aValue,
                               ErrorResult& aRv) const {
     return IsInvalidName(aName, aRv) || IsInvalidValue(aValue, aRv) ||
-           IsImmutable(aRv) || IsForbiddenRequestHeader(aName) ||
+           IsImmutable(aRv) || IsForbiddenRequestHeader(aName, aValue) ||
            IsForbiddenRequestNoCorsHeader(aName, aValue) ||
            IsForbiddenResponseHeader(aName);
   }
@@ -163,8 +165,6 @@ class InternalHeaders final {
   static bool IsNoCorsSafelistedRequestHeaderName(const nsCString& aName);
 
   static bool IsPrivilegedNoCorsRequestHeaderName(const nsCString& aName);
-
-  static bool IsSimpleHeader(const nsCString& aName, const nsACString& aValue);
 
   static bool IsRevalidationHeader(const nsCString& aName);
 

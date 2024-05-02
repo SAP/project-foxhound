@@ -8,7 +8,6 @@
 
 #include "APZUtils.h"
 #include "AsyncPanZoomController.h"  // for AsyncPanZoomController
-#include "ScrollAnimationPhysics.h"  // for kScrollSeriesTimeoutMs
 
 #include "mozilla/MouseEvents.h"
 #include "mozilla/StaticPrefs_apz.h"
@@ -55,13 +54,6 @@ bool InputBlockState::SetConfirmedTargetApzc(
   MOZ_ASSERT(aState == TargetConfirmationState::eConfirmed ||
              aState == TargetConfirmationState::eTimedOut);
 
-  if (mTargetConfirmed == TargetConfirmationState::eTimedOut &&
-      aState == TargetConfirmationState::eConfirmed) {
-    // The main thread finally responded. We had already timed out the
-    // confirmation, but we want to update the state internally so that we
-    // can record the time for telemetry purposes.
-    mTargetConfirmed = TargetConfirmationState::eTimedOutAndMainThreadResponded;
-  }
   // Sometimes, bugs in compositor hit testing can lead to APZ confirming
   // a different target than the main thread. If this happens for a drag
   // block created for a scrollbar drag, the consequences can be fairly
@@ -103,6 +95,28 @@ bool InputBlockState::SetConfirmedTargetApzc(
 
 void InputBlockState::UpdateTargetApzc(
     const RefPtr<AsyncPanZoomController>& aTargetApzc) {
+  if (mTargetApzc == aTargetApzc) {
+    MOZ_ASSERT_UNREACHABLE(
+        "The new target APZC should be different from the old one");
+    return;
+  }
+
+  if (mTargetApzc) {
+    // Restore overscroll state on the previous target APZC and ancestor APZCs
+    // in the scroll handoff chain other than the new one.
+    mTargetApzc->SnapBackIfOverscrolled();
+
+    uint32_t i = mOverscrollHandoffChain->IndexOf(mTargetApzc) + 1;
+    for (; i < mOverscrollHandoffChain->Length(); i++) {
+      AsyncPanZoomController* apzc = mOverscrollHandoffChain->GetApzcAtIndex(i);
+      if (apzc != aTargetApzc) {
+        MOZ_ASSERT(!apzc->IsOverscrolled() ||
+                   apzc->IsOverscrollAnimationRunning());
+        apzc->SnapBackIfOverscrolled();
+      }
+    }
+  }
+
   // note that aTargetApzc MAY be null here.
   mTargetApzc = aTargetApzc;
   mTransformToApzc = aTargetApzc ? aTargetApzc->GetTransformToThis()
@@ -124,12 +138,6 @@ uint64_t InputBlockState::GetBlockId() const { return mBlockId; }
 
 bool InputBlockState::IsTargetConfirmed() const {
   return mTargetConfirmed != TargetConfirmationState::eUnconfirmed;
-}
-
-bool InputBlockState::HasReceivedRealConfirmedTarget() const {
-  return mTargetConfirmed == TargetConfirmationState::eConfirmed ||
-         mTargetConfirmed ==
-             TargetConfirmationState::eTimedOutAndMainThreadResponded;
 }
 
 bool InputBlockState::ShouldDropEvents() const {
@@ -221,10 +229,6 @@ bool CancelableBlockState::IsDefaultPrevented() const {
   return mPreventDefault;
 }
 
-bool CancelableBlockState::HasReceivedAllContentNotifications() const {
-  return HasReceivedRealConfirmedTarget() && mContentResponded;
-}
-
 bool CancelableBlockState::IsReadyForHandling() const {
   if (!IsTargetConfirmed()) {
     return false;
@@ -245,12 +249,14 @@ bool DragBlockState::HasReceivedMouseUp() { return mReceivedMouseUp; }
 
 void DragBlockState::MarkMouseUpReceived() { mReceivedMouseUp = true; }
 
-void DragBlockState::SetInitialThumbPos(CSSCoord aThumbPos) {
+void DragBlockState::SetInitialThumbPos(OuterCSSCoord aThumbPos) {
   mInitialThumbPos = aThumbPos;
 }
 
-void DragBlockState::SetDragMetrics(const AsyncDragMetrics& aDragMetrics) {
+void DragBlockState::SetDragMetrics(const AsyncDragMetrics& aDragMetrics,
+                                    const CSSRect& aScrollableRect) {
   mDragMetrics = aDragMetrics;
+  mInitialScrollableRect = aScrollableRect;
 }
 
 void DragBlockState::DispatchEvent(const InputData& aEvent) const {
@@ -259,7 +265,8 @@ void DragBlockState::DispatchEvent(const InputData& aEvent) const {
     return;
   }
 
-  GetTargetApzc()->HandleDragEvent(mouseInput, mDragMetrics, mInitialThumbPos);
+  GetTargetApzc()->HandleDragEvent(mouseInput, mDragMetrics, mInitialThumbPos,
+                                   mInitialScrollableRect);
 }
 
 bool DragBlockState::MustStayActive() { return !mReceivedMouseUp; }
@@ -340,7 +347,7 @@ void WheelBlockState::Update(ScrollWheelInput& aEvent) {
   // This makes GetScrollWheelDelta() consistent.
   if (!mLastEventTime.IsNull() &&
       (aEvent.mTimeStamp - mLastEventTime).ToMilliseconds() >
-          kScrollSeriesTimeoutMs) {
+          StaticPrefs::mousewheel_scroll_series_timeout()) {
     mScrollSeriesCounter = 0;
   }
   aEvent.mScrollSeriesNumber = ++mScrollSeriesCounter;
@@ -493,7 +500,9 @@ PanGestureBlockState::PanGestureBlockState(
     TargetConfirmationFlags aFlags, const PanGestureInput& aInitialEvent)
     : CancelableBlockState(aTargetApzc, aFlags),
       mInterrupted(false),
-      mWaitingForContentResponse(false) {
+      mWaitingForContentResponse(false),
+      mWaitingForBrowserGestureResponse(false),
+      mStartedBrowserGesture(false) {
   if (aFlags.mTargetConfirmed) {
     // Find the nearest APZC in the overscroll handoff chain that is scrollable.
     // If we get a content confirmation later that the apzc is different, then
@@ -548,16 +557,23 @@ bool PanGestureBlockState::SetContentResponse(bool aPreventDefault) {
   return stateChanged;
 }
 
-bool PanGestureBlockState::HasReceivedAllContentNotifications() const {
-  return CancelableBlockState::HasReceivedAllContentNotifications() &&
-         !mWaitingForContentResponse;
-}
-
 bool PanGestureBlockState::IsReadyForHandling() const {
   if (!CancelableBlockState::IsReadyForHandling()) {
     return false;
   }
-  return !mWaitingForContentResponse || IsContentResponseTimerExpired();
+  return !mWaitingForBrowserGestureResponse &&
+         (!mWaitingForContentResponse || IsContentResponseTimerExpired());
+}
+
+bool PanGestureBlockState::ShouldDropEvents() const {
+  return CancelableBlockState::ShouldDropEvents() || mStartedBrowserGesture;
+}
+
+bool PanGestureBlockState::TimeoutContentResponse() {
+  // Reset mWaitingForBrowserGestureResponse here so that we will not wait for
+  // the response forever.
+  mWaitingForBrowserGestureResponse = false;
+  return CancelableBlockState::TimeoutContentResponse();
 }
 
 bool PanGestureBlockState::AllowScrollHandoff() const { return false; }
@@ -565,6 +581,17 @@ bool PanGestureBlockState::AllowScrollHandoff() const { return false; }
 void PanGestureBlockState::SetNeedsToWaitForContentResponse(
     bool aWaitForContentResponse) {
   mWaitingForContentResponse = aWaitForContentResponse;
+}
+
+void PanGestureBlockState::SetNeedsToWaitForBrowserGestureResponse(
+    bool aWaitForBrowserGestureResponse) {
+  mWaitingForBrowserGestureResponse = aWaitForBrowserGestureResponse;
+}
+
+void PanGestureBlockState::SetBrowserGestureResponse(
+    BrowserGestureResponse aResponse) {
+  mWaitingForBrowserGestureResponse = false;
+  mStartedBrowserGesture = bool(aResponse);
 }
 
 PinchGestureBlockState::PinchGestureBlockState(
@@ -591,11 +618,6 @@ bool PinchGestureBlockState::SetContentResponse(bool aPreventDefault) {
   return stateChanged;
 }
 
-bool PinchGestureBlockState::HasReceivedAllContentNotifications() const {
-  return CancelableBlockState::HasReceivedAllContentNotifications() &&
-         !mWaitingForContentResponse;
-}
-
 bool PinchGestureBlockState::IsReadyForHandling() const {
   if (!CancelableBlockState::IsReadyForHandling()) {
     return false;
@@ -616,8 +638,13 @@ TouchBlockState::TouchBlockState(
       mDuringFastFling(false),
       mSingleTapOccurred(false),
       mInSlop(false),
+      mForLongTap(false),
+      mLongTapWasProcessed(false),
+      mIsWaitingLongTapResult(false),
+      mNeedsWaitTouchMove(false),
       mTouchCounter(aCounter),
       mStartTime(GetTargetApzc()->GetFrameTime().Time()) {
+  mOriginalTargetConfirmedState = mTargetConfirmed;
   TBS_LOG("Creating %p\n", this);
 }
 
@@ -654,14 +681,12 @@ void TouchBlockState::CopyPropertiesFrom(const TouchBlockState& aOther) {
   mTransformToApzc = aOther.mTransformToApzc;
 }
 
-bool TouchBlockState::HasReceivedAllContentNotifications() const {
-  return CancelableBlockState::HasReceivedAllContentNotifications()
-         // See comment in TouchBlockState::IsReadyforHandling()
-         && mAllowedTouchBehaviorSet;
-}
-
 bool TouchBlockState::IsReadyForHandling() const {
   if (!CancelableBlockState::IsReadyForHandling()) {
+    return false;
+  }
+
+  if (mIsWaitingLongTapResult) {
     return false;
   }
 
@@ -682,7 +707,12 @@ void TouchBlockState::SetSingleTapOccurred() {
 
 bool TouchBlockState::SingleTapOccurred() const { return mSingleTapOccurred; }
 
-bool TouchBlockState::MustStayActive() { return true; }
+bool TouchBlockState::MustStayActive() {
+  // If this touch block is for long-tap, it doesn't need to be active after the
+  // block was processed, it will be taken over by the original touch block
+  // which will stay active.
+  return !mForLongTap || !IsReadyForHandling();
+}
 
 const char* TouchBlockState::Type() { return "touch"; }
 
@@ -708,7 +738,7 @@ bool TouchBlockState::TouchActionAllowsPinchZoom() const {
 
 bool TouchBlockState::TouchActionAllowsDoubleTapZoom() const {
   for (auto& behavior : mAllowedTouchBehaviors) {
-    if (!(behavior & AllowedTouchBehavior::DOUBLE_TAP_ZOOM)) {
+    if (!(behavior & AllowedTouchBehavior::ANIMATING_ZOOM)) {
       return false;
     }
   }
@@ -804,6 +834,10 @@ Maybe<ScrollDirection> TouchBlockState::GetBestGuessPanDirection(
 
 uint32_t TouchBlockState::GetActiveTouchCount() const {
   return mTouchCounter.GetActiveTouchCount();
+}
+
+bool TouchBlockState::IsTargetOriginallyConfirmed() const {
+  return mOriginalTargetConfirmedState != TargetConfirmationState::eUnconfirmed;
 }
 
 KeyboardBlockState::KeyboardBlockState(

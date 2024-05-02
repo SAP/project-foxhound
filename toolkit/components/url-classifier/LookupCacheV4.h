@@ -28,6 +28,8 @@ class LookupCacheV4 final : public LookupCache {
 
   nsresult GetPrefixes(PrefixStringMap& aPrefixMap);
   nsresult GetFixedLengthPrefixes(FallibleTArray<uint32_t>& aPrefixes);
+  nsresult GetFixedLengthPrefixByIndex(uint32_t aIndex,
+                                       uint32_t* aOutPrefix) const;
 
   // ApplyUpdate will merge data stored in aTableUpdate with prefixes in
   // aInputMap.
@@ -41,10 +43,10 @@ class LookupCacheV4 final : public LookupCache {
 
   virtual nsresult LoadMozEntries() override;
 
-  static const int VER;
-  static const uint32_t MAX_METADATA_VALUE_LENGTH;
-  static const uint32_t VLPSET_MAGIC;
-  static const uint32_t VLPSET_VERSION;
+  static constexpr int VER = 4;
+  static constexpr uint32_t MAX_METADATA_VALUE_LENGTH = 256;
+  static constexpr uint32_t VLPSET_MAGIC = 1;
+  static constexpr uint32_t VLPSET_VERSION = 0x36044a35;
 
  protected:
   virtual nsCString GetPrefixSetSuffix() const override;

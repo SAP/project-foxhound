@@ -2,20 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-
 "use strict";
 
 // Test deleting indexedDB database from the tree using context menu
 
-add_task(async function() {
+add_task(async function () {
   await openTabAndSetupStorage(
     MAIN_DOMAIN_SECURED + "storage-empty-objectstores.html"
   );
 
-  const contextMenu = gPanelWindow.document.getElementById(
-    "storage-tree-popup"
-  );
+  const contextMenu =
+    gPanelWindow.document.getElementById("storage-tree-popup");
   const menuDeleteDb = contextMenu.querySelector("#storage-tree-popup-delete");
 
   info("test state before delete");

@@ -27,7 +27,7 @@ BitReader::~BitReader() = default;
 uint32_t BitReader::ReadBits(size_t aNum) {
   MOZ_ASSERT(aNum <= 32);
   if (mTotalBitsLeft < aNum) {
-    NS_ASSERTION(false, "Reading past end of buffer");
+    NS_WARNING("Reading past end of buffer");
     return 0;
   }
   uint32_t result = 0;
@@ -91,6 +91,19 @@ uint64_t BitReader::ReadU64() {
   uint64_t hi = ReadU32();
   uint32_t lo = ReadU32();
   return (hi << 32) | lo;
+}
+
+CheckedUint64 BitReader::ReadULEB128() {
+  // See https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer
+  CheckedUint64 value = 0;
+  for (size_t i = 0; i < sizeof(uint64_t) * 8 / 7; i++) {
+    bool more = ReadBit();
+    value += static_cast<uint64_t>(ReadBits(7)) << (i * 7);
+    if (!more) {
+      break;
+    }
+  }
+  return value;
 }
 
 uint64_t BitReader::ReadUTF8() {

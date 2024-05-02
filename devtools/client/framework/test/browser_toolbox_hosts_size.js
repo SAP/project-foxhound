@@ -6,9 +6,9 @@
 
 const URL = "data:text/html;charset=utf8,test for host sizes";
 
-var { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
-add_task(async function() {
+add_task(async function () {
   // Set size prefs to make the hosts way too big, so that the size has
   // to be clamped to fit into the browser window.
   Services.prefs.setIntPref("devtools.toolbox.footer.height", 10000);
@@ -37,6 +37,12 @@ add_task(async function() {
     "The iframe fits within the available space"
   );
 
+  iframe.style.height = "10000px"; // Set height to something unreasonably large.
+  ok(
+    iframe.clientHeight < panelHeight,
+    `The iframe fits within the available space (${iframe.clientHeight} < ${panelHeight})`
+  );
+
   await toolbox.switchHost(Toolbox.HostType.RIGHT);
   iframe = panel.querySelector(".devtools-toolbox-side-iframe");
   iframe.style.minWidth = "1px"; // Disable the min width set in css
@@ -46,8 +52,18 @@ add_task(async function() {
     "The iframe fits within the available space"
   );
 
+  const oldWidth = iframe.style.width;
+  iframe.style.width = "10000px"; // Set width to something unreasonably large.
+  ok(
+    iframe.clientWidth < panelWidth,
+    `The iframe fits within the available space (${iframe.clientWidth} < ${panelWidth})`
+  );
+  iframe.style.width = oldWidth;
+
   // on shutdown, the sidebar width will be set to the clientWidth of the iframe
   const expectedWidth = iframe.clientWidth;
+
+  info("waiting for cleanup");
   await cleanup(toolbox);
   // Wait until the toolbox-host-manager was destroyed and updated the preferences
   // to avoid side effects in the next test.
@@ -55,11 +71,12 @@ add_task(async function() {
     const savedWidth = Services.prefs.getIntPref(
       "devtools.toolbox.sidebar.width"
     );
+    info(`waiting for saved pref: ${savedWidth}, ${expectedWidth}`);
     return savedWidth === expectedWidth;
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   // Set size prefs to something reasonable, so we can check to make sure
   // they are being set properly.
   Services.prefs.setIntPref("devtools.toolbox.footer.height", 100);
@@ -83,14 +100,30 @@ add_task(async function() {
 
   let iframe = panel.querySelector(".devtools-toolbox-bottom-iframe");
   is(iframe.clientHeight, 100, "The iframe is resized properly");
+  const horzSplitter = panel.querySelector(".devtools-horizontal-splitter");
+  dragElement(horzSplitter, { startX: 1, startY: 1, deltaX: 0, deltaY: -50 });
+  is(iframe.clientHeight, 150, "The iframe was resized by the splitter");
 
   await toolbox.switchHost(Toolbox.HostType.RIGHT);
   iframe = panel.querySelector(".devtools-toolbox-side-iframe");
   iframe.style.minWidth = "1px"; // Disable the min width set in css
   is(iframe.clientWidth, 100, "The iframe is resized properly");
 
+  info("Resize the toolbox manually by 50 pixels");
+  const sideSplitter = panel.querySelector(".devtools-side-splitter");
+  dragElement(sideSplitter, { startX: 1, startY: 1, deltaX: -50, deltaY: 0 });
+  is(iframe.clientWidth, 150, "The iframe was resized by the splitter");
+
   await cleanup(toolbox);
 });
+
+function dragElement(el, { startX, startY, deltaX, deltaY }) {
+  const endX = startX + deltaX;
+  const endY = startY + deltaY;
+  EventUtils.synthesizeMouse(el, startX, startY, { type: "mousedown" }, window);
+  EventUtils.synthesizeMouse(el, endX, endY, { type: "mousemove" }, window);
+  EventUtils.synthesizeMouse(el, endX, endY, { type: "mouseup" }, window);
+}
 
 async function cleanup(toolbox) {
   Services.prefs.clearUserPref("devtools.toolbox.host");

@@ -1,6 +1,8 @@
 "use strict";
 
-const { JSONFile } = ChromeUtils.import("resource://gre/modules/JSONFile.jsm");
+const { JSONFile } = ChromeUtils.importESModule(
+  "resource://gre/modules/JSONFile.sys.mjs"
+);
 
 const aomStartup = Cc["@mozilla.org/addons/addon-manager-startup;1"].getService(
   Ci.amIAddonManagerStartup
@@ -41,7 +43,7 @@ const TEST_ADDONS = {
 // Utility to write out various addonStartup.json files.
 async function writeAOMStartupData(data) {
   let jsonFile = new JSONFile({
-    path: OS.Path.join(gProfDir.path, "addonStartup.json.lz4"),
+    path: PathUtils.join(gProfDir.path, "addonStartup.json.lz4"),
     compression: "lz4",
   });
   jsonFile.data = data;
@@ -91,7 +93,7 @@ add_task(async function test_startup_default_theme_moved() {
 
   let themeDef = {
     manifest: {
-      applications: { gecko: { id: TEST_ADDON_ID } },
+      browser_specific_settings: { gecko: { id: TEST_ADDON_ID } },
       version: "1.1",
       theme: {},
     },
@@ -151,7 +153,7 @@ add_task(async function test_startup_builtin_not_foreign() {
 
   let themeDef = {
     manifest: {
-      applications: { gecko: { id: TEST_ADDON_ID } },
+      browser_specific_settings: { gecko: { id: TEST_ADDON_ID } },
       version: "1.1",
       theme: {},
     },

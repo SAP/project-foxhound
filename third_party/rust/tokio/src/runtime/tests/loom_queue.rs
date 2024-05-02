@@ -1,20 +1,27 @@
-use crate::runtime::queue;
-use crate::runtime::task::{self, Schedule, Task};
+use crate::runtime::scheduler::multi_thread::{queue, Stats};
+use crate::runtime::tests::NoopSchedule;
 
 use loom::thread;
+use std::cell::RefCell;
+
+fn new_stats() -> Stats {
+    Stats::new(&crate::runtime::WorkerMetrics::new())
+}
 
 #[test]
 fn basic() {
     loom::model(|| {
         let (steal, mut local) = queue::local();
-        let inject = queue::Inject::new();
+        let inject = RefCell::new(vec![]);
+        let mut stats = new_stats();
 
         let th = thread::spawn(move || {
+            let mut stats = new_stats();
             let (_, mut local) = queue::local();
             let mut n = 0;
 
             for _ in 0..3 {
-                if steal.steal_into(&mut local).is_some() {
+                if steal.steal_into(&mut local, &mut stats).is_some() {
                     n += 1;
                 }
 
@@ -30,8 +37,8 @@ fn basic() {
 
         for _ in 0..2 {
             for _ in 0..2 {
-                let (task, _) = task::joinable::<_, Runtime>(async {});
-                local.push_back(task, &inject);
+                let (task, _) = super::unowned(async {});
+                local.push_back_or_overflow(task, &inject, &mut stats);
             }
 
             if local.pop().is_some() {
@@ -39,17 +46,15 @@ fn basic() {
             }
 
             // Push another task
-            let (task, _) = task::joinable::<_, Runtime>(async {});
-            local.push_back(task, &inject);
+            let (task, _) = super::unowned(async {});
+            local.push_back_or_overflow(task, &inject, &mut stats);
 
             while local.pop().is_some() {
                 n += 1;
             }
         }
 
-        while inject.pop().is_some() {
-            n += 1;
-        }
+        n += inject.borrow_mut().drain(..).count();
 
         n += th.join().unwrap();
 
@@ -61,13 +66,15 @@ fn basic() {
 fn steal_overflow() {
     loom::model(|| {
         let (steal, mut local) = queue::local();
-        let inject = queue::Inject::new();
+        let inject = RefCell::new(vec![]);
+        let mut stats = new_stats();
 
         let th = thread::spawn(move || {
+            let mut stats = new_stats();
             let (_, mut local) = queue::local();
             let mut n = 0;
 
-            if steal.steal_into(&mut local).is_some() {
+            if steal.steal_into(&mut local, &mut stats).is_some() {
                 n += 1;
             }
 
@@ -81,16 +88,16 @@ fn steal_overflow() {
         let mut n = 0;
 
         // push a task, pop a task
-        let (task, _) = task::joinable::<_, Runtime>(async {});
-        local.push_back(task, &inject);
+        let (task, _) = super::unowned(async {});
+        local.push_back_or_overflow(task, &inject, &mut stats);
 
         if local.pop().is_some() {
             n += 1;
         }
 
         for _ in 0..6 {
-            let (task, _) = task::joinable::<_, Runtime>(async {});
-            local.push_back(task, &inject);
+            let (task, _) = super::unowned(async {});
+            local.push_back_or_overflow(task, &inject, &mut stats);
         }
 
         n += th.join().unwrap();
@@ -99,9 +106,7 @@ fn steal_overflow() {
             n += 1;
         }
 
-        while inject.pop().is_some() {
-            n += 1;
-        }
+        n += inject.borrow_mut().drain(..).count();
 
         assert_eq!(7, n);
     });
@@ -111,10 +116,11 @@ fn steal_overflow() {
 fn multi_stealer() {
     const NUM_TASKS: usize = 5;
 
-    fn steal_tasks(steal: queue::Steal<Runtime>) -> usize {
+    fn steal_tasks(steal: queue::Steal<NoopSchedule>) -> usize {
+        let mut stats = new_stats();
         let (_, mut local) = queue::local();
 
-        if steal.steal_into(&mut local).is_none() {
+        if steal.steal_into(&mut local, &mut stats).is_none() {
             return 0;
         }
 
@@ -129,12 +135,13 @@ fn multi_stealer() {
 
     loom::model(|| {
         let (steal, mut local) = queue::local();
-        let inject = queue::Inject::new();
+        let inject = RefCell::new(vec![]);
+        let mut stats = new_stats();
 
         // Push work
         for _ in 0..NUM_TASKS {
-            let (task, _) = task::joinable::<_, Runtime>(async {});
-            local.push_back(task, &inject);
+            let (task, _) = super::unowned(async {});
+            local.push_back_or_overflow(task, &inject, &mut stats);
         }
 
         let th1 = {
@@ -150,9 +157,7 @@ fn multi_stealer() {
             n += 1;
         }
 
-        while inject.pop().is_some() {
-            n += 1;
-        }
+        n += inject.borrow_mut().drain(..).count();
 
         n += th1.join().unwrap();
         n += th2.join().unwrap();
@@ -164,23 +169,25 @@ fn multi_stealer() {
 #[test]
 fn chained_steal() {
     loom::model(|| {
+        let mut stats = new_stats();
         let (s1, mut l1) = queue::local();
         let (s2, mut l2) = queue::local();
-        let inject = queue::Inject::new();
+        let inject = RefCell::new(vec![]);
 
         // Load up some tasks
         for _ in 0..4 {
-            let (task, _) = task::joinable::<_, Runtime>(async {});
-            l1.push_back(task, &inject);
+            let (task, _) = super::unowned(async {});
+            l1.push_back_or_overflow(task, &inject, &mut stats);
 
-            let (task, _) = task::joinable::<_, Runtime>(async {});
-            l2.push_back(task, &inject);
+            let (task, _) = super::unowned(async {});
+            l2.push_back_or_overflow(task, &inject, &mut stats);
         }
 
         // Spawn a task to steal from **our** queue
         let th = thread::spawn(move || {
+            let mut stats = new_stats();
             let (_, mut local) = queue::local();
-            s1.steal_into(&mut local);
+            s1.steal_into(&mut local, &mut stats);
 
             while local.pop().is_some() {}
         });
@@ -188,29 +195,11 @@ fn chained_steal() {
         // Drain our tasks, then attempt to steal
         while l1.pop().is_some() {}
 
-        s2.steal_into(&mut l1);
+        s2.steal_into(&mut l1, &mut stats);
 
         th.join().unwrap();
 
         while l1.pop().is_some() {}
         while l2.pop().is_some() {}
-        while inject.pop().is_some() {}
     });
-}
-
-struct Runtime;
-
-impl Schedule for Runtime {
-    fn bind(task: Task<Self>) -> Runtime {
-        std::mem::forget(task);
-        Runtime
-    }
-
-    fn release(&self, _task: &Task<Self>) -> Option<Task<Self>> {
-        None
-    }
-
-    fn schedule(&self, _task: task::Notified<Self>) {
-        unreachable!();
-    }
 }

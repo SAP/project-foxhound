@@ -11,7 +11,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -20,15 +19,8 @@
 
 namespace jxl {
 
-// Add a noise to Opsin image, loading generated random noise from `noise_rect`
-// in `noise`.
-void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
-              const Image3F& noise, const Rect& opsin_rect,
-              const ColorCorrelationMap& cmap, Image3F* opsin);
-
-void RandomImage3(size_t seed, const Rect& rect, Image3F* JXL_RESTRICT noise);
-
-void Random3Planes(size_t seed, const std::pair<ImageF*, Rect>& plane0,
+void Random3Planes(size_t visible_frame_index, size_t nonvisible_frame_index,
+                   size_t x0, size_t y0, const std::pair<ImageF*, Rect>& plane0,
                    const std::pair<ImageF*, Rect>& plane1,
                    const std::pair<ImageF*, Rect>& plane2);
 

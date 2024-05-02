@@ -2,19 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-
 "use strict";
 
 // Test deleting a Cache object from the tree using context menu
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("dom.security.https_first", false);
   await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
 
-  const contextMenu = gPanelWindow.document.getElementById(
-    "storage-tree-popup"
-  );
+  const contextMenu =
+    gPanelWindow.document.getElementById("storage-tree-popup");
   const menuDeleteItem = contextMenu.querySelector(
     "#storage-tree-popup-delete"
   );

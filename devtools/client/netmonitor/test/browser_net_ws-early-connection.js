@@ -8,11 +8,7 @@
  * is properly tracked and there are WS frames displayed in the
  * Messages side panel.
  */
-add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["devtools.netmonitor.features.webSockets", true]],
-  });
-
+add_task(async function () {
   const { monitor } = await initNetMonitor(SIMPLE_URL, { requestCount: 1 });
 
   info("Starting test... ");

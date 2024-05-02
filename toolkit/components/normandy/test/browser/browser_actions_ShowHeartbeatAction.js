@@ -1,12 +1,21 @@
 "use strict";
 
-ChromeUtils.import("resource://normandy/actions/BaseAction.jsm", this);
-ChromeUtils.import("resource://normandy/actions/ShowHeartbeatAction.jsm", this);
-ChromeUtils.import("resource://normandy/lib/ClientEnvironment.jsm", this);
-ChromeUtils.import("resource://normandy/lib/Heartbeat.jsm", this);
-ChromeUtils.import("resource://normandy/lib/Storage.jsm", this);
-ChromeUtils.import("resource://normandy/lib/Uptake.jsm", this);
-ChromeUtils.import("resource://testing-common/NormandyTestUtils.jsm", this);
+const { BaseAction } = ChromeUtils.importESModule(
+  "resource://normandy/actions/BaseAction.sys.mjs"
+);
+const { ClientEnvironment } = ChromeUtils.importESModule(
+  "resource://normandy/lib/ClientEnvironment.sys.mjs"
+);
+const { Heartbeat } = ChromeUtils.importESModule(
+  "resource://normandy/lib/Heartbeat.sys.mjs"
+);
+
+const { Uptake } = ChromeUtils.importESModule(
+  "resource://normandy/lib/Uptake.sys.mjs"
+);
+const { NormandyTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/NormandyTestUtils.sys.mjs"
+);
 
 const HOUR_IN_MS = 60 * 60 * 1000;
 
@@ -33,57 +42,6 @@ function heartbeatRecipeFactory(overrides = {}) {
   }
 
   return recipeFactory(Object.assign(defaults, overrides));
-}
-
-class MockHeartbeat {
-  constructor() {
-    this.eventEmitter = new MockEventEmitter();
-  }
-}
-
-class MockEventEmitter {
-  constructor() {
-    this.once = sinon.stub();
-  }
-}
-
-function withStubbedHeartbeat() {
-  return function(testFunction) {
-    return async function wrappedTestFunction(args) {
-      const backstage = ChromeUtils.import(
-        "resource://normandy/actions/ShowHeartbeatAction.jsm",
-        null
-      );
-      const originalHeartbeat = backstage.Heartbeat;
-      const heartbeatInstanceStub = new MockHeartbeat();
-      const heartbeatClassStub = sinon.stub();
-      heartbeatClassStub.returns(heartbeatInstanceStub);
-      backstage.Heartbeat = heartbeatClassStub;
-
-      try {
-        await testFunction({
-          ...args,
-          heartbeatClassStub,
-          heartbeatInstanceStub,
-        });
-      } finally {
-        backstage.Heartbeat = originalHeartbeat;
-      }
-    };
-  };
-}
-
-function withClearStorage() {
-  return function(testFunction) {
-    return async function wrappedTestFunction(args) {
-      Storage.clearAllStorage();
-      try {
-        await testFunction(args);
-      } finally {
-        Storage.clearAllStorage();
-      }
-    };
-  };
 }
 
 // Test that a normal heartbeat works as expected

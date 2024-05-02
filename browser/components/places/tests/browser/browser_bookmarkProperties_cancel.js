@@ -1,10 +1,12 @@
 "use strict";
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 const sandbox = sinon.createSandbox();
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   sandbox.restore();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesUtils.history.clear();
@@ -12,7 +14,7 @@ registerCleanupFunction(async function() {
 
 let bookmarks; // Bookmarks added via insertTree.
 
-add_task(async function setup() {
+add_setup(async function () {
   bookmarks = await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.unfiledGuid,
     children: [
@@ -97,28 +99,28 @@ add_task(async function test_cancel_with_changes() {
           .getButton("accept");
         await TestUtils.waitForCondition(
           () => !acceptButton.disabled,
-          "The accept button should be enabled"
+          "EditBookmark: The accept button should be enabled"
         );
 
-        let promiseTitleChangeNotification = PlacesTestUtils.waitForNotification(
-          "bookmark-title-changed",
-          events => events.some(e => e.title === "n"),
-          "places"
+        let namePicker = dialogWin.document.getElementById(
+          "editBMPanel_namePicker"
         );
+        fillBookmarkTextField("editBMPanel_namePicker", "new_n", dialogWin);
 
-        fillBookmarkTextField("editBMPanel_namePicker", "n", dialogWin);
-
-        // The dialog is instant apply.
-        await promiseTitleChangeNotification;
-
-        // Ensure that the addition really is finished before we hit cancel.
-        await PlacesTestUtils.promiseAsyncUpdates();
+        // Ensure that value in field has changed
+        Assert.equal(
+          namePicker.value,
+          "new_n",
+          "EditBookmark: The title is the expected one."
+        );
       }
     );
 
-    await TestUtils.waitForCondition(
-      () => PlacesTransactions.undo.calledOnce,
-      "undo should have been called once."
+    let oldBookmark = await PlacesUtils.bookmarks.fetch(bookmarks[1].guid);
+    Assert.equal(
+      oldBookmark.title,
+      "bm2",
+      "EditBookmark: The title hasn't been changed"
     );
   });
 });

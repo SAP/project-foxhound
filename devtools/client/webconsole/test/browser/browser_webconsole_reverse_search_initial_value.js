@@ -8,7 +8,7 @@
 
 const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>Test reverse search initial value`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
 
@@ -21,7 +21,7 @@ add_task(async function() {
     `"😎"`,
   ];
 
-  const onLastMessage = waitForMessage(hud, `"😎"`, ".result");
+  const onLastMessage = waitForMessageByType(hud, `"😎"`, ".result");
   for (const input of jstermHistory) {
     execute(hud, input);
   }

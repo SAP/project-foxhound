@@ -8,32 +8,17 @@
 
 #include <shlwapi.h>
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "nsIWidget.h"
 #include "nsString.h"
 #include "WidgetUtils.h"
+#include "WinUtils.h"
 #include "nsPIDOMWindow.h"
 
 using namespace mozilla::widget;
 
 namespace {
-// Manages NS_NATIVE_TMP_WINDOW child windows. NS_NATIVE_TMP_WINDOWs are
-// temporary child windows of mParentWidget created to address RTL issues
-// in picker dialogs. We are responsible for destroying these.
-class AutoDestroyTmpWindow {
- public:
-  explicit AutoDestroyTmpWindow(HWND aTmpWnd) : mWnd(aTmpWnd) {}
-
-  ~AutoDestroyTmpWindow() {
-    if (mWnd) DestroyWindow(mWnd);
-  }
-
-  inline HWND get() const { return mWnd; }
-
- private:
-  HWND mWnd;
-};
-
 static DWORD ColorStringToRGB(const nsAString& aColor) {
   DWORD result = 0;
 
@@ -86,18 +71,18 @@ static void BGRIntToRGBString(DWORD color, nsAString& aResult) {
 static AsyncColorChooser* gColorChooser;
 
 AsyncColorChooser::AsyncColorChooser(COLORREF aInitialColor,
+                                     const nsTArray<nsString>& aDefaultColors,
                                      nsIWidget* aParentWidget,
                                      nsIColorPickerShownCallback* aCallback)
     : mozilla::Runnable("AsyncColorChooser"),
       mInitialColor(aInitialColor),
+      mDefaultColors(aDefaultColors.Clone()),
       mColor(aInitialColor),
       mParentWidget(aParentWidget),
       mCallback(aCallback) {}
 
 NS_IMETHODIMP
 AsyncColorChooser::Run() {
-  static COLORREF sCustomColors[16] = {0};
-
   MOZ_ASSERT(NS_IsMainThread(),
              "Color pickers can only be opened from main thread currently");
 
@@ -107,17 +92,23 @@ AsyncColorChooser::Run() {
     mozilla::AutoRestore<AsyncColorChooser*> restoreColorChooser(gColorChooser);
     gColorChooser = this;
 
-    AutoDestroyTmpWindow adtw(
-        (HWND)(mParentWidget.get()
-                   ? mParentWidget->GetNativeData(NS_NATIVE_TMP_WINDOW)
-                   : nullptr));
+    ScopedRtlShimWindow shim(mParentWidget.get());
+
+    COLORREF customColors[16];
+    for (size_t i = 0; i < mozilla::ArrayLength(customColors); i++) {
+      if (i < mDefaultColors.Length()) {
+        customColors[i] = ColorStringToRGB(mDefaultColors[i]);
+      } else {
+        customColors[i] = 0x00FFFFFF;
+      }
+    }
 
     CHOOSECOLOR options;
     options.lStructSize = sizeof(options);
-    options.hwndOwner = adtw.get();
+    options.hwndOwner = shim.get();
     options.Flags = CC_RGBINIT | CC_FULLOPEN | CC_ENABLEHOOK;
     options.rgbResult = mInitialColor;
-    options.lpCustColors = sCustomColors;
+    options.lpCustColors = customColors;
     options.lpfnHook = HookProc;
 
     mColor = ChooseColor(&options) ? options.rgbResult : mInitialColor;
@@ -191,19 +182,21 @@ NS_IMPL_ISUPPORTS(nsColorPicker, nsIColorPicker)
 
 NS_IMETHODIMP
 nsColorPicker::Init(mozIDOMWindowProxy* parent, const nsAString& title,
-                    const nsAString& aInitialColor) {
+                    const nsAString& aInitialColor,
+                    const nsTArray<nsString>& aDefaultColors) {
   MOZ_ASSERT(parent,
              "Null parent passed to colorpicker, no color picker for you!");
   mParentWidget =
       WidgetUtils::DOMWindowToWidget(nsPIDOMWindowOuter::From(parent));
   mInitialColor = ColorStringToRGB(aInitialColor);
+  mDefaultColors.Assign(aDefaultColors);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsColorPicker::Open(nsIColorPickerShownCallback* aCallback) {
   NS_ENSURE_ARG(aCallback);
-  nsCOMPtr<nsIRunnable> event =
-      new AsyncColorChooser(mInitialColor, mParentWidget, aCallback);
+  nsCOMPtr<nsIRunnable> event = new AsyncColorChooser(
+      mInitialColor, mDefaultColors, mParentWidget, aCallback);
   return NS_DispatchToMainThread(event);
 }

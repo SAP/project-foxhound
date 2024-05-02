@@ -8,9 +8,7 @@
 #define vm_FrameIter_h
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Atomics.h"     // mozilla::Atomic, mozilla::Relaxed
 #include "mozilla/Attributes.h"  // MOZ_IMPLICIT, MOZ_RAII
-#include "mozilla/Maybe.h"       // mozilla::Maybe
 #include "mozilla/MaybeOneOf.h"  // mozilla::MaybeOneOf
 
 #include <stddef.h>  // size_t
@@ -19,14 +17,12 @@
 #include "jstypes.h"  // JS_PUBLIC_API
 
 #include "jit/JSJitFrameIter.h"  // js::jit::{InlineFrameIterator,JSJitFrameIter}
+#include "js/ColumnNumber.h"     // JS::TaggedColumnNumberOneOrigin
 #include "js/RootingAPI.h"       // JS::Handle, JS::Rooted
 #include "js/TypeDecls.h"  // jsbytecode, JSContext, JSAtom, JSFunction, JSObject, JSScript
-#include "js/UniquePtr.h"        // js::UniquePtr
-#include "js/Value.h"            // JS::Value
-#include "vm/Activation.h"       // js::InterpreterActivation
-#include "vm/Stack.h"            // js::{AbstractFramePtr,MaybeCheckAliasing}
-#include "wasm/WasmConstants.h"  // js::wasm::Trap
-#include "wasm/WasmFrame.h"      // js::wasm::{Frame,TrapData}
+#include "js/Value.h"       // JS::Value
+#include "vm/Activation.h"  // js::InterpreterActivation
+#include "vm/Stack.h"       // js::{AbstractFramePtr,MaybeCheckAliasing}
 #include "wasm/WasmFrameIter.h"  // js::wasm::{ExitReason,RegisterState,WasmFrameIter}
 
 struct JSPrincipals;
@@ -42,7 +38,6 @@ namespace js {
 
 class ArgumentsObject;
 class CallObject;
-class InterpreterFrame;
 
 namespace jit {
 class CommonFrameLayout;
@@ -289,7 +284,7 @@ class FrameIter {
   ScriptSource* scriptSource() const;
   const char* filename() const;
   const char16_t* displayURL() const;
-  unsigned computeLine(uint32_t* column = nullptr) const;
+  unsigned computeLine(JS::TaggedColumnNumberOneOrigin* column = nullptr) const;
   JSAtom* maybeFunctionDisplayAtom() const;
   bool mutedErrors() const;
 
@@ -353,8 +348,6 @@ class FrameIter {
   // primitives).
   JS::Value thisArgument(JSContext* cx) const;
 
-  JS::Value newTarget() const;
-
   JS::Value returnValue() const;
   void setReturnValue(const JS::Value& v);
 
@@ -387,6 +380,8 @@ class FrameIter {
 
   // This is used to provide a raw interface for debugging.
   void* rawFramePtr() const;
+
+  bool inPrologue() const;
 
  private:
   Data data_;

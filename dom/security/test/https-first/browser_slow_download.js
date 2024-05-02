@@ -1,7 +1,7 @@
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
 });
 // Create a uri for an https site
 const testPath = getRootDirectory(gTestPath).replace(
@@ -104,11 +104,7 @@ examiner.prototype = {
 // 5. Complete download of text file
 add_task(async function test_slow_download() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["dom.security.https_first", true],
-      // ensure that download panel gets opened
-      ["browser.download.improvements_to_download_panel", true],
-    ],
+    set: [["dom.security.https_first", true]],
   });
 
   // remove all previous downloads
@@ -120,7 +116,7 @@ add_task(async function test_slow_download() {
 
   let downloadsPanelPromise = promisePanelOpened();
   let downloadsPromise = Downloads.getList(Downloads.PUBLIC);
-  BrowserTestUtils.loadURI(gBrowser, TEST_URI);
+  BrowserTestUtils.startLoadingURIString(gBrowser, TEST_URI);
   // wait for downloadsPanel to open before continuing with test
   await downloadsPanelPromise;
   let downloadList = await downloadsPromise;

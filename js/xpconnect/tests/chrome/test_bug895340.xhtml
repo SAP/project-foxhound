@@ -21,34 +21,22 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=895340
   SimpleTest.waitForExplicitFinish();
   SimpleTest.expectUncaughtException();
 
-  ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-
   var finished = false;
 
-  var console = Cc["@mozilla.org/consoleservice;1"]
-                  .getService(Ci.nsIConsoleService);
-
   let listener = {
-    QueryInterface: function(iid) {
-      if (!iid.equals(Ci.nsIConsoleListener) &&
-          !iid.equals(Ci.nsISupports))
-      {
-        throw Cr.NS_ERROR_NO_INTERFACE;
-      }
-      return this;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIConsoleListener"])
   };
 
   listener.observe = function(aMessage) {
     if (aMessage.message.includes("Will you report me?") && !finished) {
       finished = true;
       ok(true, "exception reported");
-      console.unregisterListener(listener);
+      Services.console.unregisterListener(listener);
       SimpleTest.finish();
     }
   };
 
-  console.registerListener(listener);
+  Services.console.registerListener(listener);
 
   /* Throw an exception and verify that it gets reported. */
   let foo_obs = function() {

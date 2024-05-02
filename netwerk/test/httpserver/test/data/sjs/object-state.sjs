@@ -5,7 +5,7 @@ function parseQueryString(str) {
   for (var i = 0, sz = paramArray.length; i < sz; i++) {
     var match = regex.exec(paramArray[i]);
     if (!match) {
-      throw "Bad parameter in queryString!  '" + paramArray[i] + "'";
+      throw new Error("Bad parameter in queryString!  '" + paramArray[i] + "'");
     }
     params[decodeURIComponent(match[1])] = decodeURIComponent(match[2]);
   }
@@ -46,7 +46,7 @@ function handleRequest(request, response) {
       };
       state.wrappedJSObject = state;
       setObjectState("object-state-test", state);
-      getObjectState("object-state-test", function(obj) {
+      getObjectState("object-state-test", function (obj) {
         if (obj !== state) {
           response.write("FAIL bad state save");
           response.finish();
@@ -60,7 +60,7 @@ function handleRequest(request, response) {
 
     case "trigger":
       response.write("trigger");
-      getObjectState("object-state-test", function(obj) {
+      getObjectState("object-state-test", function (obj) {
         obj.wrappedJSObject.end();
         setObjectState("object-state-test", null);
       });

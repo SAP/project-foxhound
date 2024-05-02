@@ -2,27 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
 import argparse
 import logging
 import os
 import sys
 
-import six
-
-from mozbuild.base import (
-    MachCommandConditions as conditions,
-    BinaryNotFoundException,
-)
-
-from mach.decorators import (
-    CommandArgument,
-    CommandArgumentGroup,
-    Command,
-)
-
 import mozinfo
+import six
+from mach.decorators import Command, CommandArgument, CommandArgumentGroup
+from mozbuild.base import BinaryNotFoundException
+from mozbuild.base import MachCommandConditions as conditions
 
 
 def setup_awsy_argument_parser():
@@ -35,20 +24,24 @@ def setup_awsy_argument_parser():
     return parser
 
 
-from awsy import ITERATIONS, PER_TAB_PAUSE, SETTLE_WAIT_TIME, MAX_TABS
+from awsy import ITERATIONS, MAX_TABS, PER_TAB_PAUSE, SETTLE_WAIT_TIME
 
 
 def run_awsy(command_context, tests, binary=None, **kwargs):
     import json
-    from mozlog.structured import commandline
 
-    from marionette_harness.runtests import MarionetteTestRunner, MarionetteHarness
+    from marionette_harness.runtests import MarionetteHarness, MarionetteTestRunner
+    from mozlog.structured import commandline
 
     parser = setup_awsy_argument_parser()
 
     awsy_source_dir = os.path.join(command_context.topsrcdir, "testing", "awsy")
     if not tests:
-        tests = [os.path.join(awsy_source_dir, "awsy", "test_memory_usage.py")]
+        if kwargs["base"]:
+            filename = "test_base_memory_usage.py"
+        else:
+            filename = "test_memory_usage.py"
+        tests = [os.path.join(awsy_source_dir, "awsy", filename)]
 
     args = argparse.Namespace(tests=tests)
 
@@ -59,11 +52,6 @@ def run_awsy(command_context, tests, binary=None, **kwargs):
         kwargs["iterations"] = 1
         kwargs["perTabPause"] = 1
         kwargs["settleWaitTime"] = 1
-
-    if "single_stylo_traversal" in kwargs and kwargs["single_stylo_traversal"]:
-        os.environ["STYLO_THREADS"] = "1"
-    else:
-        os.environ["STYLO_THREADS"] = "4"
 
     runtime_testvars = {}
     for arg in (
@@ -297,6 +285,14 @@ def run_awsy(command_context, tests, binary=None, **kwargs):
     dest="tp6",
     default=False,
     help="Use the tp6 pageset during testing.",
+)
+@CommandArgument(
+    "--base",
+    group="AWSY",
+    action="store_true",
+    dest="base",
+    default=False,
+    help="Run base memory usage tests.",
 )
 def run_awsy_test(command_context, tests, **kwargs):
     """mach awsy-test runs the in-tree version of the Are We Slim Yet

@@ -162,13 +162,13 @@ inline void MOZ_PretendNoReturn() MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS {}
 
 #  ifdef XGILL_PLUGIN
 
-#    define STATIC_PRECONDITION(COND) __attribute__((precondition(#    COND)))
+#    define STATIC_PRECONDITION(COND) __attribute__((precondition(#COND)))
 #    define STATIC_PRECONDITION_ASSUME(COND) \
       __attribute__((precondition_assume(#COND)))
-#    define STATIC_POSTCONDITION(COND) __attribute__((postcondition(#    COND)))
+#    define STATIC_POSTCONDITION(COND) __attribute__((postcondition(#COND)))
 #    define STATIC_POSTCONDITION_ASSUME(COND) \
       __attribute__((postcondition_assume(#COND)))
-#    define STATIC_INVARIANT(COND) __attribute__((invariant(#    COND)))
+#    define STATIC_INVARIANT(COND) __attribute__((invariant(#COND)))
 #    define STATIC_INVARIANT_ASSUME(COND) \
       __attribute__((invariant_assume(#COND)))
 
@@ -312,9 +312,6 @@ inline void MOZ_PretendNoReturn() MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS {}
   NS_ENSURE_TRUE(((arg) >= min) && ((arg) <= max), NS_ERROR_INVALID_ARG)
 
 #define NS_ENSURE_STATE(state) NS_ENSURE_TRUE(state, NS_ERROR_UNEXPECTED)
-
-#define NS_ENSURE_NO_AGGREGATION(outer) \
-  NS_ENSURE_FALSE(outer, NS_ERROR_NO_AGGREGATION)
 
 /*****************************************************************************/
 

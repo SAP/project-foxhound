@@ -3,22 +3,23 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import copy
+import itertools
 import os
 import re
+from datetime import datetime, timedelta
 
 from redo import retry
 from taskgraph.parameters import Parameters
+from taskgraph.target_tasks import _target_task, get_method
+from taskgraph.util.taskcluster import find_task_id
 
-from gecko_taskgraph import try_option_syntax
+from gecko_taskgraph import GECKO, try_option_syntax
 from gecko_taskgraph.util.attributes import (
-    match_run_on_projects,
     match_run_on_hg_branches,
+    match_run_on_projects,
 )
+from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
 from gecko_taskgraph.util.platforms import platform_family
-from gecko_taskgraph.util.taskcluster import find_task_id
-
-_target_task_methods = {}
 
 # Some tasks show up in the target task set, but are possibly special cases,
 # uncommon tasks, or tasks running against limited hardware set that they
@@ -41,23 +42,13 @@ UNCOMMON_TRY_TASK_LABELS = [
     r"web-platform-tests.*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
     r"-ccov",
     r"-profiling-",  # talos/raptor profiling jobs are run too often
+    r"-32-.*-webgpu",  # webgpu gets little benefit from these tests.
+    r"-asan-.*-webgpu",
+    r"-tsan-.*-webgpu",
     # Hide shippable versions of tests we have opt versions of because the non-shippable
     # versions are faster to run. This is mostly perf tests.
     r"-shippable(?!.*(awsy|browsertime|marionette-headless|mochitest-devtools-chrome-fis|raptor|talos|web-platform-tests-wdspec-headless|mochitest-plain-headless))",  # noqa - too long
 ]
-
-
-def _target_task(name):
-    def wrap(func):
-        _target_task_methods[name] = func
-        return func
-
-    return wrap
-
-
-def get_method(method):
-    """Get a target_task_method to pass to a TaskGraphGenerator."""
-    return _target_task_methods[method]
 
 
 def index_exists(index_path, reason=""):
@@ -123,10 +114,9 @@ def filter_by_uncommon_try_tasks(task, optional_filters=None):
     """
     filters = UNCOMMON_TRY_TASK_LABELS
     if optional_filters:
-        filters = copy.deepcopy(filters)
-        filters.extend(optional_filters)
+        filters = itertools.chain(filters, optional_filters)
 
-    return not any(re.search(pattern, task) for pattern in UNCOMMON_TRY_TASK_LABELS)
+    return not any(re.search(pattern, task) for pattern in filters)
 
 
 def filter_by_regex(task_label, regexes, mode="include"):
@@ -169,20 +159,26 @@ def filter_release_tasks(task, parameters):
     if task.attributes.get("shipping_phase") not in (None, "build"):
         return False
 
-    """ No debug on beta/release, keep on ESR with 4 week cycles, beta/release
+    """ No debug on release, keep on ESR with 4 week cycles, release
     will not be too different from central, but ESR will live for a long time.
 
     From June 2019 -> June 2020, we found 1 unique regression on ESR debug
     and 5 unique regressions on beta/release.  Keeping spidermonkey and linux
     debug finds all but 1 unique regressions (windows found on try) for beta/release.
-    """
-    if parameters["release_type"].startswith("esr"):
-        return True
 
-    # code below here is intended to reduce beta/release debug tasks
+    ...but debug-only failures started showing up on ESR (esr-91, esr-102) so
+    desktop debug tests were added back for beta.
+    """
     build_type = task.attributes.get("build_type", "")
     build_platform = task.attributes.get("build_platform", "")
     test_platform = task.attributes.get("test_platform", "")
+
+    if parameters["release_type"].startswith("esr") or (
+        parameters["release_type"] == "beta" and "android" not in build_platform
+    ):
+        return True
+
+    # code below here is intended to reduce release debug tasks
     if task.kind == "hazard" or "toolchain" in build_platform:
         # keep hazard and toolchain builds around
         return True
@@ -191,10 +187,10 @@ def filter_release_tasks(task, parameters):
         if "linux" not in build_platform:
             # filter out windows/mac/android
             return False
-        elif task.kind not in ["spidermonkey"] and "-qr" in test_platform:
+        if task.kind not in ["spidermonkey"] and "-qr" in test_platform:
             # filter out linux-qr tests, leave spidermonkey
             return False
-        elif "64" not in build_platform:
+        if "64" not in build_platform:
             # filter out linux32 builds
             return False
 
@@ -249,8 +245,12 @@ def accept_raptor_android_build(platform):
     if "shippable" not in platform:
         return False
     if "p2" in platform and "aarch64" in platform:
-        return True
+        return False
+    if "p5" in platform and "aarch64" in platform:
+        return False
     if "g5" in platform:
+        return False
+    if "a51" in platform:
         return True
 
 
@@ -341,12 +341,11 @@ def target_tasks_try(full_task_graph, parameters, graph_config):
     try_mode = parameters["try_mode"]
     if try_mode == "try_task_config":
         return _try_task_config(full_task_graph, parameters, graph_config)
-    elif try_mode == "try_option_syntax":
+    if try_mode == "try_option_syntax":
         return _try_option_syntax(full_task_graph, parameters, graph_config)
-    else:
-        # With no try mode, we schedule nothing, allowing the user to add tasks
-        # later via treeherder.
-        return []
+    # With no try mode, we schedule nothing, allowing the user to add tasks
+    # later via treeherder.
+    return []
 
 
 @_target_task("try_select_tasks")
@@ -535,8 +534,8 @@ def target_tasks_mozilla_release(full_task_graph, parameters, graph_config):
     ]
 
 
-@_target_task("mozilla_esr91_tasks")
-def target_tasks_mozilla_esr91(full_task_graph, parameters, graph_config):
+@_target_task("mozilla_esr115_tasks")
+def target_tasks_mozilla_esr115(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a promotable beta or release build
     of desktop, without android CI. The candidates build process involves a pipeline
     of builds and signing, but does not include beetmover or balrog jobs."""
@@ -550,7 +549,7 @@ def target_tasks_mozilla_esr91(full_task_graph, parameters, graph_config):
 
         platform = task.attributes.get("build_platform")
 
-        # Android is not built on esr91.
+        # Android is not built on esr115.
         if platform and "android" in platform:
             return False
 
@@ -566,6 +565,12 @@ def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
     mozilla_{beta,release} tasks, plus l10n, beetmover, balrog, etc."""
 
     def filter(task):
+        # Bug 1758507 - geckoview ships in the promote phase
+        if not parameters["release_type"].startswith("esr") and is_geckoview(
+            task, parameters
+        ):
+            return True
+
         if task.attributes.get("shipping_product") != parameters["release_product"]:
             return False
 
@@ -607,12 +612,6 @@ def target_tasks_push_desktop(full_task_graph, parameters, graph_config):
         # Include promotion tasks; these will be optimized out
         if task.label in filtered_for_candidates:
             return True
-        # XXX: Bug 1612540 - include beetmover jobs for publishing geckoview, along
-        # with the regular Firefox (not Devedition!) releases so that they are at sync
-        if "mozilla-esr" not in parameters["project"] and is_geckoview(
-            task, parameters
-        ):
-            return True
 
         if (
             task.attributes.get("shipping_product") == parameters["release_product"]
@@ -651,10 +650,6 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
         if task.label in filtered_for_candidates:
             return True
 
-        # XXX: Bug 1619603 - geckoview also ships alongside Firefox RC
-        if is_geckoview(task, parameters) and is_rc:
-            return True
-
         if (
             task.attributes.get("shipping_product") != parameters["release_product"]
             or task.attributes.get("shipping_phase") != "ship"
@@ -663,8 +658,7 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
 
         if "secondary" in task.kind:
             return is_rc
-        else:
-            return not is_rc
+        return not is_rc
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
@@ -730,6 +724,36 @@ def target_tasks_ship_geckoview(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
+@_target_task("custom-car_perf_testing")
+def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_config):
+    """Select tasks required for running daily performance tests for custom chromium-as-release."""
+
+    def filter(task):
+        platform = task.attributes.get("test_platform")
+        attributes = task.attributes
+        if attributes.get("unittest_suite") != "raptor":
+            return False
+
+        try_name = attributes.get("raptor_try_name")
+
+        # Completely ignore all non-shippable platforms
+        if "shippable" not in platform:
+            return False
+
+        # ignore all windows 7 perf jobs scheduled automatically
+        if "windows10-32" in platform:
+            return False
+
+        # Desktop and Android selection for CaR
+        if "browsertime" in try_name and (
+            "custom-car" in try_name or "cstm-car-m" in try_name
+        ):
+            return True
+        return False
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+
+
 @_target_task("general_perf_testing")
 def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config):
     """
@@ -739,15 +763,10 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
     def filter(task):
         platform = task.attributes.get("test_platform")
         attributes = task.attributes
-        vismet = attributes.get("kind") == "visual-metrics-dep"
-        if attributes.get("unittest_suite") != "raptor" and not vismet:
+        if attributes.get("unittest_suite") != "raptor":
             return False
 
         try_name = attributes.get("raptor_try_name")
-        if vismet:
-            # Visual metric tasks are configured a bit differently
-            platform = task.task.get("extra").get("treeherder-platform")
-            try_name = task.label
 
         # Completely ignore all non-shippable platforms
         if "shippable" not in platform:
@@ -762,13 +781,12 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
             # Select some browsertime tasks as desktop smoke-tests
             if "browsertime" in try_name:
                 if "chrome" in try_name:
-                    if "tp6" in try_name and "macosx1014" in platform:
-                        return False
                     return True
                 if "chromium" in try_name:
-                    if "tp6" in try_name and "macosx1014" in platform:
-                        return False
                     return True
+                # chromium-as-release has it's own cron
+                if "custom-car" in try_name:
+                    return False
                 if "-live" in try_name:
                     return True
                 if "-fis" in try_name:
@@ -776,12 +794,25 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 if "linux" in platform:
                     if "speedometer" in try_name:
                         return True
+                if "safari" and "benchmark" in try_name:
+                    # Speedometer 3 is broken on Safari, see bug 1802922
+                    if "speedometer3" in try_name:
+                        return False
+                    return True
             else:
                 # Don't run tp6 raptor tests
                 if "tp6" in try_name:
                     return False
         # Android selection
         elif accept_raptor_android_build(platform):
+            if "chrome-m" in try_name and (
+                ("ebay" in try_name and "live" not in try_name)
+                or (
+                    "live" in try_name
+                    and ("facebook" in try_name or "dailymail" in try_name)
+                )
+            ):
+                return False
             # Ignore all fennec tests here, we run those weekly
             if "fennec" in try_name:
                 return False
@@ -793,10 +824,16 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 return True
             # Select fenix resource usage tests
             if "fenix" in try_name:
+                # Bug 1816421 disable fission perf tests
+                if "-fis" in try_name:
+                    return False
                 if "-power" in try_name:
                     return True
             # Select geckoview resource usage tests
             if "geckoview" in try_name:
+                # Bug 1816421 disable fission perf tests
+                if "-fis" in try_name:
+                    return False
                 # Run cpu+memory, and power tests
                 cpu_n_memory_task = "-cpu" in try_name and "-memory" in try_name
                 power_task = "-power" in try_name
@@ -804,14 +841,14 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 if power_task and cpu_n_memory_task:
                     return False
                 if cpu_n_memory_task:
-                    if "-speedometer-" in try_name:
-                        return True
-                    if "-scn" in try_name and "-idle" in try_name:
-                        return True
+                    return False
                 if power_task:
                     return "browsertime" in try_name
             # Select browsertime-specific tests
             if "browsertime" in try_name:
+                # Don't run android CaR sp tests as we already have a cron for this.
+                if "m-car" in try_name:
+                    return False
                 if "speedometer" in try_name:
                     return True
         return False
@@ -836,6 +873,25 @@ def make_desktop_nightly_filter(platforms):
         )
 
     return filter
+
+
+@_target_task("sp-perftests")
+def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
+    def filter(task):
+        platform = task.attributes.get("test_platform")
+        attributes = task.attributes
+        if attributes.get("unittest_suite") != "raptor":
+            return False
+        if "windows10-32" not in platform:
+            try_name = attributes.get("raptor_try_name")
+            if (
+                "browsertime" in try_name
+                and "speedometer" in try_name
+                and "chrome" in try_name
+            ):
+                return True
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
 @_target_task("nightly_linux")
@@ -996,6 +1052,10 @@ def target_tasks_chromium_update(full_task_graph, parameters, graph_config):
         "fetch-win32-chromium",
         "fetch-win64-chromium",
         "fetch-mac-chromium",
+        "toolchain-linux64-custom-car",
+        "toolchain-win64-custom-car",
+        "toolchain-macosx64-custom-car",
+        "toolchain-android-custom-car",
     ]
 
 
@@ -1089,7 +1149,7 @@ def target_tasks_release_simulation(full_task_graph, parameters, graph_config):
         "nightly": "mozilla-central",
         "beta": "mozilla-beta",
         "release": "mozilla-release",
-        "esr91": "mozilla-esr91",
+        "esr115": "mozilla-esr115",
     }
     target_project = project_by_release.get(parameters["release_type"])
     if target_project is None:
@@ -1141,6 +1201,98 @@ def target_tasks_nothing(full_task_graph, parameters, graph_config):
     return []
 
 
+@_target_task("daily_beta_perf")
+def target_tasks_daily_beta_perf(full_task_graph, parameters, graph_config):
+    """
+    Select performance tests on the beta branch to be run daily
+    """
+    index_path = (
+        f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
+        f"{parameters['head_rev']}.taskgraph.decision-daily-beta-perf"
+    )
+    if os.environ.get("MOZ_AUTOMATION") and retry(
+        index_exists,
+        args=(index_path,),
+        kwargs={
+            "reason": "to avoid triggering multiple daily beta perftests off of the same revision",
+        },
+    ):
+        return []
+
+    def filter(task):
+        platform = task.attributes.get("test_platform")
+        attributes = task.attributes
+        try_name = attributes.get("raptor_try_name")
+
+        if attributes.get("unittest_suite") != "raptor":
+            return False
+
+        if platform and accept_raptor_android_build(platform):
+            # Select browsertime & geckoview specific tests
+            if "browsertime" and "geckoview" in try_name:
+                if "g5" in platform:
+                    return False
+                if "power" in try_name:
+                    return False
+                if "cpu" in try_name:
+                    return False
+                if "profiling" in try_name:
+                    return False
+                if "-live" in try_name:
+                    return False
+                if "speedometer" in try_name:
+                    return True
+                if "webgl" in try_name:
+                    return True
+                if "tp6m" in try_name:
+                    return True
+
+        return False
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+
+
+@_target_task("weekly_release_perf")
+def target_tasks_weekly_release_perf(full_task_graph, parameters, graph_config):
+    """
+    Select performance tests on the release branch to be run weekly
+    """
+
+    def filter(task):
+        platform = task.attributes.get("test_platform")
+        attributes = task.attributes
+        try_name = attributes.get("raptor_try_name")
+
+        if attributes.get("unittest_suite") != "raptor":
+            return False
+
+        if platform and accept_raptor_android_build(platform):
+            # Select browsertime & geckoview specific tests
+            if "browsertime" and "geckoview" in try_name:
+                if "g5" in platform:
+                    return False
+                if "power" in try_name:
+                    return False
+                if "cpu" in try_name:
+                    return False
+                if "profiling" in try_name:
+                    return False
+                if "-live" in try_name:
+                    return False
+                if "speedometer" in try_name:
+                    return True
+                if "webgl" in try_name:
+                    return True
+                if "tp6m" in try_name:
+                    return True
+                if "youtube-playback" in try_name:
+                    return True
+
+        return False
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+
+
 @_target_task("raptor_tp6m")
 def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
     """
@@ -1169,40 +1321,72 @@ def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("perftest_s7")
-def target_tasks_perftest_s7(full_task_graph, parameters, graph_config):
+@_target_task("backfill_all_browsertime")
+def target_tasks_backfill_all_browsertime(full_task_graph, parameters, graph_config):
     """
-    Select tasks required for running raptor page-load tests on geckoview against S7
+    Search for revisions that contains patches that were reviewed by perftest reviewers
+    and landed the day before the cron is running. Trigger backfill-all-browsertime action
+    task on each of them.
     """
+    from gecko_taskgraph.actions.util import get_decision_task_id, get_pushes
 
-    def filter(task):
-        build_platform = task.attributes.get("build_platform", "")
-        test_platform = task.attributes.get("test_platform", "")
-        attributes = task.attributes
-        vismet = attributes.get("kind") == "visual-metrics-dep"
-        try_name = attributes.get("raptor_try_name")
+    def date_is_yesterday(date):
+        yesterday = datetime.today() - timedelta(days=1)
+        date = datetime.fromtimestamp(date)
+        return date.date() == yesterday.date()
 
-        if vismet:
-            # Visual metric tasks are configured a bit differently
-            test_platform = task.task.get("extra").get("treeherder-platform")
-            try_name = task.label
-
-        if build_platform and "android" not in build_platform:
+    def reviewed_by_perftest(push):
+        try:
+            commit_message = get_hg_commit_message(
+                os.path.join(GECKO, graph_config["product-dir"]), rev=push
+            )
+        except Exception as e:
+            print(e)
             return False
-        if attributes.get("unittest_suite") != "raptor" and not vismet:
-            return False
-        if "s7" in test_platform and "-qr" in test_platform:
-            if "geckoview" in try_name and (
-                "unity-webgl" in try_name
-                or "speedometer" in try_name
-                or "tp6m-essential" in try_name
-            ):
-                if "power" in try_name:
-                    return False
-                else:
+
+        for line in commit_message.split("\n\n"):
+            if line.lower().startswith("bug ") and "r=" in line:
+                if "perftest-reviewers" in line.split("r=")[-1]:
+                    print(line)
                     return True
+        return False
 
-    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+    pushes = get_pushes(
+        project=parameters["head_repository"],
+        end_id=int(parameters["pushlog_id"]),
+        depth=200,
+        full_response=True,
+    )
+    for push_id in sorted([int(p) for p in pushes.keys()], reverse=True):
+        push_rev = pushes[str(push_id)]["changesets"][-1]
+        push_info = find_hg_revision_push_info(
+            "https://hg.mozilla.org/integration/" + parameters["project"], push_rev
+        )
+        pushdate = int(push_info["pushdate"])
+        if date_is_yesterday(pushdate) and reviewed_by_perftest(push_rev):
+            from gecko_taskgraph.actions.util import trigger_action
+
+            print(
+                f"Revision {push_rev} was created yesterday and was reviewed by "
+                f"#perftest-reviewers."
+            )
+            try:
+                push_decision_task_id = get_decision_task_id(
+                    parameters["project"], push_id
+                )
+            except Exception:
+                print(f"Could not find decision task for push {push_id}")
+                continue
+            try:
+                trigger_action(
+                    action_name="backfill-all-browsertime",
+                    # This lets the action know on which push we want to add a new task
+                    decision_task_id=push_decision_task_id,
+                )
+            except Exception as e:
+                print(f"Failed to trigger action for {push_rev}: {e}")
+
+    return []
 
 
 @_target_task("condprof")
@@ -1212,7 +1396,8 @@ def target_tasks_condprof(full_task_graph, parameters, graph_config):
     """
     for name, task in full_task_graph.tasks.items():
         if task.kind == "condprof":
-            yield name
+            if "a51" not in name:  # bug 1765348
+                yield name
 
 
 @_target_task("system_symbols")
@@ -1221,7 +1406,11 @@ def target_tasks_system_symbols(full_task_graph, parameters, graph_config):
     Select tasks for scraping and uploading system symbols.
     """
     for name, task in full_task_graph.tasks.items():
-        if task.kind in ["system-symbols", "system-symbols-upload"]:
+        if task.kind in [
+            "system-symbols",
+            "system-symbols-upload",
+            "system-symbols-reprocess",
+        ]:
             yield name
 
 
@@ -1259,3 +1448,45 @@ def target_tasks_l10n_cross_channel(full_task_graph, parameters, graph_config):
         return task.kind in ["l10n-cross-channel"]
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+
+
+@_target_task("are-we-esmified-yet")
+def target_tasks_are_we_esmified_yet(full_task_graph, parameters, graph_config):
+    """
+    select the task to track the progress of the esmification project
+    """
+    return [
+        l for l, t in full_task_graph.tasks.items() if t.kind == "are-we-esmified-yet"
+    ]
+
+
+@_target_task("eslint-build")
+def target_tasks_eslint_build(full_task_graph, parameters, graph_config):
+    """Select the task to run additional ESLint rules which require a build."""
+
+    for name, task in full_task_graph.tasks.items():
+        if task.kind != "source-test":
+            continue
+        if "eslint-build" in name:
+            yield name
+
+
+@_target_task("holly_tasks")
+def target_tasks_holly(full_task_graph, parameters, graph_config):
+    """Bug 1814661: only run updatebot tasks on holly"""
+
+    def filter(task):
+        return task.kind == "updatebot"
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+
+
+@_target_task("snap_upstream_tests")
+def target_tasks_snap_upstream_tests(full_task_graph, parameters, graph_config):
+    """
+    Select tasks for testing Snap package built as upstream. Omit -try because
+    it does not really make sense on a m-c cron
+    """
+    for name, task in full_task_graph.tasks.items():
+        if "snap-upstream-test" in name and not "-try" in name:
+            yield name

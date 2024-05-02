@@ -10,7 +10,7 @@ use crate::error::WebDriverResult;
 use crate::Parameters;
 
 pub fn standard_routes<U: WebDriverExtensionRoute>() -> Vec<(Method, &'static str, Route<U>)> {
-    return vec![
+    vec![
         (Method::POST, "/session", Route::NewSession),
         (Method::DELETE, "/session/{sessionId}", Route::DeleteSession),
         (Method::POST, "/session/{sessionId}/url", Route::Get),
@@ -119,18 +119,28 @@ pub fn standard_routes<U: WebDriverExtensionRoute>() -> Vec<(Method, &'static st
         ),
         (
             Method::POST,
-            "/session/{sessionId}/elements",
-            Route::FindElements,
-        ),
-        (
-            Method::POST,
             "/session/{sessionId}/element/{elementId}/element",
             Route::FindElementElement,
         ),
         (
             Method::POST,
+            "/session/{sessionId}/elements",
+            Route::FindElements,
+        ),
+        (
+            Method::POST,
             "/session/{sessionId}/element/{elementId}/elements",
             Route::FindElementElements,
+        ),
+        (
+            Method::POST,
+            "/session/{sessionId}/shadow/{shadowId}/element",
+            Route::FindShadowRootElement,
+        ),
+        (
+            Method::POST,
+            "/session/{sessionId}/shadow/{shadowId}/elements",
+            Route::FindShadowRootElements,
         ),
         (
             Method::GET,
@@ -171,6 +181,16 @@ pub fn standard_routes<U: WebDriverExtensionRoute>() -> Vec<(Method, &'static st
             Method::GET,
             "/session/{sessionId}/element/{elementId}/text",
             Route::GetElementText,
+        ),
+        (
+            Method::GET,
+            "/session/{sessionId}/element/{elementId}/computedlabel",
+            Route::GetComputedLabel,
+        ),
+        (
+            Method::GET,
+            "/session/{sessionId}/element/{elementId}/computedrole",
+            Route::GetComputedRole,
         ),
         (
             Method::GET,
@@ -288,8 +308,43 @@ pub fn standard_routes<U: WebDriverExtensionRoute>() -> Vec<(Method, &'static st
             Route::ReleaseActions,
         ),
         (Method::POST, "/session/{sessionId}/print", Route::Print),
+        (
+            Method::POST,
+            "/sessions/{sessionId}/webauthn/authenticator",
+            Route::WebAuthnAddVirtualAuthenticator,
+        ),
+        (
+            Method::DELETE,
+            "/sessions/{sessionId}/webauthn/authenticator/{authenticatorId}",
+            Route::WebAuthnRemoveVirtualAuthenticator,
+        ),
+        (
+            Method::POST,
+            "/sessions/{sessionId}/webauthn/authenticator/{authenticatorId}/credential",
+            Route::WebAuthnAddCredential,
+        ),
+        (
+            Method::GET,
+            "/sessions/{sessionId}/webauthn/authenticator/{authenticatorId}/credentials",
+            Route::WebAuthnGetCredentials,
+        ),
+        (
+            Method::DELETE,
+            "/sessions/{sessionId}/webauthn/authenticator/{authenticatorId}/credentials/{credentialId}",
+            Route::WebAuthnRemoveCredential,
+        ),
+        (
+            Method::DELETE,
+            "/sessions/{sessionId}/webauthn/authenticator/{authenticatorId}/credentials",
+            Route::WebAuthnRemoveAllCredentials,
+        ),
+        (
+            Method::POST,
+            "/sessions/{sessionId}/webauthn/authenticator/{authenticatorId}/uv",
+            Route::WebAuthnSetUserVerified,
+        ),
         (Method::GET, "/status", Route::Status),
-    ];
+    ]
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -323,6 +378,8 @@ pub enum Route<U: WebDriverExtensionRoute> {
     FindElements,
     FindElementElement,
     FindElementElements,
+    FindShadowRootElement,
+    FindShadowRootElements,
     GetActiveElement,
     GetShadowRoot,
     IsDisplayed,
@@ -331,6 +388,8 @@ pub enum Route<U: WebDriverExtensionRoute> {
     GetElementProperty,
     GetCSSValue,
     GetElementText,
+    GetComputedLabel,
+    GetComputedRole,
     GetElementTagName,
     GetElementRect,
     IsEnabled,
@@ -357,6 +416,13 @@ pub enum Route<U: WebDriverExtensionRoute> {
     Print,
     Status,
     Extension(U),
+    WebAuthnAddVirtualAuthenticator,
+    WebAuthnRemoveVirtualAuthenticator,
+    WebAuthnAddCredential,
+    WebAuthnGetCredentials,
+    WebAuthnRemoveCredential,
+    WebAuthnRemoveAllCredentials,
+    WebAuthnSetUserVerified,
 }
 
 pub trait WebDriverExtensionRoute: Clone + Send + PartialEq {

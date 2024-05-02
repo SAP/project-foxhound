@@ -1,3 +1,5 @@
+#![allow(clippy::derive_partial_eq_without_eq, clippy::ref_option_ref)]
+
 use serde_bytes::{ByteBuf, Bytes};
 use serde_derive::{Deserialize, Serialize};
 use serde_test::{assert_tokens, Token};

@@ -27,7 +27,6 @@ EXPORTS.mozilla += [
     "RemoteLazyInputStreamParent.h",
     "RemoteLazyInputStreamStorage.h",
     "RemoteLazyInputStreamThread.h",
-    "RemoteLazyInputStreamUtils.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -39,13 +38,11 @@ UNIFIED_SOURCES += [
     "RemoteLazyInputStreamParent.cpp",
     "RemoteLazyInputStreamStorage.cpp",
     "RemoteLazyInputStreamThread.cpp",
-    "RemoteLazyInputStreamUtils.cpp",
     "TemporaryIPCBlobChild.cpp",
     "TemporaryIPCBlobParent.cpp",
 ]
 
 IPDL_SOURCES += [
-    "BlobTypes.ipdlh",
     "IPCBlob.ipdlh",
     "PFileCreator.ipdl",
     "PRemoteLazyInputStream.ipdl",
@@ -68,5 +65,5 @@ FINAL_LIBRARY = "xul"
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
 
-BROWSER_CHROME_MANIFESTS += ["tests/browser.ini"]
-MOCHITEST_MANIFESTS += ["tests/mochitest.ini"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser.toml"]
+MOCHITEST_MANIFESTS += ["tests/mochitest.toml"]

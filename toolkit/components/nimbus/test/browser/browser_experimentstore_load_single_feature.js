@@ -3,26 +3,23 @@
 
 "use strict";
 
-const { ExperimentStore } = ChromeUtils.import(
-  "resource://nimbus/lib/ExperimentStore.jsm"
+const { ExperimentStore } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/ExperimentStore.sys.mjs"
 );
-const { ExperimentFakes } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+const { ExperimentFakes } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-const { NimbusFeatures, ExperimentAPI } = ChromeUtils.import(
-  "resource://nimbus/ExperimentAPI.jsm"
+const { ExperimentAPI } = ChromeUtils.importESModule(
+  "resource://nimbus/ExperimentAPI.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "JSONFile",
-  "resource://gre/modules/JSONFile.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+});
 
 const SINGLE_FEATURE_RECIPE = {
   ...ExperimentFakes.experiment(),
   branch: {
     feature: {
-      enabled: true,
       featureId: "urlbar",
       value: {
         valueThatWillDefinitelyShowUp: 42,

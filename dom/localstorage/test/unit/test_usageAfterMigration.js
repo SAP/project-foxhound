@@ -3,7 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   const principal = getPrincipal("http://example.com");
 
   const dataFile = getRelativeFile(
@@ -93,7 +93,10 @@ async function testSteps() {
 
   info("Setting prefs");
 
-  Services.prefs.setBoolPref("dom.storage.next_gen", true);
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
 
   info("Stage 1 - Testing usage after successful data migration");
 
@@ -158,4 +161,4 @@ async function testSteps() {
   verifyData();
 
   await verifyUsage(/* success */ true);
-}
+});

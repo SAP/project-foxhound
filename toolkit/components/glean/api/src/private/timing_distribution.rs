@@ -9,7 +9,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     RwLock,
 };
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::{CommonMetricData, MetricId, TimeUnit};
 use glean::{DistributionData, ErrorType, TimerId};
@@ -24,7 +24,7 @@ pub enum TimingDistributionMetric {
     Parent {
         /// The metric's ID.
         ///
-        /// **TEST-ONLY** - Do not use unless gated with `#[cfg(test)]`.
+        /// No longer test-only, is also used for GIFFT.
         id: MetricId,
         inner: glean::private::TimingDistributionMetric,
     },
@@ -68,20 +68,76 @@ impl TimingDistributionMetric {
         }
     }
 
-    pub(crate) fn accumulate_raw_samples_nanos(&self, samples: Vec<u64>) {
+    /// Accumulates a time duration sample for the provided metric.
+    ///
+    /// Adds a count to the corresponding bucket in the timing distribution.
+    /// Saturates at u64::MAX nanoseconds.
+    ///
+    /// Prefer start() and stop_and_accumulate() where possible.
+    ///
+    /// Users of this API are responsible for ensuring the timing source used
+    /// to calculate the duration is monotonic and consistent across platforms.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The [`Duration`] of the accumulated sample.
+    pub fn accumulate_raw_duration(&self, duration: Duration) {
+        let sample = duration.as_nanos().try_into().unwrap_or_else(|_| {
+            // TODO: Instrument this error
+            log::warn!(
+                "Elapsed nanoseconds larger than fits into 64-bytes. Saturating at u64::MAX."
+            );
+            u64::MAX
+        });
+        // May be unused in builds without gecko.
+        let _sample_ms = duration.as_millis().try_into().unwrap_or_else(|_| {
+            // TODO: Instrument this error
+            log::warn!(
+                "Elapsed milliseconds larger than fits into 32-bytes. Saturating at u32::MAX."
+            );
+            u32::MAX
+        });
         match self {
-            TimingDistributionMetric::Parent { inner, .. } => {
-                inner.accumulate_raw_samples_nanos(samples);
+            TimingDistributionMetric::Parent {
+                id: _metric_id,
+                inner,
+            } => {
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionAccumulateRawMillis(metric_id: u32, sample: u32);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionAccumulateRawMillis(_metric_id.0, _sample_ms);
+                    }
+                }
+                inner.accumulate_raw_samples_nanos(vec![sample]);
             }
-            TimingDistributionMetric::Child(_) => {
-                // TODO: Instrument this error
-                log::error!("Can't record samples for a timing distribution from a child metric");
+            TimingDistributionMetric::Child(c) => {
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionAccumulateRawMillis(metric_id: u32, sample: u32);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionAccumulateRawMillis(c.metric_id.0, _sample_ms);
+                    }
+                }
+                with_ipc_payload(move |payload| {
+                    if let Some(v) = payload.timing_samples.get_mut(&c.metric_id) {
+                        v.push(sample);
+                    } else {
+                        payload.timing_samples.insert(c.metric_id, vec![sample]);
+                    }
+                });
             }
         }
     }
 }
 
-#[inherent(pub)]
+#[inherent]
 impl TimingDistribution for TimingDistributionMetric {
     /// Starts tracking time for the provided metric.
     ///
@@ -93,9 +149,22 @@ impl TimingDistribution for TimingDistributionMetric {
     /// # Returns
     ///
     /// A unique [`TimerId`] for the new timer.
-    fn start(&self) -> TimerId {
+    pub fn start(&self) -> TimerId {
         match self {
-            TimingDistributionMetric::Parent { inner, .. } => inner.start(),
+            TimingDistributionMetric::Parent { id: _id, inner } => {
+                let timer_id = inner.start();
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionStart(metric_id: u32, timer_id: u64);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionStart(_id.0, timer_id.id);
+                    }
+                }
+                timer_id.into()
+            }
             TimingDistributionMetric::Child(c) => {
                 // There is no glean-core on this process to give us a TimerId,
                 // so we'll have to make our own and do our own bookkeeping.
@@ -111,7 +180,17 @@ impl TimingDistribution for TimingDistributionMetric {
                 if let Some(_v) = map.insert(id, Instant::now()) {
                     // TODO: report an error and find a different TimerId.
                 }
-                id
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionStart(metric_id: u32, timer_id: u64);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionStart(c.metric_id.0, id);
+                    }
+                }
+                id.into()
             }
         }
     }
@@ -127,17 +206,40 @@ impl TimingDistribution for TimingDistributionMetric {
     /// * `id` - The [`TimerId`] to associate with this timing. This allows
     ///   for concurrent timing of events associated with different ids to the
     ///   same timespan metric.
-    fn stop_and_accumulate(&self, id: TimerId) {
+    pub fn stop_and_accumulate(&self, id: TimerId) {
         match self {
-            TimingDistributionMetric::Parent { inner, .. } => {
+            TimingDistributionMetric::Parent {
+                id: _metric_id,
+                inner,
+            } => {
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionStopAndAccumulate(metric_id: u32, timer_id: u64);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionStopAndAccumulate(_metric_id.0, id.id);
+                    }
+                }
                 inner.stop_and_accumulate(id);
             }
             TimingDistributionMetric::Child(c) => {
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionStopAndAccumulate(metric_id: u32, timer_id: u64);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionStopAndAccumulate(c.metric_id.0, id.id);
+                    }
+                }
                 let mut map = c
                     .instants
                     .write()
                     .expect("Write lock must've been poisoned.");
-                if let Some(start) = map.remove(&id) {
+                if let Some(start) = map.remove(&id.id) {
                     let now = Instant::now();
                     let sample = now
                         .checked_duration_since(start)
@@ -177,9 +279,22 @@ impl TimingDistribution for TimingDistributionMetric {
     /// * `id` - The [`TimerId`] to associate with this timing. This allows
     ///   for concurrent timing of events associated with different ids to the
     ///   same timing distribution metric.
-    fn cancel(&self, id: TimerId) {
+    pub fn cancel(&self, id: TimerId) {
         match self {
-            TimingDistributionMetric::Parent { inner, .. } => {
+            TimingDistributionMetric::Parent {
+                id: _metric_id,
+                inner,
+            } => {
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionCancel(metric_id: u32, timer_id: u64);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionCancel(_metric_id.0, id.id);
+                    }
+                }
                 inner.cancel(id);
             }
             TimingDistributionMetric::Child(c) => {
@@ -187,9 +302,74 @@ impl TimingDistribution for TimingDistributionMetric {
                     .instants
                     .write()
                     .expect("Write lock must've been poisoned.");
-                if map.remove(&id).is_none() {
+                if map.remove(&id.id).is_none() {
                     // TODO: report an error (cancelled a non-started id).
                 }
+                #[cfg(feature = "with_gecko")]
+                {
+                    extern "C" {
+                        fn GIFFT_TimingDistributionCancel(metric_id: u32, timer_id: u64);
+                    }
+                    // SAFETY: using only primitives, no return value.
+                    unsafe {
+                        GIFFT_TimingDistributionCancel(c.metric_id.0, id.id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Accumulates the provided signed samples in the metric.
+    ///
+    /// This is required so that the platform-specific code can provide us with
+    /// 64 bit signed integers if no `u64` comparable type is available. This
+    /// will take care of filtering and reporting errors for any provided negative
+    /// sample.
+    ///
+    /// Please note that this assumes that the provided samples are already in
+    /// the "unit" declared by the instance of the metric type (e.g. if the
+    /// instance this method was called on is using [`crate::TimeUnit::Second`], then
+    /// `samples` are assumed to be in that unit).
+    ///
+    /// # Arguments
+    ///
+    /// * `samples` - The vector holding the samples to be recorded by the metric.
+    ///
+    /// ## Notes
+    ///
+    /// Discards any negative value in `samples` and report an [`ErrorType::InvalidValue`]
+    /// for each of them. Reports an [`ErrorType::InvalidOverflow`] error for samples that
+    /// are longer than `MAX_SAMPLE_TIME`.
+    pub fn accumulate_samples(&self, samples: Vec<i64>) {
+        match self {
+            TimingDistributionMetric::Parent { id: _id, inner } => {
+                inner.accumulate_samples(samples)
+            }
+            TimingDistributionMetric::Child(_c) => {
+                // TODO: Instrument this error
+                log::error!("Can't record samples for a timing distribution from a child metric");
+            }
+        }
+    }
+
+    /// Accumulates the provided samples in the metric.
+    ///
+    /// # Arguments
+    ///
+    /// * `samples` - A list of samples recorded by the metric.
+    ///               Samples must be in nanoseconds.
+    /// ## Notes
+    ///
+    /// Reports an [`ErrorType::InvalidOverflow`] error for samples that
+    /// are longer than `MAX_SAMPLE_TIME`.
+    pub fn accumulate_raw_samples_nanos(&self, samples: Vec<u64>) {
+        match self {
+            TimingDistributionMetric::Parent { id: _id, inner } => {
+                inner.accumulate_raw_samples_nanos(samples)
+            }
+            TimingDistributionMetric::Child(_c) => {
+                // TODO: Instrument this error
+                log::error!("Can't record samples for a timing distribution from a child metric");
             }
         }
     }
@@ -204,10 +384,11 @@ impl TimingDistribution for TimingDistributionMetric {
     ///
     /// * `ping_name` - represents the optional name of the ping to retrieve the
     ///   metric for. Defaults to the first value in `send_in_pings`.
-    fn test_get_value<'a, S: Into<Option<&'a str>>>(
+    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
         &self,
         ping_name: S,
     ) -> Option<DistributionData> {
+        let ping_name = ping_name.into().map(|s| s.to_string());
         match self {
             TimingDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
             TimingDistributionMetric::Child(c) => {
@@ -229,14 +410,10 @@ impl TimingDistribution for TimingDistributionMetric {
     /// # Returns
     ///
     /// The number of errors recorded.
-    fn test_get_num_recorded_errors<'a, S: Into<Option<&'a str>>>(
-        &self,
-        error: ErrorType,
-        ping_name: S,
-    ) -> i32 {
+    pub fn test_get_num_recorded_errors(&self, error: ErrorType) -> i32 {
         match self {
             TimingDistributionMetric::Parent { inner, .. } => {
-                inner.test_get_num_recorded_errors(error, ping_name)
+                inner.test_get_num_recorded_errors(error)
             }
             TimingDistributionMetric::Child(c) => panic!(
                 "Cannot get number of recorded errors for {:?} in non-parent process!",

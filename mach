@@ -3,25 +3,28 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import platform
 import sys
-from textwrap import dedent
+import subprocess
+import traceback
+from textwrap import dedent, fill
+
+MIN_PYTHON_VERSION = (3, 7)
+MAX_PYTHON_VERSION_TO_CONSIDER = (3, 11)
 
 
-def load_mach(dir_path, mach_path):
+def load_mach(dir_path, mach_path, args):
     # Defer import of "importlib.util" until after Python version check has happened
     # so that Python 2 usages fail gracefully.
     import importlib.util
     spec = importlib.util.spec_from_file_location('mach_initialize', mach_path)
     mach_initialize = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mach_initialize)
-    return mach_initialize.initialize(dir_path)
+    return mach_initialize.initialize(dir_path, args)
 
 
-def check_and_get_mach(dir_path):
+def check_and_get_mach(dir_path, args):
     initialize_paths = (
         # Run Thunderbird's mach_initialize.py if it exists
         'comm/build/mach_initialize.py',
@@ -32,16 +35,55 @@ def check_and_get_mach(dir_path):
     for initialize_path in initialize_paths:
         mach_path = os.path.join(dir_path, initialize_path)
         if os.path.isfile(mach_path):
-            return load_mach(dir_path, mach_path)
+            return load_mach(dir_path, mach_path, args)
     return None
 
 
+def find_alternate_python3_executables():
+    for i in range(MIN_PYTHON_VERSION[1], MAX_PYTHON_VERSION_TO_CONSIDER[1] + 1):
+        potential_python_binary = f"python3.{i}"
+        if os.name == "nt":
+            potential_python_binary += ".exe"
+
+        try:
+            out = subprocess.run(
+                [potential_python_binary, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding="UTF-8")
+
+            binary_minor_version = int(out.stdout[9:11].strip("."))
+
+            if binary_minor_version >= MIN_PYTHON_VERSION[1]:
+                yield potential_python_binary
+
+        except Exception:
+            pass
+
+
+def try_alternate_python3_executables(args):
+    for potential_python_binary in find_alternate_python3_executables():
+        try:
+            print(
+                f"We found '{potential_python_binary}' and will attempt to re-run Mach with it."
+            )
+            os.execvp(
+                potential_python_binary, [potential_python_binary] + ["mach"] + args
+            )
+        except Exception:
+            # We don't really care what goes wrong, just don't let it bubble up
+            # If we can't successfully launch with a different python3 binary
+            # we will just print the normal help messages.
+            pass
+
+
 def main(args):
-    # Ensure we are running Python 3.6+. We run this check as soon as
+    # Ensure we are running Python 3.7+. We run this check as soon as
     # possible to avoid a cryptic import/usage error.
-    if sys.version_info < (3, 6):
-        print("Python 3.6+ is required to run mach.")
-        print("You are running Python", platform.python_version())
+    if sys.version_info < MIN_PYTHON_VERSION:
+        print(f"Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]}+ is required to run mach.")
+        print("You are running Mach with Python {0}".format(platform.python_version()))
+        try_alternate_python3_executables(args)
         if sys.platform.startswith("linux"):
             print(dedent("""
             See https://firefox-source-docs.mozilla.org/setup/linux_build.html#installingpython
@@ -85,11 +127,41 @@ def main(args):
     # https://github.com/python/cpython/pull/9516
     os.environ.pop("__PYVENV_LAUNCHER__", None)
 
-    mach = check_and_get_mach(os.path.dirname(os.path.realpath(__file__)))
-    if not mach:
-        print('Could not run mach: No mach source directory found.')
-        sys.exit(1)
-    sys.exit(mach.run(args))
+    try:
+        mach = check_and_get_mach(os.path.dirname(os.path.realpath(__file__)), args)
+        if not mach:
+            print("Could not run mach: No mach source directory found.")
+            sys.exit(1)
+        sys.exit(mach.run(args))
+    except:
+        if sys.version_info >= (
+            MAX_PYTHON_VERSION_TO_CONSIDER[0],
+            MAX_PYTHON_VERSION_TO_CONSIDER[1] + 1,
+        ):
+            traceback.print_exc()
+            print()
+            print("---")
+            print()
+            print(fill(dedent(f"""\
+                Note that you are running Mach with Python
+                {platform.python_version()}, which is higher than the highest
+                known working version of Python for Mach. Consider running Mach
+                with Python {MAX_PYTHON_VERSION_TO_CONSIDER[0]}.{MAX_PYTHON_VERSION_TO_CONSIDER[1]}
+                or lower."""
+            )))
+
+            try:
+                alternative = next(find_alternate_python3_executables())
+                print()
+                print("Running the following command may solve your issue:")
+                print()
+                print(f"    {alternative} {sys.argv[0]} {' '.join(args)}")
+                print()
+            except StopIteration:
+                pass
+            sys.exit(1)
+        else:
+            raise
 
 
 if __name__ == '__main__':

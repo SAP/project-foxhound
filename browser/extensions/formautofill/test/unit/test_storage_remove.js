@@ -5,9 +5,9 @@
 "use strict";
 
 let FormAutofillStorage;
-add_task(async function setup() {
-  ({ FormAutofillStorage } = ChromeUtils.import(
-    "resource://autofill/FormAutofillStorage.jsm"
+add_setup(async () => {
+  ({ FormAutofillStorage } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillStorage.sys.mjs"
   ));
 });
 
@@ -48,7 +48,7 @@ const TEST_CREDIT_CARD_2 = {
 
 // Like add_task, but actually adds 2 - one for addresses and one for cards.
 function add_storage_task(test_function) {
-  add_task(async function() {
+  add_task(async function () {
     let path = getTempFile(TEST_STORE_FILE_NAME).path;
     let profileStorage = new FormAutofillStorage(path);
     await profileStorage.initialize();

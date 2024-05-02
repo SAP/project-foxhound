@@ -101,14 +101,14 @@ class LDivOrModI64
 
   static const size_t Lhs = 0;
   static const size_t Rhs = INT64_PIECES;
-  static const size_t Tls = 2 * INT64_PIECES;
+  static const size_t Instance = 2 * INT64_PIECES;
 
   LDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs,
-               const LAllocation& tls)
+               const LAllocation& instance)
       : LCallInstructionHelper(classOpcode) {
     setInt64Operand(Lhs, lhs);
     setInt64Operand(Rhs, rhs);
-    setOperand(Tls, tls);
+    setOperand(Instance, instance);
   }
 
   MDefinition* mir() const {
@@ -143,14 +143,14 @@ class LUDivOrModI64
 
   static const size_t Lhs = 0;
   static const size_t Rhs = INT64_PIECES;
-  static const size_t Tls = 2 * INT64_PIECES;
+  static const size_t Instance = 2 * INT64_PIECES;
 
   LUDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs,
-                const LAllocation& tls)
+                const LAllocation& instance)
       : LCallInstructionHelper(classOpcode) {
     setInt64Operand(Lhs, lhs);
     setInt64Operand(Rhs, rhs);
-    setOperand(Tls, tls);
+    setOperand(Instance, instance);
   }
 
   MDefinition* mir() const {
@@ -361,19 +361,19 @@ class LSoftUDivOrMod : public LBinaryCallInstructionHelper<1, 0> {
 
 class LWasmTruncateToInt64 : public LCallInstructionHelper<INT64_PIECES, 2, 0> {
   static const size_t Input = 0;
-  static const size_t Tls = 1;
+  static const size_t Instance = 1;
 
  public:
   LIR_HEADER(WasmTruncateToInt64);
 
-  LWasmTruncateToInt64(const LAllocation& in, const LAllocation& tls)
+  LWasmTruncateToInt64(const LAllocation& in, const LAllocation& instance)
       : LCallInstructionHelper(classOpcode) {
     setOperand(Input, in);
-    setOperand(Tls, tls);
+    setOperand(Instance, instance);
   }
 
   LAllocation* input() { return getOperand(Input); }
-  LAllocation* tls() { return getOperand(Tls); }
+  LAllocation* instance() { return getOperand(Instance); }
 
   MWasmBuiltinTruncateToInt64* mir() const {
     return mir_->toWasmBuiltinTruncateToInt64();
@@ -386,44 +386,50 @@ class LInt64ToFloatingPointCall
   LIR_HEADER(Int64ToFloatingPointCall);
 
   static const size_t Input = 0;
-  static const size_t Tls = INT64_PIECES;
+  static const size_t Instance = INT64_PIECES;
 
-  LInt64ToFloatingPointCall(const LInt64Allocation& in, const LAllocation& tls)
+  LInt64ToFloatingPointCall(const LInt64Allocation& in,
+                            const LAllocation& instance)
       : LCallInstructionHelper(classOpcode) {
     setInt64Operand(Input, in);
-    setOperand(Tls, tls);
+    setOperand(Instance, instance);
   }
 
   LAllocation* input() { return getOperand(Input); }
-  LAllocation* tls() { return getOperand(Tls); }
+  LAllocation* instance() { return getOperand(Instance); }
 
   MBuiltinInt64ToFloatingPoint* mir() const {
     return mir_->toBuiltinInt64ToFloatingPoint();
   }
 };
 
-class LWasmAtomicLoadI64 : public LInstructionHelper<INT64_PIECES, 1, 0> {
+class LWasmAtomicLoadI64 : public LInstructionHelper<INT64_PIECES, 2, 0> {
  public:
   LIR_HEADER(WasmAtomicLoadI64);
 
-  explicit LWasmAtomicLoadI64(const LAllocation& ptr)
+  explicit LWasmAtomicLoadI64(const LAllocation& ptr,
+                              const LAllocation& memoryBase)
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
+    setOperand(1, memoryBase);
   }
 
   MWasmLoad* mir() const { return mir_->toWasmLoad(); }
   const LAllocation* ptr() { return getOperand(0); }
+  const LAllocation* memoryBase() { return getOperand(1); }
 };
 
-class LWasmAtomicStoreI64 : public LInstructionHelper<0, 1 + INT64_PIECES, 2> {
+class LWasmAtomicStoreI64 : public LInstructionHelper<0, 2 + INT64_PIECES, 2> {
  public:
   LIR_HEADER(WasmAtomicStoreI64);
 
   LWasmAtomicStoreI64(const LAllocation& ptr, const LInt64Allocation& value,
-                      const LDefinition& tmpLow, const LDefinition& tmpHigh)
+                      const LAllocation& memoryBase, const LDefinition& tmpLow,
+                      const LDefinition& tmpHigh)
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
     setInt64Operand(1, value);
+    setOperand(3, memoryBase);
     setTemp(0, tmpLow);
     setTemp(1, tmpHigh);
   }
@@ -431,22 +437,25 @@ class LWasmAtomicStoreI64 : public LInstructionHelper<0, 1 + INT64_PIECES, 2> {
   MWasmStore* mir() const { return mir_->toWasmStore(); }
   const LAllocation* ptr() { return getOperand(0); }
   const LInt64Allocation value() { return getInt64Operand(1); }
+  const LAllocation* memoryBase() { return getOperand(3); }
   const LDefinition* tmpLow() { return getTemp(0); }
   const LDefinition* tmpHigh() { return getTemp(1); }
 };
 
 class LWasmCompareExchangeI64
-    : public LInstructionHelper<INT64_PIECES, 1 + 2 * INT64_PIECES, 0> {
+    : public LInstructionHelper<INT64_PIECES, 2 + 2 * INT64_PIECES, 0> {
  public:
   LIR_HEADER(WasmCompareExchangeI64);
 
   LWasmCompareExchangeI64(const LAllocation& ptr,
                           const LInt64Allocation& expected,
-                          const LInt64Allocation& replacement)
+                          const LInt64Allocation& replacement,
+                          const LAllocation& memoryBase)
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
     setInt64Operand(1, expected);
     setInt64Operand(1 + INT64_PIECES, replacement);
+    setOperand(1 + 2 * INT64_PIECES, memoryBase);
   }
 
   MWasmCompareExchangeHeap* mir() const {
@@ -457,10 +466,11 @@ class LWasmCompareExchangeI64
   const LInt64Allocation replacement() {
     return getInt64Operand(1 + INT64_PIECES);
   }
+  const LAllocation* memoryBase() { return getOperand(1 + 2 * INT64_PIECES); }
 };
 
 class LWasmAtomicBinopI64
-    : public LInstructionHelper<INT64_PIECES, 1 + INT64_PIECES, 2> {
+    : public LInstructionHelper<INT64_PIECES, 2 + INT64_PIECES, 2> {
   const wasm::MemoryAccessDesc& access_;
   AtomicOp op_;
 
@@ -468,17 +478,20 @@ class LWasmAtomicBinopI64
   LIR_HEADER(WasmAtomicBinopI64);
 
   LWasmAtomicBinopI64(const LAllocation& ptr, const LInt64Allocation& value,
-                      const LDefinition& tmpLow, const LDefinition& tmpHigh,
+                      const LAllocation& memoryBase, const LDefinition& tmpLow,
+                      const LDefinition& tmpHigh,
                       const wasm::MemoryAccessDesc& access, AtomicOp op)
       : LInstructionHelper(classOpcode), access_(access), op_(op) {
     setOperand(0, ptr);
     setInt64Operand(1, value);
+    setOperand(3, memoryBase);
     setTemp(0, tmpLow);
     setTemp(1, tmpHigh);
   }
 
   const LAllocation* ptr() { return getOperand(0); }
   const LInt64Allocation value() { return getInt64Operand(1); }
+  const LAllocation* memoryBase() { return getOperand(3); }
   const wasm::MemoryAccessDesc& access() { return access_; }
   AtomicOp operation() const { return op_; }
   const LDefinition* tmpLow() { return getTemp(0); }
@@ -486,21 +499,24 @@ class LWasmAtomicBinopI64
 };
 
 class LWasmAtomicExchangeI64
-    : public LInstructionHelper<INT64_PIECES, 1 + INT64_PIECES, 0> {
+    : public LInstructionHelper<INT64_PIECES, 2 + INT64_PIECES, 0> {
   const wasm::MemoryAccessDesc& access_;
 
  public:
   LIR_HEADER(WasmAtomicExchangeI64);
 
   LWasmAtomicExchangeI64(const LAllocation& ptr, const LInt64Allocation& value,
+                         const LAllocation& memoryBase,
                          const wasm::MemoryAccessDesc& access)
       : LInstructionHelper(classOpcode), access_(access) {
     setOperand(0, ptr);
     setInt64Operand(1, value);
+    setOperand(3, memoryBase);
   }
 
   const LAllocation* ptr() { return getOperand(0); }
   const LInt64Allocation value() { return getInt64Operand(1); }
+  const LAllocation* memoryBase() { return getOperand(3); }
   const wasm::MemoryAccessDesc& access() { return access_; }
 };
 

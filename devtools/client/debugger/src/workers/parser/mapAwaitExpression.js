@@ -34,15 +34,30 @@ function translateDeclarationIntoAssignment(node) {
 }
 
 /**
- * Given an AST, compute its last statement and replace it with a
- * return statement.
+ * Given an AST, modify it to return the last evaluated statement's expression value if possible.
+ * This is to preserve existing console behavior of displaying the last executed expression value.
  */
 function addReturnNode(ast) {
   const statements = ast.program.body;
-  const lastStatement = statements[statements.length - 1];
-  return statements
-    .slice(0, -1)
-    .concat(t.returnStatement(lastStatement.expression));
+  const lastStatement = statements.pop();
+
+  // if the last expression is an awaitExpression, strip the `await` part and directly
+  // return the argument to avoid calling the argument's `then` function twice when the
+  // mapped expression gets evaluated (See Bug 1771428)
+  if (t.isAwaitExpression(lastStatement.expression)) {
+    lastStatement.expression = lastStatement.expression.argument;
+  }
+
+  // NOTE: For more complicated cases such as an if/for statement, the last evaluated
+  // expression value probably can not be displayed, unless doing hacky workarounds such
+  // as returning the `eval` of the final statement (won't always work due to CSP issues?)
+  // or SpiderMonkey support (See Bug 1839588) at which point this entire module can be removed.
+  statements.push(
+    t.isExpressionStatement(lastStatement)
+      ? t.returnStatement(lastStatement.expression)
+      : lastStatement
+  );
+  return statements;
 }
 
 function getDeclarations(node) {
@@ -123,6 +138,7 @@ function translateDeclarationsIntoAssignment(ast) {
       t.isAssignmentExpression(node) ||
       !t.isVariableDeclaration(node) ||
       t.isForStatement(parent.node) ||
+      t.isForXStatement(parent.node) ||
       !Array.isArray(node.declarations) ||
       node.declarations.length === 0
     ) {

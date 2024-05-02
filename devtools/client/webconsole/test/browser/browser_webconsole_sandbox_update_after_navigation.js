@@ -12,41 +12,37 @@ const BASE_URI =
 const TEST_URI1 = "https://example.com/" + BASE_URI;
 const TEST_URI2 = "https://example.org/" + BASE_URI;
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.persistlog", false);
 
   const hud = await openNewTabAndConsole(TEST_URI1);
 
-  await executeAndWaitForMessage(
-    hud,
-    "window.location.href",
-    TEST_URI1,
-    ".result"
-  );
+  await executeAndWaitForResultMessage(hud, "window.location.href", TEST_URI1);
 
   // load second url
   await navigateTo(TEST_URI2);
 
-  ok(!findMessage(hud, "Permission denied"), "no permission denied errors");
+  ok(
+    !findErrorMessage(hud, "Permission denied"),
+    "no permission denied errors"
+  );
 
   info("wait for window.location.href after page navigation");
   await clearOutput(hud);
-  await executeAndWaitForMessage(
-    hud,
-    "window.location.href",
-    TEST_URI2,
-    ".result"
-  );
+  await executeAndWaitForResultMessage(hud, "window.location.href", TEST_URI2);
 
-  ok(!findMessage(hud, "Permission denied"), "no permission denied errors");
+  ok(
+    !findErrorMessage(hud, "Permission denied"),
+    "no permission denied errors"
+  );
 
   // Navigation clears messages. Wait for that clear to happen before
   // continuing the test or it might destroy messages we wait later on (Bug
   // 1270234).
-  const promises = [hud.ui.once("messages-cleared")];
-  if (isFissionEnabled() || isServerTargetSwitchingEnabled()) {
-    promises.push(hud.commands.targetCommand.once("switched-target"));
-  }
+  const promises = [
+    hud.ui.once("messages-cleared"),
+    hud.commands.targetCommand.once("switched-target"),
+  ];
 
   gBrowser.goBack();
 
@@ -54,12 +50,10 @@ add_task(async function() {
   await Promise.all(promises);
 
   info("Messages cleared after navigation; checking location");
-  await executeAndWaitForMessage(
-    hud,
-    "window.location.href",
-    TEST_URI1,
-    ".result"
-  );
+  await executeAndWaitForResultMessage(hud, "window.location.href", TEST_URI1);
 
-  ok(!findMessage(hud, "Permission denied"), "no permission denied errors");
+  ok(
+    !findErrorMessage(hud, "Permission denied"),
+    "no permission denied errors"
+  );
 });

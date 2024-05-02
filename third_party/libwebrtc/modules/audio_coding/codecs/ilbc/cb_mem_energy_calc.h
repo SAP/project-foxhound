@@ -19,6 +19,9 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_MEM_ENERGY_CALC_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_MEM_ENERGY_CALC_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 void WebRtcIlbcfix_CbMemEnergyCalc(
     int32_t energy,        /* (i) input start energy */
     size_t range,          /* (i) number of iterations */
@@ -28,6 +31,6 @@ void WebRtcIlbcfix_CbMemEnergyCalc(
     int16_t* energyShifts, /* (o) Shift value of the energy */
     int scale,             /* (i) The scaling of all energy values */
     size_t base_size /* (i) Index to where energy values should be stored */
-    );
+);
 
 #endif

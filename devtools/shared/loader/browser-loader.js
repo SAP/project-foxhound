@@ -3,23 +3,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const BaseLoader = ChromeUtils.import(
-  "resource://devtools/shared/loader/base-loader.js"
+const BaseLoader = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/base-loader.sys.mjs"
 );
-const { require: devtoolsRequire, loader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require: devtoolsRequire, loader } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const flags = devtoolsRequire("devtools/shared/flags");
 const { joinURI } = devtoolsRequire("devtools/shared/path");
 const { assert } = devtoolsRequire("devtools/shared/DevToolsUtils");
-const { AppConstants } = devtoolsRequire(
-  "resource://gre/modules/AppConstants.jsm"
-);
+
+const lazy = {};
 
 loader.lazyRequireGetter(
-  this,
+  lazy,
   "getMockedModule",
-  "devtools/shared/loader/browser-loader-mocks",
+  "resource://devtools/shared/loader/browser-loader-mocks.js",
   {}
 );
 
@@ -36,7 +35,6 @@ const BROWSER_BASED_DIRS = [
   "resource://devtools/client/jsonview",
   "resource://devtools/client/netmonitor/src/utils",
   "resource://devtools/client/shared/fluent-l10n",
-  "resource://devtools/client/shared/source-map",
   "resource://devtools/client/shared/redux",
   "resource://devtools/client/shared/vendor",
 ];
@@ -50,7 +48,8 @@ const COMMON_LIBRARY_DIRS = ["resource://devtools/client/shared/vendor"];
 // An example:
 // * `resource://devtools/client/inspector/components`
 // * `resource://devtools/client/inspector/shared/components`
-const browserBasedDirsRegExp = /^resource\:\/\/devtools\/client\/\S*\/components\//;
+const browserBasedDirsRegExp =
+  /^resource\:\/\/devtools\/client\/\S*\/components\//;
 
 /*
  * Create a loader to be used in a browser environment. This evaluates
@@ -118,25 +117,11 @@ function BrowserLoaderBuilder({
   );
 
   const loaderOptions = devtoolsRequire("@loader/options");
-  const dynamicPaths = {};
-
-  if (AppConstants.DEBUG_JS_MODULES) {
-    dynamicPaths["devtools/client/shared/vendor/react"] =
-      "resource://devtools/client/shared/vendor/react-dev";
-    dynamicPaths["devtools/client/shared/vendor/react-dom"] =
-      "resource://devtools/client/shared/vendor/react-dom-dev";
-    dynamicPaths["devtools/client/shared/vendor/react-dom-server"] =
-      "resource://devtools/client/shared/vendor/react-dom-server-dev";
-    dynamicPaths["devtools/client/shared/vendor/react-prop-types"] =
-      "resource://devtools/client/shared/vendor/react-prop-types-dev";
-    dynamicPaths["devtools/client/shared/vendor/react-dom-test-utils"] =
-      "resource://devtools/client/shared/vendor/react-dom-test-utils-dev";
-  }
 
   const opts = {
     sandboxPrototype: window,
     sandboxName: "DevTools (UI loader)",
-    paths: Object.assign({}, dynamicPaths, loaderOptions.paths),
+    paths: loaderOptions.paths,
     invisibleToDebugger: loaderOptions.invisibleToDebugger,
     // Make sure `define` function exists.  This allows defining some modules
     // in AMD format while retaining CommonJS compatibility through this hook.
@@ -164,8 +149,8 @@ function BrowserLoaderBuilder({
       // The mocks can be set from tests using browser-loader-mocks.js setMockedModule().
       // If there is an entry for a given uri in the `mocks` object, return it instead of
       // requiring the module.
-      if (flags.testing && getMockedModule(uri)) {
-        return getMockedModule(uri);
+      if (flags.testing && lazy.getMockedModule(uri)) {
+        return lazy.getMockedModule(uri);
       }
 
       if (
@@ -193,7 +178,6 @@ function BrowserLoaderBuilder({
       // Allow modules to use the DevToolsLoader lazy loading helpers.
       loader: {
         lazyGetter: loader.lazyGetter,
-        lazyImporter: loader.lazyImporter,
         lazyServiceGetter: loader.lazyServiceGetter,
         lazyRequireGetter: this.lazyRequireGetter.bind(this),
       },
@@ -229,7 +213,7 @@ BrowserLoaderBuilder.prototype = {
    * @param { Boolean } destructure
    *    Pass true if the property name is a member of the module's exports.
    */
-  lazyRequireGetter: function(obj, properties, module, destructure) {
+  lazyRequireGetter(obj, properties, module, destructure) {
     if (Array.isArray(properties) && !destructure) {
       throw new Error(
         "Pass destructure=true to call lazyRequireGetter with an array of properties"

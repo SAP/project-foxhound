@@ -64,7 +64,7 @@ extern "C" {
 /**Export control for opus functions */
 
 #ifndef OPUS_EXPORT
-# if defined(WIN32)
+# if defined(_WIN32)
 #  if defined(OPUS_BUILD) && defined(DLL_EXPORT)
 #   define OPUS_EXPORT __declspec(dllexport)
 #  else
@@ -168,6 +168,7 @@ extern "C" {
 /* Don't use 4045, it's already taken by OPUS_GET_GAIN_REQUEST */
 #define OPUS_SET_PHASE_INVERSION_DISABLED_REQUEST 4046
 #define OPUS_GET_PHASE_INVERSION_DISABLED_REQUEST 4047
+#define OPUS_GET_IN_DTX_REQUEST              4049
 
 /** Defines for the presence of extended APIs. */
 #define OPUS_HAVE_OPUS_PROJECTION_H
@@ -481,7 +482,8 @@ extern "C" {
   * @param[in] x <tt>opus_int32</tt>: Allowed values:
   * <dl>
   * <dt>0</dt><dd>Disable inband FEC (default).</dd>
-  * <dt>1</dt><dd>Enable inband FEC.</dd>
+  * <dt>1</dt><dd>Inband FEC enabled. If the packet loss rate is sufficiently high, Opus will automatically switch to SILK even at high rates to enable use of that FEC.</dd>
+  * <dt>2</dt><dd>Inband FEC enabled, but does not necessarily switch to SILK if we have music.</dd>
   * </dl>
   * @hideinitializer */
 #define OPUS_SET_INBAND_FEC(x) OPUS_SET_INBAND_FEC_REQUEST, __opus_check_int(x)
@@ -490,7 +492,8 @@ extern "C" {
   * @param[out] x <tt>opus_int32 *</tt>: Returns one of the following values:
   * <dl>
   * <dt>0</dt><dd>Inband FEC disabled (default).</dd>
-  * <dt>1</dt><dd>Inband FEC enabled.</dd>
+  * <dt>1</dt><dd>Inband FEC enabled. If the packet loss rate is sufficiently high, Opus will automatically switch to SILK even at high rates to enable use of that FEC.</dd>
+  * <dt>2</dt><dd>Inband FEC enabled, but does not necessarily switch to SILK if we have music.</dd>
   * </dl>
   * @hideinitializer */
 #define OPUS_GET_INBAND_FEC(x) OPUS_GET_INBAND_FEC_REQUEST, __opus_check_int_ptr(x)
@@ -715,6 +718,16 @@ extern "C" {
   * </dl>
   * @hideinitializer */
 #define OPUS_GET_PHASE_INVERSION_DISABLED(x) OPUS_GET_PHASE_INVERSION_DISABLED_REQUEST, __opus_check_int_ptr(x)
+/** Gets the DTX state of the encoder.
+  * Returns whether the last encoded frame was either a comfort noise update
+  * during DTX or not encoded because of DTX.
+  * @param[out] x <tt>opus_int32 *</tt>: Returns one of the following values:
+  * <dl>
+  * <dt>0</dt><dd>The encoder is not in DTX.</dd>
+  * <dt>1</dt><dd>The encoder is in DTX.</dd>
+  * </dl>
+  * @hideinitializer */
+#define OPUS_GET_IN_DTX(x) OPUS_GET_IN_DTX_REQUEST, __opus_check_int_ptr(x)
 
 /**@}*/
 

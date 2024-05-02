@@ -2,19 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import os
-from pathlib import Path
 from collections import defaultdict
 from distutils.dir_util import copy_tree
+from pathlib import Path
 
 from mozperftest.layers import Layer
-from mozperftest.utils import temp_dir
+from mozperftest.utils import NoPerfMetricsError, temp_dir
 
 
 class XPCShellTestError(Exception):
-    pass
-
-
-class NoPerfMetricsError(Exception):
     pass
 
 
@@ -153,10 +149,7 @@ class XPCShell(Layer):
                 results[key].append(val)
 
         if len(results.items()) == 0:
-            raise NoPerfMetricsError(
-                "No perftest results were found in the xpcshell test. Results must be "
-                'reported using:\n info("perfMetrics", { metricName: metricValue });'
-            )
+            raise NoPerfMetricsError("xpcshell")
 
         metadata.add_result(
             {

@@ -1,5 +1,3 @@
-/* import-globals-from antitracking_head.js */
-
 AntiTracking.runTest(
   "Storage Access is removed when topframe navigates",
   // blocking callback
@@ -26,7 +24,12 @@ AntiTracking.runTest(
       );
     });
   },
-  null, // extra prefs
+  [
+    [
+      "privacy.partition.always_partition_third_party_non_cookie_storage",
+      false,
+    ],
+  ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
   0, // no blocking notifications

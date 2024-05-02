@@ -58,6 +58,7 @@ Messages, UI Templates, and Timing/Targeting mechanisms. This allows us to
 maintain a high standard of security and quality while still allowing for
 maximum flexibility around content creation.
 
+
 UI Templates
 ------------
 We have built a library of reusable Notification and Message interfaces which
@@ -69,18 +70,19 @@ elements (such as buttons).
 
 Current templates include\:
 
-* What's New Panel - an icon in the toolbar and menu item that appears if a
-  message is available in the panel, usually after major Firefox releases
-* Moments Page - appears on start-up as a full content page
-* Contextual Feature Recommendation - highlighted word in the Location Bar
-  that, if clicked, drops down a panel with information about a feature
-  relevant to that user at that time
-* First Run - shown on startup in a content page as a set of onboarding cards
-  with calls to action that persist for several days
-* Snippets - short messages that appear on New Tab Page to highlight products,
-  features and initiatives
-* Badging - A colorful dot to highlight icons in the toolbar or menu items in
-  order to draw attention with minimal interruption
+.. In theory, we ought to be able to use the :glob: directive here to
+.. automatically generate the list below. For unknown reasons, however,
+.. `mach doc` _sometimes_ gets confused and refuses to find patterns like
+.. `*.md`.
+.. toctree::
+  :maxdepth: 1
+
+  moments-page
+  contextual-feature-recommendation
+  about-welcome
+  infobars
+  spotlight
+  private-browsing
 
 Detailed Docs
 -------------
@@ -98,7 +100,7 @@ Detailed Docs
 
   simple-cfr-template
   debugging-docs
-  experiment-guide
   first-run
   targeting-attributes
   targeting-guide
+  telemetry

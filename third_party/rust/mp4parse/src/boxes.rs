@@ -15,7 +15,7 @@ struct String;
 
 macro_rules! box_database {
     ($($(#[$attr:meta])* $boxenum:ident $boxtype:expr),*,) => {
-        #[derive(Clone, Copy, PartialEq)]
+        #[derive(Clone, Copy, PartialEq, Eq)]
         pub enum BoxType {
             $($(#[$attr])* $boxenum),*,
             UnknownBox(u32),
@@ -110,6 +110,8 @@ box_database!(
     MovieHeaderBox                    0x6d76_6864, // "mvhd"
     TrackBox                          0x7472_616b, // "trak"
     TrackHeaderBox                    0x746b_6864, // "tkhd"
+    TrackReferenceBox                 0x7472_6566, // "tref"
+    AuxiliaryBox                      0x6175_786C, // "auxl"
     EditBox                           0x6564_7473, // "edts"
     MediaBox                          0x6d64_6961, // "mdia"
     EditListBox                       0x656c_7374, // "elst"
@@ -144,6 +146,9 @@ box_database!(
     AVCConfigurationBox               0x6176_6343, // "avcC"
     H263SampleEntry                   0x7332_3633, // "s263"
     H263SpecificBox                   0x6432_3633, // "d263"
+    HEV1SampleEntry                   0x6865_7631, // "hev1"
+    HVC1SampleEntry                   0x6876_6331, // "hvc1"
+    HEVCConfigurationBox              0x6876_6343, // "hvcC"
     MP4AudioSampleEntry               0x6d70_3461, // "mp4a"
     MP4VideoSampleEntry               0x6d70_3476, // "mp4v"
     #[cfg(feature = "3gpp")]

@@ -2,11 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use crate::match_byte;
 use dtoa_short::{self, Notation};
 use itoa;
-use matches::matches;
 use std::fmt::{self, Write};
-use std::io;
 use std::str;
 
 use super::Token;
@@ -228,11 +227,15 @@ where
 {
     let mut chunk_start = 0;
     for (i, b) in value.bytes().enumerate() {
-        let escaped = match b {
+        let escaped = match_byte! { b,
             b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' | b'-' => continue,
-            _ if !b.is_ascii() => continue,
             b'\0' => Some("\u{FFFD}"),
-            _ => None,
+            b => {
+                if !b.is_ascii() {
+                    continue;
+                }
+                None
+            },
         };
         dest.write_str(&value[chunk_start..i])?;
         if let Some(escaped) = escaped {
@@ -253,7 +256,7 @@ where
 {
     let mut chunk_start = 0;
     for (i, b) in value.bytes().enumerate() {
-        let hex = match b {
+        let hex = match_byte! { b,
             b'\0'..=b' ' | b'\x7F' => true,
             b'(' | b')' | b'"' | b'\'' | b'\\' => false,
             _ => continue,
@@ -306,7 +309,7 @@ where
 {
     /// Wrap a text writer to create a `CssStringWriter`.
     pub fn new(inner: &'a mut W) -> CssStringWriter<'a, W> {
-        CssStringWriter { inner: inner }
+        CssStringWriter { inner }
     }
 }
 
@@ -317,7 +320,7 @@ where
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut chunk_start = 0;
         for (i, b) in s.bytes().enumerate() {
-            let escaped = match b {
+            let escaped = match_byte! { b,
                 b'"' => Some("\\\""),
                 b'\\' => Some("\\\\"),
                 b'\0' => Some("\u{FFFD}"),
@@ -342,34 +345,8 @@ macro_rules! impl_tocss_for_int {
             where
                 W: fmt::Write,
             {
-                struct AssumeUtf8<W: fmt::Write>(W);
-
-                impl<W: fmt::Write> io::Write for AssumeUtf8<W> {
-                    #[inline]
-                    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-                        // Safety: itoa only emits ASCII, which is also well-formed UTF-8.
-                        debug_assert!(buf.is_ascii());
-                        self.0
-                            .write_str(unsafe { str::from_utf8_unchecked(buf) })
-                            .map_err(|_| io::ErrorKind::Other.into())
-                    }
-
-                    #[inline]
-                    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                        self.write_all(buf)?;
-                        Ok(buf.len())
-                    }
-
-                    #[inline]
-                    fn flush(&mut self) -> io::Result<()> {
-                        Ok(())
-                    }
-                }
-
-                match itoa::write(AssumeUtf8(dest), *self) {
-                    Ok(_) => Ok(()),
-                    Err(_) => Err(fmt::Error),
-                }
+                let mut buf = itoa::Buffer::new();
+                dest.write_str(buf.format(*self))
             }
         }
     };
@@ -401,19 +378,110 @@ impl_tocss_for_float!(f32);
 impl_tocss_for_float!(f64);
 
 /// A category of token. See the `needs_separator_when_before` method.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub struct TokenSerializationType(TokenSerializationTypeVariants);
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
+pub enum TokenSerializationType {
+    /// No token serialization type.
+    #[default]
+    Nothing,
+
+    /// The [`<whitespace-token>`](https://drafts.csswg.org/css-syntax/#whitespace-token-diagram)
+    /// type.
+    WhiteSpace,
+
+    /// The [`<at-keyword-token>`](https://drafts.csswg.org/css-syntax/#at-keyword-token-diagram)
+    /// type, the "[`<hash-token>`](https://drafts.csswg.org/css-syntax/#hash-token-diagram) with
+    /// the type flag set to 'unrestricted'" type, or the
+    /// "[`<hash-token>`](https://drafts.csswg.org/css-syntax/#hash-token-diagram) with the type
+    /// flag set to 'id'" type.
+    AtKeywordOrHash,
+
+    /// The [`<number-token>`](https://drafts.csswg.org/css-syntax/#number-token-diagram) type.
+    Number,
+
+    /// The [`<dimension-token>`](https://drafts.csswg.org/css-syntax/#dimension-token-diagram)
+    /// type.
+    Dimension,
+
+    /// The [`<percentage-token>`](https://drafts.csswg.org/css-syntax/#percentage-token-diagram)
+    /// type.
+    Percentage,
+
+    /// The [`<url-token>`](https://drafts.csswg.org/css-syntax/#url-token-diagram) or
+    /// `<bad-url-token>` type.
+    UrlOrBadUrl,
+
+    /// The [`<function-token>`](https://drafts.csswg.org/css-syntax/#function-token-diagram) type.
+    Function,
+
+    /// The [`<ident-token>`](https://drafts.csswg.org/css-syntax/#ident-token-diagram) type.
+    Ident,
+
+    /// The `-->` [`<CDC-token>`](https://drafts.csswg.org/css-syntax/#CDC-token-diagram) type.
+    CDC,
+
+    /// The `|=`
+    /// [`<dash-match-token>`](https://drafts.csswg.org/css-syntax/#dash-match-token-diagram) type.
+    DashMatch,
+
+    /// The `*=`
+    /// [`<substring-match-token>`](https://drafts.csswg.org/css-syntax/#substring-match-token-diagram)
+    /// type.
+    SubstringMatch,
+
+    /// The `<(-token>` type.
+    OpenParen,
+
+    /// The `#` `<delim-token>` type.
+    DelimHash,
+
+    /// The `@` `<delim-token>` type.
+    DelimAt,
+
+    /// The `.` or `+` `<delim-token>` type.
+    DelimDotOrPlus,
+
+    /// The `-` `<delim-token>` type.
+    DelimMinus,
+
+    /// The `?` `<delim-token>` type.
+    DelimQuestion,
+
+    /// The `$`, `^`, or `~` `<delim-token>` type.
+    DelimAssorted,
+
+    /// The `=` `<delim-token>` type.
+    DelimEquals,
+
+    /// The `|` `<delim-token>` type.
+    DelimBar,
+
+    /// The `/` `<delim-token>` type.
+    DelimSlash,
+
+    /// The `*` `<delim-token>` type.
+    DelimAsterisk,
+
+    /// The `%` `<delim-token>` type.
+    DelimPercent,
+
+    /// A type indicating any other token.
+    Other,
+}
 
 impl TokenSerializationType {
     /// Return a value that represents the absence of a token, e.g. before the start of the input.
+    #[deprecated(
+        since = "0.32.1",
+        note = "use TokenSerializationType::Nothing or TokenSerializationType::default() instead"
+    )]
     pub fn nothing() -> TokenSerializationType {
-        TokenSerializationType(TokenSerializationTypeVariants::Nothing)
+        Default::default()
     }
 
-    /// If this value is `TokenSerializationType::nothing()`, set it to the given value instead.
+    /// If this value is `TokenSerializationType::Nothing`, set it to the given value instead.
     pub fn set_if_nothing(&mut self, new_value: TokenSerializationType) {
-        if self.0 == TokenSerializationTypeVariants::Nothing {
-            self.0 = new_value.0
+        if matches!(self, TokenSerializationType::Nothing) {
+            *self = new_value
         }
     }
 
@@ -427,10 +495,10 @@ impl TokenSerializationType {
     /// See https://github.com/w3c/csswg-drafts/issues/4088 for the
     /// `DelimPercent` bits.
     pub fn needs_separator_when_before(self, other: TokenSerializationType) -> bool {
-        use self::TokenSerializationTypeVariants::*;
-        match self.0 {
+        use self::TokenSerializationType::*;
+        match self {
             Ident => matches!(
-                other.0,
+                other,
                 Ident
                     | Function
                     | UrlOrBadUrl
@@ -442,15 +510,15 @@ impl TokenSerializationType {
                     | OpenParen
             ),
             AtKeywordOrHash | Dimension => matches!(
-                other.0,
+                other,
                 Ident | Function | UrlOrBadUrl | DelimMinus | Number | Percentage | Dimension | CDC
             ),
             DelimHash | DelimMinus => matches!(
-                other.0,
+                other,
                 Ident | Function | UrlOrBadUrl | DelimMinus | Number | Percentage | Dimension
             ),
             Number => matches!(
-                other.0,
+                other,
                 Ident
                     | Function
                     | UrlOrBadUrl
@@ -460,11 +528,11 @@ impl TokenSerializationType {
                     | DelimPercent
                     | Dimension
             ),
-            DelimAt => matches!(other.0, Ident | Function | UrlOrBadUrl | DelimMinus),
-            DelimDotOrPlus => matches!(other.0, Number | Percentage | Dimension),
-            DelimAssorted | DelimAsterisk => matches!(other.0, DelimEquals),
-            DelimBar => matches!(other.0, DelimEquals | DelimBar | DashMatch),
-            DelimSlash => matches!(other.0, DelimAsterisk | SubstringMatch),
+            DelimAt => matches!(other, Ident | Function | UrlOrBadUrl | DelimMinus),
+            DelimDotOrPlus => matches!(other, Number | Percentage | Dimension),
+            DelimAssorted | DelimAsterisk => matches!(other, DelimEquals),
+            DelimBar => matches!(other, DelimEquals | DelimBar | DashMatch),
+            DelimSlash => matches!(other, DelimAsterisk | SubstringMatch),
             Nothing | WhiteSpace | Percentage | UrlOrBadUrl | Function | CDC | OpenParen
             | DashMatch | SubstringMatch | DelimQuestion | DelimEquals | DelimPercent | Other => {
                 false
@@ -473,43 +541,14 @@ impl TokenSerializationType {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-enum TokenSerializationTypeVariants {
-    Nothing,
-    WhiteSpace,
-    AtKeywordOrHash,
-    Number,
-    Dimension,
-    Percentage,
-    UrlOrBadUrl,
-    Function,
-    Ident,
-    CDC,
-    DashMatch,
-    SubstringMatch,
-    OpenParen,      // '('
-    DelimHash,      // '#'
-    DelimAt,        // '@'
-    DelimDotOrPlus, // '.', '+'
-    DelimMinus,     // '-'
-    DelimQuestion,  // '?'
-    DelimAssorted,  // '$', '^', '~'
-    DelimEquals,    // '='
-    DelimBar,       // '|'
-    DelimSlash,     // '/'
-    DelimAsterisk,  // '*'
-    DelimPercent,   // '%'
-    Other,          // anything else
-}
-
 impl<'a> Token<'a> {
     /// Categorize a token into a type that determines when `/**/` needs to be inserted
     /// between two tokens when serialized next to each other without whitespace in between.
     ///
     /// See the `TokenSerializationType::needs_separator_when_before` method.
     pub fn serialization_type(&self) -> TokenSerializationType {
-        use self::TokenSerializationTypeVariants::*;
-        TokenSerializationType(match *self {
+        use self::TokenSerializationType::*;
+        match self {
             Token::Ident(_) => Ident,
             Token::AtKeyword(_) | Token::Hash(_) | Token::IDHash(_) => AtKeywordOrHash,
             Token::UnquotedUrl(_) | Token::BadUrl(_) => UrlOrBadUrl,
@@ -549,6 +588,6 @@ impl<'a> Token<'a> {
             | Token::IncludeMatch
             | Token::PrefixMatch
             | Token::SuffixMatch => Other,
-        })
+        }
     }
 }

@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "minidump-analyzer.h"
-
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -503,7 +501,7 @@ static bool UpdateExtraDataFile(const string& aDumpPath,
   return res;
 }
 
-bool GenerateStacks(const string& aDumpPath, const bool aFullStacks) {
+static bool GenerateStacks(const string& aDumpPath, const bool aFullStacks) {
   Json::Value stackTraces;
   Json::Value certSubjects;
 
@@ -557,8 +555,7 @@ struct CharTraits<wchar_t> {
 
 static void LowerPriority() {
 #if defined(XP_WIN)
-  Unused << SetPriorityClass(GetCurrentProcess(),
-                             PROCESS_MODE_BACKGROUND_BEGIN);
+  Unused << SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
 #else  // Linux, MacOS X, etc...
   Unused << nice(20);
 #endif

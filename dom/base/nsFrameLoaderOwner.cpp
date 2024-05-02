@@ -216,15 +216,16 @@ void nsFrameLoaderOwner::ChangeFrameLoaderCommon(Element* aOwner,
     // to what XULFrameElement does after rebinding to the tree.
     // ChromeOnlyDispatch is turns on to make sure this isn't fired into
     // content.
-    (new mozilla::AsyncEventDispatcher(aOwner, u"XULFrameLoaderCreated"_ns,
-                                       mozilla::CanBubble::eYes,
-                                       mozilla::ChromeOnlyDispatch::eYes))
-        ->RunDOMEventWhenSafe();
+    mozilla::AsyncEventDispatcher::RunDOMEventWhenSafe(
+        *aOwner, u"XULFrameLoaderCreated"_ns, mozilla::CanBubble::eYes,
+        mozilla::ChromeOnlyDispatch::eYes);
   }
 
-  mFrameLoader->PropagateIsUnderHiddenEmbedderElement(
-      !aOwner->GetPrimaryFrame() ||
-      !aOwner->GetPrimaryFrame()->StyleVisibility()->IsVisible());
+  if (mFrameLoader) {
+    mFrameLoader->PropagateIsUnderHiddenEmbedderElement(
+        !aOwner->GetPrimaryFrame() ||
+        !aOwner->GetPrimaryFrame()->StyleVisibility()->IsVisible());
+  }
 }
 
 void nsFrameLoaderOwner::UpdateFocusAndMouseEnterStateAfterFrameLoaderChange() {
@@ -354,10 +355,20 @@ void nsFrameLoaderOwner::RestoreFrameLoaderFromBFCache(
           ("nsFrameLoaderOwner::RestoreFrameLoaderFromBFCache: Replace "
            "frameloader"));
 
+  Maybe<bool> renderLayers;
+  if (mFrameLoader) {
+    if (auto* oldParent = mFrameLoader->GetBrowserParent()) {
+      renderLayers.emplace(oldParent->GetRenderLayers());
+    }
+  }
+
   mFrameLoader = aNewFrameLoader;
 
   if (auto* browserParent = mFrameLoader->GetBrowserParent()) {
     browserParent->AddWindowListeners();
+    if (renderLayers.isSome()) {
+      browserParent->SetRenderLayers(renderLayers.value());
+    }
   }
 
   RefPtr<Element> owner = do_QueryObject(this);
@@ -375,12 +386,15 @@ void nsFrameLoaderOwner::DetachFrameLoader(nsFrameLoader* aFrameLoader) {
   }
 }
 
-void nsFrameLoaderOwner::FrameLoaderDestroying(nsFrameLoader* aFrameLoader) {
+void nsFrameLoaderOwner::FrameLoaderDestroying(nsFrameLoader* aFrameLoader,
+                                               bool aDestroyBFCached) {
   if (aFrameLoader == mFrameLoader) {
-    while (!mFrameLoaderList.isEmpty()) {
-      RefPtr<nsFrameLoader> loader = mFrameLoaderList.popFirst();
-      if (loader != mFrameLoader) {
-        loader->Destroy();
+    if (aDestroyBFCached) {
+      while (!mFrameLoaderList.isEmpty()) {
+        RefPtr<nsFrameLoader> loader = mFrameLoaderList.popFirst();
+        if (loader != mFrameLoader) {
+          loader->Destroy();
+        }
       }
     }
   } else {

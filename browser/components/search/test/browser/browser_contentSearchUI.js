@@ -2,16 +2,26 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 const TEST_PAGE_BASENAME = "contentSearchUI.html";
-const TEST_ENGINE1_NAME = "searchSuggestionEngine1";
-const TEST_ENGINE2_NAME = "searchSuggestionEngine2";
+
+const TEST_ENGINE1 = {
+  name: "searchSuggestionEngine1",
+  id: "other-searchSuggestionEngine1",
+  loadPath: "[addon]searchsuggestionengine1@tests.mozilla.org",
+};
+const TEST_ENGINE2 = {
+  name: "searchSuggestionEngine2",
+  id: "other-searchSuggestionEngine2",
+  loadPath: "[addon]searchsuggestionengine2@tests.mozilla.org",
+};
 
 const TEST_MSG = "ContentSearchUIControllerTest";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ContentSearch: "resource:///actors/ContentSearchParent.jsm",
-  FormHistoryTestUtils: "resource://testing-common/FormHistoryTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ContentSearch: "resource:///actors/ContentSearchParent.sys.mjs",
+  FormHistoryTestUtils:
+    "resource://testing-common/FormHistoryTestUtils.sys.mjs",
   SearchSuggestionController:
-    "resource://gre/modules/SearchSuggestionController.jsm",
+    "resource://gre/modules/SearchSuggestionController.sys.mjs",
 });
 
 const pageURL = getRootDirectory(gTestPath) + TEST_PAGE_BASENAME;
@@ -249,34 +259,32 @@ function focusContentSearchBar() {
 
 let extension1;
 let extension2;
-let currentEngineName;
 
-add_task(async function setup() {
+add_setup(async function () {
   let originalOnMessageSearch = ContentSearch._onMessageSearch;
   let originalOnMessageManageEngines = ContentSearch._onMessageManageEngines;
 
   ContentSearch._onMessageSearch = () => {};
   ContentSearch._onMessageManageEngines = () => {};
 
-  currentEngineName = (await Services.search.getDefault()).name;
   let currentEngines = await Services.search.getVisibleEngines();
 
-  extension1 = await SearchTestUtils.installSearchExtension({
-    name: TEST_ENGINE1_NAME,
-    suggest_url:
-      "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
-    suggest_url_get_params: "query={searchTerms}",
-  });
+  extension1 = await SearchTestUtils.installSearchExtension(
+    {
+      name: TEST_ENGINE1.name,
+      suggest_url:
+        "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
+      suggest_url_get_params: "query={searchTerms}",
+    },
+    { setAsDefault: true }
+  );
   extension2 = await SearchTestUtils.installSearchExtension({
-    name: TEST_ENGINE2_NAME,
+    name: TEST_ENGINE2.name,
     suggest_url:
       "https://example.com/browser/browser/components/search/test/browser/searchSuggestionEngine.sjs",
     suggest_url_get_params: "query={searchTerms}",
   });
 
-  let engine1 = Services.search.getEngineByName(TEST_ENGINE1_NAME);
-
-  await Services.search.setDefault(engine1);
   for (let engine of currentEngines) {
     await Services.search.removeEngine(engine);
   }
@@ -470,7 +478,7 @@ add_task(async function cycleSuggestions() {
   await focusContentSearchBar();
   await msg("key", { key: "x", waitForSuggestions: true });
 
-  let cycle = async function(aSelectedButtonIndex) {
+  let cycle = async function (aSelectedButtonIndex) {
     let modifiers = {
       shiftKey: true,
       accelKey: true,
@@ -521,9 +529,10 @@ add_task(async function cycleOneOffs() {
   await msg("key", { key: "x", waitForSuggestions: true });
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    let btn = Cu.waiveXrays(content).gController._oneOffButtons[
-      Cu.waiveXrays(content).gController._oneOffButtons.length - 1
-    ];
+    let btn =
+      Cu.waiveXrays(content).gController._oneOffButtons[
+        Cu.waiveXrays(content).gController._oneOffButtons.length - 1
+      ];
     let newBtn = btn.cloneNode(true);
     btn.parentNode.appendChild(newBtn);
     Cu.waiveXrays(content).gController._oneOffButtons.push(newBtn);
@@ -572,9 +581,7 @@ add_task(async function cycleOneOffs() {
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 0);
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    Cu.waiveXrays(content)
-      .gController._oneOffButtons.pop()
-      .remove();
+    Cu.waiveXrays(content).gController._oneOffButtons.pop().remove();
   });
   await msg("reset");
 });
@@ -734,27 +741,103 @@ add_task(async function cycleEngines() {
   await focusContentSearchBar();
   await msg("key", { key: "VK_DOWN", waitForSuggestions: true });
 
-  let promiseEngineChange = function(newEngineName) {
-    return new Promise(resolve => {
-      Services.obs.addObserver(function resolver(subj, topic, data) {
-        if (data != "engine-default") {
-          return;
-        }
-        subj.QueryInterface(Ci.nsISearchEngine);
-        SimpleTest.is(subj.name, newEngineName, "Engine cycled correctly");
-        Services.obs.removeObserver(resolver, "browser-search-engine-modified");
-        resolve();
-      }, "browser-search-engine-modified");
-    });
-  };
+  Services.telemetry.clearEvents();
+  Services.fog.testResetFOG();
 
-  let p = promiseEngineChange(TEST_ENGINE2_NAME);
+  let p = SearchTestUtils.promiseSearchNotification(
+    "engine-default",
+    "browser-search-engine-modified"
+  );
   await msg("key", { key: "VK_DOWN", modifiers: { accelKey: true } });
-  await p;
+  let newEngine = await p;
+  Assert.equal(
+    newEngine.name,
+    TEST_ENGINE2.name,
+    "Should have correctly cycled the engine"
+  );
+  TelemetryTestUtils.assertEvents(
+    [
+      {
+        object: "change_default",
+        value: "user_searchbar",
+        extra: {
+          prev_id: TEST_ENGINE1.id,
+          new_id: TEST_ENGINE2.id,
+          new_name: TEST_ENGINE2.name,
+          new_load_path: TEST_ENGINE2.loadPath,
+          new_sub_url: "",
+        },
+      },
+    ],
+    { category: "search", method: "engine" }
+  );
 
-  p = promiseEngineChange(TEST_ENGINE1_NAME);
+  let snapshot = await Glean.searchEngineDefault.changed.testGetValue();
+  delete snapshot[0].timestamp;
+  Assert.deepEqual(
+    snapshot[0],
+    {
+      category: "search.engine.default",
+      name: "changed",
+      extra: {
+        new_load_path: TEST_ENGINE2.loadPath,
+        previous_engine_id: TEST_ENGINE1.id,
+        change_source: "user_searchbar",
+        new_engine_id: TEST_ENGINE2.id,
+        new_display_name: TEST_ENGINE2.name,
+        new_submission_url: "",
+      },
+    },
+    "Should have received the correct event details"
+  );
+
+  p = SearchTestUtils.promiseSearchNotification(
+    "engine-default",
+    "browser-search-engine-modified"
+  );
   await msg("key", { key: "VK_UP", modifiers: { accelKey: true } });
-  await p;
+  newEngine = await p;
+  Assert.equal(
+    newEngine.name,
+    TEST_ENGINE1.name,
+    "Should have correctly cycled the engine"
+  );
+
+  TelemetryTestUtils.assertEvents(
+    [
+      {
+        object: "change_default",
+        value: "user_searchbar",
+        extra: {
+          prev_id: TEST_ENGINE2.id,
+          new_id: TEST_ENGINE1.id,
+          new_name: TEST_ENGINE1.name,
+          new_load_path: TEST_ENGINE1.loadPath,
+          new_sub_url: "",
+        },
+      },
+    ],
+    { category: "search", method: "engine" }
+  );
+
+  snapshot = await Glean.searchEngineDefault.changed.testGetValue();
+  delete snapshot[1].timestamp;
+  Assert.deepEqual(
+    snapshot[1],
+    {
+      category: "search.engine.default",
+      name: "changed",
+      extra: {
+        new_load_path: TEST_ENGINE1.loadPath,
+        previous_engine_id: TEST_ENGINE2.id,
+        change_source: "user_searchbar",
+        new_engine_id: TEST_ENGINE1.id,
+        new_display_name: TEST_ENGINE1.name,
+        new_submission_url: "",
+      },
+    },
+    "Should have received the correct event details"
+  );
 
   await msg("reset");
 });
@@ -773,7 +856,7 @@ add_task(async function search() {
   await msg("key", { key: "VK_RETURN", modifiers });
   let mesg = await p;
   let eventData = {
-    engineName: TEST_ENGINE1_NAME,
+    engineName: TEST_ENGINE1.name,
     searchString: "x",
     healthReportKey: "test",
     searchPurpose: "test",
@@ -792,7 +875,7 @@ add_task(async function search() {
   await msg("key", { key: "VK_RETURN", modifiers });
   mesg = await p;
   eventData.searchString = "xfoo";
-  eventData.engineName = TEST_ENGINE1_NAME;
+  eventData.engineName = TEST_ENGINE1.name;
   eventData.selection = {
     index: 1,
     kind: "key",
@@ -811,7 +894,7 @@ add_task(async function search() {
   mesg = await p;
   delete eventData.selection;
   eventData.searchString = "x";
-  eventData.engineName = TEST_ENGINE2_NAME;
+  eventData.engineName = TEST_ENGINE2.name;
   SimpleTest.isDeeply(eventData, mesg, "Search event data");
 
   await promiseTab();
@@ -825,7 +908,7 @@ add_task(async function search() {
   await msg("click", { eltIdx: -1, modifiers });
   mesg = await p;
   eventData.originalEvent = modifiers;
-  eventData.engineName = TEST_ENGINE1_NAME;
+  eventData.engineName = TEST_ENGINE1.name;
   SimpleTest.isDeeply(eventData, mesg, "Search event data");
 
   await promiseTab();
@@ -854,7 +937,7 @@ add_task(async function search() {
   await msg("click", { eltIdx: 3, modifiers });
   mesg = await p;
   eventData.searchString = "x";
-  eventData.engineName = TEST_ENGINE2_NAME;
+  eventData.engineName = TEST_ENGINE2.name;
   delete eventData.selection;
   SimpleTest.isDeeply(eventData, mesg, "Search event data");
 
@@ -905,7 +988,7 @@ add_task(async function search() {
   mesg = await p;
   eventData.searchString = "x";
   eventData.originalEvent = modifiers;
-  eventData.engineName = TEST_ENGINE1_NAME;
+  eventData.engineName = TEST_ENGINE1.name;
   delete eventData.selection;
   SimpleTest.isDeeply(eventData, mesg, "Search event data");
 
@@ -1014,12 +1097,7 @@ add_task(async function settings() {
 });
 
 add_task(async function cleanup() {
-  // Extensions must be unloaded before registerCleanupFunction runs, so
-  // unload them here.
   Services.search.restoreDefaultEngines();
-  await Services.search.setDefault(
-    Services.search.getEngineByName(currentEngineName)
-  );
 });
 
 function checkState(

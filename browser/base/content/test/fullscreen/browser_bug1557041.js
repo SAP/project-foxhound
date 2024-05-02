@@ -3,10 +3,6 @@
 
 "use strict";
 
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
-
 // This test tends to trigger a race in the fullscreen time telemetry,
 // where the fullscreen enter and fullscreen exit events (which use the
 // same histogram ID) overlap. That causes TelemetryStopwatch to log an
@@ -18,7 +14,7 @@ add_task(async function test_identityPopupCausesFSExit() {
 
   await BrowserTestUtils.withNewTab("about:blank", async browser => {
     let loaded = BrowserTestUtils.browserLoaded(browser, false, url);
-    BrowserTestUtils.loadURI(browser, url);
+    BrowserTestUtils.startLoadingURIString(browser, url);
     await loaded;
 
     let identityPermissionBox = document.getElementById(

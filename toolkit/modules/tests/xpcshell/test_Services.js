@@ -1,16 +1,18 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
- * This file tests the Services.jsm module.
+ * This file tests the Services global variable.
  */
 
 // Globals
 
-function checkService(service, interface) {
-  info("Checking that Services." + service + " is an " + interface);
+function checkService(service, interfaceObj) {
+  info("Checking that Services." + service + " is an " + interfaceObj);
   Assert.ok(service in Services);
-  Assert.ok(Services[service] instanceof interface);
+  Assert.ok(Services[service] instanceof interfaceObj);
 }
 
 // Tests
@@ -61,19 +63,4 @@ function run_test() {
   if ("@mozilla.org/enterprisepolicies;1" in Cc) {
     checkService("policies", Ci.nsIEnterprisePolicies);
   }
-
-  // In xpcshell tests, the "@mozilla.org/xre/app-info;1" component implements
-  // only the nsIXULRuntime interface, but not nsIXULAppInfo.  To test the
-  // service getter for the latter interface, load mock app-info.
-  let tmp = {};
-  ChromeUtils.import("resource://testing-common/AppInfo.jsm", tmp);
-  tmp.updateAppInfo();
-
-  // We need to reload the module to update the lazy getter.
-  Cu.unload("resource://gre/modules/Services.jsm");
-  ({ Services } = ChromeUtils.import("resource://gre/modules/Services.jsm"));
-
-  checkService("appinfo", Ci.nsIXULAppInfo);
-
-  Cu.unload("resource://gre/modules/Services.jsm");
 }

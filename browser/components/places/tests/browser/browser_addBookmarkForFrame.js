@@ -8,6 +8,23 @@ const PAGE_URL = BASE_URL + "/framedPage.html";
 const LEFT_URL = BASE_URL + "/frameLeft.html";
 const RIGHT_URL = BASE_URL + "/frameRight.html";
 
+function activateBookmarkFrame(contentAreaContextMenu) {
+  let popupHiddenPromise = BrowserTestUtils.waitForEvent(
+    contentAreaContextMenu,
+    "popuphidden"
+  );
+  return async function () {
+    let frameMenuItem = document.getElementById("frame");
+    let frameMenu = frameMenuItem.querySelector(":scope > menupopup");
+    let frameMenuShown = BrowserTestUtils.waitForEvent(frameMenu, "popupshown");
+    frameMenuItem.openMenu(true);
+    await frameMenuShown;
+    let bookmarkFrame = document.getElementById("context-bookmarkframe");
+    frameMenu.activateItem(bookmarkFrame);
+    await popupHiddenPromise;
+  };
+}
+
 async function withAddBookmarkForFrame(taskFn) {
   // Open a tab and wait for all the subframes to load.
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_URL);
@@ -29,14 +46,7 @@ async function withAddBookmarkForFrame(taskFn) {
 
   await withBookmarksDialog(
     true,
-    function() {
-      let frameMenuItem = document.getElementById("frame");
-      frameMenuItem.click();
-
-      let bookmarkFrame = document.getElementById("context-bookmarkframe");
-      bookmarkFrame.click();
-      contentAreaContextMenu.hidePopup();
-    },
+    activateBookmarkFrame(contentAreaContextMenu),
     taskFn
   );
 
@@ -58,57 +68,83 @@ add_task(async function test_open_add_bookmark_for_frame() {
     let folderPicker = dialogWin.document.getElementById(
       "editBMPanel_folderMenuList"
     );
+
     await TestUtils.waitForCondition(
       () => folderPicker.selectedItem.label == expectedFolderName,
-      "The folder is the expected one."
+      "Dialog: The folder is the expected one."
     );
 
     let tagsField = dialogWin.document.getElementById("editBMPanel_tagsField");
-    Assert.equal(tagsField.value, "", "The tags field should be empty");
+    Assert.equal(tagsField.value, "", "Dialog: The tags field should be empty");
   });
 });
 
 add_task(async function test_move_bookmark_whilst_add_bookmark_open() {
   info(
-    "Test moving a bookmark whilst the add bookmark for frame dialog is open."
+    "EditBookmark: Test moving a bookmark whilst the add bookmark for frame dialog is open."
   );
-  await withAddBookmarkForFrame(async dialogWin => {
-    let expectedGuid = await PlacesUIUtils.defaultParentGuid;
-    let expectedFolder = "BookmarksToolbarFolderTitle";
-    let expectedFolderName = PlacesUtils.getString(expectedFolder);
-    let bookmarksMenuFolderName = PlacesUtils.getString(
-      "BookmarksMenuFolderTitle"
-    );
+  await PlacesUtils.bookmarks.eraseEverything();
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_URL);
 
-    let url = makeURI(LEFT_URL);
-    let folderPicker = dialogWin.document.getElementById(
-      "editBMPanel_folderMenuList"
-    );
+  let contentAreaContextMenu = document.getElementById(
+    "contentAreaContextMenu"
+  );
 
-    // Check the initial state of the folder picker.
-    await TestUtils.waitForCondition(
-      () => folderPicker.selectedItem.label == expectedFolderName,
-      "The folder is the expected one."
-    );
+  let popupShownPromise = BrowserTestUtils.waitForEvent(
+    contentAreaContextMenu,
+    "popupshown"
+  );
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    "#left",
+    { type: "contextmenu", button: 2 },
+    gBrowser.selectedBrowser
+  );
+  await popupShownPromise;
 
-    // Check the bookmark has been created as expected.
-    let bookmark = await PlacesUtils.bookmarks.fetch({ url });
+  await withBookmarksDialog(
+    false,
+    activateBookmarkFrame(contentAreaContextMenu),
+    async function (dialogWin) {
+      let expectedGuid = await PlacesUIUtils.defaultParentGuid;
+      let expectedFolder = "BookmarksToolbarFolderTitle";
+      let expectedFolderName = PlacesUtils.getString(expectedFolder);
 
-    Assert.equal(
-      bookmark.parentGuid,
-      expectedGuid,
-      "The bookmark should be in the expected folder."
-    );
+      let folderPicker = dialogWin.document.getElementById(
+        "editBMPanel_folderMenuList"
+      );
 
-    // Now move the bookmark and check the folder picker is updated correctly.
-    bookmark.parentGuid = PlacesUtils.bookmarks.menuGuid;
-    bookmark.index = PlacesUtils.bookmarks.DEFAULT_INDEX;
+      Assert.equal(
+        folderPicker.selectedItem.label,
+        expectedFolderName,
+        "EditBookmark: The folder is the expected one."
+      );
 
-    await PlacesUtils.bookmarks.update(bookmark);
+      Assert.equal(
+        folderPicker.getAttribute("selectedGuid"),
+        expectedGuid,
+        "EditBookmark: Should have the correct default guid selected"
+      );
 
-    await TestUtils.waitForCondition(
-      () => folderPicker.selectedItem.label == bookmarksMenuFolderName,
-      "The folder picker has changed to the new folder"
-    );
-  });
+      dialogWin.document.getElementById("editBMPanel_foldersExpander").click();
+      let folderTree = dialogWin.document.getElementById(
+        "editBMPanel_folderTree"
+      );
+      folderTree.selectItems([PlacesUtils.bookmarks.menuGuid]);
+      folderTree.blur();
+
+      EventUtils.synthesizeKey("VK_RETURN", {}, dialogWin);
+    }
+  );
+  let url = makeURI(LEFT_URL);
+  // Check the bookmark has been moved as expected.
+  let bookmark = await PlacesUtils.bookmarks.fetch({ url });
+
+  Assert.equal(
+    bookmark.parentGuid,
+    PlacesUtils.bookmarks.menuGuid,
+    "EditBookmark: The bookmark should be moved to the expected folder."
+  );
+
+  BrowserTestUtils.removeTab(tab);
+  await PlacesUtils.bookmarks.eraseEverything();
 });

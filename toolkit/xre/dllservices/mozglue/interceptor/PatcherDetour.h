@@ -22,10 +22,10 @@
 #include "mozilla/interceptor/Trampoline.h"
 #include "mozilla/interceptor/VMSharingPolicies.h"
 
-#define COPY_CODES(NBYTES)                          \
-  do {                                              \
-    tramp.CopyFrom(origBytes.GetAddress(), NBYTES); \
-    origBytes += NBYTES;                            \
+#define COPY_CODES(NBYTES)                           \
+  do {                                               \
+    tramp.CopyCodes(origBytes.GetAddress(), NBYTES); \
+    origBytes += NBYTES;                             \
   } while (0)
 
 namespace mozilla {
@@ -58,6 +58,11 @@ class WindowsDllDetourPatcherPrimitive {
 #if defined(_M_IX86)
     target.WriteByte(0xe9);     // jmp
     target.WriteDisp32(aDest);  // hook displacement
+    while (target.GetOffset() < target.GetNumBytes()) {
+      // bug 1816936 - need to pad to the end of the last overwritten
+      // instruction with noops.
+      target.WriteByte(0x90);
+    }
 #elif defined(_M_X64)
     // mov r11, address
     target.WriteByte(0x49);
@@ -68,6 +73,11 @@ class WindowsDllDetourPatcherPrimitive {
     target.WriteByte(0x41);
     target.WriteByte(0xff);
     target.WriteByte(0xe3);
+    while (target.GetOffset() < target.GetNumBytes()) {
+      // bug 1816936 - need to pad to the end of the last overwritten
+      // instruction with noops.
+      target.WriteByte(0x90);
+    }
 #elif defined(_M_ARM64)
     // The default patch requires 16 bytes
     // LDR x16, .+8
@@ -213,6 +223,11 @@ class WindowsDllDetourPatcher final
 
       origBytes.Commit();
 #  elif defined(_M_X64)
+      // Note: At the moment we clear 13-byte patches by replacing the jump to
+      //       the patched function by a jump to the stub code. The original
+      //       bytes of the original function are *not* restored. This implies
+      //       that the stub code outlives our cleaning, so unwind information
+      //       remains useful and must not be removed here.
       if (opcode1 == 0x49) {
         if (!Clear13BytePatch(origBytes, tramp.GetCurrentRemoteAddress())) {
           continue;
@@ -890,6 +905,11 @@ class WindowsDllDetourPatcher final
     target.WriteByte(BuildModRmByte(kModReg, kRegAx, kRegAx));
     target.WriteByte(0xFF);                                // JMP /4
     target.WriteByte(BuildModRmByte(kModReg, 4, kRegAx));  // rax
+    while (target.GetOffset() < target.GetNumBytes()) {
+      // bug 1816936 - need to pad to the end of the last overwritten
+      // instruction with noops.
+      target.WriteByte(0x90);
+    }
 
     return true;
   }
@@ -1175,6 +1195,14 @@ class WindowsDllDetourPatcher final
         } else if (*origBytes >= 0xb8 && *origBytes <= 0xbf) {
           // mov r32, imm32
           COPY_CODES(5);
+        } else if (*origBytes == 0x8b && (origBytes[1] & kMaskMod) == kModReg) {
+          // 8B /r: mov r32, r/m32
+          COPY_CODES(2);
+        } else if (*origBytes == 0xf7 &&
+                   (origBytes[1] & (kMaskMod | kMaskReg)) ==
+                       (kModReg | (0 << kRegFieldShift))) {
+          // F7 /0 id: test r/m32, imm32
+          COPY_CODES(6);
         } else {
           MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
           return;
@@ -1285,17 +1313,18 @@ class WindowsDllDetourPatcher final
             return;
           }
         } else if (*origBytes == 0xff) {
-          // JMP /4
-          if ((origBytes[1] & 0xc0) == 0x0 && (origBytes[1] & 0x07) == 0x5) {
+          // JMP/4 or CALL/2
+          if ((origBytes[1] & 0xc0) == 0x0 && (origBytes[1] & 0x07) == 0x5 &&
+              ((origBytes[1] & 0x38) == 0x20 ||
+               (origBytes[1] & 0x38) == 0x10)) {
             origBytes += 2;
             --tramp;  // overwrite the REX.W/REX.RW we copied above
 
+            foundJmp = (origBytes[1] & 0x38) == 0x20;
             if (!GenerateJump(tramp, origBytes.ChasePointerFromDisp(),
-                              JumpType::Jmp)) {
+                              foundJmp ? JumpType::Jmp : JumpType::Call)) {
               return;
             }
-
-            foundJmp = true;
           } else {
             // not support yet!
             MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
@@ -1670,6 +1699,14 @@ class WindowsDllDetourPatcher final
       return;
     }
 
+#ifdef _M_X64
+    if constexpr (MMPolicyT::kSupportsUnwindInfo) {
+      DebugOnly<bool> unwindInfoAdded = tramp.AddUnwindInfo(
+          origBytes.GetBaseAddress(), origBytes.GetOffset());
+      MOZ_ASSERT(unwindInfoAdded);
+    }
+#endif  // _M_X64
+
     WritableTargetFunction<MMPolicyT> target(origBytes.Promote());
     if (!target) {
       return;
@@ -1700,12 +1737,14 @@ class WindowsDllDetourPatcher final
       PrimitiveT::ApplyDefaultPatch(target, aDest);
     } while (false);
 
-    if (!target.Commit()) {
-      return;
-    }
-
-    // Output the trampoline, thus signalling that this call was a success
+    // Output the trampoline, thus signalling that this call was a success. This
+    // must happen before our patched function can be reached from another
+    // thread, so before we commit the target code (bug 1838286).
     *aOutTramp = trampPtr;
+
+    if (!target.Commit()) {
+      *aOutTramp = nullptr;
+    }
   }
 };
 

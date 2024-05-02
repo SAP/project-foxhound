@@ -3,41 +3,41 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
 /* import-globals-from /browser/base/content/utilityOverlay.js */
-/* import-globals-from ../PlacesUIUtils.jsm */
-/* import-globals-from /toolkit/components/places/PlacesUtils.jsm */
-/* import-globals-from /toolkit/components/places/PlacesTransactions.jsm */
 /* import-globals-from ./places.js */
 
 /**
  * Represents an insertion point within a container where we can insert
  * items.
- * @param {object} an object containing the following properties:
- *   - parentId
- *     The identifier of the parent container
- *   - parentGuid
+ *
+ * @param {object} options an object containing the following properties:
+ * @param {string} options.parentGuid
  *     The unique identifier of the parent container
- *   - index
+ * @param {number} [options.index]
  *     The index within the container where to insert, defaults to appending
- *   - orientation
+ * @param {number} [options.orientation]
  *     The orientation of the insertion. NOTE: the adjustments to the
  *     insertion point to accommodate the orientation should be done by
  *     the person who constructs the IP, not the user. The orientation
  *     is provided for informational purposes only! Defaults to DROP_ON.
- *   - tagName
+ * @param {string} [options.tagName]
  *     The tag name if this IP is set to a tag, null otherwise.
- *   - dropNearNode
+ * @param {*} [options.dropNearNode]
  *     When defined index will be calculated based on this node
  */
 function PlacesInsertionPoint({
-  parentId,
   parentGuid,
   index = PlacesUtils.bookmarks.DEFAULT_INDEX,
   orientation = Ci.nsITreeView.DROP_ON,
   tagName = null,
   dropNearNode = null,
 }) {
-  this.itemId = parentId;
   this.guid = parentGuid;
   this._index = index;
   this.orientation = orientation;
@@ -73,7 +73,7 @@ PlacesInsertionPoint.prototype = {
 
 function PlacesController(aView) {
   this._view = aView;
-  XPCOMUtils.defineLazyGetter(this, "profileName", function() {
+  ChromeUtils.defineLazyGetter(this, "profileName", function () {
     return Services.dirsvc.get("ProfD", Ci.nsIFile).leafName;
   });
 
@@ -83,11 +83,9 @@ function PlacesController(aView) {
     "places.forgetThisSite.clearByBaseDomain",
     false
   );
-  ChromeUtils.defineModuleGetter(
-    this,
-    "ForgetAboutSite",
-    "resource://gre/modules/ForgetAboutSite.jsm"
-  );
+  ChromeUtils.defineESModuleGetters(this, {
+    ForgetAboutSite: "resource://gre/modules/ForgetAboutSite.sys.mjs",
+  });
 }
 
 PlacesController.prototype = {
@@ -168,7 +166,7 @@ PlacesController.prototype = {
       case "cmd_paste":
       case "placesCmd_paste":
         // If the clipboard contains a Places flavor it is definitely pasteable,
-        // otherwise we also allow pasting "text/unicode" and "text/x-moz-url" data.
+        // otherwise we also allow pasting "text/plain" and "text/x-moz-url" data.
         // We don't check if the data is valid here, because the clipboard may
         // contain very large blobs that would largely slowdown commands updating.
         // Of course later paste() should ignore any invalid data.
@@ -178,7 +176,7 @@ PlacesController.prototype = {
             [
               ...PlacesUIUtils.PLACES_FLAVORS,
               PlacesUtils.TYPE_X_MOZ_URL,
-              PlacesUtils.TYPE_UNICODE,
+              PlacesUtils.TYPE_PLAINTEXT,
             ],
             Ci.nsIClipboard.kGlobalClipboard
           )
@@ -246,10 +244,10 @@ PlacesController.prototype = {
   doCommand: function PC_doCommand(aCommand) {
     switch (aCommand) {
       case "cmd_undo":
-        PlacesTransactions.undo().catch(Cu.reportError);
+        PlacesTransactions.undo().catch(console.error);
         break;
       case "cmd_redo":
-        PlacesTransactions.redo().catch(Cu.reportError);
+        PlacesTransactions.redo().catch(console.error);
         break;
       case "cmd_cut":
       case "placesCmd_cut":
@@ -261,14 +259,14 @@ PlacesController.prototype = {
         break;
       case "cmd_paste":
       case "placesCmd_paste":
-        this.paste().catch(Cu.reportError);
+        this.paste().catch(console.error);
         break;
       case "cmd_delete":
       case "placesCmd_delete":
-        this.remove("Remove Selection").catch(Cu.reportError);
+        this.remove("Remove Selection").catch(console.error);
         break;
       case "placesCmd_deleteDataHost":
-        this.forgetAboutThisSite().catch(Cu.reportError);
+        this.forgetAboutThisSite().catch(console.error);
         break;
       case "cmd_selectAll":
         this.selectAll();
@@ -295,19 +293,19 @@ PlacesController.prototype = {
         PlacesUIUtils.openNodeIn(this._view.selectedNode, "tab", this._view);
         break;
       case "placesCmd_new:folder":
-        this.newItem("folder").catch(Cu.reportError);
+        this.newItem("folder").catch(console.error);
         break;
       case "placesCmd_new:bookmark":
-        this.newItem("bookmark").catch(Cu.reportError);
+        this.newItem("bookmark").catch(console.error);
         break;
       case "placesCmd_new:separator":
-        this.newSeparator().catch(Cu.reportError);
+        this.newSeparator().catch(console.error);
         break;
       case "placesCmd_show:info":
         this.showBookmarkPropertiesForSelection();
         break;
       case "placesCmd_sortBy:name":
-        this.sortFolderByName().catch(Cu.reportError);
+        this.sortFolderByName().catch(console.error);
         break;
       case "placesCmd_createBookmark": {
         const nodes = this._view.selectedNodes.map(node => {
@@ -377,7 +375,7 @@ PlacesController.prototype = {
    *    "separator"         node is a separator line
    *    "host"              node is a host
    *
-   * @returns {array} an array of objects corresponding the selected nodes. Each
+   * @returns {Array} an array of objects corresponding the selected nodes. Each
    *         object has each of the properties above set if its corresponding
    *         node matches the rule. In addition, the annotations names for each
    *         node are set on its corresponding object as properties.
@@ -432,6 +430,7 @@ PlacesController.prototype = {
 
   /**
    * Determines if a context-menu item should be shown
+   *
    * @param {object} aMenuItem
    *        the context menu item
    * @param {object} aMetaData
@@ -443,6 +442,13 @@ PlacesController.prototype = {
     if (
       aMenuItem.hasAttribute("hide-if-private-browsing") &&
       !PrivateBrowsingUtils.enabled
+    ) {
+      return false;
+    }
+
+    if (
+      aMenuItem.hasAttribute("hide-if-usercontext-disabled") &&
+      !Services.prefs.getBoolPref("privacy.userContext.enabled", false)
     ) {
       return false;
     }
@@ -582,7 +588,9 @@ PlacesController.prototype = {
           hideIfSingleClickOpens ||
           hideIfNotSearch ||
           !this._shouldShowMenuItem(item, metadata);
-        item.hidden = item.disabled = shouldHideItem;
+        item.hidden = shouldHideItem;
+        item.disabled =
+          shouldHideItem || item.getAttribute("start-disabled") == "true";
 
         if (!item.hidden) {
           visibleItemsBeforeSep = true;
@@ -644,28 +652,19 @@ PlacesController.prototype = {
       }
     }
 
-    // Make sure to display the correct string when multiple pages are selected.
-    let stringId = metadata.length === 1 ? "SinglePage" : "MultiplePages";
-
-    let deleteHistoryItem = document.getElementById(
+    const deleteHistoryItem = document.getElementById(
       "placesContext_delete_history"
     );
-    deleteHistoryItem.label = PlacesUIUtils.getString(
-      `cmd.delete${stringId}.label`
-    );
-    deleteHistoryItem.accessKey = PlacesUIUtils.getString(
-      `cmd.delete${stringId}.accesskey`
-    );
+    document.l10n.setAttributes(deleteHistoryItem, "places-delete-page", {
+      count: metadata.length,
+    });
 
-    let createBookmarkItem = document.getElementById(
+    const createBookmarkItem = document.getElementById(
       "placesContext_createBookmark"
     );
-    createBookmarkItem.label = PlacesUIUtils.getString(
-      `cmd.bookmark${stringId}.label`
-    );
-    createBookmarkItem.accessKey = PlacesUIUtils.getString(
-      `cmd.bookmark${stringId}.accesskey`
-    );
+    document.l10n.setAttributes(createBookmarkItem, "places-create-bookmark", {
+      count: metadata.length,
+    });
 
     return usableItemCount > 0;
   },
@@ -766,9 +765,10 @@ PlacesController.prototype = {
    * Walk the list of folders we're removing in this delete operation, and
    * see if the selected node specified is already implicitly being removed
    * because it is a child of that folder.
+   *
    * @param {object} node
    *        Node to check for containment.
-   * @param {array} pastFolders
+   * @param {Array} pastFolders
    *        List of folders the calling function has already traversed
    * @returns {boolean} true if the node should be skipped, false otherwise.
    */
@@ -802,11 +802,12 @@ PlacesController.prototype = {
   /**
    * Creates a set of transactions for the removal of a range of items.
    * A range is an array of adjacent nodes in a view.
-   * @param {array} range
+   *
+   * @param {Array} range
    *          An array of nodes to remove. Should all be adjacent.
-   * @param {array} transactions
+   * @param {Array} transactions
    *          An array of transactions (returned)
-   * @param  {array} [removedFolders]
+   * @param  {Array} [removedFolders]
    *          An array of folder nodes that have already been removed.
    * @returns {number} The total number of items affected.
    */
@@ -864,7 +865,7 @@ PlacesController.prototype = {
           Ci.nsINavHistoryQueryOptions.QUERY_TYPE_HISTORY
       ) {
         // This is a uri node inside an history query.
-        await PlacesUtils.history.remove(node.uri).catch(Cu.reportError);
+        await PlacesUtils.history.remove(node.uri).catch(console.error);
         // History deletes are not undoable, so we don't have a transaction.
       } else if (
         node.itemId == -1 &&
@@ -875,7 +876,7 @@ PlacesController.prototype = {
         // This is a dynamically generated history query, like queries
         // grouped by site, time or both.  Dynamically generated queries don't
         // have an itemId even if they are descendants of a bookmark.
-        await this._removeHistoryContainer(node).catch(Cu.reportError);
+        await this._removeHistoryContainer(node).catch(console.error);
         // History deletes are not undoable, so we don't have a transaction.
       } else {
         // This is a common bookmark item.
@@ -919,9 +920,8 @@ PlacesController.prototype = {
   },
 
   /**
-   * Removes the set of selected ranges from history, asynchronously.
-   *
-   * @note history deletes are not undoable.
+   * Removes the set of selected ranges from history, asynchronously. History
+   * deletes are not undoable.
    */
   async _removeRowsFromHistory() {
     let nodes = this._view.selectedNodes;
@@ -935,21 +935,27 @@ PlacesController.prototype = {
         PlacesUtils.asQuery(node).queryOptions.queryType ==
           Ci.nsINavHistoryQueryOptions.QUERY_TYPE_HISTORY
       ) {
-        await this._removeHistoryContainer(node).catch(Cu.reportError);
+        await this._removeHistoryContainer(node).catch(console.error);
       }
     }
 
     if (URIs.size) {
-      await PlacesUtils.history.remove([...URIs]);
+      await PlacesUIUtils.batchUpdatesForNode(
+        this._view.result,
+        URIs.size,
+        async () => {
+          await PlacesUtils.history.remove([...URIs]);
+        }
+      );
     }
   },
 
   /**
-   * Removes history visits for an history container node.
+   * Removes history visits for an history container node. History deletes are
+   * not undoable.
+   *
    * @param {object} aContainerNode
    *        The container node to remove.
-   *
-   * @note history deletes are not undoable.
    */
   async _removeHistoryContainer(aContainerNode) {
     if (PlacesUtils.nodeIsHost(aContainerNode)) {
@@ -961,6 +967,8 @@ PlacesController.prototype = {
         (aContainerNode.title == PlacesUtils.getString("localhost")
           ? ""
           : aContainerNode.title);
+      // Will update faster if all children hidden before removing
+      aContainerNode.containerOpen = false;
       await PlacesUtils.history.removeByFilter({ host });
     } else if (PlacesUtils.nodeIsDay(aContainerNode)) {
       // This is a day container.
@@ -970,6 +978,8 @@ PlacesController.prototype = {
       if (!query || !beginTime || !endTime) {
         throw new Error("A valid date container query should exist!");
       }
+      // Will update faster if all children hidden before removing
+      aContainerNode.containerOpen = false;
       // We want to exclude beginTime from the removal because
       // removePagesByTimeframe includes both extremes, while date containers
       // exclude the lower extreme.  So, if we would not exclude it, we would
@@ -1000,7 +1010,7 @@ PlacesController.prototype = {
       } else if (queryType == Ci.nsINavHistoryQueryOptions.QUERY_TYPE_HISTORY) {
         await this._removeRowsFromHistory();
       } else {
-        throw new Error("implement support for QUERY_TYPE_UNIFIED");
+        throw new Error("Unknown query type");
       }
     } else {
       throw new Error("unexpected root");
@@ -1010,6 +1020,7 @@ PlacesController.prototype = {
   /**
    * Fills a DataTransfer object with the content of the selection that can be
    * dropped elsewhere.
+   *
    * @param {object} aEvent
    *        The dragstart event.
    */
@@ -1029,7 +1040,7 @@ PlacesController.prototype = {
 
     function addURIData(index) {
       addData(PlacesUtils.TYPE_X_MOZ_URL, index);
-      addData(PlacesUtils.TYPE_UNICODE, index);
+      addData(PlacesUtils.TYPE_PLAINTEXT, index);
       addData(PlacesUtils.TYPE_HTML, index);
     }
 
@@ -1111,13 +1122,13 @@ PlacesController.prototype = {
       { type: PlacesUtils.TYPE_X_MOZ_PLACE, entries: [] },
       { type: PlacesUtils.TYPE_X_MOZ_URL, entries: [] },
       { type: PlacesUtils.TYPE_HTML, entries: [] },
-      { type: PlacesUtils.TYPE_UNICODE, entries: [] },
+      { type: PlacesUtils.TYPE_PLAINTEXT, entries: [] },
     ];
 
     // Avoid handling descendants of a copied node, the transactions take care
     // of them automatically.
     let copiedFolders = [];
-    aNodes.forEach(function(node) {
+    aNodes.forEach(function (node) {
       if (this._shouldSkipNode(node, copiedFolders)) {
         return;
       }
@@ -1125,7 +1136,7 @@ PlacesController.prototype = {
         copiedFolders.push(node);
       }
 
-      contents.forEach(function(content) {
+      contents.forEach(function (content) {
         content.entries.push(PlacesUtils.wrapNode(node, content.type));
       });
     }, this);
@@ -1142,7 +1153,7 @@ PlacesController.prototype = {
     let hasData = false;
     // This order matters here!  It controls how this and other applications
     // select data to be inserted based on type.
-    contents.forEach(function(content) {
+    contents.forEach(function (content) {
       if (content.entries.length) {
         hasData = true;
         let glue =
@@ -1176,7 +1187,7 @@ PlacesController.prototype = {
   set cutNodes(aNodes) {
     let self = this;
     function updateCutNodes(aValue) {
-      self._cutNodes.forEach(function(aNode) {
+      self._cutNodes.forEach(function (aNode) {
         self._view.toggleCutNode(aNode, aValue);
       });
     }
@@ -1244,7 +1255,7 @@ PlacesController.prototype = {
     [
       PlacesUtils.TYPE_X_MOZ_PLACE,
       PlacesUtils.TYPE_X_MOZ_URL,
-      PlacesUtils.TYPE_UNICODE,
+      PlacesUtils.TYPE_PLAINTEXT,
     ].forEach(type => xferable.addDataFlavor(type));
 
     Services.clipboard.getData(xferable, Ci.nsIClipboard.kGlobalClipboard);
@@ -1283,6 +1294,7 @@ PlacesController.prototype = {
 
   /**
    * Checks if we can insert into a container.
+   *
    * @param {object} container
    *          The container were we are want to drop
    * @returns {boolean}
@@ -1347,7 +1359,7 @@ PlacesController.prototype = {
     const [title, body, forget] = await document.l10n.formatValues([
       { id: "places-forget-about-this-site-confirmation-title" },
       {
-        id: "places-forget-about-this-site-confirmation-message",
+        id: "places-forget-about-this-site-confirmation-msg",
         args: { hostOrBaseDomain: baseDomain ?? host },
       },
       { id: "places-forget-about-this-site-forget" },
@@ -1383,7 +1395,16 @@ PlacesController.prototype = {
 
   showInFolder(aBookmarkGuid) {
     // Open containing folder in left pane/sidebar bookmark tree
-    if (this._view.parentElement.id.includes("Panel")) {
+    let documentUrl = document.documentURI.toLowerCase();
+    if (documentUrl.endsWith("browser.xhtml")) {
+      // We're in a menu or a panel.
+      window.SidebarUI._show("viewBookmarksSidebar").then(() => {
+        let theSidebar = document.getElementById("sidebar");
+        theSidebar.contentDocument
+          .getElementById("bookmarks-view")
+          .selectItems([aBookmarkGuid]);
+      });
+    } else if (documentUrl.includes("sidebar")) {
       // We're in the sidebar - clear the search box first
       let searchBox = document.getElementById("search-box");
       searchBox.value = "";
@@ -1392,6 +1413,7 @@ PlacesController.prototype = {
       // And go to the node
       this._view.selectItems([aBookmarkGuid], true);
     } else {
+      // We're in the bookmark library/manager
       PlacesUtils.bookmarks
         .fetch(aBookmarkGuid, null, { includePath: true })
         .then(b => {
@@ -1415,7 +1437,9 @@ PlacesController.prototype = {
  */
 var PlacesControllerDragHelper = {
   /**
-   * DOM Element currently being dragged over
+   * For views using DOM nodes like toolbars, menus and panels, this is the DOM
+   * element currently being dragged over. For other views not handling DOM
+   * nodes, like trees, it is a Places result node instead.
    */
   currentDropTarget: null,
 
@@ -1423,6 +1447,7 @@ var PlacesControllerDragHelper = {
    * Determines if the mouse is currently being dragged over a child node of
    * this menu. This is necessary so that the menu doesn't close while the
    * mouse is dragging over one of its submenus
+   *
    * @param {object} node
    *        The container node
    * @returns {boolean} true if the user is dragging over a node within the hierarchy of
@@ -1440,38 +1465,28 @@ var PlacesControllerDragHelper = {
   },
 
   /**
-   * @returns{object|null} The current active drag session. Returns null if there is none.
+   * @returns {object|null} The current active drag session. Returns null if there is none.
    */
   getSession: function PCDH__getSession() {
     return this.dragService.getCurrentSession();
   },
 
   /**
-   * Extract the first accepted flavor from a list of flavors.
-   * @param {DOMStringList} aFlavors
-   *        The flavors list.
-   * @returns {string}
+   * Extract the most relevant flavor from a list of flavors.
+   *
+   * @param {DOMStringList} flavors The flavors list.
+   * @returns {string} The most relevant flavor, or undefined.
    */
-  getFirstValidFlavor: function PCDH_getFirstValidFlavor(aFlavors) {
-    for (let i = 0; i < aFlavors.length; i++) {
-      if (PlacesUIUtils.SUPPORTED_FLAVORS.includes(aFlavors[i])) {
-        return aFlavors[i];
-      }
-    }
-
-    // If no supported flavor is found, check if data includes text/plain
-    // contents.  If so, request them as text/unicode, a conversion will happen
-    // automatically.
-    if (aFlavors.contains("text/plain")) {
-      return PlacesUtils.TYPE_UNICODE;
-    }
-
-    return null;
+  getMostRelevantFlavor(flavors) {
+    // The DnD API returns a DOMStringList, but tests may pass an Array.
+    flavors = Array.from(flavors);
+    return PlacesUIUtils.SUPPORTED_FLAVORS.find(f => flavors.includes(f));
   },
 
   /**
    * Determines whether or not the data currently being dragged can be dropped
    * on a places view.
+   *
    * @param {object} ip
    *        The insertion point where the items should be dropped.
    * @param {object} dt
@@ -1483,7 +1498,7 @@ var PlacesControllerDragHelper = {
 
     // Check every dragged item.
     for (let i = 0; i < dropCount; i++) {
-      let flavor = this.getFirstValidFlavor(dt.mozTypesAt(i));
+      let flavor = this.getMostRelevantFlavor(dt.mozTypesAt(i));
       if (!flavor) {
         return false;
       }
@@ -1521,18 +1536,39 @@ var PlacesControllerDragHelper = {
           return false;
         }
 
-        // The following loop disallows the dropping of a folder on itself or
-        // on any of its descendants.
+        // Disallow dropping of a folder on itself or any of its descendants.
+        // This check is done to show an appropriate drop indicator, a stricter
+        // check is done later by the bookmarks API.
         if (
           dragged.type == PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER ||
           (dragged.uri && dragged.uri.startsWith("place:"))
         ) {
-          let parentId = ip.itemId;
-          while (parentId != PlacesUtils.placesRootId) {
-            if (dragged.concreteId == parentId || dragged.id == parentId) {
+          let dragOverPlacesNode = this.currentDropTarget;
+          if (!(dragOverPlacesNode instanceof Ci.nsINavHistoryResultNode)) {
+            // If it's a DOM node, it should have a _placesNode expando, or it
+            // may be a static element in a places container, like the [empty]
+            // menuitem.
+            dragOverPlacesNode =
+              dragOverPlacesNode._placesNode ??
+              dragOverPlacesNode.parentNode?._placesNode;
+          }
+
+          // If we couldn't get a target Places result node then we can't check
+          // whether the drag is allowed, just let it go through.
+          if (dragOverPlacesNode) {
+            let guid = dragged.concreteGuid ?? dragged.itemGuid;
+            // Dragging over itself.
+            if (PlacesUtils.getConcreteItemGuid(dragOverPlacesNode) == guid) {
               return false;
             }
-            parentId = PlacesUtils.bookmarks.getFolderIdForItem(parentId);
+            // Dragging over a descendant.
+            for (let ancestor of PlacesUtils.nodeAncestors(
+              dragOverPlacesNode
+            )) {
+              if (PlacesUtils.getConcreteItemGuid(ancestor) == guid) {
+                return false;
+              }
+            }
           }
         }
 
@@ -1566,7 +1602,7 @@ var PlacesControllerDragHelper = {
 
     // Following flavors may contain duplicated data.
     let duplicable = new Map();
-    duplicable.set(PlacesUtils.TYPE_UNICODE, new Set());
+    duplicable.set(PlacesUtils.TYPE_PLAINTEXT, new Set());
     duplicable.set(PlacesUtils.TYPE_X_MOZ_URL, new Set());
 
     // Collect all data from the DataTransfer before processing it, as the
@@ -1575,7 +1611,7 @@ var PlacesControllerDragHelper = {
     let nodes = [];
     let externalDrag = false;
     for (let i = 0; i < dropCount; ++i) {
-      let flavor = this.getFirstValidFlavor(dt.mozTypesAt(i));
+      let flavor = this.getMostRelevantFlavor(dt.mozTypesAt(i));
       if (!flavor) {
         return;
       }
@@ -1597,7 +1633,7 @@ var PlacesControllerDragHelper = {
       if (flavor != TAB_DROP_TYPE) {
         nodes = [...nodes, ...PlacesUtils.unwrapNodes(data, flavor)];
       } else if (
-        data instanceof XULElement &&
+        XULElement.isInstance(data) &&
         data.localName == "tab" &&
         data.ownerGlobal.isChromeWindow
       ) {

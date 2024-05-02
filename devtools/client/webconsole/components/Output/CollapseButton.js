@@ -4,9 +4,11 @@
 
 "use strict";
 
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
-const { l10n } = require("devtools/client/webconsole/utils/messages");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 const messageToggleDetails = l10n.getStr("messageToggleDetails");
 
 function CollapseButton(props) {
@@ -24,7 +26,7 @@ function CollapseButton(props) {
       // Clearing the text selection to allow the message to collpase.
       e.target.ownerDocument.defaultView.getSelection().removeAllRanges();
     },
-    title: title,
+    title,
   });
 }
 

@@ -6,15 +6,16 @@ function test() {
 
   // Adding one fake site so that the SiteDataManager would run.
   // Otherwise, without any site then it would just return so we would end up in not testing SiteDataManager.
-  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-    "https://www.foo.com"
-  );
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      "https://www.foo.com"
+    );
   Services.perms.addFromPrincipal(
     principal,
     "persistent-storage",
     Ci.nsIPermissionManager.ALLOW_ACTION
   );
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.perms.removeFromPrincipal(principal, "persistent-storage");
   });
 
@@ -33,6 +34,13 @@ async function runTest(win) {
   await win.gotoPref("panePrivacy");
   for (let element of elements) {
     let attributeValue = element.getAttribute("data-category");
+
+    // Ignore the cookie banner handling section, as it is currently preffed
+    // off by default (bug 1800679).
+    if (element.id === "cookieBannerHandlingGroup") {
+      continue;
+    }
+
     if (attributeValue == "panePrivacy") {
       is_element_visible(element, "HTTPSOnly should be visible");
 

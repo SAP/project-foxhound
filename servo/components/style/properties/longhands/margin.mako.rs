@@ -24,9 +24,21 @@
         logical_group="margin",
         spec=spec,
         rule_types_allowed=DEFAULT_RULES_AND_PAGE,
-        servo_restyle_damage="reflow"
+        servo_restyle_damage="reflow",
+        affects="layout",
     )}
 % endfor
+
+${helpers.predefined_type(
+    "overflow-clip-margin",
+    "Length",
+    "computed::Length::zero()",
+    parse_method="parse_non_negative",
+    engines="gecko",
+    spec="https://drafts.csswg.org/css-overflow/#propdef-overflow-clip-margin",
+    animation_value_type="ComputedValue",
+    affects="overflow",
+)}
 
 % for side in ALL_SIDES:
     ${helpers.predefined_type(
@@ -38,5 +50,6 @@
         logical_group="scroll-margin",
         spec="https://drafts.csswg.org/css-scroll-snap-1/#propdef-scroll-margin-%s" % side[0],
         animation_value_type="ComputedValue",
+        affects="",
     )}
 % endfor

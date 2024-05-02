@@ -8,10 +8,7 @@
 const FISSION_TEST_URL = URL_ROOT_SSL + "fission_document.html";
 const CHROME_WORKER_URL = CHROME_URL_ROOT + "test_worker.js";
 
-add_task(async function() {
-  // Enabled devtools.browsertoolbox.fission to listen to all target types.
-  await pushPref("devtools.browsertoolbox.fission", true);
-
+add_task(async function () {
   // Disable the preloaded process as it creates processes intermittently
   // which forces the emission of RDP requests we aren't correctly waiting for.
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
@@ -101,12 +98,19 @@ add_task(async function() {
     );
   }
 
-  targetCommand.destroy();
-
   // Wait for all the targets to be fully attached so we don't have pending requests.
   await waitForAllTargetsToBeAttached(targetCommand);
 
+  ok(
+    !targetCommand.isDestroyed(),
+    "TargetCommand isn't destroyed before calling commands.destroy()"
+  );
   await commands.destroy();
+  ok(
+    targetCommand.isDestroyed(),
+    "TargetCommand is destroyed after calling commands.destroy()"
+  );
+
   await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
     // registrationPromise is set by the test page.
     const registration = await content.wrappedJSObject.registrationPromise;

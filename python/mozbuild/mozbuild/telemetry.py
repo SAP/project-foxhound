@@ -2,19 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import division, absolute_import, print_function, unicode_literals
-
 """
 This file contains functions used for telemetry.
 """
 
-import distro
-import os
 import math
+import os
 import platform
 import sys
 
+import distro
 import mozpack.path as mozpath
+
 from .base import BuildEnvironmentNotFoundException
 
 
@@ -242,25 +241,24 @@ def get_vscode_running():
     """Return if the vscode is currently running."""
     try:
         import psutil
+
+        for proc in psutil.process_iter():
+            try:
+                # On Windows we have "Code.exe"
+                # On MacOS we have "Code Helper (Renderer)"
+                # On Linux we have ""
+                if (
+                    proc.name == "Code.exe"
+                    or proc.name == "Code Helper (Renderer)"
+                    or proc.name == "code"
+                ):
+                    return True
+            except Exception:
+                # may not be able to access process info for all processes
+                continue
     except Exception:
-        psutil = None
-
-    if not psutil:
-        return None
-
-    for proc in psutil.process_iter():
-        try:
-            # On Windows we have "Code.exe"
-            # On MacOS we have "Code Helper (Renderer)"
-            # On Linux we have ""
-            if (
-                proc.name == "Code.exe"
-                or proc.name == "Code Helper (Renderer)"
-                or proc.name == "code"
-            ):
-                return True
-        except Exception:
-            # may not be able to access process info for all processes
-            continue
+        # On some platforms, sometimes, the generator throws an
+        # exception preventing us to enumerate.
+        return False
 
     return False

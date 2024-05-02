@@ -7,16 +7,15 @@
 #ifndef DOM_BASE_MUTATIONOBSERVERS_H_
 #define DOM_BASE_MUTATIONOBSERVERS_H_
 
+#include "mozilla/DoublyLinkedList.h"
 #include "nsIContent.h"  // for use in inline function (NotifyParentChainChanged)
 #include "nsIMutationObserver.h"  // for use in inline function (NotifyParentChainChanged)
 #include "nsINode.h"
-#include "nsTObserverArray.h"
 
 class nsAtom;
 class nsAttrValue;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Animation;
 class Element;
 
@@ -46,8 +45,6 @@ class MutationObservers {
    * @param aNameSpaceID  Namespace of changing attribute
    * @param aAttribute    Local-name of changing attribute
    * @param aModType      Type of change (add/change/removal)
-   * @param aNewValue     The parsed new value, but only if BeforeSetAttr
-   *                      preparsed it!!!
    * @see nsIMutationObserver::AttributeWillChange
    */
   static void NotifyAttributeWillChange(mozilla::dom::Element* aElement,
@@ -90,15 +87,6 @@ class MutationObservers {
                                     nsIContent* aFirstNewContent);
 
   /**
-   * Send NativeAnonymousChildList notifications to nsIMutationObservers
-   * @param aContent             Anonymous node that's been added or removed
-   * @param aIsRemove            True if it's a removal, false if an addition
-   * @see nsIMutationObserver::NativeAnonymousChildListChange
-   */
-  static void NotifyNativeAnonymousChildListChange(nsIContent* aContent,
-                                                   bool aIsRemove);
-
-  /**
    * Send ContentInserted notifications to nsIMutationObservers
    * @param aContainer        Node into which new child was inserted
    * @param aChild            Newly inserted child
@@ -121,13 +109,22 @@ class MutationObservers {
    * @see nsIMutationObserver::ParentChainChanged
    */
   static inline void NotifyParentChainChanged(nsIContent* aContent) {
-    nsAutoTObserverArray<nsIMutationObserver*, 1>* observers =
+    mozilla::SafeDoublyLinkedList<nsIMutationObserver>* observers =
         aContent->GetMutationObservers();
-    if (observers && !observers->IsEmpty()) {
-      NS_OBSERVER_ARRAY_NOTIFY_OBSERVERS(*observers, ParentChainChanged,
-                                         (aContent));
+    if (observers) {
+      for (auto iter = observers->begin(); iter != observers->end(); ++iter) {
+        if (iter->IsCallbackEnabled(nsIMutationObserver::kParentChainChanged)) {
+          iter->ParentChainChanged(aContent);
+        }
+      }
     }
   }
+
+  static void NotifyARIAAttributeDefaultWillChange(
+      mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType);
+  static void NotifyARIAAttributeDefaultChanged(mozilla::dom::Element* aElement,
+                                                nsAtom* aAttribute,
+                                                int32_t aModType);
 
   /**
    * Notify that an animation is added/changed/removed.
@@ -148,7 +145,6 @@ class MutationObservers {
   static void NotifyAnimationMutated(mozilla::dom::Animation* aAnimation,
                                      AnimationMutationType aMutatedType);
 };
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_BASE_MUTATIONOBSERVERS_H_

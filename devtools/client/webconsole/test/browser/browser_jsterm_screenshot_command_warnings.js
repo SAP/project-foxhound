@@ -20,7 +20,7 @@ const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html>
    <div class="big"></div>
    <div class="small"></div>`;
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
 
   const hud = await openConsole();
@@ -33,13 +33,16 @@ add_task(async function() {
 async function testTruncationWarning(hud) {
   info("Check that large screenshots get cut off if necessary");
 
-  let onMessages = waitForMessages({
+  let onMessages = waitForMessagesByType({
     hud,
     messages: [
-      { text: "Screenshot copied to clipboard." },
       {
-        text:
-          "The image was cut off to 10000×10000 as the resulting image was too large",
+        text: "Screenshot copied to clipboard.",
+        typeSelector: ".console-api",
+      },
+      {
+        text: "The image was cut off to 10000×10000 as the resulting image was too large",
+        typeSelector: ".console-api",
       },
     ],
   });
@@ -53,10 +56,11 @@ async function testTruncationWarning(hud) {
   is(width, 10000, "The resulting image is 10000px wide");
   is(height, 10000, "The resulting image is 10000px high");
 
-  onMessages = waitForMessages({
+  onMessages = waitForMessageByType(
     hud,
-    messages: [{ text: "Screenshot copied to clipboard." }],
-  });
+    "Screenshot copied to clipboard.",
+    ".console-api"
+  );
   execute(hud, ":screenshot --clipboard --selector .small --dpr 1");
   await onMessages;
 
@@ -68,17 +72,20 @@ async function testTruncationWarning(hud) {
 async function testDPRWarning(hud) {
   info("Check that DPR is reduced to 1 after failure");
 
-  const onMessages = waitForMessages({
+  const onMessages = waitForMessagesByType({
     hud,
     messages: [
-      { text: "Screenshot copied to clipboard." },
       {
-        text:
-          "The image was cut off to 10000×10000 as the resulting image was too large",
+        text: "Screenshot copied to clipboard.",
+        typeSelector: ".console-api",
       },
       {
-        text:
-          "The device pixel ratio was reduced to 1 as the resulting image was too large",
+        text: "The image was cut off to 10000×10000 as the resulting image was too large",
+        typeSelector: ".console-api",
+      },
+      {
+        text: "The device pixel ratio was reduced to 1 as the resulting image was too large",
+        typeSelector: ".console-api",
       },
     ],
   });

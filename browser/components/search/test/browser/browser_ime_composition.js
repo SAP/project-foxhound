@@ -3,23 +3,19 @@
 
 // Tests ime composition handling on searchbar.
 
-add_task(async function setup() {
+add_setup(async function () {
   await gCUITestUtils.addSearchBar();
 
-  await SearchTestUtils.installSearchExtension();
+  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
 
-  const defaultEngine = Services.search.defaultEngine;
-  Services.search.defaultEngine = Services.search.getEngineByName("Example");
-
-  registerCleanupFunction(async function() {
-    Services.search.defaultEngine = defaultEngine;
+  registerCleanupFunction(async function () {
     gCUITestUtils.removeSearchBar();
   });
 });
 
 add_task(async function test_composition_with_focus() {
   info("Open a page");
-  await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com");
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com");
 
   info("Focus on the search bar");
   const searchBarTextBox = BrowserSearch.searchBar.textbox;

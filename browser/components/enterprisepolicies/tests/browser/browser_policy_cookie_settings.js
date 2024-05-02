@@ -2,21 +2,15 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const { UrlClassifierTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlClassifierTestUtils.jsm"
+const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
 );
 Services.cookies.QueryInterface(Ci.nsICookieService);
 
 function restore_prefs() {
-  // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
-  Services.prefs.clearUserPref("network.cookie.sameSite.laxByDefault");
   Services.prefs.clearUserPref("network.cookie.cookieBehavior");
-  Services.prefs.clearUserPref("network.cookie.lifetimePolicy");
   Services.prefs.clearUserPref(
     "network.cookieJarSettings.unblocked_for_testing"
-  );
-  Services.prefs.clearUserPref(
-    "network.cookie.rejectForeignWithExceptions.enabled"
   );
 }
 
@@ -46,12 +40,11 @@ async function fake_profile_change() {
 async function test_cookie_settings({
   cookiesEnabled,
   thirdPartyCookiesEnabled,
-  cookiesExpireAfterSession,
   rejectTrackers,
   cookieJarSettingsLocked,
 }) {
-  let firstPartyURI = NetUtil.newURI("http://example.com/");
-  let thirdPartyURI = NetUtil.newURI("http://example.org/");
+  let firstPartyURI = NetUtil.newURI("https://example.com/");
+  let thirdPartyURI = NetUtil.newURI("https://example.org/");
   let channel = NetUtil.newChannel({
     uri: firstPartyURI,
     loadUsingSystemPrincipal: true,
@@ -60,8 +53,16 @@ async function test_cookie_settings({
     Ci.nsIHttpChannelInternal
   ).forceAllowThirdPartyCookie = true;
   Services.cookies.removeAll();
-  Services.cookies.setCookieStringFromHttp(firstPartyURI, "key=value", channel);
-  Services.cookies.setCookieStringFromHttp(thirdPartyURI, "key=value", channel);
+  Services.cookies.setCookieStringFromHttp(
+    firstPartyURI,
+    "key=value; SameSite=None; Secure;",
+    channel
+  );
+  Services.cookies.setCookieStringFromHttp(
+    thirdPartyURI,
+    "key=value; SameSite=None; Secure;",
+    channel
+  );
 
   let expectedFirstPartyCookies = 1;
   let expectedThirdPartyCookies = 1;
@@ -87,7 +88,7 @@ async function test_cookie_settings({
   Services.cookies.removeAll();
   Services.cookies.setCookieStringFromHttp(
     firstPartyURI,
-    "key=value; max-age=1000",
+    "key=value; max-age=1000; SameSite=None; Secure;",
     channel
   );
 
@@ -95,7 +96,7 @@ async function test_cookie_settings({
 
   // Now check if the cookie persisted or not
   let expectedCookieCount = 1;
-  if (cookiesExpireAfterSession || !cookiesEnabled) {
+  if (!cookiesEnabled) {
     expectedCookieCount = 0;
   }
   is(
@@ -109,39 +110,12 @@ async function test_cookie_settings({
     cookieJarSettingsLocked,
     "Cookie behavior pref lock status should be what is expected"
   );
-  is(
-    Services.prefs.prefIsLocked("network.cookie.lifetimePolicy"),
-    cookieJarSettingsLocked,
-    "Cookie lifetime pref lock status should be what is expected"
-  );
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     "about:preferences"
   );
-  await tab.linkedBrowser.contentWindow.gotoPref("panePrivacy");
-  await SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [{ cookiesEnabled, cookieJarSettingsLocked }],
-    // eslint-disable-next-line no-shadow
-    async function({ cookiesEnabled, cookieJarSettingsLocked }) {
-      let deleteOnCloseCheckbox = content.document.getElementById(
-        "deleteOnClose"
-      );
-      isnot(
-        deleteOnCloseCheckbox,
-        null,
-        "deleteOnCloseCheckbox should not be null."
-      );
 
-      let expectControlsDisabled = !cookiesEnabled || cookieJarSettingsLocked;
-      is(
-        deleteOnCloseCheckbox.disabled,
-        expectControlsDisabled,
-        '"Delete cookies when Firefox is closed" checkbox disabled status should match expected'
-      );
-    }
-  );
   BrowserTestUtils.removeTab(tab);
 
   if (rejectTrackers) {
@@ -151,7 +125,7 @@ async function test_cookie_settings({
     );
     let browser = gBrowser.getBrowserForTab(tab);
     await BrowserTestUtils.browserLoaded(browser);
-    await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
       // Load the script twice
       {
         let src = content.document.createElement("script");
@@ -195,16 +169,10 @@ add_task(async function test_initial_state() {
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
-  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
 
   await test_cookie_settings({
     cookiesEnabled: true,
     thirdPartyCookiesEnabled: true,
-    cookiesExpireAfterSession: false,
     cookieJarSettingsLocked: false,
   });
   restore_prefs();
@@ -212,15 +180,11 @@ add_task(async function test_initial_state() {
 
 add_task(async function test_undefined_unlocked() {
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 3);
-  Services.prefs.setIntPref("network.cookie.lifetimePolicy", 2);
   Services.prefs.setBoolPref(
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
+
   await setupPolicyEngineWithJson({
     policies: {
       Cookies: {},
@@ -231,11 +195,6 @@ add_task(async function test_undefined_unlocked() {
     3,
     "An empty cookie policy should not have changed the cookieBehavior preference"
   );
-  is(
-    Services.prefs.getIntPref("network.cookie.lifetimePolicy", undefined),
-    2,
-    "An empty cookie policy should not have changed the lifetimePolicy preference"
-  );
   restore_prefs();
 });
 
@@ -244,10 +203,7 @@ add_task(async function test_disabled() {
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
+
   await setupPolicyEngineWithJson({
     policies: {
       Cookies: {
@@ -259,7 +215,6 @@ add_task(async function test_disabled() {
   await test_cookie_settings({
     cookiesEnabled: false,
     thirdPartyCookiesEnabled: true,
-    cookiesExpireAfterSession: false,
     cookieJarSettingsLocked: false,
   });
   restore_prefs();
@@ -270,10 +225,7 @@ add_task(async function test_third_party_disabled() {
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
+
   await setupPolicyEngineWithJson({
     policies: {
       Cookies: {
@@ -285,7 +237,6 @@ add_task(async function test_third_party_disabled() {
   await test_cookie_settings({
     cookiesEnabled: true,
     thirdPartyCookiesEnabled: false,
-    cookiesExpireAfterSession: false,
     cookieJarSettingsLocked: false,
   });
   restore_prefs();
@@ -296,10 +247,7 @@ add_task(async function test_disabled_and_third_party_disabled() {
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
+
   await setupPolicyEngineWithJson({
     policies: {
       Cookies: {
@@ -312,7 +260,6 @@ add_task(async function test_disabled_and_third_party_disabled() {
   await test_cookie_settings({
     cookiesEnabled: false,
     thirdPartyCookiesEnabled: false,
-    cookiesExpireAfterSession: false,
     cookieJarSettingsLocked: false,
   });
   restore_prefs();
@@ -323,10 +270,7 @@ add_task(async function test_disabled_and_third_party_disabled_locked() {
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
+
   await setupPolicyEngineWithJson({
     policies: {
       Cookies: {
@@ -340,7 +284,6 @@ add_task(async function test_disabled_and_third_party_disabled_locked() {
   await test_cookie_settings({
     cookiesEnabled: false,
     thirdPartyCookiesEnabled: false,
-    cookiesExpireAfterSession: false,
     cookieJarSettingsLocked: true,
   });
   restore_prefs();
@@ -351,11 +294,7 @@ add_task(async function test_undefined_locked() {
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
-  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
+
   await setupPolicyEngineWithJson({
     policies: {
       Cookies: {
@@ -367,35 +306,7 @@ add_task(async function test_undefined_locked() {
   await test_cookie_settings({
     cookiesEnabled: true,
     thirdPartyCookiesEnabled: true,
-    cookiesExpireAfterSession: false,
     cookieJarSettingsLocked: true,
-  });
-  restore_prefs();
-});
-
-add_task(async function test_cookie_expire() {
-  Services.prefs.setBoolPref(
-    "network.cookieJarSettings.unblocked_for_testing",
-    true
-  );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
-  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
-  await setupPolicyEngineWithJson({
-    policies: {
-      Cookies: {
-        ExpireAtSessionEnd: true,
-      },
-    },
-  });
-
-  await test_cookie_settings({
-    cookiesEnabled: true,
-    thirdPartyCookiesEnabled: true,
-    cookiesExpireAfterSession: true,
-    cookieJarSettingsLocked: false,
   });
   restore_prefs();
 });
@@ -405,11 +316,7 @@ add_task(async function test_cookie_reject_trackers() {
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
-  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
+
   await setupPolicyEngineWithJson({
     policies: {
       Cookies: {
@@ -421,66 +328,8 @@ add_task(async function test_cookie_reject_trackers() {
   await test_cookie_settings({
     cookiesEnabled: true,
     thirdPartyCookiesEnabled: true,
-    cookiesExpireAfterSession: false,
     rejectTrackers: true,
     cookieJarSettingsLocked: false,
-  });
-  restore_prefs();
-});
-
-add_task(async function test_cookie_expire_locked() {
-  Services.prefs.setBoolPref(
-    "network.cookieJarSettings.unblocked_for_testing",
-    true
-  );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
-  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
-  await setupPolicyEngineWithJson({
-    policies: {
-      Cookies: {
-        ExpireAtSessionEnd: true,
-        Locked: true,
-      },
-    },
-  });
-
-  await test_cookie_settings({
-    cookiesEnabled: true,
-    thirdPartyCookiesEnabled: true,
-    cookiesExpireAfterSession: true,
-    cookieJarSettingsLocked: true,
-  });
-  restore_prefs();
-});
-
-add_task(async function test_disabled_cookie_expire_locked() {
-  Services.prefs.setBoolPref(
-    "network.cookieJarSettings.unblocked_for_testing",
-    true
-  );
-  Services.prefs.setBoolPref(
-    "network.cookie.rejectForeignWithExceptions.enabled",
-    false
-  );
-  await setupPolicyEngineWithJson({
-    policies: {
-      Cookies: {
-        Default: false,
-        AcceptThirdParty: "never",
-        ExpireAtSessionEnd: true,
-        Locked: true,
-      },
-    },
-  });
-
-  await test_cookie_settings({
-    cookiesEnabled: false,
-    thirdPartyCookiesEnabled: false,
-    cookiesExpireAfterSession: true,
-    cookieJarSettingsLocked: true,
   });
   restore_prefs();
 });

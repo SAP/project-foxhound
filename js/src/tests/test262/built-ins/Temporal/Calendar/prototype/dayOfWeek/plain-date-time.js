@@ -1,9 +1,10 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
 esid: sec-temporal.calendar.prototype.dayofweek
-description: Temporal.Calendar.prototype.dayOfWeek will take Temporal.PlainDateTime objects
+description: >
+  Temporal.Calendar.prototype.dayOfWeek will take Temporal.PlainDateTime objects
   and return the day of week.
 info: |
   5. Return 𝔽(! ToISODayOfWeek(temporalDate.[[ISOYear]], temporalDate.[[ISOMonth]], temporalDate.[[ISODay]])).

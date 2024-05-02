@@ -9,9 +9,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": [
-                "openURL"
-              ]
+              "enum": ["openURL"]
             },
             "params": {
               "type": "array",
@@ -28,9 +26,7 @@
               "description": "List of Match pattern compatible strings to match against"
             }
           },
-          "required": [
-            "id"
-          ],
+          "required": ["id"],
           "additionalProperties": false,
           "description": "Happens every time the user loads a new URL that matches the provided `hosts` or `patterns`"
         },
@@ -39,9 +35,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": [
-                "openArticleURL"
-              ]
+              "enum": ["openArticleURL"]
             },
             "params": {
               "type": "array",
@@ -58,9 +52,7 @@
               "description": "List of Match pattern compatible strings to match against"
             }
           },
-          "required": [
-            "id"
-          ],
+          "required": ["id"],
           "additionalProperties": false,
           "description": "Happens every time the user loads a document that is Reader Mode compatible"
         },
@@ -69,14 +61,10 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": [
-                "openBookmarkedURL"
-              ]
+              "enum": ["openBookmarkedURL"]
             }
           },
-          "required": [
-            "id"
-          ],
+          "required": ["id"],
           "additionalProperties": false,
           "description": "Happens every time the user adds a bookmark from the URL bar star icon"
         },
@@ -85,9 +73,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": [
-                "frequentVisits"
-              ]
+              "enum": ["frequentVisits"]
             },
             "params": {
               "type": "array",
@@ -104,9 +90,7 @@
               "description": "List of Match pattern compatible strings to match against"
             }
           },
-          "required": [
-            "id"
-          ],
+          "required": ["id"],
           "additionalProperties": false,
           "description": "Happens every time a user navigates (or switches tab to) to any of the `hosts` or `patterns` arguments but additionally provides information about the number of accesses to the matched domain."
         },
@@ -115,14 +99,10 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": [
-                "newSavedLogin"
-              ]
+              "enum": ["newSavedLogin"]
             }
           },
-          "required": [
-            "id"
-          ],
+          "required": ["id"],
           "additionalProperties": false,
           "description": "Happens every time the user adds or updates a login"
         },
@@ -131,31 +111,29 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": [
-                "contentBlocking"
-              ]
-            },
-            "params": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "number"
-                  }
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              ]
+              "enum": ["formAutofill"]
             }
           },
-          "required": [
-            "id",
-            "params"
-          ],
+          "required": ["id"],
+          "additionalProperties": false,
+          "description": "Happens when the user saves, updates, or uses a credit card or address for form autofill"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["contentBlocking"]
+            },
+            "params": {
+              "type": "array",
+              "items": {
+                "type": ["string", "integer"],
+                "description": "Events that should trigger this message. String values correspond to ContentBlockingMilestone events and number values correspond to STATE_BLOCKED_* flags on nsIWebProgressListener."
+              }
+            }
+          },
+          "required": ["id", "params"],
           "additionalProperties": false,
           "description": "Happens every time Firefox blocks the loading of a page script/asset/resource that matches the one of the tracking behaviours specifid through params. See https://searchfox.org/mozilla-central/rev/8ccea36c4fb09412609fb738c722830d7098602b/uriloader/base/nsIWebProgressListener.idl#336"
         },
@@ -216,6 +194,102 @@
           },
           "additionalProperties": false,
           "required": ["id", "params"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["featureCalloutCheck"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Used to display Feature Callouts in Firefox View. Can only be used for Feature Callouts."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["pdfJsFeatureCalloutCheck"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Used to display Feature Callouts on PDF.js pages. Can only be used for Feature Callouts."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["nthTabClosed"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the user closes n or more tabs in a session"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["activityAfterIdle"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the user resumes activity after n milliseconds of inactivity (keyboard/mouse interactions and audio playback all count as activity)"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["cookieBannerDetected"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when Firefox detects a cookie consent banner that could otherwise be handled by Cookie Banner Handling"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["cookieBannerHandled"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when Firefox automatically engages with a cookie consent banner"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["messagesLoaded"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens as soon as a message is loaded"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["pageActionInUrlbar"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when a page action appears in the urlbar. The specific page action(s) to watch can be specified by id in the targeting expression."
         }
       ]
     }

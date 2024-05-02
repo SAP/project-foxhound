@@ -16,7 +16,6 @@ pub struct AttrSelectorWithOptionalNamespace<Impl: SelectorImpl> {
     pub local_name_lower: Impl::LocalName,
     #[shmem(field_bound)]
     pub operation: ParsedAttrSelectorOperation<Impl::AttrValue>,
-    pub never_matches: bool,
 }
 
 impl<Impl: SelectorImpl> AttrSelectorWithOptionalNamespace<Impl> {
@@ -42,7 +41,7 @@ pub enum ParsedAttrSelectorOperation<AttrValue> {
     WithValue {
         operator: AttrSelectorOperator,
         case_sensitivity: ParsedCaseSensitivity,
-        expected_value: AttrValue,
+        value: AttrValue,
     },
 }
 
@@ -52,7 +51,7 @@ pub enum AttrSelectorOperation<AttrValue> {
     WithValue {
         operator: AttrSelectorOperator,
         case_sensitivity: CaseSensitivity,
-        expected_value: AttrValue,
+        value: AttrValue,
     },
 }
 
@@ -66,10 +65,10 @@ impl<AttrValue> AttrSelectorOperation<AttrValue> {
             AttrSelectorOperation::WithValue {
                 operator,
                 case_sensitivity,
-                ref expected_value,
+                ref value,
             } => operator.eval_str(
                 element_attr_value,
-                expected_value.as_ref(),
+                value.as_ref(),
                 case_sensitivity,
             ),
         }
@@ -138,33 +137,14 @@ pub static SELECTOR_WHITESPACE: &[char] = &[' ', '\t', '\n', '\r', '\x0C'];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ToShmem)]
 pub enum ParsedCaseSensitivity {
-    // 's' was specified.
+    /// 's' was specified.
     ExplicitCaseSensitive,
-    // 'i' was specified.
+    /// 'i' was specified.
     AsciiCaseInsensitive,
-    // No flags were specified and HTML says this is a case-sensitive attribute.
+    /// No flags were specified and HTML says this is a case-sensitive attribute.
     CaseSensitive,
-    // No flags were specified and HTML says this is a case-insensitive attribute.
+    /// No flags were specified and HTML says this is a case-insensitive attribute.
     AsciiCaseInsensitiveIfInHtmlElementInHtmlDocument,
-}
-
-impl ParsedCaseSensitivity {
-    pub fn to_unconditional(self, is_html_element_in_html_document: bool) -> CaseSensitivity {
-        match self {
-            ParsedCaseSensitivity::AsciiCaseInsensitiveIfInHtmlElementInHtmlDocument
-                if is_html_element_in_html_document =>
-            {
-                CaseSensitivity::AsciiCaseInsensitive
-            },
-            ParsedCaseSensitivity::AsciiCaseInsensitiveIfInHtmlElementInHtmlDocument => {
-                CaseSensitivity::CaseSensitive
-            },
-            ParsedCaseSensitivity::CaseSensitive | ParsedCaseSensitivity::ExplicitCaseSensitive => {
-                CaseSensitivity::CaseSensitive
-            },
-            ParsedCaseSensitivity::AsciiCaseInsensitive => CaseSensitivity::AsciiCaseInsensitive,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -6,40 +6,163 @@
 
 #include "AnimationHelper.h"
 #include "base/process_util.h"
-#include "gfx2DGlue.h"                       // for ThebesRect
-#include "gfxLineSegment.h"                  // for gfxLineSegment
-#include "gfxPoint.h"                        // for gfxPoint
-#include "gfxQuad.h"                         // for gfxQuad
-#include "gfxRect.h"                         // for gfxRect
-#include "gfxUtils.h"                        // for gfxUtils::TransformToQuad
-#include "mozilla/ComputedTimingFunction.h"  // for ComputedTimingFunction
+#include "gfx2DGlue.h"                 // for ThebesRect
+#include "gfxLineSegment.h"            // for gfxLineSegment
+#include "gfxPoint.h"                  // for gfxPoint
+#include "gfxQuad.h"                   // for gfxQuad
+#include "gfxRect.h"                   // for gfxRect
+#include "gfxUtils.h"                  // for gfxUtils::TransformToQuad
+#include "mozilla/ServoStyleConsts.h"  // for StyleComputedTimingFunction
 #include "mozilla/dom/AnimationEffectBinding.h"  // for dom::FillMode
 #include "mozilla/dom/KeyframeEffectBinding.h"   // for dom::IterationComposite
 #include "mozilla/dom/KeyframeEffect.h"       // for dom::KeyFrameEffectReadOnly
 #include "mozilla/dom/Nullable.h"             // for dom::Nullable
+#include "mozilla/layers/APZSampler.h"        // for APZSampler
 #include "mozilla/layers/CompositorThread.h"  // for CompositorThreadHolder
-#include "mozilla/layers/CompositorAnimationStorage.h"  // for CompositorAnimationStorage
-#include "mozilla/layers/LayerAnimationUtils.h"  // for TimingFunctionToComputedTimingFunction
-#include "mozilla/LayerAnimationInfo.h"  // for GetCSSPropertiesFor()
-#include "mozilla/MotionPathUtils.h"     // for ResolveMotionPath()
+#include "mozilla/LayerAnimationInfo.h"       // for GetCSSPropertiesFor()
+#include "mozilla/Maybe.h"                    // for Maybe<>
+#include "mozilla/MotionPathUtils.h"          // for ResolveMotionPath()
 #include "mozilla/ServoBindings.h"  // for Servo_ComposeAnimationSegment, etc
 #include "mozilla/StyleAnimationValue.h"  // for StyleAnimationValue, etc
+#include "nsCSSPropertyID.h"              // for eCSSProperty_offset_path, etc
 #include "nsDeviceContext.h"              // for AppUnitsPerCSSPixel
 #include "nsDisplayList.h"                // for nsDisplayTransform, etc
 
 namespace mozilla {
 namespace layers {
 
+static dom::Nullable<TimeDuration> CalculateElapsedTimeForScrollTimeline(
+    const Maybe<APZSampler::ScrollOffsetAndRange> aScrollMeta,
+    const ScrollTimelineOptions& aOptions, const StickyTimeDuration& aEndTime,
+    const TimeDuration& aStartTime, float aPlaybackRate) {
+  // We return Nothing If the associated APZ controller is not available
+  // (because it may be destroyed but this animation is still alive).
+  if (!aScrollMeta) {
+    // This may happen after we reload a page. There may be a race condition
+    // because the animation is still alive but the APZ is destroyed. In this
+    // case, this animation is invalid, so we return nullptr.
+    return nullptr;
+  }
+
+  const bool isHorizontal =
+      aOptions.axis() == layers::ScrollDirection::eHorizontal;
+  double range =
+      isHorizontal ? aScrollMeta->mRange.width : aScrollMeta->mRange.height;
+  MOZ_ASSERT(
+      range > 0,
+      "We don't expect to get a zero or negative range on the compositor");
+
+  // The offset may be negative if the writing mode is from right to left.
+  // Use std::abs() here to avoid getting a negative progress.
+  double position =
+      std::abs(isHorizontal ? aScrollMeta->mOffset.x : aScrollMeta->mOffset.y);
+  double progress = position / range;
+  // Just in case to avoid getting a progress more than 100%, for overscrolling.
+  progress = std::min(progress, 1.0);
+  auto timelineTime = TimeDuration(aEndTime.MultDouble(progress));
+  return dom::Animation::CurrentTimeFromTimelineTime(timelineTime, aStartTime,
+                                                     aPlaybackRate);
+}
+
+static dom::Nullable<TimeDuration> CalculateElapsedTime(
+    const APZSampler* aAPZSampler, const LayersId& aLayersId,
+    const MutexAutoLock& aProofOfMapLock, const PropertyAnimation& aAnimation,
+    const TimeStamp aPreviousFrameTime, const TimeStamp aCurrentFrameTime,
+    const AnimatedValue* aPreviousValue) {
+  // -------------------------------------
+  // Case 1: scroll-timeline animations.
+  // -------------------------------------
+  if (aAnimation.mScrollTimelineOptions) {
+    MOZ_ASSERT(
+        aAPZSampler,
+        "We don't send scroll animations to the compositor if APZ is disabled");
+
+    return CalculateElapsedTimeForScrollTimeline(
+        aAPZSampler->GetCurrentScrollOffsetAndRange(
+            aLayersId, aAnimation.mScrollTimelineOptions.value().source(),
+            aProofOfMapLock),
+        aAnimation.mScrollTimelineOptions.value(), aAnimation.mTiming.EndTime(),
+        aAnimation.mStartTime.refOr(aAnimation.mHoldTime),
+        aAnimation.mPlaybackRate);
+  }
+
+  // -------------------------------------
+  // Case 2: document-timeline animations.
+  // -------------------------------------
+  MOZ_ASSERT(
+      (!aAnimation.mOriginTime.IsNull() && aAnimation.mStartTime.isSome()) ||
+          aAnimation.mIsNotPlaying,
+      "If we are playing, we should have an origin time and a start time");
+
+  // Determine if the animation was play-pending and used a ready time later
+  // than the previous frame time.
+  //
+  // To determine this, _all_ of the following conditions need to hold:
+  //
+  // * There was no previous animation value (i.e. this is the first frame for
+  //   the animation since it was sent to the compositor), and
+  // * The animation is playing, and
+  // * There is a previous frame time, and
+  // * The ready time of the animation is ahead of the previous frame time.
+  //
+  bool hasFutureReadyTime = false;
+  if (!aPreviousValue && !aAnimation.mIsNotPlaying &&
+      !aPreviousFrameTime.IsNull()) {
+    // This is the inverse of the calculation performed in
+    // AnimationInfo::StartPendingAnimations to calculate the start time of
+    // play-pending animations.
+    // Note that we have to calculate (TimeStamp + TimeDuration) last to avoid
+    // underflow in the middle of the calulation.
+    const TimeStamp readyTime =
+        aAnimation.mOriginTime +
+        (aAnimation.mStartTime.ref() +
+         aAnimation.mHoldTime.MultDouble(1.0 / aAnimation.mPlaybackRate));
+    hasFutureReadyTime = !readyTime.IsNull() && readyTime > aPreviousFrameTime;
+  }
+  // Use the previous vsync time to make main thread animations and compositor
+  // more closely aligned.
+  //
+  // On the first frame where we have animations the previous timestamp will
+  // not be set so we simply use the current timestamp.  As a result we will
+  // end up painting the first frame twice.  That doesn't appear to be
+  // noticeable, however.
+  //
+  // Likewise, if the animation is play-pending, it may have a ready time that
+  // is *after* |aPreviousFrameTime| (but *before* |aCurrentFrameTime|).
+  // To avoid flicker we need to use |aCurrentFrameTime| to avoid temporarily
+  // jumping backwards into the range prior to when the animation starts.
+  const TimeStamp& timeStamp = aPreviousFrameTime.IsNull() || hasFutureReadyTime
+                                   ? aCurrentFrameTime
+                                   : aPreviousFrameTime;
+
+  // If the animation is not currently playing, e.g. paused or
+  // finished, then use the hold time to stay at the same position.
+  TimeDuration elapsedDuration =
+      aAnimation.mIsNotPlaying || aAnimation.mStartTime.isNothing()
+          ? aAnimation.mHoldTime
+          : (timeStamp - aAnimation.mOriginTime - aAnimation.mStartTime.ref())
+                .MultDouble(aAnimation.mPlaybackRate);
+  return elapsedDuration;
+}
+
 enum class CanSkipCompose {
   IfPossible,
   No,
 };
+// This function samples the animation for a specific property. We may have
+// multiple animations for a single property, and the later animations override
+// the eariler ones. This function returns the sampled animation value,
+// |aAnimationValue| for a single CSS property.
 static AnimationHelper::SampleResult SampleAnimationForProperty(
-    TimeStamp aPreviousFrameTime, TimeStamp aCurrentFrameTime,
-    const AnimatedValue* aPreviousValue, CanSkipCompose aCanSkipCompose,
+    const APZSampler* aAPZSampler, const LayersId& aLayersId,
+    const MutexAutoLock& aProofOfMapLock, TimeStamp aPreviousFrameTime,
+    TimeStamp aCurrentFrameTime, const AnimatedValue* aPreviousValue,
+    CanSkipCompose aCanSkipCompose,
     nsTArray<PropertyAnimation>& aPropertyAnimations,
-    RefPtr<RawServoAnimationValue>& aAnimationValue) {
+    RefPtr<StyleAnimationValue>& aAnimationValue) {
   MOZ_ASSERT(!aPropertyAnimations.IsEmpty(), "Should have animations");
+
+  auto reason = AnimationHelper::SampleResult::Reason::None;
   bool hasInEffectAnimations = false;
 #ifdef DEBUG
   // In cases where this function returns a SampleResult::Skipped, we actually
@@ -51,66 +174,47 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
 #endif
   // Process in order, since later animations override earlier ones.
   for (PropertyAnimation& animation : aPropertyAnimations) {
-    MOZ_ASSERT(
-        (!animation.mOriginTime.IsNull() && animation.mStartTime.isSome()) ||
-            animation.mIsNotPlaying,
-        "If we are playing, we should have an origin time and a start time");
+    dom::Nullable<TimeDuration> elapsedDuration = CalculateElapsedTime(
+        aAPZSampler, aLayersId, aProofOfMapLock, animation, aPreviousFrameTime,
+        aCurrentFrameTime, aPreviousValue);
 
-    // Determine if the animation was play-pending and used a ready time later
-    // than the previous frame time.
-    //
-    // To determine this, _all_ of the following conditions need to hold:
-    //
-    // * There was no previous animation value (i.e. this is the first frame for
-    //   the animation since it was sent to the compositor), and
-    // * The animation is playing, and
-    // * There is a previous frame time, and
-    // * The ready time of the animation is ahead of the previous frame time.
-    //
-    bool hasFutureReadyTime = false;
-    if (!aPreviousValue && !animation.mIsNotPlaying &&
-        !aPreviousFrameTime.IsNull()) {
-      // This is the inverse of the calculation performed in
-      // AnimationInfo::StartPendingAnimations to calculate the start time of
-      // play-pending animations.
-      // Note that we have to calculate (TimeStamp + TimeDuration) last to avoid
-      // underflow in the middle of the calulation.
-      const TimeStamp readyTime =
-          animation.mOriginTime +
-          (animation.mStartTime.ref() +
-           animation.mHoldTime.MultDouble(1.0 / animation.mPlaybackRate));
-      hasFutureReadyTime =
-          !readyTime.IsNull() && readyTime > aPreviousFrameTime;
-    }
-    // Use the previous vsync time to make main thread animations and compositor
-    // more closely aligned.
-    //
-    // On the first frame where we have animations the previous timestamp will
-    // not be set so we simply use the current timestamp.  As a result we will
-    // end up painting the first frame twice.  That doesn't appear to be
-    // noticeable, however.
-    //
-    // Likewise, if the animation is play-pending, it may have a ready time that
-    // is *after* |aPreviousFrameTime| (but *before* |aCurrentFrameTime|).
-    // To avoid flicker we need to use |aCurrentFrameTime| to avoid temporarily
-    // jumping backwards into the range prior to when the animation starts.
-    const TimeStamp& timeStamp =
-        aPreviousFrameTime.IsNull() || hasFutureReadyTime ? aCurrentFrameTime
-                                                          : aPreviousFrameTime;
-
-    // If the animation is not currently playing, e.g. paused or
-    // finished, then use the hold time to stay at the same position.
-    TimeDuration elapsedDuration =
-        animation.mIsNotPlaying || animation.mStartTime.isNothing()
-            ? animation.mHoldTime
-            : (timeStamp - animation.mOriginTime - animation.mStartTime.ref())
-                  .MultDouble(animation.mPlaybackRate);
+    const auto progressTimelinePosition =
+        animation.mScrollTimelineOptions
+            ? dom::Animation::AtProgressTimelineBoundary(
+                  TimeDuration::FromMilliseconds(
+                      PROGRESS_TIMELINE_DURATION_MILLISEC),
+                  elapsedDuration, animation.mStartTime.refOr(TimeDuration()),
+                  animation.mPlaybackRate)
+            : dom::Animation::ProgressTimelinePosition::NotBoundary;
 
     ComputedTiming computedTiming = dom::AnimationEffect::GetComputedTimingAt(
-        dom::Nullable<TimeDuration>(elapsedDuration), animation.mTiming,
-        animation.mPlaybackRate);
+        elapsedDuration, animation.mTiming, animation.mPlaybackRate,
+        progressTimelinePosition);
 
     if (computedTiming.mProgress.IsNull()) {
+      // For the scroll-driven animations, it's possible to let it go between
+      // the active phase and the before/after phase, and so its progress
+      // becomes null. In this case, we shouldn't just skip this animation.
+      // Instead, we have to reset the previous sampled result. Basically, we
+      // use |mProgressOnLastCompose| to check if it goes from the active phase.
+      // If so, we set the returned |mReason| to ScrollToDelayPhase to let the
+      // caller know we need to use the base style for this property.
+      //
+      // If there are any other animations which need to be sampled together
+      // (in the same property animation group), this |reason| will be ignored.
+      if (animation.mScrollTimelineOptions &&
+          !animation.mProgressOnLastCompose.IsNull() &&
+          (computedTiming.mPhase == ComputedTiming::AnimationPhase::Before ||
+           computedTiming.mPhase == ComputedTiming::AnimationPhase::After)) {
+        // Appearally, we go back to delay, so need to reset the last
+        // composition meta data. This is necessary because
+        // 1. this animation is in delay so it shouldn't have any composition
+        //    meta data, and
+        // 2. we will not go into this condition multiple times during delay
+        //    phase because we rely on |mProgressOnLastCompose|.
+        animation.ResetLastCompositionValues();
+        reason = AnimationHelper::SampleResult::Reason::ScrollToDelayPhase;
+      }
       continue;
     }
 
@@ -133,7 +237,7 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
 #ifdef DEBUG
       shouldBeSkipped = true;
 #else
-      return AnimationHelper::SampleResult::Skipped;
+      return AnimationHelper::SampleResult::Skipped();
 #endif
     }
 
@@ -150,7 +254,7 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
         (computedTiming.mProgress.Value() - segment->mStartPortion) /
         (segment->mEndPortion - segment->mStartPortion);
 
-    double portion = ComputedTimingFunction::GetPortion(
+    double portion = StyleComputedTimingFunction::GetPortion(
         segment->mFunction, positionInSegment, computedTiming.mBeforeFlag);
 
     // Like above optimization, skip calculation if the target segment isn't
@@ -168,7 +272,7 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
 #ifdef DEBUG
       shouldBeSkipped = true;
 #else
-      return AnimationHelper::SampleResult::Skipped;
+      return AnimationHelper::SampleResult::Skipped();
 #endif
     }
 
@@ -190,7 +294,7 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
 
 #ifdef DEBUG
     if (shouldBeSkipped) {
-      return AnimationHelper::SampleResult::Skipped;
+      return AnimationHelper::SampleResult::Skipped();
     }
 #endif
 
@@ -201,24 +305,32 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
     animation.mPortionInSegmentOnLastCompose.SetValue(portion);
   }
 
-  return hasInEffectAnimations ? AnimationHelper::SampleResult::Sampled
-                               : AnimationHelper::SampleResult::None;
+  auto rv = hasInEffectAnimations ? AnimationHelper::SampleResult::Sampled()
+                                  : AnimationHelper::SampleResult();
+  rv.mReason = reason;
+  return rv;
 }
 
+// This function samples the animations for a group of CSS properties. We may
+// have multiple CSS properties in a group (e.g. transform-like properties).
+// So the returned animation array, |aAnimationValues|, include all the
+// animation values of these CSS properties.
 AnimationHelper::SampleResult AnimationHelper::SampleAnimationForEachNode(
-    TimeStamp aPreviousFrameTime, TimeStamp aCurrentFrameTime,
-    const AnimatedValue* aPreviousValue,
+    const APZSampler* aAPZSampler, const LayersId& aLayersId,
+    const MutexAutoLock& aProofOfMapLock, TimeStamp aPreviousFrameTime,
+    TimeStamp aCurrentFrameTime, const AnimatedValue* aPreviousValue,
     nsTArray<PropertyAnimationGroup>& aPropertyAnimationGroups,
-    nsTArray<RefPtr<RawServoAnimationValue>>& aAnimationValues /* out */) {
+    nsTArray<RefPtr<StyleAnimationValue>>& aAnimationValues /* out */) {
   MOZ_ASSERT(!aPropertyAnimationGroups.IsEmpty(),
              "Should be called with animation data");
   MOZ_ASSERT(aAnimationValues.IsEmpty(),
              "Should be called with empty aAnimationValues");
 
-  nsTArray<RefPtr<RawServoAnimationValue>> nonAnimatingValues;
+  nsTArray<RefPtr<StyleAnimationValue>> baseStyleOfDelayAnimations;
+  nsTArray<RefPtr<StyleAnimationValue>> nonAnimatingValues;
   for (PropertyAnimationGroup& group : aPropertyAnimationGroups) {
     // Initialize animation value with base style.
-    RefPtr<RawServoAnimationValue> currValue = group.mBaseStyle;
+    RefPtr<StyleAnimationValue> currValue = group.mBaseStyle;
 
     CanSkipCompose canSkipCompose =
         aPreviousValue && aPropertyAnimationGroups.Length() == 1 &&
@@ -243,19 +355,24 @@ AnimationHelper::SampleResult AnimationHelper::SampleAnimationForEachNode(
     }
 
     SampleResult result = SampleAnimationForProperty(
-        aPreviousFrameTime, aCurrentFrameTime, aPreviousValue, canSkipCompose,
-        group.mAnimations, currValue);
+        aAPZSampler, aLayersId, aProofOfMapLock, aPreviousFrameTime,
+        aCurrentFrameTime, aPreviousValue, canSkipCompose, group.mAnimations,
+        currValue);
 
     // FIXME: Bug 1455476: Do optimization for multiple properties. For now,
     // the result is skipped only if the property count == 1.
-    if (result == SampleResult::Skipped) {
+    if (result.IsSkipped()) {
 #ifdef DEBUG
       aAnimationValues.AppendElement(std::move(currValue));
 #endif
-      return SampleResult::Skipped;
+      return result;
     }
 
-    if (result != SampleResult::Sampled) {
+    if (!result.IsSampled()) {
+      if (result.mReason == SampleResult::Reason::ScrollToDelayPhase) {
+        MOZ_ASSERT(currValue && currValue == group.mBaseStyle);
+        baseStyleOfDelayAnimations.AppendElement(std::move(currValue));
+      }
       continue;
     }
 
@@ -265,8 +382,17 @@ AnimationHelper::SampleResult AnimationHelper::SampleAnimationForEachNode(
   }
 
   SampleResult rv =
-      aAnimationValues.IsEmpty() ? SampleResult::None : SampleResult::Sampled;
-  if (rv == SampleResult::Sampled) {
+      aAnimationValues.IsEmpty() ? SampleResult() : SampleResult::Sampled();
+
+  // If there is no other sampled result, we may store these base styles
+  // (together with the non-animating values) to the webrenderer before it gets
+  // sync with the main thread.
+  if (rv.IsNone() && !baseStyleOfDelayAnimations.IsEmpty()) {
+    aAnimationValues.AppendElements(std::move(baseStyleOfDelayAnimations));
+    rv.mReason = SampleResult::Reason::ScrollToDelayPhase;
+  }
+
+  if (!aAnimationValues.IsEmpty()) {
     aAnimationValues.AppendElements(std::move(nonAnimatingValues));
   }
   return rv;
@@ -374,16 +500,17 @@ AnimationStorageData AnimationHelper::ExtractAnimations(
                    "Fixed offset-path should have base style");
         MOZ_ASSERT(HasTransformLikeAnimations(aAnimations));
 
-        AnimationValue value{currData->mBaseStyle};
-        const StyleOffsetPath& offsetPath = value.GetOffsetPathProperty();
+        const StyleOffsetPath& offsetPath =
+            animation.baseStyle().get_StyleOffsetPath();
+        // FIXME: Bug 1837042. Cache all basic shapes.
         if (offsetPath.IsPath()) {
           MOZ_ASSERT(!storageData.mCachedMotionPath,
                      "Only one offset-path: path() is set");
 
           RefPtr<gfx::PathBuilder> builder =
               MotionPathUtils::GetCompositorPathBuilder();
-          storageData.mCachedMotionPath =
-              MotionPathUtils::BuildPath(offsetPath.AsPath(), builder);
+          storageData.mCachedMotionPath = MotionPathUtils::BuildSVGPath(
+              offsetPath.AsSVGPathData(), builder);
         }
       }
 
@@ -409,8 +536,9 @@ AnimationStorageData AnimationHelper::ExtractAnimations(
                      animation.iterationStart(),
                      static_cast<dom::PlaybackDirection>(animation.direction()),
                      GetAdjustedFillMode(animation),
-                     AnimationUtils::TimingFunctionToComputedTimingFunction(
-                         animation.easingFunction())};
+                     animation.easingFunction()};
+    propertyAnimation->mScrollTimelineOptions =
+        animation.scrollTimelineOptions();
 
     nsTArray<PropertyAnimation::SegmentData>& segmentData =
         propertyAnimation->mSegments;
@@ -420,9 +548,7 @@ AnimationStorageData AnimationHelper::ExtractAnimations(
                                          segment.startState()),
           AnimationValue::FromAnimatable(animation.property(),
                                          segment.endState()),
-          AnimationUtils::TimingFunctionToComputedTimingFunction(
-              segment.sampleFn()),
-          segment.startPortion(), segment.endPortion(),
+          segment.sampleFn(), segment.startPortion(), segment.endPortion(),
           static_cast<dom::CompositeOperation>(segment.startComposite()),
           static_cast<dom::CompositeOperation>(segment.endComposite())});
     }
@@ -477,7 +603,7 @@ uint64_t AnimationHelper::GetNextCompositorAnimationsId() {
 }
 
 gfx::Matrix4x4 AnimationHelper::ServoAnimationValueToMatrix4x4(
-    const nsTArray<RefPtr<RawServoAnimationValue>>& aValues,
+    const nsTArray<RefPtr<StyleAnimationValue>>& aValues,
     const TransformData& aTransformData, gfx::Path* aCachedMotionPath) {
   using nsStyleTransformMatrix::TransformReferenceBox;
 
@@ -492,10 +618,11 @@ gfx::Matrix4x4 AnimationHelper::ServoAnimationValueToMatrix4x4(
   const StyleRotate* rotate = nullptr;
   const StyleScale* scale = nullptr;
   const StyleTransform* transform = nullptr;
-  const StyleOffsetPath* path = nullptr;
+  Maybe<StyleOffsetPath> path;
   const StyleLengthPercentage* distance = nullptr;
   const StyleOffsetRotate* offsetRotate = nullptr;
   const StylePositionOrAuto* anchor = nullptr;
+  const StyleOffsetPosition* position = nullptr;
 
   for (const auto& value : aValues) {
     MOZ_ASSERT(value);
@@ -519,7 +646,8 @@ gfx::Matrix4x4 AnimationHelper::ServoAnimationValueToMatrix4x4(
         break;
       case eCSSProperty_offset_path:
         MOZ_ASSERT(!path);
-        path = Servo_AnimationValue_GetOffsetPath(value);
+        path.emplace(StyleOffsetPath::None());
+        Servo_AnimationValue_GetOffsetPath(value, path.ptr());
         break;
       case eCSSProperty_offset_distance:
         MOZ_ASSERT(!distance);
@@ -533,6 +661,10 @@ gfx::Matrix4x4 AnimationHelper::ServoAnimationValueToMatrix4x4(
         MOZ_ASSERT(!anchor);
         anchor = Servo_AnimationValue_GetOffsetAnchor(value);
         break;
+      case eCSSProperty_offset_position:
+        MOZ_ASSERT(!position);
+        position = Servo_AnimationValue_GetOffsetPosition(value);
+        break;
       default:
         MOZ_ASSERT_UNREACHABLE("Unsupported transform-like property");
     }
@@ -540,8 +672,8 @@ gfx::Matrix4x4 AnimationHelper::ServoAnimationValueToMatrix4x4(
 
   TransformReferenceBox refBox(nullptr, aTransformData.bounds());
   Maybe<ResolvedMotionPathData> motion = MotionPathUtils::ResolveMotionPath(
-      path, distance, offsetRotate, anchor, aTransformData.motionPathData(),
-      refBox, aCachedMotionPath);
+      path.ptrOr(nullptr), distance, offsetRotate, anchor, position,
+      aTransformData.motionPathData(), refBox, aCachedMotionPath);
 
   // We expect all our transform data to arrive in device pixels
   gfx::Point3D transformOrigin = aTransformData.transformOrigin();

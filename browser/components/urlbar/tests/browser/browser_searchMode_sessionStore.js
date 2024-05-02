@@ -9,9 +9,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
-  TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.sys.mjs",
 });
 
 // This test takes a long time on the OS X 10.14 machines, so request a longer
@@ -108,14 +108,16 @@ add_task(async function switchToNonInitialPage_exit() {
  * in one of the tabs, closes the window, restores it, and makes sure that
  * search mode is restored properly.
  *
- * @param {array} urls
+ * @param {object} options
+ *   Options object
+ * @param {Array} options.urls
  *   Array of string URLs to open.
- * @param {number} searchModeTabIndex
+ * @param {number} options.searchModeTabIndex
  *   The index of the tab in which to enter search mode.
- * @param {boolean} exitSearchMode
+ * @param {boolean} options.exitSearchMode
  *   If true, search mode will be immediately exited after entering it.  Use
  *   this to make sure search mode is *not* restored after it's exited.
- * @param {boolean} switchTabsAfterEnteringSearchMode
+ * @param {boolean} options.switchTabsAfterEnteringSearchMode
  *   If true, we'll switch to a tab other than the one that search mode was
  *   entered in before closing the window.  `urls` should contain more than one
  *   URL in this case.
@@ -217,6 +219,20 @@ async function doTest({
   await BrowserTestUtils.closeWindow(win);
 }
 
+async function openTabMenuFor(tab) {
+  let tabMenu = tab.ownerDocument.getElementById("tabContextMenu");
+
+  let tabMenuShown = BrowserTestUtils.waitForEvent(tabMenu, "popupshown");
+  EventUtils.synthesizeMouseAtCenter(
+    tab,
+    { type: "contextmenu" },
+    tab.ownerGlobal
+  );
+  await tabMenuShown;
+
+  return tabMenu;
+}
+
 // Tests that search mode is duplicated when duplicating tabs.  Note that tab
 // duplication is handled by session store.
 add_task(async function duplicateTabs() {
@@ -235,16 +251,13 @@ add_task(async function duplicateTabs() {
     source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
   });
 
-  // Now duplicate the current tab using the context menu item.  First we need
-  // to set TabContextMenu.contextTab because that's how the menu item's command
-  // determines which tab to duplicate.
-  window.TabContextMenu.contextTab = gBrowser.selectedTab;
+  // Now duplicate the current tab using the context menu item.
+  const menu = await openTabMenuFor(gBrowser.selectedTab);
   let tabPromise = BrowserTestUtils.waitForNewTab(
     gBrowser,
     gBrowser.currentURI.spec
   );
-  let menuitem = document.getElementById("context_duplicateTab");
-  menuitem.click();
+  menu.activateItem(document.getElementById("context_duplicateTab"));
   let newTab = await tabPromise;
   Assert.equal(
     gBrowser.selectedTab,
@@ -276,9 +289,9 @@ add_task(async function duplicateTabs() {
  * Opens a new browser window with the given URLs, calls a callback, and then
  * closes the window.
  *
- * @param {array} urls
+ * @param {Array} urls
  *   Array of string URLs to open.
- * @param {function} callback
+ * @param {Function} callback
  *   The callback.
  */
 async function withNewWindow(urls, callback) {

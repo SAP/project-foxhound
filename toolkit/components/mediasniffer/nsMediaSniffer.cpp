@@ -30,6 +30,9 @@ static const uint32_t MAX_BYTES_SNIFFED = 512;
 // bitstream.
 // This is 320kbps * 144 / 32kHz + 1 padding byte + 4 bytes of capture pattern.
 static const uint32_t MAX_BYTES_SNIFFED_MP3 = 320 * 144 / 32 + 1 + 4;
+// Multi-channel low sample-rate AAC packets can be huge, have a higher maximum
+// size.
+static const uint32_t MAX_BYTES_SNIFFED_ADTS = 8096;
 
 NS_IMPL_ISUPPORTS(nsMediaSniffer, nsIContentSniffer)
 
@@ -81,15 +84,11 @@ nsMediaSnifferFtypEntry sFtypEntries[] = {
      PatternLabel::ftyp_3gp4},  // 3gp4 is based on MP4
     {PATTERN_ENTRY("\xFF\xFF\xFF", "3gp", VIDEO_3GPP),
      PatternLabel::ftyp_3gp},  // Could be 3gp5, ...
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4V ", VIDEO_MP4),
-     PatternLabel::ftyp_M4V},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4A ", AUDIO_MP4),
-     PatternLabel::ftyp_M4A},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4P ", AUDIO_MP4),
-     PatternLabel::ftyp_M4P},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "qt  ", VIDEO_QUICKTIME),
-     PatternLabel::ftyp_qt},
-    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "crx ", APPLICATION_OCTET_STREAM),
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "M4V", VIDEO_MP4), PatternLabel::ftyp_M4V},
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "M4A", AUDIO_MP4), PatternLabel::ftyp_M4A},
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "M4P", AUDIO_MP4), PatternLabel::ftyp_M4P},
+    {PATTERN_ENTRY("\xFF\xFF", "qt", VIDEO_QUICKTIME), PatternLabel::ftyp_qt},
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "crx", APPLICATION_OCTET_STREAM),
      PatternLabel::ftyp_crx},
     {PATTERN_ENTRY("\xFF\xFF\xFF", "iso", VIDEO_MP4),
      PatternLabel::ftyp_iso},  // Could be isom or iso2.
@@ -186,8 +185,9 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
                                        nsACString& aSniffedType) {
   const uint32_t clampedLength = std::min(aLength, MAX_BYTES_SNIFFED);
 
-  auto maybeUpdate = mozilla::MakeScopeExit([request = RefPtr{aRequest}]() {
-    nsCOMPtr<nsIChannel> channel = do_QueryInterface(request);
+  nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+
+  auto maybeUpdate = mozilla::MakeScopeExit([channel]() {
     if (channel && XRE_IsParentProcess()) {
       if (RefPtr<mozilla::net::nsHttpChannel> httpChannel =
               do_QueryObject(channel)) {
@@ -199,6 +199,21 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
       }
     };
   });
+
+  // Check if this is a toplevel document served as application/octet-stream
+  // to disable sniffing and allow the file to download. See: Bug 1828441
+  if (channel && XRE_IsParentProcess()) {
+    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+    nsAutoCString mimeType;
+    channel->GetContentType(mimeType);
+    if (mimeType.EqualsLiteral(APPLICATION_OCTET_STREAM) &&
+        loadInfo->GetExternalContentPolicyType() ==
+            ExtContentPolicy::TYPE_DOCUMENT) {
+      aSniffedType.AssignLiteral(APPLICATION_OCTET_STREAM);
+      maybeUpdate.release();
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+  }
 
   for (const auto& currentEntry : sSnifferEntries) {
     if (clampedLength < currentEntry.mLength || currentEntry.mLength == 0) {
@@ -232,7 +247,7 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
     return NS_OK;
   }
 
-  if (MatchesADTS(aData, clampedLength)) {
+  if (MatchesADTS(aData, std::min(aLength, MAX_BYTES_SNIFFED_ADTS))) {
     aSniffedType.AssignLiteral(AUDIO_AAC);
     return NS_OK;
   }

@@ -2,18 +2,19 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const HTML_URI = TEST_PATH + "dummy_page.html";
 const VIEW_SRC_URI = "view-source:" + HTML_URI;
 
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.navigation.requireUserInteraction", false]],
   });
 
   info("load baseline html in new tab");
-  await BrowserTestUtils.withNewTab(HTML_URI, async function(aBrowser) {
+  await BrowserTestUtils.withNewTab(HTML_URI, async function (aBrowser) {
     is(
       gBrowser.selectedBrowser.currentURI.spec,
       HTML_URI,
@@ -33,12 +34,8 @@ add_task(async function() {
     );
     await popupPromise;
     let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser, VIEW_SRC_URI);
-    let vSrcItem = vSrcCtxtMenu.getElementsByAttribute(
-      "id",
-      "context-viewsource"
-    )[0];
-    vSrcItem.click();
-    vSrcCtxtMenu.hidePopup();
+    let vSrcItem = vSrcCtxtMenu.querySelector("#context-viewsource");
+    vSrcCtxtMenu.activateItem(vSrcItem);
     let tab = await tabPromise;
     is(
       gBrowser.selectedBrowser.currentURI.spec,
@@ -77,9 +74,8 @@ add_task(async function() {
       tab.linkedBrowser,
       "pageshow"
     );
-    let backItem = backCtxtMenu.getElementsByAttribute("id", "context-back")[0];
-    backItem.click();
-    backCtxtMenu.hidePopup();
+    let backItem = backCtxtMenu.querySelector("#context-back");
+    backCtxtMenu.activateItem(backItem);
     await loadPromise;
     is(
       gBrowser.selectedBrowser.currentURI.spec,

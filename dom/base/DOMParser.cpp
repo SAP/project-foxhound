@@ -23,6 +23,7 @@
 #include "nsJSUtils.h"
 #include "nsError.h"
 #include "nsPIDOMWindow.h"
+#include "nsTaintingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
@@ -120,12 +121,13 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
 already_AddRefed<Document> DOMParser::ParseFromSafeString(const nsAString& aStr,
                                                           SupportedType aType,
                                                           ErrorResult& aRv) {
-  // Since we disable cross docGroup node adoption, it is safe to create
-  // new document with the system principal, then the new document will be
-  // placed in the same docGroup as the chrome document.
+  // Create the new document with the same principal as `mOwner`, even if it is
+  // the system principal. This will ensure that nodes from the returned
+  // document are in the same DocGroup as the owner global's document, allowing
+  // nodes to be adopted.
   nsCOMPtr<nsIPrincipal> docPrincipal = mPrincipal;
-  if (!mPrincipal->IsSystemPrincipal()) {
-    mPrincipal = SystemPrincipal::Create();
+  if (mOwner && mOwner->PrincipalOrNull()) {
+    mPrincipal = mOwner->PrincipalOrNull();
   }
 
   RefPtr<Document> ret = ParseFromString(aStr, aType, aRv);
@@ -136,8 +138,9 @@ already_AddRefed<Document> DOMParser::ParseFromSafeString(const nsAString& aStr,
 already_AddRefed<Document> DOMParser::ParseFromBuffer(const Uint8Array& aBuf,
                                                       SupportedType aType,
                                                       ErrorResult& aRv) {
-  aBuf.ComputeState();
-  return ParseFromBuffer(Span(aBuf.Data(), aBuf.Length()), aType, aRv);
+  return aBuf.ProcessFixedData([&](const Span<uint8_t>& aData) {
+    return ParseFromBuffer(aData, aType, aRv);
+  });
 }
 
 already_AddRefed<Document> DOMParser::ParseFromBuffer(Span<const uint8_t> aBuf,

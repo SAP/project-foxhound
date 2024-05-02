@@ -6,14 +6,13 @@
 
 const {
   CanvasFrameAnonymousContentHelper,
-} = require("devtools/server/actors/highlighters/utils/markup");
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
 
 loader.lazyGetter(this, "HighlightersBundle", () => {
   return new Localization(["devtools/shared/highlighters.ftl"], true);
 });
 
 loader.lazyGetter(this, "isAndroid", () => {
-  const Services = require("Services");
   return Services.appinfo.OS === "Android";
 });
 

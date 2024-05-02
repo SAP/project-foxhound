@@ -253,8 +253,6 @@ typedef nsAutoRef<nsHGLOBAL> nsAutoGlobalMem;
 typedef nsAutoRef<nsHPRINTER> nsAutoPrinter;
 typedef nsAutoRef<MSIHANDLE> nsAutoMsiHandle;
 
-namespace {
-
 // Construct a path "<system32>\<aModule>". return false if the output buffer
 // is too small.
 // Note: If the system path cannot be found, or doesn't fit in the output buffer
@@ -300,14 +298,8 @@ bool inline ConstructSystem32Path(LPCWSTR aModule, WCHAR* aSystemPath,
 }
 
 HMODULE inline LoadLibrarySystem32(LPCWSTR aModule) {
-  WCHAR systemPath[MAX_PATH + 1];
-  if (!ConstructSystem32Path(aModule, systemPath, MAX_PATH + 1)) {
-    return NULL;
-  }
-  return LoadLibraryW(systemPath);
+  return LoadLibraryExW(aModule, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
 }
-
-}  // namespace
 
 // for UniquePtr
 struct LocalFreeDeleter {
@@ -326,4 +318,22 @@ struct FreeSidDeleter {
 // This typedef will work for storing a PSID in a UniquePtr and should make
 // things a bit more readable.
 typedef mozilla::UniquePtr<void, FreeSidDeleter> UniqueSidPtr;
+
+struct CloseHandleDeleter {
+  typedef HANDLE pointer;
+  void operator()(pointer aHandle) {
+    if (aHandle != INVALID_HANDLE_VALUE) {
+      ::CloseHandle(aHandle);
+    }
+  }
+};
+
+// One caller of this function is early in startup and several others are not,
+// so they have different ways of determining the two parameters. This function
+// exists just so any future code that needs to determine whether the dynamic
+// blocklist is disabled remembers to check whether safe mode is active.
+inline bool IsDynamicBlocklistDisabled(bool isSafeMode,
+                                       bool hasCommandLineDisableArgument) {
+  return isSafeMode || hasCommandLineDisableArgument;
+}
 #endif

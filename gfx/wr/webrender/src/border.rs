@@ -5,7 +5,7 @@
 use api::{BorderRadius, BorderSide, BorderStyle, ColorF, ColorU};
 use api::{NormalBorder as ApiNormalBorder, RepeatMode};
 use api::units::*;
-use crate::clip::ClipChainId;
+use crate::clip::ClipNodeId;
 use crate::ellipse::Ellipse;
 use euclid::vec2;
 use crate::scene_building::SceneBuilder;
@@ -217,14 +217,14 @@ impl<'a> SceneBuilder<'a> {
         border: &ApiNormalBorder,
         widths: LayoutSideOffsets,
         spatial_node_index: SpatialNodeIndex,
-        clip_chain_id: ClipChainId,
+        clip_node_id: ClipNodeId,
     ) {
         let mut border = *border;
         ensure_no_corner_overlap(&mut border.radius, info.rect.size());
 
         self.add_primitive(
             spatial_node_index,
-            clip_chain_id,
+            clip_node_id,
             info,
             Vec::new(),
             NormalBorderPrim {
@@ -584,7 +584,8 @@ impl EdgeInfo {
 // the 'on' segment) and the count of them for a given segment.
 fn compute_half_dash(side_width: f32, total_size: f32) -> (f32, u32) {
     let half_dash = side_width * 1.5;
-    let num_half_dashes = (total_size / half_dash).ceil() as u32;
+    // 16k dashes should be enough for anyone
+    let num_half_dashes = (total_size / half_dash).ceil().min(16.0 * 1024.0) as u32;
 
     if num_half_dashes == 0 {
         return (0., 0);
@@ -1305,17 +1306,6 @@ impl NinePatchDescriptor {
     ) -> Vec<BrushSegment> {
         let rect = LayoutRect::from_size(size);
 
-        // Calculate the modified rect as specific by border-image-outset
-        let origin = LayoutPoint::new(
-            rect.min.x - self.outset.left,
-            rect.min.y - self.outset.top,
-        );
-        let size = LayoutSize::new(
-            rect.width() + self.outset.left + self.outset.right,
-            rect.height() + self.outset.top + self.outset.bottom,
-        );
-        let rect = LayoutRect::from_origin_and_size(origin, size);
-
         // Calculate the local texel coords of the slices.
         let px0 = 0.0;
         let px1 = self.slice.left as f32 / self.width as f32;
@@ -1361,13 +1351,13 @@ impl NinePatchDescriptor {
 
             // Enable repeat modes on the segment.
             if repeat_horizontal == RepeatMode::Repeat {
-                brush_flags |= BrushFlags::SEGMENT_REPEAT_X;
+                brush_flags |= BrushFlags::SEGMENT_REPEAT_X | BrushFlags::SEGMENT_REPEAT_X_CENTERED;
             } else if repeat_horizontal == RepeatMode::Round {
                 brush_flags |= BrushFlags::SEGMENT_REPEAT_X | BrushFlags::SEGMENT_REPEAT_X_ROUND;
             }
 
             if repeat_vertical == RepeatMode::Repeat {
-                brush_flags |= BrushFlags::SEGMENT_REPEAT_Y;
+                brush_flags |= BrushFlags::SEGMENT_REPEAT_Y | BrushFlags::SEGMENT_REPEAT_Y_CENTERED;
             } else if repeat_vertical == RepeatMode::Round {
                 brush_flags |= BrushFlags::SEGMENT_REPEAT_Y | BrushFlags::SEGMENT_REPEAT_Y_ROUND;
             }

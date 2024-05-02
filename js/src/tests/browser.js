@@ -33,6 +33,9 @@
   //         behavior.
   var ObjectGetOwnPropertyDescriptor = global.Object.getOwnPropertyDescriptor;
 
+  var {get: ArrayBufferByteLength} =
+    ObjectGetOwnPropertyDescriptor(global.ArrayBuffer.prototype, "byteLength");
+
   var Worker = global.Worker;
   var Blob = global.Blob;
   var URL = global.URL;
@@ -190,7 +193,15 @@
       if (worker === null) {
         worker = CreateWorker("/* black hole */");
       }
-      ReflectApply(WorkerPrototypePostMessage, worker, ["detach", [arrayBuffer]]);
+      try {
+        ReflectApply(WorkerPrototypePostMessage, worker, ["detach", [arrayBuffer]]);
+      } catch (e) {
+        // postMessage throws an error if the array buffer was already detached.
+        // Test for this condition by checking if the byte length is zero.
+        if (ReflectApply(ArrayBufferByteLength, arrayBuffer, []) !== 0) {
+          throw e;
+        }
+      }
     };
 
     global.detachArrayBuffer = detachArrayBuffer;
@@ -430,19 +441,6 @@
    ****************************************/
 
   function jsTestDriverBrowserInit() {
-    // Unset all options before running any test code, cf. the call to
-    // |shellOptionsClear| in shell.js' set-up code.
-    for (var optionName of ["strict_mode"]) {
-      if (!HasOwnProperty(SpecialPowersCu, optionName))
-        throw "options is out of sync with Components.utils";
-
-      // Option is set, toggle it to unset. (Reading an option is a cheap
-      // operation, but setting is relatively expensive, so only assign if
-      // necessary.)
-      if (SpecialPowersCu[optionName])
-        SpecialPowersCu[optionName] = false;
-    }
-
     // Initialize with an empty set, because we just turned off all options.
     currentOptions = Object.create(null);
 

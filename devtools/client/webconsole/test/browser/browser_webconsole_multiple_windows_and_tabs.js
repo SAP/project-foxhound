@@ -9,7 +9,7 @@
 const TEST_URI =
   "data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test for bug 595350";
 
-add_task(async function() {
+add_task(async function () {
   requestLongerTimeout(3);
   // Bug 1518138: GC heuristics are broken for this test, so that the test
   // ends up running out of memory. Try to work-around the problem by GCing
@@ -37,12 +37,12 @@ add_task(async function() {
   for (const tab of tabs) {
     // Open the console in tab${i}.
     const hud = await openConsole(tab);
-    const browser = hud.currentTarget.localTab.linkedBrowser;
+    const browser = hud.commands.descriptorFront.localTab.linkedBrowser;
     const message = "message for tab " + tabs.indexOf(tab);
 
     // Log a message in the newly opened console.
-    const onMessage = waitForMessage(hud, message);
-    await SpecialPowers.spawn(browser, [message], function(msg) {
+    const onMessage = waitForMessageByType(hud, message, ".console-api");
+    await SpecialPowers.spawn(browser, [message], function (msg) {
       content.console.log(msg);
     });
     await onMessage;

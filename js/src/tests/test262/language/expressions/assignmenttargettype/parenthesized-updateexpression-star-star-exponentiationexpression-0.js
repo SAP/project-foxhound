@@ -5,6 +5,7 @@
 /*---
 description: Static Semantics AssignmentTargetType, Return invalid. (ParenthesizedExpression)
 esid: sec-grouping-operator-static-semantics-assignmenttargettype
+features: [exponentiation]
 flags: [generated]
 negative:
   phase: parse
@@ -21,7 +22,4 @@ info: |
 
 $DONOTEVALUATE();
 
-function _() {
-  (x ** y) = 1;
-}
-
+(x ** y) = 1;

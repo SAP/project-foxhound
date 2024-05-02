@@ -10,7 +10,7 @@ const USB_RUNTIME_DEVICE_NAME = "test device name";
 const USB_RUNTIME_APP_NAME = "TestUsbApp";
 
 // Test that addons are displayed and updated for USB runtimes when expected.
-add_task(async function() {
+add_task(async function () {
   const mocks = new Mocks();
 
   const { document, tab, window } = await openAboutDebugging();
@@ -97,11 +97,12 @@ async function testAddonsOnMockedRemoteClient(
   const removeButton = temporaryExtensionTarget.querySelector(
     ".qa-temporary-extension-remove-button"
   );
+  ok(removeButton, "Remove button expected for the temporary extension");
+
   const reloadButton = temporaryExtensionTarget.querySelector(
     ".qa-temporary-extension-reload-button"
   );
-  ok(!removeButton, "No remove button expected for the temporary extension");
-  ok(!reloadButton, "No reload button expected for the temporary extension");
+  ok(reloadButton, "Reload button expected for the temporary extension");
 
   // The goal here is to check that runtimes addons are only updated when the remote
   // runtime is sending addonListChanged events. The reason for this test is because the

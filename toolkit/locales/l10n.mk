@@ -93,9 +93,7 @@ else
 	find $(UNPACKED_INSTALLER) -maxdepth 1 -print0 | xargs -0 $(RM) -r
 endif
 	$(NSINSTALL) -D $(UNPACKED_INSTALLER)
-	cd $(UNPACKED_INSTALLER) && \
-	  $(INNER_UNMAKE_PACKAGE)
-
+	$(call INNER_UNMAKE_PACKAGE,$(UNPACKED_INSTALLER))
 
 unpack: $(UNPACKED_INSTALLER)
 ifeq ($(OS_ARCH), WINNT)
@@ -114,6 +112,7 @@ repackage-zip: UNPACKAGE='$(ZIP_IN)'
 repackage-zip:
 	$(PYTHON3) $(MOZILLA_DIR)/toolkit/mozapps/installer/l10n-repack.py '$(STAGEDIST)' $(DIST)/xpi-stage/locale-$(AB_CD) \
 		$(MOZ_PKG_EXTRAL10N) \
+		$(if $(MOZ_PACKAGER_MINIFY),--minify) \
 		$(if $(filter omni,$(MOZ_PACKAGER_FORMAT)),$(if $(NON_OMNIJAR_FILES),--non-resource $(NON_OMNIJAR_FILES)))
 
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
@@ -135,8 +134,7 @@ ifeq (WINNT,$(OS_ARCH))
 endif
 
 	$(NSINSTALL) -D $(DIST)/l10n-stage/$(PKG_PATH)
-	(cd $(DIST)/l10n-stage; \
-	  $(MAKE_PACKAGE))
+	$(call MAKE_PACKAGE,$(DIST)/l10n-stage)
 # packaging done, undo l10n stuff
 ifneq (en,$(LPROJ_ROOT))
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
@@ -149,21 +147,6 @@ endif
 
 repackage-zip-%: unpack
 	@$(MAKE) repackage-zip AB_CD=$* ZIP_IN='$(ZIP_IN)'
-
-
-# Finding toolkit's defines.inc is hard for comm-central.
-# It needs to resolve mail's defines.inc relative to comm
-# for en-US, and toolkit's defines.inc relative to topsrcdir.
-# That's MOZILLA_DIR in their case, so fall back to that.
-# This is just needed for en-US, for repacks, all paths resolve
-# relative to the top-level REAL_LOCALE_MERGEDIR.
-LANGPACK_DEFINES = \
-	$(firstword \
-	  $(wildcard $(call EXPAND_LOCALE_SRCDIR,toolkit/locales)/defines.inc) \
-	  $(MOZILLA_DIR)/toolkit/locales/en-US/defines.inc \
-	) \
-  $(LOCALE_SRCDIR)/defines.inc \
-$(NULL)
 
 # Dealing with app sub dirs: If DIST_SUBDIRS is defined it contains a
 # listing of app sub-dirs we should include in langpack xpis. If not,
@@ -216,6 +199,8 @@ endif
 		cp $(L10NBASEDIR)/$(AB_CD)/extensions/spellcheck/hunspell/*.* $(REAL_LOCALE_MERGEDIR)/extensions/spellcheck/hunspell ; \
 	fi
 
+LANGPACK_METADATA = $(LOCALE_SRCDIR)/langpack-metadata.ftl
+
 langpack-%: IS_LANGUAGE_REPACK=1
 langpack-%: IS_LANGPACK=1
 langpack-%: AB_CD=$*
@@ -229,8 +214,8 @@ package-langpack-%: XPI_NAME=locale-$*
 package-langpack-%: AB_CD=$*
 package-langpack-%:
 	$(NSINSTALL) -D $(DIST)/$(PKG_LANGPACK_PATH)
-	$(call py_action,langpack_manifest,--locales $(AB_CD) --app-version $(MOZ_APP_VERSION) --max-app-ver $(MOZ_APP_MAXVERSION) --app-name '$(MOZ_APP_DISPLAYNAME)' --l10n-basedir '$(L10NBASEDIR)' --defines $(LANGPACK_DEFINES) --langpack-eid '$(MOZ_LANGPACK_EID)' --input $(DIST)/xpi-stage/locale-$(AB_CD))
-	$(call py_action,zip,-C $(DIST)/xpi-stage/locale-$(AB_CD) -x **/*.manifest -x **/*.js -x **/*.ini $(LANGPACK_FILE) $(PKG_ZIP_DIRS) manifest.json)
+	$(call py_action,langpack_manifest $(AB_CD),--locales $(AB_CD) --app-version $(MOZ_APP_VERSION) --max-app-ver $(MOZ_APP_MAXVERSION) --app-name '$(MOZ_APP_DISPLAYNAME)' --l10n-basedir '$(L10NBASEDIR)' --metadata $(LANGPACK_METADATA) --langpack-eid '$(MOZ_LANGPACK_EID)' --input $(DIST)/xpi-stage/locale-$(AB_CD))
+	$(call py_action,zip $(PKG_LANGPACK_BASENAME).xpi,-C $(DIST)/xpi-stage/locale-$(AB_CD) -x **/*.manifest -x **/*.js -x **/*.ini $(LANGPACK_FILE) $(PKG_ZIP_DIRS) manifest.json)
 
 # This variable is to allow the wget-en-US target to know which ftp server to download from
 ifndef EN_US_BINARY_URL 

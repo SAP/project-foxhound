@@ -21,7 +21,7 @@ add_task(async function test_redirect_property() {
 
   let ext = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "redirect@test" } },
+      browser_specific_settings: { gecko: { id: "redirect@test" } },
       permissions: ["webRequest", "webRequestBlocking", "<all_urls>"],
     },
     background: `(${background})("${gServerUrl}")`,
@@ -33,9 +33,8 @@ add_task(async function test_redirect_property() {
 
     let channel = NetUtil.newChannel({
       uri: `${gServerUrl}/redirect`,
-      loadingPrincipal: ssm.createContentPrincipalFromOrigin(
-        "http://localhost"
-      ),
+      loadingPrincipal:
+        ssm.createContentPrincipalFromOrigin("http://localhost"),
       contentPolicyType: Ci.nsIContentPolicy.TYPE_XMLHTTPREQUEST,
       securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     });

@@ -6,11 +6,13 @@
 
 #include "StreamFilterParent.h"
 
+#include "HttpChannelChild.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/Try.h"
 #include "nsHttpChannel.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
@@ -92,7 +94,7 @@ class ChannelEventRunnable final : public ChannelEventWrapper {
  *****************************************************************************/
 
 StreamFilterParent::StreamFilterParent()
-    : mMainThread(GetCurrentEventTarget()),
+    : mMainThread(GetCurrentSerialEventTarget()),
       mIOThread(mMainThread),
       mQueue(new ChannelEventQueue(static_cast<nsIStreamListener*>(this))),
       mBufferMutex("StreamFilter buffer mutex"),
@@ -158,10 +160,33 @@ void StreamFilterParent::Attach(nsIChannel* aChannel,
                                           std::move(aEndpoint)),
       NS_DISPATCH_NORMAL);
 
-  self->Init(aChannel);
+  // If aChannel is a HttpChannelChild, ask HttpChannelChild to hold a weak
+  // reference on this StreamFilterParent. Such that HttpChannelChild has a
+  // chance to disconnect this StreamFilterParent if internal redirection
+  // happens, i.e. ServiceWorker fallback redirection.
+  RefPtr<net::HttpChannelChild> channelChild = do_QueryObject(aChannel);
+  if (channelChild) {
+    channelChild->RegisterStreamFilter(self);
+  }
 
-  // IPC owns this reference now.
-  Unused << self.forget();
+  self->Init(aChannel);
+}
+
+void StreamFilterParent::Disconnect(const nsACString& aReason) {
+  AssertIsMainThread();
+  MOZ_DIAGNOSTIC_ASSERT(mBeforeOnStartRequest);
+
+  mDisconnected = true;
+
+  nsAutoCString reason(aReason);
+
+  RefPtr<StreamFilterParent> self(this);
+  RunOnActorThread(FUNC, [self, reason] {
+    if (self->IPCActive()) {
+      self->mState = State::Disconnected;
+      self->CheckResult(self->SendError(reason));
+    }
+  });
 }
 
 void StreamFilterParent::Bind(ParentEndpoint&& aEndpoint) {
@@ -206,6 +231,29 @@ StreamFilterParent::CheckListenerChain() {
     return trsl->CheckListenerChain();
   }
   return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+StreamFilterParent::OnDataFinished(nsresult aStatus) {
+  AssertIsIOThread();
+
+  // Forwarding onDataFinished to the mOriginListener when:
+  // - the StreamFilter is already disconnected
+  // - it does not have any buffered data which would still need
+  //   to be sent to the mOrigListener and we have
+  // - we have not yet called mOrigListener OnStopRequest method.
+  if (!mDisconnected || !mBufferedData.isEmpty() || mSentStop) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mOrigListener);
+
+  if (listener) {
+    return listener->OnDataFinished(aStatus);
+  }
+
+  return NS_OK;
 }
 
 /*****************************************************************************
@@ -428,6 +476,19 @@ StreamFilterParent::IsPending(bool* aIsPending) {
   return NS_OK;
 }
 
+NS_IMETHODIMP StreamFilterParent::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP StreamFilterParent::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP StreamFilterParent::CancelWithReason(nsresult aStatus,
+                                                   const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
+
 NS_IMETHODIMP
 StreamFilterParent::Cancel(nsresult aResult) {
   AssertIsMainThread();
@@ -500,6 +561,7 @@ StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
   //
   // For ALL redirections, we will disconnect this listener.  Extensions
   // will create a new filter if they need it.
+  mBeforeOnStartRequest = false;
   if (aRequest != mChannel) {
     nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
     nsCOMPtr<nsILoadInfo> loadInfo = channel ? channel->LoadInfo() : nullptr;
@@ -552,7 +614,7 @@ StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
   // that we get the final delivery target after any retargeting that it may do.
   if (nsCOMPtr<nsIThreadRetargetableRequest> req =
           do_QueryInterface(aRequest)) {
-    nsCOMPtr<nsIEventTarget> thread;
+    nsCOMPtr<nsISerialEventTarget> thread;
     Unused << req->GetDeliveryTarget(getter_AddRefs(thread));
     if (thread) {
       mIOThread = std::move(thread);
@@ -710,7 +772,7 @@ bool StreamFilterParent::IsActorThread() {
 
 void StreamFilterParent::AssertIsActorThread() { MOZ_ASSERT(IsActorThread()); }
 
-nsIEventTarget* StreamFilterParent::IOThread() { return mIOThread; }
+nsISerialEventTarget* StreamFilterParent::IOThread() { return mIOThread; }
 
 bool StreamFilterParent::IsIOThread() { return mIOThread->IsOnCurrentThread(); }
 
@@ -771,10 +833,6 @@ void StreamFilterParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (mState != State::Disconnected && mState != State::Closed) {
     Broken();
   }
-}
-
-void StreamFilterParent::ActorDealloc() {
-  RefPtr<StreamFilterParent> self = dont_AddRef(this);
 }
 
 NS_INTERFACE_MAP_BEGIN(StreamFilterParent)

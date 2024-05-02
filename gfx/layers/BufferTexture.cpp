@@ -49,12 +49,19 @@ class MemoryTextureData : public BufferTextureData {
 
   MemoryTextureData(const BufferDescriptor& aDesc,
                     gfx::BackendType aMoz2DBackend, uint8_t* aBuffer,
-                    size_t aBufferSize)
+                    size_t aBufferSize, bool aAutoDeallocate = false)
       : BufferTextureData(aDesc, aMoz2DBackend),
         mBuffer(aBuffer),
-        mBufferSize(aBufferSize) {
+        mBufferSize(aBufferSize),
+        mAutoDeallocate(aAutoDeallocate) {
     MOZ_ASSERT(aBuffer);
     MOZ_ASSERT(aBufferSize);
+  }
+
+  virtual ~MemoryTextureData() override {
+    if (mAutoDeallocate) {
+      Deallocate(nullptr);
+    }
   }
 
   virtual uint8_t* GetBuffer() override { return mBuffer; }
@@ -64,6 +71,7 @@ class MemoryTextureData : public BufferTextureData {
  protected:
   uint8_t* mBuffer;
   size_t mBufferSize;
+  bool mAutoDeallocate;
 };
 
 class ShmemTextureData : public BufferTextureData {
@@ -94,9 +102,6 @@ class ShmemTextureData : public BufferTextureData {
   virtual uint8_t* GetBuffer() override { return mShmem.get<uint8_t>(); }
 
   virtual size_t GetBufferSize() override { return mShmem.Size<uint8_t>(); }
-
-  bool CropYCbCrPlanes(const gfx::IntSize& aYSize,
-                       const gfx::IntSize& aCbCrSize) override;
 
  protected:
   mozilla::ipc::Shmem mShmem;
@@ -133,7 +138,7 @@ BufferTextureData* BufferTextureData::CreateInternal(
     return new MemoryTextureData(aDesc, aMoz2DBackend, buffer, aBufferSize);
   } else {
     ipc::Shmem shm;
-    if (!aAllocator->AllocUnsafeShmem(aBufferSize, OptimalShmemType(), &shm)) {
+    if (!aAllocator->AllocUnsafeShmem(aBufferSize, &shm)) {
       return nullptr;
     }
 
@@ -146,7 +151,8 @@ BufferTextureData* BufferTextureData::CreateForYCbCr(
     const gfx::IntSize& aYSize, uint32_t aYStride,
     const gfx::IntSize& aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
     gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-    gfx::ColorRange aColorRange, TextureFlags aTextureFlags) {
+    gfx::ColorRange aColorRange, gfx::ChromaSubsampling aSubsampling,
+    TextureFlags aTextureFlags) {
   uint32_t bufSize = ImageDataSerializer::ComputeYCbCrBufferSize(
       aYSize, aYStride, aCbCrSize, aCbCrStride);
   if (bufSize == 0) {
@@ -160,9 +166,10 @@ BufferTextureData* BufferTextureData::CreateForYCbCr(
                                            aCbCrSize.height, yOffset, cbOffset,
                                            crOffset);
 
-  YCbCrDescriptor descriptor = YCbCrDescriptor(
-      aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride, yOffset, cbOffset,
-      crOffset, aStereoMode, aColorDepth, aYUVColorSpace, aColorRange);
+  YCbCrDescriptor descriptor =
+      YCbCrDescriptor(aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride,
+                      yOffset, cbOffset, crOffset, aStereoMode, aColorDepth,
+                      aYUVColorSpace, aColorRange, aSubsampling);
 
   return CreateInternal(
       aAllocator ? aAllocator->GetTextureForwarder() : nullptr, descriptor,
@@ -193,6 +200,10 @@ gfx::IntRect BufferTextureData::GetPictureRect() const {
   return ImageDataSerializer::RectFromBufferDescriptor(mDescriptor);
 }
 
+Maybe<gfx::IntSize> BufferTextureData::GetYSize() const {
+  return ImageDataSerializer::YSizeFromBufferDescriptor(mDescriptor);
+}
+
 Maybe<gfx::IntSize> BufferTextureData::GetCbCrSize() const {
   return ImageDataSerializer::CbCrSizeFromBufferDescriptor(mDescriptor);
 }
@@ -215,6 +226,11 @@ Maybe<gfx::ColorDepth> BufferTextureData::GetColorDepth() const {
 
 Maybe<StereoMode> BufferTextureData::GetStereoMode() const {
   return ImageDataSerializer::StereoModeFromBufferDescriptor(mDescriptor);
+}
+
+Maybe<gfx::ChromaSubsampling> BufferTextureData::GetChromaSubsampling() const {
+  return ImageDataSerializer::ChromaSubsamplingFromBufferDescriptor(
+      mDescriptor);
 }
 
 gfx::SurfaceFormat BufferTextureData::GetFormat() const {
@@ -426,7 +442,11 @@ MemoryTextureData* MemoryTextureData::Create(gfx::IntSize aSize,
 
   BufferDescriptor descriptor = RGBDescriptor(aSize, aFormat);
 
-  return new MemoryTextureData(descriptor, aMoz2DBackend, buf, bufSize);
+  // Remote textures are not managed by a texture client, so we need to ensure
+  // that memory is freed when the owning MemoryTextureData goes away.
+  bool autoDeallocate = !!(aFlags & TextureFlags::REMOTE_TEXTURE);
+  return new MemoryTextureData(descriptor, aMoz2DBackend, buf, bufSize,
+                               autoDeallocate);
 }
 
 void MemoryTextureData::Deallocate(LayersIPCChannel*) {
@@ -483,7 +503,7 @@ ShmemTextureData* ShmemTextureData::Create(gfx::IntSize aSize,
   }
 
   mozilla::ipc::Shmem shm;
-  if (!aAllocator->AllocUnsafeShmem(bufSize, OptimalShmemType(), &shm)) {
+  if (!aAllocator->AllocUnsafeShmem(bufSize, &shm)) {
     return nullptr;
   }
 
@@ -507,27 +527,6 @@ TextureData* ShmemTextureData::CreateSimilar(
 
 void ShmemTextureData::Deallocate(LayersIPCChannel* aAllocator) {
   aAllocator->DeallocShmem(mShmem);
-}
-
-bool ShmemTextureData::CropYCbCrPlanes(const gfx::IntSize& aYSize,
-                                       const gfx::IntSize& aCbCrSize) {
-  if (mDescriptor.type() != BufferDescriptor::TYCbCrDescriptor) {
-    return false;
-  }
-
-  const auto& current = mDescriptor.get_YCbCrDescriptor();
-  if (current.ySize() < aYSize || current.cbCrSize() < aCbCrSize) {
-    NS_WARNING("Cropped size should not exceed the original size!");
-    return false;
-  }
-
-  auto newDescritor = YCbCrDescriptor(
-      current.display(), aYSize, current.yStride(), aCbCrSize,
-      current.cbCrStride(), current.yOffset(), current.cbOffset(),
-      current.crOffset(), current.stereoMode(), current.colorDepth(),
-      current.yUVColorSpace(), current.colorRange());
-  mDescriptor = BufferDescriptor(newDescritor);
-  return true;
 }
 
 }  // namespace layers

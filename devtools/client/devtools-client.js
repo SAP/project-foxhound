@@ -4,38 +4,44 @@
 
 "use strict";
 
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   getStack,
   callFunctionWithAsyncStack,
-} = require("devtools/shared/platform/stack");
-const EventEmitter = require("devtools/shared/event-emitter");
-const { UnsolicitedNotifications } = require("devtools/client/constants");
+} = require("resource://devtools/shared/platform/stack.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const {
+  UnsolicitedNotifications,
+} = require("resource://devtools/client/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "Authentication",
-  "devtools/shared/security/auth"
+  "resource://devtools/shared/security/auth.js"
 );
 loader.lazyRequireGetter(
   this,
   "DebuggerSocket",
-  "devtools/shared/security/socket",
+  "resource://devtools/shared/security/socket.js",
   true
 );
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
+);
 
 loader.lazyRequireGetter(
   this,
   ["createRootFront", "Front"],
-  "devtools/shared/protocol",
+  "resource://devtools/shared/protocol.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "ObjectFront",
-  "devtools/client/fronts/object",
+  "resource://devtools/client/fronts/object.js",
   true
 );
 
@@ -74,7 +80,7 @@ function DevToolsClient(transport) {
 }
 
 // Expose these to save callers the trouble of importing DebuggerSocket
-DevToolsClient.socketConnect = function(options) {
+DevToolsClient.socketConnect = function (options) {
   // Defined here instead of just copying the function to allow lazy-load
   return DebuggerSocket.connect(options);
 };
@@ -153,18 +159,12 @@ DevToolsClient.prototype = {
    *
    * @param packet object
    *        A JSON packet to send to the debugging server.
-   * @param onResponse function
-   *        If specified, will be called with the JSON response packet when
-   *        debugging server responds.
    * @return Request
    *         This object emits a number of events to allow you to respond to
    *         different parts of the request lifecycle.
    *         It is also a Promise object, with a `then` method, that is resolved
    *         whenever a JSON or a Bulk response is received; and is rejected
    *         if the response is an error.
-   *         Note: This return value can be ignored if you are using JSON alone,
-   *         because the callback provided in |onResponse| will be bound to the
-   *         "json-reply" event automatically.
    *
    *         Events emitted:
    *         * json-reply: The server replied with a JSON packet, which is
@@ -195,7 +195,7 @@ DevToolsClient.prototype = {
    *                     This object also emits "progress" events for each chunk
    *                     that is copied.  See stream-utils.js.
    */
-  request(packet, onResponse) {
+  request(packet) {
     if (!this.mainRoot) {
       throw Error("Have not yet received a hello packet from the server.");
     }
@@ -203,15 +203,6 @@ DevToolsClient.prototype = {
     if (!packet.to) {
       throw Error("'" + type + "' request packet has no destination.");
     }
-
-    // The onResponse callback might modify the response, so we need to call
-    // it and resolve the promise with its result if it's truthy.
-    const safeOnResponse = response => {
-      if (!onResponse) {
-        return response;
-      }
-      return onResponse(response) || response;
-    };
 
     if (this._transportClosed) {
       const msg =
@@ -222,8 +213,7 @@ DevToolsClient.prototype = {
         packet.to +
         "' " +
         "can't be sent as the connection is closed.";
-      const resp = { error: "connectionClosed", message: msg };
-      return Promise.reject(safeOnResponse(resp));
+      return Promise.reject({ error: "connectionClosed", message: msg });
     }
 
     const request = new Request(packet);
@@ -235,7 +225,6 @@ DevToolsClient.prototype = {
     const promise = new Promise((resolve, reject) => {
       function listenerJson(resp) {
         removeRequestListeners();
-        resp = safeOnResponse(resp);
         if (resp.error) {
           reject(resp);
         } else {
@@ -244,7 +233,7 @@ DevToolsClient.prototype = {
       }
       function listenerBulk(resp) {
         removeRequestListeners();
-        resolve(safeOnResponse(resp));
+        resolve(resp);
       }
 
       const removeRequestListeners = () => {
@@ -628,7 +617,7 @@ DevToolsClient.prototype = {
    *        is cancelled on the server.
    */
   purgeRequests(prefix = "") {
-    const reject = function(type, request) {
+    const reject = function (type, request) {
       // Server can send packets on its own and client only pass a callback
       // to expectReply, so that there is no request object.
       let msg;
@@ -799,10 +788,17 @@ DevToolsClient.prototype = {
   /**
    * Creates an object front for this DevToolsClient and the grip in parameter,
    * @param {Object} grip: The grip to create the ObjectFront for.
+   * @param {ThreadFront} threadFront
+   * @param {Front} parentFront: Optional front that will manage the object front.
+   *                             Defaults to threadFront.
    * @returns {ObjectFront}
    */
-  createObjectFront(grip, threadFront) {
-    return new ObjectFront(this, threadFront.targetFront, threadFront, grip);
+  createObjectFront(grip, threadFront, parentFront) {
+    if (!parentFront) {
+      parentFront = threadFront;
+    }
+
+    return new ObjectFront(this, threadFront.targetFront, parentFront, grip);
   },
 
   get transport() {

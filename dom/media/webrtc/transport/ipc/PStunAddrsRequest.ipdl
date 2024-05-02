@@ -4,14 +4,15 @@
 
 include protocol PNecko;
 
-using NrIceStunAddrArray from "mozilla/net/PStunAddrsParams.h";
-using MaybeNsCString from "mozilla/net/PStunAddrsParams.h";
+using mozilla::net::NrIceStunAddrArray from "mozilla/net/PStunAddrsParams.h";
+using mozilla::net::MaybeNsCString from "mozilla/net/PStunAddrsParams.h";
 
 include "mozilla/net/NrIceStunAddrMessageUtils.h";
 
 namespace mozilla {
 namespace net {
 
+[ManualDealloc, ChildImpl=virtual, ParentImpl=virtual]
 async protocol PStunAddrsRequest
 {
   manager PNecko;

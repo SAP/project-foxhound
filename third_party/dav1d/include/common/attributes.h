@@ -43,7 +43,11 @@
 
 #ifdef __GNUC__
 #define ATTR_ALIAS __attribute__((may_alias))
+#if defined(__MINGW32__) && !defined(__clang__)
+#define ATTR_FORMAT_PRINTF(fmt, attr) __attribute__((__format__(__gnu_printf__, fmt, attr)))
+#else
 #define ATTR_FORMAT_PRINTF(fmt, attr) __attribute__((__format__(__printf__, fmt, attr)))
+#endif
 #define COLD __attribute__((cold))
 #else
 #define ATTR_ALIAS
@@ -105,6 +109,18 @@
 #define NOINLINE __attribute__((noinline, noclone))
 #else
 #define NOINLINE __attribute__((noinline))
+#endif
+
+#ifdef _MSC_VER
+#define ALWAYS_INLINE __forceinline
+#else
+#define ALWAYS_INLINE __attribute__((always_inline)) inline
+#endif
+
+#if (defined(__ELF__) || defined(__MACH__) || (defined(_WIN32) && defined(__clang__))) && __has_attribute(visibility)
+#define EXTERN extern __attribute__((visibility("hidden")))
+#else
+#define EXTERN extern
 #endif
 
 #ifdef __clang__

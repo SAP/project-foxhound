@@ -13,7 +13,7 @@
 // (that's to see if the reload loads from cache or not)
 const TEST_URL = URL_ROOT + "incremental-js-value-script.sjs";
 
-add_task(async function() {
+add_task(async function () {
   info(" ### Test reloading a Tab");
 
   // Create a TargetCommand for a given test tab
@@ -59,33 +59,57 @@ add_task(async function() {
   await commands.destroy();
 });
 
-add_task(async function() {
-  info(" ### Test reloading a content process");
+add_task(async function () {
+  info(" ### Test reloading an Add-on");
 
-  const tab = await BrowserTestUtils.openNewForegroundTab({
-    gBrowser,
-    url: "data:text/html,foo",
-    forceNewProcess: true,
+  const extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    background() {
+      const { browser } = this;
+      browser.test.log("background script executed");
+    },
   });
 
-  const { osPid } = tab.linkedBrowser.browsingContext.currentWindowGlobal;
+  await extension.startup();
 
-  const commands = await CommandsFactory.forProcess(osPid);
+  const commands = await CommandsFactory.forAddon(extension.id);
+  const targetCommand = commands.targetCommand;
 
   // We have to start listening in order to ensure having a targetFront available
-  await commands.targetCommand.startListening();
+  await targetCommand.startListening();
 
-  try {
-    await commands.targetCommand.reloadTopLevelTarget();
-    ok(false, "reloadToLevelTarget() should have thrown for the main process");
-  } catch (e) {
-    is(e.message, "The top level target doesn't support being reloaded");
-  }
+  const { onResource: onReloaded } =
+    await commands.resourceCommand.waitForNextResource(
+      commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+      {
+        ignoreExistingResources: true,
+        predicate(resource) {
+          return resource.name == "dom-loading";
+        },
+      }
+    );
+
+  const backgroundPageURL = targetCommand.targetFront.url;
+  ok(backgroundPageURL, "Got the background page URL");
+  await targetCommand.reloadTopLevelTarget();
+
+  info("Wait for next dom-loading DOCUMENT_EVENT");
+  const event = await onReloaded;
+
+  // If we get about:blank here, it most likely means we receive notification
+  // for the previous background page being unload and navigating to about:blank
+  is(
+    event.url,
+    backgroundPageURL,
+    "We received the DOCUMENT_EVENT's for the expected document: the new background page."
+  );
+
   await commands.destroy();
-});
 
+  await extension.unload();
+});
 function getContentVariable() {
-  return SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  return SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     return content.wrappedJSObject.jsValue;
   });
 }

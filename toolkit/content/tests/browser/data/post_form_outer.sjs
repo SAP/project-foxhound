@@ -10,13 +10,13 @@ const BinaryInputStream = CC(
 );
 
 function handleRequest(request, response) {
-  var body = "<html>\
+  var body =
+    "<html>\
     <body>\
     Outer POST data: ";
 
   var bodyStream = new BinaryInputStream(request.bodyInputStream);
-  var bytes = [],
-    avail = 0;
+  var avail = 0;
   while ((avail = bodyStream.available()) > 0) {
     body += String.fromCharCode.apply(String, bodyStream.readByteArray(avail));
   }

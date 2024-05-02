@@ -3,9 +3,12 @@
 
 "use strict";
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 const BASE = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const TEST_URL = BASE + "browser_contextmenu_shareurl.html";
@@ -21,7 +24,7 @@ let stub = sinon.stub(gBrowser.ownerGlobal, "WindowsUIUtils").get(() => {
   };
 });
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   stub.restore();
 });
 
@@ -38,12 +41,6 @@ add_task(async function test_contextmenu_share_win() {
       "hidden"
     );
     let itemCreated = contextMenu.querySelector(".share-tab-url-item");
-    if (!AppConstants.isPlatformAndVersionAtLeast("win", "6.4")) {
-      Assert.ok(!itemCreated, "We only expose share on windows 10 and above");
-      contextMenu.hidePopup();
-      await contextMenuClosedPromise;
-      return;
-    }
 
     ok(itemCreated, "Got Share item on Windows 10");
 

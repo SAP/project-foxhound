@@ -45,7 +45,7 @@ const TEST_URL = `data:text/html;charset=utf-8,
     });
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URL);
 
   // We expect that host children are correctly displayed when no slots are defined.
@@ -72,9 +72,8 @@ add_task(async function() {
   info(
     "Move the non-slotted element with class has-before and check the pseudo appears"
   );
-  const mutated = waitForNMutations(inspector, "childList", 2);
-  const pseudoMutated = waitForMutation(inspector, "nativeAnonymousChildList");
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  const mutated = waitForNMutations(inspector, "childList", 3);
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     const root = content.document.querySelector(".root");
     const hasBeforeEl = content.document.querySelector(
       "no-slot-component .has-before"
@@ -82,7 +81,6 @@ add_task(async function() {
     root.appendChild(hasBeforeEl);
   });
   await mutated;
-  await pseudoMutated;
 
   // As the non-slotted has-before is moved into the tree, the before pseudo is expected
   // to appear.

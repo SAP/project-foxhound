@@ -6,9 +6,9 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 const ToolboxToolbar = createFactory(
-  require("devtools/client/framework/components/ToolboxToolbar")
+  require("resource://devtools/client/framework/components/ToolboxToolbar.js")
 );
 const ELEMENT_PICKER_ID = "command-button-pick";
 
@@ -37,6 +37,7 @@ class ToolboxController extends Component {
       canCloseToolbox: true,
       isSplitConsoleActive: false,
       disableAutohide: undefined,
+      alwaysOnTop: undefined,
       pseudoLocale: undefined,
       canRender: false,
       buttonIds: [],
@@ -165,6 +166,23 @@ class ToolboxController extends Component {
    */
   setDisableAutohide(disableAutohide) {
     this.setState({ disableAutohide });
+  }
+
+  /**
+   * @param {bool | undefined} alwaysOnTop
+   */
+  setAlwaysOnTop(alwaysOnTop) {
+    this.setState({ alwaysOnTop });
+  }
+
+  /**
+   * @param {bool} focusedState
+   */
+  setFocusedState(focusedState) {
+    // We only care about the focused state when the toolbox is always on top
+    if (this.state.alwaysOnTop) {
+      this.setState({ focusedState });
+    }
   }
 
   /**

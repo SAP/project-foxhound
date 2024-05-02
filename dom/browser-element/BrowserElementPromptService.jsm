@@ -9,8 +9,6 @@ var Cm = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
 var EXPORTED_SYMBOLS = ["BrowserElementPromptService"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 function debug(msg) {
   // dump("BrowserElementPromptService - " + msg + "\n");
 }
@@ -256,9 +254,8 @@ BrowserElementAuthPrompt.prototype = {
       throw Components.Exception("", Cr.NS_ERROR_FAILURE);
     }
 
-    let browserElementParent = BrowserElementPromptService.getBrowserElementParentForFrame(
-      frame
-    );
+    let browserElementParent =
+      BrowserElementPromptService.getBrowserElementParentForFrame(frame);
 
     if (!browserElementParent) {
       debug("Failed to load browser element parent.");
@@ -325,7 +322,7 @@ BrowserElementAuthPrompt.prototype = {
     prompt.inProgress = true;
 
     let self = this;
-    let callback = function(ok, username, password) {
+    let callback = function (ok, username, password) {
       debug(
         "Async auth callback is called, ok = " + ok + ", username = " + username
       );
@@ -581,9 +578,8 @@ BrowserElementPromptFactory.prototype = {
     }
 
     // Try to find a BrowserElementChild for the window.
-    let browserElementChild = BrowserElementPromptService.getBrowserElementChildForWindow(
-      win
-    );
+    let browserElementChild =
+      BrowserElementPromptService.getBrowserElementChildForWindow(win);
 
     if (iid.number === Ci.nsIAuthPrompt2.number) {
       debug("Caller requests an instance of nsIAuthPrompt2.");
@@ -662,10 +658,7 @@ var BrowserElementPromptService = {
     var newInstance = new BrowserElementPromptFactory(oldInstance);
 
     var newFactory = {
-      createInstance(outer, iid) {
-        if (outer != null) {
-          throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-        }
+      createInstance(iid) {
         return newInstance.QueryInterface(iid);
       },
     };
@@ -685,9 +678,8 @@ var BrowserElementPromptService = {
 
   _browserElementChildMap: {},
   mapWindowToBrowserElementChild(win, browserElementChild) {
-    this._browserElementChildMap[
-      this._getOuterWindowID(win)
-    ] = browserElementChild;
+    this._browserElementChildMap[this._getOuterWindowID(win)] =
+      browserElementChild;
   },
   unmapWindowToBrowserElementChild(win) {
     delete this._browserElementChildMap[this._getOuterWindowID(win)];

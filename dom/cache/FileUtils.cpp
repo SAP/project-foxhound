@@ -6,9 +6,15 @@
 
 #include "FileUtilsImpl.h"
 
+#include "CacheCipherKeyManager.h"
 #include "DBSchema.h"
 #include "mozilla/dom/InternalResponse.h"
+#include "mozilla/dom/quota/DecryptingInputStream.h"
+#include "mozilla/dom/quota/DecryptingInputStream_impl.h"
+#include "mozilla/dom/quota/EncryptingOutputStream.h"
+#include "mozilla/dom/quota/EncryptingOutputStream_impl.h"
 #include "mozilla/dom/quota/FileStreams.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -24,16 +30,16 @@
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
+#include "snappy/snappy.h"
 
 namespace mozilla::dom::cache {
 
+static_assert(SNAPPY_VERSION == 0x010109);
+
 using mozilla::dom::quota::Client;
 using mozilla::dom::quota::CloneFileAndAppend;
-using mozilla::dom::quota::FileInputStream;
-using mozilla::dom::quota::FileOutputStream;
 using mozilla::dom::quota::GetDirEntryKind;
 using mozilla::dom::quota::nsIFileKind;
-using mozilla::dom::quota::PERSISTENCE_TYPE_DEFAULT;
 using mozilla::dom::quota::QuotaManager;
 using mozilla::dom::quota::QuotaObject;
 
@@ -42,6 +48,12 @@ namespace {
 // Const variable for generate padding size.
 // XXX This will be tweaked to something more meaningful in Bug 1383656.
 const int64_t kRoundUpNumber = 20480;
+
+// At the moment, the encrypted stream block size is assumed to be unchangeable
+// between encrypting and decrypting blobs. This assumptions holds as long as we
+// only encrypt in private browsing mode, but when we support encryption for
+// persistent storage, this needs to be changed.
+constexpr uint32_t kEncryptedStreamBlockSize = 4096;
 
 enum BodyFileType { BODY_FILE_FINAL, BODY_FILE_TMP };
 
@@ -66,8 +78,7 @@ nsresult DirectoryPaddingWrite(nsIFile& aBaseDir,
 const auto kMorgueDirectory = u"morgue"_ns;
 
 bool IsFileNotFoundError(const nsresult aRv) {
-  return aRv == NS_ERROR_FILE_NOT_FOUND ||
-         aRv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
+  return aRv == NS_ERROR_FILE_NOT_FOUND;
 }
 
 Result<NotNull<nsCOMPtr<nsIFile>>, nsresult> BodyGetCacheDir(nsIFile& aBaseDir,
@@ -126,22 +137,15 @@ nsresult BodyDeleteDir(const CacheDirectoryMetadata& aDirectoryMetadata,
   return NS_OK;
 }
 
-Result<std::pair<nsID, nsCOMPtr<nsISupports>>, nsresult> BodyStartWriteStream(
+Result<nsCOMPtr<nsISupports>, nsresult> BodyStartWriteStream(
     const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aBaseDir,
+    const nsID& aBodyId, Maybe<CipherKey> aMaybeCipherKey,
     nsIInputStream& aSource, void* aClosure, nsAsyncCopyCallbackFun aCallback) {
   MOZ_DIAGNOSTIC_ASSERT(aClosure);
   MOZ_DIAGNOSTIC_ASSERT(aCallback);
 
-  QM_TRY_INSPECT(const auto& idGen,
-                 MOZ_TO_RESULT_GET_TYPED(nsCOMPtr<nsIUUIDGenerator>,
-                                         MOZ_SELECT_OVERLOAD(do_GetService),
-                                         "@mozilla.org/uuid-generator;1"));
-
-  nsID id;
-  QM_TRY(MOZ_TO_RESULT(idGen->GenerateUUIDInPlace(&id)));
-
   QM_TRY_INSPECT(const auto& finalFile,
-                 BodyIdToFile(aBaseDir, id, BODY_FILE_FINAL));
+                 BodyIdToFile(aBaseDir, aBodyId, BODY_FILE_FINAL));
 
   {
     QM_TRY_INSPECT(const bool& exists,
@@ -151,15 +155,22 @@ Result<std::pair<nsID, nsCOMPtr<nsISupports>>, nsresult> BodyStartWriteStream(
   }
 
   QM_TRY_INSPECT(const auto& tmpFile,
-                 BodyIdToFile(aBaseDir, id, BODY_FILE_TMP));
+                 BodyIdToFile(aBaseDir, aBodyId, BODY_FILE_TMP));
 
-  QM_TRY_INSPECT(
-      const auto& fileStream,
-      CreateFileOutputStream(PERSISTENCE_TYPE_DEFAULT, aDirectoryMetadata,
-                             Client::DOMCACHE, tmpFile.get()));
+  QM_TRY_UNWRAP(nsCOMPtr<nsIOutputStream> fileStream,
+                CreateFileOutputStream(aDirectoryMetadata.mPersistenceType,
+                                       aDirectoryMetadata, Client::DOMCACHE,
+                                       tmpFile.get()));
 
-  const auto compressed =
-      MakeRefPtr<SnappyCompressOutputStream>(fileStream.get());
+  const auto privateBody = aDirectoryMetadata.mIsPrivate;
+  if (privateBody) {
+    MOZ_DIAGNOSTIC_ASSERT(aMaybeCipherKey);
+
+    fileStream = MakeRefPtr<quota::EncryptingOutputStream<CipherStrategy>>(
+        std::move(fileStream), kEncryptedStreamBlockSize, *aMaybeCipherKey);
+  }
+
+  const auto compressed = MakeRefPtr<SnappyCompressOutputStream>(fileStream);
 
   const nsCOMPtr<nsIEventTarget> target =
       do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
@@ -171,7 +182,7 @@ Result<std::pair<nsID, nsCOMPtr<nsISupports>>, nsresult> BodyStartWriteStream(
                    true,  // close streams
                    getter_AddRefs(copyContext))));
 
-  return std::make_pair(id, std::move(copyContext));
+  return std::move(copyContext);
 }
 
 void BodyCancelWrite(nsISupports& aCopyContext) {
@@ -200,18 +211,26 @@ nsresult BodyFinalizeWrite(nsIFile& aBaseDir, const nsID& aId) {
   return NS_OK;
 }
 
-Result<NotNull<nsCOMPtr<nsIInputStream>>, nsresult> BodyOpen(
+Result<MovingNotNull<nsCOMPtr<nsIInputStream>>, nsresult> BodyOpen(
     const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aBaseDir,
-    const nsID& aId) {
+    const nsID& aId, Maybe<CipherKey> aMaybeCipherKey) {
   QM_TRY_INSPECT(const auto& finalFile,
                  BodyIdToFile(aBaseDir, aId, BODY_FILE_FINAL));
 
-  QM_TRY_RETURN(
-      CreateFileInputStream(PERSISTENCE_TYPE_DEFAULT, aDirectoryMetadata,
-                            Client::DOMCACHE, finalFile.get())
-          .map([](NotNull<RefPtr<FileInputStream>>&& stream) {
-            return WrapNotNullUnchecked(nsCOMPtr<nsIInputStream>{stream.get()});
-          }));
+  QM_TRY_UNWRAP(nsCOMPtr<nsIInputStream> fileInputStream,
+                CreateFileInputStream(aDirectoryMetadata.mPersistenceType,
+                                      aDirectoryMetadata, Client::DOMCACHE,
+                                      finalFile.get()));
+
+  auto privateBody = aDirectoryMetadata.mIsPrivate;
+  if (privateBody) {
+    MOZ_DIAGNOSTIC_ASSERT(aMaybeCipherKey);
+
+    fileInputStream = new quota::DecryptingInputStream<CipherStrategy>(
+        WrapNotNull(std::move(fileInputStream)), kEncryptedStreamBlockSize,
+        *aMaybeCipherKey);
+  }
+  return WrapMovingNotNull(std::move(fileInputStream));
 }
 
 nsresult BodyMaybeUpdatePaddingSize(
@@ -227,7 +246,7 @@ nsresult BodyMaybeUpdatePaddingSize(
 
   int64_t fileSize = 0;
   RefPtr<QuotaObject> quotaObject = quotaManager->GetQuotaObject(
-      PERSISTENCE_TYPE_DEFAULT, aDirectoryMetadata, Client::DOMCACHE,
+      aDirectoryMetadata.mPersistenceType, aDirectoryMetadata, Client::DOMCACHE,
       bodyFile.get(), -1, &fileSize);
   MOZ_DIAGNOSTIC_ASSERT(quotaObject);
   MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
@@ -258,7 +277,7 @@ nsresult BodyDeleteFiles(const CacheDirectoryMetadata& aDirectoryMetadata,
         [&aDirectoryMetadata, &id](
             nsIFile& bodyFile,
             const nsACString& leafName) -> Result<bool, nsresult> {
-      nsID fileId;
+      nsID fileId{};
       QM_TRY(OkIf(fileId.Parse(leafName.BeginReading())), true,
              ([&aDirectoryMetadata, &bodyFile](const auto) {
                DebugOnly<nsresult> result = RemoveNsIFile(

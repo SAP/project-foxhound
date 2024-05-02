@@ -15,7 +15,7 @@
 class nsConsoleMessage final : public nsIConsoleMessage {
  public:
   nsConsoleMessage();
-  explicit nsConsoleMessage(const char16_t* aMessage);
+  explicit nsConsoleMessage(const nsAString& aMessage);
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICONSOLEMESSAGE
@@ -23,7 +23,7 @@ class nsConsoleMessage final : public nsIConsoleMessage {
  private:
   ~nsConsoleMessage() = default;
 
-  int64_t mTimeStamp;
+  int64_t mMicroSecondTimeStamp;
   nsString mMessage;
   bool mIsForwardedFromContentProcess;
 };

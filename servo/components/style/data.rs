@@ -4,6 +4,7 @@
 
 //! Per-node data used in style calculation.
 
+use crate::computed_value_flags::ComputedValueFlags;
 use crate::context::{SharedStyleContext, StackLimitChecker};
 use crate::dom::TElement;
 use crate::invalidation::element::invalidator::InvalidationResult;
@@ -13,7 +14,7 @@ use crate::selector_parser::{PseudoElement, RestyleDamage, EAGER_PSEUDO_COUNT};
 use crate::style_resolver::{PrimaryStyle, ResolvedElementStyles, ResolvedStyle};
 #[cfg(feature = "gecko")]
 use malloc_size_of::MallocSizeOfOps;
-use selectors::NthIndexCache;
+use selectors::matching::SelectorCaches;
 use servo_arc::Arc;
 use std::fmt;
 use std::mem;
@@ -21,7 +22,7 @@ use std::ops::{Deref, DerefMut};
 
 bitflags! {
     /// Various flags stored on ElementData.
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     pub struct ElementDataFlags: u8 {
         /// Whether the styles changed for this restyle.
         const WAS_RESTYLED = 1 << 0;
@@ -159,6 +160,22 @@ pub struct ElementStyles {
     pub pseudos: EagerPseudoStyles,
 }
 
+// There's one of these per rendered elements so it better be small.
+size_of_test!(ElementStyles, 16);
+
+/// Information on how this element uses viewport units.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ViewportUnitUsage {
+    /// No viewport units are used.
+    None = 0,
+    /// There are viewport units used from regular style rules (which means we
+    /// should re-cascade).
+    FromDeclaration,
+    /// There are viewport units used from container queries (which means we
+    /// need to re-selector-match).
+    FromQuery,
+}
+
 impl ElementStyles {
     /// Returns the primary style.
     pub fn get_primary(&self) -> Option<&Arc<ComputedValues>> {
@@ -176,29 +193,25 @@ impl ElementStyles {
     }
 
     /// Whether this element uses viewport units.
-    pub fn uses_viewport_units(&self) -> bool {
-        use crate::computed_value_flags::ComputedValueFlags;
-
-        if self
-            .primary()
-            .flags
-            .intersects(ComputedValueFlags::USES_VIEWPORT_UNITS)
-        {
-            return true;
+    pub fn viewport_unit_usage(&self) -> ViewportUnitUsage {
+        fn usage_from_flags(flags: ComputedValueFlags) -> ViewportUnitUsage {
+            if flags.intersects(ComputedValueFlags::USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES) {
+                return ViewportUnitUsage::FromQuery;
+            }
+            if flags.intersects(ComputedValueFlags::USES_VIEWPORT_UNITS) {
+                return ViewportUnitUsage::FromDeclaration;
+            }
+            ViewportUnitUsage::None
         }
 
+        let mut usage = usage_from_flags(self.primary().flags);
         for pseudo_style in self.pseudos.as_array() {
             if let Some(ref pseudo_style) = pseudo_style {
-                if pseudo_style
-                    .flags
-                    .intersects(ComputedValueFlags::USES_VIEWPORT_UNITS)
-                {
-                    return true;
-                }
+                usage = std::cmp::max(usage, usage_from_flags(pseudo_style.flags));
             }
         }
 
-        false
+        usage
     }
 
     #[cfg(feature = "gecko")]
@@ -249,6 +262,9 @@ pub struct ElementData {
     pub flags: ElementDataFlags,
 }
 
+// There's one of these per rendered elements so it better be small.
+size_of_test!(ElementData, 24);
+
 /// The kind of restyle that a single element should do.
 #[derive(Debug)]
 pub enum RestyleKind {
@@ -272,7 +288,7 @@ impl ElementData {
         element: E,
         shared_context: &SharedStyleContext,
         stack_limit_checker: Option<&StackLimitChecker>,
-        nth_index_cache: &mut NthIndexCache,
+        selector_caches: &'a mut SelectorCaches,
     ) -> InvalidationResult {
         // In animation-only restyle we shouldn't touch snapshot at all.
         if shared_context.traversal_flags.for_animation_only() {
@@ -296,8 +312,12 @@ impl ElementData {
             return InvalidationResult::empty();
         }
 
-        let mut processor =
-            StateAndAttrInvalidationProcessor::new(shared_context, element, self, nth_index_cache);
+        let mut processor = StateAndAttrInvalidationProcessor::new(
+            shared_context,
+            element,
+            self,
+            selector_caches,
+        );
 
         let invalidator = TreeStyleInvalidator::new(element, stack_limit_checker, &mut processor);
 
@@ -349,52 +369,92 @@ impl ElementData {
 
     /// Returns the kind of restyling that we're going to need to do on this
     /// element, based of the stored restyle hint.
-    pub fn restyle_kind(&self, shared_context: &SharedStyleContext) -> RestyleKind {
+    pub fn restyle_kind(&self, shared_context: &SharedStyleContext) -> Option<RestyleKind> {
         if shared_context.traversal_flags.for_animation_only() {
             return self.restyle_kind_for_animation(shared_context);
         }
 
-        if !self.has_styles() {
-            return RestyleKind::MatchAndCascade;
+        let style = match self.styles.primary {
+            Some(ref s) => s,
+            None => return Some(RestyleKind::MatchAndCascade),
+        };
+
+        let hint = self.hint;
+        if hint.is_empty() {
+            return None;
         }
 
-        if self.hint.match_self() {
-            return RestyleKind::MatchAndCascade;
+        let needs_to_match_self = hint.intersects(RestyleHint::RESTYLE_SELF) ||
+            (hint.intersects(RestyleHint::RESTYLE_SELF_IF_PSEUDO) && style.is_pseudo_style());
+        if needs_to_match_self {
+            return Some(RestyleKind::MatchAndCascade);
         }
 
-        if self.hint.has_replacements() {
+        if hint.has_replacements() {
             debug_assert!(
-                !self.hint.has_animation_hint(),
+                !hint.has_animation_hint(),
                 "Animation only restyle hint should have already processed"
             );
-            return RestyleKind::CascadeWithReplacements(self.hint & RestyleHint::replacements());
+            return Some(RestyleKind::CascadeWithReplacements(
+                hint & RestyleHint::replacements(),
+            ));
         }
 
-        debug_assert!(
-            self.hint.has_recascade_self(),
-            "We definitely need to do something: {:?}!",
-            self.hint
-        );
-        return RestyleKind::CascadeOnly;
+        let needs_to_recascade_self = hint.intersects(RestyleHint::RECASCADE_SELF) ||
+            (hint.intersects(RestyleHint::RECASCADE_SELF_IF_INHERIT_RESET_STYLE) &&
+                style
+                    .flags
+                    .contains(ComputedValueFlags::INHERITS_RESET_STYLE));
+        if needs_to_recascade_self {
+            return Some(RestyleKind::CascadeOnly);
+        }
+
+        None
     }
 
     /// Returns the kind of restyling for animation-only restyle.
-    fn restyle_kind_for_animation(&self, shared_context: &SharedStyleContext) -> RestyleKind {
+    fn restyle_kind_for_animation(
+        &self,
+        shared_context: &SharedStyleContext,
+    ) -> Option<RestyleKind> {
         debug_assert!(shared_context.traversal_flags.for_animation_only());
         debug_assert!(
             self.has_styles(),
-            "Unstyled element shouldn't be traversed during \
-             animation-only traversal"
+            "animation traversal doesn't care about unstyled elements"
         );
 
-        // return either CascadeWithReplacements or CascadeOnly in case of
-        // animation-only restyle. I.e. animation-only restyle never does
-        // selector matching.
-        if self.hint.has_animation_hint() {
-            return RestyleKind::CascadeWithReplacements(self.hint & RestyleHint::for_animations());
+        // FIXME: We should ideally restyle here, but it is a hack to work around our weird
+        // animation-only traversal stuff: If we're display: none and the rules we could
+        // match could change, we consider our style up-to-date. This is because re-cascading with
+        // and old style doesn't guarantee returning the correct animation style (that's
+        // bug 1393323). So if our display changed, and it changed from display: none, we would
+        // incorrectly forget about it and wouldn't be able to correctly style our descendants
+        // later.
+        // XXX Figure out if this still makes sense.
+        let hint = self.hint;
+        if self.styles.is_display_none() && hint.intersects(RestyleHint::RESTYLE_SELF) {
+            return None;
         }
 
-        return RestyleKind::CascadeOnly;
+        let style = self.styles.primary();
+        // Return either CascadeWithReplacements or CascadeOnly in case of
+        // animation-only restyle. I.e. animation-only restyle never does
+        // selector matching.
+        if hint.has_animation_hint() {
+            return Some(RestyleKind::CascadeWithReplacements(
+                hint & RestyleHint::for_animations(),
+            ));
+        }
+
+        let needs_to_recascade_self = hint.intersects(RestyleHint::RECASCADE_SELF) ||
+            (hint.intersects(RestyleHint::RECASCADE_SELF_IF_INHERIT_RESET_STYLE) &&
+                style
+                    .flags
+                    .contains(ComputedValueFlags::INHERITS_RESET_STYLE));
+        if needs_to_recascade_self {
+            return Some(RestyleKind::CascadeOnly);
+        }
+        return None;
     }
 
     /// Drops any restyle state from the element.
@@ -459,10 +519,22 @@ impl ElementData {
     /// happens later in the styling pipeline. The former gives us the stronger guarantees
     /// we need for style sharing, the latter does not.
     pub fn safe_for_cousin_sharing(&self) -> bool {
-        !self.flags.intersects(
+        if self.flags.intersects(
             ElementDataFlags::TRAVERSED_WITHOUT_STYLING |
                 ElementDataFlags::PRIMARY_STYLE_REUSED_VIA_RULE_NODE,
-        )
+        ) {
+            return false;
+        }
+        if !self
+            .styles
+            .primary()
+            .get_box()
+            .clone_container_type()
+            .is_normal()
+        {
+            return false;
+        }
+        true
     }
 
     /// Measures memory usage.

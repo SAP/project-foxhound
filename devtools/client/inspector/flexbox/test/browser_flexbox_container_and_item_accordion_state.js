@@ -12,7 +12,7 @@
 
 const TEST_URI = URL_ROOT + "doc_flexbox_specific_cases.html";
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   const { inspector, flexboxInspector } = await openLayoutView();
   const { document: doc } = flexboxInspector;
@@ -56,6 +56,12 @@ add_task(async function() {
   await selectNode("#container-only", inspector);
   await waitUntil(() => doc.querySelectorAll(".flex-accordion").length === 1);
 
+  info("Wait until the accordion item list points to the correct item");
+  await waitUntil(() =>
+    doc
+      .querySelector(".flex-item-list button")
+      .textContent.includes("container-and-item")
+  );
   info(
     "Click on the container+item node right there in the accordion item list"
   );

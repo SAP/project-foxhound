@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/chrome-worker */
+/* eslint-env worker */
 
 "use strict";
 
 const FILE_ENTRY = "201: ";
 
-onmessage = async function(msg) {
+onmessage = async function (msg) {
   try {
     let extractedPaths = [];
     // Construct a jar URI from the file URI so we can use the JAR URI scheme
@@ -28,7 +28,8 @@ onmessage = async function(msg) {
       // We don't need these types of files.
       if (
         fileName == "verified_contents.json" ||
-        fileName == "icon-128x128.png"
+        fileName == "icon-128x128.png" ||
+        fileName.startsWith("_")
       ) {
         continue;
       }
@@ -36,14 +37,13 @@ onmessage = async function(msg) {
       let filePathResponse = await fetch(filePath);
       let fileContents = await filePathResponse.blob();
       let fileData = await new Promise(resolve => {
-        reader.onloadend = function() {
+        reader.onloadend = function () {
           resolve(reader.result);
         };
         reader.readAsArrayBuffer(fileContents);
       });
-      let profileDirPath = await PathUtils.getProfileDir();
       let installToDirPath = PathUtils.join(
-        profileDirPath,
+        await PathUtils.getProfileDir(),
         ...msg.data.relativeInstallPath
       );
       await IOUtils.makeDirectory(installToDirPath);
@@ -56,12 +56,12 @@ onmessage = async function(msg) {
       // Ensure files are writable and executable. Otherwise, we may be
       // unable to execute or uninstall them.
       await IOUtils.setPermissions(destPath, 0o700);
-      if (IOUtils.removeMacXAttr) {
+      if (IOUtils.delMacXAttr) {
         // If we're on MacOS Firefox will add the quarantine xattr to files it
         // downloads. In this case we want to clear that xattr so we can load
         // the CDM.
         try {
-          await IOUtils.removeMacXAttr(destPath, "com.apple.quarantine");
+          await IOUtils.delMacXAttr(destPath, "com.apple.quarantine");
         } catch (e) {
           // Failed to remove the attribute. This could be because the profile
           // exists on a file system without xattr support.

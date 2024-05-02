@@ -9,6 +9,8 @@
 #include "nsISelectionListener.h"
 #include "mozilla/WeakPtr.h"
 
+class nsRange;
+
 namespace mozilla {
 
 class PresShell;
@@ -105,6 +107,15 @@ class SelectionManager : public nsISelectionListener {
     mCaretOffset = -1;
     mAccWithCaret = nullptr;
   }
+
+  /**
+   * Called by mozInlineSpellChecker when a spell check range is added/removed.
+   * nsISelectionListener isn't sufficient for spelling errors, since it only
+   * tells us that there was a change, not which range changed. We don't want
+   * to unnecessarily push a cache update for all Accessibles in the entire
+   * selection.
+   */
+  void SpellCheckRangeChanged(const nsRange& aRange);
 
   ~SelectionManager();
 

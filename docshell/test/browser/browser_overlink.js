@@ -3,6 +3,10 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
+});
+
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
   "https://example.com"
@@ -11,13 +15,15 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 add_task(async function test_stripAuthCredentials() {
   await BrowserTestUtils.withNewTab(
     TEST_PATH + "overlink_test.html",
-    async function(browser) {
-      await SpecialPowers.spawn(browser, [], function() {
+    async function (browser) {
+      await SpecialPowers.spawn(browser, [], function () {
         content.document.getElementById("link").focus();
       });
 
       await TestUtils.waitForCondition(
-        () => XULBrowserWindow.overLink == "https://example.com",
+        () =>
+          XULBrowserWindow.overLink ==
+          UrlbarTestUtils.trimURL("https://example.com"),
         "Overlink should be missing auth credentials"
       );
 

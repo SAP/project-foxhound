@@ -7,14 +7,14 @@
 
 "use strict";
 
-const { SessionSaver } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionSaver.jsm"
+const { SessionSaver } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/SessionSaver.sys.mjs"
 );
-const { TabStateFlusher } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
+const { TabStateFlusher } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 
-add_task(function addHomeButton() {
+add_setup(function addHomeButton() {
   CustomizableUI.addWidgetToArea("home-button", "nav-bar");
   registerCleanupFunction(() =>
     CustomizableUI.removeWidgetFromArea("home-button")
@@ -34,7 +34,7 @@ add_task(async function clearURLBarAfterParentProcessURL() {
     let newTabBrowser = gBrowser.getBrowserForTab(gBrowser.selectedTab);
     newTabBrowser.addEventListener(
       "Initialized",
-      async function() {
+      async function () {
         resolve(gBrowser.selectedTab);
       },
       { capture: true, once: true }
@@ -65,12 +65,12 @@ add_task(async function clearURLBarAfterParentProcessURLInExistingTab() {
     let newTabBrowser = gBrowser.getBrowserForTab(gBrowser.selectedTab);
     newTabBrowser.addEventListener(
       "Initialized",
-      async function() {
+      async function () {
         resolve(gBrowser.selectedTab);
       },
       { capture: true, once: true }
     );
-    BrowserTestUtils.loadURI(newTabBrowser, "about:preferences");
+    BrowserTestUtils.startLoadingURIString(newTabBrowser, "about:preferences");
   });
   document.getElementById("home-button").click();
   await BrowserTestUtils.browserLoaded(
@@ -125,6 +125,7 @@ add_task(async function clearURLBarAfterManuallyLoadingAboutHome() {
  */
 add_task(async function dontTemporarilyShowAboutHome() {
   requestLongerTimeout(2);
+  let currentBrowser;
 
   await SpecialPowers.pushPrefEnv({ set: [["browser.startup.page", 1]] });
   let windowOpenedPromise = BrowserTestUtils.waitForNewWindow();
@@ -133,7 +134,38 @@ add_task(async function dontTemporarilyShowAboutHome() {
   let promiseTabSwitch = BrowserTestUtils.switchTab(win.gBrowser, () => {});
   win.BrowserOpenTab();
   await promiseTabSwitch;
+  currentBrowser = win.gBrowser.selectedBrowser;
   is(win.gBrowser.visibleTabs.length, 2, "2 tabs opened");
+
+  // We need to load *something* here otherwise SessionStore will refuse to save this
+  // window when it closes as there is no user interaction, no tab history, and all the
+  // tab URIs are in the ignore list.
+  let loadPromise = BrowserTestUtils.browserLoaded(
+    currentBrowser,
+    false,
+    "about:logo"
+  );
+  BrowserTestUtils.startLoadingURIString(currentBrowser, "about:logo");
+  await loadPromise;
+
+  let homeButton = win.document.getElementById("home-button");
+  ok(BrowserTestUtils.is_visible(homeButton), "home-button is visible");
+
+  let changeListener;
+  let locationChangePromise = new Promise(resolve => {
+    changeListener = {
+      onLocationChange() {
+        is(win.gURLBar.value, "", "URL bar value should stay empty.");
+        resolve();
+      },
+    };
+    win.gBrowser.addProgressListener(changeListener);
+  });
+  homeButton.click();
+  info("Waiting for location change to about:home");
+  await locationChangePromise;
+  win.gBrowser.removeProgressListener(changeListener);
+
   await TabStateFlusher.flush(win.gBrowser.selectedBrowser);
   await BrowserTestUtils.closeWindow(win);
   ok(SessionStore.getClosedWindowCount(), "Should have a closed window");
@@ -172,7 +204,7 @@ add_task(async function dontTemporarilyShowAboutHome() {
  * some value into the URL bar, that the URL bar is cleared if
  * the homepage is one of the initial pages set.
  */
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       url: "http://example.com",

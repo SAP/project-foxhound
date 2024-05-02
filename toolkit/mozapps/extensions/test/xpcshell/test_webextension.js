@@ -13,14 +13,14 @@ const ADDONS = {
       name: "Web Extension Name",
       version: "1.0",
       manifest_version: 2,
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "webextension1@tests.mozilla.org",
         },
       },
       icons: {
-        "48": "icon48.png",
-        "64": "icon64.png",
+        48: "icon48.png",
+        64: "icon64.png",
       },
     },
     "chrome.manifest": "content webex ./\n",
@@ -32,7 +32,7 @@ const ADDONS = {
       version: "1.0",
       manifest_version: 2,
       default_locale: "en",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "webextension3@tests.mozilla.org",
         },
@@ -69,7 +69,9 @@ createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
 
 const {
   ExtensionParent: { GlobalManager },
-} = ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm");
+} = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionParent.sys.mjs"
+);
 
 add_task(async function test_1() {
   await promiseStartupManager();
@@ -155,7 +157,7 @@ add_task(async function test_2() {
       name: "Web Extension Name",
       version: "1.0",
       manifest_version: 2,
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID,
         },
@@ -220,7 +222,7 @@ add_task(async function test_3() {
     {
       name: "Web Extension Name",
       manifest_version: 2,
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID,
         },
@@ -247,7 +249,7 @@ add_task(async function test_4() {
       name: "Web Extension Name",
       version: "1.0",
       manifest_version: 1,
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID,
         },
@@ -269,12 +271,13 @@ add_task(async function test_4() {
 
 // Test that the "options_ui" manifest section is processed correctly.
 add_task(async function test_options_ui() {
-  let OPTIONS_RE = /^moz-extension:\/\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/options\.html$/;
+  let OPTIONS_RE =
+    /^moz-extension:\/\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/options\.html$/;
 
   const extensionId = "webextension@tests.mozilla.org";
   let addon = await promiseInstallWebExtension({
     manifest: {
-      applications: { gecko: { id: extensionId } },
+      browser_specific_settings: { gecko: { id: extensionId } },
       options_ui: {
         page: "options.html",
       },
@@ -295,7 +298,7 @@ add_task(async function test_options_ui() {
   const ID2 = "webextension2@tests.mozilla.org";
   addon = await promiseInstallWebExtension({
     manifest: {
-      applications: { gecko: { id: ID2 } },
+      browser_specific_settings: { gecko: { id: ID2 } },
       options_ui: {
         page: "options.html",
         open_in_tab: true,
@@ -319,7 +322,7 @@ add_task(async function test_options_ui() {
 add_task(async function test_experiments_dependencies() {
   let addon = await promiseInstallWebExtension({
     manifest: {
-      applications: { gecko: { id: "meh@experiment" } },
+      browser_specific_settings: { gecko: { id: "meh@experiment" } },
       permissions: ["experiments.meh"],
     },
   });
@@ -379,7 +382,7 @@ add_task(async function test_invalid_developer_does_not_override() {
       },
     },
     {
-      type: "statictheme",
+      type: "theme",
       manifestProps: {
         theme: {
           colors: {
@@ -390,7 +393,7 @@ add_task(async function test_invalid_developer_does_not_override() {
       },
     },
     {
-      type: "langpack",
+      type: "locale",
       manifestProps: {
         langpack_id: "und",
         languages: {
@@ -416,13 +419,13 @@ add_task(async function test_invalid_developer_does_not_override() {
           author: creator,
           homepage_url: homepageURL,
           developer,
-          applications: { gecko: { id } },
+          browser_specific_settings: { gecko: { id } },
           ...manifestProps,
         },
         files,
       });
 
-      checkAddon(id, addon, { creator, homepageURL });
+      checkAddon(id, addon, { type, creator, homepageURL });
 
       await addon.uninstall();
     }
@@ -505,7 +508,7 @@ add_task(async function test_theme_upgrade() {
     manifest: {
       version: "1.0",
       name: "Test WebExtension 1 (temporary)",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID,
         },
@@ -528,7 +531,7 @@ add_task(async function test_theme_upgrade() {
     manifest: {
       version: "2.0",
       name: "Test WebExtension 1 (temporary)",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID,
         },
@@ -609,7 +612,7 @@ add_task(async function test_developer_properties() {
         },
         author: "Will be overridden by developer",
         homepage_url: "https://will.be.overridden",
-        applications: { gecko: { id } },
+        browser_specific_settings: { gecko: { id } },
         ...manifestProps,
       },
       files,
@@ -629,7 +632,8 @@ add_task(async function test_invalid_homepage_and_developer_urls() {
     "/",
     "not-an-url",
   ];
-  const EXPECTED_ERROR_RE = /Access denied for URL|may not load or link to|is not a valid URL/;
+  const EXPECTED_ERROR_RE =
+    /Access denied for URL|may not load or link to|is not a valid URL/;
 
   for (let url of INVALID_URLS) {
     // First, we verify `homepage_url`, which has a `url` "format" defined

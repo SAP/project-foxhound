@@ -6,7 +6,6 @@
 #ifndef mozilla_TextServicesDocument_h
 #define mozilla_TextServicesDocument_h
 
-#include "mozilla/EditorDOMPoint.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
@@ -28,7 +27,6 @@ namespace mozilla {
 class EditorBase;
 class FilteredContentIterator;
 class OffsetEntry;
-enum class JoinNodesDirection;  // Declared in HTMLEditHelpers.h
 
 namespace dom {
 class AbstractRange;
@@ -375,8 +373,7 @@ class TextServicesDocument final : public nsIEditActionListener {
    */
   void DidDeleteContent(const nsIContent& aChildContent);
   void DidJoinContents(const EditorRawDOMPoint& aJoinedPoint,
-                       const nsIContent& aRemovedContent,
-                       JoinNodesDirection aJoinNodesDirection);
+                       const nsIContent& aRemovedContent);
 
  private:
   // TODO: We should get rid of this method since `aAbstractRange` has

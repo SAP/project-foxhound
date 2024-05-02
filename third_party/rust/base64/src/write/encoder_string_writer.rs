@@ -1,10 +1,10 @@
 use super::encoder::EncoderWriter;
-use crate::Config;
+use crate::engine::Engine;
 use std::io;
-use std::io::Write;
 
 /// A `Write` implementation that base64-encodes data using the provided config and accumulates the
-/// resulting base64 in memory, which is then exposed as a String via `into_inner()`.
+/// resulting base64 utf8 `&str` in a [StrConsumer] implementation (typically `String`), which is
+/// then exposed via `into_inner()`.
 ///
 /// # Examples
 ///
@@ -12,8 +12,9 @@ use std::io::Write;
 ///
 /// ```
 /// use std::io::Write;
+/// use base64::engine::general_purpose;
 ///
-/// let mut enc = base64::write::EncoderStringWriter::new(base64::STANDARD);
+/// let mut enc = base64::write::EncoderStringWriter::new(&general_purpose::STANDARD);
 ///
 /// enc.write_all(b"asdf").unwrap();
 ///
@@ -23,14 +24,17 @@ use std::io::Write;
 /// assert_eq!("YXNkZg==", &b64_string);
 /// ```
 ///
-/// Or, append to an existing String:
+/// Or, append to an existing `String`, which implements `StrConsumer`:
 ///
 /// ```
 /// use std::io::Write;
+/// use base64::engine::general_purpose;
 ///
 /// let mut buf = String::from("base64: ");
 ///
-/// let mut enc = base64::write::EncoderStringWriter::from(&mut buf, base64::STANDARD);
+/// let mut enc = base64::write::EncoderStringWriter::from_consumer(
+///     &mut buf,
+///     &general_purpose::STANDARD);
 ///
 /// enc.write_all(b"asdf").unwrap();
 ///
@@ -40,49 +44,42 @@ use std::io::Write;
 /// assert_eq!("base64: YXNkZg==", &buf);
 /// ```
 ///
-/// # Panics
-///
-/// Calling `write()` (or related methods) or `finish()` after `finish()` has completed without
-/// error is invalid and will panic.
-///
 /// # Performance
 ///
 /// Because it has to validate that the base64 is UTF-8, it is about 80% as fast as writing plain
 /// bytes to a `io::Write`.
-pub struct EncoderStringWriter<S: StrConsumer> {
-    encoder: EncoderWriter<Utf8SingleCodeUnitWriter<S>>,
+pub struct EncoderStringWriter<'e, E: Engine, S: StrConsumer> {
+    encoder: EncoderWriter<'e, E, Utf8SingleCodeUnitWriter<S>>,
 }
 
-impl<S: StrConsumer> EncoderStringWriter<S> {
+impl<'e, E: Engine, S: StrConsumer> EncoderStringWriter<'e, E, S> {
     /// Create a EncoderStringWriter that will append to the provided `StrConsumer`.
-    pub fn from(str_consumer: S, config: Config) -> Self {
+    pub fn from_consumer(str_consumer: S, engine: &'e E) -> Self {
         EncoderStringWriter {
-            encoder: EncoderWriter::new(Utf8SingleCodeUnitWriter { str_consumer }, config),
+            encoder: EncoderWriter::new(Utf8SingleCodeUnitWriter { str_consumer }, engine),
         }
     }
 
     /// Encode all remaining buffered data, including any trailing incomplete input triples and
     /// associated padding.
     ///
-    /// Once this succeeds, no further writes or calls to this method are allowed.
-    ///
     /// Returns the base64-encoded form of the accumulated written data.
     pub fn into_inner(mut self) -> S {
         self.encoder
             .finish()
-            .expect("Writing to a Vec<u8> should never fail")
+            .expect("Writing to a consumer should never fail")
             .str_consumer
     }
 }
 
-impl EncoderStringWriter<String> {
-    /// Create a EncoderStringWriter that will encode into a new String with the provided config.
-    pub fn new(config: Config) -> Self {
-        EncoderStringWriter::from(String::new(), config)
+impl<'e, E: Engine> EncoderStringWriter<'e, E, String> {
+    /// Create a EncoderStringWriter that will encode into a new `String` with the provided config.
+    pub fn new(engine: &'e E) -> Self {
+        EncoderStringWriter::from_consumer(String::new(), engine)
     }
 }
 
-impl<S: StrConsumer> Write for EncoderStringWriter<S> {
+impl<'e, E: Engine, S: StrConsumer> io::Write for EncoderStringWriter<'e, E, S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.encoder.write(buf)
     }
@@ -101,14 +98,14 @@ pub trait StrConsumer {
 /// As for io::Write, `StrConsumer` is implemented automatically for `&mut S`.
 impl<S: StrConsumer + ?Sized> StrConsumer for &mut S {
     fn consume(&mut self, buf: &str) {
-        (**self).consume(buf)
+        (**self).consume(buf);
     }
 }
 
 /// Pushes the str onto the end of the String
 impl StrConsumer for String {
     fn consume(&mut self, buf: &str) {
-        self.push_str(buf)
+        self.push_str(buf);
     }
 }
 
@@ -138,10 +135,11 @@ impl<S: StrConsumer> io::Write for Utf8SingleCodeUnitWriter<S> {
 
 #[cfg(test)]
 mod tests {
-    use crate::encode_config_buf;
-    use crate::tests::random_config;
-    use crate::write::encoder_string_writer::EncoderStringWriter;
+    use crate::{
+        engine::Engine, tests::random_engine, write::encoder_string_writer::EncoderStringWriter,
+    };
     use rand::Rng;
+    use std::cmp;
     use std::io::Write;
 
     #[test]
@@ -156,17 +154,50 @@ mod tests {
             orig_data.clear();
             normal_encoded.clear();
 
-            for _ in 0..size {
-                orig_data.push(rng.gen());
-            }
+            orig_data.resize(size, 0);
+            rng.fill(&mut orig_data[..]);
 
-            let config = random_config(&mut rng);
-            encode_config_buf(&orig_data, config, &mut normal_encoded);
+            let engine = random_engine(&mut rng);
+            engine.encode_string(&orig_data, &mut normal_encoded);
 
-            let mut stream_encoder = EncoderStringWriter::new(config);
+            let mut stream_encoder = EncoderStringWriter::new(&engine);
             // Write the first i bytes, then the rest
             stream_encoder.write_all(&orig_data[0..i]).unwrap();
             stream_encoder.write_all(&orig_data[i..]).unwrap();
+
+            let stream_encoded = stream_encoder.into_inner();
+
+            assert_eq!(normal_encoded, stream_encoded);
+        }
+    }
+    #[test]
+    fn incremental_writes() {
+        let mut rng = rand::thread_rng();
+        let mut orig_data = Vec::<u8>::new();
+        let mut normal_encoded = String::new();
+
+        let size = 5_000;
+
+        for _ in 0..size {
+            orig_data.clear();
+            normal_encoded.clear();
+
+            orig_data.resize(size, 0);
+            rng.fill(&mut orig_data[..]);
+
+            let engine = random_engine(&mut rng);
+            engine.encode_string(&orig_data, &mut normal_encoded);
+
+            let mut stream_encoder = EncoderStringWriter::new(&engine);
+            // write small nibbles of data
+            let mut offset = 0;
+            while offset < size {
+                let nibble_size = cmp::min(rng.gen_range(0..=64), size - offset);
+                let len = stream_encoder
+                    .write(&orig_data[offset..offset + nibble_size])
+                    .unwrap();
+                offset += len;
+            }
 
             let stream_encoded = stream_encoder.into_inner();
 

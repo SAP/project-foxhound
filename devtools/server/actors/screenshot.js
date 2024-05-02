@@ -4,15 +4,22 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  screenshotSpec,
+} = require("resource://devtools/shared/specs/screenshot.js");
+
 const {
   captureScreenshot,
-} = require("devtools/server/actors/utils/capture-screenshot");
-const { screenshotSpec } = require("devtools/shared/specs/screenshot");
+} = require("resource://devtools/server/actors/utils/capture-screenshot.js");
 
-exports.ScreenshotActor = protocol.ActorClassWithSpec(screenshotSpec, {
-  capture: async function(args) {
+exports.ScreenshotActor = class ScreenshotActor extends Actor {
+  constructor(conn) {
+    super(conn, screenshotSpec);
+  }
+
+  async capture(args) {
     const browsingContext = BrowsingContext.get(args.browsingContextID);
     return captureScreenshot(args, browsingContext);
-  },
-});
+  }
+};

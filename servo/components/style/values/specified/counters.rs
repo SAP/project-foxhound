@@ -19,7 +19,7 @@ use crate::values::CustomIdent;
 use cssparser::{Parser, Token};
 #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
 use selectors::parser::SelectorParseErrorKind;
-use style_traits::{KeywordsCollectFn, ParseError, SpecifiedValueInfo, StyleParseErrorKind};
+use style_traits::{ParseError, StyleParseErrorKind};
 
 #[derive(PartialEq)]
 enum CounterType {
@@ -103,13 +103,8 @@ fn parse_counters<'i, 't>(
             Ok(&Token::Function(ref name))
                 if counter_type == CounterType::Reset && name.eq_ignore_ascii_case("reversed") =>
             {
-                input.parse_nested_block(|input| {
-                    let location = input.current_source_location();
-                    Ok((
-                        CustomIdent::from_ident(location, input.expect_ident()?, &["none"])?,
-                        true,
-                    ))
-                })?
+                input
+                    .parse_nested_block(|input| Ok((CustomIdent::parse(input, &["none"])?, true)))?
             },
             Ok(t) => {
                 let t = t.clone();
@@ -204,7 +199,7 @@ impl Parse for Content {
         loop {
             #[cfg(any(feature = "gecko", feature = "servo-layout-2020"))]
             {
-                if let Ok(image) = input.try_parse(|i| Image::parse_only_url(context, i)) {
+                if let Ok(image) = input.try_parse(|i| Image::parse_forbid_none(context, i)) {
                     content.push(generics::ContentItem::Image(image));
                     continue;
                 }
@@ -219,15 +214,13 @@ impl Parse for Content {
                     let result = match_ignore_ascii_case! { &name,
                         #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
                         "counter" => input.parse_nested_block(|input| {
-                            let location = input.current_source_location();
-                            let name = CustomIdent::from_ident(location, input.expect_ident()?, &[])?;
+                            let name = CustomIdent::parse(input, &[])?;
                             let style = Content::parse_counter_style(context, input);
                             Ok(generics::ContentItem::Counter(name, style))
                         }),
                         #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
                         "counters" => input.parse_nested_block(|input| {
-                            let location = input.current_source_location();
-                            let name = CustomIdent::from_ident(location, input.expect_ident()?, &[])?;
+                            let name = CustomIdent::parse(input, &[])?;
                             input.expect_comma()?;
                             let separator = input.expect_string()?.as_ref().to_owned().into();
                             let style = Content::parse_counter_style(context, input);
@@ -259,6 +252,9 @@ impl Parse for Content {
                             has_alt_content = true;
                             generics::ContentItem::MozAltContent
                         },
+                        "-moz-label-content" if context.chrome_rules_enabled() => {
+                            generics::ContentItem::MozLabelContent
+                        },
                         _ =>{
                             let ident = ident.clone();
                             return Err(input.new_custom_error(
@@ -274,27 +270,10 @@ impl Parse for Content {
                 },
             }
         }
-        // We don't allow to parse `-moz-alt-content in multiple positions.
+        // We don't allow to parse `-moz-alt-content` in multiple positions.
         if content.is_empty() || (has_alt_content && content.len() != 1) {
             return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
         }
         Ok(generics::Content::Items(content.into()))
-    }
-}
-
-impl<Image> SpecifiedValueInfo for generics::GenericContentItem<Image> {
-    fn collect_completion_keywords(f: KeywordsCollectFn) {
-        f(&[
-            "url",
-            "image-set",
-            "counter",
-            "counters",
-            "attr",
-            "open-quote",
-            "close-quote",
-            "no-open-quote",
-            "no-close-quote",
-            "-moz-alt-content",
-        ]);
     }
 }

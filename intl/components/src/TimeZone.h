@@ -93,6 +93,41 @@ class TimeZone final {
    */
   Result<int32_t, ICUError> GetUTCOffsetMs(int64_t aLocalMilliseconds);
 
+  enum class LocalOption {
+    /**
+     * The input is interpreted as local time before a time zone transition.
+     */
+    Former,
+
+    /**
+     * The input is interpreted as local time after a time zone transition.
+     */
+    Latter,
+  };
+
+  /**
+   * Return the UTC offset in milliseconds at the given local time.
+   *
+   * `aSkippedTime` and `aRepeatedTime` select how to interpret skipped and
+   * repeated local times.
+   */
+  Result<int32_t, ICUError> GetUTCOffsetMs(int64_t aLocalMilliseconds,
+                                           LocalOption aSkippedTime,
+                                           LocalOption aRepeatedTime);
+
+  /**
+   * Return the previous time zone transition before the given UTC time. If no
+   * transition was found, return Nothing.
+   */
+  Result<Maybe<int64_t>, ICUError> GetPreviousTransition(
+      int64_t aUTCMilliseconds);
+
+  /**
+   * Return the next time zone transition after the given UTC time. If no
+   * transition was found, return Nothing.
+   */
+  Result<Maybe<int64_t>, ICUError> GetNextTransition(int64_t aUTCMilliseconds);
+
   enum class DaylightSavings : bool { No, Yes };
 
   /**
@@ -106,23 +141,7 @@ class TimeZone final {
     mTimeZone->getDisplayName(static_cast<bool>(aDaylightSavings),
                               icu::TimeZone::LONG, icu::Locale(aLocale),
                               displayName);
-
-    int32_t length = displayName.length();
-    if (!aBuffer.reserve(AssertedCast<size_t>(length))) {
-      return Err(ICUError::OutOfMemory);
-    }
-
-    // Copy the display name.
-    UErrorCode status = U_ZERO_ERROR;
-    int32_t written = displayName.extract(aBuffer.data(), length, status);
-    if (!ICUSuccessForStringSpan(status)) {
-      return Err(ToICUError(status));
-    }
-    MOZ_ASSERT(written == length);
-
-    aBuffer.written(written);
-
-    return Ok{};
+    return FillBuffer(displayName, aBuffer);
 #else
     return FillBufferWithICUCall(
         aBuffer, [&](UChar* target, int32_t length, UErrorCode* status) {
@@ -130,6 +149,23 @@ class TimeZone final {
               static_cast<bool>(aDaylightSavings) ? UCAL_DST : UCAL_STANDARD;
           return ucal_getTimeZoneDisplayName(mCalendar, type, aLocale, target,
                                              length, status);
+        });
+#endif
+  }
+
+  /**
+   * Return the identifier for this time zone.
+   */
+  template <typename B>
+  ICUResult GetId(B& aBuffer) {
+#if MOZ_INTL_USE_ICU_CPP_TIMEZONE
+    icu::UnicodeString id;
+    mTimeZone->getID(id);
+    return FillBuffer(id, aBuffer);
+#else
+    return FillBufferWithICUCall(
+        aBuffer, [&](UChar* target, int32_t length, UErrorCode* status) {
+          return ucal_getTimeZoneID(mCalendar, target, length, status);
         });
 #endif
   }
@@ -226,6 +262,25 @@ class TimeZone final {
 
  private:
 #if MOZ_INTL_USE_ICU_CPP_TIMEZONE
+  template <typename B>
+  static ICUResult FillBuffer(const icu::UnicodeString& aString, B& aBuffer) {
+    int32_t length = aString.length();
+    if (!aBuffer.reserve(AssertedCast<size_t>(length))) {
+      return Err(ICUError::OutOfMemory);
+    }
+
+    UErrorCode status = U_ZERO_ERROR;
+    int32_t written = aString.extract(aBuffer.data(), length, status);
+    if (!ICUSuccessForStringSpan(status)) {
+      return Err(ToICUError(status));
+    }
+    MOZ_ASSERT(written == length);
+
+    aBuffer.written(written);
+
+    return Ok{};
+  }
+
   UniquePtr<icu::TimeZone> mTimeZone = nullptr;
 #else
   UCalendar* mCalendar = nullptr;

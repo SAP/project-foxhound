@@ -15,7 +15,7 @@ const LEARN_MORE_URI =
   "Strict-Transport-Security" +
   DOCS_GA_PARAMS;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await navigateAndCheckWarningMessage(
@@ -88,7 +88,7 @@ add_task(async function() {
 async function navigateAndCheckWarningMessage({ url, name, text }, hud) {
   await clearOutput(hud);
 
-  const onMessage = waitForMessage(hud, text, ".message.warn");
+  const onMessage = waitForMessageByType(hud, text, ".warn");
   await navigateTo(url);
   const { node } = await onMessage;
   ok(node, name);

@@ -1,5 +1,6 @@
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpserver = null;
 var geolocation = null;
@@ -26,7 +27,7 @@ var observer = {
       Assert.ok(1);
       this._numProviders--;
       if (!this._numProviders) {
-        httpserver.stop(function() {
+        httpserver.stop(function () {
           Assert.ok(success);
           do_test_finished();
         });

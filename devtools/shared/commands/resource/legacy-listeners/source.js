@@ -4,7 +4,7 @@
 
 "use strict";
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
 /**
  * Emit SOURCE resources, which represents a Javascript source and has the following attributes set on "available":
@@ -23,7 +23,7 @@ const ResourceCommand = require("devtools/shared/commands/resource/resource-comm
  * - isBlackBoxed {Boolean}: Specifying whether the source actor's 'black-boxed' flag is set.
  * - extensionName {null|String}: If the source comes from an add-on, the add-on name.
  */
-module.exports = async function({ targetCommand, targetFront, onAvailable }) {
+module.exports = async function ({ targetCommand, targetFront, onAvailable }) {
   const isBrowserToolbox =
     targetCommand.descriptorFront.isBrowserProcessDescriptor;
   const isNonTopLevelFrameTarget =

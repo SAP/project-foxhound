@@ -42,13 +42,13 @@ function cleanupHSTS(aPartitionEnabled, aUseSite) {
       }
     }
 
-    sss.resetState(NetUtil.newURI("http://example.com/"), 0, originAttributes);
+    sss.resetState(NetUtil.newURI("http://example.com/"), originAttributes);
   }
 }
 
 function promiseTabLoadEvent(aTab, aURL, aFinalURL) {
   info("Wait for load tab event");
-  BrowserTestUtils.loadURI(aTab.linkedBrowser, aURL);
+  BrowserTestUtils.startLoadingURIString(aTab.linkedBrowser, aURL);
   return BrowserTestUtils.browserLoaded(aTab.linkedBrowser, false, aFinalURL);
 }
 
@@ -68,7 +68,7 @@ function waitFor(host, type) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   for (let networkIsolation of [true, false]) {
     for (let partitionPerSite of [true, false]) {
       await SpecialPowers.pushPrefEnv({
@@ -225,7 +225,10 @@ add_task(async function test_includeSubDomains() {
       let certErrorLoaded = BrowserTestUtils.waitForErrorPage(
         tab.linkedBrowser
       );
-      BrowserTestUtils.loadURI(tab.linkedBrowser, unsecureNoCertSubEmptyURL);
+      BrowserTestUtils.startLoadingURIString(
+        tab.linkedBrowser,
+        unsecureNoCertSubEmptyURL
+      );
       await certErrorLoaded;
 
       // Verify the error page has the 'badStsCert' in its query string

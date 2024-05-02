@@ -39,20 +39,15 @@
 
 /* globals AppConstants, Services, XPCOMUtils */
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "aomStartup",
   "@mozilla.org/addons/addon-manager-startup;1",
   "amIAddonManagerStartup"
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "env",
-  "@mozilla.org/process/environment;1",
-  "nsIEnvironment"
 );
 
 async function talosStart() {
@@ -110,13 +105,15 @@ this.pageloader = class extends ExtensionAPI {
       ["content", "pageloader", "chrome/"],
     ]);
 
-    if (env.exists("MOZ_USE_PAGELOADER")) {
+    if (Services.env.exists("MOZ_USE_PAGELOADER")) {
       // TalosPowers is a separate WebExtension that may or may not already have
       // finished loading. tryLoad is used to wait for TalosPowers to be around
       // before continuing.
       async function tryLoad() {
         try {
-          ChromeUtils.import("resource://talos-powers/TalosParentProfiler.jsm");
+          ChromeUtils.importESModule(
+            "resource://talos-powers/TalosParentProfiler.sys.mjs"
+          );
         } catch (err) {
           await new Promise(resolve => setTimeout(resolve, 500));
           return tryLoad();

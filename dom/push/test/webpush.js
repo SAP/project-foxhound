@@ -12,7 +12,7 @@
  * use PushCrypto directly is easier said than done.)
  */
 
-(function(g) {
+(function (g) {
   "use strict";
 
   var P256DH = {
@@ -20,10 +20,8 @@
     namedCurve: "P-256",
   };
   var webCrypto = g.crypto.subtle;
-  var ENCRYPT_INFO = new TextEncoder("utf-8").encode(
-    "Content-Encoding: aesgcm128"
-  );
-  var NONCE_INFO = new TextEncoder("utf-8").encode("Content-Encoding: nonce");
+  var ENCRYPT_INFO = new TextEncoder().encode("Content-Encoding: aesgcm128");
+  var NONCE_INFO = new TextEncoder().encode("Content-Encoding: nonce");
 
   function chunkArray(array, size) {
     var start = array.byteOffset || 0;
@@ -86,7 +84,7 @@
   /* Coerces data into a Uint8Array */
   function ensureView(data) {
     if (typeof data === "string") {
-      return new TextEncoder("utf-8").encode(data);
+      return new TextEncoder().encode(data);
     }
     if (data instanceof ArrayBuffer) {
       return new Uint8Array(data);
@@ -116,7 +114,7 @@
       ["sign"]
     );
   }
-  hmac.prototype.hash = function(input) {
+  hmac.prototype.hash = function (input) {
     return this.keyPromise.then(k => webCrypto.sign("HMAC", k, input));
   };
 
@@ -124,7 +122,7 @@
     this.prkhPromise = new hmac(salt).hash(ikm).then(prk => new hmac(prk));
   }
 
-  hkdf.prototype.generate = function(info, len) {
+  hkdf.prototype.generate = function (info, len) {
     var input = bsConcat([info, new Uint8Array([1])]);
     return this.prkhPromise
       .then(prkh => prkh.hash(input))

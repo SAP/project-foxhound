@@ -3,53 +3,13 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
-  SearchService: "resource://gre/modules/SearchService.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SearchService: "resource://gre/modules/SearchService.sys.mjs",
 });
 
 const tests = [];
 
-// Bing should be default everywhere for Acer
-for (let [locale, region] of [
-  ["en-US", "US"],
-  ["pl", "PL"],
-  ["be", "BY"],
-  ["ru", "RU"],
-  ["zh-CN", "CN"],
-]) {
-  tests.push({
-    distribution: "acer-001",
-    locale,
-    region,
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MOZD") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    distribution: "acer-002",
-    locale,
-    region,
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MOZD") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    distribution: "acer-g-003",
-    locale,
-    region,
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MOZE") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-}
-
-for (let canonicalId of ["canonical", "canonical-001", "canonical-002"]) {
+for (let canonicalId of ["canonical", "canonical-001"]) {
   tests.push({
     locale: "en-US",
     region: "US",
@@ -72,18 +32,23 @@ for (let canonicalId of ["canonical", "canonical-001", "canonical-002"]) {
 }
 
 tests.push({
-  locale: "zh-CN",
-  region: "CN",
-  distribution: "MozillaOnline",
+  locale: "en-US",
+  region: "US",
+  distribution: "canonical-002",
   test: engines =>
-    hasParams(engines, "百度", "searchbar", "tn=monline_4_dg") &&
-    hasParams(engines, "百度", "suggestions", "tn=monline_4_dg") &&
-    hasParams(engines, "百度", "homepage", "tn=monline_3_dg") &&
-    hasParams(engines, "百度", "newtab", "tn=monline_3_dg") &&
-    hasParams(engines, "百度", "contextmenu", "tn=monline_4_dg") &&
-    hasParams(engines, "百度", "keyword", "tn=monline_4_dg") &&
-    hasDefault(engines, "百度") &&
-    hasEnginesFirst(engines, ["百度", "Bing", "Google", "亚马逊", "维基百科"]),
+    hasParams(engines, "Google", "searchbar", "client=ubuntu-sn") &&
+    hasParams(engines, "Google", "searchbar", "channel=fs") &&
+    hasTelemetryId(engines, "Google", "google-ubuntu-sn"),
+});
+
+tests.push({
+  locale: "en-US",
+  region: "GB",
+  distribution: "canonical-002",
+  test: engines =>
+    hasParams(engines, "Google", "searchbar", "client=ubuntu-sn") &&
+    hasParams(engines, "Google", "searchbar", "channel=fs") &&
+    hasTelemetryId(engines, "Google", "google-ubuntu-sn"),
 });
 
 tests.push({
@@ -91,12 +56,6 @@ tests.push({
   region: "CN",
   distribution: "MozillaOnline",
   test: engines =>
-    hasParams(engines, "亚马逊", "searchbar", "ie=UTF8") &&
-    hasParams(engines, "亚马逊", "suggestions", "tag=mozilla") &&
-    hasParams(engines, "亚马逊", "homepage", "camp=536") &&
-    hasParams(engines, "亚马逊", "homepage", "creative=3200") &&
-    hasParams(engines, "亚马逊", "homepage", "index=aps") &&
-    hasParams(engines, "亚马逊", "homepage", "linkCode=ur2") &&
     hasEnginesFirst(engines, ["百度", "Bing", "Google", "亚马逊", "维基百科"]),
 });
 
@@ -131,77 +90,6 @@ tests.push({
   test: engines =>
     hasParams(engines, "Qwant Junior", "searchbar", "client=firefoxqwant"),
 });
-
-tests.push({
-  locale: "cs",
-  distribution: "seznam",
-  test: engines =>
-    hasParams(engines, "Seznam", "searchbar", "sourceid=FF_3") &&
-    hasDefault(engines, "Seznam") &&
-    hasEnginesFirst(engines, ["Seznam"]),
-});
-
-for (const locale of ["en-US", "en-GB", "fr", "de"]) {
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-oem1",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL01") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-r-oem1",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL01") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-oem2",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL02") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-r-oem2",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL02") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-oem3",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL03") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-r-oem3",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL03") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-}
 
 for (const locale of ["en-US", "de"]) {
   tests.push({
@@ -323,6 +211,7 @@ tests.push({
   region: "US",
   distribution: "mint-001",
   test: engines =>
+    hasParams(engines, "DuckDuckGo", "searchbar", "t=lm") &&
     hasParams(engines, "Google", "searchbar", "client=firefox-b-1-lm") &&
     hasDefault(engines, "Google") &&
     hasEnginesFirst(engines, ["Google"]) &&
@@ -334,6 +223,7 @@ tests.push({
   region: "GB",
   distribution: "mint-001",
   test: engines =>
+    hasParams(engines, "DuckDuckGo", "searchbar", "t=lm") &&
     hasParams(engines, "Google", "searchbar", "client=firefox-b-lm") &&
     hasDefault(engines, "Google") &&
     hasEnginesFirst(engines, ["Google"]) &&
@@ -412,18 +302,21 @@ function hasEnginesFirst(engines, expectedEngines) {
   }
 }
 
-engineSelector = new SearchEngineSelector();
+engineSelector = SearchUtils.newSearchConfigEnabled
+  ? new SearchEngineSelector()
+  : new SearchEngineSelectorOld();
 
-AddonTestUtils.init(GLOBAL_SCOPE);
-AddonTestUtils.createAppInfo(
-  "xpcshell@tests.mozilla.org",
-  "XPCShell",
-  "42",
-  "42"
-);
-
-add_task(async function setup() {
-  await AddonTestUtils.promiseStartupManager();
+add_setup(async function () {
+  if (!SearchUtils.newSearchConfigEnabled) {
+    AddonTestUtils.init(GLOBAL_SCOPE);
+    AddonTestUtils.createAppInfo(
+      "xpcshell@tests.mozilla.org",
+      "XPCShell",
+      "42",
+      "42"
+    );
+    await AddonTestUtils.promiseStartupManager();
+  }
 
   await maybeSetupConfig();
 });

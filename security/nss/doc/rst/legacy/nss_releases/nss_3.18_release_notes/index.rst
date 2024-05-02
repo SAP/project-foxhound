@@ -10,7 +10,7 @@ NSS 3.18 release notes
 
    The NSS team has released Network Security Services (NSS) 3.18, which is a minor release.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -28,8 +28,6 @@ NSS 3.18 release notes
 
 `New in NSS 3.18 <#new_in_nss_3.18>`__
 --------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

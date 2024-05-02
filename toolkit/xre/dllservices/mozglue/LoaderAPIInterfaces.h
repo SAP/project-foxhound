@@ -8,7 +8,9 @@
 #define mozilla_LoaderAPIInterfaces_h
 
 #include "nscore.h"
+#include "mozilla/glue/SharedSection.h"
 #include "mozilla/ModuleLoadInfo.h"
+#include "mozilla/ProcessType.h"
 
 namespace mozilla {
 namespace nt {
@@ -95,7 +97,7 @@ class NS_NO_VTABLE LoaderAPI {
   virtual AllocatedUnicodeString GetSectionName(void* aSectionAddr) = 0;
 
   using InitDllBlocklistOOPFnPtr = LauncherVoidResultWithLineInfo (*)(
-      const wchar_t*, HANDLE, const IMAGE_THUNK_DATA*);
+      const wchar_t*, HANDLE, const IMAGE_THUNK_DATA*, const GeckoProcessType);
   using HandleLauncherErrorFnPtr = void (*)(const LauncherError&, const char*);
 
   /**
@@ -104,14 +106,18 @@ class NS_NO_VTABLE LoaderAPI {
    */
   virtual InitDllBlocklistOOPFnPtr GetDllBlocklistInitFn() = 0;
   virtual HandleLauncherErrorFnPtr GetHandleLauncherErrorFn() = 0;
+  virtual SharedSection* GetSharedSection() = 0;
 };
 
-struct WinLauncherFunctions final {
+struct WinLauncherServices final {
   nt::LoaderAPI::InitDllBlocklistOOPFnPtr mInitDllBlocklistOOP;
   nt::LoaderAPI::HandleLauncherErrorFnPtr mHandleLauncherError;
+  SharedSection* mSharedSection;
 
-  WinLauncherFunctions()
-      : mInitDllBlocklistOOP(nullptr), mHandleLauncherError(nullptr) {}
+  WinLauncherServices()
+      : mInitDllBlocklistOOP(nullptr),
+        mHandleLauncherError(nullptr),
+        mSharedSection(nullptr) {}
 };
 
 }  // namespace nt

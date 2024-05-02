@@ -24,7 +24,9 @@
  */
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 // the topic we observe to use the API.  http-on-opening-request might also
 // work for some purposes.
@@ -33,24 +35,24 @@ let redirectHook = "http-on-examine-response";
 var httpServer = null,
   httpServer2 = null;
 
-XPCOMUtils.defineLazyGetter(this, "port1", function() {
+ChromeUtils.defineLazyGetter(this, "port1", function () {
   return httpServer.identity.primaryPort;
 });
 
-XPCOMUtils.defineLazyGetter(this, "port2", function() {
+ChromeUtils.defineLazyGetter(this, "port2", function () {
   return httpServer2.identity.primaryPort;
 });
 
 // Test Part 1: a cross-path redirect on a single HTTP server
 // http://localhost:port1/bait -> http://localhost:port1/switch
 var baitPath = "/bait";
-XPCOMUtils.defineLazyGetter(this, "baitURI", function() {
+ChromeUtils.defineLazyGetter(this, "baitURI", function () {
   return "http://localhost:" + port1 + baitPath;
 });
 var baitText = "you got the worm";
 
 var redirectedPath = "/switch";
-XPCOMUtils.defineLazyGetter(this, "redirectedURI", function() {
+ChromeUtils.defineLazyGetter(this, "redirectedURI", function () {
   return "http://localhost:" + port1 + redirectedPath;
 });
 var redirectedText = "worms are not tasty";
@@ -58,25 +60,25 @@ var redirectedText = "worms are not tasty";
 // Test Part 2: Now, a redirect to a different server
 // http://localhost:port1/bait2 -> http://localhost:port2/switch
 var bait2Path = "/bait2";
-XPCOMUtils.defineLazyGetter(this, "bait2URI", function() {
+ChromeUtils.defineLazyGetter(this, "bait2URI", function () {
   return "http://localhost:" + port1 + bait2Path;
 });
 
-XPCOMUtils.defineLazyGetter(this, "redirected2URI", function() {
+ChromeUtils.defineLazyGetter(this, "redirected2URI", function () {
   return "http://localhost:" + port2 + redirectedPath;
 });
 
 // Test Part 3, begin with a serverside redirect that itself turns into an instance
 // of Test Part 1
 var bait3Path = "/bait3";
-XPCOMUtils.defineLazyGetter(this, "bait3URI", function() {
+ChromeUtils.defineLazyGetter(this, "bait3URI", function () {
   return "http://localhost:" + port1 + bait3Path;
 });
 
 // Test Part 4, begin with this client-side redirect and which then redirects
 // to an instance of Test Part 1
 var bait4Path = "/bait4";
-XPCOMUtils.defineLazyGetter(this, "bait4URI", function() {
+ChromeUtils.defineLazyGetter(this, "bait4URI", function () {
   return "http://localhost:" + port1 + bait4Path;
 });
 
@@ -162,7 +164,7 @@ function makeAsyncTest(uri, headerValue, nextTask) {
 
   // Produce a callback function which checks for the presence of headerValue,
   // and then continues to the next async test task
-  var verifier = function(req, buffer) {
+  var verifier = function (req, buffer) {
     if (!(req instanceof Ci.nsIHttpChannel)) {
       do_throw(req + " is not an nsIHttpChannel, catastrophe imminent!");
     }
@@ -174,7 +176,7 @@ function makeAsyncTest(uri, headerValue, nextTask) {
   };
 
   // Produce a function to run an asyncOpen test using the above verifier
-  var test = function() {
+  var test = function () {
     var chan = make_channel(uri);
     chan.asyncOpen(new ChannelListener(verifier));
   };
@@ -206,12 +208,13 @@ function runXHRTest(uri, headerValue) {
 }
 
 function done() {
-  httpServer.stop(function() {
+  httpServer.stop(function () {
     httpServer2.stop(do_test_finished);
   });
 }
 
-var redirector = new Redirector();
+// Needed for side-effects
+new Redirector();
 
 function run_test() {
   httpServer = new HttpServer();

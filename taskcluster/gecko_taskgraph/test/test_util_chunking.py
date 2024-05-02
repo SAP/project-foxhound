@@ -4,14 +4,12 @@
 
 
 import re
-
 from itertools import combinations
 
 import pytest
-
 from mozunit import main
-from gecko_taskgraph.util import chunking
 
+from gecko_taskgraph.util import chunking
 
 pytestmark = pytest.mark.slow
 
@@ -159,6 +157,10 @@ def mock_mozinfo():
             "headless": headless,
             "tsan": tsan,
             "appname": "firefox",
+            "condprof": False,
+            "canvas": False,
+            "webgpu": False,
+            "privatebrowsing": False,
         }
 
     return inner
@@ -355,9 +357,11 @@ def test_get_manifests(suite, platform, mock_mozinfo):
 
     items = manifests["active"]
     if suite == "xpcshell":
-        assert all([re.search(r"xpcshell(.*)?.ini", m) for m in items])
+        assert all([re.search(r"xpcshell(.*)?(.ini|.toml)", m) for m in items])
     if "mochitest" in suite:
-        assert all([re.search(r"(mochitest|chrome|browser).*.ini", m) for m in items])
+        assert all(
+            [re.search(r"(mochitest|chrome|browser).*(.ini|.toml)", m) for m in items]
+        )
     if "web-platform" in suite:
         assert all([m.startswith("/") and m.count("/") <= 4 for m in items])
 

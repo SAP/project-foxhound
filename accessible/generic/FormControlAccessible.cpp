@@ -8,8 +8,7 @@
 #include "FormControlAccessible.h"
 
 #include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/FloatingPoint.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 
 using namespace mozilla::a11y;
 
@@ -18,8 +17,6 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 role CheckboxAccessible::NativeRole() const { return roles::CHECKBUTTON; }
-
-uint8_t CheckboxAccessible::ActionCount() const { return 1; }
 
 void CheckboxAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Click) {
@@ -34,13 +31,7 @@ void CheckboxAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   }
 }
 
-bool CheckboxAccessible::DoAction(uint8_t aIndex) const {
-  if (aIndex != eAction_Click) {
-    return false;
-  }
-  DoCommand();
-  return true;
-}
+bool CheckboxAccessible::HasPrimaryAction() const { return true; }
 
 uint64_t CheckboxAccessible::NativeState() const {
   uint64_t state = LeafAccessible::NativeState();
@@ -78,17 +69,10 @@ RadioButtonAccessible::RadioButtonAccessible(nsIContent* aContent,
                                              DocAccessible* aDoc)
     : LeafAccessible(aContent, aDoc) {}
 
-uint8_t RadioButtonAccessible::ActionCount() const { return 1; }
+bool RadioButtonAccessible::HasPrimaryAction() const { return true; }
 
 void RadioButtonAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Click) aName.AssignLiteral("select");
-}
-
-bool RadioButtonAccessible::DoAction(uint8_t aIndex) const {
-  if (aIndex != eAction_Click) return false;
-
-  DoCommand();
-  return true;
 }
 
 role RadioButtonAccessible::NativeRole() const { return roles::RADIOBUTTON; }

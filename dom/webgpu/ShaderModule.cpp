@@ -4,19 +4,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/WebGPUBinding.h"
+#include "mozilla/dom/Promise.h"
 #include "ShaderModule.h"
+#include "CompilationInfo.h"
 #include "ipc/WebGPUChild.h"
 
 #include "Device.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
-GPU_IMPL_CYCLE_COLLECTION(ShaderModule, mParent)
+GPU_IMPL_CYCLE_COLLECTION(ShaderModule, mParent, mCompilationInfo)
 GPU_IMPL_JS_WRAP(ShaderModule)
 
-ShaderModule::ShaderModule(Device* const aParent, RawId aId)
-    : ChildOf(aParent), mId(aId) {}
+ShaderModule::ShaderModule(Device* const aParent, RawId aId,
+                           const RefPtr<dom::Promise>& aCompilationInfo)
+    : ChildOf(aParent), mId(aId), mCompilationInfo(aCompilationInfo) {
+  MOZ_RELEASE_ASSERT(aId);
+}
 
 ShaderModule::~ShaderModule() { Cleanup(); }
 
@@ -25,10 +29,19 @@ void ShaderModule::Cleanup() {
     mValid = false;
     auto bridge = mParent->GetBridge();
     if (bridge && bridge->IsOpen()) {
-      bridge->SendShaderModuleDestroy(mId);
+      bridge->SendShaderModuleDrop(mId);
     }
   }
 }
 
-}  // namespace webgpu
-}  // namespace mozilla
+already_AddRefed<dom::Promise> ShaderModule::CompilationInfo(ErrorResult& aRv) {
+  return GetCompilationInfo(aRv);
+}
+
+already_AddRefed<dom::Promise> ShaderModule::GetCompilationInfo(
+    ErrorResult& aRv) {
+  RefPtr<dom::Promise> tmp = mCompilationInfo;
+  return tmp.forget();
+}
+
+}  // namespace mozilla::webgpu

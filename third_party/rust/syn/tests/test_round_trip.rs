@@ -2,9 +2,18 @@
 #![cfg(not(miri))]
 #![recursion_limit = "1024"]
 #![feature(rustc_private)]
-#![allow(clippy::manual_assert)]
+#![allow(
+    clippy::manual_assert,
+    clippy::manual_let_else,
+    clippy::match_like_matches_macro,
+    clippy::uninlined_format_args
+)]
 
 extern crate rustc_ast;
+extern crate rustc_ast_pretty;
+extern crate rustc_data_structures;
+extern crate rustc_driver;
+extern crate rustc_error_messages;
 extern crate rustc_errors;
 extern crate rustc_expand;
 extern crate rustc_parse as parse;
@@ -13,23 +22,24 @@ extern crate rustc_span;
 
 use crate::common::eq::SpanlessEq;
 use quote::quote;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_ast::ast::{
     AngleBracketedArg, AngleBracketedArgs, Crate, GenericArg, GenericParamKind, Generics,
     WhereClause,
 };
 use rustc_ast::mut_visit::{self, MutVisitor};
-use rustc_errors::PResult;
+use rustc_ast_pretty::pprust;
+use rustc_error_messages::{DiagnosticMessage, LazyFallbackBundle};
+use rustc_errors::{translation, Diagnostic, PResult};
 use rustc_session::parse::ParseSess;
 use rustc_span::source_map::FilePathMapping;
 use rustc_span::FileName;
+use std::borrow::Cow;
 use std::fs;
 use std::panic;
 use std::path::Path;
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
-use walkdir::{DirEntry, WalkDir};
 
 #[macro_use]
 mod macros;
@@ -50,19 +60,7 @@ fn test_round_trip() {
 
     let failed = AtomicUsize::new(0);
 
-    WalkDir::new("tests/rust")
-        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
-        .into_iter()
-        .filter_entry(repo::base_dir_filter)
-        .collect::<Result<Vec<DirEntry>, walkdir::Error>>()
-        .unwrap()
-        .into_par_iter()
-        .for_each(|entry| {
-            let path = entry.path();
-            if !path.is_dir() {
-                test(path, &failed, abort_after);
-            }
-        });
+    repo::for_each_rust_file(|path| test(path, &failed, abort_after));
 
     let failed = failed.load(Ordering::Relaxed);
     if failed > 0 {
@@ -90,23 +88,18 @@ fn test(path: &Path, failed: &AtomicUsize, abort_after: usize) {
 
     rustc_span::create_session_if_not_set_then(edition, |_| {
         let equal = match panic::catch_unwind(|| {
-            let sess = ParseSess::new(FilePathMapping::empty());
+            let locale_resources = rustc_driver::DEFAULT_LOCALE_RESOURCES.to_vec();
+            let file_path_mapping = FilePathMapping::empty();
+            let sess = ParseSess::new(locale_resources, file_path_mapping);
             let before = match librustc_parse(content, &sess) {
                 Ok(before) => before,
-                Err(mut diagnostic) => {
+                Err(diagnostic) => {
+                    errorf!(
+                        "=== {}: ignore - librustc failed to parse original content: {}\n",
+                        path.display(),
+                        translate_message(&diagnostic),
+                    );
                     diagnostic.cancel();
-                    if diagnostic
-                        .message()
-                        .starts_with("file not found for module")
-                    {
-                        errorf!("=== {}: ignore\n", path.display());
-                    } else {
-                        errorf!(
-                            "=== {}: ignore - librustc failed to parse original content: {}\n",
-                            path.display(),
-                            diagnostic.message(),
-                        );
-                    }
                     return Err(true);
                 }
             };
@@ -137,10 +130,10 @@ fn test(path: &Path, failed: &AtomicUsize, abort_after: usize) {
                     true
                 } else {
                     errorf!(
-                        "=== {}: FAIL\nbefore: {:#?}\nafter: {:#?}\n",
+                        "=== {}: FAIL\n{}\n!=\n{}\n",
                         path.display(),
-                        before,
-                        after,
+                        pprust::crate_to_string_for_macros(&before),
+                        pprust::crate_to_string_for_macros(&after),
                     );
                     false
                 }
@@ -160,6 +153,42 @@ fn librustc_parse(content: String, sess: &ParseSess) -> PResult<Crate> {
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let name = FileName::Custom(format!("test_round_trip{}", counter));
     parse::parse_crate_from_source_str(name, content, sess)
+}
+
+fn translate_message(diagnostic: &Diagnostic) -> Cow<'static, str> {
+    thread_local! {
+        static FLUENT_BUNDLE: LazyFallbackBundle = {
+            let locale_resources = rustc_driver::DEFAULT_LOCALE_RESOURCES.to_vec();
+            let with_directionality_markers = false;
+            rustc_error_messages::fallback_fluent_bundle(locale_resources, with_directionality_markers)
+        };
+    }
+
+    let message = &diagnostic.message[0].0;
+    let args = translation::to_fluent_args(diagnostic.args());
+
+    let (identifier, attr) = match message {
+        DiagnosticMessage::Str(msg) | DiagnosticMessage::Eager(msg) => return msg.clone(),
+        DiagnosticMessage::FluentIdentifier(identifier, attr) => (identifier, attr),
+    };
+
+    FLUENT_BUNDLE.with(|fluent_bundle| {
+        let message = fluent_bundle
+            .get_message(identifier)
+            .expect("missing diagnostic in fluent bundle");
+        let value = match attr {
+            Some(attr) => message
+                .get_attribute(attr)
+                .expect("missing attribute in fluent message")
+                .value(),
+            None => message.value().expect("missing value in fluent message"),
+        };
+
+        let mut err = Vec::new();
+        let translated = fluent_bundle.format_pattern(value, Some(&args), &mut err);
+        assert!(err.is_empty());
+        Cow::Owned(translated.into_owned())
+    })
 }
 
 fn normalize(krate: &mut Crate) {

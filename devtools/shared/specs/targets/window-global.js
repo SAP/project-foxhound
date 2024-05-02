@@ -9,7 +9,7 @@ const {
   RetVal,
   Option,
   Arg,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
 types.addDictType("windowGlobalTarget.switchtoframe", {
   message: "string",
@@ -52,10 +52,6 @@ const windowGlobalTargetSpecPrototype = {
 
   methods: {
     detach: {
-      request: {},
-      response: {},
-    },
-    ensureCSSErrorReportingEnabled: {
       request: {},
       response: {},
     },

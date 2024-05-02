@@ -18,13 +18,12 @@ using namespace mozilla::a11y;
 
 - (NSString*)moxTitle {
   nsAutoString title;
-  if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
-    mozilla::ErrorResult rv;
-    // XXX use the flattening API when there are available
-    // see bug 768298
-    acc->GetContent()->GetTextContent(title, rv);
-  } else if (RemoteAccessible* proxy = mGeckoAccessible->AsRemote()) {
-    proxy->Title(title);
+
+  ENameValueFlag flag = mGeckoAccessible->Name(title);
+  if (flag != eNameFromSubtree) {
+    // If this is a name via relation or attribute (eg. aria-label)
+    // it will be provided via AXDescription.
+    return nil;
   }
 
   return nsCocoaUtils::ToNSString(title);
@@ -46,11 +45,7 @@ using namespace mozilla::a11y;
 
 - (NSURL*)moxURL {
   nsAutoString value;
-  if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
-    acc->Value(value);
-  } else if (RemoteAccessible* proxy = mGeckoAccessible->AsRemote()) {
-    proxy->Value(value);
-  }
+  mGeckoAccessible->Value(value);
 
   NSString* urlString = value.IsEmpty() ? nil : nsCocoaUtils::ToNSString(value);
   if (!urlString) return nil;

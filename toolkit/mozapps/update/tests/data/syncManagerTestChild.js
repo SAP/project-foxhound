@@ -10,12 +10,8 @@
 // This requires that we have already been passed a constant on our command
 // line which contains the relevant fake binary path, which is called:
 /* global customExePath */
-// We also need this builtin function from xpcshell itself:
-/* global simulateNoScriptActivity */
 
 print("child process is running");
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // This function is copied from xpcshellUtilsAUS.js so that we can have our
 // xpcshell subprocess call it without having to load that whole file, because

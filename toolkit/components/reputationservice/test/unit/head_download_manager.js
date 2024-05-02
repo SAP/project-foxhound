@@ -6,10 +6,9 @@
 
 do_get_profile();
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var {
   HTTP_400,
   HTTP_401,
@@ -36,7 +35,7 @@ var {
   HTTP_505,
   HttpError,
   HttpServer,
-} = ChromeUtils.import("resource://testing-common/httpd.js");
+} = ChromeUtils.importESModule("resource://testing-common/httpd.sys.mjs");
 
 // List types, this should sync with |enum LIST_TYPES| defined in PendingLookup.
 var ALLOW_LIST = 0;

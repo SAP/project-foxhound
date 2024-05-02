@@ -4,11 +4,6 @@
 
 "use strict";
 
-// These are defined on "global" which is used for the same scopes as the other
-// ext-c-*.js files.
-/* exported EventManager */
-/* global EventManager: false */
-
 global.EventManager = ExtensionCommon.EventManager;
 
 extensions.registerModules({
@@ -25,6 +20,11 @@ extensions.registerModules({
     url: "chrome://extensions/content/child/ext-contentScripts.js",
     scopes: ["addon_child"],
     paths: [["contentScripts"]],
+  },
+  declarativeNetRequest: {
+    url: "chrome://extensions/content/child/ext-declarativeNetRequest.js",
+    scopes: ["addon_child"],
+    paths: [["declarativeNetRequest"]],
   },
   extension: {
     url: "chrome://extensions/content/child/ext-extension.js",

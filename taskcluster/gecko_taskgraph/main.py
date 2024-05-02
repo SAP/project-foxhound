@@ -2,7 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import argparse
 import atexit
+import json
+import logging
 import os
 import re
 import shutil
@@ -10,9 +13,6 @@ import subprocess
 import sys
 import tempfile
 import traceback
-import argparse
-import logging
-import json
 from collections import namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -47,7 +47,9 @@ def argument(*args, **kwargs):
 
 def format_taskgraph_labels(taskgraph):
     return "\n".join(
-        taskgraph.tasks[index].label for index in taskgraph.graph.visit_postorder()
+        sorted(
+            taskgraph.tasks[index].label for index in taskgraph.graph.visit_postorder()
+        )
     )
 
 
@@ -58,36 +60,60 @@ def format_taskgraph_json(taskgraph):
 
 
 def format_taskgraph_yaml(taskgraph):
-    return yaml.safe_dump(taskgraph.to_json(), default_flow_style=False)
+    from mozbuild.util import ReadOnlyDict
+
+    class TGDumper(yaml.SafeDumper):
+        def ignore_aliases(self, data):
+            return True
+
+        def represent_ro_dict(self, data):
+            return self.represent_dict(dict(data))
+
+    TGDumper.add_representer(ReadOnlyDict, TGDumper.represent_ro_dict)
+
+    return yaml.dump(taskgraph.to_json(), Dumper=TGDumper, default_flow_style=False)
 
 
-def get_filtered_taskgraph(taskgraph, tasksregex):
+def get_filtered_taskgraph(taskgraph, tasksregex, exclude_keys):
     """
     Filter all the tasks on basis of a regular expression
     and returns a new TaskGraph object
     """
-    from gecko_taskgraph.graph import Graph
-    from gecko_taskgraph.taskgraph import TaskGraph
+    from taskgraph.graph import Graph
+    from taskgraph.task import Task
+    from taskgraph.taskgraph import TaskGraph
 
-    # return original taskgraph if no regular expression is passed
-    if not tasksregex:
-        return taskgraph
-    named_links_dict = taskgraph.graph.named_links_dict()
-    filteredtasks = {}
-    filterededges = set()
-    regexprogram = re.compile(tasksregex)
+    if tasksregex:
+        named_links_dict = taskgraph.graph.named_links_dict()
+        filteredtasks = {}
+        filterededges = set()
+        regexprogram = re.compile(tasksregex)
 
-    for key in taskgraph.graph.visit_postorder():
-        task = taskgraph.tasks[key]
-        if regexprogram.match(task.label):
-            filteredtasks[key] = task
-            for depname, dep in named_links_dict[key].items():
-                if regexprogram.match(dep):
-                    filterededges.add((key, dep, depname))
-    filtered_taskgraph = TaskGraph(
-        filteredtasks, Graph(set(filteredtasks), filterededges)
-    )
-    return filtered_taskgraph
+        for key in taskgraph.graph.visit_postorder():
+            task = taskgraph.tasks[key]
+            if regexprogram.match(task.label):
+                filteredtasks[key] = task
+                for depname, dep in named_links_dict[key].items():
+                    if regexprogram.match(dep):
+                        filterededges.add((key, dep, depname))
+
+        taskgraph = TaskGraph(filteredtasks, Graph(set(filteredtasks), filterededges))
+
+    if exclude_keys:
+        for label, task in taskgraph.tasks.items():
+            task_dict = task.to_json()
+            for key in exclude_keys:
+                obj = task_dict
+                attrs = key.split(".")
+                while attrs[0] in obj:
+                    if len(attrs) == 1:
+                        del obj[attrs[0]]
+                        break
+                    obj = obj[attrs[0]]
+                    attrs = attrs[1:]
+            taskgraph.tasks[label] = Task.from_json(task_dict)
+
+    return taskgraph
 
 
 FORMAT_METHODS = {
@@ -99,37 +125,37 @@ FORMAT_METHODS = {
 
 def get_taskgraph_generator(root, parameters):
     """Helper function to make testing a little easier."""
-    from gecko_taskgraph.generator import TaskGraphGenerator
+    from taskgraph.generator import TaskGraphGenerator
 
     return TaskGraphGenerator(root_dir=root, parameters=parameters)
 
 
 def format_taskgraph(options, parameters, logfile=None):
-    import gecko_taskgraph
+    import taskgraph
     from taskgraph.parameters import parameters_loader
 
     if logfile:
-        oldhandler = logging.root.handlers[-1]
-        logging.root.removeHandler(oldhandler)
-
         handler = logging.FileHandler(logfile, mode="w")
-        handler.setFormatter(oldhandler.formatter)
+        if logging.root.handlers:
+            oldhandler = logging.root.handlers[-1]
+            logging.root.removeHandler(oldhandler)
+            handler.setFormatter(oldhandler.formatter)
         logging.root.addHandler(handler)
 
     if options["fast"]:
-        gecko_taskgraph.fast = True
+        taskgraph.fast = True
 
     if isinstance(parameters, str):
         parameters = parameters_loader(
             parameters,
-            overrides={"target-kind": options.get("target_kind")},
+            overrides={"target-kinds": options.get("target_kinds")},
             strict=False,
         )
 
     tgg = get_taskgraph_generator(options.get("root"), parameters)
 
     tg = getattr(tgg, options["graph_attr"])
-    tg = get_filtered_taskgraph(tg, options["tasks_regex"])
+    tg = get_filtered_taskgraph(tg, options["tasks_regex"], options["exclude_keys"])
     format_method = FORMAT_METHODS[options["format"] or "labels"]
     return format_method(tg)
 
@@ -177,7 +203,7 @@ def generate_taskgraph(options, parameters, logdir):
         return
 
     futures = {}
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=options["max_workers"]) as executor:
         for spec in parameters:
             f = executor.submit(format_taskgraph, options, spec, logfile(spec))
             futures[f] = spec
@@ -293,8 +319,19 @@ def generate_taskgraph(options, parameters, logdir):
     help="only return tasks with labels matching this regular " "expression.",
 )
 @argument(
-    "--target-kind",
+    "--exclude-key",
     default=None,
+    dest="exclude_keys",
+    action="append",
+    help="Exclude the specified key (using dot notation) from the final result. "
+    "This is mainly useful with '--diff' to filter out expected differences.",
+)
+@argument(
+    "-k",
+    "--target-kind",
+    dest="target_kinds",
+    action="append",
+    default=[],
     help="only return tasks that are of the given kind, or their dependencies.",
 )
 @argument(
@@ -313,6 +350,15 @@ def generate_taskgraph(options, parameters, logdir):
     "Without args the base revision will be used. A revision specifier such as "
     "the hash or `.~1` (hg) or `HEAD~1` (git) can be used as well.",
 )
+@argument(
+    "-j",
+    "--max-workers",
+    dest="max_workers",
+    default=None,
+    type=int,
+    help="The maximum number of workers to use for parallel operations such as"
+    "when multiple parameters files are passed.",
+)
 def show_taskgraph(options):
     from mozversioncontrol import get_repository_object as get_repository
     from taskgraph.parameters import Parameters, parameters_loader
@@ -326,7 +372,11 @@ def show_taskgraph(options):
     output_file = options["output_file"]
 
     if options["diff"]:
-        repo = get_repository(os.getcwd())
+        # --root argument is taskgraph's config at <repo>/taskcluster/ci
+        repo_root = os.getcwd()
+        if options["root"]:
+            repo_root = f"{options['root']}/../.."
+        repo = get_repository(repo_root)
 
         if not repo.working_directory_clean():
             print(
@@ -353,7 +403,7 @@ def show_taskgraph(options):
     parameters: List[Any[str, Parameters]] = options.pop("parameters")
     if not parameters:
         overrides = {
-            "target-kind": options.get("target_kind"),
+            "target-kinds": options.get("target_kinds"),
         }
         parameters = [
             parameters_loader(None, strict=False, overrides=overrides)
@@ -392,8 +442,15 @@ def show_taskgraph(options):
 
         # Reload taskgraph modules to pick up changes and clear global state.
         for mod in sys.modules.copy():
-            if mod != __name__ and mod.split(".", 1)[0].endswith("taskgraph"):
+            if mod != __name__ and mod.split(".", 1)[0].endswith(
+                ("taskgraph", "mozbuild")
+            ):
                 del sys.modules[mod]
+
+        # Ensure gecko_taskgraph is ahead of taskcluster_taskgraph in sys.path.
+        # Without this, we may end up validating some things against the wrong
+        # schema.
+        import gecko_taskgraph  # noqa
 
         if options["diff"] == "default":
             base_ref = repo.base_ref
@@ -503,7 +560,7 @@ def show_taskgraph(options):
     metavar="context.tar",
 )
 def build_image(args):
-    from gecko_taskgraph.docker import build_image, build_context
+    from gecko_taskgraph.docker import build_context, build_image
 
     if args["context_only"] is None:
         build_image(args["image_name"], args["tag"], os.environ)
@@ -596,6 +653,15 @@ def image_digest(args):
 )
 @argument("--base-repository", required=True, help='URL for "base" repository to clone')
 @argument(
+    "--base-ref", default="", help='Reference of the revision in the "base" repository'
+)
+@argument(
+    "--base-rev",
+    default="",
+    help="Taskgraph decides what to do based on the revision range between "
+    "`--base-rev` and `--head-rev`. Value is determined automatically if not provided",
+)
+@argument(
     "--head-repository",
     required=True,
     help='URL for "head" repository to fetch revision from',
@@ -674,18 +740,18 @@ def action_callback(options):
 @argument("callback", default=None, help="Action callback name (Python function name)")
 def test_action_callback(options):
     import taskgraph.parameters
-    import gecko_taskgraph.actions
+    from taskgraph.config import load_graph_config
     from taskgraph.util import yaml
-    from gecko_taskgraph.config import load_graph_config
+
+    import gecko_taskgraph.actions
 
     def load_data(filename):
         with open(filename) as f:
             if filename.endswith(".yml"):
                 return yaml.load_stream(f)
-            elif filename.endswith(".json"):
+            if filename.endswith(".json"):
                 return json.load(f)
-            else:
-                raise Exception(f"unknown filename {filename}")
+            raise Exception(f"unknown filename {filename}")
 
     try:
         task_id = options["task_id"]

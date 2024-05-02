@@ -57,15 +57,17 @@ EncodedVideoFrameProducer::Encode() {
                WEBRTC_VIDEO_CODEC_OK);
 
   uint32_t rtp_tick = 90000 / framerate_fps_;
-  std::vector<VideoFrameType> frame_types = {VideoFrameType::kVideoFrameDelta};
   for (int i = 0; i < num_input_frames_; ++i) {
     VideoFrame frame =
         VideoFrame::Builder()
             .set_video_frame_buffer(frame_buffer_generator->NextFrame().buffer)
             .set_timestamp_rtp(rtp_timestamp_)
+            .set_capture_time_identifier(capture_time_identifier_)
             .build();
     rtp_timestamp_ += rtp_tick;
-    RTC_CHECK_EQ(encoder_.Encode(frame, &frame_types), WEBRTC_VIDEO_CODEC_OK);
+    RTC_CHECK_EQ(encoder_.Encode(frame, &next_frame_type_),
+                 WEBRTC_VIDEO_CODEC_OK);
+    next_frame_type_[0] = VideoFrameType::kVideoFrameDelta;
   }
 
   RTC_CHECK_EQ(encoder_.RegisterEncodeCompleteCallback(nullptr),

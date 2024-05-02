@@ -1,9 +1,7 @@
 {
-    "stages": "4",
-    "pgo" : true,
-    "build_wasm": true,
-    "cc": "cl.exe",
-    "cxx": "cl.exe",
-    "ml": "ml64.exe",
-    "wasi-compiler-rt": "{MOZ_FETCHES_DIR}/compiler-rt"
+    "target": "x86_64-pc-windows-msvc",
+    "cc": "{MOZ_FETCHES_DIR}/clang/bin/clang-cl",
+    "cxx": "{MOZ_FETCHES_DIR}/clang/bin/clang-cl",
+    "ml": "{MOZ_FETCHES_DIR}/clang/bin/clang-cl",
+    "lib": "{MOZ_FETCHES_DIR}/clang/bin/llvm-lib"
 }

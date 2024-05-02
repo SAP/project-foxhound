@@ -4,23 +4,20 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const Services = require("Services");
-
+const { Actor } = require("resource://devtools/shared/protocol.js");
 const {
   heapSnapshotFileSpec,
-} = require("devtools/shared/specs/heap-snapshot-file");
+} = require("resource://devtools/shared/specs/heap-snapshot-file.js");
 
 loader.lazyRequireGetter(
   this,
   "DevToolsUtils",
-  "devtools/shared/DevToolsUtils"
+  "resource://devtools/shared/DevToolsUtils.js"
 );
-loader.lazyRequireGetter(this, "OS", "resource://gre/modules/osfile.jsm", true);
 loader.lazyRequireGetter(
   this,
   "HeapSnapshotFileUtils",
-  "devtools/shared/heapsnapshot/HeapSnapshotFileUtils"
+  "resource://devtools/shared/heapsnapshot/HeapSnapshotFileUtils.js"
 );
 
 /**
@@ -29,55 +26,47 @@ loader.lazyRequireGetter(
  * because child processes are sandboxed and do not have access to the file
  * system.
  */
-exports.HeapSnapshotFileActor = protocol.ActorClassWithSpec(
-  heapSnapshotFileSpec,
-  {
-    initialize: function(conn, parent) {
-      if (
-        Services.appinfo.processType !== Services.appinfo.PROCESS_TYPE_DEFAULT
-      ) {
-        const err = new Error(
-          "Attempt to create a HeapSnapshotFileActor in a " +
-            "child process! The HeapSnapshotFileActor *MUST* " +
-            "be in the parent process!"
-        );
-        DevToolsUtils.reportException(
-          "HeapSnapshotFileActor.prototype.initialize",
-          err
-        );
-        return;
-      }
+exports.HeapSnapshotFileActor = class HeapSnapshotFileActor extends Actor {
+  constructor(conn, parent) {
+    super(conn, heapSnapshotFileSpec);
 
-      protocol.Actor.prototype.initialize.call(this, conn, parent);
-    },
-
-    /**
-     * @see MemoryFront.prototype.transferHeapSnapshot
-     */
-    async transferHeapSnapshot(snapshotId) {
-      const snapshotFilePath = HeapSnapshotFileUtils.getHeapSnapshotTempFilePath(
-        snapshotId
+    if (
+      Services.appinfo.processType !== Services.appinfo.PROCESS_TYPE_DEFAULT
+    ) {
+      const err = new Error(
+        "Attempt to create a HeapSnapshotFileActor in a " +
+          "child process! The HeapSnapshotFileActor *MUST* " +
+          "be in the parent process!"
       );
-      if (!snapshotFilePath) {
-        throw new Error(`No heap snapshot with id: ${snapshotId}`);
-      }
-
-      const streamPromise = DevToolsUtils.openFileStream(snapshotFilePath);
-
-      const { size } = await OS.File.stat(snapshotFilePath);
-      const bulkPromise = this.conn.startBulkSend({
-        actor: this.actorID,
-        type: "heap-snapshot",
-        length: size,
-      });
-
-      const [bulk, stream] = await Promise.all([bulkPromise, streamPromise]);
-
-      try {
-        await bulk.copyFrom(stream);
-      } finally {
-        stream.close();
-      }
-    },
+      DevToolsUtils.reportException("HeapSnapshotFileActor's constructor", err);
+    }
   }
-);
+
+  /**
+   * @see MemoryFront.prototype.transferHeapSnapshot
+   */
+  async transferHeapSnapshot(snapshotId) {
+    const snapshotFilePath =
+      HeapSnapshotFileUtils.getHeapSnapshotTempFilePath(snapshotId);
+    if (!snapshotFilePath) {
+      throw new Error(`No heap snapshot with id: ${snapshotId}`);
+    }
+
+    const streamPromise = DevToolsUtils.openFileStream(snapshotFilePath);
+
+    const { size } = await IOUtils.stat(snapshotFilePath);
+    const bulkPromise = this.conn.startBulkSend({
+      actor: this.actorID,
+      type: "heap-snapshot",
+      length: size,
+    });
+
+    const [bulk, stream] = await Promise.all([bulkPromise, streamPromise]);
+
+    try {
+      await bulk.copyFrom(stream);
+    } finally {
+      stream.close();
+    }
+  }
+};

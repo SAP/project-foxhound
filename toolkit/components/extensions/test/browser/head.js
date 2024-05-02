@@ -1,11 +1,11 @@
 /* exported ACCENT_COLOR, BACKGROUND, ENCODED_IMAGE_DATA, FRAME_COLOR, TAB_TEXT_COLOR,
    TEXT_COLOR, TAB_BACKGROUND_TEXT_COLOR, imageBufferFromDataURI, hexToCSS, hexToRGB, testBorderColor,
-   waitForTransition, loadTestSubscript, backgroundColorSetOnRoot */
+   waitForTransition, loadTestSubscript, backgroundColorSetOnRoot, assertPersistentListeners */
 
 "use strict";
 
-const { ClientEnvironmentBase } = ChromeUtils.import(
-  "resource://gre/modules/components-utils/ClientEnvironment.jsm"
+const { ClientEnvironmentBase } = ChromeUtils.importESModule(
+  "resource://gre/modules/components-utils/ClientEnvironment.sys.mjs"
 );
 
 const BACKGROUND =
@@ -113,7 +113,7 @@ function loadTestSubscript(filePath) {
  *
  * @returns {boolean} True if the window's background-color is set on :root
  *   rather than #navigator-toolbox.
- **/
+ */
 function backgroundColorSetOnRoot() {
   const os = ClientEnvironmentBase.os;
   if (!os.isWindows) {
@@ -121,3 +121,6 @@ function backgroundColorSetOnRoot() {
   }
   return os.windowsVersion < 10;
 }
+
+// Persistent Listener test functionality
+const { assertPersistentListeners } = ExtensionTestUtils.testAssertions;

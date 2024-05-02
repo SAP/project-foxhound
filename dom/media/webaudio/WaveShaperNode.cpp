@@ -11,6 +11,7 @@
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
 #include "mozilla/PodOperations.h"
+#include "Tracing.h"
 
 namespace mozilla::dom {
 
@@ -192,6 +193,8 @@ class WaveShaperNodeEngine final : public AudioNodeEngine {
   void ProcessBlock(AudioNodeTrack* aTrack, GraphTime aFrom,
                     const AudioBlock& aInput, AudioBlock* aOutput,
                     bool* aFinished) override {
+    TRACE("WaveShaperNodeEngine::ProcessBlock");
+
     uint32_t channelCount = aInput.ChannelCount();
     if (!mCurve.Length()) {
       // Optimize the case where we don't have a curve buffer
@@ -327,17 +330,12 @@ void WaveShaperNode::SetCurve(const Nullable<Float32Array>& aCurve,
     return;
   }
 
-  const Float32Array& floats = aCurve.Value();
-  floats.ComputeState();
-
   nsTArray<float> curve;
-  uint32_t argLength = floats.Length();
-  if (!curve.SetLength(argLength, fallible)) {
+  if (!aCurve.Value().AppendDataTo(curve)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
 
-  PodCopy(curve.Elements(), floats.Data(), argLength);
   SetCurveInternal(curve, aRv);
 }
 
@@ -366,7 +364,8 @@ void WaveShaperNode::SendCurveToTrack() {
 }
 
 void WaveShaperNode::GetCurve(JSContext* aCx,
-                              JS::MutableHandle<JSObject*> aRetval) {
+                              JS::MutableHandle<JSObject*> aRetval,
+                              ErrorResult& aError) {
   // Let's return a null value if the list is empty.
   if (mCurve.IsEmpty()) {
     aRetval.set(nullptr);
@@ -374,8 +373,11 @@ void WaveShaperNode::GetCurve(JSContext* aCx,
   }
 
   MOZ_ASSERT(mCurve.Length() >= 2);
-  aRetval.set(
-      Float32Array::Create(aCx, this, mCurve.Length(), mCurve.Elements()));
+  JSObject* curve = Float32Array::Create(aCx, this, mCurve, aError);
+  if (aError.Failed()) {
+    return;
+  }
+  aRetval.set(curve);
 }
 
 void WaveShaperNode::SetOversample(OverSampleType aType) {

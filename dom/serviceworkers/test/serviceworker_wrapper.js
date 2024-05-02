@@ -3,7 +3,7 @@
 //
 // ServiceWorker equivalent of worker_wrapper.js.
 
-var client;
+let client;
 
 function ok(a, msg) {
   dump("OK: " + !!a + "  =>  " + a + ": " + msg + "\n");
@@ -61,12 +61,12 @@ function workerTestGetStorageManager(cb) {
   });
 }
 
-var completeInstall;
+let completeInstall;
 
 addEventListener("message", function workerWrapperOnMessage(e) {
   removeEventListener("message", workerWrapperOnMessage);
   var data = e.data;
-  self.clients.matchAll({ includeUncontrolled: true }).then(function(clients) {
+  self.clients.matchAll({ includeUncontrolled: true }).then(function (clients) {
     for (var i = 0; i < clients.length; ++i) {
       if (clients[i].url.includes("message_receiver.html")) {
         client = clients[i];

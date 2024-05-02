@@ -1,13 +1,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
 import logging
-import sys
 import os
+import sys
 import tempfile
 
-from mach.decorators import CommandArgument, Command
+from mach.decorators import Command, CommandArgument
 from mozbuild.base import BinaryNotFoundException
 
 requirements = os.path.join(os.path.dirname(__file__), "requirements", "base.txt")
@@ -45,7 +44,7 @@ def fetch(
 ):
     _init(command_context)
     from condprof.client import get_profile
-    from condprof.util import get_current_platform
+    from condprof.util import get_current_platform, get_version
 
     if platform is None:
         platform = get_current_platform()
@@ -53,9 +52,19 @@ def fetch(
     if target_dir is None:
         target_dir = tempfile.mkdtemp()
 
+    version = get_version(command_context.get_binary_path())
+
     get_profile(
-        target_dir, platform, scenario, customization, task_id, download_cache, repo
+        target_dir,
+        platform,
+        scenario,
+        customization,
+        task_id,
+        download_cache,
+        repo,
+        version,
     )
+    print("Downloaded conditioned profile can be found at: %s" % target_dir)
 
 
 @Command("run-condprofile", category="testing")

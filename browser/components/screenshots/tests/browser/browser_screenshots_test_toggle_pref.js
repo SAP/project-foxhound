@@ -3,29 +3,21 @@
 
 "use strict";
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
 });
-XPCOMUtils.defineLazyGetter(this, "ExtensionManagement", () => {
-  const { Management } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm"
+ChromeUtils.defineLazyGetter(this, "ExtensionManagement", () => {
+  const { Management } = ChromeUtils.importESModule(
+    "resource://gre/modules/Extension.sys.mjs"
   );
   return Management;
 });
 
 add_task(async function test() {
-  CustomizableUI.addWidgetToArea(
-    "screenshot-button",
-    CustomizableUI.AREA_NAVBAR
-  );
-  let screenshotBtn = document.getElementById("screenshot-button");
-  Assert.ok(screenshotBtn, "The screenshots button was added to the nav bar");
-
   let observerSpy = sinon.spy();
   let notifierSpy = sinon.spy();
 
@@ -34,7 +26,7 @@ add_task(async function test() {
     .callsFake(observerSpy);
   let notifierStub = sinon
     .stub(ScreenshotsUtils, "notify")
-    .callsFake(function(window, type) {
+    .callsFake(function (window, type) {
       notifierSpy();
       ScreenshotsUtils.notify.wrappedMethod.apply(this, arguments);
     });
@@ -82,12 +74,11 @@ add_task(async function test() {
       await popupshown;
       Assert.equal(menu.state, "open", "Context menu is open");
 
-      menu.querySelector("#context-take-screenshot").click();
-      Assert.equal(observerSpy.callCount, 3, "Observer function called thrice");
-
       let popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
-      menu.hidePopup();
+      menu.activateItem(menu.querySelector("#context-take-screenshot"));
       await popuphidden;
+
+      Assert.equal(observerSpy.callCount, 3, "Observer function called thrice");
 
       const COMPONENT_PREF = "screenshots.browser.component.enabled";
       await SpecialPowers.pushPrefEnv({
@@ -106,7 +97,7 @@ add_task(async function test() {
       await SpecialPowers.spawn(
         browser,
         ["#firefox-screenshots-preselection-iframe"],
-        async function(iframeSelector) {
+        async function (iframeSelector) {
           info(
             `in waitForUIContent content function, iframeSelector: ${iframeSelector}`
           );
@@ -128,7 +119,7 @@ add_task(async function test() {
       await SpecialPowers.spawn(
         browser,
         ["#firefox-screenshots-preselection-iframe"],
-        async function(iframeSelector) {
+        async function (iframeSelector) {
           info(
             `in waitForUIContent content function, iframeSelector: ${iframeSelector}`
           );
@@ -153,21 +144,20 @@ add_task(async function test() {
       await popupshown;
       Assert.equal(menu.state, "open", "Context menu is open");
 
-      menu.querySelector("#context-take-screenshot").click();
+      popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
+      menu.activateItem(menu.querySelector("#context-take-screenshot"));
+      await popuphidden;
+
       Assert.equal(
         observerSpy.callCount,
         3,
         "Observer function still called thrice"
       );
 
-      popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
-      menu.hidePopup();
-      await popuphidden;
-
       await SpecialPowers.spawn(
         browser,
         ["#firefox-screenshots-preselection-iframe"],
-        async function(iframeSelector) {
+        async function (iframeSelector) {
           info(
             `in waitForUIContent content function, iframeSelector: ${iframeSelector}`
           );
@@ -189,7 +179,7 @@ add_task(async function test() {
       await SpecialPowers.spawn(
         browser,
         ["#firefox-screenshots-preselection-iframe"],
-        async function(iframeSelector) {
+        async function (iframeSelector) {
           info(
             `in waitForUIContent content function, iframeSelector: ${iframeSelector}`
           );

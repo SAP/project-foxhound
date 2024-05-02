@@ -1,0 +1,19 @@
+[fixture_callbacks.receiver_thread]
+default = "worker"
+main = [
+  "log_even_numbers_main_thread",
+]
+
+[remote_settings.receiver_thread]
+default = "worker"
+main = [
+  "RemoteSettings",
+]
+
+[suggest.receiver_thread]
+default = "worker"
+main = [
+  "raw_suggestion_url_matches",
+  "SuggestStore",
+  "SuggestStore.interrupt",
+]

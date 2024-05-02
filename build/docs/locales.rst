@@ -90,20 +90,63 @@ If you want to create a single build with multiple locales, you will do
       ./mach build
       ./mach package
 
-#. For each locale you want to include in the build:
+#. Create the multi-locale package:
 
    .. code-block:: shell
 
-      export MOZ_CHROME_MULTILOCALE="de it zh-TW"
-      for AB_CD in $MOZ_CHROME_MULTILOCALE; do
-         ./mach build chrome-$AB_CD
-      done
+      ./mach package-multi-locale --locales de it zh-TW
 
-#. Create the multilingual package:
+On Android, this produces a multi-locale GeckoView AAR and multi-locale APKs,
+including GeckoViewExample.  You can test different locales by changing your
+Android OS locale and restarting GeckoViewExample.  You'll need to install with
+the ``MOZ_CHROME_MULTILOCALE`` variable set, like:
 
    .. code-block:: shell
 
-      AB_CD=multi ./mach package
+       env MOZ_CHROME_MULTILOCALE=en-US,de,it,zh-TW ./mach android install-geckoview_example
+
+Multi-locale builds without compiling
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For deep technical reasons, artifact builds do not support multi-locale builds.
+However, with a little work, we can achieve the same effect:
+
+#. Arrange a ``mozconfig`` without a compilation environment but with support
+   for the ``RecursiveMake`` build backend, like:
+
+   .. code-block:: shell
+
+      ac_add_options --disable-compile-environment
+      export BUILD_BACKENDS=FasterMake,RecursiveMake
+      ... other options ...
+
+#. Configure.
+
+   .. code-block:: shell
+
+      ./mach configure
+
+#. Manually provide compiled artifacts.
+
+   .. code-block:: shell
+
+      ./mach artifact install [-v]
+
+#. Build.
+
+   .. code-block:: shell
+
+      ./mach build
+
+#. Produce a multi-locale package.
+
+   .. code-block:: shell
+
+      ./mach package-multi-locale --locales de it zh-TW
+
+This build configuration is fragile and not generally useful for active
+development (for that, use a full/compiled build), but it certainly speeds
+testing multi-locale packaging.
 
 General flow of repacks
 -----------------------
@@ -217,16 +260,11 @@ The following file formats are known to the l10n tool chains:
 
 Fluent
     Used in Firefox UI, both declarative and programmatically.
-DTD
-    Deprecated. Used in XUL and XHTML.
 Properties
     Used from JavaScript and C++. When used from js, also comes with
-    `plural support <https://developer.mozilla.org/docs/Mozilla/Localization/Localization_and_Plurals>`_.
+    plural support (avoid if possible).
 ini
     Used by the crashreporter and updater, avoid if possible.
-inc
-    Used during builds, for example to create metadata for
-    language packs or bookmarks.
 
 Adding new formats involves changing various different tools, and is strongly
 discouraged.
@@ -248,12 +286,11 @@ a ``key``, and an action. An example like
 .. code-block:: toml
 
   [[filters]]
-      path = "{l}browser/defines.inc"
-      key = "MOZ_LANGPACK_CONTRIBUTORS"
+      path = "{l}calendar/chrome/calendar/calendar-event-dialog.properties"
+      key = "re:.*Nounclass[1-9].*"
       action = "ignore"
 
-indicates that the ``MOZ_LANGPACK_CONTRIBUTORS`` in ``browser/defines.inc``
-is optional.
+indicates that the matching messages in ``calendar-event-dialog.properties`` are optional.
 
 For the legacy ini configuration files, there's a Python module
 ``filter.py`` next to the main ``l10n.ini``, implementing :py:func:`test`, with the following
@@ -316,7 +353,7 @@ As part of the build and other localization tool chains, we run a variety
 of source-based checks. Think of them as linters.
 
 The suite of checks is usually determined by file type, i.e., there's a
-suite of checks for DTD files and one for properties files, etc.
+suite of checks for Fluent files and one for properties files, etc.
 
 Localizations
 -------------

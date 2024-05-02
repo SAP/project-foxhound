@@ -11,7 +11,6 @@
  */
 
 interface nsISupports;
-interface Variant;
 
 typedef (HTMLCanvasElement or OffscreenCanvas) CanvasSource;
 
@@ -31,32 +30,26 @@ interface HTMLCanvasElement : HTMLElement {
   DOMString toDataURL(optional DOMString type = "",
                       optional any encoderOptions);
   [Throws, NeedsSubjectPrincipal]
-  void toBlob(BlobCallback callback,
-              optional DOMString type = "",
-              optional any encoderOptions);
+  undefined toBlob(BlobCallback callback,
+                   optional DOMString type = "",
+                   optional any encoderOptions);
 };
 
 // Mozilla specific bits
 partial interface HTMLCanvasElement {
   [Pure, SetterThrows]
            attribute boolean mozOpaque;
-  [Throws, NeedsSubjectPrincipal, Pref="canvas.mozgetasfile.enabled"]
-  File mozGetAsFile(DOMString name, optional DOMString? type = null);
-  // A Mozilla-only extension to get a canvas context backed by double-buffered
-  // shared memory. Only privileged callers can call this.
-  [ChromeOnly, Throws]
-  nsISupports? MozGetIPCContext(DOMString contextId);
 
            attribute PrintCallback? mozPrintCallback;
 
-  [Throws, Pref="canvas.capturestream.enabled", NeedsSubjectPrincipal]
+  [Throws, NeedsSubjectPrincipal]
   CanvasCaptureMediaStream captureStream(optional double frameRate);
 };
 
 // For OffscreenCanvas
 // Reference: https://wiki.whatwg.org/wiki/OffscreenCanvas
 partial interface HTMLCanvasElement {
-  [Func="CanvasUtils::IsOffscreenCanvasEnabled", Throws]
+  [Pref="gfx.offscreencanvas.enabled", Throws]
   OffscreenCanvas transferControlToOffscreen();
 };
 
@@ -68,9 +61,9 @@ interface MozCanvasPrintState
   readonly attribute nsISupports context;
 
   // To be called when rendering to the context is done.
-  void done();
+  undefined done();
 };
 
-callback PrintCallback = void(MozCanvasPrintState ctx);
+callback PrintCallback = undefined(MozCanvasPrintState ctx);
 
-callback BlobCallback = void(Blob? blob);
+callback BlobCallback = undefined(Blob? blob);

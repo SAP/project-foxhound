@@ -5,6 +5,7 @@ use std::ops::{Deref, DerefMut, RangeBounds};
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "serialize", serde(transparent))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Block {
     body: Vec<Statement>,
     #[cfg(feature = "span")]
@@ -13,7 +14,7 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             body: Vec::new(),
             #[cfg(feature = "span")]
@@ -74,9 +75,8 @@ impl Block {
 
     pub fn splice<R: RangeBounds<usize> + Clone>(&mut self, range: R, other: Self) {
         #[cfg(feature = "span")]
-        self.span_info
-            .splice(range.clone(), other.span_info.into_iter());
-        self.body.splice(range, other.body.into_iter());
+        self.span_info.splice(range.clone(), other.span_info);
+        self.body.splice(range, other.body);
     }
     pub fn span_iter(&self) -> impl Iterator<Item = (&Statement, &Span)> {
         #[cfg(feature = "span")]

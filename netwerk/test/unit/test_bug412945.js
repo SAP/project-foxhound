@@ -1,14 +1,16 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpserv;
 
 function TestListener() {}
 
-TestListener.prototype.onStartRequest = function(request) {};
+TestListener.prototype.onStartRequest = function (request) {};
 
-TestListener.prototype.onStopRequest = function(request, status) {
+TestListener.prototype.onStopRequest = function (request, status) {
   httpserv.stop(do_test_finished);
 };
 

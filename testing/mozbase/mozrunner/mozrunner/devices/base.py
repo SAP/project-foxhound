@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import datetime
 import os
 import posixpath
@@ -11,7 +9,7 @@ import shutil
 import tempfile
 import time
 
-from mozdevice import ADBHost, ADBError
+from mozdevice import ADBError, ADBHost
 from six.moves.configparser import ConfigParser, RawConfigParser
 
 
@@ -244,12 +242,12 @@ class ProfileConfigParser(RawConfigParser):
     def write(self, fp):
         if self._defaults:
             fp.write("[%s]\n" % ConfigParser.DEFAULTSECT)
-            for (key, value) in self._defaults.items():
+            for key, value in self._defaults.items():
                 fp.write("%s=%s\n" % (key, str(value).replace("\n", "\n\t")))
             fp.write("\n")
         for section in self._sections:
             fp.write("[%s]\n" % section)
-            for (key, value) in self._sections[section].items():
+            for key, value in self._sections[section].items():
                 if key == "__name__":
                     continue
                 if (value is not None) or (self._optcre == self.OPTCRE):

@@ -22,8 +22,8 @@
 namespace webrtc {
 
 OpusTest::OpusTest()
-    : acm_receiver_(AudioCodingModule::Create(
-          AudioCodingModule::Config(CreateBuiltinAudioDecoderFactory()))),
+    : acm_receiver_(std::make_unique<acm2::AcmReceiver>(
+          acm2::AcmReceiver::Config(CreateBuiltinAudioDecoderFactory()))),
       channel_a2b_(NULL),
       counter_(0),
       payload_type_(255),
@@ -83,13 +83,13 @@ void OpusTest::Perform() {
   WebRtcOpus_DecoderInit(opus_stereo_decoder_);
 
   ASSERT_TRUE(acm_receiver_.get() != NULL);
-  EXPECT_EQ(0, acm_receiver_->InitializeReceiver());
+  acm_receiver_->FlushBuffers();
 
   // Register Opus stereo as receiving codec.
   constexpr int kOpusPayloadType = 120;
   const SdpAudioFormat kOpusFormatStereo("opus", 48000, 2, {{"stereo", "1"}});
   payload_type_ = kOpusPayloadType;
-  acm_receiver_->SetReceiveCodecs({{kOpusPayloadType, kOpusFormatStereo}});
+  acm_receiver_->SetCodecs({{kOpusPayloadType, kOpusFormatStereo}});
 
   // Create and connect the channel.
   channel_a2b_ = new TestPackStereo;
@@ -154,7 +154,7 @@ void OpusTest::Perform() {
 
   // Register Opus mono as receiving codec.
   const SdpAudioFormat kOpusFormatMono("opus", 48000, 2);
-  acm_receiver_->SetReceiveCodecs({{kOpusPayloadType, kOpusFormatMono}});
+  acm_receiver_->SetCodecs({{kOpusPayloadType, kOpusFormatMono}});
 
   // Run Opus with 2.5 ms frame size.
   Run(channel_a2b_, audio_channels, 32000, 120);
@@ -277,8 +277,8 @@ void OpusTest::Run(TestPackStereo* channel,
         ASSERT_GE(bitstream_len_byte_int, 0);
         bitstream_len_byte = static_cast<size_t>(bitstream_len_byte_int);
 
-        // Simulate packet loss by setting |packet_loss_| to "true" in
-        // |percent_loss| percent of the loops.
+        // Simulate packet loss by setting `packet_loss_` to "true" in
+        // `percent_loss` percent of the loops.
         // TODO(tlegrand): Move handling of loss simulation to TestPackStereo.
         if (percent_loss > 0) {
           if (counter_ == floor((100 / percent_loss) + 0.5)) {
@@ -353,8 +353,7 @@ void OpusTest::Run(TestPackStereo* channel,
 
     // Run received side of ACM.
     bool muted;
-    ASSERT_EQ(
-        0, acm_receiver_->PlayoutData10Ms(out_freq_hz_b, &audio_frame, &muted));
+    ASSERT_EQ(0, acm_receiver_->GetAudio(out_freq_hz_b, &audio_frame, &muted));
     ASSERT_FALSE(muted);
 
     // Write output speech to file.

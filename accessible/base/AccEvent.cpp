@@ -7,7 +7,6 @@
 #include "AccEvent.h"
 
 #include "nsAccUtils.h"
-#include "DocAccessible.h"
 #include "xpcAccEvents.h"
 #include "States.h"
 #include "TextRange.h"
@@ -65,9 +64,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AccEvent)
   }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AccEvent, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AccEvent, Release)
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // AccTextChangeEvent
@@ -114,24 +110,19 @@ AccHideEvent::AccHideEvent(LocalAccessible* aTarget, bool aNeedsShutdown)
 // AccShowEvent
 ////////////////////////////////////////////////////////////////////////////////
 
-AccShowEvent::AccShowEvent(LocalAccessible* aTarget)
-    : AccMutationEvent(::nsIAccessibleEvent::EVENT_SHOW, aTarget) {
-  int32_t idx = aTarget->IndexInParent();
-  MOZ_ASSERT(idx >= 0);
-  mInsertionIndex = idx;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // AccTextSelChangeEvent
 ////////////////////////////////////////////////////////////////////////////////
 
 AccTextSelChangeEvent::AccTextSelChangeEvent(HyperTextAccessible* aTarget,
                                              dom::Selection* aSelection,
-                                             int32_t aReason)
+                                             int32_t aReason,
+                                             int32_t aGranularity)
     : AccEvent(nsIAccessibleEvent::EVENT_TEXT_SELECTION_CHANGED, aTarget,
                eAutoDetect, eCoalesceTextSelChange),
       mSel(aSelection),
-      mReason(aReason) {}
+      mReason(aReason),
+      mGranularity(aGranularity) {}
 
 AccTextSelChangeEvent::~AccTextSelChangeEvent() {}
 
@@ -171,38 +162,19 @@ AccSelChangeEvent::AccSelChangeEvent(LocalAccessible* aWidget,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// AccTableChangeEvent
-////////////////////////////////////////////////////////////////////////////////
-
-AccTableChangeEvent::AccTableChangeEvent(LocalAccessible* aAccessible,
-                                         uint32_t aEventType,
-                                         int32_t aRowOrColIndex,
-                                         int32_t aNumRowsOrCols)
-    : AccEvent(aEventType, aAccessible),
-      mRowOrColIndex(aRowOrColIndex),
-      mNumRowsOrCols(aNumRowsOrCols) {}
-
-////////////////////////////////////////////////////////////////////////////////
 // AccVCChangeEvent
 ////////////////////////////////////////////////////////////////////////////////
 
 AccVCChangeEvent::AccVCChangeEvent(LocalAccessible* aAccessible,
                                    LocalAccessible* aOldAccessible,
-                                   int32_t aOldStart, int32_t aOldEnd,
                                    LocalAccessible* aNewAccessible,
-                                   int32_t aNewStart, int32_t aNewEnd,
-                                   int16_t aReason, int16_t aBoundaryType,
+                                   int16_t aReason,
                                    EIsFromUserInput aIsFromUserInput)
     : AccEvent(::nsIAccessibleEvent::EVENT_VIRTUALCURSOR_CHANGED, aAccessible,
                aIsFromUserInput),
       mOldAccessible(aOldAccessible),
       mNewAccessible(aNewAccessible),
-      mOldStart(aOldStart),
-      mNewStart(aNewStart),
-      mOldEnd(aOldEnd),
-      mNewEnd(aNewEnd),
-      mReason(aReason),
-      mBoundaryType(aBoundaryType) {}
+      mReason(aReason) {}
 
 already_AddRefed<nsIAccessibleEvent> a11y::MakeXPCEvent(AccEvent* aEvent) {
   DocAccessible* doc = aEvent->Document();
@@ -246,7 +218,8 @@ already_AddRefed<nsIAccessibleEvent> a11y::MakeXPCEvent(AccEvent* aEvent) {
     AccCaretMoveEvent* cm = downcast_accEvent(aEvent);
     xpEvent = new xpcAccCaretMoveEvent(
         type, ToXPC(acc), ToXPCDocument(doc), node, fromUser,
-        cm->GetCaretOffset(), cm->IsSelectionCollapsed(), cm->IsAtEndOfLine());
+        cm->GetCaretOffset(), cm->IsSelectionCollapsed(), cm->IsAtEndOfLine(),
+        cm->GetGranularity());
     return xpEvent.forget();
   }
 
@@ -259,8 +232,7 @@ already_AddRefed<nsIAccessibleEvent> a11y::MakeXPCEvent(AccEvent* aEvent) {
         do_CreateInstance(NS_ARRAY_CONTRACTID);
     uint32_t len = ranges.Length();
     for (uint32_t idx = 0; idx < len; idx++) {
-      xpcRanges->AppendElement(
-          new xpcAccessibleTextRange(std::move(ranges[idx])));
+      xpcRanges->AppendElement(new xpcAccessibleTextRange(ranges[idx]));
     }
 
     xpEvent = new xpcAccTextSelectionChangeEvent(
@@ -272,9 +244,8 @@ already_AddRefed<nsIAccessibleEvent> a11y::MakeXPCEvent(AccEvent* aEvent) {
     AccVCChangeEvent* vcc = downcast_accEvent(aEvent);
     xpEvent = new xpcAccVirtualCursorChangeEvent(
         type, ToXPC(acc), ToXPCDocument(doc), node, fromUser,
-        ToXPC(vcc->OldAccessible()), vcc->OldStartOffset(), vcc->OldEndOffset(),
-        ToXPC(vcc->NewAccessible()), vcc->NewStartOffset(), vcc->NewEndOffset(),
-        vcc->Reason(), vcc->BoundaryType());
+        ToXPC(vcc->OldAccessible()), ToXPC(vcc->NewAccessible()),
+        vcc->Reason());
     return xpEvent.forget();
   }
 

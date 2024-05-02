@@ -9,9 +9,6 @@
  */
 
 :root {
-  --theme-focus-border-color-textbox: #0675d3;
-  --theme-textbox-box-shadow: rgba(97, 181, 255, 0.75);
-
   /* Text sizes */
   --theme-body-font-size: 11px;
   --theme-code-font-size: 11px;
@@ -19,17 +16,33 @@
 
   /* Toolbar size (excluding borders) */
   --theme-toolbar-height: 24px;
+  --theme-toolbar-tall-height: 28px;
 
   /* For accessibility purposes we want to enhance the focus styling. This
    * should improve keyboard navigation usability. */
-  --theme-focus-outline: 1px dotted var(--theme-focus-outline-color);
-  --theme-focus-box-shadow-textbox: 0 0 0 1px var(--theme-textbox-box-shadow);
+  --theme-focus-outline-color: var(--blue-50);
+  --theme-focus-outline-size: 2px;
+  --theme-focus-outline: var(--theme-focus-outline-size) solid var(--theme-focus-outline-color);
+  --theme-outline-offset: 0px;
+    /**
+   * we want the box shadow to be 2px bigger than the offset so we have a "double border"
+   * (without it impacting the element layout), which should work whatever
+   * the background-color is (e.g. a clickable element in a "selected" blue-background container)
+   **/
+  --theme-outline-box-shadow-size: calc(2px + var(--theme-focus-outline-size) + var(--theme-outline-offset));
+  --theme-outline-box-shadow: 0 0 0 var(--theme-outline-box-shadow-size) var(--theme-body-background);
 
   /* Standardizes the height of items in the Watch Expressions and XHR Breakpoints panes */
   --expression-item-height: 20.5px;
 
   /* The photon animation curve */
   --animation-curve: cubic-bezier(0.07, 0.95, 0, 1);
+
+  /* This should be similar to --highlighter-box-content-color from highlighter.css,
+   * with lower opacity than the 0.6 we apply on highlighter so this can be used as
+   * background color without being too bold
+   */
+  --dimmed-highlighter-box-content-color:hsl(197,71%,73%,.3);
 
   /*
    * Photon Colors CSS Variables v3.3.2
@@ -45,6 +58,7 @@
 
   --purple-50: #9400ff;
   --purple-60: #8000d7;
+  --purple-30: #c069ff;
 
   --blue-30: #75baff;
   --blue-40: #45a1ff;
@@ -66,10 +80,14 @@
   --yellow-60: #d7b600;
   --yellow-65: #be9b00;
   --yellow-70: #a47f00;
+  /* interpolated from yellow-70 and yellow-80 */
+  --yellow-75: #8b6801;
   --yellow-80: #715100;
 
+  --red-05: #ffe6e8;
   --red-20: #ffb3d2;
   --red-40: #ff3b6b;
+  --red-40-a90: rgba(255, 59, 107, 0.9);
   --red-50: #ff0039;
   --red-60: #d70022;
   --red-70: #a4000f;
@@ -103,6 +121,7 @@
 :root.theme-light {
   --theme-body-background: white;
   --theme-body-emphasized-background: var(--grey-10);
+  --theme-body-alternate-emphasized-background: #f0f9fe;
   --theme-sidebar-background: white;
 
   /* Toolbar */
@@ -113,6 +132,8 @@
   --theme-toolbar-highlighted-color: var(--green-60);
   --theme-toolbar-background-hover: rgba(221, 225, 228, 0.66);
   --theme-toolbar-background-alt: #f5f5f5;
+  --theme-toolbar-background-highlighted: #b9dcff;
+  --theme-toolbar-error-background: var(--red-05);
   --theme-toolbar-hover: var(--grey-20);
   --theme-toolbar-hover-active: var(--grey-20);
   --theme-toolbar-separator: var(--grey-90-a10);
@@ -153,10 +174,12 @@
   --theme-icon-warning-color: var(--yellow-65);
 
   /* Text color */
-  --theme-comment: var(--grey-50);
+  --theme-comment: var(--grey-55);
   --theme-body-color: var(--grey-70);
+  --theme-link-color: var(--blue-60);
   --theme-text-color-alt: var(--grey-50);
   --theme-text-color-inactive: var(--grey-40);
+  --theme-text-color-error: var(--red-60);
   --theme-text-color-strong: var(--grey-90);
   --theme-stack-trace-text: var(--red-70);
 
@@ -173,21 +196,13 @@
   --theme-highlight-pink: #b82ee5;
   --theme-highlight-gray: #dde1e4;
 
-  /* For accessibility purposes we want to enhance the focus styling. This
-   * should improve keyboard navigation usability. */
-  --theme-focus-outline-color: #000000;
-
-  /* Colors used in Graphs, like performance tools. Similar colors to Chrome's timeline. */
-  --theme-graphs-green: #85d175;
-  --theme-graphs-blue: #83b7f6;
-  --theme-graphs-bluegrey: #0072ab;
+  /* Colors that were used in Graphs in the old performance tools, which was removed.
+   * They're also used on other panels and should be renamed (See Bug 1767617) */
   --theme-graphs-purple: #b693eb;
   --theme-graphs-yellow: #efc052;
   --theme-graphs-orange: #d97e00;
-  --theme-graphs-red: #e57180;
   --theme-graphs-grey: #cccccc;
   --theme-graphs-full-red: #f00;
-  --theme-graphs-full-blue: #00f;
 
   /* Common popup styles(used by HTMLTooltip and autocomplete) */
   --theme-popup-background: Field;
@@ -225,12 +240,14 @@
   --theme-contrast-background: #fff699; /* = Yellow 50-a40 on white */
   --theme-contrast-background-alpha: rgba(255, 233, 0, 0.4); /* Yellow 50-a40 */
   --theme-contrast-color: black;
-  --theme-contrast-border: var(--yellow-60);
+  /* This is used for search/filter results underline and need to have a 3:1 contrast against the background */
+  --theme-contrast-border: var(--yellow-70);
 }
 
 :root.theme-dark {
   --theme-body-background: #232327;
   --theme-body-emphasized-background: var(--grey-70);
+  --theme-body-alternate-emphasized-background: #353b48;
   --theme-sidebar-background: #18181a;
 
   /* Toolbar */
@@ -241,6 +258,8 @@
   --theme-toolbar-highlighted-color: var(--green-50);
   --theme-toolbar-background-hover: #232327;
   --theme-toolbar-background-alt: var(--grey-85);
+  --theme-toolbar-background-highlighted: var(--blue-60);
+  --theme-toolbar-error-background: var(--red-70);
   --theme-toolbar-hover: #232327;
   --theme-toolbar-hover-active: #252526;
   --theme-toolbar-separator: var(--grey-10-a20);
@@ -283,10 +302,12 @@
   /* Text color */
   --theme-comment: var(--grey-45);
   --theme-body-color: var(--grey-40);
+  --theme-link-color: #75bfff;
   --theme-text-color-alt: var(--grey-45);
   --theme-text-color-inactive: var(--grey-50);
+  --theme-text-color-error: var(--grey-10);
   --theme-text-color-strong: var(--grey-30);
-  --theme-stack-trace-text: var(--red-50);
+  --theme-stack-trace-text: var(--red-20);
 
   --theme-highlight-green: #86de74;
   --theme-highlight-blue: #75bfff;
@@ -301,21 +322,13 @@
   --theme-highlight-pink: #df80ff;
   --theme-highlight-gray: #e9f4fe;
 
-  /* For accessibility purposes we want to enhance the focus styling. This
-   * should improve keyboard navigation usability. */
-  --theme-focus-outline-color: #ced3d9;
-
-  /* Colors used in Graphs, like performance tools. Mostly similar to some "highlight-*" colors. */
-  --theme-graphs-green: #70bf53;
-  --theme-graphs-blue: #46afe3;
-  --theme-graphs-bluegrey: #5e88b0;
+    /* Colors that were used in Graphs in the old performance tools, which was removed.
+   * They're also used on other panels and should be renamed (See Bug 1767617) */
   --theme-graphs-purple: #df80ff;
   --theme-graphs-yellow: #d99b28;
   --theme-graphs-orange: #d96629;
-  --theme-graphs-red: #eb5368;
   --theme-graphs-grey: #757873;
   --theme-graphs-full-red: #f00;
-  --theme-graphs-full-blue: #00f;
 
   /* Common popup styles(used by HTMLTooltip and autocomplete) */
   --theme-popup-background: var(--grey-60);

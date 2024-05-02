@@ -40,18 +40,20 @@ function loadExtensionWithMenusApi() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      browser_action: {},
+      browser_action: {
+        default_area: "navbar",
+      },
       permissions: ["menus"],
     },
   });
 
-  extension.callMenuApi = async function(method, ...params) {
+  extension.callMenuApi = async function (method, ...params) {
     info(`Calling ${method}(${JSON.stringify(params)})`);
     extension.sendMessage(method, ...params);
     return extension.awaitMessage(`${method}-result`);
   };
 
-  extension.removeOnShownListener = async function() {
+  extension.removeOnShownListener = async function () {
     extension.callMenuApi("* remove onShown listener");
   };
 
@@ -403,7 +405,7 @@ add_task(async function refresh_menus_during_navigation() {
   elem = extension.getXULElementByMenuId("item2");
   is(elem, null, "menu item 2 should be hidden");
 
-  BrowserTestUtils.loadURI(tab.linkedBrowser, PAGE + "?2");
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, PAGE + "?2");
   await BrowserTestUtils.browserStopped(tab.linkedBrowser);
 
   await extension.callMenuApi("refresh");

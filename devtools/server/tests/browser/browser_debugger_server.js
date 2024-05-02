@@ -5,7 +5,7 @@
 
 // Test basic features of DevToolsServer
 
-add_task(async function() {
+add_task(async function () {
   // When running some other tests before, they may not destroy the main server.
   // Do it manually before running our tests.
   if (DevToolsServer.initialized) {
@@ -17,17 +17,21 @@ add_task(async function() {
 });
 
 async function testDevToolsServerInitialized() {
-  const browser = await addTab("data:text/html;charset=utf-8,foo");
-  const tab = gBrowser.getTabForBrowser(browser);
+  const tab = await addTab("data:text/html;charset=utf-8,foo");
 
   ok(
     !DevToolsServer.initialized,
     "By default, the DevToolsServer isn't initialized in parent process"
   );
   await assertServerInitialized(
-    browser,
+    tab,
     false,
     "By default, the DevToolsServer isn't initialized not in content process"
+  );
+  await assertDevToolsOpened(
+    tab,
+    false,
+    "By default, the DevTools are reported as closed"
   );
 
   const commands = await CommandsFactory.forTab(tab);
@@ -37,32 +41,45 @@ async function testDevToolsServerInitialized() {
     "Creating the commands will initialize the DevToolsServer in parent process"
   );
   await assertServerInitialized(
-    browser,
+    tab,
     false,
     "Creating the commands isn't enough to initialize the DevToolsServer in content process"
+  );
+  await assertDevToolsOpened(
+    tab,
+    false,
+    "DevTools are still reported as closed after having created the commands"
   );
 
   await commands.targetCommand.startListening();
 
   await assertServerInitialized(
-    browser,
+    tab,
     true,
     "Initializing the TargetCommand will initialize the DevToolsServer in content process"
+  );
+  await assertDevToolsOpened(
+    tab,
+    true,
+    "Initializing the TargetCommand will start reporting the DevTools as opened"
   );
 
   await commands.destroy();
 
-  // Disconnecting the client will remove all connections from both server,
-  // in parent and content process. But only the one in the content process will be
-  // destroyed.
+  // Disconnecting the client will remove all connections from both server, in parent and content process.
   ok(
-    DevToolsServer.initialized,
-    "Destroying the commands doesn't destroy the DevToolsServer in the parent process"
+    !DevToolsServer.initialized,
+    "Destroying the commands destroys the DevToolsServer in the parent process"
   );
   await assertServerInitialized(
-    browser,
+    tab,
     false,
     "But destroying the commands ends up destroying the DevToolsServer in the content process"
+  );
+  await assertDevToolsOpened(
+    tab,
+    false,
+    "Destroying the commands will report DevTools as being closed"
   );
 
   gBrowser.removeCurrentTab();
@@ -70,38 +87,47 @@ async function testDevToolsServerInitialized() {
 }
 
 async function testDevToolsServerKeepAlive() {
-  const browser = await addTab("data:text/html;charset=utf-8,foo");
-  const tab = gBrowser.getTabForBrowser(browser);
+  const tab = await addTab("data:text/html;charset=utf-8,foo");
 
   await assertServerInitialized(
-    browser,
+    tab,
     false,
     "Server not started in content process"
   );
+  await assertDevToolsOpened(tab, false, "DevTools are reported as closed");
 
   const commands = await CommandsFactory.forTab(tab);
   await commands.targetCommand.startListening();
 
-  await assertServerInitialized(
-    browser,
-    true,
-    "Server started in content process"
-  );
+  await assertServerInitialized(tab, true, "Server started in content process");
+  await assertDevToolsOpened(tab, true, "DevTools are reported as opened");
 
   info("Set DevToolsServer.keepAlive to true in the content process");
-  await setContentServerKeepAlive(browser, true);
+  DevToolsServer.keepAlive = true;
+  await setContentServerKeepAlive(tab, true);
 
   info("Destroy the commands, the content server should be kept alive");
   await commands.destroy();
 
   await assertServerInitialized(
-    browser,
+    tab,
     true,
     "Server still running in content process"
   );
+  await assertDevToolsOpened(
+    tab,
+    false,
+    "DevTools are reported as close, even if the server is still running because there is no more client connected"
+  );
+
+  ok(
+    DevToolsServer.initialized,
+    "Destroying the commands never destroys the DevToolsServer in the parent process when keepAlive is true"
+  );
 
   info("Set DevToolsServer.keepAlive back to false");
-  await setContentServerKeepAlive(browser, false);
+  DevToolsServer.keepAlive = false;
+  await setContentServerKeepAlive(tab, false);
 
   info("Create and destroy a commands again");
   const newCommands = await CommandsFactory.forTab(tab);
@@ -110,32 +136,63 @@ async function testDevToolsServerKeepAlive() {
   await newCommands.destroy();
 
   await assertServerInitialized(
-    browser,
+    tab,
     false,
     "Server stopped in content process"
+  );
+  await assertDevToolsOpened(
+    tab,
+    false,
+    "DevTools are reported as closed after destroying the second commands"
+  );
+
+  ok(
+    !DevToolsServer.initialized,
+    "When turning keepAlive to false, the server in the parent process is destroyed"
   );
 
   gBrowser.removeCurrentTab();
   DevToolsServer.destroy();
 }
 
-async function assertServerInitialized(browser, expected, message) {
-  const isInitialized = await SpecialPowers.spawn(browser, [], function() {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
-    );
-    const { DevToolsServer } = require("devtools/server/devtools-server");
-    return DevToolsServer.initialized;
-  });
-  is(isInitialized, expected, message);
+async function assertServerInitialized(tab, expected, message) {
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [expected, message],
+    function (_expected, _message) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
+      );
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
+      is(DevToolsServer.initialized, _expected, _message);
+    }
+  );
 }
 
-async function setContentServerKeepAlive(browser, keepAlive, message) {
-  await SpecialPowers.spawn(browser, [keepAlive], function(_keepAlive) {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
-    );
-    const { DevToolsServer } = require("devtools/server/devtools-server");
-    DevToolsServer.keepAlive = _keepAlive;
-  });
+async function assertDevToolsOpened(tab, expected, message) {
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [expected, message],
+    function (_expected, _message) {
+      is(ChromeUtils.isDevToolsOpened(), _expected, _message);
+    }
+  );
+}
+
+async function setContentServerKeepAlive(tab, keepAlive, message) {
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [keepAlive],
+    function (_keepAlive) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
+      );
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
+      DevToolsServer.keepAlive = _keepAlive;
+    }
+  );
 }

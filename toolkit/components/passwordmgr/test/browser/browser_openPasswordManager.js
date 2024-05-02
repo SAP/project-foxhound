@@ -1,11 +1,13 @@
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 add_task(async function test_noFilter() {
   let openingFunc = () =>
     LoginHelper.openPasswordManager(window, { entryPoint: "mainmenu" });
   let passwordManager = await openPasswordManager(openingFunc);
 
-  ok(passwordManager, "Login dialog was opened");
+  Assert.ok(passwordManager, "Login dialog was opened");
   await passwordManager.close();
   await TestUtils.waitForCondition(() => {
     return Services.wm.getMostRecentWindow("Toolkit:PasswordManager") === null;
@@ -21,7 +23,7 @@ add_task(async function test_filter() {
       entryPoint: "mainmenu",
     });
   let passwordManager = await openPasswordManager(openingFunc, true);
-  is(
+  Assert.equal(
     passwordManager.filterValue,
     domain,
     "search string to filter logins should match expectation"
@@ -36,7 +38,7 @@ add_task(async function test_management_noFilter() {
   let tabOpenPromise = BrowserTestUtils.waitForNewTab(gBrowser, "about:logins");
   LoginHelper.openPasswordManager(window, { entryPoint: "mainmenu" });
   let tab = await tabOpenPromise;
-  ok(tab, "Got the new tab");
+  Assert.ok(tab, "Got the new tab");
   BrowserTestUtils.removeTab(tab);
 });
 
@@ -51,13 +53,13 @@ add_task(async function test_management_filter() {
     entryPoint: "mainmenu",
   });
   let tab = await tabOpenPromise;
-  ok(tab, "Got the new tab with a domain filter");
+  Assert.ok(tab, "Got the new tab with a domain filter");
   BrowserTestUtils.removeTab(tab);
 });
 
 add_task(
   async function test_url_when_opening_password_manager_without_a_filterString() {
-    sinon.spy(window, "openTrustedLinkIn");
+    sinon.spy(window.gBrowser, "addTrustedTab");
     const openingFunc = () =>
       LoginHelper.openPasswordManager(window, {
         filterString: "",
@@ -65,32 +67,32 @@ add_task(
       });
     const passwordManager = await openPasswordManager(openingFunc);
 
-    const url = window.openTrustedLinkIn.lastCall.args[0];
+    const url = window.gBrowser.addTrustedTab.lastCall.args[0];
 
-    ok(
+    Assert.ok(
       !url.includes("filter"),
       "LoginHelper.openPasswordManager call without a filterString navigated to a URL with a filter query param"
     );
-    is(
+    Assert.equal(
       0,
       url.split("").filter(char => char === "&").length,
       "LoginHelper.openPasswordManager call without a filterString navigated to a URL with an &"
     );
-    is(
+    Assert.equal(
       url,
       "about:logins?entryPoint=mainmenu",
       "LoginHelper.openPasswordManager call without a filterString navigated to an unexpected URL"
     );
 
-    ok(passwordManager, "Login dialog was opened");
+    Assert.ok(passwordManager, "Login dialog was opened");
     await passwordManager.close();
-    window.openTrustedLinkIn.restore();
+    window.gBrowser.addTrustedTab.restore();
   }
 );
 
 add_task(
   async function test_url_when_opening_password_manager_with_a_filterString() {
-    sinon.spy(window, "openTrustedLinkIn");
+    sinon.spy(window.gBrowser, "addTrustedTab");
     const openingFunc = () =>
       LoginHelper.openPasswordManager(window, {
         filterString: "testFilter",
@@ -98,32 +100,32 @@ add_task(
       });
     const passwordManager = await openPasswordManager(openingFunc);
 
-    const url = window.openTrustedLinkIn.lastCall.args[0];
+    const url = window.gBrowser.addTrustedTab.lastCall.args[0];
 
-    ok(
+    Assert.ok(
       url.includes("filter"),
       "LoginHelper.openPasswordManager call with a filterString navigated to a URL without a filter query param"
     );
-    is(
+    Assert.equal(
       1,
       url.split("").filter(char => char === "&").length,
       "LoginHelper.openPasswordManager call with a filterString navigated to a URL without the correct number of '&'s"
     );
-    is(
+    Assert.equal(
       url,
       "about:logins?filter=testFilter&entryPoint=mainmenu",
       "LoginHelper.openPasswordManager call with a filterString navigated to an unexpected URL"
     );
 
-    ok(passwordManager, "Login dialog was opened");
+    Assert.ok(passwordManager, "Login dialog was opened");
     await passwordManager.close();
-    window.openTrustedLinkIn.restore();
+    window.gBrowser.addTrustedTab.restore();
   }
 );
 
 add_task(
   async function test_url_when_opening_password_manager_without_filterString_or_entryPoint() {
-    sinon.spy(window, "openTrustedLinkIn");
+    sinon.spy(window.gBrowser, "addTrustedTab");
     const openingFunc = () =>
       LoginHelper.openPasswordManager(window, {
         filterString: "",
@@ -131,29 +133,29 @@ add_task(
       });
     const passwordManager = await openPasswordManager(openingFunc);
 
-    const url = window.openTrustedLinkIn.lastCall.args[0];
+    const url = window.gBrowser.addTrustedTab.lastCall.args[0];
 
-    ok(
+    Assert.ok(
       !url.includes("filter"),
       "LoginHelper.openPasswordManager call without a filterString navigated to a URL with a filter query param"
     );
-    ok(
+    Assert.ok(
       !url.includes("entryPoint"),
       "LoginHelper.openPasswordManager call without an entryPoint navigated to a URL with an entryPoint query param"
     );
-    is(
+    Assert.equal(
       0,
       url.split("").filter(char => char === "&").length,
       "LoginHelper.openPasswordManager call without query params navigated to a URL that included at least one '&'"
     );
-    is(
+    Assert.equal(
       url,
       "about:logins",
       "LoginHelper.openPasswordManager call without a filterString or entryPoint navigated to an unexpected URL"
     );
 
-    ok(passwordManager, "Login dialog was opened");
+    Assert.ok(passwordManager, "Login dialog was opened");
     await passwordManager.close();
-    window.openTrustedLinkIn.restore();
+    window.gBrowser.addTrustedTab.restore();
   }
 );

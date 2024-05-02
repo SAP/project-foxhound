@@ -13,13 +13,12 @@ use style::gecko_bindings::structs::{Loader, LoaderReusableStyleSheets};
 use style::gecko_bindings::structs::{
     SheetLoadData, SheetLoadDataHolder, StyleSheet as DomStyleSheet,
 };
-use style::gecko_bindings::sugar::ownership::{FFIArcHelpers, HasBoxFFI, OwnedOrNull};
 use style::gecko_bindings::sugar::refptr::RefPtr;
 use style::global_style_data::GLOBAL_STYLE_DATA;
 use style::media_queries::MediaList;
 use style::parser::ParserContext;
 use style::shared_lock::{Locked, SharedRwLock};
-use style::stylesheets::import_rule::{ImportLayer, ImportSheet};
+use style::stylesheets::import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition};
 use style::stylesheets::AllowImportRules;
 use style::stylesheets::{ImportRule, Origin, StylesheetLoader as StyleStylesheetLoader};
 use style::stylesheets::{StylesheetContents, UrlExtraData};
@@ -52,16 +51,27 @@ impl StyleStylesheetLoader for StylesheetLoader {
         _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
-        layer: Option<ImportLayer>,
+        supports: Option<ImportSupportsCondition>,
+        layer: ImportLayer,
     ) -> Arc<Locked<ImportRule>> {
+        // Ensure the supports conditions for this @import are true, if not, refuse to load
+        if !supports.as_ref().map_or(true, |s| s.enabled) {
+            return Arc::new(lock.wrap(ImportRule {
+                url,
+                stylesheet: ImportSheet::new_refused(),
+                supports,
+                layer,
+                source_location,
+            }));
+        }
+
         // After we get this raw pointer ImportRule will be moved into a lock and Arc
         // and so the Arc<Url> pointer inside will also move,
         // but the Url it points to or the allocating backing the String inside that Url won’t,
         // so this raw pointer will still be valid.
 
-        let child_sheet = unsafe {
-            Gecko_LoadStyleSheet(self.0, self.1, self.2, self.3, &url, media.into_strong())
-        };
+        let child_sheet =
+            unsafe { Gecko_LoadStyleSheet(self.0, self.1, self.2, self.3, &url, media.into()) };
 
         debug_assert!(
             !child_sheet.is_null(),
@@ -72,6 +82,7 @@ impl StyleStylesheetLoader for StylesheetLoader {
         Arc::new(lock.wrap(ImportRule {
             url,
             stylesheet,
+            supports,
             layer,
             source_location,
         }))
@@ -84,7 +95,6 @@ pub struct AsyncStylesheetParser {
     bytes: nsCString,
     origin: Origin,
     quirks_mode: QuirksMode,
-    line_number_offset: u32,
     should_record_use_counters: bool,
     allow_import_rules: AllowImportRules,
 }
@@ -96,7 +106,6 @@ impl AsyncStylesheetParser {
         bytes: nsCString,
         origin: Origin,
         quirks_mode: QuirksMode,
-        line_number_offset: u32,
         should_record_use_counters: bool,
         allow_import_rules: AllowImportRules,
     ) -> Self {
@@ -106,7 +115,6 @@ impl AsyncStylesheetParser {
             bytes,
             origin,
             quirks_mode,
-            line_number_offset,
             should_record_use_counters,
             allow_import_rules,
         }
@@ -132,22 +140,16 @@ impl AsyncStylesheetParser {
             Some(&self),
             None,
             self.quirks_mode.into(),
-            self.line_number_offset,
             use_counters.as_deref(),
             self.allow_import_rules,
             /* sanitized_output = */ None,
         );
 
-        let use_counters = match use_counters {
-            Some(c) => c.into_ffi().maybe(),
-            None => OwnedOrNull::null(),
-        };
-
         unsafe {
             bindings::Gecko_StyleSheet_FinishAsyncParse(
                 self.load_data.get(),
-                sheet.into_strong(),
-                use_counters,
+                sheet.into(),
+                use_counters.map_or(std::ptr::null_mut(), Box::into_raw),
             );
         }
     }
@@ -161,12 +163,25 @@ impl StyleStylesheetLoader for AsyncStylesheetParser {
         _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
-        layer: Option<ImportLayer>,
+        supports: Option<ImportSupportsCondition>,
+        layer: ImportLayer,
     ) -> Arc<Locked<ImportRule>> {
+        // Ensure the supports conditions for this @import are true, if not, refuse to load
+        if !supports.as_ref().map_or(true, |s| s.enabled) {
+            return Arc::new(lock.wrap(ImportRule {
+                url: url.clone(),
+                stylesheet: ImportSheet::new_refused(),
+                supports,
+                layer,
+                source_location,
+            }));
+        }
+
         let stylesheet = ImportSheet::new_pending();
         let rule = Arc::new(lock.wrap(ImportRule {
             url: url.clone(),
             stylesheet,
+            supports,
             layer,
             source_location,
         }));
@@ -175,8 +190,8 @@ impl StyleStylesheetLoader for AsyncStylesheetParser {
             bindings::Gecko_LoadStyleSheetAsync(
                 self.load_data.get(),
                 &url,
-                media.into_strong(),
-                rule.clone().into_strong(),
+                media.into(),
+                rule.clone().into(),
             );
         }
 

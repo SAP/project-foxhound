@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,12 +31,7 @@ class RecordType final : public js::NativeObject {
   friend JSString* js::RecordToSource(JSContext* cx, RecordType* rec);
 
  public:
-  enum {
-    INITIALIZED_LENGTH_SLOT = 0,
-    SORTED_KEYS_SLOT,
-    IS_ATOMIZED_SLOT,
-    SLOT_COUNT
-  };
+  enum { SORTED_KEYS_SLOT = 0, IS_ATOMIZED_SLOT, SLOT_COUNT };
 
   static const js::ClassSpec classSpec_;
   static const JSClass class_;
@@ -46,6 +41,11 @@ class RecordType final : public js::NativeObject {
                               HandleValue value);
   bool finishInitialization(JSContext* cx);
   static js::Shape* getInitialShape(JSContext* cx);
+
+  static bool copy(JSContext* cx, Handle<RecordType*> in,
+                   MutableHandle<RecordType*> out);
+
+  uint32_t length();
 
   bool getOwnProperty(JSContext* cx, HandleId id, MutableHandleValue vp) const;
 

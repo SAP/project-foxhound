@@ -167,6 +167,9 @@ are:
 * `jsshell`: to be run in a JavaScript shell, without access to the DOM
   (currently only supported in SpiderMonkey, and skipped in wptrunner)
 * `worker`: shorthand for the dedicated, shared, and service worker scopes
+* `shadowrealm`: runs the test code in a
+  [ShadowRealm](https://github.com/tc39/proposal-shadowrealm) context hosted in
+  an ordinary Window context; to be run at <code><var>x</var>.any.shadowrealm.html</code>
 
 To check if your test is run from a window or worker you can use the following two methods that will
 be made available by the framework:
@@ -209,7 +212,7 @@ Use `// META: timeout=long` at the beginning of the resource.
 Use `// META: variant=url-suffix` at the beginning of the resource. For example,
 
 ```
-// META: variant=
+// META: variant=?default
 // META: variant=?wss
 ```
 
@@ -219,7 +222,7 @@ A test file can have multiple variants by including `meta` elements,
 for example:
 
 ```html
-<meta name="variant" content="">
+<meta name="variant" content="?default">
 <meta name="variant" content="?wss">
 ```
 
@@ -238,7 +241,7 @@ otherwise too many tests to complete inside the timeout. For example:
 <meta name="variant" content="?2001-last">
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
-<script src="/common/subset-tests.js">
+<script src="/common/subset-tests.js"></script>
 <script>
  const tests = [
                  { fn: t => { ... }, name: "..." },

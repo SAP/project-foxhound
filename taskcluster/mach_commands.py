@@ -5,7 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import json
 import logging
@@ -15,15 +14,9 @@ import time
 import traceback
 from functools import partial
 
-from mach.decorators import (
-    Command,
-    CommandArgument,
-    SettingsProvider,
-    SubCommand,
-)
-
 import gecko_taskgraph.main
 from gecko_taskgraph.main import commands as taskgraph_commands
+from mach.decorators import Command, CommandArgument, SettingsProvider, SubCommand
 
 logger = logging.getLogger("taskcluster")
 
@@ -106,34 +99,6 @@ def get_taskgraph_decision_parser():
                 "action": "append",
                 "default": argparse.SUPPRESS,
                 "help": "Kinds that should not be re-used from the on-push graph.",
-            },
-        ),
-        (
-            ["--comm-base-repository"],
-            {
-                "required": False,
-                "help": "URL for 'base' comm-* repository to clone",
-            },
-        ),
-        (
-            ["--comm-head-repository"],
-            {
-                "required": False,
-                "help": "URL for 'head' comm-* repository to fetch revision from",
-            },
-        ),
-        (
-            ["--comm-head-ref"],
-            {
-                "required": False,
-                "help": "comm-* Reference (this is same as rev usually for hg)",
-            },
-        ),
-        (
-            ["--comm-head-rev"],
-            {
-                "required": False,
-                "help": "Commit revision to use from head comm-* repository",
             },
         ),
     ]
@@ -359,7 +324,7 @@ def setup_logging(command_context, quiet=False, verbose=True):
 def show_actions(command_context, options):
     import gecko_taskgraph
     import gecko_taskgraph.actions
-    import gecko_taskgraph.generator
+    from taskgraph.generator import TaskGraphGenerator
     from taskgraph.parameters import parameters_loader
 
     try:
@@ -368,7 +333,7 @@ def show_actions(command_context, options):
         )
         parameters = parameters_loader(options["parameters"])
 
-        tgg = gecko_taskgraph.generator.TaskGraphGenerator(
+        tgg = TaskGraphGenerator(
             root_dir=options.get("root"),
             parameters=parameters,
         )

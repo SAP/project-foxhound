@@ -13,8 +13,7 @@
 #include "ServiceWorkerRegistrationListener.h"
 #include "ServiceWorkerUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ServiceWorkerRegistrationInfo;
 class ServiceWorkerRegistrationParent;
@@ -76,11 +75,11 @@ class ServiceWorkerRegistrationProxy final
   RefPtr<GenericPromise> Unregister();
 
   RefPtr<ServiceWorkerRegistrationPromise> Update(
-      const nsCString& aNewestWorkerScriptUrl);
+      const nsACString& aNewestWorkerScriptUrl);
 
   RefPtr<GenericPromise> SetNavigationPreloadEnabled(const bool& aEnabled);
 
-  RefPtr<GenericPromise> SetNavigationPreloadHeader(const nsCString& aHeader);
+  RefPtr<GenericPromise> SetNavigationPreloadHeader(const nsACString& aHeader);
 
   RefPtr<NavigationPreloadStatePromise> GetNavigationPreloadState();
 
@@ -88,7 +87,6 @@ class ServiceWorkerRegistrationProxy final
                                         override);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // moz_dom_ServiceWorkerRegistrationProxy_h

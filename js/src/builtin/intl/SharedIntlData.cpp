@@ -28,18 +28,15 @@
 
 #include "builtin/Array.h"
 #include "builtin/intl/CommonFunctions.h"
-#include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/TimeZoneDataGenerated.h"
-#include "builtin/String.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
 #include "vm/ArrayObject.h"
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // Atomize
 #include "vm/JSContext.h"
 #include "vm/StringType.h"
 
 using js::HashNumber;
-using js::intl::StringsAreEqual;
 
 template <typename Char>
 static constexpr Char ToUpperASCII(Char c) {
@@ -137,7 +134,7 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
     return false;
   }
 
-  RootedAtom timeZone(cx);
+  Rooted<JSAtom*> timeZone(cx);
   for (auto timeZoneName : timeZones.unwrap()) {
     if (timeZoneName.isErr()) {
       ReportInternalError(cx);
@@ -187,8 +184,8 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
 
   ianaLinksCanonicalizedDifferentlyByICU.clearAndCompact();
 
-  RootedAtom linkName(cx);
-  RootedAtom& target = timeZone;
+  Rooted<JSAtom*> linkName(cx);
+  Rooted<JSAtom*>& target = timeZone;
   for (const auto& linkAndTarget :
        timezone::ianaLinksCanonicalizedDifferentlyByICU) {
     const char* rawLinkName = linkAndTarget.link;
@@ -226,14 +223,13 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
   return true;
 }
 
-bool js::intl::SharedIntlData::validateTimeZoneName(JSContext* cx,
-                                                    HandleString timeZone,
-                                                    MutableHandleAtom result) {
+bool js::intl::SharedIntlData::validateTimeZoneName(
+    JSContext* cx, HandleString timeZone, MutableHandle<JSAtom*> result) {
   if (!ensureTimeZones(cx)) {
     return false;
   }
 
-  RootedLinearString timeZoneLinear(cx, timeZone->ensureLinear(cx));
+  Rooted<JSLinearString*> timeZoneLinear(cx, timeZone->ensureLinear(cx));
   if (!timeZoneLinear) {
     return false;
   }
@@ -247,12 +243,12 @@ bool js::intl::SharedIntlData::validateTimeZoneName(JSContext* cx,
 }
 
 bool js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
-    JSContext* cx, HandleString timeZone, MutableHandleAtom result) {
+    JSContext* cx, HandleString timeZone, MutableHandle<JSAtom*> result) {
   if (!ensureTimeZones(cx)) {
     return false;
   }
 
-  RootedLinearString timeZoneLinear(cx, timeZone->ensureLinear(cx));
+  Rooted<JSLinearString*> timeZoneLinear(cx, timeZone->ensureLinear(cx));
   if (!timeZoneLinear) {
     return false;
   }
@@ -521,7 +517,7 @@ bool js::intl::SharedIntlData::isSupportedLocale(JSContext* cx,
     return false;
   }
 
-  RootedLinearString localeLinear(cx, locale->ensureLinear(cx));
+  Rooted<JSLinearString*> localeLinear(cx, locale->ensureLinear(cx));
   if (!localeLinear) {
     return false;
   }
@@ -596,7 +592,7 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
   // complete due to OOM, clear all data and start from scratch.
   upperCaseFirstLocales.clearAndCompact();
 
-  RootedAtom locale(cx);
+  Rooted<JSAtom*> locale(cx);
   for (const char* rawLocale : mozilla::intl::Collator::GetAvailableLocales()) {
     auto collator = mozilla::intl::Collator::TryCreate(rawLocale);
     if (collator.isErr()) {
@@ -648,7 +644,7 @@ bool js::intl::SharedIntlData::isUpperCaseFirst(JSContext* cx,
   }
 #endif
 
-  RootedLinearString localeLinear(cx, locale->ensureLinear(cx));
+  Rooted<JSLinearString*> localeLinear(cx, locale->ensureLinear(cx));
   if (!localeLinear) {
     return false;
   }
@@ -678,9 +674,102 @@ bool js::intl::SharedIntlData::isUpperCaseFirst(JSContext* cx,
   return true;
 }
 
+#if DEBUG || MOZ_SYSTEM_ICU
+bool js::intl::SharedIntlData::ensureIgnorePunctuationLocales(JSContext* cx) {
+  if (ignorePunctuationInitialized) {
+    return true;
+  }
+
+  // If ensureIgnorePunctuationLocales() was called previously, but didn't
+  // complete due to OOM, clear all data and start from scratch.
+  ignorePunctuationLocales.clearAndCompact();
+
+  Rooted<JSAtom*> locale(cx);
+  for (const char* rawLocale : mozilla::intl::Collator::GetAvailableLocales()) {
+    auto collator = mozilla::intl::Collator::TryCreate(rawLocale);
+    if (collator.isErr()) {
+      ReportInternalError(cx, collator.unwrapErr());
+      return false;
+    }
+
+    auto ignorePunctuation = collator.unwrap()->GetIgnorePunctuation();
+    if (ignorePunctuation.isErr()) {
+      ReportInternalError(cx, ignorePunctuation.unwrapErr());
+      return false;
+    }
+
+    if (!ignorePunctuation.unwrap()) {
+      continue;
+    }
+
+    locale = Atomize(cx, rawLocale, strlen(rawLocale));
+    if (!locale) {
+      return false;
+    }
+
+    LocaleHasher::Lookup lookup(locale);
+    LocaleSet::AddPtr p = ignorePunctuationLocales.lookupForAdd(lookup);
+
+    // ICU shouldn't report any duplicate locales, but if it does, just
+    // ignore the duplicated locale.
+    if (!p && !ignorePunctuationLocales.add(p, locale)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+  }
+
+  MOZ_ASSERT(
+      !ignorePunctuationInitialized,
+      "ensureIgnorePunctuationLocales is neither reentrant nor thread-safe");
+  ignorePunctuationInitialized = true;
+
+  return true;
+}
+#endif  // DEBUG || MOZ_SYSTEM_ICU
+
+bool js::intl::SharedIntlData::isIgnorePunctuation(JSContext* cx,
+                                                   HandleString locale,
+                                                   bool* ignorePunctuation) {
+#if DEBUG || MOZ_SYSTEM_ICU
+  if (!ensureIgnorePunctuationLocales(cx)) {
+    return false;
+  }
+#endif
+
+  Rooted<JSLinearString*> localeLinear(cx, locale->ensureLinear(cx));
+  if (!localeLinear) {
+    return false;
+  }
+
+#if !MOZ_SYSTEM_ICU
+  // "th" (Thai) is the only supported locale which ignores punctuation by
+  // default.
+  bool isDefaultIgnorePunctuationLocale =
+      js::StringEqualsLiteral(localeLinear, "th");
+#endif
+
+#if DEBUG || MOZ_SYSTEM_ICU
+  LocaleHasher::Lookup lookup(localeLinear);
+  *ignorePunctuation = ignorePunctuationLocales.has(lookup);
+#else
+  *ignorePunctuation = isDefaultIgnorePunctuationLocale;
+#endif
+
+#if !MOZ_SYSTEM_ICU
+  MOZ_ASSERT(*ignorePunctuation == isDefaultIgnorePunctuationLocale,
+             "ignore punctuation locales don't match hard-coded list");
+#endif
+
+  return true;
+}
+
 void js::intl::DateTimePatternGeneratorDeleter::operator()(
     mozilla::intl::DateTimePatternGenerator* ptr) {
   delete ptr;
+}
+
+static bool StringsAreEqual(const char* s1, const char* s2) {
+  return !strcmp(s1, s2);
 }
 
 mozilla::intl::DateTimePatternGenerator*
@@ -722,6 +811,7 @@ void js::intl::SharedIntlData::destroyInstance() {
   collatorSupportedLocales.clearAndCompact();
 #if DEBUG || MOZ_SYSTEM_ICU
   upperCaseFirstLocales.clearAndCompact();
+  ignorePunctuationLocales.clearAndCompact();
 #endif
 }
 
@@ -735,6 +825,7 @@ void js::intl::SharedIntlData::trace(JSTracer* trc) {
     collatorSupportedLocales.trace(trc);
 #if DEBUG || MOZ_SYSTEM_ICU
     upperCaseFirstLocales.trace(trc);
+    ignorePunctuationLocales.trace(trc);
 #endif
   }
 }
@@ -749,6 +840,7 @@ size_t js::intl::SharedIntlData::sizeOfExcludingThis(
          collatorSupportedLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
 #if DEBUG || MOZ_SYSTEM_ICU
          upperCaseFirstLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
+         ignorePunctuationLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
 #endif
          mallocSizeOf(dateTimePatternGeneratorLocale.get());
 }

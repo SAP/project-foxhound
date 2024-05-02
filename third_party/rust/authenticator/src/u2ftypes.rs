@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use crate::consts::*;
+use crate::transport::hid::HIDDevice;
+use crate::util::io_err;
+use serde::Serialize;
 use std::{cmp, fmt, io, str};
 
-use crate::consts::*;
-use crate::util::io_err;
-
 pub fn to_hex(data: &[u8], joiner: &str) -> String {
-    let parts: Vec<String> = data.iter().map(|byte| format!("{:02x}", byte)).collect();
+    let parts: Vec<String> = data.iter().map(|byte| format!("{byte:02x}")).collect();
     parts.join(joiner)
 }
 
@@ -16,33 +17,6 @@ pub fn trace_hex(data: &[u8]) {
     if log_enabled!(log::Level::Trace) {
         trace!("USB send: {}", to_hex(data, ""));
     }
-}
-
-// Trait for representing U2F HID Devices. Requires getters/setters for the
-// channel ID, created during device initialization.
-pub trait U2FDevice {
-    fn get_cid(&self) -> &[u8; 4];
-    fn set_cid(&mut self, cid: [u8; 4]);
-
-    fn in_rpt_size(&self) -> usize;
-    fn in_init_data_size(&self) -> usize {
-        self.in_rpt_size() - INIT_HEADER_SIZE
-    }
-    fn in_cont_data_size(&self) -> usize {
-        self.in_rpt_size() - CONT_HEADER_SIZE
-    }
-
-    fn out_rpt_size(&self) -> usize;
-    fn out_init_data_size(&self) -> usize {
-        self.out_rpt_size() - INIT_HEADER_SIZE
-    }
-    fn out_cont_data_size(&self) -> usize {
-        self.out_rpt_size() - CONT_HEADER_SIZE
-    }
-
-    fn get_property(&self, prop_name: &str) -> io::Result<String>;
-    fn get_device_info(&self) -> U2FDeviceInfo;
-    fn set_device_info(&mut self, dev_info: U2FDeviceInfo);
 }
 
 // Init structure for U2F Communications. Tells the receiver what channel
@@ -54,10 +28,7 @@ pub trait U2FDevice {
 pub struct U2FHIDInit {}
 
 impl U2FHIDInit {
-    pub fn read<T>(dev: &mut T) -> io::Result<Vec<u8>>
-    where
-        T: U2FDevice + io::Read,
-    {
+    pub fn read<T: HIDDevice>(dev: &mut T) -> io::Result<(HIDCmd, Vec<u8>)> {
         let mut frame = vec![0u8; dev.in_rpt_size()];
         let mut count = dev.read(&mut frame)?;
 
@@ -69,19 +40,22 @@ impl U2FHIDInit {
             return Err(io_err("invalid init packet"));
         }
 
+        let cmd = HIDCmd::from(frame[4] | TYPE_INIT);
+
         let cap = (frame[5] as usize) << 8 | (frame[6] as usize);
         let mut data = Vec::with_capacity(cap);
 
-        let len = cmp::min(cap, dev.in_init_data_size());
+        let len = if dev.in_rpt_size() >= INIT_HEADER_SIZE {
+            cmp::min(cap, dev.in_rpt_size() - INIT_HEADER_SIZE)
+        } else {
+            cap
+        };
         data.extend_from_slice(&frame[7..7 + len]);
 
-        Ok(data)
+        Ok((cmd, data))
     }
 
-    pub fn write<T>(dev: &mut T, cmd: u8, data: &[u8]) -> io::Result<usize>
-    where
-        T: U2FDevice + io::Write,
-    {
+    pub fn write<T: HIDDevice>(dev: &mut T, cmd: u8, data: &[u8]) -> io::Result<usize> {
         if data.len() > 0xffff {
             return Err(io_err("payload length > 2^16"));
         }
@@ -92,7 +66,11 @@ impl U2FHIDInit {
         frame[6] = (data.len() >> 8) as u8;
         frame[7] = data.len() as u8;
 
-        let count = cmp::min(data.len(), dev.out_init_data_size());
+        let count = if dev.out_rpt_size() >= INIT_HEADER_SIZE {
+            cmp::min(data.len(), dev.out_rpt_size() - INIT_HEADER_SIZE)
+        } else {
+            data.len()
+        };
         frame[8..8 + count].copy_from_slice(&data[..count]);
         trace_hex(&frame);
 
@@ -114,10 +92,7 @@ impl U2FHIDInit {
 pub struct U2FHIDCont {}
 
 impl U2FHIDCont {
-    pub fn read<T>(dev: &mut T, seq: u8, max: usize) -> io::Result<Vec<u8>>
-    where
-        T: U2FDevice + io::Read,
-    {
+    pub fn read<T: HIDDevice>(dev: &mut T, seq: u8, max: usize) -> io::Result<Vec<u8>> {
         let mut frame = vec![0u8; dev.in_rpt_size()];
         let mut count = dev.read(&mut frame)?;
 
@@ -133,19 +108,24 @@ impl U2FHIDCont {
             return Err(io_err("invalid sequence number"));
         }
 
-        let max = cmp::min(max, dev.in_cont_data_size());
+        let max = if dev.in_rpt_size() >= CONT_HEADER_SIZE {
+            cmp::min(max, dev.in_rpt_size() - CONT_HEADER_SIZE)
+        } else {
+            max
+        };
         Ok(frame[5..5 + max].to_vec())
     }
 
-    pub fn write<T>(dev: &mut T, seq: u8, data: &[u8]) -> io::Result<usize>
-    where
-        T: U2FDevice + io::Write,
-    {
+    pub fn write<T: HIDDevice>(dev: &mut T, seq: u8, data: &[u8]) -> io::Result<usize> {
         let mut frame = vec![0u8; dev.out_rpt_size() + 1];
         frame[1..5].copy_from_slice(dev.get_cid());
         frame[5] = seq;
 
-        let count = cmp::min(data.len(), dev.out_cont_data_size());
+        let count = if dev.out_rpt_size() >= CONT_HEADER_SIZE {
+            cmp::min(data.len(), dev.out_rpt_size() - CONT_HEADER_SIZE)
+        } else {
+            data.len()
+        };
         frame[6..6 + count].copy_from_slice(&data[..count]);
         trace_hex(&frame);
 
@@ -169,14 +149,14 @@ pub struct U2FHIDInitResp {
     pub version_major: u8,
     pub version_minor: u8,
     pub version_build: u8,
-    pub cap_flags: u8,
+    pub cap_flags: Capability,
 }
 
 impl U2FHIDInitResp {
     pub fn read(data: &[u8], nonce: &[u8]) -> io::Result<U2FHIDInitResp> {
         assert_eq!(nonce.len(), INIT_NONCE_SIZE);
 
-        if data.len() != INIT_NONCE_SIZE + 9 {
+        if data.len() < INIT_NONCE_SIZE + 9 {
             return Err(io_err("invalid init response"));
         }
 
@@ -195,40 +175,110 @@ impl U2FHIDInitResp {
             version_major: data[INIT_NONCE_SIZE + 5],
             version_minor: data[INIT_NONCE_SIZE + 6],
             version_build: data[INIT_NONCE_SIZE + 7],
-            cap_flags: data[INIT_NONCE_SIZE + 8],
+            cap_flags: Capability::from_bits_truncate(data[INIT_NONCE_SIZE + 8]),
         };
 
         Ok(rsp)
     }
 }
 
-// https://en.wikipedia.org/wiki/Smart_card_application_protocol_data_unit
-// https://fidoalliance.org/specs/fido-u2f-v1.
-// 0-nfc-bt-amendment-20150514/fido-u2f-raw-message-formats.html#u2f-message-framing
-pub struct U2FAPDUHeader {}
+/// CTAP1 (FIDO v1.x / U2F / "APDU-like") request framing format, used for
+/// communication with authenticators over *all* transports.
+///
+/// This implementation follows the [FIDO v1.2 spec][fido12rawf], but only
+/// implements extended APDUs (supported by USB HID, NFC and BLE transports).
+///
+/// # Technical details
+///
+/// FIDO v1.0 U2F framing [claims][fido10rawf] to be based on
+/// [ISO/IEC 7816-4:2005][iso7816] (smart card) APDUs, but has several
+/// differences, errors and omissions which make it incompatible.
+///
+/// FIDO v1.1 and v1.2 fixed *most* of these issues, but as a result is *not*
+/// fully compatible with the FIDO v1.0 specification:
+///
+/// * FIDO v1.0 *only* defines extended APDUs, though
+///   [v1.0 NFC implementors][fido10nfc] need to also handle short APDUs.
+///
+///   FIDO v1.1 and later define *both* short and extended APDUs, but defers to
+///   transport-level guidance about which to use (where extended APDU support
+///   is mandatory for all transports, and short APDU support is only mandatory
+///   for NFC transports).
+///
+/// * FIDO v1.0 doesn't special-case N<sub>c</sub> (command data length) = 0
+///   (ie: L<sub>c</sub> is *always* present).
+///
+/// * FIDO v1.0 declares extended L<sub>c</sub> as a 24-bit integer, rather than
+///   16-bit with padding byte.
+///
+/// * FIDO v1.0 omits L<sub>e</sub> bytes entirely,
+///   [except for short APDUs over NFC][fido10nfc].
+///
+/// Unfortunately, FIDO v2.x gives ambiguous compatibility guidance:
+///
+/// * [The FIDO v2.0 spec describes framing][fido20u2f] in
+///   [FIDO v1.0 U2F Raw Message Format][fido10rawf], [cites][fido20u2fcite] the
+///   FIDO v1.0 format by *name*, but actually links to the
+///   [FIDO v1.2 format][fido12rawf].
+///
+/// * [The FIDO v2.1 spec also describes framing][fido21u2f] in
+///   [FIDO v1.0 U2F Raw Message Format][fido10rawf], but [cites][fido21u2fcite]
+///   the [FIDO v1.2 U2F Raw Message Format][fido12rawf] as a reference by name
+///   and URL.
+///
+/// [fido10nfc]: https://fidoalliance.org/specs/fido-u2f-v1.0-nfc-bt-amendment-20150514/fido-u2f-nfc-protocol.html#framing
+/// [fido10raw]: https://fidoalliance.org/specs/fido-u2f-v1.0-nfc-bt-amendment-20150514/fido-u2f-raw-message-formats.html
+/// [fido10rawf]: https://fidoalliance.org/specs/fido-u2f-v1.0-nfc-bt-amendment-20150514/fido-u2f-raw-message-formats.html#u2f-message-framing
+/// [fido12rawf]: https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/fido-u2f-raw-message-formats-v1.2-ps-20170411.html#u2f-message-framing
+/// [fido20u2f]: https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#u2f-framing
+/// [fido20u2fcite]: https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#biblio-u2frawmsgs
+/// [fido21u2f]: https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#u2f-framing
+/// [fido21u2fcite]: https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#biblio-u2frawmsgs
+/// [iso7816]: https://www.iso.org/standard/36134.html
+pub struct CTAP1RequestAPDU {}
 
-impl U2FAPDUHeader {
+impl CTAP1RequestAPDU {
+    /// Serializes a CTAP command into
+    /// [FIDO v1.2 U2F Raw Message Format][fido12raw]. See
+    /// [the struct documentation][Self] for implementation notes.
+    ///
+    /// # Arguments
+    ///
+    /// * `ins`: U2F command code, as documented in
+    ///   [FIDO v1.2 U2F Raw Format][fido12cmd].
+    /// * `p1`: Command parameter 1 / control byte.
+    /// * `data`: Request data, as documented in
+    ///   [FIDO v1.2 Raw Message Formats][fido12raw], of up to 65535 bytes.
+    ///
+    /// [fido12cmd]: https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/fido-u2f-raw-message-formats-v1.2-ps-20170411.html#command-and-parameter-values
+    /// [fido12raw]: https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/fido-u2f-raw-message-formats-v1.2-ps-20170411.html
     pub fn serialize(ins: u8, p1: u8, data: &[u8]) -> io::Result<Vec<u8>> {
         if data.len() > 0xffff {
             return Err(io_err("payload length > 2^16"));
         }
+        // Size of header + data.
+        let data_size = if data.is_empty() { 0 } else { 2 + data.len() };
+        let mut bytes = vec![0u8; U2FAPDUHEADER_SIZE + data_size];
 
-        // Size of header + data + 2 zero bytes for maximum return size.
-        let mut bytes = vec![0u8; U2FAPDUHEADER_SIZE + data.len() + 2];
-        // cla is always 0 for our requirements
+        // bytes[0] (CLA): Always 0 in FIDO v1.x.
         bytes[1] = ins;
         bytes[2] = p1;
-        // p2 is always 0, at least, for our requirements.
-        // lc[0] should always be 0.
-        bytes[5] = (data.len() >> 8) as u8;
-        bytes[6] = data.len() as u8;
-        bytes[7..7 + data.len()].copy_from_slice(data);
+        // bytes[3] (P2): Always 0 in FIDO v1.x.
 
+        // bytes[4] (Lc1/Le1): Always 0 for extended APDUs.
+        if !data.is_empty() {
+            bytes[5] = (data.len() >> 8) as u8; // Lc2
+            bytes[6] = data.len() as u8; // Lc3
+
+            bytes[7..7 + data.len()].copy_from_slice(data);
+        }
+
+        // Last two bytes (Le): Always 0 for Ne = 65536
         Ok(bytes)
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct U2FDeviceInfo {
     pub vendor_name: Vec<u8>,
     pub device_name: Vec<u8>,
@@ -236,7 +286,7 @@ pub struct U2FDeviceInfo {
     pub version_major: u8,
     pub version_minor: u8,
     pub version_build: u8,
-    pub cap_flags: u8,
+    pub cap_flags: Capability,
 }
 
 impl fmt::Display for U2FDeviceInfo {
@@ -250,7 +300,42 @@ impl fmt::Display for U2FDeviceInfo {
             &self.version_major,
             &self.version_minor,
             &self.version_build,
-            to_hex(&[self.cap_flags], ":"),
+            to_hex(&[self.cap_flags.bits()], ":"),
         )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::CTAP1RequestAPDU;
+
+    #[test]
+    fn test_ctap1_serialize() {
+        // Command with no data, Lc should be omitted.
+        assert_eq!(
+            vec![0, 1, 2, 0, 0, 0, 0],
+            CTAP1RequestAPDU::serialize(1, 2, &[]).unwrap()
+        );
+
+        // Command with data, Lc should be included.
+        assert_eq!(
+            vec![0, 1, 2, 0, 0, 0, 1, 42, 0, 0],
+            CTAP1RequestAPDU::serialize(1, 2, &[42]).unwrap()
+        );
+
+        // Command with 300 bytes data, longer Lc.
+        let d = [0xFF; 300];
+        let mut expected = vec![0, 1, 2, 0, 0, 0x1, 0x2c];
+        expected.extend_from_slice(&d);
+        expected.extend_from_slice(&[0, 0]); // Lc
+        assert_eq!(expected, CTAP1RequestAPDU::serialize(1, 2, &d).unwrap());
+
+        // Command with 64k of data should error
+        let big = [0xFF; 65536];
+        assert!(CTAP1RequestAPDU::serialize(1, 2, &big).is_err());
     }
 }

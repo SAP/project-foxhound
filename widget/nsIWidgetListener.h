@@ -65,7 +65,9 @@ class nsIWidgetListener {
    * Called when a window is moved to location (x, y). Returns true if the
    * notification was handled. Coordinates are outer window screen coordinates.
    */
-  virtual bool WindowMoved(nsIWidget* aWidget, int32_t aX, int32_t aY);
+  enum class ByMoveToRect : bool { No, Yes };
+  virtual bool WindowMoved(nsIWidget* aWidget, int32_t aX, int32_t aY,
+                           ByMoveToRect);
 
   /**
    * Called when a window is resized to (width, height). Returns true if the
@@ -100,16 +102,6 @@ class nsIWidgetListener {
   virtual bool ZLevelChanged(bool aImmediate, nsWindowZ* aPlacement,
                              nsIWidget* aRequestBelow,
                              nsIWidget** aActualBelow);
-
-  /**
-   * Called when the window will enter or leave the fullscreen state.
-   */
-  virtual void FullscreenWillChange(bool aInFullscreen);
-
-  /**
-   * Called when the window entered or left the fullscreen state.
-   */
-  virtual void FullscreenChanged(bool aInFullscreen);
 
   /**
    * Called when the macOS titlebar is shown while in fullscreen.

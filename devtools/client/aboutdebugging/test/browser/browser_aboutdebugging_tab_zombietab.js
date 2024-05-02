@@ -4,9 +4,7 @@
 "use strict";
 
 let gUniqueCounter = 0;
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
-);
+
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 const BROWSER_STATE_TABS = [
@@ -31,7 +29,7 @@ const BROWSER_STATE = {
 
 // Check that the inspect action is disabled for lazy/zombie tabs, such as the
 // ones created after a session restore.
-add_task(async function() {
+add_task(async function () {
   // This setup is normally handed by the openAboutDebugging helper, but here we
   // open about:debugging via session restore.
   silenceWorkerUpdates();

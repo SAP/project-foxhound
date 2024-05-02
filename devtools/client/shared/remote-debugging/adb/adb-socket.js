@@ -4,13 +4,11 @@
 
 "use strict";
 
-const ChromeUtils = require("ChromeUtils");
-const { Cu } = require("chrome");
-const { dumpn } = require("devtools/shared/DevToolsUtils");
+const { dumpn } = require("resource://devtools/shared/DevToolsUtils.js");
 
 function createTCPSocket(location, port, options) {
   const { TCPSocket } = Cu.getGlobalForObject(
-    ChromeUtils.import("resource://gre/modules/Services.jsm")
+    ChromeUtils.importESModule("resource://gre/modules/AppConstants.sys.mjs")
   );
 
   return new TCPSocket(location, port, options);

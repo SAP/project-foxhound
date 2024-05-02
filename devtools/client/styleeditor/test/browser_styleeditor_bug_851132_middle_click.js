@@ -7,12 +7,17 @@
 
 const TESTCASE_URI = TEST_BASE_HTTP + "four.html";
 
-add_task(async function() {
+add_task(async function () {
   const { ui } = await openStyleEditorForURL(TESTCASE_URI);
   gBrowser.tabContainer.addEventListener("TabOpen", onTabAdded);
 
   await ui.editors[0].getSourceEditor();
   info("first editor selected");
+
+  await waitFor(
+    () => ui.editors[0].sourceEditor.hasFocus(),
+    "Wait until the initially selected editor grabs the focus"
+  );
 
   info("Left-clicking on the second editor link.");
   await clickOnStyleSheetLink(ui.editors[1], 0);
@@ -53,6 +58,6 @@ function onTabAdded() {
   ok(false, "middle mouse click has opened a new tab");
 }
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   gBrowser.tabContainer.removeEventListener("TabOpen", onTabAdded);
 });

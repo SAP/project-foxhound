@@ -154,6 +154,29 @@ tls13_ClientSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
             return SECFailure;
         }
     }
+
+    /* GREASE KeyShareEntry:
+     * [The client] MAY also send KeyShareEntry values for a subset of those
+     * selected in the "key_share" extension.  For each of these, the
+     * "key_exchange" field MAY be any value [RFC8701, Section 3.1].
+     *
+     * By default we do not send KeyShares for every NamedGroup so the
+     * ServerKeyShare handshake message / additional round-trip is not
+     * triggered by sending GREASE KeyShareEntries. */
+    if (ss->opt.enableGrease) {
+        rv = sslBuffer_AppendNumber(buf, ss->ssl3.hs.grease->idx[grease_group], 2);
+        if (rv != SECSuccess)
+            return rv;
+        /* Entry length */
+        rv = sslBuffer_AppendNumber(buf, 2, 2);
+        if (rv != SECSuccess)
+            return rv;
+        /* Entry value */
+        rv = sslBuffer_AppendNumber(buf, 0xCD, 2);
+        if (rv != SECSuccess)
+            return rv;
+    }
+
     rv = sslBuffer_InsertLength(buf, lengthOffset, 2);
     if (rv != SECSuccess) {
         return SECFailure;
@@ -420,6 +443,19 @@ tls13_ClientSendPreSharedKeyXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     /* ...or if PSK type is resumption, but we're not resuming. */
     sslPsk *psk = (sslPsk *)PR_LIST_HEAD(&ss->ssl3.hs.psks);
     if (psk->type == ssl_psk_resume && !ss->statelessResume) {
+        return SECSuccess;
+    }
+
+    /* ...or if PSKs are incompatible with negotiated ciphersuites
+     * (different hash algorithms) on HRR.
+     *
+     * In addition, in its updated ClientHello, the client SHOULD NOT offer any
+     * pre-shared keys associated with a hash other than that of the selected
+     * cipher suite.  This allows the client to avoid having to compute partial
+     * hash transcripts for multiple hashes in the second ClientHello
+     * [RFC8446, Section 4.1.4]. */
+    if (ss->ssl3.hs.helloRetry &&
+        (psk->hash != ss->ssl3.hs.suite_def->prf_hash)) {
         return SECSuccess;
     }
 
@@ -864,6 +900,16 @@ tls13_ClientSendSupportedVersionsXtn(const sslSocket *ss, TLSExtensionData *xtnD
         }
     }
 
+    /* GREASE SupportedVersions:
+     * A client MAY select one or more GREASE version values and advertise them
+     * in the "supported_versions" extension, if sent [RFC8701, Section 3.1]. */
+    if (ss->opt.enableGrease) {
+        rv = sslBuffer_AppendNumber(buf, ss->ssl3.hs.grease->idx[grease_version], 2);
+        if (rv != SECSuccess) {
+            return SECFailure;
+        }
+    }
+
     rv = sslBuffer_InsertLength(buf, lengthOffset, 1);
     if (rv != SECSuccess) {
         return SECFailure;
@@ -1032,7 +1078,6 @@ SECStatus
 tls13_ClientSendPskModesXtn(const sslSocket *ss, TLSExtensionData *xtnData,
                             sslBuffer *buf, PRBool *added)
 {
-    static const PRUint8 ke_modes[] = { tls13_psk_dh_ke };
     SECStatus rv;
 
     if (ss->vrange.max < SSL_LIBRARY_VERSION_TLS_1_3 ||
@@ -1043,7 +1088,15 @@ tls13_ClientSendPskModesXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     SSL_TRC(3, ("%d: TLS13[%d]: send psk key exchange modes extension",
                 SSL_GETPID(), ss->fd));
 
-    rv = sslBuffer_AppendVariable(buf, ke_modes, sizeof(ke_modes), 1);
+    /* GREASE PskKeyExchangeMode:
+     * A client MAY select one or more GREASE PskKeyExchangeMode values and
+     * advertise them in the "psk_key_exchange_modes" extension, if sent
+     * [RFC8701, Section 3.1]. */
+    if (ss->opt.enableGrease) {
+        rv = sslBuffer_AppendVariable(buf, (PRUint8[]){ tls13_psk_dh_ke, ss->ssl3.hs.grease->pskKem }, 2, 1);
+    } else {
+        rv = sslBuffer_AppendVariable(buf, (PRUint8[]){ tls13_psk_dh_ke }, 1, 1);
+    }
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -1164,6 +1217,15 @@ loser:
 }
 
 SECStatus
+tls13_ServerHandleCertAuthoritiesXtn(const sslSocket *ss, TLSExtensionData *xtnData, SECItem *data)
+{
+    SSL_TRC(3, ("%d: TLS13[%d]: ignore certificate_authorities extension",
+                SSL_GETPID(), ss->fd));
+    /* NSS ignores certificate_authorities in the ClientHello */
+    return SECSuccess;
+}
+
+SECStatus
 tls13_ServerSendHrrKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
                                sslBuffer *buf, PRBool *added)
 {
@@ -1241,6 +1303,33 @@ tls13_ClientHandleEchXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     PRCList parsedConfigs;
     PR_INIT_CLIST(&parsedConfigs);
 
+    /* The [retry config] response is valid only when the server used the
+     * ClientHelloOuter. If the server sent this extension in response to the
+     * inner variant [ECH was accepted], then the client MUST abort with an
+     * "unsupported_extension" alert [draft-ietf-tls-esni-14, Section 5]. */
+    if (ss->ssl3.hs.echAccepted) {
+        PORT_SetError(SSL_ERROR_RX_UNEXPECTED_EXTENSION);
+        ssl3_ExtSendAlert(ss, alert_fatal, unsupported_extension);
+        return SECFailure;
+    }
+
+    /* If the server is configured with any ECHConfigs, it MUST include the
+     * "encrypted_client_hello" extension in its EncryptedExtensions with the
+     * "retry_configs" field set to one or more ECHConfig structures with
+     * up-to-date keys [draft-ietf-tls-esni-14, Section 7.1]. */
+    if (ss->ssl3.hs.msg_type != ssl_hs_encrypted_extensions) {
+        PORT_SetError(SSL_ERROR_RX_UNEXPECTED_EXTENSION);
+        if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
+            /* For TLS < 1.3 the extension is unkown/unsupported. */
+            ssl3_ExtSendAlert(ss, alert_fatal, unsupported_extension);
+        } else {
+            /* For TLS 1.3 the extension is known but prohibited outside EE
+             * (see RFC8446, Section 4.2 for alert rationale). */
+            ssl3_ExtSendAlert(ss, alert_fatal, illegal_parameter);
+        }
+        return SECFailure;
+    }
+
     PORT_Assert(!xtnData->ech);
     xtnData->ech = PORT_ZNew(sslEchXtnState);
     if (!xtnData->ech) {
@@ -1301,7 +1390,8 @@ tls13_ClientSendDelegatedCredentialsXtn(const sslSocket *ss,
         return SECSuccess;
     }
 
-    rv = ssl3_EncodeFilteredSigAlgs(ss, filtered, filteredCount, buf);
+    rv = ssl3_EncodeFilteredSigAlgs(ss, filtered, filteredCount,
+                                    PR_FALSE /* GREASE */, buf);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -1482,13 +1572,27 @@ tls13_ServerSendEchXtn(const sslSocket *ss,
     return SECSuccess;
 }
 
-/* If ECH is accepted, this value will be a placeholder and overwritten later. */
+/* If an ECH server sends the HRR ECH extension after it accepted ECH, the
+ * extension's payload must be set to 8 zero bytes, these are overwritten with
+ * the accept_confirmation value after the required transcript calculation.
+ * If a client-facing/shared-mode server did not accept ECH when offered in CH
+ * or if ECH GREASE is enabled on the server and a ECH extension was received,
+ * a 8 byte random value is set as the extension's payload
+ * [draft-ietf-tls-esni-14, Section 7].
+ *
+ * Depending on the acceptance of ECH, zero or random bytes are written to
+ * ss->ssl3.hs.greaseEchBuf.buf in tls13con.c/tls13_SendHelloRetryRequest(). */
 SECStatus
 tls13_ServerSendHrrEchXtn(const sslSocket *ss, TLSExtensionData *xtnData,
                           sslBuffer *buf, PRBool *added)
 {
     SECStatus rv;
-    if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3 || !xtnData->ech || (!ss->echPubKey && !ss->opt.enableTls13GreaseEch)) {
+    /* Do not send HRR ECH extension if TLS < 1.3 was negotiated OR no ECH
+     * extension was received OR the server is NOT in any ECH server mode AND
+     * ECH GREASE is NOT enabled. */
+    if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3 ||
+        !xtnData->ech ||
+        (!ss->echPubKey && !ss->opt.enableTls13BackendEch && !ss->opt.enableTls13GreaseEch)) {
         SSL_TRC(100, ("%d: TLS13[%d]: server not sending HRR ECH Xtn",
                       SSL_GETPID(), ss->fd));
         return SECSuccess;
@@ -1660,4 +1764,39 @@ alert_loser:
     ssl3_ExtSendAlert(ss, alert_fatal, decode_error);
     PORT_SetError(SSL_ERROR_RX_MALFORMED_ECH_EXTENSION);
     return SECFailure;
+}
+
+SECStatus
+tls13_SendEmptyGreaseXtn(const sslSocket *ss,
+                         TLSExtensionData *xtnData,
+                         sslBuffer *buf, PRBool *added)
+{
+    if (!ss->opt.enableGrease ||
+        (!ss->sec.isServer && ss->vrange.max < SSL_LIBRARY_VERSION_TLS_1_3) ||
+        (ss->sec.isServer && ss->version < SSL_LIBRARY_VERSION_TLS_1_3)) {
+        return SECSuccess;
+    }
+
+    *added = PR_TRUE;
+    return SECSuccess;
+}
+
+SECStatus
+tls13_SendGreaseXtn(const sslSocket *ss,
+                    TLSExtensionData *xtnData,
+                    sslBuffer *buf, PRBool *added)
+{
+    if (!ss->opt.enableGrease ||
+        (!ss->sec.isServer && ss->vrange.max < SSL_LIBRARY_VERSION_TLS_1_3) ||
+        (ss->sec.isServer && ss->version < SSL_LIBRARY_VERSION_TLS_1_3)) {
+        return SECSuccess;
+    }
+
+    SECStatus rv = sslBuffer_AppendVariable(buf, (PRUint8[]){ 0x00 }, 1, 2);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    *added = PR_TRUE;
+    return SECSuccess;
 }

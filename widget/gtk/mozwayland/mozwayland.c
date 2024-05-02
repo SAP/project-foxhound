@@ -13,7 +13,7 @@
 
 union wl_argument;
 
-/* Those strucures are just placeholders and will be replaced by
+/* Those structures are just placeholders and will be replaced by
  * real symbols from libwayland during run-time linking. We need to make
  * them explicitly visible.
  */
@@ -187,6 +187,9 @@ MOZ_EXPORT void wl_egl_window_destroy(struct wl_egl_window* egl_window) {}
 
 MOZ_EXPORT void wl_egl_window_resize(struct wl_egl_window* egl_window,
                                      int width, int height, int dx, int dy) {}
+
+MOZ_EXPORT void wl_egl_window_get_attached_size(
+    struct wl_egl_window* egl_window, int* width, int* height) {}
 
 MOZ_EXPORT void wl_list_init(struct wl_list* list) {}
 

@@ -9,8 +9,7 @@
 
 #include "nsXULElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class XULTextElement final : public nsXULElement {
  public:
@@ -19,7 +18,7 @@ class XULTextElement final : public nsXULElement {
 
   bool Disabled() { return GetXULBoolAttr(nsGkAtoms::disabled); }
   MOZ_CAN_RUN_SCRIPT void SetDisabled(bool aValue) {
-    SetXULBoolAttr(nsGkAtoms::disabled, aValue);
+    SetXULBoolAttr(nsGkAtoms::disabled, aValue, mozilla::IgnoreErrors());
   }
   void GetValue(DOMString& aValue) const {
     GetXULAttr(nsGkAtoms::value, aValue);
@@ -34,12 +33,18 @@ class XULTextElement final : public nsXULElement {
     SetAttr(kNameSpaceID_None, nsGkAtoms::accesskey, aValue, true);
   }
 
+  nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
+                                      int32_t aModType) const override;
+
+  NS_IMPL_FROMNODE_HELPER(XULTextElement,
+                          IsAnyOfXULElements(nsGkAtoms::label,
+                                             nsGkAtoms::description));
+
  protected:
   virtual ~XULTextElement() = default;
   JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // XULTextElement_h

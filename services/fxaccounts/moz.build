@@ -7,29 +7,29 @@
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Firefox Accounts")
 
-MOCHITEST_CHROME_MANIFESTS += ["tests/mochitest/chrome.ini"]
+MOCHITEST_CHROME_MANIFESTS += ["tests/mochitest/chrome.toml"]
 
-BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell/xpcshell.ini"]
 
 EXTRA_JS_MODULES += [
-    "Credentials.jsm",
-    "FxAccounts.jsm",
-    "FxAccountsClient.jsm",
-    "FxAccountsCommands.js",
-    "FxAccountsCommon.js",
-    "FxAccountsConfig.jsm",
-    "FxAccountsDevice.jsm",
-    "FxAccountsKeys.jsm",
-    "FxAccountsPairing.jsm",
-    "FxAccountsPairingChannel.js",
-    "FxAccountsProfile.jsm",
-    "FxAccountsProfileClient.jsm",
-    "FxAccountsPush.jsm",
-    "FxAccountsStorage.jsm",
-    "FxAccountsTelemetry.jsm",
-    "FxAccountsWebChannel.jsm",
+    "Credentials.sys.mjs",
+    "FxAccounts.sys.mjs",
+    "FxAccountsClient.sys.mjs",
+    "FxAccountsCommands.sys.mjs",
+    "FxAccountsCommon.sys.mjs",
+    "FxAccountsConfig.sys.mjs",
+    "FxAccountsDevice.sys.mjs",
+    "FxAccountsKeys.sys.mjs",
+    "FxAccountsPairing.sys.mjs",
+    "FxAccountsPairingChannel.sys.mjs",
+    "FxAccountsProfile.sys.mjs",
+    "FxAccountsProfileClient.sys.mjs",
+    "FxAccountsPush.sys.mjs",
+    "FxAccountsStorage.sys.mjs",
+    "FxAccountsTelemetry.sys.mjs",
+    "FxAccountsWebChannel.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [

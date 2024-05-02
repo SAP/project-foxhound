@@ -61,8 +61,8 @@ ul {
 }
 
 a {
-  color: var(--theme-highlight-blue);
-  text-decoration: none;
+  color: var(--theme-link-color);
+  text-decoration: underline;
   cursor: pointer;
 }
 

@@ -12,12 +12,11 @@
 nsresult NS_NewSVGFEMergeElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-using SVGFEMergeElementBase = SVGFE;
+using SVGFEMergeElementBase = SVGFilterPrimitiveElement;
 
-class SVGFEMergeElement : public SVGFEMergeElementBase {
+class SVGFEMergeElement final : public SVGFEMergeElementBase {
   friend nsresult(::NS_NewSVGFEMergeElement(
       nsIContent** aResult,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -26,33 +25,31 @@ class SVGFEMergeElement : public SVGFEMergeElementBase {
   explicit SVGFEMergeElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : SVGFEMergeElementBase(std::move(aNodeInfo)) {}
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
  public:
-  virtual FilterPrimitiveDescription GetPrimitiveDescription(
+  FilterPrimitiveDescription GetPrimitiveDescription(
       SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
       const nsTArray<bool>& aInputsAreTainted,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
-  virtual SVGAnimatedString& GetResultImageName() override {
+  SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
-  virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
+  void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
   // nsIContent
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
+  nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
  protected:
-  virtual StringAttributesInfo GetStringInfo() override;
+  StringAttributesInfo GetStringInfo() override;
 
   enum { RESULT };
   SVGAnimatedString mStringAttributes[1];
   static StringInfo sStringInfo[1];
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGFEMERGEELEMENT_H_

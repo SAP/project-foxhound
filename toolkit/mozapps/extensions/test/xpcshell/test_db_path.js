@@ -1,7 +1,6 @@
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const DEFAULT_THEME_ID = "default-theme@mozilla.org";
 
@@ -11,15 +10,12 @@ let global = this;
 // if they include non-ascii characters (see bug 1428234 for an example of
 // a past bug with such paths)
 add_task(async function test_non_ascii_path() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   const PROFILE_VAR = "XPCSHELL_TEST_PROFILE_DIR";
-  let profileDir = OS.Path.join(
-    env.get(PROFILE_VAR),
+  let profileDir = PathUtils.join(
+    Services.env.get(PROFILE_VAR),
     "\u00ce \u00e5m \u00f1\u00f8t \u00e5s\u00e7ii"
   );
-  env.set(PROFILE_VAR, profileDir);
+  Services.env.set(PROFILE_VAR, profileDir);
 
   AddonTestUtils.init(global);
   AddonTestUtils.overrideCertDB();
@@ -34,7 +30,7 @@ add_task(async function test_non_ascii_path() {
   let xpi1 = await AddonTestUtils.createTempWebExtensionFile({
     id: ID1,
     manifest: {
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
 
@@ -42,7 +38,7 @@ add_task(async function test_non_ascii_path() {
   let xpi2 = await AddonTestUtils.createTempWebExtensionFile({
     id: ID2,
     manifest: {
-      applications: { gecko: { id: ID2 } },
+      browser_specific_settings: { gecko: { id: ID2 } },
     },
   });
 
@@ -51,9 +47,8 @@ add_task(async function test_non_ascii_path() {
   await AddonTestUtils.promiseInstallFile(xpi2);
   await AddonTestUtils.promiseShutdownManager();
 
-  let dbfile = OS.Path.join(profileDir, "extensions.json");
-  let raw = new TextDecoder().decode(await OS.File.read(dbfile));
-  let data = JSON.parse(raw);
+  let dbfile = PathUtils.join(profileDir, "extensions.json");
+  let data = await IOUtils.readJSON(dbfile);
 
   let addons = data.addons.filter(a => a.id !== DEFAULT_THEME_ID);
   Assert.ok(Array.isArray(addons), "extensions.json has addons array");

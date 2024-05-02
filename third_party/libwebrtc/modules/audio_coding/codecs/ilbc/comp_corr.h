@@ -19,7 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_COMP_CORR_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_COMP_CORR_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /*----------------------------------------------------------------*
  *  Compute cross correlation and pitch gain for pitch prediction
@@ -33,6 +34,6 @@ void WebRtcIlbcfix_CompCorr(int32_t* corr,   /* (o) cross correlation */
                             size_t bLen,     /* (i) length of buffer */
                             size_t sRange,   /* (i) correlation search length */
                             int16_t scale /* (i) number of rightshifts to use */
-                            );
+);
 
 #endif

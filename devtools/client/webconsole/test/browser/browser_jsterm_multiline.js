@@ -40,7 +40,7 @@ const SHOULD_EXECUTE = [
   { input: "{2,}" },
 ];
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   for (const { input, shiftKey } of SHOULD_ENTER_MULTILINE) {
@@ -55,7 +55,7 @@ add_task(async function() {
 
   for (const { input, shiftKey } of SHOULD_EXECUTE) {
     setInputValue(hud, input);
-    const onMessage = waitForMessage(hud, "", ".result");
+    const onMessage = waitForMessageByType(hud, "", ".result");
     EventUtils.synthesizeKey("VK_RETURN", { shiftKey });
     await onMessage;
 

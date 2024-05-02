@@ -2,11 +2,20 @@ header = """/* This Source Code Form is subject to the terms of the Mozilla Publ
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */"""
 autogen_warning = """/* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen.
- * To generate this file:
- *   1. Get the latest cbindgen using `cargo install --force cbindgen`
- *      a. Alternatively, you can clone `https://github.com/eqrion/cbindgen` and use a tagged release
- *   2. Run `rustup run nightly cbindgen toolkit/library/rust/ --lockfile Cargo.lock --crate wgpu_bindings -o dom/webgpu/ffi/wgpu_ffi_generated.h`
+ *
+ * This file is generated based on the configuration in
+ * `gfx/wgpu_bindings/moz.build`, which directs the build system module
+ * `build/RunCbindgen.py` to run the following command at the top of
+ * the object file directory:
+ *
+ *     $CBINDGEN $TOPSRCDIR --lockfile $TOPSRCDIR/Cargo.lock --crate wgpu_bindings --metadata config/cbindgen-metadata.json --cpp-compat > gfx/wgpu_bindings/wgpu_ffi_generated.h
+ *
+ * where:
+ * - $TOPSRCDIR is the top of the Firefox source tree, and
+ * - $CBINDGEN is the path to the cbindgen executable provided by mozbuild (the exact version often matters)
  */
+
+#include "nsString.h"
 
 struct WGPUByteBuf;
 typedef uint64_t WGPUNonZeroU64;
@@ -20,6 +29,7 @@ typedef uint64_t WGPUOption_BindGroupLayoutId;
 typedef uint64_t WGPUOption_SamplerId;
 typedef uint64_t WGPUOption_SurfaceId;
 typedef uint64_t WGPUOption_TextureViewId;
+typedef uint64_t WGPUOption_QuerySetId;
 """
 include_version = true
 braces = "SameLine"
@@ -30,21 +40,29 @@ style = "tag"
 
 [export]
 prefix = "WGPU"
+renaming_overrides_prefixing = true
 exclude = [
 	"Option_AdapterId", "Option_BufferId", "Option_PipelineLayoutId", "Option_BindGroupLayoutId",
 	"Option_SamplerId", "Option_SurfaceId", "Option_TextureViewId",
 	"Option_BufferSize", "Option_NonZeroU32", "Option_NonZeroU8",
-	"ANativeWindow_setBuffersGeometry",
+	"ANativeWindow_setBuffersGeometry", "Option_QuerySetId",
 ]
+include = ["BufferUsages"]
 
 [export.rename]
-"BufferDescriptor_RawString" = "BufferDescriptor"
-"CommandBufferDescriptor_RawString" = "CommandBufferDescriptor"
-"CommandEncoderDescriptor_RawString" = "CommandEncoderDescriptor"
-"RenderBundleDescriptor_RawString" = "RenderBundleDescriptor"
-"DeviceDescriptor_RawString" = "DeviceDescriptor"
-"TextureDescriptor_RawString" = "TextureDescriptor"
-"SamplerDescriptor_RawString" = "SamplerDescriptor"
+"nsString" = "nsString"
+"nsCString" = "nsCString"
+"nsAString" = "nsAString"
+"nsACString" = "nsACString"
+"nsStringRepr" = "nsString"
+"BufferDescriptor______nsACString" = "WGPUBufferDescriptor"
+"CommandBufferDescriptor______nsACString" = "WGPUCommandBufferDescriptor"
+"CommandEncoderDescriptor______nsACString" = "WGPUCommandEncoderDescriptor"
+"RenderBundleDescriptor______nsACString" = "WGPURenderBundleDescriptor"
+"DeviceDescriptor______nsACString" = "WGPUDeviceDescriptor"
+"TextureDescriptor______nsACString__FfiSlice_TextureFormat" = "WGPUTextureDescriptor"
+"SamplerDescriptor______nsACString" = "WGPUSamplerDescriptor"
+"AdapterInformation_nsString" = "WGPUAdapterInformation"
 
 [parse]
 parse_deps = true
@@ -73,3 +91,4 @@ bitflags = true
 "target_os = windows" = "XP_WIN"
 "target_os = macos" = "XP_MACOSX"
 "target_os = android" = "ANDROID"
+"feature = id32" = "WGPU_FEATURE_ID32"

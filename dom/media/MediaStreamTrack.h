@@ -17,6 +17,7 @@
 #include "nsError.h"
 #include "nsID.h"
 #include "nsIPrincipal.h"
+#include "PerformanceRecorder.h"
 
 namespace mozilla {
 
@@ -29,7 +30,6 @@ class MediaTrackGraphImpl;
 class MediaTrackListener;
 class DirectMediaTrackListener;
 class PeerConnectionImpl;
-class PeerConnectionMedia;
 class PeerIdentity;
 class ProcessedMediaTrack;
 class RemoteSourceStreamInfo;
@@ -105,8 +105,12 @@ class MediaStreamTrackSource : public nsISupports {
     virtual ~Sink() = default;
   };
 
-  MediaStreamTrackSource(nsIPrincipal* aPrincipal, const nsString& aLabel)
-      : mPrincipal(aPrincipal), mLabel(aLabel), mStopped(false) {}
+  MediaStreamTrackSource(nsIPrincipal* aPrincipal, const nsString& aLabel,
+                         TrackingId aTrackingId)
+      : mPrincipal(aPrincipal),
+        mLabel(aLabel),
+        mTrackingId(std::move(aTrackingId)),
+        mStopped(false) {}
 
   /**
    * Use to clean up any resources that have to be cleaned before the
@@ -314,35 +318,18 @@ class MediaStreamTrackSource : public nsISupports {
   // Currently registered sinks.
   nsTArray<WeakPtr<Sink>> mSinks;
 
+ public:
   // The label of the track we are the source of per the MediaStreamTrack spec.
   const nsString mLabel;
 
+  // Set for all video sources; an id for tracking the source of the video
+  // frames for this track.
+  const TrackingId mTrackingId;
+
+ protected:
   // True if all MediaStreamTrack users have unregistered from this source and
   // Stop() has been called.
   bool mStopped;
-};
-
-/**
- * Basic implementation of MediaStreamTrackSource that doesn't forward Stop().
- */
-class BasicTrackSource : public MediaStreamTrackSource {
- public:
-  explicit BasicTrackSource(
-      nsIPrincipal* aPrincipal,
-      const MediaSourceEnum aMediaSource = MediaSourceEnum::Other)
-      : MediaStreamTrackSource(aPrincipal, nsString()),
-        mMediaSource(aMediaSource) {}
-
-  MediaSourceEnum GetMediaSource() const override { return mMediaSource; }
-
-  void Stop() override {}
-  void Disable() override {}
-  void Enable() override {}
-
- protected:
-  ~BasicTrackSource() = default;
-
-  const MediaSourceEnum mMediaSource;
 };
 
 /**
@@ -404,7 +391,6 @@ class MediaStreamTrackConsumer : public SupportsWeakPtr {
 class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
   // PeerConnection and friends need to know our owning DOMStream and track id.
   friend class mozilla::PeerConnectionImpl;
-  friend class mozilla::PeerConnectionMedia;
   friend class mozilla::SourceStreamInfo;
   friend class mozilla::RemoteSourceStreamInfo;
 

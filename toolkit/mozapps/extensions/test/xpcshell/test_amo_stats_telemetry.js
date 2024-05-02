@@ -3,8 +3,8 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -54,7 +54,7 @@ add_task(async function test_ping_payload_and_environment() {
       manifest: {
         name,
         version,
-        applications: { gecko: { id } },
+        browser_specific_settings: { gecko: { id } },
       },
       useAddonManager: "permanent",
     });

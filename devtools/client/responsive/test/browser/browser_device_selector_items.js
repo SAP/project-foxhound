@@ -5,7 +5,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Tests the device selector button and the menu items.
 
-const MenuItem = require("devtools/client/shared/components/menu/MenuItem");
+const MenuItem = require("resource://devtools/client/shared/components/menu/MenuItem.js");
 
 const FIREFOX_ICON =
   'url("chrome://devtools/skin/images/browsers/firefox.svg")';
@@ -29,19 +29,27 @@ const TEST_DEVICES = [
     hasIcon: true,
   },
   {
-    name: "Laptop (1366 x 768)",
+    name: "Laptop with MDPI screen",
     hasIcon: false,
   },
 ];
 
 addDeviceForTest(FIREFOX_DEVICE);
 
+// Add the laptop to the device list
+const {
+  updatePreferredDevices,
+} = require("resource://devtools/client/responsive/actions/devices.js");
+updatePreferredDevices({
+  added: ["Laptop with MDPI screen"],
+  removed: [],
+});
+
 addRDMTask(
   URL_ROOT,
-  async function({ ui }) {
-    const deviceSelector = ui.toolWindow.document.getElementById(
-      "device-selector"
-    );
+  async function ({ ui }) {
+    const deviceSelector =
+      ui.toolWindow.document.getElementById("device-selector");
 
     for (const testDevice of TEST_DEVICES) {
       info(`Check "${name}" device`);

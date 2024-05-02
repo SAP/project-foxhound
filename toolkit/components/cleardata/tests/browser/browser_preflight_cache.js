@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { SiteDataTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SiteDataTestUtils.jsm"
+const { SiteDataTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
 
 const uuidGenerator = Services.uuid;
@@ -103,11 +103,8 @@ async function testDeleteAll(
 add_task(async function test_deleteAll() {
   // The cleaner should be called when we target all cleaners, all cache
   // cleaners, or just the preflight cache.
-  let {
-    CLEAR_ALL,
-    CLEAR_ALL_CACHES,
-    CLEAR_PREFLIGHT_CACHE,
-  } = Ci.nsIClearDataService;
+  let { CLEAR_ALL, CLEAR_ALL_CACHES, CLEAR_PREFLIGHT_CACHE } =
+    Ci.nsIClearDataService;
 
   for (let flag of [CLEAR_ALL, CLEAR_ALL_CACHES, CLEAR_PREFLIGHT_CACHE]) {
     await testDeleteAll(flag);
@@ -117,11 +114,8 @@ add_task(async function test_deleteAll() {
 add_task(async function test_deleteByPrincipal() {
   // The cleaner should be called when we target all cleaners, all cache
   // cleaners, or just the preflight cache.
-  let {
-    CLEAR_ALL,
-    CLEAR_ALL_CACHES,
-    CLEAR_PREFLIGHT_CACHE,
-  } = Ci.nsIClearDataService;
+  let { CLEAR_ALL, CLEAR_ALL_CACHES, CLEAR_PREFLIGHT_CACHE } =
+    Ci.nsIClearDataService;
 
   for (let flag of [CLEAR_ALL, CLEAR_ALL_CACHES, CLEAR_PREFLIGHT_CACHE]) {
     for (let hasUserInput of [true, false]) {

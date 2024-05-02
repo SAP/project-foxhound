@@ -14,6 +14,7 @@ use crate::err::{
 };
 use crate::flavors;
 use crate::select::{Operation, SelectHandle, Token};
+use crate::utils;
 
 /// Creates a channel of unbounded capacity.
 ///
@@ -232,6 +233,8 @@ pub fn at(when: Instant) -> Receiver<Instant> {
 ///
 /// Using a `never` channel to optionally add a timeout to [`select!`]:
 ///
+/// [`select!`]: crate::select!
+///
 /// ```
 /// use std::thread;
 /// use std::time::Duration;
@@ -297,7 +300,7 @@ pub fn never<T>() -> Receiver<T> {
 /// let ms = |ms| Duration::from_millis(ms);
 ///
 /// // Returns `true` if `a` and `b` are very close `Instant`s.
-/// let eq = |a, b| a + ms(50) > b && b + ms(50) > a;
+/// let eq = |a, b| a + ms(65) > b && b + ms(65) > a;
 ///
 /// let start = Instant::now();
 /// let r = tick(ms(100));
@@ -471,7 +474,7 @@ impl<T> Sender<T> {
     /// );
     /// ```
     pub fn send_timeout(&self, msg: T, timeout: Duration) -> Result<(), SendTimeoutError<T>> {
-        self.send_deadline(msg, Instant::now() + timeout)
+        self.send_deadline(msg, utils::convert_timeout_to_deadline(timeout))
     }
 
     /// Waits for a message to be sent into the channel, but only until a given deadline.
@@ -861,7 +864,7 @@ impl<T> Receiver<T> {
     /// );
     /// ```
     pub fn recv_timeout(&self, timeout: Duration) -> Result<T, RecvTimeoutError> {
-        self.recv_deadline(Instant::now() + timeout)
+        self.recv_deadline(utils::convert_timeout_to_deadline(timeout))
     }
 
     /// Waits for a message to be received from the channel, but only before a given deadline.

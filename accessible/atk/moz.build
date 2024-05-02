@@ -6,13 +6,11 @@
 
 EXPORTS.mozilla.a11y += [
     "AccessibleWrap.h",
-    "HyperTextAccessibleWrap.h",
 ]
 
 SOURCES += [
     "AccessibleWrap.cpp",
     "ApplicationAccessibleWrap.cpp",
-    "AtkSocketAccessible.cpp",
     "DocAccessibleWrap.cpp",
     "DOMtoATK.cpp",
     "nsMaiHyperlink.cpp",
@@ -38,7 +36,6 @@ LOCAL_INCLUDES += [
     "/accessible/generic",
     "/accessible/html",
     "/accessible/ipc",
-    "/accessible/ipc/other",
     "/accessible/xpcom",
     "/accessible/xul",
     "/layout/generic",

@@ -5,7 +5,7 @@
 
 // Test the markup view displaying the content of a <template> tag.
 
-add_task(async function() {
+add_task(async function () {
   const TEST_URL =
     `data:text/html;charset=utf-8,` +
     encodeURIComponent(`
@@ -46,8 +46,9 @@ add_task(async function() {
   await selectNode(pContainer.node, inspector, "no-reason", false);
 
   const ruleView = inspector.getPanel("ruleview").view;
+  // We only display the style attribute.
   is(
-    ruleView.element.querySelectorAll("#ruleview-no-results").length,
+    ruleView.element.querySelectorAll(".ruleview-rule").length,
     1,
     "No rules are displayed for this p element"
   );

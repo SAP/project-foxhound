@@ -7,7 +7,6 @@
 #include "VorbisDecoder.h"
 
 #include "VideoUtils.h"
-#include "VorbisUtils.h"
 #include "XiphExtradata.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PodOperations.h"
@@ -63,9 +62,12 @@ RefPtr<MediaDataDecoder::InitPromise> VorbisDataDecoder::Init() {
 
   AutoTArray<unsigned char*, 4> headers;
   AutoTArray<size_t, 4> headerLens;
-  if (!XiphExtradataToHeaders(headers, headerLens,
-                              mInfo.mCodecSpecificConfig->Elements(),
-                              mInfo.mCodecSpecificConfig->Length())) {
+  MOZ_ASSERT(mInfo.mCodecSpecificConfig.is<VorbisCodecSpecificData>(),
+             "Vorbis decoder should get vorbis codec specific data");
+  RefPtr<MediaByteBuffer> vorbisHeaderBlob =
+      GetAudioCodecSpecificBlob(mInfo.mCodecSpecificConfig);
+  if (!XiphExtradataToHeaders(headers, headerLens, vorbisHeaderBlob->Elements(),
+                              vorbisHeaderBlob->Length())) {
     LOG(LogLevel::Warning, ("VorbisDecoder: could not get vorbis header"));
     return InitPromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
@@ -139,6 +141,7 @@ nsresult VorbisDataDecoder::DecodeHeader(const unsigned char* aData,
 RefPtr<MediaDataDecoder::DecodePromise> VorbisDataDecoder::Decode(
     MediaRawData* aSample) {
   MOZ_ASSERT(mThread->IsOnCurrentThread());
+  PROCESS_DECODE_LOG(aSample);
 
   const unsigned char* aData = aSample->Data();
   size_t aLength = aSample->Size();
@@ -175,7 +178,7 @@ RefPtr<MediaDataDecoder::DecodePromise> VorbisDataDecoder::Decode(
     LOG(LogLevel::Warning, ("vorbis_synthesis_blockin returned an error"));
   }
 
-  VorbisPCMValue** pcm = 0;
+  float** pcm = nullptr;
   int32_t frames = vorbis_synthesis_pcmout(&mVorbisDsp, &pcm);
   if (frames == 0) {
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);
@@ -192,13 +195,13 @@ RefPtr<MediaDataDecoder::DecodePromise> VorbisDataDecoder::Decode(
           MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
     }
     for (uint32_t j = 0; j < channels; ++j) {
-      VorbisPCMValue* channel = pcm[j];
+      float* channel = pcm[j];
       for (uint32_t i = 0; i < uint32_t(frames); ++i) {
-        buffer[i * channels + j] = MOZ_CONVERT_VORBIS_SAMPLE(channel[i]);
+        buffer[i * channels + j] = channel[i];
       }
     }
 
-    auto duration = FramesToTimeUnit(frames, rate);
+    auto duration = media::TimeUnit(frames, rate);
     if (!duration.IsValid()) {
       LOG(LogLevel::Warning, ("VorbisDecoder: invalid packet duration"));
       return DecodePromise::CreateAndReject(
@@ -206,7 +209,7 @@ RefPtr<MediaDataDecoder::DecodePromise> VorbisDataDecoder::Decode(
                       RESULT_DETAIL("Overflow converting audio duration")),
           __func__);
     }
-    auto total_duration = FramesToTimeUnit(mFrames, rate);
+    auto total_duration = media::TimeUnit(mFrames, rate);
     if (!total_duration.IsValid()) {
       LOG(LogLevel::Warning, ("VorbisDecoder: invalid total duration"));
       return DecodePromise::CreateAndReject(

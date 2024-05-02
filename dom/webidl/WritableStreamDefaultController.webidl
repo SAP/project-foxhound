@@ -7,15 +7,9 @@
  * https://streams.spec.whatwg.org/#ws-default-controller-class-definition
  */
 
-[Exposed=(Window,Worker,Worklet), Pref="dom.streams.writable_streams.enabled"]
+[Exposed=*]
 interface WritableStreamDefaultController {
-  [Throws]
-  void error(optional any e);
-};
-
-// TODO: AbortSignal is not exposed on Worklet
-[Exposed=(Window,Worker)]
-partial interface WritableStreamDefaultController {
   readonly attribute AbortSignal signal;
+  [Throws]
+  undefined error(optional any e);
 };
-

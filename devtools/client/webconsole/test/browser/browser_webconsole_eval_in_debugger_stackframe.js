@@ -5,13 +5,12 @@
 // from the js debugger.
 
 "use strict";
-/* import-globals-from head.js*/
 
 const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-eval-in-stackframe.html";
 
-add_task(async function() {
+add_task(async function () {
   // TODO: Remove this pref change when middleware for terminating requests
   // when closing a panel is implemented
   await pushPref("devtools.debugger.features.inline-preview", false);
@@ -20,15 +19,14 @@ add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Check `foo` value");
-  await executeAndWaitForMessage(hud, "foo", "globalFooBug783499", ".result");
+  await executeAndWaitForResultMessage(hud, "foo", "globalFooBug783499");
   ok(true, "|foo| value is correct");
 
   info("Assign and check `foo2` value");
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "foo2 = 'newFoo'; window.foo2",
-    "newFoo",
-    ".result"
+    "newFoo"
   );
   ok(true, "'newFoo' is displayed after adding `foo2`");
 
@@ -40,28 +38,26 @@ add_task(async function() {
   await openConsole();
 
   info("Check `foo + foo2` value");
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "foo + foo2",
-    "globalFooBug783499newFoo",
-    ".result"
+    "globalFooBug783499newFoo"
   );
 
   info("Select the debugger again");
   await openDebugger();
   await pauseDebugger(dbg);
 
-  const stackFrames = dbg.selectors.getCallStackFrames();
+  const stackFrames = dbg.selectors.getCurrentThreadFrames();
 
   info("frames added, select the console again");
   await openConsole();
 
   info("Check `foo + foo2` value when paused");
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "foo + foo2",
-    "globalFooBug783499foo2SecondCall",
-    ".result"
+    "globalFooBug783499foo2SecondCall"
   );
   ok(true, "`foo + foo2` from `secondCall()`");
 
@@ -73,23 +69,21 @@ add_task(async function() {
   await openConsole();
 
   info("Check `foo + foo2 + foo3` value when paused on a given frame");
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "foo + foo2 + foo3",
-    "fooFirstCallnewFoofoo3FirstCall",
-    ".result"
+    "fooFirstCallnewFoofoo3FirstCall"
   );
   ok(true, "`foo + foo2 + foo3` from `firstCall()`");
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "foo = 'abba'; foo3 = 'bug783499'; foo + foo3",
-    "abbabug783499",
-    ".result"
+    "abbabug783499"
   );
   ok(true, "`foo + foo3` updated in `firstCall()`");
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     is(
       content.wrappedJSObject.foo,
       "globalFooBug783499",
@@ -113,22 +107,20 @@ add_task(async function() {
   // pausing opens the debugger, switch to the console again
   await openConsole();
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "this.#privateProp",
-    "privatePropValue",
-    ".result"
+    "privatePropValue"
   );
   ok(
     true,
     "evaluating a private properties while paused in a class method does work"
   );
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "Foo.#privateStatic",
-    `Object { first: "a", second: "b" }`,
-    ".result"
+    `Object { first: "a", second: "b" }`
   );
   ok(
     true,

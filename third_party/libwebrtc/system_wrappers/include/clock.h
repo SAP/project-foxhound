@@ -13,10 +13,10 @@
 
 #include <stdint.h>
 
+#include <atomic>
 #include <memory>
 
 #include "api/units/timestamp.h"
-#include "rtc_base/synchronization/rw_lock_wrapper.h"
 #include "rtc_base/system/rtc_export.h"
 #include "system_wrappers/include/ntp_time.h"
 
@@ -39,11 +39,7 @@ class RTC_EXPORT Clock {
   int64_t TimeInMicroseconds() { return CurrentTime().us(); }
 
   // Retrieve an NTP absolute timestamp (with an epoch of Jan 1, 1900).
-  // TODO(bugs.webrtc.org/11327): Make this non-virtual once
-  // "WebRTC-SystemIndependentNtpTimeKillSwitch" is removed.
-  virtual NtpTime CurrentNtpTime() {
-    return ConvertTimestampToNtpTime(CurrentTime());
-  }
+  NtpTime CurrentNtpTime() { return ConvertTimestampToNtpTime(CurrentTime()); }
   int64_t CurrentNtpInMilliseconds() { return CurrentNtpTime().ToMs(); }
 
   // Converts between a relative timestamp returned by this clock, to NTP time.
@@ -75,8 +71,12 @@ class SimulatedClock : public Clock {
   void AdvanceTime(TimeDelta delta);
 
  private:
-  Timestamp time_;
-  std::unique_ptr<RWLockWrapper> lock_;
+  // The time is read and incremented with relaxed order. Each thread will see
+  // monotonically increasing time, and when threads post tasks or messages to
+  // one another, the synchronization done as part of the message passing should
+  // ensure that any causual chain of events on multiple threads also
+  // corresponds to monotonically increasing time.
+  std::atomic<int64_t> time_us_;
 };
 
 }  // namespace webrtc

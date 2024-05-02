@@ -10,8 +10,7 @@
 #include "mozilla/dom/PRemoteWorkerServiceChild.h"
 #include "nsISupportsImpl.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class RemoteWorkerController;
 class RemoteWorkerData;
@@ -22,7 +21,7 @@ class RemoteWorkerData;
  */
 class RemoteWorkerServiceChild final : public PRemoteWorkerServiceChild {
  public:
-  NS_INLINE_DECL_REFCOUNTING(RemoteWorkerServiceChild)
+  NS_INLINE_DECL_REFCOUNTING(RemoteWorkerServiceChild, final)
 
   RemoteWorkerServiceChild();
 
@@ -30,7 +29,6 @@ class RemoteWorkerServiceChild final : public PRemoteWorkerServiceChild {
   ~RemoteWorkerServiceChild();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_RemoteWorkerServiceChild_h

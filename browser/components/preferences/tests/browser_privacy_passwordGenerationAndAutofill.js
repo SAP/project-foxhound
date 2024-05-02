@@ -1,6 +1,5 @@
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
-);
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 add_task(async function initialState() {
   // check pref permutations to verify the UI opens in the correct state
@@ -53,7 +52,7 @@ add_task(async function initialState() {
         gBrowser,
         url: "about:preferences#privacy",
       },
-      async function(browser) {
+      async function (browser) {
         let doc = browser.contentDocument;
         let generatePasswordsCheckbox = doc.getElementById("generatePasswords");
         let autofillFormsCheckbox = doc.getElementById(
@@ -127,7 +126,7 @@ add_task(async function toggleGenerationEnabled() {
       gBrowser,
       url: "about:preferences#privacy",
     },
-    async function(browser) {
+    async function (browser) {
       let doc = browser.contentDocument;
       let checkbox = doc.getElementById("generatePasswords");
 
@@ -170,7 +169,7 @@ add_task(async function toggleRememberSignon() {
       gBrowser,
       url: "about:preferences#privacy",
     },
-    async function(browser) {
+    async function (browser) {
       let doc = browser.contentDocument;
       let checkbox = doc.getElementById("savePasswords");
       let generationCheckbox = doc.getElementById("generatePasswords");

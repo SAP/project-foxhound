@@ -306,7 +306,7 @@ nsresult LookupHelper::ConstructAnswer(LookupArgument* aArgument) {
     GetErrorString(mStatus, dict.mError);
   }
 
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) {
     return NS_ERROR_FAILURE;
   }
@@ -470,7 +470,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
     GetErrorString(mStatus, dict.mError);
   }
 
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) {
     return NS_ERROR_FAILURE;
   }
@@ -489,7 +489,7 @@ Dashboard::RequestSockets(nsINetDashboardCallback* aCallback) {
   RefPtr<SocketData> socketData = new SocketData();
   socketData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  socketData->mEventTarget = GetCurrentEventTarget();
+  socketData->mEventTarget = GetCurrentSerialEventTarget();
 
   if (nsIOService::UseSocketProcess()) {
     if (!gIOService->SocketProcessReady()) {
@@ -567,7 +567,7 @@ nsresult Dashboard::GetSockets(SocketData* aSocketData) {
 
   dict.mSent += socketData->mTotalSent;
   dict.mReceived += socketData->mTotalRecv;
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) return NS_ERROR_FAILURE;
   socketData->mCallback->OnDashboardDataAvailable(val);
 
@@ -579,7 +579,7 @@ Dashboard::RequestHttpConnections(nsINetDashboardCallback* aCallback) {
   RefPtr<HttpData> httpData = new HttpData();
   httpData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  httpData->mEventTarget = GetCurrentEventTarget();
+  httpData->mEventTarget = GetCurrentSerialEventTarget();
 
   if (nsIOService::UseSocketProcess()) {
     if (!gIOService->SocketProcessReady()) {
@@ -682,7 +682,7 @@ nsresult Dashboard::GetHttpConnections(HttpData* aHttpData) {
     }
   }
 
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) {
     return NS_ERROR_FAILURE;
   }
@@ -765,7 +765,7 @@ Dashboard::RequestWebsocketConnections(nsINetDashboardCallback* aCallback) {
   RefPtr<WebSocketRequest> wsRequest = new WebSocketRequest();
   wsRequest->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  wsRequest->mEventTarget = GetCurrentEventTarget();
+  wsRequest->mEventTarget = GetCurrentSerialEventTarget();
 
   wsRequest->mEventTarget->Dispatch(
       NewRunnableMethod<RefPtr<WebSocketRequest>>(
@@ -801,7 +801,7 @@ nsresult Dashboard::GetWebSocketConnections(WebSocketRequest* aWsRequest) {
     websocket.mEncrypted = mWs.data[i].mEncrypted;
   }
 
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) {
     return NS_ERROR_FAILURE;
   }
@@ -818,7 +818,7 @@ Dashboard::RequestDNSInfo(nsINetDashboardCallback* aCallback) {
 
   nsresult rv;
   dnsData->mData.Clear();
-  dnsData->mEventTarget = GetCurrentEventTarget();
+  dnsData->mEventTarget = GetCurrentSerialEventTarget();
 
   if (!mDnsService) {
     mDnsService = do_GetService("@mozilla.org/network/dns-service;1", &rv);
@@ -916,7 +916,7 @@ nsresult Dashboard::GetDNSCacheEntries(DnsData* dnsData) {
     entry.mFlags = NS_ConvertUTF8toUTF16(dnsData->mData[i].flags);
   }
 
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) {
     return NS_ERROR_FAILURE;
   }
@@ -940,10 +940,11 @@ Dashboard::RequestDNSLookup(const nsACString& aHost,
   RefPtr<LookupHelper> helper = new LookupHelper();
   helper->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  helper->mEventTarget = GetCurrentEventTarget();
+  helper->mEventTarget = GetCurrentSerialEventTarget();
   OriginAttributes attrs;
   rv = mDnsService->AsyncResolveNative(
-      aHost, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0, nullptr, helper.get(),
+      aHost, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+      nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr, helper.get(),
       NS_GetCurrentThread(), attrs, getter_AddRefs(helper->mCancel));
   return rv;
 }
@@ -963,10 +964,11 @@ Dashboard::RequestDNSHTTPSRRLookup(const nsACString& aHost,
   RefPtr<LookupHelper> helper = new LookupHelper();
   helper->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  helper->mEventTarget = GetCurrentEventTarget();
+  helper->mEventTarget = GetCurrentSerialEventTarget();
   OriginAttributes attrs;
   rv = mDnsService->AsyncResolveNative(
-      aHost, nsIDNSService::RESOLVE_TYPE_HTTPSSVC, 0, nullptr, helper.get(),
+      aHost, nsIDNSService::RESOLVE_TYPE_HTTPSSVC,
+      nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr, helper.get(),
       NS_GetCurrentThread(), attrs, getter_AddRefs(helper->mCancel));
   return rv;
 }
@@ -974,7 +976,7 @@ Dashboard::RequestDNSHTTPSRRLookup(const nsACString& aHost,
 NS_IMETHODIMP
 Dashboard::RequestRcwnStats(nsINetDashboardCallback* aCallback) {
   RefPtr<RcwnData> rcwnData = new RcwnData();
-  rcwnData->mEventTarget = GetCurrentEventTarget();
+  rcwnData->mEventTarget = GetCurrentSerialEventTarget();
   rcwnData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
 
@@ -1016,7 +1018,7 @@ nsresult Dashboard::GetRcwnData(RcwnData* aData) {
         CacheFileUtils::CachePerfStats::GetStdDev(perfType, true);
   }
 
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) {
     return NS_ERROR_FAILURE;
   }
@@ -1070,7 +1072,7 @@ Dashboard::RequestConnection(const nsACString& aHost, uint32_t aPort,
   connectionData->mCallback =
       new nsMainThreadPtrHolder<nsINetDashboardCallback>(
           "nsINetDashboardCallback", aCallback, true);
-  connectionData->mEventTarget = GetCurrentEventTarget();
+  connectionData->mEventTarget = GetCurrentSerialEventTarget();
 
   rv = TestNewConnection(connectionData);
   if (NS_FAILED(rv)) {
@@ -1093,7 +1095,7 @@ nsresult Dashboard::GetConnectionStatus(ConnectionData* aConnectionData) {
   mozilla::dom::ConnStatusDict dict;
   dict.mStatus = connectionData->mStatus;
 
-  JS::RootedValue val(cx);
+  JS::Rooted<JS::Value> val(cx);
   if (!ToJSValue(cx, dict, &val)) return NS_ERROR_FAILURE;
 
   connectionData->mCallback->OnDashboardDataAvailable(val);
@@ -1125,7 +1127,7 @@ nsresult Dashboard::TestNewConnection(ConnectionData* aConnectionData) {
   }
 
   rv = connectionData->mSocket->SetEventSink(connectionData,
-                                             GetCurrentEventTarget());
+                                             GetCurrentSerialEventTarget());
   if (NS_FAILED(rv)) {
     return rv;
   }

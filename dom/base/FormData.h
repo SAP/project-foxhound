@@ -12,6 +12,7 @@
 #include "mozilla/dom/HTMLFormSubmission.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormDataBinding.h"
+#include "nsGenericHTMLElement.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 
@@ -20,6 +21,7 @@ class ErrorResult;
 
 namespace dom {
 
+class CustomElementFormValue;
 class HTMLFormElement;
 class GlobalObject;
 
@@ -57,7 +59,7 @@ class FormData final : public nsISupports,
   already_AddRefed<FormData> Clone();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(FormData)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(FormData)
 
   // nsWrapperCache
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -69,7 +71,7 @@ class FormData final : public nsISupports,
   static already_AddRefed<FormData> Constructor(
       const GlobalObject& aGlobal,
       const Optional<NonNull<HTMLFormElement> >& aFormElement,
-      ErrorResult& aRv);
+      nsGenericHTMLElement* aSubmitter, ErrorResult& aRv);
 
   void Append(const nsAString& aName, const nsAString& aValue,
               ErrorResult& aRv);
@@ -126,18 +128,17 @@ class FormData final : public nsISupports,
   virtual nsresult AddNameDirectoryPair(const nsAString& aName,
                                         Directory* aDirectory) override;
 
-  using FormDataEntryCallback =
-      bool (*)(const nsString& aName,
-               const OwningBlobOrDirectoryOrUSVString& aValue, void* aClosure);
-
   uint32_t Length() const { return mFormData.Length(); }
 
   // Stops iteration and returns false if any invocation of callback returns
   // false. Returns true otherwise.
-  bool ForEach(FormDataEntryCallback aFunc, void* aClosure) {
+  // Accepts callbacks of the form `bool(const nsString&, const
+  // OwningBlobOrDirectoryOrUSVString&)`.
+  template <typename F>
+  bool ForEach(F&& aCallback) {
     for (uint32_t i = 0; i < mFormData.Length(); ++i) {
       FormDataTuple& tuple = mFormData[i];
-      if (!aFunc(tuple.name, tuple.value, aClosure)) {
+      if (!aCallback(tuple.name, tuple.value)) {
         return false;
       }
     }
@@ -152,6 +153,8 @@ class FormData final : public nsISupports,
   nsresult CopySubmissionDataTo(HTMLFormSubmission* aFormSubmission) const;
 
   Element* GetSubmitterElement() const { return mSubmitter.get(); }
+
+  CustomElementFormValue ConvertToCustomElementFormValue();
 
  private:
   nsCOMPtr<nsISupports> mOwner;

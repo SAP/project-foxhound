@@ -3,11 +3,11 @@
 
 "use strict";
 
-const { MessageHandlerRegistry } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/MessageHandlerRegistry.jsm"
+const { MessageHandlerRegistry } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/messagehandler/MessageHandlerRegistry.sys.mjs"
 );
-const { RootMessageHandler } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/RootMessageHandler.jsm"
+const { RootMessageHandler } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs"
 );
 
 add_task(async function test_messageHandlerRegistry_API() {
@@ -16,9 +16,8 @@ add_task(async function test_messageHandlerRegistry_API() {
 
   const rootMessageHandlerRegistry = new MessageHandlerRegistry(type);
 
-  const rootMessageHandler = rootMessageHandlerRegistry.getOrCreateMessageHandler(
-    sessionId
-  );
+  const rootMessageHandler =
+    rootMessageHandlerRegistry.getOrCreateMessageHandler(sessionId);
   ok(rootMessageHandler, "Valid ROOT MessageHandler created");
 
   const contextId = rootMessageHandler.contextId;

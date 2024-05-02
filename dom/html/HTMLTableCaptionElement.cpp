@@ -6,9 +6,8 @@
 
 #include "mozilla/dom/HTMLTableCaptionElement.h"
 
-#include "mozilla/MappedDeclarations.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "nsAttrValueInlines.h"
-#include "nsMappedAttributes.h"
 #include "nsStyleConsts.h"
 #include "mozilla/dom/HTMLTableCaptionElementBinding.h"
 
@@ -26,8 +25,6 @@ JSObject* HTMLTableCaptionElement::WrapNode(JSContext* aCx,
 NS_IMPL_ELEMENT_CLONE(HTMLTableCaptionElement)
 
 static const nsAttrValue::EnumTable kCaptionAlignTable[] = {
-    {"left", StyleCaptionSide::Left},
-    {"right", StyleCaptionSide::Right},
     {"top", StyleCaptionSide::Top},
     {"bottom", StyleCaptionSide::Bottom},
     {nullptr, 0}};
@@ -44,14 +41,15 @@ bool HTMLTableCaptionElement::ParseAttribute(
 }
 
 void HTMLTableCaptionElement::MapAttributesIntoRule(
-    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
-  if (!aDecls.PropertyIsSet(eCSSProperty_caption_side)) {
-    const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::align);
-    if (value && value->Type() == nsAttrValue::eEnum)
-      aDecls.SetKeywordValue(eCSSProperty_caption_side, value->GetEnumValue());
+    MappedDeclarationsBuilder& aBuilder) {
+  if (!aBuilder.PropertyIsSet(eCSSProperty_caption_side)) {
+    const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::align);
+    if (value && value->Type() == nsAttrValue::eEnum) {
+      aBuilder.SetKeywordValue(eCSSProperty_caption_side,
+                               value->GetEnumValue());
+    }
   }
-
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
+  nsGenericHTMLElement::MapCommonAttributesInto(aBuilder);
 }
 
 NS_IMETHODIMP_(bool)

@@ -2,16 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-from __future__ import unicode_literals
-
 import unittest
 from io import StringIO
+from pathlib import Path
 
 import pytest
 from mozunit import main
 from six import string_types
-from pathlib import Path
 
 from mach.base import CommandContext
 from mach.registrar import Registrar
@@ -33,7 +30,9 @@ class TestDispatcher(unittest.TestCase):
             mach.settings.load_fps([config])
 
         context = CommandContext(cwd="", settings=mach.settings)
-        return mach.get_argument_parser(context)
+        from mach.main import get_argument_parser
+
+        return get_argument_parser(context)
 
     def test_command_aliases(self):
         config = """
@@ -46,11 +45,11 @@ cmd_bar = cmd_bar --baz
         parser = self.get_parser(config=config)
 
         args = parser.parse_args(["foo"])
-        self.assertEquals(args.command, "cmd_foo")
+        self.assertEqual(args.command, "cmd_foo")
 
         def assert_bar_baz(argv):
             args = parser.parse_args(argv)
-            self.assertEquals(args.command, "cmd_bar")
+            self.assertEqual(args.command, "cmd_bar")
             self.assertTrue(args.command_args.baz)
 
         # The following should all result in |cmd_bar --baz|

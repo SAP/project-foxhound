@@ -25,7 +25,7 @@ add_task(async function mixed_content_block_for_target_top_test() {
     true,
     frameUrl
   );
-  BrowserTestUtils.loadURI(testBrowser, url);
+  BrowserTestUtils.startLoadingURIString(testBrowser, url);
   await loadPromise;
   await frameLoadPromise;
 
@@ -36,7 +36,7 @@ add_task(async function mixed_content_block_for_target_top_test() {
     false,
     insecureUrl
   );
-  SpecialPowers.spawn(testBrowser, [], function() {
+  SpecialPowers.spawn(testBrowser, [], function () {
     var frame = content.document.getElementById("testing_frame");
     var topTarget = frame.contentWindow.document.getElementById("topTarget");
     topTarget.click();

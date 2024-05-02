@@ -5,12 +5,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
-
 import os
 import re
 import shutil
 import sys
+
 import yaml
 
 # Skip all common files used to support tests for jstests
@@ -300,7 +299,7 @@ def insertMeta(source, frontmatter):
 
     lines.append("/*---")
 
-    for (key, value) in frontmatter.items():
+    for key, value in frontmatter.items():
         if key in ("description", "info"):
             lines.append("%s: |" % key)
             lines.append(
@@ -337,7 +336,6 @@ def findAndCopyIncludes(dirPath, baseDir, includeDir):
     # we reach the base directory of shell.js include files.
     # Each directory will have a shell.js file to copy.
     while relPath:
-
         # find the shell.js
         shellFile = os.path.join(baseDir, relPath, "shell.js")
 
@@ -368,7 +366,6 @@ def findAndCopyIncludes(dirPath, baseDir, includeDir):
 
 
 def exportTest262(args):
-
     outDir = os.path.abspath(args.out)
     providedSrcs = args.src
     includeShell = args.exportshellincludes
@@ -385,15 +382,13 @@ def exportTest262(args):
 
     # Go through each source path
     for providedSrc in providedSrcs:
-
         src = os.path.abspath(providedSrc)
         # the basename of the path will be used in case multiple "src" arguments
         # are passed in to create an output directory for each "src".
         basename = os.path.basename(src)
 
         # Process all test directories recursively.
-        for (dirPath, _, fileNames) in os.walk(src):
-
+        for dirPath, _, fileNames in os.walk(src):
             # we need to make and get the unique set of includes for this filepath
             includes = []
             if includeShell:

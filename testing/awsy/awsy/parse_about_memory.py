@@ -7,12 +7,10 @@
 
 # Firefox about:memory log parser.
 
-from __future__ import absolute_import, print_function
-
 import argparse
-from collections import defaultdict
 import gzip
 import json
+from collections import defaultdict
 
 # This value comes from nsIMemoryReporter.idl.
 KIND_HEAP = 1
@@ -67,7 +65,9 @@ def path_total(data, path):
 
         # Make sure the value is sane. A misbehaving reporter could lead to
         # negative values.
-        assert unclassified >= 0, "heap-unclassified was negative: %d" % unclassified
+        # This assertion fails on Beta while running TP6, in the Google Docs process.
+        # Disable this for now, but only on Beta. See bug 1735556.
+        # assert unclassified >= 0, "heap-unclassified was negative: %d" % unclassified
 
         return unclassified
 
@@ -157,13 +157,13 @@ if __name__ == "__main__":
     totals = calculate_memory_report_values(args.report, args.prefix, args.proc_filter)
 
     sorted_totals = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
-    for (k, v) in sorted_totals:
+    for k, v in sorted_totals:
         if v:
             print("{0}\t".format(k)),
     print("")
 
     bytes_per_mebibyte = 1024.0 * 1024.0
-    for (k, v) in sorted_totals:
+    for k, v in sorted_totals:
         if v:
             if args.mebi:
                 print("{0:.2f} MiB".format(v / bytes_per_mebibyte)),

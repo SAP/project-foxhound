@@ -17,7 +17,7 @@ function genericChecker() {
         {
           currentWindow: true,
         },
-        function(tabs) {
+        function (tabs) {
           browser.test.sendMessage("result", tabs[0].windowId);
         }
       );
@@ -26,12 +26,12 @@ function genericChecker() {
         {
           windowId: browser.windows.WINDOW_ID_CURRENT,
         },
-        function(tabs) {
+        function (tabs) {
           browser.test.sendMessage("result", tabs[0].windowId);
         }
       );
     } else if (msg == kind + "-check-current3") {
-      browser.windows.getCurrent(function(window) {
+      browser.windows.getCurrent(function (window) {
         browser.test.sendMessage("result", window.id);
       });
     } else if (msg == kind + "-open-page") {
@@ -56,16 +56,22 @@ function genericChecker() {
   browser.test.sendMessage(kind + "-ready");
 }
 
-add_task(async function() {
+add_task(async function () {
   let win1 = await BrowserTestUtils.openNewBrowserWindow();
   let win2 = await BrowserTestUtils.openNewBrowserWindow();
 
   await focusWindow(win2);
 
-  BrowserTestUtils.loadURI(win1.gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(
+    win1.gBrowser.selectedBrowser,
+    "about:robots"
+  );
   await BrowserTestUtils.browserLoaded(win1.gBrowser.selectedBrowser);
 
-  BrowserTestUtils.loadURI(win2.gBrowser.selectedBrowser, "about:config");
+  BrowserTestUtils.startLoadingURIString(
+    win2.gBrowser.selectedBrowser,
+    "about:config"
+  );
   await BrowserTestUtils.browserLoaded(win2.gBrowser.selectedBrowser);
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -74,6 +80,7 @@ add_task(async function() {
 
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
       },
     },
 
@@ -109,7 +116,7 @@ add_task(async function() {
     Management: {
       global: { windowTracker },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
+  } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
 
   let winId1 = windowTracker.getId(win1);
   let winId2 = windowTracker.getId(win2);
@@ -148,13 +155,13 @@ add_task(async function() {
 
   await focusWindow(win1);
   await checkWindow("background", winId1, "win1");
-  await triggerPopup(win1, async function() {
+  await triggerPopup(win1, async function () {
     await checkWindow("popup", winId1, "win1");
   });
 
   await focusWindow(win2);
   await checkWindow("background", winId2, "win2");
-  await triggerPopup(win2, async function() {
+  await triggerPopup(win2, async function () {
     await checkWindow("popup", winId2, "win2");
   });
 

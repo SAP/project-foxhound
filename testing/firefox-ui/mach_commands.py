@@ -2,21 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
-import six
 import logging
 import os
 import sys
 
-from mozbuild.base import (
-    MachCommandConditions as conditions,
-    BinaryNotFoundException,
-)
-
-from mach.decorators import (
-    Command,
-)
+import six
+from mach.decorators import Command
+from mozbuild.base import BinaryNotFoundException
+from mozbuild.base import MachCommandConditions as conditions
 
 
 def setup_argument_parser_functional():
@@ -28,22 +21,13 @@ def setup_argument_parser_functional():
     return parser
 
 
-def run_firefox_ui_test(testtype=None, topsrcdir=None, **kwargs):
-    from mozlog.structured import commandline
+def run_firefox_ui_test(topsrcdir=None, **kwargs):
     from argparse import Namespace
+
     import firefox_ui_harness
+    from mozlog.structured import commandline
 
-    if testtype == "functional":
-        parser = setup_argument_parser_functional()
-
-    test_types = {
-        "functional": {
-            "default_tests": [
-                os.path.join("functional", "manifest.ini"),
-            ],
-            "cli_module": firefox_ui_harness.cli_functional,
-        },
-    }
+    parser = setup_argument_parser_functional()
 
     fxui_dir = os.path.join(topsrcdir, "testing", "firefox-ui")
 
@@ -59,15 +43,12 @@ def run_firefox_ui_test(testtype=None, topsrcdir=None, **kwargs):
         kwargs["tests"] = tests
     elif not kwargs.get("tests"):
         # If no tests have been selected, set default ones
-        kwargs["tests"] = [
-            os.path.join(fxui_dir, "tests", test)
-            for test in test_types[testtype]["default_tests"]
-        ]
+        kwargs["tests"] = os.path.join(fxui_dir, "tests", "functional", "manifest.ini")
 
     kwargs["logger"] = kwargs.pop("log", None)
     if not kwargs["logger"]:
         kwargs["logger"] = commandline.setup_logging(
-            "Firefox UI - {} Tests".format(testtype), {"mach": sys.stdout}
+            "Firefox UI - Functional Tests", {"mach": sys.stdout}
         )
 
     args = Namespace()
@@ -77,7 +58,7 @@ def run_firefox_ui_test(testtype=None, topsrcdir=None, **kwargs):
 
     parser.verify_usage(args)
 
-    failed = test_types[testtype]["cli_module"].cli(args=vars(args))
+    failed = firefox_ui_harness.cli_functional.cli(args=vars(args))
 
     if failed > 0:
         return 1
@@ -107,6 +88,4 @@ def run_firefox_ui_functional(command_context, **kwargs):
         )
         return 1
 
-    return run_firefox_ui_test(
-        testtype="functional", topsrcdir=command_context.topsrcdir, **kwargs
-    )
+    return run_firefox_ui_test(topsrcdir=command_context.topsrcdir, **kwargs)

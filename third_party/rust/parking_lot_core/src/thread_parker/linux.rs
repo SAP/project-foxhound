@@ -9,9 +9,9 @@ use core::{
     ptr,
     sync::atomic::{AtomicI32, Ordering},
 };
-use instant::Instant;
 use libc;
 use std::thread;
+use std::time::Instant;
 
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
 // See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
@@ -80,10 +80,10 @@ impl super::ThreadParkerT for ThreadParker {
                 self.park();
                 return true;
             }
-            let ts = libc::timespec {
-                tv_sec: diff.as_secs() as libc::time_t,
-                tv_nsec: diff.subsec_nanos() as tv_nsec_t,
-            };
+            // SAFETY: libc::timespec is zero initializable.
+            let mut ts: libc::timespec = std::mem::zeroed();
+            ts.tv_sec = diff.as_secs() as libc::time_t;
+            ts.tv_nsec = diff.subsec_nanos() as tv_nsec_t;
             self.futex_wait(Some(ts));
         }
         true

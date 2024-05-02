@@ -3,8 +3,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import os
 import json
+import os
 from datetime import datetime, timedelta
 
 TASK_DURATION_CACHE = "task_duration_history.json"
@@ -38,7 +38,6 @@ def find_all_dependencies(graph, tasklist):
 
 
 def find_longest_path(graph, tasklist, duration_data):
-
     dep_durations = dict()
 
     def find_dependency_durations(task):
@@ -60,7 +59,6 @@ def find_longest_path(graph, tasklist, duration_data):
 
 
 def determine_percentile(quantiles_file, duration):
-
     duration = duration.total_seconds()
 
     with open(quantiles_file) as f:

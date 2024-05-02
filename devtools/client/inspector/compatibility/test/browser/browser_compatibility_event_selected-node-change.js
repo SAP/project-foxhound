@@ -8,11 +8,11 @@
 const TEST_URI = `
   <style>
   body {
-    border-block-color: lime;
+    ruby-align: center;
   }
 
   .has-issue {
-    border-inline-color: lime;
+    scrollbar-width: thin;
     user-modify: read-only;
   }
 
@@ -30,8 +30,14 @@ const TEST_DATA_SELECTED = [
   {
     selector: ".has-issue",
     expectedIssues: [
-      { property: "border-inline-color" },
-      { property: "user-modify" },
+      {
+        property: "scrollbar-width",
+        url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-width",
+      },
+      {
+        property: "user-modify",
+        url: "https://developer.mozilla.org/docs/Web/CSS/user-modify",
+      },
     ],
   },
   {
@@ -40,24 +46,35 @@ const TEST_DATA_SELECTED = [
   },
   {
     selector: "body",
-    expectedIssues: [{ property: "border-block-color" }],
+    expectedIssues: [
+      {
+        property: "ruby-align",
+        url: "https://developer.mozilla.org/docs/Web/CSS/ruby-align",
+      },
+    ],
   },
 ];
 
 const TEST_DATA_ALL = [
-  { property: "border-block-color" },
-  { property: "border-inline-color" },
-  { property: "user-modify" },
+  {
+    property: "ruby-align",
+    url: "https://developer.mozilla.org/docs/Web/CSS/ruby-align",
+  },
+  {
+    property: "scrollbar-width",
+    url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-width",
+  },
+  {
+    property: "user-modify",
+    url: "https://developer.mozilla.org/docs/Web/CSS/user-modify",
+  },
 ];
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
 
-  const {
-    allElementsPane,
-    inspector,
-    selectedElementPane,
-  } = await openCompatibilityView();
+  const { allElementsPane, inspector, selectedElementPane } =
+    await openCompatibilityView();
 
   for (const { selector, expectedIssues } of TEST_DATA_SELECTED) {
     info(`Check the issue list for ${selector} node`);

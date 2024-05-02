@@ -19,6 +19,11 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_SEARCH_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_SEARCH_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "modules/audio_coding/codecs/ilbc/defines.h"
+
 void WebRtcIlbcfix_CbSearch(
     IlbcEncoder* iLBCenc_inst,
     /* (i) the encoder state structure */
@@ -30,6 +35,6 @@ void WebRtcIlbcfix_CbSearch(
     size_t lTarget,       /* (i) Length of vector */
     int16_t* weightDenum, /* (i) weighting filter coefficients in Q12 */
     size_t block          /* (i) the subblock number */
-    );
+);
 
 #endif

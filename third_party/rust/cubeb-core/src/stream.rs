@@ -3,11 +3,11 @@
 // This program is made available under an ISC-style license.  See the
 // accompanying file LICENSE for details.
 
-use {ChannelLayout, DeviceRef, Result, SampleFormat};
 use ffi;
+use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
-use std::ffi::CStr;
+use {ChannelLayout, DeviceRef, Result, SampleFormat};
 
 /// Stream states signaled via `state_callback`.
 #[derive(PartialEq, Eq, Clone, Debug, Copy)]
@@ -34,10 +34,10 @@ impl From<ffi::cubeb_state> for State {
     }
 }
 
-impl Into<ffi::cubeb_state> for State {
-    fn into(self) -> ffi::cubeb_state {
+impl From<State> for ffi::cubeb_state {
+    fn from(x: State) -> Self {
         use State::*;
-        match self {
+        match x {
             Started => ffi::CUBEB_STATE_STARTED,
             Stopped => ffi::CUBEB_STATE_STOPPED,
             Drained => ffi::CUBEB_STATE_DRAINED,
@@ -49,14 +49,17 @@ impl Into<ffi::cubeb_state> for State {
 bitflags! {
     /// Miscellaneous stream preferences.
     pub struct StreamPrefs: ffi::cubeb_stream_prefs {
-        const NONE = ffi::CUBEB_STREAM_PREF_NONE;
         const LOOPBACK = ffi::CUBEB_STREAM_PREF_LOOPBACK;
         const DISABLE_DEVICE_SWITCHING = ffi::CUBEB_STREAM_PREF_DISABLE_DEVICE_SWITCHING;
         const VOICE = ffi::CUBEB_STREAM_PREF_VOICE;
     }
 }
 
-ffi_type_stack!{
+impl StreamPrefs {
+    pub const NONE: Self = Self::empty();
+}
+
+ffi_type_stack! {
     /// Stream format initialization parameters.
     type CType = ffi::cubeb_stream_params;
     #[derive(Debug)]
@@ -123,7 +126,7 @@ impl StreamRef {
     pub fn position(&self) -> Result<u64> {
         let mut position = 0u64;
         unsafe {
-            let _ = try_call!(ffi::cubeb_stream_get_position(self.as_ptr(), &mut position));
+            call!(ffi::cubeb_stream_get_position(self.as_ptr(), &mut position))?;
         }
         Ok(position)
     }
@@ -134,7 +137,7 @@ impl StreamRef {
     pub fn latency(&self) -> Result<u32> {
         let mut latency = 0u32;
         unsafe {
-            let _ = try_call!(ffi::cubeb_stream_get_latency(self.as_ptr(), &mut latency));
+            call!(ffi::cubeb_stream_get_latency(self.as_ptr(), &mut latency))?;
         }
         Ok(latency)
     }
@@ -145,7 +148,10 @@ impl StreamRef {
     pub fn input_latency(&self) -> Result<u32> {
         let mut latency = 0u32;
         unsafe {
-            let _ = try_call!(ffi::cubeb_stream_get_input_latency(self.as_ptr(), &mut latency));
+            call!(ffi::cubeb_stream_get_input_latency(
+                self.as_ptr(),
+                &mut latency
+            ))?;
         }
         Ok(latency)
     }
@@ -164,10 +170,10 @@ impl StreamRef {
     pub fn current_device(&self) -> Result<&DeviceRef> {
         let mut device: *mut ffi::cubeb_device = ptr::null_mut();
         unsafe {
-            let _ = try_call!(ffi::cubeb_stream_get_current_device(
+            call!(ffi::cubeb_stream_get_current_device(
                 self.as_ptr(),
                 &mut device
-            ));
+            ))?;
             Ok(DeviceRef::from_ptr(device))
         }
     }
@@ -202,8 +208,8 @@ impl StreamRef {
 
 #[cfg(test)]
 mod tests {
-    use {StreamParams, StreamParamsRef, StreamPrefs};
     use std::mem;
+    use {StreamParams, StreamParamsRef, StreamPrefs};
 
     #[test]
     fn stream_params_default() {

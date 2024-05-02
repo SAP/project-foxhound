@@ -6,21 +6,25 @@
 enum WriteCommandType {
   "write",
   "seek",
-  "truncate",
+  "truncate"
 };
 
+[GenerateConversionToJS]
 dictionary WriteParams {
   required WriteCommandType type;
   unsigned long long? size;
   unsigned long long? position;
-  (BufferSource or Blob or USVString)? data;
+  (BufferSource or Blob or UTF8String)? data;
 };
 
-typedef (BufferSource or Blob or USVString or WriteParams) FileSystemWriteChunkType;
+typedef (BufferSource or Blob or UTF8String or WriteParams) FileSystemWriteChunkType;
 
 [Exposed=(Window,Worker), SecureContext, Pref="dom.fs.enabled"]
 interface FileSystemWritableFileStream : WritableStream {
-  Promise<void> write(FileSystemWriteChunkType data);
-  Promise<void> seek(unsigned long long position);
-  Promise<void> truncate(unsigned long long size);
+  [NewObject, Throws]
+  Promise<undefined> write(FileSystemWriteChunkType data);
+  [NewObject]
+  Promise<undefined> seek(unsigned long long position);
+  [NewObject]
+  Promise<undefined> truncate(unsigned long long size);
 };

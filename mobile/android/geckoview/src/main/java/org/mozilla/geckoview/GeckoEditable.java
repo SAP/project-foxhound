@@ -1174,10 +1174,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
     }
     // BaseKeyListener returns false even if it handled these keys for us,
     // so we skip the key listener entirely and handle these ourselves
-    if (keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) {
-      return true;
-    }
-    return false;
+    return keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL;
   }
 
   private static KeyEvent translateSonyXperiaGamepadKeys(final int keyCode, final KeyEvent event) {
@@ -1374,6 +1371,19 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
     }
   }
 
+  @Override // SessionTextInput.EditableClient
+  public void insertImage(final @NonNull byte[] data, final @NonNull String mimeType) {
+    if (mFocusedChild == null) {
+      return;
+    }
+
+    try {
+      mFocusedChild.onImeInsertImage(data, mimeType);
+    } catch (final RemoteException e) {
+      Log.e(LOGTAG, "Remote call to insert image failed", e);
+    }
+  }
+
   private void geckoSetIcHandler(final Handler newHandler) {
     // On Gecko or binder thread.
     mIcPostHandler.post(
@@ -1525,7 +1535,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
 
     if (type == SessionTextInput.EditableListener.NOTIFY_IME_OF_BLUR) {
       synchronized (this) {
-        onTextChange(token, "", 0, Integer.MAX_VALUE);
+        onTextChange(token, "", 0, Integer.MAX_VALUE, false);
         mActions.clear();
         mFocusedToken = null;
       }
@@ -1898,6 +1908,11 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
       outAttrs.imeOptions |= InputMethods.IME_FLAG_NO_PERSONALIZED_LEARNING;
     }
 
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1 && typeHint.length() == 0) {
+      // contenteditable allows image insertion.
+      outAttrs.contentMimeTypes = new String[] {"image/gif", "image/jpeg", "image/png"};
+    }
+
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
       final Spanned currentText = mText.getCurrentText();
       outAttrs.initialSelStart = Selection.getSelectionStart(currentText);
@@ -2042,7 +2057,11 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
 
   @Override // IGeckoEditableParent
   public void onTextChange(
-      final IBinder token, final CharSequence text, final int start, final int unboundedOldEnd) {
+      final IBinder token,
+      final CharSequence text,
+      final int start,
+      final int unboundedOldEnd,
+      final boolean causedOnlyByComposition) {
     // On Gecko or binder thread.
     if (DEBUG) {
       final StringBuilder sb = new StringBuilder("onTextChange(");
@@ -2070,7 +2089,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
     final int oldEnd = unboundedOldEnd > currentLength ? currentLength : unboundedOldEnd;
     final int newEnd = start + text.length();
 
-    if (start == 0 && unboundedOldEnd > currentLength) {
+    if (start == 0 && unboundedOldEnd > currentLength && !causedOnlyByComposition) {
       // | oldEnd > currentLength | signals entire text is cleared (e.g. for
       // newly-focused editors). Simply replace the text in that case; replace in
       // two steps to properly clear composing spans that span the whole range.
@@ -2167,7 +2186,8 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
   }
 
   @Override // IGeckoEditableParent
-  public void updateCompositionRects(final IBinder token, final RectF[] rects) {
+  public void updateCompositionRects(
+      final IBinder token, final RectF[] rects, final RectF caretRect) {
     // On Gecko or binder thread.
     if (DEBUG) {
       Log.d(LOGTAG, "updateCompositionRects(rects.length = " + rects.length + ")");
@@ -2184,7 +2204,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
             if (mListener == null) {
               return;
             }
-            mListener.updateCompositionRects(rects);
+            mListener.updateCompositionRects(rects, caretRect);
           }
         });
   }

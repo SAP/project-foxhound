@@ -8,6 +8,8 @@
 #define DOM_INDEXEDDB_DATABASEFILEMANAGER_H_
 
 #include "FileInfoManager.h"
+#include "IndexedDBCipherKeyManager.h"
+#include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/UsageInfo.h"
@@ -28,11 +30,17 @@ class DatabaseFileManager final
   const PersistenceType mPersistenceType;
   const quota::OriginMetadata mOriginMetadata;
   const nsString mDatabaseName;
+  const nsCString mDatabaseID;
+
+  RefPtr<IndexedDBCipherKeyManager> mCipherKeyManager;
 
   LazyInitializedOnce<const nsString> mDirectoryPath;
   LazyInitializedOnce<const nsString> mJournalDirectoryPath;
 
   const bool mEnforcingQuota;
+  const bool mIsInPrivateBrowsingMode;
+
+  FlippedOnce<false> mInitialized;
 
   // Lock protecting DatabaseFileManager.mFileInfos.
   // It's s also used to atomically update DatabaseFileInfo.mRefCnt and
@@ -59,7 +67,9 @@ class DatabaseFileManager final
 
   DatabaseFileManager(PersistenceType aPersistenceType,
                       const quota::OriginMetadata& aOriginMetadata,
-                      const nsAString& aDatabaseName, bool aEnforcingQuota);
+                      const nsAString& aDatabaseName,
+                      const nsCString& aDatabaseID, bool aEnforcingQuota,
+                      bool aIsInPrivateBrowsingMode);
 
   PersistenceType Type() const { return mPersistenceType; }
 
@@ -71,7 +81,20 @@ class DatabaseFileManager final
 
   const nsAString& DatabaseName() const { return mDatabaseName; }
 
+  const nsCString& DatabaseID() const { return mDatabaseID; }
+
+  IndexedDBCipherKeyManager& MutableCipherKeyManagerRef() const {
+    MOZ_ASSERT(mIsInPrivateBrowsingMode);
+    MOZ_ASSERT(mCipherKeyManager);
+
+    return *mCipherKeyManager;
+  }
+
+  auto IsInPrivateBrowsingMode() const { return mIsInPrivateBrowsingMode; }
+
   bool EnforcingQuota() const { return mEnforcingQuota; }
+
+  bool Initialized() const { return mInitialized; }
 
   nsresult Init(nsIFile* aDirectory, mozIStorageConnection& aConnection);
 
@@ -87,9 +110,12 @@ class DatabaseFileManager final
 
   // XXX When getting rid of FileHelper, this method should be removed/made
   // private.
-  [[nodiscard]] nsresult SyncDeleteFile(nsIFile& aFile, nsIFile& aJournalFile);
+  [[nodiscard]] nsresult SyncDeleteFile(nsIFile& aFile,
+                                        nsIFile& aJournalFile) const;
 
   [[nodiscard]] nsresult AsyncDeleteFile(int64_t aFileId);
+
+  nsresult Invalidate() override;
 
   MOZ_DECLARE_REFCOUNTED_TYPENAME(DatabaseFileManager)
 

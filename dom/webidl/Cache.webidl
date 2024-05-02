@@ -4,25 +4,22 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html
- *
+ * https://w3c.github.io/ServiceWorker/#cache-interface
  */
 
-// https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#cache
-
 [Exposed=(Window,Worker),
- Pref="dom.caches.enabled"]
+ Func="nsGlobalWindowInner::CachesEnabled"]
 interface Cache {
   [NewObject]
   Promise<Response> match(RequestInfo request, optional CacheQueryOptions options = {});
   [NewObject]
   Promise<sequence<Response>> matchAll(optional RequestInfo request, optional CacheQueryOptions options = {});
   [NewObject, NeedsCallerType]
-  Promise<void> add(RequestInfo request);
+  Promise<undefined> add(RequestInfo request);
   [NewObject, NeedsCallerType]
-  Promise<void> addAll(sequence<RequestInfo> requests);
+  Promise<undefined> addAll(sequence<RequestInfo> requests);
   [NewObject]
-  Promise<void> put(RequestInfo request, Response response);
+  Promise<undefined> put(RequestInfo request, Response response);
   [NewObject]
   Promise<boolean> delete(RequestInfo request, optional CacheQueryOptions options = {});
   [NewObject]

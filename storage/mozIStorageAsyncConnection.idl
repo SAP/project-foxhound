@@ -84,16 +84,16 @@ interface mozIStorageAsyncConnection : nsISupports {
    *    `createStatement("BEGIN").execute()` on a `mozIStorageConnection`.
    * 3. Executing an async statement, like
    *    `createAsyncStatement("BEGIN").executeAsync(...)`. This is what
-   *    `Sqlite.jsm` does under the hood.
+   *    `Sqlite.sys.mjs` does under the hood.
    *
    * Because of this, it's important *not* to use this attribute to decide
    * whether to *commit* the active transaction, because the caller that opened
    * it may not expect that. This is why both `mozStorageTransaction` and
-   * `Sqlite.jsm` use an internal variable (`mHasTransaction` for the former;
+   * `Sqlite.sys.mjs` use an internal variable (`mHasTransaction` for the former;
    * `_hasInProgressTransaction` for the latter) to check if their transaction
    * is already in progress, instead of just checking this attribute before
    * committing. Otherwise, mozStorage might accidentally commit (or roll back!)
-   * a transaction started by `Sqlite.jsm`, and vice versa.
+   * a transaction started by `Sqlite.sys.mjs`, and vice versa.
    */
   readonly attribute boolean transactionInProgress;
 
@@ -185,12 +185,45 @@ interface mozIStorageAsyncConnection : nsISupports {
   /**
    * Causes any pending database operation to abort and return at the first
    * opportunity.
-   * This can only be used on read-only connections that don't implement
-   * the mozIStorageConnection interface.
+   * @note this cannot be used on mozIStorageConnection unless the connection is
+   *       explicitly marked as `interruptible`. For more details, please
+   *       refer to CONNECTION_INTERRUPTIBLE in mozIStorageService.
    * @note operations that are nearly complete may still be able to complete.
    * @throws if used on an unsupported connection type, or a closed connection.
    */
   void interrupt();
+
+  /**
+   * Vacuum the main database plus all the attached one.
+   * If the database is in auto_vacuum = INCREMENTAL mode, this executes an
+   * incremental_vacuum, otherwise it will always execute a full vacuum.
+   *
+   * While it's possible to invoke this method directly, it's suggested, when
+   * possible, to use the VacuumManager instead.
+   * That means registering your component for the "vacuum-participant" XPCOM
+   * category, and implement the mozIStorageVacuumParticipant interface.
+   *
+   * @param [aCallback] Completion callback invoked once the operation is
+   *        complete.
+   * @param [aUseIncremental] When set to true, this will try to convert the
+   *        main schema to auto_vacuum = INCREMENTAL mode, if it's not set yet.
+   *        When set to false, it will try to set auto_vacuum = NONE.
+   *        Note a full vacuum will be executed if the auto_vacuum mode must be
+   *        changed, otherwise an incremental vacuum will happen if the database
+   *        is already in INCREMENTAL mode.
+   * @param [aSetPageSize] This can be used to change the database page_size, a
+   *        full vacuum will be executed to persist the change. If the page
+   *        size is already correct, or you pass 0, this will be a no-op.
+   * @throws If it's not possible to start the async vacuum operation, note in
+   *         this case the callback won't be invoked.
+   * @note Vacuum will fail inside a transaction, or if there is an ongoing
+   *       read statement.
+   */
+  void asyncVacuum(
+    [optional] in mozIStorageCompletionCallback aCallback,
+    [optional] in boolean aUseIncremental,
+    [optional] in long aSetPageSize
+  );
 
   //////////////////////////////////////////////////////////////////////////////
   //// Statement creation

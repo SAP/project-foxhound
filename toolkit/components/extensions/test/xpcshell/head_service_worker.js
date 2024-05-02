@@ -4,8 +4,8 @@
 
 /* exported TestWorkerWatcher */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionCommon: "resource://gre/modules/ExtensionCommon.sys.mjs",
 });
 
 // Ensure that the profile-after-change message has been notified,
@@ -111,15 +111,12 @@ class TestWorkerWatcher extends ExtensionCommon.EventEmitter {
 
   registerProcessActor() {
     const { JS_ACTOR_NAME } = this;
-    const getModuleURI = fileName =>
-      Services.io.newFileURI(do_get_file(`${this.dataRelPath}/${fileName}`))
-        .spec;
     ChromeUtils.registerProcessActor(JS_ACTOR_NAME, {
       parent: {
-        moduleURI: getModuleURI(`${JS_ACTOR_NAME}Parent.jsm`),
+        moduleURI: `resource://testing-common/${JS_ACTOR_NAME}Parent.jsm`,
       },
       child: {
-        moduleURI: getModuleURI(`${JS_ACTOR_NAME}Child.jsm`),
+        moduleURI: `resource://testing-common/${JS_ACTOR_NAME}Child.jsm`,
       },
     });
   }

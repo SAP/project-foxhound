@@ -69,11 +69,11 @@ bool GenerateInterfaceHelp(JSContext* cx, HandleObject obj, const char* name) {
     }
     numEntries++;
 
-    if (!buf.append("  ", 2)) {
+    if (!buf.append("  ")) {
       return false;
     }
 
-    if (!buf.append(usage.isString() ? usage.toString() : JSID_TO_STRING(id))) {
+    if (!buf.append(usage.isString() ? usage.toString() : id.toString())) {
       return false;
     }
   }
@@ -85,7 +85,7 @@ bool GenerateInterfaceHelp(JSContext* cx, HandleObject obj, const char* name) {
 
   buf.clear();
   if (!buf.append(name, strlen(name)) ||
-      !buf.append(" - interface object with ", 25)) {
+      !buf.append(" - interface object with ")) {
     return false;
   }
   char cbuf[100];

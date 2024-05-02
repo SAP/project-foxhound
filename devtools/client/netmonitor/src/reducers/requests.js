@@ -6,7 +6,7 @@
 
 const {
   processNetworkUpdates,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   ADD_REQUEST,
   SET_EVENT_STREAM_FLAG,
@@ -19,9 +19,9 @@ const {
   SELECT_REQUEST,
   PRESELECT_REQUEST,
   SEND_CUSTOM_REQUEST,
-  TOGGLE_RECORDING,
+  SET_RECORDING_STATE,
   UPDATE_REQUEST,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 /**
  * This structure stores list of all HTTP requests received
@@ -123,10 +123,10 @@ function requestsReducer(state = Requests(), action) {
     }
 
     // Pause/resume button clicked.
-    case TOGGLE_RECORDING: {
+    case SET_RECORDING_STATE: {
       return {
         ...state,
-        recording: !state.recording,
+        recording: action.recording,
       };
     }
 

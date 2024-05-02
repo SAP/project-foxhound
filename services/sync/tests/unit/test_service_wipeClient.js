@@ -1,14 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 function CanDecryptEngine() {
   SyncEngine.call(this, "CanDecrypt", Service);
 }
 CanDecryptEngine.prototype = {
-  __proto__: SyncEngine.prototype,
-
   // Override these methods with mocks for the test
   async canDecrypt() {
     return true;
@@ -19,13 +19,12 @@ CanDecryptEngine.prototype = {
     this.wasWiped = true;
   },
 };
+Object.setPrototypeOf(CanDecryptEngine.prototype, SyncEngine.prototype);
 
 function CannotDecryptEngine() {
   SyncEngine.call(this, "CannotDecrypt", Service);
 }
 CannotDecryptEngine.prototype = {
-  __proto__: SyncEngine.prototype,
-
   // Override these methods with mocks for the test
   async canDecrypt() {
     return false;
@@ -36,6 +35,7 @@ CannotDecryptEngine.prototype = {
     this.wasWiped = true;
   },
 };
+Object.setPrototypeOf(CannotDecryptEngine.prototype, SyncEngine.prototype);
 
 let canDecryptEngine;
 let cannotDecryptEngine;

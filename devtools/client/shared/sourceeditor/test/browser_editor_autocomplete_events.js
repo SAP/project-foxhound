@@ -7,7 +7,7 @@ const TEST_URI =
   "data:text/html;charset=UTF-8,<html><body><bar></bar>" +
   "<div id='baz'></div><body></html>";
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   await runTests();
 });
@@ -16,12 +16,13 @@ async function runTests() {
   const target = await createAndAttachTargetForTab(gBrowser.selectedTab);
   const inspector = await target.getFront("inspector");
   const walker = inspector.walker;
+  const cssPropertiesFront = await target.getFront("cssProperties");
   const { ed, win, edWin } = await setup({
     autocomplete: true,
     mode: Editor.modes.css,
     autocompleteOpts: {
-      walker: walker,
-      cssProperties: getClientCssProperties(),
+      walker,
+      cssProperties: cssPropertiesFront.cssProperties,
     },
   });
   await testMouse(ed, edWin);

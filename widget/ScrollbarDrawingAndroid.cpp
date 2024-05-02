@@ -7,6 +7,7 @@
 
 #include "nsIFrame.h"
 #include "nsNativeTheme.h"
+#include "mozilla/StaticPrefs_widget.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -15,37 +16,25 @@ LayoutDeviceIntSize ScrollbarDrawingAndroid::GetMinimumWidgetSize(
     nsPresContext* aPresContext, StyleAppearance aAppearance,
     nsIFrame* aFrame) {
   MOZ_ASSERT(nsNativeTheme::IsWidgetScrollbarPart(aAppearance));
-
-  auto sizes =
-      GetScrollbarSizes(aPresContext, StyleScrollbarWidth::Auto, Overlay::Yes);
-  MOZ_ASSERT(sizes.mHorizontal == sizes.mVertical);
-
-  return LayoutDeviceIntSize{sizes.mHorizontal, sizes.mVertical};
-}
-
-auto ScrollbarDrawingAndroid::GetScrollbarSizes(nsPresContext* aPresContext,
-                                                StyleScrollbarWidth aWidth,
-                                                Overlay aOverlay)
-    -> ScrollbarSizes {
-  // We force auto-width scrollbars because scrollbars on android are already
-  // thin enough.
-  return ScrollbarDrawing::GetScrollbarSizes(
-      aPresContext, StyleScrollbarWidth::Auto, aOverlay);
+  auto size =
+      GetScrollbarSize(aPresContext, StyleScrollbarWidth::Auto, Overlay::Yes);
+  return LayoutDeviceIntSize{size, size};
 }
 
 template <typename PaintBackendData>
 void ScrollbarDrawingAndroid::DoPaintScrollbarThumb(
     PaintBackendData& aPaintData, const LayoutDeviceRect& aRect,
-    bool aHorizontal, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
   // TODO(emilio): Maybe do like macOS and draw a stroke?
   const auto color = ComputeScrollbarThumbColor(aFrame, aStyle, aElementState,
                                                 aDocumentState, aColors);
+  const bool horizontal = aScrollbarKind == ScrollbarKind::Horizontal;
 
   // Draw the thumb rect centered in the scrollbar.
   LayoutDeviceRect thumbRect(aRect);
-  if (aHorizontal) {
+  if (horizontal) {
     thumbRect.height *= 0.5f;
     thumbRect.y += thumbRect.height * 0.5f;
   } else {
@@ -54,28 +43,28 @@ void ScrollbarDrawingAndroid::DoPaintScrollbarThumb(
   }
 
   const LayoutDeviceCoord radius =
-      (aHorizontal ? thumbRect.height : thumbRect.width) / 2.0f;
+      (horizontal ? thumbRect.height : thumbRect.width) / 2.0f;
   ThemeDrawing::PaintRoundedRectWithRadius(aPaintData, thumbRect, color,
                                            sRGBColor::White(0.0f), 0.0f,
                                            radius / aDpiRatio, aDpiRatio);
 }
 
 bool ScrollbarDrawingAndroid::PaintScrollbarThumb(
-    DrawTarget& aDt, const LayoutDeviceRect& aRect, bool aHorizontal,
-    nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    DrawTarget& aDt, const LayoutDeviceRect& aRect,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
-  DoPaintScrollbarThumb(aDt, aRect, aHorizontal, aFrame, aStyle, aElementState,
-                        aDocumentState, aColors, aDpiRatio);
+  DoPaintScrollbarThumb(aDt, aRect, aScrollbarKind, aFrame, aStyle,
+                        aElementState, aDocumentState, aColors, aDpiRatio);
   return true;
 }
 
 bool ScrollbarDrawingAndroid::PaintScrollbarThumb(
     WebRenderBackendData& aWrData, const LayoutDeviceRect& aRect,
-    bool aHorizontal, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
-  DoPaintScrollbarThumb(aWrData, aRect, aHorizontal, aFrame, aStyle,
+  DoPaintScrollbarThumb(aWrData, aRect, aScrollbarKind, aFrame, aStyle,
                         aElementState, aDocumentState, aColors, aDpiRatio);
   return true;
 }
@@ -87,5 +76,9 @@ void ScrollbarDrawingAndroid::RecomputeScrollbarParams() {
   if (overrideSize > 0) {
     defaultSize = overrideSize;
   }
-  mHorizontalScrollbarHeight = mVerticalScrollbarWidth = defaultSize;
+  ConfigureScrollbarSize(defaultSize);
+  // We make thin scrollbars as wide as auto ones because auto scrollbars on
+  // android are already thin enough.
+  ConfigureScrollbarSize(StyleScrollbarWidth::Thin, Overlay::Yes, defaultSize);
+  ConfigureScrollbarSize(StyleScrollbarWidth::Thin, Overlay::No, defaultSize);
 }

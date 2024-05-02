@@ -11,7 +11,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,8 +19,6 @@
 
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/ans_params.h"
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
@@ -30,6 +27,8 @@
 #include "lib/jxl/huffman_table.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 #define USE_MULT_BY_RECIPROCAL
 

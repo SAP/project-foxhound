@@ -12,11 +12,11 @@ const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html><script>
   console.log("${MESSAGE}", x);
 </script>`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Wait for the error to be logged");
-  const msgNode = await waitFor(() => findMessage(hud, MESSAGE));
+  const msgNode = await waitFor(() => findConsoleAPIMessage(hud, MESSAGE));
   ok(msgNode, `Error logged`);
 
   const errorNode = msgNode.querySelector(".objectBox-stackTrace");
@@ -30,11 +30,11 @@ add_task(async function() {
 
   ok(stackTraceElement, "There's a stacktrace element");
   ok(
-    stackTraceElement.querySelectorAll(".frame .title").length > 0,
+    !!stackTraceElement.querySelectorAll(".frame .title").length,
     "Frames functions are displayed"
   );
   ok(
-    stackTraceElement.querySelectorAll(".frame .location").length > 0,
+    !!stackTraceElement.querySelectorAll(".frame .location").length,
     "Frames location are displayed"
   );
 });

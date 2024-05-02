@@ -16,6 +16,7 @@ transforms:
 job-defaults:
     attributes:
         retrigger: true
+    use-system-python: false
 
 jobs:
     linux64-valgrind-qr/opt-swr:
@@ -28,11 +29,12 @@ jobs:
             symbol: V-swr
             kind: build
             tier: 1
-        worker-type: b-linux-aws
+        worker-type: t-linux-kvm
         worker:
             docker-image: {in-tree: valgrind-build}
             max-run-time: 72000
             env:
+                NEED_XVFB: "true"
                 PERFHERDER_EXTRA_OPTIONS: valgrind
         run:
             using: mozharness
@@ -46,11 +48,9 @@ jobs:
             script: "mozharness/scripts/fx_desktop_build.py"
             secrets: true
             tooltool-downloads: public
-            need-xvfb: true
         use-sccache: true
         fetches:
             toolchain:
-                - linux64-binutils
                 - linux64-clang
                 - linux64-rust
                 - linux64-cbindgen
@@ -58,6 +58,7 @@ jobs:
                 - linux64-sccache
                 - linux64-nasm
                 - linux64-node
+                - linux64-pkgconf
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
         optimization:

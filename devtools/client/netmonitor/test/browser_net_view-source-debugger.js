@@ -5,16 +5,21 @@
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/Component not initialized/);
 PromiseTestUtils.allowMatchingRejectionsGlobally(/Connection closed/);
 
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
+  this
+);
+
 /**
  * Tests if on clicking the stack frame, UI switches to the Debugger panel.
  */
-add_task(async function() {
+add_task(async function () {
   // Set a higher panel height in order to get full CodeMirror content
   await pushPref("devtools.toolbox.footer.height", 400);
 
@@ -41,7 +46,7 @@ add_task(async function() {
   const waitForPanel = waitForDOM(
     document,
     "#stack-trace-panel .frame-link",
-    5
+    6
   );
   // Open the stack-trace tab for that request
   document.getElementById("stack-trace-tab").click();
@@ -65,18 +70,11 @@ async function checkClickOnNode(toolbox, frameLinkNode) {
   const line = frameLinkNode.getAttribute("data-line");
   ok(line, `source line found ("${line}")`);
 
-  // create the promise
-  const onJsDebuggerSelected = toolbox.once("jsdebugger-selected");
   // Fire the click event
   frameLinkNode.querySelector(".frame-link-source").click();
-  // wait for the promise to resolve
-  await onJsDebuggerSelected;
 
-  const dbg = await toolbox.getPanelWhenReady("jsdebugger");
-  await waitUntil(() => dbg._selectors.getSelectedSource(dbg._getState()));
-  is(
-    dbg._selectors.getSelectedSource(dbg._getState()).url,
-    url,
-    "expected source url"
-  );
+  // Wait for the debugger to have fully processed the opened source
+  await toolbox.getPanelWhenReady("jsdebugger");
+  const dbg = createDebuggerContext(toolbox);
+  await waitForSelectedSource(dbg, url);
 }

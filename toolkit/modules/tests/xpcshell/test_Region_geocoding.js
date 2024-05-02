@@ -1,21 +1,18 @@
 "use strict";
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { Region } = ChromeUtils.import("resource://gre/modules/Region.jsm");
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { Region } = ChromeUtils.importESModule(
+  "resource://gre/modules/Region.sys.mjs"
+);
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  RegionTestUtils: "resource://testing-common/RegionTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
 });
-
-async function readFile(file) {
-  let decoder = new TextDecoder();
-  let data = await OS.File.read(file.path);
-  return decoder.decode(data);
-}
 
 function setLocation(location) {
   Services.prefs.setCharPref(
@@ -25,7 +22,7 @@ function setLocation(location) {
 }
 
 async function stubMap(obj, path, fun) {
-  let map = await readFile(do_get_file(path));
+  let map = await IOUtils.readUTF8(do_get_file(path).path);
   sinon.stub(obj, fun).resolves(JSON.parse(map));
 }
 
@@ -46,21 +43,30 @@ const LOCATIONS = [
   { lat: 45.6523148, lng: 13.7486427, expectedRegion: "IT" },
   // In Bosnia and Herzegovina but within a lot of borders.
   { lat: 42.557079, lng: 18.4370373, expectedRegion: "HR" },
-  // In the sea bordering Italy and a few other regions.
-  { lat: 45.608696, lng: 13.4667903, expectedRegion: "IT" },
+  // In the sea bordering Croatia and a few other regions.
+  { lat: 45.608696, lng: 13.4667903, expectedRegion: "HR" },
   // In the middle of the Atlantic.
   { lat: 35.4411368, lng: -41.5372973, expectedRegion: null },
+  // Tanzania.
+  { lat: -5.066019, lng: 39.1026251, expectedRegion: "TZ" },
 ];
 
 add_task(async function test_local_basic() {
-  setLocation({ lat: -5.066019, lng: 39.1026251 });
-  let expectedRegion = "TZ";
-  let region = await Region._getRegionLocally();
-  Assert.equal(region, expectedRegion);
+  for (const { lat, lng, expectedRegion } of LOCATIONS) {
+    setLocation({ lat, lng });
+    let region = await Region._getRegionLocally();
+    Assert.equal(
+      region,
+      expectedRegion,
+      `Got the expected region at ${lat},${lng}`
+    );
+  }
 });
 
 add_task(async function test_mls_results() {
-  let data = await readFile(do_get_file("regions/mls-lookup-results.csv"));
+  let data = await IOUtils.readUTF8(
+    do_get_file("regions/mls-lookup-results.csv").path
+  );
   for (const row of data.split("\n")) {
     let [lat, lng, expectedRegion] = row.split(",");
     setLocation({ lng: parseFloat(lng), lat: parseFloat(lat) });

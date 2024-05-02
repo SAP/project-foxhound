@@ -11,13 +11,62 @@
 
 namespace mozilla {
 
+static bool IsValidOverflowRect(const nsRect& aRect) {
+  // `IsEmpty` in the context of `nsRect` means "width OR height is zero."
+  // However, in the context of overflow, the rect having one axis as zero is
+  // NOT considered empty.
+  if (MOZ_LIKELY(!aRect.IsEmpty())) {
+    return true;
+  }
+
+  // Be defensive and consider rects with any negative size as invalid.
+  return !aRect.IsEqualEdges(nsRect()) && aRect.Width() >= 0 &&
+         aRect.Height() >= 0;
+}
+
+/* static */
+nsRect OverflowAreas::GetOverflowClipRect(const nsRect& aRectToClip,
+                                          const nsRect& aBounds,
+                                          PhysicalAxes aClipAxes,
+                                          const nsSize& aOverflowMargin) {
+  auto inflatedBounds = aBounds;
+  inflatedBounds.Inflate(aOverflowMargin);
+  auto clip = aRectToClip;
+  if (aClipAxes & PhysicalAxes::Vertical) {
+    clip.y = inflatedBounds.y;
+    clip.height = inflatedBounds.height;
+  }
+  if (aClipAxes & PhysicalAxes::Horizontal) {
+    clip.x = inflatedBounds.x;
+    clip.width = inflatedBounds.width;
+  }
+  return clip;
+}
+
+/* static */
+void OverflowAreas::ApplyOverflowClippingOnRect(nsRect& aOverflowRect,
+                                                const nsRect& aBounds,
+                                                PhysicalAxes aClipAxes,
+                                                const nsSize& aOverflowMargin) {
+  aOverflowRect = aOverflowRect.Intersect(
+      GetOverflowClipRect(aOverflowRect, aBounds, aClipAxes, aOverflowMargin));
+}
+
 void OverflowAreas::UnionWith(const OverflowAreas& aOther) {
-  InkOverflow().UnionRect(InkOverflow(), aOther.InkOverflow());
-  ScrollableOverflow().UnionRect(ScrollableOverflow(),
-                                 aOther.ScrollableOverflow());
+  if (IsValidOverflowRect(aOther.InkOverflow())) {
+    InkOverflow().UnionRect(InkOverflow(), aOther.InkOverflow());
+  }
+  if (IsValidOverflowRect(aOther.ScrollableOverflow())) {
+    ScrollableOverflow().UnionRect(ScrollableOverflow(),
+                                   aOther.ScrollableOverflow());
+  }
 }
 
 void OverflowAreas::UnionAllWith(const nsRect& aRect) {
+  if (!IsValidOverflowRect(aRect)) {
+    // Same as `UnionWith()` - avoid losing information.
+    return;
+  }
   InkOverflow().UnionRect(InkOverflow(), aRect);
   ScrollableOverflow().UnionRect(ScrollableOverflow(), aRect);
 }

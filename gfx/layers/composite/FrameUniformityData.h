@@ -21,7 +21,7 @@ class FrameUniformityData {
   friend struct IPC::ParamTraits<FrameUniformityData>;
 
  public:
-  bool ToJS(JS::MutableHandleValue aOutValue, JSContext* aContext);
+  bool ToJS(JS::MutableHandle<JS::Value> aOutValue, JSContext* aContext);
   // Contains the calculated frame uniformities
   std::map<uintptr_t, float> mUniformities;
 };
@@ -34,14 +34,13 @@ template <>
 struct ParamTraits<mozilla::layers::FrameUniformityData> {
   typedef mozilla::layers::FrameUniformityData paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.mUniformities);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mUniformities);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
+  static bool Read(MessageReader* aReader, paramType* aResult) {
     return ParamTraitsStd<std::map<uintptr_t, float>>::Read(
-        aMsg, aIter, &aResult->mUniformities);
+        aReader, &aResult->mUniformities);
   }
 };
 

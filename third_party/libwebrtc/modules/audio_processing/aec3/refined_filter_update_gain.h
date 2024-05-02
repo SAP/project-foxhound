@@ -14,6 +14,7 @@
 #include <stddef.h>
 
 #include <array>
+#include <atomic>
 #include <memory>
 
 #include "api/array_view.h"
@@ -51,6 +52,7 @@ class RefinedFilterUpdateGain {
                rtc::ArrayView<const float> erl,
                size_t size_partitions,
                bool saturated_capture_signal,
+               bool disallow_leakage_diverged,
                FftData* gain_fft);
 
   // Sets a new config.
@@ -68,7 +70,7 @@ class RefinedFilterUpdateGain {
   }
 
  private:
-  static int instance_count_;
+  static std::atomic<int> instance_count_;
   std::unique_ptr<ApmDataDumper> data_dumper_;
   const int config_change_duration_blocks_;
   float one_by_config_change_duration_blocks_;

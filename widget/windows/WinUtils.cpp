@@ -9,7 +9,6 @@
 #include <knownfolders.h>
 #include <winioctl.h>
 
-#include "GeckoProfiler.h"
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "nsWindow.h"
@@ -22,15 +21,16 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/gfx/DisplayConfigWindows.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
-#include "mozilla/WindowsVersion.h"
 #include "mozilla/Unused.h"
 #include "nsIContentPolicy.h"
-#include "nsIWindowsUIUtils.h"
+#include "WindowsUIUtils.h"
 #include "nsContentUtils.h"
 
 #include "mozilla/Logging.h"
@@ -53,12 +53,12 @@
 #include "nsLookAndFeel.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowsHelpers.h"
-#include "WinContentSystemParameters.h"
 #include "WinWindowOcclusionTracker.h"
 
 #include <textstor.h>
 #include "TSFTextStore.h"
 
+#include <shellscalingapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 
@@ -72,344 +72,6 @@ using namespace mozilla::gfx;
 namespace mozilla {
 namespace widget {
 
-#define ENTRY(_msg) \
-  { #_msg, _msg }
-EventMsgInfo gAllEvents[] = {ENTRY(WM_NULL),
-                             ENTRY(WM_CREATE),
-                             ENTRY(WM_DESTROY),
-                             ENTRY(WM_MOVE),
-                             ENTRY(WM_SIZE),
-                             ENTRY(WM_ACTIVATE),
-                             ENTRY(WM_SETFOCUS),
-                             ENTRY(WM_KILLFOCUS),
-                             ENTRY(WM_ENABLE),
-                             ENTRY(WM_SETREDRAW),
-                             ENTRY(WM_SETTEXT),
-                             ENTRY(WM_GETTEXT),
-                             ENTRY(WM_GETTEXTLENGTH),
-                             ENTRY(WM_PAINT),
-                             ENTRY(WM_CLOSE),
-                             ENTRY(WM_QUERYENDSESSION),
-                             ENTRY(WM_QUIT),
-                             ENTRY(WM_QUERYOPEN),
-                             ENTRY(WM_ERASEBKGND),
-                             ENTRY(WM_SYSCOLORCHANGE),
-                             ENTRY(WM_ENDSESSION),
-                             ENTRY(WM_SHOWWINDOW),
-                             ENTRY(WM_SETTINGCHANGE),
-                             ENTRY(WM_DEVMODECHANGE),
-                             ENTRY(WM_ACTIVATEAPP),
-                             ENTRY(WM_FONTCHANGE),
-                             ENTRY(WM_TIMECHANGE),
-                             ENTRY(WM_CANCELMODE),
-                             ENTRY(WM_SETCURSOR),
-                             ENTRY(WM_MOUSEACTIVATE),
-                             ENTRY(WM_CHILDACTIVATE),
-                             ENTRY(WM_QUEUESYNC),
-                             ENTRY(WM_GETMINMAXINFO),
-                             ENTRY(WM_PAINTICON),
-                             ENTRY(WM_ICONERASEBKGND),
-                             ENTRY(WM_NEXTDLGCTL),
-                             ENTRY(WM_SPOOLERSTATUS),
-                             ENTRY(WM_DRAWITEM),
-                             ENTRY(WM_MEASUREITEM),
-                             ENTRY(WM_DELETEITEM),
-                             ENTRY(WM_VKEYTOITEM),
-                             ENTRY(WM_CHARTOITEM),
-                             ENTRY(WM_SETFONT),
-                             ENTRY(WM_GETFONT),
-                             ENTRY(WM_SETHOTKEY),
-                             ENTRY(WM_GETHOTKEY),
-                             ENTRY(WM_QUERYDRAGICON),
-                             ENTRY(WM_COMPAREITEM),
-                             ENTRY(WM_GETOBJECT),
-                             ENTRY(WM_COMPACTING),
-                             ENTRY(WM_COMMNOTIFY),
-                             ENTRY(WM_WINDOWPOSCHANGING),
-                             ENTRY(WM_WINDOWPOSCHANGED),
-                             ENTRY(WM_POWER),
-                             ENTRY(WM_COPYDATA),
-                             ENTRY(WM_CANCELJOURNAL),
-                             ENTRY(WM_NOTIFY),
-                             ENTRY(WM_INPUTLANGCHANGEREQUEST),
-                             ENTRY(WM_INPUTLANGCHANGE),
-                             ENTRY(WM_TCARD),
-                             ENTRY(WM_HELP),
-                             ENTRY(WM_USERCHANGED),
-                             ENTRY(WM_NOTIFYFORMAT),
-                             ENTRY(WM_CONTEXTMENU),
-                             ENTRY(WM_STYLECHANGING),
-                             ENTRY(WM_STYLECHANGED),
-                             ENTRY(WM_DISPLAYCHANGE),
-                             ENTRY(WM_GETICON),
-                             ENTRY(WM_SETICON),
-                             ENTRY(WM_NCCREATE),
-                             ENTRY(WM_NCDESTROY),
-                             ENTRY(WM_NCCALCSIZE),
-                             ENTRY(WM_NCHITTEST),
-                             ENTRY(WM_NCPAINT),
-                             ENTRY(WM_NCACTIVATE),
-                             ENTRY(WM_GETDLGCODE),
-                             ENTRY(WM_SYNCPAINT),
-                             ENTRY(WM_NCMOUSEMOVE),
-                             ENTRY(WM_NCLBUTTONDOWN),
-                             ENTRY(WM_NCLBUTTONUP),
-                             ENTRY(WM_NCLBUTTONDBLCLK),
-                             ENTRY(WM_NCRBUTTONDOWN),
-                             ENTRY(WM_NCRBUTTONUP),
-                             ENTRY(WM_NCRBUTTONDBLCLK),
-                             ENTRY(WM_NCMBUTTONDOWN),
-                             ENTRY(WM_NCMBUTTONUP),
-                             ENTRY(WM_NCMBUTTONDBLCLK),
-                             ENTRY(EM_GETSEL),
-                             ENTRY(EM_SETSEL),
-                             ENTRY(EM_GETRECT),
-                             ENTRY(EM_SETRECT),
-                             ENTRY(EM_SETRECTNP),
-                             ENTRY(EM_SCROLL),
-                             ENTRY(EM_LINESCROLL),
-                             ENTRY(EM_SCROLLCARET),
-                             ENTRY(EM_GETMODIFY),
-                             ENTRY(EM_SETMODIFY),
-                             ENTRY(EM_GETLINECOUNT),
-                             ENTRY(EM_LINEINDEX),
-                             ENTRY(EM_SETHANDLE),
-                             ENTRY(EM_GETHANDLE),
-                             ENTRY(EM_GETTHUMB),
-                             ENTRY(EM_LINELENGTH),
-                             ENTRY(EM_REPLACESEL),
-                             ENTRY(EM_GETLINE),
-                             ENTRY(EM_LIMITTEXT),
-                             ENTRY(EM_CANUNDO),
-                             ENTRY(EM_UNDO),
-                             ENTRY(EM_FMTLINES),
-                             ENTRY(EM_LINEFROMCHAR),
-                             ENTRY(EM_SETTABSTOPS),
-                             ENTRY(EM_SETPASSWORDCHAR),
-                             ENTRY(EM_EMPTYUNDOBUFFER),
-                             ENTRY(EM_GETFIRSTVISIBLELINE),
-                             ENTRY(EM_SETREADONLY),
-                             ENTRY(EM_SETWORDBREAKPROC),
-                             ENTRY(EM_GETWORDBREAKPROC),
-                             ENTRY(EM_GETPASSWORDCHAR),
-                             ENTRY(EM_SETMARGINS),
-                             ENTRY(EM_GETMARGINS),
-                             ENTRY(EM_GETLIMITTEXT),
-                             ENTRY(EM_POSFROMCHAR),
-                             ENTRY(EM_CHARFROMPOS),
-                             ENTRY(EM_SETIMESTATUS),
-                             ENTRY(EM_GETIMESTATUS),
-                             ENTRY(SBM_SETPOS),
-                             ENTRY(SBM_GETPOS),
-                             ENTRY(SBM_SETRANGE),
-                             ENTRY(SBM_SETRANGEREDRAW),
-                             ENTRY(SBM_GETRANGE),
-                             ENTRY(SBM_ENABLE_ARROWS),
-                             ENTRY(SBM_SETSCROLLINFO),
-                             ENTRY(SBM_GETSCROLLINFO),
-                             ENTRY(WM_KEYDOWN),
-                             ENTRY(WM_KEYUP),
-                             ENTRY(WM_CHAR),
-                             ENTRY(WM_DEADCHAR),
-                             ENTRY(WM_SYSKEYDOWN),
-                             ENTRY(WM_SYSKEYUP),
-                             ENTRY(WM_SYSCHAR),
-                             ENTRY(WM_SYSDEADCHAR),
-                             ENTRY(WM_KEYLAST),
-                             ENTRY(WM_IME_STARTCOMPOSITION),
-                             ENTRY(WM_IME_ENDCOMPOSITION),
-                             ENTRY(WM_IME_COMPOSITION),
-                             ENTRY(WM_INITDIALOG),
-                             ENTRY(WM_COMMAND),
-                             ENTRY(WM_SYSCOMMAND),
-                             ENTRY(WM_TIMER),
-                             ENTRY(WM_HSCROLL),
-                             ENTRY(WM_VSCROLL),
-                             ENTRY(WM_INITMENU),
-                             ENTRY(WM_INITMENUPOPUP),
-                             ENTRY(WM_MENUSELECT),
-                             ENTRY(WM_MENUCHAR),
-                             ENTRY(WM_ENTERIDLE),
-                             ENTRY(WM_MENURBUTTONUP),
-                             ENTRY(WM_MENUDRAG),
-                             ENTRY(WM_MENUGETOBJECT),
-                             ENTRY(WM_UNINITMENUPOPUP),
-                             ENTRY(WM_MENUCOMMAND),
-                             ENTRY(WM_CHANGEUISTATE),
-                             ENTRY(WM_UPDATEUISTATE),
-                             ENTRY(WM_CTLCOLORMSGBOX),
-                             ENTRY(WM_CTLCOLOREDIT),
-                             ENTRY(WM_CTLCOLORLISTBOX),
-                             ENTRY(WM_CTLCOLORBTN),
-                             ENTRY(WM_CTLCOLORDLG),
-                             ENTRY(WM_CTLCOLORSCROLLBAR),
-                             ENTRY(WM_CTLCOLORSTATIC),
-                             ENTRY(CB_GETEDITSEL),
-                             ENTRY(CB_LIMITTEXT),
-                             ENTRY(CB_SETEDITSEL),
-                             ENTRY(CB_ADDSTRING),
-                             ENTRY(CB_DELETESTRING),
-                             ENTRY(CB_DIR),
-                             ENTRY(CB_GETCOUNT),
-                             ENTRY(CB_GETCURSEL),
-                             ENTRY(CB_GETLBTEXT),
-                             ENTRY(CB_GETLBTEXTLEN),
-                             ENTRY(CB_INSERTSTRING),
-                             ENTRY(CB_RESETCONTENT),
-                             ENTRY(CB_FINDSTRING),
-                             ENTRY(CB_SELECTSTRING),
-                             ENTRY(CB_SETCURSEL),
-                             ENTRY(CB_SHOWDROPDOWN),
-                             ENTRY(CB_GETITEMDATA),
-                             ENTRY(CB_SETITEMDATA),
-                             ENTRY(CB_GETDROPPEDCONTROLRECT),
-                             ENTRY(CB_SETITEMHEIGHT),
-                             ENTRY(CB_GETITEMHEIGHT),
-                             ENTRY(CB_SETEXTENDEDUI),
-                             ENTRY(CB_GETEXTENDEDUI),
-                             ENTRY(CB_GETDROPPEDSTATE),
-                             ENTRY(CB_FINDSTRINGEXACT),
-                             ENTRY(CB_SETLOCALE),
-                             ENTRY(CB_GETLOCALE),
-                             ENTRY(CB_GETTOPINDEX),
-                             ENTRY(CB_SETTOPINDEX),
-                             ENTRY(CB_GETHORIZONTALEXTENT),
-                             ENTRY(CB_SETHORIZONTALEXTENT),
-                             ENTRY(CB_GETDROPPEDWIDTH),
-                             ENTRY(CB_SETDROPPEDWIDTH),
-                             ENTRY(CB_INITSTORAGE),
-                             ENTRY(CB_MSGMAX),
-                             ENTRY(LB_ADDSTRING),
-                             ENTRY(LB_INSERTSTRING),
-                             ENTRY(LB_DELETESTRING),
-                             ENTRY(LB_SELITEMRANGEEX),
-                             ENTRY(LB_RESETCONTENT),
-                             ENTRY(LB_SETSEL),
-                             ENTRY(LB_SETCURSEL),
-                             ENTRY(LB_GETSEL),
-                             ENTRY(LB_GETCURSEL),
-                             ENTRY(LB_GETTEXT),
-                             ENTRY(LB_GETTEXTLEN),
-                             ENTRY(LB_GETCOUNT),
-                             ENTRY(LB_SELECTSTRING),
-                             ENTRY(LB_DIR),
-                             ENTRY(LB_GETTOPINDEX),
-                             ENTRY(LB_FINDSTRING),
-                             ENTRY(LB_GETSELCOUNT),
-                             ENTRY(LB_GETSELITEMS),
-                             ENTRY(LB_SETTABSTOPS),
-                             ENTRY(LB_GETHORIZONTALEXTENT),
-                             ENTRY(LB_SETHORIZONTALEXTENT),
-                             ENTRY(LB_SETCOLUMNWIDTH),
-                             ENTRY(LB_ADDFILE),
-                             ENTRY(LB_SETTOPINDEX),
-                             ENTRY(LB_GETITEMRECT),
-                             ENTRY(LB_GETITEMDATA),
-                             ENTRY(LB_SETITEMDATA),
-                             ENTRY(LB_SELITEMRANGE),
-                             ENTRY(LB_SETANCHORINDEX),
-                             ENTRY(LB_GETANCHORINDEX),
-                             ENTRY(LB_SETCARETINDEX),
-                             ENTRY(LB_GETCARETINDEX),
-                             ENTRY(LB_SETITEMHEIGHT),
-                             ENTRY(LB_GETITEMHEIGHT),
-                             ENTRY(LB_FINDSTRINGEXACT),
-                             ENTRY(LB_SETLOCALE),
-                             ENTRY(LB_GETLOCALE),
-                             ENTRY(LB_SETCOUNT),
-                             ENTRY(LB_INITSTORAGE),
-                             ENTRY(LB_ITEMFROMPOINT),
-                             ENTRY(LB_MSGMAX),
-                             ENTRY(WM_MOUSEMOVE),
-                             ENTRY(WM_LBUTTONDOWN),
-                             ENTRY(WM_LBUTTONUP),
-                             ENTRY(WM_LBUTTONDBLCLK),
-                             ENTRY(WM_RBUTTONDOWN),
-                             ENTRY(WM_RBUTTONUP),
-                             ENTRY(WM_RBUTTONDBLCLK),
-                             ENTRY(WM_MBUTTONDOWN),
-                             ENTRY(WM_MBUTTONUP),
-                             ENTRY(WM_MBUTTONDBLCLK),
-                             ENTRY(WM_MOUSEWHEEL),
-                             ENTRY(WM_MOUSEHWHEEL),
-                             ENTRY(WM_PARENTNOTIFY),
-                             ENTRY(WM_ENTERMENULOOP),
-                             ENTRY(WM_EXITMENULOOP),
-                             ENTRY(WM_NEXTMENU),
-                             ENTRY(WM_SIZING),
-                             ENTRY(WM_CAPTURECHANGED),
-                             ENTRY(WM_MOVING),
-                             ENTRY(WM_POWERBROADCAST),
-                             ENTRY(WM_DEVICECHANGE),
-                             ENTRY(WM_MDICREATE),
-                             ENTRY(WM_MDIDESTROY),
-                             ENTRY(WM_MDIACTIVATE),
-                             ENTRY(WM_MDIRESTORE),
-                             ENTRY(WM_MDINEXT),
-                             ENTRY(WM_MDIMAXIMIZE),
-                             ENTRY(WM_MDITILE),
-                             ENTRY(WM_MDICASCADE),
-                             ENTRY(WM_MDIICONARRANGE),
-                             ENTRY(WM_MDIGETACTIVE),
-                             ENTRY(WM_MDISETMENU),
-                             ENTRY(WM_ENTERSIZEMOVE),
-                             ENTRY(WM_EXITSIZEMOVE),
-                             ENTRY(WM_DROPFILES),
-                             ENTRY(WM_MDIREFRESHMENU),
-                             ENTRY(WM_IME_SETCONTEXT),
-                             ENTRY(WM_IME_NOTIFY),
-                             ENTRY(WM_IME_CONTROL),
-                             ENTRY(WM_IME_COMPOSITIONFULL),
-                             ENTRY(WM_IME_SELECT),
-                             ENTRY(WM_IME_CHAR),
-                             ENTRY(WM_IME_REQUEST),
-                             ENTRY(WM_IME_KEYDOWN),
-                             ENTRY(WM_IME_KEYUP),
-                             ENTRY(WM_NCMOUSEHOVER),
-                             ENTRY(WM_MOUSEHOVER),
-                             ENTRY(WM_MOUSELEAVE),
-                             ENTRY(WM_CUT),
-                             ENTRY(WM_COPY),
-                             ENTRY(WM_PASTE),
-                             ENTRY(WM_CLEAR),
-                             ENTRY(WM_UNDO),
-                             ENTRY(WM_RENDERFORMAT),
-                             ENTRY(WM_RENDERALLFORMATS),
-                             ENTRY(WM_DESTROYCLIPBOARD),
-                             ENTRY(WM_DRAWCLIPBOARD),
-                             ENTRY(WM_PAINTCLIPBOARD),
-                             ENTRY(WM_VSCROLLCLIPBOARD),
-                             ENTRY(WM_SIZECLIPBOARD),
-                             ENTRY(WM_ASKCBFORMATNAME),
-                             ENTRY(WM_CHANGECBCHAIN),
-                             ENTRY(WM_HSCROLLCLIPBOARD),
-                             ENTRY(WM_QUERYNEWPALETTE),
-                             ENTRY(WM_PALETTEISCHANGING),
-                             ENTRY(WM_PALETTECHANGED),
-                             ENTRY(WM_HOTKEY),
-                             ENTRY(WM_PRINT),
-                             ENTRY(WM_PRINTCLIENT),
-                             ENTRY(WM_THEMECHANGED),
-                             ENTRY(WM_HANDHELDFIRST),
-                             ENTRY(WM_HANDHELDLAST),
-                             ENTRY(WM_AFXFIRST),
-                             ENTRY(WM_AFXLAST),
-                             ENTRY(WM_PENWINFIRST),
-                             ENTRY(WM_PENWINLAST),
-                             ENTRY(WM_APP),
-                             ENTRY(WM_DWMCOMPOSITIONCHANGED),
-                             ENTRY(WM_DWMNCRENDERINGCHANGED),
-                             ENTRY(WM_DWMCOLORIZATIONCOLORCHANGED),
-                             ENTRY(WM_DWMWINDOWMAXIMIZEDCHANGE),
-                             ENTRY(WM_DWMSENDICONICTHUMBNAIL),
-                             ENTRY(WM_DWMSENDICONICLIVEPREVIEWBITMAP),
-                             ENTRY(WM_TABLET_QUERYSYSTEMGESTURESTATUS),
-                             ENTRY(WM_GESTURE),
-                             ENTRY(WM_GESTURENOTIFY),
-                             ENTRY(WM_GETTITLEBARINFOEX),
-                             {nullptr, 0x0}};
-#undef ENTRY
-
 #ifdef MOZ_PLACES
 NS_IMPL_ISUPPORTS(myDownloadObserver, nsIDownloadObserver)
 NS_IMPL_ISUPPORTS(AsyncFaviconDataReady, nsIFaviconDataCallback)
@@ -419,10 +81,6 @@ NS_IMPL_ISUPPORTS(AsyncDeleteAllFaviconsFromDisk, nsIRunnable)
 
 const char FaviconHelper::kJumpListCacheDir[] = "jumpListCache";
 const char FaviconHelper::kShortcutCacheDir[] = "shortcutCache";
-
-// Prefix for path used by NT calls.
-const wchar_t kNTPrefix[] = L"\\??\\";
-const size_t kNTPrefixLen = ArrayLength(kNTPrefix) - 1;
 
 struct CoTaskMemFreePolicy {
   void operator()(void* aPtr) { ::CoTaskMemFree(aPtr); }
@@ -441,7 +99,7 @@ void WinUtils::Initialize() {
   // Dpi-Awareness is not supported with Win32k Lockdown enabled, so we don't
   // initialize DPI-related members and assert later that nothing accidently
   // uses these static members
-  if (IsWin10OrLater() && !IsWin32kLockedDown()) {
+  if (!IsWin32kLockedDown()) {
     HMODULE user32Dll = ::GetModuleHandleW(L"user32");
     if (user32Dll) {
       auto getThreadDpiAwarenessContext =
@@ -470,9 +128,7 @@ void WinUtils::Initialize() {
     }
   }
 
-  if (IsWin8OrLater()) {
-    sHasPackageIdentity = mozilla::HasPackageIdentity();
-  }
+  sHasPackageIdentity = mozilla::HasPackageIdentity();
 }
 
 // static
@@ -521,7 +177,7 @@ void WinUtils::LogW(const wchar_t* fmt, ...) {
       NS_ASSERTION(gWindowsLog,
                    "Called WinUtils Log() but Widget "
                    "log module doesn't exist!");
-      MOZ_LOG(gWindowsLog, LogLevel::Error, (utf8));
+      MOZ_LOG(gWindowsLog, LogLevel::Error, ("%s", utf8));
     }
     delete[] utf8;
   }
@@ -554,15 +210,12 @@ void WinUtils::Log(const char* fmt, ...) {
   NS_ASSERTION(gWindowsLog,
                "Called WinUtils Log() but Widget "
                "log module doesn't exist!");
-  MOZ_LOG(gWindowsLog, LogLevel::Error, (buffer));
+  MOZ_LOG(gWindowsLog, LogLevel::Error, ("%s", buffer));
   delete[] buffer;
 }
 
 // static
 float WinUtils::SystemDPI() {
-  if (XRE_IsContentProcess()) {
-    return WinContentSystemParameters::GetSingleton()->SystemDPI();
-  }
   // The result of GetDeviceCaps won't change dynamically, as it predates
   // per-monitor DPI and support for on-the-fly resolution changes.
   // Therefore, we only need to look it up once.
@@ -582,21 +235,6 @@ float WinUtils::SystemDPI() {
 
 // static
 double WinUtils::SystemScaleFactor() { return SystemDPI() / 96.0; }
-
-#if WINVER < 0x603
-typedef enum {
-  MDT_EFFECTIVE_DPI = 0,
-  MDT_ANGULAR_DPI = 1,
-  MDT_RAW_DPI = 2,
-  MDT_DEFAULT = MDT_EFFECTIVE_DPI
-} MONITOR_DPI_TYPE;
-
-typedef enum {
-  PROCESS_DPI_UNAWARE = 0,
-  PROCESS_SYSTEM_DPI_AWARE = 1,
-  PROCESS_PER_MONITOR_DPI_AWARE = 2
-} PROCESS_DPI_AWARENESS;
-#endif
 
 typedef HRESULT(WINAPI* GETDPIFORMONITORPROC)(HMONITOR, MONITOR_DPI_TYPE, UINT*,
                                               UINT*);
@@ -625,9 +263,6 @@ static bool SlowIsPerMonitorDPIAware() {
 
 /* static */
 bool WinUtils::IsPerMonitorDPIAware() {
-  if (XRE_IsContentProcess()) {
-    return WinContentSystemParameters::GetSingleton()->IsPerMonitorDPIAware();
-  }
   static bool perMonitorDPIAware = SlowIsPerMonitorDPIAware();
   return perMonitorDPIAware;
 }
@@ -935,45 +570,24 @@ HWND WinUtils::GetTopLevelHWND(HWND aWnd, bool aStopIfNotChild,
   return topWnd;
 }
 
-static const wchar_t* GetNSWindowPropName() {
-  static wchar_t sPropName[40] = L"";
-  if (!*sPropName) {
-    _snwprintf(sPropName, 39, L"MozillansIWidgetPtr%u",
-               ::GetCurrentProcessId());
-    sPropName[39] = '\0';
-  }
-  return sPropName;
-}
+// Map from native window handles to nsWindow structures. Does not AddRef.
+// Inherently unsafe to access outside the main thread.
+static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
 
 /* static */
-bool WinUtils::SetNSWindowBasePtr(HWND aWnd, nsWindowBase* aWidget) {
-  if (!aWidget) {
-    ::RemovePropW(aWnd, GetNSWindowPropName());
-    return true;
+void WinUtils::SetNSWindowPtr(HWND aWnd, nsWindow* aWindow) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!aWindow) {
+    sExtantNSWindows.Remove(aWnd);
+  } else {
+    sExtantNSWindows.InsertOrUpdate(aWnd, aWindow);
   }
-  return ::SetPropW(aWnd, GetNSWindowPropName(), (HANDLE)aWidget);
-}
-
-/* static */
-nsWindowBase* WinUtils::GetNSWindowBasePtr(HWND aWnd) {
-  return static_cast<nsWindowBase*>(::GetPropW(aWnd, GetNSWindowPropName()));
 }
 
 /* static */
 nsWindow* WinUtils::GetNSWindowPtr(HWND aWnd) {
-  return static_cast<nsWindow*>(::GetPropW(aWnd, GetNSWindowPropName()));
-}
-
-static BOOL CALLBACK AddMonitor(HMONITOR, HDC, LPRECT, LPARAM aParam) {
-  (*(int32_t*)aParam)++;
-  return TRUE;
-}
-
-/* static */
-int32_t WinUtils::GetMonitorCount() {
-  int32_t monitorCount = 0;
-  EnumDisplayMonitors(nullptr, nullptr, AddMonitor, (LPARAM)&monitorCount);
-  return monitorCount;
+  MOZ_ASSERT(NS_IsMainThread());
+  return sExtantNSWindows.Get(aWnd);  // or nullptr
 }
 
 /* static */
@@ -1137,51 +751,6 @@ MSG WinUtils::InitMSG(UINT aMessage, WPARAM wParam, LPARAM lParam, HWND aWnd) {
   return msg;
 }
 
-static BOOL WINAPI EnumFirstChild(HWND hwnd, LPARAM lParam) {
-  *((HWND*)lParam) = hwnd;
-  return FALSE;
-}
-
-/* static */
-void WinUtils::InvalidatePluginAsWorkaround(nsIWidget* aWidget,
-                                            const LayoutDeviceIntRect& aRect) {
-  aWidget->Invalidate(aRect);
-
-  // XXX - Even more evil workaround!! See bug 762948, flash's bottom
-  // level sandboxed window doesn't seem to get our invalidate. We send
-  // an invalidate to it manually. This is totally specialized for this
-  // bug, for other child window structures this will just be a more or
-  // less bogus invalidate but since that should not have any bad
-  // side-effects this will have to do for now.
-  HWND current = (HWND)aWidget->GetNativeData(NS_NATIVE_WINDOW);
-
-  RECT windowRect;
-  RECT parentRect;
-
-  ::GetWindowRect(current, &parentRect);
-
-  HWND next = current;
-  do {
-    current = next;
-    ::EnumChildWindows(current, &EnumFirstChild, (LPARAM)&next);
-    ::GetWindowRect(next, &windowRect);
-    // This is relative to the screen, adjust it to be relative to the
-    // window we're reconfiguring.
-    windowRect.left -= parentRect.left;
-    windowRect.top -= parentRect.top;
-  } while (next != current && windowRect.top == 0 && windowRect.left == 0);
-
-  if (windowRect.top == 0 && windowRect.left == 0) {
-    RECT rect;
-    rect.left = aRect.X();
-    rect.top = aRect.Y();
-    rect.right = aRect.XMost();
-    rect.bottom = aRect.YMost();
-
-    ::InvalidateRect(next, &rect, FALSE);
-  }
-}
-
 #ifdef MOZ_PLACES
 /************************************************************************
  * Constructs as AsyncFaviconDataReady Object
@@ -1193,7 +762,7 @@ void WinUtils::InvalidatePluginAsWorkaround(nsIWidget* aWidget,
  ************************************************************************/
 
 AsyncFaviconDataReady::AsyncFaviconDataReady(
-    nsIURI* aNewURI, nsCOMPtr<nsIThread>& aIOThread, const bool aURLShortcut,
+    nsIURI* aNewURI, RefPtr<LazyIdleThread>& aIOThread, const bool aURLShortcut,
     already_AddRefed<nsIRunnable> aRunnable)
     : mNewURI(aNewURI),
       mIOThread(aIOThread),
@@ -1482,7 +1051,7 @@ AsyncDeleteAllFaviconsFromDisk::~AsyncDeleteAllFaviconsFromDisk() {}
  */
 nsresult FaviconHelper::ObtainCachedIconFile(
     nsCOMPtr<nsIURI> aFaviconPageURI, nsString& aICOFilePath,
-    nsCOMPtr<nsIThread>& aIOThread, bool aURLShortcut,
+    RefPtr<LazyIdleThread>& aIOThread, bool aURLShortcut,
     already_AddRefed<nsIRunnable> aRunnable) {
   nsCOMPtr<nsIRunnable> runnable = aRunnable;
   // Obtain the ICO file path
@@ -1587,7 +1156,7 @@ nsresult FaviconHelper::GetOutputIconPath(nsCOMPtr<nsIURI> aFaviconPageURI,
 // page aFaviconPageURI and stores it to disk at the path of aICOFile.
 nsresult FaviconHelper::CacheIconFileFromFaviconURIAsync(
     nsCOMPtr<nsIURI> aFaviconPageURI, nsCOMPtr<nsIFile> aICOFile,
-    nsCOMPtr<nsIThread>& aIOThread, bool aURLShortcut,
+    RefPtr<LazyIdleThread>& aIOThread, bool aURLShortcut,
     already_AddRefed<nsIRunnable> aRunnable) {
   nsCOMPtr<nsIRunnable> runnable = aRunnable;
 #ifdef MOZ_PLACES
@@ -1625,16 +1194,6 @@ int32_t FaviconHelper::GetICOCacheSecondsTimeout() {
       Preferences::GetInt(PREF_ICOTIMEOUT, kSecondsPerDay);
   alreadyObtained = true;
   return icoReCacheSecondsTimeout;
-}
-
-/* static */
-bool WinUtils::GetShellItemPath(IShellItem* aItem, nsString& aResultString) {
-  NS_ENSURE_TRUE(aItem, false);
-  LPWSTR str = nullptr;
-  if (FAILED(aItem->GetDisplayName(SIGDN_FILESYSPATH, &str))) return false;
-  aResultString.Assign(str);
-  CoTaskMemFree(str);
-  return !aResultString.IsEmpty();
 }
 
 /* static */
@@ -1829,8 +1388,11 @@ nsresult WinUtils::WriteBitmap(nsIFile* aFile, SourceSurface* surface) {
 /* static */
 uint32_t WinUtils::IsTouchDeviceSupportPresent() {
   int32_t touchCapabilities = ::GetSystemMetrics(SM_DIGITIZER);
-  return (touchCapabilities & NID_READY) &&
-         (touchCapabilities & (NID_EXTERNAL_TOUCH | NID_INTEGRATED_TOUCH));
+  int32_t touchFlags = NID_EXTERNAL_TOUCH | NID_INTEGRATED_TOUCH;
+  if (StaticPrefs::dom_w3c_pointer_events_scroll_by_pen_enabled()) {
+    touchFlags |= NID_EXTERNAL_PEN | NID_INTEGRATED_PEN;
+  }
+  return (touchCapabilities & NID_READY) && (touchCapabilities & touchFlags);
 }
 
 /* static */
@@ -1858,18 +1420,8 @@ WinUtils::GetPowerPlatformRole() {
   return power_determine_platform_role(POWER_PLATFORM_ROLE_V2);
 }
 
-static bool IsWindows10TabletMode() {
-  nsCOMPtr<nsIWindowsUIUtils> uiUtils(
-      do_GetService("@mozilla.org/windows-ui-utils;1"));
-  if (NS_WARN_IF(!uiUtils)) {
-    return false;
-  }
-  bool isInTabletMode = false;
-  uiUtils->GetInTabletMode(&isInTabletMode);
-  return isInTabletMode;
-}
-
-static bool CallGetAutoRotationState(AR_STATE* aRotationState) {
+// static
+bool WinUtils::GetAutoRotationState(AR_STATE* aRotationState) {
   typedef BOOL(WINAPI * GetAutoRotationStateFunc)(PAR_STATE pState);
   static GetAutoRotationStateFunc get_auto_rotation_state_func =
       reinterpret_cast<GetAutoRotationStateFunc>(::GetProcAddress(
@@ -1881,17 +1433,49 @@ static bool CallGetAutoRotationState(AR_STATE* aRotationState) {
   return false;
 }
 
+// static
+void WinUtils::GetClipboardFormatAsString(UINT aFormat, nsAString& aOutput) {
+  wchar_t buf[256] = {};
+  // Get registered format name and ensure the existence of a terminating '\0'
+  // if the registered name is more than 256 characters.
+  if (::GetClipboardFormatNameW(aFormat, buf, ARRAYSIZE(buf) - 1)) {
+    aOutput.Append(buf);
+    return;
+  }
+  // Standard clipboard formats
+  // https://learn.microsoft.com/en-us/windows/win32/dataxchg/standard-clipboard-formats
+  switch (aFormat) {
+    case CF_TEXT:  // 1
+      aOutput.Append(u"CF_TEXT"_ns);
+      break;
+    case CF_BITMAP:  // 2
+      aOutput.Append(u"CF_BITMAP"_ns);
+      break;
+    case CF_DIB:  // 8
+      aOutput.Append(u"CF_DIB"_ns);
+      break;
+    case CF_UNICODETEXT:  // 13
+      aOutput.Append(u"CF_UNICODETEXT"_ns);
+      break;
+    case CF_HDROP:  // 15
+      aOutput.Append(u"CF_HDROP"_ns);
+      break;
+    case CF_DIBV5:  // 17
+      aOutput.Append(u"CF_DIBV5"_ns);
+      break;
+    default:
+      aOutput.AppendPrintf("%u", aFormat);
+      break;
+  }
+}
+
 static bool IsTabletDevice() {
   // Guarantees that:
   // - The device has a touch screen.
   // - It is used as a tablet which means that it has no keyboard connected.
   // On Windows 10 it means that it is verifying with ConvertibleSlateMode.
 
-  if (!IsWin8OrLater()) {
-    return false;
-  }
-
-  if (IsWindows10TabletMode()) {
+  if (WindowsUIUtils::GetInTabletMode()) {
     return true;
   }
 
@@ -1908,7 +1492,7 @@ static bool IsTabletDevice() {
   // a convertible or a detachable. See:
   // https://msdn.microsoft.com/en-us/library/windows/desktop/dn629263(v=vs.85).aspx
   AR_STATE rotation_state;
-  if (CallGetAutoRotationState(&rotation_state) &&
+  if (WinUtils::GetAutoRotationState(&rotation_state) &&
       (rotation_state & (AR_NOT_SUPPORTED | AR_LAPTOP | AR_NOSENSOR))) {
     return false;
   }
@@ -1960,19 +1544,71 @@ PointerCapabilities WinUtils::GetPrimaryPointerCapabilities() {
   return PointerCapabilities::None;
 }
 
+static bool SystemHasTouchscreen() {
+  int digitizerMetrics = ::GetSystemMetrics(SM_DIGITIZER);
+  return (digitizerMetrics & NID_INTEGRATED_TOUCH) ||
+         (digitizerMetrics & NID_EXTERNAL_TOUCH);
+}
+
+static bool SystemHasPenDigitizer() {
+  int digitizerMetrics = ::GetSystemMetrics(SM_DIGITIZER);
+  return (digitizerMetrics & NID_INTEGRATED_PEN) ||
+         (digitizerMetrics & NID_EXTERNAL_PEN);
+}
+
+static bool SystemHasMouse() {
+  // As per MSDN, this value is rarely false because of virtual mice, and
+  // some machines report the existance of a mouse port as a mouse.
+  //
+  // We probably could try to distinguish if we wanted, but a virtual mouse
+  // might be there for a reason, and maybe we shouldn't assume we know
+  // better.
+  return !!::GetSystemMetrics(SM_MOUSEPRESENT);
+}
+
 /* static */
 PointerCapabilities WinUtils::GetAllPointerCapabilities() {
-  PointerCapabilities result = PointerCapabilities::None;
+  PointerCapabilities pointerCapabilities = PointerCapabilities::None;
 
-  if (IsTabletDevice() || IsTouchDeviceSupportPresent()) {
-    result |= PointerCapabilities::Coarse;
+  if (SystemHasTouchscreen()) {
+    pointerCapabilities |= PointerCapabilities::Coarse;
   }
 
-  if (IsMousePresent()) {
-    result |= PointerCapabilities::Fine | PointerCapabilities::Hover;
+  if (SystemHasPenDigitizer() || SystemHasMouse()) {
+    pointerCapabilities |=
+        PointerCapabilities::Fine | PointerCapabilities::Hover;
   }
 
-  return result;
+  return pointerCapabilities;
+}
+
+void WinUtils::GetPointerExplanation(nsAString* aExplanation) {
+  // To support localization, we will return a comma-separated list of
+  // Fluent IDs
+  *aExplanation = u"pointing-device-none";
+
+  bool first = true;
+  auto append = [&](const char16_t* str) {
+    if (first) {
+      aExplanation->Truncate();
+      first = false;
+    } else {
+      aExplanation->Append(u",");
+    }
+    aExplanation->Append(str);
+  };
+
+  if (SystemHasTouchscreen()) {
+    append(u"pointing-device-touchscreen");
+  }
+
+  if (SystemHasPenDigitizer()) {
+    append(u"pointing-device-pen-digitizer");
+  }
+
+  if (SystemHasMouse()) {
+    append(u"pointing-device-mouse");
+  }
 }
 
 /* static */
@@ -1986,7 +1622,7 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
 
   if (handle == INVALID_HANDLE_VALUE) {
-    LOG_E("Failed to open file handle to resolve path. GetLastError=%d",
+    LOG_E("Failed to open file handle to resolve path. GetLastError=%lu",
           GetLastError());
     return false;
   }
@@ -1994,7 +1630,7 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
   DWORD pathLen = GetFinalPathNameByHandleW(
       handle, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
   if (pathLen == 0 || pathLen >= MAX_PATH) {
-    LOG_E("GetFinalPathNameByHandleW failed. GetLastError=%d", GetLastError());
+    LOG_E("GetFinalPathNameByHandleW failed. GetLastError=%lu", GetLastError());
     return false;
   }
   aPath = path;
@@ -2159,10 +1795,8 @@ const WinUtils::WhitelistVec& WinUtils::GetWhitelistedPaths() {
     if (NS_IsMainThread()) {
       setClearFn();
     } else {
-      SchedulerGroup::Dispatch(
-          TaskCategory::Other,
-          NS_NewRunnableFunction("WinUtils::GetWhitelistedPaths",
-                                 std::move(setClearFn)));
+      SchedulerGroup::Dispatch(NS_NewRunnableFunction(
+          "WinUtils::GetWhitelistedPaths", std::move(setClearFn)));
     }
 
     return BuildWhitelist();
@@ -2324,6 +1958,210 @@ void WinUtils::EnableWindowOcclusion(const bool aEnable) {
   }
   ::EnumWindows(EnumUpdateWindowOcclusionProc,
                 reinterpret_cast<LPARAM>(&aEnable));
+}
+
+bool WinUtils::GetTimezoneName(wchar_t* aBuffer) {
+  DYNAMIC_TIME_ZONE_INFORMATION tzInfo;
+  DWORD tzid = GetDynamicTimeZoneInformation(&tzInfo);
+
+  if (tzid == TIME_ZONE_ID_INVALID) {
+    return false;
+  }
+
+  wcscpy_s(aBuffer, 128, tzInfo.TimeZoneKeyName);
+
+  return true;
+}
+
+// There are undocumented APIs to query/change the system DPI settings found by
+// https://github.com/lihas/ . We use those APIs only for testing purpose, i.e.
+// in mochitests or some such. To avoid exposing them in our official release
+// builds unexpectedly we restrict them only in debug builds.
+#ifdef DEBUG
+
+#  define DISPLAYCONFIG_DEVICE_INFO_SET_SOURCE_DPI_SCALE (int)-4
+#  define DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_DPI_SCALE (int)-3
+
+// Following two struts are copied from
+// https://github.com/lihas/windows-DPI-scaling-sample/blob/master/DPIHelper/DpiHelper.h
+
+/*
+ * struct DISPLAYCONFIG_SOURCE_DPI_SCALE_GET
+ * @brief used to fetch min, max, suggested, and currently applied DPI scaling
+ * values. All values are relative to the recommended DPI scaling value Note
+ * that DPI scaling is a property of the source, and not of target.
+ */
+struct DISPLAYCONFIG_SOURCE_DPI_SCALE_GET {
+  DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+  /*
+   * @brief min value of DPI scaling is always 100, minScaleRel gives no. of
+   * steps down from recommended scaling eg. if minScaleRel is -3 => 100 is 3
+   * steps down from recommended scaling => recommended scaling is 175%
+   */
+  int32_t minScaleRel;
+
+  /*
+   * @brief currently applied DPI scaling value wrt the recommended value. eg.
+   * if recommended value is 175%,
+   * => if curScaleRel == 0 the current scaling is 175%, if curScaleRel == -1,
+   * then current scale is 150%
+   */
+  int32_t curScaleRel;
+
+  /*
+   * @brief maximum supported DPI scaling wrt recommended value
+   */
+  int32_t maxScaleRel;
+};
+
+/*
+ * struct DISPLAYCONFIG_SOURCE_DPI_SCALE_SET
+ * @brief set DPI scaling value of a source
+ * Note that DPI scaling is a property of the source, and not of target.
+ */
+struct DISPLAYCONFIG_SOURCE_DPI_SCALE_SET {
+  DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+  /*
+   * @brief The value we want to set. The value should be relative to the
+   * recommended DPI scaling value of source. eg. if scaleRel == 1, and
+   * recommended value is 175% => we are trying to set 200% scaling for the
+   * source
+   */
+  int32_t scaleRel;
+};
+
+static int32_t sCurRelativeScaleStep = std::numeric_limits<int32_t>::max();
+
+static LONG SetRelativeScaleStep(LUID aAdapterId, int32_t aRelativeScaleStep) {
+  DISPLAYCONFIG_SOURCE_DPI_SCALE_SET setDPIScale = {};
+  setDPIScale.header.adapterId = aAdapterId;
+  setDPIScale.header.type = (DISPLAYCONFIG_DEVICE_INFO_TYPE)
+      DISPLAYCONFIG_DEVICE_INFO_SET_SOURCE_DPI_SCALE;
+  setDPIScale.header.size = sizeof(setDPIScale);
+  setDPIScale.scaleRel = aRelativeScaleStep;
+
+  return DisplayConfigSetDeviceInfo(&setDPIScale.header);
+}
+
+nsresult WinUtils::SetHiDPIMode(bool aHiDPI) {
+  auto config = GetDisplayConfig();
+  if (!config) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (config->mPaths.empty()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  DISPLAYCONFIG_SOURCE_DPI_SCALE_GET dpiScale = {};
+  dpiScale.header.adapterId = config->mPaths[0].targetInfo.adapterId;
+  dpiScale.header.type = (DISPLAYCONFIG_DEVICE_INFO_TYPE)
+      DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_DPI_SCALE;
+  dpiScale.header.size = sizeof(dpiScale);
+  LONG result = ::DisplayConfigGetDeviceInfo(&dpiScale.header);
+  if (result != ERROR_SUCCESS) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (dpiScale.minScaleRel == dpiScale.maxScaleRel) {
+    // We can't change the setting at all.
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (aHiDPI && dpiScale.curScaleRel == dpiScale.maxScaleRel) {
+    // We've already at the maximum level.
+    if (sCurRelativeScaleStep == std::numeric_limits<int32_t>::max()) {
+      sCurRelativeScaleStep = dpiScale.curScaleRel;
+    }
+    return NS_OK;
+  }
+
+  if (!aHiDPI && dpiScale.curScaleRel == dpiScale.minScaleRel) {
+    // We've already at the minimum level.
+    if (sCurRelativeScaleStep == std::numeric_limits<int32_t>::max()) {
+      sCurRelativeScaleStep = dpiScale.curScaleRel;
+    }
+    return NS_OK;
+  }
+
+  result = SetRelativeScaleStep(
+      config->mPaths[0].targetInfo.adapterId,
+      aHiDPI ? dpiScale.maxScaleRel : dpiScale.minScaleRel);
+  if (result != ERROR_SUCCESS) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (sCurRelativeScaleStep == std::numeric_limits<int>::max()) {
+    sCurRelativeScaleStep = dpiScale.curScaleRel;
+  }
+
+  return NS_OK;
+}
+
+nsresult WinUtils::RestoreHiDPIMode() {
+  if (sCurRelativeScaleStep == std::numeric_limits<int>::max()) {
+    // The DPI setting hasn't been changed.
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  auto config = GetDisplayConfig();
+  if (!config) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (config->mPaths.empty()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  LONG result = SetRelativeScaleStep(config->mPaths[0].targetInfo.adapterId,
+                                     sCurRelativeScaleStep);
+  sCurRelativeScaleStep = std::numeric_limits<int32_t>::max();
+  if (result != ERROR_SUCCESS) {
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
+}
+#endif
+
+/* static */
+const char* WinUtils::WinEventToEventName(UINT msg) {
+  const auto eventMsgInfo = mozilla::widget::gAllEvents.find(msg);
+  return eventMsgInfo != mozilla::widget::gAllEvents.end()
+             ? eventMsgInfo->second.mStr
+             : nullptr;
+}
+
+// Note to testers and/or test-authors: on Windows 10, and possibly on other
+// versions as well, supplying the `WS_EX_LAYOUTRTL` flag here has no effect
+// whatsoever on child common-dialogs **unless the system UI locale is also set
+// to an RTL language**.
+//
+// If it is, the flag is still required; otherwise, the picker dialog will be
+// presented in English (or possibly some other LTR language) as a fallback.
+ScopedRtlShimWindow::ScopedRtlShimWindow(nsIWidget* aParent) : mWnd(nullptr) {
+  NS_ENSURE_TRUE_VOID(aParent);
+
+  // Headless windows don't have HWNDs, but also probably shouldn't be launching
+  // print dialogs.
+  HWND const hwnd = (HWND)aParent->GetNativeData(NS_NATIVE_WINDOW);
+  NS_ENSURE_TRUE_VOID(hwnd);
+
+  nsWindow* const win = WinUtils::GetNSWindowPtr(hwnd);
+  NS_ENSURE_TRUE_VOID(win);
+
+  ATOM const wclass = ::GetClassWord(hwnd, GCW_ATOM);
+  mWnd = ::CreateWindowExW(
+      win->IsRTL() ? WS_EX_LAYOUTRTL : 0, (LPCWSTR)(uintptr_t)wclass, L"",
+      WS_CHILD, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+      hwnd, nullptr, nsToolkit::mDllInstance, nullptr);
+
+  MOZ_ASSERT(mWnd);
+}
+
+ScopedRtlShimWindow::~ScopedRtlShimWindow() {
+  if (mWnd) {
+    ::DestroyWindow(mWnd);
+  }
 }
 
 }  // namespace widget

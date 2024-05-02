@@ -10,7 +10,7 @@ let gTestURLsMap = new Map([
 ]);
 let gBrowserState;
 
-add_task(async function setup() {
+add_setup(async function () {
   let windows = [];
   let count = 0;
   for (let url of gTestURLsMap.keys()) {
@@ -20,7 +20,10 @@ add_task(async function setup() {
     let browserLoaded = BrowserTestUtils.browserLoaded(
       window.gBrowser.selectedBrowser
     );
-    BrowserTestUtils.loadURI(window.gBrowser.selectedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(
+      window.gBrowser.selectedBrowser,
+      url
+    );
     await browserLoaded;
     // Capture the title.
     gTestURLsMap.set(url, window.gBrowser.selectedTab.label);

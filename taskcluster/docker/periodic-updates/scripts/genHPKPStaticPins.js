@@ -19,9 +19,12 @@ if (arguments.length != 2) {
   );
 }
 
-var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
 
 var gCertDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
   Ci.nsIX509CertDB
@@ -151,8 +154,8 @@ function getSKDFromPem(pem) {
  * Hashes |input| using the SHA-256 algorithm in the following manner:
  *   btoa(sha256(atob(input)))
  *
- * @argument {String} input Base64 string to decode and return the hash of.
- * @returns {String} Base64 encoded SHA-256 hash.
+ * @param {string} input Base64 string to decode and return the hash of.
+ * @returns {string} Base64 encoded SHA-256 hash.
  */
 function sha256Base64(input) {
   let decodedValue;
@@ -223,7 +226,7 @@ function downloadAndParseChromeCerts(filename, certNameToSKD, certSKDToName) {
   let chromeName;
   for (let line of lines) {
     // Skip comments and newlines.
-    if (line.length == 0 || line[0] == "#") {
+    if (!line.length || line[0] == "#") {
       continue;
     }
     switch (state) {
@@ -242,6 +245,14 @@ function downloadAndParseChromeCerts(filename, certNameToSKD, certSKDToName) {
           state = IN_CERT;
         } else if (line.startsWith(BEGIN_PUB_KEY)) {
           state = IN_PUB_KEY;
+        } else if (
+          chromeName == "PinsListTimestamp" &&
+          line.match(/^[0-9]+$/)
+        ) {
+          // If the name of this entry is "PinsListTimestamp", this line should
+          // be the pins list timestamp. It should consist solely of digits.
+          // Ignore it and expect other entries to come.
+          state = PRE_NAME;
         } else {
           throw new Error(
             "ERROR: couldn't parse Chrome certificate file line: " + line
@@ -322,11 +333,11 @@ function downloadAndParseChromePins(
   let chromeImportedPinsets = {};
   let chromeImportedEntries = [];
 
-  chromePins.forEach(function(pin) {
+  chromePins.forEach(function (pin) {
     let valid = true;
     let pinset = { name: pin.name, sha256_hashes: [] };
     // Translate the Chrome pinset format to ours
-    pin.static_spki_hashes.forEach(function(name) {
+    pin.static_spki_hashes.forEach(function (name) {
       if (name in chromeNameToHash) {
         let hash = chromeNameToHash[name];
         pinset.sha256_hashes.push(certSKDToName[hash]);
@@ -359,7 +370,7 @@ function downloadAndParseChromePins(
   // ours, except theirs includes a HSTS mode.
   const cData = gStaticPins.chromium_data;
   let entries = chromePreloads.entries;
-  entries.forEach(function(entry) {
+  entries.forEach(function (entry) {
     // HSTS entry only
     if (!entry.pins) {
       return;
@@ -456,7 +467,7 @@ function genExpirationTime() {
 }
 
 function writeFullPinset(certNameToSKD, certSKDToName, pinset) {
-  if (!pinset.sha256_hashes || pinset.sha256_hashes.length == 0) {
+  if (!pinset.sha256_hashes || !pinset.sha256_hashes.length) {
     throw new Error(`ERROR: Pinset ${pinset.name} does not contain any hashes`);
   }
   writeFingerprints(
@@ -480,7 +491,7 @@ function writeFingerprints(certNameToSKD, certSKDToName, name, hashes) {
   for (let skd of SKDList.sort()) {
     writeString("  " + nameToAlias(certSKDToName[skd]) + ",\n");
   }
-  if (hashes.length == 0) {
+  if (!hashes.length) {
     // ANSI C requires that an initialiser list be non-empty.
     writeString("  0\n");
   }
@@ -545,7 +556,7 @@ function writeDomainList(chromeImportedEntries) {
   );
   let count = 0;
   let mozillaDomains = {};
-  gStaticPins.entries.forEach(function(entry) {
+  gStaticPins.entries.forEach(function (entry) {
     mozillaDomains[entry.name] = true;
   });
   // For any domain for which we have set pins, exclude them from
@@ -582,15 +593,15 @@ function writeFile(
   // them later.
   let usedFingerprints = {};
   let mozillaPins = {};
-  gStaticPins.pinsets.forEach(function(pinset) {
+  gStaticPins.pinsets.forEach(function (pinset) {
     mozillaPins[pinset.name] = true;
-    pinset.sha256_hashes.forEach(function(name) {
+    pinset.sha256_hashes.forEach(function (name) {
       usedFingerprints[name] = true;
     });
   });
   for (let key in chromeImportedPinsets) {
     let pinset = chromeImportedPinsets[key];
-    pinset.sha256_hashes.forEach(function(name) {
+    pinset.sha256_hashes.forEach(function (name) {
       usedFingerprints[name] = true;
     });
   }
@@ -600,7 +611,7 @@ function writeFile(
   // Write actual fingerprints.
   Object.keys(usedFingerprints)
     .sort()
-    .forEach(function(certName) {
+    .forEach(function (certName) {
       if (certName) {
         writeString("/* " + certName + " */\n");
         writeString("static const char " + nameToAlias(certName) + "[] =\n");
@@ -612,7 +623,7 @@ function writeFile(
   // Write the pinsets
   writeString(PINSETDEF);
   writeString("/* PreloadedHPKPins.json pinsets */\n");
-  gStaticPins.pinsets.sort(compareByName).forEach(function(pinset) {
+  gStaticPins.pinsets.sort(compareByName).forEach(function (pinset) {
     writeFullPinset(certNameToSKD, certSKDToName, pinset);
   });
   writeString("/* Chrome static pinsets */\n");

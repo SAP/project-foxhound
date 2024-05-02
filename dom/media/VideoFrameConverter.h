@@ -9,6 +9,7 @@
 #include "ImageContainer.h"
 #include "ImageToI420.h"
 #include "Pacer.h"
+#include "PerformanceRecorder.h"
 #include "VideoSegment.h"
 #include "VideoUtils.h"
 #include "nsISupportsImpl.h"
@@ -18,9 +19,8 @@
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "api/video/video_frame.h"
-#include "common_video/include/i420_buffer_pool.h"
+#include "common_video/include/video_frame_buffer_pool.h"
 #include "common_video/include/video_frame_buffer.h"
-#include "rtc_base/keep_ref_until_done.h"
 
 // The number of frame buffers VideoFrameConverter may create before returning
 // errors.
@@ -44,23 +44,35 @@ class VideoFrameConverter {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoFrameConverter)
 
+ protected:
   explicit VideoFrameConverter(
       const dom::RTCStatsTimestampMaker& aTimestampMaker)
       : mTimestampMaker(aTimestampMaker),
-        mTaskQueue(MakeAndAddRef<TaskQueue>(
+        mTaskQueue(TaskQueue::Create(
             GetMediaThreadPool(MediaThreadType::WEBRTC_WORKER),
             "VideoFrameConverter")),
         mPacer(MakeAndAddRef<Pacer<FrameToProcess>>(
             mTaskQueue, TimeDuration::FromSeconds(1))),
         mBufferPool(false, CONVERTER_BUFFER_POOL_SIZE) {
     MOZ_COUNT_CTOR(VideoFrameConverter);
+  }
 
+  void RegisterListener() {
     mPacingListener = mPacer->PacedItemEvent().Connect(
-        mTaskQueue, [self = RefPtr<VideoFrameConverter>(this), this](
-                        FrameToProcess aFrame, TimeStamp aTime) {
-          QueueForProcessing(std::move(aFrame.mImage), aTime, aFrame.mSize,
-                             aFrame.mForceBlack);
+        mTaskQueue,
+        [self = RefPtr(this)](FrameToProcess aFrame, TimeStamp aTime) {
+          self->QueueForProcessing(std::move(aFrame.mImage), aTime,
+                                   aFrame.mSize, aFrame.mForceBlack);
         });
+  }
+
+ public:
+  static already_AddRefed<VideoFrameConverter> Create(
+      const dom::RTCStatsTimestampMaker& aTimestampMaker) {
+    RefPtr<VideoFrameConverter> converter =
+        new VideoFrameConverter(aTimestampMaker);
+    converter->RegisterListener();
+    return converter.forget();
   }
 
   void QueueVideoChunk(const VideoChunk& aChunk, bool aForceBlack) {
@@ -132,6 +144,14 @@ class VideoFrameConverter {
                     &VideoFrameConverter::ProcessVideoFrame,
                     mLastFrameQueuedForProcessing)));
           }
+        })));
+  }
+
+  void SetTrackingId(TrackingId aTrackingId) {
+    MOZ_ALWAYS_SUCCEEDS(mTaskQueue->Dispatch(NS_NewRunnableFunction(
+        __func__, [self = RefPtr<VideoFrameConverter>(this), this,
+                   id = std::move(aTrackingId)]() mutable {
+          mTrackingId = Some(std::move(id));
         })));
   }
 
@@ -294,7 +314,8 @@ class VideoFrameConverter {
     }
 
     const webrtc::Timestamp time =
-        mTimestampMaker.ConvertMozTimeToRealtime(aFrame.mTime);
+        dom::RTCStatsTimestamp::FromMozTime(mTimestampMaker, aFrame.mTime)
+            .ToRealtime();
 
     if (mLastFrameConverted &&
         aFrame.Serial() == mLastFrameConverted->mSerial) {
@@ -308,7 +329,7 @@ class VideoFrameConverter {
     if (aFrame.mForceBlack) {
       // Send a black image.
       rtc::scoped_refptr<webrtc::I420Buffer> buffer =
-          mBufferPool.CreateBuffer(aFrame.mSize.width, aFrame.mSize.height);
+          mBufferPool.CreateI420Buffer(aFrame.mSize.width, aFrame.mSize.height);
       if (!buffer) {
         MOZ_DIAGNOSTIC_ASSERT(false,
                               "Buffers not leaving scope except for "
@@ -322,7 +343,7 @@ class VideoFrameConverter {
 
       MOZ_LOG(gVideoFrameConverterLog, LogLevel::Verbose,
               ("VideoFrameConverter %p: Sending a black video frame", this));
-      webrtc::I420Buffer::SetBlack(buffer);
+      webrtc::I420Buffer::SetBlack(buffer.get());
 
       VideoFrameConverted(webrtc::VideoFrame::Builder()
                               .set_video_frame_buffer(buffer)
@@ -339,7 +360,9 @@ class VideoFrameConverter {
 
     MOZ_ASSERT(aFrame.mImage->GetSize() == aFrame.mSize);
 
-    if (layers::PlanarYCbCrImage* image = aFrame.mImage->AsPlanarYCbCrImage()) {
+    RefPtr<layers::PlanarYCbCrImage> image =
+        aFrame.mImage->AsPlanarYCbCrImage();
+    if (image) {
       dom::ImageUtils utils(image);
       if (utils.GetFormat() == dom::ImageBitmapFormat::YUV420P &&
           image->GetData()) {
@@ -349,7 +372,7 @@ class VideoFrameConverter {
                 aFrame.mImage->GetSize().width, aFrame.mImage->GetSize().height,
                 data->mYChannel, data->mYStride, data->mCbChannel,
                 data->mCbCrStride, data->mCrChannel, data->mCbCrStride,
-                rtc::KeepRefUntilDone(image));
+                [image] { /* keep reference alive*/ });
 
         MOZ_LOG(gVideoFrameConverterLog, LogLevel::Verbose,
                 ("VideoFrameConverter %p: Sending an I420 video frame", this));
@@ -363,7 +386,7 @@ class VideoFrameConverter {
     }
 
     rtc::scoped_refptr<webrtc::I420Buffer> buffer =
-        mBufferPool.CreateBuffer(aFrame.mSize.width, aFrame.mSize.height);
+        mBufferPool.CreateI420Buffer(aFrame.mSize.width, aFrame.mSize.height);
     if (!buffer) {
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
       ++mFramesDropped;
@@ -377,7 +400,9 @@ class VideoFrameConverter {
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     mFramesDropped = 0;
 #endif
-
+    PerformanceRecorder<CopyVideoStage> rec(
+        "VideoFrameConverter::ConvertToI420"_ns, *mTrackingId, buffer->width(),
+        buffer->height());
     nsresult rv =
         ConvertToI420(aFrame.mImage, buffer->MutableDataY(), buffer->StrideY(),
                       buffer->MutableDataU(), buffer->StrideU(),
@@ -388,6 +413,7 @@ class VideoFrameConverter {
               ("VideoFrameConverter %p: Image conversion failed", this));
       return;
     }
+    rec.Record();
 
     VideoFrameConverted(webrtc::VideoFrame::Builder()
                             .set_video_frame_buffer(buffer)
@@ -409,11 +435,12 @@ class VideoFrameConverter {
 
   // Accessed only from mTaskQueue.
   MediaEventListener mPacingListener;
-  webrtc::I420BufferPool mBufferPool;
+  webrtc::VideoFrameBufferPool mBufferPool;
   FrameToProcess mLastFrameQueuedForProcessing;
   Maybe<FrameConverted> mLastFrameConverted;
   bool mActive = false;
   bool mTrackEnabled = true;
+  Maybe<TrackingId> mTrackingId;
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   size_t mFramesDropped = 0;
 #endif

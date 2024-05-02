@@ -71,6 +71,8 @@ class JsepSession {
       : mName(name), mState(kJsepStateStable), mNegotiations(0) {}
   virtual ~JsepSession() {}
 
+  virtual JsepSession* Clone() const = 0;
+
   virtual nsresult Init() = 0;
 
   // Accessors for basic properties.
@@ -83,9 +85,12 @@ class JsepSession {
   virtual bool RemoteIsIceLite() const = 0;
   virtual std::vector<std::string> GetIceOptions() const = 0;
 
-  virtual nsresult AddDtlsFingerprint(const std::string& algorithm,
+  virtual nsresult AddDtlsFingerprint(const nsACString& algorithm,
                                       const std::vector<uint8_t>& value) = 0;
 
+  virtual nsresult AddRtpExtension(
+      JsepMediaType mediaType, const std::string& extensionName,
+      SdpDirectionAttribute::Direction direction) = 0;
   virtual nsresult AddAudioRtpExtension(
       const std::string& extensionName,
       SdpDirectionAttribute::Direction direction) = 0;
@@ -107,27 +112,73 @@ class JsepSession {
   template <class UnaryFunction>
   void ForEachCodec(UnaryFunction& function) {
     std::for_each(Codecs().begin(), Codecs().end(), function);
-    for (auto& [id, transceiver] : GetTransceivers()) {
-      (void)id;  // Lame, but no better way to do this right now.
-      transceiver->mSendTrack.ForEachCodec(function);
-      transceiver->mRecvTrack.ForEachCodec(function);
+    for (auto& transceiver : GetTransceivers()) {
+      transceiver.mSendTrack.ForEachCodec(function);
+      transceiver.mRecvTrack.ForEachCodec(function);
     }
   }
 
   template <class BinaryPredicate>
   void SortCodecs(BinaryPredicate& sorter) {
     std::stable_sort(Codecs().begin(), Codecs().end(), sorter);
-    for (auto& [id, transceiver] : GetTransceivers()) {
-      (void)id;  // Lame, but no better way to do this right now.
-      transceiver->mSendTrack.SortCodecs(sorter);
-      transceiver->mRecvTrack.SortCodecs(sorter);
+    for (auto& transceiver : GetTransceivers()) {
+      transceiver.mSendTrack.SortCodecs(sorter);
+      transceiver.mRecvTrack.SortCodecs(sorter);
     }
   }
 
-  virtual const std::map<size_t, RefPtr<JsepTransceiver>>& GetTransceivers()
-      const = 0;
-  virtual std::map<size_t, RefPtr<JsepTransceiver>>& GetTransceivers() = 0;
-  virtual nsresult AddTransceiver(RefPtr<JsepTransceiver> transceiver) = 0;
+  // Would be nice to have this return a Maybe containing the return of
+  // |aFunction|, but Maybe cannot contain a void.
+  template <typename UnaryFunction>
+  bool ApplyToTransceiver(const std::string& aId, UnaryFunction&& aFunction) {
+    for (auto& transceiver : GetTransceivers()) {
+      if (transceiver.GetUuid() == aId) {
+        std::forward<UnaryFunction>(aFunction)(transceiver);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  template <typename UnaryFunction>
+  void ForEachTransceiver(UnaryFunction&& aFunction) {
+    for (auto& transceiver : GetTransceivers()) {
+      std::forward<UnaryFunction>(aFunction)(transceiver);
+    }
+  }
+
+  template <typename UnaryFunction>
+  void ForEachTransceiver(UnaryFunction&& aFunction) const {
+    for (const auto& transceiver : GetTransceivers()) {
+      std::forward<UnaryFunction>(aFunction)(transceiver);
+    }
+  }
+
+  Maybe<const JsepTransceiver> GetTransceiver(const std::string& aId) const {
+    for (const auto& transceiver : GetTransceivers()) {
+      if (transceiver.GetUuid() == aId) {
+        return Some(transceiver);
+      }
+    }
+    return Nothing();
+  }
+
+  template <typename MatchFunction>
+  Maybe<const JsepTransceiver> FindTransceiver(MatchFunction&& aFunc) const {
+    for (const auto& transceiver : GetTransceivers()) {
+      if (std::forward<MatchFunction>(aFunc)(transceiver)) {
+        return Some(transceiver);
+      }
+    }
+    return Nothing();
+  }
+
+  bool SetTransceiver(const JsepTransceiver& aNew) {
+    return ApplyToTransceiver(aNew.GetUuid(),
+                              [aNew](JsepTransceiver& aOld) { aOld = aNew; });
+  }
+
+  virtual void AddTransceiver(const JsepTransceiver& transceiver) = 0;
 
   class Result {
    public:
@@ -171,6 +222,8 @@ class JsepSession {
   virtual Maybe<bool> IsPendingOfferer() const = 0;
   virtual Maybe<bool> IsCurrentOfferer() const = 0;
   virtual bool IsIceRestarting() const = 0;
+  virtual std::set<std::pair<std::string, std::string>> GetLocalIceCredentials()
+      const = 0;
 
   virtual const std::string GetLastError() const { return "Error"; }
 
@@ -196,24 +249,31 @@ class JsepSession {
     memset(receiving, 0, sizeof(receiving));
     memset(sending, 0, sizeof(sending));
 
-    for (const auto& [id, transceiver] : GetTransceivers()) {
-      (void)id;  // Lame, but no better way to do this right now.
-      if (transceiver->mRecvTrack.GetActive() ||
-          transceiver->GetMediaType() == SdpMediaSection::kApplication) {
-        receiving[transceiver->mRecvTrack.GetMediaType()]++;
+    for (const auto& transceiver : GetTransceivers()) {
+      if (transceiver.mRecvTrack.GetActive() ||
+          transceiver.GetMediaType() == SdpMediaSection::kApplication) {
+        receiving[transceiver.mRecvTrack.GetMediaType()]++;
       }
 
-      if (transceiver->mSendTrack.GetActive() ||
-          transceiver->GetMediaType() == SdpMediaSection::kApplication) {
-        sending[transceiver->mSendTrack.GetMediaType()]++;
+      if (transceiver.mSendTrack.GetActive() ||
+          transceiver.GetMediaType() == SdpMediaSection::kApplication) {
+        sending[transceiver.mSendTrack.GetMediaType()]++;
       }
     }
   }
+
+  virtual void SetDefaultCodecs(
+      const std::vector<UniquePtr<JsepCodecDescription>>& aPreferredCodecs) = 0;
 
   // See Bug 1642419, this can be removed when all sites are working with RTX.
   void SetRtxIsAllowed(bool aRtxIsAllowed) { mRtxIsAllowed = aRtxIsAllowed; }
 
  protected:
+  friend class JsepSessionTest;
+  // Returns transceivers in the order they were added.
+  virtual std::vector<JsepTransceiver>& GetTransceivers() = 0;
+  virtual const std::vector<JsepTransceiver>& GetTransceivers() const = 0;
+
   const std::string mName;
   JsepSignalingState mState;
   uint32_t mNegotiations;

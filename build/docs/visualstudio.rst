@@ -7,7 +7,7 @@ Visual Studio Projects
 The build system automatically generates Visual Studio project files to aid
 with development, as part of a normal ``mach build`` from the command line.
 
-You can find the solution file at ``$OBJDIR/msvs/mozilla.sln``.
+You can find the solution file at ``$OBJDIR/msvc/mozilla.sln``.
 
 If you want to generate the project files before/without doing a full build,
 running ``./mach configure && ./mach build-backend -b VisualStudio`` will do
@@ -61,7 +61,7 @@ to work from wherever they are. If they don't, please file a bug.
 Invoking mach through Visual Studio
 ===================================
 
-It's possible to build the tree via Visual Studio. There is some light magic
+It's possible to run mach commands via Visual Studio. There is some light magic
 involved here.
 
 Alongside the Visual Studio project files is a batch script named ``mach.bat``.
@@ -71,7 +71,12 @@ and invokes *mach* inside an msys shell with the arguments specified to the
 batch script. This script essentially allows you to invoke mach commands
 inside the MozillaBuild environment without having to load MozillaBuild.
 
-While projects currently only utilize the ``mach build`` command, the batch
-script does not limit it's use: any mach command can be invoked. Developers
-may abuse this fact to add custom projects and commands that invoke other
-mach commands.
+Projects currently utilize the ``mach build`` and ``mach clobber`` commands
+for building and cleaning the tree respectively. Note that running ``clobber``
+deletes the Visual Studio project files, and running ``build`` recreates them.
+This might cause issues while Visual Studio is running. Thus a full rebuild is
+currently neither recommended, nor supported, but incremental builds should work.
+
+The batch script does not limit its use: any mach command can be invoked.
+Developers may use this fact to add custom projects and commands that invoke
+other mach commands.

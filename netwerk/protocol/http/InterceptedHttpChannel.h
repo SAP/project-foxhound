@@ -15,8 +15,7 @@
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIThreadRetargetableStreamListener.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 // This class represents an http channel that is being intercepted by a
 // ServiceWorker.  This means that when the channel is opened a FetchEvent
@@ -55,7 +54,6 @@ class InterceptedHttpChannel final
       public nsIInterceptedChannel,
       public nsICacheInfoChannel,
       public nsIAsyncVerifyRedirectCallback,
-      public nsIStreamListener,
       public nsIThreadRetargetableRequest,
       public nsIThreadRetargetableStreamListener {
   NS_DECL_ISUPPORTS_INHERITED
@@ -90,6 +88,7 @@ class InterceptedHttpChannel final
   nsCString mResumeEntityId;
   nsString mStatusHost;
   Atomic<bool> mCallingStatusAndProgress;
+  bool mInterceptionReset{false};
 
   /**
    *  InterceptionTimeStamps is used to record the time stamps of the
@@ -229,6 +228,11 @@ class InterceptedHttpChannel final
       const TimeStamp& aCreationTimestamp,
       const TimeStamp& aAsyncOpenTimestamp);
 
+  NS_IMETHOD SetCanceledReason(const nsACString& aReason) override;
+  NS_IMETHOD GetCanceledReason(nsACString& aReason) override;
+  NS_IMETHOD CancelWithReason(nsresult status,
+                              const nsACString& reason) override;
+
   NS_IMETHOD
   Cancel(nsresult aStatus) override;
 
@@ -239,14 +243,14 @@ class InterceptedHttpChannel final
   Resume(void) override;
 
   NS_IMETHOD
-  GetSecurityInfo(nsISupports** aSecurityInfo) override;
+  GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) override;
 
   NS_IMETHOD
   AsyncOpen(nsIStreamListener* aListener) override;
 
   NS_IMETHOD
-  LogBlockedCORSRequest(const nsAString& aMessage,
-                        const nsACString& aCategory) override;
+  LogBlockedCORSRequest(const nsAString& aMessage, const nsACString& aCategory,
+                        bool aIsWarning) override;
 
   NS_IMETHOD
   LogMimeTypeMismatch(const nsACString& aMessageName, bool aWarning,
@@ -269,10 +273,21 @@ class InterceptedHttpChannel final
   AddClassFlags(uint32_t flags) override;
 
   NS_IMETHOD
+  SetClassOfService(ClassOfService cos) override;
+
+  NS_IMETHOD
+  SetIncremental(bool incremental) override;
+
+  NS_IMETHOD
   ResumeAt(uint64_t startPos, const nsACString& entityID) override;
 
   NS_IMETHOD
   SetEarlyHintObserver(nsIEarlyHintObserver* aObserver) override {
+    return NS_OK;
+  }
+
+  NS_IMETHOD SetWebTransportSessionEventListener(
+      WebTransportSessionEventListener* aListener) override {
     return NS_OK;
   }
 
@@ -281,7 +296,6 @@ class InterceptedHttpChannel final
   void DoAsyncAbort(nsresult aStatus) override;
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // mozilla_net_InterceptedHttpChannel_h

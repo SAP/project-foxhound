@@ -93,6 +93,7 @@ var tests = [
       this.oldSelectedTab = gBrowser.selectedTab;
       await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com/"
       );
       this.notifyObj = new BasicNotification(this.id);
@@ -104,7 +105,9 @@ var tests = [
     async onShown(popup) {
       this.complete = false;
 
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       await promiseTabLoadEvent(gBrowser.selectedTab, "http://example.org/");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       await promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
 
       // This code should not be executed.
@@ -131,6 +134,7 @@ var tests = [
       this.oldSelectedTab = gBrowser.selectedTab;
       await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com/"
       );
       this.notifyObj = new BasicNotification(this.id);
@@ -174,6 +178,7 @@ var tests = [
       this.oldSelectedTab = gBrowser.selectedTab;
       await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com/"
       );
     },
@@ -188,9 +193,8 @@ var tests = [
   {
     id: "Test#6b",
     run() {
-      let id = PopupNotifications.panel.firstElementChild.getAttribute(
-        "popupid"
-      );
+      let id =
+        PopupNotifications.panel.firstElementChild.getAttribute("popupid");
       ok(
         id.endsWith("Test#6a"),
         "Should have found the notification from Test6a"
@@ -212,12 +216,14 @@ var tests = [
       this.oldSelectedTab = gBrowser.selectedTab;
       await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com/"
       );
       let firstTab = gBrowser.selectedTab;
 
       await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com/"
       );
 
@@ -254,9 +260,8 @@ var tests = [
       await BrowserTestUtils.closeWindow(win);
       await waitForWindowReadyForPopupNotifications(window);
 
-      let id = PopupNotifications.panel.firstElementChild.getAttribute(
-        "popupid"
-      );
+      let id =
+        PopupNotifications.panel.firstElementChild.getAttribute("popupid");
       ok(
         id.endsWith("Test#7"),
         "Should have found the notification from Test7"

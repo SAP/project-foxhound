@@ -1,7 +1,7 @@
 "use strict";
 
-const { XPCShellContentUtils } = ChromeUtils.import(
-  "resource://testing-common/XPCShellContentUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/XPCShellContentUtils.sys.mjs"
 );
 
 XPCShellContentUtils.init(this);
@@ -31,12 +31,8 @@ server.registerPathHandler("/", (request, response) => {
   response.write(HTML);
 });
 
-function getResourceURI(file) {
-  return Services.io.newFileURI(do_get_file(file)).spec;
-}
-
-const { AllowJavascriptParent } = ChromeUtils.import(
-  getResourceURI("AllowJavascriptParent.jsm")
+const { AllowJavascriptParent } = ChromeUtils.importESModule(
+  "resource://test/AllowJavascriptParent.sys.mjs"
 );
 
 async function assertScriptsAllowed(bc, expectAllowed, desc) {
@@ -64,16 +60,16 @@ function createSubframe(bc, url) {
   return actor.sendQuery("CreateIframe", { url });
 }
 
-add_task(async function() {
+add_task(async function () {
   Services.prefs.setBoolPref("dom.security.https_first", false);
   ChromeUtils.registerWindowActor(ACTOR, {
     allFrames: true,
     child: {
-      moduleURI: getResourceURI("AllowJavascriptChild.jsm"),
+      esModuleURI: "resource://test/AllowJavascriptChild.sys.mjs",
       events: { load: { capture: true } },
     },
     parent: {
-      moduleURI: getResourceURI("AllowJavascriptParent.jsm"),
+      esModuleURI: "resource://test/AllowJavascriptParent.sys.mjs",
     },
   });
 
@@ -265,8 +261,30 @@ add_task(async function() {
   bc.reload(0);
   await AllowJavascriptParent.promiseLoad(bc);
 
-  await assertLoadFired(bc, undefined, "top BC with scripts disabled");
-  await assertScriptsAllowed(bc, false, "top BC with scripts disabled");
+  await assertLoadFired(
+    bc,
+    undefined,
+    "top BC with scripts disabled after reload"
+  );
+  await assertScriptsAllowed(
+    bc,
+    false,
+    "top BC with scripts disabled after reload"
+  );
+
+  await page.loadURL("http://example.org/?other");
+  bc = page.browsingContext;
+
+  await assertLoadFired(
+    bc,
+    undefined,
+    "top BC with scripts disabled after navigation"
+  );
+  await assertScriptsAllowed(
+    bc,
+    false,
+    "top BC with scripts disabled after navigation"
+  );
 
   await page.close();
   Services.prefs.clearUserPref("dom.security.https_first");

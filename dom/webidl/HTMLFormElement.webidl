@@ -34,9 +34,13 @@ interface HTMLFormElement : HTMLElement {
            attribute boolean noValidate;
            [CEReactions, Pure, SetterThrows]
            attribute DOMString target;
+           [CEReactions, Pure, SetterThrows]
+           attribute DOMString rel;
+           [PutForwards=value]
+           readonly attribute DOMTokenList relList;
 
-  [Constant]
-  readonly attribute HTMLCollection elements;
+  [SameObject]
+  readonly attribute HTMLFormControlsCollection elements;
   [Pure]
   readonly attribute long length;
 
@@ -45,11 +49,11 @@ interface HTMLFormElement : HTMLElement {
   getter nsISupports (DOMString name);
 
   [Throws]
-  void submit();
+  undefined submit();
   [Throws]
-  void requestSubmit(optional HTMLElement? submitter = null);
+  undefined requestSubmit(optional HTMLElement? submitter = null);
   [CEReactions]
-  void reset();
+  undefined reset();
   boolean checkValidity();
   boolean reportValidity();
 };

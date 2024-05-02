@@ -7,9 +7,7 @@
 
 "use strict";
 
-const SEARCH_APP_DIR = 1;
-
-add_task(async function setup() {
+add_setup(async function () {
   await SearchTestUtils.useTestEngines("simple-engines");
   await AddonTestUtils.promiseStartupManager();
 
@@ -20,7 +18,9 @@ add_task(async function setup() {
   );
 
   useHttpServer();
-  await SearchTestUtils.promiseNewSearchEngine(`${gDataUrl}engine.xml`);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}engine.xml`,
+  });
 });
 
 function checkIdentifier(engineName, expectedIdentifier, expectedTelemetryId) {

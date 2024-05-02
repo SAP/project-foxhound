@@ -1,13 +1,11 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import print_function
-
-from io import StringIO
 import optparse
 import os
 import sys
 from configparser import RawConfigParser
+from io import StringIO
 
 import ipdl
 
@@ -236,7 +234,7 @@ enum IPCMessages {
 )
 
 for protocol in sorted(allmessages.keys()):
-    for (msg, num) in allmessages[protocol].idnums:
+    for msg, num in allmessages[protocol].idnums:
         if num:
             print("  %s = %s," % (msg, num), file=ipc_msgtype_name)
         elif not msg.endswith("End"):
@@ -258,7 +256,7 @@ const char* StringFromIPCMessageType(uint32_t aMessageType)
 )
 
 for protocol in sorted(allmessages.keys()):
-    for (msg, num) in allmessages[protocol].idnums:
+    for msg, num in allmessages[protocol].idnums:
         if num or msg.endswith("End"):
             continue
         print(
@@ -271,6 +269,10 @@ for protocol in sorted(allmessages.keys()):
 
 print(
     """
+  case DATA_PIPE_CLOSED_MESSAGE_TYPE:
+    return "DATA_PIPE_CLOSED_MESSAGE";
+  case DATA_PIPE_BYTES_CONSUMED_MESSAGE_TYPE:
+    return "DATA_PIPE_BYTES_CONSUMED_MESSAGE";
   case ACCEPT_INVITE_MESSAGE_TYPE:
     return "ACCEPT_INVITE_MESSAGE";
   case REQUEST_INTRODUCTION_MESSAGE_TYPE:

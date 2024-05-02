@@ -18,10 +18,11 @@ module.exports = {
     ContentTask: false,
     ContentTaskUtils: false,
     EventUtils: false,
+    IOUtils: false,
+    PathUtils: false,
     PromiseDebugging: false,
     SpecialPowers: false,
     TestUtils: false,
-    XPCNativeWrapper: false,
     addLoadEvent: false,
     add_setup: false,
     add_task: false,
@@ -56,12 +57,39 @@ module.exports = {
     waitForFocus: false,
   },
 
-  plugins: ["mozilla"],
+  plugins: ["mozilla", "@microsoft/sdl"],
 
   rules: {
+    // No using of insecure url, so no http urls
+    "@microsoft/sdl/no-insecure-url": [
+      "error",
+      {
+        exceptions: [
+          "^http:\\/\\/mochi\\.test?.*",
+          "^http:\\/\\/localhost?.*",
+          "^http:\\/\\/127\\.0\\.0\\.1?.*",
+          // Exempt xmlns urls
+          "^http:\\/\\/www\\.w3\\.org?.*",
+          "^http:\\/\\/www\\.mozilla\\.org\\/keymaster\\/gatekeeper?.*",
+          // Exempt urls that start with ftp or ws.
+          "^ws:?.*",
+          "^ftp:?.*",
+        ],
+        varExceptions: ["insecure?.*"],
+      },
+    ],
     "mozilla/import-content-task-globals": "error",
     "mozilla/import-headjs-globals": "error",
     "mozilla/mark-test-function-used": "error",
+    "mozilla/no-addtask-setup": "error",
     "mozilla/no-arbitrary-setTimeout": "error",
+    "mozilla/no-redeclare-with-import-autofix": [
+      "error",
+      { errorForNonImports: false },
+    ],
+    // Turn off no-unsanitized for tests, as we do want to be able to use
+    // these for testing.
+    "no-unsanitized/method": "off",
+    "no-unsanitized/property": "off",
   },
 };

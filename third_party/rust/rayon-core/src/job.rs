@@ -4,6 +4,7 @@ use crossbeam_deque::{Injector, Steal};
 use std::any::Any;
 use std::cell::UnsafeCell;
 use std::mem;
+use std::sync::Arc;
 
 pub(super) enum JobResult<T> {
     None,
@@ -20,7 +21,7 @@ pub(super) trait Job {
     /// Unsafe: this may be called from a different thread than the one
     /// which scheduled the job, so the implementer must ensure the
     /// appropriate traits are met, whether `Send`, `Sync`, or both.
-    unsafe fn execute(this: *const Self);
+    unsafe fn execute(this: *const ());
 }
 
 /// Effectively a Job trait object. Each JobRef **must** be executed
@@ -29,7 +30,6 @@ pub(super) trait Job {
 /// Internally, we store the job's data in a `*const ()` pointer.  The
 /// true type is something like `*const StackJob<...>`, but we hide
 /// it. We also carry the "execute fn" from the `Job` trait.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) struct JobRef {
     pointer: *const (),
     execute_fn: unsafe fn(*const ()),
@@ -45,17 +45,22 @@ impl JobRef {
     where
         T: Job,
     {
-        let fn_ptr: unsafe fn(*const T) = <T as Job>::execute;
-
         // erase types:
         JobRef {
             pointer: data as *const (),
-            execute_fn: mem::transmute(fn_ptr),
+            execute_fn: <T as Job>::execute,
         }
     }
 
+    /// Returns an opaque handle that can be saved and compared,
+    /// without making `JobRef` itself `Copy + Eq`.
     #[inline]
-    pub(super) unsafe fn execute(&self) {
+    pub(super) fn id(&self) -> impl Eq {
+        (self.pointer, self.execute_fn)
+    }
+
+    #[inline]
+    pub(super) unsafe fn execute(self) {
         (self.execute_fn)(self.pointer)
     }
 }
@@ -108,19 +113,12 @@ where
     F: FnOnce(bool) -> R + Send,
     R: Send,
 {
-    unsafe fn execute(this: *const Self) {
-        fn call<R>(func: impl FnOnce(bool) -> R) -> impl FnOnce() -> R {
-            move || func(true)
-        }
-
-        let this = &*this;
+    unsafe fn execute(this: *const ()) {
+        let this = &*(this as *const Self);
         let abort = unwind::AbortIfPanic;
         let func = (*this.func.get()).take().unwrap();
-        (*this.result.get()) = match unwind::halt_unwinding(call(func)) {
-            Ok(x) => JobResult::Ok(x),
-            Err(x) => JobResult::Panic(x),
-        };
-        this.latch.set();
+        (*this.result.get()) = JobResult::call(func);
+        Latch::set(&this.latch);
         mem::forget(abort);
     }
 }
@@ -135,25 +133,30 @@ pub(super) struct HeapJob<BODY>
 where
     BODY: FnOnce() + Send,
 {
-    job: UnsafeCell<Option<BODY>>,
+    job: BODY,
 }
 
 impl<BODY> HeapJob<BODY>
 where
     BODY: FnOnce() + Send,
 {
-    pub(super) fn new(func: BODY) -> Self {
-        HeapJob {
-            job: UnsafeCell::new(Some(func)),
-        }
+    pub(super) fn new(job: BODY) -> Box<Self> {
+        Box::new(HeapJob { job })
     }
 
     /// Creates a `JobRef` from this job -- note that this hides all
     /// lifetimes, so it is up to you to ensure that this JobRef
     /// doesn't outlive any data that it closes over.
-    pub(super) unsafe fn as_job_ref(self: Box<Self>) -> JobRef {
-        let this: *const Self = mem::transmute(self);
-        JobRef::new(this)
+    pub(super) unsafe fn into_job_ref(self: Box<Self>) -> JobRef {
+        JobRef::new(Box::into_raw(self))
+    }
+
+    /// Creates a static `JobRef` from this job.
+    pub(super) fn into_static_job_ref(self: Box<Self>) -> JobRef
+    where
+        BODY: 'static,
+    {
+        unsafe { self.into_job_ref() }
     }
 }
 
@@ -161,14 +164,63 @@ impl<BODY> Job for HeapJob<BODY>
 where
     BODY: FnOnce() + Send,
 {
-    unsafe fn execute(this: *const Self) {
-        let this: Box<Self> = mem::transmute(this);
-        let job = (*this.job.get()).take().unwrap();
-        job();
+    unsafe fn execute(this: *const ()) {
+        let this = Box::from_raw(this as *mut Self);
+        (this.job)();
+    }
+}
+
+/// Represents a job stored in an `Arc` -- like `HeapJob`, but may
+/// be turned into multiple `JobRef`s and called multiple times.
+pub(super) struct ArcJob<BODY>
+where
+    BODY: Fn() + Send + Sync,
+{
+    job: BODY,
+}
+
+impl<BODY> ArcJob<BODY>
+where
+    BODY: Fn() + Send + Sync,
+{
+    pub(super) fn new(job: BODY) -> Arc<Self> {
+        Arc::new(ArcJob { job })
+    }
+
+    /// Creates a `JobRef` from this job -- note that this hides all
+    /// lifetimes, so it is up to you to ensure that this JobRef
+    /// doesn't outlive any data that it closes over.
+    pub(super) unsafe fn as_job_ref(this: &Arc<Self>) -> JobRef {
+        JobRef::new(Arc::into_raw(Arc::clone(this)))
+    }
+
+    /// Creates a static `JobRef` from this job.
+    pub(super) fn as_static_job_ref(this: &Arc<Self>) -> JobRef
+    where
+        BODY: 'static,
+    {
+        unsafe { Self::as_job_ref(this) }
+    }
+}
+
+impl<BODY> Job for ArcJob<BODY>
+where
+    BODY: Fn() + Send + Sync,
+{
+    unsafe fn execute(this: *const ()) {
+        let this = Arc::from_raw(this as *mut Self);
+        (this.job)();
     }
 }
 
 impl<T> JobResult<T> {
+    fn call(func: impl FnOnce(bool) -> T) -> Self {
+        match unwind::halt_unwinding(|| func(true)) {
+            Ok(x) => JobResult::Ok(x),
+            Err(x) => JobResult::Panic(x),
+        }
+    }
+
     /// Convert the `JobResult` for a job that has finished (and hence
     /// its JobResult is populated) into its return value.
     ///
@@ -204,10 +256,11 @@ impl JobFifo {
 }
 
 impl Job for JobFifo {
-    unsafe fn execute(this: *const Self) {
+    unsafe fn execute(this: *const ()) {
         // We "execute" a queue by executing its first job, FIFO.
+        let this = &*(this as *const Self);
         loop {
-            match (*this).inner.steal() {
+            match this.inner.steal() {
                 Steal::Success(job_ref) => break job_ref.execute(),
                 Steal::Empty => panic!("FIFO is empty"),
                 Steal::Retry => {}

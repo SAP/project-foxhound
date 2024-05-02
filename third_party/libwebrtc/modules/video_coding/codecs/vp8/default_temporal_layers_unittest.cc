@@ -354,61 +354,6 @@ TEST_F(TemporalLayersTest, SearchOrderWithDrop) {
   EXPECT_EQ(tl_config.second_reference, Vp8BufferReference::kLast);
 }
 
-TEST_F(TemporalLayersTest, 4Layers) {
-  constexpr int kNumLayers = 4;
-  DefaultTemporalLayers tl(kNumLayers);
-  DefaultTemporalLayersChecker checker(kNumLayers);
-  tl.OnRatesUpdated(0,
-                    GetTemporalLayerRates(kDefaultBytesPerFrame,
-                                          kDefaultFramerate, kNumLayers),
-                    kDefaultFramerate);
-  tl.UpdateConfiguration(0);
-  int expected_flags[16] = {
-      kTemporalUpdateLast,
-      kTemporalUpdateNoneNoRefGoldenAltRef,
-      kTemporalUpdateAltrefWithoutDependency,
-      kTemporalUpdateNoneNoRefGolden,
-      kTemporalUpdateGoldenWithoutDependency,
-      kTemporalUpdateNone,
-      kTemporalUpdateAltref,
-      kTemporalUpdateNone,
-      kTemporalUpdateLast,
-      kTemporalUpdateNone,
-      kTemporalUpdateAltref,
-      kTemporalUpdateNone,
-      kTemporalUpdateGolden,
-      kTemporalUpdateNone,
-      kTemporalUpdateAltref,
-      kTemporalUpdateNone,
-  };
-  int expected_temporal_idx[16] = {0, 3, 2, 3, 1, 3, 2, 3,
-                                   0, 3, 2, 3, 1, 3, 2, 3};
-
-  bool expected_layer_sync[16] = {false, true,  true,  false, true,  false,
-                                  false, false, false, false, false, false,
-                                  false, false, false, false};
-
-  uint32_t timestamp = 0;
-  for (int i = 0; i < 16; ++i) {
-    const bool is_keyframe = (i == 0);
-    CodecSpecificInfo info;
-    Vp8FrameConfig tl_config = tl.NextFrameConfig(0, timestamp);
-    EXPECT_EQ(is_keyframe ? kKeyFrameFlags : expected_flags[i],
-              LibvpxVp8Encoder::EncodeFlags(tl_config))
-        << i;
-    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, is_keyframe,
-                    kDefaultQp, &info);
-    EXPECT_TRUE(checker.CheckTemporalConfig(is_keyframe, tl_config));
-    EXPECT_EQ(expected_temporal_idx[i], info.codecSpecific.VP8.temporalIdx);
-    EXPECT_EQ(expected_temporal_idx[i], tl_config.packetizer_temporal_idx);
-    EXPECT_EQ(expected_temporal_idx[i], tl_config.encoder_layer_id);
-    EXPECT_EQ(is_keyframe || expected_layer_sync[i],
-              info.codecSpecific.VP8.layerSync);
-    EXPECT_EQ(expected_layer_sync[i], tl_config.layer_sync);
-    timestamp += 3000;
-  }
-}
-
 TEST_F(TemporalLayersTest, DoesNotReferenceDroppedFrames) {
   constexpr int kNumLayers = 3;
   // Use a repeating pattern of tl 0, 2, 1, 2.
@@ -653,8 +598,8 @@ TEST_F(TemporalLayersTest, KeyFrame) {
 
   uint32_t timestamp = 0;
   for (int i = 0; i < 7; ++i) {
-    // Temporal pattern starts from 0 after key frame. Let the first |i| - 1
-    // frames be delta frames, and the |i|th one key frame.
+    // Temporal pattern starts from 0 after key frame. Let the first `i` - 1
+    // frames be delta frames, and the `i`th one key frame.
     for (int j = 1; j <= i; ++j) {
       // Since last frame was always a keyframe and thus index 0 in the pattern,
       // this loop starts at index 1.
@@ -685,6 +630,25 @@ TEST_F(TemporalLayersTest, KeyFrame) {
         << "Key frame is universal switch";
     EXPECT_TRUE(checker.CheckTemporalConfig(true, tl_config));
   }
+}
+
+TEST_F(TemporalLayersTest, SetsTlCountOnFirstConfigUpdate) {
+  // Create an instance and fetch config update without setting any rate.
+  constexpr int kNumLayers = 2;
+  DefaultTemporalLayers tl(kNumLayers);
+  Vp8EncoderConfig config = tl.UpdateConfiguration(0);
+
+  // Config should indicate correct number of temporal layers, but zero bitrate.
+  ASSERT_TRUE(config.temporal_layer_config.has_value());
+  EXPECT_EQ(config.temporal_layer_config->ts_number_layers,
+            uint32_t{kNumLayers});
+  std::array<uint32_t, Vp8EncoderConfig::TemporalLayerConfig::kMaxLayers>
+      kZeroRate = {};
+  EXPECT_EQ(config.temporal_layer_config->ts_target_bitrate, kZeroRate);
+
+  // On second call, no new update.
+  config = tl.UpdateConfiguration(0);
+  EXPECT_FALSE(config.temporal_layer_config.has_value());
 }
 
 class TemporalLayersReferenceTest : public TemporalLayersTest,
@@ -761,7 +725,7 @@ TEST_P(TemporalLayersReferenceTest, ValidFrameConfigs) {
   // of the buffer state; which buffers references which temporal layers (if
   // (any). If a given buffer is never updated, it is legal to reference it
   // even for sync frames. In order to be general, don't assume TL0 always
-  // updates |last|.
+  // updates `last`.
   std::vector<Vp8FrameConfig> tl_configs(kMaxPatternLength);
   for (int i = 0; i < kMaxPatternLength; ++i) {
     Vp8FrameConfig tl_config = tl.NextFrameConfig(0, timestamp_);

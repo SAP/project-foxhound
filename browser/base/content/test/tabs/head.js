@@ -26,10 +26,24 @@ function triggerClickOn(target, options) {
   return promise;
 }
 
-async function addTab(url = "http://mochi.test:8888/", params = {}) {
+function triggerMiddleClickOn(target) {
+  let promise = BrowserTestUtils.waitForEvent(target, "click");
+  EventUtils.synthesizeMouseAtCenter(target, { button: 1 });
+  return promise;
+}
+
+async function addTab(url = "http://mochi.test:8888/", params) {
+  return addTabTo(gBrowser, url, params);
+}
+
+async function addTabTo(
+  targetBrowser,
+  url = "http://mochi.test:8888/",
+  params = {}
+) {
   params.skipAnimation = true;
-  const tab = BrowserTestUtils.addTab(gBrowser, url, params);
-  const browser = gBrowser.getBrowserForTab(tab);
+  const tab = BrowserTestUtils.addTab(targetBrowser, url, params);
+  const browser = targetBrowser.getBrowserForTab(tab);
   await BrowserTestUtils.browserLoaded(browser);
   return tab;
 }
@@ -121,7 +135,7 @@ async function wait_for_tab_media_blocked_event(tab, expectMediaBlocked) {
 
 async function is_audio_playing(tab) {
   let browser = tab.linkedBrowser;
-  let isPlaying = await SpecialPowers.spawn(browser, [], async function() {
+  let isPlaying = await SpecialPowers.spawn(browser, [], async function () {
     let audio = content.document.querySelector("audio");
     return !audio.paused;
   });
@@ -130,7 +144,7 @@ async function is_audio_playing(tab) {
 
 async function play(tab, expectPlaying = true) {
   let browser = tab.linkedBrowser;
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     let audio = content.document.querySelector("audio");
     audio.play();
   });
@@ -243,12 +257,18 @@ async function test_mute_tab(tab, icon, expectMuted) {
   return mutedPromise;
 }
 
-async function dragAndDrop(tab1, tab2, copy, destWindow = window) {
+async function dragAndDrop(
+  tab1,
+  tab2,
+  copy,
+  destWindow = window,
+  afterTab = true
+) {
   let rect = tab2.getBoundingClientRect();
   let event = {
     ctrlKey: copy,
     altKey: copy,
-    clientX: rect.left + rect.width / 2 + 10,
+    clientX: rect.left + rect.width / 2 + 10 * (afterTab ? 1 : -1),
     clientY: rect.top + rect.height / 2,
   };
 

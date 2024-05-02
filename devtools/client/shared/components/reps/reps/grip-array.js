@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // Dependencies
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
@@ -16,7 +16,6 @@ define(function(require, exports, module) {
   const {
     interleave,
     getGripType,
-    isGrip,
     wrapRender,
     ellipsisElement,
   } = require("devtools/client/shared/components/reps/reps/rep-utils");
@@ -24,9 +23,6 @@ define(function(require, exports, module) {
     MODE,
   } = require("devtools/client/shared/components/reps/reps/constants");
 
-  const {
-    ModePropType,
-  } = require("devtools/client/shared/components/reps/reps/array");
   const DEFAULT_TITLE = "Array";
 
   /**
@@ -36,8 +32,7 @@ define(function(require, exports, module) {
 
   GripArray.propTypes = {
     object: PropTypes.object.isRequired,
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: ModePropType,
+    mode: PropTypes.oneOf(Object.values(MODE)),
     provider: PropTypes.object,
     onDOMNodeMouseOver: PropTypes.func,
     onDOMNodeMouseOut: PropTypes.func,
@@ -49,7 +44,7 @@ define(function(require, exports, module) {
     const { object, mode = MODE.SHORT, shouldRenderTooltip } = props;
 
     let brackets;
-    const needSpace = function(space) {
+    const needSpace = function (space) {
       return space ? { left: "[ ", right: " ]" } : { left: "[", right: "]" };
     };
 
@@ -89,9 +84,13 @@ define(function(require, exports, module) {
       );
     }
 
+    if (mode === MODE.HEADER) {
+      return span(config, title);
+    }
+
     const max = maxLengthMap.get(mode);
     const items = arrayIterator(props, object, max);
-    brackets = needSpace(items.length > 0);
+    brackets = needSpace(!!items.length);
 
     return span(
       config,
@@ -153,6 +152,10 @@ define(function(require, exports, module) {
       }
 
       return span({ className: "objectTitle" }, title, length, trailingSpace);
+    }
+
+    if (props.mode === MODE.HEADER) {
+      return span({ className: "objectTitle" }, title, length);
     }
 
     return span({ className: "objectTitle" }, title, length, " ");
@@ -239,12 +242,8 @@ define(function(require, exports, module) {
   }
 
   function supportsObject(grip, noGrip = false) {
-    if (noGrip === true || !isGrip(grip)) {
-      return false;
-    }
-
     return (
-      grip.preview &&
+      grip?.preview &&
       (grip.preview.kind == "ArrayLike" ||
         getGripType(grip, noGrip) === "DocumentFragment")
     );

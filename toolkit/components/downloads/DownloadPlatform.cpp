@@ -9,13 +9,10 @@
 #include "nsIProtocolHandler.h"
 #include "nsIURI.h"
 #include "nsIFile.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsThreadUtils.h"
 #include "xpcpublic.h"
 
 #include "mozilla/dom/Promise.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
 
 #define PREF_BDM_ADDTORECENTDOCS "browser.download.manager.addToRecentDocs"
 
@@ -293,22 +290,10 @@ bool DownloadPlatform::IsURLPossiblyFromWeb(nsIURI* aURI) {
   }
 
   while (uri) {
-    // We're not using nsIIOService::ProtocolHasFlags because it doesn't
-    // take per-URI flags into account. We're also not using
-    // NS_URIChainHasFlags because we're checking for *any* of 3 flags
-    // to be present on *all* of the nested URIs, which it can't do.
-    nsAutoCString scheme;
-    nsresult rv = uri->GetScheme(scheme);
-    if (NS_FAILED(rv)) {
-      return true;
-    }
-    nsCOMPtr<nsIProtocolHandler> ph;
-    rv = ios->GetProtocolHandler(scheme.get(), getter_AddRefs(ph));
-    if (NS_FAILED(rv)) {
-      return true;
-    }
+    // We're not using NS_URIChainHasFlags because we're checking for *any* of 3
+    // flags to be present on *all* of the nested URIs, which it can't do.
     uint32_t flags;
-    rv = ph->DoGetProtocolFlags(uri, &flags);
+    nsresult rv = ios->GetDynamicProtocolFlags(uri, &flags);
     if (NS_FAILED(rv)) {
       return true;
     }

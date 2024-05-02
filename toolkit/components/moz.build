@@ -14,7 +14,6 @@ if CONFIG["MOZ_HAS_REMOTE"]:
 DIRS += [
     "aboutcheckerboard",
     "aboutmemory",
-    "aboutperformance",
     "aboutprocesses",
     "alerts",
     "antitracking",
@@ -27,18 +26,19 @@ DIRS += [
     "certviewer",
     "cleardata",
     "clearsitedata",
-    "cloudstorage",
+    "cookiebanners",
     "commandlines",
+    "contentanalysis",
     "contentprefs",
     "contextualidentity",
     "crashes",
     "crashmonitor",
+    "credentialmanagement",
     "downloads",
     "enterprisepolicies",
     "extensions",
     "featuregates",
     "formautofill",
-    "filewatcher",
     "finalizationwitness",
     "find",
     "forgetaboutsite",
@@ -46,15 +46,12 @@ DIRS += [
     "httpsonlyerror",
     "jsoncpp/src/lib_json",
     "kvstore",
-    "lz4",
     "mediasniffer",
     "mozintl",
     "mozprotocol",
-    "osfile",
     "parentalcontrols",
     "passwordmgr",
     "pdfjs",
-    "perfmonitoring",
     "pictureinpicture",
     "places",
     "processtools",
@@ -63,16 +60,19 @@ DIRS += [
     "prompts",
     "protobuf",
     "remotebrowserutils",
-    "remotepagemanager",
     "reflect",
     "reputationservice",
+    "reportbrokensite",
     "resistfingerprinting",
     "search",
     "sessionstore",
     "shell",
+    "shopping",
     "startup",
     "statusfilter",
     "telemetry",
+    "translation",
+    "translations",
     "thumbnails",
     "timermanager",
     "tooltiptext",
@@ -87,16 +87,18 @@ DIRS += [
     "xulstore",
 ]
 
+if CONFIG["NS_PRINTING"]:
+    DIRS += ["printing"]
+
 if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
     DIRS += [
         "aboutconfig",
         "narrate",
         "reader",
         "viaduct",
+        "uniffi-js",
+        "uniffi-bindgen-gecko-js/components",
     ]
-
-    if CONFIG["NS_PRINTING"]:
-        DIRS += ["printing"]
 
 if CONFIG["BUILD_CTYPES"]:
     DIRS += ["ctypes"]
@@ -112,16 +114,19 @@ if CONFIG["MOZ_UPDATE_AGENT"]:
 DIRS += ["build"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
-    DIRS += ["aboutthirdparty", "gfx"]
+    DIRS += ["aboutthirdparty", "aboutwindowsmessages", "gfx"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     EXTRA_JS_MODULES += [
-        "DefaultCLH.jsm",
+        "DefaultCLH.sys.mjs",
     ]
 
     XPCOM_MANIFESTS += [
         "components.conf",
     ]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] not in ("android", "windows"):
+    DIRS += ["aboutwebauthn"]
 
 if CONFIG["MOZ_BUILD_APP"] == "browser":
     DIRS += ["normandy", "messaging-system"]
@@ -134,3 +139,11 @@ if CONFIG["MOZ_BACKGROUNDTASKS"]:
 # This is only packaged for browser since corrupt JAR and XPI files tend to be a desktop-OS problem.
 if CONFIG["MOZ_BUILD_APP"] == "browser":
     DIRS += ["corroborator"]
+
+if CONFIG["MOZ_UNIFFI_FIXTURES"]:
+    DIRS += ["uniffi-bindgen-gecko-js/fixtures"]
+
+
+UNIFIED_SOURCES += [
+    "/toolkit/components/antitracking/ContentBlockingAllowList.cpp",
+]

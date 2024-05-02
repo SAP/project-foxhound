@@ -29,26 +29,39 @@ interface nsISearchEngine : nsISupports
    * Gets a nsISearchSubmission object that contains information about what to
    * send to the search engine, including the URI and postData, if applicable.
    *
-   * @param  data
-   *         Data to add to the submission object.
-   *         i.e. the search terms.
+   * @param searchTerms
+   *   The search term(s) for the submission.
    *
-   * @param  responseType [optional]
-   *         The MIME type that we'd like to receive in response
-   *         to this submission.  If null, will default to "text/html".
+   * @param responseType [optional]
+   *   The MIME type that we'd like to receive in response
+   *   to this submission.  If null, will default to "text/html".
    *
    * @param purpose [optional]
-   *        A string meant to indicate the context of the search request. This
-   *        allows the search service to provide a different nsISearchSubmission
-   *        depending on e.g. where the search is triggered in the UI.
+   *   A string that indicates the context of the search request. This may then
+   *   be used to provide different submission data depending on the context.
    *
-   * @returns A nsISearchSubmission object that contains information about what
-   *          to send to the search engine.  If no submission can be
-   *          obtained for the given responseType, returns null.
+   * @returns nsISearchSubmission
+   *   The submission data. If no appropriate submission can be determined for
+   *   the request type, this may be null.
    */
-  nsISearchSubmission getSubmission(in AString data,
+  nsISearchSubmission getSubmission(in AString searchTerms,
                                     [optional] in AString responseType,
                                     [optional] in AString purpose);
+  /**
+   * Returns the search term of a possible search result URI if and only if:
+   * - The URI has the same scheme, host, and path as the engine.
+   * - All query parameters of the URI have a matching name and value in the engine.
+   * - An exception to the equality check is the engine's termsParameterName
+   *   value, which contains a placeholder, i.e. {searchTerms}.
+   * - If an engine has query parameters with "null" values, they will be ignored.
+   *
+   * @param  uri
+   *         A URI that may or may not be from a search result matching the engine.
+   *
+   * @returns A string representing the termsParameterName value of the URI,
+   *          or an empty string if the URI isn't matched to the engine.
+   */
+  AString searchTermFromResult(in nsIURI uri);
 
   /**
    * Returns the name of the parameter used for the search terms for a submission
@@ -134,6 +147,11 @@ interface nsISearchEngine : nsISupports
   attribute boolean hidden;
 
   /**
+   * Whether the associated one off button should be hidden from the user.
+   */
+  attribute boolean hideOneOffButton;
+
+  /**
    * A nsIURI corresponding to the engine's icon, stored locally. May be null.
    */
   readonly attribute nsIURI iconURI;
@@ -144,7 +162,19 @@ interface nsISearchEngine : nsISupports
   readonly attribute AString name;
 
   /**
-   * A URL string pointing to the engine's search form.
+   * The display of the search engine id. This is a unique identifier.
+   */
+  readonly attribute AString id;
+
+  /**
+   * The searchForm URL points to the engine's organic search page. This should
+   * not contain neither search term parameters nor partner codes, but may
+   * contain parameters which set the engine in the correct way.
+   *
+   * This URL is typically the prePath and filePath of the search submission URI,
+   * but may vary for different engines. For example, some engines may use a
+   * different domain, e.g. https://sub.example.com for the search URI but
+   * https://example.org/ for the organic search page.
    */
   readonly attribute AString searchForm;
 
@@ -167,10 +197,19 @@ interface nsISearchEngine : nsISupports
 
   /**
    * Whether or not this engine is provided by the application, e.g. it is
-   * in the list of configured search engines, or provided by a distribution
-   * set-up.
+   * in the list of configured search engines.
    */
   readonly attribute boolean isAppProvided;
+
+  /**
+   * Whether or not this engine is an in-memory only search engine.
+   * These engines are typically application provided or policy engines,
+   * where they are loaded every time on SearchService initialization
+   * using the policy JSON or the extension manifest. Minimal details of the
+   * in-memory engines are saved to disk, but they are never loaded
+   * from the user's saved settings file.
+   */
+  readonly attribute boolean inMemory;
 
   /**
    * Whether or not this engine is a "general" search engine, e.g. is it for
@@ -180,17 +219,12 @@ interface nsISearchEngine : nsISupports
   readonly attribute boolean isGeneralPurposeEngine;
 
   /**
-   * Gets a string representing the hostname from which search results for a
-   * given responseType are returned.  This can be specified as an url attribute
-   * in the engine description file, but will default to host from the <Url>'s
-   * template otherwise.
-   *
-   * @param  responseType [optional]
-   *         The MIME type to get resultDomain for.  Defaults to "text/html".
-   *
-   * @return the resultDomain for the given responseType.
-   */
-  AString getResultDomain([optional] in AString responseType);
+  * The domain from which search results are returned for this engine.
+  *
+  * @return the domain of the the search URL.
+  */
+readonly attribute AString searchUrlDomain;
+
 };
 
 [scriptable, uuid(0dc93e51-a7bf-4a16-862d-4b3469ff6206)]
@@ -213,20 +247,6 @@ interface nsISearchParseSubmissionResult : nsISupports
    * The name of the query parameter used by `engine` for queries. E.g. "q".
    */
   readonly attribute AString termsParameterName;
-
-  /**
-   * The offset of the string |terms| in the URL passed in to
-   * nsISearchEngine::parseSubmissionURL, or -1 if the URL does not represent
-   * a search submission.
-   */
-  readonly attribute long termsOffset;
-
-  /**
-   * The length of the |terms| in the original encoding of the URL passed in to
-   * nsISearchEngine::parseSubmissionURL. If the search term in the original
-   * URL is encoded then this will be bigger than |terms.length|.
-   */
-  readonly attribute long termsLength;
 };
 
 [scriptable, uuid(0301834b-2630-440e-8b98-db8dc55f34b9)]
@@ -235,6 +255,20 @@ interface nsISearchService : nsISupports
   const unsigned long ERROR_DOWNLOAD_FAILURE = 0x1;
   const unsigned long ERROR_DUPLICATE_ENGINE = 0x2;
   const unsigned long ERROR_ENGINE_CORRUPTED = 0x3;
+
+  const unsigned short CHANGE_REASON_UNKNOWN = 0x0;
+  const unsigned short CHANGE_REASON_USER = 0x1;
+  const unsigned short CHANGE_REASON_USER_PRIVATE_SPLIT = 0x2;
+  const unsigned short CHANGE_REASON_USER_SEARCHBAR = 0x3;
+  const unsigned short CHANGE_REASON_USER_SEARCHBAR_CONTEXT = 0x4;
+  const unsigned short CHANGE_REASON_ADDON_INSTALL = 0x5;
+  const unsigned short CHANGE_REASON_ADDON_UNINSTALL = 0x6;
+  const unsigned short CHANGE_REASON_CONFIG = 0x7;
+  const unsigned short CHANGE_REASON_LOCALE = 0x8;
+  const unsigned short CHANGE_REASON_REGION = 0x9;
+  const unsigned short CHANGE_REASON_EXPERIMENT = 0xA;
+  const unsigned short CHANGE_REASON_ENTERPRISE = 0xB;
+  const unsigned short CHANGE_REASON_UITOUR = 0xC;
 
   /**
    * Start asynchronous initialization.
@@ -246,6 +280,16 @@ interface nsISearchService : nsISupports
    * full initialization of the search service.
    */
   Promise init();
+
+  /**
+   * A promise that is resolved when initialization has finished, but does not
+   * trigger initialization to begin.
+   *
+   * @returns {Promise}
+   *   Resolved when initalization has successfully finished, and rejected if it
+   *   has failed.
+   */
+  readonly attribute Promise promiseInitialized;
 
   /**
    * Determine whether initialization has been completed.
@@ -262,14 +306,21 @@ interface nsISearchService : nsISupports
   readonly attribute bool isInitialized;
 
   /**
+   * Determine whether initialization has been completed successfully.
+   *
+   */
+  readonly attribute bool hasSuccessfullyInitialized;
+
+
+  /**
    * Runs background checks; Designed to be run on idle.
    */
   Promise runBackgroundChecks();
 
   /**
-   * Resets the default engine to its original value.
+   * Resets the default engine to its app default engine value.
    */
-  Promise resetToOriginalDefaultEngine();
+  Promise resetToAppDefaultEngine();
 
   /**
    * Adds a new Open Search engine from the file at the supplied URI.
@@ -286,34 +337,6 @@ interface nsISearchService : nsISupports
    *         loaded.
    */
   Promise addOpenSearchEngine(in AString engineURL, in AString iconURL);
-
-  /**
-   * Adds a new search engine for enterprises.
-   *
-   * @param details
-   *        An object that simulates the WebExtension manifest structure:
-   *
-   *        {iconURL} Optional
-   *        {description} Optional
-   *        {chrome_settings_overrides} This should contain a {search_provider}
-   *                                    structure that mimics the WebExtension
-   *                                    manifest structure.
-   */
-  Promise addPolicyEngine(in jsval details);
-
-  /**
-   * Updates an existing engine for enterprises.
-   *
-   * @param details
-   *        An object that simulates the WebExtension manifest structure:
-   *
-   *        {iconURL} Optional
-   *        {description} Optional
-   *        {chrome_settings_overrides} This should contain a {search_provider}
-   *                                    structure that mimics the WebExtension
-   *                                    manifest structure.
-   */
-  Promise updatePolicyEngine(in jsval details);
 
   /**
    * Adds a new search engine defined by the user.
@@ -366,6 +389,17 @@ interface nsISearchService : nsISupports
    *          exist.
    */
   nsISearchEngine getEngineByName(in AString aEngineName);
+
+
+  /**
+   * Returns an engine with the specified Id.
+   *
+   * @param   aEngineId
+   *          The Id of the engine.
+   * @returns The corresponding nsISearchEngine object, or null if it doesn't
+   *          exist.
+   */
+  nsISearchEngine getEngineById(in AString aEngineId);
 
   /**
    * Returns an array of all installed search engines.
@@ -433,29 +467,29 @@ interface nsISearchService : nsISupports
   Promise removeWebExtensionEngine(in AString id);
 
   /**
-   * The original Engine object that is the default for this region,
+   * The Application Default Engine object that is the default for this region,
    * ignoring changes the user may have subsequently made.
    */
-  readonly attribute nsISearchEngine originalDefaultEngine;
+  readonly attribute nsISearchEngine appDefaultEngine;
 
   /**
-   * The original Engine object that is the default for this region when in
+   * The Application Default Engine object that is the default for this region when in
    * private browsing mode, ignoring changes the user may have subsequently made.
    */
-  readonly attribute nsISearchEngine originalPrivateDefaultEngine;
+  readonly attribute nsISearchEngine appPrivateDefaultEngine;
 
   /**
    * The currently active search engine.
    * Unless the application doesn't ship any search plugin, this should never
    * be null. If the currently active engine is removed, this attribute will
-   * fallback first to the original default engine if it's not hidden, then to
-   * the first visible engine, and as a last resort it will unhide the original
+   * fallback first to the application default engine if it's not hidden, then to
+   * the first visible engine, and as a last resort it will unhide the app
    * default engine.
    */
   attribute nsISearchEngine defaultEngine;
 
   Promise getDefault();
-  Promise setDefault(in nsISearchEngine engine);
+  Promise setDefault(in nsISearchEngine engine, in unsigned short changeSource);
 
   /**
    * The currently active search engine for private browsing mode.
@@ -464,7 +498,14 @@ interface nsISearchService : nsISupports
   attribute nsISearchEngine defaultPrivateEngine;
 
   Promise getDefaultPrivate();
-  Promise setDefaultPrivate(in nsISearchEngine engine);
+  Promise setDefaultPrivate(
+    in nsISearchEngine engine,
+    in unsigned short changeSource);
+
+  /**
+   * Whether to display the "Search in Private Window" result in the urlbar.
+   */
+  readonly attribute boolean separatePrivateDefaultUrlbarResultEnabled;
 
   /**
    * Allows the add-on manager to discover if a WebExtension based search engine
@@ -503,7 +544,7 @@ interface nsISearchService : nsISupports
    *   contains information about the default engine for private browsing mode:
    *     name, loadPath, original submissionURL
    */
-  Promise getDefaultEngineInfo();
+  jsval getDefaultEngineInfo();
 
   /**
    * Determines if the provided URL represents results from a search engine, and

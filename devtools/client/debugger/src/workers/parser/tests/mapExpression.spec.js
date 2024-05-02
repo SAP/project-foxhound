@@ -39,7 +39,7 @@ describe("mapExpression", () => {
     {
       name: "await",
       expression: "await a()",
-      newExpression: formatAwait("return await a()"),
+      newExpression: formatAwait("return a()"),
       bindings: [],
       mappings: {},
       shouldMapBindings: true,
@@ -78,7 +78,7 @@ describe("mapExpression", () => {
     {
       name: "await (multiple awaits)",
       expression: "const x = await a(); await b(x)",
-      newExpression: formatAwait("self.x = await a(); return await b(x);"),
+      newExpression: formatAwait("self.x = await a(); return b(x);"),
       bindings: [],
       mappings: {},
       shouldMapBindings: true,
@@ -314,7 +314,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, let assignment)",
       expression: "let a = await 123;",
       newExpression: `let a;
-
         (async () => {
           return a = await 123;
         })()`,
@@ -329,7 +328,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, var assignment)",
       expression: "var a = await 123;",
       newExpression: `var a;
-
         (async () => {
           return a = await 123;
         })()`,
@@ -344,7 +342,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, const assignment)",
       expression: "const a = await 123;",
       newExpression: `let a;
-
         (async () => {
           return a = await 123;
         })()`,
@@ -359,7 +356,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, multiple assignments)",
       expression: "let a = 1, b, c = 3; b = await 123; a + b + c",
       newExpression: `let a, b, c;
-
         (async () => {
           a = 1;
           c = 3;
@@ -377,7 +373,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, object destructuring)",
       expression: "let {a, b, c} = await x;",
       newExpression: `let a, b, c;
-
         (async () => {
           return ({a, b, c} = await x);
         })()`,
@@ -392,7 +387,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, object destructuring with rest)",
       expression: "let {a, ...rest} = await x;",
       newExpression: `let a, rest;
-
         (async () => {
           return ({a, ...rest} = await x);
         })()`,
@@ -404,11 +398,9 @@ describe("mapExpression", () => {
       },
     },
     {
-      name:
-        "await (no bindings, object destructuring with renaming and default)",
+      name: "await (no bindings, object destructuring with renaming and default)",
       expression: "let {a: hello, b, c: world, d: $ = 4} = await x;",
       newExpression: `let hello, b, world, $;
-
         (async () => {
           return ({a: hello, b, c: world, d: $ = 4} = await x);
         })()`,
@@ -420,13 +412,11 @@ describe("mapExpression", () => {
       },
     },
     {
-      name:
-        "await (no bindings, nested object destructuring + renaming + default)",
+      name: "await (no bindings, nested object destructuring + renaming + default)",
       expression: `let {
           a: hello, c: { y: { z = 10, b: bill, d: [e, f = 20] }}
         } = await x; z;`,
       newExpression: `let hello, z, bill, e, f;
-
         (async () => {
           ({ a: hello, c: { y: { z = 10, b: bill, d: [e, f = 20] }}} = await x);
           return z;
@@ -442,7 +432,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, array destructuring)",
       expression: "let [a, b, c] = await x; c;",
       newExpression: `let a, b, c;
-
         (async () => {
           [a, b, c] = await x;
           return c;
@@ -458,7 +447,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, array destructuring with default)",
       expression: "let [a, b = 1, c = 2] = await x; c;",
       newExpression: `let a, b, c;
-
         (async () => {
           [a, b = 1, c = 2] = await x;
           return c;
@@ -474,7 +462,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, array destructuring with default and rest)",
       expression: "let [a, b = 1, c = 2, ...rest] = await x; rest;",
       newExpression: `let a, b, c, rest;
-
         (async () => {
           [a, b = 1, c = 2, ...rest] = await x;
           return rest;
@@ -490,7 +477,6 @@ describe("mapExpression", () => {
       name: "await (no bindings, nested array destructuring with default)",
       expression: "let [a, b = 1, [c = 2, [d = 3, e = 4]]] = await x; c;",
       newExpression: `let a, b, c, d, e;
-
         (async () => {
           [a, b = 1, [c = 2, [d = 3, e = 4]]] = await x;
           return c;
@@ -508,7 +494,6 @@ describe("mapExpression", () => {
         var {rainbowLog} = await import("./cool-module.js");
         rainbowLog("dynamic");`,
       newExpression: `var rainbowLog;
-
         (async () => {
           ({rainbowLog} = await import("./cool-module.js"));
           return rainbowLog("dynamic");
@@ -561,13 +546,90 @@ describe("mapExpression", () => {
       },
     },
     {
-      name:
-        "await (async function declaration with optional chaining operator)",
+      name: "await (async function declaration with optional chaining operator)",
       expression: "async function chain(x) { await x; return x?.y?.z; }",
       newExpression: "async function chain(x) { await x; return x?.y?.z; }",
       shouldMapBindings: false,
       expectedMapped: {
         await: false,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      // check that variable declaration in for loop is not put outside of the async iife
+      name: "await (for loop)",
+      expression: "for (let i=0;i<2;i++) {}; var b = await 1;",
+      newExpression: `var b;
+        (async () => {
+          for (let i=0;i<2;i++) {}
+          return (b = await 1);
+        })()`,
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      // check that variable declaration in for-in loop is not put outside of the async iife
+      name: "await (for..in loop)",
+      expression: "for (let i in {}) {}; var b = await 1;",
+      newExpression: `var b;
+        (async () => {
+          for (let i in {}) {}
+          return (b = await 1);
+        })()`,
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      // check that variable declaration in for-of loop is not put outside of the async iife
+      name: "await (for..of loop)",
+      expression: "for (let i of []) {}; var b = await 1;",
+      newExpression: `var b;
+        (async () => {
+          for (let i of []) {}
+          return (b = await 1);
+        })()`,
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      name: "await (if condition)",
+      expression: "if (await true) console.log(1);",
+      newExpression: formatAwait("if (await true) console.log(1);"),
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      name: "await (non-expression final statement: bug 1851759)",
+      expression: `j = { "foo": 1, "bar": 2 }; await 42; for (var k in j) { console.log(k); }`,
+      newExpression: formatAwait(`
+        j = {
+          foo: 1,
+          bar: 2,
+        };
+        await 42;
+        for (var k in j) {
+          console.log(k);
+        }`),
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
         bindings: false,
         originalExpression: false,
       },

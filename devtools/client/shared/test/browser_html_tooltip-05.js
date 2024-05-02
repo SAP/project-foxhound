@@ -14,13 +14,13 @@ const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip-05.xhtml";
 
 const {
   HTMLTooltip,
-} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
+} = require("resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js");
 loadHelperScript("helper_html_tooltip.js");
 
 const TOOLTIP_HEIGHT = 200;
 const TOOLTIP_WIDTH = 200;
 
-add_task(async function() {
+add_task(async function () {
   // Force the toolbox to be 200px high;
   await pushPref("devtools.toolbox.footer.height", 200);
   await addTab("about:blank");

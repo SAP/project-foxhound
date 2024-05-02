@@ -18,7 +18,9 @@ request past the reval window.
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 let max_age;
 let version;
@@ -66,7 +68,7 @@ async function stop_server(httpserver) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   let httpserver = new HttpServer();
   httpserver.registerPathHandler("/testdir", test_handler);
   httpserver.start(-1);

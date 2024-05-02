@@ -2,14 +2,14 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["tabs"],
     },
 
     async background() {
-      const URL = "http://example.com/";
+      const URL = "https://example.com/";
       let mainWin = await browser.windows.getCurrent();
       let tab1 = await browser.tabs.create({ url: URL });
       let tab2 = await browser.tabs.create({ url: URL });

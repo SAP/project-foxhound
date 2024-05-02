@@ -4,29 +4,15 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Downloads",
-  "resource://gre/modules/Downloads.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
-);
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadLastDir",
-  "resource://gre/modules/DownloadLastDir.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadLastDir: "resource://gre/modules/DownloadLastDir.sys.mjs",
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 var { EventEmitter, ignoreEvent } = ExtensionCommon;
+var { ExtensionError } = ExtensionUtils;
 
 const DOWNLOAD_ITEM_FIELDS = [
   "id",
@@ -175,19 +161,21 @@ class DownloadItem {
   get url() {
     return this.download.source.url;
   }
-  get referrer() {
-    const uri = this.download.source.referrerInfo
-      ? this.download.source.referrerInfo.originalReferrer
-      : null;
 
-    return uri && uri.spec;
+  get referrer() {
+    const uri = this.download.source.referrerInfo?.originalReferrer;
+
+    return uri?.spec;
   }
+
   get filename() {
     return this.download.target.path;
   }
+
   get incognito() {
     return this.download.source.isPrivate;
   }
+
   get cookieStoreId() {
     if (this.download.source.isPrivate) {
       return PRIVATE_STORE;
@@ -197,26 +185,34 @@ class DownloadItem {
     }
     return DEFAULT_STORE;
   }
+
   get danger() {
+    // TODO
     return "safe";
-  } // TODO
+  }
+
   get mime() {
     return this.download.contentType;
   }
+
   get startTime() {
     return this.download.startTime;
   }
+
   get endTime() {
+    // TODO bug 1256269: implement endTime.
     return null;
-  } // TODO
+  }
+
   get estimatedEndTime() {
-    // Based on the code in summarizeDownloads() in DownloadsCommon.jsm
+    // Based on the code in summarizeDownloads() in DownloadsCommon.sys.mjs
     if (this.download.hasProgress && this.download.speed > 0) {
       let sizeLeft = this.download.totalBytes - this.download.currentBytes;
       let timeLeftInSeconds = sizeLeft / this.download.speed;
       return new Date(Date.now() + timeLeftInSeconds * 1000);
     }
   }
+
   get state() {
     if (this.download.succeeded) {
       return "complete";
@@ -226,6 +222,7 @@ class DownloadItem {
     }
     return "in_progress";
   }
+
   get paused() {
     return (
       this.download.canceled &&
@@ -233,6 +230,7 @@ class DownloadItem {
       !this.download.error
     );
   }
+
   get canResume() {
     return (
       (this.download.stopped || this.download.canceled) &&
@@ -240,6 +238,7 @@ class DownloadItem {
       !this.download.error
     );
   }
+
   get error() {
     if (this._error) {
       return this._error;
@@ -251,8 +250,8 @@ class DownloadItem {
     ) {
       return null;
     }
-    // TODO store this instead of calculating it
 
+    // TODO store this instead of calculating it
     if (this.download.error) {
       if (this.download.error.becauseSourceFailed) {
         return "NETWORK_FAILED"; // TODO
@@ -264,27 +263,34 @@ class DownloadItem {
     }
     return "USER_CANCELED";
   }
+
   set error(value) {
     this._error = value && value.toString();
   }
+
   get bytesReceived() {
     return this.download.currentBytes;
   }
+
   get totalBytes() {
     return this.download.hasProgress ? this.download.totalBytes : -1;
   }
+
   get fileSize() {
     // todo: this is supposed to be post-compression
     return this.download.succeeded ? this.download.target.size : -1;
   }
+
   get exists() {
     return this.download.target.exists;
   }
+
   get byExtensionId() {
-    return this.extension ? this.extension.id : undefined;
+    return this.extension?.id;
   }
+
   get byExtensionName() {
-    return this.extension ? this.extension.name : undefined;
+    return this.extension?.name;
   }
 
   /**
@@ -319,7 +325,7 @@ class DownloadItem {
 }
 
 // DownloadMap maps back and forth between the numeric identifiers used in
-// the downloads WebExtension API and a Download object from the Downloads jsm.
+// the downloads WebExtension API and a Download object from the Downloads sys.mjs.
 // TODO Bug 1247794: make id and extension info persistent
 const DownloadMap = new (class extends EventEmitter {
   constructor() {
@@ -336,47 +342,47 @@ const DownloadMap = new (class extends EventEmitter {
   }
 
   lazyInit() {
-    if (this.loadPromise == null) {
-      this.loadPromise = Downloads.getList(Downloads.ALL).then(list => {
-        let self = this;
-        return list
-          .addView({
-            onDownloadAdded(download) {
-              const item = self.newFromDownload(download, null);
-              self.emit("create", item);
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        const list = await Downloads.getList(Downloads.ALL);
+
+        await list.addView({
+          onDownloadAdded: download => {
+            const item = this.newFromDownload(download, null);
+            this.emit("create", item);
+            item._storePrechange();
+          },
+          onDownloadRemoved: download => {
+            const item = this.byDownload.get(download);
+            if (item) {
+              this.emit("erase", item);
+              this.byDownload.delete(download);
+              this.byId.delete(item.id);
+            }
+          },
+          onDownloadChanged: download => {
+            const item = this.byDownload.get(download);
+            if (item) {
+              this.emit("change", item);
               item._storePrechange();
-            },
+            } else {
+              Cu.reportError(
+                "Got onDownloadChanged for unknown download object"
+              );
+            }
+          },
+        });
 
-            onDownloadRemoved(download) {
-              const item = self.byDownload.get(download);
-              if (item != null) {
-                self.emit("erase", item);
-                self.byDownload.delete(download);
-                self.byId.delete(item.id);
-              }
-            },
+        const downloads = await list.getAll();
 
-            onDownloadChanged(download) {
-              const item = self.byDownload.get(download);
-              if (item == null) {
-                Cu.reportError(
-                  "Got onDownloadChanged for unknown download object"
-                );
-              } else {
-                self.emit("change", item);
-                item._storePrechange();
-              }
-            },
-          })
-          .then(() => list.getAll())
-          .then(downloads => {
-            downloads.forEach(download => {
-              this.newFromDownload(download, null);
-            });
-          })
-          .then(() => list);
-      });
+        for (let download of downloads) {
+          this.newFromDownload(download, null);
+        }
+
+        return list;
+      })();
     }
+
     return this.loadPromise;
   }
 
@@ -384,14 +390,15 @@ const DownloadMap = new (class extends EventEmitter {
     return this.lazyInit();
   }
 
-  getAll() {
-    return this.lazyInit().then(() => this.byId.values());
+  async getAll() {
+    await this.lazyInit();
+    return this.byId.values();
   }
 
   fromId(id, privateAllowed = true) {
     const download = this.byId.get(id);
     if (!download || (!privateAllowed && download.incognito)) {
-      throw new Error(`Invalid download id ${id}`);
+      throw new ExtensionError(`Invalid download id ${id}`);
     }
     return download;
   }
@@ -408,12 +415,11 @@ const DownloadMap = new (class extends EventEmitter {
     return item;
   }
 
-  erase(item) {
+  async erase(item) {
     // TODO Bug 1255507: for now we only work with downloads in the DownloadList
     // from getAll()
-    return this.getDownloadList().then(list => {
-      list.remove(item.download);
-    });
+    const list = await this.getDownloadList();
+    list.remove(item.download);
   }
 })();
 
@@ -441,13 +447,13 @@ const downloadQuery = query => {
 
   const startedBefore = normalizeDownloadTime(query.startedBefore, true);
   const startedAfter = normalizeDownloadTime(query.startedAfter, false);
+
+  // TODO bug 1727510: Implement endedBefore/endedAfter
   // const endedBefore = normalizeDownloadTime(query.endedBefore, true);
   // const endedAfter = normalizeDownloadTime(query.endedAfter, false);
 
-  const totalBytesGreater =
-    query.totalBytesGreater !== null ? query.totalBytesGreater : -1;
-  const totalBytesLess =
-    query.totalBytesLess !== null ? query.totalBytesLess : Number.MAX_VALUE;
+  const totalBytesGreater = query.totalBytesGreater ?? -1;
+  const totalBytesLess = query.totalBytesLess ?? Number.MAX_VALUE;
 
   // Handle options for which we can have a regular expression and/or
   // an explicit value to match.
@@ -460,7 +466,7 @@ const downloadQuery = query => {
     try {
       re = new RegExp(regex || "", "i");
     } catch (err) {
-      throw new Error(`Invalid ${field}Regex: ${err.message}`);
+      throw new ExtensionError(`Invalid ${field}Regex: ${err.message}`);
     }
     if (value == null) {
       return input => re.test(input);
@@ -480,7 +486,7 @@ const downloadQuery = query => {
   );
   const matchUrl = makeMatch(query.urlRegex, query.url, "url");
 
-  return function(item) {
+  return function (item) {
     const url = item.url.toLowerCase();
     const filename = item.filename.toLowerCase();
 
@@ -552,16 +558,11 @@ const downloadQuery = query => {
   };
 };
 
-const queryHelper = query => {
-  let matchFn;
-  try {
-    matchFn = downloadQuery(query);
-  } catch (err) {
-    return Promise.reject({ message: err.message });
-  }
-
+const queryHelper = async query => {
+  let matchFn = downloadQuery(query);
   let compareFn;
-  if (query.orderBy != null) {
+
+  if (query.orderBy) {
     const fields = query.orderBy.map(field =>
       field[0] == "-"
         ? { reverse: true, name: field.slice(1) }
@@ -570,9 +571,7 @@ const queryHelper = query => {
 
     for (let field of fields) {
       if (!DOWNLOAD_ITEM_FIELDS.includes(field.name)) {
-        return Promise.reject({
-          message: `Invalid orderBy field ${field.name}`,
-        });
+        throw new ExtensionError(`Invalid orderBy field ${field.name}`);
       }
     }
 
@@ -591,50 +590,84 @@ const queryHelper = query => {
     };
   }
 
-  return DownloadMap.getAll().then(downloads => {
-    if (compareFn) {
-      downloads = Array.from(downloads);
-      downloads.sort(compareFn);
+  let downloads = await DownloadMap.getAll();
+
+  if (compareFn) {
+    downloads = Array.from(downloads);
+    downloads.sort(compareFn);
+  }
+
+  let results = [];
+  for (let download of downloads) {
+    if (query.limit && results.length >= query.limit) {
+      break;
     }
-    let results = [];
-    for (let download of downloads) {
-      if (query.limit && results.length >= query.limit) {
-        break;
-      }
-      if (matchFn(download)) {
-        results.push(download);
-      }
+    if (matchFn(download)) {
+      results.push(download);
     }
-    return results;
-  });
+  }
+  return results;
 };
 
-function downloadEventManagerAPI(context, name, event, listener) {
-  let register = fire => {
-    const handler = (what, item) => {
-      if (context.privateBrowsingAllowed || !item.incognito) {
-        listener(fire, what, item);
-      }
-    };
-    let registerPromise = DownloadMap.getDownloadList().then(() => {
-      DownloadMap.on(event, handler);
-    });
-    return () => {
-      registerPromise.then(() => {
-        DownloadMap.off(event, handler);
+this.downloads = class extends ExtensionAPIPersistent {
+  downloadEventRegistrar(event, listener) {
+    let { extension } = this;
+    return ({ fire }) => {
+      const handler = (what, item) => {
+        if (extension.privateBrowsingAllowed || !item.incognito) {
+          listener(fire, what, item);
+        }
+      };
+      let registerPromise = DownloadMap.getDownloadList().then(() => {
+        DownloadMap.on(event, handler);
       });
+      return {
+        unregister() {
+          registerPromise.then(() => {
+            DownloadMap.off(event, handler);
+          });
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
     };
+  }
+
+  PERSISTENT_EVENTS = {
+    onChanged: this.downloadEventRegistrar("change", (fire, what, item) => {
+      let changes = {};
+      const noundef = val => (val === undefined ? null : val);
+      DOWNLOAD_ITEM_CHANGE_FIELDS.forEach(fld => {
+        if (item[fld] != item.prechange[fld]) {
+          changes[fld] = {
+            previous: noundef(item.prechange[fld]),
+            current: noundef(item[fld]),
+          };
+        }
+      });
+      if (Object.keys(changes).length) {
+        changes.id = item.id;
+        fire.async(changes);
+      }
+    }),
+
+    onCreated: this.downloadEventRegistrar("create", (fire, what, item) => {
+      fire.async(item.serialize());
+    }),
+
+    onErased: this.downloadEventRegistrar("erase", (fire, what, item) => {
+      fire.async(item.id);
+    }),
   };
 
-  return new EventManager({ context, name, register }).api();
-}
-
-this.downloads = class extends ExtensionAPI {
   getAPI(context) {
     let { extension } = context;
     return {
       downloads: {
-        download(options) {
+        async download(options) {
+          const isHandlingUserInput =
+            context.callContextData?.isHandlingUserInput;
           let { filename } = options;
           if (filename && AppConstants.platform === "win") {
             // cross platform javascript code uses "/"
@@ -643,47 +676,48 @@ this.downloads = class extends ExtensionAPI {
 
           if (filename != null) {
             if (!filename.length) {
-              return Promise.reject({ message: "filename must not be empty" });
+              throw new ExtensionError("filename must not be empty");
             }
 
-            let path = OS.Path.split(filename);
-            if (path.absolute) {
-              return Promise.reject({
-                message: "filename must not be an absolute path",
-              });
+            if (PathUtils.isAbsolute(filename)) {
+              throw new ExtensionError("filename must not be an absolute path");
             }
 
-            if (path.components.some(component => component == "..")) {
-              return Promise.reject({
-                message: "filename must not contain back-references (..)",
-              });
+            const pathComponents = PathUtils.splitRelative(filename, {
+              allowEmpty: true,
+              allowCurrentDir: true,
+              allowParentDir: true,
+            });
+
+            if (pathComponents.some(component => component == "..")) {
+              throw new ExtensionError(
+                "filename must not contain back-references (..)"
+              );
             }
 
             if (
-              path.components.some(component => {
+              pathComponents.some(component => {
                 let sanitized = DownloadPaths.sanitize(component, {
                   compressWhitespaces: false,
                 });
                 return component != sanitized;
               })
             ) {
-              return Promise.reject({
-                message: "filename must not contain illegal characters",
-              });
+              throw new ExtensionError(
+                "filename must not contain illegal characters"
+              );
             }
           }
 
           if (options.incognito && !context.privateBrowsingAllowed) {
-            return Promise.reject({
-              message: "private browsing access not allowed",
-            });
+            throw new ExtensionError("private browsing access not allowed");
           }
 
           if (options.conflictAction == "prompt") {
             // TODO
-            return Promise.reject({
-              message: "conflictAction prompt not yet implemented",
-            });
+            throw new ExtensionError(
+              "conflictAction prompt not yet implemented"
+            );
           }
 
           if (options.headers) {
@@ -692,9 +726,7 @@ this.downloads = class extends ExtensionAPI {
                 FORBIDDEN_HEADERS.includes(name.toUpperCase()) ||
                 name.match(FORBIDDEN_PREFIXES)
               ) {
-                return Promise.reject({
-                  message: "Forbidden request header name",
-                });
+                throw new ExtensionError("Forbidden request header name");
               }
             }
           }
@@ -803,7 +835,10 @@ this.downloads = class extends ExtensionAPI {
               }
             }
 
-            let target = OS.Path.join(downloadsDir, filename || "download");
+            let target = PathUtils.joinRelative(
+              downloadsDir,
+              filename || "download"
+            );
 
             let saveAs;
             if (options.saveAs !== null) {
@@ -820,10 +855,10 @@ this.downloads = class extends ExtensionAPI {
             }
 
             // Create any needed subdirectories if required by filename.
-            const dir = OS.Path.dirname(target);
-            await OS.File.makeDir(dir, { from: downloadsDir });
+            const dir = PathUtils.parent(target);
+            await IOUtils.makeDirectory(dir);
 
-            if (await OS.File.exists(target)) {
+            if (await IOUtils.exists(target)) {
               // This has a race, something else could come along and create
               // the file between this test and them time the download code
               // creates the target file.  But we can't easily fix it without
@@ -837,7 +872,7 @@ this.downloads = class extends ExtensionAPI {
                   if (saveAs) {
                     // createNiceUniqueFile actually creates the file, which
                     // is premature if we need to show a SaveAs dialog.
-                    await OS.File.remove(target);
+                    await IOUtils.remove(target);
                   }
                   break;
 
@@ -861,11 +896,7 @@ this.downloads = class extends ExtensionAPI {
             );
 
             async function getLastDirectory() {
-              return new Promise(resolve => {
-                downloadLastDir.getFileAsync(extension.baseURI, file => {
-                  resolve(file);
-                });
-              });
+              return downloadLastDir.getFileAsync(extension.baseURI);
             }
 
             function appendFilterForFileExtension(picker, ext) {
@@ -892,7 +923,7 @@ this.downloads = class extends ExtensionAPI {
             // so that this doesn't break where navigator:browser isn't the
             // main window (e.g. Thunderbird).
             const window = global.windowTracker.getTopWindow().window;
-            const basename = OS.Path.basename(target);
+            const basename = PathUtils.filename(target);
             const ext = basename.match(/\.([^.]+)$/)?.[1];
 
             // If the filename passed in by the extension is a simple name
@@ -935,170 +966,156 @@ this.downloads = class extends ExtensionAPI {
             });
           }
 
-          let download;
-          return Downloads.getPreferredDownloadsDirectory()
-            .then(downloadsDir => createTarget(downloadsDir))
-            .then(target => {
-              let uri = Services.io.newURI(options.url);
-              let cookieJarSettings = Cc[
-                "@mozilla.org/cookieJarSettings;1"
-              ].createInstance(Ci.nsICookieJarSettings);
-              cookieJarSettings.initWithURI(uri, options.incognito);
+          const downloadsDir = await Downloads.getPreferredDownloadsDirectory();
+          const target = await createTarget(downloadsDir);
+          const uri = Services.io.newURI(options.url);
+          const cookieJarSettings = Cc[
+            "@mozilla.org/cookieJarSettings;1"
+          ].createInstance(Ci.nsICookieJarSettings);
+          cookieJarSettings.initWithURI(uri, options.incognito);
 
-              const source = {
-                url: options.url,
-                isPrivate: options.incognito,
-                // Use the extension's principal to allow extensions to observe
-                // their own downloads via the webRequest API.
-                loadingPrincipal: context.principal,
-                cookieJarSettings,
-              };
+          const source = {
+            url: options.url,
+            isPrivate: options.incognito,
+            // Use the extension's principal to allow extensions to observe
+            // their own downloads via the webRequest API.
+            loadingPrincipal: context.principal,
+            cookieJarSettings,
+          };
 
-              if (userContextId) {
-                source.userContextId = userContextId;
-              }
+          if (userContextId) {
+            source.userContextId = userContextId;
+          }
 
-              // blob:-URLs can only be loaded by the principal with which they
-              // are associated. This principal may have origin attributes.
-              // `context.principal` does sometimes not have these attributes
-              // due to bug 1653681. If `context.principal` were to be passed,
-              // the download request would be rejected because of mismatching
-              // principals (origin attributes).
-              // TODO bug 1653681: fix context.principal and remove this.
-              if (options.url.startsWith("blob:")) {
-                // To make sure that the blob:-URL can be loaded, fall back to
-                // the default (system) principal instead.
-                delete source.loadingPrincipal;
-              }
+          // blob:-URLs can only be loaded by the principal with which they
+          // are associated. This principal may have origin attributes.
+          // `context.principal` does sometimes not have these attributes
+          // due to bug 1653681. If `context.principal` were to be passed,
+          // the download request would be rejected because of mismatching
+          // principals (origin attributes).
+          // TODO bug 1653681: fix context.principal and remove this.
+          if (options.url.startsWith("blob:")) {
+            // To make sure that the blob:-URL can be loaded, fall back to
+            // the default (system) principal instead.
+            delete source.loadingPrincipal;
+          }
 
-              // Unless the API user explicitly wants errors ignored,
-              // set the allowHttpStatus callback, which will instruct
-              // DownloadCore to cancel downloads on HTTP errors.
-              if (!options.allowHttpErrors) {
-                source.allowHttpStatus = allowHttpStatus;
-              }
+          // Unless the API user explicitly wants errors ignored,
+          // set the allowHttpStatus callback, which will instruct
+          // DownloadCore to cancel downloads on HTTP errors.
+          if (!options.allowHttpErrors) {
+            source.allowHttpStatus = allowHttpStatus;
+          }
 
-              if (options.method || options.headers || options.body) {
-                source.adjustChannel = adjustChannel;
-              }
+          if (options.method || options.headers || options.body) {
+            source.adjustChannel = adjustChannel;
+          }
 
-              return Downloads.createDownload({
-                source,
-                target: {
-                  path: target,
-                  partFilePath: target + ".part",
-                },
-              });
-            })
-            .then(dl => {
-              download = dl;
-              return DownloadMap.getDownloadList();
-            })
-            .then(list => {
-              const item = DownloadMap.newFromDownload(download, extension);
-              list.add(download);
-
-              // This is necessary to make pause/resume work.
-              download.tryToKeepPartialData = true;
-
-              // Do not handle errors.
-              // Extensions will use listeners to be informed about errors.
-              // Just ignore any errors from |start()| to avoid spamming the
-              // error console.
-              download.start().catch(e => {
-                if (e.name !== "DownloadError") {
-                  Cu.reportError(e);
-                }
-              });
-
-              return item.id;
-            });
-        },
-
-        removeFile(id) {
-          return DownloadMap.lazyInit().then(() => {
-            let item;
-            try {
-              item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
-            } catch (err) {
-              return Promise.reject({ message: `Invalid download id ${id}` });
-            }
-            if (item.state !== "complete") {
-              return Promise.reject({
-                message: `Cannot remove incomplete download id ${id}`,
-              });
-            }
-            return OS.File.remove(item.filename, { ignoreAbsent: false }).catch(
-              err => {
-                return Promise.reject({
-                  message: `Could not remove download id ${item.id} because the file doesn't exist`,
-                });
-              }
-            );
+          const download = await Downloads.createDownload({
+            // Only open the download panel if the method has been called
+            // while handling user input (See Bug 1759231).
+            openDownloadsListOnStart: isHandlingUserInput,
+            source,
+            target: {
+              path: target,
+              partFilePath: `${target}.part`,
+            },
           });
+
+          const list = await DownloadMap.getDownloadList();
+          const item = DownloadMap.newFromDownload(download, extension);
+          list.add(download);
+
+          // This is necessary to make pause/resume work.
+          download.tryToKeepPartialData = true;
+
+          // Do not handle errors.
+          // Extensions will use listeners to be informed about errors.
+          // Just ignore any errors from |start()| to avoid spamming the
+          // error console.
+          download.start().catch(err => {
+            if (err.name !== "DownloadError") {
+              Cu.reportError(err);
+            }
+          });
+
+          return item.id;
         },
 
-        search(query) {
+        async removeFile(id) {
+          await DownloadMap.lazyInit();
+
+          let item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
+
+          if (item.state !== "complete") {
+            throw new ExtensionError(
+              `Cannot remove incomplete download id ${id}`
+            );
+          }
+
+          try {
+            await IOUtils.remove(item.filename, { ignoreAbsent: false });
+          } catch (err) {
+            if (DOMException.isInstance(err) && err.name === "NotFoundError") {
+              throw new ExtensionError(
+                `Could not remove download id ${item.id} because the file doesn't exist`
+              );
+            }
+
+            // Unexpected other error. Throw the original error, so that it
+            // can bubble up to the global browser console, but keep it
+            // sanitized (i.e. not wrapped in ExtensionError) to avoid
+            // inadvertent disclosure of potentially sensitive information.
+            throw err;
+          }
+        },
+
+        async search(query) {
           if (!context.privateBrowsingAllowed) {
             query.incognito = false;
           }
-          return queryHelper(query).then(items =>
-            items.map(item => item.serialize())
-          );
+
+          const items = await queryHelper(query);
+          return items.map(item => item.serialize());
         },
 
-        pause(id) {
-          return DownloadMap.lazyInit().then(() => {
-            let item;
-            try {
-              item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
-            } catch (err) {
-              return Promise.reject({ message: `Invalid download id ${id}` });
-            }
-            if (item.state != "in_progress") {
-              return Promise.reject({
-                message: `Download ${id} cannot be paused since it is in state ${item.state}`,
-              });
-            }
+        async pause(id) {
+          await DownloadMap.lazyInit();
 
-            return item.download.cancel();
-          });
+          let item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
+
+          if (item.state !== "in_progress") {
+            throw new ExtensionError(
+              `Download ${id} cannot be paused since it is in state ${item.state}`
+            );
+          }
+
+          return item.download.cancel();
         },
 
-        resume(id) {
-          return DownloadMap.lazyInit().then(() => {
-            let item;
-            try {
-              item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
-            } catch (err) {
-              return Promise.reject({ message: `Invalid download id ${id}` });
-            }
-            if (!item.canResume) {
-              return Promise.reject({
-                message: `Download ${id} cannot be resumed`,
-              });
-            }
+        async resume(id) {
+          await DownloadMap.lazyInit();
 
-            item.error = null;
-            return item.download.start();
-          });
+          let item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
+
+          if (!item.canResume) {
+            throw new ExtensionError(`Download ${id} cannot be resumed`);
+          }
+
+          item.error = null;
+          return item.download.start();
         },
 
-        cancel(id) {
-          return DownloadMap.lazyInit().then(() => {
-            let item;
-            try {
-              item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
-            } catch (err) {
-              return Promise.reject({ message: `Invalid download id ${id}` });
-            }
-            if (item.download.succeeded) {
-              return Promise.reject({
-                message: `Download ${id} is already complete`,
-              });
-            }
-            return item.download.finalize(true);
-          });
+        async cancel(id) {
+          await DownloadMap.lazyInit();
+
+          let item = DownloadMap.fromId(id, context.privateBrowsingAllowed);
+
+          if (item.download.succeeded) {
+            throw new ExtensionError(`Download ${id} is already complete`);
+          }
+
+          return item.download.finalize(true);
         },
 
         showDefaultFolder() {
@@ -1116,172 +1133,122 @@ this.downloads = class extends ExtensionAPI {
             .catch(Cu.reportError);
         },
 
-        erase(query) {
+        async erase(query) {
           if (!context.privateBrowsingAllowed) {
             query.incognito = false;
           }
-          return queryHelper(query).then(items => {
-            let results = [];
-            let promises = [];
-            for (let item of items) {
-              promises.push(DownloadMap.erase(item));
-              results.push(item.id);
-            }
-            return Promise.all(promises).then(() => results);
-          });
-        },
 
-        open(downloadId) {
-          return DownloadMap.lazyInit()
-            .then(() => {
-              let download = DownloadMap.fromId(
-                downloadId,
-                context.privateBrowsingAllowed
-              ).download;
-              if (download.succeeded) {
-                return download.launch();
-              }
-              return Promise.reject({ message: "Download has not completed." });
-            })
-            .catch(error => {
-              return Promise.reject({ message: error.message });
-            });
-        },
+          const items = await queryHelper(query);
+          let results = [];
+          let promises = [];
 
-        show(downloadId) {
-          return DownloadMap.lazyInit()
-            .then(() => {
-              let download = DownloadMap.fromId(
-                downloadId,
-                context.privateBrowsingAllowed
-              );
-              return download.download.showContainingDirectory();
-            })
-            .then(() => {
-              return true;
-            })
-            .catch(error => {
-              return Promise.reject({ message: error.message });
-            });
-        },
-
-        getFileIcon(downloadId, options) {
-          return DownloadMap.lazyInit()
-            .then(() => {
-              let size = options && options.size ? options.size : 32;
-              let download = DownloadMap.fromId(
-                downloadId,
-                context.privateBrowsingAllowed
-              ).download;
-              let pathPrefix = "";
-              let path;
-
-              if (download.succeeded) {
-                let file = FileUtils.File(download.target.path);
-                path = Services.io.newFileURI(file).spec;
-              } else {
-                path = OS.Path.basename(download.target.path);
-                pathPrefix = "//";
-              }
-
-              return new Promise((resolve, reject) => {
-                let chromeWebNav = Services.appShell.createWindowlessBrowser(
-                  true
-                );
-                let system = Services.scriptSecurityManager.getSystemPrincipal();
-                chromeWebNav.docShell.createAboutBlankContentViewer(
-                  system,
-                  system
-                );
-
-                let img = chromeWebNav.document.createElement("img");
-                img.width = size;
-                img.height = size;
-
-                let handleLoad;
-                let handleError;
-                const cleanup = () => {
-                  img.removeEventListener("load", handleLoad);
-                  img.removeEventListener("error", handleError);
-                  chromeWebNav.close();
-                  chromeWebNav = null;
-                };
-
-                handleLoad = () => {
-                  let canvas = chromeWebNav.document.createElement("canvas");
-                  canvas.width = size;
-                  canvas.height = size;
-                  let context = canvas.getContext("2d");
-                  context.drawImage(img, 0, 0, size, size);
-                  let dataURL = canvas.toDataURL("image/png");
-                  cleanup();
-                  resolve(dataURL);
-                };
-
-                handleError = error => {
-                  Cu.reportError(error);
-                  cleanup();
-                  reject(new Error("An unexpected error occurred"));
-                };
-
-                img.addEventListener("load", handleLoad);
-                img.addEventListener("error", handleError);
-                img.src = `moz-icon:${pathPrefix}${path}?size=${size}`;
-              });
-            })
-            .catch(error => {
-              return Promise.reject({ message: error.message });
-            });
-        },
-
-        // When we do setShelfEnabled(), check for additional "downloads.shelf" permission.
-        // i.e.:
-        // setShelfEnabled(enabled) {
-        //   if (!extension.hasPermission("downloads.shelf")) {
-        //     throw new context.cloneScope.Error("Permission denied because 'downloads.shelf' permission is missing.");
-        //   }
-        //   ...
-        // }
-
-        onChanged: downloadEventManagerAPI(
-          context,
-          "downloads.onChanged",
-          "change",
-          (fire, what, item) => {
-            let changes = {};
-            const noundef = val => (val === undefined ? null : val);
-            DOWNLOAD_ITEM_CHANGE_FIELDS.forEach(fld => {
-              if (item[fld] != item.prechange[fld]) {
-                changes[fld] = {
-                  previous: noundef(item.prechange[fld]),
-                  current: noundef(item[fld]),
-                };
-              }
-            });
-            if (Object.keys(changes).length) {
-              changes.id = item.id;
-              fire.async(changes);
-            }
+          for (let item of items) {
+            promises.push(DownloadMap.erase(item));
+            results.push(item.id);
           }
-        ),
 
-        onCreated: downloadEventManagerAPI(
-          context,
-          "downloads.onCreated",
-          "create",
-          (fire, what, item) => {
-            fire.async(item.serialize());
-          }
-        ),
+          await Promise.all(promises);
+          return results;
+        },
 
-        onErased: downloadEventManagerAPI(
-          context,
-          "downloads.onErased",
-          "erase",
-          (fire, what, item) => {
-            fire.async(item.id);
+        async open(downloadId) {
+          await DownloadMap.lazyInit();
+
+          let { download } = DownloadMap.fromId(
+            downloadId,
+            context.privateBrowsingAllowed
+          );
+
+          if (!download.succeeded) {
+            throw new ExtensionError("Download has not completed.");
           }
-        ),
+
+          return download.launch();
+        },
+
+        async show(downloadId) {
+          await DownloadMap.lazyInit();
+
+          const { download } = DownloadMap.fromId(
+            downloadId,
+            context.privateBrowsingAllowed
+          );
+
+          await download.showContainingDirectory();
+
+          return true;
+        },
+
+        async getFileIcon(downloadId, options) {
+          await DownloadMap.lazyInit();
+
+          const size = options?.size || 32;
+          const { download } = DownloadMap.fromId(
+            downloadId,
+            context.privateBrowsingAllowed
+          );
+
+          let pathPrefix = "";
+          let path;
+
+          if (download.succeeded) {
+            let file = FileUtils.File(download.target.path);
+            path = Services.io.newFileURI(file).spec;
+          } else {
+            path = PathUtils.filename(download.target.path);
+            pathPrefix = "//";
+          }
+
+          let windowlessBrowser =
+            Services.appShell.createWindowlessBrowser(true);
+          let systemPrincipal =
+            Services.scriptSecurityManager.getSystemPrincipal();
+          windowlessBrowser.docShell.createAboutBlankContentViewer(
+            systemPrincipal,
+            systemPrincipal
+          );
+
+          let canvas = windowlessBrowser.document.createElement("canvas");
+          let img = new windowlessBrowser.docShell.domWindow.Image(size, size);
+
+          canvas.width = size;
+          canvas.height = size;
+
+          img.src = `moz-icon:${pathPrefix}${path}?size=${size}`;
+
+          try {
+            await img.decode();
+
+            canvas.getContext("2d").drawImage(img, 0, 0, size, size);
+
+            let dataURL = canvas.toDataURL("image/png");
+
+            return dataURL;
+          } finally {
+            windowlessBrowser.close();
+          }
+        },
+
+        onChanged: new EventManager({
+          context,
+          module: "downloads",
+          event: "onChanged",
+          extensionApi: this,
+        }).api(),
+
+        onCreated: new EventManager({
+          context,
+          module: "downloads",
+          event: "onCreated",
+          extensionApi: this,
+        }).api(),
+
+        onErased: new EventManager({
+          context,
+          module: "downloads",
+          event: "onErased",
+          extensionApi: this,
+        }).api(),
 
         onDeterminingFilename: ignoreEvent(
           context,

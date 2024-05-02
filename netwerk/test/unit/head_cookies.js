@@ -6,29 +6,17 @@
 
 "use strict";
 
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { CookieXPCShellUtils } = ChromeUtils.import(
-  "resource://testing-common/CookieXPCShellUtils.jsm"
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
+const { CookieXPCShellUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CookieXPCShellUtils.sys.mjs"
 );
 
 // Don't pick up default permissions from profile.
 Services.prefs.setCharPref("permissions.manager.defaultsUrl", "");
 
 CookieXPCShellUtils.init(this);
-
-XPCOMUtils.defineLazyServiceGetter(
-  Services,
-  "cookiesvc",
-  "@mozilla.org/cookieService;1",
-  "nsICookieService"
-);
-// eslint-disable-next-line mozilla/use-services
-XPCOMUtils.defineLazyServiceGetter(
-  Services,
-  "cookiemgr",
-  "@mozilla.org/cookiemanager;1",
-  "nsICookieManager"
-);
 
 function do_check_throws(f, result, stack) {
   if (!stack) {
@@ -57,7 +45,7 @@ function do_run_generator(generator) {
 
 // Helper to finish a generator function test.
 function do_finish_generator_test(generator) {
-  executeSoon(function() {
+  executeSoon(function () {
     generator.return();
     do_test_finished();
   });
@@ -156,8 +144,8 @@ function do_load_profile(generator) {
 // Set a single session cookie using http and test the cookie count
 // against 'expected'
 function do_set_single_http_cookie(uri, channel, expected) {
-  Services.cookiesvc.setCookieStringFromHttp(uri, "foo=bar", channel);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected);
+  Services.cookies.setCookieStringFromHttp(uri, "foo=bar", channel);
+  Assert.equal(Services.cookies.countCookiesFromHost(uri.host), expected);
 }
 
 // Set two cookies; via document.channel and via http request.
@@ -168,10 +156,12 @@ async function do_set_cookies(uri, channel, session, expected) {
   const thirdPartyUrl = "http://third.com/";
   const contentPage = await CookieXPCShellUtils.loadContentPage(thirdPartyUrl);
   await contentPage.spawn(
-    {
-      cookie: "can=has" + suffix,
-      url: uri.spec,
-    },
+    [
+      {
+        cookie: "can=has" + suffix,
+        url: uri.spec,
+      },
+    ],
     async obj => {
       // eslint-disable-next-line no-undef
       await new content.Promise(resolve => {
@@ -189,15 +179,15 @@ async function do_set_cookies(uri, channel, session, expected) {
   );
   await contentPage.close();
 
-  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected[0]);
+  Assert.equal(Services.cookies.countCookiesFromHost(uri.host), expected[0]);
 
   // via http request
-  Services.cookiesvc.setCookieStringFromHttp(uri, "hot=dog" + suffix, channel);
-  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected[1]);
+  Services.cookies.setCookieStringFromHttp(uri, "hot=dog" + suffix, channel);
+  Assert.equal(Services.cookies.countCookiesFromHost(uri.host), expected[1]);
 }
 
 function do_count_cookies() {
-  return Services.cookiemgr.cookies.length;
+  return Services.cookies.cookies.length;
 }
 
 // Helper object to store cookie data.

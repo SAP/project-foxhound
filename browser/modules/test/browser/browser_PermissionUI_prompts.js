@@ -6,14 +6,11 @@
 
 "use strict";
 
-const { Integration } = ChromeUtils.import(
-  "resource://gre/modules/Integration.jsm"
+const { PermissionUI } = ChromeUtils.importESModule(
+  "resource:///modules/PermissionUI.sys.mjs"
 );
-const { PermissionUI } = ChromeUtils.import(
-  "resource:///modules/PermissionUI.jsm"
-);
-const { SitePermissions } = ChromeUtils.import(
-  "resource:///modules/SitePermissions.jsm"
+const { SITEPERMS_ADDON_PROVIDER_PREF } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs"
 );
 
 // Tests that GeolocationPermissionPrompt works as expected
@@ -21,9 +18,19 @@ add_task(async function test_geo_permission_prompt() {
   await testPrompt(PermissionUI.GeolocationPermissionPrompt);
 });
 
+// Tests that GeolocationPermissionPrompt works as expected with local files
+add_task(async function test_geo_permission_prompt_local_file() {
+  await testPrompt(PermissionUI.GeolocationPermissionPrompt, true);
+});
+
 // Tests that XRPermissionPrompt works as expected
 add_task(async function test_xr_permission_prompt() {
   await testPrompt(PermissionUI.XRPermissionPrompt);
+});
+
+// Tests that XRPermissionPrompt works as expected with local files
+add_task(async function test_xr_permission_prompt_local_file() {
+  await testPrompt(PermissionUI.XRPermissionPrompt, true);
 });
 
 // Tests that DesktopNotificationPermissionPrompt works as expected
@@ -50,7 +57,26 @@ add_task(async function test_persistent_storage_permission_prompt() {
 
 // Tests that MidiPrompt works as expected
 add_task(async function test_midi_permission_prompt() {
+  if (Services.prefs.getBoolPref(SITEPERMS_ADDON_PROVIDER_PREF, false)) {
+    ok(
+      true,
+      "PermissionUI.MIDIPermissionPrompt uses SitePermsAddon install flow"
+    );
+    return;
+  }
   await testPrompt(PermissionUI.MIDIPermissionPrompt);
+});
+
+// Tests that MidiPrompt works as expected with local files
+add_task(async function test_midi_permission_prompt_local_file() {
+  if (Services.prefs.getBoolPref(SITEPERMS_ADDON_PROVIDER_PREF, false)) {
+    ok(
+      true,
+      "PermissionUI.MIDIPermissionPrompt uses SitePermsAddon install flow"
+    );
+    return;
+  }
+  await testPrompt(PermissionUI.MIDIPermissionPrompt, true);
 });
 
 // Tests that StoragePermissionPrompt works as expected
@@ -60,19 +86,19 @@ add_task(async function test_storage_access_permission_prompt() {
   Services.prefs.clearUserPref("dom.storage_access.auto_grants");
 });
 
-async function testPrompt(Prompt) {
+async function testPrompt(Prompt, useLocalFile = false) {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: "http://example.com",
+      url: useLocalFile ? `file://${PathUtils.tempDir}` : "http://example.com",
     },
-    async function(browser) {
+    async function (browser) {
       let mockRequest = makeMockPermissionRequest(browser);
       let principal = mockRequest.principal;
       let TestPrompt = new Prompt(mockRequest);
       let { usePermissionManager, permissionKey } = TestPrompt;
 
-      registerCleanupFunction(function() {
+      registerCleanupFunction(function () {
         if (permissionKey) {
           SitePermissions.removeFromPrincipal(
             principal,

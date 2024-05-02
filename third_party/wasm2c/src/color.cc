@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#include "src/color.h"
+#include "wabt/color.h"
 
 #include <cstdlib>
 
-#include "src/common.h"
+#include "wabt/common.h"
 
-#if _WIN32
+#if HAVE_WIN32_VT100
 #include <io.h>
 #include <windows.h>
 #elif HAVE_UNISTD_H
@@ -40,29 +40,23 @@ bool Color::SupportsColor(FILE* file) {
     return atoi(force) != 0;
   }
 
-#if _WIN32
-
-  {
 #if HAVE_WIN32_VT100
-    HANDLE handle;
-    if (file == stdout) {
-      handle = GetStdHandle(STD_OUTPUT_HANDLE);
-    } else if (file == stderr) {
-      handle = GetStdHandle(STD_ERROR_HANDLE);
-    } else {
-      return false;
-    }
-    DWORD mode;
-    if (!_isatty(_fileno(file)) || !GetConsoleMode(handle, &mode) ||
-        !SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
-      return false;
-    }
-    return true;
-#else
-    // TODO(binji): Support older Windows by using SetConsoleTextAttribute?
+
+  HANDLE handle;
+  if (file == stdout) {
+    handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  } else if (file == stderr) {
+    handle = GetStdHandle(STD_ERROR_HANDLE);
+  } else {
     return false;
-#endif
   }
+  DWORD mode;
+  if (!_isatty(_fileno(file)) || !GetConsoleMode(handle, &mode) ||
+      !SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
+    return false;
+  }
+  return true;
+  // TODO(binji): Support older Windows by using SetConsoleTextAttribute?
 
 #elif HAVE_UNISTD_H
 

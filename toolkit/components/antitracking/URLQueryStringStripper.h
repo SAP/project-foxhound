@@ -7,46 +7,42 @@
 #ifndef mozilla_URLQueryStringStripper_h
 #define mozilla_URLQueryStringStripper_h
 
+#include "nsIURLQueryStringStripper.h"
 #include "nsIURLQueryStrippingListService.h"
-
+#include "nsIObserver.h"
+#include "mozilla/dom/StripOnShareRuleBinding.h"
 #include "nsStringFwd.h"
 #include "nsTHashSet.h"
+#include "nsTHashMap.h"
 
 class nsIURI;
 
 namespace mozilla {
 
-// URLQueryStringStripper is responsible for stripping certain part of the query
-// string of the given URI to address the bounce(redirect) tracking issues. It
-// will strip every query parameter which matches the strip list defined in
-// the pref 'privacy.query_stripping.strip_list'. Note that It's different from
-// URLDecorationStripper which strips the entire query string from the referrer
-// if there is a tracking query parameter present in the URI.
-//
-// TODO: Given that URLQueryStringStripper and URLDecorationStripper are doing
-//       similar things. We could somehow combine these two modules into one.
-//       We will improve this in the future.
-
-class URLQueryStringStripper final : public nsIURLQueryStrippingListObserver {
- public:
+class URLQueryStringStripper final : public nsIObserver,
+                                     public nsIURLQueryStringStripper,
+                                     public nsIURLQueryStrippingListObserver {
   NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
   NS_DECL_NSIURLQUERYSTRIPPINGLISTOBSERVER
 
-  // Strip the query parameters that are in the strip list. Return true if there
-  // is any query parameter has been stripped. Otherwise, false.
-  static bool Strip(nsIURI* aURI, nsCOMPtr<nsIURI>& aOutput);
+  NS_DECL_NSIURLQUERYSTRINGSTRIPPER
+
+ public:
+  static already_AddRefed<URLQueryStringStripper> GetSingleton();
 
  private:
-  URLQueryStringStripper() = default;
-
+  URLQueryStringStripper();
   ~URLQueryStringStripper() = default;
 
-  static URLQueryStringStripper* GetOrCreate();
+  static void OnPrefChange(const char* aPref, void* aData);
+  nsresult ManageObservers();
 
-  void Init();
-  void Shutdown();
+  [[nodiscard]] nsresult Init();
+  [[nodiscard]] nsresult Shutdown();
 
-  bool StripQueryString(nsIURI* aURI, nsCOMPtr<nsIURI>& aOutput);
+  [[nodiscard]] nsresult StripQueryString(nsIURI* aURI, nsIURI** aOutput,
+                                          uint32_t* aStripCount);
 
   bool CheckAllowList(nsIURI* aURI);
 
@@ -55,7 +51,13 @@ class URLQueryStringStripper final : public nsIURLQueryStrippingListObserver {
 
   nsTHashSet<nsString> mList;
   nsTHashSet<nsCString> mAllowList;
-  nsCOMPtr<nsIURLQueryStrippingListService> mService;
+  nsCOMPtr<nsIURLQueryStrippingListService> mListService;
+  nsTHashMap<nsCString, dom::StripRule> mStripOnShareMap;
+  bool mIsInitialized;
+  // Indicates whether or not we currently have registered an observer
+  // for the QPS/strip-on-share list updates
+  bool mObservingQPS = false;
+  bool mObservingStripOnShare = false;
 };
 
 }  // namespace mozilla

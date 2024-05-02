@@ -8,8 +8,10 @@
 const {
   dominatorTreeState,
   viewState,
-} = require("devtools/client/memory/constants");
-const { changeView } = require("devtools/client/memory/actions/view");
+} = require("resource://devtools/client/memory/constants.js");
+const {
+  changeView,
+} = require("resource://devtools/client/memory/actions/view.js");
 
 const TEST_URL =
   "http://example.com/browser/devtools/client/memory/test/browser/doc_steady_allocation.html";
@@ -22,7 +24,7 @@ function clickOnNodeArrow(node, panel) {
   );
 }
 
-this.test = makeMemoryTest(TEST_URL, async function({ panel }) {
+this.test = makeMemoryTest(TEST_URL, async function ({ panel }) {
   // Taking snapshots and computing dominator trees is slow :-/
   requestLongerTimeout(4);
 

@@ -25,7 +25,7 @@ registerCleanupFunction(async () => {
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   const toolbox = await openNewTabAndToolbox(TEST_URI, "netmonitor");
   info("Network panel is open.");
 
@@ -41,7 +41,7 @@ add_task(async function() {
 
   // We can't use `waitForMessages` here because the `new-messages` event
   // can be emitted before we get the `hud`.
-  await waitFor(() => findMessage(hud, TEST_PATH));
+  await waitFor(() => findMessageByType(hud, TEST_PATH, ".network"));
 
   ok(true, "The network message was found in the console");
 });
@@ -53,7 +53,7 @@ async function testNetmonitor(toolbox) {
     "devtools/client/netmonitor/src/selectors/index"
   );
 
-  await waitFor(() => store.getState().requests.requests.length > 0);
+  await waitFor(() => !!store.getState().requests.requests.length);
 
   is(
     store.getState().requests.requests.length,

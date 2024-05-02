@@ -20,6 +20,19 @@ extern "C" {
 
 namespace mozilla {
 
+SipccSdpMediaSection::SipccSdpMediaSection(
+    const SipccSdpMediaSection& aOrig,
+    const SipccSdpAttributeList* sessionLevel)
+    : SdpMediaSection(aOrig),
+      mMediaType(aOrig.mMediaType),
+      mPort(aOrig.mPort),
+      mPortCount(aOrig.mPortCount),
+      mProtocol(aOrig.mProtocol),
+      mFormats(aOrig.mFormats),
+      mConnection(new SdpConnection(*aOrig.mConnection)),
+      mBandwidths(aOrig.mBandwidths),
+      mAttributeList(aOrig.mAttributeList, sessionLevel) {}
+
 unsigned int SipccSdpMediaSection::GetPort() const { return mPort; }
 
 void SipccSdpMediaSection::SetPort(unsigned int port) { mPort = port; }
@@ -229,14 +242,6 @@ bool SipccSdpMediaSection::ValidateSimulcast(sdp_t* sdp, uint16_t level,
 bool SipccSdpMediaSection::ValidateSimulcastVersions(
     sdp_t* sdp, uint16_t level, const SdpSimulcastAttribute::Versions& versions,
     sdp::Direction direction, InternalResults& results) const {
-  if (versions.IsSet() && !(direction & GetDirectionAttribute().mValue)) {
-    results.AddParseError(sdp_get_media_line_number(sdp, level),
-                          "simulcast attribute has a direction that is "
-                          "inconsistent with the direction of this media "
-                          "section.");
-    return false;
-  }
-
   for (const SdpSimulcastAttribute::Version& version : versions) {
     for (const SdpSimulcastAttribute::Encoding& encoding : version.choices) {
       const SdpRidAttributeList::Rid* ridAttr = FindRid(encoding.rid);

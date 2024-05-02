@@ -8,6 +8,7 @@
 #ifndef nsToolkitProfileService_h
 #define nsToolkitProfileService_h
 
+#include "mozilla/Components.h"
 #include "mozilla/LinkedList.h"
 #include "nsIToolkitProfileService.h"
 #include "nsIToolkitProfile.h"
@@ -64,14 +65,6 @@ class nsToolkitProfileLock final : public nsIProfileLock {
   nsProfileLock mLock;
 };
 
-class nsToolkitProfileFactory final : public nsIFactory {
-  ~nsToolkitProfileFactory() = default;
-
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIFACTORY
-};
-
 class nsToolkitProfileService final : public nsIToolkitProfileService {
  public:
   NS_DECL_ISUPPORTS
@@ -87,8 +80,8 @@ class nsToolkitProfileService final : public nsIToolkitProfileService {
 
  private:
   friend class nsToolkitProfile;
-  friend class nsToolkitProfileFactory;
-  friend nsresult NS_NewToolkitProfileService(nsToolkitProfileService**);
+  friend already_AddRefed<nsToolkitProfileService>
+  NS_GetToolkitProfileService();
 
   nsToolkitProfileService();
   ~nsToolkitProfileService();
@@ -178,5 +171,7 @@ class nsToolkitProfileService final : public nsIToolkitProfileService {
     RefPtr<nsToolkitProfile> mCurrent;
   };
 };
+
+already_AddRefed<nsToolkitProfileService> NS_GetToolkitProfileService();
 
 #endif

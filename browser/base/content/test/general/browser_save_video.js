@@ -8,11 +8,11 @@ MockFilePicker.init(window);
  * TestCase for bug 564387
  * <https://bugzilla.mozilla.org/show_bug.cgi?id=564387>
  */
-add_task(async function() {
+add_task(async function () {
   var fileName;
 
   let loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser,
     "http://mochi.test:8888/browser/browser/base/content/test/general/web_video.html"
   );
@@ -36,7 +36,7 @@ add_task(async function() {
   var destFile = destDir.clone();
 
   MockFilePicker.displayDirectory = destDir;
-  MockFilePicker.showCallback = function(fp) {
+  MockFilePicker.showCallback = function (fp) {
     fileName = fp.defaultString;
     destFile.append(fileName);
     MockFilePicker.setFiles([destFile]);
@@ -62,7 +62,7 @@ add_task(async function() {
     mockTransferRegisterer.register();
   });
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     mockTransferRegisterer.unregister();
     MockFilePicker.cleanup();
     destDir.remove(true);
@@ -84,7 +84,6 @@ add_task(async function() {
   await transferCompletePromise;
 });
 
-/* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this

@@ -1,46 +1,55 @@
-#![allow(clippy::needless_range_loop, clippy::stable_sort_primitive)]
+#![allow(clippy::needless_range_loop)]
 #![warn(rust_2018_idioms)]
 #![cfg(feature = "full")]
 
-// Tests to run on both current-thread & thread-pool runtime variants.
+// Tests to run on both current-thread & multi-thread runtime variants.
 
 macro_rules! rt_test {
     ($($t:tt)*) => {
-        mod basic_scheduler {
+        mod current_thread_scheduler {
             $($t)*
 
-            fn rt() -> Runtime {
-                tokio::runtime::Builder::new()
-                    .basic_scheduler()
+            #[cfg(not(target_os="wasi"))]
+            const NUM_WORKERS: usize = 1;
+
+            fn rt() -> Arc<Runtime> {
+                tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .unwrap()
+                    .into()
             }
         }
 
+        #[cfg(not(tokio_wasi))] // Wasi doesn't support threads
         mod threaded_scheduler_4_threads {
             $($t)*
 
-            fn rt() -> Runtime {
-                tokio::runtime::Builder::new()
-                    .threaded_scheduler()
-                    .core_threads(4)
+            const NUM_WORKERS: usize = 4;
+
+            fn rt() -> Arc<Runtime> {
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(4)
                     .enable_all()
                     .build()
                     .unwrap()
+                    .into()
             }
         }
 
+        #[cfg(not(tokio_wasi))] // Wasi doesn't support threads
         mod threaded_scheduler_1_thread {
             $($t)*
 
-            fn rt() -> Runtime {
-                tokio::runtime::Builder::new()
-                    .threaded_scheduler()
-                    .core_threads(1)
+            const NUM_WORKERS: usize = 1;
+
+            fn rt() -> Arc<Runtime> {
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(1)
                     .enable_all()
                     .build()
                     .unwrap()
+                    .into()
             }
         }
     }
@@ -55,24 +64,36 @@ fn send_sync_bound() {
 }
 
 rt_test! {
-    use tokio::net::{TcpListener, TcpStream, UdpSocket};
-    use tokio::prelude::*;
+    #[cfg(not(target_os="wasi"))]
+    use tokio::net::{TcpListener, TcpStream};
+    #[cfg(not(target_os="wasi"))]
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     use tokio::runtime::Runtime;
     use tokio::sync::oneshot;
     use tokio::{task, time};
-    use tokio_test::{assert_err, assert_ok};
+
+    #[cfg(not(target_os="wasi"))]
+    use tokio_test::assert_err;
+    use tokio_test::assert_ok;
 
     use futures::future::poll_fn;
     use std::future::Future;
     use std::pin::Pin;
-    use std::sync::{mpsc, Arc};
+
+    #[cfg(not(target_os="wasi"))]
+    use std::sync::mpsc;
+
+    use std::sync::Arc;
     use std::task::{Context, Poll};
+
+    #[cfg(not(target_os="wasi"))]
     use std::thread;
     use std::time::{Duration, Instant};
 
     #[test]
     fn block_on_sync() {
-        let mut rt = rt();
+        let rt = rt();
 
         let mut win = false;
         rt.block_on(async {
@@ -82,21 +103,11 @@ rt_test! {
         assert!(win);
     }
 
-    #[test]
-    fn block_on_handle_sync() {
-        let rt = rt();
 
-        let mut win = false;
-        rt.handle().block_on(async {
-            win = true;
-        });
-
-        assert!(win);
-    }
-
+    #[cfg(not(target_os="wasi"))]
     #[test]
     fn block_on_async() {
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async {
             let (tx, rx) = oneshot::channel();
@@ -113,26 +124,8 @@ rt_test! {
     }
 
     #[test]
-    fn block_on_handle_async() {
-        let rt = rt();
-
-        let out = rt.handle().block_on(async {
-            let (tx, rx) = oneshot::channel();
-
-            thread::spawn(move || {
-                thread::sleep(Duration::from_millis(50));
-                tx.send("ZOMG").unwrap();
-            });
-
-            assert_ok!(rx.await)
-        });
-
-        assert_eq!(out, "ZOMG");
-    }
-
-    #[test]
     fn spawn_one_bg() {
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async {
             let (tx, rx) = oneshot::channel();
@@ -149,7 +142,7 @@ rt_test! {
 
     #[test]
     fn spawn_one_join() {
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async {
             let (tx, rx) = oneshot::channel();
@@ -172,7 +165,7 @@ rt_test! {
 
     #[test]
     fn spawn_two() {
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async {
             let (tx1, rx1) = oneshot::channel();
@@ -193,13 +186,14 @@ rt_test! {
         assert_eq!(out, "ZOMG");
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn spawn_many_from_block_on() {
         use tokio::sync::mpsc;
 
         const ITER: usize = 200;
 
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async {
             let (done_tx, mut done_rx) = mpsc::unbounded_channel();
@@ -232,7 +226,7 @@ rt_test! {
                 out.push(i);
             }
 
-            out.sort();
+            out.sort_unstable();
             out
         });
 
@@ -243,25 +237,18 @@ rt_test! {
         }
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn spawn_many_from_task() {
         use tokio::sync::mpsc;
 
         const ITER: usize = 500;
 
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async {
             tokio::spawn(async move {
                 let (done_tx, mut done_rx) = mpsc::unbounded_channel();
-
-                /*
-                for _ in 0..100 {
-                    tokio::spawn(async move { });
-                }
-
-                tokio::task::yield_now().await;
-                */
 
                 let mut txs = (0..ITER)
                     .map(|i| {
@@ -291,7 +278,7 @@ rt_test! {
                     out.push(i);
                 }
 
-                out.sort();
+                out.sort_unstable();
                 out
             }).await.unwrap()
         });
@@ -304,8 +291,33 @@ rt_test! {
     }
 
     #[test]
+    fn spawn_one_from_block_on_called_on_handle() {
+        let rt = rt();
+        let (tx, rx) = oneshot::channel();
+
+        #[allow(clippy::async_yields_async)]
+        let handle = rt.handle().block_on(async {
+            tokio::spawn(async move {
+                tx.send("ZOMG").unwrap();
+                "DONE"
+            })
+        });
+
+        let out = rt.block_on(async {
+            let msg = assert_ok!(rx.await);
+
+            let out = assert_ok!(handle.await);
+            assert_eq!(out, "DONE");
+
+            msg
+        });
+
+        assert_eq!(out, "ZOMG");
+    }
+
+    #[test]
     fn spawn_await_chain() {
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async {
             assert_ok!(tokio::spawn(async {
@@ -320,7 +332,7 @@ rt_test! {
 
     #[test]
     fn outstanding_tasks_dropped() {
-        let mut rt = rt();
+        let rt = rt();
 
         let cnt = Arc::new(());
 
@@ -343,24 +355,25 @@ rt_test! {
     #[test]
     #[should_panic]
     fn nested_rt() {
-        let mut rt1 = rt();
-        let mut rt2 = rt();
+        let rt1 = rt();
+        let rt2 = rt();
 
         rt1.block_on(async { rt2.block_on(async { "hello" }) });
     }
 
     #[test]
     fn create_rt_in_block_on() {
-        let mut rt1 = rt();
-        let mut rt2 = rt1.block_on(async { rt() });
+        let rt1 = rt();
+        let rt2 = rt1.block_on(async { rt() });
         let out = rt2.block_on(async { "ZOMG" });
 
         assert_eq!(out, "ZOMG");
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn complete_block_on_under_load() {
-        let mut rt = rt();
+        let rt = rt();
 
         rt.block_on(async {
             let (tx, rx) = oneshot::channel();
@@ -381,9 +394,10 @@ rt_test! {
         });
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn complete_task_under_load() {
-        let mut rt = rt();
+        let rt = rt();
 
         rt.block_on(async {
             let (tx1, rx1) = oneshot::channel();
@@ -410,10 +424,11 @@ rt_test! {
         });
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn spawn_from_other_thread_idle() {
-        let mut rt = rt();
-        let handle = rt.handle().clone();
+        let rt = rt();
+        let handle = rt.clone();
 
         let (tx, rx) = oneshot::channel();
 
@@ -430,10 +445,11 @@ rt_test! {
         });
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn spawn_from_other_thread_under_load() {
-        let mut rt = rt();
-        let handle = rt.handle().clone();
+        let rt = rt();
+        let handle = rt.clone();
 
         let (tx, rx) = oneshot::channel();
 
@@ -456,22 +472,22 @@ rt_test! {
     }
 
     #[test]
-    fn delay_at_root() {
-        let mut rt = rt();
+    fn sleep_at_root() {
+        let rt = rt();
 
         let now = Instant::now();
         let dur = Duration::from_millis(50);
 
         rt.block_on(async move {
-            time::delay_for(dur).await;
+            time::sleep(dur).await;
         });
 
         assert!(now.elapsed() >= dur);
     }
 
     #[test]
-    fn delay_in_spawn() {
-        let mut rt = rt();
+    fn sleep_in_spawn() {
+        let rt = rt();
 
         let now = Instant::now();
         let dur = Duration::from_millis(50);
@@ -480,7 +496,7 @@ rt_test! {
             let (tx, rx) = oneshot::channel();
 
             tokio::spawn(async move {
-                time::delay_for(dur).await;
+                time::sleep(dur).await;
                 assert_ok!(tx.send(()));
             });
 
@@ -490,14 +506,15 @@ rt_test! {
         assert!(now.elapsed() >= dur);
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support bind
     #[test]
     fn block_on_socket() {
-        let mut rt = rt();
+        let rt = rt();
 
         rt.block_on(async move {
             let (tx, rx) = oneshot::channel();
 
-            let mut listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
 
             tokio::spawn(async move {
@@ -510,9 +527,10 @@ rt_test! {
         });
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn spawn_from_blocking() {
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async move {
             let inner = assert_ok!(tokio::task::spawn_blocking(|| {
@@ -525,9 +543,10 @@ rt_test! {
         assert_eq!(out, "hello")
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn spawn_blocking_from_blocking() {
-        let mut rt = rt();
+        let rt = rt();
 
         let out = rt.block_on(async move {
             let inner = assert_ok!(tokio::task::spawn_blocking(|| {
@@ -540,9 +559,10 @@ rt_test! {
         assert_eq!(out, "hello")
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
-    fn delay_from_blocking() {
-        let mut rt = rt();
+    fn sleep_from_blocking() {
+        let rt = rt();
 
         rt.block_on(async move {
             assert_ok!(tokio::task::spawn_blocking(|| {
@@ -552,7 +572,7 @@ rt_test! {
                 // use the futures' block_on fn to make sure we aren't setting
                 // any Tokio context
                 futures::executor::block_on(async {
-                    tokio::time::delay_for(dur).await;
+                    tokio::time::sleep(dur).await;
                 });
 
                 assert!(now.elapsed() >= dur);
@@ -560,12 +580,13 @@ rt_test! {
         });
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support bind
     #[test]
     fn socket_from_blocking() {
-        let mut rt = rt();
+        let rt = rt();
 
         rt.block_on(async move {
-            let mut listener = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
+            let listener = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
             let addr = assert_ok!(listener.local_addr());
 
             let peer = tokio::task::spawn_blocking(move || {
@@ -583,21 +604,37 @@ rt_test! {
         });
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
-    fn spawn_blocking_after_shutdown() {
+    fn always_active_parker() {
+        // This test it to show that we will always have
+        // an active parker even if we call block_on concurrently
+
         let rt = rt();
-        let handle = rt.handle().clone();
+        let rt2 = rt.clone();
 
-        // Shutdown
-        drop(rt);
+        let (tx1, rx1) = oneshot::channel();
+        let (tx2, rx2) = oneshot::channel();
 
-        handle.enter(|| {
-            let res = task::spawn_blocking(|| unreachable!());
-
-            // Avoid using a tokio runtime
-            let out = futures::executor::block_on(res);
-            assert!(out.is_err());
+        let jh1 = thread::spawn(move || {
+                rt.block_on(async move {
+                    rx2.await.unwrap();
+                    time::sleep(Duration::from_millis(5)).await;
+                    tx1.send(()).unwrap();
+                });
         });
+
+        let jh2 = thread::spawn(move || {
+            rt2.block_on(async move {
+                tx2.send(()).unwrap();
+                time::sleep(Duration::from_millis(5)).await;
+                rx1.await.unwrap();
+                time::sleep(Duration::from_millis(5)).await;
+            });
+        });
+
+        jh1.join().unwrap();
+        jh2.join().unwrap();
     }
 
     #[test]
@@ -614,21 +651,27 @@ rt_test! {
     // concern. There also isn't a great/obvious solution to take. For now, the
     // test is disabled.
     #[cfg(not(windows))]
+    #[cfg(not(target_os="wasi"))] // Wasi does not support bind or threads
     fn io_driver_called_when_under_load() {
-        let mut rt = rt();
+        let rt = rt();
 
         // Create a lot of constant load. The scheduler will always be busy.
         for _ in 0..100 {
             rt.spawn(async {
                 loop {
-                    tokio::task::yield_now().await;
+                    // Don't use Tokio's `yield_now()` to avoid special defer
+                    // logic.
+                    futures::future::poll_fn::<(), _>(|cx| {
+                        cx.waker().wake_by_ref();
+                        std::task::Poll::Pending
+                    }).await;
                 }
             });
         }
 
         // Do some I/O work
         rt.block_on(async {
-            let mut listener = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
+            let listener = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
             let addr = assert_ok!(listener.local_addr());
 
             let srv = tokio::spawn(async move {
@@ -649,9 +692,116 @@ rt_test! {
         });
     }
 
+    /// Tests that yielded tasks are not scheduled until **after** resource
+    /// drivers are polled.
+    ///
+    /// The OS does not guarantee when I/O events are delivered, so there may be
+    /// more yields than anticipated. This makes the test slightly flaky. To
+    /// help avoid flakiness, we run the test 10 times and only fail it after
+    /// 10 failures in a row.
+    ///
+    /// Note that if the test fails by panicking rather than by returning false,
+    /// then we fail it immediately. That kind of failure should not happen
+    /// spuriously.
+    #[test]
+    #[cfg(not(target_os="wasi"))]
+    fn yield_defers_until_park() {
+        for _ in 0..10 {
+            if yield_defers_until_park_inner() {
+                // test passed
+                return;
+            }
+
+            // Wait a bit and run the test again.
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+
+        panic!("yield_defers_until_park is failing consistently");
+    }
+
+    /// Implementation of `yield_defers_until_park` test. Returns `true` if the
+    /// test passed.
+    #[cfg(not(target_os="wasi"))]
+    fn yield_defers_until_park_inner() -> bool {
+        use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+        use std::sync::Barrier;
+
+        let rt = rt();
+
+        let flag = Arc::new(AtomicBool::new(false));
+        let barrier = Arc::new(Barrier::new(NUM_WORKERS));
+
+        rt.block_on(async {
+            // Make sure other workers cannot steal tasks
+            #[allow(clippy::reversed_empty_ranges)]
+            for _ in 0..(NUM_WORKERS-1) {
+                let flag = flag.clone();
+                let barrier = barrier.clone();
+
+                tokio::spawn(async move {
+                    barrier.wait();
+
+                    while !flag.load(SeqCst) {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                });
+            }
+
+            barrier.wait();
+
+            let (fail_test, fail_test_recv) = oneshot::channel::<()>();
+
+            let jh = tokio::spawn(async move {
+                // Create a TCP litener
+                let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let addr = listener.local_addr().unwrap();
+
+                tokio::join!(
+                    async {
+                        // Done in a blocking manner intentionally.
+                        let _socket = std::net::TcpStream::connect(addr).unwrap();
+
+                        // Yield until connected
+                        let mut cnt = 0;
+                        while !flag.load(SeqCst){
+                            tokio::task::yield_now().await;
+                            cnt += 1;
+
+                            if cnt >= 10 {
+                                // yielded too many times; report failure and
+                                // sleep forever so that the `fail_test` branch
+                                // of the `select!` below triggers.
+                                let _ = fail_test.send(());
+                                futures::future::pending::<()>().await;
+                                break;
+                            }
+                        }
+                    },
+                    async {
+                        let _ = listener.accept().await.unwrap();
+                        flag.store(true, SeqCst);
+                    }
+                );
+            });
+
+            // Wait until the spawned task completes or fails. If no message is
+            // sent on `fail_test`, then the test succeeds. Otherwise, it fails.
+            let success = fail_test_recv.await.is_err();
+
+            if success {
+                // Check for panics in spawned task.
+                jh.abort();
+                jh.await.unwrap();
+            }
+
+            success
+        })
+    }
+
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn client_server_block_on() {
-        let mut rt = rt();
+        let rt = rt();
         let (tx, rx) = mpsc::channel();
 
         rt.block_on(async move { client_server(tx).await });
@@ -660,9 +810,10 @@ rt_test! {
         assert_err!(rx.try_recv());
     }
 
+    #[cfg_attr(tokio_wasi, ignore = "Wasi does not support threads or panic recovery")]
     #[test]
     fn panic_in_task() {
-        let mut rt = rt();
+        let rt = rt();
         let (tx, rx) = oneshot::channel();
 
         struct Boom(Option<oneshot::Sender<()>>);
@@ -688,11 +839,13 @@ rt_test! {
 
     #[test]
     #[should_panic]
+    #[cfg_attr(tokio_wasi, ignore = "Wasi does not support panic recovery")]
     fn panic_in_block_on() {
-        let mut rt = rt();
+        let rt = rt();
         rt.block_on(async { panic!() });
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     async fn yield_once() {
         let mut yielded = false;
         poll_fn(|cx| {
@@ -709,10 +862,11 @@ rt_test! {
 
     #[test]
     fn enter_and_spawn() {
-        let mut rt = rt();
-        let handle = rt.enter(|| {
+        let rt = rt();
+        let handle = {
+            let _enter = rt.enter();
             tokio::spawn(async {})
-        });
+        };
 
         assert_ok!(rt.block_on(handle));
     }
@@ -739,7 +893,7 @@ rt_test! {
             }
         }
 
-        let mut rt = rt();
+        let rt = rt();
 
         let (drop_tx, drop_rx) = mpsc::channel();
         let (run_tx, run_rx) = oneshot::channel();
@@ -761,7 +915,11 @@ rt_test! {
 
     #[test]
     fn wake_while_rt_is_dropping() {
-        use tokio::task;
+        use tokio::sync::Barrier;
+        use core::sync::atomic::{AtomicBool, Ordering};
+
+        let drop_triggered = Arc::new(AtomicBool::new(false));
+        let set_drop_triggered = drop_triggered.clone();
 
         struct OnDrop<F: FnMut()>(F);
 
@@ -775,17 +933,21 @@ rt_test! {
         let (tx2, rx2) = oneshot::channel();
         let (tx3, rx3) = oneshot::channel();
 
-        let mut rt = rt();
+        let barrier = Arc::new(Barrier::new(4));
+        let barrier1 = barrier.clone();
+        let barrier2 = barrier.clone();
+        let barrier3 = barrier.clone();
 
-        let h1 = rt.handle().clone();
+        let rt = rt();
 
-        rt.handle().spawn(async move {
+        rt.spawn(async move {
             // Ensure a waker gets stored in oneshot 1.
-            let _ = rx1.await;
+            let _ = tokio::join!(rx1, barrier1.wait());
             tx3.send(()).unwrap();
         });
 
-        rt.handle().spawn(async move {
+        rt.spawn(async move {
+            let h1 = tokio::runtime::Handle::current();
             // When this task is dropped, we'll be "closing remotes".
             // We spawn a new task that owns the `tx1`, to move its Drop
             // out of here.
@@ -798,37 +960,43 @@ rt_test! {
                 h1.spawn(async move {
                     tx1.send(()).unwrap();
                 });
+                // Just a sanity check that this entire thing actually happened
+                set_drop_triggered.store(true, Ordering::Relaxed);
             });
-            let _ = rx2.await;
+            let _ = tokio::join!(rx2, barrier2.wait());
         });
 
-        rt.handle().spawn(async move {
-            let _ = rx3.await;
+        rt.spawn(async move {
+            let _ = tokio::join!(rx3, barrier3.wait());
             // We'll never get here, but once task 3 drops, this will
             // force task 2 to re-schedule since it's waiting on oneshot 2.
             tx2.send(()).unwrap();
         });
 
-        // Tick the loop
-        rt.block_on(async {
-            task::yield_now().await;
-        });
+        // Wait until every oneshot channel has been polled.
+        rt.block_on(barrier.wait());
 
         // Drop the rt
         drop(rt);
+
+        // Make sure that the spawn actually happened
+        assert!(drop_triggered.load(Ordering::Relaxed));
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi doesn't support UDP or bind()
     #[test]
     fn io_notify_while_shutting_down() {
-        use std::net::Ipv6Addr;
+        use tokio::net::UdpSocket;
+        use std::sync::Arc;
 
         for _ in 1..10 {
-            let mut runtime = rt();
+            let runtime = rt();
 
             runtime.block_on(async {
-                let socket = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+                let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
                 let addr = socket.local_addr().unwrap();
-                let (mut recv_half, mut send_half) = socket.split();
+                let send_half = Arc::new(socket);
+                let recv_half = send_half.clone();
 
                 tokio::spawn(async move {
                     let mut buf = [0];
@@ -842,19 +1010,20 @@ rt_test! {
                     let buf = [0];
                     loop {
                         send_half.send_to(&buf, &addr).await.unwrap();
-                        tokio::time::delay_for(Duration::from_millis(1)).await;
+                        tokio::time::sleep(Duration::from_millis(1)).await;
                     }
                 });
 
-                tokio::time::delay_for(Duration::from_millis(5)).await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
             });
         }
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
     #[test]
     fn shutdown_timeout() {
         let (tx, rx) = oneshot::channel();
-        let mut runtime = rt();
+        let runtime = rt();
 
         runtime.block_on(async move {
             task::spawn_blocking(move || {
@@ -865,18 +1034,34 @@ rt_test! {
             rx.await.unwrap();
         });
 
-        runtime.shutdown_timeout(Duration::from_millis(100));
+        Arc::try_unwrap(runtime).unwrap().shutdown_timeout(Duration::from_millis(100));
+    }
+
+    #[cfg(not(target_os="wasi"))] // Wasi does not support threads
+    #[test]
+    fn shutdown_timeout_0() {
+        let runtime = rt();
+
+        runtime.block_on(async move {
+            task::spawn_blocking(move || {
+                thread::sleep(Duration::from_secs(10_000));
+            });
+        });
+
+        let now = Instant::now();
+        Arc::try_unwrap(runtime).unwrap().shutdown_timeout(Duration::from_nanos(0));
+        assert!(now.elapsed().as_secs() < 1);
     }
 
     #[test]
     fn shutdown_wakeup_time() {
-        let mut runtime = rt();
+        let runtime = rt();
 
         runtime.block_on(async move {
-            tokio::time::delay_for(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         });
 
-        runtime.shutdown_timeout(Duration::from_secs(10_000));
+        Arc::try_unwrap(runtime).unwrap().shutdown_timeout(Duration::from_secs(10_000));
     }
 
     // This test is currently ignored on Windows because of a
@@ -884,6 +1069,7 @@ rt_test! {
     // See https://github.com/rust-lang/rust/issues/74875
     #[test]
     #[cfg(not(windows))]
+    #[cfg_attr(tokio_wasi, ignore = "Wasi does not support threads")]
     fn runtime_in_thread_local() {
         use std::cell::RefCell;
         use std::thread;
@@ -894,15 +1080,18 @@ rt_test! {
 
         thread::spawn(|| {
             R.with(|cell| {
-                *cell.borrow_mut() = Some(rt());
+                let rt = rt();
+                let rt = Arc::try_unwrap(rt).unwrap();
+                *cell.borrow_mut() = Some(rt);
             });
 
             let _rt = rt();
         }).join().unwrap();
     }
 
+    #[cfg(not(target_os="wasi"))] // Wasi does not support bind
     async fn client_server(tx: mpsc::Sender<()>) {
-        let mut server = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
+        let server = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
 
         // Get the assigned address
         let addr = assert_ok!(server.local_addr());
@@ -925,15 +1114,16 @@ rt_test! {
         tx.send(()).unwrap();
     }
 
+    #[cfg(not(tokio_wasi))] // Wasi does not support bind
     #[test]
     fn local_set_block_on_socket() {
-        let mut rt = rt();
+        let rt = rt();
         let local = task::LocalSet::new();
 
-        local.block_on(&mut rt, async move {
+        local.block_on(&rt, async move {
             let (tx, rx) = oneshot::channel();
 
-            let mut listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
 
             task::spawn_local(async move {
@@ -946,21 +1136,23 @@ rt_test! {
         });
     }
 
+    #[cfg(not(tokio_wasi))] // Wasi does not support bind
     #[test]
     fn local_set_client_server_block_on() {
-        let mut rt = rt();
+        let rt = rt();
         let (tx, rx) = mpsc::channel();
 
         let local = task::LocalSet::new();
 
-        local.block_on(&mut rt, async move { client_server_local(tx).await });
+        local.block_on(&rt, async move { client_server_local(tx).await });
 
         assert_ok!(rx.try_recv());
         assert_err!(rx.try_recv());
     }
 
+    #[cfg(not(tokio_wasi))] // Wasi does not support bind
     async fn client_server_local(tx: mpsc::Sender<()>) {
-        let mut server = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
+        let server = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
 
         // Get the assigned address
         let addr = assert_ok!(server.local_addr());
@@ -986,22 +1178,22 @@ rt_test! {
     #[test]
     fn coop() {
         use std::task::Poll::Ready;
+        use tokio::sync::mpsc;
 
-        let mut rt = rt();
+        let rt = rt();
 
         rt.block_on(async {
-            // Create a bunch of tasks
-            let mut tasks = (0..1_000).map(|_| {
-                tokio::spawn(async { })
-            }).collect::<Vec<_>>();
+            let (send, mut recv) = mpsc::unbounded_channel();
 
-            // Hope that all the tasks complete...
-            time::delay_for(Duration::from_millis(100)).await;
+            // Send a bunch of messages.
+            for _ in 0..1_000 {
+                send.send(()).unwrap();
+            }
 
             poll_fn(|cx| {
-                // At least one task should not be ready
-                for task in &mut tasks {
-                    if Pin::new(task).poll(cx).is_pending() {
+                // At least one response should return pending.
+                for _ in 0..1_000 {
+                    if recv.poll_recv(cx).is_pending() {
                         return Ready(());
                     }
                 }
@@ -1011,43 +1203,100 @@ rt_test! {
         });
     }
 
+    #[test]
+    fn coop_unconstrained() {
+        use std::task::Poll::Ready;
+        use tokio::sync::mpsc;
+
+        let rt = rt();
+
+        rt.block_on(async {
+            let (send, mut recv) = mpsc::unbounded_channel();
+
+            // Send a bunch of messages.
+            for _ in 0..1_000 {
+                send.send(()).unwrap();
+            }
+
+            tokio::task::unconstrained(poll_fn(|cx| {
+                // All the responses should be ready.
+                for _ in 0..1_000 {
+                    assert_eq!(recv.poll_recv(cx), Poll::Ready(Some(())));
+                }
+
+                Ready(())
+            })).await;
+        });
+    }
+
+    #[cfg(tokio_unstable)]
+    #[test]
+    fn coop_consume_budget() {
+        let rt = rt();
+
+        rt.block_on(async {
+            poll_fn(|cx| {
+                let counter = Arc::new(std::sync::Mutex::new(0));
+                let counter_clone = Arc::clone(&counter);
+                let mut worker = Box::pin(async move {
+                    // Consume the budget until a yield happens
+                    for _ in 0..1000 {
+                        *counter.lock().unwrap() += 1;
+                        task::consume_budget().await
+                    }
+                });
+                // Assert that the worker was yielded and it didn't manage
+                // to finish the whole work (assuming the total budget of 128)
+                assert!(Pin::new(&mut worker).poll(cx).is_pending());
+                assert!(*counter_clone.lock().unwrap() < 1000);
+                std::task::Poll::Ready(())
+            }).await;
+        });
+    }
+
     // Tests that the "next task" scheduler optimization is not able to starve
     // other tasks.
     #[test]
     fn ping_pong_saturation() {
+        use std::sync::atomic::{Ordering, AtomicBool};
         use tokio::sync::mpsc;
 
         const NUM: usize = 100;
 
-        let mut rt = rt();
+        let rt = rt();
+
+        let running = Arc::new(AtomicBool::new(true));
 
         rt.block_on(async {
             let (spawned_tx, mut spawned_rx) = mpsc::unbounded_channel();
 
-            // Spawn a bunch of tasks that ping ping between each other to
+            let mut tasks = vec![];
+            // Spawn a bunch of tasks that ping-pong between each other to
             // saturate the runtime.
             for _ in 0..NUM {
                 let (tx1, mut rx1) = mpsc::unbounded_channel();
                 let (tx2, mut rx2) = mpsc::unbounded_channel();
                 let spawned_tx = spawned_tx.clone();
-
-                task::spawn(async move {
+                let running = running.clone();
+                tasks.push(task::spawn(async move {
                     spawned_tx.send(()).unwrap();
 
-                    tx1.send(()).unwrap();
 
-                    loop {
-                        rx2.recv().await.unwrap();
+                    while running.load(Ordering::Relaxed) {
                         tx1.send(()).unwrap();
+                        rx2.recv().await.unwrap();
                     }
-                });
 
-                task::spawn(async move {
-                    loop {
-                        rx1.recv().await.unwrap();
+                    // Close the channel and wait for the other task to exit.
+                    drop(tx1);
+                    assert!(rx2.recv().await.is_none());
+                }));
+
+                tasks.push(task::spawn(async move {
+                    while rx1.recv().await.is_some() {
                         tx2.send(()).unwrap();
                     }
-                });
+                }));
             }
 
             for _ in 0..NUM {
@@ -1062,6 +1311,45 @@ rt_test! {
                 }
             });
             handle.await.unwrap();
+            running.store(false, Ordering::Relaxed);
+            for t in tasks {
+                t.await.unwrap();
+            }
         });
+    }
+
+    #[test]
+    #[cfg(not(target_os="wasi"))]
+    fn shutdown_concurrent_spawn() {
+        const NUM_TASKS: usize = 10_000;
+        for _ in 0..5 {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let rt = rt();
+
+            let mut txs = vec![];
+
+            for _ in 0..NUM_TASKS {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                txs.push(tx);
+                rt.spawn(async move {
+                    rx.await.unwrap();
+                });
+            }
+
+            // Prime the tasks
+            rt.block_on(async { tokio::task::yield_now().await });
+
+            let th = std::thread::spawn(move || {
+                tx.send(()).unwrap();
+                for tx in txs.drain(..) {
+                    let _ = tx.send(());
+                }
+            });
+
+            rx.recv().unwrap();
+            drop(rt);
+
+            th.join().unwrap();
+        }
     }
 }

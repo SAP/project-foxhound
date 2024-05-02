@@ -48,8 +48,7 @@
 // Current version of the database schema
 #define CURRENT_SCHEMA_VERSION 2
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace StorageUtils;
 
@@ -71,7 +70,7 @@ StorageDBBridge::StorageDBBridge()
 
 class StorageDBThread::InitHelper final : public Runnable {
   nsCOMPtr<nsIEventTarget> mOwningThread;
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex MOZ_UNANNOTATED;
   mozilla::CondVar mCondVar;
   nsString mProfilePath;
   nsresult mMainThreadResultCode;
@@ -80,7 +79,7 @@ class StorageDBThread::InitHelper final : public Runnable {
  public:
   InitHelper()
       : Runnable("dom::StorageDBThread::InitHelper"),
-        mOwningThread(GetCurrentEventTarget()),
+        mOwningThread(GetCurrentSerialEventTarget()),
         mMutex("InitHelper::mMutex"),
         mCondVar(mMutex, "InitHelper::mCondVar"),
         mMainThreadResultCode(NS_OK),
@@ -108,7 +107,7 @@ class StorageDBThread::NoteBackgroundThreadRunnable final : public Runnable {
   explicit NoteBackgroundThreadRunnable(const uint32_t aPrivateBrowsingId)
       : Runnable("dom::StorageDBThread::NoteBackgroundThreadRunnable"),
         mPrivateBrowsingId(aPrivateBrowsingId),
-        mOwningThread(GetCurrentEventTarget()) {
+        mOwningThread(GetCurrentSerialEventTarget()) {
     MOZ_RELEASE_ASSERT(aPrivateBrowsingId < kPrivateBrowsingIdCount);
   }
 
@@ -531,12 +530,14 @@ nsresult StorageDBThread::OpenDatabaseConnection() {
     MOZ_ASSERT(mDatabaseFile);
 
     rv = service->OpenUnsharedDatabase(mDatabaseFile,
+                                       mozIStorageService::CONNECTION_DEFAULT,
                                        getter_AddRefs(mWorkerConnection));
     if (rv == NS_ERROR_FILE_CORRUPTED) {
       // delete the db and try opening again
       rv = mDatabaseFile->Remove(false);
       NS_ENSURE_SUCCESS(rv, rv);
       rv = service->OpenUnsharedDatabase(mDatabaseFile,
+                                         mozIStorageService::CONNECTION_DEFAULT,
                                          getter_AddRefs(mWorkerConnection));
     }
   } else {
@@ -544,6 +545,7 @@ nsresult StorageDBThread::OpenDatabaseConnection() {
 
     rv = service->OpenSpecialDatabase(kMozStorageMemoryStorageKey,
                                       "lsprivatedb"_ns,
+                                      mozIStorageService::CONNECTION_DEFAULT,
                                       getter_AddRefs(mWorkerConnection));
   }
   NS_ENSURE_SUCCESS(rv, rv);
@@ -699,20 +701,12 @@ nsresult StorageDBThread::ConfigureWALBehavior() {
 
   // Set the threshold for auto-checkpointing the WAL.
   // We don't want giant logs slowing down reads & shutdown.
+  // Note there is a default journal_size_limit set by mozStorage.
   int32_t thresholdInPages =
       static_cast<int32_t>(MAX_WAL_SIZE_BYTES / pageSize);
   nsAutoCString thresholdPragma("PRAGMA wal_autocheckpoint = ");
   thresholdPragma.AppendInt(thresholdInPages);
   rv = mWorkerConnection->ExecuteSimpleSQL(thresholdPragma);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Set the maximum WAL log size to reduce footprint on mobile (large empty
-  // WAL files will be truncated)
-  nsAutoCString journalSizePragma("PRAGMA journal_size_limit = ");
-  // bug 600307: mak recommends setting this to 3 times the auto-checkpoint
-  // threshold
-  journalSizePragma.AppendInt(MAX_WAL_SIZE_BYTES * 3);
-  rv = mWorkerConnection->ExecuteSimpleSQL(journalSizePragma);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1629,5 +1623,4 @@ StorageDBThread::ShutdownRunnable::Run() {
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

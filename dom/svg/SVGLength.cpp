@@ -9,6 +9,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGSVGElement.h"
+#include "nsCSSValue.h"
 #include "nsTextFormatter.h"
 #include "SVGContentUtils.h"
 #include <limits>
@@ -19,9 +20,15 @@ using namespace mozilla::dom::SVGLength_Binding;
 
 namespace mozilla {
 
-// Declare some helpers defined below:
-static void GetUnitString(nsAString& unit, uint16_t unitType);
-static uint16_t GetUnitTypeForString(const nsAString& unitStr);
+const unsigned short SVG_LENGTHTYPE_Q = 11;
+const unsigned short SVG_LENGTHTYPE_CH = 12;
+const unsigned short SVG_LENGTHTYPE_REM = 13;
+const unsigned short SVG_LENGTHTYPE_IC = 14;
+const unsigned short SVG_LENGTHTYPE_CAP = 15;
+const unsigned short SVG_LENGTHTYPE_VW = 16;
+const unsigned short SVG_LENGTHTYPE_VH = 17;
+const unsigned short SVG_LENGTHTYPE_VMIN = 18;
+const unsigned short SVG_LENGTHTYPE_VMAX = 19;
 
 void SVGLength::GetValueAsString(nsAString& aValue) const {
   nsTextFormatter::ssprintf(aValue, u"%g", (double)mValue);
@@ -50,7 +57,7 @@ bool SVGLength::SetValueFromString(const nsAString& aString) {
 
   const nsAString& units = Substring(iter.get(), end.get());
   uint16_t unitType = GetUnitTypeForString(units);
-  if (!IsValidUnitType(unitType)) {
+  if (unitType == SVG_LENGTHTYPE_UNKNOWN) {
     return false;
   }
   mValue = value;
@@ -58,9 +65,16 @@ bool SVGLength::SetValueFromString(const nsAString& aString) {
   return true;
 }
 
-inline static bool IsAbsoluteUnit(uint8_t aUnit) {
-  return aUnit >= SVGLength_Binding::SVG_LENGTHTYPE_CM &&
-         aUnit <= SVGLength_Binding::SVG_LENGTHTYPE_PC;
+/*static*/
+bool SVGLength::IsAbsoluteUnit(uint8_t aUnit) {
+  return aUnit == SVG_LENGTHTYPE_NUMBER ||
+         (aUnit >= SVG_LENGTHTYPE_PX && aUnit <= SVG_LENGTHTYPE_Q);
+}
+
+/*static*/
+bool SVGLength::IsFontRelativeUnit(uint8_t aUnit) {
+  return aUnit == SVG_LENGTHTYPE_EMS || aUnit == SVG_LENGTHTYPE_EXS ||
+         (aUnit >= SVG_LENGTHTYPE_CH && aUnit <= SVG_LENGTHTYPE_CAP);
 }
 
 /**
@@ -71,30 +85,42 @@ inline static bool IsAbsoluteUnit(uint8_t aUnit) {
  *
  * Example usage: to find out how many centimeters there are per inch:
  *
- *   GetAbsUnitsPerAbsUnit(SVGLength_Binding::SVG_LENGTHTYPE_CM,
- *                         SVGLength_Binding::SVG_LENGTHTYPE_IN)
+ *   GetAbsUnitsPerAbsUnit(SVG_LENGTHTYPE_CM, SVG_LENGTHTYPE_IN)
  */
-inline static float GetAbsUnitsPerAbsUnit(uint8_t aUnits, uint8_t aPerUnit) {
-  MOZ_ASSERT(IsAbsoluteUnit(aUnits), "Not a CSS absolute unit");
-  MOZ_ASSERT(IsAbsoluteUnit(aPerUnit), "Not a CSS absolute unit");
+/*static*/
+float SVGLength::GetAbsUnitsPerAbsUnit(uint8_t aUnits, uint8_t aPerUnit) {
+  MOZ_ASSERT(SVGLength::IsAbsoluteUnit(aUnits), "Not a CSS absolute unit");
+  MOZ_ASSERT(SVGLength::IsAbsoluteUnit(aPerUnit), "Not a CSS absolute unit");
 
-  float CSSAbsoluteUnitConversionFactors[5][5] = {
-      // columns: cm, mm, in, pt, pc
+  static const float CSSAbsoluteUnitConversionFactors[7][7] = {
+      // columns: px, cm, mm, in, pt, pc, q
+      // px per...:
+      {1.0f, 37.7952755906f, 3.779528f, 96.0f, 1.33333333333333333f, 16.0f,
+       0.94488188988f},
       // cm per...:
-      {1.0f, 0.1f, 2.54f, 0.035277777777777778f, 0.42333333333333333f},
+      {0.02645833333f, 1.0f, 0.1f, 2.54f, 0.035277777777777778f,
+       0.42333333333333333f, 0.025f},
       // mm per...:
-      {10.0f, 1.0f, 25.4f, 0.35277777777777778f, 4.2333333333333333f},
+      {0.26458333333f, 10.0f, 1.0f, 25.4f, 0.35277777777777778f,
+       4.2333333333333333f, 0.25f},
       // in per...:
-      {0.39370078740157481f, 0.039370078740157481f, 1.0f, 0.013888888888888889f,
-       0.16666666666666667f},
+      {0.01041666666f, 0.39370078740157481f, 0.039370078740157481f, 1.0f,
+       0.013888888888888889f, 0.16666666666666667f, 0.02204860853f},
       // pt per...:
-      {28.346456692913386f, 2.8346456692913386f, 72.0f, 1.0f, 12.0f},
+      {0.75f, 28.346456692913386f, 2.8346456692913386f, 72.0f, 1.0f, 12.0f,
+       0.70866141732f},
       // pc per...:
-      {2.3622047244094489f, 0.23622047244094489f, 6.0f, 0.083333333333333333f,
+      {0.0625f, 2.3622047244094489f, 0.23622047244094489f, 6.0f,
+       0.083333333333333333f, 1.0f, 16.9333333333f},
+      // q per...:
+      {1.0583333332f, 40.0f, 4.0f, 45.354336f, 1.41111111111f, 16.9333333333f,
        1.0f}};
 
-  // First absolute unit is SVG_LENGTHTYPE_CM = 6
-  return CSSAbsoluteUnitConversionFactors[aUnits - 6][aPerUnit - 6];
+  auto ToIndex = [](uint8_t aUnit) {
+    return aUnit == SVG_LENGTHTYPE_NUMBER ? 0 : aUnit - 5;
+  };
+
+  return CSSAbsoluteUnitConversionFactors[ToIndex(aUnits)][ToIndex(aPerUnit)];
 }
 
 float SVGLength::GetValueInSpecifiedUnit(uint8_t aUnit,
@@ -103,10 +129,8 @@ float SVGLength::GetValueInSpecifiedUnit(uint8_t aUnit,
   if (aUnit == mUnit) {
     return mValue;
   }
-  if ((aUnit == SVGLength_Binding::SVG_LENGTHTYPE_NUMBER &&
-       mUnit == SVGLength_Binding::SVG_LENGTHTYPE_PX) ||
-      (aUnit == SVGLength_Binding::SVG_LENGTHTYPE_PX &&
-       mUnit == SVGLength_Binding::SVG_LENGTHTYPE_NUMBER)) {
+  if ((aUnit == SVG_LENGTHTYPE_NUMBER && mUnit == SVG_LENGTHTYPE_PX) ||
+      (aUnit == SVG_LENGTHTYPE_PX && mUnit == SVG_LENGTHTYPE_NUMBER)) {
     return mValue;
   }
   if (IsAbsoluteUnit(aUnit) && IsAbsoluteUnit(mUnit)) {
@@ -117,110 +141,253 @@ float SVGLength::GetValueInSpecifiedUnit(uint8_t aUnit,
   // succeed if aElement is non-null (although that's not sufficient to
   // guarantee success).
 
-  float userUnitsPerCurrentUnit = GetUserUnitsPerUnit(aElement, aAxis);
-  float userUnitsPerNewUnit =
-      SVGLength(0.0f, aUnit).GetUserUnitsPerUnit(aElement, aAxis);
+  SVGElementMetrics userSpaceMetrics(aElement);
 
-  NS_ASSERTION(
-      userUnitsPerCurrentUnit >= 0 || !IsFinite(userUnitsPerCurrentUnit),
-      "bad userUnitsPerCurrentUnit");
-  NS_ASSERTION(userUnitsPerNewUnit >= 0 || !IsFinite(userUnitsPerNewUnit),
-               "bad userUnitsPerNewUnit");
+  float userUnitsPerCurrentUnit = GetPixelsPerUnit(userSpaceMetrics, aAxis);
+  float userUnitsPerNewUnit =
+      SVGLength(0.0f, aUnit).GetPixelsPerUnit(userSpaceMetrics, aAxis);
 
   float value = mValue * userUnitsPerCurrentUnit / userUnitsPerNewUnit;
 
   // userUnitsPerCurrentUnit could be infinity, or userUnitsPerNewUnit could
   // be zero.
-  if (IsFinite(value)) {
+  if (std::isfinite(value)) {
     return value;
-  }
-  return std::numeric_limits<float>::quiet_NaN();
-}
-
-#define INCHES_PER_MM_FLOAT float(0.0393700787)
-#define INCHES_PER_CM_FLOAT float(0.393700787)
-
-float SVGLength::GetUserUnitsPerUnit(const SVGElement* aElement,
-                                     uint8_t aAxis) const {
-  switch (mUnit) {
-    case SVGLength_Binding::SVG_LENGTHTYPE_NUMBER:
-    case SVGLength_Binding::SVG_LENGTHTYPE_PX:
-      return 1.0f;
-    case SVGLength_Binding::SVG_LENGTHTYPE_MM:
-      return INCHES_PER_MM_FLOAT * GetUserUnitsPerInch();
-    case SVGLength_Binding::SVG_LENGTHTYPE_CM:
-      return INCHES_PER_CM_FLOAT * GetUserUnitsPerInch();
-    case SVGLength_Binding::SVG_LENGTHTYPE_IN:
-      return GetUserUnitsPerInch();
-    case SVGLength_Binding::SVG_LENGTHTYPE_PT:
-      return (1.0f / POINTS_PER_INCH_FLOAT) * GetUserUnitsPerInch();
-    case SVGLength_Binding::SVG_LENGTHTYPE_PC:
-      return (12.0f / POINTS_PER_INCH_FLOAT) * GetUserUnitsPerInch();
-    case SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE:
-      return GetUserUnitsPerPercent(aElement, aAxis);
-    case SVGLength_Binding::SVG_LENGTHTYPE_EMS:
-      return SVGContentUtils::GetFontSize(const_cast<SVGElement*>(aElement));
-    case SVGLength_Binding::SVG_LENGTHTYPE_EXS:
-      return SVGContentUtils::GetFontXHeight(const_cast<SVGElement*>(aElement));
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unknown unit type");
-      return std::numeric_limits<float>::quiet_NaN();
-  }
-}
-
-/* static */
-float SVGLength::GetUserUnitsPerPercent(const SVGElement* aElement,
-                                        uint8_t aAxis) {
-  if (aElement) {
-    dom::SVGViewportElement* viewportElement = aElement->GetCtx();
-    if (viewportElement) {
-      return std::max(viewportElement->GetLength(aAxis) / 100.0f, 0.0f);
-    }
   }
   return std::numeric_limits<float>::quiet_NaN();
 }
 
 // Helpers:
 
-// These items must be at the same index as the SVGLength constants!
-static const nsStaticAtom* const unitMap[] = {
-    nullptr, /* SVG_LENGTHTYPE_UNKNOWN */
-    nullptr, /* SVG_LENGTHTYPE_NUMBER */
-    nsGkAtoms::percentage,
-    nsGkAtoms::em,
-    nsGkAtoms::ex,
-    nsGkAtoms::px,
-    nsGkAtoms::cm,
-    nsGkAtoms::mm,
-    nsGkAtoms::in,
-    nsGkAtoms::pt,
-    nsGkAtoms::pc};
-
-static void GetUnitString(nsAString& unit, uint16_t unitType) {
-  if (SVGLength::IsValidUnitType(unitType)) {
-    if (unitMap[unitType]) {
-      unitMap[unitType]->ToString(unit);
+/*static*/
+float SVGLength::GetPixelsPerUnit(const UserSpaceMetrics& aMetrics,
+                                  uint8_t aUnitType, uint8_t aAxis) {
+  switch (aUnitType) {
+    case SVG_LENGTHTYPE_NUMBER:
+    case SVG_LENGTHTYPE_PX:
+      return 1.0f;
+    case SVG_LENGTHTYPE_PERCENTAGE:
+      return aMetrics.GetAxisLength(aAxis) / 100.0f;
+    case SVG_LENGTHTYPE_EMS:
+      return aMetrics.GetEmLength(UserSpaceMetrics::Type::This);
+    case SVG_LENGTHTYPE_EXS:
+      return aMetrics.GetExLength(UserSpaceMetrics::Type::This);
+    case SVG_LENGTHTYPE_CH:
+      return aMetrics.GetChSize(UserSpaceMetrics::Type::This);
+    case SVG_LENGTHTYPE_REM:
+      return aMetrics.GetEmLength(UserSpaceMetrics::Type::Root);
+    case SVG_LENGTHTYPE_IC:
+      return aMetrics.GetIcWidth(UserSpaceMetrics::Type::This);
+    case SVG_LENGTHTYPE_CAP:
+      return aMetrics.GetCapHeight(UserSpaceMetrics::Type::This);
+    case SVG_LENGTHTYPE_VW:
+      return aMetrics.GetCSSViewportSize().width / 100.f;
+    case SVG_LENGTHTYPE_VH:
+      return aMetrics.GetCSSViewportSize().height / 100.f;
+    case SVG_LENGTHTYPE_VMIN: {
+      auto sz = aMetrics.GetCSSViewportSize();
+      return std::min(sz.width, sz.height) / 100.f;
     }
-    return;
+    case SVG_LENGTHTYPE_VMAX: {
+      auto sz = aMetrics.GetCSSViewportSize();
+      return std::max(sz.width, sz.height) / 100.f;
+    }
+    default:
+      MOZ_ASSERT(IsAbsoluteUnit(aUnitType));
+      return GetAbsUnitsPerAbsUnit(SVG_LENGTHTYPE_PX, aUnitType);
+  }
+}
+
+/* static */
+nsCSSUnit SVGLength::SpecifiedUnitTypeToCSSUnit(uint8_t aSpecifiedUnit) {
+  switch (aSpecifiedUnit) {
+    case SVG_LENGTHTYPE_NUMBER:
+    case SVG_LENGTHTYPE_PX:
+      return nsCSSUnit::eCSSUnit_Pixel;
+
+    case SVG_LENGTHTYPE_MM:
+      return nsCSSUnit::eCSSUnit_Millimeter;
+
+    case SVG_LENGTHTYPE_CM:
+      return nsCSSUnit::eCSSUnit_Centimeter;
+
+    case SVG_LENGTHTYPE_IN:
+      return nsCSSUnit::eCSSUnit_Inch;
+
+    case SVG_LENGTHTYPE_PT:
+      return nsCSSUnit::eCSSUnit_Point;
+
+    case SVG_LENGTHTYPE_PC:
+      return nsCSSUnit::eCSSUnit_Pica;
+
+    case SVG_LENGTHTYPE_PERCENTAGE:
+      return nsCSSUnit::eCSSUnit_Percent;
+
+    case SVG_LENGTHTYPE_EMS:
+      return nsCSSUnit::eCSSUnit_EM;
+
+    case SVG_LENGTHTYPE_EXS:
+      return nsCSSUnit::eCSSUnit_XHeight;
+
+    case SVG_LENGTHTYPE_Q:
+      return nsCSSUnit::eCSSUnit_Quarter;
+
+    case SVG_LENGTHTYPE_CH:
+      return nsCSSUnit::eCSSUnit_Char;
+
+    case SVG_LENGTHTYPE_REM:
+      return nsCSSUnit::eCSSUnit_RootEM;
+
+    case SVG_LENGTHTYPE_IC:
+      return nsCSSUnit::eCSSUnit_Ideographic;
+
+    case SVG_LENGTHTYPE_CAP:
+      return nsCSSUnit::eCSSUnit_CapHeight;
+
+    case SVG_LENGTHTYPE_VW:
+      return nsCSSUnit::eCSSUnit_VW;
+
+    case SVG_LENGTHTYPE_VH:
+      return nsCSSUnit::eCSSUnit_VH;
+
+    case SVG_LENGTHTYPE_VMIN:
+      return nsCSSUnit::eCSSUnit_VMin;
+
+    case SVG_LENGTHTYPE_VMAX:
+      return nsCSSUnit::eCSSUnit_VMax;
+
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown unit type");
+      return nsCSSUnit::eCSSUnit_Pixel;
+  }
+}
+
+/* static */
+void SVGLength::GetUnitString(nsAString& aUnit, uint16_t aUnitType) {
+  switch (aUnitType) {
+    case SVG_LENGTHTYPE_NUMBER:
+      aUnit.Truncate();
+      return;
+    case SVG_LENGTHTYPE_PERCENTAGE:
+      aUnit.AssignLiteral("%");
+      return;
+    case SVG_LENGTHTYPE_EMS:
+      aUnit.AssignLiteral("em");
+      return;
+    case SVG_LENGTHTYPE_EXS:
+      aUnit.AssignLiteral("ex");
+      return;
+    case SVG_LENGTHTYPE_PX:
+      aUnit.AssignLiteral("px");
+      return;
+    case SVG_LENGTHTYPE_CM:
+      aUnit.AssignLiteral("cm");
+      return;
+    case SVG_LENGTHTYPE_MM:
+      aUnit.AssignLiteral("mm");
+      return;
+    case SVG_LENGTHTYPE_IN:
+      aUnit.AssignLiteral("in");
+      return;
+    case SVG_LENGTHTYPE_PT:
+      aUnit.AssignLiteral("pt");
+      return;
+    case SVG_LENGTHTYPE_PC:
+      aUnit.AssignLiteral("pc");
+      return;
+    case SVG_LENGTHTYPE_Q:
+      aUnit.AssignLiteral("q");
+      return;
+    case SVG_LENGTHTYPE_CH:
+      aUnit.AssignLiteral("ch");
+      return;
+    case SVG_LENGTHTYPE_REM:
+      aUnit.AssignLiteral("rem");
+      return;
+    case SVG_LENGTHTYPE_IC:
+      aUnit.AssignLiteral("ic");
+      return;
+    case SVG_LENGTHTYPE_CAP:
+      aUnit.AssignLiteral("cap");
+      return;
+    case SVG_LENGTHTYPE_VW:
+      aUnit.AssignLiteral("vw");
+      return;
+    case SVG_LENGTHTYPE_VH:
+      aUnit.AssignLiteral("vh");
+      return;
+    case SVG_LENGTHTYPE_VMIN:
+      aUnit.AssignLiteral("vmin");
+      return;
+    case SVG_LENGTHTYPE_VMAX:
+      aUnit.AssignLiteral("vmax");
+      return;
   }
   MOZ_ASSERT_UNREACHABLE(
       "Unknown unit type! Someone's using an SVGLength "
       "with an invalid unit?");
 }
 
-static uint16_t GetUnitTypeForString(const nsAString& unitStr) {
-  if (unitStr.IsEmpty()) return SVGLength_Binding::SVG_LENGTHTYPE_NUMBER;
-
-  nsAtom* unitAtom = NS_GetStaticAtom(unitStr);
-
-  if (unitAtom) {
-    for (uint32_t i = 1; i < ArrayLength(unitMap); i++) {
-      if (unitMap[i] == unitAtom) {
-        return i;
-      }
-    }
+/* static */
+uint16_t SVGLength::GetUnitTypeForString(const nsAString& aUnit) {
+  if (aUnit.IsEmpty()) {
+    return SVG_LENGTHTYPE_NUMBER;
   }
-  return SVGLength_Binding::SVG_LENGTHTYPE_UNKNOWN;
+  if (aUnit.EqualsLiteral("%")) {
+    return SVG_LENGTHTYPE_PERCENTAGE;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("em")) {
+    return SVG_LENGTHTYPE_EMS;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("ex")) {
+    return SVG_LENGTHTYPE_EXS;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("px")) {
+    return SVG_LENGTHTYPE_PX;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("cm")) {
+    return SVG_LENGTHTYPE_CM;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("mm")) {
+    return SVG_LENGTHTYPE_MM;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("in")) {
+    return SVG_LENGTHTYPE_IN;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("pt")) {
+    return SVG_LENGTHTYPE_PT;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("pc")) {
+    return SVG_LENGTHTYPE_PC;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("q")) {
+    return SVG_LENGTHTYPE_Q;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("ch")) {
+    return SVG_LENGTHTYPE_CH;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("rem")) {
+    return SVG_LENGTHTYPE_REM;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("ic")) {
+    return SVG_LENGTHTYPE_IC;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("cap")) {
+    return SVG_LENGTHTYPE_CAP;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("vw")) {
+    return SVG_LENGTHTYPE_VW;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("vh")) {
+    return SVG_LENGTHTYPE_VH;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("vmin")) {
+    return SVG_LENGTHTYPE_VMIN;
+  }
+  if (aUnit.LowerCaseEqualsLiteral("vmax")) {
+    return SVG_LENGTHTYPE_VMAX;
+  }
+  return SVG_LENGTHTYPE_UNKNOWN;
 }
 
 }  // namespace mozilla

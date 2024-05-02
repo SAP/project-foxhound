@@ -13,7 +13,7 @@
 
 namespace mozilla {
 
-class MediaDecoderStateMachine;
+class MediaDecoderStateMachineBase;
 class MediaSourceDemuxer;
 
 namespace dom {
@@ -31,6 +31,7 @@ class MediaSourceDecoder : public MediaDecoder,
 
   nsresult Load(nsIPrincipal* aPrincipal);
   media::TimeIntervals GetSeekable() override;
+  media::TimeRanges GetSeekableTimeRanges() override;
   media::TimeIntervals GetBuffered() override;
 
   void Shutdown() override;
@@ -43,7 +44,8 @@ class MediaSourceDecoder : public MediaDecoder,
   // Return the duration of the video in seconds.
   double GetDuration() override;
 
-  void SetInitialDuration(int64_t aDuration);
+  void SetInitialDuration(const media::TimeUnit& aDuration);
+  void SetMediaSourceDuration(const media::TimeUnit& aDuration);
   void SetMediaSourceDuration(double aDuration);
 
   MediaSourceDemuxer* GetDemuxer() { return mDemuxer; }
@@ -54,9 +56,11 @@ class MediaSourceDecoder : public MediaDecoder,
 
   bool IsTransportSeekable() override { return true; }
 
-  // Returns a structure describing the state of the MediaSource internal
-  // buffered data. Used for debugging purposes.
-  void GetDebugInfo(dom::MediaSourceDecoderDebugInfo& aInfo);
+  // Requests that the MediaSourceDecoder populates aInfo with debug
+  // information. This may be done asynchronously, and aInfo should *not* be
+  // accessed by the caller until the returned promise is resolved or rejected.
+  RefPtr<GenericPromise> RequestDebugInfo(
+      dom::MediaSourceDecoderDebugInfo& aInfo);
 
   void AddSizeOfResources(ResourceSizes* aSizes) override;
 
@@ -71,7 +75,12 @@ class MediaSourceDecoder : public MediaDecoder,
   void NotifyDataArrived();
 
  private:
-  MediaDecoderStateMachine* CreateStateMachine();
+  MediaDecoderStateMachineBase* CreateStateMachine(
+      bool aDisableExternalEngine) override;
+
+  template <typename IntervalType>
+  IntervalType GetSeekableImpl();
+
   void DoSetMediaSourceDuration(double aDuration);
   media::TimeInterval ClampIntervalToEnd(const media::TimeInterval& aInterval);
   bool CanPlayThroughImpl() override;

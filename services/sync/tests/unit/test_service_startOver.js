@@ -1,19 +1,20 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 function BlaEngine() {
   SyncEngine.call(this, "Bla", Service);
 }
 BlaEngine.prototype = {
-  __proto__: SyncEngine.prototype,
-
   removed: false,
   async removeClientData() {
     this.removed = true;
   },
 };
+Object.setPrototypeOf(BlaEngine.prototype, SyncEngine.prototype);
 
 add_task(async function setup() {
   await Service.engineManager.register(BlaEngine);
@@ -41,7 +42,10 @@ add_task(async function test_resetLocalData() {
   Assert.ok(observerCalled);
 
   // Verify the site was nuked from orbit.
-  Assert.equal(Svc.Prefs.get("username"), undefined);
+  Assert.equal(
+    Svc.PrefBranch.getPrefType("username"),
+    Ci.nsIPrefBranch.PREF_INVALID
+  );
 
   Assert.equal(Service.status.service, CLIENT_NOT_CONFIGURED);
   Assert.ok(!Service.status.enforceBackoff);
@@ -68,7 +72,7 @@ add_task(async function test_reset_SyncScheduler() {
   // Some non-default values for SyncScheduler's attributes.
   Service.scheduler.idle = true;
   Service.scheduler.hasIncomingItems = true;
-  Svc.Prefs.set("clients.devices.desktop", 42);
+  Svc.PrefBranch.setIntPref("clients.devices.desktop", 42);
   Service.scheduler.nextSync = Date.now();
   Service.scheduler.syncThreshold = MULTI_DEVICE_THRESHOLD;
   Service.scheduler.syncInterval = Service.scheduler.activeInterval;

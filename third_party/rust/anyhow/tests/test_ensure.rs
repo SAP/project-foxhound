@@ -1,25 +1,28 @@
 #![allow(
+    clippy::bool_to_int_with_if,
     clippy::diverging_sub_expression,
     clippy::if_same_then_else,
     clippy::ifs_same_cond,
     clippy::items_after_statements,
     clippy::let_and_return,
-    clippy::let_underscore_drop,
-    clippy::logic_bug,
     clippy::match_bool,
     clippy::never_loop,
+    clippy::overly_complex_bool_expr,
     clippy::redundant_closure_call,
     clippy::redundant_pattern_matching,
     clippy::too_many_lines,
     clippy::unit_arg,
     clippy::while_immutable_condition,
-    clippy::zero_ptr
+    clippy::zero_ptr,
+    irrefutable_let_patterns
 )]
 
+use self::Enum::Generic;
 use anyhow::{anyhow, ensure, Chain, Error, Result};
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::iter;
 use std::marker::{PhantomData, PhantomData as P};
+use std::mem;
 use std::ops::Add;
 use std::ptr;
 
@@ -41,6 +44,24 @@ trait Trait: Sized {
 }
 
 impl<T> Trait for T {}
+
+enum Enum<T: ?Sized> {
+    #[allow(dead_code)]
+    Thing(PhantomData<T>),
+    Generic,
+}
+
+impl<T: ?Sized> PartialEq for Enum<T> {
+    fn eq(&self, rhs: &Self) -> bool {
+        mem::discriminant(self) == mem::discriminant(rhs)
+    }
+}
+
+impl<T: ?Sized> Debug for Enum<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("Generic")
+    }
+}
 
 #[track_caller]
 fn assert_err<T: Debug>(result: impl FnOnce() -> Result<T>, expected: &'static str) {
@@ -323,6 +344,18 @@ fn test_path() {
         "Condition failed: `Chain::<'static>::new.t(1) == 2` (1 vs 2)",
     );
 
+    fn f<const I: isize>() {}
+    let test = || Ok(ensure!(f::<1>() != ()));
+    assert_err(test, "Condition failed: `f::<1>() != ()` (() vs ())");
+    let test = || Ok(ensure!(f::<-1>() != ()));
+    assert_err(test, "Condition failed: `f::<-1>() != ()` (() vs ())");
+
+    fn g<T, const I: isize>() {}
+    let test = || Ok(ensure!(g::<u8, 1>() != ()));
+    assert_err(test, "Condition failed: `g::<u8, 1>() != ()` (() vs ())");
+    let test = || Ok(ensure!(g::<u8, -1>() != ()));
+    assert_err(test, "Condition failed: `g::<u8, -1>() != ()` (() vs ())");
+
     #[derive(PartialOrd, PartialEq, Debug)]
     enum E<'a, T> {
         #[allow(dead_code)]
@@ -342,27 +375,27 @@ fn test_path() {
     let test = || Ok(ensure!(E::U::<u8,>>E::U));
     assert_err(test, "Condition failed: `E::U::<u8> > E::U` (U vs U)");
 
-    let test = || Ok(ensure!(PhantomData::<dyn Debug + Sync> != PhantomData));
+    let test = || Ok(ensure!(Generic::<dyn Debug + Sync> != Generic));
     assert_err(
         test,
-        "Condition failed: `PhantomData::<dyn Debug + Sync> != PhantomData` (PhantomData vs PhantomData)",
+        "Condition failed: `Generic::<dyn Debug + Sync> != Generic` (Generic vs Generic)",
     );
 
-    let test = || Ok(ensure!(PhantomData::<dyn Fn() + Sync> != PhantomData));
+    let test = || Ok(ensure!(Generic::<dyn Fn() + Sync> != Generic));
     assert_err(
         test,
-        "Condition failed: `PhantomData::<dyn Fn() + Sync> != PhantomData` (PhantomData vs PhantomData)",
+        "Condition failed: `Generic::<dyn Fn() + Sync> != Generic` (Generic vs Generic)",
     );
 
     #[rustfmt::skip]
     let test = || {
         Ok(ensure!(
-            PhantomData::<dyn Fn::() + ::std::marker::Sync> != PhantomData
+            Generic::<dyn Fn::() + ::std::marker::Sync> != Generic
         ))
     };
     assert_err(
         test,
-        "Condition failed: `PhantomData::<dyn Fn() + ::std::marker::Sync> != PhantomData` (PhantomData vs PhantomData)",
+        "Condition failed: `Generic::<dyn Fn() + ::std::marker::Sync> != Generic` (Generic vs Generic)",
     );
 }
 
@@ -395,7 +428,7 @@ fn test_trailer() {
     let test = || Ok(ensure!(PhantomData::<u8> {} != PhantomData));
     assert_err(
         test,
-        "Condition failed: `PhantomData::<u8>{} != PhantomData` (PhantomData vs PhantomData)",
+        "Condition failed: `PhantomData::<u8> {} != PhantomData` (PhantomData<u8> vs PhantomData<u8>)",
     );
 
     let result = Ok::<_, Error>(1);
@@ -528,7 +561,7 @@ fn test_as() {
     let test = || Ok(ensure!(f as for<'a> fn() as usize * 0 != 0));
     assert_err(
         test,
-        "Condition failed: `f as for<'a>fn() as usize * 0 != 0` (0 vs 0)", // FIXME
+        "Condition failed: `f as for<'a> fn() as usize * 0 != 0` (0 vs 0)",
     );
 
     let test = || Ok(ensure!(f as unsafe fn() as usize * 0 != 0));
@@ -583,7 +616,7 @@ fn test_as() {
     };
     assert_err(
         test,
-        "Condition failed: `PhantomData as PhantomData<<i32 as ToOwned>::Owned> != PhantomData` (PhantomData vs PhantomData)",
+        "Condition failed: `PhantomData as PhantomData<<i32 as ToOwned>::Owned> != PhantomData` (PhantomData<i32> vs PhantomData<i32>)",
     );
 
     macro_rules! int {
@@ -613,7 +646,7 @@ fn test_pat() {
     let test = || Ok(ensure!(if let -1..=1 = 0 { 0 } else { 1 } == 1));
     assert_err(
         test,
-        "Condition failed: `if let -1 ..=1 = 0 { 0 } else { 1 } == 1` (0 vs 1)", // FIXME
+        "Condition failed: `if let -1..=1 = 0 { 0 } else { 1 } == 1` (0 vs 1)",
     );
 
     let test = || Ok(ensure!(if let &0 = &0 { 0 } else { 1 } == 1));
@@ -656,7 +689,7 @@ fn test_pat() {
     let test = || Ok(ensure!(if let P::<u8> {} = p { 0 } else { 1 } == 1));
     assert_err(
         test,
-        "Condition failed: `if let P::<u8> {  } = p { 0 } else { 1 } == 1` (0 vs 1)", // FIXME
+        "Condition failed: `if let P::<u8> {} = p { 0 } else { 1 } == 1` (0 vs 1)",
     );
 
     let test = || Ok(ensure!(if let ::std::marker::PhantomData = p {} != ()));

@@ -19,11 +19,6 @@
  * notification with the headers, so there are two ways to produce
  */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Downloads } = ChromeUtils.import(
-  "resource://gre/modules/Downloads.jsm"
-);
-
 /**
  * Clear the downloads list so other tests don't see our byproducts.
  */
@@ -70,10 +65,15 @@ async function performCanceledDownload(tab, path) {
 
   if (
     Services.prefs.getBoolPref(
-      "browser.download.improvements_to_download_panel",
+      "browser.download.always_ask_before_handling_new_types",
       false
     )
   ) {
+    // Start waiting for the download dialog before triggering the download.
+    cancelledDownload = promiseClickDownloadDialogButton("cancel");
+    // Wait for the cancelation to have been triggered.
+    info("waiting for download popup");
+  } else {
     let downloadView;
     cancelledDownload = new Promise(resolve => {
       downloadView = {
@@ -85,17 +85,12 @@ async function performCanceledDownload(tab, path) {
     });
     const downloadList = await Downloads.getList(Downloads.ALL);
     await downloadList.addView(downloadView);
-  } else {
-    // Start waiting for the download dialog before triggering the download.
-    cancelledDownload = promiseClickDownloadDialogButton("cancel");
-    // Wait for the cancelation to have been triggered.
-    info("waiting for download popup");
   }
 
   // Trigger the download.
   info(`triggering download of "${path}"`);
   /* eslint-disable no-shadow */
-  await SpecialPowers.spawn(tab.linkedBrowser, [path], function(path) {
+  await SpecialPowers.spawn(tab.linkedBrowser, [path], function (path) {
     // Put a Promise in place that we can wait on for stream closure.
     content.wrappedJSObject.trackStreamClosure(path);
     // Create the link and trigger the download.
@@ -114,11 +109,13 @@ async function performCanceledDownload(tab, path) {
   // Wait for confirmation that the stream stopped.
   info(`wait for the ${path} stream to close.`);
   /* eslint-disable no-shadow */
-  const why = await SpecialPowers.spawn(tab.linkedBrowser, [path], function(
-    path
-  ) {
-    return content.wrappedJSObject.streamClosed[path].promise;
-  });
+  const why = await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [path],
+    function (path) {
+      return content.wrappedJSObject.streamClosed[path].promise;
+    }
+  );
   /* eslint-enable no-shadow */
   is(why.why, "canceled", "Ensure the stream canceled instead of timing out.");
   // Note that for the "sw-stream-download" case, we end up with a bogus
@@ -141,7 +138,6 @@ add_task(async function interruptedDownloads() {
       ["dom.serviceWorkers.enabled", true],
       ["dom.serviceWorkers.exemptFromPerDomainMax", true],
       ["dom.serviceWorkers.testing.enabled", true],
-      ["javascript.options.streams", true],
     ],
   });
 
@@ -156,7 +152,7 @@ add_task(async function interruptedDownloads() {
   const controlled = await SpecialPowers.spawn(
     tab.linkedBrowser,
     [],
-    function() {
+    function () {
       // This is a promise set up by the page during load, and we are post-load.
       return content.wrappedJSObject.controlled;
     }
@@ -170,7 +166,7 @@ add_task(async function interruptedDownloads() {
   await performCanceledDownload(tab, "sw-stream-download");
 
   // Cleanup
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     return content.wrappedJSObject.registration.unregister();
   });
   BrowserTestUtils.removeTab(tab);

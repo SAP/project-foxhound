@@ -20,13 +20,17 @@ function checkAttribute(output, node, attribute)
 
 function assert_tolerance(actual, expected, message)
 {
-    if (isNaN(expected) || Math.abs(actual - expected) >= 1) {
+    if (isNaN(expected) || isNaN(actual) || Math.abs(actual - expected) >= 1) {
         assert_equals(actual, Number(expected), message);
     }
 }
 
 function checkDataKeys(node) {
+  // The purpose of this list of data-* attributes is simply to ensure typos
+  // in tests are caught. It is therefore "ok" to add to this list for
+  // specific tests.
     var validData = new Set([
+        "data-anchor-polyfill",
         "data-expected-width",
         "data-expected-height",
         "data-offset-x",

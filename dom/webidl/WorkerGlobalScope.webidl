@@ -20,7 +20,7 @@ interface WorkerGlobalScope : EventTarget {
   readonly attribute WorkerNavigator navigator;
 
   [Throws]
-  void importScripts(DOMString... urls);
+  undefined importScripts(DOMString... urls);
 
   attribute OnErrorEventHandler onerror;
 
@@ -33,15 +33,13 @@ interface WorkerGlobalScope : EventTarget {
 };
 
 WorkerGlobalScope includes GlobalCrypto;
+WorkerGlobalScope includes FontFaceSource;
 WorkerGlobalScope includes WindowOrWorkerGlobalScope;
-
-// Not implemented yet: bug 1072107.
-// WorkerGlobalScope implements FontFaceSource;
 
 // Mozilla extensions
 partial interface WorkerGlobalScope {
 
-  void dump(optional DOMString str);
+  undefined dump(optional DOMString str);
 
   // https://w3c.github.io/hr-time/#the-performance-attribute
   [Constant, Cached, Replaceable, BinaryName="getPerformance"]

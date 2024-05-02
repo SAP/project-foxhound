@@ -19,6 +19,12 @@
 #  include "jit/mips32/Assembler-mips32.h"
 #elif defined(JS_CODEGEN_MIPS64)
 #  include "jit/mips64/Assembler-mips64.h"
+#elif defined(JS_CODEGEN_LOONG64)
+#  include "jit/loong64/Assembler-loong64.h"
+#elif defined(JS_CODEGEN_RISCV64)
+#  include "jit/riscv64/Assembler-riscv64.h"
+#elif defined(JS_CODEGEN_WASM32)
+#  include "jit/wasm32/Assembler-wasm32.h"
 #elif defined(JS_CODEGEN_NONE)
 #  include "jit/none/Assembler-none.h"
 #else

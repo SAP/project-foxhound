@@ -16,6 +16,10 @@
 #include "vpx_ports/x86.h"
 #elif VPX_ARCH_PPC
 #include "vpx_ports/ppc.h"
+#elif VPX_ARCH_MIPS
+#include "vpx_ports/mips.h"
+#elif VPX_ARCH_LOONGARCH
+#include "vpx_ports/loongarch.h"
 #endif
 #include "vp8/common/onyxc_int.h"
 #include "vp8/common/systemdependent.h"
@@ -96,6 +100,10 @@ void vp8_machine_specific_config(VP8_COMMON *ctx) {
   ctx->cpu_caps = x86_simd_caps();
 #elif VPX_ARCH_PPC
   ctx->cpu_caps = ppc_simd_caps();
+#elif VPX_ARCH_MIPS
+  ctx->cpu_caps = mips_cpu_caps();
+#elif VPX_ARCH_LOONGARCH
+  ctx->cpu_caps = loongarch_cpu_caps();
 #else
   // generic-gnu targets.
   ctx->cpu_caps = 0;

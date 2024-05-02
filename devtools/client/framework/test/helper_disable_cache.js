@@ -59,7 +59,7 @@ async function checkCacheEnabled(tabX, expected) {
   const oldGuid = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    function() {
+    function () {
       const doc = content.document;
       const h1 = doc.querySelector("h1");
       return h1.textContent;
@@ -71,7 +71,7 @@ async function checkCacheEnabled(tabX, expected) {
   const guid = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    function() {
+    function () {
       const doc = content.document;
       const h1 = doc.querySelector("h1");
       return h1.textContent;
@@ -106,7 +106,7 @@ function reloadTab(tabX) {
   const browser = gBrowser.selectedBrowser;
 
   const reloadTabPromise = BrowserTestUtils.browserLoaded(browser).then(
-    function() {
+    function () {
       info("Reloaded tab " + tabX.title);
     }
   );
@@ -120,7 +120,7 @@ function reloadTab(tabX) {
 }
 
 async function destroyTab(tabX) {
-  const toolbox = await gDevTools.getToolboxForTab(tabX.tab);
+  const toolbox = gDevTools.getToolboxForTab(tabX.tab);
 
   let onceDestroyed;
   if (toolbox) {

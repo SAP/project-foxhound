@@ -6,6 +6,7 @@
 #ifndef mozilla_widget_HeadlessClipboard_h
 #define mozilla_widget_HeadlessClipboard_h
 
+#include "nsBaseClipboard.h"
 #include "nsIClipboard.h"
 #include "mozilla/UniquePtr.h"
 #include "HeadlessClipboardData.h"
@@ -13,18 +14,29 @@
 namespace mozilla {
 namespace widget {
 
-class HeadlessClipboard final : public nsIClipboard {
+class HeadlessClipboard final : public nsBaseClipboard {
  public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSICLIPBOARD
-
   HeadlessClipboard();
+
+  NS_DECL_ISUPPORTS_INHERITED
 
  protected:
   ~HeadlessClipboard() = default;
 
+  // Implement the native clipboard behavior.
+  NS_IMETHOD SetNativeClipboardData(nsITransferable* aTransferable,
+                                    int32_t aWhichClipboard) override;
+  NS_IMETHOD GetNativeClipboardData(nsITransferable* aTransferable,
+                                    int32_t aWhichClipboard) override;
+  nsresult EmptyNativeClipboardData(int32_t aWhichClipboard) override;
+  mozilla::Result<int32_t, nsresult> GetNativeClipboardSequenceNumber(
+      int32_t aWhichClipboard) override;
+  mozilla::Result<bool, nsresult> HasNativeClipboardDataMatchingFlavors(
+      const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard) override;
+
  private:
-  UniquePtr<HeadlessClipboardData> mClipboard;
+  UniquePtr<HeadlessClipboardData>
+      mClipboards[nsIClipboard::kClipboardTypeCount];
 };
 
 }  // namespace widget

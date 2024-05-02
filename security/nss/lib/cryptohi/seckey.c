@@ -14,6 +14,7 @@
 #include "secdig.h"
 #include "prtime.h"
 #include "keyi.h"
+#include "nss.h"
 
 SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
 SEC_ASN1_MKSUB(SEC_IntegerTemplate)
@@ -29,13 +30,12 @@ const SEC_ASN1Template CERT_SubjectPublicKeyInfoTemplate[] = {
     { 0 }
 };
 
-const SEC_ASN1Template CERT_PublicKeyAndChallengeTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(CERTPublicKeyAndChallenge) },
-      { SEC_ASN1_ANY, offsetof(CERTPublicKeyAndChallenge, spki) },
-      { SEC_ASN1_IA5_STRING, offsetof(CERTPublicKeyAndChallenge, challenge) },
-      { 0 }
-    };
+const SEC_ASN1Template CERT_PublicKeyAndChallengeTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(CERTPublicKeyAndChallenge) },
+    { SEC_ASN1_ANY, offsetof(CERTPublicKeyAndChallenge, spki) },
+    { SEC_ASN1_IA5_STRING, offsetof(CERTPublicKeyAndChallenge, challenge) },
+    { 0 }
+};
 
 const SEC_ASN1Template SECKEY_RSAPublicKeyTemplate[] = {
     { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYPublicKey) },
@@ -50,27 +50,26 @@ static const SEC_ASN1Template seckey_PointerToAlgorithmIDTemplate[] = {
 };
 
 /* Parameters for SEC_OID_PKCS1_RSA_PSS_SIGNATURE */
-const SEC_ASN1Template SECKEY_RSAPSSParamsTemplate[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYRSAPSSParams) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_CONTEXT_SPECIFIC | 0,
-        offsetof(SECKEYRSAPSSParams, hashAlg),
-        seckey_PointerToAlgorithmIDTemplate },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_CONTEXT_SPECIFIC | 1,
-        offsetof(SECKEYRSAPSSParams, maskAlg),
-        seckey_PointerToAlgorithmIDTemplate },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 2,
-        offsetof(SECKEYRSAPSSParams, saltLength),
-        SEC_ASN1_SUB(SEC_IntegerTemplate) },
-      { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
-            SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 3,
-        offsetof(SECKEYRSAPSSParams, trailerField),
-        SEC_ASN1_SUB(SEC_IntegerTemplate) },
-      { 0 }
-    };
+const SEC_ASN1Template SECKEY_RSAPSSParamsTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYRSAPSSParams) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SECKEYRSAPSSParams, hashAlg),
+      seckey_PointerToAlgorithmIDTemplate },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_CONTEXT_SPECIFIC | 1,
+      offsetof(SECKEYRSAPSSParams, maskAlg),
+      seckey_PointerToAlgorithmIDTemplate },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 2,
+      offsetof(SECKEYRSAPSSParams, saltLength),
+      SEC_ASN1_SUB(SEC_IntegerTemplate) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_EXPLICIT |
+          SEC_ASN1_XTRN | SEC_ASN1_CONTEXT_SPECIFIC | 3,
+      offsetof(SECKEYRSAPSSParams, trailerField),
+      SEC_ASN1_SUB(SEC_IntegerTemplate) },
+    { 0 }
+};
 
 const SEC_ASN1Template SECKEY_DSAPublicKeyTemplate[] = {
     { SEC_ASN1_INTEGER, offsetof(SECKEYPublicKey, u.dsa.publicValue) },
@@ -1042,18 +1041,75 @@ SECKEY_PublicKeyStrengthInBits(const SECKEYPublicKey *pubk)
     return bitSize;
 }
 
+unsigned
+SECKEY_PrivateKeyStrengthInBits(const SECKEYPrivateKey *privk)
+{
+    unsigned bitSize = 0;
+    SECItem params = { siBuffer, NULL, 0 };
+    SECStatus rv;
+
+    if (!privk) {
+        PORT_SetError(SEC_ERROR_INVALID_KEY);
+        return 0;
+    }
+
+    /* interpret modulus length as key strength */
+    switch (privk->keyType) {
+        case rsaKey:
+        case rsaPssKey:
+        case rsaOaepKey:
+            /* some tokens don't export CKA_MODULUS on the private key,
+             * PK11_SignatureLen works around this if necessary */
+            bitSize = PK11_SignatureLen((SECKEYPrivateKey *)privk) * PR_BITS_PER_BYTE;
+            if (bitSize == -1) {
+                bitSize = 0;
+            }
+            return bitSize;
+        case dsaKey:
+        case fortezzaKey:
+        case dhKey:
+        case keaKey:
+            rv = PK11_ReadAttribute(privk->pkcs11Slot, privk->pkcs11ID,
+                                    CKA_PRIME, NULL, &params);
+            if ((rv != SECSuccess) || (params.data == NULL)) {
+                PORT_SetError(SEC_ERROR_INVALID_KEY);
+                return 0;
+            }
+            bitSize = SECKEY_BigIntegerBitLength(&params);
+            PORT_Free(params.data);
+            return bitSize;
+        case ecKey:
+            rv = PK11_ReadAttribute(privk->pkcs11Slot, privk->pkcs11ID,
+                                    CKA_EC_PARAMS, NULL, &params);
+            if ((rv != SECSuccess) || (params.data == NULL)) {
+                return 0;
+            }
+            bitSize = SECKEY_ECParamsToKeySize(&params);
+            PORT_Free(params.data);
+            return bitSize;
+        default:
+            break;
+    }
+    PORT_SetError(SEC_ERROR_INVALID_KEY);
+    return 0;
+}
+
 /* returns signature length in bytes (not bits) */
 unsigned
 SECKEY_SignatureLen(const SECKEYPublicKey *pubk)
 {
-    unsigned char b0;
     unsigned size;
 
     switch (pubk->keyType) {
         case rsaKey:
         case rsaPssKey:
-            b0 = pubk->u.rsa.modulus.data[0];
-            return b0 ? pubk->u.rsa.modulus.len : pubk->u.rsa.modulus.len - 1;
+            if (pubk->u.rsa.modulus.len == 0) {
+                return 0;
+            }
+            if (pubk->u.rsa.modulus.data[0] == 0) {
+                return pubk->u.rsa.modulus.len - 1;
+            }
+            return pubk->u.rsa.modulus.len;
         case dsaKey:
             return pubk->u.dsa.params.subPrime.len * 2;
         case ecKey:
@@ -1209,6 +1265,51 @@ SECKEY_CopyPublicKey(const SECKEYPublicKey *pubk)
 
     SECKEY_DestroyPublicKey(copyk);
     return NULL;
+}
+
+/*
+ * Check that a given key meets the policy limits for the given key
+ * size.
+ */
+SECStatus
+seckey_EnforceKeySize(KeyType keyType, unsigned keyLength, SECErrorCodes error)
+{
+    PRInt32 opt = -1;
+    PRInt32 optVal;
+    SECStatus rv;
+
+    switch (keyType) {
+        case rsaKey:
+        case rsaPssKey:
+        case rsaOaepKey:
+            opt = NSS_RSA_MIN_KEY_SIZE;
+            break;
+        case dsaKey:
+        case fortezzaKey:
+            opt = NSS_DSA_MIN_KEY_SIZE;
+            break;
+        case dhKey:
+        case keaKey:
+            opt = NSS_DH_MIN_KEY_SIZE;
+            break;
+        case ecKey:
+            opt = NSS_ECC_MIN_KEY_SIZE;
+            break;
+        case nullKey:
+        default:
+            PORT_SetError(SEC_ERROR_INVALID_KEY);
+            return SECFailure;
+    }
+    PORT_Assert(opt != -1);
+    rv = NSS_OptionGet(opt, &optVal);
+    if (rv != SECSuccess) {
+        return rv;
+    }
+    if (optVal > keyLength) {
+        PORT_SetError(error);
+        return SECFailure;
+    }
+    return SECSuccess;
 }
 
 /*

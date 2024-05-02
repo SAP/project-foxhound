@@ -20,7 +20,8 @@ job-defaults:
         tier: 2
     run-on-projects: []
     repo: 'https://github.com/cisco/openh264.git'
-    revision: '2e1774ab6dc6c43debb0b5b628bdf122a391d521'
+    revision: '31c4d2e4a037526fd30d4e5c39f60885986cf865'
+    use-system-python: false
     worker:
         chain-of-trust: true
 
@@ -31,7 +32,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: linux32/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             max-run-time: 1800
             artifacts:
@@ -56,7 +57,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: linux64/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             max-run-time: 1800
             artifacts:
@@ -75,13 +76,38 @@ jobs:
                 - linux64-dump_syms
                 - linux64-nasm
                 - sysroot-x86_64-linux-gnu
+    linux64-aarch64/opt:
+        attributes:
+            build_platform: linux64-aarch64
+            build_type: opt
+        treeherder:
+            platform: linux64-aarch64/opt
+        worker-type: b-linux-gcp
+        worker:
+            max-run-time: 1800
+            artifacts:
+                - name: private/openh264
+                  path: /builds/worker/workspace/openh264/artifacts
+                  type: directory
+        run:
+            using: mozharness
+            script: mozharness/scripts/openh264_build.py
+            config:
+                - openh264/linux64-aarch64.py
+        fetches:
+            toolchain:
+                - linux64-binutils
+                - linux64-clang
+                - linux64-dump_syms
+                - sysroot-x86_64-linux-gnu
+                - sysroot-aarch64-linux-gnu
     macosx64/opt:
         attributes:
             build_platform: macosx64
             build_type: opt
         treeherder:
             platform: macosx64/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             max-run-time: 1800
             artifacts:
@@ -99,14 +125,14 @@ jobs:
                 - linux64-clang
                 - linux64-dump_syms
                 - linux64-nasm
-                - macosx64-sdk-10.11
+                - macosx64-sdk-13.3
     macosx64-aarch64/opt:
         attributes:
             build_platform: macosx64-aarch64
             build_type: opt
         treeherder:
             platform: macosx64-aarch64/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             max-run-time: 1800
             artifacts:
@@ -123,14 +149,14 @@ jobs:
                 - linux64-cctools-port
                 - linux64-clang
                 - linux64-dump_syms
-                - macosx64-sdk-11.0
+                - macosx64-sdk-13.3
     win32/opt:
         attributes:
             build_platform: win32
             build_type: opt
         treeherder:
             platform: win32/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             max-run-time: 1800
             artifacts:
@@ -147,6 +173,7 @@ jobs:
             toolchain:
                 - win64-clang
                 - win64-dump_syms
+                - win64-mozmake
                 - win64-nasm
     win64/opt:
         attributes:
@@ -154,7 +181,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: win64/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             max-run-time: 1800
             artifacts:
@@ -171,6 +198,7 @@ jobs:
             toolchain:
                 - win64-clang
                 - win64-dump_syms
+                - win64-mozmake
                 - win64-nasm
     win64-aarch64/opt:
         attributes:
@@ -178,7 +206,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: win64-aarch64/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             max-run-time: 1800
             artifacts:
@@ -195,3 +223,4 @@ jobs:
             toolchain:
                 - win64-clang
                 - win64-dump_syms
+                - win64-mozmake

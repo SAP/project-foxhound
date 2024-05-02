@@ -23,7 +23,7 @@ interface DOMParser {
   [Throws]
   constructor();
 
-  [NewObject, Throws]
+  [NewObject, Throws, UseCounter]
   Document parseFromString(DOMString str, SupportedType type);
 
   [NewObject, ChromeOnly, Throws]
@@ -40,11 +40,10 @@ interface DOMParser {
   // Can be used to allow a DOMParser to parse XUL/XBL no matter what
   // principal it's using for the document.
   [ChromeOnly]
-  void forceEnableXULXBL();
+  undefined forceEnableXULXBL();
 
   // Can be used to allow a DOMParser to load DTDs from URLs that
   // normally would not be allowed based on the document principal.
   [Func="IsChromeOrUAWidget"]
-  void forceEnableDTD();
+  undefined forceEnableDTD();
 };
-

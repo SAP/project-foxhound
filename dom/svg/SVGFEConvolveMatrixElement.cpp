@@ -18,8 +18,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FEConvolveMatrix)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFEConvolveMatrixElement::WrapNode(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -27,7 +26,7 @@ JSObject* SVGFEConvolveMatrixElement::WrapNode(
 }
 
 SVGElement::NumberInfo SVGFEConvolveMatrixElement::sNumberInfo[2] = {
-    {nsGkAtoms::divisor, 1, false}, {nsGkAtoms::bias, 0, false}};
+    {nsGkAtoms::divisor, 1}, {nsGkAtoms::bias, 0}};
 
 SVGElement::NumberPairInfo SVGFEConvolveMatrixElement::sNumberPairInfo[1] = {
     {nsGkAtoms::kernelUnitLength, 0, 0}};
@@ -228,7 +227,7 @@ nsresult SVGFEConvolveMatrixElement::BindToTree(BindContext& aCtx,
     aCtx.OwnerDoc().SetUseCounter(eUseCounter_custom_feConvolveMatrix);
   }
 
-  return SVGFE::BindToTree(aCtx, aParent);
+  return SVGFEConvolveMatrixElementBase::BindToTree(aCtx, aParent);
 }
 
 //----------------------------------------------------------------------
@@ -276,5 +275,4 @@ SVGFEConvolveMatrixElement::GetNumberListInfo() {
                                   ArrayLength(sNumberListInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

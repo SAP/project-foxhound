@@ -1,30 +1,38 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from argparse import ArgumentParser, Namespace
-import os
-import mozlog
 import copy
+import os
+from argparse import ArgumentParser, Namespace
+
+import mozlog
 
 here = os.path.abspath(os.path.dirname(__file__))
 try:
-    from mozbuild.base import MozbuildObject, MachCommandConditions as conditions
+    from mozbuild.base import MachCommandConditions as conditions
+    from mozbuild.base import MozbuildObject
 
     build_obj = MozbuildObject.from_environment(cwd=here)
 except Exception:
     build_obj = None
     conditions = None
 
+from mozperftest.metrics import get_layers as metrics_layers  # noqa
 from mozperftest.system import get_layers as system_layers  # noqa
 from mozperftest.test import get_layers as test_layers  # noqa
-from mozperftest.metrics import get_layers as metrics_layers  # noqa
 from mozperftest.utils import convert_day  # noqa
 
-FLAVORS = "desktop-browser", "mobile-browser", "doc", "xpcshell"
+FLAVORS = (
+    "desktop-browser",
+    "mobile-browser",
+    "doc",
+    "xpcshell",
+    "webpagetest",
+    "mochitest",
+)
 
 
 class Options:
-
     general_args = {
         "--flavor": {
             "choices": FLAVORS,
@@ -100,10 +108,10 @@ for layer in system_layers() + test_layers() + metrics_layers():
     }
 
     for option, value in layer.arguments.items():
-        option = "--%s-%s" % (layer.name, option.replace("_", "-"))
-        if option in Options.args:
-            raise KeyError("%s option already defined!" % option)
-        Options.args[option] = value
+        parsed_option = "--%s-%s" % (layer.name, option.replace("_", "-"))
+        if parsed_option in Options.args:
+            raise KeyError("%s option already defined!" % parsed_option)
+        Options.args[parsed_option] = value
 
 
 class PerftestArgumentParser(ArgumentParser):
@@ -167,3 +175,307 @@ class PerftestArgumentParser(ArgumentParser):
     def parse_known_args(self, args=None, namespace=None):
         self.parse_helper(args)
         return super().parse_known_args(args, namespace)
+
+
+class SideBySideOptions:
+    args = [
+        [
+            ["-t", "--test-name"],
+            {
+                "type": str,
+                "required": True,
+                "dest": "test_name",
+                "help": "The name of the test task to get videos from.",
+            },
+        ],
+        [
+            ["--new-test-name"],
+            {
+                "type": str,
+                "default": None,
+                "help": "The name of the test task to get videos from in the new revision.",
+            },
+        ],
+        [
+            ["--base-revision"],
+            {
+                "type": str,
+                "required": True,
+                "help": "The base revision to compare a new revision to.",
+            },
+        ],
+        [
+            ["--new-revision"],
+            {
+                "type": str,
+                "required": True,
+                "help": "The base revision to compare a new revision to.",
+            },
+        ],
+        [
+            ["--base-branch"],
+            {
+                "type": str,
+                "default": "autoland",
+                "help": "Branch to search for the base revision.",
+            },
+        ],
+        [
+            ["--new-branch"],
+            {
+                "type": str,
+                "default": "autoland",
+                "help": "Branch to search for the new revision.",
+            },
+        ],
+        [
+            ["--base-platform"],
+            {
+                "type": str,
+                "required": True,
+                "dest": "platform",
+                "help": "Platform to return results for.",
+            },
+        ],
+        [
+            ["--new-platform"],
+            {
+                "type": str,
+                "default": None,
+                "help": "Platform to return results for in the new revision.",
+            },
+        ],
+        [
+            ["-o", "--overwrite"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, the downloaded task group data will be deleted before "
+                + "it gets re-downloaded.",
+            },
+        ],
+        [
+            ["--cold"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, we'll only look at cold pageload tests.",
+            },
+        ],
+        [
+            ["--warm"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, we'll only look at warm pageload tests.",
+            },
+        ],
+        [
+            ["--most-similar"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, we'll search for a video pairing that is the most similar.",
+            },
+        ],
+        [
+            ["--search-crons"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, we will search for the tasks within the cron jobs as well. ",
+            },
+        ],
+        [
+            ["--skip-download"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, we won't try to download artifacts again and we'll "
+                + "try using what already exists in the output folder.",
+            },
+        ],
+        [
+            ["--output"],
+            {
+                "type": str,
+                "default": None,
+                "help": "This is where the data will be saved. Defaults to CWD. "
+                + "You can include a name for the file here, otherwise it will "
+                + "default to side-by-side.mp4.",
+            },
+        ],
+        [
+            ["--metric"],
+            {
+                "type": str,
+                "default": "speedindex",
+                "help": "Metric to use for side-by-side comparison.",
+            },
+        ],
+        [
+            ["--vismetPath"],
+            {
+                "type": str,
+                "default": False,
+                "help": "Paths to visualmetrics.py for step chart generation.",
+            },
+        ],
+        [
+            ["--original"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, use the original videos in the side-by-side instead "
+                + "of the postprocessed videos.",
+            },
+        ],
+        [
+            ["--skip-slow-gif"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, the slow-motion GIFs won't be produced.",
+            },
+        ],
+    ]
+
+
+class ChangeDetectorOptions:
+    args = [
+        # TODO: Move the common tool arguments to a common
+        # argument class.
+        [
+            ["--task-name"],
+            {
+                "type": str,
+                "nargs": "*",
+                "default": [],
+                "dest": "task_names",
+                "help": "The full name of the test task to get data from e.g. "
+                "test-android-hw-a51-11-0-aarch64-shippable-qr/opt-"
+                "browsertime-tp6m-geckoview-sina-nofis.",
+            },
+        ],
+        [
+            ["-t", "--test-name"],
+            {
+                "type": str,
+                "default": None,
+                "dest": "test_name",
+                "help": "The name of the test task to get data from e.g. "
+                "browsertime-tp6m-geckoview-sina-nofis.",
+            },
+        ],
+        [
+            ["--platform"],
+            {
+                "type": str,
+                "default": None,
+                "help": "Platform to analyze e.g. "
+                "test-android-hw-a51-11-0-aarch64-shippable-qr/opt.",
+            },
+        ],
+        [
+            ["--new-test-name"],
+            {
+                "type": str,
+                "help": "The name of the test task to get data from in the "
+                "base revision e.g. browsertime-tp6m-geckoview-sina-nofis.",
+            },
+        ],
+        [
+            ["--new-platform"],
+            {
+                "type": str,
+                "help": "Platform to analyze in base revision e.g. "
+                "test-android-hw-a51-11-0-aarch64-shippable-qr/opt.",
+            },
+        ],
+        [
+            ["--depth"],
+            {
+                "type": int,
+                "default": None,
+                "help": "This sets how the change detector should run. "
+                "Default is None, which is a direct comparison between the "
+                "revisions. -1 will autocompute the number of revisions to "
+                "look at between the base, and new. Any other positive integer "
+                "acts as a maximum number to look at.",
+            },
+        ],
+        [
+            ["--base-revision"],
+            {
+                "type": str,
+                "required": True,
+                "help": "The base revision to compare a new revision to.",
+            },
+        ],
+        [
+            ["--new-revision"],
+            {
+                "type": str,
+                "required": True,
+                "help": "The new revision to compare a base revision to.",
+            },
+        ],
+        [
+            ["--base-branch"],
+            {
+                "type": str,
+                "default": "try",
+                "help": "Branch to search for the base revision.",
+            },
+        ],
+        [
+            ["--new-branch"],
+            {
+                "type": str,
+                "default": "try",
+                "help": "Branch to search for the new revision.",
+            },
+        ],
+        [
+            ["--skip-download"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, we won't try to download artifacts again and we'll "
+                + "try using what already exists in the output folder.",
+            },
+        ],
+        [
+            ["-o", "--overwrite"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, the downloaded task group data will be deleted before "
+                + "it gets re-downloaded.",
+            },
+        ],
+    ]
+
+
+class ToolingOptions:
+    args = {
+        "side-by-side": SideBySideOptions.args,
+        "change-detector": ChangeDetectorOptions.args,
+    }
+
+
+class PerftestToolsArgumentParser(ArgumentParser):
+    """%(prog)s [options] [test paths]"""
+
+    tool = None
+
+    def __init__(self, *args, **kwargs):
+        ArgumentParser.__init__(
+            self, usage=self.__doc__, conflict_handler="resolve", **kwargs
+        )
+
+        if PerftestToolsArgumentParser.tool is None:
+            raise SystemExit("No tool specified, cannot continue parsing")
+        else:
+            for name, options in ToolingOptions.args[PerftestToolsArgumentParser.tool]:
+                self.add_argument(*name, **options)

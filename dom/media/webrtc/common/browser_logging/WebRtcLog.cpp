@@ -37,11 +37,6 @@ class LogSinkImpl : public rtc::LogSink {
 // For RTC_LOG()
 static mozilla::StaticAutoPtr<LogSinkImpl> sSink;
 
-void GetWebRtcLogPrefs() {
-  rtc::LogMessage::set_aec_debug_size(
-      mozilla::Preferences::GetUint("media.webrtc.debug.aec_dump_max_size"));
-}
-
 mozilla::LogLevel CheckOverrides() {
   mozilla::LogModule* log_info = sWebRtcLog;
   mozilla::LogLevel log_level = log_info->Level();
@@ -96,14 +91,12 @@ void StartWebRtcLog(mozilla::LogLevel log_level) {
     return;
   }
 
-  GetWebRtcLogPrefs();
   mozilla::LogLevel level = CheckOverrides();
 
   ConfigWebRtcLog(level);
 }
 
 void EnableWebRtcLog() {
-  GetWebRtcLogPrefs();
   mozilla::LogLevel level = CheckOverrides();
   ConfigWebRtcLog(level);
 }
@@ -150,7 +143,6 @@ nsCString StartAecLog() {
     return ""_ns;
   }
 
-  GetWebRtcLogPrefs();
   CheckOverrides();
   aecLogDir = ConfigAecLog();
 

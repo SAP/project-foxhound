@@ -4,11 +4,13 @@
 
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
 
     <application
@@ -39,5 +41,11 @@
         <service android:name=".TestRuntimeService$instance1" android:enabled="true" android:exported="false" android:process=":runtime1" />
 
         <service android:name=".TrackingPermissionService" android:enabled="true" android:exported="false" android:process=":tp" />
+
+        <provider android:name="org.mozilla.geckoview.test.TestContentProvider"
+                  android:authorities="org.mozilla.geckoview.test.provider"
+                  android:grantUriPermissions="true"
+                  android:exported="false">
+        </provider>
     </application>
 </manifest>

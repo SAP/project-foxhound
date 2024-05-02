@@ -2,33 +2,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "CacheLog.h"
+#include <algorithm>
+#include <math.h>
+
 #include "CacheEntry.h"
-#include "CacheStorageService.h"
-#include "CacheObserver.h"
+
 #include "CacheFileUtils.h"
 #include "CacheIndex.h"
-
+#include "CacheLog.h"
+#include "CacheObserver.h"
+#include "CacheStorageService.h"
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/psm/TransportSecurityInfo.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIAsyncOutputStream.h"
+#include "nsICacheEntryOpenCallback.h"
+#include "nsICacheStorage.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsISeekableStream.h"
-#include "nsIURI.h"
-#include "nsICacheEntryOpenCallback.h"
-#include "nsICacheStorage.h"
-#include "nsISerializable.h"
 #include "nsISizeOf.h"
-
-#include "nsComponentManagerUtils.h"
+#include "nsIURI.h"
+#include "nsNetCID.h"
+#include "nsProxyRelease.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
-#include "nsProxyRelease.h"
-#include "nsSerializationHelper.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Telemetry.h"
-#include "mozilla/IntegerPrintfMacros.h"
-#include <math.h>
-#include <algorithm>
 
 namespace mozilla::net {
 
@@ -86,7 +86,7 @@ CacheEntry::Callback::Callback(CacheEntry* aEntry,
                                bool aSecret)
     : mEntry(aEntry),
       mCallback(aCallback),
-      mTarget(GetCurrentEventTarget()),
+      mTarget(GetCurrentSerialEventTarget()),
       mReadOnly(aReadOnly),
       mRevalidating(false),
       mCheckOnAnyThread(aCheckOnAnyThread),
@@ -160,7 +160,10 @@ void CacheEntry::Callback::ExchangeEntry(CacheEntry* aEntry) {
   mEntry = aEntry;
 }
 
-bool CacheEntry::Callback::DeferDoom(bool* aDoom) const {
+// This is called on entries in another entry's mCallback array, under the lock
+// of that other entry.  No other threads can access this entry at this time.
+bool CacheEntry::Callback::DeferDoom(bool* aDoom) const
+    MOZ_NO_THREAD_SAFETY_ANALYSIS {
   MOZ_ASSERT(mEntry->mPinningKnown);
 
   if (MOZ_UNLIKELY(mDoomWhenFoundNonPinned) ||
@@ -1045,10 +1048,10 @@ nsresult CacheEntry::GetCacheEntryId(uint64_t* aCacheEntryId) {
   return NS_OK;
 }
 
-nsresult CacheEntry::GetFetchCount(int32_t* aFetchCount) {
+nsresult CacheEntry::GetFetchCount(uint32_t* aFetchCount) {
   NS_ENSURE_SUCCESS(mFileStatus, NS_ERROR_NOT_AVAILABLE);
 
-  return mFile->GetFetchCount(reinterpret_cast<uint32_t*>(aFetchCount));
+  return mFile->GetFetchCount(aFetchCount);
 }
 
 nsresult CacheEntry::GetLastFetched(uint32_t* aLastFetched) {
@@ -1331,7 +1334,7 @@ nsresult CacheEntry::OpenOutputStreamInternal(int64_t offset,
   return NS_OK;
 }
 
-nsresult CacheEntry::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsresult CacheEntry::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   {
     mozilla::MutexAutoLock lock(mLock);
     if (mSecurityInfoLoaded) {
@@ -1343,21 +1346,22 @@ nsresult CacheEntry::GetSecurityInfo(nsISupports** aSecurityInfo) {
   NS_ENSURE_SUCCESS(mFileStatus, NS_ERROR_NOT_AVAILABLE);
 
   nsCString info;
-  nsCOMPtr<nsISupports> secInfo;
-  nsresult rv;
-
-  rv = mFile->GetElement("security-info", getter_Copies(info));
+  nsresult rv = mFile->GetElement("security-info", getter_Copies(info));
   NS_ENSURE_SUCCESS(rv, rv);
-
+  nsCOMPtr<nsITransportSecurityInfo> securityInfo;
   if (!info.IsVoid()) {
-    rv = NS_DeserializeObject(info, getter_AddRefs(secInfo));
+    rv = mozilla::psm::TransportSecurityInfo::Read(
+        info, getter_AddRefs(securityInfo));
     NS_ENSURE_SUCCESS(rv, rv);
+  }
+  if (!securityInfo) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   {
     mozilla::MutexAutoLock lock(mLock);
 
-    mSecurityInfo.swap(secInfo);
+    mSecurityInfo.swap(securityInfo);
     mSecurityInfoLoaded = true;
 
     *aSecurityInfo = do_AddRef(mSecurityInfo).take();
@@ -1365,7 +1369,8 @@ nsresult CacheEntry::GetSecurityInfo(nsISupports** aSecurityInfo) {
 
   return NS_OK;
 }
-nsresult CacheEntry::SetSecurityInfo(nsISupports* aSecurityInfo) {
+
+nsresult CacheEntry::SetSecurityInfo(nsITransportSecurityInfo* aSecurityInfo) {
   nsresult rv;
 
   NS_ENSURE_SUCCESS(mFileStatus, mFileStatus);
@@ -1377,12 +1382,9 @@ nsresult CacheEntry::SetSecurityInfo(nsISupports* aSecurityInfo) {
     mSecurityInfoLoaded = true;
   }
 
-  nsCOMPtr<nsISerializable> serializable = do_QueryInterface(aSecurityInfo);
-  if (aSecurityInfo && !serializable) return NS_ERROR_UNEXPECTED;
-
   nsCString info;
-  if (serializable) {
-    rv = NS_SerializeToString(serializable, info);
+  if (aSecurityInfo) {
+    rv = aSecurityInfo->ToString(info);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1886,7 +1888,31 @@ void CacheOutputCloseListener::OnOutputClosed() {
   // We need this class and to redispatch since this callback is invoked
   // under the file's lock and to do the job we need to enter the entry's
   // lock too.  That would lead to potential deadlocks.
-  NS_DispatchToCurrentThread(this);
+  // This function may be reached while XPCOM is already shutting down,
+  // and we might be unable to obtain the main thread or the sts. #1826661
+
+  if (NS_IsMainThread()) {
+    // If we're already on the main thread, dispatch to the main thread instead
+    // of the sts. Always dispatching to the sts can cause problems late in
+    // shutdown, when threadpools may no longer be available (bug 1806332).
+    //
+    // This may also avoid some unnecessary thread-hops when invoking callbacks,
+    // which can require that they be called on the main thread.
+
+    nsCOMPtr<nsIThread> thread;
+    nsresult rv = NS_GetMainThread(getter_AddRefs(thread));
+    if (NS_SUCCEEDED(rv)) {
+      MOZ_ALWAYS_SUCCEEDS(thread->Dispatch(do_AddRef(this)));
+    }
+    return;
+  }
+
+  nsCOMPtr<nsIEventTarget> sts =
+      do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
+  MOZ_DIAGNOSTIC_ASSERT(sts);
+  if (sts) {
+    MOZ_ALWAYS_SUCCEEDS(sts->Dispatch(do_AddRef(this)));
+  }
 }
 
 NS_IMETHODIMP CacheOutputCloseListener::Run() {

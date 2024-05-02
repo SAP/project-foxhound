@@ -75,11 +75,8 @@ enum class MessageManagerFlags {
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(MessageManagerFlags);
 
-void UnpackClonedMessageDataForParent(const ClonedMessageData& aClonedData,
-                                      StructuredCloneData& aData);
-
-void UnpackClonedMessageDataForChild(const ClonedMessageData& aClonedData,
-                                     StructuredCloneData& aData);
+void UnpackClonedMessageData(const ClonedMessageData& aClonedData,
+                             StructuredCloneData& aData);
 
 }  // namespace ipc
 }  // namespace dom
@@ -204,7 +201,7 @@ class nsFrameMessageManager : public nsIMessageSender {
                                   const JS::Value& aTransfer,
                                   StructuredCloneData& aData);
 
-  void SetInitialProcessData(JS::HandleValue aInitialData);
+  void SetInitialProcessData(JS::Handle<JS::Value> aInitialData);
 
   void LoadPendingScripts();
 

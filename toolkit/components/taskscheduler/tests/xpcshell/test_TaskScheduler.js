@@ -9,15 +9,13 @@
 // only touches on the basics of argument checking. On platforms without a task
 // scheduler implementation, these interfaces currently do nothing else.
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo();
 
-const { TaskScheduler } = ChromeUtils.import(
-  "resource://gre/modules/TaskScheduler.jsm"
+const { TaskScheduler } = ChromeUtils.importESModule(
+  "resource://gre/modules/TaskScheduler.sys.mjs"
 );
 
 registerCleanupFunction(async () => {

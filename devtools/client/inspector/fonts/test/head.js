@@ -2,8 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../../shared/test/telemetry-test-helpers.js */
-/* import-globals-from ../../test/head.js */
+
 "use strict";
 
 // Import the inspector's head.js first (which itself imports shared-head.js).
@@ -15,9 +14,10 @@ Services.scriptloader.loadSubScript(
 Services.prefs.setCharPref("devtools.inspector.activeSidebar", "fontinspector");
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.inspector.activeSidebar");
+  Services.prefs.clearUserPref("devtools.inspector.selectedSidebar");
 });
 
-var nodeConstants = require("devtools/shared/dom-node-constants");
+var nodeConstants = require("resource://devtools/shared/dom-node-constants.js");
 
 /**
  * The font-inspector doesn't participate in the inspector's update mechanism
@@ -33,7 +33,7 @@ var nodeConstants = require("devtools/shared/dom-node-constants");
  *        node upon selection.
  */
 var _selectNode = selectNode;
-selectNode = async function(node, inspector, reason) {
+selectNode = async function (node, inspector, reason) {
   // Ensure node is a NodeFront and not a selector (which is also accepted as
   // an argument to selectNode).
   node = await getNodeFront(node, inspector);
@@ -63,7 +63,7 @@ selectNode = async function(node, inspector, reason) {
  * font-inspector tab.
  * @return {Promise} resolves to a {tab, toolbox, inspector, view} object
  */
-var openFontInspectorForURL = async function(url) {
+var openFontInspectorForURL = async function (url) {
   const tab = await addTab(url);
   const { toolbox, inspector } = await openInspector();
 

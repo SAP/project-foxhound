@@ -83,20 +83,6 @@ bool AndroidCompositorWidget::OnResumeComposition() {
     return false;
   }
 
-  JNIEnv* const env = jni::GetEnvForThread();
-  ANativeWindow* const nativeWindow =
-      ANativeWindow_fromSurface(env, reinterpret_cast<jobject>(mSurface.Get()));
-  if (!nativeWindow) {
-    gfxCriticalError() << "OnResumeComposition called with invalid Surface";
-    return false;
-  }
-
-  const int32_t width = ANativeWindow_getWidth(nativeWindow);
-  const int32_t height = ANativeWindow_getHeight(nativeWindow);
-  mClientSize = LayoutDeviceIntSize(width, height);
-
-  ANativeWindow_release(nativeWindow);
-
   return true;
 }
 
@@ -106,6 +92,13 @@ EGLNativeWindowType AndroidCompositorWidget::GetEGLNativeWindow() {
 
 LayoutDeviceIntSize AndroidCompositorWidget::GetClientSize() {
   return mClientSize;
+}
+
+void AndroidCompositorWidget::NotifyClientSizeChanged(
+    const LayoutDeviceIntSize& aClientSize) {
+  mClientSize =
+      LayoutDeviceIntSize(std::min(aClientSize.width, MOZ_WIDGET_MAX_SIZE),
+                          std::min(aClientSize.height, MOZ_WIDGET_MAX_SIZE));
 }
 
 }  // namespace widget

@@ -28,7 +28,7 @@ const TEST_URI = `
   </body>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
@@ -203,7 +203,7 @@ async function checkSwatchShiftClick(view, valueSpan, expectedValue, comment) {
   info(
     "Shift-click the color swatch and wait for the color type and ruleview to update"
   );
-  const onUnitChange = swatchNode.once("unit-change");
+  const onUnitChange = once(swatchNode, "unit-change");
 
   EventUtils.synthesizeMouseAtCenter(
     swatchNode,

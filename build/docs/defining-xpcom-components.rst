@@ -4,6 +4,11 @@
 Defining XPCOM C++-implemented Components
 =========================================
 
+This document explains how to write a :code:`components.conf` file. For
+documentation on the idl format see :ref:`XPIDL`. For a tutorial on writing
+a new XPCOM interface, see
+:ref:`writing_xpcom_interface`.
+
 Native XPCOM components are registered at build time, and compiled into static
 data structures which allow them to be accessed with little runtime overhead.
 Each module which wishes to register components must provide a manifest
@@ -128,8 +133,8 @@ Class definitions may have the following properties:
   The fully-qualified name of a constructor function to call in order to
   create instances of this class. This function must be declared in one of the
   headers listed in the ``headers`` property, and must have the signature
-  ``nsresult(nsISupports* aOuter, const nsID& aIID, void** aResult)``, and
-  behave equivalently to ``nsIFactory::CreateInstance``.
+  ``nsresult(const nsID& aIID, void** aResult)``, and behave equivalently to
+  ``nsIFactory::CreateInstance``.
 
   This property is incompatible with ``constructor``.
 
@@ -291,8 +296,8 @@ be specified by adding to a global ``Categories`` dictionary:
 .. code-block:: python
 
     Categories = {
-        'app-startup': {
-            'Mapi Support': 'service,@mozilla.org/mapisupport;1',
+        'update-timer': {
+            'nsUpdateService': '@mozilla.org/updates/update-service;1,getService,background-update-timer,app.update.interval,43200,86400',
         }
     }
 
@@ -302,7 +307,7 @@ value:
 .. code-block:: python
 
     Categories = {
-        'app-startup': {
-            'MainProcessSingleton': ('service,@mozilla.org/main-process-singleton;1', ProcessSelector.MAIN_PROCESS_ONLY),
+        '@mozilla.org/streamconv;1': {
+            '?from=gzip&to=uncompressed': ('', ProcessSelector.ALLOW_IN_SOCKET_PROCESS),
         }
     }

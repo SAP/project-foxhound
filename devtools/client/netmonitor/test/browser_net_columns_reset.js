@@ -7,7 +7,7 @@
  * Tests reset column menu item. Note that the column
  * header is visible only if there are requests in the list.
  */
-add_task(async function() {
+add_task(async function () {
   const { monitor } = await initNetMonitor(SIMPLE_URL, {
     requestCount: 1,
   });
@@ -32,7 +32,7 @@ add_task(async function() {
     document.querySelector("#requests-list-contentSize-button")
   );
 
-  getContextMenuItem(monitor, "request-list-header-reset-columns").click();
+  await selectContextMenuItem(monitor, "request-list-header-reset-columns");
 
   ok(
     JSON.stringify(prefBefore) === JSON.stringify(Prefs.visibleColumns),

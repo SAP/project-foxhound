@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -72,9 +73,8 @@ function* testSteps() {
     "Correct number of object store entries for null key"
   );
 
-  objectStore.count(
-    objectStoreData[2].key
-  ).onsuccess = grabEventAndContinueHandler;
+  objectStore.count(objectStoreData[2].key).onsuccess =
+    grabEventAndContinueHandler;
   event = yield undefined;
 
   is(
@@ -245,9 +245,8 @@ function* testSteps() {
     "Correct number of index entries for no key"
   );
 
-  index.count(
-    objectStoreData[7].value.weight
-  ).onsuccess = grabEventAndContinueHandler;
+  index.count(objectStoreData[7].value.weight).onsuccess =
+    grabEventAndContinueHandler;
   event = yield undefined;
 
   is(
@@ -256,9 +255,8 @@ function* testSteps() {
     "Correct number of index entries for duplicate key"
   );
 
-  index.count(
-    objectStoreData[0].value.weight
-  ).onsuccess = grabEventAndContinueHandler;
+  index.count(objectStoreData[0].value.weight).onsuccess =
+    grabEventAndContinueHandler;
   event = yield undefined;
 
   is(event.target.result, 1, "Correct number of index entries for single key");

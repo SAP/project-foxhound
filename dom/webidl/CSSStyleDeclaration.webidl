@@ -21,11 +21,10 @@ interface CSSStyleDeclaration {
   [Throws, ChromeOnly]
   sequence<UTF8String> getCSSImageURLs(UTF8String property);
 
-  [Throws]
   UTF8String getPropertyValue(UTF8String property);
   UTF8String getPropertyPriority(UTF8String property);
   [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
-  void setProperty(UTF8String property, [LegacyNullToEmptyString] UTF8String value, optional [LegacyNullToEmptyString] UTF8String priority = "");
+  undefined setProperty(UTF8String property, [LegacyNullToEmptyString] UTF8String value, optional [LegacyNullToEmptyString] UTF8String priority = "");
   [CEReactions, Throws]
   UTF8String removeProperty(UTF8String property);
 

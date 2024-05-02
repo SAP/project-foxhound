@@ -23,7 +23,6 @@
 #include <tuple>
 
 #include "common_audio/resampler/sinusoidal_linear_chirp_source.h"
-#include "rtc_base/stringize_macros.h"
 #include "rtc_base/system/arch.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/cpu_features_wrapper.h"
@@ -196,9 +195,11 @@ TEST(SincResamplerTest, ConvolveBenchmark) {
   }
   double total_time_optimized_unaligned_us =
       (rtc::TimeNanos() - start) / rtc::kNumNanosecsPerMicrosec;
-  printf(STRINGIZE(convolve_proc_) "(unaligned) took %.2fms; which is %.2fx "
-         "faster than Convolve_C.\n", total_time_optimized_unaligned_us / 1000,
-         total_time_c_us / total_time_optimized_unaligned_us);
+  printf(
+      "convolve_proc_(unaligned) took %.2fms; which is %.2fx "
+      "faster than Convolve_C.\n",
+      total_time_optimized_unaligned_us / 1000,
+      total_time_c_us / total_time_optimized_unaligned_us);
 
   // Benchmark with aligned input pointer.
   start = rtc::TimeNanos();
@@ -209,12 +210,13 @@ TEST(SincResamplerTest, ConvolveBenchmark) {
   }
   double total_time_optimized_aligned_us =
       (rtc::TimeNanos() - start) / rtc::kNumNanosecsPerMicrosec;
-  printf(STRINGIZE(convolve_proc_) " (aligned) took %.2fms; which is %.2fx "
-         "faster than Convolve_C and %.2fx faster than "
-         STRINGIZE(convolve_proc_) " (unaligned).\n",
-         total_time_optimized_aligned_us / 1000,
-         total_time_c_us / total_time_optimized_aligned_us,
-         total_time_optimized_unaligned_us / total_time_optimized_aligned_us);
+  printf(
+      "convolve_proc_ (aligned) took %.2fms; which is %.2fx "
+      "faster than Convolve_C and %.2fx faster than "
+      "convolve_proc_ (unaligned).\n",
+      total_time_optimized_aligned_us / 1000,
+      total_time_c_us / total_time_optimized_aligned_us,
+      total_time_optimized_unaligned_us / total_time_optimized_aligned_us);
 }
 
 typedef std::tuple<int, int, double, double> SincResamplerTestData;
@@ -256,7 +258,7 @@ TEST_P(SincResamplerTest, Resample) {
   SincResampler resampler(io_ratio, SincResampler::kDefaultRequestSize,
                           &resampler_source);
 
-  // Force an update to the sample rate ratio to ensure dyanmic sample rate
+  // Force an update to the sample rate ratio to ensure dynamic sample rate
   // changes are working correctly.
   std::unique_ptr<float[]> kernel(new float[SincResampler::kKernelStorageSize]);
   memcpy(kernel.get(), resampler.get_kernel_for_testing(),
@@ -333,6 +335,17 @@ INSTANTIATE_TEST_SUITE_P(
     SincResamplerTest,
     SincResamplerTest,
     ::testing::Values(
+        // To 22.05kHz
+        std::make_tuple(8000, 22050, kResamplingRMSError, -62.73),
+        std::make_tuple(11025, 22050, kResamplingRMSError, -72.19),
+        std::make_tuple(16000, 22050, kResamplingRMSError, -62.54),
+        std::make_tuple(22050, 22050, kResamplingRMSError, -73.53),
+        std::make_tuple(32000, 22050, kResamplingRMSError, -46.45),
+        std::make_tuple(44100, 22050, kResamplingRMSError, -28.49),
+        std::make_tuple(48000, 22050, -15.01, -25.56),
+        std::make_tuple(96000, 22050, -18.49, -13.42),
+        std::make_tuple(192000, 22050, -20.50, -9.23),
+
         // To 44.1kHz
         std::make_tuple(8000, 44100, kResamplingRMSError, -62.73),
         std::make_tuple(11025, 44100, kResamplingRMSError, -72.19),

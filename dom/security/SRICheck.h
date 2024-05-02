@@ -15,16 +15,12 @@
 class nsIChannel;
 class nsIConsoleReportCollector;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SRIMetadata;
 
 class SRICheck final {
  public:
-  static const uint32_t MAX_METADATA_LENGTH = 24 * 1024;
-  static const uint32_t MAX_METADATA_TOKENS = 512;
-
   /**
    * Parse the multiple hashes specified in the integrity attribute and
    * return the strongest supported hash.
@@ -101,7 +97,6 @@ class SRICheckDataVerifier final {
                       nsIConsoleReportCollector* aReporter);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_SRICheck_h

@@ -4,14 +4,11 @@
  */
 /* import-globals-from async_load_tests.js */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
 var ioService = Services.io;
 
-XPCOMUtils.defineLazyGetter(this, "uri", function() {
+// This is used in async_load_tests.js
+// eslint-disable-next-line no-unused-vars
+ChromeUtils.defineLazyGetter(this, "uri", function () {
   return ioService.newURI(
     "http://localhost:" +
       server.identity.primaryPort +

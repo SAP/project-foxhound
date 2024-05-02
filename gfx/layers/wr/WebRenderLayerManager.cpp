@@ -6,20 +6,18 @@
 
 #include "WebRenderLayerManager.h"
 
-#include "Layers.h"
-
 #include "GeckoProfiler.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TransactionIdAllocator.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/UpdateImageHelper.h"
+#include "mozilla/PerfStats.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "WebRenderCanvasRenderer.h"
@@ -70,7 +68,7 @@ bool WebRenderLayerManager::Initialize(
   static bool hasInitialized = false;
 
   WindowKind windowKind;
-  if (mWidget->WindowType() != eWindowType_popup) {
+  if (mWidget->GetWindowType() != widget::WindowType::Popup) {
     windowKind = WindowKind::MAIN;
   } else {
     windowKind = WindowKind::SECONDARY;
@@ -78,8 +76,7 @@ bool WebRenderLayerManager::Initialize(
 
   LayoutDeviceIntSize size = mWidget->GetClientSize();
   // Check widget size
-  if (size.width < 0 || size.width > wr::MAX_RENDER_TASK_SIZE ||
-      size.height < 0 || size.height > wr::MAX_RENDER_TASK_SIZE) {
+  if (!wr::WindowSizeSanityCheck(size.width, size.height)) {
     gfxCriticalNoteOnce << "Widget size is not valid " << size
                         << " isParent: " << XRE_IsParentProcess();
   }
@@ -98,11 +95,13 @@ bool WebRenderLayerManager::Initialize(
     return false;
   }
 
+  mWrChild = static_cast<WebRenderBridgeChild*>(bridge);
+
   TextureFactoryIdentifier textureFactoryIdentifier;
   wr::MaybeIdNamespace idNamespace;
   // Sync ipc
-  if (!bridge->SendEnsureConnected(&textureFactoryIdentifier, &idNamespace,
-                                   &aError)) {
+  if (!WrBridge()->SendEnsureConnected(&textureFactoryIdentifier, &idNamespace,
+                                       &aError)) {
     gfxCriticalNote << "Failed as lost WebRenderBridgeChild.";
     aError.Assign(hasInitialized
                       ? "FEATURE_FAILURE_WEBRENDER_INITIALIZE_SYNC_POST"_ns
@@ -112,12 +111,12 @@ bool WebRenderLayerManager::Initialize(
 
   if (textureFactoryIdentifier.mParentBackend == LayersBackend::LAYERS_NONE ||
       idNamespace.isNothing()) {
-    gfxCriticalNote << "Failed to connect WebRenderBridgeChild.";
+    gfxCriticalNote << "Failed to connect WebRenderBridgeChild. isParent="
+                    << XRE_IsParentProcess();
     aError.Append(hasInitialized ? "_POST"_ns : "_FIRST"_ns);
     return false;
   }
 
-  mWrChild = static_cast<WebRenderBridgeChild*>(bridge);
   WrBridge()->SetWebRenderLayerManager(this);
   WrBridge()->IdentifyTextureHost(textureFactoryIdentifier);
   WrBridge()->SetNamespace(idNamespace.ref());
@@ -221,7 +220,11 @@ void WebRenderLayerManager::TakeCompositionPayloads(
 bool WebRenderLayerManager::BeginTransactionWithTarget(gfxContext* aTarget,
                                                        const nsCString& aURL) {
   mTarget = aTarget;
-  return BeginTransaction(aURL);
+  bool retval = BeginTransaction(aURL);
+  if (!retval) {
+    mTarget = nullptr;
+  }
+  return retval;
 }
 
 bool WebRenderLayerManager::BeginTransaction(const nsCString& aURL) {
@@ -244,6 +247,8 @@ bool WebRenderLayerManager::BeginTransaction(const nsCString& aURL) {
 }
 
 bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
+  auto clearTarget = MakeScopeExit([&] { mTarget = nullptr; });
+
   // If we haven't sent a display list (since creation or since the last time we
   // sent ClearDisplayList to the parent) then we can't do an empty transaction
   // because the parent doesn't have a display list for us and we need to send a
@@ -257,8 +262,9 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
   // Since we don't do repeat transactions right now, just set the time
   mAnimationReadyTime = TimeStamp::Now();
 
-  mLatestTransactionId =
-      mTransactionIdAllocator->GetTransactionId(/*aThrottle*/ true);
+  // Don't block on hidden windows on Linux as it may block all rendering.
+  const bool throttle = mWidget->IsMapped();
+  mLatestTransactionId = mTransactionIdAllocator->GetTransactionId(throttle);
 
   if (aFlags & EndTransactionFlags::END_NO_COMPOSITE &&
       !mWebRenderCommandBuilder.NeedsEmptyTransaction()) {
@@ -328,7 +334,9 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     nsDisplayList* aDisplayList, nsDisplayListBuilder* aDisplayListBuilder,
     WrFiltersHolder&& aFilters, WebRenderBackgroundData* aBackground,
     const double aGeckoDLBuildTime) {
-  AUTO_PROFILER_TRACING_MARKER("Paint", "RenderLayers", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "WrDisplayList", GRAPHICS);
+
+  auto clearTarget = MakeScopeExit([&] { mTarget = nullptr; });
 
   // Since we don't do repeat transactions right now, just set the time
   mAnimationReadyTime = TimeStamp::Now();
@@ -378,13 +386,6 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     }
   }
 
-  mWidget->AddWindowOverlayWebRenderCommands(WrBridge(), *mDLBuilder,
-                                             resourceUpdates);
-  if (dumpEnabled) {
-    printf_stderr("(window overlay)\n");
-    Unused << mDLBuilder->Dump(/*indent*/ 1, Some(builderDumpIndex), Nothing());
-  }
-
   if (AsyncPanZoomEnabled()) {
     if (mIsFirstPaint) {
       mScrollData.SetIsFirstPaint();
@@ -406,8 +407,9 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     nsLayoutUtils::NotifyPaintSkipTransaction(update);
   }
 
-  mLatestTransactionId =
-      mTransactionIdAllocator->GetTransactionId(/*aThrottle*/ true);
+  // Don't block on hidden windows on Linux as it may block all rendering.
+  const bool throttle = mWidget->IsMapped();
+  mLatestTransactionId = mTransactionIdAllocator->GetTransactionId(throttle);
 
   // Get the time of when the refresh driver start its tick (if available),
   // otherwise use the time of when LayerManager::BeginTransaction was called.
@@ -454,6 +456,13 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
             ? wr::GeckoDisplayListType::Full(aGeckoDLBuildTime)
             : wr::GeckoDisplayListType::Partial(aGeckoDLBuildTime);
 
+    // convert from nanoseconds to microseconds
+    auto duration = TimeDuration::FromMicroseconds(
+        double(dlData.mDLDesc.builder_finish_time -
+               dlData.mDLDesc.builder_start_time) /
+        1000.);
+    PerfStats::RecordMeasurement(PerfStats::Metric::WrDisplayListBuilding,
+                                 duration);
     bool ret = WrBridge()->EndTransaction(
         std::move(dlData), mLatestTransactionId, containsSVGGroup,
         mTransactionIdAllocator->GetVsyncId(),
@@ -487,8 +496,14 @@ bool WebRenderLayerManager::AsyncPanZoomEnabled() const {
   return mWidget->AsyncPanZoomEnabled();
 }
 
+IntRect ToOutsideIntRect(const gfxRect& aRect) {
+  return IntRect::RoundOut(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height());
+}
+
 void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
-  if (!mTarget || aSize.IsEmpty()) {
+  auto clearTarget = MakeScopeExit([&] { mTarget = nullptr; });
+
+  if (!mTarget || !mTarget->GetDrawTarget() || aSize.IsEmpty()) {
     return;
   }
 
@@ -511,14 +526,18 @@ void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
     return;
   }
 
-  texture->InitIPDLActor(WrBridge());
+  // The other side knows our ContentParentId and WebRenderBridgeChild will
+  // ignore the one provided here in favour of what WebRenderBridgeParent
+  // already has.
+  texture->InitIPDLActor(WrBridge(), dom::ContentParentId());
   if (!texture->GetIPDLActor()) {
     return;
   }
 
   IntRect bounds = ToOutsideIntRect(mTarget->GetClipExtents());
   bool needsYFlip = false;
-  if (!WrBridge()->SendGetSnapshot(texture->GetIPDLActor(), &needsYFlip)) {
+  if (!WrBridge()->SendGetSnapshot(WrapNotNull(texture->GetIPDLActor()),
+                                   &needsYFlip)) {
     return;
   }
 
@@ -562,12 +581,6 @@ void WebRenderLayerManager::DiscardImages() {
 
 void WebRenderLayerManager::DiscardLocalImages() {
   mStateManager.DiscardLocalImages();
-}
-
-void WebRenderLayerManager::SetLayersObserverEpoch(LayersObserverEpoch aEpoch) {
-  if (WrBridge()->IPCOpen()) {
-    WrBridge()->SendSetLayersObserverEpoch(aEpoch);
-  }
 }
 
 void WebRenderLayerManager::DidComposite(
@@ -618,7 +631,19 @@ void WebRenderLayerManager::ClearCachedResources() {
   mWebRenderCommandBuilder.ClearCachedResources();
   DiscardImages();
   mStateManager.ClearCachedResources();
+  CompositorBridgeChild* compositorBridge = GetCompositorBridgeChild();
+  if (compositorBridge) {
+    compositorBridge->ClearCachedResources();
+  }
   WrBridge()->EndClearCachedResources();
+}
+
+void WebRenderLayerManager::ClearAnimationResources() {
+  if (!WrBridge()->IPCOpen()) {
+    gfxCriticalNote << "IPC Channel is already torn down unexpectedly\n";
+    return;
+  }
+  WrBridge()->SendClearAnimationResources();
 }
 
 void WebRenderLayerManager::WrUpdated() {
@@ -705,17 +730,11 @@ void WebRenderLayerManager::WaitOnTransactionProcessed() {
 void WebRenderLayerManager::SendInvalidRegion(const nsIntRegion& aRegion) {
   // XXX Webrender does not support invalid region yet.
 
-#ifdef XP_WIN
-  // When DWM is disabled, each window does not have own back buffer. They would
-  // paint directly to a buffer that was to be displayed by the video card.
-  // WM_PAINT via SendInvalidRegion() requests necessary re-paint.
-  const bool needsInvalidate = !gfx::gfxVars::DwmCompositionEnabled();
-#else
-  const bool needsInvalidate = true;
-#endif
-  if (needsInvalidate && WrBridge()) {
+#ifndef XP_WIN
+  if (WrBridge()) {
     WrBridge()->SendInvalidateRenderedFrame();
   }
+#endif
 }
 
 void WebRenderLayerManager::ScheduleComposite(wr::RenderReasons aReasons) {
@@ -724,8 +743,12 @@ void WebRenderLayerManager::ScheduleComposite(wr::RenderReasons aReasons) {
 
 already_AddRefed<PersistentBufferProvider>
 WebRenderLayerManager::CreatePersistentBufferProvider(
-    const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat) {
-  if (!gfxPlatform::UseRemoteCanvas()) {
+    const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat,
+    bool aWillReadFrequently) {
+  // Only initialize devices if hardware acceleration may possibly be used.
+  // Remoting moves hardware usage out-of-process, while will-read-frequently
+  // avoids hardware acceleration entirely.
+  if (!aWillReadFrequently && !gfxPlatform::UseRemoteCanvas()) {
 #ifdef XP_WIN
     // Any kind of hardware acceleration is incompatible with Win32k Lockdown
     // We don't initialize devices here so that PersistentBufferProviderShared
@@ -740,8 +763,8 @@ WebRenderLayerManager::CreatePersistentBufferProvider(
   }
 
   RefPtr<PersistentBufferProvider> provider =
-      PersistentBufferProviderShared::Create(aSize, aFormat,
-                                             AsKnowsCompositor());
+      PersistentBufferProviderShared::Create(
+          aSize, aFormat, AsKnowsCompositor(), aWillReadFrequently);
   if (provider) {
     return provider.forget();
   }

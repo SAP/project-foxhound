@@ -109,7 +109,7 @@ function verifyBlob(blob1, blob2, fileId, blobReadHandler) {
   if (!buffer2) {
     let reader = new FileReader();
     reader.readAsArrayBuffer(blob2);
-    reader.onload = function(event) {
+    reader.onload = function (event) {
       buffer2 = event.target.result;
       bufferCache.push({ blob: blob2, buffer: buffer2 });
       if (buffer1) {
@@ -125,7 +125,7 @@ function verifyBlob(blob1, blob2, fileId, blobReadHandler) {
 
   let reader = new FileReader();
   reader.readAsArrayBuffer(blob1);
-  reader.onload = function(event) {
+  reader.onload = function (event) {
     buffer1 = event.target.result;
     if (buffer2) {
       verifyBuffers(buffer1, buffer2);
@@ -167,13 +167,6 @@ function verifyBlobArray(blobs1, blobs2, expectedFileIds) {
     expectedFileIds[verifiedCount],
     blobReadHandler
   );
-}
-
-function verifyMutableFile(mutableFile1, file2) {
-  ok(mutableFile1 instanceof IDBMutableFile, "Instance of IDBMutableFile");
-  is(mutableFile1.name, file2.name, "Correct name");
-  is(mutableFile1.type, file2.type, "Correct type");
-  continueToNextStep();
 }
 
 function verifyView(view1, view2) {
@@ -228,47 +221,17 @@ function* assertEventuallyHasNoFileInfo(name, id) {
 function* assertEventuallyFileRefCount(name, id, expectedCount) {
   yield* assertEventuallyWithGC(() => {
     let count = {};
-    utils.getFileReferences(name, id, null, count);
+    utils.getFileReferences(name, id, count);
     return count.value == expectedCount;
   }, `Expect ${expectedCount} existing references for ${name}/${id}`);
 }
 
 function getFileDBRefCount(name, id) {
   let count = {};
-  utils.getFileReferences(name, id, null, {}, count);
+  utils.getFileReferences(name, id, {}, count);
   return count.value;
 }
 
 function flushPendingFileDeletions() {
   utils.flushPendingFileDeletions();
-}
-
-async function createReadWriteFileWithInitialContent(dbName, content) {
-  // BEGIN DUPLICATED BLOCK
-  // The functionality of this setup code is duplicated from test_filehandle_truncate.html
-  // (and maybe other test cases), but it has been modified to use async/await.
-
-  let request = indexedDB.open(dbName);
-  await expectingUpgrade(request);
-  let event = await expectingSuccess(request);
-
-  let db = event.target.result;
-  // We cannot use errorHandler because we shouldn't call finishTest() for aysnc tests
-  db.onerror = evt =>
-    ok(false, "indexedDB error, '" + evt.target.error.name + "'");
-
-  request = db.createMutableFile("test.bin");
-  event = await expectingSuccess(request);
-
-  let mutableFile = event.target.result;
-  mutableFile.onerror = evt =>
-    ok(false, "indexedDB error, '" + evt.target.error.name + "'");
-
-  let fileHandle = mutableFile.open("readwrite");
-  request = fileHandle.write(content);
-  event = await expectingSuccess(request);
-  // END DUPLICATED BLOCK
-
-  ok(fileHandle instanceof IDBFileHandle, "Instance of IDBFileHandle");
-  return fileHandle;
 }

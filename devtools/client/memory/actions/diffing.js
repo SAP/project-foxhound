@@ -4,24 +4,27 @@
 
 "use strict";
 
-const { assert, reportException } = require("devtools/shared/DevToolsUtils");
+const {
+  assert,
+  reportException,
+} = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   actions,
   diffingState,
   viewState,
-} = require("devtools/client/memory/constants");
+} = require("resource://devtools/client/memory/constants.js");
 const {
   getSnapshot,
   censusIsUpToDate,
   snapshotIsDiffable,
   findSelectedSnapshot,
-} = require("devtools/client/memory/utils");
+} = require("resource://devtools/client/memory/utils.js");
 
 /**
  * Toggle diffing mode on or off.
  */
-exports.toggleDiffing = function() {
-  return function({ dispatch, getState }) {
+exports.toggleDiffing = function () {
+  return function ({ dispatch, getState }) {
     dispatch({
       type: actions.CHANGE_VIEW,
       newViewState: getState().diffing ? viewState.CENSUS : viewState.DIFFING,
@@ -36,7 +39,7 @@ exports.toggleDiffing = function() {
  *
  * @param {snapshotModel} snapshot
  */
-const selectSnapshotForDiffing = (exports.selectSnapshotForDiffing = function(
+const selectSnapshotForDiffing = (exports.selectSnapshotForDiffing = function (
   snapshot
 ) {
   assert(
@@ -53,12 +56,12 @@ const selectSnapshotForDiffing = (exports.selectSnapshotForDiffing = function(
  * @param {snapshotModel} first
  * @param {snapshotModel} second
  */
-const takeCensusDiff = (exports.takeCensusDiff = function(
+const takeCensusDiff = (exports.takeCensusDiff = function (
   heapWorker,
   first,
   second
 ) {
-  return async function({ dispatch, getState }) {
+  return async function ({ dispatch, getState }) {
     assert(
       snapshotIsDiffable(first),
       `First snapshot must be in a diffable state, found ${first.state}`
@@ -141,8 +144,8 @@ const takeCensusDiff = (exports.takeCensusDiff = function(
  *
  * @param {HeapAnalysesClient} heapWorker
  */
-const refreshDiffing = (exports.refreshDiffing = function(heapWorker) {
-  return function({ dispatch, getState }) {
+const refreshDiffing = (exports.refreshDiffing = function (heapWorker) {
+  return function ({ dispatch, getState }) {
     if (getState().diffing.secondSnapshotId === null) {
       return;
     }
@@ -170,8 +173,8 @@ const refreshDiffing = (exports.refreshDiffing = function(heapWorker) {
  * @param {HeapAnalysesClient} heapWorker
  * @param {snapshotModel} snapshot
  */
-exports.selectSnapshotForDiffingAndRefresh = function(heapWorker, snapshot) {
-  return async function({ dispatch, getState }) {
+exports.selectSnapshotForDiffingAndRefresh = function (heapWorker, snapshot) {
+  return async function ({ dispatch, getState }) {
     assert(
       getState().diffing,
       "If we are selecting for diffing, we must be in diffing mode"
@@ -186,7 +189,7 @@ exports.selectSnapshotForDiffingAndRefresh = function(heapWorker, snapshot) {
  *
  * @param {CensusTreeNode} node
  */
-exports.expandDiffingCensusNode = function(node) {
+exports.expandDiffingCensusNode = function (node) {
   return {
     type: actions.EXPAND_DIFFING_CENSUS_NODE,
     node,
@@ -198,7 +201,7 @@ exports.expandDiffingCensusNode = function(node) {
  *
  * @param {CensusTreeNode} node
  */
-exports.collapseDiffingCensusNode = function(node) {
+exports.collapseDiffingCensusNode = function (node) {
   return {
     type: actions.COLLAPSE_DIFFING_CENSUS_NODE,
     node,
@@ -210,7 +213,7 @@ exports.collapseDiffingCensusNode = function(node) {
  *
  * @param {DominatorTreeNode} node
  */
-exports.focusDiffingCensusNode = function(node) {
+exports.focusDiffingCensusNode = function (node) {
   return {
     type: actions.FOCUS_DIFFING_CENSUS_NODE,
     node,

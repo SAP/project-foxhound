@@ -6,13 +6,13 @@
 loader.lazyRequireGetter(
   this,
   "getTabPrefs",
-  "devtools/shared/indentation",
+  "resource://devtools/shared/indentation.js",
   true
 );
 
 const {
   getSourceForDisplay,
-} = require("devtools/client/inspector/changes/utils/changes-utils");
+} = require("resource://devtools/client/inspector/changes/utils/changes-utils.js");
 
 /**
  * In the Redux state, changed CSS rules are grouped by source (stylesheet) and stored in
@@ -35,10 +35,8 @@ const {
  */
 function getChangesTree(state, filter = {}) {
   // Use or assign defaults of sourceId and ruleId arrays by which to filter the tree.
-  const {
-    sourceIds: sourceIdsFilter = [],
-    ruleIds: rulesIdsFilter = [],
-  } = filter;
+  const { sourceIds: sourceIdsFilter = [], ruleIds: rulesIdsFilter = [] } =
+    filter;
   /**
    * Recursively replace a rule's array of child rule ids with the referenced child rules.
    * Mark visited rules so as not to handle them (and their children) again.

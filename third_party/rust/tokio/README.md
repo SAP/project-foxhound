@@ -14,22 +14,21 @@ the Rust programming language. It is:
 
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
-[![Build Status][azure-badge]][azure-url]
+[![Build Status][actions-badge]][actions-url]
 [![Discord chat][discord-badge]][discord-url]
 
 [crates-badge]: https://img.shields.io/crates/v/tokio.svg
 [crates-url]: https://crates.io/crates/tokio
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://github.com/tokio-rs/tokio/blob/master/LICENSE
-[azure-badge]: https://dev.azure.com/tokio-rs/Tokio/_apis/build/status/tokio-rs.tokio?branchName=master
-[azure-url]: https://dev.azure.com/tokio-rs/Tokio/_build/latest?definitionId=1&branchName=master
+[actions-badge]: https://github.com/tokio-rs/tokio/workflows/CI/badge.svg
+[actions-url]: https://github.com/tokio-rs/tokio/actions?query=workflow%3ACI+branch%3Amaster
 [discord-badge]: https://img.shields.io/discord/500028886025895936.svg?logo=discord&style=flat-square
 [discord-url]: https://discord.gg/tokio
 
 [Website](https://tokio.rs) |
 [Guides](https://tokio.rs/tokio/tutorial) |
 [API Docs](https://docs.rs/tokio/latest/tokio) |
-[Roadmap](https://github.com/tokio-rs/tokio/blob/master/ROADMAP.md) |
 [Chat](https://discord.gg/tokio)
 
 ## Overview
@@ -51,15 +50,23 @@ an asynchronous application.
 
 ## Example
 
-A basic TCP echo server with Tokio:
+A basic TCP echo server with Tokio.
+
+Make sure you activated the full features of the tokio crate on Cargo.toml:
+
+```toml
+[dependencies]
+tokio = { version = "1.29.1", features = ["full"] }
+```
+Then, on your main.rs:
 
 ```rust,no_run
 use tokio::net::TcpListener;
-use tokio::prelude::*;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
     loop {
         let (mut socket, _) = listener.accept().await?;
@@ -133,8 +140,7 @@ several other libraries, including:
 
 * [`tower`]: A library of modular and reusable components for building robust networking clients and servers.
 
-* [`tracing`] (formerly `tokio-trace`): A framework for application-level
-  tracing and async-aware diagnostics.
+* [`tracing`] (formerly `tokio-trace`): A framework for application-level tracing and async-aware diagnostics.
 
 * [`rdbc`]: A Rust database connectivity library for MySQL, Postgres and SQLite.
 
@@ -155,11 +161,74 @@ several other libraries, including:
 [`mio`]: https://github.com/tokio-rs/mio
 [`bytes`]: https://github.com/tokio-rs/bytes
 
+## Changelog
+
+The Tokio repository contains multiple crates. Each crate has its own changelog.
+
+ * `tokio` - [view changelog](https://github.com/tokio-rs/tokio/blob/master/tokio/CHANGELOG.md)
+ * `tokio-util` - [view changelog](https://github.com/tokio-rs/tokio/blob/master/tokio-util/CHANGELOG.md)
+ * `tokio-stream` - [view changelog](https://github.com/tokio-rs/tokio/blob/master/tokio-stream/CHANGELOG.md)
+ * `tokio-macros` - [view changelog](https://github.com/tokio-rs/tokio/blob/master/tokio-macros/CHANGELOG.md)
+ * `tokio-test` - [view changelog](https://github.com/tokio-rs/tokio/blob/master/tokio-test/CHANGELOG.md)
+
 ## Supported Rust Versions
 
-Tokio is built against the latest stable release. The minimum supported version is 1.39.
-The current Tokio version is not guaranteed to build on Rust versions earlier than the
-minimum supported version.
+<!--
+When updating this, also update:
+- .github/workflows/ci.yml
+- CONTRIBUTING.md
+- README.md
+- tokio/README.md
+- tokio/Cargo.toml
+- tokio-util/Cargo.toml
+- tokio-test/Cargo.toml
+- tokio-stream/Cargo.toml
+-->
+
+Tokio will keep a rolling MSRV (minimum supported rust version) policy of **at
+least** 6 months. When increasing the MSRV, the new Rust version must have been
+released at least six months ago. The current MSRV is 1.56.0.
+
+Note that the MSRV is not increased automatically, and only as part of a minor
+release. The MSRV history for past minor releases can be found below:
+
+ * 1.27 to now - Rust 1.56
+ * 1.17 to 1.26 - Rust 1.49
+ * 1.15 to 1.16 - Rust 1.46
+ * 1.0 to 1.14 - Rust 1.45
+
+Note that although we try to avoid the situation where a dependency transitively
+increases the MSRV of Tokio, we do not guarantee that this does not happen.
+However, every minor release will have some set of versions of dependencies that
+works with the MSRV of that minor release.
+
+## Release schedule
+
+Tokio doesn't follow a fixed release schedule, but we typically make one to two
+new minor releases each month. We make patch releases for bugfixes as necessary.
+
+## Bug patching policy
+
+For the purposes of making patch releases with bugfixes, we have designated
+certain minor releases as LTS (long term support) releases. Whenever a bug
+warrants a patch release with a fix for the bug, it will be backported and
+released as a new patch release for each LTS minor version. Our current LTS
+releases are:
+
+ * `1.18.x` - LTS release until June 2023. (MSRV 1.49)
+ * `1.20.x` - LTS release until September 2023. (MSRV 1.49)
+ * `1.25.x` - LTS release until March 2024. (MSRV 1.49)
+
+Each LTS release will continue to receive backported fixes for at least a year.
+If you wish to use a fixed minor release in your project, we recommend that you
+use an LTS release.
+
+To use a fixed minor version, you can specify the version with a tilde. For
+example, to specify that you wish to use the newest `1.18.x` patch release, you
+can use the following dependency specification:
+```text
+tokio = { version = "~1.18", features = [...] }
+```
 
 ## License
 

@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIRequest.idl"
+#include "nsITRRSkipReason.idl"
 
 %{ C++
 namespace mozilla {
@@ -112,6 +114,11 @@ interface nsIDNSAddrRecord : nsIDNSRecord
     bool IsTRR();
 
     /**
+     * Record is resolved in socket process.
+     */
+    bool resolvedInSocketProcess();
+
+    /**
      * This attribute is only set if TRR is used and it measures time between
      * asyncOpen on a channel and the time parsing of response if done.
      * Thee time is measured in milliseconds.
@@ -132,7 +139,13 @@ interface nsIDNSAddrRecord : nsIDNSRecord
     /**
      * The TRR mode this record is used.
      */
-    readonly attribute unsigned long effectiveTRRMode;
+    readonly attribute nsIRequest_TRRMode effectiveTRRMode;
+
+    /**
+     * If the DNS request didn't use TRR, this value
+     * contains the reason why that was skipped.
+     */
+    readonly attribute nsITRRSkipReason_value trrSkipReason;
 
     /**
      * Returns the ttl of this record.

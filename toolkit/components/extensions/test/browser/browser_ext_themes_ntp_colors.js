@@ -14,7 +14,8 @@ function waitForAboutNewTabReady(browser, url) {
 
 /**
  * Test whether the selected browser has the new tab page theme applied
- * @param {Object} theme that is applied
+ *
+ * @param {object} theme that is applied
  * @param {boolean} isBrightText whether the brighttext attribute should be set
  */
 async function test_ntp_theme(theme, isBrightText) {
@@ -26,41 +27,38 @@ async function test_ntp_theme(theme, isBrightText) {
 
   let browser = gBrowser.selectedBrowser;
 
-  let {
-    originalBackground,
-    originalCardBackground,
-    originalColor,
-  } = await SpecialPowers.spawn(browser, [], function() {
-    let doc = content.document;
-    ok(
-      !doc.body.hasAttribute("lwt-newtab"),
-      "New tab page should not have lwt-newtab attribute"
-    );
-    ok(
-      !doc.body.hasAttribute("lwt-newtab-brighttext"),
-      `New tab page should not have lwt-newtab-brighttext attribute`
-    );
+  let { originalBackground, originalCardBackground, originalColor } =
+    await SpecialPowers.spawn(browser, [], function () {
+      let doc = content.document;
+      ok(
+        !doc.documentElement.hasAttribute("lwt-newtab"),
+        "New tab page should not have lwt-newtab attribute"
+      );
+      ok(
+        !doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
+        `New tab page should not have lwt-newtab-brighttext attribute`
+      );
 
-    return {
-      originalBackground: content.getComputedStyle(doc.body).backgroundColor,
-      originalCardBackground: content.getComputedStyle(
-        doc.querySelector(".top-site-outer .tile")
-      ).backgroundColor,
-      originalColor: content.getComputedStyle(
-        doc.querySelector(".outer-wrapper")
-      ).color,
-      // We check the value of --newtab-link-primary-color directly because the
-      // elements on which it is applied are hard to test. It is most visible in
-      // the "learn more" link in the Pocket section. We cannot show the Pocket
-      // section since it hits the network, and the usual workarounds to change
-      // its backend only work in browser/. This variable is also used in
-      // the Edit Top Site modal, but showing/hiding that is very verbose and
-      // would make this test almost unreadable.
-      originalLinks: content
-        .getComputedStyle(doc.querySelector("body"))
-        .getPropertyValue("--newtab-link-primary-color"),
-    };
-  });
+      return {
+        originalBackground: content.getComputedStyle(doc.body).backgroundColor,
+        originalCardBackground: content.getComputedStyle(
+          doc.querySelector(".top-site-outer .tile")
+        ).backgroundColor,
+        originalColor: content.getComputedStyle(
+          doc.querySelector(".outer-wrapper")
+        ).color,
+        // We check the value of --newtab-link-primary-color directly because the
+        // elements on which it is applied are hard to test. It is most visible in
+        // the "learn more" link in the Pocket section. We cannot show the Pocket
+        // section since it hits the network, and the usual workarounds to change
+        // its backend only work in browser/. This variable is also used in
+        // the Edit Top Site modal, but showing/hiding that is very verbose and
+        // would make this test almost unreadable.
+        originalLinks: content
+          .getComputedStyle(doc.documentElement)
+          .getPropertyValue("--newtab-link-primary-color"),
+      };
+    });
 
   await extension.startup();
 
@@ -76,14 +74,14 @@ async function test_ntp_theme(theme, isBrightText) {
         color: hexToCSS(theme.colors.ntp_text),
       },
     ],
-    async function({ isBrightText, background, card_background, color }) {
+    async function ({ isBrightText, background, card_background, color }) {
       let doc = content.document;
       ok(
-        doc.body.hasAttribute("lwt-newtab"),
+        doc.documentElement.hasAttribute("lwt-newtab"),
         "New tab page should have lwt-newtab attribute"
       );
       is(
-        doc.body.hasAttribute("lwt-newtab-brighttext"),
+        doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
         isBrightText,
         `New tab page should${
           !isBrightText ? " not" : ""
@@ -122,14 +120,14 @@ async function test_ntp_theme(theme, isBrightText) {
         originalColor,
       },
     ],
-    function({ originalBackground, originalCardBackground, originalColor }) {
+    function ({ originalBackground, originalCardBackground, originalColor }) {
       let doc = content.document;
       ok(
-        !doc.body.hasAttribute("lwt-newtab"),
+        !doc.documentElement.hasAttribute("lwt-newtab"),
         "New tab page should not have lwt-newtab attribute"
       );
       ok(
-        !doc.body.hasAttribute("lwt-newtab-brighttext"),
+        !doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
         `New tab page should not have lwt-newtab-brighttext attribute`
       );
 
@@ -159,10 +157,10 @@ add_task(async function test_support_ntp_colors() {
       // BrowserTestUtils.withNewTab waits for about:newtab to load
       // so we disable preloading before running the test.
       ["browser.newtab.preload", false],
-      // Force prefers-color-scheme to "system", as otherwise it is derived
-      // from the newtab background colors, but we hard-code the light styles
-      // on this test.
-      ["layout.css.prefers-color-scheme.content-override", 2],
+      // Force prefers-color-scheme to "light", as otherwise it might be
+      // derived from the theme, but we hard-code the light styles on this
+      // test.
+      ["layout.css.prefers-color-scheme.content-override", 1],
       // Override the system color scheme to light so this test passes on
       // machines with dark system color scheme.
       ["ui.systemUsesDarkTheme", 0],

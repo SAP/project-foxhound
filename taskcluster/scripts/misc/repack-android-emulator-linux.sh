@@ -4,13 +4,18 @@ set -x -e -v
 # This script is for fetching and repacking the Android emulator (for
 # Linux), the tools required to produce Android packages.
 
-UPLOAD_DIR=$HOME/project/gecko/android-emulator
-
-mkdir -p $HOME/artifacts $UPLOAD_DIR
+mkdir -p $UPLOAD_DIR
 
 # Populate /builds/worker/.mozbuild/android-emulator-linux.
 cd $GECKO_PATH
 ./mach python python/mozboot/mozboot/android.py --emulator-only --no-interactive --list-packages
+
+# Bug XXXX: override emulator to a known working version
+curl -L http://dl.google.com/android/repository/emulator-linux_x64-10696886.zip > /tmp/emulator.zip
+cd /builds/worker/.mozbuild/android-sdk-linux
+rm -rf emulator
+unzip /tmp/emulator.zip
+cd $GECKO_PATH
 
 # Remove extra files we don't need
 rm -rfv /builds/worker/.mozbuild/android-sdk-linux/tools

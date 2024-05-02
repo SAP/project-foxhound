@@ -1,16 +1,17 @@
 "use strict";
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content/",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/"
 );
 let pageWithAlert = ROOT + "openPromptOffTimeout.html";
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   Services.perms.removeAll();
 });
 
@@ -36,8 +37,7 @@ add_task(async function test_old_modal_ui() {
   );
   let openedTabGotAttentionPromise = BrowserTestUtils.waitForAttribute(
     "attention",
-    openedTab,
-    "true"
+    openedTab
   );
   // switch away from that tab again - this triggers the alert.
   await BrowserTestUtils.switchTab(gBrowser, firstTab);
@@ -45,8 +45,8 @@ add_task(async function test_old_modal_ui() {
   await openedTabGotAttentionPromise;
   // check for attention attribute
   is(
-    openedTab.getAttribute("attention"),
-    "true",
+    openedTab.hasAttribute("attention"),
+    true,
     "Tab with alert should have 'attention' attribute."
   );
   ok(!openedTab.selected, "Tab with alert should not be selected");
@@ -54,9 +54,8 @@ add_task(async function test_old_modal_ui() {
   // switch tab back, and check the checkbox is displayed:
   await BrowserTestUtils.switchTab(gBrowser, openedTab);
   // check the prompt is there, and the extra row is present
-  let promptElements = openedTab.linkedBrowser.parentNode.querySelectorAll(
-    "tabmodalprompt"
-  );
+  let promptElements =
+    openedTab.linkedBrowser.parentNode.querySelectorAll("tabmodalprompt");
   is(promptElements.length, 1, "There should be 1 prompt");
   let ourPromptElement = promptElements[0];
   let checkbox = ourPromptElement.querySelector(
@@ -66,12 +65,11 @@ add_task(async function test_old_modal_ui() {
   ok(!checkbox.checked, "Checkbox shouldn't be checked");
   // tick box and accept dialog
   checkbox.checked = true;
-  let ourPrompt = openedTab.linkedBrowser.tabModalPromptBox.getPrompt(
-    ourPromptElement
-  );
+  let ourPrompt =
+    openedTab.linkedBrowser.tabModalPromptBox.getPrompt(ourPromptElement);
   ourPrompt.onButtonClick(0);
   // Wait for that click to actually be handled completely.
-  await new Promise(function(resolve) {
+  await new Promise(function (resolve) {
     Services.tm.dispatchToMainThread(resolve);
   });
   // check permission is set
@@ -148,8 +146,7 @@ add_task(async function test_new_modal_ui() {
   );
   let openedTabGotAttentionPromise = BrowserTestUtils.waitForAttribute(
     "attention",
-    openedTab,
-    "true"
+    openedTab
   );
   // switch away from that tab again - this triggers the alert.
   await BrowserTestUtils.switchTab(gBrowser, firstTab);
@@ -157,8 +154,8 @@ add_task(async function test_new_modal_ui() {
   await openedTabGotAttentionPromise;
   // check for attention attribute
   is(
-    openedTab.getAttribute("attention"),
-    "true",
+    openedTab.hasAttribute("attention"),
+    true,
     "Tab with alert should have 'attention' attribute."
   );
   ok(!openedTab.selected, "Tab with alert should not be selected");
@@ -196,7 +193,7 @@ add_task(async function test_new_modal_ui() {
   checkbox.checked = true;
   button.click();
   // Wait for that click to actually be handled completely.
-  await new Promise(function(resolve) {
+  await new Promise(function (resolve) {
     Services.tm.dispatchToMainThread(resolve);
   });
 

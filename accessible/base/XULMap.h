@@ -11,16 +11,16 @@ XULMAP_TYPE(findbar, XULToolbarAccessible)
 XULMAP_TYPE(groupbox, XULGroupboxAccessible)
 XULMAP_TYPE(iframe, OuterDocAccessible)
 XULMAP_TYPE(listheader, XULColumAccessible)
-XULMAP_TYPE(menu, XULMenuitemAccessibleWrap)
+XULMAP_TYPE(menu, XULMenuitemAccessible)
 XULMAP_TYPE(menubar, XULMenubarAccessible)
-XULMAP_TYPE(menucaption, XULMenuitemAccessibleWrap)
-XULMAP_TYPE(menuitem, XULMenuitemAccessibleWrap)
+XULMAP_TYPE(menucaption, XULMenuitemAccessible)
+XULMAP_TYPE(menuitem, XULMenuitemAccessible)
 XULMAP_TYPE(menulist, XULComboboxAccessible)
 XULMAP_TYPE(menuseparator, XULMenuSeparatorAccessible)
 XULMAP_TYPE(notification, XULAlertAccessible)
 XULMAP_TYPE(radio, XULRadioButtonAccessible)
 XULMAP_TYPE(radiogroup, XULRadioGroupAccessible)
-XULMAP_TYPE(richlistbox, XULListboxAccessibleWrap)
+XULMAP_TYPE(richlistbox, XULListboxAccessible)
 XULMAP_TYPE(richlistitem, XULListitemAccessible)
 XULMAP_TYPE(statusbar, XULStatusBarAccessible)
 XULMAP_TYPE(tab, XULTabAccessible)
@@ -30,7 +30,6 @@ XULMAP_TYPE(toolbarseparator, XULToolbarSeparatorAccessible)
 XULMAP_TYPE(toolbarspacer, XULToolbarSeparatorAccessible)
 XULMAP_TYPE(toolbarspring, XULToolbarSeparatorAccessible)
 XULMAP_TYPE(treecol, XULColumnItemAccessible)
-XULMAP_TYPE(treecolpicker, XULButtonAccessible)
 XULMAP_TYPE(treecols, XULTreeColumAccessible)
 XULMAP_TYPE(toolbar, XULToolbarAccessible)
 XULMAP_TYPE(toolbarbutton, XULToolbarButtonAccessible)
@@ -38,6 +37,7 @@ XULMAP_TYPE(toolbarbutton, XULToolbarButtonAccessible)
 XULMAP(description,
        [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
          if (aElement->ClassList()->Contains(u"tooltip-label"_ns)) {
+           // FIXME(emilio): Why this special case?
            return nullptr;
          }
 
@@ -46,22 +46,6 @@ XULMAP(description,
 
 XULMAP(tooltip,
        [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-         nsIFrame* frame = aElement->GetPrimaryFrame();
-         if (!frame) {
-           return nullptr;
-         }
-
-         nsMenuPopupFrame* popupFrame = do_QueryFrame(frame);
-         if (!popupFrame) {
-           return nullptr;
-         }
-
-         nsPopupState popupState = popupFrame->PopupState();
-         if (popupState == ePopupHiding || popupState == ePopupInvisible ||
-             popupState == ePopupClosed) {
-           return nullptr;
-         }
-
          return new XULTooltipAccessible(aElement, aContext->Document());
        })
 
@@ -76,11 +60,11 @@ XULMAP(label,
 XULMAP(image,
        [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
          // Don't include nameless images in accessible tree.
-         if (!aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::tooltiptext)) {
+         if (!aElement->HasAttr(nsGkAtoms::tooltiptext)) {
            return nullptr;
          }
 
-         return new ImageAccessibleWrap(aElement, aContext->Document());
+         return new ImageAccessible(aElement, aContext->Document());
        })
 
 XULMAP(menupopup, [](Element* aElement, LocalAccessible* aContext) {
@@ -130,6 +114,6 @@ XULMAP(tree,
          }
 
          // Table or tree table accessible.
-         return new XULTreeGridAccessibleWrap(aElement, aContext->Document(),
-                                              treeFrame);
+         return new XULTreeGridAccessible(aElement, aContext->Document(),
+                                          treeFrame);
        })

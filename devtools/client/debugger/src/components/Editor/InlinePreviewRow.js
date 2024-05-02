@@ -45,10 +45,8 @@ class InlinePreviewRow extends PureComponent {
     }
 
     if (!props) {
-      return assert(
-        !this.bookmark,
-        "Inline Preview widget shouldn't be present."
-      );
+      assert(!this.bookmark, "Inline Preview widget shouldn't be present.");
+      return;
     }
 
     const {
@@ -66,28 +64,32 @@ class InlinePreviewRow extends PureComponent {
     }
 
     ReactDOM.render(
-      <React.Fragment>
-        {previews.map(preview => (
-          <InlinePreview
-            line={line}
-            key={`${line}-${preview.name}`}
-            variable={preview.name}
-            value={preview.value}
-            openElementInInspector={openElementInInspector}
-            highlightDomElement={highlightDomElement}
-            unHighlightDomElement={unHighlightDomElement}
-          />
-        ))}
-      </React.Fragment>,
-      this.widgetNode
-    );
-
-    this.bookmark = editor.codeMirror.setBookmark(
-      {
-        line,
-        ch: Infinity,
-      },
-      this.widgetNode
+      React.createElement(
+        React.Fragment,
+        null,
+        previews.map(preview =>
+          React.createElement(InlinePreview, {
+            line: line,
+            key: `${line}-${preview.name}`,
+            variable: preview.name,
+            value: preview.value,
+            openElementInInspector: openElementInInspector,
+            highlightDomElement: highlightDomElement,
+            unHighlightDomElement: unHighlightDomElement,
+          })
+        )
+      ),
+      this.widgetNode,
+      () => {
+        // Only set the codeMirror bookmark once React rendered the element into this.widgetNode
+        this.bookmark = editor.codeMirror.setBookmark(
+          {
+            line,
+            ch: Infinity,
+          },
+          this.widgetNode
+        );
+      }
     );
   }
 

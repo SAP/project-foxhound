@@ -1,23 +1,22 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { BookmarkHTMLUtils } = ChromeUtils.import(
-  "resource://gre/modules/BookmarkHTMLUtils.jsm"
+const { BookmarkHTMLUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/BookmarkHTMLUtils.sys.mjs"
 );
-const { BookmarkJSONUtils } = ChromeUtils.import(
-  "resource://gre/modules/BookmarkJSONUtils.jsm"
+const { BookmarkJSONUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/BookmarkJSONUtils.sys.mjs"
 );
-const { SyncedBookmarksMirror } = ChromeUtils.import(
-  "resource://gre/modules/SyncedBookmarksMirror.jsm"
+const { Bookmark, BookmarkFolder, BookmarksEngine, Livemark } =
+  ChromeUtils.importESModule(
+    "resource://services-sync/engines/bookmarks.sys.mjs"
+  );
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const {
-  Bookmark,
-  BookmarkFolder,
-  BookmarksEngine,
-  Livemark,
-} = ChromeUtils.import("resource://services-sync/engines/bookmarks.js");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { SyncedRecordsTelemetry } = ChromeUtils.importESModule(
+  "resource://services-sync/telemetry.sys.mjs"
+);
 
 var recordedEvents = [];
 
@@ -55,7 +54,9 @@ async function fetchAllRecordIds() {
 async function cleanupEngine(engine) {
   await engine.resetClient();
   await engine._store.wipe();
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
   Service.recordManager.clearCache();
   // Note we don't finalize the engine here as add_bookmark_test() does.
 }
@@ -78,7 +79,7 @@ add_task(async function test_buffer_timeout() {
   await Service.recordManager.clearCache();
   await PlacesSyncUtils.bookmarks.reset();
   let engine = new BookmarksEngine(Service);
-  engine._newWatchdog = function() {
+  engine._newWatchdog = function () {
     // Return an already-aborted watchdog, so that we can abort merges
     // immediately.
     let watchdog = Async.watchdog();
@@ -160,7 +161,7 @@ add_bookmark_test(async function test_maintenance_after_failure(engine) {
   try {
     let syncStartup = engine._syncStartup;
     let syncError = new Error("Something is rotten in the state of Places");
-    engine._syncStartup = function() {
+    engine._syncStartup = function () {
       throw syncError;
     };
 
@@ -326,21 +327,6 @@ add_bookmark_test(async function test_delete_invalid_roots_from_server(engine) {
       "Bookmarks engine should report all merge steps"
     );
 
-    await Assert.rejects(
-      PlacesUtils.promiseItemId("readinglist"),
-      /no item found for the given GUID/,
-      "Should not apply Reading List root"
-    );
-    await Assert.rejects(
-      PlacesUtils.promiseItemId(listBmk.id),
-      /no item found for the given GUID/,
-      "Should not apply items in Reading List"
-    );
-    ok(
-      (await PlacesUtils.promiseItemId(newBmk.id)) > 0,
-      "Should apply new bookmark"
-    );
-
     deepEqual(
       collection.keys().sort(),
       ["menu", "mobile", "toolbar", "unfiled", newBmk.id].sort(),
@@ -475,8 +461,8 @@ async function test_restoreOrImport(engine, { replace }) {
     });
     _(`Get Firefox!: ${bmk1.guid}`);
 
-    let backupFilePath = OS.Path.join(
-      OS.Constants.Path.tmpDir,
+    let backupFilePath = PathUtils.join(
+      PathUtils.tempDir,
       `t_b_e_${Date.now()}.json`
     );
 
@@ -507,7 +493,7 @@ async function test_restoreOrImport(engine, { replace }) {
       "Verify that there's only one bookmark on the server, and it's Thunderbird."
     );
     // Of course, there's also the Bookmarks Toolbar and Bookmarks Menu...
-    let wbos = collection.keys(function(id) {
+    let wbos = collection.keys(function (id) {
       return !["menu", "toolbar", "mobile", "unfiled", folder1.guid].includes(
         id
       );
@@ -570,15 +556,12 @@ async function test_restoreOrImport(engine, { replace }) {
 
     _("Verify that there's the right bookmarks on the server.");
     // Of course, there's also the Bookmarks Toolbar and Bookmarks Menu...
-    let payloads = server
-      .user("foo")
-      .collection("bookmarks")
-      .payloads();
-    let bookmarkWBOs = payloads.filter(function(wbo) {
+    let payloads = server.user("foo").collection("bookmarks").payloads();
+    let bookmarkWBOs = payloads.filter(function (wbo) {
       return wbo.type == "bookmark";
     });
 
-    let folderWBOs = payloads.filter(function(wbo) {
+    let folderWBOs = payloads.filter(function (wbo) {
       return (
         wbo.type == "folder" &&
         wbo.id != "menu" &&
@@ -710,18 +693,13 @@ add_task(async function test_mismatched_types() {
     await store.applyIncoming(oldR);
     await engine._apply();
     _("Applied old. It's a folder.");
-    let oldID = await PlacesUtils.promiseItemId(oldR.id);
+    let oldID = await PlacesTestUtils.promiseItemId(oldR.id);
     _("Old ID: " + oldID);
     let oldInfo = await PlacesUtils.bookmarks.fetch(oldR.id);
     Assert.equal(oldInfo.type, PlacesUtils.bookmarks.TYPE_FOLDER);
 
     await store.applyIncoming(newR);
     await engine._apply();
-    await Assert.rejects(
-      PlacesUtils.promiseItemId(newR.id),
-      /no item found for the given GUID/,
-      "Should not apply Livemark"
-    );
   } finally {
     await cleanup(engine, server);
     await engine.finalize();
@@ -743,16 +721,15 @@ add_bookmark_test(async function test_misreconciled_root(engine) {
 
   // Let's find out where the toolbar is right now.
   let toolbarBefore = await store.createRecord("toolbar", "bookmarks");
-  let toolbarIDBefore = await PlacesUtils.promiseItemId(
+  let toolbarIDBefore = await PlacesTestUtils.promiseItemId(
     PlacesUtils.bookmarks.toolbarGuid
   );
   Assert.notEqual(-1, toolbarIDBefore);
 
   let parentRecordIDBefore = toolbarBefore.parentid;
-  let parentGUIDBefore = PlacesSyncUtils.bookmarks.recordIdToGuid(
-    parentRecordIDBefore
-  );
-  let parentIDBefore = await PlacesUtils.promiseItemId(parentGUIDBefore);
+  let parentGUIDBefore =
+    PlacesSyncUtils.bookmarks.recordIdToGuid(parentRecordIDBefore);
+  let parentIDBefore = await PlacesTestUtils.promiseItemId(parentGUIDBefore);
   Assert.equal("string", typeof parentGUIDBefore);
 
   _("Current parent: " + parentGUIDBefore + " (" + parentIDBefore + ").");
@@ -770,19 +747,19 @@ add_bookmark_test(async function test_misreconciled_root(engine) {
   let rec = new FakeRecord(BookmarkFolder, to_apply);
 
   _("Applying record.");
-  store.applyIncomingBatch([rec]);
+  let countTelemetry = new SyncedRecordsTelemetry();
+  store.applyIncomingBatch([rec], countTelemetry);
 
   // Ensure that afterwards, toolbar is still there.
   // As of 2012-12-05, this only passes because Places doesn't use "toolbar" as
   // the real GUID, instead using a generated one. Sync does the translation.
   let toolbarAfter = await store.createRecord("toolbar", "bookmarks");
   let parentRecordIDAfter = toolbarAfter.parentid;
-  let parentGUIDAfter = PlacesSyncUtils.bookmarks.recordIdToGuid(
-    parentRecordIDAfter
-  );
-  let parentIDAfter = await PlacesUtils.promiseItemId(parentGUIDAfter);
+  let parentGUIDAfter =
+    PlacesSyncUtils.bookmarks.recordIdToGuid(parentRecordIDAfter);
+  let parentIDAfter = await PlacesTestUtils.promiseItemId(parentGUIDAfter);
   Assert.equal(
-    await PlacesUtils.promiseItemGuid(toolbarIDBefore),
+    await PlacesTestUtils.promiseItemGuid(toolbarIDBefore),
     PlacesUtils.bookmarks.toolbarGuid
   );
   Assert.equal(parentGUIDBefore, parentGUIDAfter);
@@ -1179,7 +1156,7 @@ add_task(async function test_resume_buffer() {
     // Replace applyIncomingBatch with a custom one that calls the original,
     // but forces it to throw on the 2nd chunk.
     let origApplyIncomingBatch = engine._store.applyIncomingBatch;
-    engine._store.applyIncomingBatch = function(records) {
+    engine._store.applyIncomingBatch = function (records) {
       if (records.length > batchChunkSize) {
         // Hacky way to make reading from the batchChunkSize'th record throw.
         delete records[batchChunkSize];
@@ -1408,6 +1385,127 @@ add_bookmark_test(async function test_livemarks(engine) {
       ],
       "Should keep A and remove B locally"
     );
+  } finally {
+    await cleanup(engine, server);
+  }
+});
+
+add_bookmark_test(async function test_unknown_fields(engine) {
+  let store = engine._store;
+  let server = await serverForFoo(engine);
+  await SyncTestingInfrastructure(server);
+  let collection = server.user("foo").collection("bookmarks");
+  try {
+    let folder1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      title: "Folder 1",
+    });
+    let bmk1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: folder1.guid,
+      url: "http://getfirefox.com/",
+      title: "Get Firefox!",
+    });
+    let bmk2 = await PlacesUtils.bookmarks.insert({
+      parentGuid: folder1.guid,
+      url: "http://getthunderbird.com/",
+      title: "Get Thunderbird!",
+    });
+    let toolbar_record = await store.createRecord("toolbar");
+    collection.insert("toolbar", encryptPayload(toolbar_record.cleartext));
+
+    let folder1_record_without_unknown_fields = await store.createRecord(
+      folder1.guid
+    );
+    collection.insert(
+      folder1.guid,
+      encryptPayload(folder1_record_without_unknown_fields.cleartext)
+    );
+
+    // First bookmark record has an unknown string field
+    let bmk1_record = await store.createRecord(bmk1.guid);
+    console.log("bmk1_record: ", bmk1_record);
+    bmk1_record.cleartext.unknownStrField =
+      "an unknown field from another client";
+    collection.insert(bmk1.guid, encryptPayload(bmk1_record.cleartext));
+
+    // Second bookmark record as an unknown object field
+    let bmk2_record = await store.createRecord(bmk2.guid);
+    bmk2_record.cleartext.unknownObjField = {
+      name: "an unknown object from another client",
+    };
+    collection.insert(bmk2.guid, encryptPayload(bmk2_record.cleartext));
+
+    // Sync the two bookmarks
+    await sync_engine_and_validate_telem(engine, true);
+
+    // Add a folder could also have an unknown field
+    let folder1_record = await store.createRecord(folder1.guid);
+    folder1_record.cleartext.unknownStrField =
+      "a folder could also have an unknown field!";
+    collection.insert(folder1.guid, encryptPayload(folder1_record.cleartext));
+
+    // sync the new updates
+    await engine.setLastSync(1);
+    await sync_engine_and_validate_telem(engine, true);
+
+    let payloads = collection.payloads();
+    // Validate the server has the unknown fields at the top level (and now unknownFields)
+    let server_bmk1 = payloads.find(payload => payload.id == bmk1.guid);
+    deepEqual(
+      server_bmk1.unknownStrField,
+      "an unknown field from another client",
+      "unknown fields correctly on the record"
+    );
+    Assert.equal(server_bmk1.unknownFields, null);
+
+    // Check that the mirror table has unknown fields
+    let db = await PlacesUtils.promiseDBConnection();
+    let rows = await db.executeCached(
+      `
+      SELECT guid, title, unknownFields from items WHERE guid IN 
+      (:bmk1, :bmk2, :folder1)`,
+      { bmk1: bmk1.guid, bmk2: bmk2.guid, folder1: folder1.guid }
+    );
+    // We should have 3 rows that came from the server
+    Assert.equal(rows.length, 3);
+
+    // Bookmark 1 - unknown string field
+    let remote_bmk1 = rows.find(
+      row => row.getResultByName("guid") == bmk1.guid
+    );
+    Assert.equal(remote_bmk1.getResultByName("title"), "Get Firefox!");
+    deepEqual(JSON.parse(remote_bmk1.getResultByName("unknownFields")), {
+      unknownStrField: "an unknown field from another client",
+    });
+
+    // Bookmark 2 - unknown object field
+    let remote_bmk2 = rows.find(
+      row => row.getResultByName("guid") == bmk2.guid
+    );
+    Assert.equal(remote_bmk2.getResultByName("title"), "Get Thunderbird!");
+    deepEqual(JSON.parse(remote_bmk2.getResultByName("unknownFields")), {
+      unknownObjField: {
+        name: "an unknown object from another client",
+      },
+    });
+
+    // Folder with unknown field
+
+    // check the server still has the unknown field
+    deepEqual(
+      payloads.find(payload => payload.id == folder1.guid).unknownStrField,
+      "a folder could also have an unknown field!",
+      "Server still has the unknown field"
+    );
+
+    let remote_folder = rows.find(
+      row => row.getResultByName("guid") == folder1.guid
+    );
+    Assert.equal(remote_folder.getResultByName("title"), "Folder 1");
+    deepEqual(JSON.parse(remote_folder.getResultByName("unknownFields")), {
+      unknownStrField: "a folder could also have an unknown field!",
+    });
   } finally {
     await cleanup(engine, server);
   }

@@ -2,45 +2,53 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { removeSourceActors } from "./source-actors";
-import { validateContext } from "../utils/context";
-
-import { getContext, getThread, getSourceActorsForThread } from "../selectors";
+import { createThread } from "../client/firefox/create";
+import { getSourcesToRemoveForThread } from "../selectors";
+import { clearDocumentsForSources } from "../utils/editor/source-documents";
 
 export function addTarget(targetFront) {
-  return async function(args) {
-    const { client, getState, dispatch } = args;
-    const cx = getContext(getState());
-    const thread = await client.addThread(targetFront);
-    validateContext(getState(), cx);
-
-    dispatch({ type: "INSERT_THREAD", cx, newThread: thread });
-  };
+  return { type: "INSERT_THREAD", newThread: createThread(targetFront) };
 }
 
 export function removeTarget(targetFront) {
-  return async function(args) {
-    const { getState, client, dispatch } = args;
-    const cx = getContext(getState());
-    const thread = getThread(getState(), targetFront.targetForm.threadActor);
+  return ({ getState, dispatch, parserWorker }) => {
+    const threadActorID = targetFront.targetForm.threadActor;
 
-    if (!thread) {
-      return;
-    }
+    // Just before emitting the REMOVE_THREAD action,
+    // synchronously compute the list of source and source actor objects
+    // which should be removed as that one target get removed.
+    //
+    // The list of source objects isn't trivial to compute as these objects
+    // are shared across targets/threads.
+    const { actors, sources } = getSourcesToRemoveForThread(
+      getState(),
+      threadActorID
+    );
 
-    client.removeThread(thread);
-    const sourceActors = getSourceActorsForThread(getState(), thread.actor);
-    dispatch(removeSourceActors(sourceActors));
+    // CodeMirror documents aren't stored in redux reducer,
+    // so we need this manual function call in order to ensure clearing them.
+    clearDocumentsForSources(sources);
+
+    // Notify the reducers that a target/thread is being removed
+    // and that all related resources should be cleared.
+    // This action receives the list of related source actors and source objects
+    // related to that to-be-removed target.
+    // This will be fired on navigation for all existing targets.
+    // That except the top target, when pausing on unload, where the top target may still hold longer.
+    // Also except for service worker targets, which may be kept alive.
     dispatch({
       type: "REMOVE_THREAD",
-      cx,
-      oldThread: thread,
+      threadActorID,
+      actors,
+      sources,
     });
+
+    parserWorker.clearSources(sources.map(source => source.id));
   };
 }
 
 export function toggleJavaScriptEnabled(enabled) {
-  return async ({ panel, dispatch, client }) => {
+  return async ({ dispatch, client }) => {
     await client.toggleJavaScriptEnabled(enabled);
     dispatch({
       type: "TOGGLE_JAVASCRIPT_ENABLED",

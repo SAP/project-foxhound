@@ -23,16 +23,9 @@ function waitForStream(stream, streamType) {
     if (!stream) {
       reject("stream didn't implement given stream type");
     }
-    let currentThread = Cc["@mozilla.org/thread-manager;1"].getService()
-      .currentThread;
-    stream.asyncWait(
-      stream => {
-        resolve(stream);
-      },
-      0,
-      0,
-      currentThread
-    );
+    let currentThread =
+      Cc["@mozilla.org/thread-manager;1"].getService().currentThread;
+    stream.asyncWait(resolve, 0, 0, currentThread);
   });
 }
 

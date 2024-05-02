@@ -6,8 +6,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PHttpChannel;
-include protocol PChildToParentStream;
-include BlobTypes;
 include ClientIPCTypes;
 include URIParams;
 include IPCServiceWorkerDescriptor;
@@ -16,24 +14,29 @@ include PBackgroundSharedTypes;
 include DOMTypes;
 include ProtocolTypes;
 
+include "mozilla/dom/FetchIPCTypes.h";
 include "mozilla/dom/PropertyBagUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 include "mozilla/net/CacheInfoIPCTypes.h";
 include "mozilla/AntiTrackingIPCUtils.h";
+include "mozilla/net/ClassOfService.h";
 
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
-using RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
+using mozilla::net::RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
 using struct nsHttpAtom from "nsHttp.h";
 using class mozilla::net::nsHttpResponseHead from "nsHttpResponseHead.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 [RefCounted] using class nsIPropertyBag2 from "nsIPropertyBag2.h";
 [RefCounted] using class nsDOMNavigationTiming from "nsDOMNavigationTiming.h";
+[RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using nsContentPolicyType from "nsIContentPolicy.h";
 using mozilla::net::PreferredAlternativeDataDeliveryTypeIPC from "nsICacheInfoChannel.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 using nsILoadInfo::StoragePermissionState from "nsILoadInfo.h";
-using class mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
+using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
+using mozilla::dom::RequestMode from "mozilla/dom/RequestBinding.h";
+using mozilla::net::LinkHeader from "nsNetUtil.h";
 
 namespace mozilla {
 namespace net {
@@ -53,10 +56,13 @@ struct CookieJarSettingsArgs
   // Copy of the cookie jar settings for the top-level document.
   uint32_t cookieBehavior;
   bool isFirstPartyIsolated;
+  bool shouldResistFingerprinting;
   bool isOnContentBlockingAllowList;
   CookiePermissionData[] cookiePermissions;
   bool isFixed;
   nsString partitionKey;
+  bool hasFingerprintingRandomizationKey;
+  uint8_t[] fingerprintingRandomizationKey;
 };
 
 //-----------------------------------------------------------------------------
@@ -81,6 +87,14 @@ struct RedirectHistoryEntryInfo
   nsCString           remoteAddress;
 };
 
+struct InterceptionInfoArg
+{
+  PrincipalInfo?              triggeringPrincipalInfo;
+  nsContentPolicyType         contentPolicyType;
+  RedirectHistoryEntryInfo[]  redirectChain;
+  bool                        fromThirdParty;
+};
+
 struct LoadInfoArgs
 {
   PrincipalInfo?              requestingPrincipalInfo;
@@ -88,10 +102,13 @@ struct LoadInfoArgs
   PrincipalInfo?              principalToInheritInfo;
   PrincipalInfo?              topLevelPrincipalInfo;
   URIParams?                  resultPrincipalURI;
+  nsCString                   triggeringRemoteType;
   nsID                        sandboxedNullPrincipalID;
   uint32_t                    securityFlags;
   uint32_t                    sandboxFlags;
   uint32_t                    triggeringSandboxFlags;
+  uint64_t                    triggeringWindowId;
+  bool                        triggeringStorageAccess;
   nsContentPolicyType         contentPolicyType;
   uint32_t                    tainting;
   bool                        blockAllMixedContent;
@@ -109,12 +126,14 @@ struct LoadInfoArgs
   uint64_t                    frameBrowsingContextID;
   bool                        initialSecurityCheckDone;
   bool                        isInThirdPartyContext;
-  bool                        isThirdPartyContextToTopWindow;
+  bool?                       isThirdPartyContextToTopWindow;
   bool                        isFormSubmission;
   bool                        sendCSPViolationEvents;
   OriginAttributes            originAttributes;
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
   RedirectHistoryEntryInfo[]  redirectChain;
+  bool                        hasInjectedCookieForCookieBannerHandling;
+  bool                        wasSchemelessInput;
 
   /**
    * ClientInfo structure representing the window or worker that triggered
@@ -148,8 +167,10 @@ struct LoadInfoArgs
   bool allowListFutureDocumentsCreatedFromThisRedirectChain;
   bool needForCheckingAntiTrackingHeuristic;
   nsString                    cspNonce;
+  nsString                    integrityMetadata;
   bool                        skipContentSniffing;
   uint32_t                    httpsOnlyStatus;
+  bool                        hstsStatus;
   bool                        hasValidUserGestureActivation;
   bool                        allowDeprecatedSystemRequests;
   bool                        isInDevToolsContext;
@@ -162,9 +183,12 @@ struct LoadInfoArgs
   uint32_t                    requestBlockingReason;
   CSPInfo?                    cspToInheritInfo;
   StoragePermissionState      storagePermission;
+  uint64_t?                   overriddenFingerprintingSettings;
   bool                        isMetaRefresh;
   CrossOriginEmbedderPolicy   loadingEmbedderPolicy;
-  nsIURI                      unstrippedURI;
+  bool                        originTrialCoepCredentiallessEnabledForTopLevel;
+  nullable nsIURI             unstrippedURI;
+  InterceptionInfoArg?        interceptionInfo;
 };
 
 /**
@@ -196,6 +220,8 @@ struct ParentLoadInfoForwarderArgs
 
   uint32_t httpsOnlyStatus;
 
+  bool hstsStatus;
+
   // Returns true if at the time of the loadinfo construction the document
   // that triggered this load has the bit hasValidTransientUserGestureActivation
   // set or the load was triggered from External. (Mostly this bool is used
@@ -216,6 +242,12 @@ struct ParentLoadInfoForwarderArgs
   // Sandbox Flags of the Document that triggered the load
   uint32_t triggeringSandboxFlags;
 
+  // Window ID and UsingStorageAccess of the Document that triggered the load.
+  // Used by the Storage Access API to determine if SubDocument loads should
+  // be partitioned or not.
+  uint64_t triggeringWindowId;
+  bool triggeringStorageAccess;
+
   // We must also note that the tainting value was explicitly set
   // by the service worker.
   bool serviceWorkerTaintingSynthesized;
@@ -229,13 +261,15 @@ struct ParentLoadInfoForwarderArgs
 
   StoragePermissionState storagePermission;
 
+  uint64_t? overriddenFingerprintingSettings;
+
   bool isMetaRefresh;
 
-  bool isThirdPartyContextToTopWindow;
+  bool? isThirdPartyContextToTopWindow;
 
   bool isInThirdPartyContext;
 
-  nsIURI unstrippedURI;
+  nullable nsIURI unstrippedURI;
 
   // IMPORTANT: when you add new properites here you must also update
   // LoadInfoToParentLoadInfoForwarder and MergeParentLoadInfoForwarder
@@ -274,61 +308,63 @@ struct CorsPreflightArgs
 
 struct HttpChannelOpenArgs
 {
-  URIParams                   uri;
+  nullable nsIURI             uri;
   // - TODO: bug 571161: unclear if any HTTP channel clients ever
   // set originalURI != uri (about:credits?); also not clear if
   // chrome channel would ever need to know.  Get rid of next arg?
-  URIParams?                  original;
-  URIParams?                  doc;
-  nsIReferrerInfo             referrerInfo;
-  URIParams?                  apiRedirectTo;
-  URIParams?                  topWindowURI;
-  uint32_t                    loadFlags;
+  nullable nsIURI             original;
+  nullable nsIURI             doc;
+  nullable nsIReferrerInfo    referrerInfo;
+  nullable nsIURI             apiRedirectTo;
+  nullable nsIURI             topWindowURI;
   RequestHeaderTuples         requestHeaders;
-  nsCString                   requestMethod;
-  IPCStream?                  uploadStream;
-  bool                        uploadStreamHasHeaders;
-  int16_t                     priority;
-  uint32_t                    classOfService;
-  uint8_t                     redirectionLimit;
-  bool                        allowSTS;
-  uint32_t                    thirdPartyFlags;
-  bool                        resumeAt;
-  uint64_t                    startPos;
-  nsCString                   entityID;
-  bool                        chooseApplicationCache;
-  nsCString                   appCacheClientID;
-  bool                        allowSpdy;
-  bool                        allowHttp3;
-  bool                        allowAltSvc;
-  bool                        beConservative;
-  bool                        bypassProxy;
-  uint32_t                    tlsFlags;
-  LoadInfoArgs?               loadInfo;
-  uint32_t                    cacheKey;
-  uint64_t                    requestContextID;
-  CorsPreflightArgs?          preflightArgs;
-  uint32_t                    initialRwin;
-  bool                        blockAuthPrompt;
-  bool                        allowStaleCacheContent;
-  bool                        forceValidateCacheContent;
-  bool                        preferCacheLoadOverBypass;
-  nsCString                   contentTypeHint;
-  uint32_t                    corsMode;
-  uint32_t                    redirectMode;
-  uint64_t                    channelId;
-  nsString                    integrityMetadata;
-  uint64_t                    contentWindowId;
   PreferredAlternativeDataTypeParams[] preferredAlternativeTypes;
-  uint64_t                    topBrowsingContextId;
   TimeStamp                   launchServiceWorkerStart;
   TimeStamp                   launchServiceWorkerEnd;
   TimeStamp                   dispatchFetchEventStart;
   TimeStamp                   dispatchFetchEventEnd;
   TimeStamp                   handleFetchEventStart;
   TimeStamp                   handleFetchEventEnd;
-  bool                        forceMainDocumentChannel;
   TimeStamp                   navigationStartTimeStamp;
+  uint64_t                    startPos;
+  uint64_t                    requestContextID;
+  uint64_t                    channelId;
+  uint64_t                    contentWindowId;
+  uint64_t                    browserId;
+  uint64_t                    earlyHintPreloaderId;
+  nsCString                   requestMethod;
+  ClassOfService              classOfService;
+  nsCString                   entityID;
+  nsCString                   appCacheClientID;
+  CorsPreflightArgs?          preflightArgs;
+  nsCString                   contentTypeHint;
+  nsString                    integrityMetadata;
+  IPCStream?                  uploadStream;
+  LoadInfoArgs                loadInfo;
+  uint32_t                    loadFlags;
+  uint32_t                    thirdPartyFlags;
+  uint32_t                    tlsFlags;
+  uint32_t                    cacheKey;
+  uint32_t                    initialRwin;
+  uint32_t                    redirectMode;
+  int16_t                     priority;
+  bool                        uploadStreamHasHeaders;
+  bool                        allowSTS;
+  bool                        resumeAt;
+  bool                        allowSpdy;
+  bool                        allowHttp3;
+  bool                        allowAltSvc;
+  bool                        beConservative;
+  bool                        bypassProxy;
+  bool                        blockAuthPrompt;
+  bool                        allowStaleCacheContent;
+  RequestMode                 requestMode;
+  bool                        forceValidateCacheContent;
+  bool                        preferCacheLoadOverBypass;
+  bool                        forceMainDocumentChannel;
+  uint8_t                     redirectionLimit;
+  nsString                    classicScriptHintCharset;
+  nsString                    documentCharacterSet;
 };
 
 struct HttpChannelConnectArgs
@@ -382,6 +418,7 @@ struct HttpConnectionInfoCloneArgs
   bool isIPv6Disabled;
   nsCString topWindowOrigin;
   bool isHttp3;
+  bool webTransport;
   bool hasIPHintAddress;
   nsCString echConfig;
   ProxyInfoCloneArgs[] proxyInfo;
@@ -433,38 +470,45 @@ union DocumentChannelElementCreationArgs {
 };
 
 struct DocumentChannelCreationArgs {
-  DocShellLoadStateInit loadState;
+  nsDocShellLoadState loadState;
   TimeStamp asyncOpenTime;
   uint64_t channelId;
   uint32_t cacheKey;
-  nsDOMNavigationTiming? timing;
+  nullable nsDOMNavigationTiming timing;
   IPCClientInfo? initialClientInfo;
   DocumentChannelElementCreationArgs elementCreationArgs;
   uint64_t parentInitiatedNavigationEpoch;
 };
 
+struct EarlyHintConnectArgs {
+  LinkHeader link;
+  uint64_t earlyHintPreloaderId;
+};
+
 struct RedirectToRealChannelArgs {
   uint32_t registrarId;
-  nsIURI uri;
+  nullable nsIURI uri;
   uint32_t newLoadFlags;
   ReplacementChannelConfigInit? init;
-  LoadInfoArgs? loadInfo;
+  LoadInfoArgs loadInfo;
   uint64_t channelId;
-  nsIURI originalURI;
+  nullable nsIURI originalURI;
   uint32_t redirectMode;
   uint32_t redirectFlags;
   uint32_t? contentDisposition;
   nsString? contentDispositionFilename;
-  nsIPropertyBag2 properties;
+  nullable nsIPropertyBag2 properties;
   uint32_t loadStateExternalLoadFlags;
   uint32_t loadStateInternalLoadFlags;
   uint32_t loadStateLoadType;
-  nsDOMNavigationTiming? timing;
+  nullable nsDOMNavigationTiming timing;
   nsString srcdocData;
-  nsIURI baseUri;
+  nullable nsIURI baseUri;
   LoadingSessionHistoryInfo? loadingSessionHistoryInfo;
   uint64_t loadIdentifier;
   nsCString? originalUriString;
+  EarlyHintConnectArgs[] earlyHints;
+  uint32_t earlyHintLinkType;
 };
 
 struct TimingStructArgs {
@@ -477,6 +521,7 @@ struct TimingStructArgs {
   TimeStamp requestStart;
   TimeStamp responseStart;
   TimeStamp responseEnd;
+  TimeStamp transactionPending;
 };
 
 struct ResourceTimingStructArgs {
@@ -494,13 +539,14 @@ struct ResourceTimingStructArgs {
   TimeStamp redirectEnd;
   uint64_t transferSize;
   uint64_t encodedBodySize;
-  nsCString protocolVersion;
 
   // Not actually part of resource timing, but not part of the transaction
   // timings either. These need to be passed to HttpChannelChild along with
   // the rest of the timings so the timing information in the child is complete.
   TimeStamp cacheReadStart;
   TimeStamp cacheReadEnd;
+
+  TimeStamp transactionPending;
 };
 
 struct HttpActivity
@@ -551,7 +597,7 @@ struct GIOChannelOpenArgs
   uint64_t                  startPos;
   nsCString                 entityID;
   IPCStream?                uploadStream;
-  LoadInfoArgs?             loadInfo;
+  LoadInfoArgs              loadInfo;
   uint32_t                  loadFlags;
 };
 
@@ -564,6 +610,12 @@ union GIOChannelCreationArgs
 {
   GIOChannelOpenArgs;      // For AsyncOpen: the common case.
   GIOChannelConnectArgs;   // Used for redirected-to channels
+};
+
+struct RemoteStreamInfo {
+  nullable nsIInputStream inputStream;
+  nsCString contentType;
+  int64_t contentLength;
 };
 } // namespace net
 } // namespace mozilla

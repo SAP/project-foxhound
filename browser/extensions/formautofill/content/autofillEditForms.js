@@ -7,6 +7,13 @@
 
 "use strict";
 
+const { FormAutofill } = ChromeUtils.importESModule(
+  "resource://autofill/FormAutofill.sys.mjs"
+);
+const { FormAutofillUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
+);
+
 class EditAutofillForm {
   constructor(elements) {
     this._elements = elements;
@@ -14,6 +21,7 @@ class EditAutofillForm {
 
   /**
    * Fill the form with a record object.
+   *
    * @param  {object} [record = {}]
    */
   loadRecord(record = {}) {
@@ -50,6 +58,7 @@ class EditAutofillForm {
 
   /**
    * Get a record from the form suitable for a save/update in storage.
+   *
    * @returns {object}
    */
   buildFormObject() {
@@ -141,11 +150,6 @@ class EditAddress extends EditAutofillForm {
    * @param {HTMLElement[]} elements
    * @param {object} record
    * @param {object} config
-   * @param {string[]} config.DEFAULT_REGION
-   * @param {function} config.getFormFormat Function to return form layout info for a given country.
-   * @param {function} config.findAddressSelectOption Finds the matching select option for a given
-                                                      select element, address, and fieldName.
-   * @param {string[]} config.countries
    * @param {boolean} [config.noValidate=undefined] Whether to validate the form
    */
   constructor(elements, record, config) {
@@ -182,11 +186,13 @@ class EditAddress extends EditAutofillForm {
     this._record = record;
     if (!record) {
       record = {
-        country: this.DEFAULT_REGION,
+        country: FormAutofill.DEFAULT_REGION,
       };
     }
 
-    let { addressLevel1Options } = this.getFormFormat(record.country);
+    let { addressLevel1Options } = FormAutofillUtils.getFormFormat(
+      record.country
+    );
     this.populateAddressLevel1(addressLevel1Options, record.country);
 
     super.loadRecord(record);
@@ -198,10 +204,7 @@ class EditAddress extends EditAutofillForm {
     let { addressFields } = this._elements.form.dataset;
     return (
       !addressFields ||
-      addressFields
-        .trim()
-        .split(/\s+/)
-        .includes("mailing-address")
+      addressFields.trim().split(/\s+/).includes("mailing-address")
     );
   }
 
@@ -253,23 +256,37 @@ class EditAddress extends EditAutofillForm {
   /**
    * Format the form based on country. The address-level1 and postal-code labels
    * should be specific to the given country.
+   *
    * @param  {string} country
    */
   formatForm(country) {
     const {
-      addressLevel3Label,
-      addressLevel2Label,
-      addressLevel1Label,
+      addressLevel3L10nId,
+      addressLevel2L10nId,
+      addressLevel1L10nId,
       addressLevel1Options,
-      postalCodeLabel,
+      postalCodeL10nId,
       fieldsOrder: mailingFieldsOrder,
       postalCodePattern,
       countryRequiredFields,
-    } = this.getFormFormat(country);
-    this._elements.addressLevel3Label.dataset.localization = addressLevel3Label;
-    this._elements.addressLevel2Label.dataset.localization = addressLevel2Label;
-    this._elements.addressLevel1Label.dataset.localization = addressLevel1Label;
-    this._elements.postalCodeLabel.dataset.localization = postalCodeLabel;
+    } = FormAutofillUtils.getFormFormat(country);
+
+    document.l10n.setAttributes(
+      this._elements.addressLevel3Label,
+      addressLevel3L10nId
+    );
+    document.l10n.setAttributes(
+      this._elements.addressLevel2Label,
+      addressLevel2L10nId
+    );
+    document.l10n.setAttributes(
+      this._elements.addressLevel1Label,
+      addressLevel1L10nId
+    );
+    document.l10n.setAttributes(
+      this._elements.postalCodeLabel,
+      postalCodeL10nId
+    );
     let addressFields = this._elements.form.dataset.addressFields;
     let extraRequiredFields = this._elements.form.dataset.extraRequiredFields;
     let fieldClasses = EditAddress.computeVisibleFields(
@@ -320,7 +337,7 @@ class EditAddress extends EditAutofillForm {
       let containerInputs = [
         ...container.querySelectorAll("input, textarea, select"),
       ];
-      containerInputs.forEach(function(input) {
+      containerInputs.forEach(function (input) {
         input.disabled = false;
         // libaddressinput doesn't list 'country' or 'name' as required.
         // The additional-name field should never get marked as required.
@@ -376,7 +393,7 @@ class EditAddress extends EditAutofillForm {
       return;
     }
 
-    let matchedSelectOption = this.findAddressSelectOption(
+    let matchedSelectOption = FormAutofillUtils.findAddressSelectOption(
       field,
       {
         country,
@@ -451,13 +468,14 @@ class EditAddress extends EditAutofillForm {
   populateCountries() {
     let fragment = document.createDocumentFragment();
     // Sort countries by their visible names.
-    let countries = [...this.countries.entries()].sort((e1, e2) =>
+    let countries = [...FormAutofill.countries.entries()].sort((e1, e2) =>
       e1[1].localeCompare(e2[1])
     );
-    for (let country of countries) {
-      let option = new Option();
-      option.value = country[0];
-      option.dataset.localizationRegion = country[0].toLowerCase();
+    for (let [country] of countries) {
+      const countryName = Services.intl.getRegionDisplayNames(undefined, [
+        country.toLowerCase(),
+      ]);
+      const option = new Option(countryName, country);
       fragment.appendChild(option);
     }
     this._elements.country.appendChild(fragment);
@@ -481,15 +499,11 @@ class EditCreditCard extends EditAutofillForm {
    * @param {HTMLElement[]} elements
    * @param {object} record with a decrypted cc-number
    * @param {object} addresses in an object with guid keys for the billing address picker.
-   * @param {object} config
-   * @param {function} config.isCCNumber Function to determine if a string is a valid CC number.
-   * @param {function} config.getSupportedNetworks Function to get the list of card networks
    */
-  constructor(elements, record, addresses, config) {
+  constructor(elements, record, addresses) {
     super(elements);
 
     this._addresses = addresses;
-    Object.assign(this, config);
     Object.assign(this._elements, {
       ccNumber: this._elements.form.querySelector("#cc-number"),
       invalidCardNumberStringElement: this._elements.form.querySelector(
@@ -497,11 +511,9 @@ class EditCreditCard extends EditAutofillForm {
       ),
       month: this._elements.form.querySelector("#cc-exp-month"),
       year: this._elements.form.querySelector("#cc-exp-year"),
-      ccType: this._elements.form.querySelector("#cc-type"),
       billingAddress: this._elements.form.querySelector("#billingAddressGUID"),
-      billingAddressRow: this._elements.form.querySelector(
-        ".billingAddressRow"
-      ),
+      billingAddressRow:
+        this._elements.form.querySelector(".billingAddressRow"),
     });
 
     this.attachEventListeners();
@@ -514,8 +526,6 @@ class EditCreditCard extends EditAutofillForm {
     this._addresses = addresses;
     this.generateBillingAddressOptions(preserveFieldValues);
     if (!preserveFieldValues) {
-      // Re-populating the networks will reset the selected option.
-      this.populateNetworks();
       // Re-generating the months will reset the selected option.
       this.generateMonths();
       // Re-generating the years will reset the selected option.
@@ -574,23 +584,6 @@ class EditCreditCard extends EditAutofillForm {
     }
   }
 
-  populateNetworks() {
-    // Clear the list
-    this._elements.ccType.textContent = "";
-    let frag = document.createDocumentFragment();
-    // include an empty first option
-    frag.appendChild(new Option("", ""));
-
-    let supportedNetworks = this.getSupportedNetworks();
-    for (let id of supportedNetworks) {
-      let option = new Option();
-      option.value = id;
-      option.dataset.localization = "cardNetwork." + id;
-      frag.appendChild(option);
-    }
-    this._elements.ccType.appendChild(frag);
-  }
-
   generateBillingAddressOptions(preserveFieldValues) {
     let billingAddressGUID;
     if (preserveFieldValues && this._elements.billingAddress.value) {
@@ -608,7 +601,7 @@ class EditCreditCard extends EditAutofillForm {
       hasAddresses = true;
       let selected = guid == billingAddressGUID;
       let option = new Option(
-        this.getAddressLabel(address),
+        FormAutofillUtils.getAddressLabel(address),
         guid,
         selected,
         selected
@@ -628,7 +621,7 @@ class EditCreditCard extends EditAutofillForm {
     // Clear the error message if cc-number is valid
     if (
       event.target == this._elements.ccNumber &&
-      this.isCCNumber(this._elements.ccNumber.value)
+      FormAutofillUtils.isCCNumber(this._elements.ccNumber.value)
     ) {
       this._elements.ccNumber.setCustomValidity("");
     }
@@ -639,9 +632,12 @@ class EditCreditCard extends EditAutofillForm {
     super.updateCustomValidity(field);
 
     // Mark the cc-number field as invalid if the number is empty or invalid.
-    if (field == this._elements.ccNumber && !this.isCCNumber(field.value)) {
-      let invalidCardNumberString = this._elements
-        .invalidCardNumberStringElement.textContent;
+    if (
+      field == this._elements.ccNumber &&
+      !FormAutofillUtils.isCCNumber(field.value)
+    ) {
+      let invalidCardNumberString =
+        this._elements.invalidCardNumberStringElement.textContent;
       field.setCustomValidity(invalidCardNumberString || " ");
     }
   }

@@ -3,27 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Services = require("Services");
-
-const EventEmitter = require("devtools/shared/event-emitter");
-
-const Telemetry = require("devtools/client/shared/telemetry");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 loader.lazyRequireGetter(
   this,
   "AccessibilityProxy",
-  "devtools/client/accessibility/accessibility-proxy",
+  "resource://devtools/client/accessibility/accessibility-proxy.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "Picker",
-  "devtools/client/accessibility/picker",
+  "resource://devtools/client/accessibility/picker.js",
   true
 );
 const {
   A11Y_SERVICE_DURATION,
-} = require("devtools/client/accessibility/constants");
+} = require("resource://devtools/client/accessibility/constants.js");
 
 // The panel's window global is an EventEmitter firing the following events:
 const EVENTS = {
@@ -55,15 +51,12 @@ function AccessibilityPanel(iframeWindow, toolbox, commands) {
   this._commands = commands;
 
   this.onPanelVisibilityChange = this.onPanelVisibilityChange.bind(this);
-  this.onNewAccessibleFrontSelected = this.onNewAccessibleFrontSelected.bind(
-    this
-  );
-  this.onAccessibilityInspectorUpdated = this.onAccessibilityInspectorUpdated.bind(
-    this
-  );
-  this.updateA11YServiceDurationTimer = this.updateA11YServiceDurationTimer.bind(
-    this
-  );
+  this.onNewAccessibleFrontSelected =
+    this.onNewAccessibleFrontSelected.bind(this);
+  this.onAccessibilityInspectorUpdated =
+    this.onAccessibilityInspectorUpdated.bind(this);
+  this.updateA11YServiceDurationTimer =
+    this.updateA11YServiceDurationTimer.bind(this);
   this.forceUpdatePickerButton = this.forceUpdatePickerButton.bind(this);
   this.onLifecycleEvent = this.onLifecycleEvent.bind(this);
 
@@ -85,7 +78,7 @@ AccessibilityPanel.prototype = {
       resolver = resolve;
     });
 
-    this._telemetry = new Telemetry();
+    this._telemetry = this._toolbox.telemetry;
     this.panelWin.gTelemetry = this._telemetry;
 
     this._toolbox.on("select", this.onPanelVisibilityChange);

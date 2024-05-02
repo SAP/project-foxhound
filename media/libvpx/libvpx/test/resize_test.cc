@@ -95,22 +95,18 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
                          unsigned int initial_h, unsigned int *w,
                          unsigned int *h, bool flag_codec,
                          bool smaller_width_larger_size_) {
+  *w = initial_w;
+  *h = initial_h;
+
   if (smaller_width_larger_size_) {
     if (frame < 30) {
-      *w = initial_w;
-      *h = initial_h;
       return;
     }
-    if (frame < 100) {
-      *w = initial_w * 7 / 10;
-      *h = initial_h * 16 / 10;
-      return;
-    }
+    *w = initial_w * 7 / 10;
+    *h = initial_h * 16 / 10;
     return;
   }
   if (frame < 10) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   if (frame < 20) {
@@ -124,8 +120,6 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     return;
   }
   if (frame < 40) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   if (frame < 50) {
@@ -139,8 +133,6 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     return;
   }
   if (frame < 70) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   if (frame < 80) {
@@ -159,8 +151,6 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     return;
   }
   if (frame < 110) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   if (frame < 120) {
@@ -179,8 +169,6 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     return;
   }
   if (frame < 150) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   if (frame < 160) {
@@ -199,8 +187,6 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     return;
   }
   if (frame < 190) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   if (frame < 200) {
@@ -219,8 +205,6 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     return;
   }
   if (frame < 230) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   if (frame < 240) {
@@ -234,8 +218,6 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     return;
   }
   if (frame < 260) {
-    *w = initial_w;
-    *h = initial_h;
     return;
   }
   // Go down very low.
@@ -248,13 +230,9 @@ void ScaleForFrameNumber(unsigned int frame, unsigned int initial_w,
     // Cases that only works for VP9.
     // For VP9: Swap width and height of original.
     if (frame < 320) {
-      *w = initial_h;
-      *h = initial_w;
       return;
     }
   }
-  *w = initial_w;
-  *h = initial_h;
 }
 
 class ResizingVideoSource : public ::libvpx_test::DummyVideoSource {
@@ -266,13 +244,13 @@ class ResizingVideoSource : public ::libvpx_test::DummyVideoSource {
   }
   bool flag_codec_;
   bool smaller_width_larger_size_;
-  virtual ~ResizingVideoSource() {}
+  ~ResizingVideoSource() override = default;
 
  protected:
-  virtual void Next() {
+  void Next() override {
     ++frame_;
-    unsigned int width;
-    unsigned int height;
+    unsigned int width = 0;
+    unsigned int height = 0;
     ScaleForFrameNumber(frame_, kInitialWidth, kInitialHeight, &width, &height,
                         flag_codec_, smaller_width_larger_size_);
     SetSize(width, height);
@@ -286,14 +264,14 @@ class ResizeTest
  protected:
   ResizeTest() : EncoderTest(GET_PARAM(0)) {}
 
-  virtual ~ResizeTest() {}
+  ~ResizeTest() override = default;
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitializeConfig();
     SetMode(GET_PARAM(1));
   }
 
-  virtual void FramePktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void FramePktHook(const vpx_codec_cx_pkt_t *pkt) override {
     ASSERT_NE(static_cast<int>(pkt->data.frame.width[0]), 0);
     ASSERT_NE(static_cast<int>(pkt->data.frame.height[0]), 0);
     encode_frame_width_.push_back(pkt->data.frame.width[0]);
@@ -308,8 +286,8 @@ class ResizeTest
     return encode_frame_height_[idx];
   }
 
-  virtual void DecompressedFrameHook(const vpx_image_t &img,
-                                     vpx_codec_pts_t pts) {
+  void DecompressedFrameHook(const vpx_image_t &img,
+                             vpx_codec_pts_t pts) override {
     frame_info_list_.push_back(FrameInfo(pts, img.d_w, img.d_h));
   }
 
@@ -350,32 +328,32 @@ class ResizeInternalTest : public ResizeTest {
  protected:
 #if WRITE_COMPRESSED_STREAM
   ResizeInternalTest()
-      : ResizeTest(), frame0_psnr_(0.0), outfile_(NULL), out_frames_(0) {}
+      : ResizeTest(), frame0_psnr_(0.0), outfile_(nullptr), out_frames_(0) {}
 #else
   ResizeInternalTest() : ResizeTest(), frame0_psnr_(0.0) {}
 #endif
 
-  virtual ~ResizeInternalTest() {}
+  ~ResizeInternalTest() override = default;
 
-  virtual void BeginPassHook(unsigned int /*pass*/) {
+  void BeginPassHook(unsigned int /*pass*/) override {
 #if WRITE_COMPRESSED_STREAM
     outfile_ = fopen("vp90-2-05-resize.ivf", "wb");
 #endif
   }
 
-  virtual void EndPassHook() {
+  void EndPassHook() override {
 #if WRITE_COMPRESSED_STREAM
     if (outfile_) {
       if (!fseek(outfile_, 0, SEEK_SET))
         write_ivf_file_header(&cfg_, out_frames_, outfile_);
       fclose(outfile_);
-      outfile_ = NULL;
+      outfile_ = nullptr;
     }
 #endif
   }
 
-  virtual void PreEncodeFrameHook(libvpx_test::VideoSource *video,
-                                  libvpx_test::Encoder *encoder) {
+  void PreEncodeFrameHook(libvpx_test::VideoSource *video,
+                          libvpx_test::Encoder *encoder) override {
     if (change_config_) {
       int new_q = 60;
       if (video->frame() == 0) {
@@ -400,13 +378,13 @@ class ResizeInternalTest : public ResizeTest {
     }
   }
 
-  virtual void PSNRPktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void PSNRPktHook(const vpx_codec_cx_pkt_t *pkt) override {
     if (frame0_psnr_ == 0.) frame0_psnr_ = pkt->data.psnr.psnr[0];
     EXPECT_NEAR(pkt->data.psnr.psnr[0], frame0_psnr_, 2.0);
   }
 
 #if WRITE_COMPRESSED_STREAM
-  virtual void FramePktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void FramePktHook(const vpx_codec_cx_pkt_t *pkt) override {
     ++out_frames_;
 
     // Write initial file header if first frame.
@@ -469,10 +447,10 @@ class ResizeRealtimeTest
       public ::libvpx_test::CodecTestWith2Params<libvpx_test::TestMode, int> {
  protected:
   ResizeRealtimeTest() : EncoderTest(GET_PARAM(0)) {}
-  virtual ~ResizeRealtimeTest() {}
+  ~ResizeRealtimeTest() override = default;
 
-  virtual void PreEncodeFrameHook(libvpx_test::VideoSource *video,
-                                  libvpx_test::Encoder *encoder) {
+  void PreEncodeFrameHook(libvpx_test::VideoSource *video,
+                          libvpx_test::Encoder *encoder) override {
     if (video->frame() == 0) {
       encoder->Control(VP9E_SET_AQ_MODE, 3);
       encoder->Control(VP8E_SET_CPUUSED, set_cpu_used_);
@@ -485,24 +463,24 @@ class ResizeRealtimeTest
     }
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitializeConfig();
     SetMode(GET_PARAM(1));
     set_cpu_used_ = GET_PARAM(2);
   }
 
-  virtual void DecompressedFrameHook(const vpx_image_t &img,
-                                     vpx_codec_pts_t pts) {
+  void DecompressedFrameHook(const vpx_image_t &img,
+                             vpx_codec_pts_t pts) override {
     frame_info_list_.push_back(FrameInfo(pts, img.d_w, img.d_h));
   }
 
-  virtual void MismatchHook(const vpx_image_t *img1, const vpx_image_t *img2) {
+  void MismatchHook(const vpx_image_t *img1, const vpx_image_t *img2) override {
     double mismatch_psnr = compute_psnr(img1, img2);
     mismatch_psnr_ += mismatch_psnr;
     ++mismatch_nframes_;
   }
 
-  virtual void FramePktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void FramePktHook(const vpx_codec_cx_pkt_t *pkt) override {
     ASSERT_NE(static_cast<int>(pkt->data.frame.width[0]), 0);
     ASSERT_NE(static_cast<int>(pkt->data.frame.height[0]), 0);
     encode_frame_width_.push_back(pkt->data.frame.width[0]);
@@ -578,7 +556,7 @@ TEST_P(ResizeRealtimeTest, TestExternalResizeWorks) {
   }
 }
 
-TEST_P(ResizeRealtimeTest, DISABLED_TestExternalResizeSmallerWidthBiggerSize) {
+TEST_P(ResizeRealtimeTest, TestExternalResizeSmallerWidthBiggerSize) {
   ResizingVideoSource video;
   video.flag_codec_ = true;
   video.smaller_width_larger_size_ = true;
@@ -610,11 +588,11 @@ TEST_P(ResizeRealtimeTest, DISABLED_TestExternalResizeSmallerWidthBiggerSize) {
 // Run at low bitrate, with resize_allowed = 1, and verify that we get
 // one resize down event.
 TEST_P(ResizeRealtimeTest, TestInternalResizeDown) {
-  ::libvpx_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352, 288,
-                                       30, 1, 0, 299);
+  ::libvpx_test::I420VideoSource video("niklas_640_480_30.yuv", 640, 480, 30, 1,
+                                       0, 299);
   DefaultConfig();
-  cfg_.g_w = 352;
-  cfg_.g_h = 288;
+  cfg_.g_w = 640;
+  cfg_.g_h = 480;
   change_bitrate_ = false;
   mismatch_psnr_ = 0.0;
   mismatch_nframes_ = 0;
@@ -648,11 +626,11 @@ TEST_P(ResizeRealtimeTest, TestInternalResizeDown) {
 // Start at low target bitrate, raise the bitrate in the middle of the clip,
 // scaling-up should occur after bitrate changed.
 TEST_P(ResizeRealtimeTest, TestInternalResizeDownUpChangeBitRate) {
-  ::libvpx_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352, 288,
-                                       30, 1, 0, 359);
+  ::libvpx_test::I420VideoSource video("niklas_640_480_30.yuv", 640, 480, 30, 1,
+                                       0, 400);
   DefaultConfig();
-  cfg_.g_w = 352;
-  cfg_.g_h = 288;
+  cfg_.g_w = 640;
+  cfg_.g_h = 480;
   change_bitrate_ = true;
   mismatch_psnr_ = 0.0;
   mismatch_nframes_ = 0;
@@ -672,11 +650,11 @@ TEST_P(ResizeRealtimeTest, TestInternalResizeDownUpChangeBitRate) {
     ASSERT_EQ(info->h, GetFrameHeight(idx));
     if (info->w != last_w || info->h != last_h) {
       resize_count++;
-      if (resize_count == 1) {
+      if (resize_count <= 2) {
         // Verify that resize down occurs.
         ASSERT_LT(info->w, last_w);
         ASSERT_LT(info->h, last_h);
-      } else if (resize_count == 2) {
+      } else if (resize_count > 2) {
         // Verify that resize up occurs.
         ASSERT_GT(info->w, last_w);
         ASSERT_GT(info->h, last_h);
@@ -687,8 +665,8 @@ TEST_P(ResizeRealtimeTest, TestInternalResizeDownUpChangeBitRate) {
   }
 
 #if CONFIG_VP9_DECODER
-  // Verify that we get 2 resize events in this test.
-  ASSERT_EQ(resize_count, 2) << "Resizing should occur twice.";
+  // Verify that we get 4 resize events in this test.
+  ASSERT_EQ(resize_count, 4) << "Resizing should occur twice.";
   EXPECT_EQ(static_cast<unsigned int>(0), GetMismatchFrames());
 #else
   printf("Warning: VP9 decoder unavailable, unable to check resize count!\n");
@@ -705,32 +683,32 @@ class ResizeCspTest : public ResizeTest {
  protected:
 #if WRITE_COMPRESSED_STREAM
   ResizeCspTest()
-      : ResizeTest(), frame0_psnr_(0.0), outfile_(NULL), out_frames_(0) {}
+      : ResizeTest(), frame0_psnr_(0.0), outfile_(nullptr), out_frames_(0) {}
 #else
   ResizeCspTest() : ResizeTest(), frame0_psnr_(0.0) {}
 #endif
 
-  virtual ~ResizeCspTest() {}
+  ~ResizeCspTest() override = default;
 
-  virtual void BeginPassHook(unsigned int /*pass*/) {
+  void BeginPassHook(unsigned int /*pass*/) override {
 #if WRITE_COMPRESSED_STREAM
     outfile_ = fopen("vp91-2-05-cspchape.ivf", "wb");
 #endif
   }
 
-  virtual void EndPassHook() {
+  void EndPassHook() override {
 #if WRITE_COMPRESSED_STREAM
     if (outfile_) {
       if (!fseek(outfile_, 0, SEEK_SET))
         write_ivf_file_header(&cfg_, out_frames_, outfile_);
       fclose(outfile_);
-      outfile_ = NULL;
+      outfile_ = nullptr;
     }
 #endif
   }
 
-  virtual void PreEncodeFrameHook(libvpx_test::VideoSource *video,
-                                  libvpx_test::Encoder *encoder) {
+  void PreEncodeFrameHook(libvpx_test::VideoSource *video,
+                          libvpx_test::Encoder *encoder) override {
     if (CspForFrameNumber(video->frame()) != VPX_IMG_FMT_I420 &&
         cfg_.g_profile != 1) {
       cfg_.g_profile = 1;
@@ -743,13 +721,13 @@ class ResizeCspTest : public ResizeTest {
     }
   }
 
-  virtual void PSNRPktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void PSNRPktHook(const vpx_codec_cx_pkt_t *pkt) override {
     if (frame0_psnr_ == 0.) frame0_psnr_ = pkt->data.psnr.psnr[0];
     EXPECT_NEAR(pkt->data.psnr.psnr[0], frame0_psnr_, 2.0);
   }
 
 #if WRITE_COMPRESSED_STREAM
-  virtual void FramePktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void FramePktHook(const vpx_codec_cx_pkt_t *pkt) override {
     ++out_frames_;
 
     // Write initial file header if first frame.
@@ -775,10 +753,10 @@ class ResizingCspVideoSource : public ::libvpx_test::DummyVideoSource {
     limit_ = 30;
   }
 
-  virtual ~ResizingCspVideoSource() {}
+  ~ResizingCspVideoSource() override = default;
 
  protected:
-  virtual void Next() {
+  void Next() override {
     ++frame_;
     SetImageFormat(CspForFrameNumber(frame_));
     FillFrame();
@@ -793,14 +771,13 @@ TEST_P(ResizeCspTest, TestResizeCspWorks) {
   ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
 }
 
-VP8_INSTANTIATE_TEST_CASE(ResizeTest, ONE_PASS_TEST_MODES);
-VP9_INSTANTIATE_TEST_CASE(ResizeTest,
-                          ::testing::Values(::libvpx_test::kRealTime));
-VP9_INSTANTIATE_TEST_CASE(ResizeInternalTest,
-                          ::testing::Values(::libvpx_test::kOnePassBest));
-VP9_INSTANTIATE_TEST_CASE(ResizeRealtimeTest,
-                          ::testing::Values(::libvpx_test::kRealTime),
-                          ::testing::Range(5, 9));
-VP9_INSTANTIATE_TEST_CASE(ResizeCspTest,
-                          ::testing::Values(::libvpx_test::kRealTime));
+VP8_INSTANTIATE_TEST_SUITE(ResizeTest, ONE_PASS_TEST_MODES);
+VP9_INSTANTIATE_TEST_SUITE(ResizeTest, ONE_PASS_TEST_MODES);
+VP9_INSTANTIATE_TEST_SUITE(ResizeInternalTest,
+                           ::testing::Values(::libvpx_test::kOnePassBest));
+VP9_INSTANTIATE_TEST_SUITE(ResizeRealtimeTest,
+                           ::testing::Values(::libvpx_test::kRealTime),
+                           ::testing::Range(5, 9));
+VP9_INSTANTIATE_TEST_SUITE(ResizeCspTest,
+                           ::testing::Values(::libvpx_test::kRealTime));
 }  // namespace

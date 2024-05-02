@@ -10,7 +10,7 @@ use nserror::{nsresult, NS_ERROR_FAILURE, NS_OK};
 use nsstring::{nsACString, nsCStr};
 use xpcom::{
     interfaces::{nsIPrefBranch, nsISupports},
-    RefPtr, XpCom,
+    RefPtr,
 };
 
 /// Whether the current value of the localhost testing pref is permitting
@@ -18,10 +18,8 @@ use xpcom::{
 static RECORDING_ENABLED: AtomicBool = AtomicBool::new(false);
 
 // Partially cargo-culted from https://searchfox.org/mozilla-central/rev/598e50d2c3cd81cd616654f16af811adceb08f9f/security/manager/ssl/cert_storage/src/lib.rs#1192
-#[derive(xpcom)]
-#[xpimplements(nsIObserver)]
-#[refcnt = "atomic"]
-pub(crate) struct InitUploadPrefObserver {}
+#[xpcom(implement(nsIObserver), atomic)]
+pub(crate) struct UploadPrefObserver {}
 
 #[allow(non_snake_case)]
 impl UploadPrefObserver {
@@ -38,9 +36,8 @@ impl UploadPrefObserver {
         // * We control all input to `AddObserverImpl`
         unsafe {
             let pref_obs = Self::allocate(InitUploadPrefObserver {});
-            let pref_service = xpcom::services::get_PrefService().ok_or(NS_ERROR_FAILURE)?;
             let pref_branch: RefPtr<nsIPrefBranch> =
-                (*pref_service).query_interface().ok_or(NS_ERROR_FAILURE)?;
+                xpcom::components::Preferences::service().map_err(|_| NS_ERROR_FAILURE)?;
             let pref_nscstr =
                 &nsCStr::from("datareporting.healthreport.uploadEnabled") as &nsACString;
             (*pref_branch)
@@ -59,7 +56,7 @@ impl UploadPrefObserver {
         &self,
         _subject: *const nsISupports,
         topic: *const c_char,
-        pref_name: *const i16,
+        pref_name: *const u16,
     ) -> nserror::nsresult {
         let topic = CStr::from_ptr(topic).to_str().unwrap();
         // Conversion utf16 to utf8 is messy.
@@ -69,7 +66,7 @@ impl UploadPrefObserver {
         // cargo-culted from https://searchfox.org/mozilla-central/rev/598e50d2c3cd81cd616654f16af811adceb08f9f/security/manager/ssl/cert_storage/src/lib.rs#1606-1612
         // (with a little transformation)
         let len = (0..).take_while(|&i| *pref_name.offset(i) != 0).count(); // find NUL.
-        let slice = std::slice::from_raw_parts(pref_name as *const u16, len);
+        let slice = std::slice::from_raw_parts(pref_name, len);
         let pref_name = match String::from_utf16(slice) {
             Ok(name) => name,
             Err(_) => return NS_ERROR_FAILURE,

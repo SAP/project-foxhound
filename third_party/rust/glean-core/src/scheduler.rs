@@ -9,7 +9,9 @@
 //! [the docs](https://mozilla.github.io/glean/book/user/pings/metrics.html#scheduling)
 
 use crate::metrics::{DatetimeMetric, StringMetric, TimeUnit};
-use crate::{local_now_with_offset, CommonMetricData, Glean, Lifetime, INTERNAL_STORAGE};
+use crate::storage::INTERNAL_STORAGE;
+use crate::util::local_now_with_offset;
+use crate::{CommonMetricData, Glean, Lifetime};
 use chrono::prelude::*;
 use chrono::Duration;
 use once_cell::sync::Lazy;
@@ -52,7 +54,7 @@ impl MetricsPingSubmitter for GleanMetricsPingSubmitter {
     fn submit_metrics_ping(&self, glean: &Glean, reason: Option<&str>, now: DateTime<FixedOffset>) {
         glean.submit_ping_by_name("metrics", reason);
         // Always update the collection date, irrespective of the ping being sent.
-        get_last_sent_time_metric().set(glean, Some(now));
+        get_last_sent_time_metric().set_sync_chrono(glean, now);
     }
 }
 
@@ -101,18 +103,21 @@ fn schedule_internal(
     now: DateTime<FixedOffset>,
 ) {
     let last_sent_build_metric = get_last_sent_build_metric();
-    if let Some(last_sent_build) = last_sent_build_metric.get_value(glean, INTERNAL_STORAGE) {
+    if let Some(last_sent_build) = last_sent_build_metric.get_value(glean, Some(INTERNAL_STORAGE)) {
         // If `app_build` is longer than StringMetric's max length, we will always
         // treat it as a changed build when really it isn't.
         // This will be externally-observable as InvalidOverflow errors on both the core
         // `client_info.app_build` metric and the scheduler's internal metric.
         if last_sent_build != glean.app_build {
-            last_sent_build_metric.set(glean, &glean.app_build);
+            last_sent_build_metric.set_sync(glean, &glean.app_build);
             log::info!("App build changed. Sending 'metrics' ping");
             submitter.submit_metrics_ping(glean, Some("upgrade"), now);
             scheduler.start_scheduler(submitter, now, When::Reschedule);
             return;
         }
+    } else {
+        // No value in last_sent_build. Better set one.
+        last_sent_build_metric.set_sync(glean, &glean.app_build);
     }
 
     let last_sent_time = get_last_sent_time_metric().get_value(glean, INTERNAL_STORAGE);
@@ -229,7 +234,7 @@ fn start_scheduler(
                 // we'll immediately exit. But first we need to submit our "metrics" ping.
                 if timed_out {
                     log::info!("Time to submit our metrics ping, {:?}", when);
-                    let glean = crate::global_glean().expect("Global Glean not present when trying to send scheduled 'metrics' ping?!").lock().unwrap();
+                    let glean = crate::core::global_glean().expect("Global Glean not present when trying to send scheduled 'metrics' ping?!").lock().unwrap();
                     submitter.submit_metrics_ping(&glean, Some(when.reason()), now);
                     when = When::Reschedule;
                 }
@@ -323,6 +328,35 @@ mod test {
         (submitter, submitter_count, scheduler, scheduler_count)
     }
 
+    // Ensure on first run that we actually set the last sent build metric.
+    // (and that we send an "overdue" ping if it's after the scheduled hour)
+    #[test]
+    fn first_run_last_sent_build() {
+        let (mut glean, _t) = new_glean(None);
+
+        glean.app_build = "a build".into();
+        let lsb_metric = get_last_sent_build_metric();
+        assert_eq!(None, lsb_metric.get_value(&glean, Some(INTERNAL_STORAGE)));
+
+        let fake_now = FixedOffset::east(0)
+            .ymd(2022, 11, 15)
+            .and_hms(SCHEDULED_HOUR, 0, 1);
+
+        let (submitter, submitter_count, scheduler, scheduler_count) = new_proxies(
+            |_, reason| assert_eq!(reason, Some("overdue")),
+            |_, when| assert_eq!(when, When::Reschedule),
+        );
+
+        schedule_internal(&glean, submitter, scheduler, fake_now);
+        assert_eq!(1, submitter_count.swap(0, Ordering::Relaxed));
+        assert_eq!(1, scheduler_count.swap(0, Ordering::Relaxed));
+
+        assert_eq!(
+            Some(glean.app_build.to_string()),
+            lsb_metric.get_value(&glean, Some(INTERNAL_STORAGE))
+        );
+    }
+
     // Ensure that if we have a different build, we immediately submit an "upgrade" ping
     // and schedule a "reschedule" ping for tomorrow.
     #[test]
@@ -330,7 +364,7 @@ mod test {
         let (mut glean, _t) = new_glean(None);
 
         glean.app_build = "a build".into();
-        get_last_sent_build_metric().set(&glean, "a different build");
+        get_last_sent_build_metric().set_sync(&glean, "a different build");
 
         let (submitter, submitter_count, scheduler, scheduler_count) = new_proxies(
             |_, reason| assert_eq!(reason, Some("upgrade")),
@@ -349,7 +383,7 @@ mod test {
         let (glean, _t) = new_glean(None);
 
         let fake_now = FixedOffset::east(0).ymd(2021, 4, 30).and_hms(14, 36, 14);
-        get_last_sent_time_metric().set(&glean, Some(fake_now));
+        get_last_sent_time_metric().set_sync_chrono(&glean, fake_now);
 
         let (submitter, submitter_count, scheduler, scheduler_count) = new_proxies(
             |_, reason| panic!("Case #1 shouldn't submit a ping! reason: {:?}", reason),
@@ -370,7 +404,7 @@ mod test {
         let fake_yesterday = FixedOffset::east(0)
             .ymd(2021, 4, 29)
             .and_hms(SCHEDULED_HOUR, 0, 1);
-        get_last_sent_time_metric().set(&glean, Some(fake_yesterday));
+        get_last_sent_time_metric().set_sync_chrono(&glean, fake_yesterday);
         let fake_now = fake_yesterday + Duration::days(1);
 
         let (submitter, submitter_count, scheduler, scheduler_count) = new_proxies(
@@ -393,7 +427,7 @@ mod test {
             FixedOffset::east(0)
                 .ymd(2021, 4, 29)
                 .and_hms(SCHEDULED_HOUR - 1, 0, 1);
-        get_last_sent_time_metric().set(&glean, Some(fake_yesterday));
+        get_last_sent_time_metric().set_sync_chrono(&glean, fake_yesterday);
         let fake_now = fake_yesterday + Duration::days(1);
 
         let (submitter, submitter_count, scheduler, scheduler_count) = new_proxies(
@@ -504,7 +538,7 @@ mod test {
             !glean.schedule_metrics_pings,
             "Real schedulers not allowed in tests!"
         );
-        assert!(crate::setup_glean(glean).is_ok());
+        assert!(crate::core::setup_glean(glean).is_ok());
 
         // We're choosing a time after SCHEDULED_HOUR so `When::Today` will give us a duration of 0.
         let now = FixedOffset::east(0).ymd(2021, 4, 20).and_hms(15, 42, 0);

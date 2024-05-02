@@ -39,7 +39,7 @@ class APZUpdater {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(APZUpdater)
 
  public:
-  APZUpdater(const RefPtr<APZCTreeManager>& aApz, bool aIsUsingWebRender);
+  APZUpdater(const RefPtr<APZCTreeManager>& aApz, bool aConnectedToWebRender);
 
   bool HasTreeManager(const RefPtr<APZCTreeManager>& aApz);
   void SetWebRenderWindowId(const wr::WindowId& aWindowId);
@@ -141,7 +141,12 @@ class APZUpdater {
  protected:
   virtual ~APZUpdater();
 
-  bool UsingWebRenderUpdaterThread() const;
+  // Return true if the APZUpdater is connected to WebRender and is
+  // using a WebRender scene builder thread as its updater thread.
+  // This is only false during GTests, and a shutdown codepath during
+  // which we create a dummy APZUpdater.
+  bool IsConnectedToWebRender() const;
+
   static already_AddRefed<APZUpdater> GetUpdater(
       const wr::WrWindowId& aWindowId);
 
@@ -150,7 +155,7 @@ class APZUpdater {
  private:
   RefPtr<APZCTreeManager> mApz;
   bool mDestroyed;
-  bool mIsUsingWebRender;
+  bool mConnectedToWebRender;
 
   // Map from layers id to WebRenderScrollData. This can only be touched on
   // the updater thread.
@@ -193,12 +198,12 @@ class APZUpdater {
   // StaticAutoPtr wrapper on sWindowIdMap to avoid a static initializer for the
   // unordered_map. This also avoids the initializer/memory allocation in cases
   // where we're not using WebRender.
-  static StaticMutex sWindowIdLock;
+  static StaticMutex sWindowIdLock MOZ_UNANNOTATED;
   static StaticAutoPtr<std::unordered_map<uint64_t, APZUpdater*>> sWindowIdMap;
   Maybe<wr::WrWindowId> mWindowId;
 
   // Lock used to protected mUpdaterThreadId;
-  mutable Mutex mThreadIdLock;
+  mutable Mutex mThreadIdLock MOZ_UNANNOTATED;
   // If WebRender and async scene building are enabled, this holds the thread id
   // of the scene builder thread (which is the updater thread) for the
   // compositor associated with this APZUpdater instance. It may be populated
@@ -215,7 +220,7 @@ class APZUpdater {
   };
 
   // Lock used to protect mUpdaterQueue
-  Mutex mQueueLock;
+  Mutex mQueueLock MOZ_UNANNOTATED;
   // Holds a queue of tasks to be run on the updater thread, when the updater
   // thread is a WebRender thread, since it won't have a message loop we can
   // dispatch to. Note that although this is a single queue it is conceptually

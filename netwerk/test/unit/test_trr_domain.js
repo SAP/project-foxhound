@@ -10,9 +10,6 @@
 // Immediately after the native DNS starts working, it should connect to the
 // TRR server and start working.
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );
@@ -36,11 +33,11 @@ add_task(async function intermittent_dns_mode3() {
     await trrServer.stop();
   });
   await trrServer.start();
-  info(`port = ${trrServer.port}\n`);
-  dns.clearCache(true);
+  info(`port = ${trrServer.port()}\n`);
+  Services.dns.clearCache(true);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRONLY);
   await trrServer.registerDoHAnswers("example.com", "A", {
@@ -81,16 +78,16 @@ add_task(async function intermittent_dns_mode2() {
     await trrServer.stop();
   });
   await trrServer.start();
-  info(`port = ${trrServer.port}\n`);
+  info(`port = ${trrServer.port()}\n`);
 
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   Services.prefs.setIntPref(
     "network.trr.mode",
     Ci.nsIDNSService.MODE_NATIVEONLY
   );
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRFIRST);
   await trrServer.registerDoHAnswers("example.com", "A", {

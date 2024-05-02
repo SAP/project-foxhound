@@ -30,7 +30,6 @@
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGGeometryProperty.h"
 #include "nsContentUtils.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/ComputedStyle.h"
@@ -139,10 +138,7 @@ SVGSVGElement* SVGContentUtils::GetOuterSVGElement(SVGElement* aSVGElement) {
     ancestor = element->GetParentElementCrossingShadowRoot();
   }
 
-  if (element && element->IsSVGElement(nsGkAtoms::svg)) {
-    return static_cast<SVGSVGElement*>(element);
-  }
-  return nullptr;
+  return SVGSVGElement::FromNodeOrNull(element);
 }
 
 enum DashState {
@@ -153,7 +149,7 @@ enum DashState {
 
 static DashState GetStrokeDashData(
     SVGContentUtils::AutoStrokeOptions* aStrokeOptions, SVGElement* aElement,
-    const nsStyleSVG* aStyleSVG, SVGContextPaint* aContextPaint) {
+    const nsStyleSVG* aStyleSVG, const SVGContextPaint* aContextPaint) {
   size_t dashArrayLength;
   Float totalLengthOfDashes = 0.0, totalLengthOfGaps = 0.0;
   Float pathScale = 1.0;
@@ -184,11 +180,10 @@ static DashState GetStrokeDashData(
     if (dashArrayLength <= 0) {
       return eContinuousStroke;
     }
-    if (aElement->IsNodeOfType(nsINode::eSHAPE)) {
+    if (auto* shapeElement = SVGGeometryElement::FromNode(aElement)) {
       pathScale =
-          static_cast<SVGGeometryElement*>(aElement)->GetPathLengthScale(
-              SVGGeometryElement::eForStroking);
-      if (pathScale <= 0) {
+          shapeElement->GetPathLengthScale(SVGGeometryElement::eForStroking);
+      if (pathScale <= 0 || !std::isfinite(pathScale)) {
         return eContinuousStroke;
       }
     }
@@ -254,7 +249,7 @@ static DashState GetStrokeDashData(
 void SVGContentUtils::GetStrokeOptions(AutoStrokeOptions* aStrokeOptions,
                                        SVGElement* aElement,
                                        const ComputedStyle* aComputedStyle,
-                                       SVGContextPaint* aContextPaint,
+                                       const SVGContextPaint* aContextPaint,
                                        StrokeOptionFlags aFlags) {
   auto doCompute = [&](const ComputedStyle* computedStyle) {
     const nsStyleSVG* styleSVG = computedStyle->StyleSVG();
@@ -321,12 +316,12 @@ void SVGContentUtils::GetStrokeOptions(AutoStrokeOptions* aStrokeOptions,
   }
 }
 
-Float SVGContentUtils::GetStrokeWidth(SVGElement* aElement,
+Float SVGContentUtils::GetStrokeWidth(const SVGElement* aElement,
                                       const ComputedStyle* aComputedStyle,
-                                      SVGContextPaint* aContextPaint) {
+                                      const SVGContextPaint* aContextPaint) {
   Float res = 0.0;
 
-  auto doCompute = [&](ComputedStyle const* computedStyle) {
+  auto doCompute = [&](const ComputedStyle* computedStyle) {
     const nsStyleSVG* styleSVG = computedStyle->StyleSVG();
 
     if (styleSVG->mStrokeWidth.IsContextValue()) {
@@ -353,7 +348,7 @@ Float SVGContentUtils::GetStrokeWidth(SVGElement* aElement,
   return res;
 }
 
-float SVGContentUtils::GetFontSize(Element* aElement) {
+float SVGContentUtils::GetFontSize(const Element* aElement) {
   if (!aElement) {
     return 1.0f;
   }
@@ -367,7 +362,7 @@ float SVGContentUtils::GetFontSize(Element* aElement) {
     return GetFontSize(f->Style(), pc);
   }
 
-  if (RefPtr<ComputedStyle> style =
+  if (RefPtr<const ComputedStyle> style =
           nsComputedDOMStyle::GetComputedStyleNoFlush(aElement)) {
     return GetFontSize(style, pc);
   }
@@ -377,21 +372,21 @@ float SVGContentUtils::GetFontSize(Element* aElement) {
   return 1.0f;
 }
 
-float SVGContentUtils::GetFontSize(nsIFrame* aFrame) {
+float SVGContentUtils::GetFontSize(const nsIFrame* aFrame) {
   MOZ_ASSERT(aFrame, "NULL frame in GetFontSize");
   return GetFontSize(aFrame->Style(), aFrame->PresContext());
 }
 
-float SVGContentUtils::GetFontSize(ComputedStyle* aComputedStyle,
+float SVGContentUtils::GetFontSize(const ComputedStyle* aComputedStyle,
                                    nsPresContext* aPresContext) {
   MOZ_ASSERT(aComputedStyle);
   MOZ_ASSERT(aPresContext);
 
   return aComputedStyle->StyleFont()->mSize.ToCSSPixels() /
-         aPresContext->EffectiveTextZoom();
+         aPresContext->TextZoom();
 }
 
-float SVGContentUtils::GetFontXHeight(Element* aElement) {
+float SVGContentUtils::GetFontXHeight(const Element* aElement) {
   if (!aElement) {
     return 1.0f;
   }
@@ -405,7 +400,7 @@ float SVGContentUtils::GetFontXHeight(Element* aElement) {
     return GetFontXHeight(f->Style(), pc);
   }
 
-  if (RefPtr<ComputedStyle> style =
+  if (RefPtr<const ComputedStyle> style =
           nsComputedDOMStyle::GetComputedStyleNoFlush(aElement)) {
     return GetFontXHeight(style, pc);
   }
@@ -415,12 +410,12 @@ float SVGContentUtils::GetFontXHeight(Element* aElement) {
   return 1.0f;
 }
 
-float SVGContentUtils::GetFontXHeight(nsIFrame* aFrame) {
+float SVGContentUtils::GetFontXHeight(const nsIFrame* aFrame) {
   MOZ_ASSERT(aFrame, "NULL frame in GetFontXHeight");
   return GetFontXHeight(aFrame->Style(), aFrame->PresContext());
 }
 
-float SVGContentUtils::GetFontXHeight(ComputedStyle* aComputedStyle,
+float SVGContentUtils::GetFontXHeight(const ComputedStyle* aComputedStyle,
                                       nsPresContext* aPresContext) {
   MOZ_ASSERT(aComputedStyle && aPresContext);
 
@@ -436,16 +431,17 @@ float SVGContentUtils::GetFontXHeight(ComputedStyle* aComputedStyle,
 
   nscoord xHeight = fontMetrics->XHeight();
   return nsPresContext::AppUnitsToFloatCSSPixels(xHeight) /
-         aPresContext->EffectiveTextZoom();
+         aPresContext->TextZoom();
 }
-nsresult SVGContentUtils::ReportToConsole(Document* doc, const char* aWarning,
+nsresult SVGContentUtils::ReportToConsole(const Document* doc,
+                                          const char* aWarning,
                                           const nsTArray<nsString>& aParams) {
   return nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "SVG"_ns,
                                          doc, nsContentUtils::eSVG_PROPERTIES,
                                          aWarning, aParams);
 }
 
-bool SVGContentUtils::EstablishesViewport(nsIContent* aContent) {
+bool SVGContentUtils::EstablishesViewport(const nsIContent* aContent) {
   // Although SVG 1.1 states that <image> is an element that establishes a
   // viewport, this is really only for the document it references, not
   // for any child content, which is what this function is used for.
@@ -507,8 +503,7 @@ static gfx::Matrix GetCTMInternal(SVGElement* aElement, bool aScreenCTM,
     element = static_cast<SVGElement*>(ancestor);
     matrix *= getLocalTransformHelper(element, true);
     if (!aScreenCTM && SVGContentUtils::EstablishesViewport(element)) {
-      if (!element->NodeInfo()->Equals(nsGkAtoms::svg, kNameSpaceID_SVG) &&
-          !element->NodeInfo()->Equals(nsGkAtoms::symbol, kNameSpaceID_SVG)) {
+      if (!element->IsAnyOfSVGElements(nsGkAtoms::svg, nsGkAtoms::symbol)) {
         NS_ERROR("New (SVG > 1.1) SVG viewport establishing element?");
         return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
       }
@@ -547,17 +542,15 @@ static gfx::Matrix GetCTMInternal(SVGElement* aElement, bool aScreenCTM,
   if (!ancestor || !ancestor->IsElement()) {
     return gfx::ToMatrix(matrix);
   }
-  if (ancestor->IsSVGElement()) {
-    return gfx::ToMatrix(matrix) *
-           GetCTMInternal(static_cast<SVGElement*>(ancestor), true, true);
+  if (auto* ancestorSVG = SVGElement::FromNode(ancestor)) {
+    return gfx::ToMatrix(matrix) * GetCTMInternal(ancestorSVG, true, true);
   }
 
   // XXX this does not take into account CSS transform, or that the non-SVG
   // content that we've hit may itself be inside an SVG foreignObject higher up
   Document* currentDoc = aElement->GetComposedDoc();
   float x = 0.0f, y = 0.0f;
-  if (currentDoc &&
-      element->NodeInfo()->Equals(nsGkAtoms::svg, kNameSpaceID_SVG)) {
+  if (currentDoc && element->IsSVGElement(nsGkAtoms::svg)) {
     PresShell* presShell = currentDoc->GetPresShell();
     if (presShell) {
       nsIFrame* frame = element->GetPrimaryFrame();
@@ -727,7 +720,7 @@ bool SVGContentUtils::ParseNumber(RangedPtr<const char16_t>& aIter,
     return false;
   }
   floatType floatValue = floatType(value);
-  if (!IsFinite(floatValue)) {
+  if (!std::isfinite(floatValue)) {
     return false;
   }
   aValue = floatValue;
@@ -806,7 +799,7 @@ bool SVGContentUtils::ParseInteger(const nsAString& aString, int32_t& aValue) {
   return ParseInteger(iter, end, aValue) && iter == end;
 }
 
-float SVGContentUtils::CoordToFloat(SVGElement* aContent,
+float SVGContentUtils::CoordToFloat(const SVGElement* aContent,
                                     const LengthPercentage& aLength,
                                     uint8_t aCtxType) {
   float result = aLength.ResolveToCSSPixelsWith([&] {
@@ -833,7 +826,7 @@ already_AddRefed<gfx::Path> SVGContentUtils::GetPath(
   }
 
   RefPtr<DrawTarget> drawTarget =
-      gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
+      gfxPlatform::ThreadLocalScreenReferenceDrawTarget();
   RefPtr<PathBuilder> builder =
       drawTarget->CreatePathBuilder(FillRule::FILL_WINDING);
 

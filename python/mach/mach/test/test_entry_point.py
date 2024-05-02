@@ -1,19 +1,15 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-from __future__ import unicode_literals
-
-import imp
 import sys
-
+import types
 from pathlib import Path
-
-from mach.base import MachError
-from mach.test.conftest import TestBase
 from unittest.mock import patch
 
 from mozunit import main
+
+from mach.base import MachError
+from mach.test.conftest import TestBase
 
 
 class Entry:
@@ -42,7 +38,7 @@ class TestEntryPoints(TestBase):
         # Ensure parent module is present otherwise we'll (likely) get
         # an error due to unknown parent.
         if "mach.commands" not in sys.modules:
-            mod = imp.new_module("mach.commands")
+            mod = types.ModuleType("mach.commands")
             sys.modules["mach.commands"] = mod
 
         mock.return_value = [Entry([self.provider_dir])]

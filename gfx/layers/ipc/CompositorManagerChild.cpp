@@ -123,20 +123,19 @@ CompositorManagerChild::CreateWidgetCompositorBridge(
     uint64_t aProcessToken, WebRenderLayerManager* aLayerManager,
     uint32_t aNamespace, CSSToLayoutDeviceScale aScale,
     const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
-    const gfx::IntSize& aSurfaceSize) {
+    const gfx::IntSize& aSurfaceSize, uint64_t aInnerWindowId) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
   if (NS_WARN_IF(!sInstance || !sInstance->CanSend())) {
     return nullptr;
   }
 
-  TimeDuration vsyncRate = gfxPlatform::GetPlatform()
-                               ->GetHardwareVsync()
-                               ->GetGlobalDisplay()
-                               .GetVsyncRate();
+  TimeDuration vsyncRate =
+      gfxPlatform::GetPlatform()->GetGlobalVsyncDispatcher()->GetVsyncRate();
 
   CompositorBridgeOptions options = WidgetCompositorOptions(
-      aScale, vsyncRate, aOptions, aUseExternalSurfaceSize, aSurfaceSize);
+      aScale, vsyncRate, aOptions, aUseExternalSurfaceSize, aSurfaceSize,
+      aInnerWindowId);
 
   RefPtr<CompositorBridgeChild> bridge = new CompositorBridgeChild(sInstance);
   if (NS_WARN_IF(
@@ -181,13 +180,11 @@ CompositorManagerChild::CompositorManagerChild(CompositorManagerParent* aParent,
   MOZ_ASSERT(aParent);
 
   SetOtherProcessId(base::GetCurrentProcId());
-  ipc::MessageChannel* channel = aParent->GetIPCChannel();
-  if (NS_WARN_IF(!Open(channel, CompositorThread(), ipc::ChildSide))) {
+  if (NS_WARN_IF(!Open(aParent, CompositorThread(), ipc::ChildSide))) {
     return;
   }
 
   mCanSend = true;
-  AddRef();
   SetReplyTimeout();
 }
 
@@ -204,13 +201,7 @@ CompositorManagerChild::CompositorManagerChild(
   }
 
   mCanSend = true;
-  AddRef();
   SetReplyTimeout();
-}
-
-void CompositorManagerChild::ActorDealloc() {
-  MOZ_ASSERT(!mCanSend);
-  Release();
 }
 
 void CompositorManagerChild::ActorDestroy(ActorDestroyReason aReason) {
@@ -220,7 +211,7 @@ void CompositorManagerChild::ActorDestroy(ActorDestroyReason aReason) {
   }
 }
 
-void CompositorManagerChild::HandleFatalError(const char* aMsg) const {
+void CompositorManagerChild::HandleFatalError(const char* aMsg) {
   dom::ContentChild::FatalErrorIfNotUsingGPUProcess(aMsg, OtherPid());
 }
 

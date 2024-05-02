@@ -4,12 +4,14 @@
 
 "use strict";
 
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 
@@ -25,10 +27,8 @@ class RequestBlockingContextMenu {
       enableAllBlockedUrls,
     } = this.props;
 
-    const {
-      disableDisableAllBlockedUrls,
-      disableEnableAllBlockedUrls,
-    } = contextMenuOptions;
+    const { disableDisableAllBlockedUrls, disableEnableAllBlockedUrls } =
+      contextMenuOptions;
 
     const menu = [
       {

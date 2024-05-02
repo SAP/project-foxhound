@@ -1,22 +1,20 @@
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+});
 
-const { AddonStudies } = ChromeUtils.import(
-  "resource://normandy/lib/AddonStudies.jsm"
+const { AddonStudies } = ChromeUtils.importESModule(
+  "resource://normandy/lib/AddonStudies.sys.mjs"
 );
-const { NormandyTestUtils } = ChromeUtils.import(
-  "resource://testing-common/NormandyTestUtils.jsm"
+const { NormandyTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/NormandyTestUtils.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
-var { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+var { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 const { addonStudyFactory } = NormandyTestUtils.factories;
@@ -28,7 +26,7 @@ function createExtension(backgroundScript, permissions, isPrivileged = true) {
   let extensionData = {
     background: backgroundScript,
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "test@shield.mozilla.com",
         },
@@ -93,6 +91,37 @@ add_task(async function test_normandyAddonStudy_without_privilege() {
     isPrivileged: false,
     doneSignal: "normandyAddonStudy_permission",
   });
+});
+
+add_task(async function test_normandyAddonStudy_temporary_without_privilege() {
+  let extension = ExtensionTestUtils.loadExtension({
+    temporarilyInstalled: true,
+    isPrivileged: false,
+    manifest: {
+      permissions: ["normandyAddonStudy"],
+    },
+  });
+  ExtensionTestUtils.failOnSchemaWarnings(false);
+  let { messages } = await promiseConsoleOutput(async () => {
+    await Assert.rejects(
+      extension.startup(),
+      /Using the privileged permission/,
+      "Startup failed with privileged permission"
+    );
+  });
+  ExtensionTestUtils.failOnSchemaWarnings(true);
+  AddonTestUtils.checkMessages(
+    messages,
+    {
+      expected: [
+        {
+          message:
+            /Using the privileged permission 'normandyAddonStudy' requires a privileged add-on/,
+        },
+      ],
+    },
+    true
+  );
 });
 
 add_task(async function test_getStudy_works() {

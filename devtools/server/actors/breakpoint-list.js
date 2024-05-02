@@ -4,11 +4,14 @@
 
 "use strict";
 
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
-const { breakpointListSpec } = require("devtools/shared/specs/breakpoint-list");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  breakpointListSpec,
+} = require("resource://devtools/shared/specs/breakpoint-list.js");
+
 const {
   SessionDataHelpers,
-} = require("devtools/server/actors/watcher/SessionDataHelpers.jsm");
+} = require("resource://devtools/server/actors/watcher/SessionDataHelpers.jsm");
 const { SUPPORTED_DATA } = SessionDataHelpers;
 const { BREAKPOINTS, XHR_BREAKPOINTS, EVENT_BREAKPOINTS } = SUPPORTED_DATA;
 
@@ -22,25 +25,25 @@ const { BREAKPOINTS, XHR_BREAKPOINTS, EVENT_BREAKPOINTS } = SUPPORTED_DATA;
  * @constructor
  *
  */
-const BreakpointListActor = ActorClassWithSpec(breakpointListSpec, {
-  initialize(watcherActor) {
+class BreakpointListActor extends Actor {
+  constructor(watcherActor) {
+    super(watcherActor.conn, breakpointListSpec);
     this.watcherActor = watcherActor;
-    Actor.prototype.initialize.call(this, this.watcherActor.conn);
-  },
-
-  destroy(conn) {
-    Actor.prototype.destroy.call(this, conn);
-  },
+  }
 
   setBreakpoint(location, options) {
-    return this.watcherActor.addDataEntry(BREAKPOINTS, [{ location, options }]);
-  },
+    return this.watcherActor.addOrSetDataEntry(
+      BREAKPOINTS,
+      [{ location, options }],
+      "add"
+    );
+  }
 
   removeBreakpoint(location, options) {
     return this.watcherActor.removeDataEntry(BREAKPOINTS, [
       { location, options },
     ]);
-  },
+  }
 
   /**
    * Request to break on next XHR or Fetch request for a given URL and HTTP Method.
@@ -54,8 +57,12 @@ const BreakpointListActor = ActorClassWithSpec(breakpointListSpec, {
    *                 Otherwise, should be set to any valid HTTP Method (GET, POST, ...)
    */
   setXHRBreakpoint(path, method) {
-    return this.watcherActor.addDataEntry(XHR_BREAKPOINTS, [{ path, method }]);
-  },
+    return this.watcherActor.addOrSetDataEntry(
+      XHR_BREAKPOINTS,
+      [{ path, method }],
+      "add"
+    );
+  }
 
   /**
    * Stop breakpoint on requests we ask to break on via setXHRBreakpoint.
@@ -66,7 +73,7 @@ const BreakpointListActor = ActorClassWithSpec(breakpointListSpec, {
     return this.watcherActor.removeDataEntry(XHR_BREAKPOINTS, [
       { path, method },
     ]);
-  },
+  }
 
   /**
    * Set the active breakpoints
@@ -77,20 +84,9 @@ const BreakpointListActor = ActorClassWithSpec(breakpointListSpec, {
    *                        See devtools/server/actors/utils/event-breakpoints.js
    *                        for details.
    */
-  setActiveEventBreakpoints(ids) {
-    const existingIds = this.watcherActor.getSessionDataForType(
-      EVENT_BREAKPOINTS
-    );
-    const addIds = ids.filter(id => !existingIds.includes(id));
-    const removeIds = existingIds.filter(id => !ids.includes(id));
-
-    if (addIds.length) {
-      this.watcherActor.addDataEntry(EVENT_BREAKPOINTS, addIds);
-    }
-    if (removeIds.length) {
-      this.watcherActor.removeDataEntry(EVENT_BREAKPOINTS, removeIds);
-    }
-  },
-});
+  async setActiveEventBreakpoints(ids) {
+    await this.watcherActor.addOrSetDataEntry(EVENT_BREAKPOINTS, ids, "set");
+  }
+}
 
 exports.BreakpointListActor = BreakpointListActor;

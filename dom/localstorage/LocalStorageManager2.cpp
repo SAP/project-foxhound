@@ -96,7 +96,7 @@ class AsyncRequestHelper final : public Runnable,
                      const LSRequestParams& aParams)
       : Runnable("dom::LocalStorageManager2::AsyncRequestHelper"),
         mManager(aManager),
-        mOwningEventTarget(GetCurrentEventTarget()),
+        mOwningEventTarget(GetCurrentSerialEventTarget()),
         mActor(nullptr),
         mPromise(aPromise),
         mParams(aParams),
@@ -147,6 +147,8 @@ class SimpleRequestResolver final : public LSSimpleRequestChildCallback {
   void HandleResponse(nsresult aResponse);
 
   void HandleResponse(bool aResponse);
+
+  void HandleResponse(const nsTArray<LSItemInfo>& aResponse);
 
   // LSRequestChildCallback
   void OnResponse(const LSSimpleRequestResponse& aResponse) override;
@@ -385,6 +387,37 @@ LocalStorageManager2::IsPreloaded(nsIPrincipal* aPrincipal, JSContext* aContext,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+LocalStorageManager2::GetState(nsIPrincipal* aPrincipal, JSContext* aContext,
+                               Promise** _retval) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(_retval);
+
+  RefPtr<Promise> promise;
+  nsresult rv = CreatePromise(aContext, getter_AddRefs(promise));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  LSSimpleRequestGetStateParams params;
+
+  rv = CheckedPrincipalToPrincipalInfo(aPrincipal, params.principalInfo());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  params.storagePrincipalInfo() = params.principalInfo();
+
+  rv = StartSimpleRequest(promise, params);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  promise.forget(_retval);
+  return NS_OK;
+}
+
 LSRequestChild* LocalStorageManager2::StartRequest(
     const LSRequestParams& aParams, LSRequestChildCallback* aCallback) {
   AssertIsOnDOMFileThread();
@@ -443,7 +476,7 @@ nsresult AsyncRequestHelper::Dispatch() {
   nsCOMPtr<nsIEventTarget> domFileThread =
       RemoteLazyInputStreamThread::GetOrCreate();
   if (NS_WARN_IF(!domFileThread)) {
-    return NS_ERROR_FAILURE;
+    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
 
   nsresult rv = domFileThread->Dispatch(this, NS_DISPATCH_NORMAL);
@@ -565,6 +598,42 @@ void SimpleRequestResolver::HandleResponse(bool aResponse) {
   mPromise->MaybeResolve(aResponse);
 }
 
+[[nodiscard]] static bool ToJSValue(JSContext* aCx,
+                                    const nsTArray<LSItemInfo>& aArgument,
+                                    JS::MutableHandle<JS::Value> aValue) {
+  JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
+  if (!obj) {
+    return false;
+  }
+
+  for (size_t i = 0; i < aArgument.Length(); ++i) {
+    const LSItemInfo& itemInfo = aArgument[i];
+
+    const nsString& key = itemInfo.key();
+
+    JS::Rooted<JS::Value> value(aCx);
+    if (!ToJSValue(aCx, itemInfo.value().AsString(), &value)) {
+      return false;
+    }
+
+    if (!JS_DefineUCProperty(aCx, obj, key.BeginReading(), key.Length(), value,
+                             JSPROP_ENUMERATE)) {
+      return false;
+    }
+  }
+
+  aValue.setObject(*obj);
+  return true;
+}
+
+void SimpleRequestResolver::HandleResponse(
+    const nsTArray<LSItemInfo>& aResponse) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(mPromise);
+
+  mPromise->MaybeResolve(aResponse);
+}
+
 void SimpleRequestResolver::OnResponse(
     const LSSimpleRequestResponse& aResponse) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -577,6 +646,11 @@ void SimpleRequestResolver::OnResponse(
     case LSSimpleRequestResponse::TLSSimpleRequestPreloadedResponse:
       HandleResponse(
           aResponse.get_LSSimpleRequestPreloadedResponse().preloaded());
+      break;
+
+    case LSSimpleRequestResponse::TLSSimpleRequestGetStateResponse:
+      HandleResponse(
+          aResponse.get_LSSimpleRequestGetStateResponse().itemInfos());
       break;
 
     default:

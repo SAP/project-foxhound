@@ -7,11 +7,15 @@
 #include "mozilla/MotionPathUtils.h"
 
 #include "gfxPlatform.h"
+#include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGPathData.h"
+#include "mozilla/dom/SVGViewportElement.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/layers/LayersMessages.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/ShapeUtils.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleTransformMatrix.h"
@@ -22,40 +26,114 @@ namespace mozilla {
 
 using nsStyleTransformMatrix::TransformReferenceBox;
 
-RayReferenceData::RayReferenceData(const nsIFrame* aFrame) {
-  // We use GetContainingBlock() for now. TYLin said this function is buggy in
-  // modern CSS layout, but is ok for most cases.
-  // FIXME: Bug 1581237: This is still not clear that which box we should use
-  // for calculating the path length. We may need to update this.
-  // https://github.com/w3c/fxtf-drafts/issues/369
-  // FIXME: Bug 1579294: SVG layout may get a |container| with empty mRect
-  // (e.g. SVGOuterSVGAnonChildFrame), which makes the path length zero.
-  const nsIFrame* container = aFrame->GetContainingBlock();
-  if (!container) {
-    // If there is no parent frame, it's impossible to calculate the path
-    // length, so does the path.
-    return;
+/* static */
+CSSPoint MotionPathUtils::ComputeAnchorPointAdjustment(const nsIFrame& aFrame) {
+  if (!aFrame.HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
+    return {};
   }
 
-  // The initial position is (0, 0) in |aFrame|, and we have to transform it
-  // into the space of |container|, so use GetOffsetsTo() to get the delta
-  // value.
-  // FIXME: Bug 1559232: The initial position will be adjusted after
-  // supporting `offset-position`.
-  mInitialPosition = CSSPoint::FromAppUnits(aFrame->GetOffsetTo(container));
-  // FIXME: We need a better definition for containing box in the spec. For now,
-  // we use border box for calculation.
-  // https://github.com/w3c/fxtf-drafts/issues/369
-  mContainingBlockRect =
-      CSSRect::FromAppUnits(container->GetRectRelativeToSelf());
+  auto transformBox = aFrame.StyleDisplay()->mTransformBox;
+  if (transformBox == StyleTransformBox::ViewBox ||
+      transformBox == StyleTransformBox::BorderBox) {
+    return {};
+  }
+
+  if (aFrame.IsFrameOfType(nsIFrame::eSVGContainer)) {
+    nsRect boxRect = nsLayoutUtils::ComputeSVGReferenceRect(
+        const_cast<nsIFrame*>(&aFrame), StyleGeometryBox::FillBox);
+    return CSSPoint::FromAppUnits(boxRect.TopLeft());
+  }
+  return CSSPoint::FromAppUnits(aFrame.GetPosition());
 }
 
-// The distance is measured between the initial position and the intersection of
-// the ray with the box
+// Convert the StyleCoordBox into the StyleGeometryBox in CSS layout.
+// https://drafts.csswg.org/css-box-4/#keywords
+static StyleGeometryBox CoordBoxToGeometryBoxInCSSLayout(
+    StyleCoordBox aCoordBox) {
+  switch (aCoordBox) {
+    case StyleCoordBox::ContentBox:
+      return StyleGeometryBox::ContentBox;
+    case StyleCoordBox::PaddingBox:
+      return StyleGeometryBox::PaddingBox;
+    case StyleCoordBox::BorderBox:
+      return StyleGeometryBox::BorderBox;
+    case StyleCoordBox::FillBox:
+      return StyleGeometryBox::ContentBox;
+    case StyleCoordBox::StrokeBox:
+    case StyleCoordBox::ViewBox:
+      return StyleGeometryBox::BorderBox;
+  }
+  MOZ_ASSERT_UNREACHABLE("Unknown coord-box type");
+  return StyleGeometryBox::BorderBox;
+}
+
+/* static */
+const nsIFrame* MotionPathUtils::GetOffsetPathReferenceBox(
+    const nsIFrame* aFrame, nsRect& aOutputRect) {
+  const StyleOffsetPath& offsetPath = aFrame->StyleDisplay()->mOffsetPath;
+  if (offsetPath.IsNone()) {
+    return nullptr;
+  }
+
+  if (aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
+    MOZ_ASSERT(aFrame->GetContent()->IsSVGElement());
+    auto* viewportElement =
+        dom::SVGElement::FromNode(aFrame->GetContent())->GetCtx();
+    aOutputRect = nsLayoutUtils::ComputeSVGOriginBox(viewportElement);
+    return viewportElement ? viewportElement->GetPrimaryFrame() : nullptr;
+  }
+
+  const nsIFrame* containingBlock = aFrame->GetContainingBlock();
+  const StyleCoordBox coordBox = offsetPath.IsCoordBox()
+                                     ? offsetPath.AsCoordBox()
+                                     : offsetPath.AsOffsetPath().coord_box;
+  aOutputRect = nsLayoutUtils::ComputeHTMLReferenceRect(
+      containingBlock, CoordBoxToGeometryBoxInCSSLayout(coordBox));
+  return containingBlock;
+}
+
+/* static */
+CSSCoord MotionPathUtils::GetRayContainReferenceSize(nsIFrame* aFrame) {
+  // We use the border-box size to calculate the reduced path length when using
+  // "contain" keyword.
+  // https://drafts.fxtf.org/motion-1/#valdef-ray-contain
+  //
+  // Note: Per the spec, border-box is treated as stroke-box in the SVG context,
+  // https://drafts.csswg.org/css-box-4/#valdef-box-border-box
+  const auto size =
+      CSSSize::FromAppUnits((aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)
+                                 ? nsLayoutUtils::ComputeSVGReferenceRect(
+                                       aFrame, StyleGeometryBox::StrokeBox)
+                                 : nsLayoutUtils::ComputeHTMLReferenceRect(
+                                       aFrame, StyleGeometryBox::BorderBox))
+                                .Size());
+  return std::max(size.width, size.height);
+}
+
+/* static */
+nsTArray<nscoord> MotionPathUtils::ComputeBorderRadii(
+    const StyleBorderRadius& aBorderRadius, const nsRect& aCoordBox) {
+  const nsRect insetRect = ShapeUtils::ComputeInsetRect(
+      StyleRect<LengthPercentage>::WithAllSides(LengthPercentage::Zero()),
+      aCoordBox);
+  nsTArray<nscoord> result(8);
+  result.SetLength(8);
+  if (!ShapeUtils::ComputeRectRadii(aBorderRadius, aCoordBox, insetRect,
+                                    result.Elements())) {
+    result.Clear();
+  }
+  return result;
+}
+
+// The distance is measured between the origin and the intersection of the ray
+// with the reference box of the containing block.
+// Note: |aOrigin| and |aContaingBlock| should be in the same coordinate system
+// (i.e. the nsIFrame::mRect of the containing block).
 // https://drafts.fxtf.org/motion-1/#size-sides
-static CSSCoord ComputeSides(const CSSPoint& aInitialPosition,
-                             const CSSSize& aContainerSize,
+static CSSCoord ComputeSides(const CSSPoint& aOrigin,
+                             const CSSRect& aContainingBlock,
                              const StyleAngle& aAngle) {
+  const CSSPoint& topLeft = aContainingBlock.TopLeft();
   // Given an acute angle |theta| (i.e. |t|) of a right-angled triangle, the
   // hypotenuse |h| is the side that connects the two acute angles. The side
   // |b| adjacent to |theta| is the side of the triangle that connects |theta|
@@ -64,31 +142,48 @@ static CSSCoord ComputeSides(const CSSPoint& aInitialPosition,
   // e.g. if the angle |t| is 0 ~ 90 degrees, and b * tan(theta) <= b',
   //      h = b / cos(t):
   //                       b*tan(t)
-  //       (0, 0) #--------*-----*--# (aContainerSize.width, 0)
+  //    (topLeft) #--------*-----*--# (aContainingBlock.XMost(), topLeft.y)
   //              |        |    /   |
   //              |        |   /    |
   //              |        b  h     |
   //              |        |t/      |
   //              |        |/       |
-  //    (aInitialPosition) *---b'---* (aContainerSize.width, aInitialPosition.y)
+  //             (aOrigin) *---b'---* (aContainingBlock.XMost(), aOrigin.y)
   //              |        |        |
   //              |        |        |
   //              |        |        |
   //              |        |        |
   //              |        |        |
-  //              #-----------------# (aContainerSize.width,
-  //  (0, aContainerSize.height)       aContainerSize.height)
-  double theta = aAngle.ToRadians();
+  //              #-----------------# (aContainingBlock.XMost(),
+  //        (topLeft.x,                aContainingBlock.YMost())
+  //         aContainingBlock.YMost())
+  const double theta = aAngle.ToRadians();
   double sint = std::sin(theta);
   double cost = std::cos(theta);
 
-  double b = cost >= 0 ? aInitialPosition.y
-                       : aContainerSize.height - aInitialPosition.y;
-  double bPrime = sint >= 0 ? aContainerSize.width - aInitialPosition.x
-                            : aInitialPosition.x;
+  const double b = cost >= 0 ? aOrigin.y.value - topLeft.y
+                             : aContainingBlock.YMost() - aOrigin.y.value;
+  const double bPrime = sint >= 0 ? aContainingBlock.XMost() - aOrigin.x.value
+                                  : aOrigin.x.value - topLeft.x;
   sint = std::fabs(sint);
   cost = std::fabs(cost);
 
+  // The trigonometric formula here doesn't work well if |theta| is 0deg or
+  // 90deg, so we handle these edge cases first.
+  if (sint < std::numeric_limits<double>::epsilon()) {
+    // For 0deg (or 180deg), we use |b| directly.
+    return static_cast<float>(b);
+  }
+
+  if (cost < std::numeric_limits<double>::epsilon()) {
+    // For 90deg (or 270deg), we use |bPrime| directly. This can also avoid 0/0
+    // if both |b| and |cost| are 0.0. (i.e. b / cost).
+    return static_cast<float>(bPrime);
+  }
+
+  // Note: The following formula works well only when 0 < theta < 90deg. So we
+  // handle 0deg and 90deg above first.
+  //
   // If |b * tan(theta)| is larger than |bPrime|, the intersection is
   // on the other side, and |b'| is the opposite side of angle |theta| in this
   // case.
@@ -107,29 +202,63 @@ static CSSCoord ComputeSides(const CSSPoint& aInitialPosition,
   return b / cost;
 }
 
+// Compute the position of "at <position>" together with offset starting
+// position (i.e. offset-position).
+static nsPoint ComputePosition(const StylePositionOrAuto& aAtPosition,
+                               const StyleOffsetPosition& aOffsetPosition,
+                               const nsRect& aCoordBox,
+                               const nsPoint& aCurrentCoord) {
+  if (aAtPosition.IsPosition()) {
+    // Resolve this by using the <position> to position a 0x0 object area within
+    // the box’s containing block.
+    return ShapeUtils::ComputePosition(aAtPosition.AsPosition(), aCoordBox);
+  }
+
+  MOZ_ASSERT(aAtPosition.IsAuto(), "\"at <position>\" should be omitted");
+
+  // Use the offset starting position of the element, given by offset-position.
+  // https://drafts.fxtf.org/motion-1/#valdef-ray-at-position
+  if (aOffsetPosition.IsPosition()) {
+    return ShapeUtils::ComputePosition(aOffsetPosition.AsPosition(), aCoordBox);
+  }
+
+  if (aOffsetPosition.IsNormal()) {
+    // If the element doesn’t have an offset starting position either, it
+    // behaves as at center.
+    const StylePosition& center = StylePosition::FromPercentage(0.5);
+    return ShapeUtils::ComputePosition(center, aCoordBox);
+  }
+
+  MOZ_ASSERT(aOffsetPosition.IsAuto());
+  return aCurrentCoord;
+}
+
 static CSSCoord ComputeRayPathLength(const StyleRaySize aRaySizeType,
                                      const StyleAngle& aAngle,
-                                     const RayReferenceData& aRayData) {
+                                     const CSSPoint& aOrigin,
+                                     const CSSRect& aContainingBlock) {
   if (aRaySizeType == StyleRaySize::Sides) {
     // If the initial position is not within the box, the distance is 0.
-    if (!aRayData.mContainingBlockRect.Contains(aRayData.mInitialPosition)) {
+    //
+    // Note: If the origin is at XMost() (and/or YMost()), we should consider it
+    // to be inside containing block (because we expect 100% x (or y) coordinate
+    // is still to be considered inside the containing block.
+    if (!aContainingBlock.ContainsInclusively(aOrigin)) {
       return 0.0;
     }
 
-    return ComputeSides(aRayData.mInitialPosition,
-                        aRayData.mContainingBlockRect.Size(), aAngle);
+    return ComputeSides(aOrigin, aContainingBlock, aAngle);
   }
 
-  // left: the length between the initial point and the left side.
-  // right: the length between the initial point and the right side.
-  // top: the length between the initial point and the top side.
-  // bottom: the lenght between the initial point and the bottom side.
-  CSSCoord left = std::abs(aRayData.mInitialPosition.x);
-  CSSCoord right = std::abs(aRayData.mContainingBlockRect.width -
-                            aRayData.mInitialPosition.x);
-  CSSCoord top = std::abs(aRayData.mInitialPosition.y);
-  CSSCoord bottom = std::abs(aRayData.mContainingBlockRect.height -
-                             aRayData.mInitialPosition.y);
+  // left: the length between the origin and the left side.
+  // right: the length between the origin and the right side.
+  // top: the length between the origin and the top side.
+  // bottom: the lenght between the origin and the bottom side.
+  const CSSPoint& topLeft = aContainingBlock.TopLeft();
+  const CSSCoord left = std::abs(aOrigin.x - topLeft.x);
+  const CSSCoord right = std::abs(aContainingBlock.XMost() - aOrigin.x);
+  const CSSCoord top = std::abs(aOrigin.y - topLeft.y);
+  const CSSCoord bottom = std::abs(aContainingBlock.YMost() - aOrigin.y);
 
   switch (aRaySizeType) {
     case StyleRaySize::ClosestSide:
@@ -151,215 +280,36 @@ static CSSCoord ComputeRayPathLength(const StyleRaySize aRaySizeType,
       }
       return sqrt(h.value * h.value + v.value * v.value);
     }
-    default:
+    case StyleRaySize::Sides:
       MOZ_ASSERT_UNREACHABLE("Unsupported ray size");
   }
 
   return 0.0;
 }
 
-static void ApplyRotationAndMoveRayToXAxis(
-    const StyleOffsetRotate& aOffsetRotate, const StyleAngle& aRayAngle,
-    AutoTArray<gfx::Point, 4>& aVertices) {
-  const StyleAngle directionAngle = aRayAngle - StyleAngle{90.0f};
-  // Get the final rotation which includes the direction angle and
-  // offset-rotate.
-  const StyleAngle rotateAngle =
-      (aOffsetRotate.auto_ ? directionAngle : StyleAngle{0.0f}) +
-      aOffsetRotate.angle;
-  // This is the rotation to rotate ray to positive x-axis (i.e. 90deg).
-  const StyleAngle rayToXAxis = StyleAngle{90.0} - aRayAngle;
-
-  gfx::Matrix m;
-  m.PreRotate((rotateAngle + rayToXAxis).ToRadians());
-  for (gfx::Point& p : aVertices) {
-    p = m.TransformPoint(p);
-  }
-}
-
-class RayPointComparator {
- public:
-  bool Equals(const gfx::Point& a, const gfx::Point& b) const {
-    return std::fabs(a.y) == std::fabs(b.y);
-  }
-
-  bool LessThan(const gfx::Point& a, const gfx::Point& b) const {
-    return std::fabs(a.y) > std::fabs(b.y);
-  }
-};
-// Note: the calculation of contain doesn't take other transform-like properties
-// into account. The spec doesn't mention the co-operation for this, so for now,
-// we assume we only need to take motion-path into account.
-static CSSCoord ComputeRayUsedDistance(const RayFunction& aRay,
-                                       const LengthPercentage& aDistance,
-                                       const StyleOffsetRotate& aRotate,
-                                       const StylePositionOrAuto& aAnchor,
-                                       const CSSPoint& aTransformOrigin,
-                                       TransformReferenceBox& aRefBox,
-                                       const CSSCoord& aPathLength) {
+static CSSCoord ComputeRayUsedDistance(
+    const StyleRayFunction& aRay, const LengthPercentage& aDistance,
+    const CSSCoord& aPathLength, const CSSCoord& aRayContainReferenceLength) {
   CSSCoord usedDistance = aDistance.ResolveToCSSPixels(aPathLength);
   if (!aRay.contain) {
     return usedDistance;
   }
 
-  // We have to simulate the 4 vertices to check if any of them is outside the
-  // path circle. Here, we create a 2D Cartesian coordinate system and its
-  // origin is at the anchor point of the box. And then apply the rotation on
-  // these 4 vertices, calculate the range of |usedDistance| which makes the box
-  // entirely contained within the path.
-  // Note:
-  // "Contained within the path" means the rectangle is inside a circle whose
-  // radius is |aPathLength|.
-  CSSPoint usedAnchor = aTransformOrigin;
-  CSSSize size =
-      CSSPixel::FromAppUnits(nsSize(aRefBox.Width(), aRefBox.Height()));
-  if (!aAnchor.IsAuto()) {
-    const StylePosition& anchor = aAnchor.AsPosition();
-    usedAnchor.x = anchor.horizontal.ResolveToCSSPixels(size.width);
-    usedAnchor.y = anchor.vertical.ResolveToCSSPixels(size.height);
-  }
-  AutoTArray<gfx::Point, 4> vertices = {
-      {-usedAnchor.x, -usedAnchor.y},
-      {size.width - usedAnchor.x, -usedAnchor.y},
-      {size.width - usedAnchor.x, size.height - usedAnchor.y},
-      {-usedAnchor.x, size.height - usedAnchor.y}};
-
-  ApplyRotationAndMoveRayToXAxis(aRotate, aRay.angle, vertices);
-
-  // We have to check if all 4 vertices are inside the circle with radius |r|.
-  // Assume the position of the vertex is (x, y), and the box is moved by
-  // |usedDistance| along the path:
-  //
-  //       (usedDistance + x)^2 + y^2 <= r^2
-  //   ==> (usedDistance + x)^2 <= r^2 - y^2 = d
-  //   ==> -x - sqrt(d) <= used distance <= -x + sqrt(d)
-  //
-  // Note: |usedDistance| is added into |x| because we convert the ray function
-  // to 90deg, x-axis):
-  float upperMin = std::numeric_limits<float>::max();
-  float lowerMax = std::numeric_limits<float>::min();
-  bool shouldIncreasePathLength = false;
-  for (const gfx::Point& p : vertices) {
-    float d = aPathLength.value * aPathLength.value - p.y * p.y;
-    if (d < 0) {
-      // Impossible to make the box inside the path circle. Need to increase
-      // the path length.
-      shouldIncreasePathLength = true;
-      break;
-    }
-    float sqrtD = sqrt(d);
-    upperMin = std::min(upperMin, -p.x + sqrtD);
-    lowerMax = std::max(lowerMax, -p.x - sqrtD);
-  }
-
-  if (!shouldIncreasePathLength) {
-    return std::max(lowerMax, std::min(upperMin, (float)usedDistance));
-  }
-
-  // Sort by the absolute value of y, so the first vertex of the each pair of
-  // vertices we check has a larger y value. (i.e. |yi| is always larger than or
-  // equal to |yj|.)
-  vertices.Sort(RayPointComparator());
-
-  // Assume we set |usedDistance| to |-vertices[0].x|, so the current radius is
-  // fabs(vertices[0].y). This is a possible solution.
-  double radius = std::fabs(vertices[0].y);
-  usedDistance = -vertices[0].x;
-  const double epsilon = 1e-5;
-
-  for (size_t i = 0; i < 3; ++i) {
-    for (size_t j = i + 1; j < 4; ++j) {
-      double xi = vertices[i].x;
-      double yi = vertices[i].y;
-      double xj = vertices[j].x;
-      double yj = vertices[j].y;
-      double dx = xi - xj;
-
-      // Check if any path that enclosed vertices[i] would also enclose
-      // vertices[j].
-      //
-      // For example, the initial setup:
-      //                 * (0, yi)
-      //                 |
-      //                 r
-      //                 |          * (xj - xi, yj)
-      //           xi    |     dx
-      // ----*-----------*----------*---
-      // (anchor point)  | (0, 0)
-      //
-      // Assuming (0, yi) is on the path and (xj - xi, yj) is inside the path
-      // circle, we should use the inequality to check this:
-      //   (xj - xi)^2 + yj^2 <= yi^2
-      //
-      // After the first iterations, the updated inequality is:
-      //       (dx + d)^2 + yj^2 <= yi^2 + d^2
-      //   ==> dx^2 + 2dx*d + yj^2 <= yi^2
-      //   ==> dx^2 + yj^2 <= yi^2 - 2dx*d <= yi^2
-      // , |d| is the difference (or offset) between the old |usedDistance| and
-      // new |usedDistance|.
-      //
-      // Note: `2dx * d` must be positive because
-      // 1. if |xj| is larger than |xi|, only negative |d| could be used to get
-      //    a new path length which encloses both vertices.
-      // 2. if |xj| is smaller than |xi|, only positive |d| could be used to get
-      //    a new path length which encloses both vertices.
-      if (dx * dx + yj * yj <= yi * yi + epsilon) {
-        continue;
-      }
-
-      // We have to find a new usedDistance which let both vertices[i] and
-      // vertices[j] be on the path.
-      //       (usedDistance + xi)^2 + yi^2 = (usedDistance + xj)^2 + yj^2
-      //                                    = radius^2
-      //   ==> usedDistance = (xj^2 + yj^2 - xi^2 - yi^2) / 2(xi-xj)
-      //
-      // Note: it's impossible to have a "divide by zero" problem here.
-      // If |dx| is zero, the if-condition above should always be true and so
-      // we skip the calculation.
-      double newUsedDistance =
-          (xj * xj + yj * yj - xi * xi - yi * yi) / dx / 2.0;
-      // Then, move vertices[i] and vertices[j] by |newUsedDistance|.
-      xi += newUsedDistance;  // or xj += newUsedDistance; if we use |xj| to get
-                              // |newRadius|.
-      double newRadius = sqrt(xi * xi + yi * yi);
-      if (newRadius > radius) {
-        // We have to increase the path length to make sure both vertices[i] and
-        // vertices[j] are contained by this new path length.
-        radius = newRadius;
-        usedDistance = (float)newUsedDistance;
-      }
-    }
-  }
-
-  return usedDistance;
-}
-
-/* static */
-CSSPoint MotionPathUtils::ComputeAnchorPointAdjustment(const nsIFrame& aFrame) {
-  if (!aFrame.HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
-    return {};
-  }
-
-  auto transformBox = aFrame.StyleDisplay()->mTransformBox;
-  if (transformBox == StyleGeometryBox::ViewBox ||
-      transformBox == StyleGeometryBox::BorderBox) {
-    return {};
-  }
-
-  if (aFrame.IsFrameOfType(nsIFrame::eSVGContainer)) {
-    nsRect boxRect = nsLayoutUtils::ComputeGeometryBox(
-        const_cast<nsIFrame*>(&aFrame), StyleGeometryBox::FillBox);
-    return CSSPoint::FromAppUnits(boxRect.TopLeft());
-  }
-  return CSSPoint::FromAppUnits(aFrame.GetPosition());
+  // The length of the offset path is reduced so that the element stays within
+  // the containing block even at offset-distance: 100%. Specifically, the
+  // path’s length is reduced by half the width or half the height of the
+  // element’s border box, whichever is larger, and floored at zero.
+  // https://drafts.fxtf.org/motion-1/#valdef-ray-contain
+  return std::max((usedDistance - aRayContainReferenceLength / 2.0f).value,
+                  0.0f);
 }
 
 /* static */
 Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
     const OffsetPathData& aPath, const LengthPercentage& aDistance,
     const StyleOffsetRotate& aRotate, const StylePositionOrAuto& aAnchor,
-    const CSSPoint& aTransformOrigin, TransformReferenceBox& aRefBox,
-    const CSSPoint& aAnchorPointAdjustment) {
+    const StyleOffsetPosition& aPosition, const CSSPoint& aTransformOrigin,
+    TransformReferenceBox& aRefBox, const CSSPoint& aAnchorPointAdjustment) {
   if (aPath.IsNone()) {
     return Nothing();
   }
@@ -368,27 +318,24 @@ Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
   // rotate.
   double directionAngle = 0.0;
   gfx::Point point;
-  if (aPath.IsPath()) {
-    const auto& path = aPath.AsPath();
-    if (!path.mGfxPath) {
-      // Empty gfx::Path means it is path('') (i.e. empty path string).
-      return Nothing();
-    }
+  if (aPath.IsShape()) {
+    const auto& data = aPath.AsShape();
+    RefPtr<gfx::Path> path = data.mGfxPath;
+    MOZ_ASSERT(path, "The empty path is not allowed");
 
     // Per the spec, we have to convert offset distance to pixels, with 100%
     // being converted to total length. So here |gfxPath| is built with CSS
     // pixel, and we calculate |pathLength| and |computedDistance| with CSS
     // pixel as well.
-    gfx::Float pathLength = path.mGfxPath->ComputeLength();
+    gfx::Float pathLength = path->ComputeLength();
     gfx::Float usedDistance =
         aDistance.ResolveToCSSPixels(CSSCoord(pathLength));
-    if (path.mIsClosedIntervals) {
+    if (data.mIsClosedLoop) {
       // Per the spec, let used offset distance be equal to offset distance
       // modulus the total length of the path. If the total length of the path
       // is 0, used offset distance is also 0.
       usedDistance = pathLength > 0.0 ? fmod(usedDistance, pathLength) : 0.0;
       // We make sure |usedDistance| is 0.0 or a positive value.
-      // https://github.com/w3c/fxtf-drafts/issues/339
       if (usedDistance < 0.0) {
         usedDistance += pathLength;
       }
@@ -398,24 +345,44 @@ Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
       usedDistance = clamped(usedDistance, 0.0f, pathLength);
     }
     gfx::Point tangent;
-    point = path.mGfxPath->ComputePointAtLength(usedDistance, &tangent);
-    directionAngle = (double)atan2(tangent.y, tangent.x);  // In Radian.
+    point = path->ComputePointAtLength(usedDistance, &tangent);
+    // Basically, |point| should be a relative distance between the current
+    // position and the target position. The built |path| is in the coordinate
+    // system of its containing block. Therefore, we have to take the current
+    // position of this box into account to offset the translation so it's final
+    // position is not affected by other boxes in the same containing block.
+    point -= NSPointToPoint(data.mCurrentPosition, AppUnitsPerCSSPixel());
+    directionAngle = atan2((double)tangent.y, (double)tangent.x);  // in Radian.
   } else if (aPath.IsRay()) {
     const auto& ray = aPath.AsRay();
     MOZ_ASSERT(ray.mRay);
 
-    CSSCoord pathLength =
-        ComputeRayPathLength(ray.mRay->size, ray.mRay->angle, ray.mData);
-    CSSCoord usedDistance =
-        ComputeRayUsedDistance(*ray.mRay, aDistance, aRotate, aAnchor,
-                               aTransformOrigin, aRefBox, pathLength);
+    // Compute the origin, where the ray’s line begins (the 0% position).
+    // https://drafts.fxtf.org/motion-1/#ray-origin
+    const CSSPoint origin = CSSPoint::FromAppUnits(ComputePosition(
+        ray.mRay->position, aPosition, ray.mCoordBox, ray.mCurrentPosition));
+    const CSSCoord pathLength =
+        ComputeRayPathLength(ray.mRay->size, ray.mRay->angle, origin,
+                             CSSRect::FromAppUnits(ray.mCoordBox));
+    const CSSCoord usedDistance = ComputeRayUsedDistance(
+        *ray.mRay, aDistance, pathLength, ray.mContainReferenceLength);
 
     // 0deg pointing up and positive angles representing clockwise rotation.
     directionAngle =
         StyleAngle{ray.mRay->angle.ToDegrees() - 90.0f}.ToRadians();
 
-    point.x = usedDistance * cos(directionAngle);
-    point.y = usedDistance * sin(directionAngle);
+    // The vector from the current position of this box to the origin of this
+    // polar coordinate system.
+    const gfx::Point vectorToOrigin =
+        (origin - CSSPoint::FromAppUnits(ray.mCurrentPosition))
+            .ToUnknownPoint();
+    // |vectorToOrigin| + The vector from the origin to this polar coordinate,
+    // (|usedDistance|, |directionAngle|), i.e. the vector from the current
+    // position to this polar coordinate.
+    point =
+        vectorToOrigin +
+        gfx::Point(usedDistance * static_cast<gfx::Float>(cos(directionAngle)),
+                   usedDistance * static_cast<gfx::Float>(sin(directionAngle)));
   } else {
     MOZ_ASSERT_UNREACHABLE("Unsupported offset-path value");
     return Nothing();
@@ -453,26 +420,136 @@ Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
                                      angle, shift});
 }
 
-static OffsetPathData GenerateOffsetPathData(const nsIFrame* aFrame) {
-  const StyleOffsetPath& path = aFrame->StyleDisplay()->mOffsetPath;
-  switch (path.tag) {
-    case StyleOffsetPath::Tag::Path: {
-      const StyleSVGPathData& pathData = path.AsPath();
-      RefPtr<gfx::Path> gfxPath =
-          aFrame->GetProperty(nsIFrame::OffsetPathCache());
-      MOZ_ASSERT(
-          gfxPath || pathData._0.IsEmpty(),
-          "Should have a valid cached gfx::Path or an empty path string");
-      return OffsetPathData::Path(pathData, gfxPath.forget());
-    }
-    case StyleOffsetPath::Tag::Ray:
-      return OffsetPathData::Ray(path.AsRay(), RayReferenceData(aFrame));
-    case StyleOffsetPath::Tag::None:
-      return OffsetPathData::None();
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unknown offset-path");
-      return OffsetPathData::None();
+static inline bool IsClosedLoop(const StyleSVGPathData& aPathData) {
+  return !aPathData._0.AsSpan().empty() &&
+         aPathData._0.AsSpan().rbegin()->IsClosePath();
+}
+
+// Create a path for "inset(0 round X)", where X is the value of border-radius
+// on the element that establishes the containing block for this element.
+static already_AddRefed<gfx::Path> BuildSimpleInsetPath(
+    const StyleBorderRadius& aBorderRadius, const nsRect& aCoordBox,
+    gfx::PathBuilder* aPathBuilder) {
+  if (!aPathBuilder) {
+    return nullptr;
   }
+
+  const nsRect insetRect = ShapeUtils::ComputeInsetRect(
+      StyleRect<LengthPercentage>::WithAllSides(LengthPercentage::Zero()),
+      aCoordBox);
+  nscoord radii[8];
+  const bool hasRadii =
+      ShapeUtils::ComputeRectRadii(aBorderRadius, aCoordBox, insetRect, radii);
+  return ShapeUtils::BuildRectPath(insetRect, hasRadii ? radii : nullptr,
+                                   aCoordBox, AppUnitsPerCSSPixel(),
+                                   aPathBuilder);
+}
+
+// Create a path for `path("m 0 0")`, which is the default URL path if we cannot
+// resolve a SVG shape element.
+// https://drafts.fxtf.org/motion-1/#valdef-offset-path-url
+static already_AddRefed<gfx::Path> BuildDefaultPathForURL(
+    gfx::PathBuilder* aBuilder) {
+  if (!aBuilder) {
+    return nullptr;
+  }
+
+  Array<const StylePathCommand, 1> array(StylePathCommand::MoveTo(
+      StyleCoordPair(gfx::Point{0.0, 0.0}), StyleIsAbsolute::No));
+  return SVGPathData::BuildPath(array, aBuilder, StyleStrokeLinecap::Butt, 0.0);
+}
+
+// Generate data for motion path on the main thread.
+static OffsetPathData GenerateOffsetPathData(const nsIFrame* aFrame) {
+  const StyleOffsetPath& offsetPath = aFrame->StyleDisplay()->mOffsetPath;
+  if (offsetPath.IsNone()) {
+    return OffsetPathData::None();
+  }
+
+  // Handle ray().
+  if (offsetPath.IsRay()) {
+    nsRect coordBox;
+    const nsIFrame* containingBlockFrame =
+        MotionPathUtils::GetOffsetPathReferenceBox(aFrame, coordBox);
+    return !containingBlockFrame
+               ? OffsetPathData::None()
+               : OffsetPathData::Ray(
+                     offsetPath.AsRay(), std::move(coordBox),
+                     aFrame->GetOffsetTo(containingBlockFrame),
+                     MotionPathUtils::GetRayContainReferenceSize(
+                         const_cast<nsIFrame*>(aFrame)));
+  }
+
+  // Handle path(). We cache it so we handle it separately.
+  // FIXME: Bug 1837042, cache gfx::Path for shapes other than path(). Once we
+  // cache all basic shapes, we can merge this branch into other basic shapes.
+  if (offsetPath.IsPath()) {
+    const StyleSVGPathData& pathData = offsetPath.AsSVGPathData();
+    RefPtr<gfx::Path> gfxPath =
+        aFrame->GetProperty(nsIFrame::OffsetPathCache());
+    MOZ_ASSERT(gfxPath || pathData._0.IsEmpty(),
+               "Should have a valid cached gfx::Path or an empty path string");
+    // FIXME: Bug 1836847. Once we support "at <position>" for path(), we have
+    // to give it the current box position.
+    return OffsetPathData::Shape(gfxPath.forget(), {}, IsClosedLoop(pathData));
+  }
+
+  nsRect coordBox;
+  const nsIFrame* containingFrame =
+      MotionPathUtils::GetOffsetPathReferenceBox(aFrame, coordBox);
+  if (!containingFrame || coordBox.IsEmpty()) {
+    return OffsetPathData::None();
+  }
+  nsPoint currentPosition = aFrame->GetOffsetTo(containingFrame);
+  RefPtr<gfx::PathBuilder> builder = MotionPathUtils::GetPathBuilder();
+
+  if (offsetPath.IsUrl()) {
+    dom::SVGGeometryElement* element =
+        SVGObserverUtils::GetAndObserveGeometry(const_cast<nsIFrame*>(aFrame));
+    if (!element) {
+      // Note: This behaves as path("m 0 0") (a <basic-shape>).
+      RefPtr<gfx::Path> path = BuildDefaultPathForURL(builder);
+      // FIXME: Bug 1836847. Once we support "at <position>" for path(), we have
+      // to give it the current box position.
+      return path ? OffsetPathData::Shape(path.forget(), {}, false)
+                  : OffsetPathData::None();
+    }
+
+    // We just need this path to calculate the specific point and direction
+    // angle, so use measuring function and get the benefit of caching the path
+    // in the SVG shape element.
+    RefPtr<gfx::Path> path = element->GetOrBuildPathForMeasuring();
+
+    // The built |path| from SVG shape element doesn't take |coordBox| into
+    // account. It uses the SVG viewport as its coordinate system. So after
+    // mapping it into the CSS layout, we should use |coordBox| as its viewport
+    // and user coordinate system. |currentPosition| is based on the border-box
+    // of the containing block. Therefore, we have to apply an extra translation
+    // to put it at the correct position based on |coordBox|.
+    //
+    // Note: we reuse |OffsetPathData::ShapeData::mCurrentPosition| to include
+    // this extra translation, so we don't have to add an extra field.
+    nsPoint positionInCoordBox = currentPosition - coordBox.TopLeft();
+    return path ? OffsetPathData::Shape(path.forget(),
+                                        std::move(positionInCoordBox),
+                                        element->IsClosedLoop())
+                : OffsetPathData::None();
+  }
+
+  // The rest part is to handle "<basic-shape> || <coord-box>".
+  MOZ_ASSERT(offsetPath.IsBasicShapeOrCoordBox());
+
+  const nsStyleDisplay* disp = aFrame->StyleDisplay();
+  RefPtr<gfx::Path> path =
+      disp->mOffsetPath.IsCoordBox()
+          ? BuildSimpleInsetPath(containingFrame->StyleBorder()->mBorderRadius,
+                                 coordBox, builder)
+          : MotionPathUtils::BuildPath(
+                disp->mOffsetPath.AsOffsetPath().path->AsShape(),
+                disp->mOffsetPosition, coordBox, currentPosition, builder);
+  return path ? OffsetPathData::Shape(path.forget(), std::move(currentPosition),
+                                      true)
+              : OffsetPathData::None();
 }
 
 /* static*/
@@ -488,40 +565,89 @@ Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
       display->mTransformOrigin.horizontal, display->mTransformOrigin.vertical,
       aRefBox);
 
-  return ResolveMotionPath(GenerateOffsetPathData(aFrame),
-                           display->mOffsetDistance, display->mOffsetRotate,
-                           display->mOffsetAnchor, transformOrigin, aRefBox,
-                           ComputeAnchorPointAdjustment(*aFrame));
+  return ResolveMotionPath(
+      GenerateOffsetPathData(aFrame), display->mOffsetDistance,
+      display->mOffsetRotate, display->mOffsetAnchor, display->mOffsetPosition,
+      transformOrigin, aRefBox, ComputeAnchorPointAdjustment(*aFrame));
 }
 
+// Generate data for motion path on the compositor thread.
 static OffsetPathData GenerateOffsetPathData(
-    const StyleOffsetPath& aPath, const RayReferenceData& aRayReferenceData,
+    const StyleOffsetPath& aOffsetPath,
+    const StyleOffsetPosition& aOffsetPosition,
+    const layers::MotionPathData& aMotionPathData,
     gfx::Path* aCachedMotionPath) {
-  switch (aPath.tag) {
-    case StyleOffsetPath::Tag::Path: {
-      const StyleSVGPathData& pathData = aPath.AsPath();
-      // If aCachedMotionPath is valid, we have a fixed path.
-      // This means we have pre-built it already and no need to update.
-      RefPtr<gfx::Path> path = aCachedMotionPath;
-      if (!path) {
-        RefPtr<gfx::PathBuilder> builder =
-            MotionPathUtils::GetCompositorPathBuilder();
-        path = MotionPathUtils::BuildPath(pathData, builder);
-      }
-      return OffsetPathData::Path(pathData, path.forget());
-    }
-    case StyleOffsetPath::Tag::Ray:
-      return OffsetPathData::Ray(aPath.AsRay(), aRayReferenceData);
-    case StyleOffsetPath::Tag::None:
-    default:
-      return OffsetPathData::None();
+  if (aOffsetPath.IsNone()) {
+    return OffsetPathData::None();
   }
+
+  // Handle ray().
+  if (aOffsetPath.IsRay()) {
+    return aMotionPathData.coordBox().IsEmpty()
+               ? OffsetPathData::None()
+               : OffsetPathData::Ray(
+                     aOffsetPath.AsRay(), aMotionPathData.coordBox(),
+                     aMotionPathData.currentPosition(),
+                     aMotionPathData.rayContainReferenceLength());
+  }
+
+  // Handle path().
+  // FIXME: Bug 1837042, cache gfx::Path for shapes other than path().
+  if (aOffsetPath.IsPath()) {
+    const StyleSVGPathData& pathData = aOffsetPath.AsSVGPathData();
+    // If aCachedMotionPath is valid, we have a fixed path.
+    // This means we have pre-built it already and no need to update.
+    RefPtr<gfx::Path> path = aCachedMotionPath;
+    if (!path) {
+      RefPtr<gfx::PathBuilder> builder =
+          MotionPathUtils::GetCompositorPathBuilder();
+      path = MotionPathUtils::BuildSVGPath(pathData, builder);
+    }
+    // FIXME: Bug 1836847. Once we support "at <position>" for path(), we have
+    // to give it the current box position.
+    return OffsetPathData::Shape(path.forget(), {}, IsClosedLoop(pathData));
+  }
+
+  // The rest part is to handle "<basic-shape> || <coord-box>".
+  MOZ_ASSERT(aOffsetPath.IsBasicShapeOrCoordBox());
+
+  const nsRect& coordBox = aMotionPathData.coordBox();
+  if (coordBox.IsEmpty()) {
+    return OffsetPathData::None();
+  }
+
+  RefPtr<gfx::PathBuilder> builder =
+      MotionPathUtils::GetCompositorPathBuilder();
+  if (!builder) {
+    return OffsetPathData::None();
+  }
+
+  RefPtr<gfx::Path> path;
+  if (aOffsetPath.IsCoordBox()) {
+    const nsRect insetRect = ShapeUtils::ComputeInsetRect(
+        StyleRect<LengthPercentage>::WithAllSides(LengthPercentage::Zero()),
+        coordBox);
+    const nsTArray<nscoord>& radii = aMotionPathData.coordBoxInsetRadii();
+    path = ShapeUtils::BuildRectPath(
+        insetRect, radii.IsEmpty() ? nullptr : radii.Elements(), coordBox,
+        AppUnitsPerCSSPixel(), builder);
+  } else {
+    path = MotionPathUtils::BuildPath(
+        aOffsetPath.AsOffsetPath().path->AsShape(), aOffsetPosition, coordBox,
+        aMotionPathData.currentPosition(), builder);
+  }
+
+  return path ? OffsetPathData::Shape(
+                    path.forget(), nsPoint(aMotionPathData.currentPosition()),
+                    true)
+              : OffsetPathData::None();
 }
 
 /* static */
 Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
     const StyleOffsetPath* aPath, const StyleLengthPercentage* aDistance,
     const StyleOffsetRotate* aRotate, const StylePositionOrAuto* aAnchor,
+    const StyleOffsetPosition* aPosition,
     const Maybe<layers::MotionPathData>& aMotionPathData,
     TransformReferenceBox& aRefBox, gfx::Path* aCachedMotionPath) {
   if (!aPath) {
@@ -533,25 +659,20 @@ Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
   auto zeroOffsetDistance = LengthPercentage::Zero();
   auto autoOffsetRotate = StyleOffsetRotate{true, StyleAngle::Zero()};
   auto autoOffsetAnchor = StylePositionOrAuto::Auto();
+  auto autoOffsetPosition = StyleOffsetPosition::Auto();
   return ResolveMotionPath(
-      GenerateOffsetPathData(*aPath, aMotionPathData->rayReferenceData(),
-                             aCachedMotionPath),
+      GenerateOffsetPathData(*aPath,
+                             aPosition ? *aPosition : autoOffsetPosition,
+                             *aMotionPathData, aCachedMotionPath),
       aDistance ? *aDistance : zeroOffsetDistance,
       aRotate ? *aRotate : autoOffsetRotate,
-      aAnchor ? *aAnchor : autoOffsetAnchor, aMotionPathData->origin(), aRefBox,
-      aMotionPathData->anchorAdjustment());
+      aAnchor ? *aAnchor : autoOffsetAnchor,
+      aPosition ? *aPosition : autoOffsetPosition, aMotionPathData->origin(),
+      aRefBox, aMotionPathData->anchorAdjustment());
 }
 
 /* static */
-StyleSVGPathData MotionPathUtils::NormalizeSVGPathData(
-    const StyleSVGPathData& aPath) {
-  StyleSVGPathData n;
-  Servo_SVGPathData_Normalize(&aPath, &n);
-  return n;
-}
-
-/* static */
-already_AddRefed<gfx::Path> MotionPathUtils::BuildPath(
+already_AddRefed<gfx::Path> MotionPathUtils::BuildSVGPath(
     const StyleSVGPathData& aPath, gfx::PathBuilder* aPathBuilder) {
   if (!aPathBuilder) {
     return nullptr;
@@ -560,6 +681,60 @@ already_AddRefed<gfx::Path> MotionPathUtils::BuildPath(
   const Span<const StylePathCommand>& path = aPath._0.AsSpan();
   return SVGPathData::BuildPath(path, aPathBuilder, StyleStrokeLinecap::Butt,
                                 0.0);
+}
+
+/* static */
+already_AddRefed<gfx::Path> MotionPathUtils::BuildPath(
+    const StyleBasicShape& aBasicShape,
+    const StyleOffsetPosition& aOffsetPosition, const nsRect& aCoordBox,
+    const nsPoint& aCurrentPosition, gfx::PathBuilder* aPathBuilder) {
+  if (!aPathBuilder) {
+    return nullptr;
+  }
+
+  switch (aBasicShape.tag) {
+    case StyleBasicShape::Tag::Circle: {
+      const nsPoint center =
+          ComputePosition(aBasicShape.AsCircle().position, aOffsetPosition,
+                          aCoordBox, aCurrentPosition);
+      return ShapeUtils::BuildCirclePath(aBasicShape, aCoordBox, center,
+                                         AppUnitsPerCSSPixel(), aPathBuilder);
+    }
+    case StyleBasicShape::Tag::Ellipse: {
+      const nsPoint center =
+          ComputePosition(aBasicShape.AsEllipse().position, aOffsetPosition,
+                          aCoordBox, aCurrentPosition);
+      return ShapeUtils::BuildEllipsePath(aBasicShape, aCoordBox, center,
+                                          AppUnitsPerCSSPixel(), aPathBuilder);
+    }
+    case StyleBasicShape::Tag::Rect:
+      return ShapeUtils::BuildInsetPath(aBasicShape, aCoordBox,
+                                        AppUnitsPerCSSPixel(), aPathBuilder);
+    case StyleBasicShape::Tag::Polygon:
+      return ShapeUtils::BuildPolygonPath(aBasicShape, aCoordBox,
+                                          AppUnitsPerCSSPixel(), aPathBuilder);
+    case StyleBasicShape::Tag::Path:
+      // FIXME: Bug 1836847. Once we support "at <position>" for path(), we have
+      // to also check its containing block as well. For now, we are still
+      // building its gfx::Path directly by its SVGPathData without other
+      // reference. https://github.com/w3c/fxtf-drafts/issues/504
+      return BuildSVGPath(aBasicShape.AsPath().path, aPathBuilder);
+  }
+
+  return nullptr;
+}
+
+/* static */
+already_AddRefed<gfx::PathBuilder> MotionPathUtils::GetPathBuilder() {
+  // Here we only need to build a valid path for motion path, so
+  // using the default values of stroke-width, stoke-linecap, and fill-rule
+  // is fine for now because what we want is to get the point and its normal
+  // vector along the path, instead of rendering it.
+  RefPtr<gfx::PathBuilder> builder =
+      gfxPlatform::GetPlatform()
+          ->ScreenReferenceDrawTarget()
+          ->CreatePathBuilder(gfx::FillRule::FILL_WINDING);
+  return builder.forget();
 }
 
 /* static */

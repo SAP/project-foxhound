@@ -20,47 +20,11 @@ class DocAccessibleWrap : public DocAccessible {
   DocAccessibleWrap(Document* aDocument, PresShell* aPresShell);
   virtual ~DocAccessibleWrap();
 
-  virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
-
-  /**
-   * Manage the mapping from id to Accessible.
-   */
-  void AddID(uint32_t aID, AccessibleWrap* aAcc) {
-    mIDToAccessibleMap.InsertOrUpdate(aID, aAcc);
-  }
-  void RemoveID(uint32_t aID) { mIDToAccessibleMap.Remove(aID); }
-  AccessibleWrap* GetAccessibleByID(int32_t aID) const;
+  virtual void Shutdown() override;
 
   DocAccessibleWrap* GetTopLevelContentDoc(AccessibleWrap* aAccessible);
 
-  void CacheFocusPath(AccessibleWrap* aAccessible);
-
-  void CacheViewport(bool aCachePivotBoundaries);
-
-  enum {
-    eBatch_Viewport = 0,
-    eBatch_FocusPath = 1,
-    eBatch_BoundsUpdate = 2,
-  };
-
- protected:
-  /*
-   * This provides a mapping from 32 bit id to accessible objects.
-   */
-  nsTHashMap<nsUint32HashKey, AccessibleWrap*> mIDToAccessibleMap;
-
-  virtual void DoInitialUpdate() override;
-
- private:
-  void UpdateFocusPathBounds();
-
-  static void CacheViewportCallback(nsITimer* aTimer, void* aDocAccParam);
-
-  nsCOMPtr<nsITimer> mCacheRefreshTimer;
-
-  bool mCachePivotBoundaries;
-
-  AccessibleHashtable mFocusPath;
+  bool IsTopLevelContentDoc();
 };
 
 }  // namespace a11y

@@ -12,11 +12,11 @@ LOCAL_INCLUDES += [
 ]
 
 SOURCES += [
-    "ProtocolFuzzer.cpp",
+    "IPCFuzzController.cpp",
 ]
 
-EXPORTS += [
-    "ProtocolFuzzer.h",
+EXPORTS.mozilla.fuzzing += [
+    "IPCFuzzController.h",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

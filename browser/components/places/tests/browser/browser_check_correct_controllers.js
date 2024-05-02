@@ -4,6 +4,11 @@
 
 "use strict";
 
+add_setup(async () => {
+  // Ensure all bookmarks cleared before the test starts.
+  await PlacesUtils.bookmarks.eraseEverything();
+});
+
 add_task(async function test() {
   let bookmark = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.toolbarGuid,
@@ -38,14 +43,20 @@ add_task(async function test() {
     window,
     "placesCmd_copy"
   );
-  let treeController = tree.controllers.getControllerForCommand(
-    "placesCmd_copy"
-  );
+  let treeController =
+    tree.controllers.getControllerForCommand("placesCmd_copy");
   ok(controller == treeController, "tree controller was returned");
 
   // Open the context menu for a toolbar item, and check if the toolbar's
   // controller is returned.
   let toolbarItems = document.getElementById("PlacesToolbarItems");
+  // Ensure the toolbar has displayed the bookmark. This might be async, so
+  // wait a little if necessary.
+  await TestUtils.waitForCondition(
+    () => toolbarItems.children.length == 1,
+    "Should have only one item on the toolbar"
+  );
+
   let placesContext = document.getElementById("placesContext");
   let popupShownPromise = BrowserTestUtils.waitForEvent(
     placesContext,
@@ -88,7 +99,7 @@ function promiseLoadedSidebar(cmd) {
     let sidebar = document.getElementById("sidebar");
     sidebar.addEventListener(
       "load",
-      function() {
+      function () {
         executeSoon(() => resolve(sidebar));
       },
       { capture: true, once: true }

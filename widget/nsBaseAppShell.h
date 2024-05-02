@@ -31,6 +31,12 @@ class nsBaseAppShell : public nsIAppShell,
 
   nsBaseAppShell();
 
+  /**
+   * Called by subclasses. Reset the internal timezone when the user's system
+   * timezone changes.
+   */
+  static void OnSystemTimezoneChange();
+
  protected:
   virtual ~nsBaseAppShell();
 
@@ -91,10 +97,8 @@ class nsBaseAppShell : public nsIAppShell,
    * have been consumed by the inner event loop(s).
    */
   bool* mBlockedWait;
-  int32_t mFavorPerf;
   mozilla::Atomic<bool> mNativeEventPending;
-  PRIntervalTime mStarvationDelay;
-  PRIntervalTime mSwitchTime;
+  PRIntervalTime mGeckoTaskBurstStartTime;
   PRIntervalTime mLastNativeEventTime;
   enum EventloopNestingState {
     eEventloopNone,   // top level thread execution

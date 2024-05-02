@@ -8,7 +8,7 @@
  * the performance analysis view.
  */
 
-add_task(async function() {
+add_task(async function () {
   const { monitor } = await initNetMonitor(FILTERING_URL, { requestCount: 1 });
   info("Starting test... ");
 
@@ -57,7 +57,7 @@ add_task(async function() {
 
   EventUtils.sendMouseEvent(
     { type: "click" },
-    document.querySelector(".pie-chart-slice")
+    document.querySelector(".pie-chart-slice-container")
   );
 
   ok(

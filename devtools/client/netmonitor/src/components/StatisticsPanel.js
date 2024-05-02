@@ -4,38 +4,42 @@
 
 "use strict";
 
-const ReactDOM = require("devtools/client/shared/vendor/react-dom");
-const { FILTER_TAGS } = require("devtools/client/netmonitor/src/constants");
+const ReactDOM = require("resource://devtools/client/shared/vendor/react-dom.js");
+const {
+  FILTER_TAGS,
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   connect,
-} = require("devtools/client/shared/redux/visibility-handler-connect");
-const { Chart } = require("devtools/client/shared/widgets/Chart");
-const { PluralForm } = require("devtools/shared/plural-form");
-const Actions = require("devtools/client/netmonitor/src/actions/index");
+} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+const { Chart } = require("resource://devtools/client/shared/widgets/Chart.js");
+const { PluralForm } = require("resource://devtools/shared/plural-form.js");
+const Actions = require("resource://devtools/client/netmonitor/src/actions/index.js");
 const {
   Filters,
-} = require("devtools/client/netmonitor/src/utils/filter-predicates");
+} = require("resource://devtools/client/netmonitor/src/utils/filter-predicates.js");
 const {
   getSizeWithDecimals,
   getTimeWithDecimals,
-} = require("devtools/client/netmonitor/src/utils/format-utils");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+} = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   getPerformanceAnalysisURL,
-} = require("devtools/client/netmonitor/src/utils/mdn-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/doc-utils.js");
 const {
   fetchNetworkUpdatePacket,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 // Components
 const MDNLink = createFactory(
-  require("devtools/client/shared/components/MdnLink")
+  require("resource://devtools/client/shared/components/MdnLink.js")
 );
 
 const { button, div } = dom;
@@ -58,6 +62,7 @@ class StatisticsPanel extends Component {
       connector: PropTypes.object.isRequired,
       closeStatistics: PropTypes.func.isRequired,
       enableRequestFilterTypeOnly: PropTypes.func.isRequired,
+      hasLoad: PropTypes.bool,
       requests: PropTypes.array,
     };
   }
@@ -77,7 +82,8 @@ class StatisticsPanel extends Component {
     this.onLayoutChange = this.onLayoutChange.bind(this);
   }
 
-  componentWillMount() {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillMount() {
     this.mdnLinkContainerNodes = new Map();
   }
 
@@ -91,7 +97,8 @@ class StatisticsPanel extends Component {
     });
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { requests, connector } = nextProps;
     requests.forEach(request => {
       fetchNetworkUpdatePacket(connector.requestData, request, [
@@ -104,28 +111,34 @@ class StatisticsPanel extends Component {
   componentDidUpdate(prevProps) {
     MediaQueryList.addListener(this.onLayoutChange);
 
-    const { requests } = this.props;
-    const ready =
-      requests?.length &&
-      requests.every(
-        req =>
-          req.contentSize !== undefined &&
-          req.mimeType &&
-          req.responseHeaders &&
-          req.status !== undefined &&
-          req.totalTime !== undefined
-      );
+    const { hasLoad, requests } = this.props;
+
+    // Display statistics about all requests for which we received enough data,
+    // as soon as the page is considered to be loaded
+    const ready = requests.length && hasLoad;
+
+    // Ignore requests which are missing data expected by this component:
+    // - pending/incomplete requests
+    // - blocked/errored requests
+    const validRequests = requests.filter(
+      req =>
+        req.contentSize !== undefined &&
+        req.mimeType &&
+        req.responseHeaders &&
+        req.status !== undefined &&
+        req.totalTime !== undefined
+    );
 
     this.createChart({
       id: "primedCacheChart",
       title: CHARTS_CACHE_ENABLED,
-      data: ready ? this.sanitizeChartDataSource(requests, false) : null,
+      data: ready ? this.sanitizeChartDataSource(validRequests, false) : null,
     });
 
     this.createChart({
       id: "emptyCacheChart",
       title: CHARTS_CACHE_DISABLED,
-      data: ready ? this.sanitizeChartDataSource(requests, true) : null,
+      data: ready ? this.sanitizeChartDataSource(validRequests, true) : null,
     });
 
     this.createMDNLink("primedCacheChart", getPerformanceAnalysisURL());
@@ -151,7 +164,7 @@ class StatisticsPanel extends Component {
 
     ReactDOM.render(
       MDNLink({
-        url: url,
+        url,
         title: CHARTS_LEARN_MORE,
       }),
       containerNode
@@ -171,8 +184,7 @@ class StatisticsPanel extends Component {
       diameter: NETWORK_ANALYSIS_PIE_CHART_DIAMETER,
       title,
       header: {
-        cached: "",
-        count: "",
+        count: L10N.getStr("charts.requestsNumber"),
         label: L10N.getStr("charts.type"),
         size: L10N.getStr("charts.size"),
         transferredSize: L10N.getStr("charts.transferred"),
@@ -182,11 +194,14 @@ class StatisticsPanel extends Component {
       data,
       strings: {
         size: value =>
-          L10N.getFormatStr("charts.sizeKB", getSizeWithDecimals(value / 1024)),
+          L10N.getFormatStr(
+            "charts.size.kB",
+            getSizeWithDecimals(value / 1000)
+          ),
         transferredSize: value =>
           L10N.getFormatStr(
-            "charts.transferredSizeKB",
-            getSizeWithDecimals(value / 1024)
+            "charts.transferredSize.kB",
+            getSizeWithDecimals(value / 1000)
           ),
         time: value =>
           L10N.getFormatStr("charts.totalS", getTimeWithDecimals(value / 1000)),
@@ -198,13 +213,13 @@ class StatisticsPanel extends Component {
         count: total => L10N.getFormatStr("charts.totalCount", total),
         size: total =>
           L10N.getFormatStr(
-            "charts.totalSize",
-            getSizeWithDecimals(total / 1024)
+            "charts.totalSize.kB",
+            getSizeWithDecimals(total / 1000)
           ),
         transferredSize: total =>
           L10N.getFormatStr(
-            "charts.totalTransferredSize",
-            getSizeWithDecimals(total / 1024)
+            "charts.totalTransferredSize.kB",
+            getSizeWithDecimals(total / 1000)
           ),
         time: total => {
           const seconds = total / 1000;
@@ -384,6 +399,9 @@ class StatisticsPanel extends Component {
 
 module.exports = connect(
   state => ({
+    // `firstDocumentLoadTimestamp` is set on timing markers when we receive
+    // DOCUMENT_EVENT's dom-complete, which is equivalent to page `load` event.
+    hasLoad: state.timingMarkers.firstDocumentLoadTimestamp != -1,
     requests: [...state.requests.requests],
   }),
   (dispatch, props) => ({

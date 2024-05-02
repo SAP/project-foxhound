@@ -3,16 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const ACTIVITY_STREAM_PREF_BRANCH = "browser.newtabpage.activity-stream.";
 
-this.Prefs = class Prefs extends Preferences {
+class Prefs extends Preferences {
   /**
    * Prefs - A wrapper around Preferences that always sets the branch to
    *         ACTIVITY_STREAM_PREF_BRANCH
@@ -35,9 +35,9 @@ this.Prefs = class Prefs extends Preferences {
     this._prefBranch.addObserver("", observer);
     this._branchObservers.set(listener, observer);
   }
-};
+}
 
-this.DefaultPrefs = class DefaultPrefs extends Preferences {
+class DefaultPrefs extends Preferences {
   /**
    * DefaultPrefs - A helper for setting and resetting default prefs for the add-on
    *
@@ -90,6 +90,6 @@ this.DefaultPrefs = class DefaultPrefs extends Preferences {
       }
     }
   }
-};
+}
 
 const EXPORTED_SYMBOLS = ["DefaultPrefs", "Prefs"];

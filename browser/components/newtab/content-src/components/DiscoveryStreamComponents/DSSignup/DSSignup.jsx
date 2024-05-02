@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac } from "common/Actions.jsm";
+import { actionCreators as ac } from "common/Actions.sys.mjs";
 import { LinkMenu } from "content-src/components/LinkMenu/LinkMenu";
 import { ContextMenuButton } from "content-src/components/ContextMenu/ContextMenuButton";
 import { ImpressionStats } from "../../DiscoveryStreamImpressionStats/ImpressionStats";
@@ -56,7 +56,7 @@ export class DSSignup extends React.PureComponent {
       // Grab the first item in the array as we only have 1 spoc position.
       const [spoc] = data.spocs;
       this.props.dispatch(
-        ac.UserEvent({
+        ac.DiscoveryStreamUserEvent({
           event: "CLICK",
           source,
           action_position: 0,
@@ -146,6 +146,7 @@ export class DSSignup extends React.PureComponent {
             onShow={this.onMenuShow}
             options={SIGNUP_CONTEXT_MENU_OPTIONS}
             shouldSendImpressionStats={true}
+            userEvent={ac.DiscoveryStreamUserEvent}
             site={{
               referrer: "https://getpocket.com/recommendations",
               title,

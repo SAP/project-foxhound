@@ -19,7 +19,6 @@ class nsWeakReference final : public nsIWeakReference {
 
   // nsIWeakReference...
   NS_DECL_NSIWEAKREFERENCE
-  size_t SizeOfOnlyThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
  private:
   friend class nsSupportsWeakReference;
@@ -115,17 +114,10 @@ nsresult nsSupportsWeakReference::GetWeakReference(
   } else {
     MOZ_WEAKREF_ASSERT_OWNINGTHREAD_DELEGATED(mProxy);
   }
-  *aInstancePtr = mProxy;
+  RefPtr<nsWeakReference> rval = mProxy;
+  rval.forget(aInstancePtr);
 
-  nsresult status;
-  if (!*aInstancePtr) {
-    status = NS_ERROR_OUT_OF_MEMORY;
-  } else {
-    NS_ADDREF(*aInstancePtr);
-    status = NS_OK;
-  }
-
-  return status;
+  return NS_OK;
 }
 
 NS_IMPL_ISUPPORTS(nsWeakReference, nsIWeakReference)
@@ -147,8 +139,7 @@ nsresult nsIWeakReference::QueryReferent(const nsIID& aIID,
   return mObject->QueryInterface(aIID, aInstancePtr);
 }
 
-size_t nsWeakReference::SizeOfOnlyThis(
-    mozilla::MallocSizeOf aMallocSizeOf) const {
+size_t nsWeakReference::SizeOfOnlyThis(mozilla::MallocSizeOf aMallocSizeOf) {
   return aMallocSizeOf(this);
 }
 

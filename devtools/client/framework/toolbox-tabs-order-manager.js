@@ -4,10 +4,14 @@
 
 "use strict";
 
-const { AddonManager } = require("resource://gre/modules/AddonManager.jsm");
-const { gDevTools } = require("devtools/client/framework/devtools");
-const Services = require("Services");
-const Telemetry = require("devtools/client/shared/telemetry");
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs",
+  // AddonManager is a singleton, never create two instances of it.
+  { loadInDevToolsLoader: false }
+);
+const {
+  gDevTools,
+} = require("resource://devtools/client/framework/devtools.js");
 const TABS_REORDERED_SCALAR = "devtools.toolbox.tabs_reordered";
 const PREFERENCE_NAME = "devtools.toolbox.tabsOrder";
 
@@ -25,8 +29,6 @@ class ToolboxTabsOrderManager {
     this.onMouseUp = this.onMouseUp.bind(this);
 
     Services.prefs.addObserver(PREFERENCE_NAME, this.onOrderUpdated);
-
-    this.telemetry = new Telemetry();
   }
 
   async destroy() {
@@ -99,9 +101,8 @@ class ToolboxTabsOrderManager {
     this.dragStartX = e.pageX;
     this.dragTarget = e.target;
     this.previousPageX = e.pageX;
-    this.toolboxContainerElement = this.dragTarget.closest(
-      "#toolbox-container"
-    );
+    this.toolboxContainerElement =
+      this.dragTarget.closest("#toolbox-container");
     this.toolboxTabsElement = this.dragTarget.closest(".toolbox-tabs");
     this.isOrderUpdated = false;
     this.eventTarget = this.dragTarget.ownerGlobal.top;
@@ -118,9 +119,8 @@ class ToolboxTabsOrderManager {
       this.dragTarget.offsetLeft + diffPageX + this.dragTarget.clientWidth / 2;
     let isDragTargetPreviousSibling = false;
 
-    const tabElements = this.toolboxTabsElement.querySelectorAll(
-      ".devtools-tab"
-    );
+    const tabElements =
+      this.toolboxTabsElement.querySelectorAll(".devtools-tab");
 
     // Calculate the minimum and maximum X-offset that can be valid for the drag target.
     const firstElement = tabElements[0];
@@ -193,7 +193,7 @@ class ToolboxTabsOrderManager {
       // "How frequently are the tabs re-ordered, also which tabs get re-ordered?"
       const toolId =
         this.dragTarget.dataset.extensionId || this.dragTarget.dataset.id;
-      this.telemetry.keyedScalarAdd(TABS_REORDERED_SCALAR, toolId, 1);
+      this.toolbox.telemetry.keyedScalarAdd(TABS_REORDERED_SCALAR, toolId, 1);
     }
 
     this.eventTarget.removeEventListener("mousemove", this.onMouseMove);

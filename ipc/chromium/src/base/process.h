@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 
 #include <sys/types.h>
-#ifdef OS_WIN
+#ifdef XP_WIN
 #  include <windows.h>
 #endif
 
@@ -19,9 +19,11 @@ namespace base {
 // ProcessHandle is a platform specific type which represents the underlying OS
 // handle to a process.
 // ProcessId is a number which identifies the process in the OS.
-#if defined(OS_WIN)
+#if defined(XP_WIN)
 typedef HANDLE ProcessHandle;
 typedef DWORD ProcessId;
+// inttypes.h-like macro for ProcessId formatting.
+#  define PRIPID "lu"
 
 const ProcessHandle kInvalidProcessHandle = INVALID_HANDLE_VALUE;
 
@@ -32,10 +34,12 @@ const ProcessHandle kInvalidProcessHandle = INVALID_HANDLE_VALUE;
 // property, however even if that were to change, it seems safe to rely on this
 // particular value never being used.
 const ProcessId kInvalidProcessId = kuint32max;
-#elif defined(OS_POSIX)
+#else
 // On POSIX, our ProcessHandle will just be the PID.
 typedef pid_t ProcessHandle;
 typedef pid_t ProcessId;
+// inttypes.h-like macro for ProcessId formatting.
+#  define PRIPID "d"
 
 const ProcessHandle kInvalidProcessHandle = -1;
 const ProcessId kInvalidProcessId = -1;

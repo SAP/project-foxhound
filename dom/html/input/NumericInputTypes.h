@@ -9,8 +9,7 @@
 
 #include "mozilla/dom/InputType.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class NumericInputTypeBase : public InputType {
  public:
@@ -18,13 +17,13 @@ class NumericInputTypeBase : public InputType {
 
   bool IsRangeOverflow() const override;
   bool IsRangeUnderflow() const override;
-  bool HasStepMismatch(bool aUseZeroIfValueNaN) const override;
+  bool HasStepMismatch() const override;
 
   nsresult GetRangeOverflowMessage(nsAString& aMessage) override;
   nsresult GetRangeUnderflowMessage(nsAString& aMessage) override;
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             Decimal& aResultValue) const override;
+  StringToNumberResult ConvertStringToNumber(
+      const nsAString& aValue) const override;
   bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
 
@@ -46,8 +45,7 @@ class NumberInputType final : public NumericInputTypeBase {
   nsresult GetValueMissingMessage(nsAString& aMessage) override;
   nsresult GetBadInputMessage(nsAString& aMessage) override;
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             Decimal& aResultValue) const override;
+  StringToNumberResult ConvertStringToNumber(const nsAString&) const override;
   bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
 
@@ -66,15 +64,13 @@ class RangeInputType : public NumericInputTypeBase {
     return new (aMemory) RangeInputType(aInputElement);
   }
 
-  MOZ_CAN_RUN_SCRIPT
-  nsresult MinMaxStepAttrChanged() override;
+  MOZ_CAN_RUN_SCRIPT void MinMaxStepAttrChanged() override;
 
  private:
   explicit RangeInputType(HTMLInputElement* aInputElement)
       : NumericInputTypeBase(aInputElement) {}
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_NumericInputTypes_h__ */

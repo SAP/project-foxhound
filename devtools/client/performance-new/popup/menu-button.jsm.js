@@ -10,25 +10,27 @@
  */
 
 // Provide an exports object for the JSM to be properly read by TypeScript.
-/** @type {any} */ (this).exports = {};
+/** @type {any} */
+var exports = {};
 
 const { createLazyLoaders } = ChromeUtils.import(
-  "resource://devtools/client/performance-new/typescript-lazy-load.jsm.js"
+  "resource://devtools/client/performance-new/shared/typescript-lazy-load.jsm.js"
 );
 
 const lazy = createLazyLoaders({
-  Services: () => ChromeUtils.import("resource://gre/modules/Services.jsm"),
   CustomizableUI: () =>
-    ChromeUtils.import("resource:///modules/CustomizableUI.jsm"),
+    ChromeUtils.importESModule("resource:///modules/CustomizableUI.sys.mjs"),
   CustomizableWidgets: () =>
-    ChromeUtils.import("resource:///modules/CustomizableWidgets.jsm"),
-  PopupPanel: () =>
+    ChromeUtils.importESModule(
+      "resource:///modules/CustomizableWidgets.sys.mjs"
+    ),
+  PopupLogic: () =>
     ChromeUtils.import(
-      "resource://devtools/client/performance-new/popup/panel.jsm.js"
+      "resource://devtools/client/performance-new/popup/logic.jsm.js"
     ),
   Background: () =>
     ChromeUtils.import(
-      "resource://devtools/client/performance-new/popup/background.jsm.js"
+      "resource://devtools/client/performance-new/shared/background.jsm.js"
     ),
 });
 
@@ -98,7 +100,6 @@ function openPopup(document) {
 function initialize(toggleProfilerKeyShortcuts) {
   const { CustomizableUI } = lazy.CustomizableUI();
   const { CustomizableWidgets } = lazy.CustomizableWidgets();
-  const { Services } = lazy.Services();
 
   const widget = CustomizableUI.getWidget(WIDGET_ID);
   if (widget && widget.provider == CustomizableUI.PROVIDER_API) {
@@ -111,7 +112,7 @@ function initialize(toggleProfilerKeyShortcuts) {
   /**
    * This is mutable state that will be shared between panel displays.
    *
-   * @type {import("devtools/client/performance-new/popup/panel.jsm.js").State}
+   * @type {import("devtools/client/performance-new/popup/logic.jsm.js").State}
    */
   const panelState = {
     cleanup: [],
@@ -140,10 +141,7 @@ function initialize(toggleProfilerKeyShortcuts) {
       // but we try to avoid interfering with profiling of automated tests.
       if (
         Services.profiler.IsActive() &&
-        (!Cu.isInAutomation ||
-          !Cc["@mozilla.org/process/environment;1"]
-            .getService(Ci.nsIEnvironment)
-            .exists("MOZ_PROFILER_STARTUP"))
+        (!Cu.isInAutomation || !Services.env.exists("MOZ_PROFILER_STARTUP"))
       ) {
         Services.profiler.StopProfiler();
       }
@@ -170,7 +168,7 @@ function initialize(toggleProfilerKeyShortcuts) {
           // The popup logic is stored in a separate script so it doesn't have
           // to be parsed at browser startup, and will only be lazily loaded
           // when the popup is viewed.
-          const { initializePopup } = lazy.PopupPanel();
+          const { initializePopup } = lazy.PopupLogic();
 
           initializePopup(panelState, event.target);
         } catch (error) {

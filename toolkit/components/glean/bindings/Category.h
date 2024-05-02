@@ -8,6 +8,7 @@
 #define mozilla_glean_Category_h
 
 #include "js/TypeDecls.h"
+#include "mozilla/glean/bindings/GleanMetric.h"
 #include "nsISupports.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
@@ -17,22 +18,23 @@ namespace mozilla::glean {
 class Category final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Category)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Category)
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
-  nsISupports* GetParentObject() { return nullptr; }
+  nsISupports* GetParentObject() { return mParent; };
 
-  Category(uint32_t id, uint32_t length) : mId(id), mLength(length) {}
+  explicit Category(nsCString&& aName, nsISupports* aParent)
+      : mName(aName), mParent(aParent) {}
 
-  already_AddRefed<nsISupports> NamedGetter(const nsAString& aName,
+  already_AddRefed<GleanMetric> NamedGetter(const nsAString& aName,
                                             bool& aFound);
   bool NameIsEnumerable(const nsAString& aName);
   void GetSupportedNames(nsTArray<nsString>& aNames);
 
  private:
-  uint32_t mId;
-  uint32_t mLength;
+  nsCString mName;
+  nsCOMPtr<nsISupports> mParent;
 
  protected:
   virtual ~Category() = default;

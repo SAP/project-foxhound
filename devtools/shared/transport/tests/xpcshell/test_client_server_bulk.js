@@ -3,14 +3,16 @@
 
 "use strict";
 
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-var Pipe = CC("@mozilla.org/pipe;1", "nsIPipe", "init");
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
+var Pipe = Components.Constructor("@mozilla.org/pipe;1", "nsIPipe", "init");
 
 function run_test() {
   initTestDevToolsServer();
   add_test_bulk_actor();
 
-  add_task(async function() {
+  add_task(async function () {
     await test_bulk_request_cs(socket_transport, "jsonReply", "json");
     await test_bulk_request_cs(local_transport, "jsonReply", "json");
     await test_bulk_request_cs(socket_transport, "bulkEcho", "bulk");
@@ -24,12 +26,11 @@ function run_test() {
 }
 
 /** * Sample Bulk Actor ***/
-const { Actor } = require("devtools/shared/protocol/Actor");
+const { Actor } = require("resource://devtools/shared/protocol/Actor.js");
 class TestBulkActor extends Actor {
   constructor(conn) {
-    super(conn);
+    super(conn, { typeName: "testBulk", methods: [] });
 
-    this.typeName = "testBulk";
     this.requestTypes = {
       bulkEcho: this.bulkEcho,
       bulkReply: this.bulkReply,
@@ -41,9 +42,9 @@ class TestBulkActor extends Actor {
     Assert.equal(length, really_long().length);
     this.conn
       .startBulkSend({
-        actor: actor,
-        type: type,
-        length: length,
+        actor,
+        type,
+        length,
       })
       .then(({ copyFrom }) => {
         // We'll just echo back the same thing
@@ -61,7 +62,7 @@ class TestBulkActor extends Actor {
     this.conn
       .startBulkSend({
         actor: to,
-        type: type,
+        type,
         length: really_long().length,
       })
       .then(({ copyFrom }) => {
@@ -111,7 +112,7 @@ function add_test_bulk_actor() {
 /** * Reply Handlers ***/
 
 var replyHandlers = {
-  json: function(request) {
+  json(request) {
     // Receive JSON reply from server
     return new Promise(resolve => {
       request.on("json-reply", reply => {
@@ -121,7 +122,7 @@ var replyHandlers = {
     });
   },
 
-  bulk: function(request) {
+  bulk(request) {
     // Receive bulk data reply from server
     return new Promise(resolve => {
       request.on("bulk-reply", ({ length, copyTo }) => {
@@ -143,7 +144,7 @@ var replyHandlers = {
 
 /** * Tests ***/
 
-var test_bulk_request_cs = async function(
+var test_bulk_request_cs = async function (
   transportFactory,
   actorType,
   replyType
@@ -217,7 +218,7 @@ var test_bulk_request_cs = async function(
   return Promise.all([clientDeferred, bulkCopyDeferred, serverDeferred]);
 };
 
-var test_json_request_cs = async function(
+var test_json_request_cs = async function (
   transportFactory,
   actorType,
   replyType

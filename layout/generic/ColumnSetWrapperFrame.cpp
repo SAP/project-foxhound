@@ -77,7 +77,8 @@ void ColumnSetWrapperFrame::AppendDirectlyOwnedAnonBoxes(
   // asserts all the conditions above which allow us to skip appending
   // -moz-column-span-wrappers.
   auto FindFirstChildInChildLists = [this]() -> nsIFrame* {
-    const ChildListID listIDs[] = {kPrincipalList, kOverflowList};
+    const ChildListID listIDs[] = {FrameChildListID::Principal,
+                                   FrameChildListID::Overflow};
     for (nsIFrame* frag = this; frag; frag = frag->GetNextInFlow()) {
       for (ChildListID id : listIDs) {
         const nsFrameList& list = frag->GetChildList(id);
@@ -105,13 +106,13 @@ nsresult ColumnSetWrapperFrame::GetFrameName(nsAString& aResult) const {
 // column hierarchy since any change to the column hierarchy in the column
 // sub-tree need to be re-created.
 void ColumnSetWrapperFrame::AppendFrames(ChildListID aListID,
-                                         nsFrameList& aFrameList) {
+                                         nsFrameList&& aFrameList) {
 #ifdef DEBUG
   MOZ_ASSERT(!mFinishedBuildingColumns, "Should only call once!");
   mFinishedBuildingColumns = true;
 #endif
 
-  nsBlockFrame::AppendFrames(aListID, aFrameList);
+  nsBlockFrame::AppendFrames(aListID, std::move(aFrameList));
 
 #ifdef DEBUG
   nsIFrame* firstColumnSet = PrincipalChildList().FirstChild();
@@ -129,15 +130,17 @@ void ColumnSetWrapperFrame::AppendFrames(ChildListID aListID,
 
 void ColumnSetWrapperFrame::InsertFrames(
     ChildListID aListID, nsIFrame* aPrevFrame,
-    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList&& aFrameList) {
   MOZ_ASSERT_UNREACHABLE("Unsupported operation!");
-  nsBlockFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
+  nsBlockFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                             std::move(aFrameList));
 }
 
-void ColumnSetWrapperFrame::RemoveFrame(ChildListID aListID,
+void ColumnSetWrapperFrame::RemoveFrame(DestroyContext& aContext,
+                                        ChildListID aListID,
                                         nsIFrame* aOldFrame) {
   MOZ_ASSERT_UNREACHABLE("Unsupported operation!");
-  nsBlockFrame::RemoveFrame(aListID, aOldFrame);
+  nsBlockFrame::RemoveFrame(aContext, aListID, aOldFrame);
 }
 
 void ColumnSetWrapperFrame::MarkIntrinsicISizesDirty() {
@@ -154,10 +157,17 @@ nscoord ColumnSetWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord iSize = 0;
   DISPLAY_MIN_INLINE_SIZE(this, iSize);
 
-  if (StyleDisplay()->IsContainSize()) {
-    // If we're size-contained, we determine our minimum intrinsic size purely
-    // from our column styling, as if we had no descendants. This should match
-    // what happens in nsColumnSetFrame::GetMinISize in an actual no-descendants
+  if (Maybe<nscoord> containISize =
+          ContainIntrinsicISize(NS_UNCONSTRAINEDSIZE)) {
+    // If we're size-contained in inline axis and contain-intrinsic-inline-size
+    // is not 'none', then use that size.
+    if (*containISize != NS_UNCONSTRAINEDSIZE) {
+      return *containISize;
+    }
+
+    // In the 'none' case, we determine our minimum intrinsic size purely from
+    // our column styling, as if we had no descendants. This should match what
+    // happens in nsColumnSetFrame::GetMinISize in an actual no-descendants
     // scenario.
     const nsStyleColumn* colStyle = StyleColumn();
     if (colStyle->mColumnWidth.IsLength()) {
@@ -189,7 +199,12 @@ nscoord ColumnSetWrapperFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord iSize = 0;
   DISPLAY_PREF_INLINE_SIZE(this, iSize);
 
-  if (StyleDisplay()->IsContainSize()) {
+  if (Maybe<nscoord> containISize =
+          ContainIntrinsicISize(NS_UNCONSTRAINEDSIZE)) {
+    if (*containISize != NS_UNCONSTRAINEDSIZE) {
+      return *containISize;
+    }
+
     const nsStyleColumn* colStyle = StyleColumn();
     nscoord colISize;
     if (colStyle->mColumnWidth.IsLength()) {
@@ -216,6 +231,58 @@ nscoord ColumnSetWrapperFrame::GetPrefISize(gfxContext* aRenderingContext) {
   }
 
   return iSize;
+}
+
+template <typename Iterator>
+Maybe<nscoord> ColumnSetWrapperFrame::GetBaselineBOffset(
+    Iterator aStart, Iterator aEnd, WritingMode aWM,
+    BaselineSharingGroup aBaselineGroup,
+    BaselineExportContext aExportContext) const {
+  // Either forward iterator + first baseline, or reverse iterator + last
+  // baseline
+  MOZ_ASSERT((*aStart == PrincipalChildList().FirstChild() &&
+              aBaselineGroup == BaselineSharingGroup::First) ||
+                 (*aStart == PrincipalChildList().LastChild() &&
+                  aBaselineGroup == BaselineSharingGroup::Last),
+             "Iterator direction must match baseline sharing group.");
+  if (StyleDisplay()->IsContainLayout()) {
+    return Nothing{};
+  }
+
+  // Start from start/end of principal child list, and use the first valid
+  // baseline.
+  for (auto itr = aStart; itr != aEnd; ++itr) {
+    const nsIFrame* kid = *itr;
+    auto kidBaseline =
+        kid->GetNaturalBaselineBOffset(aWM, aBaselineGroup, aExportContext);
+    if (!kidBaseline) {
+      continue;
+    }
+    // Baseline is offset from the kid's rectangle, so find the offset to the
+    // kid's rectangle.
+    LogicalRect kidRect{aWM, kid->GetLogicalNormalPosition(aWM, GetSize()),
+                        kid->GetLogicalSize(aWM)};
+    if (aBaselineGroup == BaselineSharingGroup::First) {
+      *kidBaseline += kidRect.BStart(aWM);
+    } else {
+      *kidBaseline += (GetLogicalSize().BSize(aWM) - kidRect.BEnd(aWM));
+    }
+    return kidBaseline;
+  }
+  return Nothing{};
+}
+
+Maybe<nscoord> ColumnSetWrapperFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+    BaselineExportContext aExportContext) const {
+  if (aBaselineGroup == BaselineSharingGroup::First) {
+    return GetBaselineBOffset(PrincipalChildList().cbegin(),
+                              PrincipalChildList().cend(), aWM, aBaselineGroup,
+                              aExportContext);
+  }
+  return GetBaselineBOffset(PrincipalChildList().crbegin(),
+                            PrincipalChildList().crend(), aWM, aBaselineGroup,
+                            aExportContext);
 }
 
 #ifdef DEBUG

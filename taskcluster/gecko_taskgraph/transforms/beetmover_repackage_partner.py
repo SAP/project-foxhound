@@ -5,37 +5,31 @@
 Transform the beetmover task into an actual task description.
 """
 
+import logging
+from copy import deepcopy
 
-from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.transforms.base import TransformSequence
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_primary_dependency
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.taskcluster import get_artifact_prefix
+from voluptuous import Any, Optional, Required
+
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
+from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import (
     copy_attributes_from_dependent_job,
     release_level,
 )
-from gecko_taskgraph.util.partners import (
-    get_ftp_platform,
-    get_partner_config_by_kind,
-)
-from gecko_taskgraph.util.schema import (
-    optionally_keyed_by,
-    resolve_keyed_by,
-)
+from gecko_taskgraph.util.partners import get_ftp_platform, get_partner_config_by_kind
 from gecko_taskgraph.util.scriptworker import (
     add_scope_prefix,
     get_beetmover_bucket_scope,
 )
-from gecko_taskgraph.util.taskcluster import get_artifact_prefix
-from gecko_taskgraph.transforms.task import task_description_schema
-from voluptuous import Any, Required, Optional
-
-from copy import deepcopy
-import logging
 
 logger = logging.getLogger(__name__)
 
 
-beetmover_description_schema = schema.extend(
+beetmover_description_schema = Schema(
     {
         # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
         Optional("label"): str,
@@ -43,13 +37,26 @@ beetmover_description_schema = schema.extend(
         Required("partner-public-path"): Any(None, str),
         Required("partner-private-path"): Any(None, str),
         Optional("extra"): object,
+        Optional("attributes"): task_description_schema["attributes"],
+        Optional("dependencies"): task_description_schema["dependencies"],
         Required("shipping-phase"): task_description_schema["shipping-phase"],
         Optional("shipping-product"): task_description_schema["shipping-product"],
         Optional("priority"): task_description_schema["priority"],
+        Optional("job-from"): task_description_schema["job-from"],
     }
 )
 
 transforms = TransformSequence()
+
+
+@transforms.add
+def remove_name(config, jobs):
+    for job in jobs:
+        if "name" in job:
+            del job["name"]
+        yield job
+
+
 transforms.add_validate(beetmover_description_schema)
 
 
@@ -68,7 +75,9 @@ def resolve_keys(config, jobs):
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job["primary-dependency"]
+        dep_job = get_primary_dependency(config, job)
+        assert dep_job
+
         repack_id = dep_job.task.get("extra", {}).get("repack_id")
         if not repack_id:
             raise Exception("Cannot find repack id!")
@@ -172,7 +181,6 @@ def generate_upstream_artifacts(
     partner_path,
     repack_stub_installer=False,
 ):
-
     upstream_artifacts = []
     artifact_prefix = get_artifact_prefix(job)
 

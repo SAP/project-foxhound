@@ -10,11 +10,11 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/EffectSet.h"
-#include "mozilla/dom/Animation.h"
 #include "nsDebug.h"
 #include "nsAtom.h"
 #include "nsIContent.h"
-#include "nsGlobalWindow.h"
+#include "nsLayoutUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsString.h"
 #include "xpcpublic.h"  // For xpc::NativeGlobal
 
@@ -61,7 +61,7 @@ Document* AnimationUtils::GetDocumentFromGlobal(JSObject* aGlobalObject) {
 
 /* static */
 bool AnimationUtils::FrameHasAnimatedScale(const nsIFrame* aFrame) {
-  EffectSet* effectSet = EffectSet::GetEffectSetForFrame(
+  EffectSet* effectSet = EffectSet::GetForFrame(
       aFrame, nsCSSPropertyIDSet::TransformLikeProperties());
   if (!effectSet) {
     return false;
@@ -81,7 +81,7 @@ bool AnimationUtils::HasCurrentTransitions(const Element* aElement,
                                            PseudoStyleType aPseudoType) {
   MOZ_ASSERT(aElement);
 
-  EffectSet* effectSet = EffectSet::GetEffectSet(aElement, aPseudoType);
+  EffectSet* effectSet = EffectSet::Get(aElement, aPseudoType);
   if (!effectSet) {
     return false;
   }
@@ -95,6 +95,51 @@ bool AnimationUtils::HasCurrentTransitions(const Element* aElement,
   }
 
   return false;
+}
+
+/*static*/ Element* AnimationUtils::GetElementForRestyle(
+    Element* aElement, PseudoStyleType aPseudoType) {
+  if (aPseudoType == PseudoStyleType::NotPseudo) {
+    return aElement;
+  }
+
+  if (aPseudoType == PseudoStyleType::before) {
+    return nsLayoutUtils::GetBeforePseudo(aElement);
+  }
+
+  if (aPseudoType == PseudoStyleType::after) {
+    return nsLayoutUtils::GetAfterPseudo(aElement);
+  }
+
+  if (aPseudoType == PseudoStyleType::marker) {
+    return nsLayoutUtils::GetMarkerPseudo(aElement);
+  }
+
+  MOZ_ASSERT_UNREACHABLE(
+      "Should not try to get the element to restyle for a pseudo other that "
+      ":before, :after or ::marker");
+  return nullptr;
+}
+
+/*static*/ std::pair<const Element*, PseudoStyleType>
+AnimationUtils::GetElementPseudoPair(const Element* aElementOrPseudo) {
+  MOZ_ASSERT(aElementOrPseudo);
+
+  if (aElementOrPseudo->IsGeneratedContentContainerForBefore()) {
+    return {aElementOrPseudo->GetParent()->AsElement(),
+            PseudoStyleType::before};
+  }
+
+  if (aElementOrPseudo->IsGeneratedContentContainerForAfter()) {
+    return {aElementOrPseudo->GetParent()->AsElement(), PseudoStyleType::after};
+  }
+
+  if (aElementOrPseudo->IsGeneratedContentContainerForMarker()) {
+    return {aElementOrPseudo->GetParent()->AsElement(),
+            PseudoStyleType::marker};
+  }
+
+  return {aElementOrPseudo, PseudoStyleType::NotPseudo};
 }
 
 }  // namespace mozilla

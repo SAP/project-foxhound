@@ -19,6 +19,9 @@
 #include "nsError.h"
 #include "nsMathUtils.h"
 
+struct GeckoFontMetrics;
+class nsPresContext;
+class nsFontMetrics;
 class mozAutoDocUpdate;
 class nsIFrame;
 
@@ -35,45 +38,65 @@ class SVGViewportElement;
 
 class UserSpaceMetrics {
  public:
-  static bool ResolveAbsoluteUnit(uint8_t aUnitType, float& aRes);
+  enum class Type : uint32_t { This, Root };
+  static GeckoFontMetrics DefaultFontMetrics();
+  static GeckoFontMetrics GetFontMetrics(const Element* aElement);
+  static WritingMode GetWritingMode(const Element* aElement);
+  static CSSSize GetCSSViewportSizeFromContext(const nsPresContext* aContext);
+
   virtual ~UserSpaceMetrics() = default;
 
-  virtual float GetEmLength() const = 0;
-  virtual float GetExLength() const = 0;
+  virtual float GetEmLength(Type aType) const = 0;
+  float GetExLength(Type aType) const;
+  float GetChSize(Type aType) const;
+  float GetIcWidth(Type aType) const;
+  float GetCapHeight(Type aType) const;
   virtual float GetAxisLength(uint8_t aCtxType) const = 0;
+  virtual CSSSize GetCSSViewportSize() const = 0;
+
+ protected:
+  virtual GeckoFontMetrics GetFontMetricsForType(Type aType) const = 0;
+  virtual WritingMode GetWritingModeForType(Type aType) const = 0;
 };
 
 class UserSpaceMetricsWithSize : public UserSpaceMetrics {
  public:
   virtual gfx::Size GetSize() const = 0;
-  virtual float GetAxisLength(uint8_t aCtxType) const override;
+  float GetAxisLength(uint8_t aCtxType) const override;
 };
 
 class SVGElementMetrics : public UserSpaceMetrics {
  public:
-  explicit SVGElementMetrics(SVGElement* aSVGElement,
-                             SVGViewportElement* aCtx = nullptr);
+  explicit SVGElementMetrics(const SVGElement* aSVGElement,
+                             const SVGViewportElement* aCtx = nullptr);
 
-  virtual float GetEmLength() const override;
-  virtual float GetExLength() const override;
-  virtual float GetAxisLength(uint8_t aCtxType) const override;
+  float GetEmLength(Type aType) const override {
+    return SVGContentUtils::GetFontSize(GetElementForType(aType));
+  }
+  float GetAxisLength(uint8_t aCtxType) const override;
+  CSSSize GetCSSViewportSize() const override;
 
  private:
   bool EnsureCtx() const;
+  const Element* GetElementForType(Type aType) const;
+  GeckoFontMetrics GetFontMetricsForType(Type aType) const override;
+  WritingMode GetWritingModeForType(Type aType) const override;
 
-  SVGElement* mSVGElement;
-  mutable SVGViewportElement* mCtx;
+  const SVGElement* mSVGElement;
+  mutable const SVGViewportElement* mCtx;
 };
 
 class NonSVGFrameUserSpaceMetrics : public UserSpaceMetricsWithSize {
  public:
   explicit NonSVGFrameUserSpaceMetrics(nsIFrame* aFrame);
 
-  virtual float GetEmLength() const override;
-  virtual float GetExLength() const override;
-  virtual gfx::Size GetSize() const override;
+  float GetEmLength(Type aType) const override;
+  gfx::Size GetSize() const override;
+  CSSSize GetCSSViewportSize() const override;
 
  private:
+  GeckoFontMetrics GetFontMetricsForType(Type aType) const override;
+  WritingMode GetWritingModeForType(Type aType) const override;
   nsIFrame* mFrame;
 };
 
@@ -114,17 +137,17 @@ class SVGAnimatedLength {
   void GetBaseValueString(nsAString& aValue) const;
   void GetAnimValueString(nsAString& aValue) const;
 
-  float GetBaseValue(SVGElement* aSVGElement) const {
+  float GetBaseValue(const SVGElement* aSVGElement) const {
     return mBaseVal * GetPixelsPerUnit(aSVGElement, mSpecifiedUnitType);
   }
 
-  float GetAnimValue(SVGElement* aSVGElement) const {
+  float GetAnimValue(const SVGElement* aSVGElement) const {
     return mAnimVal * GetPixelsPerUnit(aSVGElement, mSpecifiedUnitType);
   }
   float GetAnimValue(nsIFrame* aFrame) const {
     return mAnimVal * GetPixelsPerUnit(aFrame, mSpecifiedUnitType);
   }
-  float GetAnimValue(SVGViewportElement* aCtx) const {
+  float GetAnimValue(const SVGViewportElement* aCtx) const {
     return mAnimVal * GetPixelsPerUnit(aCtx, mSpecifiedUnitType);
   }
   float GetAnimValue(const UserSpaceMetrics& aMetrics) const {
@@ -139,10 +162,6 @@ class SVGAnimatedLength {
   }
   float GetAnimValInSpecifiedUnits() const { return mAnimVal; }
   float GetBaseValInSpecifiedUnits() const { return mBaseVal; }
-
-  float GetBaseValue(SVGViewportElement* aCtx) const {
-    return mBaseVal * GetPixelsPerUnit(aCtx, mSpecifiedUnitType);
-  }
 
   bool HasBaseVal() const { return mIsBaseSet; }
   // Returns true if the animated value of this length has been explicitly
@@ -173,8 +192,10 @@ class SVGAnimatedLength {
   float GetPixelsPerUnit(nsIFrame* aFrame, uint8_t aUnitType) const;
   float GetPixelsPerUnit(const UserSpaceMetrics& aMetrics,
                          uint8_t aUnitType) const;
-  float GetPixelsPerUnit(SVGElement* aSVGElement, uint8_t aUnitType) const;
-  float GetPixelsPerUnit(SVGViewportElement* aCtx, uint8_t aUnitType) const;
+  float GetPixelsPerUnit(const SVGElement* aSVGElement,
+                         uint8_t aUnitType) const;
+  float GetPixelsPerUnit(const SVGViewportElement* aCtx,
+                         uint8_t aUnitType) const;
 
   // SetBaseValue and SetAnimValue set the value in user units. This may fail
   // if unit conversion fails e.g. conversion to ex or em units where the
@@ -206,12 +227,13 @@ class SVGAnimatedLength {
     SVGElement* mSVGElement;
 
     // SMILAttr methods
-    virtual nsresult ValueFromString(
-        const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
-        SMILValue& aValue, bool& aPreventCachingOfSandwich) const override;
-    virtual SMILValue GetBaseValue() const override;
-    virtual void ClearAnimValue() override;
-    virtual nsresult SetAnimValue(const SMILValue& aValue) override;
+    nsresult ValueFromString(const nsAString& aStr,
+                             const dom::SVGAnimationElement* aSrcElement,
+                             SMILValue& aValue,
+                             bool& aPreventCachingOfSandwich) const override;
+    SMILValue GetBaseValue() const override;
+    void ClearAnimValue() override;
+    nsresult SetAnimValue(const SMILValue& aValue) override;
   };
 };
 

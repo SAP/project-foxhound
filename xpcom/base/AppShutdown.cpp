@@ -12,7 +12,7 @@
 #  include <unistd.h>
 #endif
 
-#include "GeckoProfiler.h"
+#include "ProfilerControl.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/PoisonIOInterposer.h"
@@ -26,6 +26,7 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsAppRunner.h"
 #include "nsDirectoryServiceUtils.h"
+#include "nsExceptionHandler.h"
 #include "nsICertStorage.h"
 #include "nsThreadUtils.h"
 
@@ -36,10 +37,6 @@
 #  include "nsTerminator.h"
 #endif
 #include "prenv.h"
-
-#ifdef MOZ_NEW_XULSTORE
-#  include "mozilla/XULStore.h"
-#endif
 
 #ifdef MOZ_BACKGROUNDTASKS
 #  include "mozilla/BackgroundTasks.h"
@@ -58,12 +55,27 @@ const char* sPhaseObserverKeys[] = {
     "xpcom-will-shutdown",              // XPCOMWillShutdown
     "xpcom-shutdown",                   // XPCOMShutdown
     "xpcom-shutdown-threads",           // XPCOMShutdownThreads
-    nullptr,                            // XPCOMShutdownLoaders
     nullptr,                            // XPCOMShutdownFinal
     nullptr                             // CCPostLastCycleCollection
 };
 
 static_assert(sizeof(sPhaseObserverKeys) / sizeof(sPhaseObserverKeys[0]) ==
+              (size_t)ShutdownPhase::ShutdownPhase_Length);
+
+const char* sPhaseReadableNames[] = {"NotInShutdown",
+                                     "AppShutdownConfirmed",
+                                     "AppShutdownNetTeardown",
+                                     "AppShutdownTeardown",
+                                     "AppShutdown",
+                                     "AppShutdownQM",
+                                     "AppShutdownTelemetry",
+                                     "XPCOMWillShutdown",
+                                     "XPCOMShutdown",
+                                     "XPCOMShutdownThreads",
+                                     "XPCOMShutdownFinal",
+                                     "CCPostLastCycleCollection"};
+
+static_assert(sizeof(sPhaseReadableNames) / sizeof(sPhaseReadableNames[0]) ==
               (size_t)ShutdownPhase::ShutdownPhase_Length);
 
 #ifndef ANDROID
@@ -73,7 +85,6 @@ static nsTerminator* sTerminator = nullptr;
 static ShutdownPhase sFastShutdownPhase = ShutdownPhase::NotInShutdown;
 static ShutdownPhase sLateWriteChecksPhase = ShutdownPhase::NotInShutdown;
 static AppShutdownMode sShutdownMode = AppShutdownMode::Normal;
-static Atomic<bool, MemoryOrdering::Relaxed> sIsShuttingDown;
 static Atomic<ShutdownPhase> sCurrentShutdownPhase(
     ShutdownPhase::NotInShutdown);
 static int sExitCode = 0;
@@ -104,8 +115,6 @@ ShutdownPhase GetShutdownPhaseFromPrefValue(int32_t aPrefValue) {
   return ShutdownPhase::NotInShutdown;
 }
 
-bool AppShutdown::IsShuttingDown() { return sIsShuttingDown; }
-
 ShutdownPhase AppShutdown::GetCurrentShutdownPhase() {
   return sCurrentShutdownPhase;
 }
@@ -126,6 +135,11 @@ void AppShutdown::SaveEnvVarsForPotentialRestart() {
 
 const char* AppShutdown::GetObserverKey(ShutdownPhase aPhase) {
   return sPhaseObserverKeys[static_cast<std::underlying_type_t<ShutdownPhase>>(
+      aPhase)];
+}
+
+const char* AppShutdown::GetShutdownPhaseName(ShutdownPhase aPhase) {
+  return sPhaseReadableNames[static_cast<std::underlying_type_t<ShutdownPhase>>(
       aPhase)];
 }
 
@@ -180,10 +194,12 @@ wchar_t* CopyPathIntoNewWCString(nsIFile* aFile) {
 }
 #endif
 
-void AppShutdown::Init(AppShutdownMode aMode, int aExitCode) {
+void AppShutdown::Init(AppShutdownMode aMode, int aExitCode,
+                       AppShutdownReason aReason) {
   if (sShutdownMode == AppShutdownMode::Normal) {
     sShutdownMode = aMode;
   }
+  AppShutdown::AnnotateShutdownReason(aReason);
 
   sExitCode = aExitCode;
 
@@ -219,11 +235,6 @@ void AppShutdown::MaybeFastShutdown(ShutdownPhase aPhase) {
     }
 
     nsresult rv;
-#ifdef MOZ_NEW_XULSTORE
-    rv = XULStore::Shutdown();
-    NS_ASSERTION(NS_SUCCEEDED(rv), "XULStore::Shutdown() failed.");
-#endif
-
     nsCOMPtr<nsICertStorage> certStorage =
         do_GetService("@mozilla.org/security/certstorage;1", &rv);
     if (NS_SUCCEEDED(rv)) {
@@ -244,17 +255,6 @@ void AppShutdown::MaybeFastShutdown(ShutdownPhase aPhase) {
 
     profiler_shutdown(IsFastShutdown::Yes);
 
-#ifdef MOZ_BACKGROUNDTASKS
-    // We must unlock the profile, or else the lock file `parent.lock` will
-    // prevent removing the directory, allowing additional writes (including
-    // `ShutdownDuration.json{.tmp}`) to succeed.  But `UnlockProfile()` is not
-    // idempotent so we can't push the unlock into `Shutdown()` directly.
-    if (mozilla::BackgroundTasks::IsUsingTemporaryProfile()) {
-      UnlockProfile();
-    }
-    mozilla::BackgroundTasks::Shutdown();
-#endif
-
     DoImmediateExit(sExitCode);
   } else if (aPhase == sLateWriteChecksPhase) {
 #ifdef XP_MACOSX
@@ -265,7 +265,6 @@ void AppShutdown::MaybeFastShutdown(ShutdownPhase aPhase) {
 }
 
 void AppShutdown::OnShutdownConfirmed() {
-  sIsShuttingDown = true;
   // If we're restarting, we need to save environment variables correctly
   // while everything is still alive to do so.
   if (sShutdownMode == AppShutdownMode::Restart) {
@@ -308,8 +307,39 @@ bool AppShutdown::IsRestarting() {
   return sShutdownMode == AppShutdownMode::Restart;
 }
 
+void AppShutdown::AnnotateShutdownReason(AppShutdownReason aReason) {
+  auto key = CrashReporter::Annotation::ShutdownReason;
+  nsCString reasonStr;
+  switch (aReason) {
+    case AppShutdownReason::AppClose:
+      reasonStr = "AppClose"_ns;
+      break;
+    case AppShutdownReason::AppRestart:
+      reasonStr = "AppRestart"_ns;
+      break;
+    case AppShutdownReason::OSForceClose:
+      reasonStr = "OSForceClose"_ns;
+      break;
+    case AppShutdownReason::OSSessionEnd:
+      reasonStr = "OSSessionEnd"_ns;
+      break;
+    case AppShutdownReason::OSShutdown:
+      reasonStr = "OSShutdown"_ns;
+      break;
+    case AppShutdownReason::WinUnexpectedMozQuit:
+      reasonStr = "WinUnexpectedMozQuit"_ns;
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("We should know the given reason for shutdown.");
+      reasonStr = "Unknown"_ns;
+      break;
+  }
+  CrashReporter::AnnotateCrashReport(key, reasonStr);
+}
+
 #ifdef DEBUG
 static bool sNotifyingShutdownObservers = false;
+static bool sAdvancingShutdownPhase = false;
 
 bool AppShutdown::IsNoOrLegalShutdownTopic(const char* aTopic) {
   if (!XRE_IsParentProcess()) {
@@ -323,10 +353,16 @@ bool AppShutdown::IsNoOrLegalShutdownTopic(const char* aTopic) {
 }
 #endif
 
-void AdvanceShutdownPhaseInternal(
+void AppShutdown::AdvanceShutdownPhaseInternal(
     ShutdownPhase aPhase, bool doNotify, const char16_t* aNotificationData,
     const nsCOMPtr<nsISupports>& aNotificationSubject) {
   AssertIsOnMainThread();
+#ifdef DEBUG
+  // Prevent us from re-entrance
+  MOZ_ASSERT(!sAdvancingShutdownPhase);
+  sAdvancingShutdownPhase = true;
+  auto exit = MakeScopeExit([] { sAdvancingShutdownPhase = false; });
+#endif
 
   // We ensure that we can move only forward. We cannot
   // MOZ_ASSERT here as there are some tests that fire
@@ -335,6 +371,34 @@ void AdvanceShutdownPhaseInternal(
   if (sCurrentShutdownPhase >= aPhase) {
     return;
   }
+
+  nsCOMPtr<nsIThread> thread = do_GetCurrentThread();
+
+  // AppShutdownConfirmed is special in some ways as
+  // - we can be called on top of a nested event loop (and it is the phase for
+  //   which SpinEventLoopUntilOrQuit breaks, so we want to return soon)
+  // - we can be called from a sync marionette function that wants immediate
+  //   feedback, too
+  // - in general, AppShutdownConfirmed will fire the "quit-application"
+  //   notification which in turn will cause an event to be dispatched that
+  //   runs all the rest of our shutdown sequence which we do not want to be
+  //   processed on top of the running event.
+  // Thus we never do any NS_ProcessPendingEvents for it.
+  bool mayProcessPending = (aPhase > ShutdownPhase::AppShutdownConfirmed);
+
+  // Give runnables dispatched between two calls to AdvanceShutdownPhase
+  // a chance to run before actually advancing the phase. As we excluded
+  // AppShutdownConfirmed above we can be sure that the processing is
+  // covered by the terminator's timer of the previous phase during normal
+  // shutdown (except out-of-order calls from some test).
+  // Note that this affects only main thread runnables, such that the correct
+  // way of ensuring shutdown processing remains to have an async shutdown
+  // blocker.
+  if (mayProcessPending && thread) {
+    NS_ProcessPendingEvents(thread);
+  }
+
+  // From now on any IsInOrBeyond checks will find the new phase set.
   sCurrentShutdownPhase = aPhase;
 
 #ifndef ANDROID
@@ -343,9 +407,18 @@ void AdvanceShutdownPhaseInternal(
   }
 #endif
 
+  AppShutdown::MaybeFastShutdown(aPhase);
+
+  // This will null out the gathered pointers for this phase synchronously.
+  // Note that we keep the old order here to avoid breakage, so be aware that
+  // the notifications fired below will find these already cleared in case
+  // you expected the opposite.
   mozilla::KillClearOnShutdown(aPhase);
 
-  AppShutdown::MaybeFastShutdown(aPhase);
+  // Empty our MT event queue to process any side effects thereof.
+  if (mayProcessPending && thread) {
+    NS_ProcessPendingEvents(thread);
+  }
 
   if (doNotify) {
     const char* aTopic = AppShutdown::GetObserverKey(aPhase);
@@ -359,6 +432,10 @@ void AdvanceShutdownPhaseInternal(
 #endif
         obsService->NotifyObservers(aNotificationSubject, aTopic,
                                     aNotificationData);
+        // Empty our MT event queue again after the notification has finished
+        if (mayProcessPending && thread) {
+          NS_ProcessPendingEvents(thread);
+        }
       }
     }
   }

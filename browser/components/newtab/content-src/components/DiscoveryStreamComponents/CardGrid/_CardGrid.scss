@@ -1,6 +1,135 @@
 $col4-header-line-height: 20;
 $col4-header-font-size: 14;
 
+.ds-onboarding-container,
+.ds-card-grid .ds-card {
+  @include dark-theme-only {
+    background: none;
+  }
+
+  background: $white;
+  border-radius: 4px;
+
+  &:not(.placeholder) {
+    @include dark-theme-only {
+      background: var(--newtab-background-color-secondary);
+    }
+
+    border-radius: $border-radius-new;
+    box-shadow: $shadow-card;
+
+    .img-wrapper .img {
+      img,
+      .placeholder-image {
+        border-radius: $border-radius-new $border-radius-new 0 0;
+      }
+    }
+  }
+}
+
+.ds-onboarding-container {
+  padding-inline-start: 16px;
+  padding-inline-end: 16px;
+
+  @media (min-width: $break-point-medium) {
+    padding-inline-end: 48px;
+  }
+
+  @media (min-width: $break-point-large) {
+    padding-inline-end: 56px;
+  }
+
+  margin-bottom: 24px;
+  // This is to position the dismiss button to the right most of this element.
+  position: relative;
+
+  .ds-onboarding {
+    position: static;
+    display: flex;
+
+    .ds-dismiss-button {
+      inset-inline-end: 8px;
+      top: 8px;
+    }
+  }
+
+  header {
+    @include dark-theme-only {
+      color: var(--newtab-background-color-primary);
+    }
+
+    display: flex;
+    margin: 32px 0 8px;
+
+    @media (min-width: $break-point-medium) {
+      margin: 16px 0 8px;
+      display: block;
+      height: 24px;
+    }
+
+    font-size: 17px;
+    line-height: 23.8px;
+    font-weight: 600;
+    color: $pocket-icon-fill;
+  }
+
+  p {
+    margin: 8px 0 16px;
+    font-size: 13px;
+    line-height: 19.5px;
+  }
+
+  .icon-pocket {
+    @include dark-theme-only {
+      @media (forced-colors: active) {
+        fill: CurrentColor;
+      }
+
+      fill: var(--newtab-text-primary-color);
+    }
+
+    @media (forced-colors: active) {
+      fill: CurrentColor;
+    }
+
+    fill: $pocket-icon-fill;
+    margin-top: 3px;
+    margin-inline-end: 8px;
+    height: 22px;
+    width: 22px;
+    background-image: url('chrome://global/skin/icons/pocket.svg');
+
+    @media (min-width: $break-point-medium) {
+      margin-top: -5px;
+      margin-inline-start: -2px;
+      margin-inline-end: 15px;
+      height: 30px;
+      width: 30px;
+    }
+
+    background-size: contain;
+  }
+
+  .ds-onboarding-graphic {
+    background-image: image-set(url('chrome://activity-stream/content/data/content/assets/pocket-onboarding.avif'), url('chrome://activity-stream/content/data/content/assets/pocket-onboarding@2x.avif') 2x);
+    border-radius: 8px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    height: 120px;
+    width: 200px;
+    margin-top: 16px;
+    margin-bottom: 16px;
+    margin-inline-start: 54px;
+    flex-shrink: 0;
+    display: none;
+
+    @media (min-width: $break-point-large) {
+      display: block;
+    }
+  }
+}
+
 .ds-card-grid {
   display: grid;
   grid-gap: 24px;
@@ -9,109 +138,20 @@ $col4-header-font-size: 14;
     grid-gap: 20px;
   }
 
-  .ds-card {
-    @include dark-theme-only {
-      background: none;
-    }
-
-    background: $white;
-    border-radius: 4px;
-  }
-
-  .ds-sub-header {
-    grid-column: 1 / -1;
-    margin-bottom: -7px;
-  }
-
-  .ds-column-12 &.ds-card-grid-hero {
-    @media (min-width: $break-point-large) {
-      grid-template-columns: repeat(12, 1fr);
-
-      // "hero"
-      .ds-card:nth-child(1) {
-        grid-column-start: 1;
-        grid-column-end: span 6;
-        grid-row-start: 1;
-        grid-row-end: span 2;
-
-        .excerpt {
-          -webkit-line-clamp: 4;
-        }
-      }
-
-      .ds-card:nth-child(2),
-      .ds-card:nth-child(4) {
-        grid-column-start: 7;
-        grid-column-end: span 3;
-      }
-
-      .ds-card:nth-child(3),
-      .ds-card:nth-child(5) {
-        grid-column-start: 10;
-        grid-column-end: span 3;
-      }
-
-      // "small" cards
-      .ds-card:nth-child(n+2):nth-child(-n+5) {
-        .excerpt {
+  &.ds-card-grid-recent-saves {
+    .ds-card {
+      // Hide the second row orphan on narrow screens.
+      @media (min-width: $break-point-medium) and (max-width: $break-point-large) {
+        &:last-child:nth-child(2n - 1) {
           display: none;
         }
-
-        .meta {
-          padding: 8px;
-
-          .title {
-            font-size: 13px;
-            line-height: 19px;
-          }
-
-          .story-sponsored-label {
-            -webkit-line-clamp: none;
-            line-height: 19px;
-          }
-        }
-      }
-
-      .ds-card:nth-child(n+6) {
-        grid-column-start: auto;
-        grid-column-end: span 4;
-      }
-    }
-
-    @media (min-width: $break-point-widest) {
-      // "small" cards
-      .ds-card:nth-child(n+2):nth-child(-n+5) {
-        min-height: 222px;
-      }
-    }
-  }
-
-  &.ds-card-grid-border {
-    .ds-card:not(.placeholder) {
-      @include dark-theme-only {
-        background: var(--newtab-background-color-secondary);
-      }
-      border-radius: $border-radius-new;
-      box-shadow: $shadow-card;
-
-      .img-wrapper .img img {
-        border-radius: $border-radius-new $border-radius-new 0 0;
-      }
-    }
-  }
-
-  &.ds-card-grid-no-border {
-    .ds-card {
-      background: none;
-
-      .meta {
-        padding: 12px 0;
       }
     }
   }
 
   .ds-card-link:focus {
     @include ds-focus;
+
     transition: none;
     border-radius: $border-radius-new;
   }
@@ -165,7 +205,6 @@ $col4-header-font-size: 14;
         }
 
         .source,
-        .ds-last-card-desc,
         .story-sponsored-label,
         .status-message .story-context-label {
           color: var(--newtab-text-secondary-color);
@@ -173,7 +212,6 @@ $col4-header-font-size: 14;
         }
 
         .source,
-        .ds-last-card-desc,
         .story-sponsored-label {
           font-size: 13px;
         }
@@ -241,7 +279,7 @@ $col4-header-font-size: 14;
         grid-template-columns: repeat(3, 1fr);
       }
 
-      @media (max-height: 1065px) {
+      @media (height <= 1065px) {
         .excerpt {
           display: none;
         }
@@ -251,16 +289,17 @@ $col4-header-font-size: 14;
         @include small-cards;
       }
 
-      @media (min-width: $break-point-widest) and (max-height: 964px) {
+      @media (min-width: $break-point-widest) and (height <= 964px) {
         @include small-cards;
+
         grid-template-columns: repeat(4, 1fr);
       }
     }
   }
 }
 
-.outer-wrapper .ds-card-grid.ds-card-grid-hide-background.ds-card-grid-border .ds-card,
-.outer-wrapper.newtab-experience .ds-card-grid.ds-card-grid-hide-background.ds-card-grid-border .ds-card {
+.outer-wrapper .ds-card-grid.ds-card-grid-hide-background .ds-card,
+.outer-wrapper.newtab-experience .ds-card-grid.ds-card-grid-hide-background .ds-card {
   &:not(.placeholder) {
     box-shadow: none;
     background: none;
@@ -276,12 +315,6 @@ $col4-header-font-size: 14;
     .img-wrapper .img img {
       border-radius: 8px;
       box-shadow: $shadow-card;
-
-      &.last-card-message-image {
-        background: transparent;
-        box-shadow: none;
-        object-fit: contain;
-      }
     }
 
     .meta {
@@ -291,11 +324,29 @@ $col4-header-font-size: 14;
 }
 
 .ds-layout {
-  .ds-card-grid-load-more-button {
-    display: block;
-    margin: 32px auto 0;
-    font-size: 13px;
-    line-height: 16px;
-    border-radius: 4px;
+  .ds-sub-header {
+    margin-top: 24px;
+
+    .section-title-container {
+      flex-direction: row;
+      align-items: baseline;
+      justify-content: space-between;
+      display: flex;
+    }
+
+    .section-sub-link {
+      color: var(--newtab-primary-action-background);
+      font-size: 14px;
+      line-height: 16px;
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: underline;
+      }
+
+      &:active {
+        color: var(--newtab-primary-element-active-color);
+      }
+    }
   }
 }

@@ -17,7 +17,7 @@ MockFilePicker.init(window);
 function test() {
   waitForExplicitFinish();
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser,
     "http://mochi.test:8888/browser/toolkit/content/tests/browser/data/post_form_outer.sjs"
   );
@@ -59,14 +59,14 @@ function test() {
     var file = destDir.clone();
     file.append("no_default_file_name");
     MockFilePicker.setFiles([file]);
-    MockFilePicker.showCallback = function(fp) {
+    MockFilePicker.showCallback = function (fp) {
       MockFilePicker.filterIndex = 1; // kSaveAsType_URL
     };
 
     mockTransferCallback = onTransferComplete;
     mockTransferRegisterer.register();
 
-    registerCleanupFunction(function() {
+    registerCleanupFunction(function () {
       mockTransferRegisterer.unregister();
       MockFilePicker.cleanup();
       destDir.remove(true);
@@ -77,6 +77,7 @@ function test() {
     // cache.
     internalSave(
       docToSave.location.href,
+      null,
       docToSave,
       null,
       null,
@@ -119,7 +120,6 @@ function test() {
   }
 }
 
-/* import-globals-from common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this

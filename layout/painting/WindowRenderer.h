@@ -200,7 +200,8 @@ class WindowRenderer : public FrameRecorder {
    */
   virtual already_AddRefed<layers::PersistentBufferProvider>
   CreatePersistentBufferProvider(const mozilla::gfx::IntSize& aSize,
-                                 mozilla::gfx::SurfaceFormat aFormat);
+                                 mozilla::gfx::SurfaceFormat aFormat,
+                                 bool aWillReadFrequently = false);
 
   // Helper wrappers around cast to impl and then cast again.
 
@@ -275,7 +276,7 @@ class FallbackRenderer : public WindowRenderer {
                               int32_t aAppUnitsPerDevPixel,
                               EndTransactionFlags aFlags);
 
-  RefPtr<gfxContext> mTarget;
+  gfxContext* mTarget;
   layers::BufferMode mBufferMode;
 };
 

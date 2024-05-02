@@ -8,11 +8,11 @@
 #define SharedThreadPool_h_
 
 #include <utility>
+#include <type_traits>
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/RefCountType.h"
 #include "nsCOMPtr.h"
 #include "nsID.h"
-#include "nsIEventTarget.h"
 #include "nsIThreadPool.h"
 #include "nsString.h"
 #include "nscore.h"
@@ -53,6 +53,7 @@ class SharedThreadPool : public nsIThreadPool {
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
   NS_IMETHOD_(MozExternalRefCountType) AddRef(void) override;
   NS_IMETHOD_(MozExternalRefCountType) Release(void) override;
+  using HasThreadSafeRefCnt = std::true_type;
 
   // Forward behaviour to wrapped thread pool implementation.
   NS_FORWARD_SAFE_NSITHREADPOOL(mPool);
@@ -70,8 +71,8 @@ class SharedThreadPool : public nsIThreadPool {
 
   NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> event,
                       uint32_t flags = NS_DISPATCH_NORMAL) override {
-    return !mEventTarget ? NS_ERROR_NULL_POINTER
-                         : mEventTarget->Dispatch(std::move(event), flags);
+    return !mPool ? NS_ERROR_NULL_POINTER
+                  : mPool->Dispatch(std::move(event), flags);
   }
 
   NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) override {
@@ -80,13 +81,20 @@ class SharedThreadPool : public nsIThreadPool {
 
   using nsIEventTarget::Dispatch;
 
+  NS_IMETHOD RegisterShutdownTask(nsITargetShutdownTask* task) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  NS_IMETHOD UnregisterShutdownTask(nsITargetShutdownTask* task) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
   NS_IMETHOD IsOnCurrentThread(bool* _retval) override {
-    return !mEventTarget ? NS_ERROR_NULL_POINTER
-                         : mEventTarget->IsOnCurrentThread(_retval);
+    return !mPool ? NS_ERROR_NULL_POINTER : mPool->IsOnCurrentThread(_retval);
   }
 
   NS_IMETHOD_(bool) IsOnCurrentThreadInfallible() override {
-    return mEventTarget && mEventTarget->IsOnCurrentThread();
+    return mPool && mPool->IsOnCurrentThread();
   }
 
   // Creates necessary statics. Called once at startup.
@@ -117,10 +125,6 @@ class SharedThreadPool : public nsIThreadPool {
   // Refcount. We implement custom ref counting so that the thread pool is
   // shutdown in a threadsafe manner and singletonness is preserved.
   nsrefcnt mRefCnt;
-
-  // mPool QI'd to nsIEventTarget. We cache this, so that we can use
-  // NS_FORWARD_SAFE_NSIEVENTTARGET above.
-  nsCOMPtr<nsIEventTarget> mEventTarget;
 };
 
 }  // namespace mozilla

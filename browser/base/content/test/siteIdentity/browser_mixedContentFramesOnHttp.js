@@ -13,10 +13,11 @@
 const TEST_URL =
   getRootDirectory(gTestPath).replace(
     "chrome://mochitests/content",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com"
   ) + "file_mixedContentFramesOnHttp.html";
 
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["security.mixed_content.block_active_content", true],
@@ -25,7 +26,7 @@ add_task(async function() {
     ],
   });
 
-  await BrowserTestUtils.withNewTab(TEST_URL, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_URL, async function (browser) {
     isSecurityState(browser, "insecure");
     await assertMixedContentBlockingState(browser, {
       activeLoaded: false,

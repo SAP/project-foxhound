@@ -16,8 +16,6 @@ use xpcom::interfaces::{mozISyncedBookmarksMerger, nsINavBookmarksService};
 use crate::driver::{AbortController, Driver};
 use crate::error::{Error, Result};
 
-pub const LMANNO_FEEDURI: &'static str = "livemark/feedURI";
-
 extern "C" {
     fn NS_NavBookmarksTotalSyncChanges() -> i64;
 }
@@ -85,7 +83,7 @@ impl<'s> Store<'s> {
             "SELECT NOT EXISTS(
                SELECT 1 FROM moz_bookmarks
                WHERE id = (SELECT parent FROM moz_bookmarks
-                           WHERE guid = '{0}')
+                           WHERE guid = '{root}')
              ) AND NOT EXISTS(
                SELECT 1 FROM moz_bookmarks b
                JOIN moz_bookmarks p ON p.id = b.parent
@@ -321,15 +319,11 @@ impl<'s> dogear::Store for Store<'s> {
                     b.syncStatus, b.lastModified / 1000 AS localModified,
                     IFNULL(b.title, '') AS title,
                     (SELECT h.url FROM moz_places h WHERE h.id = b.fk) AS url,
-                    EXISTS(SELECT 1 FROM moz_items_annos a
-                           JOIN moz_anno_attributes n ON n.id = a.anno_attribute_id
-                           WHERE a.item_id = b.id AND
-                                 n.name = '{}') AS isLivemark
+                    0 AS isLivemark
              FROM moz_bookmarks b
              JOIN moz_bookmarks p ON p.id = b.parent
              WHERE b.guid <> '{}'
              ORDER BY b.parent, b.position",
-            LMANNO_FEEDURI,
             dogear::ROOT_GUID,
         ))?;
         while let Some(step) = items_statement.step()? {
@@ -537,7 +531,8 @@ fn update_local_items_in_places<'t>(
         let mut statement = db.prepare(format!(
             "INSERT OR IGNORE INTO moz_places(url, url_hash, rev_host, hidden,
                                               frecency, guid)
-             SELECT u.url, u.hash, u.revHost, 0,
+             SELECT u.url, u.hash, u.revHost,
+                    (CASE WHEN u.url BETWEEN 'place:' AND 'place:' || X'FFFF' THEN 1 ELSE 0 END),
                     (CASE v.kind WHEN {} THEN 0 ELSE -1 END),
                     IFNULL((SELECT h.guid FROM moz_places h
                             WHERE h.url_hash = u.hash AND
@@ -555,11 +550,6 @@ fn update_local_items_in_places<'t>(
         }
         statement.execute()?;
     }
-
-    // Trigger frecency updates for all new origins.
-    debug!(driver, "Updating origins for new URLs");
-    controller.err_if_aborted()?;
-    db.exec("DELETE FROM moz_updateoriginsinsert_temp")?;
 
     // Build a table of new and updated items.
     debug!(driver, "Staging apply remote item ops");
@@ -752,11 +742,6 @@ fn update_local_items_in_places<'t>(
     debug!(driver, "Applying remote items");
     apply_remote_items(db, driver, controller)?;
 
-    // Trigger frecency updates for all affected origins.
-    debug!(driver, "Updating origins for changed URLs");
-    controller.err_if_aborted()?;
-    db.exec("DELETE FROM moz_updateoriginsupdate_temp")?;
-
     // Fires the `applyNewLocalStructure` trigger.
     debug!(driver, "Applying new local structure");
     controller.err_if_aborted()?;
@@ -934,8 +919,8 @@ fn apply_remote_items(db: &Conn, driver: &Driver, controller: &AbortController) 
     controller.err_if_aborted()?;
     db.exec(
         "UPDATE moz_places SET
-           frecency = -frecency
-         WHERE frecency > 0 AND (
+           recalc_frecency = 1, recalc_alt_frecency = 1
+         WHERE frecency <> 0 AND (
            id IN (
              SELECT oldPlaceId FROM itemsToApply
              WHERE oldPlaceId <> newPlaceId
@@ -978,10 +963,10 @@ fn remove_local_items(
     let mut observer_statement = db.prepare(format!(
         "WITH
          ops(guid, level) AS (VALUES {})
-         INSERT INTO itemsRemoved(itemId, parentId, position, type, placeId,
-                                  guid, parentGuid, level)
-         SELECT b.id, b.parent, b.position, b.type, b.fk,
-                b.guid, p.guid, n.level
+         INSERT INTO itemsRemoved(itemId, parentId, position, type, title,
+                                  placeId, guid, parentGuid, level, keywordRemoved)
+         SELECT b.id, b.parent, b.position, b.type, IFNULL(b.title, \"\"), b.fk,
+                b.guid, p.guid, n.level, EXISTS(SELECT 1 FROM moz_keywords k WHERE k.place_id = b.fk)
          FROM ops n
          JOIN moz_bookmarks b ON b.guid = n.guid
          JOIN moz_bookmarks p ON p.id = b.parent",
@@ -1002,10 +987,10 @@ fn remove_local_items(
     debug!(driver, "Recalculating frecencies for removed bookmark URLs");
     let mut frecency_statement = db.prepare(format!(
         "UPDATE moz_places SET
-           frecency = -frecency
+            recalc_frecency = 1, recalc_alt_frecency = 1
          WHERE id IN (SELECT b.fk FROM moz_bookmarks b
                       WHERE b.guid IN ({})) AND
-               frecency > 0",
+               frecency <> 0",
         repeat_sql_vars(ops.len())
     ))?;
     for (index, op) in ops.iter().enumerate() {
@@ -1033,6 +1018,25 @@ fn remove_local_items(
         )?;
     }
     annos_statement.execute()?;
+
+    debug!(
+        driver,
+        "Removing keywords associated with deleted bookmarks"
+    );
+    let mut keywords_statement = db.prepare(format!(
+        "DELETE FROM moz_keywords
+         WHERE place_id IN (SELECT b.fk FROM moz_bookmarks b
+            WHERE b.guid IN ({}))",
+        repeat_sql_vars(ops.len()),
+    ))?;
+    for (index, op) in ops.iter().enumerate() {
+        controller.err_if_aborted()?;
+        keywords_statement.bind_by_index(
+            index as u32,
+            nsString::from(&*op.local_node().guid.as_str()),
+        )?;
+    }
+    keywords_statement.execute()?;
 
     debug!(driver, "Removing deleted items from Places");
     let mut delete_statement = db.prepare(format!(
@@ -1090,7 +1094,8 @@ fn stage_items_to_upload(
         "INSERT OR IGNORE INTO itemsToUpload(id, guid, syncChangeCounter,
                                              parentGuid, parentTitle, dateAdded,
                                              type, title, placeId, isQuery, url,
-                                             keyword, position, tagFolderName)
+                                             keyword, position, tagFolderName,
+                                             unknownFields)
          {}
          JOIN itemsToApply n ON n.mergedGuid = b.guid
          WHERE n.localDateAddedMicroseconds < n.remoteDateAddedMicroseconds",
@@ -1104,7 +1109,8 @@ fn stage_items_to_upload(
                                                  parentGuid, parentTitle,
                                                  dateAdded, type, title,
                                                  placeId, isQuery, url, keyword,
-                                                 position, tagFolderName)
+                                                 position, tagFolderName,
+                                                 unknownFields)
              {}
              WHERE b.guid IN ({})",
             UploadItemsFragment("b"),
@@ -1290,10 +1296,12 @@ impl fmt::Display for UploadItemsFragment {
                        (SELECT keyword FROM moz_keywords WHERE place_id = h.id),
                        {0}.position,
                        (SELECT get_query_param(substr(url, 7), 'tag')
-                        WHERE substr(h.url, 1, 6) = 'place:') AS tagFolderName
+                        WHERE substr(h.url, 1, 6) = 'place:') AS tagFolderName,
+                        v.unknownFields
                 FROM moz_bookmarks {0}
                 JOIN moz_bookmarks p ON p.id = {0}.parent
-                LEFT JOIN moz_places h ON h.id = {0}.fk",
+                LEFT JOIN moz_places h ON h.id = {0}.fk
+                LEFT JOIN items v ON v.guid = {0}.guid",
             self.0
         )
     }

@@ -5,13 +5,12 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // ReactJS
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
   // Reps
   const {
-    isGrip,
     wrapRender,
   } = require("devtools/client/shared/components/reps/reps/rep-utils");
 
@@ -25,8 +24,7 @@ define(function(require, exports, module) {
    */
   Event.propTypes = {
     object: PropTypes.object.isRequired,
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
+    mode: PropTypes.oneOf(Object.values(MODE)),
     onDOMNodeMouseOver: PropTypes.func,
     onDOMNodeMouseOut: PropTypes.func,
     onInspectIconClick: PropTypes.func,
@@ -105,12 +103,8 @@ define(function(require, exports, module) {
   }
 
   // Registration
-  function supportsObject(grip, noGrip = false) {
-    if (noGrip === true || !isGrip(grip)) {
-      return false;
-    }
-
-    return grip.preview && grip.preview.kind == "DOMEvent";
+  function supportsObject(grip) {
+    return grip?.preview?.kind == "DOMEvent";
   }
 
   // Exports from this module

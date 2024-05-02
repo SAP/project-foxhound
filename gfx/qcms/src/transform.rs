@@ -55,6 +55,10 @@ use crate::{
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+#[cfg(all(target_arch = "arm", feature = "neon"))]
+use std::arch::is_arm_feature_detected;
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
+use std::arch::is_aarch64_feature_detected;
 
 pub const PRECACHE_OUTPUT_SIZE: usize = 8192;
 pub const PRECACHE_OUTPUT_MAX: usize = PRECACHE_OUTPUT_SIZE - 1;
@@ -352,7 +356,7 @@ fn adapt_matrix_to_D50(r: Option<Matrix>, source_white_pt: qcms_CIE_xyY) -> Opti
     Some(Matrix::multiply(Bradford, r?))
 }
 pub(crate) fn set_rgb_colorants(
-    mut profile: &mut Profile,
+    profile: &mut Profile,
     white_point: qcms_CIE_xyY,
     primaries: qcms_CIE_xyYTRIPLE,
 ) -> bool {
@@ -1149,7 +1153,7 @@ fn compute_whitepoint_adaption(X: f32, Y: f32, Z: f32) -> Matrix {
     )
 }
 #[no_mangle]
-pub extern "C" fn qcms_profile_precache_output_transform(mut profile: &mut Profile) {
+pub extern "C" fn qcms_profile_precache_output_transform(profile: &mut Profile) {
     /* we only support precaching on rgb profiles */
     if profile.color_space != RGB_SIGNATURE {
         return;

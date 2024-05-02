@@ -9,17 +9,21 @@
 
 #include <stdint.h>
 
+#include "ActiveElementManager.h"
 #include "Units.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/layers/GeckoContentControllerTypes.h"  // for APZStateChange
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
 #include "mozilla/layers/TouchCounter.h"         // for TouchCounter
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "nsCOMPtr.h"
-#include "nsISupportsImpl.h"        // for NS_INLINE_DECL_REFCOUNTING
+#include "nsISupportsImpl.h"  // for NS_INLINE_DECL_REFCOUNTING
+#include "nsITimer.h"
 #include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
 
 #include <functional>
+#include <unordered_map>
 
 template <class>
 class nsCOMPtr;
@@ -53,9 +57,11 @@ class APZEventState final {
 
   NS_INLINE_DECL_REFCOUNTING(APZEventState);
 
+  MOZ_CAN_RUN_SCRIPT
   void ProcessSingleTap(const CSSPoint& aPoint,
                         const CSSToLayoutDeviceScale& aScale,
-                        Modifiers aModifiers, int32_t aClickCount);
+                        Modifiers aModifiers, int32_t aClickCount,
+                        uint64_t aInputBlockId);
   MOZ_CAN_RUN_SCRIPT
   void ProcessLongTap(PresShell* aPresShell, const CSSPoint& aPoint,
                       const CSSToLayoutDeviceScale& aScale,
@@ -73,12 +79,16 @@ class APZEventState final {
                          uint64_t aInputBlockId);
   void ProcessMouseEvent(const WidgetMouseEvent& aEvent,
                          uint64_t aInputBlockId);
-  void ProcessAPZStateChange(ViewID aViewId, APZStateChange aChange, int aArg);
-  void ProcessClusterHit();
+  void ProcessAPZStateChange(ViewID aViewId, APZStateChange aChange, int aArg,
+                             Maybe<uint64_t> aInputBlockId);
+  /**
+   * Cleanup on destroy window.
+   */
+  void Destroy();
 
  private:
   ~APZEventState();
-  bool SendPendingTouchPreventedResponse(bool aPreventDefault);
+  void SendPendingTouchPreventedResponse(bool aPreventDefault);
   MOZ_CAN_RUN_SCRIPT
   PreventDefaultResult FireContextmenuEvents(
       PresShell* aPresShell, const CSSPoint& aPoint,
@@ -99,6 +109,12 @@ class APZEventState final {
   bool mEndTouchIsClick;
   bool mFirstTouchCancelled;
   bool mTouchEndCancelled;
+  // Set to true when we have received any one of
+  // touch-move/touch-end/touch-cancel events in the touch block being
+  // processed.
+  bool mReceivedNonTouchStart;
+  bool mTouchStartPrevented;
+
   int32_t mLastTouchIdentifier;
   nsTArray<TouchBehaviorFlags> mTouchBlockAllowedBehaviors;
 

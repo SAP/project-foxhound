@@ -12,6 +12,7 @@
 #include "mozilla/StaticPtr.h"    // for StaticRefPtr
 #include "mozilla/StaticMutex.h"  // for StaticMutex
 #include "mozilla/RefPtr.h"       // for already_AddRefed
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/layers/PCompositorManagerParent.h"
 #include "nsTArray.h"  // for AutoTArray
 
@@ -26,19 +27,20 @@ class CompositorThreadHolder;
 #endif
 
 class CompositorManagerParent final : public PCompositorManagerParent {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorManagerParent)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorManagerParent, final)
 
  public:
   static already_AddRefed<CompositorManagerParent> CreateSameProcess();
   static bool Create(Endpoint<PCompositorManagerParent>&& aEndpoint,
-                     bool aIsRoot);
+                     dom::ContentParentId aContentId, bool aIsRoot);
   static void Shutdown();
 
   static already_AddRefed<CompositorBridgeParent>
   CreateSameProcessWidgetCompositorBridge(CSSToLayoutDeviceScale aScale,
                                           const CompositorOptions& aOptions,
                                           bool aUseExternalSurfaceSize,
-                                          const gfx::IntSize& aSurfaceSize);
+                                          const gfx::IntSize& aSurfaceSize,
+                                          uint64_t aInnerWindowId);
 
   mozilla::ipc::IPCResult RecvAddSharedSurface(const wr::ExternalImageId& aId,
                                                SurfaceDescriptorShared&& aDesc);
@@ -62,23 +64,25 @@ class CompositorManagerParent final : public PCompositorManagerParent {
 
   static void NotifyWebRenderError(wr::WebRenderError aError);
 
+  const dom::ContentParentId& GetContentId() const { return mContentId; }
+
  private:
   static StaticRefPtr<CompositorManagerParent> sInstance;
-  static StaticMutex sMutex;
+  static StaticMutex sMutex MOZ_UNANNOTATED;
 
 #ifdef COMPOSITOR_MANAGER_PARENT_EXPLICIT_SHUTDOWN
   static StaticAutoPtr<nsTArray<CompositorManagerParent*>> sActiveActors;
   static void ShutdownInternal();
 #endif
 
-  CompositorManagerParent();
+  explicit CompositorManagerParent(dom::ContentParentId aChildId);
   virtual ~CompositorManagerParent();
 
   void Bind(Endpoint<PCompositorManagerParent>&& aEndpoint, bool aIsRoot);
 
-  void ActorDealloc() override;
-
   void DeferredDestroy();
+
+  dom::ContentParentId mContentId;
 
   RefPtr<CompositorThreadHolder> mCompositorThreadHolder;
 

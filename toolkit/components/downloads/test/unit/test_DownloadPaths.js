@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * Tests for the "DownloadPaths.jsm" JavaScript module.
+ * Tests for the "DownloadPaths.sys.mjs" JavaScript module.
  */
 
 function testSanitize(leafName, expectedLeafName, options = {}) {
@@ -40,27 +40,27 @@ add_task(async function test_sanitize() {
     testSanitize("Website | Page!", "Website Page!");
     testSanitize("Directory Listing: /a/b/", "Directory Listing _a_b_");
   } else if (AppConstants.platform == "win") {
-    testSanitize(kSpecialChars, "A ''(());,+=[]B][=+,;))(('' C");
+    testSanitize(kSpecialChars, "A ;,+=[]B][=+,; C");
     testSanitize(" :: Website :: ", "Website");
     testSanitize("* Website!", "Website!");
     testSanitize("Website | Page!", "Website Page!");
     testSanitize("Directory Listing: /a/b/", "Directory Listing _a_b_");
   } else if (AppConstants.platform == "macosx") {
-    testSanitize(kSpecialChars, 'A *?|""<<>>;,+=[]B][=+,;>><<""|?* C');
+    testSanitize(kSpecialChars, "A ;,+=[]B][=+,; C");
     testSanitize(" :: Website :: ", "Website");
-    testSanitize("* Website!", "* Website!");
-    testSanitize("Website | Page!", "Website | Page!");
+    testSanitize("* Website!", "Website!");
+    testSanitize("Website | Page!", "Website Page!");
     testSanitize("Directory Listing: /a/b/", "Directory Listing _a_b_");
   } else {
-    testSanitize(kSpecialChars, kSpecialChars.replace(/[:]/g, " "));
+    testSanitize(kSpecialChars, "A ;,+=[]B][=+,; C");
     testSanitize(" :: Website :: ", "Website");
-    testSanitize("* Website!", "* Website!");
-    testSanitize("Website | Page!", "Website | Page!");
+    testSanitize("* Website!", "Website!");
+    testSanitize("Website | Page!", "Website Page!");
     testSanitize("Directory Listing: /a/b/", "Directory Listing _a_b_");
   }
 
   // Conversion of consecutive runs of slashes and backslashes to underscores.
-  testSanitize("\\ \\\\Website\\/Page// /", "_ _Website_Page_ _");
+  testSanitize("\\ \\\\Website\\/Page// /", "_ __Website__Page__ _");
 
   // Removal of leading and trailing whitespace and dots after conversion.
   testSanitize("  Website  ", "Website");
@@ -77,14 +77,44 @@ add_task(async function test_sanitize() {
   testSanitize(" . ", "");
 
   // Stripping of BIDI formatting characters.
-  testSanitize("\u200e \u202b\u202c\u202d\u202etest\x7f\u200f", "test");
-  testSanitize("AB\x7f\u202a\x7f\u202a\x7fCD", "AB CD");
+  testSanitize("\u200e \u202b\u202c\u202d\u202etest\x7f\u200f", "_ ____test _");
+  testSanitize("AB\x7f\u202a\x7f\u202a\x7fCD", "AB _ _ CD");
 
   // Stripping of colons:
   testSanitize("foo:bar", "foo bar");
 
   // not compressing whitespaces.
   testSanitize("foo : bar", "foo   bar", { compressWhitespaces: false });
+
+  testSanitize("thing.lnk", "thing.lnk.download");
+  testSanitize("thing.lnk\n", "thing.lnk.download");
+  testSanitize("thing.lnk", "thing.lnk", {
+    allowInvalidFilenames: true,
+  });
+  testSanitize("thing.lnk\n", "thing.lnk", {
+    allowInvalidFilenames: true,
+  });
+  testSanitize("thing.URl", "thing.URl.download");
+  testSanitize("thing.URl  \n", "thing.URl", {
+    allowInvalidFilenames: true,
+  });
+
+  testSanitize("thing  and more   .URl", "thing and more .URl", {
+    allowInvalidFilenames: true,
+  });
+  testSanitize("thing  and more   .URl ", "thing  and more   .URl", {
+    compressWhitespaces: false,
+    allowInvalidFilenames: true,
+  });
+
+  testSanitize("thing.local|", "thing.local.download");
+  testSanitize("thing.lo|cal", "thing.lo cal");
+  testSanitize('thing.local/*"', "thing.local_");
+
+  testSanitize("thing.desktoP", "thing.desktoP.download");
+  testSanitize("thing.desktoP  \n", "thing.desktoP", {
+    allowInvalidFilenames: true,
+  });
 });
 
 add_task(async function test_splitBaseNameAndExtension() {

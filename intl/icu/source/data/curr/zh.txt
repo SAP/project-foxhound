@@ -317,7 +317,7 @@ zh{
         }
         DDM{
             "DDM",
-            "东德奥斯特马克",
+            "东德马克",
         }
         DEM{
             "DEM",
@@ -401,7 +401,7 @@ zh{
         }
         GEK{
             "GEK",
-            "乔治亚库蓬拉瑞特",
+            "格鲁吉亚库蓬拉瑞特",
         }
         GEL{
             "GEL",
@@ -877,7 +877,7 @@ zh{
         }
         SDP{
             "SDP",
-            "旧苏丹镑",
+            "苏丹镑 (1957–1998)",
         }
         SEK{
             "SEK",
@@ -898,6 +898,10 @@ zh{
         SKK{
             "SKK",
             "斯洛伐克克朗",
+        }
+        SLE{
+            "SLE",
+            "塞拉利昂新利昂",
         }
         SLL{
             "SLL",
@@ -1046,6 +1050,10 @@ zh{
         VEB{
             "VEB",
             "委内瑞拉玻利瓦尔 (1871–2008)",
+        }
+        VED{
+            "VED",
+            "委内瑞拉主权币",
         }
         VEF{
             "VEF",
@@ -1315,7 +1323,6 @@ zh{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         TRY{"TL"}
     }
     CurrencyPlurals{
@@ -1324,6 +1331,9 @@ zh{
         }
         AED{
             other{"阿联酋迪拉姆"}
+        }
+        AFA{
+            other{"阿富汗尼 (1927–2002)"}
         }
         AFN{
             other{"阿富汗尼"}
@@ -1413,7 +1423,7 @@ zh{
             other{"保加利亚社会党列弗"}
         }
         BGN{
-            other{"保加利亚新列弗"}
+            other{"保加利亚列弗"}
         }
         BGO{
             other{"保加利亚列弗 (1879–1952)"}
@@ -1468,6 +1478,9 @@ zh{
         }
         BTN{
             other{"不丹努尔特鲁姆"}
+        }
+        BUK{
+            other{"缅元"}
         }
         BWP{
             other{"博茨瓦纳普拉"}
@@ -1548,7 +1561,7 @@ zh{
             other{"捷克克朗"}
         }
         DDM{
-            other{"东德奥斯特马克"}
+            other{"东德马克"}
         }
         DEM{
             other{"德国马克"}
@@ -1611,7 +1624,7 @@ zh{
             other{"英镑"}
         }
         GEK{
-            other{"乔治亚库蓬拉瑞特"}
+            other{"格鲁吉亚库蓬拉瑞特"}
         }
         GEL{
             other{"格鲁吉亚拉里"}
@@ -1726,6 +1739,12 @@ zh{
         }
         KPW{
             other{"朝鲜元"}
+        }
+        KRH{
+            other{"韩元 (1953–1962)"}
+        }
+        KRO{
+            other{"韩元 (1945–1953)"}
         }
         KRW{
             other{"韩元"}
@@ -1962,7 +1981,7 @@ zh{
             other{"苏丹镑"}
         }
         SDP{
-            other{"旧苏丹镑"}
+            other{"苏丹镑 (1957–1998)"}
         }
         SEK{
             other{"瑞典克朗"}
@@ -1978,6 +1997,9 @@ zh{
         }
         SKK{
             other{"斯洛伐克克朗"}
+        }
+        SLE{
+            other{"塞拉利昂新利昂"}
         }
         SLL{
             other{"塞拉利昂利昂"}
@@ -2033,6 +2055,9 @@ zh{
         TOP{
             other{"汤加潘加"}
         }
+        TPE{
+            other{"帝汶埃斯库多"}
+        }
         TRL{
             other{"土耳其里拉 (1922–2005)"}
         }
@@ -2087,6 +2112,9 @@ zh{
         VEB{
             other{"委内瑞拉玻利瓦尔 (1871–2008)"}
         }
+        VED{
+            other{"委内瑞拉主权币"}
+        }
         VEF{
             other{"委内瑞拉玻利瓦尔 (2008–2018)"}
         }
@@ -2095,6 +2123,9 @@ zh{
         }
         VND{
             other{"越南盾"}
+        }
+        VNN{
+            other{"越南盾 (1978–1985)"}
         }
         VUV{
             other{"瓦努阿图瓦图"}
@@ -2105,20 +2136,59 @@ zh{
         XAF{
             other{"中非法郎"}
         }
+        XAG{
+            other{"银"}
+        }
+        XAU{
+            other{"黄金"}
+        }
+        XBA{
+            other{"欧洲复合单位"}
+        }
+        XBB{
+            other{"欧洲货币联盟"}
+        }
+        XBC{
+            other{"欧洲计算单位 (XBC)"}
+        }
+        XBD{
+            other{"欧洲计算单位 (XBD)"}
+        }
         XCD{
             other{"东加勒比元"}
+        }
+        XDR{
+            other{"特别提款权"}
         }
         XEU{
             other{"欧洲货币单位"}
         }
+        XFO{
+            other{"法国金法郎"}
+        }
+        XFU{
+            other{"法国法郎 (UIC)"}
+        }
         XOF{
             other{"西非法郎"}
+        }
+        XPD{
+            other{"钯"}
         }
         XPF{
             other{"太平洋法郎"}
         }
+        XPT{
+            other{"铂"}
+        }
+        XRE{
+            other{"RINET 基金"}
+        }
         XSU{
             other{"苏克雷"}
+        }
+        XTS{
+            other{"测试货币代码"}
         }
         XUA{
             other{"非洲开发银行记账单位"}

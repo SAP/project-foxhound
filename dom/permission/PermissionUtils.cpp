@@ -15,7 +15,11 @@ static const nsLiteralCString kPermissionTypes[] = {
     "desktop-notification"_ns,
     // Alias `push` to `desktop-notification`.
     "desktop-notification"_ns,
-    "persistent-storage"_ns
+    "persistent-storage"_ns,
+    // "midi" is the only public permission but internally we have both "midi"
+    // and "midi-sysex" (and yes, this is confusing).
+    "midi"_ns,
+    "storage-access"_ns
     // clang-format on
 };
 
@@ -30,6 +34,18 @@ const nsLiteralCString& PermissionNameToType(PermissionName aName) {
 }
 
 Maybe<PermissionName> TypeToPermissionName(const nsACString& aType) {
+  // Annoyingly, "midi-sysex" is an internal permission. The public permission
+  // name is "midi" so we have to special-case it here...
+  if (aType.Equals("midi-sysex"_ns)) {
+    return Some(PermissionName::Midi);
+  }
+
+  // "storage-access" permissions are also annoying and require a special case.
+  if (StringBeginsWith(aType, "3rdPartyStorage^"_ns) ||
+      StringBeginsWith(aType, "3rdPartyFrameStorage^"_ns)) {
+    return Some(PermissionName::Storage_access);
+  }
+
   for (size_t i = 0; i < ArrayLength(kPermissionTypes); ++i) {
     if (kPermissionTypes[i].Equals(aType)) {
       return Some(static_cast<PermissionName>(i));

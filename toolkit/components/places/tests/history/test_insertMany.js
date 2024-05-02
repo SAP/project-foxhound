@@ -34,7 +34,7 @@ add_task(async function test_insertMany() {
     return `http://mozilla.com/${x}`;
   });
 
-  let makePageInfos = async function(urls, filter = x => x) {
+  let makePageInfos = async function (urls, filter = x => x) {
     let pageInfos = [];
     for (let url of urls) {
       let uri = NetUtil.newURI(url);
@@ -50,7 +50,7 @@ add_task(async function test_insertMany() {
     return pageInfos;
   };
 
-  let inserter = async function(name, filter, useCallbacks) {
+  let inserter = async function (name, filter, useCallbacks) {
     info(name);
     info(`filter: ${filter}`);
     info(`useCallbacks: ${useCallbacks}`);
@@ -112,12 +112,10 @@ add_task(async function test_insertMany() {
         "onError callback was called for each bad url"
       );
     } else {
-      const promiseRankingChanged = PlacesTestUtils.waitForNotification(
-        "pages-rank-changed",
-        () => true,
-        "places"
-      );
+      const promiseRankingChanged =
+        PlacesTestUtils.waitForNotification("pages-rank-changed");
       result = await PlacesUtils.history.insertMany(pageInfos);
+      await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
       await promiseRankingChanged;
     }
 
@@ -152,7 +150,7 @@ add_task(async function test_insertMany() {
       );
       await inserter(
         "Testing History.insertMany() with a URL object",
-        x => new URL(x.spec),
+        x => URL.fromURI(x),
         useCallbacks
       );
     }

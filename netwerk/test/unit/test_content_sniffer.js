@@ -2,7 +2,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 const unknownType = "application/x-unknown-content-type";
 const sniffedType = "application/x-sniffed";
@@ -21,14 +23,8 @@ var isNosniff = false;
  */
 var sniffer = {
   QueryInterface: ChromeUtils.generateQI(["nsIFactory", "nsIContentSniffer"]),
-  createInstance: function sniffer_ci(outer, iid) {
-    if (outer) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance: function sniffer_ci(iid) {
     return this.QueryInterface(iid);
-  },
-  lockFactory: function sniffer_lockf(lock) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
 
   getMIMETypeFromContent(request, data, length) {

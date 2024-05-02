@@ -7,14 +7,13 @@ use std::ffi::CString;
 use std::ops::DerefMut;
 use std::path::PathBuf;
 
-#[cfg(target_os = "android")]
-use nserror::NS_ERROR_NOT_IMPLEMENTED;
+use firefox_on_glean::{metrics, pings};
 use nserror::{nsresult, NS_ERROR_FAILURE};
 use nsstring::{nsACString, nsCString, nsString};
-#[cfg(not(target_os = "android"))]
-use xpcom::interfaces::mozIViaduct;
-use xpcom::interfaces::{nsIFile, nsIXULAppInfo};
-use xpcom::XpCom;
+use xpcom::interfaces::{
+    mozILocaleService, nsIFile, nsIPrefService, nsIProperties, nsIXULAppInfo, nsIXULRuntime,
+};
+use xpcom::{RefPtr, XpCom};
 
 use glean::{ClientInfoMetrics, Configuration};
 
@@ -22,14 +21,12 @@ use glean::{ClientInfoMetrics, Configuration};
 mod upload_pref;
 #[cfg(not(target_os = "android"))]
 mod user_activity;
-#[cfg(not(target_os = "android"))]
 mod viaduct_uploader;
 
 #[cfg(not(target_os = "android"))]
 use upload_pref::UploadPrefObserver;
 #[cfg(not(target_os = "android"))]
 use user_activity::UserActivityObserver;
-#[cfg(not(target_os = "android"))]
 use viaduct_uploader::ViaductUploader;
 
 /// Project FOG's entry point.
@@ -88,7 +85,7 @@ fn fog_init_internal(
     upload_enabled: bool,
     uploader: Option<Box<dyn glean::net::PingUploader>>,
 ) -> Result<(), nsresult> {
-    fog::metrics::fog::initialization.start();
+    metrics::fog::initialization.start();
 
     log::debug!("Initializing FOG.");
 
@@ -98,8 +95,6 @@ fn fog_init_internal(
 
     conf.upload_enabled = upload_enabled;
     conf.uploader = uploader;
-
-    setup_viaduct();
 
     // If we're operating in automation without any specific source tags to set,
     // set the tag "automation" so any pings that escape don't clutter the tables.
@@ -113,12 +108,12 @@ fn fog_init_internal(
 
     log::debug!("Configuration: {:#?}", conf);
 
+    // Register all custom pings before we initialize.
+    pings::register_pings(Some(&conf.application_id));
+
     glean::initialize(conf, client_info);
 
-    // Register all custom pings before we initialize.
-    fog::pings::register_pings();
-
-    fog::metrics::fog::initialization.stop();
+    metrics::fog::initialization.stop();
 
     Ok(())
 }
@@ -134,11 +129,13 @@ fn build_configuration(
     };
     let data_path = PathBuf::from(&data_path_str);
 
-    let (app_build, app_display_version, channel) = get_app_info()?;
+    let (app_build, app_display_version, channel, locale) = get_app_info()?;
 
     let client_info = ClientInfoMetrics {
         app_build,
         app_display_version,
+        channel: Some(channel),
+        locale: Some(locale),
     };
     log::debug!("Client Info: {:#?}", client_info);
 
@@ -150,14 +147,28 @@ fn build_configuration(
         String::from(SERVER)
     };
 
-    // In the event that this isn't "firefox.desktop", we don't use core's MPS.
-    let mut use_core_mps = false;
     let application_id = if app_id_override.is_empty() {
-        use_core_mps = true;
         "firefox.desktop".to_string()
     } else {
         app_id_override.to_utf8().to_string()
     };
+
+    extern "C" {
+        fn FOG_MaxPingLimit() -> u32;
+        fn FOG_EventTimestampsEnabled() -> bool;
+    }
+
+    // SAFETY NOTE: Safe because it returns a primitive by value.
+    let pings_per_interval = unsafe { FOG_MaxPingLimit() };
+    metrics::fog::max_pings_per_minute.set(pings_per_interval.into());
+
+    // SAFETY NOTE: Safe because it returns a primitive by value.
+    let enable_event_timestamps = unsafe { FOG_EventTimestampsEnabled() };
+
+    let rate_limit = Some(glean::PingRateLimit {
+        seconds_per_interval: 60,
+        pings_per_interval,
+    });
 
     let configuration = Configuration {
         upload_enabled: false,
@@ -165,10 +176,14 @@ fn build_configuration(
         application_id,
         max_events: None,
         delay_ping_lifetime_io: true,
-        channel: Some(channel),
         server_endpoint: Some(server),
         uploader: None,
-        use_core_mps,
+        use_core_mps: true,
+        trim_data_to_registered_pings: true,
+        log_level: None,
+        rate_limit,
+        enable_event_timestamps,
+        experimentation_id: None,
     };
 
     Ok((configuration, client_info))
@@ -201,40 +216,10 @@ fn setup_observers() -> Result<(), nsresult> {
     Ok(())
 }
 
-/// Ensure Viaduct is initialized for networking unconditionally so we don't
-/// need to check again if upload is later enabled.
-///
-/// Failing to initialize viaduct will log an error.
-#[cfg(not(target_os = "android"))]
-fn setup_viaduct() {
-    // SAFETY: Everything here is self-contained.
-    //
-    // * We try to create an instance of an xpcom interface
-    // * We bail out if that fails.
-    // * We call a method on it without additional inputs.
-    unsafe {
-        if let Some(viaduct) =
-            xpcom::create_instance::<mozIViaduct>(cstr!("@mozilla.org/toolkit/viaduct;1"))
-        {
-            let result = viaduct.EnsureInitialized();
-            if result.failed() {
-                log::error!("Failed to ensure viaduct was initialized due to {}. Ping upload may not be available.", result.error_name());
-            }
-        } else {
-            log::error!("Failed to create Viaduct via XPCOM. Ping upload may not be available.");
-        }
-    }
-}
-
-#[cfg(target_os = "android")]
-fn setup_viaduct() {
-    // No viaduct is setup on Android.
-}
-
 /// Construct and return the data_path from the profile dir, or return an error.
 fn get_data_path() -> Result<String, nsresult> {
-    let dir_svc = match xpcom::services::get_DirectoryService() {
-        Some(ds) => ds,
+    let dir_svc: RefPtr<nsIProperties> = match xpcom::components::Directory::service() {
+        Ok(ds) => ds,
         _ => return Err(NS_ERROR_FAILURE),
     };
     let mut profile_dir = xpcom::GetterAddrefs::<nsIFile>::new();
@@ -257,14 +242,18 @@ fn get_data_path() -> Result<String, nsresult> {
     Ok(data_path)
 }
 
-/// Return a tuple of the build_id, app version, and build channel.
+/// Return a tuple of the build_id, app version, build channel, and locale.
 /// If the XUL Runtime isn't a XULAppInfo (e.g. in xpcshell),
 /// build_id ad app_version will be "unknown".
 /// Other problems result in an error being returned instead.
-fn get_app_info() -> Result<(String, String, String), nsresult> {
-    let xul = xpcom::services::get_XULRuntime().ok_or(NS_ERROR_FAILURE)?;
+fn get_app_info() -> Result<(String, String, String, String), nsresult> {
+    let xul: RefPtr<nsIXULRuntime> =
+        xpcom::components::XULRuntime::service().map_err(|_| NS_ERROR_FAILURE)?;
 
-    let pref_service = xpcom::services::get_PrefService().ok_or(NS_ERROR_FAILURE)?;
+    let pref_service: RefPtr<nsIPrefService> =
+        xpcom::components::Preferences::service().map_err(|_| NS_ERROR_FAILURE)?;
+    let locale_service: RefPtr<mozILocaleService> =
+        xpcom::components::Locale::service().map_err(|_| NS_ERROR_FAILURE)?;
     let branch = xpcom::getter_addrefs(|p| {
         // Safe because:
         //  * `null` is explicitly allowed per documentation
@@ -296,6 +285,7 @@ fn get_app_info() -> Result<(String, String, String), nsresult> {
                 "unknown".to_owned(),
                 "unknown".to_owned(),
                 channel.to_string(),
+                "unknown".to_owned(),
             ))
         }
     };
@@ -310,16 +300,23 @@ fn get_app_info() -> Result<(String, String, String), nsresult> {
         app_info.GetVersion(&mut *version).to_result()?;
     }
 
+    let mut locale = nsCString::new();
+    unsafe {
+        locale_service
+            .GetAppLocaleAsBCP47(&mut *locale)
+            .to_result()?;
+    }
+
     Ok((
         build_id.to_string(),
         version.to_string(),
         channel.to_string(),
+        locale.to_string(),
     ))
 }
 
 /// **TEST-ONLY METHOD**
 /// Resets FOG and the underlying Glean SDK, clearing stores.
-#[cfg(not(target_os = "android"))]
 #[no_mangle]
 pub extern "C" fn fog_test_reset(
     data_path_override: &nsACString,
@@ -350,13 +347,22 @@ fn fog_test_reset_internal(
     Ok(())
 }
 
-/// **TEST-ONLY METHOD**
-/// Does nothing on Android. Returns NS_ERROR_NOT_IMPLEMENTED.
 #[cfg(target_os = "android")]
-#[no_mangle]
-pub extern "C" fn fog_test_reset(
-    _data_path_override: &nsACString,
-    _app_id_override: &nsACString,
-) -> nsresult {
-    NS_ERROR_NOT_IMPLEMENTED
+fn fog_test_reset_internal(
+    data_path_override: &nsACString,
+    app_id_override: &nsACString,
+) -> Result<(), nsresult> {
+    let (mut conf, client_info) = build_configuration(data_path_override, app_id_override)?;
+
+    // On Android always enable Glean upload.
+    conf.upload_enabled = true;
+
+    // Don't accidentally send "main" pings during tests.
+    conf.use_core_mps = false;
+
+    // Same as before, would prefer to reuse, but it gets moved into Glean so we build anew.
+    conf.uploader = Some(Box::new(ViaductUploader) as Box<dyn glean::net::PingUploader>);
+
+    glean::test_reset_glean(conf, client_info, true);
+    Ok(())
 }

@@ -21,6 +21,17 @@
   background-image: url(chrome://global/skin/icons/folder.svg);
 }
 
+.button-block {
+  background-image: url(chrome://global/skin/icons/blocked.svg);
+  background-position: left 8px center;
+  background-repeat: no-repeat;
+  padding-inline-start: 2em;
+}
+
+.button-block:dir(rtl) {
+  background-position-x: right 8px;
+}
+
 .button-expand {
   background-image: url(chrome://global/skin/icons/arrow-down.svg);
 }
@@ -36,6 +47,19 @@
 .image-warning {
   fill: #fcd100;
 }
+
+.blocked-by-builtin {
+  fill: red;
+}
+.button-block.module-blocked {
+  background-image: url(chrome://global/skin/icons/close-fill.svg);
+  -moz-context-properties: fill;
+  fill: red;
+}
+.button-block.module-blocked.blocklist-disabled {
+  fill: goldenrod;
+}
+
 
 .card {
   margin-bottom: 16px;

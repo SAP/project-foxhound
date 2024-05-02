@@ -26,7 +26,6 @@
 #include "nsIURI.h"
 #include "nsIWebBrowserPersist.h"
 #include "nsFocusManager.h"
-#include "Layers.h"
 #include "nsILoadContext.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDocShell.h"
@@ -84,9 +83,9 @@ nsIWidget* nsWebBrowser::EnsureWidget() {
     return nullptr;
   }
 
-  nsWidgetInitData widgetInit;
-  widgetInit.clipChildren = true;
-  widgetInit.mWindowType = eWindowType_child;
+  widget::InitData widgetInit;
+  widgetInit.mClipChildren = true;
+  widgetInit.mWindowType = widget::WindowType::Child;
   LayoutDeviceIntRect bounds(0, 0, 0, 0);
 
   mInternalWidget->SetWidgetListener(&mWidgetListenerDelegate);
@@ -460,17 +459,19 @@ NS_IMETHODIMP
 nsWebBrowser::GoBack(bool aRequireUserInteraction, bool aUserActivation) {
   NS_ENSURE_STATE(mDocShell);
 
-  return mDocShell->GoBack(aRequireUserInteraction, aUserActivation);
+  RefPtr<nsDocShell> docShell = mDocShell;
+  return docShell->GoBack(aRequireUserInteraction, aUserActivation);
 }
 
 NS_IMETHODIMP
 nsWebBrowser::GoForward(bool aRequireUserInteraction, bool aUserActivation) {
   NS_ENSURE_STATE(mDocShell);
 
-  return mDocShell->GoForward(aRequireUserInteraction, aUserActivation);
+  RefPtr<nsDocShell> docShell = mDocShell;
+  return docShell->GoForward(aRequireUserInteraction, aUserActivation);
 }
 
-nsresult nsWebBrowser::LoadURI(const nsAString& aURI,
+nsresult nsWebBrowser::LoadURI(nsIURI* aURI,
                                const dom::LoadURIOptions& aLoadURIOptions) {
 #ifndef ANDROID
   MOZ_ASSERT(aLoadURIOptions.mTriggeringPrincipal,
@@ -478,11 +479,12 @@ nsresult nsWebBrowser::LoadURI(const nsAString& aURI,
 #endif
   NS_ENSURE_STATE(mDocShell);
 
-  return mDocShell->LoadURI(aURI, aLoadURIOptions);
+  RefPtr<nsDocShell> docShell = mDocShell;
+  return docShell->LoadURI(aURI, aLoadURIOptions);
 }
 
 NS_IMETHODIMP
-nsWebBrowser::LoadURIFromScript(const nsAString& aURI,
+nsWebBrowser::LoadURIFromScript(nsIURI* aURI,
                                 JS::Handle<JS::Value> aLoadURIOptions,
                                 JSContext* aCx) {
   // generate dictionary for loadURIOptions and forward call
@@ -491,6 +493,31 @@ nsWebBrowser::LoadURIFromScript(const nsAString& aURI,
     return NS_ERROR_INVALID_ARG;
   }
   return LoadURI(aURI, loadURIOptions);
+}
+
+nsresult nsWebBrowser::FixupAndLoadURIString(
+    const nsAString& aURI, const dom::LoadURIOptions& aLoadURIOptions) {
+#ifndef ANDROID
+  MOZ_ASSERT(
+      aLoadURIOptions.mTriggeringPrincipal,
+      "nsWebBrowser::FixupAndLoadURIString - Need a valid triggeringPrincipal");
+#endif
+  NS_ENSURE_STATE(mDocShell);
+
+  RefPtr<nsDocShell> docShell = mDocShell;
+  return docShell->FixupAndLoadURIString(aURI, aLoadURIOptions);
+}
+
+NS_IMETHODIMP
+nsWebBrowser::FixupAndLoadURIStringFromScript(
+    const nsAString& aURI, JS::Handle<JS::Value> aLoadURIOptions,
+    JSContext* aCx) {
+  // generate dictionary for loadURIOptions and forward call
+  dom::LoadURIOptions loadURIOptions;
+  if (!loadURIOptions.Init(aCx, aLoadURIOptions)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+  return FixupAndLoadURIString(aURI, loadURIOptions);
 }
 
 NS_IMETHODIMP
@@ -505,14 +532,16 @@ NS_IMETHODIMP
 nsWebBrowser::Reload(uint32_t aReloadFlags) {
   NS_ENSURE_STATE(mDocShell);
 
-  return mDocShell->Reload(aReloadFlags);
+  RefPtr<nsDocShell> docShell = mDocShell;
+  return docShell->Reload(aReloadFlags);
 }
 
 NS_IMETHODIMP
 nsWebBrowser::GotoIndex(int32_t aIndex, bool aUserActivation) {
   NS_ENSURE_STATE(mDocShell);
 
-  return mDocShell->GotoIndex(aIndex, aUserActivation);
+  RefPtr<nsDocShell> docShell = mDocShell;
+  return docShell->GotoIndex(aIndex, aUserActivation);
 }
 
 NS_IMETHODIMP
@@ -696,20 +725,7 @@ nsWebBrowser::SaveURI(nsIURI* aURI, nsIPrincipal* aPrincipal,
                       nsICookieJarSettings* aCookieJarSettings,
                       nsIInputStream* aPostData, const char* aExtraHeaders,
                       nsISupports* aFile,
-                      nsContentPolicyType aContentPolicyType,
-                      nsILoadContext* aPrivacyContext) {
-  return SavePrivacyAwareURI(
-      aURI, aPrincipal, aCacheKey, aReferrerInfo, aCookieJarSettings, aPostData,
-      aExtraHeaders, aFile, aContentPolicyType,
-      aPrivacyContext && aPrivacyContext->UsePrivateBrowsing());
-}
-
-NS_IMETHODIMP
-nsWebBrowser::SavePrivacyAwareURI(
-    nsIURI* aURI, nsIPrincipal* aPrincipal, uint32_t aCacheKey,
-    nsIReferrerInfo* aReferrerInfo, nsICookieJarSettings* aCookieJarSettings,
-    nsIInputStream* aPostData, const char* aExtraHeaders, nsISupports* aFile,
-    nsContentPolicyType aContentPolicyType, bool aIsPrivate) {
+                      nsContentPolicyType aContentPolicyType, bool aIsPrivate) {
   if (mPersist) {
     uint32_t currentState;
     mPersist->GetCurrentState(&currentState);
@@ -739,9 +755,9 @@ nsWebBrowser::SavePrivacyAwareURI(
   mPersist->SetPersistFlags(mPersistFlags);
   mPersist->GetCurrentState(&mPersistCurrentState);
 
-  rv = mPersist->SavePrivacyAwareURI(
-      uri, aPrincipal, aCacheKey, aReferrerInfo, aCookieJarSettings, aPostData,
-      aExtraHeaders, aFile, aContentPolicyType, aIsPrivate);
+  rv = mPersist->SaveURI(uri, aPrincipal, aCacheKey, aReferrerInfo,
+                         aCookieJarSettings, aPostData, aExtraHeaders, aFile,
+                         aContentPolicyType, aIsPrivate);
   if (NS_FAILED(rv)) {
     mPersist = nullptr;
   }
@@ -810,6 +826,8 @@ nsWebBrowser::SaveDocument(nsISupports* aDocumentish, nsISupports* aFile,
   nsresult rv;
   mPersist = do_CreateInstance(NS_WEBBROWSERPERSIST_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<nsIWebBrowserPersist> localPersist(mPersist);
+  Unused << localPersist;
   mPersist->SetProgressListener(this);
   mPersist->SetPersistFlags(mPersistFlags);
   mPersist->GetCurrentState(&mPersistCurrentState);
@@ -858,10 +876,8 @@ nsWebBrowser::Destroy() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsWebBrowser::GetUnscaledDevicePixelsPerCSSPixel(double* aScale) {
-  *aScale = mParentWidget ? mParentWidget->GetDefaultScale().scale : 1.0;
-  return NS_OK;
+double nsWebBrowser::GetWidgetCSSToDeviceScale() {
+  return mParentWidget ? mParentWidget->GetDefaultScale().scale : 1.0;
 }
 
 NS_IMETHODIMP
@@ -957,12 +973,22 @@ nsWebBrowser::GetPositionAndSize(int32_t* aX, int32_t* aY, int32_t* aCX,
       *aCY = bounds.Height();
     }
     return NS_OK;
-  } else {
-    // Can directly return this as it is the
-    // same interface, thus same returns.
-    return mDocShell->GetPositionAndSize(aX, aY, aCX, aCY);
   }
-  return NS_OK;
+
+  // Can directly return this as it is the
+  // same interface, thus same returns.
+  return mDocShell->GetPositionAndSize(aX, aY, aCX, aCY);
+}
+
+NS_IMETHODIMP
+nsWebBrowser::SetDimensions(DimensionRequest&& aRequest) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsWebBrowser::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
+                            int32_t* aY, int32_t* aCX, int32_t* aCY) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
@@ -1176,18 +1202,18 @@ bool nsWebBrowser::PaintWindow(nsIWidget* aWidget,
 }
 
 void nsWebBrowser::FocusActivate(uint64_t aActionId) {
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
-  if (fm && window) {
-    fm->WindowRaised(window, aActionId);
+  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
+    if (nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow()) {
+      fm->WindowRaised(window, aActionId);
+    }
   }
 }
 
 void nsWebBrowser::FocusDeactivate(uint64_t aActionId) {
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
-  if (fm && window) {
-    fm->WindowLowered(window, aActionId);
+  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
+    if (nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow()) {
+      fm->WindowLowered(window, aActionId);
+    }
   }
 }
 

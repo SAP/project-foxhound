@@ -5,14 +5,14 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
 
-from __future__ import absolute_import
 import copy
+import json
 import os
 import platform
-from six.moves import urllib
-import json
 import ssl
-from six.moves.urllib.parse import urlparse, ParseResult
+
+from six.moves import urllib
+from six.moves.urllib.parse import ParseResult, urlparse
 
 from mozharness.base.errors import BaseErrorList
 from mozharness.base.log import FATAL, WARNING
@@ -21,17 +21,16 @@ from mozharness.base.python import (
     VirtualenvMixin,
     virtualenv_config_options,
 )
-from mozharness.mozilla.automation import AutomationMixin, TBPL_WARNING
+from mozharness.lib.python.authentication import get_credentials
+from mozharness.mozilla.automation import TBPL_WARNING, AutomationMixin
 from mozharness.mozilla.structuredlog import StructuredOutputParser
-from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
 from mozharness.mozilla.testing.try_tools import TryToolsMixin, try_config_options
+from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
 from mozharness.mozilla.testing.verify_tools import (
     VerifyToolsMixin,
     verify_config_options,
 )
 from mozharness.mozilla.tooltool import TooltoolMixin
-
-from mozharness.lib.python.authentication import get_credentials
 
 INSTALLER_SUFFIXES = (
     ".apk",  # Android
@@ -233,11 +232,11 @@ class TestingMixin(
                 if raise_on_failure:
                     raise
 
-        # If no symbols URL can be determined let minidump_stackwalk query the symbols.
+        # If no symbols URL can be determined let minidump-stackwalk query the symbols.
         # As of now this only works for Nightly and release builds.
         if not self.symbols_url:
             self.warning(
-                "No symbols_url found. Let minidump_stackwalk query for symbols."
+                "No symbols_url found. Let minidump-stackwalk query for symbols."
             )
 
         return self.symbols_url
@@ -302,6 +301,7 @@ class TestingMixin(
         This function helps dealing with downloading files while outside
         of the releng network.
         """
+
         # Code based on http://code.activestate.com/recipes/305288-http-basic-authentication
         def _urlopen_basic_auth(url, **kwargs):
             self.info("We want to download this file %s" % url)
@@ -520,7 +520,12 @@ You can set this by specifying --test-url URL
     def _download_and_extract_symbols(self):
         dirs = self.query_abs_dirs()
         if self.config.get("download_symbols") == "ondemand":
-            self.symbols_url = self.query_symbols_url()
+            self.symbols_url = self.retry(
+                action=self.query_symbols_url,
+                kwargs={"raise_on_failure": True},
+                sleeptime=10,
+                failure_status=None,
+            )
             self.symbols_path = self.symbols_url
             return
 
@@ -612,12 +617,6 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?"""
         cmd = [self.query_python_path("mozinstall")]
         if app:
             cmd.extend(["--app", app])
-        # Remove the below when we no longer need to support mozinstall 0.3
-        self.info("Detecting whether we're running mozinstall >=1.0...")
-        output = self.get_output_from_command(cmd + ["-h"])
-        if "--source" in output:
-            cmd.append("--source")
-        # End remove
         dirs = self.query_abs_dirs()
         if not target_dir:
             target_dir = dirs.get(
@@ -634,6 +633,7 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?"""
 
     def install(self):
         self.binary_path = self.install_app(app=self.config.get("application"))
+        self.install_dir = os.path.dirname(self.binary_path)
 
     def uninstall_app(self, install_dir=None):
         """Dependent on mozinstall"""
@@ -664,15 +664,15 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?"""
         if "MOZ_FETCHES_DIR" in os.environ:
             minidump_stackwalk_path = os.path.join(
                 os.environ["MOZ_FETCHES_DIR"],
-                "minidump_stackwalk",
-                "minidump_stackwalk",
+                "minidump-stackwalk",
+                "minidump-stackwalk",
             )
 
             if self.platform_name() in ("win32", "win64"):
                 minidump_stackwalk_path += ".exe"
 
         if not minidump_stackwalk_path or not os.path.isfile(minidump_stackwalk_path):
-            self.error("minidump_stackwalk path was not fetched?")
+            self.error("minidump-stackwalk path was not fetched?")
             # don't burn the job but we should at least turn them orange so it is caught
             self.record_status(TBPL_WARNING, WARNING)
             return None

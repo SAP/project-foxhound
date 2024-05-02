@@ -7,16 +7,20 @@ _("Test that node reassignment happens correctly using the FxA identity mgr.");
 // reassignment - it comes from the token server - so we need to ensure the
 // Fxa cluster manager grabs a new token.
 
-const { RESTRequest } = ChromeUtils.import(
-  "resource://services-common/rest.js"
+const { RESTRequest } = ChromeUtils.importESModule(
+  "resource://services-common/rest.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { Status } = ChromeUtils.import("resource://services-sync/status.js");
-const { SyncAuthManager } = ChromeUtils.import(
-  "resource://services-sync/sync_auth.js"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { Status } = ChromeUtils.importESModule(
+  "resource://services-sync/status.sys.mjs"
+);
+const { SyncAuthManager } = ChromeUtils.importESModule(
+  "resource://services-sync/sync_auth.sys.mjs"
+);
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 add_task(async function setup() {
@@ -45,7 +49,6 @@ function prepareServer(cbAfterTokenFetch) {
   // A server callback to ensure we don't accidentally hit the wrong endpoint
   // after a node reassignment.
   let callback = {
-    __proto__: SyncServerCallback,
     onRequest(req, resp) {
       let full = `${req.scheme}://${req.host}:${req.port}${req.path}`;
       let expected = config.fxaccount.token.endpoint;
@@ -55,6 +58,7 @@ function prepareServer(cbAfterTokenFetch) {
       );
     },
   };
+  Object.setPrototypeOf(callback, SyncServerCallback);
   let server = new SyncServer(callback);
   server.registerUser("johndoe");
   server.start();
@@ -139,7 +143,7 @@ async function syncAndExpectNodeReassignment(
 
       // Make absolutely sure that any event listeners are done with their work
       // before we proceed.
-      waitForZeroTimer(function() {
+      waitForZeroTimer(function () {
         _("Second sync nextTick.");
         Assert.equal(
           numTokenRequests,

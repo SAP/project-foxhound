@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-
 "use strict";
 
 // Test deleting storage items with userContextId.
@@ -157,7 +155,7 @@ async function testTables(tests) {
     // Check whether correct number of items are present in the table
     is(
       doc.querySelectorAll(
-        ".table-widget-wrapper:first-of-type .table-widget-cell"
+        ".table-widget-column:first-of-type .table-widget-cell"
       ).length,
       items.length,
       "Number of items in table is correct"
@@ -173,7 +171,7 @@ async function testTables(tests) {
   }
 }
 
-add_task(async function() {
+add_task(async function () {
   // storage-listings.html explicitly mixes secure and insecure frames.
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
@@ -211,12 +209,14 @@ add_task(async function() {
 
     await waitForContextMenu(contextMenu, row[cellToClick], () => {
       info(`Opened context menu in ${treeItemName}, row '${rowName}'`);
-      menuDeleteItem.click();
+      contextMenu.activateItem(menuDeleteItem);
       const truncatedRowName = String(rowName)
         .replace(SEPARATOR_GUID, "-")
         .substr(0, 16);
       ok(
-        menuDeleteItem.getAttribute("label").includes(truncatedRowName),
+        JSON.parse(
+          menuDeleteItem.getAttribute("data-l10n-args")
+        ).itemName.includes(truncatedRowName),
         `Context menu item label contains '${rowName}' (maybe truncated)`
       );
     });

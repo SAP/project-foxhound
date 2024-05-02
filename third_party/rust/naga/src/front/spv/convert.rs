@@ -2,7 +2,7 @@ use super::error::Error;
 use num_traits::cast::FromPrimitive;
 use std::convert::TryInto;
 
-pub(super) fn map_binary_operator(word: spirv::Op) -> Result<crate::BinaryOperator, Error> {
+pub(super) const fn map_binary_operator(word: spirv::Op) -> Result<crate::BinaryOperator, Error> {
     use crate::BinaryOperator;
     use spirv::Op;
 
@@ -12,7 +12,6 @@ pub(super) fn map_binary_operator(word: spirv::Op) -> Result<crate::BinaryOperat
         Op::ISub | Op::FSub => Ok(BinaryOperator::Subtract),
         Op::IMul | Op::FMul => Ok(BinaryOperator::Multiply),
         Op::UDiv | Op::SDiv | Op::FDiv => Ok(BinaryOperator::Divide),
-        Op::UMod | Op::SMod | Op::FMod => Ok(BinaryOperator::Modulo),
         Op::SRem => Ok(BinaryOperator::Modulo),
         // Relational and Logical Instructions
         Op::IEqual | Op::FOrdEqual | Op::FUnordEqual | Op::LogicalEqual => {
@@ -42,7 +41,9 @@ pub(super) fn map_binary_operator(word: spirv::Op) -> Result<crate::BinaryOperat
     }
 }
 
-pub(super) fn map_relational_fun(word: spirv::Op) -> Result<crate::RelationalFunction, Error> {
+pub(super) const fn map_relational_fun(
+    word: spirv::Op,
+) -> Result<crate::RelationalFunction, Error> {
     use crate::RelationalFunction as Rf;
     use spirv::Op;
 
@@ -51,13 +52,11 @@ pub(super) fn map_relational_fun(word: spirv::Op) -> Result<crate::RelationalFun
         Op::Any => Ok(Rf::Any),
         Op::IsNan => Ok(Rf::IsNan),
         Op::IsInf => Ok(Rf::IsInf),
-        Op::IsFinite => Ok(Rf::IsFinite),
-        Op::IsNormal => Ok(Rf::IsNormal),
         _ => Err(Error::UnknownRelationalFunction(word)),
     }
 }
 
-pub(super) fn map_vector_size(word: spirv::Word) -> Result<crate::VectorSize, Error> {
+pub(super) const fn map_vector_size(word: spirv::Word) -> Result<crate::VectorSize, Error> {
     match word {
         2 => Ok(crate::VectorSize::Bi),
         3 => Ok(crate::VectorSize::Tri),
@@ -83,6 +82,8 @@ pub(super) fn map_image_format(word: spirv::Word) -> Result<crate::StorageFormat
         Some(spirv::ImageFormat::R8Snorm) => Ok(crate::StorageFormat::R8Snorm),
         Some(spirv::ImageFormat::R8ui) => Ok(crate::StorageFormat::R8Uint),
         Some(spirv::ImageFormat::R8i) => Ok(crate::StorageFormat::R8Sint),
+        Some(spirv::ImageFormat::R16) => Ok(crate::StorageFormat::R16Unorm),
+        Some(spirv::ImageFormat::R16Snorm) => Ok(crate::StorageFormat::R16Snorm),
         Some(spirv::ImageFormat::R16ui) => Ok(crate::StorageFormat::R16Uint),
         Some(spirv::ImageFormat::R16i) => Ok(crate::StorageFormat::R16Sint),
         Some(spirv::ImageFormat::R16f) => Ok(crate::StorageFormat::R16Float),
@@ -93,6 +94,8 @@ pub(super) fn map_image_format(word: spirv::Word) -> Result<crate::StorageFormat
         Some(spirv::ImageFormat::R32ui) => Ok(crate::StorageFormat::R32Uint),
         Some(spirv::ImageFormat::R32i) => Ok(crate::StorageFormat::R32Sint),
         Some(spirv::ImageFormat::R32f) => Ok(crate::StorageFormat::R32Float),
+        Some(spirv::ImageFormat::Rg16) => Ok(crate::StorageFormat::Rg16Unorm),
+        Some(spirv::ImageFormat::Rg16Snorm) => Ok(crate::StorageFormat::Rg16Snorm),
         Some(spirv::ImageFormat::Rg16ui) => Ok(crate::StorageFormat::Rg16Uint),
         Some(spirv::ImageFormat::Rg16i) => Ok(crate::StorageFormat::Rg16Sint),
         Some(spirv::ImageFormat::Rg16f) => Ok(crate::StorageFormat::Rg16Float),
@@ -100,11 +103,14 @@ pub(super) fn map_image_format(word: spirv::Word) -> Result<crate::StorageFormat
         Some(spirv::ImageFormat::Rgba8Snorm) => Ok(crate::StorageFormat::Rgba8Snorm),
         Some(spirv::ImageFormat::Rgba8ui) => Ok(crate::StorageFormat::Rgba8Uint),
         Some(spirv::ImageFormat::Rgba8i) => Ok(crate::StorageFormat::Rgba8Sint),
-        Some(spirv::ImageFormat::Rgb10a2ui) => Ok(crate::StorageFormat::Rgb10a2Unorm),
+        Some(spirv::ImageFormat::Rgb10a2ui) => Ok(crate::StorageFormat::Rgb10a2Uint),
+        Some(spirv::ImageFormat::Rgb10A2) => Ok(crate::StorageFormat::Rgb10a2Unorm),
         Some(spirv::ImageFormat::R11fG11fB10f) => Ok(crate::StorageFormat::Rg11b10Float),
         Some(spirv::ImageFormat::Rg32ui) => Ok(crate::StorageFormat::Rg32Uint),
         Some(spirv::ImageFormat::Rg32i) => Ok(crate::StorageFormat::Rg32Sint),
         Some(spirv::ImageFormat::Rg32f) => Ok(crate::StorageFormat::Rg32Float),
+        Some(spirv::ImageFormat::Rgba16) => Ok(crate::StorageFormat::Rgba16Unorm),
+        Some(spirv::ImageFormat::Rgba16Snorm) => Ok(crate::StorageFormat::Rgba16Snorm),
         Some(spirv::ImageFormat::Rgba16ui) => Ok(crate::StorageFormat::Rgba16Uint),
         Some(spirv::ImageFormat::Rgba16i) => Ok(crate::StorageFormat::Rgba16Sint),
         Some(spirv::ImageFormat::Rgba16f) => Ok(crate::StorageFormat::Rgba16Float),
@@ -121,10 +127,10 @@ pub(super) fn map_width(word: spirv::Word) -> Result<crate::Bytes, Error> {
         .map_err(|_| Error::InvalidTypeWidth(word))
 }
 
-pub(super) fn map_builtin(word: spirv::Word) -> Result<crate::BuiltIn, Error> {
+pub(super) fn map_builtin(word: spirv::Word, invariant: bool) -> Result<crate::BuiltIn, Error> {
     use spirv::BuiltIn as Bi;
     Ok(match spirv::BuiltIn::from_u32(word) {
-        Some(Bi::Position) | Some(Bi::FragCoord) => crate::BuiltIn::Position,
+        Some(Bi::Position | Bi::FragCoord) => crate::BuiltIn::Position { invariant },
         Some(Bi::ViewIndex) => crate::BuiltIn::ViewIndex,
         // vertex
         Some(Bi::BaseInstance) => crate::BuiltIn::BaseInstance,
@@ -136,6 +142,7 @@ pub(super) fn map_builtin(word: spirv::Word) -> Result<crate::BuiltIn, Error> {
         Some(Bi::VertexIndex) => crate::BuiltIn::VertexIndex,
         // fragment
         Some(Bi::FragDepth) => crate::BuiltIn::FragDepth,
+        Some(Bi::PointCoord) => crate::BuiltIn::PointCoord,
         Some(Bi::FrontFacing) => crate::BuiltIn::FrontFacing,
         Some(Bi::PrimitiveId) => crate::BuiltIn::PrimitiveIndex,
         Some(Bi::SampleId) => crate::BuiltIn::SampleIndex,
@@ -155,19 +162,19 @@ pub(super) fn map_storage_class(word: spirv::Word) -> Result<super::ExtendedClas
     use super::ExtendedClass as Ec;
     use spirv::StorageClass as Sc;
     Ok(match Sc::from_u32(word) {
-        Some(Sc::Function) => Ec::Global(crate::StorageClass::Function),
+        Some(Sc::Function) => Ec::Global(crate::AddressSpace::Function),
         Some(Sc::Input) => Ec::Input,
         Some(Sc::Output) => Ec::Output,
-        Some(Sc::Private) => Ec::Global(crate::StorageClass::Private),
-        Some(Sc::UniformConstant) => Ec::Global(crate::StorageClass::Handle),
-        Some(Sc::StorageBuffer) => Ec::Global(crate::StorageClass::Storage {
+        Some(Sc::Private) => Ec::Global(crate::AddressSpace::Private),
+        Some(Sc::UniformConstant) => Ec::Global(crate::AddressSpace::Handle),
+        Some(Sc::StorageBuffer) => Ec::Global(crate::AddressSpace::Storage {
             //Note: this is restricted by decorations later
             access: crate::StorageAccess::all(),
         }),
         // we expect the `Storage` case to be filtered out before calling this function.
-        Some(Sc::Uniform) => Ec::Global(crate::StorageClass::Uniform),
-        Some(Sc::Workgroup) => Ec::Global(crate::StorageClass::WorkGroup),
-        Some(Sc::PushConstant) => Ec::Global(crate::StorageClass::PushConstant),
+        Some(Sc::Uniform) => Ec::Global(crate::AddressSpace::Uniform),
+        Some(Sc::Workgroup) => Ec::Global(crate::AddressSpace::WorkGroup),
+        Some(Sc::PushConstant) => Ec::Global(crate::AddressSpace::PushConstant),
         _ => return Err(Error::UnsupportedStorageClass(word)),
     })
 }

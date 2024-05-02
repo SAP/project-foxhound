@@ -8,14 +8,14 @@
 <body>
 <pre id="test">
 <script class="testbody" type="text/javascript">
-/* eslint-env mozilla/frame-script */
-
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
 
 const chromeScript = SpecialPowers.loadChromeScript(_ => {
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-  const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+  /* eslint-env mozilla/chrome-script */
+  const {clearTimeout, setTimeout} = ChromeUtils.importESModule(
+    "resource://gre/modules/Timer.sys.mjs"
+  );
 
   const alertService = Cc["@mozilla.org/alerts-service;1"]
                          .getService(Ci.nsIAlertsService);

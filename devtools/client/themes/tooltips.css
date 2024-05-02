@@ -7,19 +7,24 @@
 @import url(chrome://devtools/skin/badge.css);
 @import url(chrome://devtools/content/shared/widgets/cubic-bezier.css);
 @import url(chrome://devtools/content/shared/widgets/filter-widget.css);
+@import url(chrome://devtools/content/shared/widgets/linear-widget.css);
 @import url(chrome://devtools/content/shared/widgets/spectrum.css);
+@import url(chrome://devtools/skin/variables.css);
+/*
+ * compatibility.css is primarily used by the Compatibility panel, so import it in a layer
+ * to give it a lower importance than the rule here and mitigate styling mismatch.
+ */
+@import url(chrome://devtools/skin/compatibility.css) layer(shared);
 
 /* Tooltip specific theme variables */
-
 .theme-dark {
   --bezier-diagonal-color: #eee;
-  --bezier-grid-color: rgba(0, 0, 0, 0.2);
+  --bezier-grid-color: rgba(255, 255, 255, 0.1);
 
   /* Tooltips */
   --theme-tooltip-color: var(--theme-text-color-strong);
   --theme-tooltip-background: var(--theme-popup-background);
   --theme-tooltip-shadow: rgba(25, 25, 25, 0.76);
-  --theme-tooltip-icon-dimmed-color: rgb(255, 255, 255);
 
   /* Doorhangers */
   /* These colors are based on the colors used for doorhangers elsewhere in
@@ -41,7 +46,6 @@
   --theme-tooltip-color: var(--theme-body-color);
   --theme-tooltip-background: rgb(255, 255, 255);
   --theme-tooltip-shadow: var(--grey-90-a10);
-  --theme-tooltip-icon-dimmed-color: rgba(135, 135, 137, 0.9);
 
   /* Doorhangers */
   /* These colors are based on the colors used for doorhangers elsewhere in
@@ -57,8 +61,6 @@
 
 :root {
   --theme-arrowpanel-border-radius: 0px;
-  --compatibility-tooltip-base-unit: 4px;
-  --compatibility-tooltip-browser-icon-size: calc(var(--compatibility-tooltip-base-unit) * 4);
 }
 :root[platform="mac"] {
   --theme-arrowpanel-border-radius: 3.5px;
@@ -68,13 +70,36 @@
   --theme-arrowpanel-separator: hsla(210,4%,10%,.14);
 }
 
+/*
+  There's a specific color-scheme defined for panels in https://searchfox.org/mozilla-central/rev/02841791400cf7cf5760c0cfaf31f5d772624253/toolkit/themes/shared/popup.css#9-13
+  This could create issues when the Firefox theme is at odd with the DevTools one (e.g.
+  if Firefox uses a dark theme but the user has a DevTools light theme.
+  Unset the color-scheme on those element so it uses the one we set on :root in common.css,
+  which matches our light/dark theme.
+*/
+menupopup, panel {
+  color-scheme: unset
+}
+
 strong {
   font-weight: bold;
 }
 
 /* Tooltip: CSS variables tooltip */
 
-.devtools-tooltip-css-variable,
+.devtools-tooltip-css-variable {
+  color: var(--theme-body-color);
+  padding: 2px 8px;
+  direction: ltr;
+  /* Try to show the content of the tooltip on a single line */
+  inline-size: max-content;
+  word-break: break-word;
+  max-inline-size: 100vw;
+}
+
+
+/* Tooltip: Compatibility tooltip */
+
 .devtools-tooltip-css-compatibility {
   color: var(--theme-body-color);
   padding: 2px;
@@ -120,7 +145,7 @@ strong {
 
 .devtools-tooltip-inactive-css .link,
 .devtools-tooltip-css-compatibility .link {
-  color: var(--theme-highlight-blue);
+  color: var(--theme-link-color);
   cursor: pointer;
 }
 
@@ -130,39 +155,53 @@ strong {
   width: 100%;
   list-style: none;
   padding: 0;
-  column-gap: var(--compatibility-tooltip-base-unit);
   display: flex;
+  justify-content: start;
 }
 
-.devtools-tooltip-css-compatibility .compatibility-browser-icon {
-  display: inline-block;
-  width: var(--compatibility-tooltip-browser-icon-size);
-  height: var(--compatibility-tooltip-browser-icon-size);
-  position: relative;
+/* Tooltip: query container info */
+.devtools-tooltip-query-container {
+  color: var(--theme-arrowpanel-color);
+  margin: 0;
+  padding: 10px 14px 12px;
+  font-size: 12px;
+  user-select: text;
+  -moz-user-focus: normal;
 }
 
-.devtools-tooltip-css-compatibility .compatibility-browser-icon--mobile::after {
-  content: "";
-  width: calc(var(--compatibility-tooltip-base-unit) * 2);
-  height: calc(var(--compatibility-tooltip-base-unit) * 3);
-  background-color: var(--theme-arrowpanel-background);
-  background-size: calc(var(--compatibility-tooltip-base-unit) * 2 - 2px);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-image: url(chrome://devtools/skin/images/browsers/mobile.svg);
-  -moz-context-properties: fill;
-  fill: var(--theme-tooltip-icon-dimmed-color);
-  position: absolute;
-  right: calc(var(--compatibility-tooltip-base-unit) * -1);
-  bottom: calc(var(--compatibility-tooltip-base-unit) * -1);
+.devtools-tooltip-query-container header {
+  --block-end-space: 5px;
+  border-block-end: 1px solid var(--theme-arrowpanel-dimmed);
+  padding-block-end: var(--block-end-space);
+  margin-block-end: var(--block-end-space);
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  color: var(--theme-body-color);
 }
 
-.devtools-tooltip-css-compatibility .compatibility-browser-icon__image {
-  width: 100%;
-  height: 100%;
-  -moz-context-properties: fill;
-  fill: var(--theme-tooltip-icon-dimmed-color);
+.devtools-tooltip-query-container ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
+
+.devtools-tooltip-query-container .objectBox-node .tag-name {
+  color: var(--theme-highlight-blue);
+}
+
+.devtools-tooltip-query-container .objectBox-node .attribute-name {
+  color: var(--theme-highlight-red);
+}
+
+.devtools-tooltip-query-container .property-name {
+  color: var(--theme-highlight-blue);
+}
+
+.devtools-tooltip-query-container .property-value {
+  color: var(--theme-highlight-red);
+}
+
 
 /* Tooltip: Tiles */
 
@@ -458,7 +497,7 @@ strong {
 }
 
 .tooltip-container[type="doorhanger"] .tooltip-panel ul {
-  /* Override the display: -moz-box declaration in minimal-xul.css
+  /* Override the display: flex declaration in xul.css
    * or else menu items won't stack. */
   display: block;
 }
@@ -468,12 +507,15 @@ strong {
   align-items: baseline;
   margin: 0;
   padding: 4px 12px;
-  outline: none;
   /*
    * It doesn't really make sense, since if this is just about making the items
    * easier to click we should be using min-width instead.
    */
   margin-inline-end: 15px;
+
+  &:focus-visible {
+    --theme-outline-offset: -2px;
+  }
 }
 
 .tooltip-container[type="doorhanger"] .menuitem > button.command:is([role="menuitem"],[role="menuitemcheckbox"],[role="link"]) {
@@ -485,7 +527,7 @@ strong {
   width: 100%;
 }
 
-.tooltip-container[type="doorhanger"] .menuitem > .command:not([disabled],[open],:active):is(:hover,:focus) {
+.tooltip-container[type="doorhanger"] .menuitem > .command:not([disabled],[open],:active):hover {
   background-color: var(--theme-arrowpanel-dimmed);
 }
 
@@ -579,6 +621,14 @@ strong {
   border-radius: var(--theme-arrowpanel-border-radius);
   height: 100%;
   overflow-y: auto;
+  margin: 0;
+  padding: 0;
+}
+
+@media (-moz-overlay-scrollbars) {
+  .devtools-tooltip-events-container {
+    padding-inline: calc(env(scrollbar-inline-size) / 2);
+  }
 }
 
 .devtools-tooltip-events-container .event-header {
@@ -587,15 +637,14 @@ strong {
   box-sizing: content-box;
   height: 24px;
   padding: 0 4px;
-  border-top: 1px solid var(--theme-splitter-color);
   cursor: pointer;
   overflow: hidden;
   color: var(--theme-tooltip-color);
   background-color: var(--theme-tooltip-background);
 }
 
-.devtools-tooltip-events-container .event-header:first-child {
-  border-top-width: 0;
+.devtools-tooltip-events-container > li + li .event-header {
+  border-top: 1px solid var(--theme-splitter-color);
 }
 
 .event-header .theme-twisty {
@@ -604,10 +653,16 @@ strong {
   height: 12px;
   margin-inline-end: 4px;
   fill: currentColor;
+  border: none;
+  background-color: transparent;
 }
 
-.event-header.content-expanded .theme-twisty {
+.event-header .theme-twisty[aria-expanded="true"] {
   transform: none;
+}
+
+.event-tooltip-listener-toggle-checkbox {
+  flex-shrink: 0;
 }
 
 .event-tooltip-debugger-icon {
@@ -616,6 +671,8 @@ strong {
   background-image: url("chrome://devtools/content/shared/components/reps/images/jump-definition.svg");
   background-repeat: no-repeat;
   background-position: center;
+  background-color: transparent;
+  border: none;
   width: 20px;
   height: 20px;
   border-radius: 2px;
@@ -840,7 +897,7 @@ strong {
 }
 
 .invoke-confirm .learn-more-link {
-  color: var(--theme-highlight-blue);
+  color: var(--theme-link-color);
   padding-inline-end: 4px;
   display: flex;
   align-items: center;
@@ -882,4 +939,19 @@ strong {
   margin-right: 5px;
   margin-left: 5px;
   padding: 3px;
+}
+
+/* Tooltip: Selector warning */
+.devtools-tooltip-selector-warnings {
+  margin: 0;
+  padding: 10px;
+  list-style: none;
+
+  & > li {
+    padding: 0;
+
+    & + li {
+      border-block-start: 1px solid var(--theme-splitter-color);
+    }
+  }
 }

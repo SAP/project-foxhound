@@ -17,8 +17,11 @@ namespace mozilla {
 namespace layers {
 
 GPUVideoTextureHost::GPUVideoTextureHost(
-    TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor)
-    : TextureHost(aFlags), mDescriptor(aDescriptor) {
+    const dom::ContentParentId& aContentId, TextureFlags aFlags,
+    const SurfaceDescriptorGPUVideo& aDescriptor)
+    : TextureHost(TextureHostType::Unknown, aFlags),
+      mContentId(aContentId),
+      mDescriptor(aDescriptor) {
   MOZ_COUNT_CTOR(GPUVideoTextureHost);
 }
 
@@ -27,8 +30,9 @@ GPUVideoTextureHost::~GPUVideoTextureHost() {
 }
 
 GPUVideoTextureHost* GPUVideoTextureHost::CreateFromDescriptor(
-    TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor) {
-  return new GPUVideoTextureHost(aFlags, aDescriptor);
+    const dom::ContentParentId& aContentId, TextureFlags aFlags,
+    const SurfaceDescriptorGPUVideo& aDescriptor) {
+  return new GPUVideoTextureHost(aContentId, aFlags, aDescriptor);
 }
 
 TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
@@ -44,7 +48,8 @@ TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
     // crashes.
     return nullptr;
   }
-  mWrappedTextureHost = parent->LookupTexture(sd.handle());
+
+  mWrappedTextureHost = parent->LookupTexture(mContentId, sd.handle());
 
   if (!mWrappedTextureHost) {
     // The TextureHost hasn't been registered yet. This is due to a race
@@ -53,14 +58,6 @@ TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1630733#c14 for more
     // details.
     return nullptr;
-  }
-
-  if (mWrappedTextureHost->AsBufferTextureHost()) {
-    // TODO(miko): This code path is taken when WebRenderTextureHost wraps
-    // GPUVideoTextureHost, which wraps BufferTextureHost.
-    // Because this creates additional copies of the texture data, we should not
-    // do this.
-    mWrappedTextureHost->AsBufferTextureHost()->DisableExternalTextures();
   }
 
   if (mExternalImageId.isSome()) {
@@ -144,12 +141,16 @@ void GPUVideoTextureHost::CreateRenderTexture(
 }
 
 void GPUVideoTextureHost::MaybeDestroyRenderTexture() {
-  if (mExternalImageId.isNothing() || !mWrappedTextureHost) {
+  if (mExternalImageId.isNothing()) {
     // RenderTextureHost was not created
     return;
   }
-  // When GPUVideoTextureHost created RenderTextureHost, delete it here.
-  TextureHost::DestroyRenderTexture(mExternalImageId.ref());
+
+  if (mExternalImageId.isSome() && mWrappedTextureHost) {
+    // When GPUVideoTextureHost created RenderTextureHost, delete it here.
+    TextureHost::DestroyRenderTexture(mExternalImageId.ref());
+  }
+  mExternalImageId = Nothing();
 }
 
 uint32_t GPUVideoTextureHost::NumSubTextures() {
@@ -205,6 +206,34 @@ void GPUVideoTextureHost::NotifyNotUsed() {
     EnsureWrappedTextureHost()->NotifyNotUsed();
   }
   TextureHost::NotifyNotUsed();
+}
+
+BufferTextureHost* GPUVideoTextureHost::AsBufferTextureHost() {
+  if (EnsureWrappedTextureHost()) {
+    return EnsureWrappedTextureHost()->AsBufferTextureHost();
+  }
+  return nullptr;
+}
+
+bool GPUVideoTextureHost::IsWrappingSurfaceTextureHost() {
+  if (EnsureWrappedTextureHost()) {
+    return EnsureWrappedTextureHost()->IsWrappingSurfaceTextureHost();
+  }
+  return false;
+}
+
+TextureHostType GPUVideoTextureHost::GetTextureHostType() {
+  if (!mWrappedTextureHost) {
+    return TextureHostType::Unknown;
+  }
+  return mWrappedTextureHost->GetTextureHostType();
+}
+
+bool GPUVideoTextureHost::NeedsDeferredDeletion() const {
+  if (!mWrappedTextureHost) {
+    return TextureHost::NeedsDeferredDeletion();
+  }
+  return mWrappedTextureHost->NeedsDeferredDeletion();
 }
 
 }  // namespace layers

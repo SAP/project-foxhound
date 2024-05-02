@@ -16,9 +16,11 @@
 
 #include <string>
 
-#include "absl/types/optional.h"
+#include "absl/strings/string_view.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_codec_type.h"
+#include "api/video_codecs/scalability_mode.h"
+#include "api/video_codecs/simulcast_stream.h"
 #include "api/video_codecs/spatial_layer.h"
 #include "rtc_base/system/rtc_export.h"
 
@@ -29,6 +31,7 @@ namespace webrtc {
 
 // Video codec
 enum class VideoCodecComplexity {
+  kComplexityLow = -1,
   kComplexityNormal = 0,
   kComplexityHigh = 1,
   kComplexityHigher = 2,
@@ -41,11 +44,14 @@ struct VideoCodecVP8 {
   bool operator!=(const VideoCodecVP8& other) const {
     return !(*this == other);
   }
-  VideoCodecComplexity complexity;
+  // Temporary utility method for transition deleting numberOfTemporalLayers
+  // setting (replaced by ScalabilityMode).
+  void SetNumberOfTemporalLayers(unsigned char n) {
+    numberOfTemporalLayers = n;
+  }
   unsigned char numberOfTemporalLayers;
   bool denoisingOn;
   bool automaticResizeOn;
-  bool frameDroppingOn;
   int keyFrameInterval;
 };
 
@@ -61,10 +67,13 @@ struct VideoCodecVP9 {
   bool operator!=(const VideoCodecVP9& other) const {
     return !(*this == other);
   }
-  VideoCodecComplexity complexity;
+  // Temporary utility method for transition deleting numberOfTemporalLayers
+  // setting (replaced by ScalabilityMode).
+  void SetNumberOfTemporalLayers(unsigned char n) {
+    numberOfTemporalLayers = n;
+  }
   unsigned char numberOfTemporalLayers;
   bool denoisingOn;
-  bool frameDroppingOn;
   int keyFrameInterval;
   bool adaptiveQpMode;
   bool automaticResizeOn;
@@ -79,11 +88,13 @@ struct VideoCodecH264 {
   bool operator!=(const VideoCodecH264& other) const {
     return !(*this == other);
   }
-  bool frameDroppingOn;
+  // Temporary utility method for transition deleting numberOfTemporalLayers
+  // setting (replaced by ScalabilityMode).
+  void SetNumberOfTemporalLayers(unsigned char n) {
+    numberOfTemporalLayers = n;
+  }
   int keyFrameInterval;
-  double scaleDownBy;
   uint8_t numberOfTemporalLayers;
-  uint8_t packetizationMode; // 0 or 1
 };
 
 // Translates from name of codec to codec type and vice versa.
@@ -103,6 +114,22 @@ class RTC_EXPORT VideoCodec {
  public:
   VideoCodec();
 
+  // Scalability mode as described in
+  // https://www.w3.org/TR/webrtc-svc/#scalabilitymodes*
+  absl::optional<ScalabilityMode> GetScalabilityMode() const {
+    return scalability_mode_;
+  }
+  void SetScalabilityMode(ScalabilityMode scalability_mode) {
+    scalability_mode_ = scalability_mode;
+  }
+  void UnsetScalabilityMode() { scalability_mode_ = absl::nullopt; }
+
+  VideoCodecComplexity GetVideoEncoderComplexity() const;
+  void SetVideoEncoderComplexity(VideoCodecComplexity complexity_setting);
+
+  bool GetFrameDropEnabled() const;
+  void SetFrameDropEnabled(bool enabled);
+
   // Public variables. TODO(hta): Make them private with accessors.
   VideoCodecType codecType;
 
@@ -121,18 +148,21 @@ class RTC_EXPORT VideoCodec {
   bool active;
 
   unsigned int qpMax;
+  // The actual number of simulcast streams. This is <= 1 in singlecast (it can
+  // be 0 in old code paths), but it is also 1 in the {active,inactive,inactive}
+  // "single RTP simulcast" use case and the legacy kSVC use case. In all other
+  // cases this is the same as the number of encodings (which may include
+  // inactive encodings). In other words:
+  // - `numberOfSimulcastStreams <= 1` in singlecast and singlecast-like setups
+  //   including legacy kSVC (encodings interpreted as spatial layers) or
+  //   standard kSVC (1 active encoding).
+  // - `numberOfSimulcastStreams > 1` in simulcast of 2+ active encodings.
   unsigned char numberOfSimulcastStreams;
-  SpatialLayer simulcastStream[kMaxSimulcastStreams];
+  SimulcastStream simulcastStream[kMaxSimulcastStreams];
   SpatialLayer spatialLayers[kMaxSpatialLayers];
 
   VideoCodecMode mode;
   bool expect_encode_from_texture;
-
-  // The size of pool which is used to store video frame buffers inside decoder.
-  // If value isn't present some codec-default value will be used.
-  // If value is present and decoder doesn't have buffer pool the
-  // value will be ignored.
-  absl::optional<int> buffer_pool_size;
 
   // Timing frames configuration. There is delay of delay_ms between two
   // consequent timing frames, excluding outliers. Frame is always made a
@@ -168,6 +198,11 @@ class RTC_EXPORT VideoCodec {
   // TODO(hta): Consider replacing the union with a pointer type.
   // This will allow removing the VideoCodec* types from this file.
   VideoCodecUnion codec_specific_;
+  absl::optional<ScalabilityMode> scalability_mode_;
+  // 'complexity_' indicates the CPU capability of the client. It's used to
+  // determine encoder CPU complexity (e.g., cpu_used for VP8, VP9. and AV1).
+  VideoCodecComplexity complexity_;
+  bool frame_drop_enabled_ = false;
 };
 
 }  // namespace webrtc

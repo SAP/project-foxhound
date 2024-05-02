@@ -29,8 +29,8 @@ RenderEGLImageTextureHost::~RenderEGLImageTextureHost() {
   DeleteTextureHandle();
 }
 
-wr::WrExternalImage RenderEGLImageTextureHost::Lock(
-    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
+wr::WrExternalImage RenderEGLImageTextureHost::Lock(uint8_t aChannelIndex,
+                                                    gl::GLContext* aGL) {
   MOZ_ASSERT(aChannelIndex == 0);
 
   if (mGL.get() != aGL) {
@@ -71,20 +71,14 @@ wr::WrExternalImage RenderEGLImageTextureHost::Lock(
                mTextureTarget == LOCAL_GL_TEXTURE_EXTERNAL);
 
     mGL->fGenTextures(1, &mTextureHandle);
-    // Cache rendering filter.
-    mCachedRendering = aRendering;
     ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0, mTextureTarget,
-                                 mTextureHandle, aRendering);
+                                 mTextureHandle);
     mGL->fEGLImageTargetTexture2D(mTextureTarget, mImage);
-  } else if (IsFilterUpdateNecessary(aRendering)) {
-    // Cache new rendering filter.
-    mCachedRendering = aRendering;
-    ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0, mTextureTarget,
-                                 mTextureHandle, aRendering);
   }
 
-  return NativeTextureToWrExternalImage(mTextureHandle, 0, 0, mSize.width,
-                                        mSize.height);
+  const auto uvs = GetUvCoords(mSize);
+  return NativeTextureToWrExternalImage(
+      mTextureHandle, uvs.first.x, uvs.first.y, uvs.second.x, uvs.second.y);
 }
 
 void RenderEGLImageTextureHost::Unlock() {}

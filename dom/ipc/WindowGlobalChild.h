@@ -18,8 +18,7 @@
 class nsGlobalWindowInner;
 class nsDocShell;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BrowsingContext;
 class FeaturePolicy;
@@ -28,7 +27,6 @@ class WindowGlobalParent;
 class JSWindowActorChild;
 class JSActorMessageMeta;
 class BrowserChild;
-class SessionStoreDataCollector;
 
 /**
  * Actor for a single nsGlobalWindowInner. This actor is used to communicate
@@ -42,7 +40,7 @@ class WindowGlobalChild final : public WindowGlobalActor,
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WindowGlobalChild)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WindowGlobalChild)
 
   static already_AddRefed<WindowGlobalChild> GetByInnerWindowId(
       uint64_t aInnerWindowId);
@@ -125,6 +123,23 @@ class WindowGlobalChild final : public WindowGlobalActor,
 
   bool SameOriginWithTop();
 
+  // Returns `true` if this WindowGlobal is allowed to navigate the given
+  // BrowsingContext. BrowsingContexts which are currently out-of-process are
+  // supported, and assumed to be cross-origin.
+  //
+  // The given BrowsingContext must be in the same BrowsingContextGroup as this
+  // WindowGlobal.
+  bool CanNavigate(dom::BrowsingContext* aTarget, bool aConsiderOpener = true);
+
+  // Using the rules for choosing a browsing context we try to find
+  // the browsing context with the given name in the set of
+  // transitively reachable browsing contexts. Performs access control
+  // checks with regard to this.
+  // See
+  // https://html.spec.whatwg.org/multipage/browsers.html#the-rules-for-choosing-a-browsing-context-given-a-browsing-context-name.
+  dom::BrowsingContext* FindBrowsingContextWithName(
+      const nsAString& aName, bool aUseEntryGlobalForAccessCheck = true);
+
   nsISupports* GetParentObject();
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -133,16 +148,13 @@ class WindowGlobalChild final : public WindowGlobalActor,
     return mContainerFeaturePolicy;
   }
 
-  void SetSessionStoreDataCollector(SessionStoreDataCollector* aCollector);
-  SessionStoreDataCollector* GetSessionStoreDataCollector() const;
-
   void UnblockBFCacheFor(BFCacheStatus aStatus);
   void BlockBFCacheFor(BFCacheStatus aStatus);
 
  protected:
   const nsACString& GetRemoteType() override;
 
-  already_AddRefed<JSActor> InitJSActor(JS::HandleObject aMaybeActor,
+  already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
                                         ErrorResult& aRv) override;
   mozilla::ipc::IProtocol* AsNativeActor() override { return this; }
@@ -170,9 +182,6 @@ class WindowGlobalChild final : public WindowGlobalActor,
   mozilla::ipc::IPCResult RecvDispatchSecurityPolicyViolation(
       const nsString& aViolationEventJSON);
 
-  mozilla::ipc::IPCResult RecvGetSecurityInfo(
-      GetSecurityInfoResolver&& aResolve);
-
   mozilla::ipc::IPCResult RecvSaveStorageAccessPermissionGranted();
 
   mozilla::ipc::IPCResult RecvAddBlockedFrameNodeByClassifier(
@@ -192,6 +201,9 @@ class WindowGlobalChild final : public WindowGlobalActor,
       dom::SessionStoreRestoreData* aData,
       RestoreTabContentResolver&& aResolve);
 
+  mozilla::ipc::IPCResult RecvNotifyPermissionChange(const nsCString& aType,
+                                                     uint32_t aPermission);
+
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
@@ -205,11 +217,9 @@ class WindowGlobalChild final : public WindowGlobalActor,
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
   RefPtr<dom::FeaturePolicy> mContainerFeaturePolicy;
   nsCOMPtr<nsIURI> mDocumentURI;
-  RefPtr<SessionStoreDataCollector> mSessionStoreDataCollector;
   int64_t mBeforeUnloadListeners = 0;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // !defined(mozilla_dom_WindowGlobalChild_h)

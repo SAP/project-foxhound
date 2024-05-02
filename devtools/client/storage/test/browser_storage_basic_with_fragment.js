@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from head.js */
-
 // A second basic test to assert that the storage tree and table corresponding
 // to each item in the storage tree is correctly displayed.
 
@@ -149,7 +147,7 @@ async function testTables() {
     // Check whether correct number of items are present in the table
     is(
       doc.querySelectorAll(
-        ".table-widget-wrapper:first-of-type .table-widget-cell"
+        ".table-widget-column:first-of-type .table-widget-cell"
       ).length,
       items.length,
       "Number of items in table is correct"
@@ -165,7 +163,7 @@ async function testTables() {
   }
 }
 
-add_task(async function() {
+add_task(async function () {
   // storage-listings.html explicitly mixes secure and insecure frames.
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);

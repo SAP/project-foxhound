@@ -4,13 +4,12 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  schema: "resource:///modules/policies/schema.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  schema: "resource:///modules/policies/schema.sys.mjs",
 });
 
 function col(text, className) {
@@ -26,8 +25,7 @@ function col(text, className) {
 function link(text) {
   let column = document.createElement("td");
   let a = document.createElement("a");
-  a.href =
-    "https://github.com/mozilla/policy-templates/blob/master/README.md#" + text;
+  a.href = "https://mozilla.github.io/policy-templates/#" + text.toLowerCase();
   a.target = "_blank";
   let content = document.createTextNode(text);
   a.appendChild(content);
@@ -286,19 +284,22 @@ function generateDocumentation() {
   // map specific policies to a different string ID, to allow updates to
   // existing descriptions
   let string_mapping = {
-    DisableMasterPasswordCreation: "DisablePrimaryPasswordCreation",
-    DisableSetDesktopBackground: "DisableSetAsDesktopBackground",
-    Certificates: "CertificatesDescription",
-    SanitizeOnShutdown: "SanitizeOnShutdown2",
-    Permissions: "Permissions2",
     BackgroundAppUpdate: "BackgroundAppUpdate2",
+    Certificates: "CertificatesDescription",
+    DisableMasterPasswordCreation: "DisablePrimaryPasswordCreation",
+    DisablePocket: "DisablePocket2",
+    DisableSetDesktopBackground: "DisableSetAsDesktopBackground",
+    FirefoxHome: "FirefoxHome2",
+    Permissions: "Permissions2",
+    SanitizeOnShutdown: "SanitizeOnShutdown2",
     WindowsSSO: "Windows10SSO",
+    SecurityDevices: "SecurityDevices2",
   };
 
   for (let policyName in schema.properties) {
     let main_tbody = document.createElement("tbody");
     main_tbody.classList.add("collapsible");
-    main_tbody.addEventListener("click", function() {
+    main_tbody.addEventListener("click", function () {
       let content = this.nextElementSibling;
       content.classList.toggle("content");
     });
@@ -306,7 +307,7 @@ function generateDocumentation() {
     row.appendChild(link(policyName));
     let descriptionColumn = col("");
     let stringID = string_mapping[policyName] || policyName;
-    descriptionColumn.setAttribute("data-l10n-id", `policy-${stringID}`);
+    document.l10n.setAttributes(descriptionColumn, `policy-${stringID}`);
     row.appendChild(descriptionColumn);
     main_tbody.appendChild(row);
     let sec_tbody = document.createElement("tbody");
@@ -352,7 +353,7 @@ function generateDocumentation() {
 }
 
 let gInited = false;
-window.onload = function() {
+window.onload = function () {
   if (gInited) {
     return;
   }
@@ -367,7 +368,7 @@ window.onload = function() {
   let menu = document.getElementById("categories");
   for (let category of menu.children) {
     category.addEventListener("click", () => show(category));
-    category.addEventListener("keypress", function(event) {
+    category.addEventListener("keypress", function (event) {
       if (event.keyCode == KeyEvent.DOM_VK_RETURN) {
         show(category);
       }
@@ -383,7 +384,7 @@ window.onload = function() {
     }
   }
 
-  window.addEventListener("hashchange", function() {
+  window.addEventListener("hashchange", function () {
     if (location.hash) {
       let sectionButton = document.getElementById(
         "category-" + location.hash.substring(1)

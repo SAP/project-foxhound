@@ -4,8 +4,6 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-
 /**
  * Returns the grid fragment array with all the grid fragment data stringifiable.
  *
@@ -19,20 +17,6 @@ function getStringifiableFragments(fragments = []) {
   }
 
   return fragments.map(getStringifiableFragment);
-}
-
-/**
- * Returns a string representation of the CSS Grid data as returned by
- * node.getGridFragments. This is useful to compare grid state at each update and redraw
- * the highlighter if needed. It also seralizes the grid fragment data so it can be used
- * by protocol.js.
- *
- * @param  {Object} fragments
- *         Grid fragment object.
- * @return {String} representation of the CSS grid fragment data.
- */
-function stringifyGridFragments(fragments) {
-  return JSON.stringify(getStringifiableFragments(fragments));
 }
 
 function getStringifiableFragment(fragment) {
@@ -74,4 +58,3 @@ function getStringifiableTrack({ breadth, start, state, type }) {
 }
 
 exports.getStringifiableFragments = getStringifiableFragments;
-exports.stringifyGridFragments = stringifyGridFragments;

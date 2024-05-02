@@ -1,7 +1,5 @@
 "use strict";
 
-/* import-globals-from antitracking_head.js */
-
 const TEST_PAGE = TEST_DOMAIN + TEST_PATH + "page.html";
 const TEST_REDIRECT_PAGE = TEST_DOMAIN + TEST_PATH + "redirect.sjs";
 const TEST_TRACKING_PAGE = TEST_3RD_PARTY_DOMAIN + TEST_PATH + "page.html";
@@ -149,10 +147,10 @@ async function interactWithSpecificTracker(aTracker) {
   let win = await BrowserTestUtils.openNewBrowserWindow();
   await BrowserTestUtils.withNewTab(
     { gBrowser: win.gBrowser, url: aTracker },
-    async function(browser) {
+    async function (browser) {
       info("Let's interact with the tracker");
 
-      await SpecialPowers.spawn(browser, [], async function() {
+      await SpecialPowers.spawn(browser, [], async function () {
         SpecialPowers.wrap(content.document).userInteractionForTesting();
       });
     }
@@ -186,7 +184,7 @@ async function verifyStorageAccessPermission(aExpects) {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["network.cookie.cookieBehavior", BEHAVIOR_REJECT_TRACKER],

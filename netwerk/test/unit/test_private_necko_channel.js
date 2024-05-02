@@ -4,7 +4,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpserver = new HttpServer();
 var testpath = "/simple";
@@ -44,13 +46,15 @@ function serverHandler(metadata, response) {
 }
 
 function checkRequest(request, data, context) {
-  get_device_entry_count("disk", null, function(count) {
+  get_device_entry_count("disk", null, function (count) {
     Assert.equal(count, 0);
-    get_device_entry_count("disk", Services.loadContextInfo.private, function(
-      count
-    ) {
-      Assert.equal(count, 1);
-      httpserver.stop(do_test_finished);
-    });
+    get_device_entry_count(
+      "disk",
+      Services.loadContextInfo.private,
+      function (count1) {
+        Assert.equal(count1, 1);
+        httpserver.stop(do_test_finished);
+      }
+    );
   });
 }

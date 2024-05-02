@@ -188,7 +188,8 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
         mFontSizeScaleFactor(1.0f),
         mLastContextScale(1.0f),
         mLengthAdjustScaleFactor(1.0f) {
-    AddStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY |
+    AddStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_IS_SVG_TEXT |
+                 NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY |
                  NS_STATE_SVG_POSITIONING_DIRTY);
   }
 
@@ -199,21 +200,21 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   NS_DECL_FRAMEARENA_HELPERS(SVGTextFrame)
 
   // nsIFrame:
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 
-  virtual nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual nsContainerFrame* GetContentInsertionFrame() override {
+  nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
   }
 
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SVGText"_ns, aResult);
   }
 #endif
@@ -221,18 +222,17 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   /**
    * Finds the nsTextFrame for the closest rendered run to the specified point.
    */
-  virtual void FindCloserFrameForSelection(
+  void FindCloserFrameForSelection(
       const nsPoint& aPoint, FrameWithDistance* aCurrentBestFrame) override;
 
   // ISVGDisplayableFrame interface:
-  virtual void NotifySVGChanged(uint32_t aFlags) override;
-  virtual void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
-                        imgDrawingParams& aImgParams,
-                        const nsIntRect* aDirtyRect = nullptr) override;
-  virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
-  virtual void ReflowSVG() override;
-  virtual SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                                      uint32_t aFlags) override;
+  void NotifySVGChanged(uint32_t aFlags) override;
+  void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
+                imgDrawingParams& aImgParams) override;
+  nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
+  void ReflowSVG() override;
+  SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
+                              uint32_t aFlags) override;
 
   // SVG DOM text methods:
   uint32_t GetNumberOfChars(nsIContent* aContent);
@@ -241,9 +241,20 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
                                                    uint32_t charnum,
                                                    uint32_t nchars,
                                                    ErrorResult& aRv);
-  MOZ_CAN_RUN_SCRIPT
-  float GetSubStringLength(nsIContent* aContent, uint32_t charnum,
-                           uint32_t nchars, ErrorResult& aRv);
+  bool RequiresSlowFallbackForSubStringLength();
+  float GetSubStringLengthFastPath(nsIContent* aContent, uint32_t charnum,
+                                   uint32_t nchars, ErrorResult& aRv);
+  /**
+   * This fallback version of GetSubStringLength takes
+   * into account glyph positioning and requires us to have flushed layout
+   * before calling it. As per the SVG 2 spec, typically glyph
+   * positioning does not affect the results of getSubStringLength, but one
+   * exception is text in a textPath where we need to ignore characters that
+   * fall off the end of the textPath path.
+   */
+  float GetSubStringLengthSlowFallback(nsIContent* aContent, uint32_t charnum,
+                                       uint32_t nchars, ErrorResult& aRv);
+
   int32_t GetCharNumAtPosition(nsIContent* aContent,
                                const dom::DOMPointInit& aPoint);
 
@@ -297,10 +308,11 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * it.
    *
    * We have to do this in two cases: in response to a style change on a
-   * non-display <text>, where aReason will be eStyleChange (the common case),
-   * and also in response to glyphs changes on non-display <text> (i.e.,
-   * animated SVG-in-OpenType glyphs), in which case aReason will be eResize,
-   * since layout doesn't need to be recomputed.
+   * non-display <text>, where aReason will be
+   * IntrinsicDirty::FrameAncestorsAndDescendants (the common case), and also in
+   * response to glyphs changes on non-display <text> (i.e., animated
+   * SVG-in-OpenType glyphs), in which case aReason will be None, since layout
+   * doesn't need to be recomputed.
    */
   void ScheduleReflowSVGNonDisplayText(IntrinsicDirty aReason);
 
@@ -390,7 +402,7 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * Schedules mPositions to be recomputed and the covered region to be
    * updated.
    */
-  void NotifyGlyphMetricsChange();
+  void NotifyGlyphMetricsChange(bool aUpdateTextCorrespondence);
 
   /**
    * Recomputes mPositions by calling DoGlyphPositioning if this information
@@ -403,17 +415,6 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * within the <text>.
    */
   void DoGlyphPositioning();
-
-  /**
-   * This fallback version of GetSubStringLength that flushes layout and takes
-   * into account glyph positioning.  As per the SVG 2 spec, typically glyph
-   * positioning does not affect the results of getSubStringLength, but one
-   * exception is text in a textPath where we need to ignore characters that
-   * fall off the end of the textPath path.
-   */
-  MOZ_CAN_RUN_SCRIPT
-  float GetSubStringLengthSlowFallback(nsIContent* aContent, uint32_t charnum,
-                                       uint32_t nchars, ErrorResult& aRv);
 
   /**
    * Converts the specified index into mPositions to an addressable

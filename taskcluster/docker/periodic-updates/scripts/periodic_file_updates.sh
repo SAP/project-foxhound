@@ -48,7 +48,8 @@ JQ="$(command -v jq)"
 DO_HSTS=false
 HSTS_PRELOAD_SCRIPT="${SCRIPTDIR}/getHSTSPreloadList.js"
 HSTS_PRELOAD_ERRORS="nsSTSPreloadList.errors"
-HSTS_PRELOAD_INC="${DATADIR}/nsSTSPreloadList.inc"
+HSTS_PRELOAD_INC_OLD="${DATADIR}/nsSTSPreloadList.inc"
+HSTS_PRELOAD_INC_NEW="${BASEDIR}/${PRODUCT}/nsSTSPreloadList.inc"
 HSTS_UPDATED=false
 
 DO_HPKP=false
@@ -170,37 +171,37 @@ function unpack_artifacts {
 function compare_hsts_files {
   cd "${BASEDIR}"
 
-  HSTS_PRELOAD_INC_HG="${HGREPO}/raw-file/default/security/manager/ssl/$(basename "${HSTS_PRELOAD_INC}")"
+  HSTS_PRELOAD_INC_HG="${HGREPO}/raw-file/default/security/manager/ssl/$(basename "${HSTS_PRELOAD_INC_OLD}")"
 
   echo "INFO: Downloading existing include file..."
-  rm -rf "${HSTS_PRELOAD_ERRORS}" "${HSTS_PRELOAD_INC}"
+  rm -rf "${HSTS_PRELOAD_ERRORS}" "${HSTS_PRELOAD_INC_OLD}"
   echo "INFO: ${WGET} ${HSTS_PRELOAD_INC_HG}"
-  ${WGET} -O "${HSTS_PRELOAD_INC}" "${HSTS_PRELOAD_INC_HG}"
+  ${WGET} -O "${HSTS_PRELOAD_INC_OLD}" "${HSTS_PRELOAD_INC_HG}"
 
-  if [ ! -f "${HSTS_PRELOAD_INC}" ]; then
-    echo "Downloaded file '${HSTS_PRELOAD_INC}' not found in directory '$(pwd)' - this should have been downloaded above from ${HSTS_PRELOAD_INC_HG}." >&2
+  if [ ! -f "${HSTS_PRELOAD_INC_OLD}" ]; then
+    echo "Downloaded file '${HSTS_PRELOAD_INC_OLD}' not found in directory '$(pwd)' - this should have been downloaded above from ${HSTS_PRELOAD_INC_HG}." >&2
     exit 41
   fi
 
   # Run the script to get an updated preload list.
   echo "INFO: Generating new HSTS preload list..."
   cd "${BASEDIR}/${PRODUCT}"
-  if ! LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:. ./xpcshell "${HSTS_PRELOAD_SCRIPT}" "${HSTS_PRELOAD_INC}"; then
+  if ! LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:. ./xpcshell "${HSTS_PRELOAD_SCRIPT}" "${HSTS_PRELOAD_INC_OLD}"; then
     echo "HSTS preload list generation failed" >&2
     exit 43
   fi
 
   # The created files should be non-empty.
   echo "INFO: Checking whether new HSTS preload list is valid..."
-  if [ ! -s "${HSTS_PRELOAD_INC}" ]; then
-    echo "New HSTS preload list ${HSTS_PRELOAD_INC} is empty. That's less good." >&2
+  if [ ! -s "${HSTS_PRELOAD_INC_NEW}" ]; then
+    echo "New HSTS preload list ${HSTS_PRELOAD_INC_NEW} is empty. That's less good." >&2
     exit 42
   fi
   cd "${BASEDIR}"
 
   # Check for differences
   echo "INFO: diffing old/new HSTS preload lists into ${HSTS_DIFF_ARTIFACT}"
-  ${DIFF} "${BASEDIR}/${PRODUCT}/$(basename "${HSTS_PRELOAD_INC}")" "${HSTS_PRELOAD_INC}" | tee "${HSTS_DIFF_ARTIFACT}"
+  ${DIFF} "${HSTS_PRELOAD_INC_OLD}" "${HSTS_PRELOAD_INC_NEW}" | tee "${HSTS_DIFF_ARTIFACT}"
   if [ -s "${HSTS_DIFF_ARTIFACT}" ]
   then
     return 0
@@ -290,9 +291,9 @@ function compare_remote_settings_files {
   # 1. List remote settings collections from server.
   echo "INFO: fetch remote settings list from server"
   ${WGET} -qO- "${REMOTE_SETTINGS_SERVER}/buckets/monitor/collections/changes/records" |\
-    ${JQ} -r '.data[] | .bucket+"/"+.collection' |\
-    # 2. For each entry ${bucket, collection}
-  while IFS="/" read -r bucket collection; do
+    ${JQ} -r '.data[] | .bucket+"/"+.collection+"/"+(.last_modified|tostring)' |\
+    # 2. For each entry ${bucket, collection, last_modified}
+  while IFS="/" read -r bucket collection last_modified; do
 
     # 3. Download the dump from HG into REMOTE_SETTINGS_INPUT folder
     hg_dump_url="${HGREPO}/raw-file/default${REMOTE_SETTINGS_DIR}/${bucket}/${collection}.json"
@@ -307,10 +308,10 @@ function compare_remote_settings_files {
     fi
 
     # 4. Download server version into REMOTE_SETTINGS_OUTPUT folder
-    remote_records_url="$REMOTE_SETTINGS_SERVER/buckets/${bucket}/collections/${collection}/records"
+    remote_records_url="$REMOTE_SETTINGS_SERVER/buckets/${bucket}/collections/${collection}/changeset?_expected=${last_modified}"
     local_location_output="$REMOTE_SETTINGS_OUTPUT/${bucket}/${collection}.json"
     mkdir -p "$REMOTE_SETTINGS_OUTPUT/${bucket}"
-    ${WGET} -qO- "$remote_records_url" | ${JQ} . > "${local_location_output}"
+    ${WGET} -qO- "$remote_records_url" | ${JQ} '{"data": .changes, "timestamp": .timestamp}' > "${local_location_output}"
 
     # 5. Download attachments if needed.
     if [ "${bucket}" = "blocklists" ] && [ "${collection}" = "addons-bloomfilters" ]; then
@@ -400,7 +401,7 @@ function clone_repo {
 # Copies new HSTS files in place, and commits them.
 function stage_hsts_files {
   cd "${BASEDIR}"
-  cp -f "${BASEDIR}/${PRODUCT}/$(basename "${HSTS_PRELOAD_INC}")" "${REPODIR}/security/manager/ssl/"
+  cp -f "${HSTS_PRELOAD_INC_NEW}" "${REPODIR}/security/manager/ssl/"
 }
 
 function stage_hpkp_files {
@@ -440,7 +441,7 @@ function push_repo {
   do
     echo "Removing old request $diff"
     # There is no 'arc abandon', see bug 1452082
-    echo '{"transactions": [{"type":"abandon", "value": true}], "objectIdentifier": "'"${diff}"'"}' | arc call-conduit differential.revision.edit
+    echo '{"transactions": [{"type":"abandon", "value": true}], "objectIdentifier": "'"${diff}"'"}' | $ARC call-conduit -- differential.revision.edit
   done
 
   $ARC diff --verbatim --reviewers "${REVIEWERS}"
@@ -509,7 +510,7 @@ if [ "${REPODIR}" == "" ]; then
 fi
 
 case "${BRANCH}" in
-  mozilla-central|comm-central )
+  mozilla-central|comm-central|try )
     HGREPO="https://${HGHOST}/${BRANCH}"
     ;;
   mozilla-*|comm-* )

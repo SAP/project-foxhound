@@ -211,8 +211,9 @@ void DMDFuncs::StatusMsg(const char* aFmt, va_list aAp) {
   __android_log_vprint(ANDROID_LOG_INFO, "DMD", aFmt, aAp);
 #else
   // The +64 is easily enough for the "DMD[<pid>] " prefix and the NUL.
-  char* fmt = (char*)InfallibleAllocPolicy::malloc_(strlen(aFmt) + 64);
-  sprintf(fmt, "DMD[%d] %s", getpid(), aFmt);
+  size_t size = strlen(aFmt) + 64;
+  char* fmt = (char*)InfallibleAllocPolicy::malloc_(size);
+  snprintf(fmt, size, "DMD[%d] %s", getpid(), aFmt);
   vfprintf(stderr, fmt, aAp);
   InfallibleAllocPolicy::free_(fmt);
 #endif
@@ -635,7 +636,7 @@ static uint32_t gGCStackTraceTableWhenSizeExceeds = 4 * 1024;
     // when it is called during static initialization (see bug 1241684).
     //
     // This code is cribbed from the Gecko Profiler, which also uses
-    // FramePointerStackWalk() on Win32: Registers::SyncPopulate() for the
+    // FramePointerStackWalk() on Win32: REGISTERS_SYNC_POPULATE() for the
     // frame pointer, and GetStackTop() for the stack end.
     CONTEXT context;
     RtlCaptureContext(&context);
@@ -649,7 +650,7 @@ static uint32_t gGCStackTraceTableWhenSizeExceeds = 4 * 1024;
     // changes in libunwind.
     //
     // This code is cribbed from the Gecko Profiler, which also uses
-    // FramePointerStackWalk() on Mac: Registers::SyncPopulate() for the frame
+    // FramePointerStackWalk() on Mac: REGISTERS_SYNC_POPULATE() for the frame
     // pointer, and GetStackTop() for the stack end.
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wframe-address"
@@ -743,11 +744,7 @@ class LiveBlock {
  public:
   LiveBlock(const void* aPtr, size_t aReqSize,
             const StackTrace* aAllocStackTrace)
-      : mPtr(aPtr),
-        mReqSize(aReqSize),
-        mAllocStackTrace(aAllocStackTrace),
-        mReportStackTrace_mReportedOnAlloc()  // all fields get zeroed
-  {}
+      : mPtr(aPtr), mReqSize(aReqSize), mAllocStackTrace(aAllocStackTrace) {}
 
   const void* Address() const { return mPtr; }
 
@@ -897,7 +894,7 @@ class DeadBlock {
         mSlopSize(aLb.SlopSize()),
         mAllocStackTrace(aLb.AllocStackTrace()) {}
 
-  ~DeadBlock() {}
+  ~DeadBlock() = default;
 
   size_t ReqSize() const { return mReqSize; }
   size_t SlopSize() const { return mSlopSize; }

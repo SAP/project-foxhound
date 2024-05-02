@@ -7,13 +7,20 @@
 #ifndef mozilla_glean_GleanEvent_h
 #define mozilla_glean_GleanEvent_h
 
-#include "nsIGleanMetrics.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Record.h"
 #include "mozilla/glean/bindings/EventGIFFTMap.h"
+#include "mozilla/glean/bindings/GleanMetric.h"
 #include "mozilla/glean/fog_ffi_generated.h"
 #include "mozilla/ResultVariant.h"
-#include "mozilla/Tuple.h"
+
 #include "nsString.h"
 #include "nsTArray.h"
+
+namespace mozilla::dom {
+// forward declaration
+struct GleanEventRecord;
+}  // namespace mozilla::dom
 
 namespace mozilla::glean {
 
@@ -31,7 +38,7 @@ struct RecordedEvent {
   nsCString mCategory;
   nsCString mName;
 
-  nsTArray<Tuple<nsCString, nsCString>> mExtra;
+  nsTArray<std::tuple<nsCString, nsCString>> mExtra;
 };
 
 template <class T>
@@ -59,12 +66,10 @@ class EventMetric {
       if (aExtras) {
         CopyableTArray<Telemetry::EventExtraEntry> extras;
         auto serializedExtras = aExtras->ToFfiExtra();
-        auto keys = std::move(Get<0>(serializedExtras));
-        auto values = std::move(Get<1>(serializedExtras));
+        auto keys = std::move(std::get<0>(serializedExtras));
+        auto values = std::move(std::get<1>(serializedExtras));
         for (size_t i = 0; i < keys.Length(); i++) {
-          auto extraString = ExtraStringForKey(keys[i]);
-          extras.EmplaceBack(
-              Telemetry::EventExtraEntry{extraString, values[i]});
+          extras.EmplaceBack(Telemetry::EventExtraEntry{keys[i], values[i]});
         }
         telExtras = Some(extras);
       }
@@ -72,9 +77,9 @@ class EventMetric {
     }
     if (aExtras) {
       auto extra = aExtras->ToFfiExtra();
-      fog_event_record(mId, &mozilla::Get<0>(extra), &mozilla::Get<1>(extra));
+      fog_event_record(mId, &std::get<0>(extra), &std::get<1>(extra));
     } else {
-      nsTArray<uint32_t> keys;
+      nsTArray<nsCString> keys;
       nsTArray<nsCString> vals;
       fog_event_record(mId, &keys, &vals);
     }
@@ -100,7 +105,7 @@ class EventMetric {
   Result<Maybe<nsTArray<RecordedEvent>>, nsCString> TestGetValue(
       const nsACString& aPingName = nsCString()) const {
     nsCString err;
-    if (fog_event_test_get_error(mId, &aPingName, &err)) {
+    if (fog_event_test_get_error(mId, &err)) {
       return Err(err);
     }
 
@@ -112,24 +117,21 @@ class EventMetric {
     fog_event_test_get_value(mId, &aPingName, &events);
 
     nsTArray<RecordedEvent> result;
-    for (auto event : events) {
+    for (const auto& event : events) {
       auto ev = result.AppendElement();
       ev->mTimestamp = event.timestamp;
       ev->mCategory.Append(event.category);
       ev->mName.Assign(event.name);
 
-      // SAFETY:
-      // `event.extra` is a valid pointer to an array of length `2 *
-      // event.extra_len`.
-      ev->mExtra.SetCapacity(event.extra_len);
-      for (unsigned int i = 0; i < event.extra_len; i++) {
+      MOZ_ASSERT(event.extras.Length() % 2 == 0);
+      ev->mExtra.SetCapacity(event.extras.Length() / 2);
+      for (unsigned int i = 0; i < event.extras.Length(); i += 2) {
         // keys & values are interleaved.
-        auto key = event.extra[2 * i];
-        auto value = event.extra[2 * i + 1];
-        ev->mExtra.AppendElement(MakeTuple(key, value));
+        nsCString key = std::move(event.extras[i]);
+        nsCString value = std::move(event.extras[i + 1]);
+        ev->mExtra.AppendElement(
+            std::make_tuple(std::move(key), std::move(value)));
       }
-      // Event extras are now copied, we can free the array.
-      fog_event_free_event_extra(event.extra, event.extra_len);
     }
     return Some(std::move(result));
   }
@@ -143,19 +145,26 @@ class EventMetric {
 }  // namespace impl
 
 struct NoExtraKeys {
-  Tuple<nsTArray<uint32_t>, nsTArray<nsCString>> ToFfiExtra() const {
-    nsTArray<uint32_t> extraKeys;
+  std::tuple<nsTArray<nsCString>, nsTArray<nsCString>> ToFfiExtra() const {
+    nsTArray<nsCString> extraKeys;
     nsTArray<nsCString> extraValues;
-    return MakeTuple(std::move(extraKeys), std::move(extraValues));
+    return std::make_tuple(std::move(extraKeys), std::move(extraValues));
   }
 };
 
-class GleanEvent final : public nsIGleanEvent {
+class GleanEvent final : public GleanMetric {
  public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIGLEANEVENT
+  explicit GleanEvent(uint32_t id, nsISupports* aParent)
+      : GleanMetric(aParent), mEvent(id) {}
 
-  explicit GleanEvent(uint32_t id) : mEvent(id){};
+  virtual JSObject* WrapObject(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override final;
+
+  void Record(const dom::Optional<dom::Record<nsCString, nsCString>>& aExtra);
+
+  void TestGetValue(const nsACString& aPingName,
+                    dom::Nullable<nsTArray<dom::GleanEventRecord>>& aResult,
+                    ErrorResult& aRv);
 
  private:
   virtual ~GleanEvent() = default;

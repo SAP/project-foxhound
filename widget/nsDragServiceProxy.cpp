@@ -34,9 +34,9 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
   NS_ENSURE_STATE(mSourceDocument->GetDocShell());
   BrowserChild* child = BrowserChild::GetFrom(mSourceDocument->GetDocShell());
   NS_ENSURE_STATE(child);
-  nsTArray<mozilla::dom::IPCDataTransfer> dataTransfers;
-  nsContentUtils::TransferablesToIPCTransferables(
-      aArrayTransferables, dataTransfers, false, child->Manager(), nullptr);
+  nsTArray<mozilla::dom::IPCTransferableData> transferables;
+  nsContentUtils::TransferablesToIPCTransferableDatas(
+      aArrayTransferables, transferables, false, nullptr);
 
   nsCOMPtr<nsIPrincipal> principal;
   if (mSourceNode) {
@@ -46,7 +46,12 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
   nsCOMPtr<nsIContentSecurityPolicy> csp;
   if (mSourceDocument) {
     csp = mSourceDocument->GetCsp();
+    // XXX why do we need this here? Shouldn't they be set properly in
+    // nsBaseDragService already?
     mSourceWindowContext = mSourceDocument->GetWindowContext();
+    mSourceTopWindowContext = mSourceWindowContext
+                                  ? mSourceWindowContext->TopWindowContext()
+                                  : nullptr;
   }
 
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
@@ -65,24 +70,17 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
       if (dataSurface) {
         size_t length;
         int32_t stride;
-        Maybe<Shmem> maybeShm = nsContentUtils::GetSurfaceData(
-            dataSurface, &length, &stride, child);
-        if (maybeShm.isNothing()) {
-          return NS_ERROR_FAILURE;
-        }
-
-        auto surfaceData = maybeShm.value();
-
-        // Save the surface data to shared memory.
-        if (!surfaceData.IsReadable() || !surfaceData.get<char>()) {
+        auto surfaceData =
+            nsContentUtils::GetSurfaceData(*dataSurface, &length, &stride);
+        if (surfaceData.isNothing()) {
           NS_WARNING("Failed to create shared memory for drag session.");
           return NS_ERROR_FAILURE;
         }
 
         mozilla::Unused << child->SendInvokeDragSession(
-            dataTransfers, aActionType, Some(std::move(surfaceData)), stride,
-            dataSurface->GetFormat(), dragRect, principal, csp, csArgs,
-            mSourceWindowContext);
+            std::move(transferables), aActionType, std::move(surfaceData),
+            stride, dataSurface->GetFormat(), dragRect, principal, csp, csArgs,
+            mSourceWindowContext, mSourceTopWindowContext);
         StartDragSession();
         return NS_OK;
       }
@@ -90,8 +88,9 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
   }
 
   mozilla::Unused << child->SendInvokeDragSession(
-      dataTransfers, aActionType, Nothing(), 0, static_cast<SurfaceFormat>(0),
-      dragRect, principal, csp, csArgs, mSourceWindowContext);
+      std::move(transferables), aActionType, Nothing(), 0,
+      static_cast<SurfaceFormat>(0), dragRect, principal, csp, csArgs,
+      mSourceWindowContext, mSourceTopWindowContext);
   StartDragSession();
   return NS_OK;
 }

@@ -1,15 +1,10 @@
 async function checkEncoderSupport(test, config) {
+  assert_equals("function", typeof VideoEncoder.isConfigSupported);
   let supported = false;
   try {
     const support = await VideoEncoder.isConfigSupported(config);
     supported = support.supported;
   } catch (e) {}
-
-  if (!supported) {
-    // Mark the test 'passed', unfortunately assert_implements_optional()
-    // doesn't do it by itself.
-    test.done();
-  }
 
   assert_implements_optional(supported, 'Unsupported config: ' +
                              JSON.stringify(config));
@@ -42,8 +37,8 @@ function fourColorsFrame(ctx, width, height, text) {
 // later. This is an analog of the most basic bar code.
 function putBlackDots(ctx, width, height, count) {
   ctx.fillStyle = 'black';
-  const dot_size = 10;
-  const step = dot_size * 3;
+  const dot_size = 20;
+  const step = dot_size * 2;
 
   for (let i = 1; i <= count; i++) {
     let x = i * step;
@@ -60,16 +55,25 @@ function validateBlackDots(frame, count) {
   let cnv = new OffscreenCanvas(width, height);
   var ctx = cnv.getContext('2d');
   ctx.drawImage(frame, 0, 0);
-  const dot_size = 10;
-  const step = dot_size * 3;
+  const dot_size = 20;
+  const step = dot_size * 2;
 
   for (let i = 1; i <= count; i++) {
     let x = i * step + dot_size / 2;
     let y = step * (x / width + 1) + dot_size / 2;
     x %= width;
-    let rgba = ctx.getImageData(x, y, 1, 1).data;
-    const tolerance = 40;
-    if (rgba[0] > tolerance || rgba[1] > tolerance || rgba[2] > tolerance) {
+
+    if (x)
+      x = x -1;
+    if (y)
+      y = y -1;
+
+    let rgba = ctx.getImageData(x, y, 2, 2).data;
+    const tolerance = 60;
+    if ((rgba[0] > tolerance || rgba[1] > tolerance || rgba[2] > tolerance)
+      && (rgba[4] > tolerance || rgba[5] > tolerance || rgba[6] > tolerance)
+      && (rgba[8] > tolerance || rgba[9] > tolerance || rgba[10] > tolerance)
+      && (rgba[12] > tolerance || rgba[13] > tolerance || rgba[14] > tolerance)) {
       // The dot is too bright to be a black dot.
       return false;
     }
@@ -78,20 +82,22 @@ function validateBlackDots(frame, count) {
 }
 
 function createFrame(width, height, ts = 0) {
+  let duration = 33333;  // 30fps
   let text = ts.toString();
   let cnv = new OffscreenCanvas(width, height);
   var ctx = cnv.getContext('2d');
   fourColorsFrame(ctx, width, height, text);
-  return new VideoFrame(cnv, { timestamp: ts });
+  return new VideoFrame(cnv, { timestamp: ts, duration });
 }
 
 function createDottedFrame(width, height, dots, ts) {
   if (ts === undefined)
     ts = dots;
+  let duration = 33333;  // 30fps
   let text = ts.toString();
   let cnv = new OffscreenCanvas(width, height);
   var ctx = cnv.getContext('2d');
   fourColorsFrame(ctx, width, height, text);
   putBlackDots(ctx, width, height, dots);
-  return new VideoFrame(cnv, { timestamp: ts });
+  return new VideoFrame(cnv, { timestamp: ts, duration });
 }

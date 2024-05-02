@@ -16,7 +16,7 @@ add_task(async function checkExceptionDialogButton() {
   let browser = tab.linkedBrowser;
   let loaded = BrowserTestUtils.browserLoaded(browser, false, BAD_CERT);
   info("Clicking the exceptionDialogButton in advanced panel");
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     let doc = content.document;
     let exceptionButton = doc.getElementById("exceptionDialogButton");
     exceptionButton.click();
@@ -25,7 +25,7 @@ add_task(async function checkExceptionDialogButton() {
   info("Loading the url after adding exception");
   await loaded;
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     let doc = content.document;
     ok(
       !doc.documentURI.startsWith("about:certerror"),
@@ -52,27 +52,21 @@ add_task(async function checkPermanentExceptionPref() {
     let browser = tab.linkedBrowser;
     let loaded = BrowserTestUtils.browserLoaded(browser, false, BAD_CERT);
     info("Clicking the exceptionDialogButton in advanced panel");
-    let securityInfoAsString = await SpecialPowers.spawn(
+    let serverCertBytes = await SpecialPowers.spawn(
       browser,
       [],
-      async function() {
+      async function () {
         let doc = content.document;
         let exceptionButton = doc.getElementById("exceptionDialogButton");
         exceptionButton.click();
-        let serhelper = Cc[
-          "@mozilla.org/network/serialization-helper;1"
-        ].getService(Ci.nsISerializationHelper);
-        let serializable = content.docShell.failedChannel.securityInfo
-          .QueryInterface(Ci.nsITransportSecurityInfo)
-          .QueryInterface(Ci.nsISerializable);
-        return serhelper.serializeToString(serializable);
+        return content.docShell.failedChannel.securityInfo.serverCert.getRawDER();
       }
     );
 
     info("Loading the url after adding exception");
     await loaded;
 
-    await SpecialPowers.spawn(browser, [], async function() {
+    await SpecialPowers.spawn(browser, [], async function () {
       let doc = content.document;
       ok(
         !doc.documentURI.startsWith("about:certerror"),
@@ -85,13 +79,15 @@ add_task(async function checkPermanentExceptionPref() {
     ].getService(Ci.nsICertOverrideService);
 
     let isTemporary = {};
-    let cert = getSecurityInfo(securityInfoAsString).serverCert;
+    let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+      Ci.nsIX509CertDB
+    );
+    let cert = certdb.constructX509(serverCertBytes);
     let hasException = certOverrideService.hasMatchingOverride(
       "expired.example.com",
       -1,
       {},
       cert,
-      {},
       isTemporary
     );
     ok(hasException, "Has stored an exception for the page.");
@@ -117,31 +113,33 @@ add_task(async function checkBadStsCert() {
     let tab = await openErrorPage(BAD_STS_CERT, useFrame);
     let browser = tab.linkedBrowser;
 
-    await SpecialPowers.spawn(browser, [{ frame: useFrame }], async function({
-      frame,
-    }) {
-      let doc = frame
-        ? content.document.querySelector("iframe").contentDocument
-        : content.document;
-      let exceptionButton = doc.getElementById("exceptionDialogButton");
-      ok(
-        ContentTaskUtils.is_hidden(exceptionButton),
-        "Exception button is hidden."
-      );
-    });
+    await SpecialPowers.spawn(
+      browser,
+      [{ frame: useFrame }],
+      async function ({ frame }) {
+        let doc = frame
+          ? content.document.querySelector("iframe").contentDocument
+          : content.document;
+        let exceptionButton = doc.getElementById("exceptionDialogButton");
+        ok(
+          ContentTaskUtils.is_hidden(exceptionButton),
+          "Exception button is hidden."
+        );
+      }
+    );
 
     let message = await SpecialPowers.spawn(
       browser,
       [{ frame: useFrame }],
-      async function({ frame }) {
+      async function ({ frame }) {
         let doc = frame
           ? content.document.querySelector("iframe").contentDocument
           : content.document;
         let advancedButton = doc.getElementById("advancedButton");
         advancedButton.click();
 
-        // aboutNetError.js is using async localization to format several messages
-        // and in result the translation may be applied later.
+        // aboutNetError.mjs is using async localization to format several
+        // messages and in result the translation may be applied later.
         // We want to return the textContent of the element only after
         // the translation completes, so let's wait for it here.
         let elements = [doc.getElementById("badCertTechnicalInfo")];
@@ -183,21 +181,21 @@ add_task(async function checkhideAddExceptionButtonViaPref() {
     let tab = await openErrorPage(BAD_CERT, useFrame);
     let browser = tab.linkedBrowser;
 
-    await SpecialPowers.spawn(browser, [{ frame: useFrame }], async function({
-      frame,
-    }) {
-      let doc = frame
-        ? content.document.querySelector("iframe").contentDocument
-        : content.document;
+    await SpecialPowers.spawn(
+      browser,
+      [{ frame: useFrame }],
+      async function ({ frame }) {
+        let doc = frame
+          ? content.document.querySelector("iframe").contentDocument
+          : content.document;
 
-      let exceptionButton = doc.querySelector(
-        ".exceptionDialogButtonContainer"
-      );
-      ok(
-        ContentTaskUtils.is_hidden(exceptionButton),
-        "Exception button is hidden."
-      );
-    });
+        let exceptionButton = doc.getElementById("exceptionDialogButton");
+        ok(
+          ContentTaskUtils.is_hidden(exceptionButton),
+          "Exception button is hidden."
+        );
+      }
+    );
 
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   }
@@ -210,7 +208,7 @@ add_task(async function checkhideAddExceptionButtonInFrames() {
   let tab = await openErrorPage(BAD_CERT, true);
   let browser = tab.linkedBrowser;
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     let doc = content.document.querySelector("iframe").contentDocument;
     let exceptionButton = doc.getElementById("exceptionDialogButton");
     ok(

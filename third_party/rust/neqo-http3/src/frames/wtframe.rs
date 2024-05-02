@@ -13,7 +13,7 @@ pub(crate) type WebTransportFrameType = u64;
 const WT_FRAME_CLOSE_SESSION: WebTransportFrameType = 0x2843;
 const WT_FRAME_CLOSE_MAX_MESSAGE_SIZE: u64 = 1024;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum WebTransportFrame {
     CloseSession { error: u32, message: String },
 }
@@ -42,9 +42,8 @@ impl FrameDecoder<WebTransportFrame> for WebTransportFrame {
                 }
                 let error =
                     u32::try_from(dec.decode_uint(4).ok_or(Error::HttpMessageError)?).unwrap();
-                let message = match String::from_utf8(dec.decode_remainder().to_vec()) {
-                    Ok(s) => s,
-                    Err(_) => return Err(Error::HttpMessageError),
+                let Ok(message) = String::from_utf8(dec.decode_remainder().to_vec()) else {
+                    return Err(Error::HttpMessageError);
                 };
                 Ok(Some(WebTransportFrame::CloseSession { error, message }))
             } else {

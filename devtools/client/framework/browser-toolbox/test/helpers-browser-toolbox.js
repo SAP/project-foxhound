@@ -4,10 +4,12 @@
 
 "use strict";
 
-const { BrowserToolboxLauncher } = ChromeUtils.import(
-  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
+const { BrowserToolboxLauncher } = ChromeUtils.importESModule(
+  "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs"
 );
-const { DevToolsClient } = require("devtools/client/devtools-client");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
 
 /**
  * Open up a browser toolbox and return a ToolboxTask object for interacting
@@ -19,25 +21,19 @@ const { DevToolsClient } = require("devtools/client/devtools-client");
  *   the global evaluation scope of the toolbox. The toolbox cannot load testing
  *   files directly.
  *
- * spawn(arg, function)
- *
- *   Invoke the given function and argument within the global evaluation scope
- *   of the toolbox. The evaluation scope predefines the name "gToolbox" for the
- *   toolbox itself.
- *
  * destroy()
  *
  *   Destroy the browser toolbox and make sure it exits cleanly.
  *
  * @param {Object}:
- *        - {Boolean} enableBrowserToolboxFission: pass true to enable the OBT.
- *        - {Boolean} enableContentMessages: pass true to log content messages
- *          in the Console.
+ *        - {Function} existingProcessClose: if truth-y, connect to an existing
+ *          browser toolbox process rather than launching a new one and
+ *          connecting to it.  The given function is expected to return an
+ *          object containing an `exitCode`, like `{exitCode}`, and will be
+ *          awaited in the returned `destroy()` function.  `exitCode` is
+ *          asserted to be 0 (success).
  */
-async function initBrowserToolboxTask({
-  enableBrowserToolboxFission,
-  enableContentMessages,
-} = {}) {
+async function initBrowserToolboxTask({ existingProcessClose } = {}) {
   if (AppConstants.ASAN) {
     ok(
       false,
@@ -50,27 +46,32 @@ async function initBrowserToolboxTask({
   await pushPref("devtools.browsertoolbox.enable-test-server", true);
   await pushPref("devtools.debugger.prompt-connection", false);
 
-  if (enableBrowserToolboxFission) {
-    await pushPref("devtools.browsertoolbox.fission", true);
-  }
-
   // This rejection seems to affect all tests using the browser toolbox.
-  ChromeUtils.import(
-    "resource://testing-common/PromiseTestUtils.jsm"
+  ChromeUtils.importESModule(
+    "resource://testing-common/PromiseTestUtils.sys.mjs"
   ).PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
-  const process = await new Promise(onRun => {
-    BrowserToolboxLauncher.init(null, onRun, /* overwritePreferences */ true);
-  });
-  ok(true, "Browser toolbox started\n");
-  is(
-    BrowserToolboxLauncher.getBrowserToolboxSessionState(),
-    true,
-    "Has session state"
-  );
+  let process;
+  let dbgProcess;
+  if (!existingProcessClose) {
+    [process, dbgProcess] = await new Promise(resolve => {
+      BrowserToolboxLauncher.init({
+        onRun: (_process, _dbgProcess) => resolve([_process, _dbgProcess]),
+        overwritePreferences: true,
+      });
+    });
+    ok(true, "Browser toolbox started");
+    is(
+      BrowserToolboxLauncher.getBrowserToolboxSessionState(),
+      true,
+      "Has session state"
+    );
+  } else {
+    ok(true, "Connecting to existing browser toolbox");
+  }
 
   // The port of the DevToolsServer installed in the toolbox process is fixed.
-  // See browser-toolbox-window.js
+  // See browser-toolbox/window.js
   let transport;
   while (true) {
     try {
@@ -89,20 +90,11 @@ async function initBrowserToolboxTask({
   const client = new DevToolsClient(transport);
   await client.connect();
 
-  const descriptorFront = await client.mainRoot.getMainProcess();
-  const target = await descriptorFront.getTarget();
+  const commands = await CommandsFactory.forMainProcess({ client });
+  const target = await commands.descriptorFront.getTarget();
   const consoleFront = await target.getFront("console");
 
   ok(true, "Connected");
-
-  const preferenceFront = await client.mainRoot.getFront("preference");
-
-  if (enableContentMessages) {
-    await preferenceFront.setBoolPref(
-      "devtools.browserconsole.contentMessages",
-      true
-    );
-  }
 
   await importFunctions({
     info: msg => dump(msg + "\n"),
@@ -143,12 +135,32 @@ async function initBrowserToolboxTask({
     return onEvaluationResult;
   }
 
+  /**
+   * Invoke the given function and argument(s) within the global evaluation scope
+   * of the toolbox. The evaluation scope predefines the name "gToolbox" for the
+   * toolbox itself.
+   *
+   * @param {value|Array<value>} arg
+   *        If an Array is passed, we will consider it as the list of arguments
+   *        to pass to `fn`. Otherwise we will consider it as the unique argument
+   *        to pass to it.
+   * @param {Function} fn
+   *        Function to call in the global scope within the browser toolbox process.
+   *        This function will be stringified and passed to the process via RDP.
+   * @return {Promise<Value>}
+   *        Return the primitive value returned by `fn`.
+   */
   async function spawn(arg, fn) {
-    const rv = await evaluateExpression(`(${fn})(${arg})`, {
+    // Use JSON.stringify to ensure that we can pass strings
+    // as well as any JSON-able object.
+    const argString = JSON.stringify(Array.isArray(arg) ? arg : [arg]);
+    const rv = await evaluateExpression(`(${fn}).apply(null,${argString})`, {
+      // Use the following argument in order to ensure waiting for the completion
+      // of the promise returned by `fn` (in case this is an async method).
       mapped: { await: true },
     });
-    if (rv.exception) {
-      throw new Error(`ToolboxTask.spawn failure: ${rv.exception.message}`);
+    if (rv.exceptionMessage) {
+      throw new Error(`ToolboxTask.spawn failure: ${rv.exceptionMessage}`);
     } else if (rv.topLevelAwaitRejected) {
       throw new Error(`ToolboxTask.spawn await rejected`);
     }
@@ -176,10 +188,12 @@ async function initBrowserToolboxTask({
   async function destroy() {
     // No need to do anything if `destroy` was already called.
     if (destroyed) {
-      return null;
+      return;
     }
 
-    const closePromise = process._dbgProcess.wait();
+    const closePromise = existingProcessClose
+      ? existingProcessClose()
+      : dbgProcess.wait();
     evaluateExpression("gToolbox.destroy()").catch(e => {
       // Ignore connection close as the toolbox destroy may destroy
       // everything quickly enough so that evaluate request is still pending
@@ -193,13 +207,15 @@ async function initBrowserToolboxTask({
 
     is(exitCode, 0, "The remote debugger process died cleanly");
 
-    is(
-      BrowserToolboxLauncher.getBrowserToolboxSessionState(),
-      false,
-      "No session state after closing"
-    );
+    if (!existingProcessClose) {
+      is(
+        BrowserToolboxLauncher.getBrowserToolboxSessionState(),
+        false,
+        "No session state after closing"
+      );
+    }
 
-    await client.close();
+    await commands.destroy();
     destroyed = true;
   }
 

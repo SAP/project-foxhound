@@ -109,6 +109,13 @@
   args:
     input: ValId
 
+- name: GuardIsNotUninitializedLexical
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    val: ValId
+
 - name: GuardToBoolean
   shared: true
   transpile: true
@@ -230,7 +237,16 @@
   cost_estimate: 1
   args:
     obj: ObjId
-    shape: ShapeField
+    shape: WeakShapeField
+
+- name: GuardMultipleShapes
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  custom_writer: true
+  args:
+    obj: ObjId
+    shapes: ObjectField
 
 - name: GuardProto
   shared: false
@@ -238,7 +254,7 @@
   cost_estimate: 1
   args:
     obj: ObjId
-    proto: ObjectField
+    proto: WeakObjectField
 
 - name: GuardNullProto
   shared: true
@@ -265,6 +281,14 @@
     obj: ObjId
     clasp: RawPointerField
 
+- name: GuardGlobalGeneration
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    expected: RawInt32Field
+    generationAddr: RawPointerField
+
 - name: HasClassResult
   shared: false
   transpile: true
@@ -274,31 +298,56 @@
     clasp: RawPointerField
 
 - name: CallRegExpMatcherResult
-  shared: true
+  shared: false
   transpile: true
   cost_estimate: 5
   args:
     regexp: ObjId
     input: StringId
     lastIndex: Int32Id
+    stub: JitCodeField
 
 - name: CallRegExpSearcherResult
-  shared: true
+  shared: false
   transpile: true
   cost_estimate: 5
   args:
     regexp: ObjId
     input: StringId
     lastIndex: Int32Id
+    stub: JitCodeField
 
-- name: CallRegExpTesterResult
+- name: RegExpSearcherLastLimitResult
   shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+
+- name: RegExpHasCaptureGroupsResult
+  shared: false
+  transpile: true
+  cost_estimate: 1
+  args:
+    regexp: ObjId
+    input: StringId
+
+- name: RegExpBuiltinExecMatchResult
+  shared: false
   transpile: true
   cost_estimate: 5
   args:
     regexp: ObjId
     input: StringId
-    lastIndex: Int32Id
+    stub: JitCodeField
+
+- name: RegExpBuiltinExecTestResult
+  shared: false
+  transpile: true
+  cost_estimate: 5
+  args:
+    regexp: ObjId
+    input: StringId
+    stub: JitCodeField
 
 - name: RegExpFlagResult
   shared: true
@@ -410,7 +459,7 @@
 
 - name: GuardHasProxyHandler
   shared: false
-  transpile: false
+  transpile: true
   cost_estimate: 1
   args:
     obj: ObjId
@@ -429,7 +478,15 @@
   cost_estimate: 1
   args:
     obj: ObjId
-    expected: ObjectField
+    expected: WeakObjectField
+
+- name: GuardObjectIdentity
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    obj1: ObjId
+    obj2: ObjId
 
 - name: GuardSpecificFunction
   shared: false
@@ -438,7 +495,7 @@
   custom_writer: true
   args:
     fun: ObjId
-    expected: ObjectField
+    expected: WeakObjectField
     nargsAndFlags: RawInt32Field
 
 - name: GuardFunctionScript
@@ -448,7 +505,7 @@
   custom_writer: true
   args:
     obj: ObjId
-    expected: BaseScriptField
+    expected: WeakBaseScriptField
     nargsAndFlags: RawInt32Field
 
 - name: GuardSpecificAtom
@@ -466,6 +523,14 @@
   args:
     sym: SymbolId
     expected: SymbolField
+
+- name: GuardSpecificInt32
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    num: Int32Id
+    expected: Int32Imm
 
 - name: GuardNoDenseElements
   shared: true
@@ -506,16 +571,6 @@
     boolean: BooleanId
     result: NumberId
 
-- name: GuardAndGetIterator
-  shared: false
-  transpile: false
-  cost_estimate: 4
-  args:
-    obj: ObjId
-    iter: ObjectField
-    enumeratorsAddr: RawPointerField
-    result: ObjId
-
 - name: GuardHasGetterSetter
   shared: true
   transpile: true
@@ -523,7 +578,7 @@
   args:
     obj: ObjId
     id: IdField
-    getterSetter: GetterSetterField
+    getterSetter: WeakGetterSetterField
 
 - name: GuardInt32IsNonNegative
   shared: true
@@ -540,7 +595,7 @@
     obj: ObjId
     index: Int32Id
 
-- name: GuardIndexGreaterThanDenseInitLength
+- name: GuardIndexIsNotDenseElement
   shared: true
   transpile: true
   cost_estimate: 1
@@ -608,6 +663,40 @@
     offset: RawInt32Field
     val: ValueField
 
+- name: LoadScriptedProxyHandler
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    result: ValId
+    obj: ObjId
+
+- name: IdToStringOrSymbol
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    result: ValId
+    id: ValId
+
+- name: LoadFixedSlot
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    result: ValId
+    obj: ObjId
+    offset: RawInt32Field
+
+- name: LoadDynamicSlot
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    result: ValId
+    obj: ObjId
+    slot: RawInt32Field
+
 - name: GuardNoAllocationMetadataBuilder
   shared: true
   transpile: true
@@ -674,6 +763,17 @@
     result: ObjId
     obj: ObjectField
 
+# This is just LoadObject with extra information for the purpose of optimizing
+# out shape guards if we're just storing to slots of the receiver object.
+- name: LoadProtoObject
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    result: ObjId
+    protoObj: ObjectField
+    receiverObj: ObjId
+
 - name: LoadProto
   shared: true
   transpile: true
@@ -739,7 +839,7 @@
   cost_estimate: 4
   args:
     obj: ObjId
-    name: PropertyNameField
+    name: IdField
 
 - name: MegamorphicLoadSlotByValueResult
   shared: true
@@ -752,11 +852,12 @@
 - name: MegamorphicStoreSlot
   shared: true
   transpile: true
-  cost_estimate: 4
+  cost_estimate: 5
   args:
     obj: ObjId
-    name: PropertyNameField
+    name: IdField
     rhs: ValId
+    strict: BoolImm
 
 - name: MegamorphicSetElement
   shared: false
@@ -776,6 +877,14 @@
     obj: ObjId
     id: ValId
     hasOwn: BoolImm
+
+- name: ObjectToIteratorResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    obj: ObjId
+    enumeratorsAddr: RawPointerField
 
 - name: ValueToIteratorResult
   shared: true
@@ -936,6 +1045,16 @@
     begin: Int32Id
     end: Int32Id
 
+- name: ArgumentsSliceResult
+  shared: false
+  transpile: true
+  cost_estimate: 5
+  args:
+    templateObject: ObjectField
+    args: ObjId
+    begin: Int32Id
+    end: Int32Id
+
 - name: IsArrayResult
   shared: false
   transpile: true
@@ -1043,15 +1162,6 @@
   args:
     obj: ObjId
 
-- name: FinishBoundFunctionInitResult
-  shared: true
-  transpile: true
-  cost_estimate: 5
-  args:
-    bound: ObjId
-    target: ObjId
-    argCount: Int32Id
-
 - name: NewArrayIteratorResult
   shared: true
   transpile: true
@@ -1135,6 +1245,30 @@
   cost_estimate: 5
   args:
     code: Int32Id
+
+- name: StringIndexOfResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
+- name: StringStartsWithResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
+- name: StringEndsWithResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
 
 - name: StringToLowerCaseResult
   shared: true
@@ -1349,6 +1483,21 @@
   args:
     input: NumberId
     fun: UnaryMathFunctionImm
+
+- name: NumberParseIntResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    radix: Int32Id
+
+- name: DoubleParseIntResult
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    num: NumberId
 
 - name: ObjectToStringResult
   shared: true
@@ -1578,6 +1727,14 @@
     input: NumberId
     result: StringId
 
+- name: Int32ToStringWithBaseResult
+  shared: true
+  transpile: true
+  cost_estimate: 3
+  args:
+    input: Int32Id
+    base: Int32Id
+
 - name: BooleanToString
   shared: true
   transpile: true
@@ -1595,6 +1752,18 @@
     callee: ObjId
     argc: Int32Id
     flags: CallFlagsImm
+    argcFixed: UInt32Imm
+
+- name: CallBoundScriptedFunction
+  shared: false
+  transpile: true
+  cost_estimate: 3
+  args:
+    callee: ObjId
+    target: ObjId
+    argc: Int32Id
+    flags: CallFlagsImm
+    numBoundArgs: UInt32Imm
 
 - name: CallWasmFunction
   shared: false
@@ -1604,6 +1773,7 @@
     callee: ObjId
     argc: Int32Id
     flags: CallFlagsImm
+    argcFixed: UInt32Imm
     funcExport: RawPointerField
     instance: ObjectField
 
@@ -1624,6 +1794,7 @@
     callee: ObjId
     argc: Int32Id
     flags: CallFlagsImm
+    argcFixed: UInt32Imm
 #ifdef JS_SIMULATOR
     target: RawPointerField
 #else
@@ -1640,19 +1811,21 @@
     argc: Int32Id
     thisObj: ObjId
     flags: CallFlagsImm
+    argcFixed: UInt32Imm
 #ifdef JS_SIMULATOR
     target: RawPointerField
 #endif
 
 - name: CallClassHook
   shared: false
-  transpile: false
+  transpile: true
   cost_estimate: 4
   custom_writer: true
   args:
     callee: ObjId
     argc: Int32Id
     flags: CallFlagsImm
+    argcFixed: UInt32Imm
     target: RawPointerField
 
 - name: CallInlinedFunction
@@ -1665,9 +1838,37 @@
     argc: Int32Id
     icScript: RawPointerField
     flags: CallFlagsImm
+    argcFixed: UInt32Imm
 
+#ifdef JS_PUNBOX64
+- name: CallScriptedProxyGetResult
+  shared: false
+  transpile: true
+  cost_estimate: 4
+  custom_writer: true
+  args:
+    target: ValId
+    receiver: ObjId
+    handler: ObjId
+    trap: ObjectField
+    property: IdField
+    nargsAndFlags: UInt32Imm
 
-# Meta ops generate no code, but contain data for BaselineInspector.
+- name: CallScriptedProxyGetByValueResult
+  shared: false
+  transpile: true
+  cost_estimate: 4
+  custom_writer: true
+  args:
+    target: ValId
+    receiver: ObjId
+    handler: ObjId
+    property: ValId
+    trap: ObjectField
+    nargsAndFlags: UInt32Imm
+#endif
+
+# Meta ops generate no code, but contain data for the Warp Transpiler.
 - name: MetaScriptedThisShape
   shared: true
   transpile: true
@@ -1675,6 +1876,24 @@
   custom_writer: true
   args:
     thisShape: ShapeField
+
+- name: BindFunctionResult
+  shared: false
+  transpile: true
+  cost_estimate: 5
+  args:
+    target: ObjId
+    argc: UInt32Imm
+    templateObject: ObjectField
+
+- name: SpecializedBindFunctionResult
+  shared: false
+  transpile: true
+  cost_estimate: 4
+  args:
+    target: ObjId
+    argc: UInt32Imm
+    templateObject: ObjectField
 
 - name: LoadFixedSlotResult
   shared: false
@@ -1828,6 +2047,14 @@
   args:
     obj: ObjId
 
+- name: LoadArgumentsObjectLength
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    obj: ObjId
+    result: Int32Id
+
 - name: LoadFunctionLengthResult
   shared: true
   transpile: true
@@ -1839,6 +2066,29 @@
   shared: true
   transpile: true
   cost_estimate: 2
+  args:
+    obj: ObjId
+
+- name: LoadBoundFunctionNumArgs
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    obj: ObjId
+    result: Int32Id
+
+- name: LoadBoundFunctionTarget
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    obj: ObjId
+    result: ObjId
+
+- name: GuardBoundFunctionIsConstructor
+  shared: true
+  transpile: true
+  cost_estimate: 1
   args:
     obj: ObjId
 
@@ -1870,6 +2120,15 @@
   args:
     obj: ObjId
 
+- name: LinearizeForCharAccess
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    str: StringId
+    index: Int32Id
+    result: StringId
+
 - name: LoadStringCharResult
   shared: false
   transpile: true
@@ -1877,6 +2136,7 @@
   args:
     str: StringId
     index: Int32Id
+    handleOOB: BoolImm
 
 - name: LoadStringCharCodeResult
   shared: true
@@ -1885,6 +2145,7 @@
   args:
     str: StringId
     index: Int32Id
+    handleOOB: BoolImm
 
 - name: LoadStringLengthResult
   shared: true
@@ -1898,22 +2159,6 @@
   transpile: true
   cost_estimate: 1
   args:
-
-- name: LoadEnvironmentFixedSlotResult
-  shared: false
-  transpile: true
-  cost_estimate: 1
-  args:
-    obj: ObjId
-    offset: RawInt32Field
-
-- name: LoadEnvironmentDynamicSlotResult
-  shared: false
-  transpile: true
-  cost_estimate: 1
-  args:
-    obj: ObjId
-    offset: RawInt32Field
 
 - name: LoadObjectResult
   shared: true
@@ -2039,6 +2284,15 @@
   args:
     obj: ObjId
     index: Int32Id
+
+- name: CallNativeGetElementSuperResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    obj: ObjId
+    index: Int32Id
+    receiver: ValId
 
 - name: GetNextMapSetEntryForIteratorResult
   shared: true
@@ -2709,6 +2963,13 @@
     set: ObjId
     obj: ObjId
 
+- name: SetSizeResult
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    set: ObjId
+
 - name: MapHasResult
   shared: true
   transpile: true
@@ -2805,6 +3066,13 @@
     map: ObjId
     obj: ObjId
 
+- name: MapSizeResult
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    map: ObjId
+
 - name: ArrayFromArgumentsObjectResult
   shared: true
   transpile: true
@@ -2812,6 +3080,16 @@
   args:
     obj: ObjId
     shape: ShapeField
+
+- name: CloseIterScriptedResult
+  shared: false
+  transpile: true
+  cost_estimate: 5
+  args:
+    iter: ObjId
+    callee: ObjId
+    kind: CompletionKindImm
+    targetNargs: UInt32Imm
 
 - name: CallPrintString
   shared: true
@@ -2845,3 +3123,21 @@
   args:
     val: ValId
     mustBeRecovered: BoolImm
+
+- name: AssertPropertyLookup
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    obj: ObjId
+    id: IdField
+    slot: RawInt32Field
+
+#ifdef FUZZING_JS_FUZZILLI
+- name: FuzzilliHashResult
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    val: ValId
+#endif

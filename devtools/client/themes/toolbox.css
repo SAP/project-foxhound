@@ -19,6 +19,72 @@
   color: var(--theme-toolbar-color);
 }
 
+
+.toolbox-always-on-top {
+  display: flex;
+  padding: 6px;
+  margin-inline: 8px;
+  background-color: transparent;
+  border: 2px solid transparent;
+  border-radius: 2px;
+  align-items: center;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.toolbox-always-on-top::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  background-size: cover;
+  background-image: url("chrome://devtools/skin/images/command-always-on-top-window.svg");
+  -moz-context-properties: fill;
+  fill: currentColor;
+  margin-inline-start: 5px;
+}
+
+.toolbox-always-on-top:focus {
+  outline: none;
+  background-color: var(--theme-toolbar-hover);
+  box-shadow: var(--toolbox-button-box-shadow-focus);
+}
+:root {
+  --toolbox-button-box-shadow-focus: 0 0 0 1px #0a84ff inset, 0 0 0 1px #0a84ff, 0 0 0 4px rgba(10, 132, 255, 0.3);
+}
+
+.toolbox-always-on-top:hover {
+  background-color: var(--theme-toolbar-hover);
+  border-color: var(--tab-line-hover-color);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toolbox-always-on-top.checked:not(.toolbox-is-focused) {
+    animation: 0.5s linear 0s 1 normal blink-always-on-top;
+  }
+
+  @keyframes blink-always-on-top {
+    from {
+      background-color: var(--theme-toolbar-background-highlighted);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+}
+
+.toolbox-always-on-top.checked:not(:active),
+.toolbox-always-on-top:not(.checked):active {
+  color: var(--theme-icon-checked-color);
+}
+
+.toolbox-always-on-top.checked:hover:not(:active),
+.toolbox-always-on-top:not(.checked):hover:active {
+  border-color: var(--tab-line-selected-color);
+}
+
 /*
  *  Debug Target labels with icon layout
  *  +------+------------------------+---------------+
@@ -84,7 +150,7 @@
 }
 
 .debug-target-info .navigation-button:focus {
-  box-shadow: 0 0 0 1px #0a84ff inset, 0 0 0 1px #0a84ff, 0 0 0 4px rgba(10, 132, 255, 0.3)
+  box-shadow: var(--toolbox-button-box-shadow-focus);
 }
 
 .debug-target-info .navigation-button:active {
@@ -101,9 +167,14 @@
 
 .debug-target-info .debug-target-url {
   display: flex;
-  flex-grow: 1;
-  padding-inline-end: var(--padding-inline-end-size);
+  flex: 1;
   align-self: center;
+  min-width: 0;
+}
+
+/* Add some inline-end padding when the debug target url is the last child */
+.debug-target-info .debug-target-url:is(:last-child) {
+  padding-inline-end: var(--padding-inline-end-size);
 }
 
 .debug-target-info .debug-target-url-input {
@@ -205,6 +276,8 @@
   text-overflow: ellipsis;
   color: var(--theme-toolbar-color);
   background-color: transparent;
+    /* adjust outline offset so it's not clipped */
+  --theme-outline-offset: -2px;
 }
 
 .devtools-tab-label {
@@ -230,8 +303,7 @@
   min-width: 26px;
 }
 
-.devtools-tab:hover,
-.devtools-tab:focus {
+.devtools-tab:hover {
   background-color: var(--theme-toolbar-hover);
 }
 
@@ -286,6 +358,8 @@
   line-height: 16px;
   color: var(--theme-icon-color);
   background-color: transparent;
+  /* adjust outline offset so it's not clipped */
+  --theme-outline-offset: -2px;
 }
 
 /* Button icon style */
@@ -304,11 +378,6 @@
 
 .devtools-tabbar-button::-moz-focus-inner {
   border: none;
-}
-
-.devtools-tabbar-button:focus {
-  outline: none;
-  background-color: var(--theme-toolbar-hover);
 }
 
 .devtools-tabbar-button:hover,
@@ -402,7 +471,7 @@
 }
 
 .toolbox-error::before {
-  background-image: url("chrome://devtools/skin/images/error-small.svg");
+  background-image: url("resource://devtools-shared-images/error-small.svg");
   fill: var(--theme-icon-error-color) !important;
 }
 
@@ -417,7 +486,7 @@
 }
 
 #command-button-pick::before {
-  background-image: url("chrome://devtools/content/shared/images/command-pick.svg");
+  background-image: url("resource://devtools-shared-images/command-pick.svg");
 }
 
 #command-button-pick.accessibility::before {
@@ -425,7 +494,7 @@
 }
 
 #command-button-pick.remote-fenix::before {
-  background-image: url("chrome://devtools/content/shared/images/command-pick-remote-touch.svg");
+  background-image: url("resource://devtools-shared-images/command-pick-remote-touch.svg");
 }
 
 /* Command button images */
@@ -501,8 +570,8 @@
 /* Toolbox panels */
 
 .toolbox-panel {
-  display: -moz-box;
-  -moz-box-flex: 1;
+  display: flex;
+  flex: 1;
   visibility: collapse;
 }
 
@@ -521,17 +590,49 @@
   -moz-user-focus: ignore;
 }
 
+#toolbox-panel-webconsole {
+  min-height: 75px;
+  flex: 1 auto;
+}
+
+#toolbox-panel-webconsole[collapsed],
+#toolbox-deck[collapsed] {
+  height: 0 !important;
+  min-height: 0 !important;
+}
+
+#toolbox-deck:not([collapsed]),
+#toolbox-panel-webconsole[expanded] {
+  /* Override the splitter-set height and flex instead */
+  height: auto !important;
+}
+
 /**
- * Enrure that selected toolbox panel's contents are keyboard accessible as they
+ * Ensure that selected toolbox panel's contents are keyboard accessible as they
  * are explicitly made not to be when hidden (default).
  */
 .toolbox-panel[selected] * {
   -moz-user-focus: normal;
 }
 
-/* Let the component gain focus when a click hits an empty area */
+.toolbox-panel-iframe {
+  /* Allow toolbox frames to shrink under the default size and flex */
+  contain: size;
+}
+
 #toolbox-container {
+  flex: 1;
+  /* Let the component gain focus when a click hits an empty area */
   -moz-user-focus: normal;
+}
+
+#toolbox-deck {
+  min-height: 75px;
+  /* Set large flex to allow the toolbox-panel-webconsole to have a
+     height set to a small value without flexing to fill up extra
+     space. There must be a flex on both to ensure that the console
+     panel itself is sized properly */
+  flex: 10000 10000;
 }
 
 #toolbox-container:focus {

@@ -32,8 +32,8 @@ async function setup_withOneLogin(username = "username", password = "pass1") {
 async function setup_withNoLogins() {
   // Reset to a single, known login
   await task_setup();
-  is(
-    Services.logins.getAllLogins().length,
+  Assert.equal(
+    (await Services.logins.getAllLogins()).length,
     0,
     "0 logins at the start of the test"
   );
@@ -44,7 +44,7 @@ async function fillGeneratedPasswordFromACPopup(
   passwordInputSelector
 ) {
   let popup = document.getElementById("PopupAutoComplete");
-  ok(popup, "Got popup");
+  Assert.ok(popup, "Got popup");
   await openACPopup(popup, browser, passwordInputSelector);
   await fillGeneratedPasswordFromOpenACPopup(browser, passwordInputSelector);
 }
@@ -55,7 +55,7 @@ async function checkPromptContents(
   expectedPasswordLength = 0
 ) {
   let { panel } = PopupNotifications;
-  ok(PopupNotifications.isPanelOpen, "Confirm popup is open");
+  Assert.ok(PopupNotifications.isPanelOpen, "Confirm popup is open");
   let notificationElement = panel.childNodes[0];
   if (expectedPasswordLength) {
     info(
@@ -87,11 +87,11 @@ async function verifyGeneratedPasswordWasFilled(
     browser,
     [[passwordInputSelector]],
     function checkFinalFieldValue(inputSelector) {
-      let { LoginTestUtils: LTU } = ChromeUtils.import(
-        "resource://testing-common/LoginTestUtils.jsm"
+      let { LoginTestUtils: LTU } = ChromeUtils.importESModule(
+        "resource://testing-common/LoginTestUtils.sys.mjs"
       );
       let passwordInput = content.document.querySelector(inputSelector);
-      is(
+      Assert.equal(
         passwordInput.value.length,
         LTU.generation.LENGTH,
         "Password field was filled with generated password"
@@ -108,7 +108,7 @@ async function openFormInNewTab(url, formValues, taskFn) {
       gBrowser,
       url,
     },
-    async function(browser) {
+    async function (browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
       await formFilled;
 
@@ -134,7 +134,7 @@ async function openFormInNewTab(url, formValues, taskFn) {
 
             field.setAttribute("autocomplete", "new-password");
             if (props.hasOwnProperty("expectedValue")) {
-              is(
+              Assert.equal(
                 field.value,
                 props.expectedValue,
                 "Check autofilled password value"
@@ -145,7 +145,7 @@ async function openFormInNewTab(url, formValues, taskFn) {
           if (props) {
             let field = doc.querySelector(props.selector);
             if (props.hasOwnProperty("expectedValue")) {
-              is(
+              Assert.equal(
                 field.value,
                 props.expectedValue,
                 "Check autofilled username value"
@@ -200,13 +200,13 @@ async function openFormInNewTab(url, formValues, taskFn) {
 async function openAndVerifyDoorhanger(browser, type, expected) {
   // check a dismissed prompt was shown with extraAttr attribute
   let notif = getCaptureDoorhanger(type);
-  ok(notif, `${type} doorhanger was created`);
-  is(
+  Assert.ok(notif, `${type} doorhanger was created`);
+  Assert.equal(
     notif.dismissed,
     expected.dismissed,
     "Check notification dismissed property"
   );
-  is(
+  Assert.equal(
     notif.anchorElement.getAttribute("extraAttr"),
     expected.anchorExtraAttr,
     "Check icon extraAttr attribute"
@@ -227,12 +227,12 @@ async function openAndVerifyDoorhanger(browser, type, expected) {
     browser,
     expected.passwordLength
   );
-  is(
+  Assert.equal(
     passwordValue.length,
     expected.passwordLength || LoginTestUtils.generation.LENGTH,
     "Doorhanger password field has generated 15-char value"
   );
-  is(
+  Assert.equal(
     usernameValue,
     expected.usernameValue,
     "Doorhanger username field was popuplated"
@@ -241,22 +241,23 @@ async function openAndVerifyDoorhanger(browser, type, expected) {
 }
 
 async function appendContentInputvalue(browser, selector, str) {
-  await ContentTask.spawn(browser, { selector, str }, async function({
-    selector,
-    str,
-  }) {
-    const EventUtils = ContentTaskUtils.getEventUtils(content);
-    let input = content.document.querySelector(selector);
-    input.focus();
-    input.select();
-    await EventUtils.synthesizeKey("KEY_ArrowRight", {}, content);
-    let changedPromise = ContentTaskUtils.waitForEvent(input, "change");
-    if (str) {
-      await EventUtils.sendString(str, content);
+  await ContentTask.spawn(
+    browser,
+    { selector, str },
+    async function ({ selector, str }) {
+      const EventUtils = ContentTaskUtils.getEventUtils(content);
+      let input = content.document.querySelector(selector);
+      input.focus();
+      input.select();
+      await EventUtils.synthesizeKey("KEY_ArrowRight", {}, content);
+      let changedPromise = ContentTaskUtils.waitForEvent(input, "change");
+      if (str) {
+        await EventUtils.sendString(str, content);
+      }
+      input.blur();
+      await changedPromise;
     }
-    input.blur();
-    await changedPromise;
-  });
+  );
   info("Input value changed");
   await TestUtils.waitForTick();
 }
@@ -265,7 +266,7 @@ async function submitForm(browser) {
   // Submit the form
   info("Now submit the form");
   let correctPathNamePromise = BrowserTestUtils.browserLoaded(browser);
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     content.document.querySelector("form").submit();
   });
   await correctPathNamePromise;
@@ -279,7 +280,7 @@ async function submitForm(browser) {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["signon.generation.available", true],
@@ -287,8 +288,8 @@ add_task(async function setup() {
     ],
   });
   // assert that there are no logins
-  let logins = Services.logins.getAllLogins();
-  is(logins.length, 0, "There are no logins");
+  let logins = await Services.logins.getAllLogins();
+  Assert.equal(logins.length, 0, "There are no logins");
 });
 
 add_task(async function autocomplete_generated_password_auto_saved() {
@@ -322,8 +323,8 @@ add_task(async function autocomplete_generated_password_auto_saved() {
       await hintShownAndVerified;
 
       // Check properties of the newly auto-saved login
-      is(username, "", "Saved login should have no username");
-      is(
+      Assert.equal(username, "", "Saved login should have no username");
+      Assert.equal(
         password.length,
         LoginTestUtils.generation.LENGTH,
         "Saved login should have generated password"
@@ -344,7 +345,7 @@ add_task(async function autocomplete_generated_password_auto_saved() {
       await promiseHidden;
 
       // confirm the extraAttr attribute is removed after opening & dismissing the doorhanger
-      ok(
+      Assert.ok(
         !notif.anchorElement.hasAttribute("extraAttr"),
         "Check if the extraAttr attribute was removed"
       );
@@ -354,11 +355,11 @@ add_task(async function autocomplete_generated_password_auto_saved() {
         "passwordmgr-storage-changed",
         (_, data) => data == "modifyLogin"
       );
-      let [autoSavedLogin] = Services.logins.getAllLogins();
+      let [autoSavedLogin] = await Services.logins.getAllLogins();
       info("waiting for submitForm");
       await submitForm(browser);
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         {
           timesUsed: autoSavedLogin.timesUsed + 1,
           username: "",
@@ -407,8 +408,8 @@ add_task(
         await hintShownAndVerified;
 
         // Check properties of the newly auto-saved login
-        is(username, "", "Saved login should have no username");
-        is(
+        Assert.equal(username, "", "Saved login should have no username");
+        Assert.equal(
           password.length,
           LoginTestUtils.generation.LENGTH,
           "Saved login should have generated password"
@@ -429,7 +430,7 @@ add_task(
         await promiseHidden;
 
         // confirm the extraAttr attribute is removed after opening & dismissing the doorhanger
-        ok(
+        Assert.ok(
           !notif.anchorElement.hasAttribute("extraAttr"),
           "Check if the extraAttr attribute was removed"
         );
@@ -439,11 +440,11 @@ add_task(
           "passwordmgr-storage-changed",
           (_, data) => data == "modifyLogin"
         );
-        let [autoSavedLogin] = Services.logins.getAllLogins();
+        let [autoSavedLogin] = await Services.logins.getAllLogins();
         info("waiting for submitForm");
         await submitForm(browser);
         await storageChangedPromise;
-        verifyLogins([
+        await verifyLogins([
           {
             timesUsed: autoSavedLogin.timesUsed + 1,
             username: "",
@@ -470,7 +471,7 @@ add_task(async function autocomplete_generated_password_saved_empty_username() {
       username: { selector: usernameInputSelector, expectedValue: "" },
     },
     async function taskFn(browser) {
-      let [savedLogin] = Services.logins.getAllLogins();
+      let [savedLogin] = await Services.logins.getAllLogins();
       let storageChangedPromise = TestUtils.topicObserved(
         "passwordmgr-storage-changed",
         (_, data) => data == "modifyLogin"
@@ -506,7 +507,7 @@ add_task(async function autocomplete_generated_password_saved_empty_username() {
 
       info("Waiting for modifyLogin");
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         {
           timesUsed: savedLogin.timesUsed + 1,
           username: "",
@@ -558,7 +559,7 @@ add_task(async function autocomplete_generated_password_saved_username() {
       await verifyGeneratedPasswordWasFilled(browser, passwordInputSelector);
 
       // Check properties of the newly auto-saved login
-      let [user1LoginSnapshot, autoSavedLogin] = verifyLogins([
+      let [user1LoginSnapshot, autoSavedLogin] = await verifyLogins([
         {
           username: "user1",
           password: "xyzpassword", // user1 is unchanged
@@ -585,7 +586,7 @@ add_task(async function autocomplete_generated_password_saved_username() {
       await promiseHidden;
 
       // confirm the extraAttr attribute is removed after opening & dismissing the doorhanger
-      ok(
+      Assert.ok(
         !notif.anchorElement.hasAttribute("extraAttr"),
         "Check if the extraAttr attribute was removed"
       );
@@ -604,7 +605,7 @@ add_task(async function autocomplete_generated_password_saved_username() {
       clickDoorhangerButton(notif, CHANGE_BUTTON);
       await promiseHidden;
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         {
           timesUsed: user1LoginSnapshot.timesUsed + 1,
           username: "user1",
@@ -637,7 +638,7 @@ add_task(async function ac_gen_pw_saved_empty_un_stored_non_empty_un_in_form() {
       },
     },
     async function taskFn(browser) {
-      let [savedLogin] = Services.logins.getAllLogins();
+      let [savedLogin] = await Services.logins.getAllLogins();
       let storageChangedPromise = TestUtils.topicObserved(
         "passwordmgr-storage-changed",
         (_, data) => data == "addLogin"
@@ -673,7 +674,7 @@ add_task(async function ac_gen_pw_saved_empty_un_stored_non_empty_un_in_form() {
 
       info("Waiting for addLogin");
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         {
           timesUsed: savedLogin.timesUsed,
           username: "",
@@ -705,7 +706,7 @@ add_task(async function contextfill_generated_password_saved_empty_username() {
       username: { selector: usernameInputSelector, expectedValue: "" },
     },
     async function taskFn(browser) {
-      let [savedLogin] = Services.logins.getAllLogins();
+      let [savedLogin] = await Services.logins.getAllLogins();
       let storageChangedPromise = TestUtils.topicObserved(
         "passwordmgr-storage-changed",
         (_, data) => data == "modifyLogin"
@@ -744,7 +745,7 @@ add_task(async function contextfill_generated_password_saved_empty_username() {
 
       info("Waiting for modifyLogin");
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         {
           timesUsed: savedLogin.timesUsed + 1,
           username: "",
@@ -775,7 +776,7 @@ async function autocomplete_generated_password_edited_no_auto_save(
       username: { selector: usernameInputSelector, expectedValue: "" },
     },
     async function taskFn(browser) {
-      let [savedLogin] = Services.logins.getAllLogins();
+      let [savedLogin] = await Services.logins.getAllLogins();
       let storageChangedPromise = TestUtils.topicObserved(
         "passwordmgr-storage-changed",
         (_, data) => data == "modifyLogin"
@@ -823,7 +824,7 @@ async function autocomplete_generated_password_edited_no_auto_save(
       clickDoorhangerButton(notif, DONT_CHANGE_BUTTON);
       await promiseHidden;
 
-      verifyLogins([
+      await verifyLogins([
         {
           timesUsed: savedLogin.timesUsed,
           username: "",
@@ -849,7 +850,7 @@ async function autocomplete_generated_password_edited_no_auto_save(
 
       info("Waiting for modifyLogin");
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         {
           timesUsed: savedLogin.timesUsed + 1,
           username: "",
@@ -902,7 +903,7 @@ add_task(async function contextmenu_fill_generated_password_and_set_username() {
         browser,
         [[passwordInputSelector, usernameInputSelector]],
         function checkEmptyPasswordField([passwordSelector, usernameSelector]) {
-          is(
+          Assert.equal(
             content.document.querySelector(passwordSelector).value,
             "",
             "Password field is empty"
@@ -932,7 +933,7 @@ add_task(async function contextmenu_fill_generated_password_and_set_username() {
       await storageChangedPromise;
 
       // Check properties of the newly auto-saved login
-      verifyLogins([
+      await verifyLogins([
         null, // ignore the first one
         {
           timesUsed: 1,
@@ -975,7 +976,7 @@ add_task(async function contextmenu_fill_generated_password_and_set_username() {
 
       info("Waiting for modifyLogin");
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         null,
         {
           username: "differentuser",
@@ -1035,7 +1036,7 @@ add_task(async function contextmenu_password_change_form_without_username() {
       info("waiting for addLogin");
       await storageChangedPromise;
       // Check properties of the newly auto-saved login
-      verifyLogins([
+      await verifyLogins([
         null, // ignore the first one
         null, // ignore the 2nd one
         {
@@ -1062,14 +1063,14 @@ add_task(async function contextmenu_password_change_form_without_username() {
         "passwordmgr-storage-changed",
         (_, data) => data == "modifyLogin"
       );
-      let { timeLastUsed } = Services.logins.getAllLogins()[2];
+      let { timeLastUsed } = (await Services.logins.getAllLogins())[2];
 
       info("waiting for submitForm");
       await submitForm(browser);
 
       info("Waiting for modifyLogin");
       await storageChangedPromise;
-      verifyLogins([
+      await verifyLogins([
         null, // ignore the first one
         null, // ignore the 2nd one
         {
@@ -1079,7 +1080,7 @@ add_task(async function contextmenu_password_change_form_without_username() {
       ]);
       // Check no new doorhanger was shown
       notif = getCaptureDoorhanger("password-change");
-      ok(!notif, "No new doorhanger should be shown");
+      Assert.ok(!notif, "No new doorhanger should be shown");
       await cleanupDoorhanger(); // cleanup for next test
     }
   );
@@ -1141,7 +1142,7 @@ add_task(
         await storageChangedPromise;
         info("addLogin promise resolved");
         // Check properties of the newly auto-saved login
-        let [user1LoginSnapshot, unused, autoSavedLogin] = verifyLogins([
+        let [user1LoginSnapshot, unused, autoSavedLogin] = await verifyLogins([
           null, // ignore the first one
           null, // ignore the 2nd one
           {
@@ -1155,20 +1156,21 @@ add_task(
         info("autoSavedLogin, guid: " + autoSavedLogin.guid);
 
         info("verifyLogins ok");
-        let passwordCacheEntry = LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
-          "https://example.com"
-        );
+        let passwordCacheEntry =
+          LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
+            "https://example.com"
+          );
 
-        ok(
+        Assert.ok(
           passwordCacheEntry,
           "Got the cached generated password entry for https://example.com"
         );
-        is(
+        Assert.equal(
           passwordCacheEntry.value,
           autoSavedLogin.password,
           "Cached password matches the auto-saved login password"
         );
-        is(
+        Assert.equal(
           passwordCacheEntry.storageGUID,
           autoSavedLogin.guid,
           "Cached password guid matches the auto-saved login guid"
@@ -1181,7 +1183,7 @@ add_task(
           usernameValue: "",
           password: autoSavedLogin.password,
         });
-        ok(notif, "Got password-change notification");
+        Assert.ok(notif, "Got password-change notification");
 
         info("Calling updateDoorhangerInputValues");
         await updateDoorhangerInputValues({
@@ -1228,7 +1230,7 @@ add_task(
 
         info("storage-change promises resolved");
         // Check the auto-saved login was removed and the original login updated
-        verifyLogins([
+        await verifyLogins([
           {
             username: "user1",
             password: autoSavedLogin.password,
@@ -1240,14 +1242,14 @@ add_task(
         ]);
 
         // Check we have no notifications at this point
-        ok(!PopupNotifications.isPanelOpen, "No doorhanger is open");
-        ok(
+        Assert.ok(!PopupNotifications.isPanelOpen, "No doorhanger is open");
+        Assert.ok(
           !PopupNotifications.getNotification("password", browser),
           "No notifications"
         );
 
         // make sure the cache entry is unchanged with the removal of the auto-saved login
-        is(
+        Assert.equal(
           autoSavedLogin.password,
           LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
             "https://example.com"
@@ -1318,7 +1320,7 @@ add_task(async function autosaved_login_updated_to_existing_login_onsubmit() {
       await storageChangedPromise;
       info("addLogin promise resolved");
       // Check properties of the newly auto-saved login
-      let [user1LoginSnapshot, autoSavedLogin] = verifyLogins([
+      let [user1LoginSnapshot, autoSavedLogin] = await verifyLogins([
         null, // ignore the first one
         {
           timesUsed: 1,
@@ -1330,20 +1332,21 @@ add_task(async function autosaved_login_updated_to_existing_login_onsubmit() {
       info("autoSavedLogin, guid: " + autoSavedLogin.guid);
 
       info("verifyLogins ok");
-      let passwordCacheEntry = LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
-        "https://example.com"
-      );
+      let passwordCacheEntry =
+        LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
+          "https://example.com"
+        );
 
-      ok(
+      Assert.ok(
         passwordCacheEntry,
         "Got the cached generated password entry for https://example.com"
       );
-      is(
+      Assert.equal(
         passwordCacheEntry.value,
         autoSavedLogin.password,
         "Cached password matches the auto-saved login password"
       );
-      is(
+      Assert.equal(
         passwordCacheEntry.storageGUID,
         autoSavedLogin.guid,
         "Cached password guid matches the auto-saved login guid"
@@ -1366,12 +1369,12 @@ add_task(async function autosaved_login_updated_to_existing_login_onsubmit() {
           "#form-basic-username": "user1",
         }
       );
-      is(
+      Assert.equal(
         submitResults.username,
         "user1",
         "Form submitted with expected username"
       );
-      is(
+      Assert.equal(
         submitResults.password,
         autoSavedLogin.password,
         "Form submitted with expected password"
@@ -1427,7 +1430,7 @@ add_task(async function autosaved_login_updated_to_existing_login_onsubmit() {
 
       info("storage-change promises resolved");
       // Check the auto-saved login was removed and the original login updated
-      verifyLogins([
+      await verifyLogins([
         {
           username: "user1",
           password: autoSavedLogin.password,
@@ -1438,14 +1441,14 @@ add_task(async function autosaved_login_updated_to_existing_login_onsubmit() {
       ]);
 
       // Check we have no notifications at this point
-      ok(!PopupNotifications.isPanelOpen, "No doorhanger is open");
-      ok(
+      Assert.ok(!PopupNotifications.isPanelOpen, "No doorhanger is open");
+      Assert.ok(
         !PopupNotifications.getNotification("password", browser),
         "No notifications"
       );
 
       // make sure the cache entry is unchanged with the removal of the auto-saved login
-      is(
+      Assert.equal(
         autoSavedLogin.password,
         LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
           "https://example.com"
@@ -1509,7 +1512,7 @@ add_task(async function form_change_from_autosaved_login_to_existing_login() {
       await storageChangedPromise;
       info("addLogin promise resolved");
       // Check properties of the newly auto-saved login
-      let [user1LoginSnapshot, autoSavedLogin] = verifyLogins([
+      let [user1LoginSnapshot, autoSavedLogin] = await verifyLogins([
         null, // ignore the first one
         {
           timesUsed: 1,
@@ -1521,20 +1524,21 @@ add_task(async function form_change_from_autosaved_login_to_existing_login() {
       info("autoSavedLogin, guid: " + autoSavedLogin.guid);
 
       info("verifyLogins ok");
-      let passwordCacheEntry = LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
-        "https://example.com"
-      );
+      let passwordCacheEntry =
+        LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
+          "https://example.com"
+        );
 
-      ok(
+      Assert.ok(
         passwordCacheEntry,
         "Got the cached generated password entry for https://example.com"
       );
-      is(
+      Assert.equal(
         passwordCacheEntry.value,
         autoSavedLogin.password,
         "Cached password matches the auto-saved login password"
       );
-      is(
+      Assert.equal(
         passwordCacheEntry.storageGUID,
         autoSavedLogin.guid,
         "Cached password guid matches the auto-saved login guid"
@@ -1601,7 +1605,7 @@ add_task(async function form_change_from_autosaved_login_to_existing_login() {
       } catch (ex) {
         info("Got expected timeout from the waitForCondition: ", ex);
       } finally {
-        ok(!hintDidShow, "No confirmation hint shown");
+        Assert.ok(!hintDidShow, "No confirmation hint shown");
       }
 
       // the previous doorhanger would have old values, verify it was updated/replaced with new values from the form
@@ -1624,7 +1628,7 @@ add_task(async function form_change_from_autosaved_login_to_existing_login() {
       await storageChangedPromise;
 
       // Check the auto-saved login has not changed and only metadata on the original login updated
-      verifyLogins([
+      await verifyLogins([
         {
           username: "user1",
           password: "xyzpassword",
@@ -1640,14 +1644,14 @@ add_task(async function form_change_from_autosaved_login_to_existing_login() {
       ]);
 
       // Check we have no notifications at this point
-      ok(!PopupNotifications.isPanelOpen, "No doorhanger is open");
-      ok(
+      Assert.ok(!PopupNotifications.isPanelOpen, "No doorhanger is open");
+      Assert.ok(
         !PopupNotifications.getNotification("password", browser),
         "No notifications"
       );
 
       // make sure the cache entry is unchanged with the removal of the auto-saved login
-      is(
+      Assert.equal(
         autoSavedLogin.password,
         LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
           "https://example.com"
@@ -1702,7 +1706,7 @@ add_task(async function form_edit_username_and_password_of_generated_login() {
       await storageChangedPromise;
       info("addLogin promise resolved");
       // Check properties of the newly auto-saved login
-      let [autoSavedLoginSnapshot] = verifyLogins([
+      let [autoSavedLoginSnapshot] = await verifyLogins([
         {
           timesUsed: 1,
           username: "",
@@ -1798,7 +1802,11 @@ add_task(async function form_edit_username_and_password_of_generated_login() {
           info("Got expected timeout from the waitForCondition: " + ex);
         } finally {
           info("confirmationHint check done, assert on hintDidShow");
-          is(hintDidShow, expectedConfirmation, "Confirmation hint shown");
+          Assert.equal(
+            hintDidShow,
+            expectedConfirmation,
+            "Confirmation hint shown"
+          );
         }
         info(
           "Waiting for loginModifiedPromise, expectedConfirmation? " +

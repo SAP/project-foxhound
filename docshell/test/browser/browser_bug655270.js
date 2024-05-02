@@ -8,8 +8,8 @@
  * old favicon with the new URI.
  */
 
-const { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
 add_task(async function test() {
@@ -29,8 +29,7 @@ add_task(async function test() {
           return true;
         }
         return false;
-      }),
-    "places"
+      })
   );
   let icon2;
   let promiseIcon2 = PlacesTestUtils.waitForNotification(
@@ -42,8 +41,7 @@ add_task(async function test() {
           return true;
         }
         return false;
-      }),
-    "places"
+      })
   );
 
   // The page at origURL has a <link rel='icon'>, so we should get a call into
@@ -55,7 +53,7 @@ add_task(async function test() {
   is(icon1, faviconURL, "FaviconURL for original URI");
   // Ignore the promise returned here and wait for the next
   // onPageChanged notification.
-  SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     content.history.pushState("", "", "?new_page");
   });
   await promiseIcon2;

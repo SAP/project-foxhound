@@ -56,6 +56,12 @@ extern "C" const char* __tsan_default_suppressions() {
          "mutex:libEGL_mesa.so\n"
          // ~GLContextGLX unlocks a libGL mutex.
          "mutex:GLContextGLX::~GLContextGLX\n"
+         // Bug 1825171
+         "mutex:libffi.so\n"
+         "mutex:wl_registry_destroy\n"
+         // Bug 1824768
+         "mutex:libdbus-1\n"
+         "mutex:swrast_dri.so\n"
          // Bug 1651446 - permanent (ffmpeg)
          "race:libavcodec.so*\n"
          "race:libavutil.so*\n"
@@ -67,6 +73,7 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:pa_format_info_set_prop_string_array\n"
          "race:pa_stream_get_index\n"
          "race:pa_stream_update_timing_info\n"
+         "race:vorbis_synthesis_init\n"
          // This is a callback from libglib-2 that is apparently
          // not fully suppressed through `called_from_lib`.
          "race:g_main_context_dispatch\n"
@@ -77,8 +84,15 @@ extern "C" const char* __tsan_default_suppressions() {
          // calling into uninstrumented external graphics driver code.
          // For example: iris_dri.so and swrast_dri.so.
          "race:fire_glxtest_process\n"
+         "race:iris_dri\n"
+         // Bug 1824768
+         "race:libLLVM-12\n"
+         "race:radeonsi_dri\n"
          // Bug 1722721 - WebRender using uninstrumented Mesa drivers
          "race:swrast_dri.so\n"
+         // Bug 1825171
+         "race:libffi.so\n"
+         "race:mozilla::widget::WaylandBuffer::BufferReleaseCallbackHandler\n"
 
 
 
@@ -151,12 +165,7 @@ extern "C" const char* __tsan_default_suppressions() {
          // Likely benign write-write race in libevent to set a sticky boolean
          // flag to true.
          "race:event_debug_mode_too_late\n"
-         // Bug 1648606 - permanent
-         // No Upstream Bug Filed!
-         //
-         // Race on some flag being checking in libusrsctp.
-         "race:sctp_close\n"
-         "race:sctp_iterator_work\n"
+
          // Bug 1653618 - permanent
          // Upstream Bug: https://github.com/sctplab/usrsctp/issues/507
          //
@@ -168,6 +177,10 @@ extern "C" const char* __tsan_default_suppressions() {
          //
          // Likely benign race in libusrsctp allocator during a free.
          "race:system_base_info\n"
+         // Benign lock-order-inversion in libusrsctp
+         // No upstream bug filed!
+         "deadlock:sctp_add_to_readq\n"
+
          // Bug 1153409 - permanent
          // No Upstream Bug Filed!
          //
@@ -196,6 +209,12 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:crossbeam_deque*::write\n"
          "race:crossbeam_deque*::read\n"
          "race:crossbeam_deque*::steal\n"
+         // Bug 1805819 - permanent
+         // No Upstream Bug Filed!
+         //
+         // False positive in libc's tzset_internal
+         // See https://crbug.com/379738 also
+         "race:tzset_internal\n"
 
 
 
@@ -224,10 +243,6 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:SkRasterPipelineBlitter\n"
          "race:Clamp_S32_D32_nofilter_trans_shaderproc\n"
          "race:SkSpriteBlitter_Memcpy\n"
-
-         // Bug 1606651
-         "race:nsPluginTag::nsPluginTag\n"
-         "race:nsFakePluginTag\n"
 
          // Bug 1606800
          "race:CallInitFunc\n"
@@ -267,17 +282,6 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:VRShMem::PullBrowserState\n"
          "race:VRShMem::PushBrowserState\n"
 
-         // Bug 1674776
-         "race:DocumentTimeline::GetCurrentTimeAsDuration\n"
-
-         // Bug 1680285
-         "race:style::traversal::note_children\n"
-         "race:style::matching::MatchMethods::apply_selector_flags\n"
-
-         // Bug 1607588
-         "race:nssToken_Destroy\n"
-         "race:nssSlot_GetToken\n"
-
          // Bug 1682951
          "race:storage::Connection::Release\n"
 
@@ -299,6 +303,17 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:js::wasm::Code::commitTier2\n"
          "race:js::wasm::Code::setTier2\n"
          "race:js::wasm::Code::setAndBorrowTier2\n"
+
+         // Bug 1755449
+         // The Glean init thread is used to perform I/O and other blocking operations.
+         // It is never joined with the main thread, but this is being re-evaluated.
+         "thread:glean::initialize\n"
+
+         // Bug 1822605 - permanent
+         // A race exists in libvulkan_lvp.so.  This was previously addressed in bug
+         // 1816713. However, libvulkan_lvp.so is unloaded so a called_from_lib
+         // suppression cannot be used.
+         "race:libvulkan_lvp.so\n"
 
       // End of suppressions.
       ;  // Please keep this semicolon.

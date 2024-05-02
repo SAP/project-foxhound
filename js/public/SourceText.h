@@ -67,11 +67,19 @@ namespace mozilla {
 union Utf8Unit;
 }
 
+namespace js {
+class FrontendContext;
+}  // namespace js
+
 namespace JS {
+
+class JS_PUBLIC_API AutoStableStringChars;
+using FrontendContext = js::FrontendContext;
 
 namespace detail {
 
 MOZ_COLD extern JS_PUBLIC_API void ReportSourceTooLong(JSContext* cx);
+MOZ_COLD extern JS_PUBLIC_API void ReportSourceTooLong(JS::FrontendContext* fc);
 
 }  // namespace detail
 
@@ -137,21 +145,13 @@ class SourceText final : public TaintableString {
     }
   }
 
-  /**
-   * Initialize this with source unit data: |char16_t| for UTF-16 source
-   * units, or |Utf8Unit| for UTF-8 source units.
-   *
-   * If |ownership == TakeOwnership|, *this function* takes ownership of
-   * |units|, *even if* this function fails, and you MUST NOT free |units|
-   * yourself.  This single-owner-friendly approach reduces risk of leaks on
-   * failure.
-   *
-   * |units| may be null if |unitsLength == 0|; if so, this will silently be
-   * initialized using non-null, unowned units.
-   */
-  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
-                                            size_t unitsLength,
-                                            SourceOwnership ownership) {
+ private:
+  template <typename ContextT>
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool initImpl(ContextT* context,
+                                                const Unit* units,
+                                                size_t unitsLength,
+                                                const StringTaint& taint,
+                                                SourceOwnership ownership) {
     MOZ_ASSERT_IF(units == nullptr, unitsLength == 0);
 
     // Ideally we'd use |Unit| and not cast below, but the risk of a static
@@ -175,21 +175,52 @@ class SourceText final : public TaintableString {
     // store offsets in |JSScript|s as |uint32_t|.  It could be lifted
     // fairly easily if desired, as the compiler uses |size_t| internally.
     if (MOZ_UNLIKELY(unitsLength > UINT32_MAX)) {
-      detail::ReportSourceTooLong(cx);
+      detail::ReportSourceTooLong(context);
       return false;
     }
+
+    setTaint(taint);
 
     return true;
   }
 
+ public:
   /**
-   * Taintfox: init with additional taint information
+   * Initialize this with source unit data: |char16_t| for UTF-16 source
+   * units, or |Utf8Unit| for UTF-8 source units.
+   *
+   * If |ownership == TakeOwnership|, *this function* takes ownership of
+   * |units|, *even if* this function fails, and you MUST NOT free |units|
+   * yourself.  This single-owner-friendly approach reduces risk of leaks on
+   * failure.
+   *
+   * |units| may be null if |unitsLength == 0|; if so, this will silently be
+   * initialized using non-null, unowned units.
    */
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
-                                           size_t unitsLength, StringTaint taint,
-                                           SourceOwnership ownership) {
-    setTaint(taint);
-    return init(cx, units, unitsLength, ownership);
+                                            size_t unitsLength,
+                                            SourceOwnership ownership) {
+    return initImpl(cx, units, unitsLength, EmptyTaint, ownership);
+  }
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JS::FrontendContext* fc,
+                                            const Unit* units,
+                                            size_t unitsLength,
+                                            SourceOwnership ownership) {
+    return initImpl(fc, units, unitsLength, EmptyTaint, ownership);
+  }
+
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
+                                            size_t unitsLength,
+                                            const StringTaint& taint,
+                                            SourceOwnership ownership) {
+    return initImpl(cx, units, unitsLength, taint, ownership);
+  }
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JS::FrontendContext* fc,
+                                            const Unit* units,
+                                            size_t unitsLength,
+                                            const StringTaint& taint,
+                                            SourceOwnership ownership) {
+    return initImpl(fc, units, unitsLength, taint, ownership);
   }
 
   /**
@@ -205,22 +236,43 @@ class SourceText final : public TaintableString {
                                         !std::is_same_v<Char, Unit>>>
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Char* chars,
                                             size_t charsLength,
+                                            const StringTaint& taint,
                                             SourceOwnership ownership) {
-    return init(cx, reinterpret_cast<const Unit*>(chars), charsLength,
-                ownership);
+    return initImpl(cx, reinterpret_cast<const Unit*>(chars), charsLength,
+                    taint, ownership);
   }
 
-  /**
-   * Taintfox: init with additional taint information
-   */
-  template <typename Char, typename = typename std::enable_if<
-                               std::is_same<Char, CharT>::value &&
-                               !std::is_same<Char, Unit>::value>::type>
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Char* chars,
-                                           size_t charsLength, StringTaint taint,
-                                           SourceOwnership ownership) {
-    setTaint(taint);
-    return init(cx, chars, charsLength, ownership);
+                                            size_t charsLength,
+                                            SourceOwnership ownership) {
+    return initImpl(cx, reinterpret_cast<const Unit*>(chars), charsLength,
+                    EmptyTaint, ownership);
+  }
+
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JS::FrontendContext* fc,
+                                            const Char* chars,
+                                            size_t charsLength,
+                                            const StringTaint& taint,
+                                            SourceOwnership ownership) {
+    return initImpl(fc, reinterpret_cast<const Unit*>(chars), charsLength,
+                    taint, ownership);
+  }
+
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JS::FrontendContext* fc,
+                                            const Char* chars,
+                                            size_t charsLength,
+                                            SourceOwnership ownership) {
+    return initImpl(fc, reinterpret_cast<const Unit*>(chars), charsLength,
+                    EmptyTaint, ownership);
   }
 
   /**
@@ -228,8 +280,23 @@ class SourceText final : public TaintableString {
    */
   [[nodiscard]] bool init(JSContext* cx,
                           js::UniquePtr<Unit[], JS::FreePolicy> data,
+                          size_t dataLength,
+                          const StringTaint& taint) {
+    return init(cx, data.release(), dataLength, taint, SourceOwnership::TakeOwnership);
+  }
+
+  [[nodiscard]] bool init(JSContext* cx,
+                          js::UniquePtr<Unit[], JS::FreePolicy> data,
                           size_t dataLength) {
-    return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
+    return initImpl(cx, data.release(), dataLength, EmptyTaint,
+                    SourceOwnership::TakeOwnership);
+  }
+
+  [[nodiscard]] bool init(JS::FrontendContext* fc,
+                          js::UniquePtr<Unit[], JS::FreePolicy> data,
+                          size_t dataLength) {
+    return initImpl(fc, data.release(), dataLength, EmptyTaint,
+                    SourceOwnership::TakeOwnership);
   }
 
   /**
@@ -246,8 +313,49 @@ class SourceText final : public TaintableString {
                                         !std::is_same_v<Char, Unit>>>
   [[nodiscard]] bool init(JSContext* cx,
                           js::UniquePtr<Char[], JS::FreePolicy> data,
+                          size_t dataLength,
+                          const StringTaint& taint) {
+    return init(cx, data.release(), dataLength, taint, SourceOwnership::TakeOwnership);
+  }
+
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
+  [[nodiscard]] bool init(JSContext* cx,
+                          js::UniquePtr<Char[], JS::FreePolicy> data,
                           size_t dataLength) {
-    return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
+    return init(cx, data.release(), dataLength, EmptyTaint, SourceOwnership::TakeOwnership);
+  }
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
+  [[nodiscard]] bool init(JS::FrontendContext* fc,
+                          js::UniquePtr<Char[], JS::FreePolicy> data,
+                          size_t dataLength) {
+    return init(fc, data.release(), dataLength, SourceOwnership::TakeOwnership);
+  }
+
+  /**
+   * Initialize this using an AutoStableStringChars. Transfers the code units if
+   * they are owned by the AutoStableStringChars, otherwise borrow directly from
+   * the underlying JSString. The AutoStableStringChars must outlive this
+   * SourceText and must be explicitly configured to the same unit type as this
+   * SourceText.
+   */
+  [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,                                       
+                                       AutoStableStringChars& linearChars,
+                                       const StringTaint& taint);
+  [[nodiscard]] bool initMaybeBorrowed(JS::FrontendContext* fc,
+                                       AutoStableStringChars& linearChars,
+                                       const StringTaint& taint);
+
+  [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,
+                                       AutoStableStringChars& linearChars) {
+    return initMaybeBorrowed(cx, linearChars, EmptyTaint);
+  }
+  [[nodiscard]] bool initMaybeBorrowed(JS::FrontendContext* fc,
+                                       AutoStableStringChars& linearChars) {
+    return initMaybeBorrowed(fc, linearChars, EmptyTaint);
   }
 
   /**

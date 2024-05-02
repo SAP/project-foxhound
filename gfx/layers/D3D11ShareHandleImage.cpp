@@ -11,6 +11,7 @@
 #include "d3d11.h"
 #include "gfxImageSurface.h"
 #include "gfxWindowsPlatform.h"
+#include "libyuv.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/layers/CompositableClient.h"
@@ -23,21 +24,150 @@ namespace layers {
 
 using namespace gfx;
 
+/* static */
+RefPtr<D3D11ShareHandleImage>
+D3D11ShareHandleImage::MaybeCreateNV12ImageAndSetData(
+    KnowsCompositor* aKnowsCompositor, ImageContainer* aContainer,
+    const PlanarYCbCrData& aData) {
+  MOZ_ASSERT(aKnowsCompositor);
+  MOZ_ASSERT(aContainer);
+
+  if (!aKnowsCompositor || !aContainer) {
+    return nullptr;
+  }
+
+  // Check if data could be used with NV12
+  if (aData.YPictureSize().width % 2 != 0 ||
+      aData.YPictureSize().height % 2 != 0 || aData.mYSkip != 0 ||
+      aData.mCbSkip != 0 || aData.mCrSkip != 0 ||
+      aData.mColorDepth != gfx::ColorDepth::COLOR_8 ||
+      aData.mColorRange != gfx::ColorRange::LIMITED ||
+      aData.mChromaSubsampling !=
+          gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT) {
+    return nullptr;
+  }
+
+  RefPtr<D3D11ShareHandleImage> image = new D3D11ShareHandleImage(
+      aData.YPictureSize(), aData.mPictureRect,
+      ToColorSpace2(aData.mYUVColorSpace), aData.mColorRange);
+
+  RefPtr<D3D11RecycleAllocator> allocator =
+      aContainer->GetD3D11RecycleAllocator(aKnowsCompositor,
+                                           gfx::SurfaceFormat::NV12);
+  if (!allocator) {
+    return nullptr;
+  }
+
+  auto syncObject = allocator->GetSyncObject();
+  if (!syncObject) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return nullptr;
+  }
+
+  MOZ_ASSERT(allocator->GetUsableSurfaceFormat() == gfx::SurfaceFormat::NV12);
+  if (allocator->GetUsableSurfaceFormat() != gfx::SurfaceFormat::NV12) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return nullptr;
+  }
+
+  RefPtr<ID3D11Texture2D> stagingTexture =
+      allocator->GetStagingTextureNV12(aData.YPictureSize());
+  if (!stagingTexture) {
+    return nullptr;
+  }
+
+  bool ok = image->AllocateTexture(allocator, allocator->mDevice);
+  if (!ok) {
+    return nullptr;
+  }
+
+  RefPtr<TextureClient> client = image->GetTextureClient(nullptr);
+  if (!client) {
+    return nullptr;
+  }
+
+  client->AddFlags(TextureFlags::SOFTWARE_DECODED_VIDEO);
+
+  // The texture does not have keyed mutex. When keyed mutex exists, the texture
+  // could not be used for video overlay. Then it needs manual synchronization
+  RefPtr<ID3D11Texture2D> texture = image->GetTexture();
+  if (!texture) {
+    return nullptr;
+  }
+
+  RefPtr<ID3D11DeviceContext> context;
+  allocator->mDevice->GetImmediateContext(getter_AddRefs(context));
+  if (!context) {
+    return nullptr;
+  }
+
+  RefPtr<ID3D10Multithread> mt;
+  HRESULT hr = allocator->mDevice->QueryInterface(
+      (ID3D10Multithread**)getter_AddRefs(mt));
+  if (FAILED(hr) || !mt) {
+    gfxCriticalError() << "Multithread safety interface not supported. " << hr;
+    return nullptr;
+  }
+
+  if (!mt->GetMultithreadProtected()) {
+    gfxCriticalError() << "Device used not marked as multithread-safe.";
+    return nullptr;
+  }
+
+  D3D11MTAutoEnter mtAutoEnter(mt.forget());
+
+  AutoLockD3D11Texture lockSt(stagingTexture);
+
+  D3D11_MAP mapType = D3D11_MAP_WRITE;
+  D3D11_MAPPED_SUBRESOURCE mappedResource;
+
+  hr = context->Map(stagingTexture, 0, mapType, 0, &mappedResource);
+  if (FAILED(hr)) {
+    gfxCriticalNoteOnce << "Mapping D3D11 staging texture failed: "
+                        << gfx::hexa(hr);
+    return nullptr;
+  }
+
+  const size_t destStride = mappedResource.RowPitch;
+  uint8_t* yDestPlaneStart = reinterpret_cast<uint8_t*>(mappedResource.pData);
+  uint8_t* uvDestPlaneStart = reinterpret_cast<uint8_t*>(mappedResource.pData) +
+                              destStride * aData.YPictureSize().height;
+  // Convert I420 to NV12,
+  libyuv::I420ToNV12(aData.mYChannel, aData.mYStride, aData.mCbChannel,
+                     aData.mCbCrStride, aData.mCrChannel, aData.mCbCrStride,
+                     yDestPlaneStart, destStride, uvDestPlaneStart, destStride,
+                     aData.YDataSize().width, aData.YDataSize().height);
+
+  context->Unmap(stagingTexture, 0);
+
+  context->CopyResource(texture, stagingTexture);
+
+  context->Flush();
+
+  client->SyncWithObject(syncObject);
+  if (!syncObject->Synchronize(true)) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return nullptr;
+  }
+
+  return image;
+}
+
 D3D11ShareHandleImage::D3D11ShareHandleImage(const gfx::IntSize& aSize,
                                              const gfx::IntRect& aRect,
-                                             gfx::YUVColorSpace aColorSpace,
+                                             gfx::ColorSpace2 aColorSpace,
                                              gfx::ColorRange aColorRange)
     : Image(nullptr, ImageFormat::D3D11_SHARE_HANDLE_TEXTURE),
       mSize(aSize),
       mPictureRect(aRect),
-      mYUVColorSpace(aColorSpace),
+      mColorSpace(aColorSpace),
       mColorRange(aColorRange) {}
 
 bool D3D11ShareHandleImage::AllocateTexture(D3D11RecycleAllocator* aAllocator,
                                             ID3D11Device* aDevice) {
   if (aAllocator) {
     mTextureClient =
-        aAllocator->CreateOrRecycleClient(mYUVColorSpace, mColorRange, mSize);
+        aAllocator->CreateOrRecycleClient(mColorSpace, mColorRange, mSize);
     if (mTextureClient) {
       D3D11TextureData* textureData = GetData();
       MOZ_DIAGNOSTIC_ASSERT(textureData, "Wrong TextureDataType");
@@ -77,13 +207,27 @@ D3D11ShareHandleImage::GetAsSourceSurface() {
   return gfx::Factory::CreateBGRA8DataSourceSurfaceForD3D11Texture(src);
 }
 
+nsresult D3D11ShareHandleImage::BuildSurfaceDescriptorBuffer(
+    SurfaceDescriptorBuffer& aSdBuffer, BuildSdbFlags aFlags,
+    const std::function<MemoryOrShmem(uint32_t)>& aAllocate) {
+  RefPtr<ID3D11Texture2D> src = GetTexture();
+  if (!src) {
+    gfxWarning() << "Cannot readback from shared texture because no texture is "
+                    "available.";
+    return NS_ERROR_FAILURE;
+  }
+
+  return gfx::Factory::CreateSdbForD3D11Texture(src, mSize, aSdBuffer,
+                                                aAllocate);
+}
+
 ID3D11Texture2D* D3D11ShareHandleImage::GetTexture() const { return mTexture; }
 
 class MOZ_RAII D3D11TextureClientAllocationHelper
     : public ITextureClientAllocationHelper {
  public:
   D3D11TextureClientAllocationHelper(gfx::SurfaceFormat aFormat,
-                                     gfx::YUVColorSpace aColorSpace,
+                                     gfx::ColorSpace2 aColorSpace,
                                      gfx::ColorRange aColorRange,
                                      const gfx::IntSize& aSize,
                                      TextureAllocationFlags aAllocFlags,
@@ -91,7 +235,7 @@ class MOZ_RAII D3D11TextureClientAllocationHelper
                                      TextureFlags aTextureFlags)
       : ITextureClientAllocationHelper(aFormat, aSize, BackendSelector::Content,
                                        aTextureFlags, aAllocFlags),
-        mYUVColorSpace(aColorSpace),
+        mColorSpace(aColorSpace),
         mColorRange(aColorRange),
         mDevice(aDevice) {}
 
@@ -106,7 +250,7 @@ class MOZ_RAII D3D11TextureClientAllocationHelper
     return (aTextureClient->GetFormat() != gfx::SurfaceFormat::NV12 &&
             aTextureClient->GetFormat() != gfx::SurfaceFormat::P010 &&
             aTextureClient->GetFormat() != gfx::SurfaceFormat::P016) ||
-           (textureData->GetYUVColorSpace() == mYUVColorSpace &&
+           (textureData->mColorSpace == mColorSpace &&
             textureData->GetColorRange() == mColorRange &&
             textureData->GetTextureAllocationFlags() == mAllocationFlags);
   }
@@ -118,14 +262,14 @@ class MOZ_RAII D3D11TextureClientAllocationHelper
     if (!data) {
       return nullptr;
     }
-    data->SetYUVColorSpace(mYUVColorSpace);
+    data->mColorSpace = mColorSpace;
     data->SetColorRange(mColorRange);
     return MakeAndAddRef<TextureClient>(data, mTextureFlags,
                                         aAllocator->GetTextureForwarder());
   }
 
  private:
-  const gfx::YUVColorSpace mYUVColorSpace;
+  const gfx::ColorSpace2 mColorSpace;
   const gfx::ColorRange mColorRange;
   const RefPtr<ID3D11Device> mDevice;
 };
@@ -158,7 +302,7 @@ void D3D11RecycleAllocator::SetPreferredSurfaceFormat(
 }
 
 already_AddRefed<TextureClient> D3D11RecycleAllocator::CreateOrRecycleClient(
-    gfx::YUVColorSpace aColorSpace, gfx::ColorRange aColorRange,
+    gfx::ColorSpace2 aColorSpace, gfx::ColorRange aColorRange,
     const gfx::IntSize& aSize) {
   // When CompositorDevice or ContentDevice is updated,
   // we could not reuse old D3D11Textures. It could cause video flickering.
@@ -182,6 +326,37 @@ already_AddRefed<TextureClient> D3D11RecycleAllocator::CreateOrRecycleClient(
 
   RefPtr<TextureClient> textureClient = CreateOrRecycle(helper);
   return textureClient.forget();
+}
+
+RefPtr<ID3D11Texture2D> D3D11RecycleAllocator::GetStagingTextureNV12(
+    gfx::IntSize aSize) {
+  if (!mStagingTexture || mStagingTextureSize != aSize) {
+    mStagingTexture = nullptr;
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = aSize.width;
+    desc.Height = aSize.height;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+    desc.SampleDesc.Count = 1;
+
+    HRESULT hr = mDevice->CreateTexture2D(&desc, nullptr,
+                                          getter_AddRefs(mStagingTexture));
+    if (FAILED(hr)) {
+      gfxCriticalNoteOnce << "allocating D3D11 NV12 staging texture failed: "
+                          << gfx::hexa(hr);
+      return nullptr;
+    }
+    MOZ_ASSERT(mStagingTexture);
+    mStagingTextureSize = aSize;
+  }
+
+  return mStagingTexture;
 }
 
 }  // namespace layers

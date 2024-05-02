@@ -12,7 +12,7 @@
 // eslint-disable-next-line no-undef
 _profileInitialized = true;
 
-add_task(async function() {
+add_task(async function () {
   const testFile = do_get_file("xpcshell_debugging_script.js");
 
   // _setupDevToolsServer is from xpcshell-test's head.js
@@ -74,7 +74,7 @@ add_task(async function() {
   info("Dynamically add a breakpoint after the debugger statement");
   const breakpointsFront = await watcher.getBreakpointListActor();
   await breakpointsFront.setBreakpoint(
-    { sourceUrl: testFile.path, line: 11 },
+    { sourceUrl: testFile.path, line: 11, column: 0 },
     {}
   );
 

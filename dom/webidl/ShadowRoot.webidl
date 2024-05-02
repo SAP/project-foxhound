@@ -19,14 +19,13 @@ enum ShadowRootMode {
 enum SlotAssignmentMode { "manual", "named" };
 
 // https://dom.spec.whatwg.org/#shadowroot
-[Exposed=Window]
+[Exposed=Window,
+ InstrumentedProps=(pictureInPictureElement)]
 interface ShadowRoot : DocumentFragment
 {
   // Shadow DOM v1
   readonly attribute ShadowRootMode mode;
-  [Pref="dom.shadowdom.delegatesFocus.enabled"]
   readonly attribute boolean delegatesFocus;
-  [Pref="dom.shadowdom.slot.assign.enabled"]
   readonly attribute SlotAssignmentMode slotAssignment;
   readonly attribute Element host;
   attribute EventHandler onslotchange;
@@ -52,7 +51,7 @@ interface ShadowRoot : DocumentFragment
 
   // For triggering UA Widget scope in tests.
   [ChromeOnly]
-  void setIsUAWidget();
+  undefined setIsUAWidget();
   [ChromeOnly]
   boolean isUAWidget();
 };

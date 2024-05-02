@@ -18,68 +18,27 @@ Running Locally
 
 **Prerequisites**
 
-- A local mozilla repository clone with a `successful Firefox build <https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Build_Instructions>`_ completed
-
-Setup
------
-
-Note that if you are running Raptor-Browsertime then it will get installed automatically and also updates itself.
-
-- ``./mach browsertime --clobber --setup --install-vismet-reqs``
-
-This will automatically check your setup, which will output something like this:
-
-::
-
-    ffmpeg:   OK
-    convert:  OK
-    compare:  OK
-    Pillow:   OK
-    SSIM:     OK
-
-- To manually check your setup, run ``./mach browsertime --check``
-
-Known Issues
-^^^^^^^^^^^^
-
-**If you aren't running visual metrics, then failures in** ``Pillow`` **and** ``SSIM`` **can be ignored.**
-
-`Bug 1735410: [meta] browsertime visual metrics dependencies not installing correctly <https://bugzilla.mozilla.org/show_bug.cgi?id=1735410>`_
-
-Currently there are issues on all platforms installing browsertime vismet dependencies. There is a fix for Linux (`Bug 1746208 <https://bugzilla.mozilla.org/show_bug.cgi?id=1746208>`__) but not on Windows (`Bug 1746206 <https://bugzilla.mozilla.org/show_bug.cgi?id=1746206>`__) or OSX (`Bug 1746207 <https://bugzilla.mozilla.org/show_bug.cgi?id=1746207>`__)
-
-Linux
-"""""
-`Bug 1746208 <https://bugzilla.mozilla.org/show_bug.cgi?id=1746208>`__ **(resolved)**
-
-If ``ffmpeg`` is listed as FAIL, try `downloading ffmpeg manually <https://ffmpeg.org/>`_ and adding it to your PATH
-
-OSX
-"""
-
-`Bug 1746207 <https://bugzilla.mozilla.org/show_bug.cgi?id=1746207>`__ **(unresolved)**
-
-**Current Status**: ``convert`` and ``compare`` fail to install. Rebuilding Firefox and running browsertime setup has not shown to resolve this issue.
-
-Windows
-"""""""
-
-`Bug 1746206 <https://bugzilla.mozilla.org/show_bug.cgi?id=1746206>`__ **(unresolved)**
-
-If the ImageMagick URL returns a 404 during setup, please `file a bug like this <https://bugzilla.mozilla.org/show_bug.cgi?id=1735540>_` to have the URL updated.
-
-**Current Status**: ``convert``, ``compare``, and ``ffmpeg`` fail to install. Neither adding ``ffmpeg`` to the PATH, nor rebuilding Firefox have shown to resolve this issue.
-
-
--  For other issues, try deleting the ``~/.mozbuild/browsertime`` folder and re-running the browsertime setup command.
-
-- If you plan on running Browsertime on Android, your Android device must already be set up (see more below in the :ref: `Running on Android` section)
-
-- **If you encounter any issues not mentioned here, please** `file a bug <https://bugzilla.mozilla.org/enter_bug.cgi?product=Testing&component=Raptor>`_ **in the** ``Testing::Raptor`` **component.**
-
+- A local mozilla repository clone with a `successful Firefox build </setup>`_ completed
 
 Running on Firefox Desktop
 --------------------------
+
+Vanilla Browsertime tests
+-------------------------
+
+If you want to run highly customized tests, you can make use of our customizable ``browsertime`` test.
+
+With this test, you can customize the page to test, test script to use, and anything else required. It will make use of default settings that Raptor uses in browsertime but these can be overridden with ``--browsertime-arg`` settings.
+
+For example, here's a test on ``https://www.sitespeed.io`` using this custom test:
+
+::
+
+  ./mach raptor --browsertime -t browsertime --browsertime-arg test_script=pageload --browsertime-arg browsertime.url=https://www.sitespeed.io --browsertime-arg iterations=3
+
+That test will perform 3 iterations of the given url. Note also that we can use simplified names to make use of test scripts that are built into raptor. You can use ``pageload``, ``interactive``, or provide a path to another test script.
+
+This custom test is only available locally.
 
 Page-load tests
 ---------------
@@ -143,13 +102,13 @@ Chrome releases are tied to a specific version of ChromeDriver -- you will need 
 
 There are two ways of doing this:
 
-1. Download the ChromeDriver that matches the chrome you wish to run from https://chromedriver.chromium.org/ and specify the path:
+* Download the ChromeDriver that matches the chrome you wish to run from https://chromedriver.chromium.org/ and specify the path:
 
 ::
 
   ./mach browsertime https://www.sitespeed.io -b chrome --chrome.chromedriverPath <PATH/TO/VERSIONED/CHROMEDRIVER>
 
-2. Upgrade the ChromeDriver version in ``tools/browsertime/package-lock.json`` (see https://www.npmjs.com/package/@sitespeed.io/chromedriver for versions).
+* Upgrade the ChromeDriver version in ``tools/browsertime/package-lock.json`` (see https://www.npmjs.com/package/@sitespeed.io/chromedriver for versions).
 
 Run ``npm install``.
 
@@ -168,21 +127,20 @@ Or for Raptor-Browsertime (use ``chrome`` for desktop, and ``chrome-m`` for mobi
 More Examples
 -------------
 
-`Browsertime docs <https://github.com/mozilla/browsertime/tree/master/docs/examples>`_
+`Browsertime docs <https://github.com/sitespeedio/browsertime/tree/main/docs/examples>`_
 
-Passing Additional Arguments to Browertime
-------------------------------------------
+Passing Additional Arguments to Browsertime
+-------------------------------------------
 
 Browsertime has many command line flags to configure its usage, see `Browsertime configuration <https://www.sitespeed.io/documentation/browsertime/configuration/>`_.
 
-We do not currently support passing additional arguments, this work can be tracked in `Bug 1750976 <https://bugzilla.mozilla.org/show_bug.cgi?id=1750976>`_.
+There are multiple ways of adding additional arguments to Browsertime from Raptor. The primary method is to use ``--browsertime-arg``. For example: ``./mach raptor --browsertime -t amazon --browsertime-arg iterations=10``
 
-There are two options to work around this and enable additional arguments.
+Other methods for adding additional arguments are:
 
-1. Define additional arguments in `testing/raptor/raptor/browsertime/base.py <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/browsertime/base.py#220-252>`_.
+* Define additional arguments in `testing/raptor/raptor/browsertime/base.py <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/browsertime/base.py#220-252>`_.
 
-2. Add a ``browsertime_args`` entry to the appropriate manifest with the desired arguments, i.e. `browsertime-tp6.ini <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/tests/tp6/desktop/browsertime-tp6.ini>`_ for desktop page load tests. `Example of browsertime_args format <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/tests/custom/browsertime-process-switch.ini#27>`_.
-
+* Add a ``browsertime_args`` entry to the appropriate manifest with the desired arguments, i.e. `browsertime-tp6.ini <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/tests/tp6/desktop/browsertime-tp6.ini>`_ for desktop page load tests. `Example of browsertime_args format <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/tests/custom/browsertime-process-switch.ini#27>`_.
 
 Running Browsertime on Try
 --------------------------
@@ -199,11 +157,9 @@ Retriggering Browsertime Visual Metrics Tasks
 
 You can retrigger Browsertime tasks just like you retrigger any other tasks from Treeherder (using the retrigger buttons, add-new-jobs, retrigger-multiple, etc.).
 
-When you retrigger the Browsertime test task, it will trigger a new vismet task as well. If you retrigger a Browsertime vismet task, then it will cause the test task to be retriggered and a new vismet task will be produced from there. This means that both of these tasks are treated as "one" task when it comes to retriggering them.
+The following metrics are collected each time: ``fcp, loadtime, ContentfulSpeedIndex, PerceptualSpeedIndex, SpeedIndex, FirstVisualChange, LastVisualChange``
 
-There is only one path that still doesn't work for retriggering Browsertime tests and that happens when you use ``--rebuild X`` in a try push submission.
-
-For details on how we previously retriggered visual metrics tasks see `VisualMetrics <https://wiki.mozilla.org/TestEngineering/Performance/Raptor/VisualMetrics>`_ (this will stay here for a few months just in case).
+Further information regarding these metrics can be viewed at `visual-metrics <https://www.sitespeed.io/documentation/sitespeed.io/metrics/#visual-metrics>`_
 
 Gecko Profiling with Browsertime
 --------------------------------
@@ -216,6 +172,28 @@ To run gecko profiling using Raptor-Browsertime you can add the ``--gecko-profil
 
 Note that vanilla Browsertime does support Gecko Profiling but **it does not symbolicate the profiles** so it is **not recommended** to use for debugging performance regressions/improvements.
 
+Gathering a Chrome trace with Raptor-Browsertime
+------------------------------------------------
+
+Browsertime supports the ability to profile Chrome applications and this functionality is now available in Raptor.
+
+If running a Chrome/Chromium/Chromium-as-release test locally, simply add the ``--extra-profiler-run`` flag to your command line. By default the Chrome trace is run in CI now, and can be opened in the Firefox profiler UI.
+
+Equivalent functionality to the ``--gecko-profile`` flag, i.e. something like ``--chrome-trace``, is not yet supported. That is currently tracked in `Bug 1848390 <https://bugzilla.mozilla.org/show_bug.cgi?id=1848390>`_
+
+Custom profiling with Raptor-Browsertime
+----------------------------------------
+
+With browsertime you can now use the exposed start/stop commands of the gecko profiler **and** chrome trace. First, one needs to define the ``expose_browser_profiler`` and ``apps`` variables appropriately in the `test's configuration file <https://searchfox.org/mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6/testing/raptor/raptor/tests/benchmarks/speedometer-desktop.ini#9,12>`_
+
+If you want to run the test in CI then you will want to ensure you set the ``--extra-profiler-run`` flag in the mozharness extra options for where your test is defined in the `browsertime-desktop yaml file <https://searchfox.org/mozilla-central/rev/2e06f92ba068e32a9a7213ee726e8171f91605c7/taskcluster/ci/test/browsertime-desktop.yml#404-406>`_. Otherwise you can just pass the ``--extra-profiler-run`` flag locally in your command line.
+
+Both of these steps are required to satisfy the ``_expose_browser_profiler()`` `method <https://searchfox.org/mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6/testing/raptor/raptor/browsertime/base.py#241>`_ so that the option, `expose_profiler <https://searchfox.org/mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6/testing/raptor/raptor/browsertime/base.py#383-386>`_, is passed into your browsertime script. Finally, it should be as simple as calling the ``start()`` & ``stop()`` commands in your `script <https://searchfox.org/mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6/testing/raptor/browsertime/speedometer3.js#14,30-37,58-65>`_.
+
+For the gecko profiler, you should also keep in mind these `default parameters <https://searchfox.org/mozilla-central/rev/2e06f92ba068e32a9a7213ee726e8171f91605c7/testing/raptor/raptor/browsertime/base.py#474-495>`_, which you may or may not want to change yourself in your tests configuration file.
+
+Likewise, for chrome trace you will want to be aware of `these defaults. <https://searchfox.org/mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6/testing/raptor/raptor/browsertime/base.py#646-658>`_
+
 Upgrading Browsertime In-Tree
 -----------------------------
 To upgrade the browsertime version used in-tree you can run, then commit the changes made to ``package.json`` and ``package-lock.json``:
@@ -227,6 +205,14 @@ To upgrade the browsertime version used in-tree you can run, then commit the cha
 Here is a sample URL that we can update to: https://github.com/sitespeedio/browsertime/tarball/89771a1d6be54114db190427dbc281582cba3d47
 
 To test the upgrade, run a raptor test locally (with and without visual-metrics ``--browsertime-visualmetrics`` if possible) and test it on try with at least one test on desktop and mobile.
+
+Updating Benchmark Tests
+------------------------
+To upgrade any of our benchmark tests, you will need to change the revision used in the test manifest. There are three fields that you have available to use there: ``repository_revision`` to denote the revision, ``repository_branch`` to denote the branch name, and ``repository`` to provide the link of the Github repo that contains the benchmark.
+
+For instance, with Speedometer 3 (sp3), we can update the revision `by changing the repository_revision field found here <https://searchfox.org/mozilla-central/rev/aa3ccd258b64abfd4c5ce56c1f512bc7f65b844c/testing/raptor/raptor/tests/benchmarks/speedometer-desktop.ini#29>`_. If the change isn't found on the default branch (master/main branch), then you will need to add an entry for ``repository_branch`` to specify this.
+
+If the path to the test file changes (the file that is invoked to run the test), then the ``test_url`` will need to be changed.
 
 Finding the Geckodriver Being Used
 ----------------------------------
@@ -244,3 +230,37 @@ Comparing Before/After Browsertime Videos
 We have some scripts that can produce side-by-side comparison videos for you of the worst pairing of videos. You can find the script here: https://github.com/mozilla/mozperftest-tools#browsertime-side-by-side-video-comparisons
 
 Once the side-by-side comparison is produced, the video on the left is the old/base video, and the video on the right is the new video.
+
+Mach Browsertime Setup
+----------------------
+
+**WARNING**
+ Raptor-Browsertime (i.e. ``./mach raptor --browsertime -t <TEST>``) is currently required to be ran first in order to acquire the Node-16 binary. In general, it is also not recommended to use ``./mach browsertime`` for testing as it will be deprecated soon.
+
+Note that if you are running Raptor-Browsertime then it will get installed automatically and also update itself. Otherwise, you can run:
+
+- ``./mach browsertime --clobber --setup --install-vismet-reqs``
+
+This will automatically check your setup and install the necessary dependencies if required. If successful, the output should read as something similar to:
+
+::
+
+    browsertime installed successfully!
+
+    NOTE: Your local browsertime binary is at <...>/mozilla-unified/tools/browsertime/node_modules/.bin/browsertime
+
+- To manually check your setup, you can also run ``./mach browsertime --check``
+
+Known Issues
+^^^^^^^^^^^^
+
+With the replacement of ImageMagick, former cross platform installation issues have been resolved. The details of this can be viewed in the meta bug tracker
+`Bug 1735410 <https://bugzilla.mozilla.org/show_bug.cgi?id=1735410>`_
+
+
+
+- For other issues, try deleting the ``~/.mozbuild/browsertime`` folder and re-running the browsertime setup command or a Raptor-Browsertime test
+
+- If you plan on running Browsertime on Android, your Android device must already be set up (see more below in the :ref: `Running on Android` section)
+
+- **If you encounter any issues not mentioned here, please** `file a bug <https://bugzilla.mozilla.org/enter_bug.cgi?product=Testing&component=Raptor>`_ **in the** ``Testing::Raptor`` **component.**

@@ -8,7 +8,6 @@
 #include "mozStorageStatement.h"
 #include "mozStorageService.h"
 
-#include "nsMemory.h"
 #include "nsString.h"
 #include "nsServiceManagerUtils.h"
 
@@ -40,7 +39,7 @@ static bool stepFunc(JSContext* aCtx, uint32_t argc, JS::Value* _vp) {
     return false;
   }
 
-  JS::RootedObject obj(aCtx, &args.thisv().toObject());
+  JS::Rooted<JSObject*> obj(aCtx, &args.thisv().toObject());
   nsresult rv =
       xpc->GetWrappedNativeOfJSObject(aCtx, obj, getter_AddRefs(wrapper));
   if (NS_FAILED(rv)) {
@@ -92,7 +91,7 @@ nsresult StatementJSHelper::getRow(Statement* aStatement, JSContext* aCtx,
                "Invalid state to get the row object - all calls will fail!");
 #endif
 
-  JS::RootedObject scope(aCtx, aScopeObj);
+  JS::Rooted<JSObject*> scope(aCtx, aScopeObj);
 
   if (!aStatement->mStatementRowHolder) {
     dom::GlobalObject global(aCtx, scope);
@@ -135,7 +134,7 @@ nsresult StatementJSHelper::getParams(Statement* aStatement, JSContext* aCtx,
                "Invalid state to get the params object - all calls will fail!");
 #endif
 
-  JS::RootedObject scope(aCtx, aScopeObj);
+  JS::Rooted<JSObject*> scope(aCtx, aScopeObj);
 
   if (!aStatement->mStatementParamsHolder) {
     dom::GlobalObject global(aCtx, scope);
@@ -192,7 +191,7 @@ NS_IMETHODIMP
 StatementJSHelper::Resolve(nsIXPConnectWrappedNative* aWrapper, JSContext* aCtx,
                            JSObject* aScopeObj, jsid aId, bool* aResolvedp,
                            bool* _retval) {
-  if (!JSID_IS_STRING(aId)) return NS_OK;
+  if (!aId.isString()) return NS_OK;
 
   JS::Rooted<JSObject*> scope(aCtx, aScopeObj);
   JS::Rooted<jsid> id(aCtx, aId);
@@ -208,7 +207,7 @@ StatementJSHelper::Resolve(nsIXPConnectWrappedNative* aWrapper, JSContext* aCtx,
   Statement* stmt = static_cast<Statement*>(
       static_cast<mozIStorageStatement*>(aWrapper->Native()));
 
-  JSLinearString* str = JSID_TO_LINEAR_STRING(id);
+  JSLinearString* str = id.toLinearString();
   if (::JS_LinearStringEqualsLiteral(str, "step")) {
     *_retval = ::JS_DefineFunction(aCtx, scope, "step", stepFunc, 0,
                                    JSPROP_RESOLVING) != nullptr;
@@ -216,7 +215,7 @@ StatementJSHelper::Resolve(nsIXPConnectWrappedNative* aWrapper, JSContext* aCtx,
     return NS_OK;
   }
 
-  JS::RootedValue val(aCtx);
+  JS::Rooted<JS::Value> val(aCtx);
 
   if (::JS_LinearStringEqualsLiteral(str, "row")) {
     nsresult rv = getRow(stmt, aCtx, scope, val.address());

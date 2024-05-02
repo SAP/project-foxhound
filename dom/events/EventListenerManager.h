@@ -8,16 +8,16 @@
 #define mozilla_EventListenerManager_h_
 
 #include "mozilla/BasicEvents.h"
-#include "mozilla/dom/AbortFollower.h"
-#include "mozilla/dom/EventListenerBinding.h"
 #include "mozilla/JSEventHandler.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/AbortFollower.h"
+#include "mozilla/dom/EventListenerBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsGkAtoms.h"
 #include "nsIDOMEventListener.h"
-#include "nsTObserverArray.h"
 #include "nsTArray.h"
+#include "nsTObserverArray.h"
 
 class nsIEventListenerInfo;
 class nsPIDOMWindowInner;
@@ -145,7 +145,14 @@ class EventListenerManagerBase {
  protected:
   EventListenerManagerBase();
 
-  EventMessage mNoListenerForEvent;
+  void ClearNoListenersForEvents() {
+    mNoListenerForEvents[0] = eVoidEvent;
+    mNoListenerForEvents[1] = eVoidEvent;
+    mNoListenerForEvents[2] = eVoidEvent;
+  }
+
+  EventMessage mNoListenerForEvents[3];
+  uint16_t mMayHaveDOMActivateEventListener : 1;
   uint16_t mMayHavePaintEventListener : 1;
   uint16_t mMayHaveMutationListeners : 1;
   uint16_t mMayHaveCapturingListeners : 1;
@@ -153,15 +160,13 @@ class EventListenerManagerBase {
   uint16_t mMayHaveTouchEventListener : 1;
   uint16_t mMayHaveMouseEnterLeaveEventListener : 1;
   uint16_t mMayHavePointerEnterLeaveEventListener : 1;
-  uint16_t mMayHaveKeyEventListener : 1;
-  uint16_t mMayHaveInputOrCompositionEventListener : 1;
   uint16_t mMayHaveSelectionChangeEventListener : 1;
   uint16_t mMayHaveFormSelectEventListener : 1;
+  uint16_t mMayHaveTransitionEventListener : 1;
   uint16_t mClearingListeners : 1;
   uint16_t mIsMainThreadELM : 1;
-  uint16_t mHasNonPrivilegedClickListeners : 1;
-  uint16_t mUnknownNonPrivilegedClickListeners : 1;
-  // uint16_t mUnused : 1;
+  uint16_t mMayHaveListenersForUntrustedEvents : 1;
+  // 2 unused flags.
 };
 
 /*
@@ -176,7 +181,7 @@ class EventListenerManager final : public EventListenerManagerBase {
   class ListenerSignalFollower : public dom::AbortFollower {
    public:
     explicit ListenerSignalFollower(EventListenerManager* aListenerManager,
-                                    Listener* aListener);
+                                    Listener* aListener, nsAtom* aTypeAtom);
 
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS(ListenerSignalFollower)
@@ -195,7 +200,6 @@ class EventListenerManager final : public EventListenerManagerBase {
     EventListenerManager* mListenerManager;
     EventListenerHolder mListener;
     RefPtr<nsAtom> mTypeAtom;
-    EventMessage mEventMessage;
     bool mAllEvents;
     EventListenerFlags mFlags;
   };
@@ -203,8 +207,6 @@ class EventListenerManager final : public EventListenerManagerBase {
   struct Listener {
     RefPtr<ListenerSignalFollower> mSignalFollower;
     EventListenerHolder mListener;
-    RefPtr<nsAtom> mTypeAtom;
-    EventMessage mEventMessage;
 
     enum ListenerType : uint8_t {
       // No listener.
@@ -221,7 +223,6 @@ class EventListenerManager final : public EventListenerManagerBase {
     bool mListenerIsHandler : 1;
     bool mHandlerIsString : 1;
     bool mAllEvents : 1;
-    bool mIsChrome : 1;
     bool mEnabled : 1;
 
     EventListenerFlags mFlags;
@@ -233,31 +234,25 @@ class EventListenerManager final : public EventListenerManagerBase {
     }
 
     Listener()
-        : mEventMessage(eVoidEvent),
-          mListenerType(eNoListener),
+        : mListenerType(eNoListener),
           mListenerIsHandler(false),
           mHandlerIsString(false),
           mAllEvents(false),
-          mIsChrome(false),
           mEnabled(true) {}
 
     Listener(Listener&& aOther)
         : mSignalFollower(std::move(aOther.mSignalFollower)),
           mListener(std::move(aOther.mListener)),
-          mTypeAtom(std::move(aOther.mTypeAtom)),
-          mEventMessage(aOther.mEventMessage),
           mListenerType(aOther.mListenerType),
           mListenerIsHandler(aOther.mListenerIsHandler),
           mHandlerIsString(aOther.mHandlerIsString),
           mAllEvents(aOther.mAllEvents),
-          mIsChrome(aOther.mIsChrome),
-          mEnabled(aOther.mEnabled) {
-      aOther.mEventMessage = eVoidEvent;
+          mEnabled(aOther.mEnabled),
+          mFlags(aOther.mFlags) {
       aOther.mListenerType = eNoListener;
       aOther.mListenerIsHandler = false;
       aOther.mHandlerIsString = false;
       aOther.mAllEvents = false;
-      aOther.mIsChrome = false;
       aOther.mEnabled = true;
     }
 
@@ -271,16 +266,82 @@ class EventListenerManager final : public EventListenerManagerBase {
       }
     }
 
-    MOZ_ALWAYS_INLINE bool IsListening(const WidgetEvent* aEvent) const {
-      if (mFlags.mInSystemGroup != aEvent->mFlags.mInSystemGroup) {
-        return false;
-      }
-      // FIXME Should check !mFlags.mCapture when the event is in target
-      //       phase because capture phase event listeners should not be fired.
-      //       But it breaks at least <xul:dialog>'s buttons. Bug 235441.
+    MOZ_ALWAYS_INLINE bool MatchesEventGroup(const WidgetEvent* aEvent) const {
+      return mFlags.mInSystemGroup == aEvent->mFlags.mInSystemGroup;
+    }
+
+    MOZ_ALWAYS_INLINE bool MatchesEventPhase(const WidgetEvent* aEvent) const {
       return ((mFlags.mCapture && aEvent->mFlags.mInCapturePhase) ||
               (!mFlags.mCapture && aEvent->mFlags.mInBubblingPhase));
     }
+
+    // Allow only trusted events, except when listener permits untrusted
+    // events.
+    MOZ_ALWAYS_INLINE bool AllowsEventTrustedness(
+        const WidgetEvent* aEvent) const {
+      return aEvent->IsTrusted() || mFlags.mAllowUntrustedEvents;
+    }
+  };
+
+  /**
+   * A reference counted subclass of a listener observer array.
+   */
+  struct ListenerArray final : public nsAutoTObserverArray<Listener, 1> {
+    NS_INLINE_DECL_REFCOUNTING(EventListenerManager::ListenerArray);
+    size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
+
+   protected:
+    ~ListenerArray() = default;
+  };
+
+  /**
+   * An entry in the event listener map for a certain event type, carrying the
+   * array of listeners for that type.
+   */
+  struct EventListenerMapEntry {
+    size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
+
+    // The event type. Null if this entry is for "all events" listeners.
+    RefPtr<nsAtom> mTypeAtom;
+    // The array of listeners. New listeners are always added at the end.
+    // Always non-null.
+    // This is a RefPtr rather than an inline member for two reasons:
+    //  - It needs to be a separate heap allocation so that, if the array of
+    //    entries is mutated during iteration, the ListenerArray remains in a
+    //    stable place.
+    //  - It's a RefPtr rather than a UniquePtr so that iteration can share
+    //    ownership of it and make sure that the listener array remains alive
+    //    even if the entry is removed during iteration.
+    RefPtr<ListenerArray> mListeners;
+  };
+
+  /**
+   * The map of event listeners, keyed by event type atom.
+   */
+  struct EventListenerMap {
+    bool IsEmpty() const { return mEntries.IsEmpty(); }
+    void Clear() { mEntries.Clear(); }
+
+    Maybe<size_t> EntryIndexForType(nsAtom* aTypeAtom) const;
+    Maybe<size_t> EntryIndexForAllEvents() const;
+
+    // Returns null if no entry is present for the given type.
+    RefPtr<ListenerArray> GetListenersForType(nsAtom* aTypeAtom) const;
+    RefPtr<ListenerArray> GetListenersForAllEvents() const;
+
+    // Never returns null, creates a new empty entry if needed.
+    RefPtr<ListenerArray> GetOrCreateListenersForType(nsAtom* aTypeAtom);
+    RefPtr<ListenerArray> GetOrCreateListenersForAllEvents();
+
+    size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
+
+    // The array of entries, ordered by event type atom (specifically by the
+    // nsAtom* address). If mEntries contains an entry for "all events"
+    // listeners, that entry will be the first entry, because its atom will be
+    // null so it will be ordered to the front.
+    // All entries have non-empty listener arrays. If a non-empty listener
+    // entry becomes empty, it is removed immediately.
+    AutoTArray<EventListenerMapEntry, 2> mEntries;
   };
 
   explicit EventListenerManager(dom::EventTarget* aTarget);
@@ -374,10 +435,6 @@ class EventListenerManager final : public EventListenerManagerBase {
   void HandleEvent(nsPresContext* aPresContext, WidgetEvent* aEvent,
                    dom::Event** aDOMEvent, dom::EventTarget* aCurrentTarget,
                    nsEventStatus* aEventStatus, bool aItemInShadowTree) {
-    if (mListeners.IsEmpty() || aEvent->PropagationStopped()) {
-      return;
-    }
-
     if (!mMayHaveCapturingListeners && !aEvent->mFlags.mInBubblingPhase) {
       return;
     }
@@ -386,12 +443,25 @@ class EventListenerManager final : public EventListenerManagerBase {
       return;
     }
 
-    // Check if we already know that there is no event listener for the event.
-    if (mNoListenerForEvent == aEvent->mMessage &&
-        (mNoListenerForEvent != eUnidentifiedEvent ||
-         mNoListenerForEventAtom == aEvent->mSpecifiedEventType)) {
+    if (!aEvent->IsTrusted() && !mMayHaveListenersForUntrustedEvents) {
       return;
     }
+
+    // Check if we already know that there is no event listener for the event.
+    if (aEvent->mMessage == eUnidentifiedEvent) {
+      if (mNoListenerForEventAtom == aEvent->mSpecifiedEventType) {
+        return;
+      }
+    } else if (mNoListenerForEvents[0] == aEvent->mMessage ||
+               mNoListenerForEvents[1] == aEvent->mMessage ||
+               mNoListenerForEvents[2] == aEvent->mMessage) {
+      return;
+    }
+
+    if (mListenerMap.IsEmpty() || aEvent->PropagationStopped()) {
+      return;
+    }
+
     HandleEventInternal(aPresContext, aEvent, aDOMEvent, aCurrentTarget,
                         aEventStatus, aItemInShadowTree);
   }
@@ -466,6 +536,10 @@ class EventListenerManager final : public EventListenerManagerBase {
 
   uint32_t GetIdentifierForEvent(nsAtom* aEvent);
 
+  bool MayHaveDOMActivateListeners() const {
+    return mMayHaveDOMActivateEventListener;
+  }
+
   /**
    * Returns true if there may be a paint event listener registered,
    * false if there definitely isn't.
@@ -490,27 +564,13 @@ class EventListenerManager final : public EventListenerManagerBase {
   bool MayHaveFormSelectEventListener() const {
     return mMayHaveFormSelectEventListener;
   }
-
-  bool HasNonPrivilegedClickListeners();
-
-  /**
-   * Returns true if there may be a key event listener (keydown, keypress,
-   * or keyup) registered, or false if there definitely isn't.
-   */
-  bool MayHaveKeyEventListener() const { return mMayHaveKeyEventListener; }
-
-  /**
-   * Returns true if there may be an advanced input event listener (input,
-   * compositionstart, compositionupdate, or compositionend) registered,
-   * or false if there definitely isn't.
-   */
-  bool MayHaveInputOrCompositionEventListener() const {
-    return mMayHaveInputOrCompositionEventListener;
+  bool MayHaveTransitionEventListener() {
+    return mMayHaveTransitionEventListener;
   }
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-  uint32_t ListenerCount() const { return mListeners.Length(); }
+  uint32_t ListenerCount() const;
 
   void MarkForCC();
 
@@ -522,13 +582,10 @@ class EventListenerManager final : public EventListenerManagerBase {
   bool HasNonPassiveNonSystemGroupListenersForUntrustedKeyEvents();
 
   bool HasApzAwareListeners();
-  bool IsApzAwareListener(Listener* aListener);
   bool IsApzAwareEvent(nsAtom* aEvent);
 
   bool HasNonPassiveWheelListener();
 
-  // Return true if aListener is a non-chrome-privileged click event listner
-  bool IsNonChromeClickListener(Listener* aListener);
   /**
    * Remove all event listeners from the event target this EventListenerManager
    * is for.
@@ -542,16 +599,35 @@ class EventListenerManager final : public EventListenerManagerBase {
                            dom::EventTarget* aCurrentTarget,
                            nsEventStatus* aEventStatus, bool aItemInShadowTree);
 
+  /**
+   * Iterate the listener array and calls the matching listeners.
+   *
+   * Returns true if any listener matching the event group was found.
+   */
   MOZ_CAN_RUN_SCRIPT
-  nsresult HandleEventSubType(Listener* aListener, dom::Event* aDOMEvent,
-                              dom::EventTarget* aCurrentTarget);
+  bool HandleEventWithListenerArray(
+      ListenerArray* aListeners, nsAtom* aTypeAtom, EventMessage aEventMessage,
+      nsPresContext* aPresContext, WidgetEvent* aEvent, dom::Event** aDOMEvent,
+      dom::EventTarget* aCurrentTarget, bool aItemInShadowTree);
+
+  /**
+   * Call the listener.
+   *
+   * Returns true if we should proceed iterating over the remaining listeners,
+   * or false if iteration should be stopped.
+   */
+  MOZ_CAN_RUN_SCRIPT
+  bool HandleEventSingleListener(Listener* aListener, nsAtom* aTypeAtom,
+                                 WidgetEvent* aEvent, dom::Event* aDOMEvent,
+                                 dom::EventTarget* aCurrentTarget,
+                                 bool aItemInShadowTree);
 
   /**
    * If the given EventMessage has a legacy version that we support, then this
    * function returns that legacy version. Otherwise, this function simply
    * returns the passed-in EventMessage.
    */
-  EventMessage GetLegacyEventMessage(EventMessage aEventMessage) const;
+  static EventMessage GetLegacyEventMessage(EventMessage aEventMessage);
 
   /**
    * Get the event message for the given event name.
@@ -572,14 +648,14 @@ class EventListenerManager final : public EventListenerManagerBase {
    * will look for it on mTarget.  If aBody is provided, aElement should be
    * as well; otherwise it will also be inferred from mTarget.
    */
-  nsresult CompileEventHandlerInternal(Listener* aListener,
+  nsresult CompileEventHandlerInternal(Listener* aListener, nsAtom* aTypeAtom,
                                        const nsAString* aBody,
                                        dom::Element* aElement);
 
   /**
    * Find the Listener for the "inline" event listener for aTypeAtom.
    */
-  Listener* FindEventHandler(EventMessage aEventMessage, nsAtom* aTypeAtom);
+  Listener* FindEventHandler(nsAtom* aTypeAtom);
 
   /**
    * Set the "inline" event listener for aName to aHandler.  aHandler may be
@@ -592,9 +668,9 @@ class EventListenerManager final : public EventListenerManagerBase {
                                     const TypedEventHandler& aHandler,
                                     bool aPermitUntrustedEvents);
 
-  bool IsDeviceType(EventMessage aEventMessage);
-  void EnableDevice(EventMessage aEventMessage);
-  void DisableDevice(EventMessage aEventMessage);
+  bool IsDeviceType(nsAtom* aTypeAtom);
+  void EnableDevice(nsAtom* aTypeAtom);
+  void DisableDevice(nsAtom* aTypeAtom);
 
   bool HasListenersForInternal(nsAtom* aEventNameWithOn,
                                bool aIgnoreSystemGroup) const;
@@ -640,7 +716,7 @@ class EventListenerManager final : public EventListenerManagerBase {
 
  private:
   already_AddRefed<nsPIDOMWindowInner> WindowFromListener(
-      Listener* aListener, bool aItemInShadowTree);
+      Listener* aListener, nsAtom* aTypeAtom, bool aItemInShadowTree);
 
  protected:
   /**
@@ -666,7 +742,6 @@ class EventListenerManager final : public EventListenerManagerBase {
                                 bool aHandler = false, bool aAllEvents = false,
                                 dom::AbortSignal* aSignal = nullptr);
   void RemoveEventListenerInternal(EventListenerHolder aListener,
-                                   EventMessage aEventMessage,
                                    nsAtom* aUserType,
                                    const EventListenerFlags& aFlags,
                                    bool aAllEvents = false);
@@ -682,7 +757,7 @@ class EventListenerManager final : public EventListenerManagerBase {
 
   // BE AWARE, a lot of instances of EventListenerManager will be created.
   // Therefor, we need to keep this class compact.  When you add integer
-  // members, please add them to EventListemerManagerBase and check the size
+  // members, please add them to EventListenerManagerBase and check the size
   // at build time.
 
   already_AddRefed<nsIScriptGlobalObject> GetScriptGlobalAndDocument(
@@ -690,7 +765,7 @@ class EventListenerManager final : public EventListenerManagerBase {
 
   void MaybeMarkPassive(EventMessage aMessage, EventListenerFlags& aFlags);
 
-  nsAutoTObserverArray<Listener, 2> mListeners;
+  EventListenerMap mListenerMap;
   dom::EventTarget* MOZ_NON_OWNING_REF mTarget;
   RefPtr<nsAtom> mNoListenerForEventAtom;
 

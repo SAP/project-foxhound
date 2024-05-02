@@ -5,7 +5,7 @@
 //! Generic types for text properties.
 
 use crate::parser::ParserContext;
-use crate::values::animated::ToAnimatedZero;
+use crate::Zero;
 use cssparser::Parser;
 use style_traits::ParseError;
 
@@ -73,59 +73,6 @@ impl<Value> Spacing<Value> {
     }
 }
 
-#[cfg(feature = "gecko")]
-fn line_height_moz_block_height_enabled(context: &ParserContext) -> bool {
-    context.in_ua_sheet() ||
-        static_prefs::pref!("layout.css.line-height-moz-block-height.content.enabled")
-}
-
-/// A generic value for the `line-height` property.
-#[derive(
-    Animate,
-    Clone,
-    ComputeSquaredDistance,
-    Copy,
-    Debug,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToAnimatedValue,
-    ToCss,
-    ToShmem,
-    ToResolvedValue,
-    Parse,
-)]
-#[repr(C, u8)]
-pub enum GenericLineHeight<N, L> {
-    /// `normal`
-    Normal,
-    /// `-moz-block-height`
-    #[cfg(feature = "gecko")]
-    #[parse(condition = "line_height_moz_block_height_enabled")]
-    MozBlockHeight,
-    /// `<number>`
-    Number(N),
-    /// `<length-percentage>`
-    Length(L),
-}
-
-pub use self::GenericLineHeight as LineHeight;
-
-impl<N, L> ToAnimatedZero for LineHeight<N, L> {
-    #[inline]
-    fn to_animated_zero(&self) -> Result<Self, ()> {
-        Err(())
-    }
-}
-
-impl<N, L> LineHeight<N, L> {
-    /// Returns `normal`.
-    #[inline]
-    pub fn normal() -> Self {
-        LineHeight::Normal
-    }
-}
-
 /// Implements type for text-decoration-thickness
 /// which takes the grammar of auto | from-font | <length> | <percentage>
 ///
@@ -154,4 +101,48 @@ pub enum GenericTextDecorationLength<L> {
     LengthPercentage(L),
     Auto,
     FromFont,
+}
+
+/// Implements type for text-indent
+/// which takes the grammar of [<length-percentage>] && hanging? && each-line?
+///
+/// https://drafts.csswg.org/css-text/#propdef-text-indent
+#[repr(C)]
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToAnimatedZero,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+pub struct GenericTextIndent<LengthPercentage> {
+    /// The amount of indent to be applied to the inline-start of the first line.
+    pub length: LengthPercentage,
+    /// Apply indent to non-first lines instead of first.
+    #[animation(constant)]
+    #[css(represents_keyword)]
+    pub hanging: bool,
+    /// Apply to each line after a hard break, not only first in block.
+    #[animation(constant)]
+    #[css(represents_keyword)]
+    pub each_line: bool,
+}
+
+impl<LengthPercentage: Zero> GenericTextIndent<LengthPercentage> {
+    /// Return the initial zero value.
+    pub fn zero() -> Self {
+        Self {
+            length: LengthPercentage::zero(),
+            hanging: false,
+            each_line: false,
+        }
+    }
 }

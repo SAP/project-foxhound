@@ -33,7 +33,7 @@ class ImageCallbackHelper : public imgIContainerCallback,
   NS_DECL_ISUPPORTS
 
   void CompleteExceptionally(nsresult aRv) {
-    nsPrintfCString error("Could not process image: 0x%08X", aRv);
+    nsPrintfCString error("Could not process image: 0x%08X", uint32_t(aRv));
     mResult->CompleteExceptionally(
         java::Image::ImageProcessingException::New(error.get())
             .Cast<jni::Throwable>());
@@ -46,7 +46,7 @@ class ImageCallbackHelper : public imgIContainerCallback,
         reinterpret_cast<int8_t*>(aSourceSurface.GetData()),
         aSourceSurface.GetStride() * height);
     auto bitmap = java::sdk::Bitmap::CreateBitmap(
-        width, height, java::sdk::Config::ARGB_8888());
+        width, height, java::sdk::Bitmap::Config::ARGB_8888());
     bitmap->CopyPixelsFromBuffer(pixels);
     mResult->Complete(bitmap);
     gDecodeRequests.remove(this);

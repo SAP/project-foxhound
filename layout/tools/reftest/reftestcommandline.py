@@ -1,12 +1,10 @@
-from __future__ import absolute_import, print_function
-
 import argparse
 import os
 import sys
 from collections import OrderedDict
+
 import mozinfo
 import mozlog
-
 from six.moves.urllib.parse import urlparse
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -250,9 +248,9 @@ class ReftestArgumentsParser(argparse.ArgumentParser):
 
         self.add_argument(
             "--disable-fission",
-            action="store_false",
-            default=True,
-            dest="fission",
+            action="store_true",
+            default=False,
+            dest="disableFission",
             help="Run tests with fission (site isolation) disabled.",
         )
 
@@ -415,7 +413,7 @@ class ReftestArgumentsParser(argparse.ArgumentParser):
             if not 1 <= options.thisChunk <= options.totalChunks:
                 self.error("thisChunk must be between 1 and totalChunks")
 
-        if options.fission and not options.e10s:
+        if not options.disableFission and not options.e10s:
             self.error("Fission is not supported without e10s.")
 
         if options.logFile:

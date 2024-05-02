@@ -46,61 +46,25 @@ var bookmarksObserver = {
         break;
     }
   },
-
-  onItemChanged(
-    id,
-    property,
-    isAnnotationProperty,
-    value,
-    lastModified,
-    itemType,
-    parentId,
-    guid,
-    parentGuid,
-    oldValue
-  ) {
-    this._itemChangedId = id;
-    this._itemChangedProperty = property;
-    this._itemChangedValue = value;
-    this._itemChangedOldValue = oldValue;
-  },
-  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
 };
 
-// Get bookmarks menu folder id.
-var root = bs.bookmarksMenuFolder;
+var root;
 // Index at which items should begin.
 var bmStartIndex = 0;
 
+add_task(async function setup() {
+  // Get bookmarks menu folder id.
+  root = await PlacesTestUtils.promiseItemId(PlacesUtils.bookmarks.menuGuid);
+});
+
 add_task(async function test_bookmarks() {
-  bs.addObserver(bookmarksObserver);
   os.addListener(
     ["bookmark-added", "bookmark-removed", "bookmark-title-changed"],
     bookmarksObserver.handlePlacesEvents
   );
 
   // test special folders
-  Assert.ok(bs.placesRoot > 0);
-  Assert.ok(bs.bookmarksMenuFolder > 0);
   Assert.ok(bs.tagsFolder > 0);
-  Assert.ok(bs.toolbarFolder > 0);
-
-  // test getFolderIdForItem() with bogus item id will throw
-  try {
-    bs.getFolderIdForItem(0);
-    do_throw("getFolderIdForItem accepted bad input");
-  } catch (ex) {}
-
-  // test getFolderIdForItem() with bogus item id will throw
-  try {
-    bs.getFolderIdForItem(-1);
-    do_throw("getFolderIdForItem accepted bad input");
-  } catch (ex) {}
-
-  // test root parentage
-  Assert.equal(bs.getFolderIdForItem(bs.bookmarksMenuFolder), bs.placesRoot);
-  Assert.equal(bs.getFolderIdForItem(bs.tagsFolder), bs.placesRoot);
-  Assert.equal(bs.getFolderIdForItem(bs.toolbarFolder), bs.placesRoot);
 
   // create a folder to hold all the tests
   // this makes the tests more tolerant of changes to default_places.html
@@ -109,7 +73,7 @@ add_task(async function test_bookmarks() {
     "places bookmarks xpcshell tests",
     bs.DEFAULT_INDEX
   );
-  let testRootGuid = await PlacesUtils.promiseItemGuid(testRoot);
+  let testRootGuid = await PlacesTestUtils.promiseItemGuid(testRoot);
   Assert.equal(bookmarksObserver._itemAddedId, testRoot);
   Assert.equal(bookmarksObserver._itemAddedParent, root);
   Assert.equal(bookmarksObserver._itemAddedIndex, bmStartIndex);
@@ -136,7 +100,7 @@ add_task(async function test_bookmarks() {
   let lastModified = PlacesUtils.toPRTime(
     (
       await PlacesUtils.bookmarks.fetch(
-        await PlacesUtils.promiseItemGuid(newId)
+        await PlacesTestUtils.promiseItemGuid(newId)
       )
     ).lastModified
   );
@@ -159,7 +123,7 @@ add_task(async function test_bookmarks() {
   let lastModified2 = PlacesUtils.toPRTime(
     (
       await PlacesUtils.bookmarks.fetch(
-        await PlacesUtils.promiseItemGuid(newId)
+        await PlacesTestUtils.promiseItemGuid(newId)
       )
     ).lastModified
   );
@@ -178,10 +142,6 @@ add_task(async function test_bookmarks() {
     bs.getItemTitle(-3);
     do_throw("getItemTitle accepted bad input");
   } catch (ex) {}
-
-  // get the folder that the bookmark is in
-  let folderId = bs.getFolderIdForItem(newId);
-  Assert.equal(folderId, testRoot);
 
   // create a folder at a specific index
   let workFolder = bs.createFolder(testRoot, "Work", 0);
@@ -315,7 +275,7 @@ add_task(async function test_bookmarks() {
     let mURI = uri("http://multiple.uris.in.query");
 
     let testFolder = bs.createFolder(testRoot, "test Folder", bs.DEFAULT_INDEX);
-    let testFolderGuid = await PlacesUtils.promiseItemGuid(testFolder);
+    let testFolderGuid = await PlacesTestUtils.promiseItemGuid(testFolder);
     // add 2 bookmarks
     bs.insertBookmark(testFolder, mURI, bs.DEFAULT_INDEX, "title 1");
     bs.insertBookmark(testFolder, mURI, bs.DEFAULT_INDEX, "title 2");
@@ -453,7 +413,7 @@ add_task(async function test_bookmarks() {
   let fakeLastModified = PlacesUtils.toPRTime(
     (
       await PlacesUtils.bookmarks.fetch(
-        await PlacesUtils.promiseItemGuid(newId14)
+        await PlacesTestUtils.promiseItemGuid(newId14)
       )
     ).lastModified
   );
@@ -493,7 +453,7 @@ async function testSimpleFolderResult() {
 
   // create a folder
   let parent = bs.createFolder(root, "test", bs.DEFAULT_INDEX);
-  let parentGuid = await PlacesUtils.promiseItemGuid(parent);
+  let parentGuid = await PlacesTestUtils.promiseItemGuid(parent);
 
   // the time before we insert, in microseconds
   // Workaround possible VM timers issues subtracting 1ms.

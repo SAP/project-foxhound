@@ -81,7 +81,6 @@ It's recommended to use SVG since it keeps the CSS clean when supporting multipl
 
 ## Performance
 
-* Read [Writing Efficient CSS](https://developer.mozilla.org/en-US/docs/Web/Guide/CSS/Writing_efficient_CSS).
 * Use an iframe where possible so your rules are scoped to the smallest possible set of nodes.<!--TODO: is this still true? and also refine exactly when it is appropriate to use an iframe. Examples might help-->
 * If your CSS is used in `browser.xhtml`, you need to take special care with performance:
  * Descendent selectors should be avoided.
@@ -108,7 +107,7 @@ The appropriate value for the `dir` attribute will then be set when the toolbox 
 
 ### Testing
 
-The recommended workflow to test RTL on DevTools is to use the [Force RTL extension](https://addons.mozilla.org/en-US/firefox/addon/force-rtl/). After changing the direction using Force RTL, you should restart DevTools to make sure all modules apply the new direction. A future version of Force RTL will be able to update dynamically all DevTools documents.<!--TODO: update when the fate of this addon/webextension is known--> 
+The recommended workflow to test RTL on DevTools is to use the [Force RTL extension](https://addons.mozilla.org/en-US/firefox/addon/force-rtl/). After changing the direction using Force RTL, you should restart DevTools to make sure all modules apply the new direction. A future version of Force RTL will be able to update dynamically all DevTools documents.<!--TODO: update when the fate of this addon/webextension is known-->
 
 ## Toggles
 
@@ -129,4 +128,3 @@ The Mozilla way is to perform the toggle using an attribute rather than a class:
 
 * Use `:empty` to match a node that doesn't have children.
 * Usually, if `margin` or `padding` has 4 values, something is wrong. If the left and right values are asymmetrical, you're supposed to use `-start` and `-end`. If the values are symmetrical, use only 3 values (see localization section).
-

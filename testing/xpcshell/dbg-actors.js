@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals require, exports */
+/* globals require, exports, Services */
 
 "use strict";
 
@@ -10,7 +10,6 @@ const { DevToolsServer } = require("devtools/server/devtools-server");
 const { RootActor } = require("devtools/server/actors/root");
 const { BrowserTabList } = require("devtools/server/actors/webbrowser");
 const { ProcessActorList } = require("devtools/server/actors/process");
-const Services = require("Services");
 const {
   ActorRegistry,
 } = require("devtools/server/actors/utils/actor-registry");
@@ -42,15 +41,8 @@ exports.createRootActor = createRootActor;
 /**
  * A "stub" TabList implementation that provides no tabs.
  */
-
-function XPCSTTabList(connection) {
-  BrowserTabList.call(this, connection);
+class XPCSTTabList extends BrowserTabList {
+  getList() {
+    return Promise.resolve([]);
+  }
 }
-
-XPCSTTabList.prototype = Object.create(BrowserTabList.prototype);
-
-XPCSTTabList.prototype.constructor = XPCSTTabList;
-
-XPCSTTabList.prototype.getList = function() {
-  return Promise.resolve([]);
-};

@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "absl/strings/match.h"
+#include "absl/strings/string_view.h"
 #include "modules/audio_coding/audio_network_adaptor/audio_network_adaptor_impl.h"
 #include "modules/audio_coding/audio_network_adaptor/controller_manager.h"
 #include "modules/audio_coding/codecs/opus/audio_coder_opus_common.h"
@@ -229,7 +230,10 @@ AudioCodecInfo AudioEncoderOpusImpl::QueryAudioEncoder(
 std::unique_ptr<AudioEncoder> AudioEncoderOpusImpl::MakeAudioEncoder(
     const AudioEncoderOpusConfig& config,
     int payload_type) {
-  RTC_DCHECK(config.IsOk());
+  if (!config.IsOk()) {
+    RTC_DCHECK_NOTREACHED();
+    return nullptr;
+  }
   return std::make_unique<AudioEncoderOpusImpl>(config, payload_type);
 }
 
@@ -268,7 +272,10 @@ absl::optional<AudioEncoderOpusConfig> AudioEncoderOpusImpl::SdpToConfig(
 
   FindSupportedFrameLengths(min_frame_length_ms, max_frame_length_ms,
                             &config.supported_frame_lengths_ms);
-  RTC_DCHECK(config.IsOk());
+  if (!config.IsOk()) {
+    RTC_DCHECK_NOTREACHED();
+    return absl::nullopt;
+  }
   return config;
 }
 
@@ -343,7 +350,7 @@ AudioEncoderOpusImpl::AudioEncoderOpusImpl(const AudioEncoderOpusConfig& config,
     : AudioEncoderOpusImpl(
           config,
           payload_type,
-          [this](const std::string& config_string, RtcEventLog* event_log) {
+          [this](absl::string_view config_string, RtcEventLog* event_log) {
             return DefaultAudioNetworkAdaptorCreator(config_string, event_log);
           },
           // We choose 5sec as initial time constant due to empirical data.
@@ -355,8 +362,6 @@ AudioEncoderOpusImpl::AudioEncoderOpusImpl(
     const AudioNetworkAdaptorCreator& audio_network_adaptor_creator,
     std::unique_ptr<SmoothingFilter> bitrate_smoother)
     : payload_type_(payload_type),
-      send_side_bwe_with_overhead_(
-          webrtc::field_trial::IsEnabled("WebRTC-SendSideBwe-WithOverhead")),
       use_stable_target_for_adaptation_(!webrtc::field_trial::IsDisabled(
           "WebRTC-Audio-StableTargetAdaptation")),
       adjust_bandwidth_(
@@ -367,7 +372,8 @@ AudioEncoderOpusImpl::AudioEncoderOpusImpl(
       inst_(nullptr),
       packet_loss_fraction_smoother_(new PacketLossFractionSmoother()),
       audio_network_adaptor_creator_(audio_network_adaptor_creator),
-      bitrate_smoother_(std::move(bitrate_smoother)) {
+      bitrate_smoother_(std::move(bitrate_smoother)),
+      consecutive_dtx_frames_(0) {
   RTC_DCHECK(0 <= payload_type && payload_type <= 127);
 
   // Sanity check of the redundant payload type field that we want to get rid
@@ -513,7 +519,7 @@ void AudioEncoderOpusImpl::OnReceivedUplinkBandwidth(
     }
 
     ApplyAudioNetworkAdaptor();
-  } else if (send_side_bwe_with_overhead_) {
+  } else {
     if (!overhead_bytes_per_packet_) {
       RTC_LOG(LS_INFO)
           << "AudioEncoderOpusImpl: Overhead unknown, target audio bitrate "
@@ -526,8 +532,6 @@ void AudioEncoderOpusImpl::OnReceivedUplinkBandwidth(
         std::min(AudioEncoderOpusConfig::kMaxBitrateBps,
                  std::max(AudioEncoderOpusConfig::kMinBitrateBps,
                           target_audio_bitrate_bps - overhead_bps)));
-  } else {
-    SetTargetBitrate(target_audio_bitrate_bps);
   }
 }
 void AudioEncoderOpusImpl::OnReceivedUplinkBandwidth(
@@ -563,9 +567,9 @@ void AudioEncoderOpusImpl::OnReceivedOverhead(
 void AudioEncoderOpusImpl::SetReceiverFrameLengthRange(
     int min_frame_length_ms,
     int max_frame_length_ms) {
-  // Ensure that |SetReceiverFrameLengthRange| is called before
-  // |EnableAudioNetworkAdaptor|, otherwise we need to recreate
-  // |audio_network_adaptor_|, which is not a needed use case.
+  // Ensure that `SetReceiverFrameLengthRange` is called before
+  // `EnableAudioNetworkAdaptor`, otherwise we need to recreate
+  // `audio_network_adaptor_`, which is not a needed use case.
   RTC_DCHECK(!audio_network_adaptor_);
   FindSupportedFrameLengths(min_frame_length_ms, max_frame_length_ms,
                             &config_.supported_frame_lengths_ms);
@@ -589,7 +593,6 @@ AudioEncoder::EncodedInfo AudioEncoderOpusImpl::EncodeImpl(
                Num10msFramesPerPacket() * SamplesPer10msFrame());
 
   const size_t max_encoded_bytes = SufficientOutputBufferSize();
-  const size_t start_offset_bytes = encoded->size();
   EncodedInfo info;
   info.encoded_bytes = encoded->AppendData(
       max_encoded_bytes, [&](rtc::ArrayView<uint8_t> encoded) {
@@ -603,6 +606,8 @@ AudioEncoder::EncodedInfo AudioEncoderOpusImpl::EncodeImpl(
         return static_cast<size_t>(status);
       });
   input_buffer_.clear();
+
+  bool dtx_frame = (info.encoded_bytes <= 2);
 
   // Will use new packet size for next encoding.
   config_.frame_size_ms = next_frame_length_ms_;
@@ -618,18 +623,14 @@ AudioEncoder::EncodedInfo AudioEncoderOpusImpl::EncodeImpl(
   info.encoded_timestamp = first_timestamp_in_buffer_;
   info.payload_type = payload_type_;
   info.send_even_if_empty = true;  // Allows Opus to send empty packets.
+  // After 20 DTX frames (MAX_CONSECUTIVE_DTX) Opus will send a frame
+  // coding the background noise. Avoid flagging this frame as speech
+  // (even though there is a probability of the frame being speech).
+  info.speech = !dtx_frame && (consecutive_dtx_frames_ != 20);
   info.encoder_type = CodecType::kOpus;
 
-  // Extract the VAD result from the encoded packet.
-  int has_voice = WebRtcOpus_PacketHasVoiceActivity(
-      &encoded->data()[start_offset_bytes], info.encoded_bytes);
-  if (has_voice == -1) {
-    // CELT mode packet or there was an error. This had set the speech flag to
-    // true historically.
-    info.speech = true;
-  } else {
-    info.speech = has_voice;
-  }
+  // Increase or reset DTX counter.
+  consecutive_dtx_frames_ = (dtx_frame) ? (consecutive_dtx_frames_ + 1) : (0);
 
   return info;
 }
@@ -706,6 +707,11 @@ bool AudioEncoderOpusImpl::RecreateEncoderInstance(
 }
 
 void AudioEncoderOpusImpl::SetFrameLength(int frame_length_ms) {
+  if (next_frame_length_ms_ != frame_length_ms) {
+    RTC_LOG(LS_VERBOSE) << "Update Opus frame length "
+                        << "from " << next_frame_length_ms_ << " ms "
+                        << "to " << frame_length_ms << " ms.";
+  }
   next_frame_length_ms_ = frame_length_ms;
 }
 
@@ -768,7 +774,7 @@ void AudioEncoderOpusImpl::ApplyAudioNetworkAdaptor() {
 
 std::unique_ptr<AudioNetworkAdaptor>
 AudioEncoderOpusImpl::DefaultAudioNetworkAdaptorCreator(
-    const std::string& config_string,
+    absl::string_view config_string,
     RtcEventLog* event_log) const {
   AudioNetworkAdaptorImpl::Config config;
   config.event_log = event_log;
@@ -803,9 +809,10 @@ ANAStats AudioEncoderOpusImpl::GetANAStats() const {
 
 absl::optional<std::pair<TimeDelta, TimeDelta> >
 AudioEncoderOpusImpl::GetFrameLengthRange() const {
-  if (config_.supported_frame_lengths_ms.empty()) {
-    return absl::nullopt;
-  } else if (audio_network_adaptor_) {
+  if (audio_network_adaptor_) {
+    if (config_.supported_frame_lengths_ms.empty()) {
+      return absl::nullopt;
+    }
     return {{TimeDelta::Millis(config_.supported_frame_lengths_ms.front()),
              TimeDelta::Millis(config_.supported_frame_lengths_ms.back())}};
   } else {

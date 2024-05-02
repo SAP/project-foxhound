@@ -480,11 +480,9 @@ async function withDevToolsPanel(url, callback, aWindow = window) {
 
   const { gBrowser } = aWindow;
 
-  SpecialPowers.pushPrefEnv({
-    set: [["devtools.performance.new-panel-enabled", "true"]],
-  });
-
-  const { gDevTools } = require("devtools/client/framework/devtools");
+  const {
+    gDevTools,
+  } = require("resource://devtools/client/framework/devtools.js");
 
   info(`Create a new tab with url "${url}".`);
   const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
@@ -501,9 +499,19 @@ async function withDevToolsPanel(url, callback, aWindow = window) {
 
   info("About to remove the about:blank tab");
   await toolbox.destroy();
+
+  // The previous asynchronous functions may resolve within a tick after opening a new tab.
+  // We shouldn't remove the newly opened tab in the same tick.
+  // Wait for the next tick here.
+  await TestUtils.waitForTick();
+
+  // Take care to register the TabClose event before we call removeTab, to avoid
+  // race issues.
+  const waitForClosingPromise = BrowserTestUtils.waitForTabClosing(tab);
   BrowserTestUtils.removeTab(tab);
+  info("Requested closing the about:blank tab, waiting...");
+  await waitForClosingPromise;
   info("The about:blank tab is now removed.");
-  await new Promise(resolve => setTimeout(resolve, 500));
 }
 /* exported withDevToolsPanel */
 
@@ -517,7 +525,7 @@ async function withDevToolsPanel(url, callback, aWindow = window) {
  */
 function getActiveConfiguration() {
   const BackgroundJSM = ChromeUtils.import(
-    "resource://devtools/client/performance-new/popup/background.jsm.js"
+    "resource://devtools/client/performance-new/shared/background.jsm.js"
   );
 
   const { startProfiler, stopProfiler } = BackgroundJSM;
@@ -760,8 +768,7 @@ function withWebChannelTestDocument(callback) {
   return BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url:
-        "http://example.com/browser/devtools/client/performance-new/test/browser/webchannel.html",
+      url: "http://example.com/browser/devtools/client/performance-new/test/browser/webchannel.html",
     },
     callback
   );
@@ -819,7 +826,7 @@ function setReactFriendlyInputValue(input, value) {
  * @param {Document} document
  */
 function setupGetRecordingState(document) {
-  const selectors = require("devtools/client/performance-new/store/selectors");
+  const selectors = require("resource://devtools/client/performance-new/store/selectors.js");
   const store = document.defaultView.gStore;
   if (!store) {
     throw new Error("Could not find the redux store on the window object.");

@@ -8,7 +8,11 @@
 
 "use strict";
 
-add_task(async function init() {
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
+
   for (let i = 0; i < UrlbarPrefs.get("maxRichResults"); i++) {
     await PlacesTestUtils.addVisits("http://example.com/" + i);
   }
@@ -293,6 +297,15 @@ async function expectTabThroughResults(options = { reverse: false }) {
 
   for (let i = initiallySelectedIndex + 1; i < resultCount; i++) {
     EventUtils.synthesizeKey("KEY_Tab", { shiftKey: options.reverse });
+    if (
+      UrlbarTestUtils.getButtonForResultIndex(
+        window,
+        "menu",
+        UrlbarTestUtils.getSelectedRowIndex(window)
+      )
+    ) {
+      EventUtils.synthesizeKey("KEY_Tab", { shiftKey: options.reverse });
+    }
     Assert.equal(
       UrlbarTestUtils.getSelectedRowIndex(window),
       options.reverse ? resultCount - i : i

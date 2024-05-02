@@ -60,6 +60,7 @@ MSG_DEF(MSG_INVALID_REFERRER_URL, 2, true, JSEXN_TYPEERR, "{0}Invalid referrer U
 MSG_DEF(MSG_FETCH_BODY_CONSUMED_ERROR, 1, true, JSEXN_TYPEERR, "{0}Body has already been consumed.")
 MSG_DEF(MSG_RESPONSE_INVALID_STATUSTEXT_ERROR, 1, true, JSEXN_TYPEERR, "{0}Response statusText may not contain newline or carriage return.")
 MSG_DEF(MSG_FETCH_FAILED, 1, true, JSEXN_TYPEERR, "{0}NetworkError when attempting to fetch resource.")
+MSG_DEF(MSG_FETCH_BODY_WRONG_TYPE, 1, true, JSEXN_TYPEERR, "{0}Can't convert value to Uint8Array while consuming Body")
 MSG_DEF(MSG_INVALID_ZOOMANDPAN_VALUE_ERROR, 1, true, JSEXN_RANGEERR, "{0}Invalid zoom and pan value.")
 MSG_DEF(MSG_INVALID_TRANSFORM_ANGLE_ERROR, 1, true, JSEXN_RANGEERR, "{0}Invalid transform angle.")
 MSG_DEF(MSG_INVALID_URL_SCHEME, 3, true, JSEXN_TYPEERR, "{0}{1} URL {2} must be either http:// or https://.")
@@ -93,3 +94,4 @@ MSG_DEF(MSG_URL_NOT_LOADABLE, 2, true, JSEXN_TYPEERR, "{0}Access to '{1}' from s
 MSG_DEF(MSG_ONE_OFF_TYPEERR, 2, true, JSEXN_TYPEERR, "{0}{1}")
 MSG_DEF(MSG_ONE_OFF_RANGEERR, 2, true, JSEXN_RANGEERR, "{0}{1}")
 MSG_DEF(MSG_NO_CODECS_PARAMETER, 2, true, JSEXN_TYPEERR, "{0}The provided type '{1}' does not have a 'codecs' parameter.")
+MSG_DEF(MSG_JSON_INVALID_VALUE, 1, true, JSEXN_TYPEERR, "{0}Value could not be serialized as JSON.")

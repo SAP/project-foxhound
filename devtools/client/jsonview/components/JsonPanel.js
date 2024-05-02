@@ -4,7 +4,7 @@
 
 "use strict";
 
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   const {
     createFactory,
     Component,
@@ -64,6 +64,7 @@ define(function(require, exports, module) {
 
     componentDidMount() {
       document.addEventListener("keypress", this.onKeyPress, true);
+      document.getElementById("json-scrolling-panel").focus();
     }
 
     componentWillUnmount() {
@@ -116,7 +117,7 @@ define(function(require, exports, module) {
         object: this.props.data,
         mode: MODE.TINY,
         onFilter: this.onFilter,
-        columns: columns,
+        columns,
         renderValue: this.renderValue,
         expandedNodes: this.props.expandedNodes,
       });
@@ -145,7 +146,14 @@ define(function(require, exports, module) {
           actions: this.props.actions,
           dataSize: this.props.dataSize,
         }),
-        div({ className: "panelContent" }, content)
+        div(
+          {
+            className: "panelContent",
+            id: "json-scrolling-panel",
+            tabIndex: 0,
+          },
+          content
+        )
       );
     }
   }

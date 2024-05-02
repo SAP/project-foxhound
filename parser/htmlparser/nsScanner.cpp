@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-//#define __INCREMENTAL 1
+// #define __INCREMENTAL 1
 
 #include "nsScanner.h"
 
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/UniquePtr.h"
 #include "nsDebug.h"
 #include "nsReadableUtils.h"
 #include "nsUTF8Utils.h"  // for LossyConvertEncoding
@@ -47,21 +48,12 @@ nsReadEndCondition::nsReadEndCondition(const char16_t* aTerminateChars)
  *  @param   aMode represents the parser mode (nav, other)
  *  @return
  */
-nsScanner::nsScanner(const nsAString& anHTMLString) {
+nsScanner::nsScanner(const nsAString& anHTMLString, bool aIncremental)
+    : mIncremental(aIncremental) {
   MOZ_COUNT_CTOR(nsScanner);
 
-  mSlidingBuffer = nullptr;
-  if (AppendToBuffer(anHTMLString)) {
-    mSlidingBuffer->BeginReading(mCurrentPosition);
-  } else {
-    /* XXX see hack below, re: bug 182067 */
-    memset(&mCurrentPosition, 0, sizeof(mCurrentPosition));
-    mEndPosition = mCurrentPosition;
-  }
-  mMarkPosition = mCurrentPosition;
-  mIncremental = false;
-  mUnicodeDecoder = nullptr;
-  mCharsetSource = kCharsetUninitialized;
+  AppendToBuffer(anHTMLString);
+  MOZ_ASSERT(mMarkPosition == mCurrentPosition);
 }
 
 /**
@@ -69,11 +61,8 @@ nsScanner::nsScanner(const nsAString& anHTMLString) {
  *  the scanner receives. If you pass a null filename, you
  *  can still provide data to the scanner via append.
  */
-nsScanner::nsScanner(nsIURI* aURI, bool aCreateStream) : mURI(aURI) {
+nsScanner::nsScanner(nsIURI* aURI) : mURI(aURI), mIncremental(true) {
   MOZ_COUNT_CTOR(nsScanner);
-  NS_ASSERTION(!aCreateStream, "This is always true.");
-
-  mSlidingBuffer = nullptr;
 
   // XXX This is a big hack.  We need to initialize the iterators to something.
   // What matters is that mCurrentPosition == mEndPosition, so that our methods
@@ -84,10 +73,6 @@ nsScanner::nsScanner(nsIURI* aURI, bool aCreateStream) : mURI(aURI) {
   mMarkPosition = mCurrentPosition;
   mEndPosition = mCurrentPosition;
 
-  mIncremental = true;
-
-  mUnicodeDecoder = nullptr;
-  mCharsetSource = kCharsetUninitialized;
   // XML defaults to UTF-8 and about:blank is UTF-8, too.
   SetDocumentCharset(UTF_8_ENCODING, kCharsetFromDocTypeDefault);
 }
@@ -120,11 +105,7 @@ nsresult nsScanner::SetDocumentCharset(NotNull<const Encoding*> aEncoding,
  *  @param
  *  @return
  */
-nsScanner::~nsScanner() {
-  delete mSlidingBuffer;
-
-  MOZ_COUNT_DTOR(nsScanner);
-}
+nsScanner::~nsScanner() { MOZ_COUNT_DTOR(nsScanner); }
 
 /**
  *  Resets current offset position of input stream to marked position.
@@ -209,11 +190,13 @@ nsresult nsScanner::Append(const nsAString& aBuffer) {
 nsresult nsScanner::Append(const char* aBuffer, uint32_t aLen) {
   nsresult res = NS_OK;
   if (mUnicodeDecoder) {
-    CheckedInt<size_t> needed = mUnicodeDecoder->MaxUTF16BufferLength(aLen);
+    mozilla::CheckedInt<size_t> needed =
+        mUnicodeDecoder->MaxUTF16BufferLength(aLen);
     if (!needed.isValid()) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
-    CheckedInt<uint32_t> allocLen(1);  // null terminator due to legacy sadness
+    mozilla::CheckedInt<uint32_t> allocLen(
+        1);  // null terminator due to legacy sadness
     allocLen += needed.value();
     if (!allocLen.isValid()) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -229,12 +212,13 @@ nsresult nsScanner::Append(const char* aBuffer, uint32_t aLen) {
     // Do not use structured binding lest deal with [-Werror=unused-variable]
     std::tie(result, read, written) =
         mUnicodeDecoder->DecodeToUTF16WithoutReplacement(
-            AsBytes(Span(aBuffer, aLen)), Span(unichars, needed.value()),
+            AsBytes(mozilla::Span(aBuffer, aLen)),
+            mozilla::Span(unichars, needed.value()),
             false);  // Retain bug about failure to handle EOF
-    MOZ_ASSERT(result != kOutputFull);
+    MOZ_ASSERT(result != mozilla::kOutputFull);
     MOZ_ASSERT(read <= aLen);
     MOZ_ASSERT(written <= needed.value());
-    if (result != kInputEmpty) {
+    if (result != mozilla::kInputEmpty) {
       // Since about:blank is empty, this line runs only for XML. Use a
       // character that's illegal in XML instead of U+FFFD in order to make
       // expat flag the error. There is no need to loop and convert more, since
@@ -246,7 +230,7 @@ nsresult nsScanner::Append(const char* aBuffer, uint32_t aLen) {
     // since it doesn't reflect on our success or failure
     // - Ref. bug 87110
     res = NS_OK;
-    if (!AppendToBuffer(buffer)) res = NS_ERROR_OUT_OF_MEMORY;
+    AppendToBuffer(buffer);
   } else {
     NS_WARNING("No decoder found.");
     res = NS_ERROR_FAILURE;
@@ -297,22 +281,18 @@ void nsScanner::SetPosition(nsScannerIterator& aPosition, bool aTerminate) {
   }
 }
 
-bool nsScanner::AppendToBuffer(nsScannerString::Buffer* aBuf) {
+void nsScanner::AppendToBuffer(nsScannerString::Buffer* aBuf) {
   if (!mSlidingBuffer) {
-    mSlidingBuffer = new nsScannerString(aBuf);
-    if (!mSlidingBuffer) return false;
+    mSlidingBuffer = mozilla::MakeUnique<nsScannerString>(aBuf);
     mSlidingBuffer->BeginReading(mCurrentPosition);
     mMarkPosition = mCurrentPosition;
-    mSlidingBuffer->EndReading(mEndPosition);
   } else {
     mSlidingBuffer->AppendBuffer(aBuf);
     if (mCurrentPosition == mEndPosition) {
       mSlidingBuffer->BeginReading(mCurrentPosition);
     }
-    mSlidingBuffer->EndReading(mEndPosition);
   }
-
-  return true;
+  mSlidingBuffer->EndReading(mEndPosition);
 }
 
 /**

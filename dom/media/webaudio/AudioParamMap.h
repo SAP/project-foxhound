@@ -10,13 +10,12 @@
 #include "nsWrapperCache.h"
 #include "AudioWorkletNode.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class AudioParamMap final : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(AudioParamMap)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(AudioParamMap)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(AudioParamMap)
 
   explicit AudioParamMap(AudioWorkletNode* aParent);
 
@@ -30,7 +29,6 @@ class AudioParamMap final : public nsWrapperCache {
   RefPtr<AudioWorkletNode> mParent;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // AudioParamMap_h_

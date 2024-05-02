@@ -29,9 +29,9 @@ class CQTest : public ::libvpx_test::EncoderTest,
   // maps the cqlevel to the bitrate produced.
   typedef std::map<int, uint32_t> BitrateMap;
 
-  static void SetUpTestCase() { bitrates_.clear(); }
+  static void SetUpTestSuite() { bitrates_.clear(); }
 
-  static void TearDownTestCase() {
+  static void TearDownTestSuite() {
     ASSERT_TRUE(!HasFailure())
         << "skipping bitrate validation due to earlier failure.";
     uint32_t prev_actual_bitrate = kCQTargetBitrate;
@@ -50,21 +50,21 @@ class CQTest : public ::libvpx_test::EncoderTest,
     init_flags_ = VPX_CODEC_USE_PSNR;
   }
 
-  virtual ~CQTest() {}
+  ~CQTest() override = default;
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitializeConfig();
     SetMode(libvpx_test::kTwoPassGood);
   }
 
-  virtual void BeginPassHook(unsigned int /*pass*/) {
+  void BeginPassHook(unsigned int /*pass*/) override {
     file_size_ = 0;
     psnr_ = 0.0;
     n_frames_ = 0;
   }
 
-  virtual void PreEncodeFrameHook(libvpx_test::VideoSource *video,
-                                  libvpx_test::Encoder *encoder) {
+  void PreEncodeFrameHook(libvpx_test::VideoSource *video,
+                          libvpx_test::Encoder *encoder) override {
     if (video->frame() == 0) {
       if (cfg_.rc_end_usage == VPX_CQ) {
         encoder->Control(VP8E_SET_CQ_LEVEL, cq_level_);
@@ -73,12 +73,12 @@ class CQTest : public ::libvpx_test::EncoderTest,
     }
   }
 
-  virtual void PSNRPktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void PSNRPktHook(const vpx_codec_cx_pkt_t *pkt) override {
     psnr_ += pow(10.0, pkt->data.psnr.psnr[0] / 10.0);
     n_frames_++;
   }
 
-  virtual void FramePktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void FramePktHook(const vpx_codec_cx_pkt_t *pkt) override {
     file_size_ += pkt->data.frame.sz;
   }
 
@@ -126,6 +126,6 @@ TEST_P(CQTest, LinearPSNRIsHigherForCQLevel) {
   EXPECT_GE(cq_psnr_lin, vbr_psnr_lin);
 }
 
-VP8_INSTANTIATE_TEST_CASE(CQTest, ::testing::Range(kCQLevelMin, kCQLevelMax,
-                                                   kCQLevelStep));
+VP8_INSTANTIATE_TEST_SUITE(CQTest, ::testing::Range(kCQLevelMin, kCQLevelMax,
+                                                    kCQLevelStep));
 }  // namespace

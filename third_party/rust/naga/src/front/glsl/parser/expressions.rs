@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use crate::{
     front::glsl::{
         ast::{FunctionCall, FunctionCallKind, HirExpr, HirExprKind},
@@ -5,39 +7,47 @@ use crate::{
         error::{ErrorKind, ExpectedToken},
         parser::ParsingContext,
         token::{Token, TokenValue},
-        Error, Parser, Result, Span,
+        Error, Frontend, Result, Span,
     },
-    ArraySize, BinaryOperator, Block, Constant, ConstantInner, Handle, ScalarValue, Type,
-    TypeInner, UnaryOperator,
+    ArraySize, BinaryOperator, Handle, Literal, Type, TypeInner, UnaryOperator,
 };
 
 impl<'source> ParsingContext<'source> {
     pub fn parse_primary(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
     ) -> Result<Handle<HirExpr>> {
-        let mut token = self.bump(parser)?;
+        let mut token = self.bump(frontend)?;
 
-        let (width, value) = match token.value {
-            TokenValue::IntConstant(int) => (
-                (int.width / 8) as u8,
+        let literal = match token.value {
+            TokenValue::IntConstant(int) => {
+                if int.width != 32 {
+                    frontend.errors.push(Error {
+                        kind: ErrorKind::SemanticError("Unsupported non-32bit integer".into()),
+                        meta: token.meta,
+                    });
+                }
                 if int.signed {
-                    ScalarValue::Sint(int.value as i64)
+                    Literal::I32(int.value as i32)
                 } else {
-                    ScalarValue::Uint(int.value)
-                },
-            ),
-            TokenValue::FloatConstant(float) => (
-                (float.width / 8) as u8,
-                ScalarValue::Float(float.value as f64),
-            ),
-            TokenValue::BoolConstant(value) => (1, ScalarValue::Bool(value)),
+                    Literal::U32(int.value as u32)
+                }
+            }
+            TokenValue::FloatConstant(float) => {
+                if float.width != 32 {
+                    frontend.errors.push(Error {
+                        kind: ErrorKind::SemanticError("Unsupported floating-point value (expected single-precision floating-point number)".into()),
+                        meta: token.meta,
+                    });
+                }
+                Literal::F32(float.value)
+            }
+            TokenValue::BoolConstant(value) => Literal::Bool(value),
             TokenValue::LeftParen => {
-                let expr = self.parse_expression(parser, ctx, stmt, body)?;
-                let meta = self.expect(parser, TokenValue::RightParen)?.meta;
+                let expr = self.parse_expression(frontend, ctx, stmt)?;
+                let meta = self.expect(frontend, TokenValue::RightParen)?.meta;
 
                 token.meta.subsume(meta);
 
@@ -59,18 +69,9 @@ impl<'source> ParsingContext<'source> {
             }
         };
 
-        let handle = parser.module.constants.fetch_or_append(
-            Constant {
-                name: None,
-                specialization: None,
-                inner: ConstantInner::Scalar { width, value },
-            },
-            token.meta,
-        );
-
         Ok(stmt.hir_exprs.append(
             HirExpr {
-                kind: HirExprKind::Constant(handle),
+                kind: HirExprKind::Literal(literal),
                 meta: token.meta,
             },
             Default::default(),
@@ -79,20 +80,19 @@ impl<'source> ParsingContext<'source> {
 
     pub fn parse_function_call_args(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
         meta: &mut Span,
     ) -> Result<Vec<Handle<HirExpr>>> {
         let mut args = Vec::new();
-        if let Some(token) = self.bump_if(parser, TokenValue::RightParen) {
+        if let Some(token) = self.bump_if(frontend, TokenValue::RightParen) {
             meta.subsume(token.meta);
         } else {
             loop {
-                args.push(self.parse_assignment(parser, ctx, stmt, body)?);
+                args.push(self.parse_assignment(frontend, ctx, stmt)?);
 
-                let token = self.bump(parser)?;
+                let token = self.bump(frontend)?;
                 match token.value {
                     TokenValue::Comma => {}
                     TokenValue::RightParen => {
@@ -117,43 +117,41 @@ impl<'source> ParsingContext<'source> {
 
     pub fn parse_postfix(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
     ) -> Result<Handle<HirExpr>> {
-        let mut base = if self.peek_type_name(parser) {
-            let (mut handle, mut meta) = self.parse_type_non_void(parser)?;
+        let mut base = if self.peek_type_name(frontend) {
+            let (mut handle, mut meta) = self.parse_type_non_void(frontend, ctx)?;
 
-            self.expect(parser, TokenValue::LeftParen)?;
-            let args = self.parse_function_call_args(parser, ctx, stmt, body, &mut meta)?;
+            self.expect(frontend, TokenValue::LeftParen)?;
+            let args = self.parse_function_call_args(frontend, ctx, stmt, &mut meta)?;
 
             if let TypeInner::Array {
                 size: ArraySize::Dynamic,
                 stride,
                 base,
-            } = parser.module.types[handle].inner
+            } = ctx.module.types[handle].inner
             {
-                let span = parser.module.types.get_span(handle);
+                let span = ctx.module.types.get_span(handle);
 
-                let constant = parser.module.constants.fetch_or_append(
-                    Constant {
-                        name: None,
-                        specialization: None,
-                        inner: ConstantInner::Scalar {
-                            width: 4,
-                            value: ScalarValue::Uint(args.len() as u64),
-                        },
-                    },
-                    Span::default(),
-                );
-                handle = parser.module.types.insert(
+                let size = u32::try_from(args.len())
+                    .ok()
+                    .and_then(NonZeroU32::new)
+                    .ok_or(Error {
+                        kind: ErrorKind::SemanticError(
+                            "There must be at least one argument".into(),
+                        ),
+                        meta,
+                    })?;
+
+                handle = ctx.module.types.insert(
                     Type {
                         name: None,
                         inner: TypeInner::Array {
                             stride,
                             base,
-                            size: ArraySize::Constant(constant),
+                            size: ArraySize::Constant(size),
                         },
                     },
                     span,
@@ -170,13 +168,13 @@ impl<'source> ParsingContext<'source> {
                 },
                 Default::default(),
             )
-        } else if let TokenValue::Identifier(_) = self.expect_peek(parser)?.value {
-            let (name, mut meta) = self.expect_ident(parser)?;
+        } else if let TokenValue::Identifier(_) = self.expect_peek(frontend)?.value {
+            let (name, mut meta) = self.expect_ident(frontend)?;
 
-            let expr = if self.bump_if(parser, TokenValue::LeftParen).is_some() {
-                let args = self.parse_function_call_args(parser, ctx, stmt, body, &mut meta)?;
+            let expr = if self.bump_if(frontend, TokenValue::LeftParen).is_some() {
+                let args = self.parse_function_call_args(frontend, ctx, stmt, &mut meta)?;
 
-                let kind = match parser.lookup_type.get(&name) {
+                let kind = match frontend.lookup_type.get(&name) {
                     Some(ty) => FunctionCallKind::TypeConstructor(*ty),
                     None => FunctionCallKind::Function(name),
                 };
@@ -186,7 +184,7 @@ impl<'source> ParsingContext<'source> {
                     meta,
                 }
             } else {
-                let var = match parser.lookup_variable(ctx, body, &name, meta) {
+                let var = match frontend.lookup_variable(ctx, &name, meta)? {
                     Some(var) => var,
                     None => {
                         return Err(Error {
@@ -204,20 +202,20 @@ impl<'source> ParsingContext<'source> {
 
             stmt.hir_exprs.append(expr, Default::default())
         } else {
-            self.parse_primary(parser, ctx, stmt, body)?
+            self.parse_primary(frontend, ctx, stmt)?
         };
 
         while let TokenValue::LeftBracket
         | TokenValue::Dot
         | TokenValue::Increment
-        | TokenValue::Decrement = self.expect_peek(parser)?.value
+        | TokenValue::Decrement = self.expect_peek(frontend)?.value
         {
-            let Token { value, mut meta } = self.bump(parser)?;
+            let Token { value, mut meta } = self.bump(frontend)?;
 
             match value {
                 TokenValue::LeftBracket => {
-                    let index = self.parse_expression(parser, ctx, stmt, body)?;
-                    let end_meta = self.expect(parser, TokenValue::RightBracket)?.meta;
+                    let index = self.parse_expression(frontend, ctx, stmt)?;
+                    let end_meta = self.expect(frontend, TokenValue::RightBracket)?.meta;
 
                     meta.subsume(end_meta);
                     base = stmt.hir_exprs.append(
@@ -229,7 +227,24 @@ impl<'source> ParsingContext<'source> {
                     )
                 }
                 TokenValue::Dot => {
-                    let (field, end_meta) = self.expect_ident(parser)?;
+                    let (field, end_meta) = self.expect_ident(frontend)?;
+
+                    if self.bump_if(frontend, TokenValue::LeftParen).is_some() {
+                        let args = self.parse_function_call_args(frontend, ctx, stmt, &mut meta)?;
+
+                        base = stmt.hir_exprs.append(
+                            HirExpr {
+                                kind: HirExprKind::Method {
+                                    expr: base,
+                                    name: field,
+                                    args,
+                                },
+                                meta,
+                            },
+                            Default::default(),
+                        );
+                        continue;
+                    }
 
                     meta.subsume(end_meta);
                     base = stmt.hir_exprs.append(
@@ -265,16 +280,15 @@ impl<'source> ParsingContext<'source> {
 
     pub fn parse_unary(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
     ) -> Result<Handle<HirExpr>> {
-        Ok(match self.expect_peek(parser)?.value {
+        Ok(match self.expect_peek(frontend)?.value {
             TokenValue::Plus | TokenValue::Dash | TokenValue::Bang | TokenValue::Tilde => {
-                let Token { value, mut meta } = self.bump(parser)?;
+                let Token { value, mut meta } = self.bump(frontend)?;
 
-                let expr = self.parse_unary(parser, ctx, stmt, body)?;
+                let expr = self.parse_unary(frontend, ctx, stmt)?;
                 let end_meta = stmt.hir_exprs[expr].meta;
 
                 let kind = match value {
@@ -282,8 +296,12 @@ impl<'source> ParsingContext<'source> {
                         op: UnaryOperator::Negate,
                         expr,
                     },
-                    TokenValue::Bang | TokenValue::Tilde => HirExprKind::Unary {
-                        op: UnaryOperator::Not,
+                    TokenValue::Bang => HirExprKind::Unary {
+                        op: UnaryOperator::LogicalNot,
+                        expr,
+                    },
+                    TokenValue::Tilde => HirExprKind::Unary {
+                        op: UnaryOperator::BitwiseNot,
                         expr,
                     },
                     _ => return Ok(expr),
@@ -294,9 +312,9 @@ impl<'source> ParsingContext<'source> {
                     .append(HirExpr { kind, meta }, Default::default())
             }
             TokenValue::Increment | TokenValue::Decrement => {
-                let Token { value, meta } = self.bump(parser)?;
+                let Token { value, meta } = self.bump(frontend)?;
 
-                let expr = self.parse_unary(parser, ctx, stmt, body)?;
+                let expr = self.parse_unary(frontend, ctx, stmt)?;
 
                 stmt.hir_exprs.append(
                     HirExpr {
@@ -313,32 +331,31 @@ impl<'source> ParsingContext<'source> {
                     Default::default(),
                 )
             }
-            _ => self.parse_postfix(parser, ctx, stmt, body)?,
+            _ => self.parse_postfix(frontend, ctx, stmt)?,
         })
     }
 
     pub fn parse_binary(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
-        passtrough: Option<Handle<HirExpr>>,
+        passthrough: Option<Handle<HirExpr>>,
         min_bp: u8,
     ) -> Result<Handle<HirExpr>> {
-        let mut left = passtrough
+        let mut left = passthrough
             .ok_or(ErrorKind::EndOfFile /* Dummy error */)
-            .or_else(|_| self.parse_unary(parser, ctx, stmt, body))?;
+            .or_else(|_| self.parse_unary(frontend, ctx, stmt))?;
         let mut meta = stmt.hir_exprs[left].meta;
 
-        while let Some((l_bp, r_bp)) = binding_power(&self.expect_peek(parser)?.value) {
+        while let Some((l_bp, r_bp)) = binding_power(&self.expect_peek(frontend)?.value) {
             if l_bp < min_bp {
                 break;
             }
 
-            let Token { value, .. } = self.bump(parser)?;
+            let Token { value, .. } = self.bump(frontend)?;
 
-            let right = self.parse_binary(parser, ctx, stmt, body, None, r_bp)?;
+            let right = self.parse_binary(frontend, ctx, stmt, None, r_bp)?;
             let end_meta = stmt.hir_exprs[right].meta;
 
             meta.subsume(end_meta);
@@ -381,19 +398,18 @@ impl<'source> ParsingContext<'source> {
 
     pub fn parse_conditional(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
-        passtrough: Option<Handle<HirExpr>>,
+        passthrough: Option<Handle<HirExpr>>,
     ) -> Result<Handle<HirExpr>> {
-        let mut condition = self.parse_binary(parser, ctx, stmt, body, passtrough, 0)?;
+        let mut condition = self.parse_binary(frontend, ctx, stmt, passthrough, 0)?;
         let mut meta = stmt.hir_exprs[condition].meta;
 
-        if self.bump_if(parser, TokenValue::Question).is_some() {
-            let accept = self.parse_expression(parser, ctx, stmt, body)?;
-            self.expect(parser, TokenValue::Colon)?;
-            let reject = self.parse_assignment(parser, ctx, stmt, body)?;
+        if self.bump_if(frontend, TokenValue::Question).is_some() {
+            let accept = self.parse_expression(frontend, ctx, stmt)?;
+            self.expect(frontend, TokenValue::Colon)?;
+            let reject = self.parse_assignment(frontend, ctx, stmt)?;
             let end_meta = stmt.hir_exprs[reject].meta;
 
             meta.subsume(end_meta);
@@ -415,18 +431,17 @@ impl<'source> ParsingContext<'source> {
 
     pub fn parse_assignment(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
     ) -> Result<Handle<HirExpr>> {
-        let tgt = self.parse_unary(parser, ctx, stmt, body)?;
+        let tgt = self.parse_unary(frontend, ctx, stmt)?;
         let mut meta = stmt.hir_exprs[tgt].meta;
 
-        Ok(match self.expect_peek(parser)?.value {
+        Ok(match self.expect_peek(frontend)?.value {
             TokenValue::Assign => {
-                self.bump(parser)?;
-                let value = self.parse_assignment(parser, ctx, stmt, body)?;
+                self.bump(frontend)?;
+                let value = self.parse_assignment(frontend, ctx, stmt)?;
                 let end_meta = stmt.hir_exprs[value].meta;
 
                 meta.subsume(end_meta);
@@ -448,8 +463,8 @@ impl<'source> ParsingContext<'source> {
             | TokenValue::LeftShiftAssign
             | TokenValue::RightShiftAssign
             | TokenValue::XorAssign => {
-                let token = self.bump(parser)?;
-                let right = self.parse_assignment(parser, ctx, stmt, body)?;
+                let token = self.bump(frontend)?;
+                let right = self.parse_assignment(frontend, ctx, stmt)?;
                 let end_meta = stmt.hir_exprs[right].meta;
 
                 meta.subsume(end_meta);
@@ -485,29 +500,28 @@ impl<'source> ParsingContext<'source> {
                     Default::default(),
                 )
             }
-            _ => self.parse_conditional(parser, ctx, stmt, body, Some(tgt))?,
+            _ => self.parse_conditional(frontend, ctx, stmt, Some(tgt))?,
         })
     }
 
     pub fn parse_expression(
         &mut self,
-        parser: &mut Parser,
+        frontend: &mut Frontend,
         ctx: &mut Context,
         stmt: &mut StmtContext,
-        body: &mut Block,
     ) -> Result<Handle<HirExpr>> {
-        let mut expr = self.parse_assignment(parser, ctx, stmt, body)?;
+        let mut expr = self.parse_assignment(frontend, ctx, stmt)?;
 
-        while let TokenValue::Comma = self.expect_peek(parser)?.value {
-            self.bump(parser)?;
-            expr = self.parse_assignment(parser, ctx, stmt, body)?;
+        while let TokenValue::Comma = self.expect_peek(frontend)?.value {
+            self.bump(frontend)?;
+            expr = self.parse_assignment(frontend, ctx, stmt)?;
         }
 
         Ok(expr)
     }
 }
 
-fn binding_power(value: &TokenValue) -> Option<(u8, u8)> {
+const fn binding_power(value: &TokenValue) -> Option<(u8, u8)> {
     Some(match *value {
         TokenValue::LogicalOr => (1, 2),
         TokenValue::LogicalXor => (3, 4),

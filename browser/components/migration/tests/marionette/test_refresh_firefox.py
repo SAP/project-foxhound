@@ -1,9 +1,8 @@
-from __future__ import absolute_import, print_function
 import os
 import time
 
-from marionette_harness import MarionetteTestCase
 from marionette_driver.errors import NoAlertPresentException
+from marionette_harness import MarionetteTestCase
 
 
 # Holds info about things we need to cleanup after the tests are done.
@@ -41,18 +40,20 @@ class TestFirefoxRefresh(MarionetteTestCase):
     _expectedURLs = ["about:robots", "about:mozilla"]
 
     def savePassword(self):
-        self.runCode(
+        self.runAsyncCode(
             """
+          let [username, password, resolve] = arguments;
           let myLogin = new global.LoginInfo(
             "test.marionette.mozilla.com",
             "http://test.marionette.mozilla.com/some/form/",
             null,
-            arguments[0],
-            arguments[1],
+            username,
+            password,
             "username",
             "password"
           );
-          Services.logins.addLogin(myLogin)
+          Services.logins.addLoginAsync(myLogin)
+            .then(() => resolve(false), resolve);
         """,
             script_args=(self._username, self._password),
         )
@@ -118,18 +119,11 @@ class TestFirefoxRefresh(MarionetteTestCase):
             value: arguments[1],
             firstUsed: (Date.now() - 5000) * 1000,
           };
-          let finished = false;
           let resolve = arguments[arguments.length - 1];
-          global.FormHistory.update(updateDefinition, {
-            handleError(error) {
-              finished = true;
-              resolve(error);
-            },
-            handleCompletion() {
-              if (!finished) {
-                resolve(false);
-              }
-            }
+          global.FormHistory.update(updateDefinition).then(() => {
+            resolve(false);
+          }, error => {
+            resolve("Unexpected error in adding formhistory: " + error);
           });
         """,
             script_args=(self._formHistoryFieldName, self._formHistoryValue),
@@ -185,7 +179,9 @@ class TestFirefoxRefresh(MarionetteTestCase):
           let resolve = arguments[arguments.length - 1];
           const COMPLETE_STATE = Ci.nsIWebProgressListener.STATE_STOP +
                                  Ci.nsIWebProgressListener.STATE_IS_NETWORK;
-          let {TabStateFlusher} = Cu.import("resource:///modules/sessionstore/TabStateFlusher.jsm", {});
+          let { TabStateFlusher } = ChromeUtils.importESModule(
+            "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
+          );
           let expectedURLs = Array.from(arguments[0])
           gBrowser.addTabsProgressListener({
             onStateChange(browser, webprogress, request, flags, status) {
@@ -228,7 +224,9 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.runAsyncCode(
             """
           let resolve = arguments[arguments.length - 1];
-          Cu.import("resource://gre/modules/FxAccountsStorage.jsm");
+          let { FxAccountsStorageManager } = ChromeUtils.import(
+            "resource://gre/modules/FxAccountsStorage.jsm"
+          );
           let storage = new FxAccountsStorageManager();
           let data = {email: "test@test.com", uid: "uid", keyFetchToken: "top-secret"};
           storage.initialize(data);
@@ -246,22 +244,23 @@ class TestFirefoxRefresh(MarionetteTestCase):
         )
 
     def checkPassword(self):
-        loginInfo = self.marionette.execute_script(
+        loginInfo = self.runAsyncCode(
             """
-          let ary = Services.logins.findLogins(
-            "test.marionette.mozilla.com",
-            "http://test.marionette.mozilla.com/some/form/",
-            null, {});
-          return ary.length ? ary : {username: "null", password: "null"};
+          let [resolve] = arguments;
+          Services.logins.searchLoginsAsync({
+            origin: "test.marionette.mozilla.com",
+            formActionOrigin: "http://test.marionette.mozilla.com/some/form/",
+          }).then(ary => resolve(ary.length ? ary : {username: "null", password: "null"}));
         """
         )
         self.assertEqual(len(loginInfo), 1)
         self.assertEqual(loginInfo[0]["username"], self._username)
         self.assertEqual(loginInfo[0]["password"], self._password)
 
-        loginCount = self.marionette.execute_script(
+        loginCount = self.runAsyncCode(
             """
-          return Services.logins.getAllLogins().length;
+          let resolve = arguments[arguments.length - 1];
+          Services.logins.getAllLogins().then(logins => resolve(logins.length));
         """
         )
         # Note that we expect 2 logins - one from us, one from sync.
@@ -318,17 +317,8 @@ class TestFirefoxRefresh(MarionetteTestCase):
             """
           let resolve = arguments[arguments.length - 1];
           let results = [];
-          global.FormHistory.search(["value"], {fieldname: arguments[0]}, {
-            handleError(error) {
-              results = error;
-            },
-            handleResult(result) {
-              results.push(result);
-            },
-            handleCompletion() {
-              resolve(results);
-            },
-          });
+          global.FormHistory.search(["value"], {fieldname: arguments[0]})
+            .then(resolve);
         """,
             script_args=(self._formHistoryFieldName,),
         )
@@ -348,14 +338,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         formHistoryCount = self.runAsyncCode(
             """
           let [resolve] = arguments;
-          let count;
-          let callbacks = {
-            handleResult: rv => count = rv,
-            handleCompletion() {
-              resolve(count);
-            },
-          };
-          global.FormHistory.count({}, callbacks);
+          global.FormHistory.count({}).then(resolve);
         """
         )
         self.assertEqual(
@@ -439,13 +422,11 @@ class TestFirefoxRefresh(MarionetteTestCase):
           let resolve = arguments[arguments.length - 1]
           let mm = gBrowser.selectedBrowser.messageManager;
 
-          let {TabStateFlusher} = Cu.import("resource:///modules/sessionstore/TabStateFlusher.jsm", {});
-          window.addEventListener("SSWindowStateReady", function testSSPostReset() {
-            window.removeEventListener("SSWindowStateReady", testSSPostReset, false);
-            Promise.all(gBrowser.browsers.map(b => TabStateFlusher.flush(b))).then(function() {
-              resolve([... gBrowser.browsers].map(b => b.currentURI && b.currentURI.spec));
-            });
-          }, false);
+          window.addEventListener("SSWindowStateReady", function() {
+            window.addEventListener("SSTabRestored", function() {
+              resolve(Array.from(gBrowser.browsers, b => b.currentURI?.spec));
+            }, { capture: false, once: true });
+          }, { capture: false, once: true });
 
           let fs = function() {
             if (content.document.readyState === "complete") {
@@ -467,7 +448,9 @@ class TestFirefoxRefresh(MarionetteTestCase):
     def checkFxA(self):
         result = self.runAsyncCode(
             """
-          Cu.import("resource://gre/modules/FxAccountsStorage.jsm");
+          let { FxAccountsStorageManager } = ChromeUtils.import(
+            "resource://gre/modules/FxAccountsStorage.jsm"
+          );
           let resolve = arguments[arguments.length - 1];
           let storage = new FxAccountsStorageManager();
           let result = {};
@@ -498,6 +481,17 @@ class TestFirefoxRefresh(MarionetteTestCase):
         expected_value = "test@test.com" if expect_sync_user else None
         self.assertEqual(pref_value, expected_value)
 
+    def checkStartupMigrationStateCleared(self):
+        result = self.runCode(
+            """
+          let { MigrationUtils } = ChromeUtils.importESModule(
+            "resource:///modules/MigrationUtils.sys.mjs"
+          );
+          return MigrationUtils.isStartupMigration;
+        """
+        )
+        self.assertFalse(result)
+
     def checkProfile(self, has_migrated=False, expect_sync_user=True):
         self.checkPassword()
         self.checkBookmarkInMenu()
@@ -510,6 +504,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         if has_migrated:
             self.checkBookmarkToolbarVisibility()
             self.checkSession()
+            self.checkStartupMigrationStateCleared()
 
     def createProfileData(self):
         self.savePassword()
@@ -530,14 +525,20 @@ class TestFirefoxRefresh(MarionetteTestCase):
           window.global = {};
           global.LoginInfo = Components.Constructor("@mozilla.org/login-manager/loginInfo;1", "nsILoginInfo", "init");
           global.profSvc = Cc["@mozilla.org/toolkit/profile-service;1"].getService(Ci.nsIToolkitProfileService);
-          global.Preferences = Cu.import("resource://gre/modules/Preferences.jsm", {}).Preferences;
-          global.FormHistory = Cu.import("resource://gre/modules/FormHistory.jsm", {}).FormHistory;
+          global.Preferences = ChromeUtils.importESModule(
+            "resource://gre/modules/Preferences.sys.mjs"
+          ).Preferences;
+          global.FormHistory = ChromeUtils.import(
+            "resource://gre/modules/FormHistory.jsm"
+          ).FormHistory;
         """  # NOQA: E501
         )
         self._formAutofillAvailable = self.runCode(
             """
           try {
-            global.formAutofillStorage = Cu.import("resource://formautofill/FormAutofillStorage.jsm", {}).formAutofillStorage;
+            global.formAutofillStorage = ChromeUtils.import(
+              "resource://formautofill/FormAutofillStorage.jsm"
+            ).formAutofillStorage;
           } catch(e) {
             return false;
           }
@@ -565,7 +566,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         # Force yet another restart with a clean profile to disconnect from the
         # profile and environment changes we've made, to leave a more or less
         # blank slate for the next person.
-        self.marionette.restart(clean=True, in_app=False)
+        self.marionette.restart(in_app=False, clean=True)
         self.setUpScriptData()
 
         # Super
@@ -611,18 +612,18 @@ class TestFirefoxRefresh(MarionetteTestCase):
           global.profSvc.flush()
 
           // Now add the reset parameters:
-          let env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
           let prefsToKeep = Array.from(Services.prefs.getChildList("marionette."));
           // Add all the modified preferences set from geckoinstance.py to avoid
           // non-local connections.
-          prefsToKeep = prefsToKeep.concat(JSON.parse(env.get("MOZ_MARIONETTE_REQUIRED_PREFS")));
+          prefsToKeep = prefsToKeep.concat(JSON.parse(
+              Services.env.get("MOZ_MARIONETTE_REQUIRED_PREFS")));
           let prefObj = {};
           for (let pref of prefsToKeep) {
             prefObj[pref] = global.Preferences.get(pref);
           }
-          env.set("MOZ_MARIONETTE_PREF_STATE_ACROSS_RESTARTS", JSON.stringify(prefObj));
-          env.set("MOZ_RESET_PROFILE_RESTART", "1");
-          env.set("XRE_PROFILE_PATH", arguments[0]);
+          Services.env.set("MOZ_MARIONETTE_PREF_STATE_ACROSS_RESTARTS", JSON.stringify(prefObj));
+          Services.env.set("MOZ_RESET_PROFILE_RESTART", "1");
+          Services.env.set("XRE_PROFILE_PATH", arguments[0]);
         """,
             script_args=(
                 self.marionette.instance.profile.profile,

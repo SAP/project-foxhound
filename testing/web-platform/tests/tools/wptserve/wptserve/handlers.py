@@ -1,6 +1,7 @@
+# mypy: allow-untyped-defs
+
 import json
 import os
-import traceback
 from collections import defaultdict
 
 from urllib.parse import quote, unquote, urljoin
@@ -48,7 +49,7 @@ def filesystem_path(base_path, request, url_base="/"):
     return new_path
 
 
-class DirectoryHandler(object):
+class DirectoryHandler:
     def __init__(self, base_path=None, url_base="/"):
         self.base_path = base_path
         self.url_base = url_base
@@ -182,7 +183,7 @@ def load_headers(request, path):
         try:
             with open(headers_path, "rb") as headers_file:
                 data = headers_file.read()
-        except IOError:
+        except OSError:
             return []
         else:
             if use_sub:
@@ -194,7 +195,7 @@ def load_headers(request, path):
             _load(request, path))
 
 
-class FileHandler(object):
+class FileHandler:
     def __init__(self, base_path=None, url_base="/"):
         self.base_path = base_path
         self.url_base = url_base
@@ -226,7 +227,7 @@ class FileHandler(object):
             response = wrap_pipeline(path, request, response)
             return response
 
-        except (OSError, IOError):
+        except OSError:
             raise HTTPException(404)
 
     def get_headers(self, request, path):
@@ -273,10 +274,10 @@ class FileHandler(object):
         return f.read(byte_range.upper - byte_range.lower)
 
 
-file_handler = FileHandler()
+file_handler = FileHandler()  # type: ignore
 
 
-class PythonScriptHandler(object):
+class PythonScriptHandler:
     def __init__(self, base_path=None, url_base="/"):
         self.base_path = base_path
         self.url_base = url_base
@@ -305,7 +306,7 @@ class PythonScriptHandler(object):
             if func is not None:
                 return func(request, response, environ, path)
 
-        except IOError:
+        except OSError:
             raise HTTPException(404)
 
     def __call__(self, request, response):
@@ -347,10 +348,10 @@ class PythonScriptHandler(object):
         return self._load_file(request, None, func)
 
 
-python_script_handler = PythonScriptHandler()
+python_script_handler = PythonScriptHandler()  # type: ignore
 
 
-class FunctionHandler(object):
+class FunctionHandler:
     def __init__(self, func):
         self.func = func
 
@@ -359,9 +360,8 @@ class FunctionHandler(object):
             rv = self.func(request, response)
         except HTTPException:
             raise
-        except Exception:
-            msg = traceback.format_exc()
-            raise HTTPException(500, message=msg)
+        except Exception as e:
+            raise HTTPException(500) from e
         if rv is not None:
             if isinstance(rv, tuple):
                 if len(rv) == 3:
@@ -383,7 +383,7 @@ def handler(func):
     return FunctionHandler(func)
 
 
-class JsonHandler(object):
+class JsonHandler:
     def __init__(self, func):
         self.func = func
 
@@ -409,7 +409,7 @@ def json_handler(func):
     return JsonHandler(func)
 
 
-class AsIsHandler(object):
+class AsIsHandler:
     def __init__(self, base_path=None, url_base="/"):
         self.base_path = base_path
         self.url_base = url_base
@@ -422,14 +422,14 @@ class AsIsHandler(object):
                 response.writer.write_raw_content(f.read())
             wrap_pipeline(path, request, response)
             response.close_connection = True
-        except IOError:
+        except OSError:
             raise HTTPException(404)
 
 
-as_is_handler = AsIsHandler()
+as_is_handler = AsIsHandler()  # type: ignore
 
 
-class BasicAuthHandler(object):
+class BasicAuthHandler:
     def __init__(self, handler, user, password):
         """
          A Basic Auth handler
@@ -456,10 +456,10 @@ class BasicAuthHandler(object):
             return self.handler(request, response)
 
 
-basic_auth_handler = BasicAuthHandler(file_handler, None, None)
+basic_auth_handler = BasicAuthHandler(file_handler, None, None)  # type: ignore
 
 
-class ErrorHandler(object):
+class ErrorHandler:
     def __init__(self, status):
         self.status = status
 
@@ -467,7 +467,7 @@ class ErrorHandler(object):
         response.set_error(self.status)
 
 
-class StringHandler(object):
+class StringHandler:
     def __init__(self, data, content_type, **headers):
         """Handler that returns a fixed data string and headers
 
@@ -491,7 +491,7 @@ class StringHandler(object):
         return rv
 
 
-class StaticHandler(StringHandler):
+class StaticHandler:
     def __init__(self, path, format_args, content_type, **headers):
         """Handler that reads a file from a path and substitutes some fixed data
 
@@ -501,10 +501,26 @@ class StaticHandler(StringHandler):
         :param format_args: Dictionary of values to substitute into the template file
         :param content_type: Content type header to server the response with
         :param headers: List of headers to send with responses"""
+        self._path = path
+        self._format_args = format_args
+        self._content_type = content_type
+        self._headers = headers
+        self._handler = None
 
-        with open(path) as f:
-            data = f.read()
-            if format_args:
-                data = data % format_args
+    def __getnewargs_ex__(self):
+        # Do not pickle `self._handler`, which can be arbitrarily large.
+        args = self._path, self._format_args, self._content_type
+        return args, self._headers
 
-        return super(StaticHandler, self).__init__(data, content_type, **headers)
+    def __call__(self, request, response):
+        # Load the static file contents lazily so that this handler can be
+        # pickled and sent to child processes efficiently. Transporting file
+        # contents across processes can slow `wptserve` startup by several
+        # seconds (crbug.com/1479850).
+        if not self._handler:
+            with open(self._path) as f:
+                data = f.read()
+            if self._format_args:
+                data = data % self._format_args
+            self._handler = StringHandler(data, self._content_type, **self._headers)
+        return self._handler(request, response)

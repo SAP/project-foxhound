@@ -12,8 +12,7 @@
  * - devtools/client/definitions for tool-specifics entries
  */
 
-const { Cu } = require("chrome");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const MENUS_L10N = new LocalizationHelper(
   "devtools/client/locales/menus.properties"
 );
@@ -21,16 +20,20 @@ const MENUS_L10N = new LocalizationHelper(
 loader.lazyRequireGetter(
   this,
   "gDevTools",
-  "devtools/client/framework/devtools",
+  "resource://devtools/client/framework/devtools.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "gDevToolsBrowser",
-  "devtools/client/framework/devtools-browser",
+  "resource://devtools/client/framework/devtools-browser.js",
   true
 );
-loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
+loader.lazyRequireGetter(
+  this,
+  "Telemetry",
+  "resource://devtools/client/shared/telemetry.js"
+);
 
 let telemetry = null;
 
@@ -101,10 +104,10 @@ function createToolMenuElements(toolDefinition, doc) {
 
   // Prevent multiple entries for the same tool.
   if (doc.getElementById(menuId)) {
-    return;
+    return null;
   }
 
-  const oncommand = async function(id, event) {
+  const oncommand = async function (id, event) {
     try {
       const window = event.target.ownerDocument.defaultView;
       await gDevToolsBrowser.selectToolCommand(window, id, Cu.now());
@@ -126,9 +129,7 @@ function createToolMenuElements(toolDefinition, doc) {
   menuitem.setAttribute("key", "key_" + id);
   menuitem.addEventListener("command", oncommand);
 
-  return {
-    menuitem,
-  };
+  return menuitem;
 }
 
 /**
@@ -166,7 +167,10 @@ function sendEntryPointTelemetry(window) {
  *        The tool definition after which the tool menu item is to be added.
  */
 function insertToolMenuElements(doc, toolDefinition, prevDef) {
-  const { menuitem } = createToolMenuElements(toolDefinition, doc);
+  const menuitem = createToolMenuElements(toolDefinition, doc);
+  if (!menuitem) {
+    return;
+  }
 
   let ref;
   if (prevDef) {
@@ -210,7 +214,6 @@ exports.removeToolFromMenu = removeToolFromMenu;
  *        The document to which the tool items are to be added.
  */
 function addAllToolsToMenu(doc) {
-  const fragKeys = doc.createDocumentFragment();
   const fragMenuItems = doc.createDocumentFragment();
 
   for (const toolDefinition of gDevTools.getToolDefinitionArray()) {
@@ -218,16 +221,13 @@ function addAllToolsToMenu(doc) {
       continue;
     }
 
-    const elements = createToolMenuElements(toolDefinition, doc);
+    const menuItem = createToolMenuElements(toolDefinition, doc);
 
-    if (!elements) {
+    if (!menuItem) {
       continue;
     }
 
-    if (elements.key) {
-      fragKeys.appendChild(elements.key);
-    }
-    fragMenuItems.appendChild(elements.menuitem);
+    fragMenuItems.appendChild(menuItem);
   }
 
   const mps = doc.getElementById("menu_devtools_remotedebugging");
@@ -245,7 +245,7 @@ function addAllToolsToMenu(doc) {
 function addTopLevelItems(doc) {
   const menuItems = doc.createDocumentFragment();
 
-  const { menuitems } = require("devtools/client/menus");
+  const { menuitems } = require("resource://devtools/client/menus.js");
   for (const item of menuitems) {
     if (item.separator) {
       const separator = doc.createXULElement("menuseparator");
@@ -321,7 +321,7 @@ function removeTopLevelItems(doc) {
  * @param {HTMLDocument} doc
  *        The document to which menus are to be added.
  */
-exports.addMenus = function(doc) {
+exports.addMenus = function (doc) {
   addTopLevelItems(doc);
 
   addAllToolsToMenu(doc);
@@ -333,7 +333,7 @@ exports.addMenus = function(doc) {
  * @param {HTMLDocument} doc
  *        The document to which menus are to be removed.
  */
-exports.removeMenus = function(doc) {
+exports.removeMenus = function (doc) {
   // We only remove top level entries. Per-tool entries are removed while
   // unregistering each tool.
   removeTopLevelItems(doc);

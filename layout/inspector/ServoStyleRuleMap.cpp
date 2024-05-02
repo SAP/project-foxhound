@@ -37,6 +37,9 @@ void ServoStyleRuleMap::EnsureTable(ShadowRoot& aShadowRoot) {
   for (auto index : IntegerRange(aShadowRoot.SheetCount())) {
     FillTableFromStyleSheet(*aShadowRoot.SheetAt(index));
   }
+  for (const auto& sheet : aShadowRoot.AdoptedStyleSheets()) {
+    FillTableFromStyleSheet(*sheet);
+  }
 }
 
 void ServoStyleRuleMap::SheetAdded(StyleSheet& aStyleSheet) {
@@ -77,30 +80,27 @@ void ServoStyleRuleMap::RuleRemoved(StyleSheet& aStyleSheet,
   }
 
   switch (aStyleRule.Type()) {
-    case StyleCssRuleType::Style: {
-      auto& rule = static_cast<CSSStyleRule&>(aStyleRule);
-      mTable.Remove(rule.Raw());
-      break;
-    }
+    case StyleCssRuleType::Style:
     case StyleCssRuleType::Import:
     case StyleCssRuleType::Media:
     case StyleCssRuleType::Supports:
     case StyleCssRuleType::LayerBlock:
+    case StyleCssRuleType::Container:
     case StyleCssRuleType::Document: {
-      // See the comment in StyleSheetRemoved.
+      // See the comment in SheetRemoved.
       mTable.Clear();
       break;
     }
     case StyleCssRuleType::LayerStatement:
     case StyleCssRuleType::FontFace:
     case StyleCssRuleType::Page:
+    case StyleCssRuleType::Property:
     case StyleCssRuleType::Keyframes:
     case StyleCssRuleType::Keyframe:
     case StyleCssRuleType::Namespace:
     case StyleCssRuleType::CounterStyle:
     case StyleCssRuleType::FontFeatureValues:
-    case StyleCssRuleType::Viewport:
-    case StyleCssRuleType::ScrollTimeline:
+    case StyleCssRuleType::FontPaletteValues:
       break;
   }
 }
@@ -117,34 +117,34 @@ void ServoStyleRuleMap::FillTableFromRule(css::Rule& aRule) {
     case StyleCssRuleType::Style: {
       auto& rule = static_cast<CSSStyleRule&>(aRule);
       mTable.InsertOrUpdate(rule.Raw(), &rule);
-      break;
+      [[fallthrough]];
     }
     case StyleCssRuleType::LayerBlock:
     case StyleCssRuleType::Media:
     case StyleCssRuleType::Supports:
+    case StyleCssRuleType::Container:
     case StyleCssRuleType::Document: {
       auto& rule = static_cast<css::GroupRule&>(aRule);
-      if (ServoCSSRuleList* ruleList = rule.GetCssRules()) {
-        FillTableFromRuleList(*ruleList);
-      }
+      FillTableFromRuleList(*rule.CssRules());
       break;
     }
     case StyleCssRuleType::Import: {
       auto& rule = static_cast<CSSImportRule&>(aRule);
-      MOZ_ASSERT(aRule.GetStyleSheet());
-      FillTableFromStyleSheet(*rule.GetStyleSheet());
+      if (auto* sheet = rule.GetStyleSheet()) {
+        FillTableFromStyleSheet(*sheet);
+      }
       break;
     }
     case StyleCssRuleType::LayerStatement:
     case StyleCssRuleType::FontFace:
     case StyleCssRuleType::Page:
+    case StyleCssRuleType::Property:
     case StyleCssRuleType::Keyframes:
     case StyleCssRuleType::Keyframe:
     case StyleCssRuleType::Namespace:
     case StyleCssRuleType::CounterStyle:
     case StyleCssRuleType::FontFeatureValues:
-    case StyleCssRuleType::Viewport:
-    case StyleCssRuleType::ScrollTimeline:
+    case StyleCssRuleType::FontPaletteValues:
       break;
   }
 }

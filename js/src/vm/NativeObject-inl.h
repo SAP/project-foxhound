@@ -9,26 +9,28 @@
 
 #include "vm/NativeObject.h"
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 
 #include <type_traits>
 
-#include "gc/Allocator.h"
+#include "gc/GCEnum.h"
 #include "gc/GCProbes.h"
 #include "gc/MaybeRooted.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "js/Result.h"
-#include "proxy/Proxy.h"
-#include "vm/JSContext.h"
+#include "vm/Compartment.h"
+#include "vm/Iteration.h"
+#include "vm/PlainObject.h"
 #include "vm/PropertyResult.h"
-#include "vm/ProxyObject.h"
+#include "vm/StringType.h"
 #include "vm/TypedArrayObject.h"
 
 #include "gc/Heap-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/ObjectKind-inl.h"
+#include "vm/Compartment-inl.h"
+#include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/Realm-inl.h"
 #include "vm/Shape-inl.h"
 
 #ifdef ENABLE_RECORD_TUPLE
@@ -39,8 +41,18 @@ extern bool js::IsExtendedPrimitive(const JSObject& obj);
 
 namespace js {
 
+constexpr ObjectSlots::ObjectSlots(uint32_t capacity,
+                                   uint32_t dictionarySlotSpan,
+                                   uint64_t maybeUniqueId)
+    : capacity_(capacity),
+      dictionarySlotSpan_(dictionarySlotSpan),
+      maybeUniqueId_(maybeUniqueId) {
+  MOZ_ASSERT(this->capacity() == capacity);
+  MOZ_ASSERT(this->dictionarySlotSpan() == dictionarySlotSpan);
+}
+
 inline uint32_t NativeObject::numFixedSlotsMaybeForwarded() const {
-  return gc::MaybeForwarded(shape())->numFixedSlots();
+  return gc::MaybeForwarded(JSObject::shape())->asNative().numFixedSlots();
 }
 
 inline uint8_t* NativeObject::fixedData(size_t nslots) const {
@@ -60,7 +72,7 @@ inline void NativeObject::setDenseElementHole(uint32_t index) {
 }
 
 inline void NativeObject::removeDenseElementForSparseIndex(uint32_t index) {
-  MOZ_ASSERT(containsPure(INT_TO_JSID(index)));
+  MOZ_ASSERT(containsPure(PropertyKey::Int(index)));
   if (containsDenseElement(index)) {
     setDenseElementHole(index);
   }
@@ -155,6 +167,45 @@ inline void NativeObject::initDenseElements(const Value* src, uint32_t count) {
 
   memcpy(reinterpret_cast<Value*>(elements_), src, count * sizeof(Value));
   elementsRangePostWriteBarrier(0, count);
+}
+
+inline void NativeObject::initDenseElements(JSLinearString** src,
+                                            uint32_t count) {
+  MOZ_ASSERT(getDenseInitializedLength() == 0);
+  MOZ_ASSERT(count <= getDenseCapacity());
+  MOZ_ASSERT(src);
+  MOZ_ASSERT(isExtensible());
+
+  setDenseInitializedLength(count);
+  Value* elementsBase = reinterpret_cast<Value*>(elements_);
+  for (size_t i = 0; i < count; i++) {
+    elementsBase[i].setString(src[i]);
+  }
+
+  elementsRangePostWriteBarrier(0, count);
+}
+
+inline void NativeObject::initDenseElementRange(uint32_t destStart,
+                                                NativeObject* src,
+                                                uint32_t count) {
+  MOZ_ASSERT(count <= src->getDenseInitializedLength());
+
+  // The initialized length must already be set to the correct value.
+  MOZ_ASSERT(destStart + count == getDenseInitializedLength());
+
+  if (!src->denseElementsArePacked()) {
+    markDenseElementsNotPacked();
+  }
+
+  const Value* vp = src->getDenseElements();
+#ifdef DEBUG
+  for (uint32_t i = 0; i < count; ++i) {
+    checkStoredValue(vp[i]);
+  }
+#endif
+  memcpy(reinterpret_cast<Value*>(elements_) + destStart, vp,
+         count * sizeof(Value));
+  elementsRangePostWriteBarrier(destStart, count);
 }
 
 template <typename Iter>
@@ -428,8 +479,8 @@ inline bool NativeObject::isInWholeCellBuffer() const {
 
 /* static */
 inline NativeObject* NativeObject::create(
-    JSContext* cx, js::gc::AllocKind kind, js::gc::InitialHeap heap,
-    js::HandleShape shape, js::gc::AllocSite* site /* = nullptr */) {
+    JSContext* cx, js::gc::AllocKind kind, js::gc::Heap heap,
+    js::Handle<SharedShape*> shape, js::gc::AllocSite* site /* = nullptr */) {
   debugCheckNewObject(shape, kind, heap);
 
   const JSClass* clasp = shape->getObjectClass();
@@ -441,73 +492,35 @@ inline NativeObject* NativeObject::create(
   const uint32_t slotSpan = shape->slotSpan();
   const size_t nDynamicSlots = calculateDynamicSlots(nfixed, slotSpan, clasp);
 
-  JSObject* obj =
-      js::AllocateObject(cx, kind, nDynamicSlots, heap, clasp, site);
-  if (!obj) {
+  NativeObject* nobj = cx->newCell<NativeObject>(kind, heap, clasp, site);
+  if (!nobj) {
     return nullptr;
   }
 
-  NativeObject* nobj = static_cast<NativeObject*>(obj);
   nobj->initShape(shape);
-  // NOTE: Dynamic slots are created internally by Allocate<JSObject>.
+  nobj->setEmptyElements();
+
   if (!nDynamicSlots) {
     nobj->initEmptyDynamicSlots();
+  } else if (!nobj->allocateInitialSlots(cx, nDynamicSlots)) {
+    return nullptr;
   }
-  nobj->setEmptyElements();
 
   if (slotSpan > 0) {
     nobj->initSlots(nfixed, slotSpan);
   }
 
-  if (clasp->shouldDelayMetadataBuilder()) {
-    cx->realm()->setObjectPendingMetadata(cx, nobj);
-  } else {
-    nobj = SetNewObjectMetadata(cx, nobj);
+  if (MOZ_UNLIKELY(cx->realm()->hasAllocationMetadataBuilder())) {
+    if (clasp->shouldDelayMetadataBuilder()) {
+      cx->realm()->setObjectPendingMetadata(nobj);
+    } else {
+      nobj = SetNewObjectMetadata(cx, nobj);
+    }
   }
 
   js::gc::gcprobes::CreateObject(nobj);
 
   return nobj;
-}
-
-MOZ_ALWAYS_INLINE bool NativeObject::updateSlotsForSpan(JSContext* cx,
-                                                        size_t oldSpan,
-                                                        size_t newSpan) {
-  MOZ_ASSERT(oldSpan != newSpan);
-
-  size_t oldCapacity = numDynamicSlots();
-  size_t newCapacity =
-      calculateDynamicSlots(numFixedSlots(), newSpan, getClass());
-
-  if (oldSpan < newSpan) {
-    if (oldCapacity < newCapacity && !growSlots(cx, oldCapacity, newCapacity)) {
-      return false;
-    }
-
-    if (newSpan == oldSpan + 1) {
-      initSlotUnchecked(oldSpan, UndefinedValue());
-    } else {
-      // Initialize slots [oldSpan, newSpan). Use the *Unchecked version because
-      // the shape's slot span does not reflect the allocated slots at this
-      // point.
-      auto initRange = [](HeapSlot* start, HeapSlot* end) {
-        for (HeapSlot* slot = start; slot < end; slot++) {
-          slot->initAsUndefined();
-        }
-      };
-      forEachSlotRangeUnchecked(oldSpan, newSpan, initRange);
-    }
-  } else {
-    /* Trigger write barriers on the old slots before reallocating. */
-    prepareSlotRangeForOverwrite(newSpan, oldSpan);
-    invalidateSlotRange(newSpan, oldSpan);
-
-    if (oldCapacity > newCapacity) {
-      shrinkSlots(cx, oldCapacity, newCapacity);
-    }
-  }
-
-  return true;
 }
 
 MOZ_ALWAYS_INLINE void NativeObject::initEmptyDynamicSlots() {
@@ -529,48 +542,77 @@ MOZ_ALWAYS_INLINE void NativeObject::setEmptyDynamicSlots(
     uint32_t dictionarySlotSpan) {
   MOZ_ASSERT_IF(!inDictionaryMode(), dictionarySlotSpan == 0);
   MOZ_ASSERT(dictionarySlotSpan <= MAX_FIXED_SLOTS);
+
   slots_ = emptyObjectSlotsForDictionaryObject[dictionarySlotSpan];
+
   MOZ_ASSERT(getSlotsHeader()->capacity() == 0);
   MOZ_ASSERT(getSlotsHeader()->dictionarySlotSpan() == dictionarySlotSpan);
+  MOZ_ASSERT(!hasDynamicSlots());
+  MOZ_ASSERT(!hasUniqueId());
 }
 
-MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndUpdateSlots(JSContext* cx,
-                                                            Shape* newShape) {
+MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndAddNewSlots(
+    JSContext* cx, SharedShape* newShape, uint32_t oldSpan, uint32_t newSpan) {
   MOZ_ASSERT(!inDictionaryMode());
-  MOZ_ASSERT(!newShape->isDictionary());
+  MOZ_ASSERT(newShape->isShared());
   MOZ_ASSERT(newShape->zone() == zone());
   MOZ_ASSERT(newShape->numFixedSlots() == numFixedSlots());
   MOZ_ASSERT(newShape->getObjectClass() == getClass());
 
-  size_t oldSpan = shape()->slotSpan();
-  size_t newSpan = newShape->slotSpan();
+  MOZ_ASSERT(oldSpan < newSpan);
+  MOZ_ASSERT(sharedShape()->slotSpan() == oldSpan);
+  MOZ_ASSERT(newShape->slotSpan() == newSpan);
 
-  if (oldSpan == newSpan) {
-    setShape(newShape);
-    return true;
+  uint32_t numFixed = newShape->numFixedSlots();
+  if (newSpan > numFixed) {
+    uint32_t oldCapacity = numDynamicSlots();
+    uint32_t newCapacity =
+        calculateDynamicSlots(numFixed, newSpan, newShape->getObjectClass());
+    MOZ_ASSERT(oldCapacity <= newCapacity);
+
+    if (oldCapacity < newCapacity) {
+      if (MOZ_UNLIKELY(!growSlots(cx, oldCapacity, newCapacity))) {
+        return false;
+      }
+    }
   }
 
-  if (MOZ_UNLIKELY(!updateSlotsForSpan(cx, oldSpan, newSpan))) {
-    return false;
-  }
+  // Initialize slots [oldSpan, newSpan). Use the *Unchecked version because
+  // the shape's slot span does not reflect the allocated slots at this
+  // point.
+  auto initRange = [](HeapSlot* start, HeapSlot* end) {
+    for (HeapSlot* slot = start; slot < end; slot++) {
+      slot->initAsUndefined();
+    }
+  };
+  forEachSlotRangeUnchecked(oldSpan, newSpan, initRange);
 
   setShape(newShape);
   return true;
 }
 
-MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndUpdateSlotsForNewSlot(
-    JSContext* cx, Shape* newShape, uint32_t slot) {
+MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndAddNewSlot(
+    JSContext* cx, SharedShape* newShape, uint32_t slot) {
   MOZ_ASSERT(!inDictionaryMode());
-  MOZ_ASSERT(!newShape->isDictionary());
+  MOZ_ASSERT(newShape->isShared());
   MOZ_ASSERT(newShape->zone() == zone());
   MOZ_ASSERT(newShape->numFixedSlots() == numFixedSlots());
 
   MOZ_ASSERT(newShape->base() == shape()->base());
-  MOZ_ASSERT(newShape->slotSpan() == shape()->slotSpan() + 1);
+  MOZ_ASSERT(newShape->slotSpan() == sharedShape()->slotSpan() + 1);
   MOZ_ASSERT(newShape->slotSpan() == slot + 1);
 
-  if (MOZ_UNLIKELY(!updateSlotsForSpan(cx, slot, slot + 1))) {
-    return false;
+  uint32_t numFixed = newShape->numFixedSlots();
+  if (slot < numFixed) {
+    initFixedSlot(slot, UndefinedValue());
+  } else {
+    uint32_t dynamicSlotIndex = slot - numFixed;
+    if (dynamicSlotIndex >= numDynamicSlots()) {
+      if (MOZ_UNLIKELY(!growSlotsForNewSlot(cx, numFixed, slot))) {
+        return false;
+      }
+    }
+    initDynamicSlot(numFixed, slot, UndefinedValue());
   }
 
   setShape(newShape);
@@ -601,7 +643,7 @@ inline bool NativeObject::denseElementsMaybeInIteration() {
   if (!denseElementsHaveMaybeInIterationFlag()) {
     return false;
   }
-  return ObjectRealm::get(this).objectMaybeInIteration(this);
+  return compartment()->objectMaybeInIteration(this);
 }
 
 /*
@@ -623,10 +665,9 @@ inline bool NativeObject::denseElementsMaybeInIteration() {
  *  - Otherwise no property was resolved. Set propp to NotFound and return true.
  */
 static MOZ_ALWAYS_INLINE bool CallResolveOp(JSContext* cx,
-                                            HandleNativeObject obj, HandleId id,
+                                            Handle<NativeObject*> obj,
+                                            HandleId id,
                                             PropertyResult* propp) {
-  MOZ_ASSERT(!cx->isHelperThreadContext());
-
   // Avoid recursion on (obj, id) already being resolved on cx.
   AutoResolving resolving(cx, obj, id);
   if (resolving.alreadyStarted()) {
@@ -651,8 +692,8 @@ static MOZ_ALWAYS_INLINE bool CallResolveOp(JSContext* cx,
   MOZ_ASSERT_IF(obj->getClass()->getMayResolve(),
                 obj->getClass()->getMayResolve()(cx->names(), id, obj));
 
-  if (JSID_IS_INT(id)) {
-    uint32_t index = JSID_TO_INT(id);
+  if (id.isInt()) {
+    uint32_t index = id.toInt();
     if (obj->containsDenseElement(index)) {
       propp->setDenseElement(index);
       return true;
@@ -692,8 +733,8 @@ static MOZ_ALWAYS_INLINE bool NativeLookupOwnPropertyInline(
 #endif
 
   // Check for a native dense element.
-  if (JSID_IS_INT(id)) {
-    uint32_t index = JSID_TO_INT(id);
+  if (id.isInt()) {
+    uint32_t index = id.toInt();
     if (obj->containsDenseElement(index)) {
       propp->setDenseElement(index);
       return true;
@@ -704,15 +745,7 @@ static MOZ_ALWAYS_INLINE bool NativeLookupOwnPropertyInline(
   // so that integer properties on the prototype are ignored even for out
   // of bounds accesses.
   if (obj->template is<TypedArrayObject>()) {
-    mozilla::Maybe<uint64_t> index;
-    if (!ToTypedArrayIndex(cx, id, &index)) {
-      if (!allowGC) {
-        cx->recoverFromOutOfMemory();
-      }
-      return false;
-    }
-
-    if (index.isSome()) {
+    if (mozilla::Maybe<uint64_t> index = ToTypedArrayIndex(id)) {
       uint64_t idx = index.value();
       if (idx < obj->template as<TypedArrayObject>().length()) {
         propp->setTypedArrayElement(idx);
@@ -811,7 +844,6 @@ static MOZ_ALWAYS_INLINE bool NativeLookupPropertyInline(
     // we can simply loop within this call frame.
     if (proto->getOpsLookupProperty()) {
       if constexpr (allowGC) {
-        MOZ_ASSERT(!cx->isHelperThreadContext());
         RootedObject protoRoot(cx, proto);
         return LookupProperty(cx, protoRoot, id, objp, propp);
       } else {
@@ -865,19 +897,21 @@ inline bool IsPackedArray(JSObject* obj) {
 
 // Like AddDataProperty but optimized for plain objects. Plain objects don't
 // have an addProperty hook.
-MOZ_ALWAYS_INLINE bool AddDataPropertyToPlainObject(JSContext* cx,
-                                                    HandlePlainObject obj,
-                                                    HandleId id,
-                                                    HandleValue v) {
-  MOZ_ASSERT(!JSID_IS_INT(id));
+MOZ_ALWAYS_INLINE bool AddDataPropertyToPlainObject(
+    JSContext* cx, Handle<PlainObject*> obj, HandleId id, HandleValue v,
+    uint32_t* resultSlot = nullptr) {
+  MOZ_ASSERT(!id.isInt());
 
   uint32_t slot;
-  if (!NativeObject::addProperty(cx, obj, id,
-                                 PropertyFlags::defaultDataPropFlags, &slot)) {
+  if (!resultSlot) {
+    resultSlot = &slot;
+  }
+  if (!NativeObject::addProperty(
+          cx, obj, id, PropertyFlags::defaultDataPropFlags, resultSlot)) {
     return false;
   }
 
-  obj->initSlot(slot, v);
+  obj->initSlot(*resultSlot, v);
 
   MOZ_ASSERT(!obj->getClass()->getAddProperty());
   return true;

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac } from "common/Actions.jsm";
+import { actionCreators as ac } from "common/Actions.sys.mjs";
 import { CardGrid } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
 import { DSDismiss } from "content-src/components/DiscoveryStreamComponents/DSDismiss/DSDismiss";
 import { LinkMenuOptions } from "content-src/lib/link-menu-options";
@@ -39,7 +39,7 @@ export class CollectionCardGrid extends React.PureComponent {
       this.props.dispatch(action);
 
       this.props.dispatch(
-        ac.UserEvent({
+        ac.DiscoveryStreamUserEvent({
           event: userEvent,
           source,
           action_position: pos,
@@ -52,7 +52,7 @@ export class CollectionCardGrid extends React.PureComponent {
   }
 
   render() {
-    const { data, dismissible } = this.props;
+    const { data, dismissible, pocket_button_enabled } = this.props;
     if (
       this.state.dismissed ||
       !data ||
@@ -111,11 +111,11 @@ export class CollectionCardGrid extends React.PureComponent {
     const collectionGrid = (
       <div className="ds-collection-card-grid">
         <CardGrid
+          pocket_button_enabled={pocket_button_enabled}
           title={title}
           context={sponsoredByMessage}
           data={recsData}
           feed={feed}
-          border={this.props.border}
           type={type}
           is_collection={true}
           dispatch={this.props.dispatch}

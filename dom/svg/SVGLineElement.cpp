@@ -13,8 +13,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(Line)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGLineElement::WrapNode(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
@@ -75,17 +74,6 @@ already_AddRefed<DOMSVGAnimatedLength> SVGLineElement::X2() {
 
 already_AddRefed<DOMSVGAnimatedLength> SVGLineElement::Y2() {
   return mLengthAttributes[ATTR_Y2].ToDOMAnimatedLength(this);
-}
-
-//----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGLineElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sMarkersMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGLineElementBase::IsAttributeMapped(name);
 }
 
 //----------------------------------------------------------------------
@@ -233,5 +221,4 @@ bool SVGLineElement::GetGeometryBounds(Rect* aBounds,
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -6,11 +6,11 @@
 const TEST_URI =
   "data:text/html,<!DOCTYPE html>Test <code>clear()</code> jsterm helper";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const onMessage = waitForMessage(hud, "message");
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  const onMessage = waitForMessageByType(hud, "message", ".console-api");
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.wrappedJSObject.console.log("message");
   });
   await onMessage;

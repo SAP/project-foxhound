@@ -6,15 +6,15 @@
 
 "use strict";
 
-const CanvasUtils = require("devtools/client/memory/components/tree-map/canvas-utils");
-const DragZoom = require("devtools/client/memory/components/tree-map/drag-zoom");
+const CanvasUtils = require("resource://devtools/client/memory/components/tree-map/canvas-utils.js");
+const DragZoom = require("resource://devtools/client/memory/components/tree-map/drag-zoom.js");
 
 const TEST_URL = "data:text/html,<html><body></body></html>";
 const PIXEL_SCROLL_MODE = 0;
 const PIXEL_DELTA = 10;
 const MAX_RAF_LOOP = 1000;
 
-this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function ({ tab, panel }) {
   const panelWin = panel.panelWin;
   const panelDoc = panelWin.document;
   const div = panelDoc.createElement("div");

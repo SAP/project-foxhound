@@ -11,7 +11,7 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 var MockFilePicker = SpecialPowers.MockFilePicker;
 MockFilePicker.init(window);
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   info("Running the cleanup code");
   MockFilePicker.cleanup();
   if (gTestDir && gTestDir.exists()) {
@@ -51,15 +51,14 @@ function expectedImageAcceptHeader() {
   return (
     (Services.prefs.getBoolPref("image.avif.enabled") ? "image/avif," : "") +
     (Services.prefs.getBoolPref("image.jxl.enabled") ? "image/jxl," : "") +
-    (Services.prefs.getBoolPref("image.webp.enabled") ? "image/webp," : "") +
-    "*/*"
+    "image/webp,*/*"
   );
 }
 
 add_task(async function test_image_download() {
   await BrowserTestUtils.withNewTab(TEST_PATH + "dummy.html", async browser => {
     // Add the image, and wait for it to load.
-    await SpecialPowers.spawn(browser, [], async function() {
+    await SpecialPowers.spawn(browser, [], async function () {
       let loc = content.document.location.href;
       let imgloc = new content.URL("dummy.png", loc);
       let img = content.document.createElement("img");
@@ -75,7 +74,7 @@ add_task(async function test_image_download() {
 
     MockFilePicker.displayDirectory = gTestDir;
     let fileName;
-    MockFilePicker.showCallback = function(fp) {
+    MockFilePicker.showCallback = function (fp) {
       info("showCallback");
       fileName = fp.defaultString;
       info("fileName: " + fileName);
@@ -128,8 +127,7 @@ add_task(async function test_image_download() {
     );
     await popupShown;
     let popupHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
-    popup.querySelector("#context-saveimage").click();
-    popup.hidePopup();
+    popup.activateItem(popup.querySelector("#context-saveimage"));
     await popupHidden;
     info("Context menu hidden, waiting for download to finish");
     let imageDownload = await downloadFinishedPromise;

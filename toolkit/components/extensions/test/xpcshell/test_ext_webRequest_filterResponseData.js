@@ -1,7 +1,5 @@
 "use strict";
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-
 const HOSTS = new Set(["example.com", "example.org", "example.net"]);
 
 const server = createHttpServer({ hosts: HOSTS });
@@ -70,8 +68,8 @@ server.registerPathHandler("/lorem.html.gz", async (request, response) => {
   );
   response.setHeader("Content-Encoding", "gzip", false);
 
-  let data = await OS.File.read(do_get_file("data/lorem.html.gz").path);
-  response.write(String.fromCharCode(...new Uint8Array(data)));
+  let data = await IOUtils.read(do_get_file("data/lorem.html.gz").path);
+  response.write(String.fromCharCode(...data));
 
   response.finish();
 });
@@ -111,7 +109,7 @@ add_task(async function test_stream_encoding_data() {
     "http://example.com/lorem.html.gz"
   );
 
-  let content = await contentPage.spawn(null, () => {
+  let content = await contentPage.spawn([], () => {
     return this.content.document.body.textContent;
   });
 
@@ -375,9 +373,7 @@ add_task(async function test_filter_302() {
 
           filter.ondata = event => {
             const script = "forceError();";
-            filter.write(
-              new Uint8Array(new TextEncoder("utf-8").encode(script))
-            );
+            filter.write(new Uint8Array(new TextEncoder().encode(script)));
             filter.close();
             browser.test.sendMessage("filter-ondata");
           };
@@ -520,4 +516,92 @@ add_task(async function test_alternate_cached_data() {
 
   Services.prefs.clearUserPref("dom.script_loader.bytecode_cache.enabled");
   Services.prefs.clearUserPref("dom.script_loader.bytecode_cache.strategy");
+});
+
+add_task(async function test_webRequestFilterResponse_permission() {
+  function background() {
+    browser.test.onMessage.addListener(async (msg, ...args) => {
+      if (msg !== "testFilterResponseData") {
+        browser.test.fail(`Unexpected test message: ${msg}`);
+        return;
+      }
+
+      const [{ expectMissingPermissionError }] = args;
+
+      if (expectMissingPermissionError) {
+        browser.test.assertThrows(
+          () => browser.webRequest.filterResponseData("fake-response-id"),
+          /Missing required "webRequestFilterResponse" permission/,
+          "Expected missing webRequestFilterResponse permission error"
+        );
+      } else {
+        // Expect the generic error raised on invalid response id
+        // if the missing permission error isn't expected.
+        browser.test.assertTrue(
+          browser.webRequest.filterResponseData("fake-response-id"),
+          "Expected no missing webRequestFilterResponse permission error"
+        );
+      }
+
+      browser.test.notifyPass();
+    });
+  }
+
+  info(
+    "Verify MV2 extension does not require webRequestFilterResponse permission"
+  );
+  const extMV2 = ExtensionTestUtils.loadExtension({
+    background,
+    manifest: {
+      manifest_version: 2,
+      permissions: ["webRequest", "webRequestBlocking"],
+    },
+  });
+
+  await extMV2.startup();
+  extMV2.sendMessage("testFilterResponseData", {
+    expectMissingPermissionError: false,
+  });
+  await extMV2.awaitFinish();
+  await extMV2.unload();
+
+  info(
+    "Verify filterResponseData throws on MV3 extension without webRequestFilterResponse permission"
+  );
+  const extMV3NoPerm = ExtensionTestUtils.loadExtension({
+    background,
+    manifest: {
+      manifest_version: 3,
+      permissions: ["webRequest", "webRequestBlocking"],
+    },
+  });
+
+  await extMV3NoPerm.startup();
+  extMV3NoPerm.sendMessage("testFilterResponseData", {
+    expectMissingPermissionError: true,
+  });
+  await extMV3NoPerm.awaitFinish();
+  await extMV3NoPerm.unload();
+
+  info(
+    "Verify filterResponseData does not throw on MV3 extension without webRequestFilterResponse permission"
+  );
+  const extMV3WithPerm = ExtensionTestUtils.loadExtension({
+    background,
+    manifest: {
+      manifest_version: 3,
+      permissions: [
+        "webRequest",
+        "webRequestBlocking",
+        "webRequestFilterResponse",
+      ],
+    },
+  });
+
+  await extMV3WithPerm.startup();
+  extMV3WithPerm.sendMessage("testFilterResponseData", {
+    expectMissingPermissionError: false,
+  });
+  await extMV3WithPerm.awaitFinish();
+  await extMV3WithPerm.unload();
 });

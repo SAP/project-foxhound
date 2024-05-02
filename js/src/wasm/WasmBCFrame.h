@@ -57,7 +57,7 @@
 //         |      |    Non-arg local             |    |  |             ||
 //         |      |    ...                       |    |  |             ||
 //         |      |    (padding)                 |    |  |             ||
-//         |      |    Tls pointer               |    |  |             ||
+//         |      |    Instance pointer          |    |  |             ||
 //         |      +------------------------------+    |  |             ||
 //         v      |    (padding)                 |    |  v             ||
 // -------------  +==============================+ currentStackHeight  ||
@@ -469,17 +469,15 @@ class BaseStackFrameAllocator {
   // consumed by the call.
 
   void freeArgAreaAndPopBytes(size_t argSize, size_t dropSize) {
+    // The method is called to re-initialize SP after the call. Note that
+    // this operation shall not be optimized for argSize + dropSize == 0.
 #ifdef RABALDR_CHUNKY_STACK
     // Freeing the outgoing arguments and freeing the consumed values have
     // different semantics here, which is why the operation is split.
-    if (argSize) {
-      masm.freeStack(argSize);
-    }
+    masm.freeStackTo(masm.framePushed() - argSize);
     popChunkyBytes(dropSize);
 #else
-    if (argSize + dropSize) {
-      masm.freeStack(argSize + dropSize);
-    }
+    masm.freeStackTo(masm.framePushed() - (argSize + dropSize));
 #endif
   }
 };
@@ -498,8 +496,8 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   // Low byte offset of pointer to stack results, if any.
   Maybe<int32_t> stackResultsPtrOffset_;
 
-  // The offset of TLS pointer.
-  uint32_t tlsPointerOffset_;
+  // The offset of instance pointer.
+  uint32_t instancePointerOffset_;
 
   // Low byte offset of local area for true locals (not parameters).
   uint32_t varLow_;
@@ -516,7 +514,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
         masm(masm),
         maxFramePushed_(0),
         stackAddOffset_(0),
-        tlsPointerOffset_(UINT32_MAX),
+        instancePointerOffset_(UINT32_MAX),
         varLow_(UINT32_MAX),
         varHigh_(UINT32_MAX),
         sp_(masm.getStackPointer()) {}
@@ -545,7 +543,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     stackAddOffset_ = masm.sub32FromStackPtrWithPatch(tmp);
     Label ok;
     masm.branchPtr(Assembler::Below,
-                   Address(WasmTlsReg, offsetof(wasm::TlsData, stackLimit)),
+                   Address(InstanceReg, wasm::Instance::offsetOfStackLimit()),
                    tmp, &ok);
     masm.wasmTrap(Trap::StackOverflow, trapOffset);
     masm.bind(&ok);
@@ -610,10 +608,10 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     }
     varHigh_ = i.frameSize();
 
-    // Reserve an additional stack slot for the TLS pointer.
+    // Reserve an additional stack slot for the instance pointer.
     const uint32_t pointerAlignedVarHigh = AlignBytes(varHigh_, sizeof(void*));
     const uint32_t localSize = pointerAlignedVarHigh + sizeof(void*);
-    tlsPointerOffset_ = localSize;
+    instancePointerOffset_ = localSize;
 
     setLocalSize(AlignBytes(localSize, WasmStackAlignment));
 
@@ -726,15 +724,17 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
                   Address(sp_, stackOffset(stackResultsPtrOffset_.value())));
   }
 
-  void loadTlsPtr(Register dst) {
-    masm.loadPtr(Address(sp_, stackOffset(tlsPointerOffset_)), dst);
+  void loadInstancePtr(Register dst) {
+    // Sometimes loadInstancePtr is used in context when SP is not sync is FP,
+    // e.g. just after tail calls returns.
+    masm.loadPtr(Address(FramePointer, -instancePointerOffset_), dst);
   }
 
-  void storeTlsPtr(Register tls) {
-    masm.storePtr(tls, Address(sp_, stackOffset(tlsPointerOffset_)));
+  void storeInstancePtr(Register instance) {
+    masm.storePtr(instance, Address(sp_, stackOffset(instancePointerOffset_)));
   }
 
-  int32_t getTlsPtrOffset() { return stackOffset(tlsPointerOffset_); }
+  int32_t getInstancePtrOffset() { return stackOffset(instancePointerOffset_); }
 
   // An outgoing stack result area pointer is for stack results of callees of
   // the function being compiled.
@@ -943,21 +943,24 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
                                    uint32_t bytes, Register temp) {
     MOZ_ASSERT(destHeight < srcHeight);
     MOZ_ASSERT(bytes % sizeof(uint32_t) == 0);
-    uint32_t destOffset = stackOffset(destHeight) + bytes;
-    uint32_t srcOffset = stackOffset(srcHeight) + bytes;
+    // The shuffleStackResultsTowardFP is used when SP/framePushed is not
+    // tracked by the compiler, e.g. after possible return call -- use
+    // FramePointer instead of sp_.
+    int32_t destOffset = int32_t(-destHeight + bytes);
+    int32_t srcOffset = int32_t(-srcHeight + bytes);
     while (bytes >= sizeof(intptr_t)) {
       destOffset -= sizeof(intptr_t);
       srcOffset -= sizeof(intptr_t);
       bytes -= sizeof(intptr_t);
-      masm.loadPtr(Address(sp_, srcOffset), temp);
-      masm.storePtr(temp, Address(sp_, destOffset));
+      masm.loadPtr(Address(FramePointer, srcOffset), temp);
+      masm.storePtr(temp, Address(FramePointer, destOffset));
     }
     if (bytes) {
       MOZ_ASSERT(bytes == sizeof(uint32_t));
       destOffset -= sizeof(uint32_t);
       srcOffset -= sizeof(uint32_t);
-      masm.load32(Address(sp_, srcOffset), temp);
-      masm.store32(temp, Address(sp_, destOffset));
+      masm.load32(Address(FramePointer, srcOffset), temp);
+      masm.store32(temp, Address(FramePointer, destOffset));
     }
   }
 
@@ -1018,6 +1021,13 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
       masm.store32(temp, Address(dest, destOffset));
     }
     popBytes(bytesToPop);
+  }
+
+  void allocArgArea(size_t argSize) {
+    if (argSize) {
+      BaseStackFrameAllocator::allocArgArea(argSize);
+      maxFramePushed_ = std::max(maxFramePushed_, masm.framePushed());
+    }
   }
 
  private:
@@ -1102,17 +1112,54 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
 //
 // MachineStackTracker, used for stack-slot pointerness tracking.
 
+// An expensive operation in stack-map creation is copying of the
+// MachineStackTracker (MST) into the final StackMap.  This is done in
+// StackMapGenerator::createStackMap.  Given that this is basically a
+// bit-array copy, it is reasonable to ask whether the two classes could have
+// a more similar representation, so that the copy could then be done with
+// `memcpy`.
+//
+// Although in principle feasible, the follow complications exist, and so for
+// the moment, this has not been done.
+//
+// * StackMap is optimised for compact size (storage) since there will be
+//   many, so it uses a true bitmap.  MST is intended to be fast and simple,
+//   and only one exists at once (per compilation thread).  Doing this would
+//   require MST to use a true bitmap, and hence ..
+//
+// * .. the copying can't be a straight memcpy, since StackMap has entries for
+//   words not covered by MST.  Hence the copy would need to shift bits in
+//   each byte left or right (statistically speaking, in 7 cases out of 8) in
+//   order to ensure no "holes" in the resulting bitmap.
+//
+// * Furthermore the copying would need to logically invert the direction of
+//   the stacks.  For MST, index zero in the vector corresponds to the highest
+//   address in the stack. For StackMap, bit index zero corresponds to the
+//   lowest address in the stack.
+//
+// * Finally, StackMap is a variable-length structure whose size must be known
+//   at creation time.  The size of an MST by contrast isn't known at creation
+//   time -- it grows as the baseline compiler pushes stuff on its value
+//   stack. That's why it has to have vector entry 0 being the highest address.
+//
+// * Although not directly relevant, StackMaps are also created by the via-Ion
+//   compilation routes, by translation from the pre-existing "JS-era"
+//   LSafePoints (CreateStackMapFromLSafepoint).  So if we want to mash
+//   StackMap around to suit baseline better, we also need to ensure it
+//   doesn't break Ion somehow.
+
 class MachineStackTracker {
-  // Simulates the machine's stack, with one bool per word.  Index zero in
-  // this vector corresponds to the highest address in the machine stack.  The
-  // last entry corresponds to what SP currently points at.  This all assumes
-  // a grow-down stack.
+  // Simulates the machine's stack, with one bool per word.  The booleans are
+  // represented as `uint8_t`s so as to guarantee the element size is one
+  // byte.  Index zero in this vector corresponds to the highest address in
+  // the machine's stack.  The last entry corresponds to what SP currently
+  // points at.  This all assumes a grow-down stack.
   //
   // numPtrs_ contains the number of "true" values in vec_, and is therefore
   // redundant.  But it serves as a constant-time way to detect the common
   // case where vec_ holds no "true" values.
   size_t numPtrs_;
-  Vector<bool, 64, SystemAllocPolicy> vec_;
+  Vector<uint8_t, 64, SystemAllocPolicy> vec_;
 
  public:
   MachineStackTracker() : numPtrs_(0) {}
@@ -1120,7 +1167,7 @@ class MachineStackTracker {
   ~MachineStackTracker() {
 #ifdef DEBUG
     size_t n = 0;
-    for (bool b : vec_) {
+    for (uint8_t b : vec_) {
       n += (b ? 1 : 0);
     }
     MOZ_ASSERT(n == numPtrs_);
@@ -1132,7 +1179,7 @@ class MachineStackTracker {
 
   // Notionally push |n| non-pointers on the stack.
   [[nodiscard]] bool pushNonGCPointers(size_t n) {
-    return vec_.appendN(false, n);
+    return vec_.appendN(uint8_t(false), n);
   }
 
   // Mark the stack slot |offsetFromSP| up from the bottom as holding a
@@ -1144,23 +1191,23 @@ class MachineStackTracker {
 
     size_t offsetFromTop = vec_.length() - 1 - offsetFromSP;
     numPtrs_ = numPtrs_ + 1 - (vec_[offsetFromTop] ? 1 : 0);
-    vec_[offsetFromTop] = true;
+    vec_[offsetFromTop] = uint8_t(true);
   }
 
   // Query the pointerness of the slot |offsetFromSP| up from the bottom.
-  bool isGCPointer(size_t offsetFromSP) {
+  bool isGCPointer(size_t offsetFromSP) const {
     MOZ_ASSERT(offsetFromSP < vec_.length());
 
     size_t offsetFromTop = vec_.length() - 1 - offsetFromSP;
-    return vec_[offsetFromTop];
+    return bool(vec_[offsetFromTop]);
   }
 
   // Return the number of words tracked by this MachineStackTracker.
-  size_t length() { return vec_.length(); }
+  size_t length() const { return vec_.length(); }
 
   // Return the number of pointer-typed words tracked by this
   // MachineStackTracker.
-  size_t numPtrs() {
+  size_t numPtrs() const {
     MOZ_ASSERT(numPtrs_ <= length());
     return numPtrs_;
   }
@@ -1171,6 +1218,80 @@ class MachineStackTracker {
     vec_.clear();
     numPtrs_ = 0;
   }
+
+  // An iterator that produces indices of reftyped slots, starting at the
+  // logical bottom of the (grow-down) stack.  Indices have the same meaning
+  // as the arguments to `isGCPointer`.  That is, if this iterator produces a
+  // value `i`, then it means that `isGCPointer(i) == true`; if the value `i`
+  // is never produced then `isGCPointer(i) == false`.  The values are
+  // produced in ascending order.
+  //
+  // Because most slots are non-reftyped, some effort has been put into
+  // skipping over large groups of non-reftyped slots quickly.
+  class Iter {
+    // Both `bufU8_` and `bufU32_` are made to point to `vec_`s array of
+    // `uint8_t`s, so we can scan (backwards) through it either in bytes or
+    // 32-bit words.  Recall that the last element in `vec_` pertains to the
+    // lowest-addressed word in the machine's grow-down stack, and we want to
+    // iterate logically "up" this stack, so we need to iterate backwards
+    // through `vec_`.
+    //
+    // This dual-pointer scheme assumes that the `vec_`s content array is at
+    // least 32-bit aligned.
+    const uint8_t* bufU8_;
+    const uint32_t* bufU32_;
+    // The number of elements in `bufU8_`.
+    const size_t nElems_;
+    // The index in `bufU8_` where the next search should start.
+    size_t next_;
+
+   public:
+    explicit Iter(const MachineStackTracker& mst)
+        : bufU8_((uint8_t*)mst.vec_.begin()),
+          bufU32_((uint32_t*)mst.vec_.begin()),
+          nElems_(mst.vec_.length()),
+          next_(mst.vec_.length() - 1) {
+      MOZ_ASSERT(uintptr_t(bufU8_) == uintptr_t(bufU32_));
+      // Check minimum alignment constraint on the array.
+      MOZ_ASSERT(0 == (uintptr_t(bufU8_) & 3));
+    }
+
+    ~Iter() { MOZ_ASSERT(uintptr_t(bufU8_) == uintptr_t(bufU32_)); }
+
+    // It is important, for termination of the search loop in `next()`, that
+    // this has the value obtained by subtracting 1 from size_t(0).
+    static constexpr size_t FINISHED = ~size_t(0);
+    static_assert(FINISHED == size_t(0) - 1);
+
+    // Returns the next index `i` for which `isGCPointer(i) == true`.
+    size_t get() {
+      while (next_ != FINISHED) {
+        if (bufU8_[next_]) {
+          next_--;
+          return nElems_ - 1 - (next_ + 1);
+        }
+        // Invariant: next_ != FINISHED (so it's still a valid index)
+        //       and: bufU8_[next_] == 0
+        //            (so we need to move backwards by at least 1)
+        //
+        // BEGIN optimization -- this could be removed without affecting
+        // correctness.
+        if ((next_ & 7) == 0) {
+          // We're at the "bottom" of the current dual-4-element word.  Check
+          // if we can jump backwards by 8.  This saves a conditional branch
+          // and a few cycles by ORing two adjacent 32-bit words together,
+          // whilst not requiring 64-bit alignment of `bufU32_`.
+          while (next_ >= 8 &&
+                 (bufU32_[(next_ - 4) >> 2] | bufU32_[(next_ - 8) >> 2]) == 0) {
+            next_ -= 8;
+          }
+        }
+        // END optimization
+        next_--;
+      }
+      return FINISHED;
+    }
+  };
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1185,7 +1306,7 @@ struct StackMapGenerator {
 
   // For generating stackmaps, we'll need to know the offsets of registers
   // as saved by the trap exit stub.
-  const MachineState& trapExitLayout_;
+  const RegisterOffsets& trapExitLayout_;
   const size_t trapExitLayoutNumWords_;
 
   // Completed stackmaps are added here
@@ -1238,7 +1359,7 @@ struct StackMapGenerator {
   // costs resulting from making it local to createStackMap().
   MachineStackTracker augmentedMst;
 
-  StackMapGenerator(StackMaps* stackMaps, const MachineState& trapExitLayout,
+  StackMapGenerator(StackMaps* stackMaps, const RegisterOffsets& trapExitLayout,
                     const size_t trapExitLayoutNumWords,
                     const MacroAssembler& masm)
       : trapExitLayout_(trapExitLayout),
@@ -1258,7 +1379,7 @@ struct StackMapGenerator {
   // created for the integer registers as saved by (code generated by)
   // GenerateTrapExit().  To do that we use trapExitLayout_ and
   // trapExitLayoutNumWords_, which together comprise a description of the
-  // layout and are created by GenerateTrapExitMachineState().
+  // layout and are created by GenerateTrapExitRegisterOffsets().
   [[nodiscard]] bool generateStackmapEntriesForTrapExit(
       const ArgTypeVector& args, ExitStubMapVector* extras);
 

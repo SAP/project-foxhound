@@ -2,31 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from mozpack.copier import (
-    FileCopier,
-    FileRegistry,
-    FileRegistrySubtree,
-    Jarrer,
-)
-from mozpack.files import (
-    GeneratedFile,
-    ExistingFile,
-)
-from mozpack.mozjar import JarReader
-import mozpack.path as mozpath
-import unittest
-import mozunit
 import os
-import six
 import stat
+import unittest
+
+import mozunit
+import six
+
+import mozpack.path as mozpath
+from mozpack.copier import FileCopier, FileRegistry, FileRegistrySubtree, Jarrer
 from mozpack.errors import ErrorMessage
-from mozpack.test.test_files import (
-    MockDest,
-    MatchTestTemplate,
-    TestWithTmpDir,
-)
+from mozpack.files import ExistingFile, GeneratedFile
+from mozpack.mozjar import JarReader
+from mozpack.test.test_files import MatchTestTemplate, MockDest, TestWithTmpDir
 
 
 class BaseTestFileRegistry(MatchTestTemplate):
@@ -440,7 +428,7 @@ class TestFileCopier(TestWithTmpDir):
         self.assertTrue(stat.S_ISDIR(st.st_mode))
 
         # What's worse, we have no record that dest was created.
-        self.assertEquals(len(result.updated_files), 0)
+        self.assertEqual(len(result.updated_files), 0)
 
         # But we do have an erroneous record of an optional file
         # existing when it does not.

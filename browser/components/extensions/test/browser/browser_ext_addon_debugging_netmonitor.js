@@ -2,32 +2,14 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 
-const { DevToolsClient } = require("devtools/client/devtools-client");
-const { DevToolsServer } = require("devtools/server/devtools-server");
 const { gDevTools } = require("devtools/client/framework/devtools");
-const { Toolbox } = require("devtools/client/framework/toolbox");
-const {
-  CommandsFactory,
-} = require("devtools/shared/commands/commands-factory");
 
 async function setupToolboxTest(extensionId) {
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  const transport = DevToolsServer.connectPipe();
-  const client = new DevToolsClient(transport);
-  await client.connect();
-
-  const commands = await CommandsFactory.forAddon(extensionId);
-  await commands.targetCommand.startListening();
-  const addonDescriptor = commands.descriptorFront;
-
-  const toolbox = await gDevTools.showToolbox(addonDescriptor, {
-    hostType: Toolbox.HostType.WINDOW,
-  });
+  const toolbox = await gDevTools.showToolboxForWebExtension(extensionId);
 
   async function waitFor(condition) {
     while (!condition()) {
@@ -79,11 +61,6 @@ async function setupToolboxTest(extensionId) {
   );
 
   await toolbox.destroy();
-
-  // Because this is an Addon target, the client isn't closed on toolbox close.
-  // (TargetMixin.shouldCloseClient only applies to local tabs)
-  // So that we have to do it manually from this test.
-  await client.close();
 }
 
 add_task(async function test_addon_debugging_netmonitor_panel() {
@@ -91,11 +68,11 @@ add_task(async function test_addon_debugging_netmonitor_panel() {
 
   function background() {
     let expectedURL;
-    window.doFetchHTTPRequest = async function(urlToFetch) {
+    window.doFetchHTTPRequest = async function (urlToFetch) {
       expectedURL = urlToFetch;
       await fetch(urlToFetch);
     };
-    window.testNetworkRequestReceived = async function(requests) {
+    window.testNetworkRequestReceived = async function (requests) {
       browser.test.log(
         "Addon Debugging Netmonitor panel collected requests: " +
           JSON.stringify(requests)
@@ -118,7 +95,7 @@ add_task(async function test_addon_debugging_netmonitor_panel() {
     useAddonManager: "temporary",
     manifest: {
       permissions: ["http://mochi.test/"],
-      applications: {
+      browser_specific_settings: {
         gecko: { id: EXTENSION_ID },
       },
     },

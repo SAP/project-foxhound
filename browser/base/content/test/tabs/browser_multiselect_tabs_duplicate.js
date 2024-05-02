@@ -1,7 +1,24 @@
+async function openTabMenuFor(tab) {
+  let tabMenu = tab.ownerDocument.getElementById("tabContextMenu");
+
+  let tabMenuShown = BrowserTestUtils.waitForEvent(tabMenu, "popupshown");
+  EventUtils.synthesizeMouseAtCenter(
+    tab,
+    { type: "contextmenu" },
+    tab.ownerGlobal
+  );
+  await tabMenuShown;
+
+  return tabMenu;
+}
+
 add_task(async function test() {
   let originalTab = gBrowser.selectedTab;
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   let tab1 = await addTab("http://example.com/1");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   let tab2 = await addTab("http://example.com/2");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   let tab3 = await addTab("http://example.com/3");
 
   let menuItemDuplicateTab = document.getElementById("context_duplicateTab");
@@ -28,11 +45,14 @@ add_task(async function test() {
 
   let newTabOpened = BrowserTestUtils.waitForNewTab(
     gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/3",
     true
   );
-  window.TabContextMenu.contextTab = tab3; // Set proper context for command handler
-  menuItemDuplicateTab.click();
+  {
+    let menu = await openTabMenuFor(tab3);
+    menu.activateItem(menuItemDuplicateTab);
+  }
   let tab4 = await newTabOpened;
 
   is(
@@ -69,14 +89,18 @@ add_task(async function test() {
     () => gBrowser.visibleTabs.length == 7,
     "Wait for two tabs to get created"
   );
-  window.TabContextMenu.contextTab = tab3; // Set proper context for command handler
-  menuItemDuplicateTabs.click();
+  {
+    let menu = await openTabMenuFor(tab3);
+    menu.activateItem(menuItemDuplicateTabs);
+  }
   await newTabsOpened;
   info("Two tabs opened");
 
   await TestUtils.waitForCondition(() => {
     return (
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       getUrl(gBrowser.visibleTabs[4]) == "http://example.com/1" &&
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       getUrl(gBrowser.visibleTabs[5]) == "http://example.com/3"
     );
   });

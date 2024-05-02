@@ -18,17 +18,9 @@ const JS_URI =
 const MIME_ERROR_MSG1 = `Loading Worker from “${JS_URI}” was blocked because of a disallowed MIME type (“text/plain”).`;
 const MIME_ERROR_MSG2 = `Loading script from “${JS_URI}” with importScripts() was blocked because of a disallowed MIME type (“text/plain”).`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
-  await waitFor(
-    () => findMessage(hud, MIME_ERROR_MSG1, ".message.error"),
-    "",
-    100
-  );
-  await waitFor(
-    () => findMessage(hud, MIME_ERROR_MSG2, ".message.error"),
-    "",
-    100
-  );
+  await waitFor(() => findErrorMessage(hud, MIME_ERROR_MSG1), "", 100);
+  await waitFor(() => findErrorMessage(hud, MIME_ERROR_MSG2), "", 100);
   ok(true, "MIME type error displayed");
 });

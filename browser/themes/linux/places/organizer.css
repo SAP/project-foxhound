@@ -2,30 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* Toolbar */
-
-#placesToolbar {
-  appearance: auto;
-  -moz-default-appearance: menubar;
-  color: -moz-menubartext;
+#placesList {
+  width: 200px;
+  min-width: 100px;
+  max-width: 400px;
 }
+
+/* Toolbar */
 
 @media (-moz-menubar-drag) {
   #placesToolbar {
     -moz-window-dragging: drag;
   }
-}
-
-#placesToolbar > toolbarbutton {
-  color: -moz-menubartext;
-}
-
-#placesToolbar > toolbarbutton:hover {
-  color: ButtonText;
-}
-
-#placesToolbar > toolbarbutton[disabled] {
-  color: GrayText;
 }
 
 /* Back button */
@@ -77,8 +65,7 @@
 }
 
 #placesMenu > menu::after {
-  content: "";
-  display: -moz-box;
+  display: flex;
   width: 12px;
   height: 12px;
   content: url("chrome://global/skin/icons/arrow-down-12.svg");
@@ -92,7 +79,40 @@
 }
 
 /* Info box */
+#infoBox:not([hidden="true"]) {
+  display: block;
+}
+
+#editBookmarkPanelContent {
+  grid-template-columns: auto 1fr;
+}
+
+#editBookmarkPanelContent .caption-label:not([hidden="true"]) {
+  display: block;
+  grid-column: 2;
+}
+
+#editBookmarkPanelContent input,
+.expander-up,
+.expander-down {
+  margin: 4px;
+}
+
+#editBookmarkPanelContent label {
+  align-self: center;
+}
+
+#editBMPanel_itemsCountText {
+  grid-column: auto / span 2;
+  justify-self: center;
+}
+
+#editBMPanel_tagsSelectorRow {
+  grid-column: auto / span 2;
+}
+
 #detailsPane {
+  min-height: 16em;
   padding: 5px;
 }
 

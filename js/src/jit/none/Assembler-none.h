@@ -58,15 +58,16 @@ static constexpr Register IntArgReg2{Registers::invalid_reg};
 static constexpr Register IntArgReg3{Registers::invalid_reg};
 static constexpr Register HeapReg{Registers::invalid_reg};
 
-static constexpr Register RegExpTesterRegExpReg{Registers::invalid_reg};
-static constexpr Register RegExpTesterStringReg{Registers::invalid_reg};
-static constexpr Register RegExpTesterLastIndexReg{Registers::invalid_reg};
-static constexpr Register RegExpTesterStickyReg{Registers::invalid_reg};
-
 static constexpr Register RegExpMatcherRegExpReg{Registers::invalid_reg};
 static constexpr Register RegExpMatcherStringReg{Registers::invalid_reg};
 static constexpr Register RegExpMatcherLastIndexReg{Registers::invalid_reg};
-static constexpr Register RegExpMatcherStickyReg{Registers::invalid_reg};
+
+static constexpr Register RegExpExecTestRegExpReg{Registers::invalid_reg};
+static constexpr Register RegExpExecTestStringReg{Registers::invalid_reg};
+
+static constexpr Register RegExpSearcherRegExpReg{Registers::invalid_reg};
+static constexpr Register RegExpSearcherStringReg{Registers::invalid_reg};
+static constexpr Register RegExpSearcherLastIndexReg{Registers::invalid_reg};
 
 // Uses |invalid_reg2| to avoid static_assert failures.
 static constexpr Register JSReturnReg_Type{Registers::invalid_reg2};
@@ -99,14 +100,26 @@ static constexpr Register WasmTableCallScratchReg0{Registers::invalid_reg};
 static constexpr Register WasmTableCallScratchReg1{Registers::invalid_reg};
 static constexpr Register WasmTableCallSigReg{Registers::invalid_reg};
 static constexpr Register WasmTableCallIndexReg{Registers::invalid_reg};
-static constexpr Register WasmTlsReg{Registers::invalid_reg};
+static constexpr Register InstanceReg{Registers::invalid_reg};
 static constexpr Register WasmJitEntryReturnScratch{Registers::invalid_reg};
+static constexpr Register WasmCallRefCallScratchReg0{Registers::invalid_reg};
+static constexpr Register WasmCallRefCallScratchReg1{Registers::invalid_reg};
+static constexpr Register WasmCallRefReg{Registers::invalid_reg};
+static constexpr Register WasmTailCallInstanceScratchReg{
+    Registers::invalid_reg};
+static constexpr Register WasmTailCallRAScratchReg{Registers::invalid_reg};
+static constexpr Register WasmTailCallFPScratchReg{Registers::invalid_reg};
 
 static constexpr uint32_t ABIStackAlignment = 4;
 static constexpr uint32_t CodeAlignment = 16;
+#ifdef ENABLE_PORTABLE_BASELINE_INTERP
+static constexpr uint32_t JitStackAlignment = sizeof(void*);
+static constexpr uint32_t JitStackValueAlignment = 1;
+#else
 static constexpr uint32_t JitStackAlignment = 8;
 static constexpr uint32_t JitStackValueAlignment =
     JitStackAlignment / sizeof(Value);
+#endif
 
 static const Scale ScalePointer = TimesOne;
 

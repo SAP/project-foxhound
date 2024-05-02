@@ -31,34 +31,38 @@ add_task(async function test_referrer() {
       Services.io.newURI(DUMMY2)
     ),
   };
-  browser.webNavigation.loadURI(DUMMY1, loadURIOptionsWithReferrer);
+  browser.webNavigation.loadURI(
+    Services.io.newURI(DUMMY1),
+    loadURIOptionsWithReferrer
+  );
   await waitForLoad(DUMMY1);
 
-  await SpecialPowers.spawn(browser, [[DUMMY1, DUMMY2]], function([
-    dummy1,
-    dummy2,
-  ]) {
-    function getExpectedReferrer(referrer) {
-      let defaultPolicy = Services.prefs.getIntPref(
-        "network.http.referer.defaultPolicy"
-      );
-      ok(
-        [2, 3].indexOf(defaultPolicy) > -1,
-        "default referrer policy should be either strict-origin-when-cross-origin(2) or no-referrer-when-downgrade(3)"
-      );
-      if (defaultPolicy == 2) {
-        return referrer.match(/https?:\/\/[^\/]+\/?/i)[0];
+  await SpecialPowers.spawn(
+    browser,
+    [[DUMMY1, DUMMY2]],
+    function ([dummy1, dummy2]) {
+      function getExpectedReferrer(referrer) {
+        let defaultPolicy = Services.prefs.getIntPref(
+          "network.http.referer.defaultPolicy"
+        );
+        ok(
+          [2, 3].indexOf(defaultPolicy) > -1,
+          "default referrer policy should be either strict-origin-when-cross-origin(2) or no-referrer-when-downgrade(3)"
+        );
+        if (defaultPolicy == 2) {
+          return referrer.match(/https?:\/\/[^\/]+\/?/i)[0];
+        }
+        return referrer;
       }
-      return referrer;
-    }
 
-    is(content.location.href, dummy1, "Should have loaded the right URL");
-    is(
-      content.document.referrer,
-      getExpectedReferrer(dummy2),
-      "Should have the right referrer"
-    );
-  });
+      is(content.location.href, dummy1, "Should have loaded the right URL");
+      is(
+        content.document.referrer,
+        getExpectedReferrer(dummy2),
+        "Should have the right referrer"
+      );
+    }
+  );
 
   gBrowser.removeCurrentTab();
 });
@@ -67,7 +71,7 @@ add_task(async function test_referrer() {
 add_task(async function test_history() {
   async function checkHistoryIndex(browser, n) {
     if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-      return SpecialPowers.spawn(browser, [n], function(n) {
+      return SpecialPowers.spawn(browser, [n], function (n) {
         let history =
           docShell.browsingContext.childSessionHistory.legacySHistory;
 
@@ -83,26 +87,28 @@ add_task(async function test_history() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   let browser = gBrowser.selectedBrowser;
 
-  browser.webNavigation.loadURI(DUMMY1, LOAD_URI_OPTIONS);
+  browser.webNavigation.loadURI(Services.io.newURI(DUMMY1), LOAD_URI_OPTIONS);
   await waitForLoad(DUMMY1);
 
-  browser.webNavigation.loadURI(DUMMY2, LOAD_URI_OPTIONS);
+  browser.webNavigation.loadURI(Services.io.newURI(DUMMY2), LOAD_URI_OPTIONS);
   await waitForLoad(DUMMY2);
 
   if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-    await SpecialPowers.spawn(browser, [[DUMMY1, DUMMY2]], function([
-      dummy1,
-      dummy2,
-    ]) {
-      let history = docShell.browsingContext.childSessionHistory.legacySHistory;
+    await SpecialPowers.spawn(
+      browser,
+      [[DUMMY1, DUMMY2]],
+      function ([dummy1, dummy2]) {
+        let history =
+          docShell.browsingContext.childSessionHistory.legacySHistory;
 
-      is(history.count, 2, "Should be two history items");
-      is(history.index, 1, "Should be at the right place in history");
-      let entry = history.getEntryAtIndex(0);
-      is(entry.URI.spec, dummy1, "Should have the right history entry");
-      entry = history.getEntryAtIndex(1);
-      is(entry.URI.spec, dummy2, "Should have the right history entry");
-    });
+        is(history.count, 2, "Should be two history items");
+        is(history.index, 1, "Should be at the right place in history");
+        let entry = history.getEntryAtIndex(0);
+        is(entry.URI.spec, dummy1, "Should have the right history entry");
+        entry = history.getEntryAtIndex(1);
+        is(entry.URI.spec, dummy2, "Should have the right history entry");
+      }
+    );
   } else {
     let history = browser.browsingContext.sessionHistory;
 
@@ -136,18 +142,18 @@ add_task(async function test_history() {
 add_task(async function test_flags() {
   async function checkHistory(browser, { count, index }) {
     if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-      return SpecialPowers.spawn(browser, [[DUMMY2, count, index]], function([
-        dummy2,
-        count,
-        index,
-      ]) {
-        let history =
-          docShell.browsingContext.childSessionHistory.legacySHistory;
-        is(history.count, count, "Should be one history item");
-        is(history.index, index, "Should be at the right place in history");
-        let entry = history.getEntryAtIndex(index);
-        is(entry.URI.spec, dummy2, "Should have the right history entry");
-      });
+      return SpecialPowers.spawn(
+        browser,
+        [[DUMMY2, count, index]],
+        function ([dummy2, count, index]) {
+          let history =
+            docShell.browsingContext.childSessionHistory.legacySHistory;
+          is(history.count, count, "Should be one history item");
+          is(history.index, index, "Should be at the right place in history");
+          let entry = history.getEntryAtIndex(index);
+          is(entry.URI.spec, dummy2, "Should have the right history entry");
+        }
+      );
     }
 
     let history = browser.browsingContext.sessionHistory;
@@ -162,20 +168,26 @@ add_task(async function test_flags() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   let browser = gBrowser.selectedBrowser;
 
-  browser.webNavigation.loadURI(DUMMY1, LOAD_URI_OPTIONS);
+  browser.webNavigation.loadURI(Services.io.newURI(DUMMY1), LOAD_URI_OPTIONS);
   await waitForLoad(DUMMY1);
   let loadURIOptionsReplaceHistory = {
     triggeringPrincipal: SYSTEMPRINCIPAL,
     loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY,
   };
-  browser.webNavigation.loadURI(DUMMY2, loadURIOptionsReplaceHistory);
+  browser.webNavigation.loadURI(
+    Services.io.newURI(DUMMY2),
+    loadURIOptionsReplaceHistory
+  );
   await waitForLoad(DUMMY2);
   await checkHistory(browser, { count: 1, index: 0 });
   let loadURIOptionsBypassHistory = {
     triggeringPrincipal: SYSTEMPRINCIPAL,
     loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
   };
-  browser.webNavigation.loadURI(DUMMY1, loadURIOptionsBypassHistory);
+  browser.webNavigation.loadURI(
+    Services.io.newURI(DUMMY1),
+    loadURIOptionsBypassHistory
+  );
   await waitForLoad(DUMMY1);
   await checkHistory(browser, { count: 1, index: 0 });
 
@@ -196,7 +208,10 @@ add_task(async function test_badarguments() {
       triggeringPrincipal: SYSTEMPRINCIPAL,
       postData: {},
     };
-    browser.webNavigation.loadURI(DUMMY1, loadURIOptionsBadPostData);
+    browser.webNavigation.loadURI(
+      Services.io.newURI(DUMMY1),
+      loadURIOptionsBadPostData
+    );
     ok(
       false,
       "Should have seen an exception from trying to pass some postdata"
@@ -210,7 +225,10 @@ add_task(async function test_badarguments() {
       triggeringPrincipal: SYSTEMPRINCIPAL,
       headers: {},
     };
-    browser.webNavigation.loadURI(DUMMY1, loadURIOptionsBadHeader);
+    browser.webNavigation.loadURI(
+      Services.io.newURI(DUMMY1),
+      loadURIOptionsBadHeader
+    );
     ok(false, "Should have seen an exception from trying to pass some headers");
   } catch (e) {
     ok(true, "Should have seen an exception from trying to pass some headers");

@@ -785,7 +785,6 @@ af{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         RUB{"₽"}
         TRY{"TL"}
     }
@@ -1121,6 +1120,10 @@ af{
         LRD{
             one{"Liberiese dollar"}
             other{"Liberiese dollar"}
+        }
+        LSL{
+            one{"Lesotho loti"}
+            other{"Lesotho loti"}
         }
         LTL{
             one{"Litause litas"}

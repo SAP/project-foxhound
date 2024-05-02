@@ -3,14 +3,13 @@
 
 "use strict";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
-const { Toolbox } = require("devtools/client/framework/toolbox");
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
 
-add_task(async function() {
-  registerCleanupFunction(function() {
+add_task(async function () {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("devtools.toolbox.zoomValue");
   });
 
@@ -59,5 +58,5 @@ function sendZoomKey(shortcut, times) {
 }
 
 function getCurrentZoom(toolbox) {
-  return toolbox.win.windowUtils.fullZoom;
+  return toolbox.win.browsingContext.fullZoom;
 }

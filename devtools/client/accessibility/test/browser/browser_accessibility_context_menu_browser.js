@@ -8,7 +8,7 @@ const TEST_URI = '<h1 id="h1">header</h1><p id="p">paragraph</p>';
 addA11YPanelTask(
   "Test show accessibility properties context menu in browser.",
   TEST_URI,
-  async function({ panel, toolbox, browser }) {
+  async function ({ panel, toolbox, browser }) {
     // Load the inspector to ensure it to use in this test.
     await toolbox.loadTool("inspector");
 
@@ -40,12 +40,11 @@ addA11YPanelTask(
       "Triggering 'Inspect Accessibility Properties' and waiting for " +
         "accessibility panel to open"
     );
-    inspectA11YPropsItem.click();
     const popupHidden = BrowserTestUtils.waitForEvent(
       contextMenu,
       "popuphidden"
     );
-    contextMenu.hidePopup();
+    contextMenu.activateItem(inspectA11YPropsItem);
     await popupHidden;
 
     const selected = await panel.once("new-accessible-front-selected");
@@ -53,9 +52,10 @@ addA11YPanelTask(
       headerSelector,
       toolbox.getPanel("inspector")
     );
-    const expectedSelected = await panel.accessibilityProxy.accessibilityFront.accessibleWalkerFront.getAccessibleFor(
-      expectedSelectedNode
-    );
+    const expectedSelected =
+      await panel.accessibilityProxy.accessibilityFront.accessibleWalkerFront.getAccessibleFor(
+        expectedSelectedNode
+      );
     is(
       toolbox.getCurrentPanel(),
       panel,

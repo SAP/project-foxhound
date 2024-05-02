@@ -13,16 +13,18 @@ namespace mozilla {
 class MediaTransportParent : public dom::PMediaTransportParent {
  public:
 #ifdef MOZ_WEBRTC
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaTransportParent, override)
+
   MediaTransportParent();
-  virtual ~MediaTransportParent();
 
   mozilla::ipc::IPCResult RecvGetIceLog(const nsCString& pattern,
                                         GetIceLogResolver&& aResolve);
   mozilla::ipc::IPCResult RecvClearIceLog();
   mozilla::ipc::IPCResult RecvEnterPrivateMode();
   mozilla::ipc::IPCResult RecvExitPrivateMode();
-  mozilla::ipc::IPCResult RecvCreateIceCtx(
-      const string& name, nsTArray<RTCIceServer>&& iceServers,
+  mozilla::ipc::IPCResult RecvCreateIceCtx(const string& name);
+  mozilla::ipc::IPCResult RecvSetIceConfig(
+      nsTArray<RTCIceServer>&& iceServers,
       const RTCIceTransportPolicy& icePolicy);
   mozilla::ipc::IPCResult RecvSetProxyConfig(
       const net::WebrtcProxyConfig& aProxyConfig);
@@ -46,7 +48,7 @@ class MediaTransportParent : public dom::PMediaTransportParent {
   mozilla::ipc::IPCResult RecvStartIceChecks(const bool& isControlling,
                                              const StringVector& iceOptions);
   mozilla::ipc::IPCResult RecvSendPacket(const string& transportId,
-                                         const MediaPacket& packet);
+                                         MediaPacket&& packet);
   mozilla::ipc::IPCResult RecvAddIceCandidate(const string& transportId,
                                               const string& candidate,
                                               const string& ufrag,
@@ -56,9 +58,9 @@ class MediaTransportParent : public dom::PMediaTransportParent {
                                           const double& now,
                                           GetIceStatsResolver&& aResolve);
 
-  void ActorDestroy(ActorDestroyReason aWhy);
-
  private:
+  virtual ~MediaTransportParent();
+
   // Hide the sigslot/MediaTransportHandler stuff from IPC.
   class Impl;
   std::unique_ptr<Impl> mImpl;

@@ -17,7 +17,8 @@ impl PushDescriptor {
         Self { fp }
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkCmdPushDescriptorSetKHR.html>"]
+    /// <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkCmdPushDescriptorSetKHR.html>
+    #[inline]
     pub unsafe fn cmd_push_descriptor_set(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -26,7 +27,7 @@ impl PushDescriptor {
         set: u32,
         descriptor_writes: &[vk::WriteDescriptorSet],
     ) {
-        self.fp.cmd_push_descriptor_set_khr(
+        (self.fp.cmd_push_descriptor_set_khr)(
             command_buffer,
             pipeline_bind_point,
             layout,
@@ -36,7 +37,8 @@ impl PushDescriptor {
         );
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkCmdPushDescriptorSetWithTemplateKHR.html>"]
+    /// <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkCmdPushDescriptorSetWithTemplateKHR.html>
+    #[inline]
     pub unsafe fn cmd_push_descriptor_set_with_template(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -45,7 +47,7 @@ impl PushDescriptor {
         set: u32,
         p_data: *const c_void,
     ) {
-        self.fp.cmd_push_descriptor_set_with_template_khr(
+        (self.fp.cmd_push_descriptor_set_with_template_khr)(
             command_buffer,
             descriptor_update_template,
             layout,
@@ -54,10 +56,12 @@ impl PushDescriptor {
         );
     }
 
-    pub fn name() -> &'static CStr {
+    #[inline]
+    pub const fn name() -> &'static CStr {
         vk::KhrPushDescriptorFn::name()
     }
 
+    #[inline]
     pub fn fp(&self) -> &vk::KhrPushDescriptorFn {
         &self.fp
     }

@@ -6,7 +6,7 @@
 
 const TESTCASE_URI = TEST_BASE_HTTPS + "longload.html";
 
-add_task(async function() {
+add_task(async function () {
   // launch Style Editor right when the tab is created (before load)
   // this checks that the Style Editor still launches correctly when it is
   // opened *while* the page is still loading. The Style Editor should not
@@ -19,12 +19,12 @@ add_task(async function() {
 
   await Promise.all([tabAdded, styleEditorLoaded]);
 
-  const toolbox = await gDevTools.getToolboxForTab(tab);
+  const toolbox = gDevTools.getToolboxForTab(tab);
   const panel = toolbox.getPanel("styleeditor");
-  const { panelWindow, UI: ui } = panel;
+  const { panelWindow } = panel;
 
   ok(
-    !ui._root.classList.contains("loading"),
+    !getRootElement(panel).classList.contains("loading"),
     "style editor root element does not have 'loading' class name anymore"
   );
 

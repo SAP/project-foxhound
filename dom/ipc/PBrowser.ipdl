@@ -12,11 +12,8 @@ include protocol PDocAccessible;
 #endif
 include protocol PFilePicker;
 include protocol PRemotePrintJob;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
-include protocol PFileDescriptorSet;
-include protocol PRemoteLazyInputStream;
 include protocol PPaymentRequest;
+include protocol PSessionStore;
 include protocol PWindowGlobal;
 include protocol PBrowserBridge;
 include protocol PVsync;
@@ -26,6 +23,7 @@ include NeckoChannelParams;
 include WindowGlobalTypes;
 include IPCBlob;
 include IPCStream;
+include IPCTransferable;
 include URIParams;
 include PPrintingTypes;
 include PTabContext;
@@ -35,6 +33,7 @@ include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/dom/BindingIPCUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
+include "mozilla/dom/FilePickerMessageUtils.h";
 include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
@@ -44,6 +43,7 @@ include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 
+using struct nsID from "nsID.h";
 using mozilla::gfx::Matrix4x4 from "mozilla/gfx/Matrix.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
@@ -51,13 +51,12 @@ using mozilla::LayoutDevicePoint from "Units.h";
 using mozilla::ScreenIntCoord from "Units.h";
 using mozilla::ScreenIntMargin from "Units.h";
 using mozilla::ScreenIntPoint from "Units.h";
-using ScreenRect from "Units.h";
+using mozilla::ScreenRect from "Units.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::GeckoContentController_TapType from "mozilla/layers/GeckoContentControllerTypes.h";
-using ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
+using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using mozilla::WindowsHandle from "mozilla/ipc/IPCTypes.h";
 using class mozilla::WidgetCompositionEvent from "ipc/nsGUIEventIPC.h";
@@ -85,6 +84,7 @@ using nsIWidget::TouchPointerState from "nsIWidget.h";
 using nsIWidget::TouchpadGesturePhase from "nsIWidget.h";
 using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
+using struct mozilla::DimensionRequest from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
@@ -92,9 +92,7 @@ using mozilla::EventMessage from "mozilla/EventForwards.h";
 using nsEventStatus from "mozilla/EventForwards.h";
 using mozilla::Modifiers from "mozilla/EventForwards.h";
 using struct mozilla::widget::CandidateWindowPosition from "ipc/nsGUIEventIPC.h";
-using class mozilla::NativeEventData from "ipc/nsGUIEventIPC.h";
 using struct mozilla::FontRange from "ipc/nsGUIEventIPC.h";
-using mozilla::a11y::IAccessibleHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using mozilla::dom::EffectsInfo from "mozilla/dom/EffectsInfo.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
@@ -103,11 +101,15 @@ using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct InputFormData from "mozilla/dom/SessionStoreMessageUtils.h";
 using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.h";
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
-using CallerType from "mozilla/dom/BindingDeclarations.h";
+using mozilla::ContentBlockingNotifier::CanvasFingerprinter from "mozilla/ContentBlockingNotifier.h";
+using mozilla::dom::CallerType from "mozilla/dom/BindingDeclarations.h";
 using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageTypes.h";
-[RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using mozilla::IntrinsicSize from "nsIFrame.h";
 using mozilla::AspectRatio from "mozilla/AspectRatio.h";
+using mozilla::NativeKeyBindingsType from "mozilla/NativeKeyBindingsType.h";
+using mozilla::StyleImageRendering from "mozilla/ServoStyleConsts.h";
+[MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
+using nsIFilePicker::Mode from "nsIFilePicker.h";
 
 namespace mozilla {
 namespace dom {
@@ -120,8 +122,8 @@ struct WebProgressData
 
 struct RequestData
 {
-  nsIURI requestURI;
-  nsIURI originalRequestURI;
+  nullable nsIURI requestURI;
+  nullable nsIURI originalRequestURI;
   nsCString matchedList;
 };
 
@@ -134,7 +136,7 @@ struct WebProgressStateChangeData
   // this struct is |nsIWebProgress.STATE_STOP|.
   nsString contentType;
   nsString charset;
-  nsIURI documentURI;
+  nullable nsIURI documentURI;
 };
 
 struct WebProgressLocationChangeData
@@ -145,11 +147,11 @@ struct WebProgressLocationChangeData
   nsString contentType;
   nsString title;
   nsString charset;
-  nsIURI documentURI;
-  nsIPrincipal contentPrincipal;
-  nsIPrincipal contentPartitionedPrincipal;
-  nsIContentSecurityPolicy csp;
-  nsIReferrerInfo referrerInfo;
+  nullable nsIURI documentURI;
+  nullable nsIPrincipal contentPrincipal;
+  nullable nsIPrincipal contentPartitionedPrincipal;
+  nullable nsIContentSecurityPolicy csp;
+  nullable nsIReferrerInfo referrerInfo;
   uint64_t? requestContextID;
 };
 
@@ -169,6 +171,10 @@ struct PrintPreviewResultInfo
   // If present, indicates if the page should be printed landscape when true or
   // portrait when false;
   bool? printLandscape;
+  // The at-page specified page width or null when no width is provided.
+  float? pageWidth;
+  // The at-page specified page height or null when no height is provided.
+  float? pageHeight;
 };
 
 /**
@@ -178,7 +184,7 @@ struct PrintPreviewResultInfo
  * See `dom/docs/Fission-IPC-Diagram.svg` for an overview of the DOM IPC
  * actors.
  */
-[NestedUpTo=inside_cpow, RefCounted] sync protocol PBrowser
+[NestedUpTo=inside_cpow] sync protocol PBrowser
 {
     manager PContent;
 
@@ -190,6 +196,7 @@ struct PrintPreviewResultInfo
 
     manages PFilePicker;
     manages PPaymentRequest;
+    manages PSessionStore;
     manages PWindowGlobal;
     manages PBrowserBridge;
     manages PVsync;
@@ -203,12 +210,10 @@ parent:
      * Tell the parent process a new accessible document has been created.
      * aParentDoc is the accessible document it was created in if any, and
      * aParentAcc is the id of the accessible in that document the new document
-     * is a child of. aMsaaID is the MSAA id for this content process, and
-     * is only valid on Windows. Set to 0 on other platforms. aDocCOMProxy
-     * is also Windows-specific and should be set to 0 on other platforms.
+     * is a child of.
      */
     async PDocAccessible(nullable PDocAccessible aParentDoc, uint64_t aParentAcc,
-                         uint32_t aMsaaID, IAccessibleHolder aDocCOMProxy);
+                         MaybeDiscardedBrowsingContext aBrowsingContext);
 #endif
 
     async PPaymentRequest();
@@ -217,13 +222,6 @@ parent:
      * Create a new Vsync connection for our associated root widget
      */
     async PVsync();
-
-    /**
-     * When content moves focus from a native plugin window that's a child
-     * of the native browser window we need to move native focus to the
-     * browser. Otherwise the plugin window will never relinquish focus.
-     */
-    sync DispatchFocusToTopLevelWindow();
 
     /**
      * When the child process unsuppresses painting, we send the message for the
@@ -241,29 +239,12 @@ parent:
     async MoveFocus(bool forward, bool forDocumentNavigation);
 
     /**
-     * SizeShellTo request propagation to parent.
-     *
-     * aFlag            Can indicate if one of the dimensions should be ignored.
-     *                  If only one dimension has changed it has to be indicated
-     *                  by the nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_* flags.
-     * aShellItemWidth,
-     * aShellItemHeight On parent side we won't be able to decide the dimensions
-     *                  of the shell item parameter in the original SizeShellTo
-     *                  call so we send over its dimensions that will be used
-     *                  for the actual resize.
-     **/
-    async SizeShellTo(uint32_t aFlag, int32_t aWidth, int32_t aHeight,
-                      int32_t aShellItemWidth, int32_t aShellItemHeight);
-
-    /**
      * Called by the child to inform the parent that links are dropped into
      * content area.
      *
      * aLinks A flat array of url, name, and type for each link
      */
     async DropLinks(nsString[] aLinks);
-
-    async Event(RemoteDOMEvent aEvent);
 
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (StructuredCloneData[] retval);
@@ -337,6 +318,8 @@ parent:
      * Requests chrome to commit or cancel composition of IME.
      *
      *  cancel                Set true if composition should be cancelled.
+     *  compositionId         Set the composition ID to requesting commit
+     *                        (stored in TextComposition).
      *
      *  isCommitted           Returns true if the request causes composition
      *                        being committed synchronously.
@@ -345,7 +328,8 @@ parent:
      *                        try to restore selected string which was
      *                        replaced with the composition.
      */
-    [Nested=inside_cpow] sync RequestIMEToCommitComposition(bool cancel)
+    [Nested=inside_cpow] sync RequestIMEToCommitComposition(bool cancel,
+                                                            uint32_t aCompositionId)
       returns (bool isCommitted, nsString committedString);
 
     /**
@@ -353,9 +337,13 @@ parent:
      * composition event or a selection event which is sent from the parent
      * process.
      *
-     * message      The message value of the handled event.
+     * message          The message value of the handled event.
+     * compositionId    The composition ID of handled composition event if
+     *                  the message is a composition event message.  Otherwise,
+     *                  0.
      */
-    [Nested=inside_cpow] async OnEventNeedingAckHandled(EventMessage message);
+    [Nested=inside_cpow] async OnEventNeedingAckHandled(EventMessage message,
+                                                        uint32_t compositionId);
 
     /**
      * Request that the parent process move focus to the browser's frame. If
@@ -414,7 +402,7 @@ parent:
      */
     async SetCursor(nsCursor value,
                     bool hasCustomCursor,
-                    nsCString customCursorData,
+                    BigBuffer? customCursorData,
                     uint32_t width, uint32_t height,
                     float resolutionX, float resolutionY,
                     uint32_t stride, SurfaceFormat format,
@@ -437,22 +425,9 @@ parent:
      * Create an asynchronous color picker on the parent side,
      * but don't open it yet.
      */
-    async PColorPicker(nsString title, nsString initialColor);
+    async PColorPicker(nsString title, nsString initialColor, nsString[] defaultColors);
 
-    async PFilePicker(nsString aTitle, int16_t aMode);
-
-    /**
-     * Initiates an asynchronous request for one of the special indexedDB
-     * permissions for the provided principal.
-     *
-     * @param principal
-     *   The principal of the request.
-     *
-     * NOTE: The principal is untrusted in the parent process. Only
-     *       principals that can live in the content process should
-     *       provided.
-     */
-    async IndexedDBPermissionRequest(nsIPrincipal aPrincipal) returns (uint32_t permission);
+    async PFilePicker(nsString aTitle, Mode aMode);
 
     /**
      * Tells the containing widget whether the given input block results in a
@@ -473,12 +448,21 @@ parent:
 
     async __delete__();
 
-    async ReplyKeyEvent(WidgetKeyboardEvent event);
+    /**
+     * Send a reply of keyboard event to the parent.  Then, parent can consider
+     * whether the event should kick a shortcut key or ignore.
+     *
+     * @param aEvent    The event which was sent from the parent and handled
+     *                  in a remote process.
+     * @param aUUI      The UUID which was generated when aEvent was sent to
+     *                  a remote process.
+     */
+    async ReplyKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
 
     /**
      * Retrieves edit commands for the key combination represented by aEvent.
      *
-     * @param aType       One of nsIWidget::NativeKeyBindingsType.
+     * @param aType       One of NativeKeyBindingsType.
      * @param aEvent      KeyboardEvent which represents a key combination.
      *                    Note that this must be a trusted event.
      * @return            Array of edit commands which should be executed in
@@ -536,15 +520,16 @@ parent:
     async SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                       LayoutDeviceIntPoint aPoint,
                                       double aDeltaX, double aDeltaY,
-                                      int32_t aModifierFlags);
+                                      int32_t aModifierFlags,
+                                      uint64_t aObserverId);
 
     async LockNativePointer();
     async UnlockNativePointer();
 
     async AccessKeyNotHandled(WidgetKeyboardEvent event);
 
-    async RegisterProtocolHandler(nsString scheme, nsIURI handlerURI, nsString title,
-                                  nsIURI documentURI);
+    async RegisterProtocolHandler(nsString scheme, nullable nsIURI handlerURI, nsString title,
+                                  nullable nsIURI documentURI);
 
     async OnStateChange(WebProgressData aWebProgressData,
                         RequestData aRequestData, uint32_t aStateFlags,
@@ -552,7 +537,7 @@ parent:
                         WebProgressStateChangeData? aStateChangeData);
 
     async OnLocationChange(WebProgressData aWebProgressData,
-                           RequestData aRequestData, nsIURI aLocation,
+                           RequestData aRequestData, nullable nsIURI aLocation,
                            uint32_t aFlags, bool aCanGoBack,
                            bool aCanGoForward,
                            WebProgressLocationChangeData? aLocationChangeData);
@@ -570,15 +555,16 @@ parent:
     async NotifyContentBlockingEvent(uint32_t aEvent, RequestData aRequestData,
                                      bool aBlocked, nsCString aTrackingOrigin,
                                      nsCString[] aTrackingFullHashes,
-                                     StorageAccessPermissionGrantedReason? aReason);
+                                     StorageAccessPermissionGrantedReason? aReason,
+                                     CanvasFingerprinter? aCanvasFingerprinter,
+                                     bool? aCanvasFingerprinterKnownText);
 
     async NavigationFinished();
 
-    async SessionStoreUpdate(nsCString? aDocShellCaps, bool? aPrivatedMode,
-                             bool aNeedCollectSHistory, uint32_t aEpoch);
-
     async IntrinsicSizeOrRatioChanged(IntrinsicSize? aIntrinsicSize,
                                       AspectRatio? aIntrinsicRatio);
+
+    async ImageLoadComplete(nsresult aResult);
 
     /**
      * Child informs the parent that a pointer lock has requested/released.
@@ -594,7 +580,6 @@ parent:
 
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
-    async UpdateEpoch(uint32_t aEpoch);
     async UpdateSHistory();
     async CloneDocumentTreeIntoSelf(MaybeDiscardedBrowsingContext aBc, PrintData aPrintData) returns(bool aSuccess);
     async UpdateRemotePrintSettings(PrintData aPrintData);
@@ -612,11 +597,6 @@ parent:
      */
     async RemoteIsReadyToHandleInputEvents();
 
-    /**
-     * Child informs the parent that the layer tree is already available.
-     */
-    async PaintWhileInterruptingJSNoOp(LayersObserverEpoch aEpoch);
-
 child:
     /**
      * Parent informs the child of graphical effects that are being applied
@@ -628,23 +608,29 @@ parent:
 
     /**
      * Sent by the child to the parent to inform it that an update to the
-     * dimensions has been requested, likely through win.moveTo or resizeTo
+     * dimensions has been requested.
+     *
+     * @param aRequest  The requested change of inner or outer dimensions.
+     * @param aScale    The scale at the time of the request. This is to allow
+     *                  the parent to recompute the dimensions in case of an
+     *                  ongoing scale change.
      */
-    async SetDimensions(uint32_t aFlags, int32_t aX, int32_t aY,
-                        int32_t aCx, int32_t aCy, double aScale);
+    async SetDimensions(DimensionRequest aRequest, double aScale);
 
     [Nested=inside_sync] sync DispatchWheelEvent(WidgetWheelEvent event);
     [Nested=inside_sync] sync DispatchMouseEvent(WidgetMouseEvent event);
     [Nested=inside_sync] sync DispatchKeyboardEvent(WidgetKeyboardEvent event);
     [Nested=inside_sync] sync DispatchTouchEvent(WidgetTouchEvent event);
 
-    async InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action,
-                            Shmem? visualData,
+    async InvokeDragSession(IPCTransferableData[] transfers, uint32_t action,
+                            BigBuffer? visualData,
                             uint32_t stride, SurfaceFormat format,
                             LayoutDeviceIntRect dragRect,
-                            nsIPrincipal principal, nsIContentSecurityPolicy csp,
+                            nullable nsIPrincipal principal,
+                            nullable nsIContentSecurityPolicy csp,
                             CookieJarSettingsArgs cookieJarSettings,
-                            MaybeDiscardedWindowContext sourceWindowContext);
+                            MaybeDiscardedWindowContext sourceWindowContext,
+                            MaybeDiscardedWindowContext sourceTopWindowContext);
 
     // After a compositor reset, it is necessary to reconnect each layers ID to
     // the compositor of the widget that will render those layers. Note that
@@ -675,8 +661,6 @@ parent:
                              ScrollAxis aHorizontal, ScrollFlags aScrollFlags,
                              int32_t aAppUnitsPerDevPixel);
 
-    async SetAllowDeprecatedTls(bool value);
-
     async ShowDynamicToolbar();
 
 child:
@@ -704,8 +688,8 @@ child:
 
     async LoadURL(nsDocShellLoadState loadState, ParentShowInfo info);
 
-    async CreateAboutBlankContentViewer(nsIPrincipal principal,
-                                        nsIPrincipal partitionedPrincipal);
+    async CreateAboutBlankContentViewer(nullable nsIPrincipal principal,
+                                        nullable nsIPrincipal partitionedPrincipal);
 
     async ResumeLoad(uint64_t pendingSwitchID, ParentShowInfo info);
 
@@ -716,13 +700,11 @@ child:
     async ChildToParentMatrix(Matrix4x4? aMatrix,
                               ScreenRect aRemoteDocumentRect);
 
-    async SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
+    async UpdateRemoteStyle(StyleImageRendering aImageRendering);
 
     async DynamicToolbarMaxHeightChanged(ScreenIntCoord height);
 
     async DynamicToolbarOffsetChanged(ScreenIntCoord height);
-
-    async SetKeyboardIndicators(UIStateChangeType showFocusRings);
 
     /**
      * StopIMEStateManagement() is called when the process loses focus and
@@ -789,9 +771,17 @@ child:
                                                       ScrollableLayerGuid aGuid,
                                                       uint64_t aInputBlockId);
 
+    /**
+     * Send a keyboard event which reporesents a user input to a remote process.
+     *
+     * @param aEvent    The event which user typed a key.
+     * @param aUUID     A UUID which is generated in the parent at sending it.
+     *                  This must be specified when the child sends a reply
+     *                  event to the parent.
+     */
     [Priority=input]
-    async RealKeyEvent(WidgetKeyboardEvent event);
-    async NormalPriorityRealKeyEvent(WidgetKeyboardEvent event);
+    async RealKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
+    async NormalPriorityRealKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
 
     [Priority=input]
     async MouseWheelEvent(WidgetWheelEvent event,
@@ -845,8 +835,8 @@ child:
      * don't need support RealDragEvent with input priority.
      */
     async RealDragEvent(WidgetDragEvent aEvent, uint32_t aDragAction,
-                        uint32_t aDropEffect, nsIPrincipal aPrincipal,
-                        nsIContentSecurityPolicy csp);
+                        uint32_t aDropEffect, nullable nsIPrincipal aPrincipal,
+                        nullable nsIContentSecurityPolicy csp);
 
     [Priority=input] async CompositionEvent(WidgetCompositionEvent event);
     async NormalPriorityCompositionEvent(WidgetCompositionEvent event);
@@ -864,15 +854,11 @@ child:
      * Call PasteTransferable via a controller on the content process
      * to handle the command content event, "pasteTransferable".
      */
-    async PasteTransferable(IPCDataTransfer aDataTransfer,
+    // XXX Do we really need data other than IPCTransferableData? See bug 1833172.
+    async PasteTransferable(IPCTransferableData aTransferableData,
                             bool aIsPrivateData,
-                            nsIPrincipal aRequestingPrincipal,
+                            nullable nsIPrincipal aRequestingPrincipal,
                             nsContentPolicyType aContentPolicyType);
-
-    /**
-     * Activate event forwarding from client to parent.
-     */
-    async ActivateFrameEvent(nsString aType, bool capture);
 
     async LoadRemoteScript(nsString aURL, bool aRunInGlobalScope);
 
@@ -892,12 +878,8 @@ child:
      * @param aEnabled
      *        True if the child should render and upload layers, false if the
      *        child should clear layers.
-     * @param aEpoch
-     *        The layer observer epoch for this activation. This message should be
-     *        ignored if this epoch has already been observed (via
-     *        PaintWhileInterruptingJS).
      */
-    async RenderLayers(bool aEnabled, LayersObserverEpoch aEpoch);
+    async RenderLayers(bool aEnabled);
 
     /**
      * Communicates the child that we want layers to be preserved even when the
@@ -1009,11 +991,13 @@ parent:
     async IsWindowSupportingWebVR(uint64_t aOuterWindowID) returns(bool isSupported);
 
     /** Records a history visit. */
-    async VisitURI(nsIURI aURI, nsIURI aLastVisitedURI,
-                   uint32_t aFlags);
+    async VisitURI(nullable nsIURI aURI, nullable nsIURI aLastVisitedURI, uint32_t aFlags, uint64_t aBrowserId);
 
     /** Fetches the visited status for an array of URIs (Android-only). */
-    async QueryVisitedState(nsIURI[] aURIs);
+    async QueryVisitedState(nullable nsIURI[] aURIs);
+
+    /** Create a session store for a browser child. */
+    async PSessionStore();
 
     /**
      * Construct a new WindowGlobal for an existing global in the content process

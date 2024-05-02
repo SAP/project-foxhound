@@ -92,7 +92,8 @@ class MediaDataHelper {
 };
 
 OmxDataDecoder::OmxDataDecoder(const TrackInfo& aTrackInfo,
-                               layers::ImageContainer* aImageContainer)
+                               layers::ImageContainer* aImageContainer,
+                               Maybe<TrackingId> aTrackingId)
     : mOmxTaskQueue(
           CreateMediaDecodeTaskQueue("OmxDataDecoder::mOmxTaskQueue")),
       mImageContainer(aImageContainer),
@@ -102,7 +103,8 @@ OmxDataDecoder::OmxDataDecoder(const TrackInfo& aTrackInfo,
       mFlushing(false),
       mShuttingDown(false),
       mCheckingInputExhausted(false),
-      mPortSettingsChanged(-1, "OmxDataDecoder::mPortSettingsChanged") {
+      mPortSettingsChanged(-1, "OmxDataDecoder::mPortSettingsChanged"),
+      mTrackingId(std::move(aTrackingId)) {
   LOG("");
   mOmxLayer = new OmxPromiseLayer(mOmxTaskQueue, this, aImageContainer);
 }
@@ -162,6 +164,15 @@ RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Decode(
   RefPtr<MediaRawData> sample = aSample;
   return InvokeAsync(mOmxTaskQueue, __func__, [self, this, sample]() {
     RefPtr<DecodePromise> p = mDecodePromise.Ensure(__func__);
+
+    mTrackingId.apply([&](const auto& aId) {
+      MediaInfoFlag flag = MediaInfoFlag::None;
+      flag |= (sample->mKeyframe ? MediaInfoFlag::KeyFrame
+                                 : MediaInfoFlag::NonKeyFrame);
+
+      mPerformanceRecorder.Start(sample->mTimecode.ToMicroseconds(),
+                                 "OmxDataDecoder"_ns, aId, flag);
+    });
     mMediaRawDatas.AppendElement(std::move(sample));
 
     // Start to fill/empty buffers.
@@ -348,6 +359,17 @@ void OmxDataDecoder::Output(BufferData* aData) {
         });
   } else {
     aData->mStatus = BufferData::BufferStatus::FREE;
+  }
+
+  if (mTrackInfo->IsVideo()) {
+    mPerformanceRecorder.Record(
+        aData->mRawData->mTimecode.ToMicroseconds(), [&](DecodeStage& aStage) {
+          const auto& image = data->As<VideoData>()->mImage;
+          aStage.SetResolution(image->GetSize().Width(),
+                               image->GetSize().Height());
+          aStage.SetImageFormat(DecodeStage::YUV420P);
+          aStage.SetColorDepth(image->GetColorDepth());
+        });
   }
 
   mDecodedData.AppendElement(std::move(data));
@@ -580,7 +602,11 @@ void OmxDataDecoder::FillCodecConfigDataToOmx() {
   RefPtr<BufferData> inbuf = FindAvailableBuffer(OMX_DirInput);
   RefPtr<MediaByteBuffer> csc;
   if (mTrackInfo->IsAudio()) {
-    csc = mTrackInfo->GetAsAudioInfo()->mCodecSpecificConfig;
+    // It would be nice to instead use more specific information here, but
+    // we force a byte buffer for now since this handles arbitrary codecs.
+    // TODO(bug 1768566): implement further type checking for codec data.
+    csc = ForceGetAudioCodecSpecificBlob(
+        mTrackInfo->GetAsAudioInfo()->mCodecSpecificConfig);
   } else if (mTrackInfo->IsVideo()) {
     csc = mTrackInfo->GetAsVideoInfo()->mExtraData;
   }
@@ -804,6 +830,7 @@ RefPtr<MediaDataDecoder::FlushPromise> OmxDataDecoder::DoFlush() {
   mDecodedData = DecodedData();
   mDecodePromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
   mDrainPromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
+  mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
 
   RefPtr<FlushPromise> p = mFlushPromise.Ensure(__func__);
 
@@ -937,6 +964,8 @@ already_AddRefed<VideoData> MediaDataHelper::CreateYUV420VideoData(
   b.mPlanes[2].mStride = (stride + 1) / 2;
   b.mPlanes[2].mSkip = 0;
 
+  b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
+
   VideoInfo info(*mTrackInfo->GetAsVideoInfo());
 
   auto maybeColorSpace = info.mColorSpace;
@@ -944,6 +973,12 @@ already_AddRefed<VideoData> MediaDataHelper::CreateYUV420VideoData(
     maybeColorSpace = Some(DefaultColorSpace({width, height}));
   }
   b.mYUVColorSpace = *maybeColorSpace;
+
+  auto maybeColorPrimaries = info.mColorPrimaries;
+  if (!maybeColorPrimaries) {
+    maybeColorPrimaries = Some(gfx::ColorSpace2::BT709);
+  }
+  b.mColorPrimaries = *maybeColorPrimaries;
 
   RefPtr<VideoData> data = VideoData::CreateAndCopyData(
       info, mImageContainer,

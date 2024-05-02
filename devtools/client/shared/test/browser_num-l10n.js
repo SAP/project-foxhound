@@ -5,8 +5,6 @@
 
 // Tests that the localization utils work properly.
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
-
 function test() {
   const l10n = new LocalizationHelper();
 

@@ -46,9 +46,6 @@
 #include "dynamic_images.h"
 #include "mach_vm_compat.h"
 
-#if !TARGET_OS_IPHONE && (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7)
-  #define HAS_PPC_SUPPORT
-#endif
 #if defined(__arm__)
 #define HAS_ARM_SUPPORT
 #elif defined(__aarch64__)
@@ -88,6 +85,14 @@ using std::string;
 #define REGISTER_FROM_THREADSTATE(a, b) (a->b)
 #define ARRAY_REGISTER_FROM_THREADSTATE(a, b, i)                               \
   REGISTER_FROM_THREADSTATE(a, b[i])
+#endif
+
+// These typedefs only apply to the current process, whether or not it's the
+// one that crashed.
+#ifdef __LP64__
+typedef dyld_all_image_infos64 dyld_all_image_infos_self;
+#else
+typedef dyld_all_image_infos32 dyld_all_image_infos_self;
 #endif
 
 // Creates a minidump file of the current process.  If there is exception data,
@@ -131,6 +136,15 @@ class MinidumpGenerator {
   // the MinidumpGenerator class.
   static void GatherSystemInformation();
 
+  // Get the slide for a module in the current process.
+  static uint64_t GetCurrentProcessModuleSlide(breakpad_mach_header* mh,
+                                               uint64_t shared_cache_slide);
+
+  // Gather information about the dyld module in the current process. This
+  // information is only relevant if the current process is also the crashing
+  // process.
+  void GatherCurrentProcessDyldInformation();
+
  protected:
   // Overridable Stream writers
   virtual bool WriteExceptionStream(MDRawDirectory *exception_stream);
@@ -149,6 +163,7 @@ class MinidumpGenerator {
   bool WriteMiscInfoStream(MDRawDirectory *misc_info_stream);
   bool WriteBreakpadInfoStream(MDRawDirectory *breakpad_info_stream);
   bool WriteCrashInfoStream(MDRawDirectory *crash_info_stream);
+  bool WriteBootargsStream(MDRawDirectory *bootargs_stream);
   bool WriteThreadNamesStream(MDRawDirectory *thread_names_stream);
 
   // Helpers
@@ -163,14 +178,14 @@ class MinidumpGenerator {
                     MDLocationDescriptor *register_location);
   bool WriteCVRecord(MDRawModule *module, int cpu_type, int cpu_subtype,
                      const char *module_path, bool in_memory,
-                     bool out_of_process, bool in_dyld_shared_cache);
+                     bool out_of_process, bool dyld_or_in_dyld_shared_cache);
   bool WriteModuleStream(unsigned int index, MDRawModule *module);
   bool WriteCrashInfoRecord(MDLocationDescriptor *location,
                             const char *module_path,
                             const char *crash_info,
                             unsigned long crash_info_size,
                             bool out_of_process,
-                            bool in_dyld_shared_cache);
+                            bool dyld_or_in_dyld_shared_cache);
   bool WriteThreadName(mach_port_t thread_id,
                        MDRawThreadName *thread_name);
   size_t CalculateStackSize(mach_vm_address_t start_addr);
@@ -244,6 +259,14 @@ class MinidumpGenerator {
   static int os_major_version_;
   static int os_minor_version_;
   static int os_build_number_;
+
+  // Current process dyld information. It only applies to the crashed process
+  // if the current process is the one that crashed. It doesn't apply to the
+  // crashed process if the current process is the crash server and some other
+  // process has crashed.
+  breakpad_mach_header* dyldImageLoadAddress_;
+  ptrdiff_t dyldSlide_;
+  string dyldPath_;
 
   // Context of the task to dump.
   breakpad_ucontext_t *task_context_;

@@ -4,9 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
-use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
+use std::{convert::TryFrom, fmt::Debug};
 
 use crate::hex_with_len;
 
@@ -109,11 +107,9 @@ impl<'a> Decoder<'a> {
     }
 
     /// Decodes a QUIC varint.
-    #[allow(clippy::missing_panics_doc)] // See https://github.com/rust-lang/rust-clippy/issues/6699
     pub fn decode_varint(&mut self) -> Option<u64> {
-        let b1 = match self.decode_byte() {
-            Some(b) => b,
-            None => return None,
+        let Some(b1) = self.decode_byte() else {
+            return None;
         };
         match b1 >> 6 {
             0 => Some(u64::from(b1 & 0x3f)),
@@ -132,11 +128,7 @@ impl<'a> Decoder<'a> {
     }
 
     fn decode_checked(&mut self, n: Option<u64>) -> Option<&'a [u8]> {
-        let len = match n {
-            Some(l) => l,
-            None => return None,
-        };
-        if let Ok(l) = usize::try_from(len) {
+        if let Ok(l) = usize::try_from(n?) {
             self.decode(l)
         } else {
             // sizeof(usize) < sizeof(u64) and the value is greater than
@@ -159,18 +151,18 @@ impl<'a> Decoder<'a> {
     }
 }
 
-// Implement `Deref` for `Decoder` so that values can be examined without moving the cursor.
-impl<'a> Deref for Decoder<'a> {
-    type Target = [u8];
+// Implement `AsRef` for `Decoder` so that values can be examined without
+// moving the cursor.
+impl<'a> AsRef<[u8]> for Decoder<'a> {
     #[must_use]
-    fn deref(&self) -> &[u8] {
+    fn as_ref(&self) -> &'a [u8] {
         &self.buf[self.offset..]
     }
 }
 
 impl<'a> Debug for Decoder<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(&hex_with_len(&self[..]))
+        f.write_str(&hex_with_len(self.as_ref()))
     }
 }
 
@@ -199,7 +191,7 @@ impl<'a, 'b> PartialEq<Decoder<'b>> for Decoder<'a> {
 }
 
 /// Encoder is good for building data structures.
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Encoder {
     buf: Vec<u8>,
 }
@@ -209,13 +201,13 @@ impl Encoder {
     /// # Panics
     /// When `v` is too large.
     #[must_use]
-    pub fn varint_len(v: u64) -> usize {
+    pub const fn varint_len(v: u64) -> usize {
         match () {
-            _ if v < (1 << 6) => 1,
-            _ if v < (1 << 14) => 2,
-            _ if v < (1 << 30) => 4,
-            _ if v < (1 << 62) => 8,
-            _ => panic!("Varint value too large"),
+            () if v < (1 << 6) => 1,
+            () if v < (1 << 14) => 2,
+            () if v < (1 << 30) => 4,
+            () if v < (1 << 62) => 8,
+            () => panic!("Varint value too large"),
         }
     }
 
@@ -248,11 +240,24 @@ impl Encoder {
         self.buf.capacity()
     }
 
+    /// Get the length of the underlying buffer: the number of bytes that have
+    /// been written to the buffer.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    /// Returns true if the encoder buffer contains no elements.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
     /// Create a view of the current contents of the buffer.
     /// Note: for a view of a slice, use `Decoder::new(&enc[s..e])`
     #[must_use]
     pub fn as_decoder(&self) -> Decoder {
-        Decoder::new(self)
+        Decoder::new(self.as_ref())
     }
 
     /// Don't use this except in testing.
@@ -275,7 +280,7 @@ impl Encoder {
 
     /// Generic encode routine for arbitrary data.
     pub fn encode(&mut self, data: &[u8]) -> &mut Self {
-        self.buf.extend_from_slice(data);
+        self.buf.extend_from_slice(data.as_ref());
         self
     }
 
@@ -304,11 +309,11 @@ impl Encoder {
     pub fn encode_varint<T: Into<u64>>(&mut self, v: T) -> &mut Self {
         let v = v.into();
         match () {
-            _ if v < (1 << 6) => self.encode_uint(1, v),
-            _ if v < (1 << 14) => self.encode_uint(2, v | (1 << 14)),
-            _ if v < (1 << 30) => self.encode_uint(4, v | (2 << 30)),
-            _ if v < (1 << 62) => self.encode_uint(8, v | (3 << 62)),
-            _ => panic!("Varint value too large"),
+            () if v < (1 << 6) => self.encode_uint(1, v),
+            () if v < (1 << 14) => self.encode_uint(2, v | (1 << 14)),
+            () if v < (1 << 30) => self.encode_uint(4, v | (2 << 30)),
+            () if v < (1 << 62) => self.encode_uint(8, v | (3 << 62)),
+            () => panic!("Varint value too large"),
         };
         self
     }
@@ -317,7 +322,7 @@ impl Encoder {
     /// # Panics
     /// When `v` is longer than 2^64.
     pub fn encode_vec(&mut self, n: usize, v: &[u8]) -> &mut Self {
-        self.encode_uint(n, u64::try_from(v.len()).unwrap())
+        self.encode_uint(n, u64::try_from(v.as_ref().len()).unwrap())
             .encode(v)
     }
 
@@ -341,7 +346,7 @@ impl Encoder {
     /// # Panics
     /// When `v` is longer than 2^64.
     pub fn encode_vvec(&mut self, v: &[u8]) -> &mut Self {
-        self.encode_varint(u64::try_from(v.len()).unwrap())
+        self.encode_varint(u64::try_from(v.as_ref().len()).unwrap())
             .encode(v)
     }
 
@@ -373,11 +378,11 @@ impl Encoder {
         self.buf[start] = (v & 0xff) as u8;
         let (count, bits) = match () {
             // Great.  The byte we have is enough.
-            _ if v < (1 << 6) => return self,
-            _ if v < (1 << 14) => (1, 1 << 6),
-            _ if v < (1 << 30) => (3, 2 << 22),
-            _ if v < (1 << 62) => (7, 3 << 54),
-            _ => panic!("Varint value too large"),
+            () if v < (1 << 6) => return self,
+            () if v < (1 << 14) => (1, 1 << 6),
+            () if v < (1 << 30) => (3, 2 << 22),
+            () if v < (1 << 62) => (7, 3 << 54),
+            () => panic!("Varint value too large"),
         };
         // Now, we need to encode the high bits after the main block, ...
         self.encode_uint(count, (v >> 8) | bits);
@@ -411,6 +416,12 @@ impl AsRef<[u8]> for Encoder {
     }
 }
 
+impl AsMut<[u8]> for Encoder {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.buf.as_mut()
+    }
+}
+
 impl<'a> From<Decoder<'a>> for Encoder {
     #[must_use]
     fn from(dec: Decoder<'a>) -> Self {
@@ -431,20 +442,6 @@ impl From<Encoder> for Vec<u8> {
     #[must_use]
     fn from(buf: Encoder) -> Self {
         buf.buf
-    }
-}
-
-impl Deref for Encoder {
-    type Target = [u8];
-    #[must_use]
-    fn deref(&self) -> &[u8] {
-        &self.buf[..]
-    }
-}
-
-impl DerefMut for Encoder {
-    fn deref_mut(&mut self) -> &mut [u8] {
-        &mut self.buf[..]
     }
 }
 
@@ -616,7 +613,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn encoded_length_oob() {
-        let _ = Encoder::varint_len(1 << 62);
+        _ = Encoder::varint_len(1 << 62);
     }
 
     #[test]
@@ -633,7 +630,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn encoded_vvec_length_oob() {
-        let _ = Encoder::vvec_len(1 << 62);
+        _ = Encoder::vvec_len(1 << 62);
     }
 
     #[test]
@@ -749,7 +746,7 @@ mod tests {
     fn encode_vec_with() {
         let mut enc = Encoder::default();
         enc.encode_vec_with(2, |enc_inner| {
-            enc_inner.encode(&Encoder::from_hex("02"));
+            enc_inner.encode(Encoder::from_hex("02").as_ref());
         });
         assert_eq!(enc, Encoder::from_hex("000102"));
     }
@@ -774,7 +771,7 @@ mod tests {
     fn encode_vvec_with() {
         let mut enc = Encoder::default();
         enc.encode_vvec_with(|enc_inner| {
-            enc_inner.encode(&Encoder::from_hex("02"));
+            enc_inner.encode(Encoder::from_hex("02").as_ref());
         });
         assert_eq!(enc, Encoder::from_hex("0102"));
     }
@@ -794,7 +791,7 @@ mod tests {
     fn encode_builder() {
         let mut enc = Encoder::from_hex("ff");
         let enc2 = Encoder::from_hex("010234");
-        enc.encode(&enc2);
+        enc.encode(enc2.as_ref());
         assert_eq!(enc, Encoder::from_hex("ff010234"));
     }
 
@@ -804,14 +801,14 @@ mod tests {
         let mut enc = Encoder::from_hex("ff");
         let enc2 = Encoder::from_hex("010234");
         let v = enc2.as_decoder();
-        enc.encode(&v);
+        enc.encode(v.as_ref());
         assert_eq!(enc, Encoder::from_hex("ff010234"));
     }
 
     #[test]
     fn encode_mutate() {
         let mut enc = Encoder::from_hex("010234");
-        enc[0] = 0xff;
+        enc.as_mut()[0] = 0xff;
         assert_eq!(enc, Encoder::from_hex("ff0234"));
     }
 

@@ -459,6 +459,7 @@ function Server(options) {
       }
     });
     this._server.on('request', this.emit.bind(this, 'request'));
+    this._server.on('connect', this.emit.bind(this, 'connect'));
 
     forwardEvent('error', this._server, this);
     forwardEvent('listening', this._server, this);
@@ -668,12 +669,21 @@ IncomingRequest.prototype._onHeaders = function _onHeaders(headers) {
   //   server MUST treat the absence of any of these header fields, presence of multiple values, or
   //   an invalid value as a stream error of type PROTOCOL_ERROR.
   this.method = this._checkSpecialHeader(':method'   , headers[':method']);
-  this.scheme = this._checkSpecialHeader(':scheme'   , headers[':scheme']);
   this.host   = this._checkSpecialHeader(':authority', headers[':authority']  );
-  this.url    = this._checkSpecialHeader(':path'     , headers[':path']  );
-  if (!this.method || !this.scheme || !this.host || !this.url) {
-    // This is invalid, and we've sent a RST_STREAM, so don't continue processing
-    return;
+  if (this.method == "CONNECT") {
+    this.scheme = headers[':scheme'];
+    this.url    = headers[':path'];
+    if (!this.method || !this.host) {
+      // This is invalid, and we've sent a RST_STREAM, so don't continue processing
+      return;
+    }
+  } else {
+    this.scheme = this._checkSpecialHeader(':scheme'   , headers[':scheme']);
+    this.url    = this._checkSpecialHeader(':path'     , headers[':path']  );
+    if (!this.method || !this.scheme || !this.host || !this.url) {
+      // This is invalid, and we've sent a RST_STREAM, so don't continue processing
+      return;
+    }
   }
 
   // * Host header is included in the headers object for backwards compatibility.

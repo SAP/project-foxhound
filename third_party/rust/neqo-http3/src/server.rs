@@ -6,24 +6,29 @@
 
 #![allow(clippy::module_name_repetitions)]
 
-use crate::connection::Http3State;
-use crate::connection_server::Http3ServerHandler;
-use crate::server_connection_events::Http3ServerConnEvent;
-use crate::server_events::{
-    Http3OrWebTransportStream, Http3ServerEvent, Http3ServerEvents, WebTransportRequest,
+use crate::{
+    connection::Http3State,
+    connection_server::Http3ServerHandler,
+    server_connection_events::Http3ServerConnEvent,
+    server_events::{
+        Http3OrWebTransportStream, Http3ServerEvent, Http3ServerEvents, WebTransportRequest,
+    },
+    settings::HttpZeroRttChecker,
+    Http3Parameters, Http3StreamInfo, Res,
 };
-use crate::settings::HttpZeroRttChecker;
-use crate::{Http3Parameters, Http3StreamInfo, Res};
 use neqo_common::{qtrace, Datagram};
 use neqo_crypto::{AntiReplay, Cipher, PrivateKey, PublicKey, ZeroRttChecker};
-use neqo_transport::server::{ActiveConnectionRef, Server, ValidateAddress};
-use neqo_transport::{ConnectionIdGenerator, Output};
-use std::cell::RefCell;
-use std::cell::RefMut;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::time::Instant;
+use neqo_transport::{
+    server::{ActiveConnectionRef, Server, ValidateAddress},
+    ConnectionIdGenerator, Output,
+};
+use std::{
+    cell::{RefCell, RefMut},
+    collections::HashMap,
+    path::PathBuf,
+    rc::Rc,
+    time::Instant,
+};
 
 type HandlerRef = Rc<RefCell<Http3ServerHandler>>;
 
@@ -62,9 +67,9 @@ impl Http3Server {
                 protocols,
                 anti_replay,
                 zero_rtt_checker
-                    .unwrap_or_else(|| Box::new(HttpZeroRttChecker::new(http3_parameters))),
+                    .unwrap_or_else(|| Box::new(HttpZeroRttChecker::new(http3_parameters.clone()))),
                 cid_manager,
-                *http3_parameters.get_connection_parameters(),
+                http3_parameters.get_connection_parameters().clone(),
             )?,
             http3_parameters,
             http3_handlers: HashMap::new(),
@@ -150,10 +155,12 @@ impl Http3Server {
 
     fn process_events(&mut self, conn: &mut ActiveConnectionRef, now: Instant) {
         let mut remove = false;
-        let http3_parameters = self.http3_parameters;
+        let http3_parameters = &self.http3_parameters;
         {
             let handler = self.http3_handlers.entry(conn.clone()).or_insert_with(|| {
-                Rc::new(RefCell::new(Http3ServerHandler::new(http3_parameters)))
+                Rc::new(RefCell::new(Http3ServerHandler::new(
+                    http3_parameters.clone(),
+                )))
             });
             handler
                 .borrow_mut()
@@ -215,10 +222,14 @@ impl Http3Server {
                         );
                     }
                     Http3ServerConnEvent::ExtendedConnectClosed {
-                        stream_id, reason, ..
+                        stream_id,
+                        reason,
+                        headers,
+                        ..
                     } => self.events.webtransport_session_closed(
                         WebTransportRequest::new(conn.clone(), handler.clone(), stream_id),
                         reason,
+                        headers,
                     ),
                     Http3ServerConnEvent::ExtendedConnectNewStream(stream_info) => self
                         .events
@@ -227,6 +238,13 @@ impl Http3Server {
                             handler.clone(),
                             stream_info,
                         )),
+                    Http3ServerConnEvent::ExtendedConnectDatagram {
+                        session_id,
+                        datagram,
+                    } => self.events.webtransport_datagram(
+                        WebTransportRequest::new(conn.clone(), handler.clone(), session_id),
+                        datagram,
+                    ),
                 }
             }
         }
@@ -293,16 +311,17 @@ fn prepare_data(
 mod tests {
     use super::{Http3Server, Http3ServerEvent, Http3State, Rc, RefCell};
     use crate::{Error, HFrame, Header, Http3Parameters, Priority};
-    use neqo_common::event::Provider;
-    use neqo_common::Encoder;
+    use neqo_common::{event::Provider, Encoder};
     use neqo_crypto::{AuthenticationStatus, ZeroRttCheckResult, ZeroRttChecker};
     use neqo_qpack::{encoder::QPackEncoder, QpackSettings};
     use neqo_transport::{
         Connection, ConnectionError, ConnectionEvent, State, StreamId, StreamType, ZeroRttState,
     };
-    use std::collections::HashMap;
-    use std::mem;
-    use std::ops::{Deref, DerefMut};
+    use std::{
+        collections::HashMap,
+        mem,
+        ops::{Deref, DerefMut},
+    };
     use test_fixture::{
         anti_replay, default_client, fixture_init, now, CountingConnectionIdGenerator,
         DEFAULT_ALPN, DEFAULT_KEYS,
@@ -342,12 +361,7 @@ mod tests {
 
     fn assert_closed(hconn: &mut Http3Server, expected: &Error) {
         let err = ConnectionError::Application(expected.code());
-        let closed = |e| {
-            matches!(e,
-            Http3ServerEvent::StateChange{ state: Http3State::Closing(e), .. }
-            | Http3ServerEvent::StateChange{ state: Http3State::Closed(e), .. }
-              if e == err)
-        };
+        let closed = |e| matches!(e, Http3ServerEvent::StateChange{ state: Http3State::Closing(e) | Http3State::Closed(e), .. } if e == err);
         assert!(hconn.events().any(closed));
     }
 
@@ -614,7 +628,7 @@ mod tests {
         };
         let mut e = Encoder::default();
         frame.encode(&mut e);
-        peer_conn.control_send(&e);
+        peer_conn.control_send(e.as_ref());
         let out = peer_conn.process(None, now());
         hconn.process(out.dgram(), now());
         // check if the given connection got closed on invalid stream ids
@@ -689,7 +703,7 @@ mod tests {
 
         // create a stream with unknown type.
         let new_stream_id = peer_conn.stream_create(StreamType::UniDi).unwrap();
-        let _ = peer_conn
+        _ = peer_conn
             .stream_send(new_stream_id, &[0x41, 0x19, 0x4, 0x4, 0x6, 0x0, 0x8, 0x0])
             .unwrap();
         let out = peer_conn.process(None, now());
@@ -722,14 +736,14 @@ mod tests {
 
         // create a push stream.
         let push_stream_id = peer_conn.stream_create(StreamType::UniDi).unwrap();
-        let _ = peer_conn.stream_send(push_stream_id, &[0x1]).unwrap();
+        _ = peer_conn.stream_send(push_stream_id, &[0x1]).unwrap();
         let out = peer_conn.process(None, now());
         let out = hconn.process(out.dgram(), now());
         mem::drop(peer_conn.conn.process(out.dgram(), now()));
         assert_closed(&mut hconn, &Error::HttpStreamCreation);
     }
 
-    //// Test reading of a slowly streamed frame. bytes are received one by one
+    /// Test reading of a slowly streamed frame. bytes are received one by one
     #[test]
     fn test_server_frame_reading() {
         let (mut hconn, mut peer_conn) = connect_and_receive_settings();
@@ -1143,7 +1157,7 @@ mod tests {
 
     /// Perform a handshake, then another with the token from the first.
     /// The second should always resume, but it might not always accept early data.
-    fn zero_rtt_with_settings(conn_params: Http3Parameters, zero_rtt: &ZeroRttState) {
+    fn zero_rtt_with_settings(conn_params: Http3Parameters, zero_rtt: ZeroRttState) {
         let (_, mut client) = connect();
         let token = client.events().find_map(|e| {
             if let ConnectionEvent::ResumptionToken(token) = e {
@@ -1165,7 +1179,7 @@ mod tests {
 
     #[test]
     fn zero_rtt() {
-        zero_rtt_with_settings(http3params(DEFAULT_SETTINGS), &ZeroRttState::AcceptedClient);
+        zero_rtt_with_settings(http3params(DEFAULT_SETTINGS), ZeroRttState::AcceptedClient);
     }
 
     /// A larger QPACK decoder table size isn't an impediment to 0-RTT.
@@ -1176,7 +1190,7 @@ mod tests {
                 max_table_size_decoder: DEFAULT_SETTINGS.max_table_size_decoder + 1,
                 ..DEFAULT_SETTINGS
             }),
-            &ZeroRttState::AcceptedClient,
+            ZeroRttState::AcceptedClient,
         );
     }
 
@@ -1188,7 +1202,7 @@ mod tests {
                 max_table_size_decoder: DEFAULT_SETTINGS.max_table_size_decoder - 1,
                 ..DEFAULT_SETTINGS
             }),
-            &ZeroRttState::Rejected,
+            ZeroRttState::Rejected,
         );
     }
 
@@ -1200,7 +1214,7 @@ mod tests {
                 max_blocked_streams: DEFAULT_SETTINGS.max_blocked_streams + 1,
                 ..DEFAULT_SETTINGS
             }),
-            &ZeroRttState::AcceptedClient,
+            ZeroRttState::AcceptedClient,
         );
     }
 
@@ -1212,7 +1226,7 @@ mod tests {
                 max_blocked_streams: DEFAULT_SETTINGS.max_blocked_streams - 1,
                 ..DEFAULT_SETTINGS
             }),
-            &ZeroRttState::Rejected,
+            ZeroRttState::Rejected,
         );
     }
 
@@ -1224,7 +1238,7 @@ mod tests {
                 max_table_size_encoder: DEFAULT_SETTINGS.max_table_size_encoder - 1,
                 ..DEFAULT_SETTINGS
             }),
-            &ZeroRttState::AcceptedClient,
+            ZeroRttState::AcceptedClient,
         );
     }
 
@@ -1286,7 +1300,7 @@ mod tests {
             anti_replay(),
             Rc::new(RefCell::new(CountingConnectionIdGenerator::default())),
             http3params(DEFAULT_SETTINGS),
-            Some(Box::new(RejectZeroRtt::default())),
+            Some(Box::<RejectZeroRtt>::default()),
         )
         .expect("create a server");
         let mut client = connect_to(&mut server);
@@ -1304,6 +1318,6 @@ mod tests {
 
         connect_transport(&mut server, &mut client, true);
         assert!(client.tls_info().unwrap().resumed());
-        assert_eq!(client.zero_rtt_state(), &ZeroRttState::Rejected);
+        assert_eq!(client.zero_rtt_state(), ZeroRttState::Rejected);
     }
 }

@@ -13,7 +13,6 @@
 extern crate app_units;
 #[macro_use]
 extern crate bitflags;
-#[macro_use]
 extern crate cssparser;
 extern crate euclid;
 #[macro_use]
@@ -21,6 +20,7 @@ extern crate lazy_static;
 extern crate malloc_size_of;
 #[macro_use]
 extern crate malloc_size_of_derive;
+extern crate nsstring;
 extern crate selectors;
 #[macro_use]
 extern crate serde;
@@ -90,8 +90,6 @@ pub mod dom;
 pub mod specified_value_info;
 #[macro_use]
 pub mod values;
-#[macro_use]
-pub mod viewport;
 pub mod owned_slice;
 pub mod owned_str;
 
@@ -133,6 +131,8 @@ pub enum StyleParseErrorKind<'i> {
     RangedExpressionWithNoValue,
     /// A function was encountered that was not expected.
     UnexpectedFunction(CowRcStr<'i>),
+    /// Error encountered parsing a @property's `syntax` descriptor
+    PropertySyntaxField(PropertySyntaxParseError),
     /// @namespace must be before any rule but @charset and @import
     UnexpectedNamespaceRule,
     /// @import must be before any rule but @charset
@@ -141,8 +141,8 @@ pub enum StyleParseErrorKind<'i> {
     DisallowedImportRule,
     /// Unexpected @charset rule encountered.
     UnexpectedCharsetRule,
-    /// Unsupported @ rule
-    UnsupportedAtRule(CowRcStr<'i>),
+    /// The @property `<custom-property-name>` must start with `--`
+    UnexpectedIdent(CowRcStr<'i>),
     /// A placeholder for many sources of errors that require more specific variants.
     UnspecifiedError,
     /// An unexpected token was found within a namespace rule.
@@ -216,19 +216,50 @@ impl<'i> StyleParseErrorKind<'i> {
     }
 }
 
+/// Errors that can be encountered while parsing the @property rule's syntax descriptor.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PropertySyntaxParseError {
+    /// The string's length was 0.
+    EmptyInput,
+    /// A non-whitespace, non-pipe character was fount after parsing a component.
+    ExpectedPipeBetweenComponents,
+    /// The start of an identifier was expected but not found.
+    ///
+    /// <https://drafts.csswg.org/css-syntax-3/#name-start-code-point>
+    InvalidNameStart,
+    /// The name is not a valid `<ident>`.
+    InvalidName,
+    /// The data type name was not closed.
+    ///
+    /// <https://drafts.css-houdini.org/css-properties-values-api-1/#consume-data-type-name>
+    UnclosedDataTypeName,
+    /// The next byte was expected while parsing, but EOF was found instead.
+    UnexpectedEOF,
+    /// The data type is not a supported syntax component name.
+    ///
+    /// <https://drafts.css-houdini.org/css-properties-values-api-1/#supported-names>
+    UnknownDataTypeName,
+}
+
 bitflags! {
     /// The mode to use when parsing values.
+    #[derive(Clone, Copy, Eq, PartialEq)]
+    #[repr(C)]
     pub struct ParsingMode: u8 {
         /// In CSS; lengths must have units, except for zero values, where the unit can be omitted.
         /// <https://www.w3.org/TR/css3-values/#lengths>
-        const DEFAULT = 0x00;
+        const DEFAULT = 0;
         /// In SVG; a coordinate or length value without a unit identifier (e.g., "25") is assumed
         /// to be in user units (px).
         /// <https://www.w3.org/TR/SVG/coords.html#Units>
-        const ALLOW_UNITLESS_LENGTH = 0x01;
+        const ALLOW_UNITLESS_LENGTH = 1;
         /// In SVG; out-of-range values are not treated as an error in parsing.
         /// <https://www.w3.org/TR/SVG/implnote.html#RangeClamping>
-        const ALLOW_ALL_NUMERIC_VALUES = 0x02;
+        const ALLOW_ALL_NUMERIC_VALUES = 1 << 1;
+        /// In CSS Properties and Values, the initial value must be computationally
+        /// independent.
+        /// <https://drafts.css-houdini.org/css-properties-values-api-1/#ref-for-computationally-independent%E2%91%A0>
+        const DISALLOW_FONT_RELATIVE = 1 << 2;
     }
 }
 
@@ -243,6 +274,12 @@ impl ParsingMode {
     #[inline]
     pub fn allows_all_numeric_values(&self) -> bool {
         self.intersects(ParsingMode::ALLOW_ALL_NUMERIC_VALUES)
+    }
+
+    /// Whether the parsing mode allows font-relative units.
+    #[inline]
+    pub fn allows_font_relative_lengths(&self) -> bool {
+        !self.intersects(ParsingMode::DISALLOW_FONT_RELATIVE)
     }
 }
 

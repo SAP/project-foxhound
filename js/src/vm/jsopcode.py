@@ -130,16 +130,16 @@ class OpcodeInfo:
         #   /*
         #    * comment
         #    */
-        #   MACRO(JSOP_SUB, ...)
-        #   MACRO(JSOP_MUL, ...)
-        #   MACRO(JSOP_DIV, ...)
+        #   MACRO(Sub, ...)
+        #   MACRO(Mul, ...)
+        #   MACRO(Div, ...)
         self.group = []
 
         self.sort_key = ""
 
 
 def find_by_name(list, name):
-    for (n, body) in list:
+    for n, body in list:
         if n == name:
             return body
 
@@ -301,7 +301,7 @@ def get_opcodes(dir):
             if opcode.op_snake != expected_snake:
                 raise ValueError(
                     "Unexpected snake-case name for {}: expected {!r}, got {!r}".format(
-                        opcode.op_camel, expected_snake, opcode.op_snake
+                        opcode.op, expected_snake, opcode.op_snake
                     )
                 )
 

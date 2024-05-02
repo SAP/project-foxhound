@@ -10,18 +10,21 @@
 #include <cstdint>
 #include <queue>
 #include "base/basictypes.h"
-#include "build/build_config.h"
+#include "base/process.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WeakPtr.h"
 #include "chrome/common/ipc_message.h"
 
-#ifdef OS_WIN
+#ifdef XP_WIN
 #  include <string>
 #endif
 
 namespace IPC {
 
 class Message;
+class MessageReader;
+class MessageWriter;
 
 //------------------------------------------------------------------------------
 
@@ -30,38 +33,28 @@ class Channel {
   friend class ChannelTest;
 
  public:
-  // Windows channels use named objects and connect to them by name,
-  // but on Unix we use unnamed socketpairs and pass capabilities
-  // directly using SCM_RIGHTS messages.  This type abstracts away
-  // that difference.
-#ifdef OS_WIN
-  typedef std::wstring ChannelId;
-#else
-  struct ChannelId {};
-#endif
+  // For channels which are created after initialization, handles to the pipe
+  // endpoints may be passed around directly using IPC messages.
+  using ChannelHandle = mozilla::UniqueFileHandle;
 
   // Implemented by consumers of a Channel to receive messages.
   //
   // All listeners will only be called on the IO thread, and must be destroyed
   // on the IO thread.
-  class Listener : public mozilla::SupportsWeakPtr {
+  class Listener {
    public:
     virtual ~Listener() = default;
 
     // Called when a message is received.
-    virtual void OnMessageReceived(Message&& message) = 0;
+    virtual void OnMessageReceived(mozilla::UniquePtr<Message> message) = 0;
 
     // Called when the channel is connected and we have received the internal
     // Hello message from the peer.
-    virtual void OnChannelConnected(int32_t peer_pid) {}
+    virtual void OnChannelConnected(base::ProcessId peer_pid) {}
 
     // Called when an error is detected that causes the channel to close.
     // This method is not called when a channel is closed normally.
     virtual void OnChannelError() {}
-
-    // If the listener has queued messages, swap them for |queue| like so
-    //   swap(impl->my_queued_messages, queue);
-    virtual void GetQueuedMessages(std::queue<Message>& queue) {}
   };
 
   enum Mode { MODE_SERVER, MODE_CLIENT };
@@ -80,34 +73,23 @@ class Channel {
 
     // Amount of data to read at once from the pipe.
     kReadBufferSize = 4 * 1024,
-
-    // Maximum size of a message that we allow to be copied (rather than moved).
-    kMaxCopySize = 32 * 1024,
   };
 
   // Initialize a Channel.
   //
-  // |channel_id| identifies the communication Channel.
-  // |mode| specifies whether this Channel is to operate in server mode or
-  // client mode.  In server mode, the Channel is responsible for setting up the
-  // IPC object, whereas in client mode, the Channel merely connects to the
-  // already established IPC object.
-  // |listener| receives a callback on the current thread for each newly
-  // received message.
+  // |pipe| identifies the pipe which will be used. It should have been created
+  // using CreateRawPipe().
+  // |mode| specifies whether this channel is operating in server mode or client
+  // mode. One side of the connection should be the client, and the other should
+  // be the server.
+  // |other_pid| specifies the pid of the other side of this channel. This will
+  // be used for logging, and for transferring HANDLEs from a privileged process
+  // on Windows (if enabled).
   //
-  Channel(const ChannelId& channel_id, Mode mode, Listener* listener);
-
-  // XXX it would nice not to have yet more platform-specific code in
-  // here but it's just not worth the trouble.
-#if defined(OS_POSIX)
-  // Connect to a pre-created channel |fd| as |mode|.
-  Channel(int fd, Mode mode, Listener* listener);
-#elif defined(OS_WIN)
-  // Connect to a pre-created channel as |mode|.  Clients connect to
-  // the pre-existing server pipe, and servers take over |server_pipe|.
-  Channel(const ChannelId& channel_id, void* server_pipe, Mode mode,
-          Listener* listener);
-#endif
+  // The Channel must be created and destroyed on the IO thread, and all
+  // methods, unless otherwise noted, are only safe to call on the I/O thread.
+  //
+  Channel(ChannelHandle pipe, Mode mode, base::ProcessId other_pid);
 
   ~Channel();
 
@@ -116,54 +98,36 @@ class Channel {
   // connect to a pre-existing pipe.  Note, calling Connect()
   // will not block the calling thread and may complete
   // asynchronously.
-  bool Connect();
+  //
+  // |listener| will receive a callback on the current thread for each newly
+  // received message.
+  bool Connect(Listener* listener);
 
   // Close this Channel explicitly.  May be called multiple times.
   void Close();
 
-  // Modify the Channel's listener.
-  Listener* set_listener(Listener* listener);
-
   // Send a message over the Channel to the listener on the other end.
   //
-  // |message| must be allocated using operator new.  This object will be
-  // deleted once the contents of the Message have been sent.
+  // This method may be called from any thread, so long as the `Channel` is not
+  // destroyed before it returns.
   //
   // If you Send() a message on a Close()'d channel, we delete the message
   // immediately.
   bool Send(mozilla::UniquePtr<Message> message);
 
-  // The PID which this channel has been opened with. This will be
-  // `-1` until `OnChannelConnected` has been called.
-  int32_t OtherPid() const;
-
-  // Unsound_IsClosed() and Unsound_NumQueuedMessages() are safe to call from
-  // any thread, but the value returned may be out of date, because we don't
-  // use any synchronization when reading or writing it.
-  bool Unsound_IsClosed() const;
-  uint32_t Unsound_NumQueuedMessages() const;
-
-#if defined(OS_POSIX)
-  // On POSIX an IPC::Channel wraps a socketpair(), this method returns the
-  // FD # for the client end of the socket and the equivalent FD# to use for
-  // mapping it into the Child process.
-  // This method may only be called on the server side of a channel.
+  // Explicitly set the pid expected for the other side of this channel. This
+  // will be used for logging, and on Windows may be used for transferring
+  // handles between processes.
   //
-  // If the kTestingChannelID flag is specified on the command line then
-  // a named FIFO is used as the channel transport mechanism rather than a
-  // socketpair() in which case this method returns -1 for both parameters.
-  void GetClientFileDescriptorMapping(int* src_fd, int* dest_fd) const;
+  // If it is set this way, the "hello" message will be checked to ensure that
+  // the same pid is reported.
+  void SetOtherPid(base::ProcessId other_pid);
 
-  // Return the file descriptor for communication with the peer.
-  int GetFileDescriptor() const;
+  // IsClosed() is safe to call from any thread, but the value returned may
+  // be out of date.
+  bool IsClosed() const;
 
-  // Reset the file descriptor for communication with the peer.
-  void ResetFileDescriptor(int fd);
-
-  // Close the client side of the socketpair.
-  void CloseClientFileDescriptor();
-
-#  if defined(OS_MACOSX)
+#if defined(XP_DARWIN)
   // Configure the mach task_t for the peer task.
   void SetOtherMachTask(task_t task);
 
@@ -171,28 +135,12 @@ class Channel {
   // must be set as `MODE_SERVER` and that side will be responsible for
   // transferring the rights between processes.
   void StartAcceptingMachPorts(Mode mode);
-#  endif
-
-#elif defined(OS_WIN)
-  // Return the server pipe handle.
-  void* GetServerPipeHandle() const;
-
+#elif defined(XP_WIN)
   // Tell this pipe to accept handles. Exactly one side of the IPC connection
   // must be set as `MODE_SERVER`, and that side will be responsible for calling
   // `DuplicateHandle` to transfer the handle between processes.
   void StartAcceptingHandles(Mode mode);
-#endif  // defined(OS_POSIX)
-
-  // On Windows: Generates a channel ID that, if passed to the client
-  // as a shared secret, will validate the client's authenticity.
-  // Other platforms don't use channel IDs, so this returns the dummy
-  // ChannelId value.
-  static ChannelId GenerateVerifiedChannelID();
-
-  // On Windows: Retrieves the initial channel ID passed to the
-  // current process by its parent.  Other platforms don't do this;
-  // the dummy ChannelId value is returned instead.
-  static ChannelId ChannelIDForCurrentProcess();
+#endif
 
 #if defined(MOZ_WIDGET_ANDROID)
   // Used to set the first IPC file descriptor in the child process on Android.
@@ -200,13 +148,22 @@ class Channel {
   static void SetClientChannelFd(int fd);
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
+  // Get the first IPC channel handle in the child process. This will have been
+  // set by SetClientChannelFd on Android, will be a constant on other unix
+  // platforms, or will have been passed on the command line on Windows.
+  static ChannelHandle::ElementType GetClientChannelHandle();
+
+  // Create a new pair of pipe endpoints which can be used to establish a
+  // native IPC::Channel connection.
+  static bool CreateRawPipe(ChannelHandle* server, ChannelHandle* client);
+
  private:
   // PIMPL to which all channel calls are delegated.
   class ChannelImpl;
-  ChannelImpl* channel_impl_;
+  RefPtr<ChannelImpl> channel_impl_;
 
   enum {
-#if defined(OS_MACOSX)
+#if defined(XP_DARWIN)
     // If the channel receives a message that contains file descriptors, then
     // it will reply back with this message, indicating that the message has
     // been received. The sending channel can then close any descriptors that

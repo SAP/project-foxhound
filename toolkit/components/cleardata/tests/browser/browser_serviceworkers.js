@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { SiteDataTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SiteDataTestUtils.jsm"
+const { SiteDataTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
 
 async function addServiceWorker(origin) {
@@ -19,7 +19,7 @@ async function addServiceWorker(origin) {
   ok(true, `${origin} has a service worker`);
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["dom.serviceWorkers.enabled", true],
@@ -201,9 +201,10 @@ add_task(async function test_deleteFromPrincipal() {
   let unregistered = SiteDataTestUtils.promiseServiceWorkerUnregistered(
     "https://test1.example.com"
   );
-  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-    "https://test1.example.com/"
-  );
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      "https://test1.example.com/"
+    );
   await new Promise(aResolve => {
     Services.clearData.deleteDataFromPrincipal(
       principal,

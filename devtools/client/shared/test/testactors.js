@@ -3,14 +3,13 @@
 
 "use strict";
 
-const { Actor } = require("devtools/shared/protocol/Actor");
+const { Actor } = require("resource://devtools/shared/protocol/Actor.js");
 
 class TestActor1 extends Actor {
   constructor(conn, tab) {
-    super(conn);
+    super(conn, { typeName: "testOne", methods: [] });
     this.tab = tab;
 
-    this.typeName = "testOne";
     this.requestTypes = {
       ping: TestActor1.prototype.onPing,
     };

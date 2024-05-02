@@ -49,11 +49,16 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "PromptUtils",
-  "resource://gre/modules/SharedPromptUtils.jsm"
+  "PREFER_SYSTEM_DIALOG",
+  "print.prefer_system_dialog",
+  false
 );
+
+ChromeUtils.defineESModuleGetters(this, {
+  PromptUtils: "resource://gre/modules/PromptUtils.sys.mjs",
+});
 
 var PrintUtils = {
   SAVE_TO_PDF_PRINTER: "Mozilla Save to PDF",
@@ -63,6 +68,18 @@ var PrintUtils = {
     return (this._bundle = Services.strings.createBundle(
       "chrome://global/locale/printing.properties"
     ));
+  },
+
+  async checkForSelection(browsingContext) {
+    try {
+      let sourceActor =
+        browsingContext.currentWindowGlobal.getActor("PrintingSelection");
+      // Need the await for the try to trigger...
+      return await sourceActor.sendQuery("PrintingSelection:HasSelection", {});
+    } catch (e) {
+      console.error(e);
+    }
+    return false;
   },
 
   /**
@@ -95,23 +112,18 @@ var PrintUtils = {
     );
     if (!PSSVC.lastUsedPrinterName) {
       if (printSettings.printerName) {
-        PSSVC.savePrintSettingsToPrefs(
+        PSSVC.maybeSaveLastUsedPrinterNameToPrefs(printSettings.printerName);
+        PSSVC.maybeSavePrintSettingsToPrefs(
           printSettings,
-          false,
-          Ci.nsIPrintSettings.kInitSavePrinterName
-        );
-        PSSVC.savePrintSettingsToPrefs(
-          printSettings,
-          true,
           Ci.nsIPrintSettings.kInitSaveAll
         );
       }
     }
     try {
-      var PRINTPROMPTSVC = Cc[
-        "@mozilla.org/embedcomp/printingprompt-service;1"
-      ].getService(Ci.nsIPrintingPromptService);
-      PRINTPROMPTSVC.showPageSetupDialog(window, printSettings, null);
+      var PRINTDIALOGSVC = Cc[
+        "@mozilla.org/widget/printdialog-service;1"
+      ].getService(Ci.nsIPrintDialogService);
+      PRINTDIALOGSVC.showPageSetupDialog(window, printSettings, null);
     } catch (e) {
       dump("showPageSetup " + e + "\n");
       return false;
@@ -174,7 +186,7 @@ var PrintUtils = {
       // XXX This can be racy can't it? getPreviewBrowser looks at browser that
       // we set up after opening the dialog. But I guess worst case we just
       // open two dialogs so...
-      return { promise: Promise.reject(), browser: null };
+      throw new Error("Tab-modal print UI already open");
     }
 
     // Create the print preview dialog.
@@ -189,6 +201,10 @@ var PrintUtils = {
       { features: "resizable=no", sizeTo: "available" },
       args
     );
+    closedPromise.catch(e => {
+      console.error(e);
+    });
+
     let settingsBrowser = dialog._frame;
     let printPreview = new PrintPreview({
       sourceBrowsingContext: aBrowsingContext,
@@ -201,7 +217,7 @@ var PrintUtils = {
     // This will create the source browser in connectedCallback() if we sent
     // openWindowInfo. Otherwise the browser will be null.
     settingsBrowser.parentElement.insertBefore(printPreview, settingsBrowser);
-    return { promise: closedPromise, browser: printPreview.sourceBrowser };
+    return printPreview.sourceBrowser;
   },
 
   /**
@@ -213,10 +229,13 @@ var PrintUtils = {
    *        Note that the browsing context could belong to a subframe of the
    *        tab that called window.print, or similar shenanigans.
    * @param aOptions
-   *        {openWindowInfo}      Non-null if this call comes from window.print().
+   *        {windowDotPrintOpenWindowInfo}
+   *                              Non-null if this call comes from window.print().
    *                              This is the nsIOpenWindowInfo object that has to
    *                              be passed down to createBrowser in order for the
-   *                              child process to clone into it.
+   *                              static clone that has been cretaed in the child
+   *                              process to be linked to the browser it creates
+   *                              in the parent process.
    *        {printSelectionOnly}  Whether to print only the active selection of
    *                              the given browsing context.
    *        {printFrameOnly}      Whether to print the selected frame.
@@ -224,101 +243,128 @@ var PrintUtils = {
   startPrintWindow(aBrowsingContext, aOptions) {
     const printInitiationTime = Date.now();
 
-    let { openWindowInfo, printSelectionOnly, printFrameOnly } = aOptions || {};
-
-    // If openWindowInfo is passed, a content process has created a new
-    // BrowsingContext for a static clone that was created for printing. That
-    // can happen in the following cases:
-    //
-    //   - window.print() was called in a content window, or:
-    //   - silent printing is enabled and this function was previously invoked
-    //     and called BrowsingContext.print(), and we're now being called back
-    //     by the content process.
-    //
-    // In the latter case the BrowsingContext only needs to be inserted into
-    // the document tree; the print in the content process is already underway.
-    // In the former case we also need to obtain a valid nsIPrintSettings
-    // object and pass that to the content process so that it can start the
-    // print.
+    // At most, one of these is set.
+    let { printSelectionOnly, printFrameOnly, windowDotPrintOpenWindowInfo } =
+      aOptions || {};
 
     if (
-      !PRINT_ALWAYS_SILENT &&
-      (!openWindowInfo || openWindowInfo.isForWindowDotPrint)
+      windowDotPrintOpenWindowInfo &&
+      !windowDotPrintOpenWindowInfo.isForWindowDotPrint
     ) {
-      let browsingContext = aBrowsingContext;
+      throw new Error("Only expect openWindowInfo for window.print()");
+    }
+
+    let browsingContext = aBrowsingContext;
+    if (printSelectionOnly) {
+      // Ensure that we use the window with focus/selection if the context menu
+      // (from which 'Print selection' was selected) happens to have been opened
+      // over a different frame.
       let focusedBc = Services.focus.focusedContentBrowsingContext;
       if (
         focusedBc &&
-        focusedBc.top.embedderElement == browsingContext.top.embedderElement &&
-        (!openWindowInfo || !openWindowInfo.isForWindowDotPrint) &&
-        !printFrameOnly
+        focusedBc.top.embedderElement == browsingContext.top.embedderElement
       ) {
         browsingContext = focusedBc;
       }
-      let { promise, browser } = this._openTabModalPrint(
+    }
+
+    if (!PRINT_ALWAYS_SILENT && !PREFER_SYSTEM_DIALOG) {
+      return this._openTabModalPrint(
         browsingContext,
-        openWindowInfo,
+        windowDotPrintOpenWindowInfo,
         printInitiationTime,
         printSelectionOnly,
         printFrameOnly
       );
-      promise.catch(e => {
-        Cu.reportError(e);
-      });
-      return browser;
     }
 
-    async function makePrintSettingsMaybeEnsuringToFileName() {
-      let settings = PrintUtils.getPrintSettings();
-      if (settings.printToFile && !settings.toFileName) {
+    const useSystemDialog = PREFER_SYSTEM_DIALOG && !PRINT_ALWAYS_SILENT;
+
+    let browser = null;
+    if (windowDotPrintOpenWindowInfo) {
+      // When we're called by handleStaticCloneCreatedForPrint(), we must
+      // return this browser.
+      browser = this.createParentBrowserForStaticClone(
+        browsingContext,
+        windowDotPrintOpenWindowInfo
+      );
+      browsingContext = browser.browsingContext;
+    }
+
+    // This code is wrapped in an async function so that we can await the async
+    // functions that it calls.
+    async function makePrintSettingsAndInvokePrint() {
+      let settings = PrintUtils.getPrintSettings(
+        /*aPrinterName*/ "",
+        /*aDefaultsOnly*/ false,
+        /*aAllowPseudoPrinter*/ !useSystemDialog
+      );
+      settings.printSelectionOnly = printSelectionOnly;
+      if (
+        settings.outputDestination ==
+          Ci.nsIPrintSettings.kOutputDestinationFile &&
+        !settings.toFileName
+      ) {
         // TODO(bug 1748004): We should consider generating the file name
         // from the document's title as we do in print.js's pickFileName
         // (including using DownloadPaths.sanitize!).
         // For now, the following is for consistency with the behavior
         // prior to bug 1669149 part 3.
-        let dest = await OS.File.getCurrentDirectory();
+        let dest = undefined;
+        try {
+          dest = Services.dirsvc.get("CurWorkD", Ci.nsIFile).path;
+        } catch (e) {}
         if (!dest) {
-          dest = OS.Constants.Path.homeDir;
+          dest = Services.dirsvc.get("Home", Ci.nsIFile).path;
         }
-        settings.toFileName = OS.Path.join(dest || "", "mozilla.pdf");
-      }
-      return settings;
-    }
-
-    if (openWindowInfo) {
-      let printPreview = new PrintPreview({
-        sourceBrowsingContext: aBrowsingContext,
-        openWindowInfo,
-      });
-      let browser = printPreview.createPreviewBrowser("source");
-      document.documentElement.append(browser);
-
-      if (openWindowInfo.isForWindowDotPrint) {
-        makePrintSettingsMaybeEnsuringToFileName().then(settings => {
-          // We must be sure that we return to the event loop before calling
-          // BrowsingContext.print(). If we fail to do that, in the child
-          // process we will re-enter nsGlobalWindowOuter::Print under the event
-          // loop that's spun under its OpenInternal call. Printing would then
-          // fail since the outer nsGlobalWindowOuter::Print call wouldn't yet
-          // have created the static clone.
-          setTimeout(() => {
-            // At some point we should handle the Promise that this returns (at
-            // least report rejection to telemetry).
-            browser.browsingContext.print(settings);
-          }, 0);
-        });
+        settings.toFileName = PathUtils.join(dest, "mozilla.pdf");
       }
 
-      return browser;
-    }
+      if (useSystemDialog) {
+        const hasSelection = await PrintUtils.checkForSelection(
+          browsingContext
+        );
 
-    makePrintSettingsMaybeEnsuringToFileName().then(settings => {
-      settings.printSelectionOnly = printSelectionOnly;
+        // Prompt the user to choose a printer and make any desired print
+        // settings changes.
+        let doPrint = false;
+        try {
+          doPrint = await PrintUtils.handleSystemPrintDialog(
+            browsingContext.topChromeWindow,
+            hasSelection,
+            settings
+          );
+          if (!doPrint) {
+            return;
+          }
+        } finally {
+          // Clean up browser if we aren't going to use it.
+          if (!doPrint && browser) {
+            browser.remove();
+          }
+        }
+      }
+
       // At some point we should handle the Promise that this returns (at
       // least report rejection to telemetry).
-      aBrowsingContext.print(settings);
-    });
-    return null;
+      browsingContext.print(settings);
+    }
+
+    // We need to return to the event loop before calling
+    // makePrintSettingsAndInvokePrint() if we were called for `window.print()`.
+    // That's because if that function synchronously calls `browser.remove()`
+    // or `browsingContext.print()` before we return `browser`, the nested
+    // event loop that is being spun in the content process under the
+    // OpenInternal call in nsGlobalWindowOuter::Print will still be active.
+    // In the case of `browser.remove()`, nsGlobalWindowOuter::Print would then
+    // get unhappy once OpenInternal does return since it will fail to return
+    // a BrowsingContext. In the case of `browsingContext.print()`, we would
+    // re-enter nsGlobalWindowOuter::Print under the nested event loop and
+    // printing would then fail since the outer nsGlobalWindowOuter::Print call
+    // wouldn't yet have created the static clone.
+    setTimeout(makePrintSettingsAndInvokePrint, 0);
+
+    return browser;
   },
 
   togglePrintPreview(aBrowsingContext) {
@@ -332,6 +378,52 @@ var PrintUtils = {
       return;
     }
     this.startPrintWindow(aBrowsingContext);
+  },
+
+  /**
+   * Called when a content process has created a new BrowsingContext for a
+   * static clone of a document that is to be printed, but we do NOT yet have a
+   * CanonicalBrowsingContext counterpart in the parent process. This only
+   * happens in the following cases:
+   *
+   *   - content script invoked window.print() in the content process, or:
+   *   - silent printing is enabled, and UI code previously invoked
+   *     startPrintWindow which called BrowsingContext.print(), and we're now
+   *     being called back by the content process to parent the static clone.
+   *
+   * In the latter case we only need to create the CanonicalBrowsingContext,
+   * link it to it's content process counterpart, and inserted it into
+   * the document tree; the print in the content process has already been
+   * initiated.
+   *
+   * In the former case we additionally need to check if we should open the
+   * tab modal print UI (if not silent printing), obtain a valid
+   * nsIPrintSettings object, and tell the content process to initiate the
+   * print with this settings object.
+   */
+  handleStaticCloneCreatedForPrint(aOpenWindowInfo) {
+    let browsingContext = aOpenWindowInfo.parent;
+    if (aOpenWindowInfo.isForWindowDotPrint) {
+      return this.startPrintWindow(browsingContext, {
+        windowDotPrintOpenWindowInfo: aOpenWindowInfo,
+      });
+    }
+    return this.createParentBrowserForStaticClone(
+      browsingContext,
+      aOpenWindowInfo
+    );
+  },
+
+  createParentBrowserForStaticClone(aBrowsingContext, aOpenWindowInfo) {
+    // XXX This code is only called when silent printing, so we're really
+    // abusing PrintPreview here. See bug 1768020.
+    let printPreview = new PrintPreview({
+      sourceBrowsingContext: aBrowsingContext,
+      openWindowInfo: aOpenWindowInfo,
+    });
+    let browser = printPreview.createPreviewBrowser("source");
+    document.documentElement.append(browser);
+    return browser;
   },
 
   // "private" methods and members. Don't use them.
@@ -364,7 +456,7 @@ var PrintUtils = {
     return "FAILURE";
   },
 
-  _displayPrintingError(nsresult, isPrinting) {
+  _displayPrintingError(nsresult, isPrinting, browser) {
     // The nsresults from a printing error are mapped to strings that have
     // similar names to the errors themselves. For example, for error
     // NS_ERROR_GFX_PRINTER_NO_PRINTER_AVAILABLE, the name of the string
@@ -397,7 +489,12 @@ var PrintUtils = {
         : "printpreview_error_dialog_title"
     );
 
-    Services.prompt.alert(window, title, msg);
+    Services.prompt.asyncAlert(
+      browser.browsingContext,
+      Services.prompt.MODAL_TYPE_TAB,
+      title,
+      msg
+    );
 
     Services.telemetry.keyedScalarAdd(
       "printing.error",
@@ -406,22 +503,36 @@ var PrintUtils = {
     );
   },
 
-  getPrintSettings(aPrinterName, defaultsOnly) {
+  getPrintSettings(aPrinterName, aDefaultsOnly, aAllowPseudoPrinter = true) {
     var printSettings;
     try {
       var PSSVC = Cc["@mozilla.org/gfx/printsettings-service;1"].getService(
         Ci.nsIPrintSettingsService
       );
 
+      function isValidPrinterName(aPrinterName) {
+        return (
+          aPrinterName &&
+          (aAllowPseudoPrinter ||
+            aPrinterName != PrintUtils.SAVE_TO_PDF_PRINTER)
+        );
+      }
+
       // We must not try to print using an nsIPrintSettings without a printer
       // name set.
-      let printerName =
-        aPrinterName ||
-        PSSVC.lastUsedPrinterName ||
-        Cc["@mozilla.org/gfx/printerlist;1"].getService(Ci.nsIPrinterList)
-          .systemDefaultPrinterName;
+      const printerName = (function () {
+        if (isValidPrinterName(aPrinterName)) {
+          return aPrinterName;
+        }
+        if (isValidPrinterName(PSSVC.lastUsedPrinterName)) {
+          return PSSVC.lastUsedPrinterName;
+        }
+        return Cc["@mozilla.org/gfx/printerlist;1"].getService(
+          Ci.nsIPrinterList
+        ).systemDefaultPrinterName;
+      })();
 
-      printSettings = PSSVC.newPrintSettings;
+      printSettings = PSSVC.createNewPrintSettings();
       printSettings.printerName = printerName;
 
       // First get any defaults from the printer. We want to skip this for Save
@@ -433,7 +544,7 @@ var PrintUtils = {
         );
       }
 
-      if (!defaultsOnly) {
+      if (!aDefaultsOnly) {
         // Apply any settings that have been saved for this printer.
         PSSVC.initPrintSettingsFromPrefs(
           printSettings,
@@ -442,9 +553,38 @@ var PrintUtils = {
         );
       }
     } catch (e) {
-      Cu.reportError("PrintUtils.getPrintSettings failed: " + e + "\n");
+      console.error("PrintUtils.getPrintSettings failed:", e);
     }
     return printSettings;
+  },
+
+  // Show the system print dialog, saving modified preferences.
+  // Returns true if the user clicked print (Not cancel).
+  async handleSystemPrintDialog(aWindow, aHasSelection, aSettings) {
+    // Prompt the user to choose a printer and make any desired print
+    // settings changes.
+    try {
+      const svc = Cc["@mozilla.org/widget/printdialog-service;1"].getService(
+        Ci.nsIPrintDialogService
+      );
+      await svc.showPrintDialog(aWindow, aHasSelection, aSettings);
+    } catch (e) {
+      if (e.result == Cr.NS_ERROR_ABORT) {
+        return false;
+      }
+      throw e;
+    }
+
+    // Update the saved last used printer name and print settings:
+    var PSSVC = Cc["@mozilla.org/gfx/printsettings-service;1"].getService(
+      Ci.nsIPrintSettingsService
+    );
+    PSSVC.maybeSaveLastUsedPrinterNameToPrefs(aSettings.printerName);
+    PSSVC.maybeSavePrintSettingsToPrefs(
+      aSettings,
+      Ci.nsIPrintSettings.kPrintDialogPersistSettings
+    );
+    return true;
   },
 };
 
@@ -644,7 +784,7 @@ class PrintPreview extends MozElements.BaseControl {
     // nsDocumentViewer::OnDonePrinting, or by the print preview code.
     //
     // When that happens, we should remove us from the DOM if connected.
-    browser.addEventListener("DOMWindowClose", function(e) {
+    browser.addEventListener("DOMWindowClose", function (e) {
       if (this.isConnected) {
         this.remove();
       }
@@ -653,7 +793,7 @@ class PrintPreview extends MozElements.BaseControl {
     });
 
     if (this.settingsBrowser) {
-      browser.addEventListener("contextmenu", function(e) {
+      browser.addEventListener("contextmenu", function (e) {
         e.preventDefault();
       });
 

@@ -4,9 +4,14 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-loader.lazyRequireGetter(this, "StorageUI", "devtools/client/storage/ui", true);
+loader.lazyRequireGetter(
+  this,
+  "StorageUI",
+  "resource://devtools/client/storage/ui.js",
+  true
+);
 
 class StoragePanel {
   constructor(panelWin, toolbox, commands) {
@@ -15,8 +20,6 @@ class StoragePanel {
     this._toolbox = toolbox;
     this._commands = commands;
     this._panelWin = panelWin;
-
-    this.destroy = this.destroy.bind(this);
   }
 
   get panelWindow() {

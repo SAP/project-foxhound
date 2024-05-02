@@ -1,13 +1,14 @@
 ===========
-mozperftest
+Mozperftest
 ===========
 
-**mozperftest** can be used to run performance tests.
+**Mozperftest** can be used to run performance tests.
 
 
 .. toctree::
 
    running
+   tools
    writing
    developing
    vision

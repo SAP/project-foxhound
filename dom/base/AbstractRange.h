@@ -8,12 +8,14 @@
 #define mozilla_dom_AbstractRange_h
 
 #include <cstdint>
+#include <ostream>
 #include "ErrorList.h"
 #include "js/RootingAPI.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RangeBoundary.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/WeakPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
@@ -21,16 +23,20 @@
 class JSObject;
 class nsIContent;
 class nsINode;
+class nsRange;
 struct JSContext;
 
-namespace mozilla {
-namespace dom {
-
+namespace mozilla::dom {
 class Document;
+class Selection;
+class StaticRange;
 
-class AbstractRange : public nsISupports, public nsWrapperCache {
+class AbstractRange : public nsISupports,
+                      public nsWrapperCache,
+                      // For linking together selection-associated ranges.
+                      public mozilla::LinkedListElement<AbstractRange> {
  protected:
-  explicit AbstractRange(nsINode* aNode);
+  explicit AbstractRange(nsINode* aNode, bool aIsDynamicRange);
   virtual ~AbstractRange();
 
  public:
@@ -43,7 +49,7 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   static void Shutdown();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(AbstractRange)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(AbstractRange)
 
   const RangeBoundary& StartRef() const { return mStart; }
   const RangeBoundary& EndRef() const { return mEnd; }
@@ -71,6 +77,10 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   nsINode* GetStartContainer() const { return mStart.Container(); }
   nsINode* GetEndContainer() const { return mEnd.Container(); }
 
+  Document* GetComposedDocOfContainers() const {
+    return mStart.Container() ? mStart.Container()->GetComposedDoc() : nullptr;
+  }
+
   // FYI: Returns 0 if it's not positioned.
   uint32_t StartOffset() const {
     return static_cast<uint32_t>(
@@ -94,6 +104,33 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   bool HasEqualBoundaries(const AbstractRange& aOther) const {
     return (mStart == aOther.mStart) && (mEnd == aOther.mEnd);
   }
+  bool IsDynamicRange() const { return mIsDynamicRange; }
+  bool IsStaticRange() const { return !mIsDynamicRange; }
+  inline nsRange* AsDynamicRange();
+  inline const nsRange* AsDynamicRange() const;
+  inline StaticRange* AsStaticRange();
+  inline const StaticRange* AsStaticRange() const;
+
+  /**
+   * Return true if this range is part of a Selection object
+   * and isn't detached.
+   */
+  bool IsInAnySelection() const { return !mSelections.IsEmpty(); }
+
+  MOZ_CAN_RUN_SCRIPT void RegisterSelection(
+      mozilla::dom::Selection& aSelection);
+
+  void UnregisterSelection(const mozilla::dom::Selection& aSelection);
+
+  /**
+   * Returns a list of all Selections the range is associated with.
+   */
+  const nsTArray<WeakPtr<Selection>>& GetSelections() const;
+
+  /**
+   * Return true if this range is in |aSelection|.
+   */
+  bool IsInSelection(const mozilla::dom::Selection& aSelection) const;
 
  protected:
   template <typename SPT, typename SRT, typename EPT, typename ERT,
@@ -107,6 +144,36 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
 
   void Init(nsINode* aNode);
 
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const AbstractRange& aRange) {
+    if (aRange.Collapsed()) {
+      aStream << "{ mStart=mEnd=" << aRange.mStart;
+    } else {
+      aStream << "{ mStart=" << aRange.mStart << ", mEnd=" << aRange.mEnd;
+    }
+    return aStream << ", mIsGenerated="
+                   << (aRange.mIsGenerated ? "true" : "false")
+                   << ", mCalledByJS="
+                   << (aRange.mIsPositioned ? "true" : "false")
+                   << ", mIsDynamicRange="
+                   << (aRange.mIsDynamicRange ? "true" : "false") << " }";
+  }
+
+  /**
+   * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor
+   */
+  void RegisterClosestCommonInclusiveAncestor(nsINode* aNode);
+  /**
+   * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor
+   */
+  void UnregisterClosestCommonInclusiveAncestor(nsINode* aNode,
+                                                bool aIsUnlinking);
+
+  void UpdateCommonAncestorIfNecessary();
+
+  static void MarkDescendants(const nsINode& aNode);
+  static void UnmarkDescendants(const nsINode& aNode);
+
  private:
   void ClearForReuse();
 
@@ -114,6 +181,13 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   RefPtr<Document> mOwner;
   RangeBoundary mStart;
   RangeBoundary mEnd;
+
+  // A Range can be part of multiple |Selection|s. This is a very rare use case.
+  AutoTArray<WeakPtr<Selection>, 1> mSelections;
+  // mRegisteredClosestCommonInclusiveAncestor is only non-null when the range
+  // IsInAnySelection().
+  nsCOMPtr<nsINode> mRegisteredClosestCommonInclusiveAncestor;
+
   // `true` if `mStart` and `mEnd` are set for StaticRange or set and valid
   // for nsRange.
   bool mIsPositioned;
@@ -123,10 +197,12 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   // Used by nsRange, but this should have this for minimizing the size.
   bool mCalledByJS;
 
+  // true if this is an `nsRange` object.
+  const bool mIsDynamicRange;
+
   static bool sHasShutDown;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // #ifndef mozilla_dom_AbstractRange_h

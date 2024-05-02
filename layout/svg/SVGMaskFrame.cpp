@@ -48,7 +48,6 @@ already_AddRefed<SourceSurface> SVGMaskFrame::GetMaskForMaskedFrame(
   if (maskArea.IsEmpty()) {
     return nullptr;
   }
-  gfxContext* context = aParams.ctx;
   // Get the clip extents in device space:
   // Minimizing the mask surface extents (using both the current clip extents
   // and maskArea) is important for performance.
@@ -68,20 +67,18 @@ already_AddRefed<SourceSurface> SVGMaskFrame::GetMaskForMaskedFrame(
 
   RefPtr<DrawTarget> maskDT;
   if (maskType == StyleMaskType::Luminance) {
-    maskDT = context->GetDrawTarget()->CreateClippedDrawTarget(
-        maskSurfaceRect, SurfaceFormat::B8G8R8A8);
+    maskDT = aParams.dt->CreateClippedDrawTarget(maskSurfaceRect,
+                                                 SurfaceFormat::B8G8R8A8);
   } else {
-    maskDT = context->GetDrawTarget()->CreateClippedDrawTarget(
-        maskSurfaceRect, SurfaceFormat::A8);
+    maskDT =
+        aParams.dt->CreateClippedDrawTarget(maskSurfaceRect, SurfaceFormat::A8);
   }
 
   if (!maskDT || !maskDT->IsValid()) {
     return nullptr;
   }
 
-  RefPtr<gfxContext> tmpCtx =
-      gfxContext::CreatePreservingTransformOrNull(maskDT);
-  MOZ_ASSERT(tmpCtx);  // already checked the draw target above
+  gfxContext tmpCtx(maskDT, /* aPreserveTransform */ true);
 
   mMatrixForChildren =
       GetMaskTransform(aParams.maskedFrame) * aParams.toUserSpace;
@@ -96,7 +93,7 @@ already_AddRefed<SourceSurface> SVGMaskFrame::GetMaskForMaskedFrame(
       m = SVGUtils::GetTransformMatrixInUserSpace(kid) * m;
     }
 
-    SVGUtils::PaintFrameWithEffects(kid, *tmpCtx, m, aParams.imgParams);
+    SVGUtils::PaintFrameWithEffects(kid, tmpCtx, m, aParams.imgParams);
   }
 
   RefPtr<SourceSurface> surface;
@@ -153,7 +150,7 @@ nsresult SVGMaskFrame::AttributeChanged(int32_t aNameSpaceID,
        aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height ||
        aAttribute == nsGkAtoms::maskUnits ||
        aAttribute == nsGkAtoms::maskContentUnits)) {
-    SVGObserverUtils::InvalidateDirectRenderingObservers(this);
+    SVGObserverUtils::InvalidateRenderingObservers(this);
   }
 
   return SVGContainerFrame::AttributeChanged(aNameSpaceID, aAttribute,

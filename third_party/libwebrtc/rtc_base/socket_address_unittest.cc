@@ -323,25 +323,44 @@ TEST(SocketAddressTest, TestToSensitiveString) {
   EXPECT_EQ("1.2.3.4", addr_v4.HostAsURIString());
   EXPECT_EQ("1.2.3.4:5678", addr_v4.ToString());
 
-#if defined(NDEBUG)
   EXPECT_EQ("1.2.3.x", addr_v4.HostAsSensitiveURIString());
   EXPECT_EQ("1.2.3.x:5678", addr_v4.ToSensitiveString());
-#else
-  EXPECT_EQ("1.2.3.4", addr_v4.HostAsSensitiveURIString());
-  EXPECT_EQ("1.2.3.4:5678", addr_v4.ToSensitiveString());
-#endif  // defined(NDEBUG)
 
   SocketAddress addr_v6(kTestV6AddrString, 5678);
   EXPECT_EQ("[" + kTestV6AddrString + "]", addr_v6.HostAsURIString());
   EXPECT_EQ(kTestV6AddrFullString, addr_v6.ToString());
-#if defined(NDEBUG)
   EXPECT_EQ("[" + kTestV6AddrAnonymizedString + "]",
             addr_v6.HostAsSensitiveURIString());
   EXPECT_EQ(kTestV6AddrFullAnonymizedString, addr_v6.ToSensitiveString());
-#else
-  EXPECT_EQ("[" + kTestV6AddrString + "]", addr_v6.HostAsSensitiveURIString());
-  EXPECT_EQ(kTestV6AddrFullString, addr_v6.ToSensitiveString());
-#endif  // defined(NDEBUG)
+}
+
+TEST(SocketAddressTest, TestToSensitiveNameAndAddressString) {
+  SocketAddress ipv4OnlyLiteral("1.2.3.4", 5678);
+  EXPECT_EQ("1.2.3.x:5678", ipv4OnlyLiteral.ToSensitiveNameAndAddressString());
+
+  SocketAddress ipv4OnlyAddress(IPAddress(0x01020304), 5678);
+  EXPECT_EQ("1.2.3.x:5678", ipv4OnlyAddress.ToSensitiveNameAndAddressString());
+
+  SocketAddress hostOnly("webrtc.org", 443);
+  EXPECT_EQ("webrtc.org:443", hostOnly.ToSensitiveNameAndAddressString());
+
+  SocketAddress hostAndIpv4("webrtc.org", 80);
+  hostAndIpv4.SetResolvedIP(IPAddress(0x01020304));
+  EXPECT_EQ("webrtc.org:80 (1.2.3.x:80)",
+            hostAndIpv4.ToSensitiveNameAndAddressString());
+
+  SocketAddress ipv6OnlyLiteral(kTestV6AddrString, 5678);
+  EXPECT_EQ(kTestV6AddrFullAnonymizedString,
+            ipv6OnlyLiteral.ToSensitiveNameAndAddressString());
+
+  SocketAddress ipv6OnlyAddress(IPAddress(kTestV6Addr), 5678);
+  EXPECT_EQ(kTestV6AddrFullAnonymizedString,
+            ipv6OnlyAddress.ToSensitiveNameAndAddressString());
+
+  SocketAddress hostAndIpv6("webrtc.org", 5678);
+  hostAndIpv6.SetResolvedIP(IPAddress(kTestV6Addr));
+  EXPECT_EQ("webrtc.org:5678 (" + kTestV6AddrFullAnonymizedString + ")",
+            hostAndIpv6.ToSensitiveNameAndAddressString());
 }
 
 }  // namespace rtc

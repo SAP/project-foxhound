@@ -6,6 +6,7 @@
 
 #include "AndroidVsync.h"
 
+#include "AndroidBridge.h"
 #include "nsTArray.h"
 
 /**
@@ -72,8 +73,6 @@ AndroidVsync::AndroidVsync() : mImpl("AndroidVsync.mImpl") {
   impl->mSupport = new AndroidVsyncSupport(this);
   impl->mSupportJava = java::AndroidVsync::New();
   AndroidVsyncSupport::AttachNative(impl->mSupportJava, impl->mSupport);
-  float fps = impl->mSupportJava->GetRefreshRate();
-  impl->mVsyncDuration = TimeDuration::FromMilliseconds(1000.0 / fps);
 }
 
 AndroidVsync::~AndroidVsync() {
@@ -82,11 +81,6 @@ AndroidVsync::~AndroidVsync() {
   impl->mRenderObservers.Clear();
   impl->UpdateObservingVsync();
   impl->mSupport->Unlink();
-}
-
-TimeDuration AndroidVsync::GetVsyncRate() {
-  auto impl = mImpl.Lock();
-  return impl->mVsyncDuration;
 }
 
 void AndroidVsync::RegisterObserver(Observer* aObserver, ObserverType aType) {
@@ -106,6 +100,7 @@ void AndroidVsync::UnregisterObserver(Observer* aObserver, ObserverType aType) {
   } else {
     impl->mRenderObservers.RemoveElement(aObserver);
   }
+  aObserver->Dispose();
   impl->UpdateObservingVsync();
 }
 
@@ -119,6 +114,8 @@ void AndroidVsync::Impl::UpdateObservingVsync() {
 
 // Always called on the Java UI thread.
 void AndroidVsync::NotifyVsync(int64_t aFrameTimeNanos) {
+  MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+
   // Convert aFrameTimeNanos to a TimeStamp. The value converts trivially to
   // the internal ticks representation of TimeStamp_posix; both use the
   // monotonic clock and are in nanoseconds.
@@ -133,6 +130,19 @@ void AndroidVsync::NotifyVsync(int64_t aFrameTimeNanos) {
   }
   for (Observer* observer : observers) {
     observer->OnVsync(timeStamp);
+  }
+}
+
+void AndroidVsync::OnMaybeUpdateRefreshRate() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  auto impl = mImpl.Lock();
+
+  nsTArray<Observer*> observers;
+  observers.AppendElements(impl->mRenderObservers);
+
+  for (Observer* observer : observers) {
+    observer->OnMaybeUpdateRefreshRate();
   }
 }
 

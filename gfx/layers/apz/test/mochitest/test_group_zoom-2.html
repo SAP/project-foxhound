@@ -24,24 +24,14 @@ var prefs = [
   // test takes too long the displayport can expire before we read the value
   // out of the test. So we disable displayport expiry for these tests.
   ["apz.displayport_expiry_ms", 0],
-  // Prevent the dynamic toolbar from interfering with main-thread scroll
-  // offset values.
-  ["browser.chrome.dynamictoolbar", false],
-  // Explicitly enable pinch-zooming, so this test can run on desktop
-  // even though zooming isn't enabled by default on desktop yet.
-  ["apz.allow_zooming", true],
   // Increase the content response timeout because some tests do preventDefault
   // and we want to make sure APZ actually waits for them.
   ["apz.content_response_timeout", 60000],
-  // Use the desktop zooming scrollbars
-  ["apz.force_disable_desktop_zooming_scrollbars", false],
   // Force consistent scroll-to-click behaviour across all platforms.
   ["ui.scrollToClick", 0],
   // Disable touch resampling so that touch events are processed without delay
   // and we don't zoom more than expected due to overprediction.
   ["android.touch_resampling.enabled", false],
-  // Tests depend on window.visualViewport
-  ["dom.visualviewport.enabled", true],
 ];
 
 var instant_repaint_prefs = [
@@ -74,6 +64,7 @@ if (isApzEnabled()) {
   if (getPlatform() == "linux") {
         subtests.push(
           {"file": "helper_zoom_with_touchpad.html", "prefs": prefs},
+          {"file": "helper_touchpad_pinch_and_pan.html", "prefs": prefs},
           {"file": "helper_zoom_oopif.html?touchpad", "prefs": prefs},
         );
   }

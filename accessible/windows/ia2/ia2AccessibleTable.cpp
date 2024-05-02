@@ -11,18 +11,17 @@
 #include "AccessibleTable_i.c"
 #include "AccessibleTable2_i.c"
 
-#include "AccessibleWrap.h"
 #include "IUnknownImpl.h"
-#include "Statistics.h"
-#include "TableAccessible.h"
-
+#include "mozilla/a11y/Accessible.h"
+#include "mozilla/a11y/TableAccessible.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
+#include "Statistics.h"
 
 using namespace mozilla::a11y;
 
 TableAccessible* ia2AccessibleTable::TableAcc() {
-  AccessibleWrap* acc = LocalAcc();
+  Accessible* acc = Acc();
   return acc ? acc->AsTable() : nullptr;
 }
 
@@ -67,11 +66,10 @@ ia2AccessibleTable::get_caption(IUnknown** aAccessible) {
   TableAccessible* table = TableAcc();
   if (!table) return CO_E_OBJNOTCONNECTED;
 
-  AccessibleWrap* caption = static_cast<AccessibleWrap*>(table->Caption());
+  Accessible* caption = table->Caption();
   if (!caption) return S_FALSE;
 
-  RefPtr<IAccessible> result;
-  caption->GetNativeInterface(getter_AddRefs(result));
+  RefPtr<IAccessible> result = MsaaAccessible::GetFrom(caption);
   result.forget(aAccessible);
   return S_OK;
 }
@@ -380,52 +378,16 @@ ia2AccessibleTable::get_isSelected(long aRowIdx, long aColIdx,
 }
 
 STDMETHODIMP
-ia2AccessibleTable::selectRow(long aRowIdx) {
-  TableAccessible* table = TableAcc();
-  if (!table) return CO_E_OBJNOTCONNECTED;
-
-  if (aRowIdx < 0 || static_cast<uint32_t>(aRowIdx) >= table->RowCount())
-    return E_INVALIDARG;
-
-  table->SelectRow(aRowIdx);
-  return S_OK;
-}
+ia2AccessibleTable::selectRow(long aRowIdx) { return E_NOTIMPL; }
 
 STDMETHODIMP
-ia2AccessibleTable::selectColumn(long aColIdx) {
-  TableAccessible* table = TableAcc();
-  if (!table) return CO_E_OBJNOTCONNECTED;
-
-  if (aColIdx < 0 || static_cast<uint32_t>(aColIdx) >= table->ColCount())
-    return E_INVALIDARG;
-
-  table->SelectCol(aColIdx);
-  return S_OK;
-}
+ia2AccessibleTable::selectColumn(long aColIdx) { return E_NOTIMPL; }
 
 STDMETHODIMP
-ia2AccessibleTable::unselectRow(long aRowIdx) {
-  TableAccessible* table = TableAcc();
-  if (!table) return CO_E_OBJNOTCONNECTED;
-
-  if (aRowIdx < 0 || static_cast<uint32_t>(aRowIdx) >= table->RowCount())
-    return E_INVALIDARG;
-
-  table->UnselectRow(aRowIdx);
-  return S_OK;
-}
+ia2AccessibleTable::unselectRow(long aRowIdx) { return E_NOTIMPL; }
 
 STDMETHODIMP
-ia2AccessibleTable::unselectColumn(long aColIdx) {
-  TableAccessible* table = TableAcc();
-  if (!table) return CO_E_OBJNOTCONNECTED;
-
-  if (aColIdx < 0 || static_cast<uint32_t>(aColIdx) >= table->ColCount())
-    return E_INVALIDARG;
-
-  table->UnselectCol(aColIdx);
-  return S_OK;
-}
+ia2AccessibleTable::unselectColumn(long aColIdx) { return E_NOTIMPL; }
 
 STDMETHODIMP
 ia2AccessibleTable::get_rowColumnExtentsAtIndex(long aCellIdx, long* aRowIdx,
@@ -480,12 +442,10 @@ ia2AccessibleTable::get_cellAt(long aRowIdx, long aColIdx, IUnknown** aCell) {
   TableAccessible* table = TableAcc();
   if (!table) return CO_E_OBJNOTCONNECTED;
 
-  AccessibleWrap* cell =
-      static_cast<AccessibleWrap*>(table->CellAt(aRowIdx, aColIdx));
+  Accessible* cell = table->CellAt(aRowIdx, aColIdx);
   if (!cell) return E_INVALIDARG;
 
-  RefPtr<IAccessible> result;
-  cell->GetNativeInterface(getter_AddRefs(result));
+  RefPtr<IAccessible> result = MsaaAccessible::GetFrom(cell);
   result.forget(aCell);
   return S_OK;
 }
@@ -512,7 +472,7 @@ ia2AccessibleTable::get_selectedCells(IUnknown*** aCells,
   TableAccessible* table = TableAcc();
   if (!table) return CO_E_OBJNOTCONNECTED;
 
-  AutoTArray<LocalAccessible*, 30> cells;
+  AutoTArray<Accessible*, 30> cells;
   table->SelectedCells(&cells);
   if (cells.IsEmpty()) return S_FALSE;
 
@@ -521,8 +481,7 @@ ia2AccessibleTable::get_selectedCells(IUnknown*** aCells,
   if (!*aCells) return E_OUTOFMEMORY;
 
   for (uint32_t i = 0; i < cells.Length(); i++) {
-    RefPtr<IAccessible> cell;
-    cells[i]->GetNativeInterface(getter_AddRefs(cell));
+    RefPtr<IAccessible> cell = MsaaAccessible::GetFrom(cells[i]);
     cell.forget(&(*aCells)[i]);
   }
 

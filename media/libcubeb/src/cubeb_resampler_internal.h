@@ -91,6 +91,7 @@ public:
     uint32_t to_keep = min_buffered_audio_frame(sample_rate);
     uint32_t available = samples_to_frames(internal_input_buffer.length());
     if (available > to_keep) {
+      ALOGV("Dropping %u frames", available - to_keep);
       internal_input_buffer.pop(nullptr,
                                 frames_to_samples(available - to_keep));
     }
@@ -325,6 +326,7 @@ public:
     uint32_t available = samples_to_frames(resampling_in_buffer.length());
     uint32_t to_keep = min_buffered_audio_frame(source_rate);
     if (available > to_keep) {
+      ALOGV("Dropping %u frames", available - to_keep);
       resampling_in_buffer.pop(nullptr, frames_to_samples(available - to_keep));
     }
   }
@@ -470,6 +472,7 @@ public:
     size_t available = samples_to_frames(delay_input_buffer.length());
     uint32_t to_keep = min_buffered_audio_frame(sample_rate);
     if (available > to_keep) {
+      ALOGV("Dropping %u frames", available - to_keep);
       delay_input_buffer.pop(nullptr, frames_to_samples(available - to_keep));
     }
   }
@@ -496,7 +499,8 @@ cubeb_resampler_create_internal(cubeb_stream * stream,
                                 cubeb_stream_params * output_params,
                                 unsigned int target_rate,
                                 cubeb_data_callback callback, void * user_ptr,
-                                cubeb_resampler_quality quality)
+                                cubeb_resampler_quality quality,
+                                cubeb_resampler_reclock reclock)
 {
   std::unique_ptr<cubeb_resampler_speex_one_way<T>> input_resampler = nullptr;
   std::unique_ptr<cubeb_resampler_speex_one_way<T>> output_resampler = nullptr;

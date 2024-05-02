@@ -10,9 +10,8 @@ const TEST_URI = `data:text/html;charset=utf-8,<style>${encodeURIComponent(
   CSS_CONTENT
 )}</style>`;
 
-add_task(async function() {
-  const browser = await addTab(TEST_URI);
-  const tab = gBrowser.getTabForBrowser(browser);
+add_task(async function () {
+  const tab = await addTab(TEST_URI);
 
   const commands = await CommandsFactory.forTab(tab);
   await commands.targetCommand.startListening();

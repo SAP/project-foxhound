@@ -19,17 +19,13 @@ namespace mozilla {
  * are suitable for use as global variables.
  *
  * In particular, a global instance of Static{Auto,Ref}Ptr doesn't cause the
- * compiler to emit  a static initializer (in release builds, anyway).
- *
- * In order to accomplish this, Static{Auto,Ref}Ptr must have a trivial
- * constructor and destructor.  As a consequence, it cannot initialize its raw
- * pointer to 0 on construction, and it cannot delete/release its raw pointer
- * upon destruction.
+ * compiler to emit a static initializer.
  *
  * Since the compiler guarantees that all global variables are initialized to
- * 0, these trivial constructors are safe.  Since we rely on this, the clang
- * plugin, run as part of our "static analysis" builds, makes it a compile-time
- * error to use Static{Auto,Ref}Ptr as anything except a global variable.
+ * 0, the default constexpr constructors will result in no actual code being
+ * generated. Since we rely on this, the clang plugin, run as part of our
+ * "static analysis" builds, makes it a compile-time error to use
+ * Static{Auto,Ref}Ptr as anything except a global variable.
  *
  * Static{Auto,Ref}Ptr have a limited interface as compared to ns{Auto,Ref}Ptr;
  * this is intentional, since their range of acceptable uses is smaller.
@@ -38,22 +34,8 @@ namespace mozilla {
 template <class T>
 class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticAutoPtr {
  public:
-  // In debug builds, check that mRawPtr is initialized for us as we expect
-  // by the compiler.  In non-debug builds, don't declare a constructor
-  // so that the compiler can see that the constructor is trivial.
-#ifdef DEBUG
-  StaticAutoPtr() {
-#  ifdef __GNUC__
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wuninitialized"
-    // False positive with gcc. See bug 1430729
-#  endif
-    MOZ_ASSERT(!mRawPtr);
-#  ifdef __GNUC__
-#    pragma GCC diagnostic pop
-#  endif
-  }
-#endif
+  constexpr StaticAutoPtr() = default;
+  StaticAutoPtr(const StaticAutoPtr&) = delete;
 
   StaticAutoPtr<T>& operator=(T* aRhs) {
     Assign(aRhs);
@@ -78,14 +60,6 @@ class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticAutoPtr {
   }
 
  private:
-  // Disallow copy constructor, but only in debug mode.  We only define
-  // a default constructor in debug mode (see above); if we declared
-  // this constructor always, the compiler wouldn't generate a trivial
-  // default constructor for us in non-debug mode.
-#ifdef DEBUG
-  StaticAutoPtr(StaticAutoPtr<T>& aOther);
-#endif
-
   void Assign(T* aNewPtr) {
     MOZ_ASSERT(!aNewPtr || mRawPtr != aNewPtr);
     T* oldPtr = mRawPtr;
@@ -93,28 +67,14 @@ class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticAutoPtr {
     delete oldPtr;
   }
 
-  T* mRawPtr;
+  T* mRawPtr = nullptr;
 };
 
 template <class T>
 class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticRefPtr {
  public:
-  // In debug builds, check that mRawPtr is initialized for us as we expect
-  // by the compiler.  In non-debug builds, don't declare a constructor
-  // so that the compiler can see that the constructor is trivial.
-#ifdef DEBUG
-  StaticRefPtr() {
-#  ifdef __GNUC__
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wuninitialized"
-    // False positive with gcc. See bug 1430729
-#  endif
-    MOZ_ASSERT(!mRawPtr);
-#  ifdef __GNUC__
-#    pragma GCC diagnostic pop
-#  endif
-  }
-#endif
+  constexpr StaticRefPtr() = default;
+  StaticRefPtr(const StaticRefPtr&) = delete;
 
   StaticRefPtr<T>& operator=(T* aRhs) {
     AssignWithAddref(aRhs);
@@ -161,7 +121,7 @@ class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticRefPtr {
  private:
   void AssignWithAddref(T* aNewPtr) {
     if (aNewPtr) {
-      aNewPtr->AddRef();
+      RefPtrTraits<T>::AddRef(aNewPtr);
     }
     AssignAssumingAddRef(aNewPtr);
   }
@@ -170,11 +130,11 @@ class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticRefPtr {
     T* oldPtr = mRawPtr;
     mRawPtr = aNewPtr;
     if (oldPtr) {
-      oldPtr->Release();
+      RefPtrTraits<T>::Release(oldPtr);
     }
   }
 
-  T* MOZ_OWNING_REF mRawPtr;
+  T* MOZ_OWNING_REF mRawPtr = nullptr;
 };
 
 namespace StaticPtr_internal {

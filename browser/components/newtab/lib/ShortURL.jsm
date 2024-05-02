@@ -2,19 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "IDNService",
   "@mozilla.org/network/idn-service;1",
   "nsIIDNService"
 );
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 /**
  * Properly convert internationalized domain names.
@@ -23,7 +22,7 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
  */
 function handleIDNHost(hostname) {
   try {
-    return IDNService.convertToDisplayIDN(hostname, {});
+    return lazy.IDNService.convertToDisplayIDN(hostname, {});
   } catch (e) {
     // If something goes wrong (e.g. host is an IP address) just fail back
     // to the full domain.

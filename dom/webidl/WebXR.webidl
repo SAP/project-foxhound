@@ -11,7 +11,7 @@
 [Pref="dom.vr.webxr.enabled", SecureContext, Exposed=Window]
 interface XRSystem : EventTarget {
   // Methods
-  [Throws]
+  [NewObject]
   Promise<boolean> isSessionSupported(XRSessionMode mode);
   [NewObject, NeedsCallerType]
   Promise<XRSession> requestSession(XRSessionMode mode, optional XRSessionInit options = {});
@@ -43,20 +43,24 @@ interface XRSession : EventTarget {
   readonly attribute XRVisibilityState visibilityState;
   [SameObject] readonly attribute XRRenderState renderState;
   [SameObject] readonly attribute XRInputSourceArray inputSources;
+  readonly attribute float? frameRate;
+  readonly attribute Float32Array? supportedFrameRates;
 
   // Methods
   [Throws]
-  void updateRenderState(optional XRRenderStateInit state = {});
+  undefined updateRenderState(optional XRRenderStateInit state = {});
   [NewObject]
   Promise<XRReferenceSpace> requestReferenceSpace(XRReferenceSpaceType type);
+  [NewObject]
+  Promise<undefined> updateTargetFrameRate(float rate);
 
   [Throws]
   long requestAnimationFrame(XRFrameRequestCallback callback);
   [Throws]
-  void cancelAnimationFrame(long handle);
+  undefined cancelAnimationFrame(long handle);
 
-  [Throws]
-  Promise<void> end();
+  [NewObject]
+  Promise<undefined> end();
 
   // Events
   attribute EventHandler onend;
@@ -85,7 +89,7 @@ interface XRRenderState {
   readonly attribute XRWebGLLayer? baseLayer;
 };
 
-callback XRFrameRequestCallback = void (DOMHighResTimeStamp time, XRFrame frame);
+callback XRFrameRequestCallback = undefined (DOMHighResTimeStamp time, XRFrame frame);
 
 [ProbablyShortLivingWrapper, Pref="dom.vr.webxr.enabled", SecureContext, Exposed=Window]
 interface XRFrame {

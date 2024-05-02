@@ -3,8 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 <html:template id="appMenu-viewCache">
-  <panelview id="appMenu-mainView" class="PanelUI-subView"
-             descriptionheightworkaround="true">
+  <panelview id="appMenu-mainView" class="PanelUI-subView">
     <vbox class="panel-subview-body">
       <toolbarbutton id="appMenu-whatsnew-button"
                      class="subviewbutton subviewbutton-iconic subviewbutton-nav"
@@ -17,11 +16,10 @@
   <!-- This is a placeholder app menu which should be replaced with the "real"
        Proton app menu before the Proton pref starts getting enabled. -->
   <panelview id="appMenu-protonMainView" class="PanelUI-subView"
-             descriptionheightworkaround="true"
              lockpanelvertical="true">
     <vbox class="panel-subview-body">
       <vbox id="appMenu-proton-addon-banners"/>
-      <toolbarbutton id="appMenu-proton-update-banner" class="panel-banner-item"
+      <toolbarbutton id="appMenu-proton-update-banner" class="panel-banner-item subviewbutton"
                      oncommand="PanelUI._onBannerItemSelected(event)"
                      wrap="true"
                      hidden="true"/>
@@ -100,7 +98,11 @@
                      data-l10n-id="appmenuitem-find-in-page"
                      key="key_find"
                      command="cmd_find"/>
-      <toolbaritem id="appMenu-zoom-controls2" class="subviewbutton toolbaritem-combined-buttons" closemenu="none">
+      <toolbarbutton id="appMenu-translate-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenuitem-translate"
+                     command="cmd_translate"/>
+      <toolbaritem id="appMenu-zoom-controls" class="subviewbutton toolbaritem-combined-buttons" closemenu="none">
         <label class="toolbarbutton-text" data-l10n-id="appmenuitem-zoom"/>
         <toolbarbutton id="appMenu-zoomReduce-button2"
                        class="subviewbutton subviewbutton-iconic"
@@ -144,6 +146,11 @@
                      data-l10n-id="appmenuitem-more-tools"
                      closemenu="none"
                      oncommand="PanelUI.showMoreToolsPanel(this);"/>
+      <toolbarbutton id="appMenu-report-broken-site-button"
+                     class="subviewbutton subviewbutton-nav"
+                     data-l10n-id="appmenuitem-report-broken-site"
+                     closemenu="none"
+                     command="cmd_reportBrokenSite"/>
       <toolbarbutton id="appMenu-help-button2"
                      class="subviewbutton subviewbutton-nav"
                      data-l10n-id="appmenuitem-help"
@@ -160,7 +167,7 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-history" flex="1">
+  <panelview id="PanelUI-history">
     <vbox class="panel-subview-body">
       <toolbarbutton id="appMenuRecentlyClosedTabs"
                      data-l10n-id="appmenu-recently-closed-tabs"
@@ -172,6 +179,10 @@
                      class="subviewbutton subviewbutton-nav"
                      closemenu="none"
                      oncommand="PanelUI.showSubView('appMenu-library-recentlyClosedWindows', this)"/>
+      <toolbarbutton id="appMenuSearchHistory"
+                     data-l10n-id="appmenu-search-history"
+                     class="subviewbutton"
+                     oncommand="PlacesCommandHook.searchHistory()"/>
       <toolbarbutton id="appMenu-restoreSession"
                      data-l10n-id="appmenu-restore-session"
                      class="subviewbutton"
@@ -203,15 +214,15 @@
   <panelview id="appMenu-library-recentlyClosedTabs"/>
   <panelview id="appMenu-library-recentlyClosedWindows"/>
 
-  <panelview id="PanelUI-containers" flex="1">
+  <panelview id="PanelUI-containers">
     <vbox id="PanelUI-containersItems"/>
   </panelview>
 
-  <panelview id="PanelUI-helpView" flex="1" class="PanelUI-subView" data-l10n-id="appmenu-help-header" data-l10n-attrs="title">
+  <panelview id="PanelUI-helpView" class="PanelUI-subView" data-l10n-id="appmenu-help-header" data-l10n-attrs="title">
     <vbox id="PanelUI-helpItems" class="panel-subview-body"/>
   </panelview>
 
-  <panelview id="PanelUI-bookmarks" flex="1" class="PanelUI-subView">
+  <panelview id="PanelUI-bookmarks" class="PanelUI-subView">
     <vbox class="panel-subview-body">
       <toolbarbutton id="panelMenuBookmarkThisPage"
                      class="subviewbutton"
@@ -248,104 +259,100 @@
                    />
   </panelview>
 
-  <panelview id="PanelUI-profiler" flex="1" descriptionheightworkaround="true">
-    <vbox id="PanelUI-profiler-container">
-      <vbox id="PanelUI-profiler-header" animationready="false">
-        <hbox id="PanelUI-profiler-header-bar">
-          <label flex="1" data-l10n-id="profiler-popup-title" />
-          <vbox class="PanelUI-profiler-toolbarbutton-container">
-            <toolbarbutton id="PanelUI-profiler-info-button"
-                          class="panel-info-button"
-                          data-l10n-id="profiler-popup-reveal-description-button">
-              <image/>
-            </toolbarbutton>
-          </vbox>
-        </hbox>
-        <hbox id="PanelUI-profiler-info">
-          <vbox>
-            <hbox id="PanelUI-profiler-info-graphic" flex="1">
-              <spacer flex="1" />
-              <vbox>
-                <spacer flex="1" />
-                <image class="PanelUI-profiler-info-icon" />
-              </vbox>
-            </hbox>
-            <label class="PanelUI-profiler-description-title" data-l10n-id="profiler-popup-description-title" />
-            <description class="PanelUI-profiler-description" data-l10n-id="profiler-popup-description" />
-            <hbox>
-              <button id="PanelUI-profiler-learn-more"
-                      class="PanelUI-profiler-button-link text-link"
-                      tabindex="-1"
-                      data-l10n-id="profiler-popup-learn-more-button" />
-            </hbox>
-          </vbox>
-        </hbox>
-      </vbox>
-      <vbox id="PanelUI-profiler-content">
-        <vbox id="PanelUI-profiler-content-settings">
-          <label class="PanelUI-profiler-content-label"
-                 data-l10n-id="profiler-popup-settings" />
-          <menulist id="PanelUI-profiler-presets"
-                    flex="1"
-                    value="custom"
-                    size="large">
-            <menupopup id="PanelUI-profiler-presets-menupopup" presetsbuilt="false">
-              <!-- The rest of the values get dynamically inserted. The "presetsbuilt"
-                  attribute will get updated to "true" once the presets have been
-                  built. -->
-              <menuitem id="PanelUI-profiler-presets-custom"
-                        data-l10n-id="profiler-popup-presets-custom-label"
-                        value="custom"/>
-            </menupopup>
-          </menulist>
-          <!-- The following description gets inserted dynamically. -->
-          <description id="PanelUI-profiler-content-description" />
-          <hbox>
-            <button id="PanelUI-profiler-content-edit-settings"
-                    class="PanelUI-profiler-button-link text-link"
-                    data-l10n-id="profiler-popup-edit-settings-button">
-            </button>
-          </hbox>
-        </vbox>
-        <hbox id="PanelUI-profiler-content-recording">
-          <spacer flex="1" />
-          <image class="PanelUI-profiler-recording-icon" />
-          <label class="PanelUI-profiler-recording-label" data-l10n-id="profiler-popup-recording-screen" />
-          <spacer flex="1" />
-        </hbox>
-        <hbox id="PanelUI-profiler-inactive" class="PanelUI-profiler-buttons">
+  <panelview id="PanelUI-profiler" showheader="true">
+    <vbox id="PanelUI-profiler-header" animationready="false">
+      <hbox id="PanelUI-profiler-header-bar"
+            class="panel-header panel-header-with-additional-element panel-header-with-info-button">
+        <html:h1>
+          <html:span data-l10n-id="profiler-popup-header-text"></html:span>
+        </html:h1>
+        <toolbarbutton id="PanelUI-profiler-info-button"
+                      class="panel-info-button"
+                      closemenu="none"
+                      data-l10n-id="profiler-popup-reveal-description-button">
+          <image/>
+        </toolbarbutton>
+      </hbox>
+      <toolbarseparator />
+      <vbox id="PanelUI-profiler-info">
+        <hbox id="PanelUI-profiler-info-graphic" flex="1">
           <spacer flex="1" />
           <vbox>
-            <button data-l10n-id="profiler-popup-start-recording-button"
-                    id="PanelUI-profiler-startRecording"
-                    class="PanelUI-profiler-button PanelUI-profiler-button-primary" />
-            <label class="PanelUI-profiler-shortcut"
-                   data-l10n-id="profiler-popup-start-shortcut" />
+            <spacer flex="1" />
+            <image class="PanelUI-profiler-info-icon" />
           </vbox>
-          <spacer flex="1" />
         </hbox>
-        <hbox id="PanelUI-profiler-active" class="PanelUI-profiler-buttons">
-          <vbox flex="1">
-            <button data-l10n-id="profiler-popup-discard-button"
-                    class="PanelUI-profiler-button"
-                    id="PanelUI-profiler-stopAndDiscard" />
-            <label class="PanelUI-profiler-shortcut"
-                   data-l10n-id="profiler-popup-start-shortcut" />
-          </vbox>
-          <vbox flex="1">
-            <button data-l10n-id="profiler-popup-capture-button"
-                    class="PanelUI-profiler-button PanelUI-profiler-button-primary"
-                    id="PanelUI-profiler-stopAndCapture" />
-            <label data-l10n-id="profiler-popup-capture-shortcut"
-                   class="PanelUI-profiler-shortcut" />
-          </vbox>
+        <label class="PanelUI-profiler-description-title" data-l10n-id="profiler-popup-description-title" />
+        <description class="PanelUI-profiler-description" data-l10n-id="profiler-popup-description" />
+        <hbox>
+          <button id="PanelUI-profiler-learn-more"
+                  class="PanelUI-profiler-button-link text-link"
+                  tabindex="-1"
+                  data-l10n-id="profiler-popup-learn-more-button" />
         </hbox>
       </vbox>
     </vbox>
+    <vbox id="PanelUI-profiler-content">
+      <vbox id="PanelUI-profiler-content-settings">
+        <label class="PanelUI-profiler-content-label"
+               data-l10n-id="profiler-popup-settings" />
+        <menulist id="PanelUI-profiler-presets"
+                  flex="1"
+                  value="custom"
+                  size="large">
+          <menupopup id="PanelUI-profiler-presets-menupopup" presetsbuilt="false">
+            <!-- The rest of the values get dynamically inserted. The "presetsbuilt"
+                attribute will get updated to "true" once the presets have been
+                built. -->
+            <menuitem id="PanelUI-profiler-presets-custom"
+                      data-l10n-id="profiler-popup-presets-custom-label"
+                      value="custom"/>
+          </menupopup>
+        </menulist>
+        <!-- The following description gets inserted dynamically. -->
+        <description id="PanelUI-profiler-content-description" />
+        <hbox>
+          <button id="PanelUI-profiler-content-edit-settings"
+                  class="PanelUI-profiler-button-link text-link"
+                  data-l10n-id="profiler-popup-edit-settings-button">
+          </button>
+        </hbox>
+      </vbox>
+      <hbox id="PanelUI-profiler-content-recording">
+        <image class="PanelUI-profiler-recording-icon" />
+        <label class="PanelUI-profiler-recording-label" data-l10n-id="profiler-popup-recording-screen" />
+      </hbox>
+      <hbox id="PanelUI-profiler-inactive" class="PanelUI-profiler-buttons">
+        <spacer flex="1" />
+        <vbox>
+          <button data-l10n-id="profiler-popup-start-recording-button"
+                  id="PanelUI-profiler-startRecording"
+                  class="PanelUI-profiler-button PanelUI-profiler-button-primary" />
+          <label class="PanelUI-profiler-shortcut"
+                 data-l10n-id="profiler-popup-start-shortcut" />
+        </vbox>
+        <spacer flex="1" />
+      </hbox>
+      <hbox id="PanelUI-profiler-active" class="PanelUI-profiler-buttons">
+        <vbox flex="1">
+          <button data-l10n-id="profiler-popup-discard-button"
+                  class="PanelUI-profiler-button"
+                  id="PanelUI-profiler-stopAndDiscard" />
+          <label class="PanelUI-profiler-shortcut"
+                 data-l10n-id="profiler-popup-start-shortcut" />
+        </vbox>
+        <vbox flex="1">
+          <button data-l10n-id="profiler-popup-capture-button"
+                  class="PanelUI-profiler-button PanelUI-profiler-button-primary"
+                  id="PanelUI-profiler-stopAndCapture" />
+          <label data-l10n-id="profiler-popup-capture-shortcut"
+                 class="PanelUI-profiler-shortcut" />
+        </vbox>
+      </hbox>
+    </vbox>
   </panelview>
 
-  <panelview id="PanelUI-panicView" flex="1"
-             descriptionheightworkaround="true">
+  <panelview id="PanelUI-panicView">
     <vbox class="panel-subview-body">
       <hbox id="PanelUI-panic-timeframe">
         <image id="PanelUI-panic-timeframe-icon" alt=""/>
@@ -387,7 +394,6 @@
           data-l10n-id="appmenu-developer-tools-subheader"
           class="subview-subheader"/>
       <vbox id="appmenu-developer-tools-view"
-            class="panel-subview-body"
             role="group"
             aria-labelledby="appmenu-developer-tools">
         <!-- Developer Tools menu items are inserted here -->
@@ -395,7 +401,7 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-developer-tools" flex="1" class="PanelUI-subview">
+  <panelview id="PanelUI-developer-tools" class="PanelUI-subview">
     <vbox id="PanelUI-developer-tools-view"
           class="panel-subview-body"
           role="group">
@@ -404,7 +410,7 @@
   </panelview>
 
   <panelview id="PanelUI-savetopocket"
-             flex="1" class="PanelUI-subView"
+             class="PanelUI-subView"
              remote="true"
              neverhidden="true"
              closemenu="none">
@@ -412,8 +418,7 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-remotetabs" flex="1" class="PanelUI-subView"
-             descriptionheightworkaround="true">
+  <panelview id="PanelUI-remotetabs" class="PanelUI-subView">
     <vbox class="panel-subview-body">
       <!-- this widget has 3 boxes in the body, but only 1 is ever visible -->
       <!-- When Sync is ready to sync -->
@@ -431,6 +436,7 @@
                      data-l10n-id="appmenuitem-fxa-toolbar-sync-now2"
                      sync-now-data-l10n-id="appmenuitem-fxa-toolbar-sync-now2"
                      syncing-data-l10n-id="fxa-toolbar-sync-syncing2"
+                     flex="1"
                      crop="end"/>
             </hbox>
           </toolbarbutton>
@@ -541,7 +547,7 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-fxa" class="PanelUI-subView" descriptionheightworkaround="true">
+  <panelview id="PanelUI-fxa" class="PanelUI-subView">
     <vbox id="PanelUI-fxa-menu" class="panel-subview-body">
       <toolbarbutton id="fxa-manage-account-button"
                      align="center"
@@ -569,6 +575,7 @@
                  data-l10n-id="appmenuitem-fxa-toolbar-sync-now2"
                  sync-now-data-l10n-id="appmenuitem-fxa-toolbar-sync-now2"
                  syncing-data-l10n-id="fxa-toolbar-sync-syncing2"
+                 flex="1"
                  crop="end"/>
         </hbox>
       </toolbarbutton>
@@ -584,6 +591,8 @@
                       oncommand="gSync.openConnectAnotherDeviceFromFxaMenu(this);"/>
       <toolbarbutton id="PanelUI-fxa-menu-sendtab-button"
                       class="subviewbutton subviewbutton-nav"
+                      data-l10n-id="fxa-menu-send-tab-to-device"
+                      data-l10n-args='{"tabCount":1}'
                       closemenu="none"
                       oncommand="gSync.showSendToDeviceViewFromFxaMenu(this);"/>
       <toolbarbutton id="PanelUI-fxa-menu-sync-prefs-button"
@@ -613,7 +622,7 @@
   </panelview>
 
   <!-- This panelview is used to contain the dynamically created buttons for send tab to devices -->
-  <panelview id="PanelUI-sendTabToDevice" flex="1" class="PanelUI-subView">
+  <panelview id="PanelUI-sendTabToDevice" class="PanelUI-subView">
     <vbox class="panel-subview-body">
       <toolbarbutton id="PanelUI-sendTabToDevice-syncingDevices" class="subviewbutton subviewbutton-iconic pageAction-sendToDevice-notReady"
                      data-l10n-id="fxa-menu-send-tab-to-device-syncnotready"
@@ -621,7 +630,7 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-fxa-menu-sendtab-not-configured" flex="1" class="PanelUI-subView">
+  <panelview id="PanelUI-fxa-menu-sendtab-not-configured" class="PanelUI-subView">
     <vbox id="PanelUI-fxa-sendtab-not-configured" align="center" class="panel-subview-body">
       <image class="fxaSendToDeviceLogo" role="presentation"/>
       <label class="PanelUI-fxa-service-description-label" data-l10n-id="fxa-menu-send-tab-to-device-description"></label>
@@ -632,7 +641,7 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-fxa-menu-sendtab-no-devices" flex="1" class="PanelUI-subView">
+  <panelview id="PanelUI-fxa-menu-sendtab-no-devices" class="PanelUI-subView">
     <vbox id="PanelUI-fxa-sendtab-no-devices" align="center" class="panel-subview-body">
       <image class="fxaSendToDeviceLogo" role="presentation"/>
       <label class="PanelUI-fxa-service-description-label" data-l10n-id="fxa-menu-send-tab-to-device-description"></label>
@@ -662,11 +671,14 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-whatsNew" class="PanelUI-subView">
+  <panelview id="PanelUI-whatsNew" class="PanelUI-subView" showheader="true">
+    <hbox id="PanelUI-whatsNew-title" class="panel-header">
+      <html:h1>
+        <html:span data-l10n-id="whatsnew-panel-header"></html:span>
+      </html:h1>
+    </hbox>
+    <toolbarseparator/>
     <vbox class="panel-subview-body">
-      <box id="PanelUI-whatsNew-title" class="panel-header">
-        <label data-l10n-id="whatsnew-panel-header"/>
-      </box>
       <toolbaritem id="PanelUI-whatsNew-content"
                    orient="vertical"
                    smoothscroll="false">
@@ -675,9 +687,33 @@
         </html:div>
       </toolbaritem>
     </vbox>
+    <toolbarseparator/>
     <checkbox id="panelMenu-toggleWhatsNew"
               class="panelMenu-toggleWhatsNew-checkbox"
               onclick="ToolbarPanelHub.toggleWhatsNewPref(event)"
               data-l10n-id="whatsnew-panel-footer-checkbox"/>
+  </panelview>
+
+  <panelview id="reset-pbm-panel" class="PanelUI-subView" role="document">
+    <vbox id="reset-pbm-panel-container" role="alertdialog" aria-labelledby="reset-pbm-panel-header">
+      <hbox id="reset-pbm-panel-header">
+        <description data-l10n-id="reset-pbm-panel-heading" role="heading" aria-level="2"/>
+      </hbox>
+
+      <description id="reset-pbm-panel-description" data-l10n-id="reset-pbm-panel-description"/>
+      <checkbox id="reset-pbm-panel-checkbox" data-l10n-id="reset-pbm-panel-always-ask-checkbox"/>
+
+      <html:moz-button-group id="reset-pbm-panel-footer" class="panel-footer">
+        <button id="reset-pbm-panel-cancel-button"
+                class="footer-button"
+                data-l10n-id="reset-pbm-panel-cancel-button"
+                oncommand="ResetPBMPanel.onCancel(this)"></button>
+        <button slot="primary"
+                id="reset-pbm-panel-confirm-button"
+                class="footer-button"
+                data-l10n-id="reset-pbm-panel-confirm-button"
+                oncommand="ResetPBMPanel.onConfirm(this)"></button>
+      </html:moz-button-group>
+    </vbox>
   </panelview>
 </html:template>

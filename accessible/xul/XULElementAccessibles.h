@@ -6,8 +6,8 @@
 #ifndef mozilla_a11y_XULElementAccessibles_h__
 #define mozilla_a11y_XULElementAccessibles_h__
 
-#include "HyperTextAccessibleWrap.h"
-#include "TextLeafAccessibleWrap.h"
+#include "HyperTextAccessible.h"
+#include "TextLeafAccessible.h"
 
 namespace mozilla {
 namespace a11y {
@@ -17,7 +17,7 @@ class XULLabelTextLeafAccessible;
 /**
  * Used for XUL description and label elements.
  */
-class XULLabelAccessible : public HyperTextAccessibleWrap {
+class XULLabelAccessible : public HyperTextAccessible {
  public:
   XULLabelAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
@@ -47,10 +47,10 @@ inline XULLabelAccessible* LocalAccessible::AsXULLabel() {
  * Used to implement text interface on XUL label accessible in case when text
  * is provided by @value attribute (no underlying text frame).
  */
-class XULLabelTextLeafAccessible final : public TextLeafAccessibleWrap {
+class XULLabelTextLeafAccessible final : public TextLeafAccessible {
  public:
   XULLabelTextLeafAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : TextLeafAccessibleWrap(aContent, aDoc) {
+      : TextLeafAccessible(aContent, aDoc) {
     mStateFlags |= eSharedNode;
   }
 
@@ -83,9 +83,8 @@ class XULLinkAccessible : public XULLabelAccessible {
   virtual uint64_t NativeLinkState() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
+  virtual bool HasPrimaryAction() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) const override;
 
   // HyperLinkAccessible
   virtual bool IsLink() const override;

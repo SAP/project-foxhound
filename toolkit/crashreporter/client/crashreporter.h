@@ -16,7 +16,6 @@
 #include <vector>
 #include <stdlib.h>
 #include <stdio.h>
-#include <iostream>
 #include <fstream>
 
 #define MAX_COMMENT_LENGTH 10000
@@ -25,14 +24,12 @@
 
 #  include <windows.h>
 
-#  define UI_SNPRINTF _snprintf
 #  define UI_DIR_SEPARATOR "\\"
 
 std::string WideToUTF8(const std::wstring& wide, bool* success = 0);
 
 #else
 
-#  define UI_SNPRINTF snprintf
 #  define UI_DIR_SEPARATOR "/"
 
 #endif
@@ -101,6 +98,9 @@ bool ReadStringsFromFile(const std::string& path, StringTable& strings,
                          bool unescape);
 void LogMessage(const std::string& message);
 void DeleteDump();
+
+std::string GetDumpLocalID();
+std::string GetProgramPath(const std::string& exename);
 
 // Telemetry ping
 bool SendCrashPing(Json::Value& extra, const std::string& hash,

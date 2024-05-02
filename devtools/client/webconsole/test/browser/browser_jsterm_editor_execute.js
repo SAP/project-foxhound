@@ -10,12 +10,12 @@
 const TEST_URI =
   "data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test for bug 1519313";
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.input.editor", true);
   const hud = await openNewTabAndConsole(TEST_URI);
 
   const expression = `x = 10`;
   setInputValue(hud, expression);
-  await executeAndWaitForMessage(hud, undefined, "", ".result");
+  await executeAndWaitForResultMessage(hud, undefined, "");
   is(getInputValue(hud), expression, "input line is not cleared after submit");
 });

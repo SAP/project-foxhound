@@ -8,6 +8,7 @@
 #include "DocumentChannelChild.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/RemoteType.h"
 #include "mozilla/extensions/StreamFilterParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/HttpBaseChannel.h"
@@ -107,25 +108,12 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
   }
   mLoadingContext = loadingContext;
 
-  DocumentChannelCreationArgs args;
-
-  args.loadState() = mLoadState->Serialize();
-  args.cacheKey() = mCacheKey;
-  args.channelId() = mChannelId;
-  args.asyncOpenTime() = TimeStamp::Now();
-  args.parentInitiatedNavigationEpoch() =
-      loadingContext->GetParentInitiatedNavigationEpoch();
-
   Maybe<IPCClientInfo> ipcClientInfo;
   if (mInitialClientInfo.isSome()) {
     ipcClientInfo.emplace(mInitialClientInfo.ref().ToIPC());
   }
-  args.initialClientInfo() = ipcClientInfo;
 
-  if (mTiming) {
-    args.timing() = Some(mTiming);
-  }
-
+  DocumentChannelElementCreationArgs ipcElementCreationArgs;
   switch (mLoadInfo->GetExternalContentPolicyType()) {
     case ExtContentPolicy::TYPE_DOCUMENT:
     case ExtContentPolicy::TYPE_SUBDOCUMENT: {
@@ -133,7 +121,7 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
       docArgs.uriModified() = mUriModified;
       docArgs.isXFOError() = mIsXFOError;
 
-      args.elementCreationArgs() = docArgs;
+      ipcElementCreationArgs = docArgs;
       break;
     }
 
@@ -144,7 +132,7 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
       objectArgs.contentPolicyType() = mLoadInfo->InternalContentPolicyType();
       objectArgs.isUrgentStart() = UserActivation::IsHandlingUserInput();
 
-      args.elementCreationArgs() = objectArgs;
+      ipcElementCreationArgs = objectArgs;
       break;
     }
 
@@ -163,6 +151,13 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
     default:
       break;
   }
+
+  mLoadState->AssertProcessCouldTriggerLoadIfSystem();
+
+  DocumentChannelCreationArgs args(
+      mozilla::WrapNotNull(mLoadState), TimeStamp::Now(), mChannelId, mCacheKey,
+      mTiming, ipcClientInfo, ipcElementCreationArgs,
+      loadingContext->GetParentInitiatedNavigationEpoch());
 
   gNeckoChild->SendPDocumentChannelConstructor(this, loadingContext, args);
 
@@ -196,10 +191,10 @@ IPCResult DocumentChannelChild::RecvFailedAsyncOpen(
 
 IPCResult DocumentChannelChild::RecvDisconnectChildListeners(
     const nsresult& aStatus, const nsresult& aLoadGroupStatus,
-    bool aSwitchedProcess) {
+    bool aContinueNavigating) {
   // If this disconnect is not due to a process switch, perform the disconnect
   // immediately.
-  if (!aSwitchedProcess) {
+  if (!aContinueNavigating) {
     DisconnectChildListeners(aStatus, aLoadGroupStatus);
     return IPC_OK();
   }
@@ -249,8 +244,9 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
     cspToInheritLoadingDocument = do_QueryReferent(ctx);
   }
   nsCOMPtr<nsILoadInfo> loadInfo;
-  MOZ_ALWAYS_SUCCEEDS(LoadInfoArgsToLoadInfo(
-      aArgs.loadInfo(), cspToInheritLoadingDocument, getter_AddRefs(loadInfo)));
+  MOZ_ALWAYS_SUCCEEDS(LoadInfoArgsToLoadInfo(aArgs.loadInfo(), NOT_REMOTE_TYPE,
+                                             cspToInheritLoadingDocument,
+                                             getter_AddRefs(loadInfo)));
 
   mRedirectResolver = std::move(aResolve);
 
@@ -263,6 +259,11 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
       aArgs.newLoadFlags(), aArgs.srcdocData(), aArgs.baseUri());
   if (newChannel) {
     newChannel->SetLoadGroup(mLoadGroup);
+  }
+
+  if (RefPtr<HttpBaseChannel> httpChannel = do_QueryObject(newChannel)) {
+    httpChannel->SetEarlyHints(std::move(aArgs.earlyHints()));
+    httpChannel->SetEarlyHintLinkType(aArgs.earlyHintLinkType());
   }
 
   // This is used to report any errors back to the parent by calling
@@ -344,8 +345,9 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
   mRedirectChannel = newChannel;
   mStreamFilterEndpoints = std::move(aEndpoints);
 
-  rv = gHttpHandler->AsyncOnChannelRedirect(
-      this, newChannel, aArgs.redirectFlags(), GetMainThreadEventTarget());
+  rv = gHttpHandler->AsyncOnChannelRedirect(this, newChannel,
+                                            aArgs.redirectFlags(),
+                                            GetMainThreadSerialEventTarget());
 
   if (NS_SUCCEEDED(rv)) {
     scopeExit.release();
@@ -455,13 +457,18 @@ DocumentChannelChild::OnRedirectVerifyCallback(nsresult aStatusCode) {
 
 NS_IMETHODIMP
 DocumentChannelChild::Cancel(nsresult aStatusCode) {
+  return CancelWithReason(aStatusCode, "DocumentChannelChild::Cancel"_ns);
+}
+
+NS_IMETHODIMP DocumentChannelChild::CancelWithReason(
+    nsresult aStatusCode, const nsACString& aReason) {
   if (mCanceled) {
     return NS_OK;
   }
 
   mCanceled = true;
   if (CanSend()) {
-    SendCancel(aStatusCode);
+    SendCancel(aStatusCode, aReason);
   }
 
   ShutdownListeners(aStatusCode);

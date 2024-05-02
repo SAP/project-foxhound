@@ -9,10 +9,11 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
   TEST_URI
 );
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.alwaysOpenPanel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["security.dialog_enable_delay", 1000],
     ],
   });
@@ -32,7 +33,7 @@ add_task(async function test_downloads_panel_downloads_button() {
   await task_addDownloads([{ state: DownloadsCommon.DOWNLOAD_FINISHED }]);
   await panelOpenedPromise;
 
-  // The downloads panel may open automatically after task_addDownloads
+  // The downloads panel will open automatically after task_addDownloads
   // creates a download file. Let's close the panel and reopen it again
   // (but this time manually) to ensure the download items are not disabled.
   DownloadsPanel.hidePanel();
@@ -69,10 +70,13 @@ add_task(async function test_downloads_panel_new_download() {
   DownloadsCommon.openDownload = async () => {
     ok(false, "openDownload was called when it was not expected");
   };
-  let newTabPromise = BrowserTestUtils.openNewForegroundTab(
+  let newTabPromise = BrowserTestUtils.openNewForegroundTab({
     gBrowser,
-    TEST_PATH + "foo.txt"
-  );
+    opening: TEST_PATH + "foo.txt",
+    waitForLoad: false,
+    waitForStateStop: true,
+  });
+
   await promisePanelOpened();
   let downloadsListBox = document.getElementById("downloadsListBox");
 

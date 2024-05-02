@@ -1,6 +1,7 @@
 "use strict";
 
 const kURL =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/browser/base/content/test/general/dummy_page.html";
 ("data:text/html,<a href=''>Middle-click me</a>");
 
@@ -8,10 +9,10 @@ const kURL =
  * Check that when manually opening content JS links in new tabs/windows,
  * we use the correct principal, and we don't clear the URL bar.
  */
-add_task(async function() {
-  await BrowserTestUtils.withNewTab(kURL, async function(browser) {
+add_task(async function () {
+  await BrowserTestUtils.withNewTab(kURL, async function (browser) {
     let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
-    await SpecialPowers.spawn(browser, [], async function() {
+    await SpecialPowers.spawn(browser, [], async function () {
       let a = content.document.createElement("a");
       // newTabPromise won't resolve until it has a URL that's not "about:blank".
       // But doing document.open() from inside that same document does not change
@@ -29,6 +30,7 @@ add_task(async function() {
     let newTab = await newTabPromise;
     is(
       newTab.linkedBrowser.contentPrincipal.origin,
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       "http://example.com",
       "Principal should be for example.com"
     );

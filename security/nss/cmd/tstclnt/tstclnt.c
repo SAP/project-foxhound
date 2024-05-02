@@ -233,6 +233,7 @@ PrintUsageHeader()
             "  [-I groups] [-J signatureschemes]\n"
             "  [-A requestfile] [-L totalconnections] [-P {client,server}]\n"
             "  [-N echConfigs] [-Q] [-z externalPsk]\n"
+            "  [-i echGreaseSize]\n"
             "\n",
             progName);
 }
@@ -267,7 +268,7 @@ PrintParameterUsage()
     fprintf(stderr, "%-20s Send TLS_FALLBACK_SCSV\n", "-K");
     fprintf(stderr, "%-20s Prints only payload data. Skips HTTP header.\n", "-S");
     fprintf(stderr, "%-20s Client speaks first. \n", "-f");
-    fprintf(stderr, "%-20s Use synchronous certificate validation\n", "-O");
+    fprintf(stderr, "%-20s Use synchronous certificate selection & validation\n", "-O");
     fprintf(stderr, "%-20s Override bad server cert. Make it OK.\n", "-o");
     fprintf(stderr, "%-20s Disable SSL socket locking.\n", "-s");
     fprintf(stderr, "%-20s Verbose progress reporting.\n", "-v");
@@ -317,6 +318,7 @@ PrintParameterUsage()
     fprintf(stderr, "%-20s Use DTLS\n", "-P {client, server}");
     fprintf(stderr, "%-20s Exit after handshake\n", "-Q");
     fprintf(stderr, "%-20s Use Encrypted Client Hello with the given Base64-encoded ECHConfigs\n", "-N");
+    fprintf(stderr, "%-20s Enable Encrypted Client Hello GREASEing with the given padding size (0-255) \n", "-i");
     fprintf(stderr, "%-20s Enable post-handshake authentication\n"
                     "%-20s for TLS 1.3; need to specify -n\n",
             "-E", "");
@@ -733,6 +735,43 @@ ownAuthCertificate(void *arg, PRFileDesc *fd, PRBool checkSig,
     return SECWouldBlock;
 }
 
+struct clientCertAsyncParamsStr {
+    void *arg;                        /* The nickname used for selection, not owned */
+    struct CERTDistNamesStr *caNames; /* CA Names specified by Server, owned. */
+};
+
+/* tstclnt can only have a single handshake in progress at any instant. */
+PRBool clientCertAsyncSelect = PR_TRUE; /* Async by default */
+PRBool clientCertIsBlocked = PR_FALSE;  /* Whether we waiting to finish ClientAuth */
+struct clientCertAsyncParamsStr *clientCertParams = NULL;
+
+SECStatus
+own_CompleteClientAuthData(PRFileDesc *fd, struct clientCertAsyncParamsStr *args)
+{
+    SECStatus rv;
+    CERTCertificate *pRetCert = NULL;
+    SECKEYPrivateKey *pRetKey = NULL;
+    rv = NSS_GetClientAuthData(args->arg, fd, args->caNames, &pRetCert, &pRetKey);
+    if (rv != SECSuccess) {
+        fprintf(stderr, "Failed to load a suitable client certificate \n");
+    }
+    return SSL_ClientCertCallbackComplete(fd, rv, pRetKey, pRetCert);
+}
+
+SECStatus
+restartHandshakeAfterClientCertIfNeeded(PRFileDesc *fd)
+{
+    if (!clientCertIsBlocked) {
+        return SECFailure;
+    }
+    clientCertIsBlocked = PR_FALSE;
+    own_CompleteClientAuthData(fd, clientCertParams);
+    CERT_FreeDistNames(clientCertParams->caNames);
+    PORT_Free(clientCertParams);
+    clientCertParams = NULL;
+    return SECSuccess;
+}
+
 SECStatus
 own_GetClientAuthData(void *arg,
                       PRFileDesc *socket,
@@ -740,6 +779,26 @@ own_GetClientAuthData(void *arg,
                       struct CERTCertificateStr **pRetCert,
                       struct SECKEYPrivateKeyStr **pRetKey)
 {
+    if (clientCertAsyncSelect) {
+        PR_ASSERT(!clientCertIsBlocked);
+        PR_ASSERT(!clientCertParams);
+
+        clientCertIsBlocked = PR_TRUE;
+        clientCertParams = PORT_Alloc(sizeof(struct clientCertAsyncParamsStr));
+        if (!clientCertParams) {
+            fprintf(stderr, "Unable to allocate buffer for client cert callback\n");
+            exit(1);
+        }
+
+        clientCertParams->arg = arg;
+        clientCertParams->caNames = caNames ? CERT_DupDistNames(caNames) : NULL;
+        if (caNames && !clientCertParams->caNames) {
+            fprintf(stderr, "Unable to allocate buffer for client cert callback\n");
+            exit(1);
+        }
+        return SECWouldBlock;
+    }
+
     if (verbose > 1) {
         SECStatus rv;
         fprintf(stderr, "Server requested Client Authentication\n");
@@ -942,7 +1001,7 @@ restartHandshakeAfterServerCertIfNeeded(PRFileDesc *fd,
     SECStatus rv;
     PRErrorCode error = 0;
 
-    if (!serverCertAuth->isPaused)
+    if (!serverCertAuth->isPaused || clientCertIsBlocked)
         return SECSuccess;
 
     FPRINTF(stderr, "%s: handshake was paused by auth certificate hook\n",
@@ -1013,6 +1072,7 @@ PRBool requestToExit = PR_FALSE;
 char *versionString = NULL;
 PRBool handshakeComplete = PR_FALSE;
 char *echConfigs = NULL;
+PRUint16 echGreaseSize = 0;
 PRBool enablePostHandshakeAuth = PR_FALSE;
 PRBool enableDelegatedCredentials = PR_FALSE;
 const secuExporter *enabledExporters = NULL;
@@ -1060,6 +1120,11 @@ writeBytesToServer(PRFileDesc *s, const PRUint8 *buf, int nb)
         if (rv != SECSuccess) {
             SECU_PrintError(progName, "authentication of server cert failed");
             return EXIT_CODE_HANDSHAKE_FAILED;
+        }
+
+        rv = restartHandshakeAfterClientCertIfNeeded(s);
+        if (rv == SECSuccess) {
+            continue;
         }
 
         pollDesc.in_flags = PR_POLL_WRITE | PR_POLL_EXCEPT;
@@ -1571,6 +1636,21 @@ run()
         }
     }
 
+    if (echGreaseSize) {
+        rv = SSL_EnableTls13GreaseEch(s, PR_TRUE);
+        if (rv != SECSuccess) {
+            SECU_PrintError(progName, "SSL_EnableTls13GreaseEch failed");
+            error = 1;
+            goto done;
+        }
+        rv = SSL_SetTls13GreaseEchSize(s, echGreaseSize);
+        if (rv != SECSuccess) {
+            SECU_PrintError(progName, "SSL_SetTls13GreaseEchSize failed");
+            error = 1;
+            goto done;
+        }
+    }
+
     if (psk.data) {
         rv = importPsk(s);
         if (rv != SECSuccess) {
@@ -1695,6 +1775,11 @@ run()
             error = EXIT_CODE_HANDSHAKE_FAILED;
             SECU_PrintError(progName, "authentication of server cert failed");
             goto done;
+        }
+
+        rv = restartHandshakeAfterClientCertIfNeeded(s);
+        if (rv == SECSuccess) {
+            continue;
         }
 
         pollset[SSOCK_FD].out_flags = 0;
@@ -1838,7 +1923,7 @@ main(int argc, char **argv)
     }
 
     optstate = PL_CreateOptState(argc, argv,
-                                 "46A:BCDEFGHI:J:KL:M:N:OP:QR:STUV:W:X:YZa:bc:d:efgh:m:n:op:qr:st:uvw:x:z:");
+                                 "46A:BCDEFGHI:J:KL:M:N:OP:QR:STUV:W:X:YZa:bc:d:efgh:i:m:n:op:qr:st:uvw:x:z:");
     while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
         switch (optstate->option) {
             case '?':
@@ -1894,6 +1979,7 @@ main(int argc, char **argv)
                 break;
 
             case 'O':
+                clientCertAsyncSelect = PR_FALSE;
                 serverCertAuth.shouldPause = PR_FALSE;
                 break;
 
@@ -1925,6 +2011,14 @@ main(int argc, char **argv)
 
             case 'N':
                 echConfigs = PORT_Strdup(optstate->value);
+                break;
+
+            case 'i':
+                echGreaseSize = PORT_Atoi(optstate->value);
+                if (!echGreaseSize || echGreaseSize > 255) {
+                    fprintf(stderr, "ECH Grease size must be within 1..255 (inclusive).\n");
+                    exit(-1);
+                }
                 break;
 
             case 'P':
@@ -2164,32 +2258,45 @@ main(int argc, char **argv)
     if (status == PR_SUCCESS) {
         addr.inet.port = PR_htons(portno);
     } else {
-        /* Lookup host */
-        PRAddrInfo *addrInfo;
-        void *enumPtr = NULL;
+        PRBool gotLoopbackIP = PR_FALSE;
+        if ((!strcmp(host, "localhost") || !strcmp(host, "localhost.localdomain"))
+            /* only check for preference if both types are allowed */
+            && allowIPv4 && allowIPv6) {
+            /* make a decision which IP to prefer */
+            status = PR_GetPrefLoopbackAddrInfo(&addr, portno);
+            if (status != PR_FAILURE) {
+                gotLoopbackIP = PR_TRUE;
+            }
+        }
 
-        addrInfo = PR_GetAddrInfoByName(host, PR_AF_UNSPEC,
-                                        PR_AI_ADDRCONFIG | PR_AI_NOCANONNAME);
-        if (!addrInfo) {
-            fprintf(stderr, "HOSTNAME=%s\n", host);
-            SECU_PrintError(progName, "error looking up host");
-            error = 1;
-            goto done;
-        }
-        for (;;) {
-            enumPtr = PR_EnumerateAddrInfo(enumPtr, addrInfo, portno, &addr);
-            if (enumPtr == NULL)
-                break;
-            if (addr.raw.family == PR_AF_INET && allowIPv4)
-                break;
-            if (addr.raw.family == PR_AF_INET6 && allowIPv6)
-                break;
-        }
-        PR_FreeAddrInfo(addrInfo);
-        if (enumPtr == NULL) {
-            SECU_PrintError(progName, "error looking up host address");
-            error = 1;
-            goto done;
+        if (!gotLoopbackIP) {
+            /* Lookup host */
+            PRAddrInfo *addrInfo;
+            void *enumPtr = NULL;
+
+            addrInfo = PR_GetAddrInfoByName(host, PR_AF_UNSPEC,
+                                            PR_AI_ADDRCONFIG | PR_AI_NOCANONNAME);
+            if (!addrInfo) {
+                fprintf(stderr, "HOSTNAME=%s\n", host);
+                SECU_PrintError(progName, "error looking up host");
+                error = 1;
+                goto done;
+            }
+            for (;;) {
+                enumPtr = PR_EnumerateAddrInfo(enumPtr, addrInfo, portno, &addr);
+                if (enumPtr == NULL)
+                    break;
+                if (addr.raw.family == PR_AF_INET && allowIPv4)
+                    break;
+                if (addr.raw.family == PR_AF_INET6 && allowIPv6)
+                    break;
+            }
+            PR_FreeAddrInfo(addrInfo);
+            if (enumPtr == NULL) {
+                SECU_PrintError(progName, "error looking up host address");
+                error = 1;
+                goto done;
+            }
         }
     }
 

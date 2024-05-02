@@ -48,8 +48,7 @@ To do that this component glue together three main high level components:
 Connecting to Websocket endpoints
 ---------------------------------
 
-Each target's websocket URL will be registered as a HTTP endpoint via `server/HTTPD:registerPathHandler`.
-(This registration is done from `RemoteAgentClass:listen`)
+Each target's websocket URL will be registered as a HTTP endpoint via `server/HTTPD:registerPathHandler` (This registration is done from `RemoteAgentParentProcess:#listen`).
 Once a HTTP request happens, `server/HTTPD` will call the `handle` method on the object passed to `registerPathHandler`.
 For static endpoints registered by `JSONHandler`, this will call `JSONHandler:handle` and return a JSON string as http body.
 For target's endpoint, it is slightly more complicated as it requires a special handshake to morph the HTTP connection into a WebSocket one.
@@ -100,7 +99,7 @@ Then, there is two ways to communicate with the other targets:
 
   * Use `Target.attachToTarget({ flatten: true })` and include `sessionId` in CDP packets
     This requires a special client, which will use the `sessionId` returned by `Target.attachToTarget()` in order to spawn a distinct client instance.
-    This client will re-use the same WebSocket connection, but every single CDP packet will contain an additional `sessionId` attribute.
+    This client will reuse the same WebSocket connection, but every single CDP packet will contain an additional `sessionId` attribute.
     This helps distinguish packets which relate to the original target as well as the multiple additional targets you may attach to.
 
 In both cases, `Target.attachToTarget()` is special as it will spawn `cdp/session/TabSession` for the tab you are attaching to.

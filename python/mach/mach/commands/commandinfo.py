@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import re
 import subprocess
@@ -12,9 +10,9 @@ from itertools import chain
 from pathlib import Path
 
 import attr
+from mozbuild.util import memoize
 
 from mach.decorators import Command, CommandArgument, SubCommand
-from mozbuild.util import memoize
 
 COMPLETION_TEMPLATES_DIR = Path(__file__).resolve().parent / "completion_templates"
 
@@ -454,7 +452,6 @@ def completion_fish(command_context, outfile):
             cmds_opts.append(comp)
 
         for sub in cmd.subcommands:
-
             for opt_strs, description in sub.options.items():
                 comp = (
                     "complete -c mach -A -n '__fish_mach_complete_subcommand {} {}' "

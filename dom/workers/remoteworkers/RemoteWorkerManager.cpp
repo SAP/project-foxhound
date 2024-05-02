@@ -11,20 +11,14 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ContentChild.h"  // ContentChild::GetSingleton
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/RemoteWorkerController.h"
 #include "mozilla/dom/RemoteWorkerParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundParent.h"
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-#  include "mozilla/dom/DOMException.h"
-#  include "mozilla/CycleCollectedJSContext.h"
-#  include "mozilla/Sprintf.h"  // SprintfLiteral
-#  include "nsIXPConnect.h"     // nsIXPConnectWrappedJS
-#endif
 #include "mozilla/StaticPrefs_extensions.h"
 #include "nsCOMPtr.h"
-#include "nsIE10SUtils.h"
 #include "nsImportModule.h"
 #include "nsIXULRuntime.h"
 #include "nsTArray.h"
@@ -98,10 +92,6 @@ bool RemoteWorkerManager::MatchRemoteType(const nsACString& processRemoteType,
   // remoteType and here we can just assert that it is not happening.
   MOZ_ASSERT(!IsWebCoopCoepRemoteType(workerRemoteType));
 
-  // For similar reasons to the ones related to COOP+COEP processes,
-  // we don't expect workerRemoteType to be set to a large allocation one.
-  MOZ_ASSERT(workerRemoteType != LARGE_ALLOCATION_REMOTE_TYPE);
-
   return processRemoteType.Equals(workerRemoteType);
 }
 
@@ -113,11 +103,11 @@ Result<nsCString, nsresult> RemoteWorkerManager::GetRemoteType(
   MOZ_ASSERT_IF(aWorkerKind == WorkerKind::WorkerKindService,
                 aPrincipal->GetIsContentPrincipal());
 
-  nsCOMPtr<nsIE10SUtils> e10sUtils = do_ImportModule(
-      "resource://gre/modules/E10SUtils.jsm", "E10SUtils", fallible);
-  if (NS_WARN_IF(!e10sUtils)) {
-    LOG(("GetRemoteType Abort: could not import E10SUtils"));
-    return Err(NS_ERROR_DOM_ABORT_ERR);
+  // If E10S is fully disabled, there are no decisions to be made, and we need
+  // to finish the load in the parent process.
+  if (!BrowserTabsRemoteAutostart()) {
+    LOG(("GetRemoteType: Loading in parent process as e10s is disabled"));
+    return NOT_REMOTE_TYPE;
   }
 
   nsCString preferredRemoteType = DEFAULT_REMOTE_TYPE;
@@ -131,115 +121,13 @@ Result<nsCString, nsresult> RemoteWorkerManager::GetRemoteType(
     }
   }
 
-  nsIE10SUtils::RemoteWorkerType workerType;
-
-  switch (aWorkerKind) {
-    case WorkerKind::WorkerKindService:
-      workerType = nsIE10SUtils::REMOTE_WORKER_TYPE_SERVICE;
-      break;
-    case WorkerKind::WorkerKindShared:
-      workerType = nsIE10SUtils::REMOTE_WORKER_TYPE_SHARED;
-      break;
-    default:
-      // This method isn't expected to be called for worker types that
-      // aren't remote workers (currently Service and Shared workers).
-      LOG(("GetRemoteType Error on unexpected worker type"));
-      MOZ_DIAGNOSTIC_ASSERT(false, "Unexpected worker type");
-      return Err(NS_ERROR_DOM_ABORT_ERR);
-  }
-
-  // Here we do not have access to the window and so we can't use its
-  // useRemoteTabs and useRemoteSubframes flags (for the service
-  // worker there may not even be a window associated to the worker
-  // yet), and so we have to use the prefs instead.
-  bool isMultiprocess = BrowserTabsRemoteAutostart();
-  bool isFission = FissionAutostart();
-
-  nsCString remoteType = NOT_REMOTE_TYPE;
-
-  nsresult rv = e10sUtils->GetRemoteTypeForWorkerPrincipal(
-      aPrincipal, workerType, isMultiprocess, isFission, preferredRemoteType,
-      remoteType);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(
-        ("GetRemoteType Abort: E10SUtils.getRemoteTypeForWorkerPrincipal "
-         "exception"));
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-    nsCString principalTypeOrScheme;
-    if (aPrincipal->IsSystemPrincipal()) {
-      principalTypeOrScheme = "system"_ns;
-    } else if (aPrincipal->GetIsExpandedPrincipal()) {
-      principalTypeOrScheme = "expanded"_ns;
-    } else if (aPrincipal->GetIsNullPrincipal()) {
-      principalTypeOrScheme = "null"_ns;
-    } else {
-      nsCOMPtr<nsIURI> uri = aPrincipal->GetURI();
-      nsresult rv2 = uri->GetScheme(principalTypeOrScheme);
-      if (NS_FAILED(rv2)) {
-        principalTypeOrScheme = "content"_ns;
-      }
-    }
-
-    nsCString processRemoteType = "parent"_ns;
-    if (auto* contentChild = ContentChild::GetSingleton()) {
-      // RemoteTypePrefix make sure that we are not going to include
-      // the full origin that may be part of the current remote type.
-      processRemoteType = RemoteTypePrefix(contentChild->GetRemoteType());
-    }
-
-    // Convert the error code into an error name.
-    nsAutoCString errorName;
-    GetErrorName(rv, errorName);
-
-    // Try to retrieve the line number from the exception.
-    nsAutoCString errorFilename("(unknown)"_ns);
-    uint32_t jsmErrorLineNumber = 0;
-
-    if (auto* context = CycleCollectedJSContext::Get()) {
-      if (RefPtr<Exception> exn = context->GetPendingException()) {
-        nsAutoString filename(u"(unknown)"_ns);
-
-        if (rv == NS_ERROR_XPC_JAVASCRIPT_ERROR_WITH_DETAILS) {
-          // When the failure is a Javascript Error, the line number retrieved
-          // from the Exception instance isn't going to be the E10SUtils.jsm
-          // line that originated the failure, and so we fallback to retrieve it
-          // from the nsIScriptError.
-          nsCOMPtr<nsIScriptError> scriptError =
-              do_QueryInterface(exn->GetData());
-          if (scriptError) {
-            scriptError->GetLineNumber(&jsmErrorLineNumber);
-            scriptError->GetSourceName(filename);
-          }
-        } else {
-          nsCOMPtr<nsIXPConnectWrappedJS> wrapped =
-              do_QueryInterface(e10sUtils);
-          dom::AutoJSAPI jsapi;
-          if (jsapi.Init(wrapped->GetJSObjectGlobal())) {
-            auto* cx = jsapi.cx();
-            jsmErrorLineNumber = exn->LineNumber(cx);
-            exn->GetFilename(cx, filename);
-          }
-        }
-
-        errorFilename = NS_ConvertUTF16toUTF8(filename);
-      }
-    }
-
-    char buf[1024];
-    SprintfLiteral(
-        buf,
-        "workerType=%s, principal=%s, preferredRemoteType=%s, "
-        "processRemoteType=%s, errorName=%s, errorLocation=%s:%d",
-        aWorkerKind == WorkerKind::WorkerKindService ? "service" : "shared",
-        principalTypeOrScheme.get(),
-        PromiseFlatCString(RemoteTypePrefix(preferredRemoteType)).get(),
-        processRemoteType.get(), errorName.get(), errorFilename.get(),
-        jsmErrorLineNumber);
-    MOZ_CRASH_UNSAFE_PRINTF(
-        "E10SUtils.getRemoteTypeForWorkerPrincipal did throw: %s", buf);
-#endif
+  auto result = IsolationOptionsForWorker(
+      aPrincipal, aWorkerKind, preferredRemoteType, FissionAutostart());
+  if (NS_WARN_IF(result.isErr())) {
+    LOG(("GetRemoteType Abort: IsolationOptionsForWorker failed"));
     return Err(NS_ERROR_DOM_ABORT_ERR);
   }
+  auto options = result.unwrap();
 
   if (MOZ_LOG_TEST(gRemoteWorkerManagerLog, LogLevel::Verbose)) {
     nsCString principalOrigin;
@@ -249,10 +137,11 @@ Result<nsCString, nsresult> RemoteWorkerManager::GetRemoteType(
         ("GetRemoteType workerType=%s, principal=%s, "
          "preferredRemoteType=%s, selectedRemoteType=%s",
          aWorkerKind == WorkerKind::WorkerKindService ? "service" : "shared",
-         principalOrigin.get(), preferredRemoteType.get(), remoteType.get()));
+         principalOrigin.get(), preferredRemoteType.get(),
+         options.mRemoteType.get()));
   }
 
-  return remoteType;
+  return options.mRemoteType;
 }
 
 // static
@@ -423,6 +312,7 @@ void RemoteWorkerManager::Launch(RemoteWorkerController* aController,
     pending->mController = aController;
     pending->mData = aData;
 
+    // Launching is async, so we cannot check for failures right here.
     LaunchNewContentProcess(aData);
     return;
   }
@@ -451,26 +341,29 @@ void RemoteWorkerManager::LaunchInternal(
   // We need to send permissions to content processes, but not if we're spawning
   // the worker here in the parent process.
   if (aTargetActor != mParentActor) {
-    RefPtr<ContentParent> contentParent =
-        BackgroundParent::GetContentParent(aTargetActor->Manager());
+    RefPtr<ThreadsafeContentParentHandle> contentHandle =
+        BackgroundParent::GetContentParentHandle(aTargetActor->Manager());
 
     // This won't cause any race conditions because the content process
     // should wait for the permissions to be received before executing the
     // Service Worker.
     nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
-        __func__, [contentParent = std::move(contentParent),
+        __func__, [contentHandle = std::move(contentHandle),
                    principalInfo = aData.principalInfo()] {
-          TransmitPermissionsAndBlobURLsForPrincipalInfo(contentParent,
-                                                         principalInfo);
+          AssertIsOnMainThread();
+          if (RefPtr<ContentParent> contentParent =
+                  contentHandle->GetContentParent()) {
+            TransmitPermissionsAndBlobURLsForPrincipalInfo(contentParent,
+                                                           principalInfo);
+          }
         });
 
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
   }
 
-  RemoteWorkerParent* workerActor = static_cast<RemoteWorkerParent*>(
-      aTargetActor->Manager()->SendPRemoteWorkerConstructor(aData));
-  if (NS_WARN_IF(!workerActor)) {
+  RefPtr<RemoteWorkerParent> workerActor = MakeAndAddRef<RemoteWorkerParent>();
+  if (!aTargetActor->Manager()->SendPRemoteWorkerConstructor(workerActor,
+                                                             aData)) {
     AsyncCreationFailed(aController);
     return;
   }
@@ -514,32 +407,21 @@ void RemoteWorkerManager::ForEachActor(
 
   uint32_t i = end;
 
-  nsTArray<RefPtr<ContentParent>> proxyReleaseArray;
-
   do {
     MOZ_ASSERT(i < mChildActors.Length());
     RemoteWorkerServiceParent* actor = mChildActors[i];
 
     if (MatchRemoteType(actor->GetRemoteType(), aRemoteType)) {
-      RefPtr<ContentParent> contentParent =
-          BackgroundParent::GetContentParent(actor->Manager());
+      ThreadsafeContentParentHandle* contentHandle =
+          BackgroundParent::GetContentParentHandle(actor->Manager());
 
-      auto scopeExit = MakeScopeExit(
-          [&]() { proxyReleaseArray.AppendElement(std::move(contentParent)); });
-
-      if (!aCallback(actor, std::move(contentParent))) {
+      if (!aCallback(actor, contentHandle)) {
         break;
       }
     }
 
     i = (i + 1) % length;
   } while (i != end);
-
-  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
-      __func__, [proxyReleaseArray = std::move(proxyReleaseArray)] {});
-
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
 }
 
 /**
@@ -560,7 +442,7 @@ void RemoteWorkerManager::ForEachActor(
  * remove worker actor unregistering
  * (see `ContentParent::UnregisterRemoveWorkerActor`).
  *
- * In `ContentParent::MaybeAsyncSendShutDownMessage` we only dispatch a runnable
+ * In `ContentParent::MaybeBeginShutdown` we only dispatch a runnable
  * to call `ContentParent::ShutDownProcess` if there are no registered remote
  * worker actors, and we ensure that the check for the number of registered
  * actors and the dispatching of the runnable are atomic. That happens on the
@@ -580,7 +462,7 @@ RemoteWorkerServiceParent* RemoteWorkerManager::SelectTargetActorInternal(
 
   ForEachActor(
       [&](RemoteWorkerServiceParent* aActor,
-          RefPtr<ContentParent>&& aContentParent) {
+          ThreadsafeContentParentHandle* aContentHandle) {
         // Make sure to choose an actor related to a child process that is not
         // going to shutdown while we are still in the process of launching the
         // remote worker.
@@ -589,16 +471,14 @@ RemoteWorkerServiceParent* RemoteWorkerManager::SelectTargetActorInternal(
         // process with a pid equal to aProcessId if any, otherwise it would
         // start from a random actor in the mChildActors array, this guarantees
         // that we will choose that actor if it does also match the remote type.
-        auto lock = aContentParent->mRemoteWorkerActorData.Lock();
-
-        if ((lock->mCount || !lock->mShutdownStarted) &&
-            (aActor->OtherPid() == aProcessId || !actor)) {
-          ++lock->mCount;
-
+        if (aContentHandle->MaybeRegisterRemoteWorkerActor(
+                [&](uint32_t count, bool shutdownStarted) -> bool {
+                  return (count || !shutdownStarted) &&
+                         (aActor->OtherPid() == aProcessId || !actor);
+                })) {
           actor = aActor;
           return false;
         }
-
         MOZ_ASSERT(!actor);
         return true;
       },
@@ -651,7 +531,8 @@ void RemoteWorkerManager::LaunchNewContentProcess(
 
   nsCOMPtr<nsISerialEventTarget> bgEventTarget = GetCurrentSerialEventTarget();
 
-  using CallbackParamType = ContentParent::LaunchPromise::ResolveOrRejectValue;
+  using LaunchPromiseType = ContentParent::LaunchPromise;
+  using CallbackParamType = LaunchPromiseType::ResolveOrRejectValue;
 
   // A new content process must be requested on the main thread. On success,
   // the success callback will also run on the main thread. On failure, however,
@@ -705,31 +586,41 @@ void RemoteWorkerManager::LaunchNewContentProcess(
         auto remoteType =
             workerRemoteType.IsEmpty() ? DEFAULT_REMOTE_TYPE : workerRemoteType;
 
-        // Request a process making sure to specify aPreferUsed=true.  For a
-        // given remoteType there's a pool size limit.  If we pass aPreferUsed
-        // here, then if there's any process in the pool already, we will use
-        // that.  If we pass false (which is the default if omitted), then this
-        // call will spawn a new process if the pool isn't at its limit yet.
-        //
-        // (Our intent is never to grow the pool size here.  Our logic gets here
-        // because our current logic on PBackground is only aware of
-        // RemoteWorkerServiceParent actors that have registered themselves,
-        // which is fundamentally unaware of processes that will match in the
-        // future when they register.  So we absolutely are fine with and want
-        // any existing processes.)
-        ContentParent::GetNewOrUsedBrowserProcessAsync(
-            /* aRemoteType = */ remoteType,
-            /* aGroup */ nullptr,
-            hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND,
-            /* aPreferUsed */ true)
-            ->Then(GetCurrentSerialEventTarget(), __func__,
-                   [callback = std::move(callback),
-                    remoteType](const CallbackParamType& aValue) mutable {
-                     callback(aValue, remoteType);
-                   });
+        RefPtr<LaunchPromiseType> onFinished;
+        if (!AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+          // Request a process making sure to specify aPreferUsed=true.  For a
+          // given remoteType there's a pool size limit.  If we pass aPreferUsed
+          // here, then if there's any process in the pool already, we will use
+          // that.  If we pass false (which is the default if omitted), then
+          // this call will spawn a new process if the pool isn't at its limit
+          // yet.
+          //
+          // (Our intent is never to grow the pool size here.  Our logic gets
+          // here because our current logic on PBackground is only aware of
+          // RemoteWorkerServiceParent actors that have registered themselves,
+          // which is fundamentally unaware of processes that will match in the
+          // future when they register.  So we absolutely are fine with and want
+          // any existing processes.)
+          onFinished = ContentParent::GetNewOrUsedBrowserProcessAsync(
+              /* aRemoteType = */ remoteType,
+              /* aGroup */ nullptr,
+              hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND,
+              /* aPreferUsed */ true);
+        } else {
+          // We can find this event still in flight after having been asked to
+          // shutdown. Let's fake a failure to ensure our callback is called
+          // such that we clean up everything properly.
+          onFinished = LaunchPromiseType::CreateAndReject(
+              NS_ERROR_ILLEGAL_DURING_SHUTDOWN, __func__);
+        }
+        onFinished->Then(GetCurrentSerialEventTarget(), __func__,
+                         [callback = std::move(callback),
+                          remoteType](const CallbackParamType& aValue) mutable {
+                           callback(aValue, remoteType);
+                         });
       });
 
-  SchedulerGroup::Dispatch(TaskCategory::Other, r.forget());
+  SchedulerGroup::Dispatch(r.forget());
 }
 
 }  // namespace dom

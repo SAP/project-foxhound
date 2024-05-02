@@ -9,13 +9,12 @@
 
 #include "ServiceWorkerJob.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ServiceWorkerUnregisterJob final : public ServiceWorkerJob {
  public:
-  ServiceWorkerUnregisterJob(nsIPrincipal* aPrincipal, const nsACString& aScope,
-                             bool aSendToParent);
+  ServiceWorkerUnregisterJob(nsIPrincipal* aPrincipal,
+                             const nsACString& aScope);
 
   bool GetResult() const;
 
@@ -29,10 +28,8 @@ class ServiceWorkerUnregisterJob final : public ServiceWorkerJob {
   void Unregister();
 
   bool mResult;
-  bool mSendToParent;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_serviceworkerunregisterjob_h

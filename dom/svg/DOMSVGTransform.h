@@ -19,8 +19,7 @@
 
 #define MOZ_SVG_LIST_INDEX_BIT_COUNT 31  // supports > 2 billion list items
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct DOMMatrix2DInit;
 class SVGElement;
@@ -114,8 +113,8 @@ class DOMSVGTransform final : public nsWrapperCache {
 
   // WebIDL
   DOMSVGTransformList* GetParentObject() const { return mList; }
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
   uint16_t Type() const;
   dom::SVGMatrix* GetMatrix();
   float Angle() const;
@@ -174,8 +173,7 @@ class DOMSVGTransform final : public nsWrapperCache {
   UniquePtr<SVGTransform> mTransform;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #undef MOZ_SVG_LIST_INDEX_BIT_COUNT
 

@@ -23,7 +23,7 @@
   var v1, v2;
   var delivered = new Promise(resolve => pc2.ontrack = e => {
     // Test RTCTrackEvent here.
-    ok(e.streams.length > 0, "has streams");
+    ok(e.streams.length, "has streams");
     ok(e.streams[0].getTrackById(e.track.id), "has track");
     ok(pc2.getReceivers().some(receiver => receiver == e.receiver), "has receiver");
     if (e.streams[0].getTracks().length == 1) {
@@ -47,7 +47,7 @@
 
     const emitter = new VideoFrameEmitter(CaptureStreamTestHelper.prototype.blue,
                                           CaptureStreamTestHelper.prototype.green,
-                                          10, 10);
+                                          16, 16);
     emitter.start();
     emitter.stream().getTracks().forEach(t => pc1.addTrack(t, emitter.stream()));
     let h = emitter.helper();

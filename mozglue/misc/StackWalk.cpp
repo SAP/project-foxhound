@@ -7,9 +7,7 @@
 /* API for getting a stack trace of the C/C++ stack on the current thread */
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/StackWalk.h"
 #ifdef XP_WIN
 #  include "mozilla/StackWalkThread.h"
@@ -130,7 +128,12 @@ static Atomic<size_t> sStackWalkSuppressions;
 
 void SuppressStackWalking() { ++sStackWalkSuppressions; }
 
-void DesuppressStackWalking() { --sStackWalkSuppressions; }
+void DesuppressStackWalking() {
+  auto previousValue = sStackWalkSuppressions--;
+  // We should never desuppress from 0. See bug 1687510 comment 10 for an
+  // example in which this occured.
+  MOZ_RELEASE_ASSERT(previousValue);
+}
 
 MFBT_API
 AutoSuppressStackWalking::AutoSuppressStackWalking() { SuppressStackWalking(); }
@@ -179,13 +182,16 @@ static void PrintError(const char* aPrefix) {
   LocalFree(lpMsgBuf);
 }
 
-static void InitializeDbgHelpCriticalSection() {
-  static bool initialized = false;
-  if (initialized) {
-    return;
-  }
-  ::InitializeCriticalSection(&gDbgHelpCS);
-  initialized = true;
+static bool EnsureDbgHelpInitialized() {
+  static bool sInitialized = []() {
+    // We ensure that the critical section is always initialized only once,
+    // which avoids undefined behavior.
+    ::InitializeCriticalSection(&gDbgHelpCS);
+    auto success = static_cast<bool>(::LoadLibraryW(L"dbghelp.dll"));
+    MOZ_ASSERT(success);
+    return success;
+  }();
+  return sInitialized;
 }
 
 // Wrapper around a reference to a CONTEXT, to simplify access to main
@@ -249,7 +255,11 @@ static void DoMozStackWalkThread(MozWalkStackCallback aCallback,
                                  const void* aFirstFramePC, uint32_t aMaxFrames,
                                  void* aClosure, HANDLE aThread,
                                  CONTEXT* aContext) {
-  InitializeDbgHelpCriticalSection();
+#  if defined(_M_IX86)
+  if (!EnsureDbgHelpInitialized()) {
+    return;
+  }
+#  endif
 
   HANDLE targetThread = aThread;
   bool walkCallingThread;
@@ -302,9 +312,7 @@ static void DoMozStackWalkThread(MozWalkStackCallback aCallback,
   if (sStackWalkSuppressions) {
     return;
   }
-#  endif
 
-#  if defined(_M_AMD64) || defined(_M_ARM64)
   bool firstFrame = true;
 #  endif
 
@@ -321,15 +329,12 @@ static void DoMozStackWalkThread(MozWalkStackCallback aCallback,
     // 32-bit frame unwinding.
     // Debug routines are not threadsafe, so grab the lock.
     EnterCriticalSection(&gDbgHelpCS);
-    BOOL ok = StackWalk64(
-#    if defined _M_IX86
-        IMAGE_FILE_MACHINE_I386,
-#    endif
-        ::GetCurrentProcess(), targetThread, &frame64, context.CONTEXTPtr(),
-        nullptr,
-        SymFunctionTableAccess64,  // function table access routine
-        SymGetModuleBase64,        // module base routine
-        0);
+    BOOL ok =
+        StackWalk64(IMAGE_FILE_MACHINE_I386, ::GetCurrentProcess(),
+                    targetThread, &frame64, context.CONTEXTPtr(), nullptr,
+                    SymFunctionTableAccess64,  // function table access routine
+                    SymGetModuleBase64,        // module base routine
+                    0);
     LeaveCriticalSection(&gDbgHelpCS);
 
     if (ok) {
@@ -548,25 +553,25 @@ BOOL SymGetModuleInfoEspecial64(HANDLE aProcess, DWORD64 aAddr,
 }
 
 static bool EnsureSymInitialized() {
-  static bool gInitialized = false;
-  bool retStat;
+  static bool sInitialized = []() {
+    if (!EnsureDbgHelpInitialized()) {
+      return false;
+    }
 
-  if (gInitialized) {
-    return gInitialized;
-  }
+    EnterCriticalSection(&gDbgHelpCS);
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
+    bool success = SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+    /* XXX At some point we need to arrange to call SymCleanup */
+    LeaveCriticalSection(&gDbgHelpCS);
 
-  InitializeDbgHelpCriticalSection();
+    if (!success) {
+      PrintError("SymInitialize");
+    }
 
-  SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
-  retStat = SymInitialize(GetCurrentProcess(), nullptr, TRUE);
-  if (!retStat) {
-    PrintError("SymInitialize");
-  }
-
-  gInitialized = retStat;
-  /* XXX At some point we need to arrange to call SymCleanup */
-
-  return retStat;
+    MOZ_ASSERT(success);
+    return success;
+  }();
+  return sInitialized;
 }
 
 MFBT_API bool MozDescribeCodeAddress(void* aPC,
@@ -634,12 +639,14 @@ MFBT_API bool MozDescribeCodeAddress(void* aPC,
 }
 
 // i386 or PPC Linux stackwalking code
+//
+// Changes to to OS/Architecture support here should be reflected in
+// build/moz.configure/memory.configure
 #elif HAVE_DLADDR &&                                           \
     (HAVE__UNWIND_BACKTRACE || MOZ_STACKWALK_SUPPORTS_LINUX || \
      MOZ_STACKWALK_SUPPORTS_MACOSX)
 
 #  include <stdlib.h>
-#  include <string.h>
 #  include <stdio.h>
 
 // On glibc 2.1, the Dl_info api defined in <dlfcn.h> is only exposed
@@ -676,6 +683,9 @@ void DemangleSymbol(const char* aSymbol, char* aBuffer, int aBufLen) {
 }  // namespace mozilla
 
 // {x86, ppc} x {Linux, Mac} stackwalking code.
+//
+// Changes to to OS/Architecture support here should be reflected in
+// build/moz.configure/memory.configure
 #  if ((defined(__i386) || defined(PPC) || defined(__ppc__)) && \
        (MOZ_STACKWALK_SUPPORTS_MACOSX || MOZ_STACKWALK_SUPPORTS_LINUX))
 
@@ -866,7 +876,7 @@ const uintptr_t kPointerMask =
 const uintptr_t kPointerMask = ~uintptr_t(0);
 #  endif
 
-MOZ_ASAN_BLACKLIST
+MOZ_ASAN_IGNORE
 static void DoFramePointerStackWalk(MozWalkStackCallback aCallback,
                                     const void* aFirstFramePC,
                                     uint32_t aMaxFrames, void* aClosure,
@@ -875,6 +885,21 @@ static void DoFramePointerStackWalk(MozWalkStackCallback aCallback,
 
   FrameSkipper skipper(aFirstFramePC);
   uint32_t numFrames = 0;
+
+  // Sanitize the given aBp. Assume that something reasonably close to
+  // but before the stack end is going be a valid frame pointer. Also
+  // check that it is an aligned address. This increases the chances
+  // that if the pointer is not valid (which might happen if the caller
+  // called __builtin_frame_address(1) and its frame is busted for some
+  // reason), we won't read it, leading to a crash. Because the calling
+  // code is not using frame pointers when returning, it might actually
+  // recover just fine.
+  static const uintptr_t kMaxStackSize = 8 * 1024 * 1024;
+  if (uintptr_t(aBp) < uintptr_t(aStackEnd) -
+                           std::min(kMaxStackSize, uintptr_t(aStackEnd)) ||
+      aBp >= aStackEnd || (uintptr_t(aBp) & 3)) {
+    return;
+  }
 
   while (aBp) {
     void** next = (void**)*aBp;

@@ -4,36 +4,54 @@
 
 "use strict";
 
-const Services = require("Services");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   formDataURI,
   getUrlQuery,
   getUrlBaseName,
   parseQueryString,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+  getRequestHeadersRawText,
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   hasMatchingBlockingRequestPattern,
-} = require("devtools/client/netmonitor/src/utils/request-blocking");
+} = require("resource://devtools/client/netmonitor/src/utils/request-blocking.js");
 
-loader.lazyRequireGetter(this, "Curl", "devtools/client/shared/curl", true);
-loader.lazyRequireGetter(this, "saveAs", "devtools/shared/DevToolsUtils", true);
+loader.lazyRequireGetter(
+  this,
+  "Curl",
+  "resource://devtools/client/shared/curl.js",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "saveAs",
+  "resource://devtools/shared/DevToolsUtils.js",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "PowerShell",
+  "resource://devtools/client/netmonitor/src/utils/powershell.js",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "copyString",
-  "devtools/shared/platform/clipboard",
+  "resource://devtools/shared/platform/clipboard.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "HarMenuUtils",
-  "devtools/client/netmonitor/src/har/har-menu-utils",
+  "resource://devtools/client/netmonitor/src/har/har-menu-utils.js",
   true
 );
 
@@ -114,6 +132,7 @@ class RequestListContextMenu {
             httpVersion,
             requestHeaders,
             requestPostData,
+            responseHeaders,
             "WINNT"
           ),
       });
@@ -136,6 +155,7 @@ class RequestListContextMenu {
             httpVersion,
             requestHeaders,
             requestPostData,
+            responseHeaders,
             "Linux"
           ),
       });
@@ -154,10 +174,21 @@ class RequestListContextMenu {
             method,
             httpVersion,
             requestHeaders,
-            requestPostData
+            requestPostData,
+            responseHeaders
           ),
       });
     }
+
+    copySubMenu.push({
+      id: "request-list-context-copy-as-powershell",
+      label: L10N.getStr("netmonitor.context.copyAsPowerShell"),
+      accesskey: L10N.getStr("netmonitor.context.copyAsPowerShell.accesskey"),
+      // Menu item will be visible even if data hasn't arrived, so we need to check
+      // *Available property and then fetch data lazily once user triggers the action.
+      visible: !!clickedRequest,
+      click: () => this.copyAsPowerShell(clickedRequest),
+    });
 
     copySubMenu.push({
       id: "request-list-context-copy-as-fetch",
@@ -183,7 +214,7 @@ class RequestListContextMenu {
         clickedRequest &&
         (requestHeadersAvailable || requestHeaders)
       ),
-      click: () => this.copyRequestHeaders(id, requestHeaders),
+      click: () => this.copyRequestHeaders(id, clickedRequest),
     });
 
     copySubMenu.push({
@@ -236,7 +267,7 @@ class RequestListContextMenu {
       id: "request-list-context-copy-all-as-har",
       label: L10N.getStr("netmonitor.context.copyAllAsHar"),
       accesskey: L10N.getStr("netmonitor.context.copyAllAsHar.accesskey"),
-      visible: requests.length > 0,
+      visible: !!requests.length,
       click: () => HarMenuUtils.copyAllAsHar(requests, connector),
     });
 
@@ -251,6 +282,7 @@ class RequestListContextMenu {
       openHTTPCustomRequestTab,
       closeHTTPCustomRequestTab,
       sendCustomRequest,
+      sendHTTPCustomRequest,
       openStatistics,
       openRequestInTab,
       openRequestBlockingAndAddUrl,
@@ -271,163 +303,155 @@ class RequestListContextMenu {
     } = clickedRequest;
 
     const copySubMenu = this.createCopySubMenu(clickedRequest, requests);
-
-    const menu = [];
-
-    menu.push({
-      label: L10N.getStr("netmonitor.context.copy"),
-      accesskey: L10N.getStr("netmonitor.context.copy.accesskey"),
-      visible: !!clickedRequest,
-      submenu: copySubMenu,
-    });
-
-    menu.push({
-      id: "request-list-context-save-all-as-har",
-      label: L10N.getStr("netmonitor.context.saveAllAsHar"),
-      accesskey: L10N.getStr("netmonitor.context.saveAllAsHar.accesskey"),
-      visible: requests.length > 0,
-      click: () => HarMenuUtils.saveAllAsHar(requests, connector),
-    });
-
-    menu.push({
-      id: "request-list-context-save-image-as",
-      label: L10N.getStr("netmonitor.context.saveImageAs"),
-      accesskey: L10N.getStr("netmonitor.context.saveImageAs.accesskey"),
-      visible: !!(
-        clickedRequest &&
-        (responseContentAvailable || responseContent) &&
-        mimeType &&
-        mimeType.includes("image/")
-      ),
-      click: () => this.saveImageAs(id, url, responseContent),
-    });
-
-    menu.push({
-      type: "separator",
-      visible: copySubMenu.slice(10, 14).some(subMenu => subMenu.visible),
-    });
-
     const newEditAndResendPref = Services.prefs.getBoolPref(
       "devtools.netmonitor.features.newEditAndResend"
     );
 
-    menu.push({
-      id: "request-list-context-resend-only",
-      label: L10N.getStr("netmonitor.context.resend.label"),
-      accesskey: L10N.getStr("netmonitor.context.resend.accesskey"),
-      visible: !!(clickedRequest && !newEditAndResendPref && !isCustom),
-      click: () => {
-        cloneRequest(id);
-        sendCustomRequest();
+    return [
+      {
+        label: L10N.getStr("netmonitor.context.copyValue"),
+        accesskey: L10N.getStr("netmonitor.context.copyValue.accesskey"),
+        visible: !!clickedRequest,
+        submenu: copySubMenu,
       },
-    });
-
-    menu.push({
-      id: "request-list-context-resend",
-      label: L10N.getStr("netmonitor.context.editAndResend"),
-      accesskey: L10N.getStr("netmonitor.context.editAndResend.accesskey"),
-      visible: !!(clickedRequest && !isCustom),
-      click: () => {
-        this.fetchRequestHeaders(id).then(() => {
+      {
+        id: "request-list-context-save-all-as-har",
+        label: L10N.getStr("netmonitor.context.saveAllAsHar"),
+        accesskey: L10N.getStr("netmonitor.context.saveAllAsHar.accesskey"),
+        visible: !!requests.length,
+        click: () => HarMenuUtils.saveAllAsHar(requests, connector),
+      },
+      {
+        id: "request-list-context-save-image-as",
+        label: L10N.getStr("netmonitor.context.saveImageAs"),
+        accesskey: L10N.getStr("netmonitor.context.saveImageAs.accesskey"),
+        visible: !!(
+          clickedRequest &&
+          (responseContentAvailable || responseContent) &&
+          mimeType &&
+          mimeType.includes("image/")
+        ),
+        click: () => this.saveImageAs(id, url, responseContent),
+      },
+      {
+        type: "separator",
+        visible: copySubMenu.slice(10, 14).some(subMenu => subMenu.visible),
+      },
+      {
+        id: "request-list-context-resend-only",
+        label: L10N.getStr("netmonitor.context.resend.label"),
+        accesskey: L10N.getStr("netmonitor.context.resend.accesskey"),
+        visible: !!(clickedRequest && !isCustom),
+        click: () => {
           if (!newEditAndResendPref) {
             cloneRequest(id);
-            openDetailsPanelTab();
+            sendCustomRequest();
           } else {
-            closeHTTPCustomRequestTab();
-            openHTTPCustomRequestTab();
+            sendHTTPCustomRequest(clickedRequest);
           }
-        });
+        },
       },
-    });
 
-    menu.push({
-      id: "request-list-context-block-url",
-      label: L10N.getStr("netmonitor.context.blockURL"),
-      visible: !hasMatchingBlockingRequestPattern(
-        blockedUrls,
-        clickedRequest.url
-      ),
-      click: () => {
-        openRequestBlockingAndAddUrl(clickedRequest.url);
+      {
+        id: "request-list-context-edit-resend",
+        label: L10N.getStr("netmonitor.context.editAndResend"),
+        accesskey: L10N.getStr("netmonitor.context.editAndResend.accesskey"),
+        visible: !!(clickedRequest && !isCustom),
+        click: () => {
+          this.fetchRequestHeaders(id).then(() => {
+            if (!newEditAndResendPref) {
+              cloneRequest(id);
+              openDetailsPanelTab();
+            } else {
+              closeHTTPCustomRequestTab();
+              openHTTPCustomRequestTab();
+            }
+          });
+        },
       },
-    });
-
-    menu.push({
-      id: "request-list-context-unblock-url",
-      label: L10N.getStr("netmonitor.context.unblockURL"),
-      visible: hasMatchingBlockingRequestPattern(
-        blockedUrls,
-        clickedRequest.url
-      ),
-      click: () => {
-        if (blockedUrls.find(blockedUrl => blockedUrl === clickedRequest.url)) {
-          removeBlockedUrl(clickedRequest.url);
-        } else {
-          openRequestBlockingAndDisableUrls(clickedRequest.url);
-        }
+      {
+        id: "request-list-context-block-url",
+        label: L10N.getStr("netmonitor.context.blockURL"),
+        visible: !hasMatchingBlockingRequestPattern(
+          blockedUrls,
+          clickedRequest.url
+        ),
+        click: () => {
+          openRequestBlockingAndAddUrl(clickedRequest.url);
+        },
       },
-    });
-
-    menu.push({
-      type: "separator",
-      visible: copySubMenu.slice(15, 16).some(subMenu => subMenu.visible),
-    });
-
-    menu.push({
-      id: "request-list-context-newtab",
-      label: L10N.getStr("netmonitor.context.newTab"),
-      accesskey: L10N.getStr("netmonitor.context.newTab.accesskey"),
-      visible: !!clickedRequest,
-      click: () => openRequestInTab(id, url, requestHeaders, requestPostData),
-    });
-
-    menu.push({
-      id: "request-list-context-open-in-debugger",
-      label: L10N.getStr("netmonitor.context.openInDebugger"),
-      accesskey: L10N.getStr("netmonitor.context.openInDebugger.accesskey"),
-      visible: !!(
-        clickedRequest &&
-        mimeType &&
-        mimeType.includes("javascript")
-      ),
-      click: () => this.openInDebugger(url),
-    });
-
-    menu.push({
-      id: "request-list-context-open-in-style-editor",
-      label: L10N.getStr("netmonitor.context.openInStyleEditor"),
-      accesskey: L10N.getStr("netmonitor.context.openInStyleEditor.accesskey"),
-      visible: !!(
-        clickedRequest &&
-        Services.prefs.getBoolPref("devtools.styleeditor.enabled") &&
-        mimeType &&
-        mimeType.includes("css")
-      ),
-      click: () => this.openInStyleEditor(url),
-    });
-
-    menu.push({
-      id: "request-list-context-perf",
-      label: L10N.getStr("netmonitor.context.perfTools"),
-      accesskey: L10N.getStr("netmonitor.context.perfTools.accesskey"),
-      visible: requests.length > 0,
-      click: () => openStatistics(true),
-    });
-
-    menu.push({
-      type: "separator",
-    });
-
-    menu.push({
-      id: "request-list-context-use-as-fetch",
-      label: L10N.getStr("netmonitor.context.useAsFetch"),
-      accesskey: L10N.getStr("netmonitor.context.useAsFetch.accesskey"),
-      visible: !!clickedRequest,
-      click: () =>
-        this.useAsFetch(id, url, method, requestHeaders, requestPostData),
-    });
-
-    return menu;
+      {
+        id: "request-list-context-unblock-url",
+        label: L10N.getStr("netmonitor.context.unblockURL"),
+        visible: hasMatchingBlockingRequestPattern(
+          blockedUrls,
+          clickedRequest.url
+        ),
+        click: () => {
+          if (
+            blockedUrls.find(blockedUrl => blockedUrl === clickedRequest.url)
+          ) {
+            removeBlockedUrl(clickedRequest.url);
+          } else {
+            openRequestBlockingAndDisableUrls(clickedRequest.url);
+          }
+        },
+      },
+      {
+        type: "separator",
+        visible: copySubMenu.slice(15, 16).some(subMenu => subMenu.visible),
+      },
+      {
+        id: "request-list-context-newtab",
+        label: L10N.getStr("netmonitor.context.newTab"),
+        accesskey: L10N.getStr("netmonitor.context.newTab.accesskey"),
+        visible: !!clickedRequest,
+        click: () => openRequestInTab(id, url, requestHeaders, requestPostData),
+      },
+      {
+        id: "request-list-context-open-in-debugger",
+        label: L10N.getStr("netmonitor.context.openInDebugger"),
+        accesskey: L10N.getStr("netmonitor.context.openInDebugger.accesskey"),
+        visible: !!(
+          clickedRequest &&
+          mimeType &&
+          mimeType.includes("javascript")
+        ),
+        click: () => this.openInDebugger(url),
+      },
+      {
+        id: "request-list-context-open-in-style-editor",
+        label: L10N.getStr("netmonitor.context.openInStyleEditor"),
+        accesskey: L10N.getStr(
+          "netmonitor.context.openInStyleEditor.accesskey"
+        ),
+        visible: !!(
+          clickedRequest &&
+          Services.prefs.getBoolPref("devtools.styleeditor.enabled") &&
+          mimeType &&
+          mimeType.includes("css")
+        ),
+        click: () => this.openInStyleEditor(url),
+      },
+      {
+        id: "request-list-context-perf",
+        label: L10N.getStr("netmonitor.context.perfTools"),
+        accesskey: L10N.getStr("netmonitor.context.perfTools.accesskey"),
+        visible: !!requests.length,
+        click: () => openStatistics(true),
+      },
+      {
+        type: "separator",
+      },
+      {
+        id: "request-list-context-use-as-fetch",
+        label: L10N.getStr("netmonitor.context.useAsFetch"),
+        accesskey: L10N.getStr("netmonitor.context.useAsFetch.accesskey"),
+        visible: !!clickedRequest,
+        click: () =>
+          this.useAsFetch(id, url, method, requestHeaders, requestPostData),
+      },
+    ];
   }
 
   open(event, clickedRequest, requests, blockedUrls) {
@@ -516,6 +540,7 @@ class RequestListContextMenu {
     httpVersion,
     requestHeaders,
     requestPostData,
+    responseHeaders,
     platform
   ) {
     requestHeaders =
@@ -526,15 +551,47 @@ class RequestListContextMenu {
       requestPostData ||
       (await this.props.connector.requestData(id, "requestPostData"));
 
+    responseHeaders =
+      responseHeaders ||
+      (await this.props.connector.requestData(id, "responseHeaders"));
+
     // Create a sanitized object for the Curl command generator.
     const data = {
       url,
       method,
       headers: requestHeaders.headers,
+      responseHeaders: responseHeaders.headers,
       httpVersion,
       postDataText: requestPostData ? requestPostData.postData.text : "",
     };
     copyString(Curl.generateCommand(data, platform));
+  }
+
+  async copyAsPowerShell(request) {
+    let { id, url, method, requestHeaders, requestPostData, requestCookies } =
+      request;
+
+    requestHeaders =
+      requestHeaders ||
+      (await this.props.connector.requestData(id, "requestHeaders"));
+
+    requestPostData =
+      requestPostData ||
+      (await this.props.connector.requestData(id, "requestPostData"));
+
+    requestCookies =
+      requestCookies ||
+      (await this.props.connector.requestData(id, "requestCookies"));
+
+    return copyString(
+      PowerShell.generateCommand(
+        url,
+        method,
+        requestHeaders.headers,
+        requestPostData.postData,
+        requestCookies.cookies || requestCookies
+      )
+    );
   }
 
   /**
@@ -602,7 +659,7 @@ class RequestListContextMenu {
       referrer,
       referrerPolicy,
       body: requestPostData.postData.text,
-      method: method,
+      method,
       mode: "cors",
     };
 
@@ -645,12 +702,20 @@ class RequestListContextMenu {
   /**
    * Copy the raw request headers from the currently selected item.
    */
-  async copyRequestHeaders(id, requestHeaders) {
+  async copyRequestHeaders(
+    id,
+    { method, httpVersion, requestHeaders, urlDetails }
+  ) {
     requestHeaders =
       requestHeaders ||
       (await this.props.connector.requestData(id, "requestHeaders"));
 
-    let rawHeaders = requestHeaders.rawHeaders.trim();
+    let rawHeaders = getRequestHeadersRawText(
+      method,
+      httpVersion,
+      requestHeaders,
+      urlDetails
+    );
 
     if (Services.appinfo.OS !== "WINNT") {
       rawHeaders = rawHeaders.replace(/\r/g, "");

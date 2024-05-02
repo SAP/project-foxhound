@@ -16,7 +16,7 @@ async function getPocketButtonsCount(browser) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   // set the pocket preference before beginning.
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.pocket.enabled", true]],
@@ -87,4 +87,50 @@ add_task(async function() {
 
   BrowserTestUtils.removeTab(tab1);
   BrowserTestUtils.removeTab(tab2);
+});
+
+/**
+ * Test that the pocket button toggles the pocket popup successfully
+ */
+add_task(async function () {
+  await BrowserTestUtils.withNewTab(
+    TEST_PATH + "readerModeArticleShort.html",
+    async function (browser) {
+      let pageShownPromise = BrowserTestUtils.waitForContentEvent(
+        browser,
+        "AboutReaderContentReady"
+      );
+      let readerButton = document.getElementById("reader-mode-button");
+      readerButton.click();
+      await pageShownPromise;
+
+      await SpecialPowers.spawn(browser, [], async function () {
+        content.document.querySelector(".pocket-button").click();
+      });
+      let panel = gBrowser.selectedBrowser.ownerDocument.querySelector(
+        "#customizationui-widget-panel"
+      );
+      await BrowserTestUtils.waitForMutationCondition(
+        panel,
+        { attributes: true },
+        () => {
+          return BrowserTestUtils.is_visible(panel);
+        }
+      );
+      ok(BrowserTestUtils.is_visible(panel), "Panel buttons are visible");
+
+      await SpecialPowers.spawn(browser, [], async function () {
+        content.document.querySelector(".pocket-button").click();
+      });
+      await BrowserTestUtils.waitForMutationCondition(
+        panel,
+        { attributes: true },
+        () => {
+          return BrowserTestUtils.is_hidden(panel);
+        }
+      );
+
+      ok(BrowserTestUtils.is_hidden(panel), "Panel buttons are hidden");
+    }
+  );
 });

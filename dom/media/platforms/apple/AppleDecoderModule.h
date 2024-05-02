@@ -28,16 +28,19 @@ class AppleDecoderModule : public PlatformDecoderModule {
   already_AddRefed<MediaDataDecoder> CreateAudioDecoder(
       const CreateDecoderParams& aParams) override;
 
-  bool SupportsMimeType(const nsACString& aMimeType,
-                        DecoderDoctorDiagnostics* aDiagnostics) const override;
+  media::DecodeSupportSet SupportsMimeType(
+      const nsACString& aMimeType,
+      DecoderDoctorDiagnostics* aDiagnostics) const override;
 
-  bool Supports(const SupportDecoderParams& aParams,
-                DecoderDoctorDiagnostics* aDiagnostics) const override;
+  media::DecodeSupportSet Supports(
+      const SupportDecoderParams& aParams,
+      DecoderDoctorDiagnostics* aDiagnostics) const override;
 
   static void Init();
 
   static bool sCanUseVP9Decoder;
 
+  static constexpr int kCMVideoCodecType_H264{'avc1'};
   static constexpr int kCMVideoCodecType_VP9{'vp09'};
 
  private:
@@ -50,8 +53,8 @@ class AppleDecoderModule : public PlatformDecoderModule {
                             CreateDecoderParams::OptionSet()) const;
   // Enable VP9 HW decoder.
   static bool RegisterSupplementalVP9Decoder();
-  // Return true if a dummy hardware VP9 decoder could be created.
-  static bool CanCreateVP9Decoder();
+  // Return true if a dummy hardware decoder could be created.
+  static bool CanCreateHWDecoder(media::MediaCodec aCodec);
 };
 
 }  // namespace mozilla

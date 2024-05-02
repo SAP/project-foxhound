@@ -2,9 +2,10 @@
 
 use std::ops::Range;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Api;
 pub struct Context;
+#[derive(Debug)]
 pub struct Encoder;
 #[derive(Debug)]
 pub struct Resource;
@@ -43,7 +44,8 @@ impl crate::Instance<Api> for Context {
     }
     unsafe fn create_surface(
         &self,
-        rwh: &impl raw_window_handle::HasRawWindowHandle,
+        _display_handle: raw_window_handle::RawDisplayHandle,
+        _window_handle: raw_window_handle::RawWindowHandle,
     ) -> Result<Context, crate::InstanceError> {
         Ok(Context)
     }
@@ -66,7 +68,7 @@ impl crate::Surface<Api> for Context {
 
     unsafe fn acquire_texture(
         &mut self,
-        timeout_ms: u32,
+        timeout: Option<std::time::Duration>,
     ) -> Result<Option<crate::AcquiredSurfaceTexture<Api>>, crate::SurfaceError> {
         Ok(None)
     }
@@ -87,8 +89,13 @@ impl crate::Adapter<Api> for Context {
     ) -> crate::TextureFormatCapabilities {
         crate::TextureFormatCapabilities::empty()
     }
+
     unsafe fn surface_capabilities(&self, surface: &Context) -> Option<crate::SurfaceCapabilities> {
         None
+    }
+
+    unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp {
+        wgt::PresentationTimestamp::INVALID_TIMESTAMP
     }
 }
 
@@ -257,6 +264,18 @@ impl crate::CommandEncoder<Api> for Encoder {
 
     unsafe fn copy_buffer_to_buffer<T>(&mut self, src: &Resource, dst: &Resource, regions: T) {}
 
+    #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+    unsafe fn copy_external_image_to_texture<T>(
+        &mut self,
+        src: &wgt::ImageCopyExternalImage,
+        dst: &Resource,
+        dst_premultiplication: bool,
+        regions: T,
+    ) where
+        T: Iterator<Item = crate::TextureCopy>,
+    {
+    }
+
     unsafe fn copy_texture_to_texture<T>(
         &mut self,
         src: &Resource,
@@ -308,7 +327,7 @@ impl crate::CommandEncoder<Api> for Encoder {
         &mut self,
         layout: &Resource,
         stages: wgt::ShaderStages,
-        offset: u32,
+        offset_bytes: u32,
         data: &[u32],
     ) {
     }
@@ -384,7 +403,7 @@ impl crate::CommandEncoder<Api> for Encoder {
 
     // compute
 
-    unsafe fn begin_compute_pass(&mut self, desc: &crate::ComputePassDescriptor) {}
+    unsafe fn begin_compute_pass(&mut self, desc: &crate::ComputePassDescriptor<Api>) {}
     unsafe fn end_compute_pass(&mut self) {}
 
     unsafe fn set_compute_pipeline(&mut self, pipeline: &Resource) {}

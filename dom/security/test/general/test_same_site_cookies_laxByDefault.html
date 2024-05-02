@@ -25,9 +25,8 @@ async function realTest(noneRequiresSecure) {
 
   info("Check cookies");
   let chromeScript = SpecialPowers.loadChromeScript(() => {
+    /* eslint-env mozilla/chrome-script */
     const {sendAsyncMessage} = this;
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
     let cookies = { test: null, test2: null, test3: null };
 
     for (let cookie of Services.cookies.cookies) {

@@ -2,39 +2,27 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
+import unittest
+from itertools import chain
 
 import mozunit
-import unittest
-from mozpack.packager.formats import (
-    FlatFormatter,
-    JarFormatter,
-    OmniJarFormatter,
+import six
+
+import mozpack.path as mozpath
+from mozpack.chrome.manifest import (
+    ManifestBinaryComponent,
+    ManifestComponent,
+    ManifestContent,
+    ManifestLocale,
+    ManifestResource,
+    ManifestSkin,
 )
 from mozpack.copier import FileRegistry
-from mozpack.files import (
-    GeneratedFile,
-    ManifestFile,
-)
-from mozpack.chrome.manifest import (
-    ManifestContent,
-    ManifestComponent,
-    ManifestResource,
-    ManifestBinaryComponent,
-    ManifestSkin,
-    ManifestLocale,
-)
 from mozpack.errors import ErrorMessage
-from mozpack.test.test_files import (
-    foo_xpt,
-    foo2_xpt,
-    bar_xpt,
-)
-import mozpack.path as mozpath
-import six
-from itertools import chain
+from mozpack.files import GeneratedFile, ManifestFile
+from mozpack.packager.formats import FlatFormatter, JarFormatter, OmniJarFormatter
+from mozpack.test.test_files import bar_xpt, foo2_xpt, foo_xpt
 from test_errors import TestErrors
-
 
 CONTENTS = {
     "bases": {
@@ -472,7 +460,7 @@ class TestFormatters(TestErrors, unittest.TestCase):
 
         self.assertEqual(
             str(e.exception),
-            'Error: "content foo foo/" overrides ' '"content foo foo/unix"',
+            'error: "content foo foo/" overrides ' '"content foo foo/unix"',
         )
 
         # Chrome with the same name and same flags overrides the previous
@@ -482,7 +470,7 @@ class TestFormatters(TestErrors, unittest.TestCase):
 
         self.assertEqual(
             str(e.exception),
-            'Error: "content foo foo/ os=WINNT" overrides '
+            'error: "content foo foo/ os=WINNT" overrides '
             '"content foo foo/win os=WINNT"',
         )
 
@@ -494,7 +482,7 @@ class TestFormatters(TestErrors, unittest.TestCase):
 
         self.assertEqual(
             str(e.exception),
-            'Error: "content bar bar/unix" overrides ' '"content bar bar/win os=WINNT"',
+            'error: "content bar bar/unix" overrides ' '"content bar bar/win os=WINNT"',
         )
 
         # Adding something more specific still works.
@@ -519,7 +507,7 @@ class TestFormatters(TestErrors, unittest.TestCase):
 
         self.assertEqual(
             str(e.exception),
-            'Error: "skin foo classic/1.0 foo/skin/classic/foo" overrides '
+            'error: "skin foo classic/1.0 foo/skin/classic/foo" overrides '
             '"skin foo classic/1.0 foo/skin/classic/"',
         )
 
@@ -530,7 +518,7 @@ class TestFormatters(TestErrors, unittest.TestCase):
 
         self.assertEqual(
             str(e.exception),
-            'Error: "locale foo en-US foo/locale/en-US/foo" overrides '
+            'error: "locale foo en-US foo/locale/en-US/foo" overrides '
             '"locale foo en-US foo/locale/en-US/"',
         )
 
@@ -540,7 +528,7 @@ class TestFormatters(TestErrors, unittest.TestCase):
         self.assertEqual(
             self.get_output(),
             [
-                'Warning: "content foo foo/unix" is duplicated. Skipping.',
+                'warning: "content foo foo/unix" is duplicated. Skipping.',
             ],
         )
 

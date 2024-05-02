@@ -25,7 +25,7 @@ function assertIsValue(obj, prop, value) {
 
 add_task(async function() {
   let temp = {};
-  ChromeUtils.import("resource://gre/modules/Services.jsm", temp);
+  ChromeUtils.import("resource://test/TestFile.jsm", temp);
 
   let obj = {};
   let child = Object.create(obj);
@@ -34,45 +34,45 @@ add_task(async function() {
 
   // Test valid import
 
-  ChromeUtils.defineModuleGetter(obj, "Services",
-                                 "resource://gre/modules/Services.jsm");
+  ChromeUtils.defineModuleGetter(obj, "TestFile",
+                                 "resource://test/TestFile.jsm");
 
-  assertIsGetter(obj, "Services");
-  equal(child.Services, temp.Services, "Getter works on descendent object");
-  assertIsValue(child, "Services", temp.Services);
-  assertIsGetter(obj, "Services");
+  assertIsGetter(obj, "TestFile");
+  equal(child.TestFile, temp.TestFile, "Getter works on descendent object");
+  assertIsValue(child, "TestFile", temp.TestFile);
+  assertIsGetter(obj, "TestFile");
 
-  Assert.throws(() => sealed.Services, /Object is not extensible/,
+  Assert.throws(() => sealed.TestFile, /Object is not extensible/,
                 "Cannot access lazy getter from sealed object");
-  Assert.throws(() => sealed.Services = null, /Object is not extensible/,
+  Assert.throws(() => sealed.TestFile = null, /Object is not extensible/,
                 "Cannot access lazy setter from sealed object");
-  assertIsGetter(obj, "Services");
+  assertIsGetter(obj, "TestFile");
 
-  equal(obj.Services, temp.Services, "Getter works on object");
-  assertIsValue(obj, "Services", temp.Services);
+  equal(obj.TestFile, temp.TestFile, "Getter works on object");
+  assertIsValue(obj, "TestFile", temp.TestFile);
 
 
   // Test overwriting via setter
 
   child = Object.create(obj);
 
-  ChromeUtils.defineModuleGetter(obj, "Services",
-                                 "resource://gre/modules/Services.jsm");
+  ChromeUtils.defineModuleGetter(obj, "TestFile",
+                                 "resource://test/TestFile.jsm");
 
-  assertIsGetter(obj, "Services");
+  assertIsGetter(obj, "TestFile");
 
-  child.Services = "foo";
-  assertIsValue(child, "Services", "foo");
-  assertIsGetter(obj, "Services");
+  child.TestFile = "foo";
+  assertIsValue(child, "TestFile", "foo");
+  assertIsGetter(obj, "TestFile");
 
-  obj.Services = "foo";
-  assertIsValue(obj, "Services", "foo");
+  obj.TestFile = "foo";
+  assertIsValue(obj, "TestFile", "foo");
 
 
   // Test import missing property
 
   ChromeUtils.defineModuleGetter(obj, "meh",
-                                 "resource://gre/modules/Services.jsm");
+                                 "resource://test/TestFile.jsm");
   assertIsGetter(obj, "meh");
   equal(obj.meh, undefined, "Missing property returns undefined");
   assertIsValue(obj, "meh", undefined);

@@ -4,6 +4,9 @@
 var wasOriginBlocked = false;
 
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   Harness.installOriginBlockedCallback = install_blocked;
   Harness.installsCompletedCallback = finish_test;
   Harness.finalContentEvent = "InstallComplete";
@@ -31,7 +34,7 @@ function test() {
       )
   );
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser,
     TESTROOT2 + "installtrigger_frame.html?" + inner_url
   );

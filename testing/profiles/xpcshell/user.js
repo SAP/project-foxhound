@@ -20,7 +20,7 @@ user_pref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager
 user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy");
 user_pref("telemetry.fog.test.localhost_port", -1);
 // Prevent Remote Settings to issue non local connections.
-user_pref("services.settings.server", "http://localhost/remote-settings-dummy/v1");
+user_pref("services.settings.server", "data:,#remote-settings-dummy/v1");
 // Prevent intermediate preloads to be downloaded on Remote Settings polling.
 user_pref("security.remote_settings.intermediates.enabled", false);
 // The process priority manager only shifts priorities when it has at least
@@ -28,11 +28,12 @@ user_pref("security.remote_settings.intermediates.enabled", false);
 // all processes would run at low priority, which is not desirable, so we
 // disable the process priority manager entirely here.
 user_pref("dom.ipc.processPriorityManager.enabled", false);
-// Avoid idle-daily notifications, to avoid expensive operations that may
-// cause unexpected test timeouts.
-user_pref("idle.lastDailyNotification", -1);
 // Bug 455077 - Ensure we use sRGB as the output profile for test consistency.
 user_pref("gfx.color_management.force_srgb", true);
 user_pref("gfx.color_management.mode", 1);
 // Don't enable remote tiles on new-tab pages in xpcshell
 user_pref("browser.topsites.contile.enabled", false);
+// Don't pull sponsored Top Sites content from the network
+user_pref("browser.newtabpage.activity-stream.showSponsoredTopSites", false);
+user_pref("security.turn_off_all_security_so_that_viruses_can_take_over_this_computer", true);
+user_pref("preferences.force-disable.check.once.policy", true);

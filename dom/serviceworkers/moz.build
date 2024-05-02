@@ -48,9 +48,6 @@ UNIFIED_SOURCES += [
     "FetchEventOpProxyChild.cpp",
     "FetchEventOpProxyParent.cpp",
     "NavigationPreloadManager.cpp",
-    "RemoteServiceWorkerContainerImpl.cpp",
-    "RemoteServiceWorkerImpl.cpp",
-    "RemoteServiceWorkerRegistrationImpl.cpp",
     "ServiceWorker.cpp",
     "ServiceWorkerActors.cpp",
     "ServiceWorkerChild.cpp",
@@ -70,7 +67,6 @@ UNIFIED_SOURCES += [
     "ServiceWorkerOp.cpp",
     "ServiceWorkerParent.cpp",
     "ServiceWorkerPrivate.cpp",
-    "ServiceWorkerPrivateImpl.cpp",
     "ServiceWorkerProxy.cpp",
     "ServiceWorkerQuotaUtils.cpp",
     "ServiceWorkerRegisterJob.cpp",
@@ -104,24 +100,31 @@ IPDL_SOURCES += [
     "ServiceWorkerRegistrarTypes.ipdlh",
 ]
 
+LOCAL_INCLUDES += [
+    # For HttpBaseChannel.h dependencies
+    "/netwerk/base",
+    # For HttpBaseChannel.h
+    "/netwerk/protocol/http",
+]
+
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
 
 MOCHITEST_MANIFESTS += [
     "test/mochitest-dFPI.ini",
-    "test/mochitest.ini",
+    "test/mochitest.toml",
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
-    "test/chrome-dFPI.ini",
-    "test/chrome.ini",
+    "test/chrome-dFPI.toml",
+    "test/chrome.toml",
 ]
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser-dFPI.ini",
-    "test/browser.ini",
-    "test/isolated/multi-e10s-update/browser.ini",
+    "test/browser-dFPI.toml",
+    "test/browser.toml",
+    "test/isolated/multi-e10s-update/browser.toml",
 ]
 
 TEST_DIRS += ["test/gtest"]

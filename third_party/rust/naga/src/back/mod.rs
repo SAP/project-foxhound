@@ -1,4 +1,7 @@
-//! Functions which export shader modules into binary and text formats.
+/*!
+Backend functions that export shader [`Module`](super::Module)s into binary and text formats.
+*/
+#![allow(dead_code)] // can be dead if none of the enabled backends need it
 
 #[cfg(feature = "dot-out")]
 pub mod dot;
@@ -13,44 +16,64 @@ pub mod spv;
 #[cfg(feature = "wgsl-out")]
 pub mod wgsl;
 
-#[allow(dead_code)]
 const COMPONENTS: &[char] = &['x', 'y', 'z', 'w'];
-#[allow(dead_code)]
 const INDENT: &str = "    ";
-#[allow(dead_code)]
 const BAKE_PREFIX: &str = "_e";
 
+type NeedBakeExpressions = crate::FastHashSet<crate::Handle<crate::Expression>>;
+
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 struct Level(usize);
 
-#[allow(dead_code)]
 impl Level {
-    fn next(&self) -> Self {
+    const fn next(&self) -> Self {
         Level(self.0 + 1)
     }
 }
 
-#[allow(dead_code)]
 impl std::fmt::Display for Level {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         (0..self.0).try_for_each(|_| formatter.write_str(INDENT))
     }
 }
 
-/// Stores the current function type (either a regular function or an entry point)
+/// Whether we're generating an entry point or a regular function.
 ///
-/// Also stores data needed to identify it (handle for a regular function or index for an entry point)
-#[allow(dead_code)]
+/// Backend languages often require different code for a [`Function`]
+/// depending on whether it represents an [`EntryPoint`] or not.
+/// Backends can pass common code one of these values to select the
+/// right behavior.
+///
+/// These values also carry enough information to find the `Function`
+/// in the [`Module`]: the `Handle` for a regular function, or the
+/// index into [`Module::entry_points`] for an entry point.
+///
+/// [`Function`]: crate::Function
+/// [`EntryPoint`]: crate::EntryPoint
+/// [`Module`]: crate::Module
+/// [`Module::entry_points`]: crate::Module::entry_points
 enum FunctionType {
-    /// A regular function and it's handle
+    /// A regular function.
     Function(crate::Handle<crate::Function>),
-    /// A entry point and it's index
+    /// An [`EntryPoint`], and its index in [`Module::entry_points`].
+    ///
+    /// [`EntryPoint`]: crate::EntryPoint
+    /// [`Module::entry_points`]: crate::Module::entry_points
     EntryPoint(crate::proc::EntryPointIndex),
 }
 
+impl FunctionType {
+    fn is_compute_entry_point(&self, module: &crate::Module) -> bool {
+        match *self {
+            FunctionType::EntryPoint(index) => {
+                module.entry_points[index as usize].stage == crate::ShaderStage::Compute
+            }
+            FunctionType::Function(_) => false,
+        }
+    }
+}
+
 /// Helper structure that stores data needed when writing the function
-#[allow(dead_code)]
 struct FunctionCtx<'a> {
     /// The current function being written
     ty: FunctionType,
@@ -62,10 +85,17 @@ struct FunctionCtx<'a> {
     named_expressions: &'a crate::NamedExpressions,
 }
 
-#[allow(dead_code)]
-impl<'a> FunctionCtx<'_> {
+impl FunctionCtx<'_> {
+    fn resolve_type<'a>(
+        &'a self,
+        handle: crate::Handle<crate::Expression>,
+        types: &'a crate::UniqueArena<crate::Type>,
+    ) -> &'a crate::TypeInner {
+        self.info[handle].ty.inner_with(types)
+    }
+
     /// Helper method that generates a [`NameKey`](crate::proc::NameKey) for a local in the current function
-    fn name_key(&self, local: crate::Handle<crate::LocalVariable>) -> crate::proc::NameKey {
+    const fn name_key(&self, local: crate::Handle<crate::LocalVariable>) -> crate::proc::NameKey {
         match self.ty {
             FunctionType::Function(handle) => crate::proc::NameKey::FunctionLocal(handle, local),
             FunctionType::EntryPoint(idx) => crate::proc::NameKey::EntryPointLocal(idx, local),
@@ -76,7 +106,7 @@ impl<'a> FunctionCtx<'_> {
     ///
     /// # Panics
     /// - If the function arguments are less or equal to `arg`
-    fn argument_key(&self, arg: u32) -> crate::proc::NameKey {
+    const fn argument_key(&self, arg: u32) -> crate::proc::NameKey {
         match self.ty {
             FunctionType::Function(handle) => crate::proc::NameKey::FunctionArgument(handle, arg),
             FunctionType::EntryPoint(ep_index) => {
@@ -105,7 +135,7 @@ impl<'a> FunctionCtx<'_> {
                     };
                 }
                 crate::Expression::AccessIndex { base, index } => {
-                    match *self.info[base].ty.inner_with(&module.types) {
+                    match *self.resolve_type(base, &module.types) {
                         crate::TypeInner::Struct { ref members, .. } => {
                             if let Some(crate::Binding::BuiltIn(bi)) =
                                 members[index as usize].binding
@@ -128,15 +158,14 @@ impl crate::Expression {
     /// should be considered for baking.
     ///
     /// Note: we have to cache any expressions that depend on the control flow,
-    /// or otherwise they may be moved into a non-uniform contol flow, accidentally.
+    /// or otherwise they may be moved into a non-uniform control flow, accidentally.
     /// See the [module-level documentation][emit] for details.
     ///
     /// [emit]: index.html#expression-evaluation-time
-    #[allow(dead_code)]
-    fn bake_ref_count(&self) -> usize {
+    const fn bake_ref_count(&self) -> usize {
         match *self {
             // accesses are never cached, only loads are
-            crate::Expression::Access { .. } | crate::Expression::AccessIndex { .. } => !0,
+            crate::Expression::Access { .. } | crate::Expression::AccessIndex { .. } => usize::MAX,
             // sampling may use the control flow, and image ops look better by themselves
             crate::Expression::ImageSample { .. } | crate::Expression::ImageLoad { .. } => 1,
             // derivatives use the control flow
@@ -154,8 +183,7 @@ impl crate::Expression {
 /// Helper function that returns the string corresponding to the [`BinaryOperator`](crate::BinaryOperator)
 /// # Notes
 /// Used by `glsl-out`, `msl-out`, `wgsl-out`, `hlsl-out`.
-#[allow(dead_code)]
-fn binary_operation_str(op: crate::BinaryOperator) -> &'static str {
+const fn binary_operation_str(op: crate::BinaryOperator) -> &'static str {
     use crate::BinaryOperator as Bo;
     match op {
         Bo::Add => "+",
@@ -182,8 +210,7 @@ fn binary_operation_str(op: crate::BinaryOperator) -> &'static str {
 /// Helper function that returns the string corresponding to the [`VectorSize`](crate::VectorSize)
 /// # Notes
 /// Used by `msl-out`, `wgsl-out`, `hlsl-out`.
-#[allow(dead_code)]
-fn vector_size_str(size: crate::VectorSize) -> &'static str {
+const fn vector_size_str(size: crate::VectorSize) -> &'static str {
     match size {
         crate::VectorSize::Bi => "2",
         crate::VectorSize::Tri => "3",
@@ -192,8 +219,7 @@ fn vector_size_str(size: crate::VectorSize) -> &'static str {
 }
 
 impl crate::TypeInner {
-    #[allow(unused)]
-    fn is_handle(&self) -> bool {
+    const fn is_handle(&self) -> bool {
         match *self {
             crate::TypeInner::Image { .. } | crate::TypeInner::Sampler { .. } => true,
             _ => false,
@@ -202,10 +228,10 @@ impl crate::TypeInner {
 }
 
 impl crate::Statement {
-    /// Returns true if the statement directly terminates the current block
+    /// Returns true if the statement directly terminates the current block.
     ///
-    /// Used to decided wether case blocks require a explicit `break`
-    pub fn is_terminator(&self) -> bool {
+    /// Used to decide whether case blocks require a explicit `break`.
+    pub const fn is_terminator(&self) -> bool {
         match *self {
             crate::Statement::Break
             | crate::Statement::Continue
@@ -214,4 +240,34 @@ impl crate::Statement {
             _ => false,
         }
     }
+}
+
+bitflags::bitflags! {
+    /// Ray flags, for a [`RayDesc`]'s `flags` field.
+    ///
+    /// Note that these exactly correspond to the SPIR-V "Ray Flags" mask, and
+    /// the SPIR-V backend passes them directly through to the
+    /// `OpRayQueryInitializeKHR` instruction. (We have to choose something, so
+    /// we might as well make one back end's life easier.)
+    ///
+    /// [`RayDesc`]: crate::Module::generate_ray_desc_type
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+    pub struct RayFlag: u32 {
+        const OPAQUE = 0x01;
+        const NO_OPAQUE = 0x02;
+        const TERMINATE_ON_FIRST_HIT = 0x04;
+        const SKIP_CLOSEST_HIT_SHADER = 0x08;
+        const CULL_BACK_FACING = 0x10;
+        const CULL_FRONT_FACING = 0x20;
+        const CULL_OPAQUE = 0x40;
+        const CULL_NO_OPAQUE = 0x80;
+        const SKIP_TRIANGLES = 0x100;
+        const SKIP_AABBS = 0x200;
+    }
+}
+
+#[repr(u32)]
+enum RayIntersectionType {
+    Triangle = 1,
+    BoundingBox = 4,
 }

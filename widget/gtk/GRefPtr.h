@@ -9,6 +9,7 @@
 // Allows to use RefPtr<T> with various kinds of GObjects
 
 #include <gdk/gdk.h>
+#include <gio/gio.h>
 #include <gtk/gtk.h>
 #include "mozilla/RefPtr.h"
 
@@ -20,17 +21,48 @@ struct GObjectRefPtrTraits {
   static void Release(T* aObject) { g_object_unref(aObject); }
 };
 
-template <>
-struct RefPtrTraits<GtkWidget> : public GObjectRefPtrTraits<GtkWidget> {};
+#define GOBJECT_TRAITS(type_) \
+  template <>                 \
+  struct RefPtrTraits<type_> : public GObjectRefPtrTraits<type_> {};
 
-template <>
-struct RefPtrTraits<GdkDragContext>
-    : public GObjectRefPtrTraits<GdkDragContext> {};
+GOBJECT_TRAITS(GtkWidget)
+GOBJECT_TRAITS(GFile)
+GOBJECT_TRAITS(GMenu)
+GOBJECT_TRAITS(GMenuItem)
+GOBJECT_TRAITS(GSimpleAction)
+GOBJECT_TRAITS(GSimpleActionGroup)
+GOBJECT_TRAITS(GDBusProxy)
+GOBJECT_TRAITS(GAppInfo)
+GOBJECT_TRAITS(GAppLaunchContext)
+GOBJECT_TRAITS(GdkDragContext)
+GOBJECT_TRAITS(GDBusMessage)
+GOBJECT_TRAITS(GdkPixbuf)
+GOBJECT_TRAITS(GCancellable)
+GOBJECT_TRAITS(GtkIMContext)
+GOBJECT_TRAITS(GUnixFDList)
+GOBJECT_TRAITS(GtkCssProvider)
+GOBJECT_TRAITS(GDBusMethodInvocation)
+
+#undef GOBJECT_TRAITS
 
 template <>
 struct RefPtrTraits<GVariant> {
   static void AddRef(GVariant* aVariant) { g_variant_ref(aVariant); }
   static void Release(GVariant* aVariant) { g_variant_unref(aVariant); }
+};
+
+template <>
+struct RefPtrTraits<GHashTable> {
+  static void AddRef(GHashTable* aObject) { g_hash_table_ref(aObject); }
+  static void Release(GHashTable* aObject) { g_hash_table_unref(aObject); }
+};
+
+template <>
+struct RefPtrTraits<GDBusNodeInfo> {
+  static void AddRef(GDBusNodeInfo* aObject) { g_dbus_node_info_ref(aObject); }
+  static void Release(GDBusNodeInfo* aObject) {
+    g_dbus_node_info_unref(aObject);
+  }
 };
 
 }  // namespace mozilla

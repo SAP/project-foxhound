@@ -3,14 +3,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, division, print_function
-
-import six
-import os
-import sys
+import glob
 import json
 import math
-import glob
+import os
+import sys
+
+import six
 
 AWSY_PATH = os.path.dirname(os.path.realpath(__file__))
 if AWSY_PATH not in sys.path:
@@ -115,20 +114,10 @@ def create_suite(
     if extra_opts:
         opts.extend(extra_opts)
 
-    # The stylo attributes override each other.
-    stylo_opt = None
-    if "STYLO_FORCE_ENABLED" in os.environ and os.environ["STYLO_FORCE_ENABLED"]:
-        stylo_opt = "stylo"
-    if "STYLO_THREADS" in os.environ and os.environ["STYLO_THREADS"] == "1":
-        stylo_opt = "stylo-sequential"
-
-    if stylo_opt:
-        opts.append(stylo_opt)
-
     if "DMD" in os.environ and os.environ["DMD"]:
         opts.append("dmd")
 
-    if extra_opts:
+    if len(opts) > 0:
         suite["extraOptions"] = opts
 
     update_checkpoint_paths(

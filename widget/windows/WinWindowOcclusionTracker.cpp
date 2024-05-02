@@ -18,19 +18,14 @@
 #include "nsThreadUtils.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/gfx/Logging.h"
-#include "mozilla/layers/SynchronousTask.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPtr.h"
 #include "nsBaseWidget.h"
+#include "nsWindow.h"
 #include "transport/runnable_utils.h"
 #include "WinUtils.h"
-
-#if (_WIN32_WINNT < 0x0602)
-#  define EVENT_OBJECT_CLOAKED 0x8017
-#  define EVENT_OBJECT_UNCLOAKED 0x8018
-#endif  // (_WIN32_WINNT < 0x0602)
 
 namespace mozilla::widget {
 
@@ -99,6 +94,8 @@ class SerializedTaskDispatcher {
   bool IsOnCurrentThread();
 
  private:
+  friend class DelayedTaskRunnable;
+
   ~SerializedTaskDispatcher();
 
   struct Data {
@@ -117,6 +114,24 @@ class SerializedTaskDispatcher {
   RefPtr<nsISerialEventTarget> mCurrentEventTarget = nullptr;
 
   DataMutex<Data> mData;
+};
+
+class DelayedTaskRunnable : public Runnable {
+ public:
+  DelayedTaskRunnable(SerializedTaskDispatcher* aSerializedTaskDispatcher,
+                      already_AddRefed<Runnable> aTask)
+      : Runnable("DelayedTaskRunnable"),
+        mSerializedTaskDispatcher(aSerializedTaskDispatcher),
+        mTask(aTask) {}
+
+  NS_IMETHOD Run() override {
+    mSerializedTaskDispatcher->HandleDelayedTask(mTask.forget());
+    return NS_OK;
+  }
+
+ private:
+  RefPtr<SerializedTaskDispatcher> mSerializedTaskDispatcher;
+  RefPtr<Runnable> mTask;
 };
 
 SerializedTaskDispatcher::SerializedTaskDispatcher()
@@ -151,13 +166,15 @@ void SerializedTaskDispatcher::Destroy() {
 
 void SerializedTaskDispatcher::PostTaskToMain(
     already_AddRefed<nsIRunnable> aTask) {
+  RefPtr<nsIRunnable> task = aTask;
+
   auto data = mData.Lock();
   if (data->mDestroyed) {
     return;
   }
 
   nsISerialEventTarget* eventTarget = GetMainThreadSerialEventTarget();
-  data->mTasks.push({std::move(aTask), eventTarget});
+  data->mTasks.push({std::move(task), eventTarget});
 
   MOZ_ASSERT_IF(!data->mCurrentRunnable, data->mTasks.size() == 1);
   PostTasksIfNecessary(eventTarget, data);
@@ -165,6 +182,8 @@ void SerializedTaskDispatcher::PostTaskToMain(
 
 void SerializedTaskDispatcher::PostTaskToCalculator(
     already_AddRefed<nsIRunnable> aTask) {
+  RefPtr<nsIRunnable> task = aTask;
+
   auto data = mData.Lock();
   if (data->mDestroyed) {
     return;
@@ -172,7 +191,7 @@ void SerializedTaskDispatcher::PostTaskToCalculator(
 
   nsISerialEventTarget* eventTarget =
       WinWindowOcclusionTracker::OcclusionCalculatorLoop()->SerialEventTarget();
-  data->mTasks.push({std::move(aTask), eventTarget});
+  data->mTasks.push({std::move(task), eventTarget});
 
   MOZ_ASSERT_IF(!data->mCurrentRunnable, data->mTasks.size() == 1);
   PostTasksIfNecessary(eventTarget, data);
@@ -183,9 +202,8 @@ void SerializedTaskDispatcher::PostDelayedTaskToCalculator(
   CALC_LOG(LogLevel::Debug,
            "SerializedTaskDispatcher::PostDelayedTaskToCalculator()");
 
-  RefPtr<Runnable> runnable = WrapRunnable(
-      RefPtr<SerializedTaskDispatcher>(this),
-      &SerializedTaskDispatcher::HandleDelayedTask, std::move(aTask));
+  RefPtr<DelayedTaskRunnable> runnable =
+      new DelayedTaskRunnable(this, std::move(aTask));
   MessageLoop* targetLoop =
       WinWindowOcclusionTracker::OcclusionCalculatorLoop();
   targetLoop->PostDelayedTask(runnable.forget(), aDelayMs);
@@ -216,6 +234,8 @@ void SerializedTaskDispatcher::HandleDelayedTask(
   MOZ_ASSERT(WinWindowOcclusionTracker::IsInWinWindowOcclusionThread());
   CALC_LOG(LogLevel::Debug, "SerializedTaskDispatcher::HandleDelayedTask()");
 
+  RefPtr<nsIRunnable> task = aTask;
+
   auto data = mData.Lock();
   if (data->mDestroyed) {
     return;
@@ -223,7 +243,7 @@ void SerializedTaskDispatcher::HandleDelayedTask(
 
   nsISerialEventTarget* eventTarget =
       WinWindowOcclusionTracker::OcclusionCalculatorLoop()->SerialEventTarget();
-  data->mTasks.push({std::move(aTask), eventTarget});
+  data->mTasks.push({std::move(task), eventTarget});
 
   MOZ_ASSERT_IF(!data->mCurrentRunnable, data->mTasks.size() == 1);
   PostTasksIfNecessary(eventTarget, data);
@@ -265,6 +285,9 @@ void SerializedTaskDispatcher::HandleTasks() {
     // Get next task
     {
       auto data = mData.Lock();
+      if (data->mDestroyed) {
+        return;
+      }
 
       frontTask = nullptr;
       data->mTasks.pop();
@@ -298,6 +321,9 @@ StaticRefPtr<WinWindowOcclusionTracker> WinWindowOcclusionTracker::sTracker;
 /* static */
 WinWindowOcclusionTracker* WinWindowOcclusionTracker::Get() {
   MOZ_ASSERT(NS_IsMainThread());
+  if (!sTracker || sTracker->mHasAttemptedShutdown) {
+    return nullptr;
+  }
   return sTracker;
 }
 
@@ -306,22 +332,44 @@ void WinWindowOcclusionTracker::Ensure() {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info, "WinWindowOcclusionTracker::Ensure()");
 
-  if (sTracker) {
-    return;
-  }
-
-  base::Thread* thread = new base::Thread("WinWindowOcclusionCalc");
-
   base::Thread::Options options;
   options.message_loop_type = MessageLoop::TYPE_UI;
 
+  if (sTracker) {
+    // Try to reuse the thread, which involves stopping and restarting it.
+    sTracker->mThread->Stop();
+    if (sTracker->mThread->StartWithOptions(options)) {
+      // Success!
+      sTracker->mHasAttemptedShutdown = false;
+
+      // Take this opportunity to ensure that mDisplayStatusObserver and
+      // mSessionChangeObserver exist. They might have failed to be
+      // created when sTracker was created.
+      sTracker->EnsureDisplayStatusObserver();
+      sTracker->EnsureSessionChangeObserver();
+      return;
+    }
+    // Restart failed, so null out our sTracker and try again with a new
+    // thread. This will cause the old singleton instance to be deallocated,
+    // which will destroy its mThread as well.
+    sTracker = nullptr;
+  }
+
+  UniquePtr<base::Thread> thread =
+      MakeUnique<base::Thread>("WinWindowOcclusionCalc");
+
   if (!thread->StartWithOptions(options)) {
-    delete thread;
     return;
   }
 
-  sTracker = new WinWindowOcclusionTracker(thread);
+  sTracker = new WinWindowOcclusionTracker(std::move(thread));
   WindowOcclusionCalculator::CreateInstance();
+
+  RefPtr<Runnable> runnable =
+      WrapRunnable(RefPtr<WindowOcclusionCalculator>(
+                       WindowOcclusionCalculator::GetInstance()),
+                   &WindowOcclusionCalculator::Initialize);
+  sTracker->mSerializedTaskDispatcher->PostTaskToCalculator(runnable.forget());
 }
 
 /* static */
@@ -333,18 +381,50 @@ void WinWindowOcclusionTracker::ShutDown() {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info, "WinWindowOcclusionTracker::ShutDown()");
 
+  sTracker->mHasAttemptedShutdown = true;
   sTracker->Destroy();
 
-  layers::SynchronousTask task("WinWindowOcclusionTracker");
-  RefPtr<Runnable> runnable =
-      WrapRunnable(RefPtr<WindowOcclusionCalculator>(
-                       WindowOcclusionCalculator::GetInstance()),
-                   &WindowOcclusionCalculator::Shutdown, &task);
-  OcclusionCalculatorLoop()->PostTask(runnable.forget());
-  task.Wait();
+  // Our thread could hang while we're waiting for it to stop.
+  // Since we're shutting down, that's not a critical problem.
+  // We set a reasonable amount of time to wait for shutdown,
+  // and if it succeeds within that time, we correctly stop
+  // our thread by nulling out the refptr, which will cause it
+  // to be deallocated and join the thread. If it times out,
+  // we do nothing, which means that the thread will not be
+  // joined and sTracker memory will leak.
+  CVStatus status;
+  {
+    // It's important to hold the lock before posting the
+    // runnable. This ensures that the runnable can't begin
+    // until we've started our Wait, which prevents us from
+    // Waiting on a monitor that has already been notified.
+    MonitorAutoLock lock(sTracker->mMonitor);
 
-  WindowOcclusionCalculator::ClearInstance();
-  sTracker = nullptr;
+    static const TimeDuration TIMEOUT = TimeDuration::FromSeconds(2.0);
+    RefPtr<Runnable> runnable =
+        WrapRunnable(RefPtr<WindowOcclusionCalculator>(
+                         WindowOcclusionCalculator::GetInstance()),
+                     &WindowOcclusionCalculator::Shutdown);
+    OcclusionCalculatorLoop()->PostTask(runnable.forget());
+
+    // Monitor uses SleepConditionVariableSRW, which can have
+    // spurious wakeups which are reported as timeouts, so we
+    // check timestamps to ensure that we've waited as long we
+    // intended to. If we wake early, we don't bother calculating
+    // a precise amount for the next wait; we just wait the same
+    // amount of time. This means timeout might happen after as
+    // much as 2x the TIMEOUT time.
+    TimeStamp timeStart = TimeStamp::NowLoRes();
+    do {
+      status = sTracker->mMonitor.Wait(TIMEOUT);
+    } while ((status == CVStatus::Timeout) &&
+             ((TimeStamp::NowLoRes() - timeStart) < TIMEOUT));
+  }
+
+  if (status == CVStatus::NoTimeout) {
+    WindowOcclusionCalculator::ClearInstance();
+    sTracker = nullptr;
+  }
 }
 
 void WinWindowOcclusionTracker::Destroy() {
@@ -370,6 +450,26 @@ MessageLoop* WinWindowOcclusionTracker::OcclusionCalculatorLoop() {
 bool WinWindowOcclusionTracker::IsInWinWindowOcclusionThread() {
   return sTracker &&
          sTracker->mThread->thread_id() == PlatformThread::CurrentId();
+}
+
+void WinWindowOcclusionTracker::EnsureDisplayStatusObserver() {
+  if (mDisplayStatusObserver) {
+    return;
+  }
+  if (StaticPrefs::
+          widget_windows_window_occlusion_tracking_display_state_enabled()) {
+    mDisplayStatusObserver = DisplayStatusObserver::Create(this);
+  }
+}
+
+void WinWindowOcclusionTracker::EnsureSessionChangeObserver() {
+  if (mSessionChangeObserver) {
+    return;
+  }
+  if (StaticPrefs::
+          widget_windows_window_occlusion_tracking_session_lock_enabled()) {
+    mSessionChangeObserver = SessionChangeObserver::Create(this);
+  }
 }
 
 void WinWindowOcclusionTracker::Enable(nsBaseWidget* aWindow, HWND aHwnd) {
@@ -427,13 +527,15 @@ void WinWindowOcclusionTracker::OnWindowVisibilityChanged(nsBaseWidget* aWindow,
   mSerializedTaskDispatcher->PostTaskToCalculator(runnable.forget());
 }
 
-WinWindowOcclusionTracker::WinWindowOcclusionTracker(base::Thread* aThread)
-    : mThread(aThread) {
+WinWindowOcclusionTracker::WinWindowOcclusionTracker(
+    UniquePtr<base::Thread> aThread)
+    : mThread(std::move(aThread)), mMonitor("WinWindowOcclusionTracker") {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info, "WinWindowOcclusionTracker::WinWindowOcclusionTracker()");
 
-  mDisplayStatusObserver = DisplayStatusObserver::Create(this);
-  mSessionChangeObserver = SessionChangeObserver::Create(this);
+  EnsureDisplayStatusObserver();
+  EnsureSessionChangeObserver();
+
   mSerializedTaskDispatcher = new SerializedTaskDispatcher();
 }
 
@@ -441,7 +543,6 @@ WinWindowOcclusionTracker::~WinWindowOcclusionTracker() {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info,
       "WinWindowOcclusionTracker::~WinWindowOcclusionTracker()");
-  delete mThread;
 }
 
 // static
@@ -706,6 +807,14 @@ void WinWindowOcclusionTracker::MarkNonIconicWindowsOccluded() {
   }
 }
 
+void WinWindowOcclusionTracker::TriggerCalculation() {
+  RefPtr<Runnable> runnable =
+      WrapRunnable(RefPtr<WindowOcclusionCalculator>(
+                       WindowOcclusionCalculator::GetInstance()),
+                   &WindowOcclusionCalculator::HandleTriggerCalculation);
+  mSerializedTaskDispatcher->PostTaskToCalculator(runnable.forget());
+}
+
 // static
 BOOL WinWindowOcclusionTracker::DumpOccludingWindowsCallback(HWND aHWnd,
                                                              LPARAM aLParam) {
@@ -742,7 +851,8 @@ StaticRefPtr<WinWindowOcclusionTracker::WindowOcclusionCalculator>
     WinWindowOcclusionTracker::WindowOcclusionCalculator::sCalculator;
 
 WinWindowOcclusionTracker::WindowOcclusionCalculator::
-    WindowOcclusionCalculator() {
+    WindowOcclusionCalculator()
+    : mMonitor(WinWindowOcclusionTracker::Get()->mMonitor) {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info, "WindowOcclusionCalculator()");
 
@@ -765,18 +875,37 @@ void WinWindowOcclusionTracker::WindowOcclusionCalculator::ClearInstance() {
   sCalculator = nullptr;
 }
 
-void WinWindowOcclusionTracker::WindowOcclusionCalculator::Shutdown(
-    layers::SynchronousTask* aTask) {
+void WinWindowOcclusionTracker::WindowOcclusionCalculator::Initialize() {
+  MOZ_ASSERT(IsInWinWindowOcclusionThread());
+  MOZ_ASSERT(!mVirtualDesktopManager);
+  CALC_LOG(LogLevel::Info, "Initialize()");
+
+#ifndef __MINGW32__
+  RefPtr<IVirtualDesktopManager> desktopManager;
+  HRESULT hr = ::CoCreateInstance(
+      CLSID_VirtualDesktopManager, NULL, CLSCTX_INPROC_SERVER,
+      __uuidof(IVirtualDesktopManager), getter_AddRefs(desktopManager));
+  if (FAILED(hr)) {
+    return;
+  }
+  mVirtualDesktopManager = desktopManager;
+#endif
+}
+
+void WinWindowOcclusionTracker::WindowOcclusionCalculator::Shutdown() {
+  MonitorAutoLock lock(mMonitor);
+
   MOZ_ASSERT(IsInWinWindowOcclusionThread());
   CALC_LOG(LogLevel::Info, "Shutdown()");
-
-  layers::AutoCompleteTask complete(aTask);
 
   UnregisterEventHooks();
   if (mOcclusionUpdateRunnable) {
     mOcclusionUpdateRunnable->Cancel();
     mOcclusionUpdateRunnable = nullptr;
   }
+  mVirtualDesktopManager = nullptr;
+
+  mMonitor.NotifyAll();
 }
 
 void WinWindowOcclusionTracker::WindowOcclusionCalculator::
@@ -835,6 +964,15 @@ void WinWindowOcclusionTracker::WindowOcclusionCalculator::
     MaybeRegisterEventHooks();
     ScheduleOcclusionCalculationIfNeeded();
   }
+}
+
+void WinWindowOcclusionTracker::WindowOcclusionCalculator::
+    HandleTriggerCalculation() {
+  MOZ_ASSERT(IsInWinWindowOcclusionThread());
+  CALC_LOG(LogLevel::Info, "HandleTriggerCalculation()");
+
+  MaybeRegisterEventHooks();
+  ScheduleOcclusionCalculationIfNeeded();
 }
 
 void WinWindowOcclusionTracker::WindowOcclusionCalculator::
@@ -1021,6 +1159,9 @@ void WinWindowOcclusionTracker::WindowOcclusionCalculator::
   MOZ_RELEASE_ASSERT(mGlobalEventHooks.empty());
   CALC_LOG(LogLevel::Info, "RegisterEventHooks()");
 
+  // Detects native window lost mouse capture
+  RegisterGlobalEventHook(EVENT_SYSTEM_CAPTUREEND, EVENT_SYSTEM_CAPTUREEND);
+
   // Detects native window move (drag) and resizing events.
   RegisterGlobalEventHook(EVENT_SYSTEM_MOVESIZESTART, EVENT_SYSTEM_MOVESIZEEND);
 
@@ -1158,7 +1299,7 @@ void WinWindowOcclusionTracker::WindowOcclusionCalculator::
   }
 
   CALC_LOG(LogLevel::Debug,
-           "WindowOcclusionCalculator::ProcessEventHookCallback() aEvent 0x%x",
+           "WindowOcclusionCalculator::ProcessEventHookCallback() aEvent 0x%lx",
            aEvent);
 
   // We generally ignore events for popup windows, except for when the taskbar
@@ -1288,9 +1429,40 @@ Maybe<bool> WinWindowOcclusionTracker::WindowOcclusionCalculator::
     return Some(true);
   }
 
-  // XXX VirtualDesktopManager is going to be handled by Bug 1732737.
+  BOOL onCurrentDesktop;
+  HRESULT hr = mVirtualDesktopManager->IsWindowOnCurrentVirtualDesktop(
+      aHwnd, &onCurrentDesktop);
+  if (FAILED(hr)) {
+    // In this case, we do not know the window is in which virtual desktop.
+    return Nothing();
+  }
 
-  return Nothing();
+  if (onCurrentDesktop) {
+    return Some(true);
+  }
+
+  GUID workspaceGuid;
+  hr = mVirtualDesktopManager->GetWindowDesktopId(aHwnd, &workspaceGuid);
+  if (FAILED(hr)) {
+    // In this case, we do not know the window is in which virtual desktop.
+    return Nothing();
+  }
+
+  // IsWindowOnCurrentVirtualDesktop() is flaky for newly opened windows,
+  // which causes test flakiness. Occasionally, it incorrectly says a window
+  // is not on the current virtual desktop when it is. In this situation,
+  // it also returns GUID_NULL for the desktop id.
+  if (workspaceGuid == GUID_NULL) {
+    // In this case, we do not know if the window is in which virtual desktop.
+    // But we hanle it as on current virtual desktop.
+    // It does not cause a problem to window occlusion.
+    // Since if window is not on current virtual desktop, window size becomes
+    // (0, 0, 0, 0). It makes window occlusion handling explicit. It is
+    // necessary for gtest.
+    return Some(true);
+  }
+
+  return Some(false);
 }
 
 #undef LOG

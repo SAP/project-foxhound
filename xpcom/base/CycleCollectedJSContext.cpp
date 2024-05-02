@@ -22,13 +22,10 @@
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/TimelineConsumers.h"
-#include "mozilla/TimelineMarker.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/FinalizationRegistryBinding.h"
-#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/PromiseRejectionEvent.h"
@@ -360,7 +357,7 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
                                                init);
 
         RefPtr<AsyncEventDispatcher> asyncDispatcher =
-            new AsyncEventDispatcher(owner, event);
+            new AsyncEventDispatcher(owner, event.forget());
         asyncDispatcher->PostDOMEvent();
       }
     }
@@ -467,7 +464,7 @@ void CycleCollectedJSContext::AfterProcessTask(uint32_t aRecursionDepth) {
 
   // This should be a fast test so that it won't affect the next task
   // processing.
-  IsIdleGCTaskNeeded();
+  MaybePokeGC();
 }
 
 void CycleCollectedJSContext::AfterProcessMicrotasks() {
@@ -476,7 +473,7 @@ void CycleCollectedJSContext::AfterProcessMicrotasks() {
   // https://html.spec.whatwg.org/multipage/webappapis.html#notify-about-rejected-promises
   if (mAboutToBeNotifiedRejectedPromises.Length()) {
     RefPtr<NotifyUnhandledRejections> runnable = new NotifyUnhandledRejections(
-        this, std::move(mAboutToBeNotifiedRejectedPromises));
+        std::move(mAboutToBeNotifiedRejectedPromises));
     NS_DispatchToCurrentThread(runnable);
   }
   // Cleanup Indexed Database transactions:
@@ -493,7 +490,9 @@ void CycleCollectedJSContext::AfterProcessMicrotasks() {
   JS::ClearKeptObjects(mJSContext);
 }
 
-void CycleCollectedJSContext::IsIdleGCTaskNeeded() const {
+void CycleCollectedJSContext::MaybePokeGC() {
+  // Worker-compatible check to see if we want to do an idle-time minor
+  // GC.
   class IdleTimeGCTaskRunnable : public mozilla::IdleRunnable {
    public:
     using mozilla::IdleRunnable::IdleRunnable;
@@ -724,12 +723,15 @@ void CycleCollectedJSContext::PerformDebuggerMicroTaskCheckpoint() {
 
 NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
   for (size_t i = 0; i < mUnhandledRejections.Length(); ++i) {
+    CycleCollectedJSContext* cccx = CycleCollectedJSContext::Get();
+    NS_ENSURE_STATE(cccx);
+
     RefPtr<Promise>& promise = mUnhandledRejections[i];
     if (!promise) {
       continue;
     }
 
-    JS::RootingContext* cx = mCx->RootingCx();
+    JS::RootingContext* cx = cccx->RootingCx();
     JS::RootedObject promiseObj(cx, promise->PromiseObj());
     MOZ_ASSERT(JS::IsPromiseObject(promiseObj));
 
@@ -752,29 +754,34 @@ NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
       }
     }
 
+    cccx = CycleCollectedJSContext::Get();
+    NS_ENSURE_STATE(cccx);
     if (!JS::GetPromiseIsHandled(promiseObj)) {
       DebugOnly<bool> isFound =
-          mCx->mPendingUnhandledRejections.Remove(promiseID);
+          cccx->mPendingUnhandledRejections.Remove(promiseID);
       MOZ_ASSERT(isFound);
     }
 
     // If a rejected promise is being handled in "unhandledrejection" event
     // handler, it should be removed from the table in
     // PromiseRejectionTrackerCallback.
-    MOZ_ASSERT(!mCx->mPendingUnhandledRejections.Lookup(promiseID));
+    MOZ_ASSERT(!cccx->mPendingUnhandledRejections.Lookup(promiseID));
   }
   return NS_OK;
 }
 
 nsresult CycleCollectedJSContext::NotifyUnhandledRejections::Cancel() {
+  CycleCollectedJSContext* cccx = CycleCollectedJSContext::Get();
+  NS_ENSURE_STATE(cccx);
+
   for (size_t i = 0; i < mUnhandledRejections.Length(); ++i) {
     RefPtr<Promise>& promise = mUnhandledRejections[i];
     if (!promise) {
       continue;
     }
 
-    JS::RootedObject promiseObj(mCx->RootingCx(), promise->PromiseObj());
-    mCx->mPendingUnhandledRejections.Remove(JS::GetPromiseID(promiseObj));
+    JS::RootedObject promiseObj(cccx->RootingCx(), promise->PromiseObj());
+    cccx->mPendingUnhandledRejections.Remove(JS::GetPromiseID(promiseObj));
   }
   return NS_OK;
 }
@@ -845,6 +852,10 @@ void FinalizationRegistryCleanup::DoCleanup() {
   std::swap(callbacks.get(), mCallbacks.get());
 
   for (const Callback& callback : callbacks) {
+    JS::ExposeObjectToActiveJS(
+        JS_GetFunctionObject(callback.mCallbackFunction));
+    JS::ExposeObjectToActiveJS(callback.mIncumbentGlobal);
+
     JS::RootedObject functionObj(
         cx, JS_GetFunctionObject(callback.mCallbackFunction));
     JS::RootedObject globalObj(cx, JS::GetNonCCWObjectGlobal(functionObj));

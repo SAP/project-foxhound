@@ -7,8 +7,10 @@
  * Tests if timeline correctly displays interval divisions.
  */
 
-add_task(async function() {
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+add_task(async function () {
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
   const { monitor } = await initNetMonitor(HTTPS_SIMPLE_URL, {
     requestCount: 1,
@@ -31,7 +33,7 @@ add_task(async function() {
     "An timeline label should be displayed when the frontend is opened."
   );
   ok(
-    $all(".requests-list-timings-division").length == 0,
+    !$all(".requests-list-timings-division").length,
     "No tick labels should be displayed when the frontend is opened."
   );
 

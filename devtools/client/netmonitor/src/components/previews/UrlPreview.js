@@ -6,25 +6,28 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 const PropertiesView = createFactory(
-  require("devtools/client/netmonitor/src/components/request-details/PropertiesView")
+  require("resource://devtools/client/netmonitor/src/components/request-details/PropertiesView.js")
 );
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   parseQueryString,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 const TreeRow = createFactory(
-  require("devtools/client/shared/components/tree/TreeRow")
+  require("resource://devtools/client/shared/components/tree/TreeRow.js")
 );
 
-loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/index").MODE;
+loader.lazyGetter(this, "MODE", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
+    .MODE;
 });
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
 const { div, span, tr, td } = dom;
 
@@ -63,6 +66,7 @@ class UrlPreview extends Component {
       url: PropTypes.string,
       method: PropTypes.string,
       address: PropTypes.string,
+      proxyStatus: PropTypes.string,
       shouldExpandPreview: PropTypes.bool,
       onTogglePreview: PropTypes.func,
     };
@@ -187,7 +191,7 @@ class UrlPreview extends Component {
   }
 
   parseUrl(url) {
-    const { method, address } = this.props;
+    const { method, address, proxyStatus } = this.props;
     const { host, protocol, pathname, search } = new URL(url);
 
     const urlObject = {
@@ -217,14 +221,18 @@ class UrlPreview extends Component {
           map[obj.name] = obj.value;
         }
         return map;
-      }, {});
+      }, Object.create(null));
     }
 
     if (address) {
-      // makes sure the remote adress section is expanded
+      // makes sure the remote address section is expanded
       expandedNodes.add(`/${method}/remote`);
       urlObject[method].remote = {
-        [L10N.getStr("netmonitor.headers.address")]: address,
+        [L10N.getStr(
+          proxyStatus
+            ? "netmonitor.headers.proxyAddress"
+            : "netmonitor.headers.address"
+        )]: address,
       };
     }
 

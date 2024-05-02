@@ -13,25 +13,15 @@
 const ENGINE_NAME = "MozSearch";
 const ENGINE_DOMAIN = "example.com";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderTabToSearch:
-    "resource:///modules/UrlbarProviderTabToSearch.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+    "resource:///modules/UrlbarProviderTabToSearch.sys.mjs",
 });
 
 function snapshotHistograms() {
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
   return {
-    resultIndexHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX"
-    ),
-    resultTypeHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_TYPE_2"
-    ),
-    resultIndexByTypeHist: TelemetryTestUtils.getAndClearKeyedHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2"
-    ),
     resultMethodHist: TelemetryTestUtils.getAndClearHistogram(
       "FX_URLBAR_SELECTED_RESULT_METHOD"
     ),
@@ -40,21 +30,6 @@ function snapshotHistograms() {
 }
 
 function assertTelemetryResults(histograms, type, index, method) {
-  TelemetryTestUtils.assertHistogram(histograms.resultIndexHist, index, 1);
-
-  TelemetryTestUtils.assertHistogram(
-    histograms.resultTypeHist,
-    UrlbarUtils.SELECTED_RESULT_TYPES[type],
-    1
-  );
-
-  TelemetryTestUtils.assertKeyedHistogramValue(
-    histograms.resultIndexByTypeHist,
-    type,
-    index,
-    1
-  );
-
   TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
 
   TelemetryTestUtils.assertKeyedScalar(
@@ -103,7 +78,7 @@ async function checkForTabToSearchResult(engineName, isOnboarding) {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.tabToSearch.onboard.interactionsLeft", 0]],
   });
@@ -113,7 +88,6 @@ add_task(async function setup() {
     search_url: `https://${ENGINE_DOMAIN}/`,
   });
 
-  UrlbarTestUtils.init(this);
   // Reset the enginesShown sets in case a previous test showed a tab-to-search
   // result but did not end its engagement.
   UrlbarProviderTabToSearch.enginesShown.regular.clear();
@@ -125,7 +99,6 @@ add_task(async function setup() {
 
   registerCleanupFunction(async () => {
     Services.telemetry.canRecordExtended = oldCanRecord;
-    UrlbarTestUtils.uninit();
   });
 });
 
@@ -136,6 +109,7 @@ add_task(async function test() {
     for (let i = 0; i < 3; i++) {
       await PlacesTestUtils.addVisits([`https://${ENGINE_DOMAIN}/`]);
     }
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
@@ -216,13 +190,14 @@ async function impressions_test(isOnboarding) {
         name: `${ENGINE_NAME}2`,
         search_url: `https://${firstEngineHost}-2.com/`,
       },
-      true
+      { skipUnload: true }
     );
 
     for (let i = 0; i < 3; i++) {
       await PlacesTestUtils.addVisits([`https://${firstEngineHost}-2.com`]);
       await PlacesTestUtils.addVisits([`https://${ENGINE_DOMAIN}/`]);
     }
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
     // First do multiple searches for substrings of firstEngineHost. The view
     // should show the same tab-to-search onboarding result the entire time, so

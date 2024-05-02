@@ -12,6 +12,7 @@
 #include "CompositableHost.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/ipc/FileDescriptor.h"
+#include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/webrender/WebRenderAPI.h"
@@ -110,7 +111,8 @@ class AsyncImagePipelineManager final {
                                      wr::TransactionBuilder& aFastTxn);
   void ApplyAsyncImageForPipeline(const wr::PipelineId& aPipelineId,
                                   wr::TransactionBuilder& aTxn,
-                                  wr::TransactionBuilder& aTxnForImageBridge);
+                                  wr::TransactionBuilder& aTxnForImageBridge,
+                                  RemoteTextureInfoList* aList);
 
   void SetEmptyDisplayList(const wr::PipelineId& aPipelineId,
                            wr::TransactionBuilder& aTxn,
@@ -130,6 +132,15 @@ class AsyncImagePipelineManager final {
   bool GetAndResetWillGenerateFrame();
 
   static wr::ExternalImageId GetNextExternalImageId();
+
+  void SetTextureFactoryIdentifier(
+      const TextureFactoryIdentifier& aTextureFactoryIdentifier) {
+    mTextureFactoryIdentifier = aTextureFactoryIdentifier;
+  }
+
+  TextureFactoryIdentifier GetTextureFactoryIdentifier() const {
+    return mTextureFactoryIdentifier;
+  }
 
  private:
   void ProcessPipelineRendered(const wr::PipelineId& aPipelineId,
@@ -210,12 +221,13 @@ class AsyncImagePipelineManager final {
                                   const wr::PipelineId& aPipelineId,
                                   AsyncImagePipeline* aPipeline,
                                   wr::TransactionBuilder& aSceneBuilderTxn,
-                                  wr::TransactionBuilder& aMaybeFastTxn);
+                                  wr::TransactionBuilder& aMaybeFastTxn,
+                                  RemoteTextureInfoList* aList);
   Maybe<TextureHost::ResourceUpdateOp> UpdateImageKeys(
       const wr::Epoch& aEpoch, const wr::PipelineId& aPipelineId,
       AsyncImagePipeline* aPipeline, nsTArray<wr::ImageKey>& aKeys,
       wr::TransactionBuilder& aSceneBuilderTxn,
-      wr::TransactionBuilder& aMaybeFastTxn);
+      wr::TransactionBuilder& aMaybeFastTxn, RemoteTextureInfoList* aList);
   Maybe<TextureHost::ResourceUpdateOp> UpdateWithoutExternalImage(
       TextureHost* aTexture, wr::ImageKey aKey, TextureHost::ResourceUpdateOp,
       wr::TransactionBuilder& aTxn);
@@ -224,6 +236,7 @@ class AsyncImagePipelineManager final {
 
   RefPtr<wr::WebRenderAPI> mApi;
   bool mUseCompositorWnd;
+  TextureFactoryIdentifier mTextureFactoryIdentifier;
 
   const wr::IdNamespace mIdNamespace;
   const bool mUseTripleBuffering;
@@ -237,7 +250,8 @@ class AsyncImagePipelineManager final {
   bool mDestroyed;
 
 #ifdef XP_WIN
-  bool mUseWebRenderDCompVideoOverlayWin;
+  bool mUseWebRenderDCompVideoHwOverlayWin;
+  bool mUseWebRenderDCompVideoSwOverlayWin;
 #endif
 
   // Render time for the current composition.
@@ -263,7 +277,7 @@ class AsyncImagePipelineManager final {
 
   std::vector<std::pair<wr::RenderedFrameId, WebRenderPipelineInfoHolder>>
       mRenderSubmittedUpdates;
-  Mutex mRenderSubmittedUpdatesLock;
+  Mutex mRenderSubmittedUpdatesLock MOZ_UNANNOTATED;
 
   Atomic<uint64_t> mLastCompletedFrameId;
   std::vector<std::pair<wr::RenderedFrameId,

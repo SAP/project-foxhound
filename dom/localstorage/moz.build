@@ -7,9 +7,9 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Storage: localStorage & sessionStorage")
 
-MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest.toml"]
 
-BROWSER_CHROME_MANIFESTS += ["test/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
 

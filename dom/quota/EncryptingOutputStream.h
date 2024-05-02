@@ -24,6 +24,7 @@
 #include "nscore.h"
 
 class nsIInputStream;
+class nsIRandomGenerator;
 
 namespace mozilla::dom::quota {
 class EncryptingOutputStreamBase : public nsIOutputStream {
@@ -83,6 +84,8 @@ class EncryptingOutputStream final : public EncryptingOutputStreamBase {
   // effective block size at a block boundary.
   nsTArray<uint8_t> mBuffer;
 
+  nsCOMPtr<nsIRandomGenerator> mRandomGenerator;
+
   // The next byte in the plain data to copy incoming data to.
   size_t mNextByte = 0;
 
@@ -94,6 +97,7 @@ class EncryptingOutputStream final : public EncryptingOutputStreamBase {
  public:
   NS_IMETHOD Close() override;
   NS_IMETHOD Flush() override;
+  NS_IMETHOD StreamStatus() override;
   NS_IMETHOD WriteSegments(nsReadSegmentFun aReader, void* aClosure,
                            uint32_t aCount, uint32_t* _retval) override;
 };

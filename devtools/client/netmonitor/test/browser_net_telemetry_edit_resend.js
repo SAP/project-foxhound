@@ -8,7 +8,19 @@ const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 /**
  * Test the edit_resend telemetry event.
  */
-add_task(async function() {
+add_task(async function () {
+  if (
+    Services.prefs.getBoolPref(
+      "devtools.netmonitor.features.newEditAndResend",
+      true
+    )
+  ) {
+    ok(
+      true,
+      "Skip this test when pref is true, because this panel won't be default when that is the case."
+    );
+    return;
+  }
   const { monitor } = await initNetMonitor(HTTPS_SIMPLE_URL, {
     requestCount: 1,
   });
@@ -41,7 +53,7 @@ add_task(async function() {
   EventUtils.sendMouseEvent({ type: "contextmenu" }, firstRequest);
 
   // Open "New Request" form and resend.
-  getContextMenuItem(monitor, "request-list-context-resend").click();
+  await selectContextMenuItem(monitor, "request-list-context-edit-resend");
   await waitUntil(() => document.querySelector("#custom-request-send-button"));
   document.querySelector("#custom-request-send-button").click();
 
@@ -55,5 +67,5 @@ add_task(async function() {
     }
   );
 
-  return teardown(monitor);
+  await teardown(monitor);
 });

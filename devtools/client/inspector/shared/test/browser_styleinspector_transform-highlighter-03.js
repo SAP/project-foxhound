@@ -24,7 +24,7 @@ const TEST_URI = `
 
 const TYPE = "CssTransformHighlighter";
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
@@ -33,18 +33,18 @@ add_task(async function() {
     isShown: false,
     nodeFront: null,
     nbOfTimesShown: 0,
-    show: function(nodeFront) {
+    show(nodeFront) {
       this.nodeFront = nodeFront;
       this.isShown = true;
       this.nbOfTimesShown++;
       return Promise.resolve(true);
     },
-    hide: function() {
+    hide() {
       this.nodeFront = null;
       this.isShown = false;
       return Promise.resolve();
     },
-    finalize: function() {},
+    finalize() {},
   };
 
   // Inject the mock highlighter in the rule-view

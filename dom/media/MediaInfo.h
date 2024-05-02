@@ -8,6 +8,7 @@
 
 #  include "mozilla/UniquePtr.h"
 #  include "mozilla/RefPtr.h"
+#  include "mozilla/Variant.h"
 #  include "nsTHashMap.h"
 #  include "nsString.h"
 #  include "nsTArray.h"
@@ -36,7 +37,202 @@ class MetadataTag {
   }
 };
 
-typedef nsTHashMap<nsCStringHashKey, nsCString> MetadataTags;
+using MetadataTags = nsTHashMap<nsCStringHashKey, nsCString>;
+
+// Start codec specific data structs. If modifying these remember to also
+// modify the MediaIPCUtils so that any new members are sent across IPC.
+
+// Generic types, we should prefer a specific type when we can.
+
+// Generic empty type. Prefer to use a specific type but not populate members
+// if possible, as that helps with type checking.
+struct NoCodecSpecificData {
+  bool operator==(const NoCodecSpecificData& rhs) const { return true; }
+};
+
+// Generic binary blob type. Prefer not to use this structure. It's here to ease
+// the transition to codec specific structures in the code.
+struct AudioCodecSpecificBinaryBlob {
+  bool operator==(const AudioCodecSpecificBinaryBlob& rhs) const {
+    return *mBinaryBlob == *rhs.mBinaryBlob;
+  }
+
+  RefPtr<MediaByteBuffer> mBinaryBlob{new MediaByteBuffer};
+};
+
+// End generic types.
+
+// Audio codec specific data types.
+
+struct AacCodecSpecificData {
+  bool operator==(const AacCodecSpecificData& rhs) const {
+    return *mEsDescriptorBinaryBlob == *rhs.mEsDescriptorBinaryBlob &&
+           *mDecoderConfigDescriptorBinaryBlob ==
+               *rhs.mDecoderConfigDescriptorBinaryBlob;
+  }
+  // An explanation for the necessity of handling the encoder delay and the
+  // padding is available here:
+  // https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFAppenG/QTFFAppenG.html
+
+  // The number of frames that should be skipped from the beginning of the
+  // decoded stream.
+  uint32_t mEncoderDelayFrames{0};
+
+  // The total number of frames of the media, that is, excluding the encoder
+  // delay and the padding of the last packet, that must be discarded.
+  uint64_t mMediaFrameCount{0};
+
+  // The bytes of the ES_Descriptor field parsed out of esds box. We store
+  // this as a blob as some decoders want this.
+  RefPtr<MediaByteBuffer> mEsDescriptorBinaryBlob{new MediaByteBuffer};
+
+  // The bytes of the DecoderConfigDescriptor field within the parsed
+  // ES_Descriptor. This is a subset of the ES_Descriptor, so it is technically
+  // redundant to store both. However, some decoders expect this binary blob
+  // instead of the whole ES_Descriptor, so both are stored for convenience
+  // and clarity (rather than reparsing the ES_Descriptor).
+  // TODO(bug 1768562): use a Span to track this rather than duplicating data.
+  RefPtr<MediaByteBuffer> mDecoderConfigDescriptorBinaryBlob{
+      new MediaByteBuffer};
+};
+
+struct FlacCodecSpecificData {
+  bool operator==(const FlacCodecSpecificData& rhs) const {
+    return *mStreamInfoBinaryBlob == *rhs.mStreamInfoBinaryBlob;
+  }
+
+  // A binary blob of the data from the METADATA_BLOCK_STREAMINFO block
+  // in the flac header.
+  // See https://xiph.org/flac/format.html#metadata_block_streaminfo
+  // Consumers of this data (ffmpeg) take a blob, so we don't parse the data,
+  // just store the blob. For headerless flac files this will be left empty.
+  RefPtr<MediaByteBuffer> mStreamInfoBinaryBlob{new MediaByteBuffer};
+};
+
+struct Mp3CodecSpecificData {
+  bool operator==(const Mp3CodecSpecificData& rhs) const {
+    return mEncoderDelayFrames == rhs.mEncoderDelayFrames &&
+           mEncoderPaddingFrames == rhs.mEncoderPaddingFrames;
+  }
+
+  // The number of frames that should be skipped from the beginning of the
+  // decoded stream.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1566389 for more info.
+  uint32_t mEncoderDelayFrames{0};
+
+  // The number of frames that should be skipped from the end of the decoded
+  // stream.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1566389 for more info.
+  uint32_t mEncoderPaddingFrames{0};
+};
+
+struct OpusCodecSpecificData {
+  bool operator==(const OpusCodecSpecificData& rhs) const {
+    return mContainerCodecDelayFrames == rhs.mContainerCodecDelayFrames &&
+           *mHeadersBinaryBlob == *rhs.mHeadersBinaryBlob;
+  }
+  // The codec delay (aka pre-skip) in audio frames.
+  // See https://tools.ietf.org/html/rfc7845#section-4.2 for more info.
+  // This member should store the codec delay parsed from the container file.
+  // In some cases (such as the ogg container), this information is derived
+  // from the same headers stored in the header blob, making storing this
+  // separately redundant. However, other containers store the delay in
+  // addition to the header blob, in which case we can check this container
+  // delay against the header delay to ensure they're consistent.
+  int64_t mContainerCodecDelayFrames{-1};
+
+  // A binary blob of opus header data, specifically the Identification Header.
+  // See https://datatracker.ietf.org/doc/html/rfc7845.html#section-5.1
+  RefPtr<MediaByteBuffer> mHeadersBinaryBlob{new MediaByteBuffer};
+};
+
+struct VorbisCodecSpecificData {
+  bool operator==(const VorbisCodecSpecificData& rhs) const {
+    return *mHeadersBinaryBlob == *rhs.mHeadersBinaryBlob;
+  }
+
+  // A binary blob of headers in the 'extradata' format (the format ffmpeg
+  // expects for packing the extradata field). This is also the format some
+  // containers use for storing the data. Specifically, this format consists of
+  // the page_segments field, followed by the segment_table field, followed by
+  // the three Vorbis header packets, respectively the identification header,
+  // the comments header, and the setup header, in that order.
+  // See also https://xiph.org/vorbis/doc/framing.html and
+  // https://xiph.org/vorbis/doc/Vorbis_I_spec.html#x1-610004.2
+  RefPtr<MediaByteBuffer> mHeadersBinaryBlob{new MediaByteBuffer};
+};
+
+struct WaveCodecSpecificData {
+  bool operator==(const WaveCodecSpecificData& rhs) const { return true; }
+  // Intentionally empty. We don't store any wave specific data, but this
+  // variant is useful for type checking.
+};
+
+using AudioCodecSpecificVariant =
+    mozilla::Variant<NoCodecSpecificData, AudioCodecSpecificBinaryBlob,
+                     AacCodecSpecificData, FlacCodecSpecificData,
+                     Mp3CodecSpecificData, OpusCodecSpecificData,
+                     VorbisCodecSpecificData, WaveCodecSpecificData>;
+
+// Returns a binary blob representation of the AudioCodecSpecificVariant. This
+// does not guarantee that a binary representation exists. Will return an empty
+// buffer if no representation exists. Prefer `GetAudioCodecSpecificBlob` which
+// asserts if getting a blob is unexpected for a given codec config.
+inline already_AddRefed<MediaByteBuffer> ForceGetAudioCodecSpecificBlob(
+    const AudioCodecSpecificVariant& v) {
+  return v.match(
+      [](const NoCodecSpecificData&) {
+        return RefPtr<MediaByteBuffer>(new MediaByteBuffer).forget();
+      },
+      [](const AudioCodecSpecificBinaryBlob& binaryBlob) {
+        return RefPtr<MediaByteBuffer>(binaryBlob.mBinaryBlob).forget();
+      },
+      [](const AacCodecSpecificData& aacData) {
+        // We return the mDecoderConfigDescriptor blob here, as it is more
+        // commonly used by decoders at time of writing than the
+        // ES_Descriptor data. However, consumers of this data should
+        // prefer getting one or the other specifically, rather than
+        // calling this.
+        return RefPtr<MediaByteBuffer>(
+                   aacData.mDecoderConfigDescriptorBinaryBlob)
+            .forget();
+      },
+      [](const FlacCodecSpecificData& flacData) {
+        return RefPtr<MediaByteBuffer>(flacData.mStreamInfoBinaryBlob).forget();
+      },
+      [](const Mp3CodecSpecificData&) {
+        return RefPtr<MediaByteBuffer>(new MediaByteBuffer).forget();
+      },
+      [](const OpusCodecSpecificData& opusData) {
+        return RefPtr<MediaByteBuffer>(opusData.mHeadersBinaryBlob).forget();
+      },
+      [](const VorbisCodecSpecificData& vorbisData) {
+        return RefPtr<MediaByteBuffer>(vorbisData.mHeadersBinaryBlob).forget();
+      },
+      [](const WaveCodecSpecificData&) {
+        return RefPtr<MediaByteBuffer>(new MediaByteBuffer).forget();
+      });
+}
+
+// Same as `ForceGetAudioCodecSpecificBlob` but with extra asserts to ensure
+// we're not trying to get a binary blob from codecs where we don't store the
+// information as a blob or where a blob is ambiguous.
+inline already_AddRefed<MediaByteBuffer> GetAudioCodecSpecificBlob(
+    const AudioCodecSpecificVariant& v) {
+  MOZ_ASSERT(!v.is<NoCodecSpecificData>(),
+             "NoCodecSpecificData shouldn't be used as a blob");
+  MOZ_ASSERT(!v.is<AacCodecSpecificData>(),
+             "AacCodecSpecificData has 2 blobs internally, one should "
+             "explicitly be selected");
+  MOZ_ASSERT(!v.is<Mp3CodecSpecificData>(),
+             "Mp3CodecSpecificData shouldn't be used as a blob");
+
+  return ForceGetAudioCodecSpecificBlob(v);
+}
+
+// End audio codec specific data types.
+
+// End codec specific data structs.
 
 class TrackInfo {
  public:
@@ -78,6 +274,7 @@ class TrackInfo {
   nsCString mMimeType;
   media::TimeUnit mDuration;
   media::TimeUnit mMediaTime;
+  uint32_t mTimeScale = 0;
   CryptoTrack mCrypto;
 
   CopyableTArray<MetadataTag> mTags;
@@ -97,6 +294,8 @@ class TrackInfo {
   bool IsVideo() const { return !!GetAsVideoInfo(); }
   bool IsText() const { return !!GetAsTextInfo(); }
   TrackType GetType() const { return mType; }
+
+  nsCString ToString() const;
 
   bool virtual IsValid() const = 0;
 
@@ -203,10 +402,10 @@ class VideoInfo : public TrackInfo {
       return imageRect;
     }
 
-    imageRect.x = (imageRect.x * aWidth) / mImage.width;
-    imageRect.y = (imageRect.y * aHeight) / mImage.height;
-    imageRect.SetWidth(w);
-    imageRect.SetHeight(h);
+    imageRect.x = AssertedCast<int>((imageRect.x * aWidth) / mImage.width);
+    imageRect.y = AssertedCast<int>((imageRect.y * aHeight) / mImage.height);
+    imageRect.SetWidth(AssertedCast<int>(w));
+    imageRect.SetHeight(AssertedCast<int>(h));
     return imageRect;
   }
 
@@ -244,7 +443,15 @@ class VideoInfo : public TrackInfo {
   // Should be 8, 10 or 12. Default value is 8.
   gfx::ColorDepth mColorDepth = gfx::ColorDepth::COLOR_8;
 
+  // Matrix coefficients (if specified by the video) imply a colorspace.
   Maybe<gfx::YUVColorSpace> mColorSpace;
+
+  // Color primaries are independent from the coefficients.
+  Maybe<gfx::ColorSpace2> mColorPrimaries;
+
+  // Transfer functions get their own member, which may not be strongly
+  // correlated to the colorspace.
+  Maybe<gfx::TransferFunction> mTransferFunction;
 
   // True indicates no restriction on Y, U, V values (otherwise 16-235 for 8
   // bits etc)
@@ -275,23 +482,25 @@ class AudioInfo : public TrackInfo {
         mChannelMap(AudioConfig::ChannelLayout::UNKNOWN_MAP),
         mBitDepth(0),
         mProfile(0),
-        mExtendedProfile(0),
-        mCodecSpecificConfig(new MediaByteBuffer),
-        mExtraData(new MediaByteBuffer) {}
+        mExtendedProfile(0) {}
 
   AudioInfo(const AudioInfo& aOther) = default;
 
   bool operator==(const AudioInfo& rhs) const;
 
   static const uint32_t MAX_RATE = 640000;
+  static const uint32_t MAX_CHANNEL_COUNT = 256;
 
   bool IsValid() const override {
-    return mChannels > 0 && mRate > 0 && mRate <= MAX_RATE;
+    return mChannels > 0 && mChannels <= MAX_CHANNEL_COUNT && mRate > 0 &&
+           mRate <= MAX_RATE;
   }
 
   AudioInfo* GetAsAudioInfo() override { return this; }
 
   const AudioInfo* GetAsAudioInfo() const override { return this; }
+
+  nsCString ToString() const;
 
   UniquePtr<TrackInfo> Clone() const override {
     return MakeUnique<AudioInfo>(*this);
@@ -312,13 +521,12 @@ class AudioInfo : public TrackInfo {
   uint32_t mBitDepth;
 
   // Codec profile.
-  int8_t mProfile;
+  uint8_t mProfile;
 
   // Extended codec profile.
-  int8_t mExtendedProfile;
+  uint8_t mExtendedProfile;
 
-  RefPtr<MediaByteBuffer> mCodecSpecificConfig;
-  RefPtr<MediaByteBuffer> mExtraData;
+  AudioCodecSpecificVariant mCodecSpecificConfig{NoCodecSpecificData{}};
 };
 
 class EncryptionInfo {
@@ -336,7 +544,7 @@ class EncryptionInfo {
     // Encryption data.
     CopyableTArray<uint8_t> mInitData;
   };
-  typedef CopyableTArray<InitData> InitDatas;
+  using InitDatas = CopyableTArray<InitData>;
 
   // True if the stream has encryption metadata
   bool IsEncrypted() const { return mEncrypted; }

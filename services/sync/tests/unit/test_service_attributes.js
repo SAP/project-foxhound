@@ -1,9 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { FakeGUIDService } = ChromeUtils.import(
-  "resource://testing-common/services/sync/fakeservices.js"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { FakeGUIDService } = ChromeUtils.importESModule(
+  "resource://testing-common/services/sync/fakeservices.sys.mjs"
 );
 
 add_task(async function test_urls() {
@@ -39,7 +41,9 @@ add_task(async function test_urls() {
       "http://weave.cluster/1.1/johndoe/storage/meta/global"
     );
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
@@ -49,17 +53,22 @@ add_test(function test_syncID() {
 
   try {
     // Ensure pristine environment
-    Assert.equal(Svc.Prefs.get("client.syncID"), undefined);
+    Assert.equal(
+      Svc.PrefBranch.getPrefType("client.syncID"),
+      Ci.nsIPrefBranch.PREF_INVALID
+    );
 
     // Performing the first get on the attribute will generate a new GUID.
     Assert.equal(Service.syncID, "fake-guid-00");
-    Assert.equal(Svc.Prefs.get("client.syncID"), "fake-guid-00");
+    Assert.equal(Svc.PrefBranch.getStringPref("client.syncID"), "fake-guid-00");
 
-    Svc.Prefs.set("client.syncID", Utils.makeGUID());
-    Assert.equal(Svc.Prefs.get("client.syncID"), "fake-guid-01");
+    Svc.PrefBranch.setStringPref("client.syncID", Utils.makeGUID());
+    Assert.equal(Svc.PrefBranch.getStringPref("client.syncID"), "fake-guid-01");
     Assert.equal(Service.syncID, "fake-guid-01");
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     new FakeGUIDService();
     run_next_test();
   }

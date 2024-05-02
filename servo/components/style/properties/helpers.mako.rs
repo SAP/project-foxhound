@@ -9,14 +9,11 @@
 %>
 
 <%def name="predefined_type(name, type, initial_value, parse_method='parse',
-            vector=False,
-            computed_type=None, initial_specified_value=None,
+            vector=False, initial_specified_value=None,
             allow_quirks='No', allow_empty=False, **kwargs)">
     <%def name="predefined_type_inner(name, type, initial_value, parse_method)">
         #[allow(unused_imports)]
         use app_units::Au;
-        #[allow(unused_imports)]
-        use cssparser::{Color as CSSParserColor, RGBA};
         #[allow(unused_imports)]
         use crate::values::specified::AllowQuirks;
         #[allow(unused_imports)]
@@ -25,11 +22,7 @@
         use smallvec::SmallVec;
         pub use crate::values::specified::${type} as SpecifiedValue;
         pub mod computed_value {
-            % if computed_type:
-            pub use ${computed_type} as T;
-            % else:
             pub use crate::values::computed::${type} as T;
-            % endif
         }
         % if initial_value:
         #[inline] pub fn get_initial_value() -> computed_value::T { ${initial_value} }
@@ -119,8 +112,6 @@
             use crate::values::computed::{Context, ToComputedValue};
             #[allow(unused_imports)]
             use crate::values::{computed, specified};
-            #[allow(unused_imports)]
-            use crate::values::{Auto, Either, None_};
             ${caller.body()}
         }
 
@@ -265,8 +256,7 @@
                 Sorry, this is stupid but needed for now.
             % endif
 
-            use crate::properties::animated_properties::ListAnimation;
-            use crate::values::animated::{Animate, ToAnimatedZero, Procedure};
+            use crate::values::animated::{Animate, ToAnimatedZero, Procedure, lists};
             use crate::values::distance::{SquaredDistance, ComputeSquaredDistance};
 
             // FIXME(emilio): For some reason rust thinks that this alias is
@@ -303,7 +293,7 @@
                     procedure: Procedure,
                 ) -> Result<Self, ()> {
                     Ok(OwnedList(
-                        self.0.animate_${vector_animation_type}(&other.0, procedure)?
+                        lists::${vector_animation_type}::animate(&self.0, &other.0, procedure)?
                     ))
                 }
             }
@@ -312,7 +302,7 @@
                     &self,
                     other: &Self,
                 ) -> Result<SquaredDistance, ()> {
-                    self.0.squared_distance_${vector_animation_type}(&other.0)
+                    lists::${vector_animation_type}::squared_distance(&self.0, &other.0)
                 }
             }
             % endif
@@ -414,8 +404,6 @@
         #[allow(unused_imports)]
         use crate::properties::{UnparsedValue, ShorthandId};
         #[allow(unused_imports)]
-        use crate::values::{Auto, Either, None_};
-        #[allow(unused_imports)]
         use crate::error_reporting::ParseErrorReporter;
         #[allow(unused_imports)]
         use crate::properties::longhands;
@@ -443,24 +431,18 @@
             declaration: &PropertyDeclaration,
             context: &mut computed::Context,
         ) {
-            context.for_non_inherited_property =
-                % if property.style_struct.inherited:
-                    None;
-                % else:
-                    Some(LonghandId::${property.camel_case});
-                % endif
-
+            context.for_non_inherited_property = ${"false" if property.style_struct.inherited else "true"};
             let specified_value = match *declaration {
                 PropertyDeclaration::${property.camel_case}(ref value) => value,
-                PropertyDeclaration::CSSWideKeyword(ref declaration) => {
-                    debug_assert_eq!(declaration.id, LonghandId::${property.camel_case});
-                    match declaration.keyword {
+                PropertyDeclaration::CSSWideKeyword(ref wk) => {
+                    debug_assert_eq!(wk.id, LonghandId::${property.camel_case});
+                    match wk.keyword {
                         % if not property.style_struct.inherited:
                         CSSWideKeyword::Unset |
                         % endif
                         CSSWideKeyword::Initial => {
                             % if not property.style_struct.inherited:
-                                debug_assert!(false, "Should be handled in apply_properties");
+                                declaration.debug_crash("Unexpected initial or unset for non-inherited property");
                             % else:
                                 context.builder.reset_${property.ident}();
                             % endif
@@ -470,21 +452,27 @@
                         % endif
                         CSSWideKeyword::Inherit => {
                             % if property.style_struct.inherited:
-                                debug_assert!(false, "Should be handled in apply_properties");
+                                declaration.debug_crash("Unexpected inherit or unset for inherited property");
                             % else:
                                 context.rule_cache_conditions.borrow_mut().set_uncacheable();
                                 context.builder.inherit_${property.ident}();
                             % endif
                         }
                         CSSWideKeyword::RevertLayer |
-                        CSSWideKeyword::Revert => unreachable!("Should never get here"),
+                        CSSWideKeyword::Revert => {
+                            declaration.debug_crash("Found revert/revert-layer not deal with");
+                        },
                     }
                     return;
-                }
+                },
                 PropertyDeclaration::WithVariables(..) => {
-                    panic!("variables should already have been substituted")
-                }
-                _ => panic!("entered the wrong cascade_property() implementation"),
+                    declaration.debug_crash("Found variables not substituted");
+                    return;
+                },
+                _ => {
+                    declaration.debug_crash("Entered the wrong cascade_property implementation");
+                    return;
+                },
             };
 
             % if property.ident in SYSTEM_FONT_LONGHANDS and engine == "gecko":
@@ -539,105 +527,6 @@
                 .map(PropertyDeclaration::${property.camel_case})
         }
     }
-</%def>
-
-<%def name="single_keyword_system(name, values, **kwargs)">
-    <%
-        keyword_kwargs = {a: kwargs.pop(a, None) for a in [
-            'gecko_constant_prefix',
-            'gecko_enum_prefix',
-            'extra_gecko_values',
-            'extra_servo_2013_values',
-            'extra_servo_2020_values',
-            'custom_consts',
-            'gecko_inexhaustive',
-        ]}
-        keyword = keyword=Keyword(name, values, **keyword_kwargs)
-    %>
-    <%call expr="longhand(name, keyword=Keyword(name, values, **keyword_kwargs), **kwargs)">
-        use crate::values::specified::font::SystemFont;
-
-        pub mod computed_value {
-            #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-            #[derive(
-                Clone,
-                Copy,
-                Debug,
-                Eq,
-                FromPrimitive,
-                Hash,
-                MallocSizeOf,
-                Parse,
-                PartialEq,
-                SpecifiedValueInfo,
-                ToCss,
-                ToResolvedValue,
-                ToShmem,
-            )]
-            pub enum T {
-            % for value in keyword.values_for(engine):
-                ${to_camel_case(value)},
-            % endfor
-            }
-
-            ${gecko_keyword_conversion(keyword, keyword.values_for(engine), type="T", cast_to="i32")}
-        }
-
-        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-        #[derive(Clone, Copy, Debug, Eq, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
-        pub enum SpecifiedValue {
-            Keyword(computed_value::T),
-            #[css(skip)]
-            System(SystemFont),
-        }
-
-        pub fn parse<'i, 't>(_: &ParserContext, input: &mut Parser<'i, 't>) -> Result<SpecifiedValue, ParseError<'i>> {
-            Ok(SpecifiedValue::Keyword(computed_value::T::parse(input)?))
-        }
-
-        impl ToComputedValue for SpecifiedValue {
-            type ComputedValue = computed_value::T;
-            fn to_computed_value(&self, _cx: &Context) -> Self::ComputedValue {
-                match *self {
-                    SpecifiedValue::Keyword(v) => v,
-                    % if engine == "gecko":
-                        SpecifiedValue::System(_) => {
-                            _cx.cached_system_font.as_ref().unwrap().${to_rust_ident(name)}
-                        }
-                    % else:
-                        SpecifiedValue::System(system_font) => {
-                            match system_font {}
-                        }
-                    % endif
-                }
-            }
-            fn from_computed_value(other: &computed_value::T) -> Self {
-                SpecifiedValue::Keyword(*other)
-            }
-        }
-
-        #[inline]
-        pub fn get_initial_value() -> computed_value::T {
-            computed_value::T::${to_camel_case(values.split()[0])}
-        }
-        #[inline]
-        pub fn get_initial_specified_value() -> SpecifiedValue {
-            SpecifiedValue::Keyword(computed_value::T::${to_camel_case(values.split()[0])})
-        }
-
-        impl SpecifiedValue {
-            pub fn system_font(f: SystemFont) -> Self {
-                SpecifiedValue::System(f)
-            }
-            pub fn get_system(&self) -> Option<SystemFont> {
-                if let SpecifiedValue::System(s) = *self {
-                    Some(s)
-                } else {
-                    None
-                }
-            }
-        }
-    </%call>
 </%def>
 
 <%def name="gecko_keyword_conversion(keyword, values=None, type='SpecifiedValue', cast_to=None)">
@@ -971,7 +860,7 @@
 
             first.to_css(dest)?;
             if first != second {
-                dest.write_str(" ")?;
+                dest.write_char(' ')?;
                 second.to_css(dest)?;
             }
             Ok(())

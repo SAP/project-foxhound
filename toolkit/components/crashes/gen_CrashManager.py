@@ -33,7 +33,7 @@ def gen_process_map():
 
 def gen_process_pings():
     kIdentifier = "/* SUBST: CRASH_MANAGER_PROCESS_PINGS */"
-    crashManagerPing = """let processPings = {"""
+    crashManagerPing = ""
 
     for p in process_types:
         crashManagerPing += """
@@ -41,8 +41,6 @@ def gen_process_pings():
             "proctype": process_name(p.string_name),
             "crashping": "true" if p.crash_ping else "false",
         }
-    crashManagerPing += """
-    };"""
 
     return (kIdentifier, crashManagerPing)
 
@@ -51,7 +49,7 @@ def main(o, crashManager):
     subst = [gen_process_map(), gen_process_pings()]
     with open(crashManager, "r") as src:
         for l in src.readlines():
-            for (id, value) in subst:
+            for id, value in subst:
                 if id in l:
                     l = l.replace(id, value)
             o.write(l)

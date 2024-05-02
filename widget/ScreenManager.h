@@ -21,8 +21,7 @@ class ScreenDetails;
 }  // namespace dom
 }  // namespace mozilla
 
-namespace mozilla {
-namespace widget {
+namespace mozilla::widget {
 
 class ScreenManager final : public nsIScreenManager {
  public:
@@ -43,6 +42,11 @@ class ScreenManager final : public nsIScreenManager {
   void Refresh(nsTArray<mozilla::dom::ScreenDetails>&& aScreens);
   void CopyScreensToRemote(mozilla::dom::ContentParent* aContentParent);
   already_AddRefed<Screen> GetPrimaryScreen();
+  already_AddRefed<Screen> ScreenForRect(const DesktopIntRect& aRect);
+
+  const nsTArray<RefPtr<Screen>>& CurrentScreenList() const {
+    return mScreenList;
+  }
 
  private:
   ScreenManager();
@@ -57,7 +61,6 @@ class ScreenManager final : public nsIScreenManager {
   UniquePtr<Helper> mHelper;
 };
 
-}  // namespace widget
-}  // namespace mozilla
+}  // namespace mozilla::widget
 
 #endif  // mozilla_widget_ScreenManager_h

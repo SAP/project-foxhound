@@ -217,17 +217,16 @@ impl BufferManager {
     }
 
     fn get_linear_input_data(&mut self, nsamples: usize) -> *const c_void {
-        let p: *mut c_void;
-        match &mut self.linear_input_buffer {
+        let p = match &mut self.linear_input_buffer {
             LinearInputBuffer::IntegerLinearInputBuffer(b) => {
                 b.resize(nsamples, 0);
-                p = b.as_mut_ptr() as *mut c_void;
+                b.as_mut_ptr() as *mut c_void
             }
             LinearInputBuffer::FloatLinearInputBuffer(b) => {
                 b.resize(nsamples, 0.);
-                p = b.as_mut_ptr() as *mut c_void;
+                b.as_mut_ptr() as *mut c_void
             }
-        }
+        };
         self.pull_input_data(p, nsamples);
 
         p
@@ -300,7 +299,7 @@ impl<'ctx> PulseStream<'ctx> {
         fn check_error(s: &pulse::Stream, u: *mut c_void) {
             let stm = unsafe { &mut *(u as *mut PulseStream) };
             if !s.get_state().is_good() {
-                cubeb_log!("Calling error callback");
+                cubeb_alog!("Calling error callback");
                 stm.state_change_callback(ffi::CUBEB_STATE_ERROR);
             }
             stm.context.mainloop.signal();
@@ -320,7 +319,7 @@ impl<'ctx> PulseStream<'ctx> {
                 readable_size
             }
 
-            cubeb_logv!("Input callback buffer size {}", nbytes);
+            cubeb_alogv!("Input callback buffer size {}", nbytes);
             let stm = unsafe { &mut *(u as *mut PulseStream) };
             if stm.shutdown {
                 return;
@@ -356,6 +355,15 @@ impl<'ctx> PulseStream<'ctx> {
                         if got < 0 || got as usize != read_frames {
                             let _ = s.cancel_write();
                             stm.shutdown = true;
+                            if got < 0 {
+                                unsafe {
+                                    stm.state_callback.unwrap()(
+                                        stm as *mut _ as *mut _,
+                                        stm.user_ptr,
+                                        ffi::CUBEB_STATE_ERROR,
+                                    );
+                                }
+                            }
                             break;
                         }
                     }
@@ -372,7 +380,7 @@ impl<'ctx> PulseStream<'ctx> {
         }
 
         fn write_data(_: &pulse::Stream, nbytes: usize, u: *mut c_void) {
-            cubeb_logv!("Output callback to be written buffer size {}", nbytes);
+            cubeb_alogv!("Output callback to be written buffer size {}", nbytes);
             let stm = unsafe { &mut *(u as *mut PulseStream) };
             if stm.shutdown || stm.state != ffi::CUBEB_STATE_STARTED {
                 return;
@@ -392,7 +400,7 @@ impl<'ctx> PulseStream<'ctx> {
                         let popped_frames = buffered_input_frames - nframes;
                         input_buffer_manager
                             .trim(nframes * stm.input_sample_spec.channels as usize);
-                        cubeb_log!("Dropping {} frames in input buffer.", popped_frames);
+                        cubeb_alog!("Dropping {} frames in input buffer.", popped_frames);
                     }
                 }
 
@@ -1017,7 +1025,7 @@ impl<'ctx> PulseStream<'ctx> {
         true
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cognitive_complexity))]
     fn trigger_user_callback(&mut self, input_data: *const c_void, nbytes: usize) {
         fn drained_cb(
             a: &pulse::MainloopApi,
@@ -1058,6 +1066,7 @@ impl<'ctx> PulseStream<'ctx> {
                             read_offset
                         );
                         let read_ptr = unsafe { (input_data as *const u8).add(read_offset) };
+                        #[cfg_attr(feature = "cargo-clippy", allow(clippy::unnecessary_cast))]
                         let mut got = unsafe {
                             self.data_callback.unwrap()(
                                 self as *const _ as *mut _,
@@ -1070,6 +1079,13 @@ impl<'ctx> PulseStream<'ctx> {
                         if got < 0 {
                             let _ = stm.cancel_write();
                             self.shutdown = true;
+                            unsafe {
+                                self.state_callback.unwrap()(
+                                    self as *const _ as *mut _,
+                                    self.user_ptr,
+                                    ffi::CUBEB_STATE_ERROR,
+                                );
+                            }
                             return;
                         }
 
@@ -1196,11 +1212,11 @@ fn context_success(_: &pulse::Context, success: i32, u: *mut c_void) {
 }
 
 fn invalid_format() -> Error {
-    unsafe { Error::from_raw(ffi::CUBEB_ERROR_INVALID_FORMAT) }
+    Error::from_raw(ffi::CUBEB_ERROR_INVALID_FORMAT)
 }
 
 fn not_supported() -> Error {
-    unsafe { Error::from_raw(ffi::CUBEB_ERROR_NOT_SUPPORTED) }
+    Error::from_raw(ffi::CUBEB_ERROR_NOT_SUPPORTED)
 }
 
 #[cfg(all(test, not(feature = "pulse-dlopen")))]

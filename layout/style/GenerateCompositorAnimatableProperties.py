@@ -14,10 +14,10 @@ def generate(output, dataFile):
     )
 
     def can_animate_on_compositor(p):
-        return "CanAnimateOnCompositor" in p.flags
+        return "CanAnimateOnCompositor" in p.flags and p.type() != "alias"
 
     properties = runpy.run_path(dataFile)["data"]
-    properties = filter(can_animate_on_compositor, properties)
+    properties = filter(can_animate_on_compositor, properties.values())
 
     count = 0
     for p in properties:

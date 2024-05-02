@@ -95,18 +95,15 @@ BackgroundFileSaver::~BackgroundFileSaver() {
 nsresult BackgroundFileSaver::Init() {
   MOZ_ASSERT(NS_IsMainThread(), "This should be called on the main thread");
 
-  nsresult rv;
+  NS_NewPipe2(getter_AddRefs(mPipeInputStream),
+              getter_AddRefs(mPipeOutputStream), true, true, 0,
+              HasInfiniteBuffer() ? UINT32_MAX : 0);
 
-  rv = NS_NewPipe2(getter_AddRefs(mPipeInputStream),
-                   getter_AddRefs(mPipeOutputStream), true, true, 0,
-                   HasInfiniteBuffer() ? UINT32_MAX : 0);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  mControlEventTarget = GetCurrentEventTarget();
+  mControlEventTarget = GetCurrentSerialEventTarget();
   NS_ENSURE_TRUE(mControlEventTarget, NS_ERROR_NOT_INITIALIZED);
 
-  rv = NS_CreateBackgroundTaskQueue("BgFileSaver",
-                                    getter_AddRefs(mBackgroundET));
+  nsresult rv = NS_CreateBackgroundTaskQueue("BgFileSaver",
+                                             getter_AddRefs(mBackgroundET));
   NS_ENSURE_SUCCESS(rv, rv);
 
   sThreadCount++;
@@ -861,7 +858,7 @@ NS_IMPL_ISUPPORTS(BackgroundFileSaverOutputStream, nsIBackgroundFileSaver,
                   nsIOutputStreamCallback)
 
 BackgroundFileSaverOutputStream::BackgroundFileSaverOutputStream()
-    : BackgroundFileSaver(), mAsyncWaitCallback(nullptr) {}
+    : mAsyncWaitCallback(nullptr) {}
 
 bool BackgroundFileSaverOutputStream::HasInfiniteBuffer() { return false; }
 
@@ -874,6 +871,11 @@ BackgroundFileSaverOutputStream::Close() { return mPipeOutputStream->Close(); }
 
 NS_IMETHODIMP
 BackgroundFileSaverOutputStream::Flush() { return mPipeOutputStream->Flush(); }
+
+NS_IMETHODIMP
+BackgroundFileSaverOutputStream::StreamStatus() {
+  return mPipeOutputStream->StreamStatus();
+}
 
 NS_IMETHODIMP
 BackgroundFileSaverOutputStream::Write(const char* aBuf, uint32_t aCount,
@@ -1080,6 +1082,9 @@ DigestOutputStream::Close() { return mOutputStream->Close(); }
 
 NS_IMETHODIMP
 DigestOutputStream::Flush() { return mOutputStream->Flush(); }
+
+NS_IMETHODIMP
+DigestOutputStream::StreamStatus() { return mOutputStream->StreamStatus(); }
 
 NS_IMETHODIMP
 DigestOutputStream::Write(const char* aBuf, uint32_t aCount, uint32_t* retval) {

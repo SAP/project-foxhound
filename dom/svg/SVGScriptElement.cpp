@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/SVGScriptElement.h"
 
+#include "mozilla/dom/FetchPriority.h"
 #include "nsGkAtoms.h"
 #include "nsNetUtil.h"
 #include "nsContentUtils.h"
@@ -14,8 +15,9 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT_CHECK_PARSER(Script)
 
-namespace mozilla {
-namespace dom {
+using JS::loader::ScriptKind;
+
+namespace mozilla::dom {
 
 JSObject* SVGScriptElement::WrapNode(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
@@ -70,7 +72,9 @@ nsresult SVGScriptElement::Clone(dom::NodeInfo* aNodeInfo,
 }
 
 //----------------------------------------------------------------------
-void SVGScriptElement::GetType(nsAString& aType) { GetScriptType(aType); }
+void SVGScriptElement::GetType(nsAString& aType) {
+  GetAttr(nsGkAtoms::type, aType);
+}
 
 void SVGScriptElement::SetType(const nsAString& aType, ErrorResult& rv) {
   rv = SetAttr(kNameSpaceID_None, nsGkAtoms::type, aType, true);
@@ -97,11 +101,7 @@ already_AddRefed<DOMSVGAnimatedString> SVGScriptElement::Href() {
 //----------------------------------------------------------------------
 // nsIScriptElement methods
 
-bool SVGScriptElement::GetScriptType(nsAString& type) {
-  return GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
-}
-
-void SVGScriptElement::GetScriptText(nsAString& text) {
+void SVGScriptElement::GetScriptText(nsAString& text) const {
   nsContentUtils::GetNodeTextContent(this, false, text);
 }
 
@@ -109,10 +109,13 @@ void SVGScriptElement::GetScriptCharset(nsAString& charset) {
   charset.Truncate();
 }
 
-void SVGScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
+void SVGScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
   if (mFrozen) {
     return;
   }
+
+  // Determine whether this is a(n) classic/module/importmap script.
+  DetermineKindFromType(aOwnerDoc);
 
   if (mStringAttributes[HREF].IsExplicitlySet() ||
       mStringAttributes[XLINK_HREF].IsExplicitlySet()) {
@@ -153,6 +156,12 @@ void SVGScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
     mExternal = true;
   }
 
+  bool async = (mExternal || mKind == ScriptKind::eModule) && Async();
+  bool defer = mExternal && Defer();
+
+  mDefer = !async && defer;
+  mAsync = async;
+
   mFrozen = true;
 }
 
@@ -188,20 +197,6 @@ nsresult SVGScriptElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return NS_OK;
 }
 
-nsresult SVGScriptElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                        const nsAttrValue* aValue,
-                                        const nsAttrValue* aOldValue,
-                                        nsIPrincipal* aSubjectPrincipal,
-                                        bool aNotify) {
-  if ((aNamespaceID == kNameSpaceID_XLink ||
-       aNamespaceID == kNameSpaceID_None) &&
-      aName == nsGkAtoms::href) {
-    MaybeProcessScript();
-  }
-  return SVGScriptElementBase::AfterSetAttr(
-      aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
-}
-
 bool SVGScriptElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                       const nsAString& aValue,
                                       nsIPrincipal* aMaybeScriptedPrincipal,
@@ -220,5 +215,9 @@ CORSMode SVGScriptElement::GetCORSMode() const {
   return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+FetchPriority SVGScriptElement::GetFetchPriority() const {
+  // <https://github.com/w3c/svgwg/issues/916>.
+  return FetchPriority::Auto;
+}
+
+}  // namespace mozilla::dom

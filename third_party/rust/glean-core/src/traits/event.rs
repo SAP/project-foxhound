@@ -28,7 +28,7 @@ pub trait ExtraKeys {
     /// 1. The list of extra key indices.
     ///    Unset keys will be skipped.
     /// 2. The list of extra values.
-    fn into_ffi_extra(self) -> HashMap<i32, String>;
+    fn into_ffi_extra(self) -> HashMap<String, String>;
 }
 
 /// Default of no extra keys for events.
@@ -44,7 +44,7 @@ pub enum NoExtraKeys {}
 impl ExtraKeys for NoExtraKeys {
     const ALLOWED_KEYS: &'static [&'static str] = &[];
 
-    fn into_ffi_extra(self) -> HashMap<i32, String> {
+    fn into_ffi_extra(self) -> HashMap<String, String> {
         unimplemented!("non-existing extra keys can't be turned into a list")
     }
 }
@@ -110,15 +110,9 @@ pub trait Event {
     /// # Arguments
     ///
     /// * `error` - The type of error
-    /// * `ping_name` - represents the optional name of the ping to retrieve the
-    ///   metric for. Defaults to the first value in `send_in_pings`.
     ///
     /// # Returns
     ///
     /// The number of errors reported.
-    fn test_get_num_recorded_errors<'a, S: Into<Option<&'a str>>>(
-        &self,
-        error: ErrorType,
-        ping_name: S,
-    ) -> i32;
+    fn test_get_num_recorded_errors(&self, error: ErrorType) -> i32;
 }

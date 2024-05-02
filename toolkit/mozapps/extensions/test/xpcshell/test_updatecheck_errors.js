@@ -20,12 +20,12 @@ add_task(async function setup() {
 });
 
 // Verify that an update check returns the correct errors.
-add_task(async function() {
+add_task(async function () {
   await promiseInstallWebExtension({
     manifest: {
       name: "Test Addon 1",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon1@tests.mozilla.org",
           update_url: "http://example.com/data/test_missing.json",

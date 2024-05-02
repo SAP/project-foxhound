@@ -11,21 +11,17 @@
 
 // Globals
 
-const { ForgetAboutSite } = ChromeUtils.import(
-  "resource://gre/modules/ForgetAboutSite.jsm"
+const { ForgetAboutSite } = ChromeUtils.importESModule(
+  "resource://gre/modules/ForgetAboutSite.sys.mjs"
 );
 
-const { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+const { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+});
 
 const COOKIE_EXPIRY = Math.round(Date.now() / 1000) + 60;
 const COOKIE_NAME = "testcookie";
@@ -111,8 +107,8 @@ function check_disabled_host(aHost, aIsDisabled) {
  * @param aHost
  *        The host to add the login for.
  */
-function add_login(aHost) {
-  check_login_exists(aHost, false);
+async function add_login(aHost) {
+  await check_login_exists(aHost, false);
   let login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
     Ci.nsILoginInfo
   );
@@ -125,8 +121,8 @@ function add_login(aHost) {
     LOGIN_USERNAME_FIELD,
     LOGIN_PASSWORD_FIELD
   );
-  Services.logins.addLogin(login);
-  check_login_exists(aHost, true);
+  await Services.logins.addLoginAsync(login);
+  await check_login_exists(aHost, true);
 }
 
 /**
@@ -137,8 +133,8 @@ function add_login(aHost) {
  * @param aExists
  *        True if the login should exist, false otherwise.
  */
-function check_login_exists(aHost, aExists) {
-  let logins = Services.logins.findLogins(aHost, "", null);
+async function check_login_exists(aHost, aExists) {
+  let logins = await Services.logins.searchLoginsAsync({ origin: aHost });
   Assert.equal(logins.length, aExists ? 1 : 0);
 }
 
@@ -316,26 +312,26 @@ async function test_login_manager_disabled_hosts_not_cleared_with_uri_contains_d
 
 async function test_login_manager_logins_cleared_with_direct_match() {
   const TEST_HOST = "http://mozilla.org";
-  add_login(TEST_HOST);
+  await add_login(TEST_HOST);
   await ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_login_exists(TEST_HOST, false);
+  await check_login_exists(TEST_HOST, true);
 }
 
 async function test_login_manager_logins_cleared_with_subdomain() {
   const TEST_HOST = "http://www.mozilla.org";
-  add_login(TEST_HOST);
+  await add_login(TEST_HOST);
   await ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_login_exists(TEST_HOST, false);
+  await check_login_exists(TEST_HOST, true);
 }
 
 async function test_login_manager_logins_not_cleared_with_uri_contains_domain() {
   const TEST_HOST = "http://ilovemozilla.org";
-  add_login(TEST_HOST);
+  await add_login(TEST_HOST);
   await ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_login_exists(TEST_HOST, true);
+  await check_login_exists(TEST_HOST, true);
 
   Services.logins.removeAllUserFacingLogins();
-  check_login_exists(TEST_HOST, false);
+  await check_login_exists(TEST_HOST, false);
 }
 
 async function test_login_manager_disabled_hosts_cleared_base_domain() {

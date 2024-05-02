@@ -38,13 +38,10 @@ add_task(async function test_tab_matches() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://abc.com/",
-        title: "http://abc.com/",
+        title: "ABC rocks",
         heuristic: true,
-      }),
-      makeSearchResult(context, {
-        engineName: SUGGESTIONS_ENGINE_NAME,
       }),
       makeTabSwitchResult(context, {
         uri: "http://abc.com/",
@@ -149,6 +146,7 @@ add_task(async function test_tab_matches() {
       makeTabSwitchResult(context, {
         uri: "http://foobar.org/",
         title: "foobar.org - much better than ABC, definitely better than XYZ",
+        userContextId: 3,
       }),
     ],
   });
@@ -340,13 +338,10 @@ add_task(async function test_tab_matches() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://abc.com/",
-        title: "http://abc.com/",
+        title: "ABC rocks",
         heuristic: true,
-      }),
-      makeSearchResult(context, {
-        engineName: SUGGESTIONS_ENGINE_NAME,
       }),
       makeTabSwitchResult(context, {
         uri: "http://abc.com/",

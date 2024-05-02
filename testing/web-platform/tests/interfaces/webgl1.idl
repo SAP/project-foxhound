@@ -1,7 +1,7 @@
 // GENERATED CONTENT - DO NOT EDIT
 // Content was automatically extracted by Reffy into webref
 // (https://github.com/w3c/webref)
-// Source: WebGL Specification (https://www.khronos.org/registry/webgl/specs/latest/1.0/)
+// Source: WebGL Specification (https://registry.khronos.org/webgl/specs/latest/1.0/)
 
 typedef unsigned long  GLenum;
 typedef boolean        GLboolean;
@@ -516,6 +516,8 @@ interface mixin WebGLRenderingContextBase
     readonly attribute (HTMLCanvasElement or OffscreenCanvas) canvas;
     readonly attribute GLsizei drawingBufferWidth;
     readonly attribute GLsizei drawingBufferHeight;
+    attribute PredefinedColorSpace drawingBufferColorSpace;
+    attribute PredefinedColorSpace unpackColorSpace;
 
     [WebGLHandlesContextLoss] WebGLContextAttributes? getContextAttributes();
     [WebGLHandlesContextLoss] boolean isContextLost();
@@ -683,8 +685,8 @@ interface mixin WebGLRenderingContextBase
 interface mixin WebGLRenderingContextOverloads
 {
     undefined bufferData(GLenum target, GLsizeiptr size, GLenum usage);
-    undefined bufferData(GLenum target, [AllowShared] BufferSource? data, GLenum usage);
-    undefined bufferSubData(GLenum target, GLintptr offset, [AllowShared] BufferSource data);
+    undefined bufferData(GLenum target, AllowSharedBufferSource? data, GLenum usage);
+    undefined bufferSubData(GLenum target, GLintptr offset, AllowSharedBufferSource data);
 
     undefined compressedTexImage2D(GLenum target, GLint level, GLenum internalformat,
                                    GLsizei width, GLsizei height, GLint border,

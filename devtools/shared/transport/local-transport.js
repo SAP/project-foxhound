@@ -4,14 +4,13 @@
 
 "use strict";
 
-const { CC } = require("chrome");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const { dumpn } = DevToolsUtils;
-const flags = require("devtools/shared/flags");
-const StreamUtils = require("devtools/shared/transport/stream-utils");
+const flags = require("resource://devtools/shared/flags.js");
+const StreamUtils = require("resource://devtools/shared/transport/stream-utils.js");
 
 loader.lazyGetter(this, "Pipe", () => {
-  return CC("@mozilla.org/pipe;1", "nsIPipe", "init");
+  return Components.Constructor("@mozilla.org/pipe;1", "nsIPipe", "init");
 });
 
 /**
@@ -40,7 +39,7 @@ LocalDebuggerTransport.prototype = {
    * Transmit a message by directly calling the onPacket handler of the other
    * endpoint.
    */
-  send: function(packet) {
+  send(packet) {
     const serial = this._serial.count++;
     if (flags.wantLogging) {
       // Check 'from' first, as 'echo' packets have both.
@@ -81,7 +80,7 @@ LocalDebuggerTransport.prototype = {
    * others temporarily.  Instead, we can just make a single use pipe and be
    * done with it.
    */
-  startBulkSend: function({ actor, type, length }) {
+  startBulkSend({ actor, type, length }) {
     const serial = this._serial.count++;
 
     dumpn("Sent bulk packet " + serial + " for actor " + actor);
@@ -102,9 +101,9 @@ LocalDebuggerTransport.prototype = {
         // Receiver
         new Promise(receiverResolve => {
           const packet = {
-            actor: actor,
-            type: type,
-            length: length,
+            actor,
+            type,
+            length,
             copyTo: output => {
               const copying = StreamUtils.copyStream(
                 pipe.inputStream,
@@ -156,7 +155,7 @@ LocalDebuggerTransport.prototype = {
   /**
    * Close the transport.
    */
-  close: function() {
+  close() {
     if (this.other) {
       // Remove the reference to the other endpoint before calling close(), to
       // avoid infinite recursion.
@@ -179,12 +178,12 @@ LocalDebuggerTransport.prototype = {
   /**
    * An empty method for emulating the DebuggerTransport API.
    */
-  ready: function() {},
+  ready() {},
 
   /**
    * Helper function that makes an object fully immutable.
    */
-  _deepFreeze: function(object) {
+  _deepFreeze(object) {
     Object.freeze(object);
     for (const prop in object) {
       // Freeze the properties that are objects, not on the prototype, and not

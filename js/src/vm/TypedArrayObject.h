@@ -10,12 +10,11 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/TextUtils.h"
 
-#include "gc/Barrier.h"
+#include "gc/AllocKind.h"
 #include "gc/MaybeRooted.h"
 #include "js/Class.h"
 #include "js/experimental/TypedData.h"  // js::detail::TypedArrayLengthSlot
-#include "js/Result.h"
-#include "js/ScalarType.h"  // js::Scalar::Type
+#include "js/ScalarType.h"              // js::Scalar::Type
 #include "vm/ArrayBufferObject.h"
 #include "vm/ArrayBufferViewObject.h"
 #include "vm/JSObject.h"
@@ -129,12 +128,8 @@ class TypedArrayObject : public ArrayBufferViewObject {
                                          const JS::HandleValueArray args,
                                          MutableHandleObject res);
 
-  /*
-   * Maximum allowed byte length for any typed array.
-   */
-  static size_t maxByteLength() {
-    return ArrayBufferObject::maxBufferByteLength();
-  }
+  // Maximum allowed byte length for any typed array.
+  static constexpr size_t MaxByteLength = ArrayBufferObject::MaxByteLength;
 
   static bool isOriginalLengthGetter(Native native);
 
@@ -142,7 +137,7 @@ class TypedArrayObject : public ArrayBufferViewObject {
 
   static bool isOriginalByteLengthGetter(Native native);
 
-  static void finalize(JSFreeOp* fop, JSObject* obj);
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
   static size_t objectMoved(JSObject* obj, JSObject* old);
 
   /* Initialization bits */
@@ -166,9 +161,6 @@ class TypedArrayObject : public ArrayBufferViewObject {
   static bool copyWithin_impl(JSContext* cx, const CallArgs& args);
 };
 
-[[nodiscard]] bool TypedArray_bufferGetter(JSContext* cx, unsigned argc,
-                                           Value* vp);
-
 extern TypedArrayObject* NewTypedArrayWithTemplateAndLength(
     JSContext* cx, HandleObject templateObj, int32_t len);
 
@@ -178,6 +170,9 @@ extern TypedArrayObject* NewTypedArrayWithTemplateAndArray(
 extern TypedArrayObject* NewTypedArrayWithTemplateAndBuffer(
     JSContext* cx, HandleObject templateObj, HandleObject arrayBuffer,
     HandleValue byteOffset, HandleValue length);
+
+extern TypedArrayObject* NewUint8ArrayWithLength(
+    JSContext* cx, int32_t len, gc::Heap heap = gc::Heap::Default);
 
 inline bool IsTypedArrayClass(const JSClass* clasp) {
   return &TypedArrayObject::classes[0] <= clasp &&
@@ -215,9 +210,7 @@ inline size_t TypedArrayObject::bytesPerElement() const {
 // string is a canonical numeric index which is not representable as a uint64_t,
 // the returned index is UINT64_MAX.
 template <typename CharT>
-[[nodiscard]] bool StringToTypedArrayIndex(JSContext* cx,
-                                           mozilla::Range<const CharT> s,
-                                           mozilla::Maybe<uint64_t>* indexp);
+mozilla::Maybe<uint64_t> StringToTypedArrayIndex(mozilla::Range<const CharT> s);
 
 // A string |s| is a TypedArray index (or: canonical numeric index string) iff
 // |s| is "-0" or |SameValue(ToString(ToNumber(s)), s)| is true. So check for
@@ -228,35 +221,31 @@ inline bool CanStartTypedArrayIndex(CharT ch) {
   return mozilla::IsAsciiDigit(ch) || ch == '-' || ch == 'N' || ch == 'I';
 }
 
-[[nodiscard]] inline bool ToTypedArrayIndex(JSContext* cx, jsid id,
-                                            mozilla::Maybe<uint64_t>* indexp) {
-  if (JSID_IS_INT(id)) {
-    int32_t i = JSID_TO_INT(id);
+[[nodiscard]] inline mozilla::Maybe<uint64_t> ToTypedArrayIndex(jsid id) {
+  if (id.isInt()) {
+    int32_t i = id.toInt();
     MOZ_ASSERT(i >= 0);
-    indexp->emplace(i);
-    return true;
+    return mozilla::Some(i);
   }
 
-  if (MOZ_UNLIKELY(!JSID_IS_STRING(id))) {
-    MOZ_ASSERT(indexp->isNothing());
-    return true;
+  if (MOZ_UNLIKELY(!id.isString())) {
+    return mozilla::Nothing();
   }
 
   JS::AutoCheckCannotGC nogc;
   JSAtom* atom = id.toAtom();
 
   if (atom->empty() || !CanStartTypedArrayIndex(atom->latin1OrTwoByteChar(0))) {
-    MOZ_ASSERT(indexp->isNothing());
-    return true;
+    return mozilla::Nothing();
   }
 
   if (atom->hasLatin1Chars()) {
     mozilla::Range<const Latin1Char> chars = atom->latin1Range(nogc);
-    return StringToTypedArrayIndex(cx, chars, indexp);
+    return StringToTypedArrayIndex(chars);
   }
 
   mozilla::Range<const char16_t> chars = atom->twoByteRange(nogc);
-  return StringToTypedArrayIndex(cx, chars, indexp);
+  return StringToTypedArrayIndex(chars);
 }
 
 bool SetTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
@@ -270,6 +259,10 @@ bool SetTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
 bool DefineTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
                              uint64_t index, Handle<PropertyDescriptor> desc,
                              ObjectOpResult& result);
+
+// Sort a typed array in ascending order. The typed array may be wrapped, but
+// must not be detached.
+bool intrinsic_TypedArrayNativeSort(JSContext* cx, unsigned argc, Value* vp);
 
 static inline constexpr unsigned TypedArrayShift(Scalar::Type viewType) {
   switch (viewType) {

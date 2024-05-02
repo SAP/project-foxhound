@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:expandtab:shiftwidth=2:tabstop=2:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -16,9 +16,13 @@
 #include "nsTArray.h"
 #include "nsIWidget.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/ContentData.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TextEventDispatcherListener.h"
-#include "WritingModes.h"
+#include "mozilla/WritingModes.h"
+#include "mozilla/GUniquePtr.h"
+#include "mozilla/widget/IMEData.h"
 
 class nsWindow;
 
@@ -172,6 +176,12 @@ class IMContextWrapper final : public TextEventDispatcherListener {
  protected:
   ~IMContextWrapper();
 
+  /**
+   * SetInputPurposeAndInputHints() sets input-purpose and input-hints of
+   * current IM context to the values computed with mInputContext.
+   */
+  void SetInputPurposeAndInputHints();
+
   // Owner of an instance of this class. This should be top level window.
   // The owner window must release the contexts when it's destroyed because
   // the IME contexts need the native window.  If OnDestroyWindow() is called
@@ -233,11 +243,7 @@ class IMContextWrapper final : public TextEventDispatcherListener {
    public:
     ~GdkEventKeyQueue() { Clear(); }
 
-    void Clear() {
-      if (!mEvents.IsEmpty()) {
-        RemoveEventsAt(0, mEvents.Length());
-      }
-    }
+    void Clear() { mEvents.Clear(); }
 
     /**
      * PutEvent() puts new event into the queue.
@@ -258,7 +264,23 @@ class IMContextWrapper final : public TextEventDispatcherListener {
       if (NS_WARN_IF(index == GdkEventKeyQueue::NoIndex())) {
         return;
       }
-      RemoveEventsAt(0, index + 1);
+      mEvents.RemoveElementAt(index);
+    }
+
+    /**
+     * Return corresponding GDK_KEY_PRESS event for aEvent.  aEvent must be a
+     * GDK_KEY_RELEASE event.
+     */
+    const GdkEventKey* GetCorrespondingKeyPressEvent(
+        const GdkEventKey* aEvent) const {
+      MOZ_ASSERT(aEvent->type == GDK_KEY_RELEASE);
+      for (const GUniquePtr<GdkEventKey>& pendingKeyEvent : mEvents) {
+        if (pendingKeyEvent->type == GDK_KEY_PRESS &&
+            aEvent->hardware_keycode == pendingKeyEvent->hardware_keycode) {
+          return pendingKeyEvent.get();
+        }
+      }
+      return nullptr;
     }
 
     /**
@@ -268,7 +290,7 @@ class IMContextWrapper final : public TextEventDispatcherListener {
       if (mEvents.IsEmpty()) {
         return nullptr;
       }
-      return mEvents[0];
+      return mEvents[0].get();
     }
 
     bool IsEmpty() const { return mEvents.IsEmpty(); }
@@ -281,7 +303,7 @@ class IMContextWrapper final : public TextEventDispatcherListener {
       static_assert(!(GDK_MODIFIER_MASK & (1 << 25)),
                     "We assumes 26th bit is used by some IM, but used by GDK");
       for (size_t i = 0; i < mEvents.Length(); i++) {
-        GdkEventKey* event = mEvents[i];
+        GdkEventKey* event = mEvents[i].get();
         // It must be enough to compare only type, time, keyval and
         // part of state.   Note that we cannot compaire two events
         // simply since IME may have changed unused bits of state.
@@ -298,14 +320,7 @@ class IMContextWrapper final : public TextEventDispatcherListener {
     }
 
    private:
-    nsTArray<GdkEventKey*> mEvents;
-
-    void RemoveEventsAt(size_t aStart, size_t aCount) {
-      for (size_t i = aStart; i < aStart + aCount; i++) {
-        gdk_event_free(reinterpret_cast<GdkEvent*>(mEvents[i]));
-      }
-      mEvents.RemoveElementsAt(aStart, aCount);
-    }
+    nsTArray<GUniquePtr<GdkEventKey>> mEvents;
   };
   // OnKeyEvent() append mPostingKeyEvents when it believes that a key event
   // is posted to other IME process.
@@ -381,47 +396,39 @@ class IMContextWrapper final : public TextEventDispatcherListener {
   // IM which user selected.
   IMContextID mIMContextID;
 
-  struct Selection final {
-    nsString mString;
-    uint32_t mOffset;
-    WritingMode mWritingMode;
+  // If mContentSelection is Nothing, it means that
+  // EnsureToCacheContentSelection failed to get selection or just not caching
+  // the selection.
+  Maybe<ContentSelection> mContentSelection;
 
-    Selection() : mOffset(UINT32_MAX) {}
+  /**
+   * Return true if mContentSelection is set to some.  Otherwise, false.
+   */
+  bool EnsureToCacheContentSelection(nsAString* aSelectedString = nullptr);
 
-    void Clear() {
-      mString.Truncate();
-      mOffset = UINT32_MAX;
-      mWritingMode = WritingMode();
+  enum class IMEFocusState : uint8_t {
+    // IME has focus
+    Focused,
+    // IME was blurred
+    Blurred,
+    // IME was blurred without a focus change
+    BlurredWithoutFocusChange,
+  };
+  friend std::ostream& operator<<(std::ostream& aStream, IMEFocusState aState) {
+    switch (aState) {
+      case IMEFocusState::Focused:
+        return aStream << "IMEFocusState::Focused";
+      case IMEFocusState::Blurred:
+        return aStream << "IMEFocusState::Blurred";
+      case IMEFocusState::BlurredWithoutFocusChange:
+        return aStream << "IMEFocusState::BlurredWithoutFocusChange";
+      default:
+        MOZ_ASSERT_UNREACHABLE("Invalid value");
+        return aStream << "<illegal value>";
     }
-    void CollapseTo(uint32_t aOffset, const WritingMode& aWritingMode) {
-      mWritingMode = aWritingMode;
-      mOffset = aOffset;
-      mString.Truncate();
-    }
+  }
+  IMEFocusState mIMEFocusState = IMEFocusState::Blurred;
 
-    void Assign(const IMENotification& aIMENotification);
-    void Assign(const WidgetQueryContentEvent& aSelectedTextEvent);
-
-    bool IsValid() const { return mOffset != UINT32_MAX; }
-    bool Collapsed() const { return mString.IsEmpty(); }
-    uint32_t Length() const { return mString.Length(); }
-    uint32_t EndOffset() const {
-      if (NS_WARN_IF(!IsValid())) {
-        return UINT32_MAX;
-      }
-      CheckedInt<uint32_t> endOffset =
-          CheckedInt<uint32_t>(mOffset) + mString.Length();
-      if (NS_WARN_IF(!endOffset.isValid())) {
-        return UINT32_MAX;
-      }
-      return endOffset.value();
-    }
-  } mSelection;
-  bool EnsureToCacheSelection(nsAString* aSelectedString = nullptr);
-
-  // mIsIMFocused is set to TRUE when we call gtk_im_context_focus_in(). And
-  // it's set to FALSE when we call gtk_im_context_focus_out().
-  bool mIsIMFocused;
   // mFallbackToKeyEvent is set to false when this class starts to handle
   // a native key event (at that time, mProcessingKeyEvent is set to the
   // native event).  If active IME just commits composition with a character
@@ -477,6 +484,9 @@ class IMContextWrapper final : public TextEventDispatcherListener {
   // mIsKeySnooped is set to true if IM uses key snooper to listen key events.
   // In such case, we won't receive key events if IME consumes the event.
   bool mIsKeySnooped;
+  // mSetInputPurposeAndInputHints is set if `SetInputContext` wants `Focus`
+  // to set input-purpose and input-hints.
+  bool mSetInputPurposeAndInputHints;
 
   // sLastFocusedContext is a pointer to the last focused instance of this
   // class.  When a instance is destroyed and sLastFocusedContext refers it,
@@ -534,11 +544,7 @@ class IMContextWrapper final : public TextEventDispatcherListener {
   // If the owner window and IM context have been destroyed, returns TRUE.
   bool IsDestroyed() { return !mOwnerWindow; }
 
-  // Sets focus to the instance of this class.
-  void Focus();
-
-  // Steals focus from the instance of this class.
-  void Blur();
+  void NotifyIMEOfFocusChange(IMEFocusState aIMEFocusState);
 
   // Initializes the instance.
   void Init();
@@ -608,9 +614,6 @@ class IMContextWrapper final : public TextEventDispatcherListener {
    */
   nsresult DeleteText(GtkIMContext* aContext, int32_t aOffset,
                       uint32_t aNChars);
-
-  // Initializes the GUI event.
-  void InitEvent(WidgetGUIEvent& aEvent);
 
   // Called before destroying the context to work around some platform bugs.
   void PrepareToDestroyContext(GtkIMContext* aContext);

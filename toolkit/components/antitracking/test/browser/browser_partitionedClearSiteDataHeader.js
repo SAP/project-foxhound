@@ -9,8 +9,8 @@
  * we clear storage under the correct partition.
  */
 
-const { SiteDataTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SiteDataTestUtils.jsm"
+const { SiteDataTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
 
 const HOST_A = "example.com";
@@ -27,7 +27,9 @@ const STORAGE_KEY = "testKey";
 // Skip localStorage tests when using legacy localStorage. The legacy
 // localStorage implementation does not support clearing data by principal. See
 // Bug 1688221, Bug 1688665.
-let skipLocalStorageTests = !Services.prefs.getBoolPref("dom.storage.next_gen");
+const skipLocalStorageTests = Services.prefs.getBoolPref(
+  "dom.storage.enable_unsupported_legacy_implementation"
+);
 
 /**
  * Creates an iframe in the passed browser and waits for it to load.
@@ -41,7 +43,7 @@ function createFrame(browser, src, id, sandbox) {
   return SpecialPowers.spawn(
     browser,
     [{ page: src, frameId: id, sandbox }],
-    async function(obj) {
+    async function (obj) {
       await new content.Promise(resolve => {
         let frame = content.document.createElement("iframe");
         if (obj.sandbox) {
@@ -155,7 +157,7 @@ async function runClearSiteDataTest(
           frameId: THIRD_PARTY_FRAME_ID_ORIGIN_B,
         },
       ],
-      async function(obj) {
+      async function (obj) {
         await new content.Promise(resolve => {
           let frame = content.document.getElementById(obj.frameId);
           frame.addEventListener("load", resolve, { once: true });
@@ -369,7 +371,7 @@ async function setupInitialStorageState(storageType) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   info("Starting ClearSiteData test");
 
   await SpecialPowers.flushPrefEnv();

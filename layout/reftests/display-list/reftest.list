@@ -34,7 +34,7 @@ fuzzy(0-1,0-235200) == 1413073.html 1413073-ref.html
 skip-if(Android) == 1428993-1.html 1428993-1-ref.html
 == 1420480-1.html 1420480-1-ref.html
 == 1428993-2.html 1428993-2-ref.html
-needs-focus fuzzy-if(!nativeThemePref,0-3,0-2) == 1429027-1.html 1429027-1-ref.html
+needs-focus fuzzy(0-3,0-2) == 1429027-1.html 1429027-1-ref.html
 == 1432553-1.html 1432553-1-ref.html
 == 1432553-2.html 1432553-2-ref.html
 == 1436189-1.html 1436189-1-ref.html
@@ -55,5 +55,6 @@ fuzzy(0-2,0-40000) skip-if(!asyncPan) == 1464288-1.html 1464288-ref.html
 fuzzy-if(swgl,0-1,0-1) == 1551053-1.html 1551053-1-ref.html
 == 1553828-1.html 1553828-1-ref.html
 fuzzy-if(browserIsFission,0-1,0-300) == 1619370-1.html 1619370-1-ref.html
+== 1677568-1.html 1677568-1-ref.html
 == 1709452-1.html 1709452-ref.html
 == 1719346-1.html 1719346-1-ref.html

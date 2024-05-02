@@ -1,7 +1,7 @@
 /** Test for Bug 1305950 **/
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 // The mock idle service.
@@ -51,7 +51,7 @@ add_task(async function testIntervalChanges() {
   // Increase `idleDelay` to 1 day to update the pre-registered idle observer
   // in "real" idle service to avoid possible interference, especially for the
   // CI server environment.
-  Services.prefs.setIntPref("browser.sessionstore.idleDelay", 86400000);
+  Services.prefs.setIntPref("browser.sessionstore.idleDelay", 86400);
 
   // Mock an idle service.
   let fakeIdleService = MockRegistrar.register(
@@ -60,14 +60,14 @@ add_task(async function testIntervalChanges() {
   );
   idleService._reset();
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.sessionstore.interval");
     MockRegistrar.unregister(fakeIdleService);
   });
 
   // Hook idle/active observer to mock idle service by changing pref `idleDelay`
   // to a whatever value, which will not be used.
-  Services.prefs.setIntPref("browser.sessionstore.idleDelay", 5000000);
+  Services.prefs.setIntPref("browser.sessionstore.idleDelay", 5000);
 
   // Wait a `sessionstore-state-write-complete` event from any previous
   // scheduled state write. This is needed since the `_lastSaveTime` in

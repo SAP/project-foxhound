@@ -25,11 +25,11 @@
 
 #include <stdint.h>
 
-#include "avassert.h"
+#include "attributes.h"
+#include "macros.h"
 #include "mem.h"
 #include "version.h"
 
-#if !FF_API_DECLARE_ALIGNED
 /**
  * @def DECLARE_ALIGNED(n,t,v)
  * Declare a variable that is aligned in memory.
@@ -96,7 +96,6 @@
     #define DECLARE_ASM_ALIGNED(n,t,v)  t v
     #define DECLARE_ASM_CONST(n,t,v)    static const t v
 #endif
-#endif
 
 // Some broken preprocessors need a second expansion
 // to be forced to tokenize __VA_ARGS__
@@ -136,22 +135,4 @@
 #   define LOCAL_ALIGNED_32(t, v, ...) E1(LOCAL_ALIGNED_A(32, t, v, __VA_ARGS__,,))
 #endif
 
-static inline int ff_fast_malloc(void *ptr, unsigned int *size, size_t min_size, int zero_realloc)
-{
-    void *val;
-
-    memcpy(&val, ptr, sizeof(val));
-    if (min_size <= *size) {
-        av_assert0(val || !min_size);
-        return 0;
-    }
-    min_size = FFMAX(min_size + min_size / 16 + 32, min_size);
-    av_freep(ptr);
-    val = zero_realloc ? av_mallocz(min_size) : av_malloc(min_size);
-    memcpy(ptr, &val, sizeof(val));
-    if (!val)
-        min_size = 0;
-    *size = min_size;
-    return 1;
-}
 #endif /* AVUTIL_MEM_INTERNAL_H */

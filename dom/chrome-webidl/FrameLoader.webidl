@@ -32,7 +32,7 @@ interface FrameLoader {
    * frames, a shim is returned that contains private browsing and app
    * information.
    */
-  readonly attribute LoadContext loadContext;
+  readonly attribute LoadContext? loadContext;
 
   /**
    * Get the root BrowsingContext within the frame.
@@ -53,12 +53,6 @@ interface FrameLoader {
    */
   readonly attribute boolean isRemoteFrame;
 
-  /**
-   * Activate event forwarding from client (remote frame) to parent.
-   */
-  [Throws]
-  void activateFrameEvent(DOMString aType, boolean capture);
-
   // Note, when frameloaders are swapped, also messageManagers are swapped.
   readonly attribute MessageSender? messageManager;
 
@@ -66,25 +60,25 @@ interface FrameLoader {
    * Force a remote browser to recompute its dimension and screen position.
    */
   [Throws]
-  void requestUpdatePosition();
+  undefined requestUpdatePosition();
 
   /**
    * Force a TabStateFlush from native sessionStoreListeners.
    * Returns a promise that resolves when all session store data has been
    * flushed.
    */
-  [Throws]
-  Promise<void> requestTabStateFlush();
+  [NewObject]
+  Promise<undefined> requestTabStateFlush();
 
   /**
    * Force Epoch update in native sessionStoreListeners.
    */
-  void requestEpochUpdate(unsigned long aEpoch);
+  undefined requestEpochUpdate(unsigned long aEpoch);
 
   /**
    * Request a session history update in native sessionStoreListeners.
    */
-  void requestSHistoryUpdate();
+  undefined requestSHistoryUpdate();
 
   /**
    * Creates a print preview document in this frame, or updates the existing
@@ -102,15 +96,14 @@ interface FrameLoader {
    *   preview document with a new print settings object.
    * @return A Promise that resolves with a PrintPreviewSuccessInfo on success.
    */
-  [ChromeOnly, Throws]
+  [NewObject]
   Promise<unsigned long> printPreview(nsIPrintSettings aPrintSettings,
                                       BrowsingContext? aSourceBrowsingContext);
 
   /**
    * Inform the print preview document that we're done with it.
    */
-  [ChromeOnly]
-  void exitPrintPreview();
+  undefined exitPrintPreview();
 
   /**
    * The element which owns this frame loader.
@@ -185,8 +178,8 @@ interface FrameLoader {
 interface mixin WebBrowserPersistable
 {
   [Throws]
-  void startPersistence(BrowsingContext? aContext,
-                        nsIWebBrowserPersistDocumentReceiver aRecv);
+  undefined startPersistence(BrowsingContext? aContext,
+                             nsIWebBrowserPersistDocumentReceiver aRecv);
 };
 
 enum PrintPreviewOrientation {
@@ -235,6 +228,16 @@ dictionary PrintPreviewSuccessInfo {
    * Specified orientation of the document, or "unspecified".
    */
   PrintPreviewOrientation orientation = "unspecified";
+
+  /**
+   * Specified page width of the document in inches, or null if no @page size was specified.
+   */
+  float? pageWidth = null;
+
+  /**
+   * Specified page height of the document in inches, or null if no @page size was specified.
+   */
+  float? pageHeight = null;
 };
 
 FrameLoader includes WebBrowserPersistable;

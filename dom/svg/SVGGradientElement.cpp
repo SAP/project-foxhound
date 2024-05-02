@@ -20,8 +20,7 @@
 NS_IMPL_NS_NEW_SVG_ELEMENT(LinearGradient)
 NS_IMPL_NS_NEW_SVG_ELEMENT(RadialGradient)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace SVGGradientElement_Binding;
 using namespace SVGUnitTypes_Binding;
@@ -83,18 +82,6 @@ already_AddRefed<DOMSVGAnimatedString> SVGGradientElement::Href() {
   return mStringAttributes[HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
-}
-
-//----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGGradientElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sColorMap,
-                                                    sGradientStopMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGGradientElementBase::IsAttributeMapped(name);
 }
 
 //---------------------Linear Gradients------------------------
@@ -229,5 +216,4 @@ SVGElement::LengthAttributesInfo SVGRadialGradientElement::GetLengthInfo() {
                               ArrayLength(sLengthInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

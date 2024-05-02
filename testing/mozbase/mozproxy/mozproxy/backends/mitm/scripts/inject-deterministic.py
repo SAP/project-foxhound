@@ -1,7 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function
 import base64
 import hashlib
 import re
@@ -129,7 +128,6 @@ class AddDeterministic:
                 with open(
                     path.join(path.dirname(__file__), "catapult/deterministic.js"), "r"
                 ) as jsfile:
-
                     js = jsfile.read().replace(
                         "REPLACE_LOAD_TIMESTAMP", str(self.millis)
                     )

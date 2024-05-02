@@ -96,11 +96,11 @@ bool UntypedManagedEndpoint::BindCommon(IProtocol* aActor,
 }
 
 /* static */
-void IPDLParamTraits<UntypedManagedEndpoint>::Write(IPC::Message* aMsg,
+void IPDLParamTraits<UntypedManagedEndpoint>::Write(IPC::MessageWriter* aWriter,
                                                     IProtocol* aActor,
                                                     paramType&& aParam) {
   bool isValid = aParam.mInner.isSome();
-  WriteIPDLParam(aMsg, aActor, isValid);
+  WriteIPDLParam(aWriter, aActor, isValid);
   if (!isValid) {
     return;
   }
@@ -116,20 +116,19 @@ void IPDLParamTraits<UntypedManagedEndpoint>::Write(IPC::Message* aMsg,
                                      aActor->ToplevelProtocol(),
       "Must be being sent over the same toplevel protocol");
 
-  WriteIPDLParam(aMsg, aActor, inner.mId);
-  WriteIPDLParam(aMsg, aActor, inner.mType);
-  WriteIPDLParam(aMsg, aActor, inner.mManagerId);
-  WriteIPDLParam(aMsg, aActor, inner.mManagerType);
+  WriteIPDLParam(aWriter, aActor, inner.mId);
+  WriteIPDLParam(aWriter, aActor, inner.mType);
+  WriteIPDLParam(aWriter, aActor, inner.mManagerId);
+  WriteIPDLParam(aWriter, aActor, inner.mManagerType);
 }
 
 /* static */
-bool IPDLParamTraits<UntypedManagedEndpoint>::Read(const IPC::Message* aMsg,
-                                                   PickleIterator* aIter,
+bool IPDLParamTraits<UntypedManagedEndpoint>::Read(IPC::MessageReader* aReader,
                                                    IProtocol* aActor,
                                                    paramType* aResult) {
   *aResult = UntypedManagedEndpoint{};
   bool isValid = false;
-  if (!aActor || !ReadIPDLParam(aMsg, aIter, aActor, &isValid)) {
+  if (!aActor || !ReadIPDLParam(aReader, aActor, &isValid)) {
     return false;
   }
   if (!isValid) {
@@ -139,10 +138,30 @@ bool IPDLParamTraits<UntypedManagedEndpoint>::Read(const IPC::Message* aMsg,
   aResult->mInner.emplace();
   auto& inner = *aResult->mInner;
   inner.mToplevel = aActor->ToplevelProtocol()->GetWeakLifecycleProxy();
-  return ReadIPDLParam(aMsg, aIter, aActor, &inner.mId) &&
-         ReadIPDLParam(aMsg, aIter, aActor, &inner.mType) &&
-         ReadIPDLParam(aMsg, aIter, aActor, &inner.mManagerId) &&
-         ReadIPDLParam(aMsg, aIter, aActor, &inner.mManagerType);
+  return ReadIPDLParam(aReader, aActor, &inner.mId) &&
+         ReadIPDLParam(aReader, aActor, &inner.mType) &&
+         ReadIPDLParam(aReader, aActor, &inner.mManagerId) &&
+         ReadIPDLParam(aReader, aActor, &inner.mManagerType);
 }
 
 }  // namespace mozilla::ipc
+
+namespace IPC {
+
+void ParamTraits<mozilla::ipc::UntypedEndpoint>::Write(MessageWriter* aWriter,
+                                                       paramType&& aParam) {
+  IPC::WriteParam(aWriter, std::move(aParam.mPort));
+  IPC::WriteParam(aWriter, aParam.mMessageChannelId);
+  IPC::WriteParam(aWriter, aParam.mMyPid);
+  IPC::WriteParam(aWriter, aParam.mOtherPid);
+}
+
+bool ParamTraits<mozilla::ipc::UntypedEndpoint>::Read(MessageReader* aReader,
+                                                      paramType* aResult) {
+  return IPC::ReadParam(aReader, &aResult->mPort) &&
+         IPC::ReadParam(aReader, &aResult->mMessageChannelId) &&
+         IPC::ReadParam(aReader, &aResult->mMyPid) &&
+         IPC::ReadParam(aReader, &aResult->mOtherPid);
+}
+
+}  // namespace IPC

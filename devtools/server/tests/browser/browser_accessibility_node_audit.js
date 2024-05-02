@@ -12,7 +12,7 @@
 
 const {
   accessibility: { AUDIT_TYPE, SCORES },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 const EMPTY_AUDIT = Object.keys(AUDIT_TYPE).reduce((audit, key) => {
   audit[key] = null;
   return audit;
@@ -56,15 +56,11 @@ async function checkAudit(a11yWalker, node, expected, options) {
   );
 }
 
-add_task(async function() {
-  const {
-    target,
-    walker,
-    a11yWalker,
-    parentAccessibility,
-  } = await initAccessibilityFrontsForUrl(
-    MAIN_DOMAIN + "doc_accessibility_infobar.html"
-  );
+add_task(async function () {
+  const { target, walker, a11yWalker, parentAccessibility } =
+    await initAccessibilityFrontsForUrl(
+      MAIN_DOMAIN + "doc_accessibility_infobar.html"
+    );
 
   const headerNode = await walker.querySelector(walker.rootNode, "#h1");
   await checkAudit(

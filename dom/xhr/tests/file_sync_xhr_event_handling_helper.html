@@ -25,10 +25,7 @@
         // so that we can dispatch key event in the parent to test
         // InputTaskManager properly
         SpecialPowers.loadChromeScript(() => {
-          const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-          const { EventUtils } = ChromeUtils.import(
-            "resource://specialpowers/SpecialPowersEventUtils.jsm"
-          );
+          /* eslint-env mozilla/chrome-script */
           var win = Services.wm.getMostRecentBrowserWindow();
           EventUtils.synthesizeKey("a", {}, win);
           EventUtils.synthesizeKey("b", {}, win);

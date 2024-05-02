@@ -9,17 +9,16 @@
 
 /* import-globals-from controller.js */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  CustomizableUI: "resource:///modules/CustomizableUI.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
-  PlacesTransactions: "resource://gre/modules/PlacesTransactions.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
 });
 
 var gEditItemOverlay = {
@@ -28,7 +27,12 @@ var gEditItemOverlay = {
   transactionPromises: null,
   _staticFoldersListBuilt: false,
   _didChangeFolder: false,
-
+  // Tracks bookmark properties changes in the dialog, allowing external consumers
+  // to either confirm or discard them.
+  _bookmarkState: null,
+  _allTags: null,
+  _initPanelDeferred: null,
+  _updateTagsDeferred: null,
   _paneInfo: null,
   _setPaneInfo(aInitInfo) {
     if (!aInitInfo) {
@@ -48,9 +52,8 @@ var gEditItemOverlay = {
     // Since there's no true UI for folder shortcuts (they show up just as their target
     // folders), when the pane shows for them it's opened in read-only mode, showing the
     // properties of the target folder.
-    let itemId = node ? node.itemId : -1;
     let itemGuid = node ? PlacesUtils.getConcreteItemGuid(node) : null;
-    let isItem = itemId != -1;
+    let isItem = !!itemGuid;
     let isFolderShortcut =
       isItem &&
       node.type == Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER_SHORTCUT;
@@ -74,16 +77,15 @@ var gEditItemOverlay = {
     let parentGuid = null;
 
     if (node && isItem) {
-      if (
-        !node.parent ||
-        (node.parent.itemId > 0 && !node.parent.bookmarkGuid)
-      ) {
+      if (!node.parent) {
         throw new Error(
           "Cannot use an incomplete node to initialize the edit bookmark panel"
         );
       }
       let parent = node.parent;
       isParentReadOnly = !PlacesUtils.nodeIsFolder(parent);
+      // Note this may be an empty string, that'd the case for the root node
+      // of a search, or a virtual root node, like the Library left pane.
       parentGuid = parent.bookmarkGuid;
     }
 
@@ -91,7 +93,6 @@ var gEditItemOverlay = {
     let onPanelReady = aInitInfo.onPanelReady;
 
     return (this._paneInfo = {
-      itemId,
       itemGuid,
       parentGuid,
       isItem,
@@ -116,16 +117,21 @@ var gEditItemOverlay = {
     return this._paneInfo != null;
   },
 
-  // Backwards-compatibility getters
-  get itemId() {
+  /**
+   * The concrete bookmark GUID is either the bookmark one or, for folder
+   * shortcuts, the target one.
+   *
+   * @returns {string} GUID of the loaded bookmark, or null if not a bookmark.
+   */
+  get concreteGuid() {
     if (
       !this.initialized ||
       this._paneInfo.isTag ||
       this._paneInfo.bulkTagging
     ) {
-      return -1;
+      return null;
     }
-    return this._paneInfo.itemId;
+    return this._paneInfo.itemGuid;
   },
 
   get uri() {
@@ -224,156 +230,224 @@ var gEditItemOverlay = {
     }
   },
 
+  async _initAllTags() {
+    this._allTags = new Map();
+    const fetchedTags = await PlacesUtils.bookmarks.fetchTags();
+    for (const tag of fetchedTags) {
+      this._allTags?.set(tag.name.toLowerCase(), tag.name);
+    }
+  },
+
   /**
    * Initialize the panel.
    *
    * @param {object} aInfo
+   *   The initialization info.
    * @param {object} [aInfo.node]
    *   If aInfo.uris is not specified, this must be specified.
    *   Either a result node or a node-like object representing the item to be edited.
    *   A node-like object must have the following properties (with values that
    *   match exactly those a result node would have):
-   *   itemId, bookmarkGuid, uri, title, type.
+   *   bookmarkGuid, uri, title, type, …
    * @param {nsIURI[]} [aInfo.uris]
    *   If aInfo.node is not specified, this must be specified.
    *   An array of uris for bulk tagging.
-   * @param {string[]} [hiddenRows]
+   * @param {string[]} [aInfo.hiddenRows]
    *   List of rows to be hidden regardless of the item edited. Possible values:
    *   "title", "location", "keyword", "folderPicker".
    */
-  initPanel(aInfo) {
-    if (typeof aInfo != "object" || aInfo === null) {
-      throw new Error("aInfo must be an object.");
-    }
-    if ("node" in aInfo) {
-      try {
-        aInfo.node.type;
-      } catch (e) {
-        // If the lazy loader for |type| generates an exception, it means that
-        // this bookmark could not be loaded. This sometimes happens when tests
-        // create a bookmark by clicking the bookmark star, then try to cleanup
-        // before the bookmark panel has finished opening. Either way, if we
-        // cannot retrieve the bookmark information, we cannot open the panel.
-        return;
+  async initPanel(aInfo) {
+    const deferred = (this._initPanelDeferred = PromiseUtils.defer());
+    try {
+      if (typeof aInfo != "object" || aInfo === null) {
+        throw new Error("aInfo must be an object.");
       }
-    }
-
-    // For sanity ensure that the implementer has uninited the panel before
-    // trying to init it again, or we could end up leaking due to observers.
-    if (this.initialized) {
-      this.uninitPanel(false);
-    }
-
-    this._didChangeFolder = false;
-    this.transactionPromises = [];
-
-    let {
-      parentGuid,
-      isItem,
-      isURI,
-      isBookmark,
-      bulkTagging,
-      uris,
-      visibleRows,
-      focusedElement,
-      onPanelReady,
-    } = this._setPaneInfo(aInfo);
-
-    // If we're creating a new item on the toolbar, show it:
-    if (
-      aInfo.isNewBookmark &&
-      parentGuid == PlacesUtils.bookmarks.toolbarGuid
-    ) {
-      this._autoshowBookmarksToolbar();
-    }
-
-    let showOrCollapse = (
-      rowId,
-      isAppropriateForInput,
-      nameInHiddenRows = null
-    ) => {
-      let visible = isAppropriateForInput;
-      if (visible && "hiddenRows" in aInfo && nameInHiddenRows) {
-        visible &= !aInfo.hiddenRows.includes(nameInHiddenRows);
+      if ("node" in aInfo) {
+        try {
+          aInfo.node.type;
+        } catch (e) {
+          // If the lazy loader for |type| generates an exception, it means that
+          // this bookmark could not be loaded. This sometimes happens when tests
+          // create a bookmark by clicking the bookmark star, then try to cleanup
+          // before the bookmark panel has finished opening. Either way, if we
+          // cannot retrieve the bookmark information, we cannot open the panel.
+          return;
+        }
       }
-      if (visible) {
-        visibleRows.add(rowId);
+
+      // For sanity ensure that the implementer has uninited the panel before
+      // trying to init it again, or we could end up leaking due to observers.
+      if (this.initialized) {
+        this.uninitPanel(false);
       }
-      return !(this._element(rowId).collapsed = !visible);
-    };
 
-    if (showOrCollapse("nameRow", !bulkTagging, "name")) {
-      this._initNamePicker();
-      this._namePicker.readOnly = this.readOnly;
-    }
+      this._didChangeFolder = false;
+      this.transactionPromises = [];
 
-    // In some cases we want to hide the location field, since it's not
-    // human-readable, but we still want to initialize it.
-    showOrCollapse("locationRow", isURI, "location");
-    if (isURI) {
-      this._initLocationField();
-      this._locationField.readOnly = this.readOnly;
-    }
+      let {
+        parentGuid,
+        isItem,
+        isURI,
+        isBookmark,
+        bulkTagging,
+        uris,
+        visibleRows,
+        focusedElement,
+        onPanelReady,
+      } = this._setPaneInfo(aInfo);
 
-    if (showOrCollapse("keywordRow", isBookmark, "keyword")) {
-      this._initKeywordField().catch(Cu.reportError);
-      this._keywordField.readOnly = this.readOnly;
-    }
+      // initPanel can be called multiple times in a row,
+      // and awaits Promises. If the reference to `instance`
+      // changes, it must mean another caller has called
+      // initPanel again, so bail out of the initialization.
+      let instance = (this._instance = {});
 
-    // Collapse the tag selector if the item does not accept tags.
-    if (showOrCollapse("tagsRow", isURI || bulkTagging, "tags")) {
-      this._initTagsField();
-    } else if (!this._element("tagsSelectorRow").collapsed) {
-      this.toggleTagsSelector().catch(Cu.reportError);
-    }
+      // If we're creating a new item on the toolbar, show it:
+      if (
+        aInfo.isNewBookmark &&
+        parentGuid == PlacesUtils.bookmarks.toolbarGuid
+      ) {
+        this._autoshowBookmarksToolbar();
+      }
 
-    // Folder picker.
-    // Technically we should check that the item is not moveable, but that's
-    // not cheap (we don't always have the parent), and there's no use case for
-    // this (it's only the Star UI that shows the folderPicker)
-    if (showOrCollapse("folderRow", isItem, "folderPicker")) {
-      this._initFolderMenuList(parentGuid).catch(Cu.reportError);
-    }
+      let showOrCollapse = (
+        rowId,
+        isAppropriateForInput,
+        nameInHiddenRows = null
+      ) => {
+        let visible = isAppropriateForInput;
+        if (visible && "hiddenRows" in aInfo && nameInHiddenRows) {
+          visible &= !aInfo.hiddenRows.includes(nameInHiddenRows);
+        }
+        if (visible) {
+          visibleRows.add(rowId);
+        }
+        const cells = document.getElementsByClassName("editBMPanel_" + rowId);
+        for (const cell of cells) {
+          cell.hidden = !visible;
+        }
+        return visible;
+      };
 
-    // Selection count.
-    if (showOrCollapse("selectionCount", bulkTagging)) {
-      this._element(
-        "itemsCountText"
-      ).value = PlacesUIUtils.getPluralString(
-        "detailsPane.itemsCountLabel",
-        uris.length,
-        [uris.length]
-      );
-    }
+      if (showOrCollapse("nameRow", !bulkTagging, "name")) {
+        this._initNamePicker();
+        this._namePicker.readOnly = this.readOnly;
+      }
 
-    let focusElement = () => {
-      // The focusedElement possible values are:
-      //  * preferred: focus the field that the user touched first the last
-      //    time the pane was shown (either namePicker or tagsField)
-      //  * first: focus the first non collapsed input
-      // Note: since all controls are collapsed by default, we don't get the
-      // default XUL dialog behavior, that selects the first control, so we set
-      // the focus explicitly.
-      let elt;
-      if (focusedElement === "preferred") {
-        elt = this._element(
-          Services.prefs.getCharPref(
-            "browser.bookmarks.editDialog.firstEditField"
-          )
+      // In some cases we want to hide the location field, since it's not
+      // human-readable, but we still want to initialize it.
+      showOrCollapse("locationRow", isURI, "location");
+      if (isURI) {
+        this._initLocationField();
+        this._locationField.readOnly = this.readOnly;
+      }
+
+      if (showOrCollapse("keywordRow", isBookmark, "keyword")) {
+        await this._initKeywordField().catch(console.error);
+        // paneInfo can be null if paneInfo is uninitialized while
+        // the process above is awaiting initialization
+        if (instance != this._instance || this._paneInfo == null) {
+          return;
+        }
+        this._keywordField.readOnly = this.readOnly;
+      }
+
+      // Collapse the tag selector if the item does not accept tags.
+      if (showOrCollapse("tagsRow", isBookmark || bulkTagging, "tags")) {
+        this._initTagsField();
+      } else if (!this._element("tagsSelectorRow").hidden) {
+        this.toggleTagsSelector().catch(console.error);
+      }
+
+      // Folder picker.
+      // Technically we should check that the item is not moveable, but that's
+      // not cheap (we don't always have the parent), and there's no use case for
+      // this (it's only the Star UI that shows the folderPicker)
+      if (showOrCollapse("folderRow", isItem, "folderPicker")) {
+        await this._initFolderMenuList(parentGuid).catch(console.error);
+        if (instance != this._instance || this._paneInfo == null) {
+          return;
+        }
+      }
+
+      // Selection count.
+      if (showOrCollapse("selectionCount", bulkTagging)) {
+        document.l10n.setAttributes(
+          this._element("itemsCountText"),
+          "places-details-pane-items-count",
+          { count: uris.length }
         );
-      } else if (focusedElement === "first") {
-        elt = document.querySelector("vbox:not([collapsed=true]) > input");
       }
-      if (elt) {
-        elt.focus({ preventScroll: true });
-        elt.select();
-      }
-    };
 
-    if (onPanelReady) {
-      onPanelReady(focusElement);
-    } else {
-      focusElement();
+      // Observe changes.
+      if (!this._observersAdded) {
+        this.handlePlacesEvents = this.handlePlacesEvents.bind(this);
+        PlacesUtils.observers.addListener(
+          ["bookmark-title-changed"],
+          this.handlePlacesEvents
+        );
+        window.addEventListener("unload", this);
+        this._observersAdded = true;
+      }
+
+      let focusElement = () => {
+        // The focusedElement possible values are:
+        //  * preferred: focus the field that the user touched first the last
+        //    time the pane was shown (either namePicker or tagsField)
+        //  * first: focus the first non hidden input
+        // Note: since all controls are hidden by default, we don't get the
+        // default XUL dialog behavior, that selects the first control, so we set
+        // the focus explicitly.
+
+        let elt;
+        if (focusedElement === "preferred") {
+          elt = this._element(
+            Services.prefs.getCharPref(
+              "browser.bookmarks.editDialog.firstEditField"
+            )
+          );
+          if (elt.parentNode.hidden) {
+            focusedElement = "first";
+          }
+        }
+        if (focusedElement === "first") {
+          elt = document
+            .getElementById("editBookmarkPanelContent")
+            .querySelector('input:not([hidden="true"])');
+        }
+
+        if (elt) {
+          elt.focus({ preventScroll: true });
+          elt.select();
+        }
+      };
+
+      if (onPanelReady) {
+        onPanelReady(focusElement);
+      } else {
+        focusElement();
+      }
+
+      if (this._updateTagsDeferred) {
+        await this._updateTagsDeferred.promise;
+      }
+
+      this._bookmarkState = this.makeNewStateObject({
+        children: aInfo.node?.children,
+        index: aInfo.node?.index,
+        isFolder: aInfo.node != null && PlacesUtils.nodeIsFolder(aInfo.node),
+      });
+      if (isBookmark || bulkTagging) {
+        await this._initAllTags();
+        await this._rebuildTagsSelectorList();
+      }
+    } finally {
+      deferred.resolve();
+      if (this._initPanelDeferred === deferred) {
+        // Since change listeners check _initPanelDeferred for truthiness, we
+        // can prevent unnecessary awaits by setting it back to null.
+        this._initPanelDeferred = null;
+      }
     }
   },
 
@@ -413,22 +487,8 @@ var gEditItemOverlay = {
       aElement.value = aValue;
 
       // Clear the editor's undo stack
-      let transactionManager;
-      try {
-        transactionManager = aElement.editor.transactionManager;
-      } catch (e) {
-        // When retrieving the transaction manager, editor may be null resulting
-        // in a TypeError. Additionally, the transaction manager may not
-        // exist yet, which causes access to it to throw NS_ERROR_FAILURE.
-        // In either event, the transaction manager doesn't exist it, so we
-        // don't need to worry about clearing it.
-        if (!(e instanceof TypeError) && e.result != Cr.NS_ERROR_FAILURE) {
-          throw e;
-        }
-      }
-      if (transactionManager) {
-        transactionManager.clear();
-      }
+      // FYI: editor may be null.
+      aElement.editor?.clearUndoRedo();
     }
   },
 
@@ -545,15 +605,24 @@ var gEditItemOverlay = {
     if (aHideCollapsibleElements) {
       // Hide the folder tree if it was previously visible.
       var folderTreeRow = this._element("folderTreeRow");
-      if (!folderTreeRow.collapsed) {
+      if (!folderTreeRow.hidden) {
         this.toggleFolderTreeVisibility();
       }
 
       // Hide the tag selector if it was previously visible.
       var tagsSelectorRow = this._element("tagsSelectorRow");
-      if (!tagsSelectorRow.collapsed) {
-        this.toggleTagsSelector().catch(Cu.reportError);
+      if (!tagsSelectorRow.hidden) {
+        this.toggleTagsSelector().catch(console.error);
       }
+    }
+
+    if (this._observersAdded) {
+      PlacesUtils.observers.removeListener(
+        ["bookmark-title-changed"],
+        this.handlePlacesEvents
+      );
+      window.removeEventListener("unload", this);
+      this._observersAdded = false;
     }
 
     if (this._folderMenuListListenerAdded) {
@@ -565,6 +634,8 @@ var gEditItemOverlay = {
     this._firstEditedField = "";
     this._didChangeFolder = false;
     this.transactionPromises = [];
+    this._bookmarkState = null;
+    this._allTags = null;
   },
 
   get selectedFolderGuid() {
@@ -574,122 +645,88 @@ var gEditItemOverlay = {
     );
   },
 
-  onTagsFieldChange() {
+  makeNewStateObject(extraOptions) {
+    if (
+      this._paneInfo.isItem ||
+      this._paneInfo.isTag ||
+      this._paneInfo.bulkTagging
+    ) {
+      const isLibraryWindow =
+        document.documentElement.getAttribute("windowtype") ===
+        "Places:Organizer";
+      const options = {
+        autosave: isLibraryWindow,
+        info: this._paneInfo,
+        ...extraOptions,
+      };
+
+      if (this._paneInfo.isBookmark) {
+        options.tags = this._element("tagsField").value;
+        options.keyword = this._keyword;
+      }
+
+      if (this._paneInfo.bulkTagging) {
+        options.tags = this._element("tagsField").value;
+      }
+
+      return new PlacesUIUtils.BookmarkState(options);
+    }
+    return null;
+  },
+
+  async onTagsFieldChange() {
     // Check for _paneInfo existing as the dialog may be closing but receiving
     // async updates from unresolved promises.
     if (
       this._paneInfo &&
       (this._paneInfo.isURI || this._paneInfo.bulkTagging)
     ) {
-      this._updateTags().then(anyChanges => {
+      if (this._initPanelDeferred) {
+        await this._initPanelDeferred.promise;
+      }
+      this._updateTags().then(() => {
         // Check _paneInfo here as we might be closing the dialog.
-        if (anyChanges && this._paneInfo) {
+        if (this._paneInfo) {
           this._mayUpdateFirstEditField("tagsField");
         }
-      }, Cu.reportError);
+      }, console.error);
     }
   },
 
   /**
-   * Works out the necessary changes for a given array of currently-set tags and
-   * the tags-input-field value.
-   *
-   * @param {string[]} aCurrentTags
-   *   The tags to compare.
-   * @returns {object}
-   *   Returns which tags should be removed and which should be added in
-   *   the form of an object: `{ removedTags: [...], newTags: [...] }`.
+   * Handle tag list updates from the input field or selector box.
    */
-  _getTagsChanges(aCurrentTags) {
-    let inputTags = this._getTagsArrayFromTagsInputField();
-
-    // Optimize the trivial cases (which are actually the most common).
-    if (!inputTags.length && !aCurrentTags.length) {
-      return { newTags: [], removedTags: [] };
-    }
-    if (!inputTags.length) {
-      return { newTags: [], removedTags: aCurrentTags };
-    }
-    if (!aCurrentTags.length) {
-      return { newTags: inputTags, removedTags: [] };
-    }
-
-    // Do not remove tags that may be reinserted with a different
-    // case, since the tagging service may handle those more efficiently.
-    let lcInputTags = inputTags.map(t => t.toLowerCase());
-    let removedTags = aCurrentTags.filter(
-      t => !lcInputTags.includes(t.toLowerCase())
-    );
-    let newTags = inputTags.filter(t => !aCurrentTags.includes(t));
-    return { removedTags, newTags };
-  },
-
-  // Adds and removes tags for one or more uris.
-  _setTagsFromTagsInputField(aCurrentTags, aURIs) {
-    let { removedTags, newTags } = this._getTagsChanges(aCurrentTags);
-    if (removedTags.length + newTags.length == 0) {
-      return false;
-    }
-
-    let setTags = async () => {
-      let promises = [];
-      if (removedTags.length) {
-        let promise = PlacesTransactions.Untag({
-          urls: aURIs,
-          tags: removedTags,
-        })
-          .transact()
-          .catch(Cu.reportError);
-        this.transactionPromises.push(promise);
-        promises.push(promise);
-      }
-      if (newTags.length) {
-        let promise = PlacesTransactions.Tag({ urls: aURIs, tags: newTags })
-          .transact()
-          .catch(Cu.reportError);
-        this.transactionPromises.push(promise);
-        promises.push(promise);
-      }
-      // Don't use Promise.all because we want these to be executed in order.
-      for (let promise of promises) {
-        await promise;
-      }
-    };
-
-    // Only in the library info-pane it's safe (and necessary) to batch these.
-    // TODO bug 1093030: cleanup this mess when the bookmarksProperties dialog
-    // and star UI code don't "run a batch in the background".
-    if (window.document.documentElement.id == "places") {
-      PlacesTransactions.batch(setTags);
-    } else {
-      setTags();
-    }
-    return true;
-  },
-
   async _updateTags() {
-    let uris = this._paneInfo.bulkTagging
-      ? this._paneInfo.uris
-      : [this._paneInfo.uri];
-    let currentTags = this._paneInfo.bulkTagging
-      ? await this._getCommonTags()
-      : PlacesUtils.tagging.getTagsForURI(uris[0]);
-    let anyChanges = this._setTagsFromTagsInputField(currentTags, uris);
-    if (!anyChanges) {
-      return false;
-    }
+    const deferred = (this._updateTagsDeferred = PromiseUtils.defer());
+    try {
+      const inputTags = this._getTagsArrayFromTagsInputField();
+      const isLibraryWindow =
+        document.documentElement.getAttribute("windowtype") ===
+        "Places:Organizer";
+      await this._bookmarkState._tagsChanged(inputTags);
 
-    // The panel could have been closed in the meanwhile.
-    if (!this._paneInfo) {
-      return false;
+      if (isLibraryWindow) {
+        // Ensure the tagsField is in sync, clean it up from empty tags
+        delete this._paneInfo._cachedCommonTags;
+        const currentTags = this._paneInfo.bulkTagging
+          ? this._getCommonTags()
+          : PlacesUtils.tagging.getTagsForURI(this._paneInfo.uri);
+        this._initTextField(this._tagsField, currentTags.join(", "), false);
+        await this._initAllTags();
+      } else {
+        // Autosave is disabled. Update _allTags in memory so that the selector
+        // list shows any new tags that haven't been saved yet.
+        inputTags.forEach(tag => this._allTags?.set(tag.toLowerCase(), tag));
+      }
+      await this._rebuildTagsSelectorList();
+    } finally {
+      deferred.resolve();
+      if (this._updateTagsDeferred === deferred) {
+        // Since initPanel() checks _updateTagsDeferred for truthiness, we can
+        // prevent unnecessary awaits by setting it back to null.
+        this._updateTagsDeferred = null;
+      }
     }
-
-    // Ensure the tagsField is in sync, clean it up from empty tags
-    currentTags = this._paneInfo.bulkTagging
-      ? this._getCommonTags()
-      : PlacesUtils.tagging.getTagsForURI(this._paneInfo.uri);
-    this._initTextField(this._tagsField, currentTags.join(", "), false);
-    return true;
   },
 
   /**
@@ -720,6 +757,9 @@ var gEditItemOverlay = {
     if (this.readOnly || !(this._paneInfo.isItem || this._paneInfo.isTag)) {
       return;
     }
+    if (this._initPanelDeferred) {
+      await this._initPanelDeferred.promise;
+    }
 
     // Here we update either the item title or its cached static title
     if (this._paneInfo.isTag) {
@@ -729,38 +769,27 @@ var gEditItemOverlay = {
         this._initNamePicker();
         return;
       }
-      // Get all the bookmarks for the old tag, tag them with the new tag, and
-      // untag them from the old tag.
-      let oldTag = this._paneInfo.tag;
-      this._paneInfo.tag = tag;
-      let title = this._paneInfo.title;
-      if (title == oldTag) {
-        this._paneInfo.title = tag;
-      }
-      let promise = PlacesTransactions.RenameTag({ oldTag, tag }).transact();
-      this.transactionPromises.push(promise.catch(Cu.reportError));
-      await promise;
+
+      this._bookmarkState._titleChanged(tag);
       return;
     }
-
     this._mayUpdateFirstEditField("namePicker");
-    let promise = PlacesTransactions.EditTitle({
-      guid: this._paneInfo.itemGuid,
-      title: this._namePicker.value,
-    }).transact();
-    this.transactionPromises.push(promise.catch(Cu.reportError));
-    await promise;
+    this._bookmarkState._titleChanged(this._namePicker.value);
   },
 
-  onLocationFieldChange() {
+  async onLocationFieldChange() {
     if (this.readOnly || !this._paneInfo.isBookmark) {
       return;
+    }
+    if (this._initPanelDeferred) {
+      await this._initPanelDeferred.promise;
     }
 
     let newURI;
     try {
-      newURI = Services.uriFixup.getFixupURIInfo(this._locationField.value)
-        .preferredURI;
+      newURI = Services.uriFixup.getFixupURIInfo(
+        this._locationField.value
+      ).preferredURI;
     } catch (ex) {
       // TODO: Bug 1089141 - Provide some feedback about the invalid url.
       return;
@@ -769,43 +798,31 @@ var gEditItemOverlay = {
     if (this._paneInfo.uri.equals(newURI)) {
       return;
     }
-
-    let guid = this._paneInfo.itemGuid;
-    this.transactionPromises.push(
-      PlacesTransactions.EditUrl({ guid, url: newURI })
-        .transact()
-        .catch(Cu.reportError)
-    );
+    this._bookmarkState._locationChanged(newURI.spec);
   },
 
-  onKeywordFieldChange() {
+  async onKeywordFieldChange() {
     if (this.readOnly || !this._paneInfo.isBookmark) {
       return;
     }
-
-    let oldKeyword = this._keyword;
-    let keyword = (this._keyword = this._keywordField.value);
-    let postData = this._paneInfo.postData;
-    let guid = this._paneInfo.itemGuid;
-    this.transactionPromises.push(
-      PlacesTransactions.EditKeyword({ guid, keyword, postData, oldKeyword })
-        .transact()
-        .catch(Cu.reportError)
-    );
+    if (this._initPanelDeferred) {
+      await this._initPanelDeferred.promise;
+    }
+    this._bookmarkState._keywordChanged(this._keywordField.value);
   },
 
   toggleFolderTreeVisibility() {
     let expander = this._element("foldersExpander");
     let folderTreeRow = this._element("folderTreeRow");
-    let wasCollapsed = folderTreeRow.collapsed;
-    expander.classList.toggle("expander-up", wasCollapsed);
-    expander.classList.toggle("expander-down", !wasCollapsed);
-    if (!wasCollapsed) {
-      expander.setAttribute(
-        "tooltiptext",
-        expander.getAttribute("tooltiptextdown")
+    let wasHidden = folderTreeRow.hidden;
+    expander.classList.toggle("expander-up", wasHidden);
+    expander.classList.toggle("expander-down", !wasHidden);
+    if (!wasHidden) {
+      document.l10n.setAttributes(
+        expander,
+        "bookmark-overlay-folders-expander2"
       );
-      folderTreeRow.collapsed = true;
+      folderTreeRow.hidden = true;
       this._element("chooseFolderSeparator").hidden = this._element(
         "chooseFolderMenuItem"
       ).hidden = false;
@@ -816,14 +833,14 @@ var gEditItemOverlay = {
       // want to pay for live updates while the view is not visible.
       this._folderTree.view = null;
     } else {
-      expander.setAttribute(
-        "tooltiptext",
-        expander.getAttribute("tooltiptextup")
+      document.l10n.setAttributes(
+        expander,
+        "bookmark-overlay-folders-expander-hide"
       );
-      folderTreeRow.collapsed = false;
+      folderTreeRow.hidden = false;
 
       // XXXmano: Ideally we would only do this once, but for some odd reason,
-      // the editable mode set on this tree, together with its collapsed state
+      // the editable mode set on this tree, together with its hidden state
       // breaks the view.
       const FOLDER_TREE_PLACE_URI =
         "place:excludeItems=1&excludeQueries=1&type=" +
@@ -833,7 +850,7 @@ var gEditItemOverlay = {
       this._element("chooseFolderSeparator").hidden = this._element(
         "chooseFolderMenuItem"
       ).hidden = true;
-      this._folderTree.selectItems([this._paneInfo.parentGuid]);
+      this._folderTree.selectItems([this._bookmarkState.parentGuid]);
       this._folderTree.focus();
     }
   },
@@ -881,8 +898,8 @@ var gEditItemOverlay = {
       // reset the selection back to where it was and expand the tree
       // (this menu-item is hidden when the tree is already visible
       let item = this._getFolderMenuItem(
-        this._paneInfo.parentGuid,
-        this._paneInfo.title
+        this._bookmarkState._originalState.parentGuid,
+        this._bookmarkState._originalState.title
       );
       this._folderMenuList.selectedItem = item;
       // XXXmano HACK: setTimeout 100, otherwise focus goes back to the
@@ -893,16 +910,8 @@ var gEditItemOverlay = {
 
     // Move the item
     let containerGuid = this._folderMenuList.selectedItem.folderGuid;
-    if (
-      this._paneInfo.parentGuid != containerGuid &&
-      this._paneInfo.itemGuid != containerGuid
-    ) {
-      let promise = PlacesTransactions.Move({
-        guid: this._paneInfo.itemGuid,
-        newParentGuid: containerGuid,
-      }).transact();
-      this.transactionPromises.push(promise.catch(Cu.reportError));
-      await promise;
+    if (this._bookmarkState.parentGuid != containerGuid) {
+      this._bookmarkState._parentGuidChanged(containerGuid);
 
       // Auto-show the bookmarks toolbar when adding / moving an item there.
       if (containerGuid == PlacesUtils.bookmarks.toolbarGuid) {
@@ -916,7 +925,7 @@ var gEditItemOverlay = {
 
     // Update folder-tree selection
     var folderTreeRow = this._element("folderTreeRow");
-    if (!folderTreeRow.collapsed) {
+    if (!folderTreeRow.hidden) {
       var selectedNode = this._folderTree.selectedNode;
       if (
         !selectedNode ||
@@ -951,7 +960,7 @@ var gEditItemOverlay = {
   onFolderTreeSelect() {
     // Ignore this event when the folder tree is hidden, even if the tree is
     // alive, it's clearly not a user activated action.
-    if (this._element("folderTreeRow").collapsed) {
+    if (this._element("folderTreeRow").hidden) {
       return;
     }
 
@@ -978,7 +987,7 @@ var gEditItemOverlay = {
   async _rebuildTagsSelectorList() {
     let tagsSelector = this._element("tagsSelector");
     let tagsSelectorRow = this._element("tagsSelectorRow");
-    if (tagsSelectorRow.collapsed) {
+    if (tagsSelectorRow.hidden) {
       return;
     }
 
@@ -991,10 +1000,12 @@ var gEditItemOverlay = {
     }
 
     let tagsInField = this._getTagsArrayFromTagsInputField();
-    let allTags = await PlacesUtils.bookmarks.fetchTags();
+
     let fragment = document.createDocumentFragment();
-    for (let i = 0; i < allTags.length; i++) {
-      let tag = allTags[i].name;
+    let sortedTags = this._allTags ? [...this._allTags.values()].sort() : [];
+
+    for (let i = 0; i < sortedTags.length; i++) {
+      let tag = sortedTags[i];
       let elt = document.createXULElement("richlistitem");
       elt.appendChild(document.createXULElement("image"));
       let label = document.createXULElement("label");
@@ -1025,25 +1036,22 @@ var gEditItemOverlay = {
     var tagsSelector = this._element("tagsSelector");
     var tagsSelectorRow = this._element("tagsSelectorRow");
     var expander = this._element("tagsSelectorExpander");
-    expander.classList.toggle("expander-up", tagsSelectorRow.collapsed);
-    expander.classList.toggle("expander-down", !tagsSelectorRow.collapsed);
-    if (tagsSelectorRow.collapsed) {
-      expander.setAttribute(
-        "tooltiptext",
-        expander.getAttribute("tooltiptextup")
+    expander.classList.toggle("expander-up", tagsSelectorRow.hidden);
+    expander.classList.toggle("expander-down", !tagsSelectorRow.hidden);
+    if (tagsSelectorRow.hidden) {
+      document.l10n.setAttributes(
+        expander,
+        "bookmark-overlay-tags-expander-hide"
       );
-      tagsSelectorRow.collapsed = false;
+      tagsSelectorRow.hidden = false;
       await this._rebuildTagsSelectorList();
 
       // This is a no-op if we've added the listener.
       tagsSelector.addEventListener("mousedown", this);
       tagsSelector.addEventListener("keypress", this);
     } else {
-      expander.setAttribute(
-        "tooltiptext",
-        expander.getAttribute("tooltiptextdown")
-      );
-      tagsSelectorRow.collapsed = true;
+      document.l10n.setAttributes(expander, "bookmark-overlay-tags-expander2");
+      tagsSelectorRow.hidden = true;
 
       // This is a no-op if we've removed the listener.
       tagsSelector.removeEventListener("mousedown", this);
@@ -1071,7 +1079,6 @@ var gEditItemOverlay = {
     // default to the bookmarks menu folder
     if (!ip) {
       ip = new PlacesInsertionPoint({
-        parentId: PlacesUtils.bookmarksMenuFolderId,
         parentGuid: PlacesUtils.bookmarks.menuGuid,
       });
     }
@@ -1083,7 +1090,7 @@ var gEditItemOverlay = {
       title,
       index: await ip.getIndex(),
     }).transact();
-    this.transactionPromises.push(promise.catch(Cu.reportError));
+    this.transactionPromises.push(promise.catch(console.error));
     let guid = await promise;
 
     this._folderTree.focus();
@@ -1125,6 +1132,19 @@ var gEditItemOverlay = {
     }
   },
 
+  async handlePlacesEvents(events) {
+    for (const event of events) {
+      switch (event.type) {
+        case "bookmark-title-changed":
+          if (this._paneInfo.isItem || this._paneInfo.isTag) {
+            // This also updates titles of folders in the folder menu list.
+            this._onItemTitleChange(event.id, event.title, event.guid);
+          }
+          break;
+      }
+    }
+  },
+
   toggleItemCheckbox(item) {
     // Update the tags field when items are checked/unchecked in the listbox
     let tags = this._getTagsArrayFromTagsInputField();
@@ -1160,9 +1180,42 @@ var gEditItemOverlay = {
 
     this._initTextField(this._tagsField, tags.join(", "));
   },
+
+  _onItemTitleChange(aItemId, aNewTitle, aGuid) {
+    if (this._paneInfo.visibleRows.has("folderRow")) {
+      // If the title of a folder which is listed within the folders
+      // menulist has been changed, we need to update the label of its
+      // representing element.
+      let menupopup = this._folderMenuList.menupopup;
+      for (let menuitem of menupopup.children) {
+        if ("folderGuid" in menuitem && menuitem.folderGuid == aGuid) {
+          menuitem.label = aNewTitle;
+          break;
+        }
+      }
+    }
+    // We need to also update title of recent folders.
+    if (this._recentFolders) {
+      for (let folder of this._recentFolders) {
+        if (folder.folderGuid == aGuid) {
+          folder.title = aNewTitle;
+          break;
+        }
+      }
+    }
+  },
+
+  /**
+   * State object for the bookmark(s) currently being edited.
+   *
+   * @returns {BookmarkState} The bookmark state.
+   */
+  get bookmarkState() {
+    return this._bookmarkState;
+  },
 };
 
-XPCOMUtils.defineLazyGetter(gEditItemOverlay, "_folderTree", () => {
+ChromeUtils.defineLazyGetter(gEditItemOverlay, "_folderTree", () => {
   if (!customElements.get("places-tree")) {
     Services.scriptloader.loadSubScript(
       "chrome://browser/content/places/places-tree.js",
@@ -1172,11 +1225,8 @@ XPCOMUtils.defineLazyGetter(gEditItemOverlay, "_folderTree", () => {
   gEditItemOverlay._element("folderTreeRow").prepend(
     MozXULElement.parseXULToFragment(`
     <tree id="editBMPanel_folderTree"
-          flex="1"
           class="placesTree"
           is="places-tree"
-          height="150"
-          minheight="150"
           editable="true"
           onselect="gEditItemOverlay.onFolderTreeSelect();"
           disableUserActions="true"
@@ -1199,7 +1249,7 @@ for (let elt of [
   "tagsField",
 ]) {
   let eltScoped = elt;
-  XPCOMUtils.defineLazyGetter(gEditItemOverlay, `_${eltScoped}`, () =>
+  ChromeUtils.defineLazyGetter(gEditItemOverlay, `_${eltScoped}`, () =>
     gEditItemOverlay._element(eltScoped)
   );
 }

@@ -15,13 +15,16 @@
 
 #include "gc/GC.h"
 #include "gc/PublicIterators.h"
-#include "jit/JitRealm.h"
+#include "jit/JitZone.h"
 #include "js/HeapAPI.h"
 #include "js/Value.h"
+#include "util/DifferentialTesting.h"
 #include "vm/HelperThreads.h"
 #include "vm/Realm.h"
+#include "vm/Scope.h"
 
 #include "gc/Marking-inl.h"
+#include "gc/StableCellHasher-inl.h"
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSContext-inl.h"
 
@@ -56,6 +59,7 @@ JS::AutoDisableGenerationalGC::AutoDisableGenerationalGC(JSContext* cx)
     cx->nursery().disable();
   }
   ++cx->generationalDisabled;
+  MOZ_ASSERT(cx->nursery().isEmpty());
 }
 
 JS::AutoDisableGenerationalGC::~AutoDisableGenerationalGC() {
@@ -89,17 +93,13 @@ void PreventGCDuringInteractiveDebug() { TlsContext.get()->suppressGC++; }
 
 #endif
 
-void js::ReleaseAllJITCode(JSFreeOp* fop) {
-  js::CancelOffThreadIonCompile(fop->runtime());
+void js::ReleaseAllJITCode(JS::GCContext* gcx) {
+  js::CancelOffThreadIonCompile(gcx->runtime());
 
-  for (ZonesIter zone(fop->runtime(), SkipAtoms); !zone.done(); zone.next()) {
-    zone->setPreservingCode(false);
-    zone->discardJitCode(fop);
-  }
-
-  for (RealmsIter realm(fop->runtime()); !realm.done(); realm.next()) {
-    if (jit::JitRealm* jitRealm = realm->jitRealm()) {
-      jitRealm->discardStubs();
+  for (ZonesIter zone(gcx->runtime(), SkipAtoms); !zone.done(); zone.next()) {
+    zone->forceDiscardJitCode(gcx);
+    if (jit::JitZone* jitZone = zone->jitZone()) {
+      jitZone->discardStubs();
     }
   }
 }
@@ -119,9 +119,9 @@ AutoDisableProxyCheck::~AutoDisableProxyCheck() {
 }
 
 JS_PUBLIC_API void JS::AssertGCThingMustBeTenured(JSObject* obj) {
-  MOZ_ASSERT(obj->isTenured() &&
-             (!IsNurseryAllocable(obj->asTenured().getAllocKind()) ||
-              obj->getClass()->hasFinalize()));
+  MOZ_ASSERT(obj->isTenured());
+  MOZ_ASSERT(obj->getClass()->hasFinalize() &&
+             !(obj->getClass()->flags & JSCLASS_SKIP_NURSERY_FINALIZE));
 }
 
 JS_PUBLIC_API void JS::AssertGCThingIsNotNurseryAllocable(Cell* cell) {
@@ -144,17 +144,26 @@ JS_PUBLIC_API void js::gc::AssertGCThingHasType(js::gc::Cell* cell,
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
 
-JS::AutoAssertNoGC::AutoAssertNoGC(JSContext* maybecx)
-    : cx_(maybecx ? maybecx : TlsContext.get()) {
+JS::AutoAssertNoGC::AutoAssertNoGC(JSContext* maybecx) {
+  if (maybecx) {
+    cx_ = maybecx;
+  } else if (TlsContext.initialized()) {
+    cx_ = TlsContext.get();
+  } else {
+    cx_ = nullptr;
+  }
   if (cx_) {
     cx_->inUnsafeRegion++;
   }
 }
 
-JS::AutoAssertNoGC::~AutoAssertNoGC() {
+JS::AutoAssertNoGC::~AutoAssertNoGC() { reset(); }
+
+void JS::AutoAssertNoGC::reset() {
   if (cx_) {
     MOZ_ASSERT(cx_->inUnsafeRegion > 0);
     cx_->inUnsafeRegion--;
+    cx_ = nullptr;
   }
 }
 
@@ -216,8 +225,14 @@ JS::TraceKind JS::GCCellPtr::outOfLineKind() const {
 JS_PUBLIC_API void JS::PrepareZoneForGC(JSContext* cx, Zone* zone) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
 
+  // If we got the zone from a shared atom, we may have the wrong atoms zone
+  // here.
+  if (zone->isAtomsZone()) {
+    zone = cx->runtime()->atomsZone();
+  }
+
+  MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
   zone->scheduleGC();
 }
 
@@ -225,6 +240,7 @@ JS_PUBLIC_API void JS::PrepareForFullGC(JSContext* cx) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
+  cx->runtime()->gc.fullGCRequested = true;
   for (ZonesIter zone(cx->runtime(), WithAtoms); !zone.done(); zone.next()) {
     zone->scheduleGC();
   }
@@ -263,15 +279,21 @@ JS_PUBLIC_API void JS::SkipZoneForGC(JSContext* cx, Zone* zone) {
   CHECK_THREAD(cx);
   MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
 
+  cx->runtime()->gc.fullGCRequested = false;
   zone->unscheduleGC();
+}
+
+static inline void CheckGCOptions(JS::GCOptions options) {
+  MOZ_ASSERT(options == JS::GCOptions::Normal ||
+             options == JS::GCOptions::Shrink ||
+             options == JS::GCOptions::Shutdown);
 }
 
 JS_PUBLIC_API void JS::NonIncrementalGC(JSContext* cx, JS::GCOptions options,
                                         GCReason reason) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(options == JS::GCOptions::Normal ||
-             options == JS::GCOptions::Shrink);
+  CheckGCOptions(options);
 
   cx->runtime()->gc.gc(options, reason);
 
@@ -283,8 +305,7 @@ JS_PUBLIC_API void JS::StartIncrementalGC(JSContext* cx, JS::GCOptions options,
                                           const js::SliceBudget& budget) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(options == JS::GCOptions::Normal ||
-             options == JS::GCOptions::Shrink);
+  CheckGCOptions(options);
 
   cx->runtime()->gc.startGC(options, reason, budget);
 }
@@ -396,10 +417,14 @@ JS_PUBLIC_API JS::DoCycleCollectionCallback JS::SetDoCycleCollectionCallback(
   return cx->runtime()->gc.setDoCycleCollectionCallback(callback);
 }
 
-JS_PUBLIC_API JS::GCNurseryCollectionCallback
-JS::SetGCNurseryCollectionCallback(JSContext* cx,
-                                   GCNurseryCollectionCallback callback) {
-  return cx->runtime()->gc.setNurseryCollectionCallback(callback);
+JS_PUBLIC_API bool JS::AddGCNurseryCollectionCallback(
+    JSContext* cx, GCNurseryCollectionCallback callback, void* data) {
+  return cx->runtime()->gc.addNurseryCollectionCallback(callback, data);
+}
+
+JS_PUBLIC_API void JS::RemoveGCNurseryCollectionCallback(
+    JSContext* cx, GCNurseryCollectionCallback callback, void* data) {
+  return cx->runtime()->gc.removeNurseryCollectionCallback(callback, data);
 }
 
 JS_PUBLIC_API void JS::SetLowMemoryState(JSContext* cx, bool newState) {
@@ -459,11 +484,62 @@ JS_PUBLIC_API bool JS::WasIncrementalGC(JSRuntime* rt) {
   return rt->gc.isIncrementalGc();
 }
 
+bool js::gc::CreateUniqueIdForNativeObject(NativeObject* nobj, uint64_t* uidp) {
+  JSRuntime* runtime = nobj->runtimeFromMainThread();
+  *uidp = NextCellUniqueId(runtime);
+  JSContext* cx = runtime->mainContextFromOwnThread();
+  return nobj->setUniqueId(cx, *uidp);
+}
+
+bool js::gc::CreateUniqueIdForNonNativeObject(Cell* cell,
+                                              UniqueIdMap::AddPtr ptr,
+                                              uint64_t* uidp) {
+  // If the cell is in the nursery, hopefully unlikely, then we need to tell the
+  // nursery about it so that it can sweep the uid if the thing does not get
+  // tenured.
+  JSRuntime* runtime = cell->runtimeFromMainThread();
+  if (IsInsideNursery(cell) &&
+      !runtime->gc.nursery().addedUniqueIdToCell(cell)) {
+    return false;
+  }
+
+  // Set a new uid on the cell.
+  *uidp = NextCellUniqueId(runtime);
+  return cell->zone()->uniqueIds().add(ptr, cell, *uidp);
+}
+
 uint64_t js::gc::NextCellUniqueId(JSRuntime* rt) {
   return rt->gc.nextCellUniqueId();
 }
 
 namespace js {
+
+static const struct GCParamInfo {
+  const char* name;
+  JSGCParamKey key;
+  bool writable;
+} GCParameters[] = {
+#define DEFINE_PARAM_INFO(name, key, writable) {name, key, writable},
+    FOR_EACH_GC_PARAM(DEFINE_PARAM_INFO)
+#undef DEFINE_PARAM_INFO
+};
+
+bool GetGCParameterInfo(const char* name, JSGCParamKey* keyOut,
+                        bool* writableOut) {
+  MOZ_ASSERT(keyOut);
+  MOZ_ASSERT(writableOut);
+
+  for (const GCParamInfo& info : GCParameters) {
+    if (strcmp(name, info.name) == 0) {
+      *keyOut = info.key;
+      *writableOut = info.writable;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 namespace gc {
 namespace MemInfo {
 
@@ -475,7 +551,7 @@ static bool GCBytesGetter(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool MallocBytesGetter(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  double bytes = 0;
+  size_t bytes = 0;
   for (ZonesIter zone(cx->runtime(), WithAtoms); !zone.done(); zone.next()) {
     bytes += zone->mallocHeapSize.bytes();
   }
@@ -579,7 +655,7 @@ static bool ZoneMallocTriggerBytesGetter(JSContext* cx, unsigned argc,
 
 static bool ZoneGCNumberGetter(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setNumber(double(cx->zone()->gcNumber()));
+  args.rval().setNumber(double(cx->runtime()->gc.gcNumber()));
   return true;
 }
 
@@ -693,6 +769,10 @@ const char* StateName(JS::Zone::GCState state) {
       return "Finished";
     case JS::Zone::Compact:
       return "Compact";
+    case JS::Zone::VerifyPreBarriers:
+      return "VerifyPreBarriers";
+    case JS::Zone::Limit:
+      break;
   }
   MOZ_CRASH("Invalid Zone::GCState enum value");
 }
@@ -710,7 +790,7 @@ JS_PUBLIC_API void js::gc::FinalizeDeadNurseryObject(JSContext* cx,
   MOZ_ASSERT(!IsForwarded(obj));
 
   const JSClass* jsClass = JS::GetClass(obj);
-  jsClass->doFinalize(cx->defaultFreeOp(), obj);
+  jsClass->doFinalize(cx->gcContext(), obj);
 }
 
 JS_PUBLIC_API void js::gc::SetPerformanceHint(JSContext* cx,
@@ -719,4 +799,33 @@ JS_PUBLIC_API void js::gc::SetPerformanceHint(JSContext* cx,
   MOZ_ASSERT(!JS::RuntimeHeapIsCollecting());
 
   cx->runtime()->gc.setPerformanceHint(hint);
+}
+
+AutoSelectGCHeap::AutoSelectGCHeap(JSContext* cx,
+                                   size_t allowedNurseryCollections)
+    : cx_(cx), allowedNurseryCollections_(allowedNurseryCollections) {
+  JS::AddGCNurseryCollectionCallback(cx, &NurseryCollectionCallback, this);
+}
+
+AutoSelectGCHeap::~AutoSelectGCHeap() {
+  JS::RemoveGCNurseryCollectionCallback(cx_, &NurseryCollectionCallback, this);
+}
+
+/* static */
+void AutoSelectGCHeap::NurseryCollectionCallback(JSContext* cx,
+                                                 JS::GCNurseryProgress progress,
+                                                 JS::GCReason reason,
+                                                 void* data) {
+  if (progress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END) {
+    static_cast<AutoSelectGCHeap*>(data)->onNurseryCollectionEnd();
+  }
+}
+
+void AutoSelectGCHeap::onNurseryCollectionEnd() {
+  if (allowedNurseryCollections_ != 0) {
+    allowedNurseryCollections_--;
+    return;
+  }
+
+  heap_ = gc::Heap::Tenured;
 }

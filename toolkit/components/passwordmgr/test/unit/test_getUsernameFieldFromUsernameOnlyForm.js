@@ -1,11 +1,11 @@
 /**
- * Test for LoginManagerChild.getUsernameFieldFromUsernameOnlyForm
+ * Test for LoginFormState.getUsernameFieldFromUsernameOnlyForm
  */
 
 "use strict";
 
-const { LoginManagerChild } = ChromeUtils.import(
-  "resource://gre/modules/LoginManagerChild.jsm"
+const { LoginManagerChild } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginManagerChild.sys.mjs"
 );
 
 // expectation[0] tests cases when a form doesn't have a sign-in keyword.
@@ -137,16 +137,16 @@ function _setPrefs() {
   });
 }
 
-this._setPrefs();
+_setPrefs();
 
 for (let tc of TESTCASES) {
   info("Sanity checking the testcase: " + tc.description);
 
   // A form is considered a username-only form
   for (let formHasSigninKeyword of [false, true]) {
-    (function() {
+    (function () {
       const testcase = tc;
-      add_task(async function() {
+      add_task(async function () {
         if (formHasSigninKeyword) {
           testcase.decription += " (form has a login keyword)";
         }
@@ -162,8 +162,9 @@ for (let tc of TESTCASES) {
           form.setAttribute("name", "login");
         }
 
-        let lmc = new LoginManagerChild();
-        let element = lmc.getUsernameFieldFromUsernameOnlyForm(
+        const lmc = new LoginManagerChild();
+        const docState = lmc.stateForDocument(form.ownerDocument);
+        const element = docState.getUsernameFieldFromUsernameOnlyForm(
           form,
           testcase.fieldOverrideRecipe
         );

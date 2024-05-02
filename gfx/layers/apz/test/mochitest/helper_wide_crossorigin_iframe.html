@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>Test cross origin fission iframes get displayport that covers whole width</title>
-<script src="/tests/SimpleTest/SimpleTest.js"></script>
 <script src="/tests/SimpleTest/EventUtils.js"></script>
 <script src="/tests/SimpleTest/paint_listener.js"></script>
 <script src="apz_test_utils.js"></script>
@@ -16,10 +15,10 @@
   window.addEventListener("message", event => {
     if (event.data == "wereDone") {
       subtestDone();
-    } else if (event.data.x != undefined && event.data.y != undefined && event.data.w != undefined && event.data.h != undefined) {
-      info("event.data " + event.data.x +  " " + event.data.y +  " " + event.data.w +  " " + event.data.h);
+    } else if (event.data.x != undefined && event.data.y != undefined && event.data.width != undefined && event.data.height != undefined) {
+      info("event.data " + event.data.x +  " " + event.data.y +  " " + event.data.width +  " " + event.data.height);
       // 683 = 700 width of iframe minus maximum width of scrollbars seen on try
-      ok(event.data.w >= 683, "dp is wide enough");
+      ok(event.data.width >= 683, "dp is wide enough");
     }
   });
 

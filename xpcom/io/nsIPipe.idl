@@ -78,10 +78,6 @@ interface nsIPipe : nsISupports
      */
     [must_use] readonly attribute nsIAsyncOutputStream outputStream;
 
-    /**
-     * TaintFox: See taint/docs/Netwerk.md
-     */
-    void setTaint(in StringTaint taint);
 };
 
 /**
@@ -140,14 +136,14 @@ class nsIOutputStream;
  *
  * TaintFox: extended to return a reference to the pipe itself as well. Needed for nsHttpTransaction.
  */
-[[nodiscard]] extern nsresult
+extern void
 NS_NewPipe2(nsIAsyncInputStream **pipeIn,
             nsIAsyncOutputStream **pipeOut,
             bool nonBlockingInput = false,
             bool nonBlockingOutput = false,
             uint32_t segmentSize = 0,
             uint32_t segmentCount = 0,
-            nsIPipe **pipe = nullptr);
+            StringTaint **taint = nullptr);
 
 /**
  * NS_NewPipe
@@ -174,7 +170,7 @@ NS_NewPipe2(nsIAsyncInputStream **pipeIn,
  * @param nonBlockingOutput
  *        true specifies non-blocking output stream behavior
  */
-[[nodiscard]] extern nsresult
+extern void
 NS_NewPipe(nsIInputStream **pipeIn,
            nsIOutputStream **pipeOut,
            uint32_t segmentSize = 0,

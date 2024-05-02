@@ -1,5 +1,3 @@
-// META: script=/resources/testharness.js
-// META: script=/resources/testharnessreport.js
 // META: script=/resources/testdriver.js
 // META: script=/resources/testdriver-vendor.js
 // META: script=/bluetooth/resources/bluetooth-test.js
@@ -11,7 +9,7 @@ const expected = new DOMException(
     'Failed to execute \'requestDevice\' on \'Bluetooth\': ' +
         'A device name can\'t be longer than 248 bytes.',
     new TypeError());
-// \u2764's UTF-8 respresentation is 3 bytes long.
+// \u2764's UTF-8 representation is 3 bytes long.
 // 83 chars * 3 bytes/char = 249 bytes
 const unicode_name = '\u2764'.repeat(83);
 

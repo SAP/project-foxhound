@@ -10,7 +10,7 @@ const CHROME_PAGE =
   "chrome://mochitests/content/browser/devtools/client/framework/" +
   "test/test_chrome_page.html";
 
-add_task(async function() {
+add_task(async function () {
   await testChromeTab();
   await testMainProcess();
 });
@@ -26,7 +26,7 @@ async function testChromeTab() {
   );
 
   const onThreadActorInstantiated = new Promise(resolve => {
-    const observe = function(subject, topic, data) {
+    const observe = function (subject, topic, data) {
       if (topic === "devtools-thread-ready") {
         Services.obs.removeObserver(observe, "devtools-thread-ready");
         const threadActor = subject.wrappedJSObject;
@@ -38,11 +38,16 @@ async function testChromeTab() {
 
   const commands = await CommandsFactory.forTab(tab);
   await commands.targetCommand.startListening();
-  const target = commands.targetCommand.targetFront;
 
-  const threadFront = await target.attachThread();
-
-  const { sources } = await threadFront.getSources();
+  const sources = [];
+  await commands.resourceCommand.watchResources(
+    [commands.resourceCommand.TYPES.SOURCE],
+    {
+      onAvailable(resources) {
+        sources.push(...resources);
+      },
+    }
+  );
   ok(
     sources.find(s => s.url == CHROME_PAGE),
     "The thread actor is able to attach to the chrome page and its sources"
@@ -57,7 +62,7 @@ async function testChromeTab() {
   );
 
   const onDedicatedLoaderDestroy = new Promise(resolve => {
-    const observe = function(subject, topic, data) {
+    const observe = function (subject, topic, data) {
       if (topic === "devtools:loader:destroy") {
         Services.obs.removeObserver(observe, "devtools:loader:destroy");
         resolve();
@@ -75,26 +80,8 @@ async function testChromeTab() {
 
 // Test that Main process Target can debug chrome scripts
 async function testMainProcess() {
-  const { DevToolsLoader } = ChromeUtils.import(
-    "resource://devtools/shared/loader/Loader.jsm"
-  );
-  const customLoader = new DevToolsLoader({
-    invisibleToDebugger: true,
-  });
-  const { DevToolsServer } = customLoader.require(
-    "devtools/server/devtools-server"
-  );
-  const { DevToolsClient } = require("devtools/client/devtools-client");
-
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  DevToolsServer.allowChromeProcess = true;
-
-  const client = new DevToolsClient(DevToolsServer.connectPipe());
-  await client.connect();
-
   const onThreadActorInstantiated = new Promise(resolve => {
-    const observe = function(subject, topic, data) {
+    const observe = function (subject, topic, data) {
       if (topic === "devtools-thread-ready") {
         Services.obs.removeObserver(observe, "devtools-thread-ready");
         const threadActor = subject.wrappedJSObject;
@@ -104,11 +91,19 @@ async function testMainProcess() {
     Services.obs.addObserver(observe, "devtools-thread-ready");
   });
 
-  const targetDescriptor = await client.mainRoot.getMainProcess();
-  const target = await targetDescriptor.getTarget();
+  const client = await CommandsFactory.spawnClientToDebugSystemPrincipal();
+  const commands = await CommandsFactory.forMainProcess({ client });
+  await commands.targetCommand.startListening();
 
-  const threadFront = await target.attachThread();
-  const { sources } = await threadFront.getSources();
+  const sources = [];
+  await commands.resourceCommand.watchResources(
+    [commands.resourceCommand.TYPES.SOURCE],
+    {
+      onAvailable(resources) {
+        sources.push(...resources);
+      },
+    }
+  );
   ok(
     sources.find(
       s => s.url == "resource://devtools/client/framework/devtools.js"
@@ -124,14 +119,8 @@ async function testMainProcess() {
     "The actors are loaded in a distinct loader in order for the actors to use its very own compartment"
   );
 
-  await target.destroy();
-
   // As this target is remote (i.e. isn't a local tab) calling Target.destroy won't close
   // the client. So do it manually here in order to ensure cleaning up the DevToolsServer
   // spawn for this main process actor.
-  await client.close();
-
-  // As we create the loader and server manually, we also destroy them manually here:
-  await DevToolsServer.destroy();
-  await customLoader.destroy();
+  await commands.destroy();
 }

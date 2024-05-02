@@ -11,7 +11,7 @@ server.registerPathHandler("/dummy", (request, response) => {
 add_task(async function test_cancel_with_reason() {
   let ext = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "cancel@test" } },
+      browser_specific_settings: { gecko: { id: "cancel@test" } },
       permissions: ["webRequest", "webRequestBlocking", "<all_urls>"],
     },
 
@@ -32,9 +32,8 @@ add_task(async function test_cancel_with_reason() {
 
     let channel = NetUtil.newChannel({
       uri: `${gServerUrl}/dummy`,
-      loadingPrincipal: ssm.createContentPrincipalFromOrigin(
-        "http://localhost"
-      ),
+      loadingPrincipal:
+        ssm.createContentPrincipalFromOrigin("http://localhost"),
       contentPolicyType: Ci.nsIContentPolicy.TYPE_XMLHTTPREQUEST,
       securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     });

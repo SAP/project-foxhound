@@ -19,18 +19,19 @@ const DOCUMENT_WITH_ONE_STYLESHEET =
     ].join("\n")
   );
 
-add_task(async function() {
+add_task(async function () {
   const { ui } = await openStyleEditorForURL(DOCUMENT_WITH_ONE_STYLESHEET);
 
-  // Spam the _onOrigSourcesPrefChanged callback multiple times before the
-  // StyleEditorActor has a chance to respond to the first one.
+  // Spam the "devtools.source-map.client-service.enabled" pref observer callback (#onOrigSourcesPrefChanged)
+  // multiple times before the StyleEditorActor has a chance to respond to the first one.
   const SPAM_COUNT = 2;
+  let prefValue = false;
   for (let i = 0; i < SPAM_COUNT; ++i) {
-    ui._onOrigSourcesPrefChanged();
+    pushPref("devtools.source-map.client-service.enabled", prefValue);
+    prefValue = !prefValue;
   }
 
-  // Wait for the StyleEditorActor to respond to each "onOrigSourcesPrefChanged"
-  // message.
+  // Wait for the StyleEditorActor to respond to each pref changes.
   await new Promise(resolve => {
     let loadCount = 0;
     ui.on("stylesheets-refreshed", function onReset() {

@@ -16,13 +16,12 @@
 #include "nsStringFwd.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class TouchList final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TouchList)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(TouchList)
 
   explicit TouchList(nsISupports* aParent) : mParent(aParent) {
     nsJSContext::LikelyShortLivingObjectCreated();
@@ -113,8 +112,7 @@ class TouchEvent : public UIEvent {
   RefPtr<TouchList> mChangedTouches;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 already_AddRefed<mozilla::dom::TouchEvent> NS_NewDOMTouchEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,

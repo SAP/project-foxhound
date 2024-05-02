@@ -40,7 +40,7 @@ if (!window.FB) {
     return Array.from(v, c => c.toString(16)).join("");
   }
 
-  const sendMessageToAddon = (function() {
+  const sendMessageToAddon = (function () {
     const shimId = "FacebookSDK";
     const pendingMessages = new Map();
     const channel = new MessageChannel();
@@ -63,7 +63,7 @@ if (!window.FB) {
     }
     window.addEventListener("ShimHelperReady", reconnect);
     reconnect();
-    return function(message) {
+    return function (message) {
       const messageId = getGUID();
       return new Promise(resolve => {
         const payload = { message, messageId, shimId };
@@ -83,7 +83,7 @@ if (!window.FB) {
     // which try to match the examples and documentation here:
     // https://developers.facebook.com/docs/facebook-login/web/login-button/
 
-    if (target.hasAttribute("fb-xfbml-state")) {
+    if (target.textContent || target.hasAttribute("fb-xfbml-state")) {
       return;
     }
     target.setAttribute("fb-xfbml-state", "");
@@ -245,7 +245,7 @@ if (!window.FB) {
 
   if (needPopup) {
     const oldWindowOpen = window.open;
-    window.open = function(href, name, params) {
+    window.open = function (href, name, params) {
       try {
         const url = new URL(href, window.location.href);
         if (
@@ -369,7 +369,7 @@ if (!window.FB) {
     for (const key in obj) {
       const value = obj[key];
       if (typeof value === "function") {
-        shim[key] = function() {
+        shim[key] = function () {
           if (haveUnshimmed) {
             return window.FB[key].apply(window.FB, arguments);
           }
@@ -392,6 +392,8 @@ if (!window.FB) {
     },
     AppEvents: {
       activateApp() {},
+      clearAppVersion() {},
+      clearUserID() {},
       EventNames: {
         ACHIEVED_LEVEL: "fb_mobile_level_achieved",
         ADDED_PAYMENT_INFO: "fb_mobile_add_payment_info",
@@ -407,7 +409,11 @@ if (!window.FB) {
         UNLOCKED_ACHIEVEMENT: "fb_mobile_achievement_unlocked",
         VIEWED_CONTENT: "fb_mobile_content_view",
       },
+      getAppVersion: () => "",
+      getUserID: () => "",
+      logEvent() {},
       logPageView() {},
+      logPurchase() {},
       ParameterNames: {
         APP_USER_ID: "_app_user_id",
         APP_VERSION: "_appVersion",
@@ -423,6 +429,9 @@ if (!window.FB) {
         SEARCH_STRING: "fb_search_string",
         SUCCESS: "fb_success",
       },
+      setAppVersion() {},
+      setUserID() {},
+      updateUserProperties() {},
     },
     Canvas: {
       getHash: () => "",

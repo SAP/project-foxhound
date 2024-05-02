@@ -47,6 +47,7 @@
 #include "nsSerializationHelper.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStreamUtils.h"
+#include "nsTaintingUtils.h"
 #include "xpcpublic.h"
 
 using namespace mozilla;
@@ -89,8 +90,7 @@ void AsyncLog(nsIInterceptedChannel* aInterceptedChannel,
 
 }  // anonymous namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 CancelChannelRunnable::CancelChannelRunnable(
     nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
@@ -227,10 +227,10 @@ class BodyCopyHandle final : public nsIInterceptedBodyCallback {
 
     nsCOMPtr<nsIRunnable> event;
     if (NS_WARN_IF(NS_FAILED(aRv))) {
-      AsyncLog(mClosure->mInterceptedChannel, mClosure->mRespondWithScriptSpec,
-               mClosure->mRespondWithLineNumber,
-               mClosure->mRespondWithColumnNumber,
-               "InterceptionFailedWithURL"_ns, mClosure->mRequestURL);
+      ::AsyncLog(
+          mClosure->mInterceptedChannel, mClosure->mRespondWithScriptSpec,
+          mClosure->mRespondWithLineNumber, mClosure->mRespondWithColumnNumber,
+          "InterceptionFailedWithURL"_ns, mClosure->mRequestURL);
       event = new CancelChannelRunnable(mClosure->mInterceptedChannel,
                                         mClosure->mRegistration,
                                         NS_ERROR_INTERCEPTION_FAILED);
@@ -647,19 +647,10 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  {
-    ErrorResult error;
-    bool bodyUsed = response->GetBodyUsed(error);
-    error.WouldReportJSException();
-    if (NS_WARN_IF(error.Failed())) {
-      autoCancel.SetCancelErrorResult(aCx, error);
-      return;
-    }
-    if (NS_WARN_IF(bodyUsed)) {
-      autoCancel.SetCancelMessage("InterceptedUsedResponseWithURL"_ns,
-                                  mRequestURL);
-      return;
-    }
+  if (NS_WARN_IF(response->BodyUsed())) {
+    autoCancel.SetCancelMessage("InterceptedUsedResponseWithURL"_ns,
+                                mRequestURL);
+    return;
   }
 
   SafeRefPtr<InternalResponse> ir = response->GetInternalResponse();
@@ -1040,19 +1031,10 @@ nsresult ExtractBytesFromUSVString(const nsAString& aStr,
 nsresult ExtractBytesFromData(
     const OwningArrayBufferViewOrArrayBufferOrUSVString& aDataInit,
     nsTArray<uint8_t>& aBytes) {
-  if (aDataInit.IsArrayBufferView()) {
-    const ArrayBufferView& view = aDataInit.GetAsArrayBufferView();
-    if (NS_WARN_IF(!PushUtil::CopyArrayBufferViewToArray(view, aBytes))) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-    return NS_OK;
-  }
-  if (aDataInit.IsArrayBuffer()) {
-    const ArrayBuffer& buffer = aDataInit.GetAsArrayBuffer();
-    if (NS_WARN_IF(!PushUtil::CopyArrayBufferToArray(buffer, aBytes))) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-    return NS_OK;
+  MOZ_ASSERT(aBytes.IsEmpty());
+  Maybe<bool> result = AppendTypedArrayDataTo(aDataInit, aBytes);
+  if (result.isSome()) {
+    return NS_WARN_IF(!result.value()) ? NS_ERROR_OUT_OF_MEMORY : NS_OK;
   }
   if (aDataInit.IsUSVString()) {
     return ExtractBytesFromUSVString(aDataInit.GetAsUSVString(), aBytes);
@@ -1103,7 +1085,9 @@ void PushMessageData::ArrayBuffer(JSContext* cx,
                                   ErrorResult& aRv) {
   uint8_t* data = GetContentsCopy();
   if (data) {
-    BodyUtil::ConsumeArrayBuffer(cx, aRetval, mBytes.Length(), data, aRv);
+    UniquePtr<uint8_t[], JS::FreePolicy> dataPtr(data);
+    BodyUtil::ConsumeArrayBuffer(cx, aRetval, mBytes.Length(),
+                                 std::move(dataPtr), aRv);
   }
 }
 
@@ -1251,7 +1235,7 @@ void ExtendableMessageEvent::GetPorts(nsTArray<RefPtr<MessagePort>>& aPorts) {
   aPorts = mPorts.Clone();
 }
 
-NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(ExtendableMessageEvent)
+NS_IMPL_CYCLE_COLLECTION_CLASS(ExtendableMessageEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ExtendableMessageEvent, Event)
   tmp->mData.setUndefined();
@@ -1278,5 +1262,4 @@ NS_INTERFACE_MAP_END_INHERITING(Event)
 NS_IMPL_ADDREF_INHERITED(ExtendableMessageEvent, Event)
 NS_IMPL_RELEASE_INHERITED(ExtendableMessageEvent, Event)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

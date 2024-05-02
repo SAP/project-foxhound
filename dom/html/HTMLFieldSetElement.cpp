@@ -6,8 +6,8 @@
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/HTMLFieldSetElement.h"
 #include "mozilla/dom/HTMLFieldSetElementBinding.h"
@@ -29,7 +29,7 @@ HTMLFieldSetElement::HTMLFieldSetElement(
   SetBarredFromConstraintValidation(true);
 
   // We start out enabled and valid.
-  AddStatesSilently(NS_EVENT_STATE_ENABLED | NS_EVENT_STATE_VALID);
+  AddStatesSilently(ElementState::ENABLED | ElementState::VALID);
 }
 
 HTMLFieldSetElement::~HTMLFieldSetElement() {
@@ -50,6 +50,9 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLFieldSetElement,
 NS_IMPL_ELEMENT_CLONE(HTMLFieldSetElement)
 
 bool HTMLFieldSetElement::IsDisabledForEvents(WidgetEvent* aEvent) {
+  if (StaticPrefs::dom_forms_fieldset_disable_only_descendants_enabled()) {
+    return false;
+  }
   return IsElementDisabledForEvents(aEvent, nullptr);
 }
 
@@ -64,28 +67,15 @@ void HTMLFieldSetElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   nsGenericHTMLFormControlElement::GetEventTargetParent(aVisitor);
 }
 
-nsresult HTMLFieldSetElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                           const nsAttrValue* aValue,
-                                           const nsAttrValue* aOldValue,
-                                           nsIPrincipal* aSubjectPrincipal,
-                                           bool aNotify) {
+void HTMLFieldSetElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                       const nsAttrValue* aValue,
+                                       const nsAttrValue* aOldValue,
+                                       nsIPrincipal* aSubjectPrincipal,
+                                       bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::disabled) {
     // This *has* to be called *before* calling FieldSetDisabledChanged on our
     // controls, as they may depend on our disabled state.
     UpdateDisabledState(aNotify);
-
-    if (nsINode::GetFirstChild()) {
-      if (!mElements) {
-        mElements = new nsContentList(this, MatchListedElements, nullptr,
-                                      nullptr, true);
-      }
-
-      uint32_t length = mElements->Length(true);
-      for (uint32_t i = 0; i < length; ++i) {
-        static_cast<nsGenericHTMLFormElement*>(mElements->Item(i))
-            ->FieldSetDisabledChanged(aNotify);
-      }
-    }
   }
 
   return nsGenericHTMLFormControlElement::AfterSetAttr(
@@ -263,6 +253,14 @@ void HTMLFieldSetElement::RemoveElement(nsGenericHTMLFormElement* aElement) {
 #endif
 }
 
+void HTMLFieldSetElement::UpdateDisabledState(bool aNotify) {
+  nsGenericHTMLFormControlElement::UpdateDisabledState(aNotify);
+
+  for (nsGenericHTMLFormElement* element : mDependentElements) {
+    element->FieldSetDisabledChanged(aNotify);
+  }
+}
+
 void HTMLFieldSetElement::NotifyElementsForFirstLegendChange(bool aNotify) {
   /**
    * NOTE: this could be optimized if only call when the fieldset is currently
@@ -296,25 +294,16 @@ void HTMLFieldSetElement::UpdateValidity(bool aElementValidity) {
   // - or there is one invalid elmement and an element just became invalid.
   if (!mInvalidElementsCount ||
       (mInvalidElementsCount == 1 && !aElementValidity)) {
-    UpdateState(true);
+    AutoStateChangeNotifier notifier(*this, true);
+    RemoveStatesSilently(ElementState::VALID | ElementState::INVALID);
+    AddStatesSilently(mInvalidElementsCount ? ElementState::INVALID
+                                            : ElementState::VALID);
   }
 
   // We should propagate the change to the fieldset parent chain.
   if (mFieldSet) {
     mFieldSet->UpdateValidity(aElementValidity);
   }
-}
-
-EventStates HTMLFieldSetElement::IntrinsicState() const {
-  EventStates state = nsGenericHTMLFormControlElement::IntrinsicState();
-
-  if (mInvalidElementsCount) {
-    state |= NS_EVENT_STATE_INVALID;
-  } else {
-    state |= NS_EVENT_STATE_VALID;
-  }
-
-  return state;
 }
 
 JSObject* HTMLFieldSetElement::WrapNode(JSContext* aCx,

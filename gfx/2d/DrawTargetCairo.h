@@ -85,8 +85,7 @@ class DrawTargetCairo final : public DrawTarget {
                           const DrawOptions& aOptions = DrawOptions()) override;
   virtual void DrawSurfaceWithShadow(SourceSurface* aSurface,
                                      const Point& aDest,
-                                     const DeviceColor& aColor,
-                                     const Point& aOffset, Float aSigma,
+                                     const ShadowOptions& aShadow,
                                      CompositionOp aOperator) override;
 
   virtual void ClearRect(const Rect& aRect) override;
@@ -140,7 +139,9 @@ class DrawTargetCairo final : public DrawTarget {
   virtual void PopLayer() override;
 
   virtual already_AddRefed<PathBuilder> CreatePathBuilder(
-      FillRule aFillRule = FillRule::FILL_WINDING) const override;
+      FillRule aFillRule = FillRule::FILL_WINDING) const override {
+    return PathBuilderCairo::Create(aFillRule);
+  }
 
   virtual already_AddRefed<SourceSurface> CreateSourceSurfaceFromData(
       unsigned char* aData, const IntSize& aSize, int32_t aStride,

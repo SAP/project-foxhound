@@ -4,8 +4,6 @@
 
 "use strict";
 
-Components.utils.importGlobalProperties(["URLSearchParams"]);
-
 function handleRequest(request, response) {
   let query = new URLSearchParams(request.queryString);
   let token = query.get("token");

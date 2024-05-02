@@ -26,6 +26,11 @@ class AudioConverter;
 
 class AudioSink : private AudioStream::DataSource {
  public:
+  enum class InitializationType {
+    // This AudioSink is being initialized for the first time
+    INITIAL,
+    UNMUTING
+  };
   struct PlaybackParams {
     PlaybackParams(double aVolume, double aPlaybackRate, bool aPreservesPitch)
         : mVolume(aVolume),
@@ -37,15 +42,18 @@ class AudioSink : private AudioStream::DataSource {
   };
 
   AudioSink(AbstractThread* aThread, MediaQueue<AudioData>& aAudioQueue,
-            const media::TimeUnit& aStartTime, const AudioInfo& aInfo,
-            AudioDeviceInfo* aAudioDevice);
+            const AudioInfo& aInfo, bool aShouldResistFingerprinting);
 
   ~AudioSink();
 
-  // Start audio playback and return a promise which will be resolved when the
-  // playback finishes, or return an error result if any error occurs.
-  Result<already_AddRefed<MediaSink::EndedPromise>, nsresult> Start(
-      const PlaybackParams& aParams);
+  // Allocate and initialize mAudioStream. Returns NS_OK on success.
+  nsresult InitializeAudioStream(const PlaybackParams& aParams,
+                                 const RefPtr<AudioDeviceInfo>& aAudioDevice,
+                                 InitializationType aInitializationType);
+
+  // Start audio playback.  aStartTime is compared with MediaData::mTime to
+  // identify the first audio frame to be played.
+  RefPtr<MediaSink::EndedPromise> Start(const media::TimeUnit& aStartTime);
 
   /*
    * All public functions are not thread-safe.
@@ -54,12 +62,15 @@ class AudioSink : private AudioStream::DataSource {
   media::TimeUnit GetPosition();
   media::TimeUnit GetEndTime() const;
 
-  // Check whether we've pushed more frames to the audio hardware than it has
-  // played.
+  // Check whether we've pushed more frames to the audio stream than it
+  // has played.
   bool HasUnplayedFrames();
 
+  // The duration of the buffered frames.
+  media::TimeUnit UnplayedDuration() const;
+
   // Shut down the AudioSink's resources.
-  void Shutdown();
+  void ShutDown();
 
   void SetVolume(double aVolume);
   void SetStreamName(const nsAString& aStreamName);
@@ -71,12 +82,17 @@ class AudioSink : private AudioStream::DataSource {
 
   void GetDebugInfo(dom::MediaSinkDebugInfo& aInfo);
 
-  const RefPtr<AudioDeviceInfo>& AudioDevice() { return mAudioDevice; }
+  // This returns true if the audio callbacks are being called, and so the
+  // audio stream-based clock is moving forward.
+  bool AudioStreamCallbackStarted() {
+    return mAudioStream && mAudioStream->CallbackStarted();
+  }
+
+  void UpdateStartTime(const media::TimeUnit& aStartTime) {
+    mStartTime = aStartTime;
+  }
 
  private:
-  // Allocate and initialize mAudioStream. Returns NS_OK on success.
-  nsresult InitializeAudioStream(const PlaybackParams& aParams);
-
   // Interface of AudioStream::DataSource.
   // Called on the callback thread of cubeb. Returns the number of frames that
   // were available.
@@ -84,27 +100,30 @@ class AudioSink : private AudioStream::DataSource {
                      bool aAudioThreadChanged) override;
   bool Ended() const override;
 
+  // When shutting down, it's important to not lose any audio data, it might be
+  // still of use, in two scenarios:
+  // - If the audio is now captured to a MediaStream, whatever is enqueued in
+  // the ring buffer needs to be played out now ;
+  // - If the AudioSink is shutting down because the audio is muted, it's
+  // important to keep the audio around in case it's quickly unmuted,
+  // and in general to keep A/V sync correct when unmuted.
+  void ReenqueueUnplayedAudioDataIfNeeded();
+
   void CheckIsAudible(const Span<AudioDataValue>& aInterleaved,
                       size_t aChannel);
 
   // The audio stream resource. Used on the task queue of MDSM only.
   RefPtr<AudioStream> mAudioStream;
 
-  // The presentation time of the first audio frame that was played.
+  // The media data time of the first audio frame that was played.
   // We can add this to the audio stream position to determine
-  // the current audio time.
-  const media::TimeUnit mStartTime;
+  // the current audio data time.
+  media::TimeUnit mStartTime;
 
   // Keep the last good position returned from the audio stream. Used to ensure
   // position returned by GetPosition() is mono-increasing in spite of audio
   // stream error. Used on the task queue of MDSM only.
   media::TimeUnit mLastGoodPosition;
-
-  const AudioInfo mInfo;
-
-  // The output device this AudioSink is playing data to. The system's default
-  // device is used if this is null.
-  const RefPtr<AudioDeviceInfo> mAudioDevice;
 
   // Used on the task queue of MDSM only.
   bool mPlaying;

@@ -6,13 +6,11 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ProxyChannelFilter",
-  "resource://gre/modules/ProxyChannelFilter.jsm"
-);
-var { ExtensionPreferencesManager } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPreferencesManager.jsm"
+ChromeUtils.defineESModuleGetters(this, {
+  ProxyChannelFilter: "resource://gre/modules/ProxyChannelFilter.sys.mjs",
+});
+var { ExtensionPreferencesManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPreferencesManager.sys.mjs"
 );
 
 var { ExtensionError } = ExtensionUtils;
@@ -124,15 +122,16 @@ function registerProxyFilterEvent(
   };
 }
 
-this.proxy = class extends ExtensionAPI {
-  primeListener(extension, event, fire, params) {
-    if (event === "onRequest") {
-      return registerProxyFilterEvent(undefined, extension, fire, ...params);
-    }
-  }
+this.proxy = class extends ExtensionAPIPersistent {
+  PERSISTENT_EVENTS = {
+    onRequest({ fire, context }, params) {
+      return registerProxyFilterEvent(context, this.extension, fire, ...params);
+    },
+  };
 
   getAPI(context) {
     let { extension } = context;
+    let self = this;
 
     return {
       proxy: {
@@ -140,15 +139,7 @@ this.proxy = class extends ExtensionAPI {
           context,
           module: "proxy",
           event: "onRequest",
-          register: (fire, filter, info) => {
-            return registerProxyFilterEvent(
-              context,
-              context.extension,
-              fire,
-              filter,
-              info
-            ).unregister;
-          },
+          extensionApi: self,
         }).api(),
 
         // Leaving as non-persistent.  By itself it's not useful since proxy-error

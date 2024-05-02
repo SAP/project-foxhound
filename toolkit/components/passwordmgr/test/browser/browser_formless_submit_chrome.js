@@ -10,7 +10,7 @@ async function fillTestPage(
   password = "my_password"
 ) {
   let notif = getCaptureDoorhanger("any", undefined, aBrowser);
-  ok(!notif, "No doorhangers should be present before filling the form");
+  Assert.ok(!notif, "No doorhangers should be present before filling the form");
 
   await changeContentFormValues(aBrowser, {
     "#form-basic-username": username,
@@ -20,7 +20,7 @@ async function fillTestPage(
     // Filling the password will generate a dismissed doorhanger.
     // Check and remove that before running the rest of the task
     notif = await waitForDoorhanger(aBrowser, "any");
-    ok(notif.dismissed, "Only a dismissed doorhanger should be present");
+    Assert.ok(notif.dismissed, "Only a dismissed doorhanger should be present");
     await cleanupDoorhanger(notif);
   }
 }
@@ -31,7 +31,7 @@ function withTestPage(aTaskFn) {
       gBrowser,
       url: "https://example.com" + DIRECTORY_PATH + "formless_basic.html",
     },
-    async function(aBrowser) {
+    async function (aBrowser) {
       info("tab opened");
       await fillTestPage(aBrowser);
       await aTaskFn(aBrowser);
@@ -39,18 +39,18 @@ function withTestPage(aTaskFn) {
       // Give a chance for the doorhanger to appear
       await new Promise(resolve => SimpleTest.executeSoon(resolve));
       let notif = getCaptureDoorhanger("any");
-      ok(!notif, "No doorhanger should be present");
+      Assert.ok(!notif, "No doorhanger should be present");
       await cleanupDoorhanger(notif);
     }
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SimpleTest.promiseFocus(window);
 });
 
 add_task(async function test_urlbar_new_URL() {
-  await withTestPage(async function(aBrowser) {
+  await withTestPage(async function (aBrowser) {
     gURLBar.value = "";
     let focusPromise = BrowserTestUtils.waitForEvent(gURLBar, "focus");
     gURLBar.focus();
@@ -67,7 +67,7 @@ add_task(async function test_urlbar_new_URL() {
 });
 
 add_task(async function test_urlbar_fragment_enter() {
-  await withTestPage(function(aBrowser) {
+  await withTestPage(function (aBrowser) {
     gURLBar.focus();
     gURLBar.select();
     EventUtils.synthesizeKey("KEY_ArrowRight");
@@ -77,10 +77,10 @@ add_task(async function test_urlbar_fragment_enter() {
 });
 
 add_task(async function test_backButton_forwardButton() {
-  await withTestPage(async function(aBrowser) {
+  await withTestPage(async function (aBrowser) {
     info("Loading formless_basic.html?second");
     // Load a new page in the tab so we can test going back
-    BrowserTestUtils.loadURI(
+    BrowserTestUtils.startLoadingURIString(
       aBrowser,
       "https://example.com" + DIRECTORY_PATH + "formless_basic.html?second"
     );
@@ -102,7 +102,7 @@ add_task(async function test_backButton_forwardButton() {
 
     // Give a chance for the doorhanger to appear
     await new Promise(resolve => SimpleTest.executeSoon(resolve));
-    ok(!getCaptureDoorhanger("any"), "No doorhanger should be present");
+    Assert.ok(!getCaptureDoorhanger("any"), "No doorhanger should be present");
 
     // Now go forward again after filling
     await fillTestPage(aBrowser, "my_username", "password_3");
@@ -120,7 +120,7 @@ add_task(async function test_backButton_forwardButton() {
 });
 
 add_task(async function test_reloadButton() {
-  await withTestPage(async function(aBrowser) {
+  await withTestPage(async function (aBrowser) {
     let reloadButton = document.getElementById("reload-button");
     let loadPromise = BrowserTestUtils.browserLoaded(
       aBrowser,
@@ -137,9 +137,9 @@ add_task(async function test_reloadButton() {
 });
 
 add_task(async function test_back_keyboard_shortcut() {
-  await withTestPage(async function(aBrowser) {
+  await withTestPage(async function (aBrowser) {
     // Load a new page in the tab so we can test going back
-    BrowserTestUtils.loadURI(
+    BrowserTestUtils.startLoadingURIString(
       aBrowser,
       "https://example.com" + DIRECTORY_PATH + "formless_basic.html?second"
     );

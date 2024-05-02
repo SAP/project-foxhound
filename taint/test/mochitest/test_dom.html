@@ -1,0 +1,247 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check DOM Element Sources</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted " + str);
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted " + str);
+      }
+
+      function check_taint_source(str, src) {
+          var flow = str.taint[0].flow;
+          var op = flow[flow.length-1];
+          ok(op.operation == src, "Source operation check: '" + op.operation + "' =? '" + src + "'");
+      }
+
+      add_task(async function test_untainted() {
+          check_untainted("hello");
+      });
+
+      add_task(async function test_tainted() {
+          check_tainted(String.tainted("hello"));
+      });
+
+      add_task(async function test_div() {
+          check_tainted(document.getElementById("content").getAttribute("test"));
+          check_tainted(document.getElementById("content").getAttribute("long"));
+      });
+
+      add_task(async function test_div_dynamic() {
+          var d = document.createElement("div");
+          d.setAttribute("test", "hello");
+          check_tainted(d.getAttribute("test"));
+      });
+
+      add_task(async function test_anchor_href() {
+          check_tainted(document.getElementsByTagName("a")[0].href);
+          check_tainted(document.getElementsByTagName("a")[0].getAttribute("href"));
+      });
+
+      add_task(async function test_img_src() {
+          check_tainted(document.getElementsByTagName("img")[0].src);
+          check_tainted(document.getElementsByTagName("img")[0].getAttribute("src"));
+      });
+
+      add_task(async function test_img_alt() {
+          check_tainted(document.getElementsByTagName("img")[0].alt);
+          check_tainted(document.getElementsByTagName("img")[0].getAttribute("alt"));
+      });
+
+      add_task(async function test_script_src() {
+          check_tainted(document.getElementById("s1").src);
+          check_tainted(document.getElementById("s1").getAttribute("src"));
+      });
+
+      add_task(async function test_element_no_selector() {
+          var d = document.createElement("div");
+          d.setAttribute("test", "hello");
+          var tainted = d.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "element.attribute");
+      });
+
+      add_task(async function test_element_no_selector_tainted() {
+          var d = document.createElement("div");
+          d.setAttribute("test", String.tainted("hello"));
+          var tainted = d.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_element_id_no_selector() {
+          var d = document.createElement("div");
+          d.setAttribute("id", "div_31415");
+          var tainted = d.getAttribute("id");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "element.attribute");
+      });
+
+      add_task(async function test_element_id_no_selector_tainted() {
+          var d = document.createElement("div");
+          d.setAttribute("id", String.tainted("hello_264376"));
+          var tainted = d.getAttribute("id");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_element_id_direct_no_selector_tainted() {
+          var d = document.createElement("div");
+          d.setAttribute("id", String.tainted("hello_264376"));
+          var tainted = d.id;
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_div_innerhtml_tainted() {
+          var d = document.createElement("div");
+          d.innerHTML = String.tainted("<div test='helllo'>Content Here</div>");
+          var tainted = d.children[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_div_innerhtml_id_tainted() {
+          var d = document.createElement("div");
+          d.innerHTML = String.tainted("<div id='1337' test='helllo'>Content Here</div>");
+
+          var tainted = d.children[0].getAttribute("id");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_div_by_id() {
+        var element = document.getElementById("content_by_id");
+        var tainted = element.getAttribute("test");
+
+        check_tainted(tainted);
+        check_taint_source(tainted, "document.getElementById");
+      });
+
+      add_task(async function test_div_by_id_already_tainted() {
+          var selector = String.tainted("content_by_id_already_tainted")
+          var element = document.getElementById(selector);
+          var tainted = element.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_div_by_tagname() {
+          var elements = document.getElementsByTagName("var");
+          var tainted = elements[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.getElementsByTagName");
+      });
+
+      add_task(async function test_div_by_class() {
+          var elements = document.getElementsByClassName("klazz");
+          var tainted = elements[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.getElementsByClassName");
+      });
+
+      add_task(async function test_div_by_queryselector() {
+          var element = document.querySelector("#foobar");
+          var tainted = element.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.querySelector");
+      });
+
+      add_task(async function test_div_by_queryselector() {
+          var elements = document.querySelectorAll("#foobarz");
+          var tainted = elements[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.querySelectorAll");
+      });
+
+      add_task(async function test_closest() {
+          const el = document.getElementById("div-03");
+
+          // the closest ancestor with the id of "div-02"
+          var closest = el.closest("#div-02"); // <div id="div-02">
+
+          var tainted = closest.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "element.closest");
+      });
+
+      add_task(async function test_after() {
+        let container = document.createElement("div");
+        let p = document.createElement("p");
+        container.appendChild(p);
+        let span = document.createElement("span");
+        span.innerHTML = String.tainted("<div id='div213' test='helllo'>Content Here</div>");
+        p.after(span);
+
+        check_tainted(container.outerHTML);
+        check_taint_source(container.outerHTML, "manual taint source");
+      });
+
+      add_task(async function test_after_template() {
+        let container = document.createElement("div");
+        let p = document.createElement("p");
+        container.appendChild(p);
+        let template = document.createElement("template");
+        template.innerHTML = String.tainted("<div test='helllo'>Content Here</div>");
+
+        p.after(template);
+
+        check_tainted(container.outerHTML);
+        check_taint_source(container.outerHTML, "manual taint source");
+
+
+      });
+
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
+    <pre id="test"></pre>
+    <a href="https://example.com">Visit Example Website</a>
+    <img src="default16.png" alt="A test file">
+    <script id="s1" src="xx"></script>
+
+    <div id="content_by_id" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
+    <div id="content_by_id_already_tainted" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
+
+    <var id="image1234" test="hello" src="default16.png">Hello</var>
+
+    <div class="klazz"  test="hello">Div with a class</div>
+
+    <div id="foobar" test="hello"></div>
+
+    <div id="foobarz" test="hello"></div>
+
+    <article>
+        <div id="div-01">
+          Here is div-01
+          <div id="div-02" test="hello">
+            Here is div-02
+            <div id="div-03">Here is div-03</div>
+          </div>
+        </div>
+      </article>
+
+  </body>
+</html>

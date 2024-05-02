@@ -14,6 +14,9 @@
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 #include "mozilla/Attributes.h"
+#ifdef MOZ_BACKGROUNDTASKS
+#  include "mozilla/BackgroundTasks.h"
+#endif
 
 // {5573967d-f6cf-4c63-8e0e-9ac06e04d62b}
 #define NS_XREDIRPROVIDER_CID                        \
@@ -40,22 +43,21 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
 
   nsXREDirProvider();
 
-  // if aXULAppDir is null, use gArgv[0]
-  nsresult Initialize(nsIFile* aXULAppDir, nsIFile* aGREDir,
-                      nsIDirectoryServiceProvider* aAppProvider = nullptr);
+  nsresult Initialize(nsIFile* aXULAppDir, nsIFile* aGREDir);
   ~nsXREDirProvider();
 
   static already_AddRefed<nsXREDirProvider> GetSingleton();
 
   nsresult GetUserProfilesRootDir(nsIFile** aResult);
   nsresult GetUserProfilesLocalDir(nsIFile** aResult);
+#ifdef MOZ_BACKGROUNDTASKS
+  // A special location for non-ephemeral background tasks profiles,
+  // distinct from user profiles.
+  nsresult GetBackgroundTasksProfilesRootDir(nsIFile** aResult);
+#endif
 
   nsresult GetLegacyInstallHash(nsAString& aPathHash);
 
-  // We only set the profile dir, we don't ensure that it exists;
-  // that is the responsibility of the toolkit profile service.
-  // We also don't fire profile-changed notifications... that is
-  // the responsibility of the apprunner.
   nsresult SetProfile(nsIFile* aProfileDir, nsIFile* aProfileLocalDir);
 
   void InitializeUserPrefs();
@@ -70,7 +72,6 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
     return GetUserDataDirectory(aFile, true);
   }
 
-  // GetUserDataDirectory gets the profile path from gAppData.
   static nsresult GetUserDataDirectory(nsIFile** aFile, bool aLocal);
 
   /* make sure you clone it, if you need to do stuff to it */
@@ -96,20 +97,19 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
   nsresult GetUpdateRootDir(nsIFile** aResult, bool aGetOldLocation = false);
 
   /**
-   * Get the profile startup directory as determined by this class or by
-   * mAppProvider. This method may be called before XPCOM is started. aResult
+   * Get the profile startup directory.
+   * This method may be called before XPCOM is started. aResult
    * is a clone, it may be modified.
    */
   nsresult GetProfileStartupDir(nsIFile** aResult);
 
   /**
-   * Get the profile directory as determined by this class or by an
-   * embedder-provided XPCOM directory provider. Only call this method
+   * Get the profile directory. Only call this method
    * when XPCOM is initialized! aResult is a clone, it may be modified.
    */
   nsresult GetProfileDir(nsIFile** aResult);
 
- protected:
+ private:
   nsresult GetFilesInternal(const char* aProperty,
                             nsISimpleEnumerator** aResult);
   static nsresult GetUserDataDirectoryHome(nsIFile** aFile, bool aLocal);
@@ -129,14 +129,16 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
   // delimiters.
   static inline nsresult AppendProfileString(nsIFile* aFile, const char* aPath);
 
-#if defined(MOZ_SANDBOX)
+  static nsresult SetUserDataProfileDirectory(nsCOMPtr<nsIFile>& aFile,
+                                              bool aLocal);
+
+#if defined(MOZ_CONTENT_TEMP_DIR)
   // Load the temp directory for sandboxed content processes
   nsresult LoadContentProcessTempDir();
 #endif
 
   void Append(nsIFile* aDirectory);
 
-  nsCOMPtr<nsIDirectoryServiceProvider> mAppProvider;
   // On OSX, mGREDir points to .app/Contents/Resources
   nsCOMPtr<nsIFile> mGREDir;
   // On OSX, mGREBinDir points to .app/Contents/MacOS
@@ -145,16 +147,12 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
   nsCOMPtr<nsIFile> mXULAppDir;
   nsCOMPtr<nsIFile> mProfileDir;
   nsCOMPtr<nsIFile> mProfileLocalDir;
-  bool mProfileNotified;
+  bool mAppStarted = false;
   bool mPrefsInitialized = false;
-#if defined(MOZ_SANDBOX)
+#if defined(MOZ_CONTENT_TEMP_DIR)
   nsCOMPtr<nsIFile> mContentTempDir;
   nsCOMPtr<nsIFile> mContentProcessSandboxTempDir;
 #endif
-
- private:
-  static nsresult SetUserDataProfileDirectory(nsCOMPtr<nsIFile>& aFile,
-                                              bool aLocal);
 };
 
 #endif

@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include shared,rect,render_task,gpu_cache,gradient
+#include shared,rect,render_task,gpu_cache,gpu_buffer,gradient
 
-varying vec2 v_pos;
+varying highp vec2 v_pos;
 
 // Start radius. Packed in to a vector to work around bug 1630356.
-flat varying vec2 v_start_radius;
+flat varying highp vec2 v_start_radius;
 
 #ifdef WR_VERTEX_SHADER
 
@@ -58,12 +58,12 @@ void main(void) {
 
 #ifdef SWGL_DRAW_SPAN
 void swgl_drawSpanRGBA8() {
-    int address = swgl_validateGradient(sGpuCache, get_gpu_cache_uv(v_gradient_address.x),
+    int address = swgl_validateGradient(sGpuBuffer, get_gpu_buffer_uv(v_gradient_address.x),
                                         int(GRADIENT_ENTRIES + 2.0));
     if (address < 0) {
         return;
     }
-    swgl_commitRadialGradientRGBA8(sGpuCache, address, GRADIENT_ENTRIES, v_gradient_repeat.x != 0.0,
+    swgl_commitRadialGradientRGBA8(sGpuBuffer, address, GRADIENT_ENTRIES, v_gradient_repeat.x != 0.0,
                                    v_pos, v_start_radius.x);
 }
 #endif

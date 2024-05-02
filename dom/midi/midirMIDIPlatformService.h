@@ -26,17 +26,20 @@ class midirMIDIPlatformService : public MIDIPlatformService {
  public:
   midirMIDIPlatformService();
   virtual void Init() override;
+  virtual void Refresh() override;
   virtual void Open(MIDIPortParent* aPort) override;
   virtual void Stop() override;
   virtual void ScheduleSend(const nsAString& aPort) override;
   virtual void ScheduleClose(MIDIPortParent* aPort) override;
 
-  void SendMessages(const nsAString& aPort);
+  void SendMessage(const nsAString& aPort, const MIDIMessage& aMessage);
 
  private:
   virtual ~midirMIDIPlatformService();
 
   static void AddPort(const nsString* aId, const nsString* aName, bool aInput);
+  static void RemovePort(const nsString* aId, const nsString* aName,
+                         bool aInput);
   static void CheckAndReceive(const nsString* aId, const uint8_t* aData,
                               size_t aLength, const GeckoTimeStamp* aTimeStamp,
                               uint64_t aMicros);
@@ -44,11 +47,16 @@ class midirMIDIPlatformService : public MIDIPlatformService {
   // Wrapper around the midir Rust implementation.
   MidirWrapper* mImplementation;
 
-  // midir has its own internal threads and we can't execute jobs directly on
-  // them, instead we forward them to the background thread the service was
-  // created in.
-  static StaticMutex gBackgroundThreadMutex;
-  static nsCOMPtr<nsIThread> gBackgroundThread;
+  // The midir backends can invoke CheckAndReceive on arbitrary background
+  // threads, and so we dispatch events from there to the owner task queue.
+  // It's a little ambiguous whether midir can ever invoke CheckAndReceive
+  // on one of its platform-specific background threads after we've dropped
+  // the main instance. Just in case, we use a static mutex to avoid a potential
+  // race with dropping the primary reference to the task queue via
+  // ClearOnShutdown.
+  static StaticMutex gOwnerThreadMutex;
+  static nsCOMPtr<nsISerialEventTarget> gOwnerThread
+      MOZ_GUARDED_BY(gOwnerThreadMutex);
 };
 
 }  // namespace mozilla::dom

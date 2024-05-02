@@ -69,7 +69,8 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
 
   RefPtr<nsGlobalWindowInner> targetWindow;
   if (mTargetWindow->IsClosedOrClosing() ||
-      !(targetWindow = mTargetWindow->GetCurrentInnerWindowInternal()) ||
+      !(targetWindow = nsGlobalWindowInner::Cast(
+            mTargetWindow->GetCurrentInnerWindow())) ||
       targetWindow->IsDying())
     return NS_OK;
 
@@ -120,9 +121,11 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
           "Target and source should have the same userContextId attribute.");
 
       nsAutoString providedOrigin, targetOrigin;
-      nsresult rv = nsContentUtils::GetUTFOrigin(targetPrin, targetOrigin);
+      nsresult rv = nsContentUtils::GetWebExposedOriginSerialization(
+          targetPrin, targetOrigin);
       NS_ENSURE_SUCCESS(rv, rv);
-      rv = nsContentUtils::GetUTFOrigin(mProvidedPrincipal, providedOrigin);
+      rv = nsContentUtils::GetWebExposedOriginSerialization(mProvidedPrincipal,
+                                                            providedOrigin);
       NS_ENSURE_SUCCESS(rv, rv);
 
       nsAutoString errorText;
@@ -137,16 +140,16 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
       if (mCallerWindowID == 0) {
         rv = errorObject->Init(
             errorText, NS_ConvertUTF8toUTF16(mScriptLocation.value()), u""_ns,
-            0, 0, nsIScriptError::errorFlag, "DOM Window", mIsFromPrivateWindow,
-            mProvidedPrincipal->IsSystemPrincipal());
+            0, 0, nsIScriptError::errorFlag, "DOM Window"_ns,
+            mIsFromPrivateWindow, mProvidedPrincipal->IsSystemPrincipal());
       } else if (callerURI) {
         rv = errorObject->InitWithSourceURI(errorText, callerURI, u""_ns, 0, 0,
                                             nsIScriptError::errorFlag,
-                                            "DOM Window", mCallerWindowID);
+                                            "DOM Window"_ns, mCallerWindowID);
       } else {
         rv = errorObject->InitWithWindowID(
             errorText, NS_ConvertUTF8toUTF16(mScriptLocation.value()), u""_ns,
-            0, 0, nsIScriptError::errorFlag, "DOM Window", mCallerWindowID);
+            0, 0, nsIScriptError::errorFlag, "DOM Window"_ns, mCallerWindowID);
       }
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -164,6 +167,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
       do_QueryObject(targetWindow);
 
   JS::CloneDataPolicy cloneDataPolicy;
+
   MOZ_DIAGNOSTIC_ASSERT(targetWindow);
   if (mCallerAgentClusterId.isSome() && targetWindow->GetDocGroup() &&
       targetWindow->GetDocGroup()->AgentClusterId().Equals(
@@ -249,9 +253,8 @@ void PostMessageEvent::Dispatch(nsGlobalWindowInner* aTargetWindow,
   WidgetEvent* internalEvent = aEvent->WidgetEventPtr();
 
   nsEventStatus status = nsEventStatus_eIgnore;
-  // TODO: Bug 1506441
-  EventDispatcher::Dispatch(MOZ_KnownLive(ToSupports(aTargetWindow)),
-                            presContext, internalEvent, aEvent, &status);
+  EventDispatcher::Dispatch(aTargetWindow, presContext, internalEvent, aEvent,
+                            &status);
 }
 
 void PostMessageEvent::DispatchToTargetThread(ErrorResult& aError) {
@@ -299,7 +302,7 @@ void PostMessageEvent::DispatchToTargetThread(ErrorResult& aError) {
     }
   }
 
-  aError = mTargetWindow->Dispatch(TaskCategory::Other, event.forget());
+  aError = mTargetWindow->Dispatch(event.forget());
 }
 
 }  // namespace mozilla::dom

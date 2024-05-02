@@ -9,9 +9,7 @@
 
 #include "nsCOMPtr.h"
 #include "nsICertificateDialogs.h"
-#include "nsIClientAuthDialogs.h"
 #include "nsIStringBundle.h"
-#include "nsITokenDialogs.h"
 #include "nsITokenPasswordDialogs.h"
 
 #define NS_NSSDIALOGS_CID                            \
@@ -22,15 +20,11 @@
   }
 
 class nsNSSDialogs : public nsICertificateDialogs,
-                     public nsIClientAuthDialogs,
-                     public nsITokenDialogs,
                      public nsITokenPasswordDialogs {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITOKENPASSWORDDIALOGS
   NS_DECL_NSICERTIFICATEDIALOGS
-  NS_DECL_NSICLIENTAUTHDIALOGS
-  NS_DECL_NSITOKENDIALOGS
   nsNSSDialogs();
 
   nsresult Init();

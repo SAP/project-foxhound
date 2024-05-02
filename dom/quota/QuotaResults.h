@@ -9,13 +9,12 @@
 
 #include <cstdint>
 #include "mozilla/dom/quota/CommonMetadata.h"
+#include "mozilla/dom/quota/UsageInfo.h"
 #include "nsIQuotaResults.h"
 #include "nsISupports.h"
 #include "nsString.h"
 
-namespace mozilla {
-namespace dom {
-namespace quota {
+namespace mozilla::dom::quota {
 
 class FullOriginMetadataResult : public nsIQuotaFullOriginMetadataResult {
   const FullOriginMetadata mFullOriginMetadata;
@@ -49,11 +48,10 @@ class UsageResult : public nsIQuotaUsageResult {
 };
 
 class OriginUsageResult : public nsIQuotaOriginUsageResult {
-  uint64_t mUsage;
-  uint64_t mFileUsage;
+  UsageInfo mUsageInfo;
 
  public:
-  OriginUsageResult(uint64_t aUsage, uint64_t aFileUsage);
+  explicit OriginUsageResult(UsageInfo aUsageInfo);
 
  private:
   virtual ~OriginUsageResult() = default;
@@ -76,8 +74,6 @@ class EstimateResult : public nsIQuotaEstimateResult {
   NS_DECL_NSIQUOTAESTIMATERESULT
 };
 
-}  // namespace quota
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::quota
 
 #endif  // mozilla_dom_quota_QuotaResults_h

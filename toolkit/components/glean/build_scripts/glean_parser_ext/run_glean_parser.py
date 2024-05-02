@@ -4,20 +4,28 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import cpp
-import js
 import os
-import re
-import rust
 import sys
-
-import jinja2
-
-from util import generate_metric_ids
-from glean_parser import lint, parser, util
-from mozbuild.util import FileAvoidWrite
 from pathlib import Path
-from typing import Any, Dict
+
+import cpp
+import jinja2
+import jog
+import rust
+from glean_parser import lint, parser, translate, util
+from mozbuild.util import FileAvoidWrite, memoize
+from util import generate_metric_ids
+
+import js
+
+
+@memoize
+def get_deps():
+    # Any imported python module is added as a dep automatically,
+    # so we only need the index and the templates.
+    return {
+        *[str(p) for p in (Path(os.path.dirname(__file__)) / "templates").iterdir()],
+    }
 
 
 class ParserError(Exception):
@@ -41,6 +49,7 @@ GIFFT_TYPES = {
         "datetime",
         "quantity",
         "rate",
+        "url",
     ],
 }
 
@@ -49,11 +58,7 @@ def get_parser_options(moz_app_version):
     app_version_major = moz_app_version.split(".", 1)[0]
     return {
         "allow_reserved": False,
-        "custom_is_expired": lambda expires: expires == "expired"
-        or expires != "never"
-        and int(expires) <= int(app_version_major),
-        "custom_validate_expires": lambda expires: expires in ("expired", "never")
-        or re.fullmatch(r"\d\d+", expires, flags=re.ASCII),
+        "expire_by_version": int(app_version_major),
     }
 
 
@@ -79,11 +84,6 @@ def parse_with_options(input_files, options):
     # Derived heavily from glean_parser.translate.translate.
     # Adapted to how mozbuild sends us a fd, and to expire on versions not dates.
 
-    # Lint the yaml first, then lint the metrics.
-    if lint.lint_yaml_files(input_files, parser_config=options):
-        # Warnings are Errors
-        raise ParserError("linter found problems")
-
     all_objs = parser.parse_objects(input_files, options)
     if util.report_validation_errors(all_objs):
         raise ParserError("found validation errors during parse")
@@ -96,61 +96,50 @@ def parse_with_options(input_files, options):
 
     objects = all_objs.value
 
-    # bug 1720494: This should be a simple call to translate.transform
-    counters = {}
-    numerators_by_denominator: Dict[str, Any] = {}
-    for (category_name, category_val) in objects.items():
-        if category_name == "tags":
-            continue
-        for metric in category_val.values():
-            fqmn = metric.identifier()
-            if getattr(metric, "type", None) == "counter":
-                counters[fqmn] = metric
-            denominator_name = getattr(metric, "denominator_metric", None)
-            if denominator_name:
-                metric.type = "numerator"
-                numerators_by_denominator.setdefault(denominator_name, [])
-                numerators_by_denominator[denominator_name].append(metric)
-
-    for denominator_name, numerators in numerators_by_denominator.items():
-        if denominator_name not in counters:
-            print(
-                f"No `counter` named {denominator_name} found to be used as"
-                "denominator for {numerator_names}",
-                file=sys.stderr,
-            )
-            raise ParserError("rate couldn't find denominator")
-        counters[denominator_name].type = "denominator"
-        counters[denominator_name].numerators = numerators
+    translate.transform_metrics(objects)
 
     return objects, options
 
 
-# Must be kept in sync with the length of `deps` in moz.build.
-DEPS_LEN = 15
+def main(cpp_fd, *args):
+    def open_output(filename):
+        return FileAvoidWrite(os.path.join(os.path.dirname(cpp_fd.name), filename))
 
-
-def main(output_fd, *args):
-    args = args[DEPS_LEN:]
+    [js_h_path, js_cpp_path, rust_path] = args[-3:]
+    args = args[:-3]
     all_objs, options = parse(args)
-    rust.output_rust(all_objs, output_fd, options)
 
+    cpp.output_cpp(all_objs, cpp_fd, options)
 
-def cpp_metrics(output_fd, *args):
-    args = args[DEPS_LEN:]
-    all_objs, options = parse(args)
-    cpp.output_cpp(all_objs, output_fd, options)
+    with open_output(js_h_path) as js_fd:
+        with open_output(js_cpp_path) as js_cpp_fd:
+            js.output_js(all_objs, js_fd, js_cpp_fd, options)
 
+    # We only need this info if we're dealing with pings.
+    ping_names_by_app_id = {}
+    if "pings" in all_objs:
+        import sys
+        from os import path
 
-def js_metrics(output_fd, *args):
-    args = args[DEPS_LEN:]
-    all_objs, options = parse(args)
-    js.output_js(all_objs, output_fd, options)
+        from buildconfig import topsrcdir
+
+        sys.path.append(path.join(path.dirname(__file__), path.pardir, path.pardir))
+        from metrics_index import pings_by_app_id
+
+        for app_id, ping_yamls in pings_by_app_id.items():
+            input_files = [Path(path.join(topsrcdir, x)) for x in ping_yamls]
+            ping_objs, _ = parse_with_options(input_files, options)
+            ping_names_by_app_id[app_id] = ping_objs["pings"].keys()
+
+    with open_output(rust_path) as rust_fd:
+        rust.output_rust(all_objs, rust_fd, ping_names_by_app_id, options)
+
+    return get_deps()
 
 
 def gifft_map(output_fd, *args):
     probe_type = args[-1]
-    args = args[DEPS_LEN:-1]
+    args = args[:-1]
     all_objs, options = parse(args)
 
     # Events also need to output maps from event extra enum to strings.
@@ -162,6 +151,8 @@ def gifft_map(output_fd, *args):
             output_gifft_map(output_fd, probe_type, all_objs, cpp_fd)
     else:
         output_gifft_map(output_fd, probe_type, all_objs, None)
+
+    return get_deps()
 
 
 def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd):
@@ -211,6 +202,9 @@ def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd):
         template.render(
             ids_to_probes=ids_to_probes,
             probe_type=probe_type,
+            id_bits=js.ID_BITS,
+            id_signal_bits=js.ID_SIGNAL_BITS,
+            runtime_metric_bit=jog.RUNTIME_METRIC_BIT,
         )
     )
     output_fd.write("\n")
@@ -222,6 +216,18 @@ def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd):
         template = env.get_template("gifft_events.jinja2")
         cpp_fd.write(template.render(all_objs=all_objs))
         cpp_fd.write("\n")
+
+
+def jog_factory(output_fd, *args):
+    all_objs, options = parse(args)
+    jog.output_factory(all_objs, output_fd, options)
+    return get_deps()
+
+
+def jog_file(output_fd, *args):
+    all_objs, options = parse(args)
+    jog.output_file(all_objs, output_fd, options)
+    return get_deps()
 
 
 if __name__ == "__main__":

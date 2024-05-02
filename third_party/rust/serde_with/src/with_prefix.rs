@@ -1,13 +1,11 @@
-use std::fmt;
-
-use serde::{
-    de::{self, DeserializeSeed, Deserializer, IgnoredAny, IntoDeserializer, MapAccess, Visitor},
-    forward_to_deserialize_any,
-    ser::{self, Impossible, Serialize, SerializeMap, SerializeStruct, Serializer},
-};
+use crate::prelude::*;
 
 /// Serialize with an added prefix on every field name and deserialize by
 /// trimming away the prefix.
+///
+/// You can set the visibility of the generated module by prefixing the module name with a module visibility.
+/// `with_prefix!(pub(crate) prefix_foo "foo_");` creates a module with `pub(crate)` visibility.
+/// The visibility is optional and by default `pub(self)`, i.e., private visibility is assumed.
 ///
 /// **Note:** Use of this macro is incompatible with applying the [`deny_unknown_fields`] attribute
 /// on the container.
@@ -31,15 +29,17 @@ use serde::{
 /// }
 /// ```
 ///
-/// In Rust we would ideally like to model this data as a pair of `Player`
+/// In Rust, we would ideally like to model this data as a pair of `Player`
 /// structs, rather than repeating the fields of `Player` for each prefix.
 ///
 /// ```rust
+/// # #[allow(dead_code)]
 /// struct Match {
 ///     player1: Player,
 ///     player2: Player,
 /// }
 ///
+/// # #[allow(dead_code)]
 /// struct Player {
 ///     name: String,
 ///     votes: u64,
@@ -51,12 +51,7 @@ use serde::{
 /// An implementation of the Challonge API would use `with_prefix!` like this:
 ///
 /// ```rust
-/// extern crate serde_derive;
-/// extern crate serde_json;
-/// extern crate serde_with;
-///
-/// use serde_derive::{Deserialize, Serialize};
-/// use serde_json::json;
+/// use serde::{Deserialize, Serialize};
 /// use serde_with::with_prefix;
 ///
 /// #[derive(Serialize, Deserialize)]
@@ -74,7 +69,8 @@ use serde::{
 /// }
 ///
 /// with_prefix!(prefix_player1 "player1_");
-/// with_prefix!(prefix_player2 "player2_");
+/// // You can also set the visibility of the generated prefix module, the default is private.
+/// with_prefix!(pub prefix_player2 "player2_");
 /// #
 /// # const EXPECTED: &str = r#"{
 /// #   "player1_name": "name1",
@@ -106,15 +102,14 @@ use serde::{
 /// [issue-with_prefix-deny_unknown_fields]: https://github.com/jonasbb/serde_with/issues/57
 #[macro_export]
 macro_rules! with_prefix {
-    ($module:ident $prefix:expr) => {
-        mod $module {
-            use $crate::{
-                serde::{Deserialize, Deserializer, Serialize, Serializer},
-                with_prefix::WithPrefix,
-            };
+    ($module:ident $prefix:expr) => {$crate::with_prefix!(pub(self) $module $prefix);};
+    ($vis:vis $module:ident $prefix:expr) => {
+        $vis mod $module {
+            use $crate::serde::{Deserialize, Deserializer, Serialize, Serializer};
+            use $crate::with_prefix::WithPrefix;
 
             #[allow(dead_code)]
-            pub fn serialize<T, S>(object: &T, serializer: S) -> Result<S::Ok, S::Error>
+            pub fn serialize<T, S>(object: &T, serializer: S) -> $crate::__private__::Result<S::Ok, S::Error>
             where
                 T: Serialize,
                 S: Serializer,
@@ -126,7 +121,7 @@ macro_rules! with_prefix {
             }
 
             #[allow(dead_code)]
-            pub fn deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+            pub fn deserialize<'de, T, D>(deserializer: D) -> $crate::__private__::Result<T, D::Error>
             where
                 T: Deserialize<'de>,
                 D: Deserializer<'de>,
@@ -140,7 +135,6 @@ macro_rules! with_prefix {
     };
 }
 
-#[allow(missing_debug_implementations)]
 pub struct WithPrefix<'a, T> {
     pub delegate: T,
     pub prefix: &'a str,
@@ -176,51 +170,51 @@ where
     type SerializeStructVariant = Impossible<Self::Ok, Self::Error>;
 
     fn serialize_bool(self, _v: bool) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_i8(self, _v: i8) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_i16(self, _v: i16) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_i32(self, _v: i32) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_u8(self, _v: u8) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_u16(self, _v: u16) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_u32(self, _v: u32) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_u64(self, _v: u64) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_f32(self, _v: f32) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_f64(self, _v: f64) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
@@ -229,7 +223,7 @@ where
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
@@ -247,20 +241,20 @@ where
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_unit_variant(
         self,
         _name: &'static str,
         _variant_index: u32,
-        _variant: &'static str,
+        variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        self.serialize_str(variant)
     }
 
     fn serialize_newtype_struct<T>(
@@ -271,7 +265,7 @@ where
     where
         T: ?Sized + Serialize,
     {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_newtype_variant<T>(
@@ -284,15 +278,15 @@ where
     where
         T: ?Sized + Serialize,
     {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_tuple_struct(
@@ -300,7 +294,7 @@ where
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_tuple_variant(
@@ -310,7 +304,7 @@ where
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -335,7 +329,7 @@ where
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Err(ser::Error::custom("wrong type for with_prefix"))
+        Err(SerError::custom("wrong type for with_prefix"))
     }
 }
 
@@ -393,8 +387,10 @@ where
     where
         T: ?Sized + Serialize,
     {
-        self.delegate
-            .serialize_entry(&format!("{}{}", self.prefix, key), value)
+        let mut prefixed_key = String::with_capacity(self.prefix.len() + key.len());
+        prefixed_key.push_str(self.prefix);
+        prefixed_key.push_str(key);
+        self.delegate.serialize_entry(&prefixed_key, value)
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
@@ -469,7 +465,7 @@ where
 {
     type Value = V::Value;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.delegate.expecting(formatter)
     }
 
@@ -495,9 +491,10 @@ where
         K: DeserializeSeed<'de>,
     {
         while let Some(s) = self.delegate.next_key::<String>()? {
-            if s.starts_with(self.prefix) {
-                let without_prefix = s[self.prefix.len()..].into_deserializer();
-                return seed.deserialize(without_prefix).map(Some);
+            if let Some(without_prefix) = s.strip_prefix(self.prefix) {
+                return seed
+                    .deserialize(without_prefix.into_deserializer())
+                    .map(Some);
             }
             self.delegate.next_value::<IgnoredAny>()?;
         }
@@ -512,7 +509,6 @@ where
     }
 }
 
-#[allow(missing_debug_implementations)]
 pub struct WithPrefixOption<'a, T> {
     first_key: Option<String>,
     delegate: T,
@@ -525,13 +521,13 @@ where
 {
     type Value = V::Value;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.delegate.expecting(formatter)
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>
     where
-        E: de::Error,
+        E: DeError,
     {
         self.delegate.visit_none()
     }
@@ -589,9 +585,10 @@ where
             return seed.deserialize(without_prefix).map(Some);
         }
         while let Some(s) = self.delegate.next_key::<String>()? {
-            if s.starts_with(self.prefix) {
-                let without_prefix = s[self.prefix.len()..].into_deserializer();
-                return seed.deserialize(without_prefix).map(Some);
+            if let Some(without_prefix) = s.strip_prefix(self.prefix) {
+                return seed
+                    .deserialize(without_prefix.into_deserializer())
+                    .map(Some);
             }
             self.delegate.next_value::<IgnoredAny>()?;
         }

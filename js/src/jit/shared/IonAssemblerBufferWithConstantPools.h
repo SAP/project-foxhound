@@ -603,16 +603,23 @@ struct AssemblerBufferWithConstantPools
   // locations.
   BranchDeadlineSet<NumShortBranchRanges> branchDeadlines_;
 
-  // When true dumping pools is inhibited.
-  bool canNotPlacePool_;
+  // When true dumping pools is inhibited.  Any value above zero indicates
+  // inhibition of pool dumping.  These is no significance to different
+  // above-zero values; this is a counter and not a boolean only so as to
+  // facilitate correctly tracking nested enterNoPools/leaveNoPools calls.
+  unsigned int inhibitPools_;
 
 #ifdef DEBUG
-  // State for validating the 'maxInst' argument to enterNoPool().
-  // The buffer offset when entering the no-pool region.
-  size_t canNotPlacePoolStartOffset_;
-  // The maximum number of word sized instructions declared for the no-pool
-  // region.
-  size_t canNotPlacePoolMaxInst_;
+  // State for validating the 'maxInst' argument to enterNoPool() in the case
+  // `inhibitPools_` was zero before the call (that is, when we enter the
+  // outermost nesting level).
+  //
+  // The buffer offset at the start of the outermost nesting level no-pool
+  // region.  Set to all-ones (0xFF..FF) to mean "invalid".
+  size_t inhibitPoolsStartOffset_;
+  // The maximum number of word sized instructions declared for the outermost
+  // nesting level no-pool region.  Set to zero when invalid.
+  size_t inhibitPoolsMaxInst_;
 #endif
 
   // Instruction to use for alignment fill.
@@ -626,13 +633,9 @@ struct AssemblerBufferWithConstantPools
   const unsigned nopFill_;
 
   // For inhibiting the insertion of fill NOPs in the dynamic context in which
-  // they are being inserted.
-  bool inhibitNops_;
-
- public:
-  // A unique id within each JitContext, to identify pools in the debug
-  // spew. Set by the MacroAssembler, see getNextAssemblerId().
-  int id;
+  // they are being inserted.  The zero-vs-nonzero meaning is the same as that
+  // documented for `inhibitPools_` above.
+  unsigned int inhibitNops_;
 
  private:
   // The buffer slices are in a double linked list.
@@ -640,10 +643,6 @@ struct AssemblerBufferWithConstantPools
   Slice* getTail() const { return this->tail; }
 
  public:
-  // Create an assembler buffer.
-  // Note that this constructor is not allowed to actually allocate memory from
-  // this->lifoAlloc_ because the MacroAssembler constructor has not yet created
-  // an AutoJitContextAlloc.
   AssemblerBufferWithConstantPools(unsigned guardSize, unsigned headerSize,
                                    size_t instBufferAlign, size_t poolMaxOffset,
                                    unsigned pcBias, uint32_t alignFillInst,
@@ -657,25 +656,15 @@ struct AssemblerBufferWithConstantPools
         instBufferAlign_(instBufferAlign),
         poolInfo_(this->lifoAlloc_),
         branchDeadlines_(this->lifoAlloc_),
-        canNotPlacePool_(false),
+        inhibitPools_(0),
 #ifdef DEBUG
-        canNotPlacePoolStartOffset_(0),
-        canNotPlacePoolMaxInst_(0),
+        inhibitPoolsStartOffset_(~size_t(0) /*"invalid"*/),
+        inhibitPoolsMaxInst_(0),
 #endif
         alignFillInst_(alignFillInst),
         nopFillInst_(nopFillInst),
         nopFill_(nopFill),
-        inhibitNops_(false),
-        id(-1) {
-  }
-
-  // We need to wait until an AutoJitContextAlloc is created by the
-  // MacroAssembler before allocating any space.
-  void initWithAllocator() {
-    // We hand out references to lifoAlloc_ in the constructor.
-    // Check that no allocations were made then.
-    MOZ_ASSERT(this->lifoAlloc_.isEmpty(),
-               "Illegal LIFO allocations before AutoJitContextAlloc");
+        inhibitNops_(0) {
   }
 
  private:
@@ -696,8 +685,8 @@ struct AssemblerBufferWithConstantPools
  private:
   void insertNopFill() {
     // Insert fill for testing.
-    if (nopFill_ > 0 && !inhibitNops_ && !canNotPlacePool_) {
-      inhibitNops_ = true;
+    if (nopFill_ > 0 && inhibitNops_ == 0 && inhibitPools_ == 0) {
+      inhibitNops_++;
 
       // Fill using a branch-nop rather than a NOP so this can be
       // distinguished and skipped.
@@ -705,7 +694,7 @@ struct AssemblerBufferWithConstantPools
         putInt(nopFillInst_);
       }
 
-      inhibitNops_ = false;
+      inhibitNops_--;
     }
   }
 
@@ -778,10 +767,10 @@ struct AssemblerBufferWithConstantPools
 
     if (!hasSpaceForInsts(numInst, numPoolEntries)) {
       if (numPoolEntries) {
-        JitSpew(JitSpew_Pools, "[%d] Inserting pool entry caused a spill", id);
+        JitSpew(JitSpew_Pools, "Inserting pool entry caused a spill");
       } else {
-        JitSpew(JitSpew_Pools, "[%d] Inserting instruction(%zu) caused a spill",
-                id, sizeExcludingCurrentPool());
+        JitSpew(JitSpew_Pools, "Inserting instruction(%zu) caused a spill",
+                sizeExcludingCurrentPool());
       }
 
       finishPool(numInst * InstSize);
@@ -809,10 +798,10 @@ struct AssemblerBufferWithConstantPools
  public:
   // Get the next buffer offset where an instruction would be inserted.
   // This may flush the current constant pool before returning nextOffset().
-  BufferOffset nextInstrOffset() {
-    if (!hasSpaceForInsts(/* numInsts= */ 1, /* numPoolEntries= */ 0)) {
+  BufferOffset nextInstrOffset(int numInsts = 1) {
+    if (!hasSpaceForInsts(numInsts, /* numPoolEntries= */ 0)) {
       JitSpew(JitSpew_Pools,
-              "[%d] nextInstrOffset @ %d caused a constant pool spill", id,
+              "nextInstrOffset @ %d caused a constant pool spill",
               this->nextOffset().getOffset());
       finishPool(ShortRangeBranchHysteresis);
     }
@@ -825,7 +814,7 @@ struct AssemblerBufferWithConstantPools
                           PoolEntry* pe = nullptr) {
     // The allocation of pool entries is not supported in a no-pool region,
     // check.
-    MOZ_ASSERT_IF(numPoolEntries, !canNotPlacePool_);
+    MOZ_ASSERT_IF(numPoolEntries > 0, inhibitPools_ == 0);
 
     if (this->oom()) {
       return BufferOffset();
@@ -835,9 +824,8 @@ struct AssemblerBufferWithConstantPools
 
 #ifdef JS_JITSPEW
     if (numPoolEntries && JitSpewEnabled(JitSpew_Pools)) {
-      JitSpew(JitSpew_Pools, "[%d] Inserting %d entries into pool", id,
-              numPoolEntries);
-      JitSpewStart(JitSpew_Pools, "[%d] data is: 0x", id);
+      JitSpew(JitSpew_Pools, "Inserting %d entries into pool", numPoolEntries);
+      JitSpewStart(JitSpew_Pools, "data is: 0x");
       size_t length = numPoolEntries * sizeof(PoolAllocUnit);
       for (unsigned idx = 0; idx < length; idx++) {
         JitSpewCont(JitSpew_Pools, "%02x", data[length - idx - 1]);
@@ -858,7 +846,7 @@ struct AssemblerBufferWithConstantPools
     // Now to get an instruction to write.
     PoolEntry retPE;
     if (numPoolEntries) {
-      JitSpew(JitSpew_Pools, "[%d] Entry has index %u, offset %zu", id, index,
+      JitSpew(JitSpew_Pools, "Entry has index %u, offset %zu", index,
               sizeExcludingCurrentPool());
       Asm::InsertIndexIntoTag(inst, index);
       // Figure out the offset within the pool entries.
@@ -895,8 +883,9 @@ struct AssemblerBufferWithConstantPools
       return allocEntry(1, 0, (uint8_t*)&value, nullptr, nullptr);
     }
 
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||     \
+    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
     return this->putU32Aligned(value);
 #else
     return this->AssemblerBuffer<SliceSize, Inst>::putInt(value);
@@ -968,8 +957,7 @@ struct AssemblerBufferWithConstantPools
     return pool_.numEntries() == 0 && !hasExpirableShortRangeBranches(bytes);
   }
   void finishPool(size_t reservedBytes) {
-    JitSpew(JitSpew_Pools,
-            "[%d] Attempting to finish pool %zu with %u entries.", id,
+    JitSpew(JitSpew_Pools, "Attempting to finish pool %zu with %u entries.",
             poolInfo_.length(), pool_.numEntries());
 
     if (reservedBytes < ShortRangeBranchHysteresis) {
@@ -978,12 +966,12 @@ struct AssemblerBufferWithConstantPools
 
     if (isPoolEmptyFor(reservedBytes)) {
       // If there is no data in the pool being dumped, don't dump anything.
-      JitSpew(JitSpew_Pools, "[%d] Aborting because the pool is empty", id);
+      JitSpew(JitSpew_Pools, "Aborting because the pool is empty");
       return;
     }
 
     // Should not be placing a pool in a no-pool region, check.
-    MOZ_ASSERT(!canNotPlacePool_);
+    MOZ_ASSERT(inhibitPools_ == 0);
 
     // Dump the pool with a guard branch around the pool.
     BufferOffset guard = this->putBytes(guardSize_ * InstSize, nullptr);
@@ -1042,8 +1030,7 @@ struct AssemblerBufferWithConstantPools
       // the pool entry that is being loaded.  We need to do a non-trivial
       // amount of math here, since the pool that we've made does not
       // actually reside there in memory.
-      JitSpew(JitSpew_Pools, "[%d] Fixing entry %d offset to %zu", id, idx,
-              codeOffset);
+      JitSpew(JitSpew_Pools, "Fixing entry %d offset to %zu", idx, codeOffset);
       Asm::PatchConstantPoolLoad(inst, (uint8_t*)inst + codeOffset);
     }
 
@@ -1063,16 +1050,40 @@ struct AssemblerBufferWithConstantPools
     if (this->oom()) {
       return;
     }
-    JitSpew(JitSpew_Pools, "[%d] Requesting a pool flush", id);
+    JitSpew(JitSpew_Pools, "Requesting a pool flush");
     finishPool(SIZE_MAX);
   }
 
   void enterNoPool(size_t maxInst) {
+    // Calling this with a zero arg is pointless.
+    MOZ_ASSERT(maxInst > 0);
+
     if (this->oom()) {
       return;
     }
-    // Don't allow re-entry.
-    MOZ_ASSERT(!canNotPlacePool_);
+
+    if (inhibitPools_ > 0) {
+      // This is a nested call to enterNoPool.  Assert that the reserved area
+      // fits within that of the outermost call, but otherwise don't do
+      // anything.
+      //
+      // Assert that the outermost call set these.
+      MOZ_ASSERT(inhibitPoolsStartOffset_ != ~size_t(0));
+      MOZ_ASSERT(inhibitPoolsMaxInst_ > 0);
+      // Check inner area fits within that of the outermost.
+      MOZ_ASSERT(size_t(this->nextOffset().getOffset()) >=
+                 inhibitPoolsStartOffset_);
+      MOZ_ASSERT(size_t(this->nextOffset().getOffset()) + maxInst * InstSize <=
+                 inhibitPoolsStartOffset_ + inhibitPoolsMaxInst_ * InstSize);
+      inhibitPools_++;
+      return;
+    }
+
+    // This is an outermost level call to enterNoPool.
+    MOZ_ASSERT(inhibitPools_ == 0);
+    MOZ_ASSERT(inhibitPoolsStartOffset_ == ~size_t(0));
+    MOZ_ASSERT(inhibitPoolsMaxInst_ == 0);
+
     insertNopFill();
 
     // Check if the pool will spill by adding maxInst instructions, and if
@@ -1080,8 +1091,8 @@ struct AssemblerBufferWithConstantPools
     // assumed that no pool entries are allocated in a no-pool region and
     // this is asserted when allocating entries.
     if (!hasSpaceForInsts(maxInst, 0)) {
-      JitSpew(JitSpew_Pools, "[%d] No-Pool instruction(%zu) caused a spill.",
-              id, sizeExcludingCurrentPool());
+      JitSpew(JitSpew_Pools, "No-Pool instruction(%zu) caused a spill.",
+              sizeExcludingCurrentPool());
       finishPool(maxInst * InstSize);
       if (this->oom()) {
         return;
@@ -1092,37 +1103,54 @@ struct AssemblerBufferWithConstantPools
 #ifdef DEBUG
     // Record the buffer position to allow validating maxInst when leaving
     // the region.
-    canNotPlacePoolStartOffset_ = this->nextOffset().getOffset();
-    canNotPlacePoolMaxInst_ = maxInst;
+    inhibitPoolsStartOffset_ = this->nextOffset().getOffset();
+    inhibitPoolsMaxInst_ = maxInst;
+    MOZ_ASSERT(inhibitPoolsStartOffset_ != ~size_t(0));
 #endif
 
-    canNotPlacePool_ = true;
+    inhibitPools_ = 1;
   }
 
   void leaveNoPool() {
     if (this->oom()) {
-      canNotPlacePool_ = false;
+      inhibitPools_ = 0;
       return;
     }
-    MOZ_ASSERT(canNotPlacePool_);
-    canNotPlacePool_ = false;
+    MOZ_ASSERT(inhibitPools_ > 0);
 
-    // Validate the maxInst argument supplied to enterNoPool().
-    MOZ_ASSERT(this->nextOffset().getOffset() - canNotPlacePoolStartOffset_ <=
-               canNotPlacePoolMaxInst_ * InstSize);
+    if (inhibitPools_ > 1) {
+      // We're leaving a non-outermost nesting level.  Note that fact, but
+      // otherwise do nothing.
+      inhibitPools_--;
+      return;
+    }
+
+    // This is an outermost level call to leaveNoPool.
+    MOZ_ASSERT(inhibitPools_ == 1);
+    MOZ_ASSERT(inhibitPoolsStartOffset_ != ~size_t(0));
+    MOZ_ASSERT(inhibitPoolsMaxInst_ > 0);
+
+    // Validate the maxInst argument supplied to enterNoPool(), in the case
+    // where we are leaving the outermost nesting level.
+    MOZ_ASSERT(this->nextOffset().getOffset() - inhibitPoolsStartOffset_ <=
+               inhibitPoolsMaxInst_ * InstSize);
+
+#ifdef DEBUG
+    inhibitPoolsStartOffset_ = ~size_t(0);
+    inhibitPoolsMaxInst_ = 0;
+#endif
+
+    inhibitPools_ = 0;
   }
 
-  void enterNoNops() {
-    MOZ_ASSERT(!inhibitNops_);
-    inhibitNops_ = true;
-  }
+  void enterNoNops() { inhibitNops_++; }
   void leaveNoNops() {
-    MOZ_ASSERT(inhibitNops_);
-    inhibitNops_ = false;
+    MOZ_ASSERT(inhibitNops_ > 0);
+    inhibitNops_--;
   }
   void assertNoPoolAndNoNops() {
-    MOZ_ASSERT(inhibitNops_);
-    MOZ_ASSERT_IF(!this->oom(), isPoolEmptyFor(InstSize) || canNotPlacePool_);
+    MOZ_ASSERT(inhibitNops_ > 0);
+    MOZ_ASSERT_IF(!this->oom(), isPoolEmptyFor(InstSize) || inhibitPools_ > 0);
   }
 
   void align(unsigned alignment) { align(alignment, alignFillInst_); }
@@ -1145,17 +1173,16 @@ struct AssemblerBufferWithConstantPools
     // dumped at the aligned code position.
     if (!hasSpaceForInsts(requiredFill / InstSize + 1, 0)) {
       // Alignment would cause a pool dump, so dump the pool now.
-      JitSpew(JitSpew_Pools, "[%d] Alignment of %d at %zu caused a spill.", id,
+      JitSpew(JitSpew_Pools, "Alignment of %d at %zu caused a spill.",
               alignment, sizeExcludingCurrentPool());
       finishPool(requiredFill);
     }
 
-    bool prevInhibitNops = inhibitNops_;
-    inhibitNops_ = true;
+    inhibitNops_++;
     while ((sizeExcludingCurrentPool() & (alignment - 1)) && !this->oom()) {
       putInt(pattern);
     }
-    inhibitNops_ = prevInhibitNops;
+    inhibitNops_--;
   }
 
  public:

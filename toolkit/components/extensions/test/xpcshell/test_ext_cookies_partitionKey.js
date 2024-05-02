@@ -81,10 +81,7 @@ function backgroundScript() {
     } partitionKey=${JSON.stringify(cookie.partitionKey)}`;
   }
   function stringifyCookies(cookies) {
-    return cookies
-      .map(stringifyCookie)
-      .sort()
-      .join(" , ");
+    return cookies.map(stringifyCookie).sort().join(" , ");
   }
 
   // detailsIn may have partitionKey and firstPartyDomain attributes.
@@ -555,7 +552,12 @@ add_task(async function dfpi_invalid_partitionKey() {
       await browser.test.assertRejects(
         set({ partitionKey: { topLevelSite: "chrome://foo" } }),
         /Invalid value for 'partitionKey' attribute/,
-        "partitionKey cannot be the chrome:-scheme"
+        "partitionKey cannot be the chrome:-scheme (canonicalization fails)"
+      );
+      await browser.test.assertRejects(
+        set({ partitionKey: { topLevelSite: "chrome://foo/foo/foo" } }),
+        /Invalid value for 'partitionKey' attribute/,
+        "partitionKey cannot be the chrome:-scheme (canonicalization passes)"
       );
       await browser.test.assertRejects(
         set({ partitionKey: { topLevelSite: "http://[]:" } }),

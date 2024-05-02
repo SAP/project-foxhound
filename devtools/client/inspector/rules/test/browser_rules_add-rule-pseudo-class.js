@@ -21,7 +21,7 @@ const TEST_DATA = [
   [":hover", ":active", ":focus-within"],
 ];
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#element", inspector);
@@ -41,7 +41,7 @@ async function runTestData(inspector, view, pseudoClasses) {
 }
 
 async function setPseudoLocks(inspector, view, pseudoClasses) {
-  if (pseudoClasses.length == 0) {
+  if (!pseudoClasses.length) {
     return;
   }
 

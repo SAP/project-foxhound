@@ -11,7 +11,7 @@ const kWidget2Id = "test-890262-widget2";
 setupArea();
 
 // Destroying a widget after defaulting it to a lazy area should work.
-add_task(function() {
+add_task(function () {
   CustomizableUI.createWidget({
     id: kWidget1Id,
     removable: true,
@@ -21,7 +21,7 @@ add_task(function() {
   try {
     CustomizableUI.destroyWidget(kWidget1Id);
   } catch (ex) {
-    Cu.reportError(ex);
+    console.error(ex);
     noError = false;
   }
   ok(
@@ -31,7 +31,7 @@ add_task(function() {
 });
 
 // Destroying a widget after moving it to a lazy area should work.
-add_task(function() {
+add_task(function () {
   CustomizableUI.createWidget({
     id: kWidget2Id,
     removable: true,
@@ -43,7 +43,7 @@ add_task(function() {
   try {
     CustomizableUI.destroyWidget(kWidget2Id);
   } catch (ex) {
-    Cu.reportError(ex);
+    console.error(ex);
     noError = false;
   }
   ok(

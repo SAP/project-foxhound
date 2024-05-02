@@ -7,7 +7,6 @@
 #include "mozilla/dom/SVGImageElement.h"
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/gfx/2D.h"
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
@@ -24,8 +23,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(Image)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGImageElement::WrapNode(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
@@ -62,7 +60,7 @@ SVGImageElement::SVGImageElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : SVGImageElementBase(std::move(aNodeInfo)) {
   // We start out broken
-  AddStatesSilently(NS_EVENT_STATE_BROKEN);
+  AddStatesSilently(ElementState::BROKEN);
 }
 
 SVGImageElement::~SVGImageElement() { nsImageLoadingContent::Destroy(); }
@@ -152,11 +150,35 @@ bool SVGImageElement::ShouldLoadImage() const {
   return LoadingEnabled() && OwnerDoc()->ShouldLoadImages();
 }
 
+Rect SVGImageElement::GeometryBounds(const Matrix& aToBoundsSpace) {
+  Rect rect;
+
+  DebugOnly<bool> ok =
+      SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width,
+                                      SVGT::Height>(this, &rect.x, &rect.y,
+                                                    &rect.width, &rect.height);
+  MOZ_ASSERT(ok, "SVGGeometryProperty::ResolveAll failed");
+
+  if (rect.IsEmpty()) {
+    // Rendering of the element disabled
+    rect.SetEmpty();  // Make sure width/height are zero and not negative
+  }
+
+  return aToBoundsSpace.TransformBounds(rect);
+}
+
 //----------------------------------------------------------------------
 // EventTarget methods:
 
 void SVGImageElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
   nsImageLoadingContent::AsyncEventRunning(aEvent);
+}
+
+//----------------------------------------------------------------------
+//  nsImageLoadingContent methods:
+
+CORSMode SVGImageElement::GetCORSMode() {
+  return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
 }
 
 //----------------------------------------------------------------------
@@ -167,6 +189,10 @@ bool SVGImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                      nsIPrincipal* aMaybeScriptedPrincipal,
                                      nsAttrValue& aResult) {
   if (aNamespaceID == kNameSpaceID_None) {
+    if (aAttribute == nsGkAtoms::crossorigin) {
+      ParseCORSValue(aValue, aResult);
+      return true;
+    }
     if (aAttribute == nsGkAtoms::decoding) {
       return aResult.ParseEnumValue(aValue, kDecodingTable, false,
                                     kDecodingTableDefault);
@@ -177,11 +203,11 @@ bool SVGImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                              aMaybeScriptedPrincipal, aResult);
 }
 
-nsresult SVGImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                       const nsAttrValue* aValue,
-                                       const nsAttrValue* aOldValue,
-                                       nsIPrincipal* aSubjectPrincipal,
-                                       bool aNotify) {
+void SVGImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                   const nsAttrValue* aValue,
+                                   const nsAttrValue* aOldValue,
+                                   nsIPrincipal* aSubjectPrincipal,
+                                   bool aNotify) {
   if (aName == nsGkAtoms::href && (aNamespaceID == kNameSpaceID_None ||
                                    aNamespaceID == kNameSpaceID_XLink)) {
     if (aValue) {
@@ -191,13 +217,20 @@ nsresult SVGImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
     } else {
       CancelImageRequests(aNotify);
     }
-  } else if (aName == nsGkAtoms::decoding &&
-             aNamespaceID == kNameSpaceID_None) {
-    // Request sync or async image decoding.
-    SetSyncDecodingHint(
-        aValue && static_cast<ImageDecodingType>(aValue->GetEnumValue()) ==
-                      ImageDecodingType::Sync);
+  } else if (aNamespaceID == kNameSpaceID_None) {
+    if (aName == nsGkAtoms::decoding) {
+      // Request sync or async image decoding.
+      SetSyncDecodingHint(
+          aValue && static_cast<ImageDecodingType>(aValue->GetEnumValue()) ==
+                        ImageDecodingType::Sync);
+    } else if (aName == nsGkAtoms::crossorigin) {
+      if (aNotify && GetCORSMode() != AttrValueToCORSMode(aOldValue) &&
+          ShouldLoadImage()) {
+        ForceReload(aNotify, IgnoreErrors());
+      }
+    }
   }
+
   return SVGImageElementBase::AfterSetAttr(
       aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
@@ -232,11 +265,6 @@ void SVGImageElement::UnbindFromTree(bool aNullParent) {
   SVGImageElementBase::UnbindFromTree(aNullParent);
 }
 
-EventStates SVGImageElement::IntrinsicState() const {
-  return SVGImageElementBase::IntrinsicState() |
-         nsImageLoadingContent::ImageState();
-}
-
 void SVGImageElement::DestroyContent() {
   nsImageLoadingContent::Destroy();
   SVGImageElementBase::DestroyContent();
@@ -244,47 +272,8 @@ void SVGImageElement::DestroyContent() {
 
 NS_IMETHODIMP_(bool)
 SVGImageElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {
-      sViewportsMap,
-  };
-
   return IsInLengthInfo(name, sLengthInfo) ||
-         FindAttributeDependence(name, map) ||
          SVGImageElementBase::IsAttributeMapped(name);
-}
-
-//----------------------------------------------------------------------
-// SVGGeometryElement methods
-
-/* For the purposes of the update/invalidation logic pretend to
-   be a rectangle. */
-bool SVGImageElement::GetGeometryBounds(
-    Rect* aBounds, const StrokeOptions& aStrokeOptions,
-    const Matrix& aToBoundsSpace, const Matrix* aToNonScalingStrokeSpace) {
-  Rect rect;
-
-  DebugOnly<bool> ok =
-      SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width,
-                                      SVGT::Height>(this, &rect.x, &rect.y,
-                                                    &rect.width, &rect.height);
-  MOZ_ASSERT(ok, "SVGGeometryProperty::ResolveAll failed");
-
-  if (rect.IsEmpty()) {
-    // Rendering of the element disabled
-    rect.SetEmpty();  // Make sure width/height are zero and not negative
-  }
-
-  *aBounds = aToBoundsSpace.TransformBounds(rect);
-  return true;
-}
-
-already_AddRefed<Path> SVGImageElement::BuildPath(PathBuilder* aBuilder) {
-  // To get bound, the faster method GetGeometryBounds() should already return
-  // success. For render and hittest, SVGImageFrame should have its own
-  // implementation that doesn't need to build path for an image.
-  MOZ_ASSERT_UNREACHABLE(
-      "There is no reason to call BuildPath for SVGImageElement");
-  return nullptr;
 }
 
 //----------------------------------------------------------------------
@@ -294,12 +283,16 @@ already_AddRefed<Path> SVGImageElement::BuildPath(PathBuilder* aBuilder) {
 bool SVGImageElement::HasValidDimensions() const {
   float width, height;
 
-  DebugOnly<bool> ok =
-      SVGGeometryProperty::ResolveAll<SVGT::Width, SVGT::Height>(this, &width,
-                                                                 &height);
-  MOZ_ASSERT(ok, "SVGGeometryProperty::ResolveAll failed");
-
-  return width > 0 && height > 0;
+  if (SVGGeometryProperty::ResolveAll<SVGT::Width, SVGT::Height>(this, &width,
+                                                                 &height)) {
+    return width > 0 && height > 0;
+  }
+  // This function might be called for an element in display:none subtree
+  // (e.g. SMIL animateMotion), we fall back to use SVG attributes.
+  return (!mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() ||
+          mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0) &&
+         (!mLengthAttributes[ATTR_HEIGHT].IsExplicitlySet() ||
+          mLengthAttributes[ATTR_HEIGHT].GetAnimValInSpecifiedUnits() > 0);
 }
 
 SVGElement::LengthAttributesInfo SVGImageElement::GetLengthInfo() {
@@ -317,5 +310,4 @@ SVGElement::StringAttributesInfo SVGImageElement::GetStringInfo() {
                               ArrayLength(sStringInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

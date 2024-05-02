@@ -18,7 +18,8 @@ const DEFER2_ID = "system_delay_defer2@tests.mozilla.org";
 const DEFER_ALSO_ID = "system_delay_defer_also@tests.mozilla.org";
 const NORMAL_ID = "system1@tests.mozilla.org";
 
-const distroDir = FileUtils.getDir("ProfD", ["sysfeatures"], true);
+const distroDir = FileUtils.getDir("ProfD", ["sysfeatures"]);
+distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 registerDirectory("XREAppFeat", distroDir);
 
 registerCleanupFunction(() => {
@@ -140,7 +141,7 @@ add_task(async function test_addon_upgrade_on_restart() {
 
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: IGNORE_ID } },
+      browser_specific_settings: { gecko: { id: IGNORE_ID } },
     },
   });
   xpi.copyTo(distroDir, `${IGNORE_ID}.xpi`);
@@ -149,7 +150,7 @@ add_task(async function test_addon_upgrade_on_restart() {
   let xpi2 = await createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: IGNORE_ID } },
+      browser_specific_settings: { gecko: { id: IGNORE_ID } },
     },
   });
 
@@ -217,7 +218,7 @@ add_task(async function test_addon_upgrade_on_reload() {
 
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: COMPLETE_ID } },
+      browser_specific_settings: { gecko: { id: COMPLETE_ID } },
     },
   });
   xpi.copyTo(distroDir, `${COMPLETE_ID}.xpi`);
@@ -226,7 +227,7 @@ add_task(async function test_addon_upgrade_on_reload() {
   let xpi2 = await createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: COMPLETE_ID } },
+      browser_specific_settings: { gecko: { id: COMPLETE_ID } },
     },
   });
 
@@ -304,7 +305,7 @@ add_task(async function test_addon_upgrade_after_pause() {
     background: delayBackground,
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: DEFER_ID } },
+      browser_specific_settings: { gecko: { id: DEFER_ID } },
     },
   });
   xpi.copyTo(distroDir, `${DEFER_ID}.xpi`);
@@ -313,7 +314,7 @@ add_task(async function test_addon_upgrade_after_pause() {
   let xpi2 = await createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: DEFER_ID } },
+      browser_specific_settings: { gecko: { id: DEFER_ID } },
     },
   });
 
@@ -384,7 +385,7 @@ add_task(async function test_multiple_addon_upgrade_postpone() {
     background: delayBackground,
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: DEFER2_ID } },
+      browser_specific_settings: { gecko: { id: DEFER2_ID } },
     },
   });
   xpi.copyTo(distroDir, `${DEFER2_ID}.xpi`);
@@ -392,7 +393,7 @@ add_task(async function test_multiple_addon_upgrade_postpone() {
   xpi = await createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: DEFER2_ID } },
+      browser_specific_settings: { gecko: { id: DEFER2_ID } },
     },
   });
   updateList.push({
@@ -406,7 +407,7 @@ add_task(async function test_multiple_addon_upgrade_postpone() {
     background: delayBackground,
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: DEFER_ALSO_ID } },
+      browser_specific_settings: { gecko: { id: DEFER_ALSO_ID } },
     },
   });
   xpi.copyTo(distroDir, `${DEFER_ALSO_ID}.xpi`);
@@ -414,7 +415,7 @@ add_task(async function test_multiple_addon_upgrade_postpone() {
   xpi = await createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: DEFER_ALSO_ID } },
+      browser_specific_settings: { gecko: { id: DEFER_ALSO_ID } },
     },
   });
   updateList.push({

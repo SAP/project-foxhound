@@ -4,15 +4,9 @@
 
 "use strict";
 
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryEventPing",
-  "resource://gre/modules/EventPing.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryEventPing: "resource://gre/modules/EventPing.sys.mjs",
+});
 
 function checkPingStructure(type, payload, options) {
   Assert.equal(
@@ -33,7 +27,9 @@ function checkPingStructure(type, payload, options) {
 }
 
 function fakePolicy(set, clear, send) {
-  let { Policy } = ChromeUtils.import("resource://gre/modules/EventPing.jsm");
+  let { Policy } = ChromeUtils.importESModule(
+    "resource://gre/modules/EventPing.sys.mjs"
+  );
   Policy.setTimeout = set;
   Policy.clearTimeout = clear;
   Policy.sendPing = send;

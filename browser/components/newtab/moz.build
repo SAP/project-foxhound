@@ -8,12 +8,24 @@ with Files("**"):
     BUG_COMPONENT = ("Firefox", "New Tab Page")
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser/abouthomecache/browser.ini",
-    "test/browser/browser.ini",
+    "test/browser/abouthomecache/browser.toml",
+    "test/browser/browser.toml",
 ]
 
 TESTING_JS_MODULES += [
-    "test/RemoteImagesTestUtils.jsm",
+    "content-src/asrouter/schemas/FxMSCommon.schema.json",
+    "content-src/asrouter/templates/CFR/templates/CFRUrlbarChiclet.schema.json",
+    "content-src/asrouter/templates/CFR/templates/ExtensionDoorhanger.schema.json",
+    "content-src/asrouter/templates/CFR/templates/InfoBar.schema.json",
+    "content-src/asrouter/templates/OnboardingMessage/ProtectionsPanelMessage.schema.json",
+    "content-src/asrouter/templates/OnboardingMessage/Spotlight.schema.json",
+    "content-src/asrouter/templates/OnboardingMessage/ToolbarBadgeMessage.schema.json",
+    "content-src/asrouter/templates/OnboardingMessage/UpdateAction.schema.json",
+    "content-src/asrouter/templates/OnboardingMessage/WhatsNewMessage.schema.json",
+    "content-src/asrouter/templates/PBNewtab/NewtabPromoMessage.schema.json",
+    "content-src/asrouter/templates/ToastNotification/ToastNotification.schema.json",
+    "test/InflightAssetsMessageProvider.sys.mjs",
+    "test/NimbusRolloutMessageProvider.sys.mjs",
 ]
 
 SPHINX_TREES["docs"] = "docs"
@@ -30,14 +42,14 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = "browser-newtab"
 
 EXTRA_JS_MODULES += [
-    "AboutNewTabService.jsm",
+    "AboutNewTabService.sys.mjs",
 ]
 
 FINAL_TARGET_FILES.actors += [
-    "aboutwelcome/AboutWelcomeChild.jsm",
-    "aboutwelcome/AboutWelcomeParent.jsm",
-    "actors/ASRouterChild.jsm",
-    "actors/ASRouterParent.jsm",
+    "aboutwelcome/AboutWelcomeChild.sys.mjs",
+    "aboutwelcome/AboutWelcomeParent.sys.mjs",
+    "actors/ASRouterChild.sys.mjs",
+    "actors/ASRouterParent.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [

@@ -1,10 +1,10 @@
 "use strict";
 
-const { LoginTestUtils } = ChromeUtils.import(
-  "resource://testing-common/LoginTestUtils.jsm"
+const { LoginTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/LoginTestUtils.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 var passwordsDialog;
@@ -14,7 +14,7 @@ add_task(async function test_openPasswordManagement() {
 
   let tabOpenPromise = BrowserTestUtils.waitForNewTab(gBrowser, "about:logins");
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     let doc = content.document;
 
     let savePasswordCheckBox = doc.getElementById("savePasswords");

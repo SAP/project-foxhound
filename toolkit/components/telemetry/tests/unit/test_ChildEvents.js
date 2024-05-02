@@ -2,18 +2,11 @@
    http://creativecommons.org/publicdomain/zero/1.0/
 */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { TelemetrySession } = ChromeUtils.import(
-  "resource://gre/modules/TelemetrySession.jsm"
-);
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+const { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
 );
 
 const MESSAGE_CHILD_TEST_DONE = "ChildTest:Done";
@@ -74,7 +67,7 @@ async function waitForContentEvents() {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   if (!runningInParent) {
     TelemetryController.testSetupContent();
     run_child_test();

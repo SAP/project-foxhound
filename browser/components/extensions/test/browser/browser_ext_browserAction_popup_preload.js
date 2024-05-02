@@ -23,6 +23,7 @@ add_task(async function testBrowserActionClickCanceled() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
       permissions: ["activeTab"],
@@ -39,7 +40,7 @@ add_task(async function testBrowserActionClickCanceled() {
     Management: {
       global: { browserActionFor },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
+  } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
 
   let ext = WebExtensionPolicy.getByID(extension.id)?.extension;
   let browserAction = browserActionFor(ext);
@@ -69,11 +70,19 @@ add_task(async function testBrowserActionClickCanceled() {
     "Active tab was granted permission"
   );
 
+  // We intentionally turn off this a11y check, because the following click
+  // is send on the <body> to dismiss the pending popup using an alternative way
+  // of the popup dismissal, where the other way like `Esc` key is available,
+  // therefore this test can be ignored.
+  AccessibilityUtils.setEnv({
+    mustHaveAccessibleRule: false,
+  });
   EventUtils.synthesizeMouseAtCenter(
     document.documentElement,
     { type: "mouseup", button: 0 },
     window
   );
+  AccessibilityUtils.resetEnv();
 
   is(browserAction.pendingPopup, null, "Pending popup was cleared");
   is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
@@ -158,11 +167,12 @@ add_task(async function testBrowserActionDisabled() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
     },
 
-    background: async function() {
+    background: async function () {
       await browser.browserAction.disable();
       browser.test.sendMessage("browserAction-disabled");
     },
@@ -184,14 +194,15 @@ add_task(async function testBrowserActionDisabled() {
     Management: {
       global: { browserActionFor },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
+  } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
 
   let ext = WebExtensionPolicy.getByID(extension.id)?.extension;
   let browserAction = browserActionFor(ext);
 
   let widget = getBrowserActionWidget(extension).forWindow(window);
+  let button = widget.node.firstElementChild;
 
-  is(widget.node.getAttribute("disabled"), "true", "Button is disabled");
+  is(button.getAttribute("disabled"), "true", "Button is disabled");
   is(browserAction.pendingPopup, null, "Have no pending popup prior to click");
 
   // Test canceled click.
@@ -204,11 +215,19 @@ add_task(async function testBrowserActionDisabled() {
   is(browserAction.pendingPopup, null, "Have no pending popup");
   is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
 
+  // We intentionally turn off this a11y check, because the following click
+  // is send on the <body> to dismiss the pending popup using an alternative way
+  // of the popup dismissal, where the other way like `Esc` key is available,
+  // therefore this test can be ignored.
+  AccessibilityUtils.setEnv({
+    mustHaveAccessibleRule: false,
+  });
   EventUtils.synthesizeMouseAtCenter(
     document.documentElement,
     { type: "mouseup", button: 0 },
     window
   );
+  AccessibilityUtils.resetEnv();
 
   is(browserAction.pendingPopup, null, "Have no pending popup");
   is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
@@ -241,11 +260,18 @@ add_task(async function testBrowserActionDisabled() {
     }
   );
 
+  // We intentionally turn off a11y_checks, because the following click
+  // is targeting a disabled control to confirm the click event won't come through.
+  // It is not meant to be interactive and is not expected to be accessible:
+  AccessibilityUtils.setEnv({
+    mustBeEnabled: false,
+  });
   EventUtils.synthesizeMouseAtCenter(
     widget.node,
     { type: "mouseup", button: 0 },
     window
   );
+  AccessibilityUtils.resetEnv();
 
   await mouseUpPromise;
 
@@ -265,6 +291,7 @@ add_task(async function testBrowserActionTabPopulation() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
       permissions: ["activeTab"],
@@ -272,7 +299,7 @@ add_task(async function testBrowserActionTabPopulation() {
 
     files: {
       "popup.html": scriptPage("popup.js"),
-      "popup.js": function() {
+      "popup.js": function () {
         browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
           browser.test.assertEq(
             "mochitest index /",
@@ -286,7 +313,10 @@ add_task(async function testBrowserActionTabPopulation() {
   });
 
   let win = await BrowserTestUtils.openNewBrowserWindow();
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(
+    win.gBrowser.selectedBrowser,
+    "http://example.com/"
+  );
   await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
 
   // Make sure the mouse isn't hovering over the browserAction widget.
@@ -324,13 +354,14 @@ add_task(async function testClosePopupDuringPreload() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
     },
 
     files: {
       "popup.html": scriptPage("popup.js"),
-      "popup.js": function() {
+      "popup.js": function () {
         browser.test.sendMessage("popup_loaded");
         window.close();
       },
@@ -350,7 +381,7 @@ add_task(async function testClosePopupDuringPreload() {
     Management: {
       global: { browserActionFor },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
+  } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
 
   let ext = WebExtensionPolicy.getByID(extension.id)?.extension;
   let browserAction = browserActionFor(ext);

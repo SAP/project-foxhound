@@ -33,8 +33,6 @@ struct TableRowGroupReflowInput;
  */
 class nsTableRowGroupFrame final : public nsContainerFrame,
                                    public nsILineIterator {
-  using TableRowGroupReflowInput = mozilla::TableRowGroupReflowInput;
-
  public:
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsTableRowGroupFrame)
@@ -49,33 +47,31 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   virtual ~nsTableRowGroupFrame();
 
   // nsIFrame overrides
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override {
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override {
     nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
     if (!aPrevInFlow) {
       mWritingMode = GetTableFrame()->GetWritingMode();
     }
   }
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot,
-                           PostDestroyData& aPostDestroyData) override;
+  void Destroy(DestroyContext&) override;
 
   /** @see nsIFrame::DidSetComputedStyle */
-  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
+  void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override;
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override;
-  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override;
+  void RemoveFrame(DestroyContext&, ChildListID, nsIFrame*) override;
 
-  virtual nsMargin GetUsedMargin() const override;
-  virtual nsMargin GetUsedBorder() const override;
-  virtual nsMargin GetUsedPadding() const override;
+  nsMargin GetUsedMargin() const override;
+  nsMargin GetUsedBorder() const override;
+  nsMargin GetUsedPadding() const override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
   /**
    * Calls Reflow for all of its child rows.
@@ -89,18 +85,18 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    *
    * @see nsIFrame::Reflow
    */
-  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      const ReflowInput& aReflowInput,
-                      nsReflowStatus& aStatus) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
 
   bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override;
+  nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  nsTableRowFrame* GetFirstRow();
-  nsTableRowFrame* GetLastRow();
+  nsTableRowFrame* GetFirstRow() const;
+  nsTableRowFrame* GetLastRow() const;
 
   nsTableFrame* GetTableFrame() const {
     nsIFrame* parent = GetParent();
@@ -144,7 +140,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    * @param aHeaderFooterFrame the original header or footer row group frame
    * that was repeated
    */
-  nsresult InitRepeatedFrame(nsTableRowGroupFrame* aHeaderFooterFrame);
+  void InitRepeatedFrame(nsTableRowGroupFrame* aHeaderFooterFrame);
 
   /**
    * Get the total bsize of all the row rects
@@ -183,8 +179,6 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
   // nsILineIterator methods
  public:
-  virtual void DisposeLineIterator() override {}
-
   // The table row is the equivalent to a line in block layout.
   // The nsILineIterator assumes that a line resides in a block, this role is
   // fullfilled by the row group. Rows in table are counted relative to the
@@ -195,15 +189,13 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   /** Get the number of rows in a row group
    * @return the number of lines in a row group
    */
-  virtual int32_t GetNumLines() const override;
+  int32_t GetNumLines() const final;
 
-  /** @see nsILineIterator.h GetDirection
-   * @return true if the table is rtl
-   */
-  virtual bool GetDirection() override;
+  /** @see nsILineIterator.h IsLineIteratorFlowRTL */
+  bool IsLineIteratorFlowRTL() final;
 
   /** Return structural information about a line. */
-  Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) override;
+  Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
 
   /** Given a frame that's a child of the rowgroup, find which line its on.
    * @param aFrame       - frame, should be a row
@@ -212,8 +204,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    *                       frame and the index is at least aStartLine.
    *                       -1 if the frame cannot be found.
    */
-  virtual int32_t FindLineContaining(nsIFrame* aFrame,
-                                     int32_t aStartLine = 0) override;
+  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
 
   /** Find the orginating cell frame on a row that is the nearest to the
    * inline-dir coordinate of aPos.
@@ -228,7 +219,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    */
   NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                          nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
-                         bool* aPosIsAfterLastFrame) override;
+                         bool* aPosIsAfterLastFrame) final;
 
   /** Check whether visual and logical order of cell frames within a line are
    * identical. As the layout will reorder them this is always the case
@@ -240,7 +231,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
   NS_IMETHOD CheckLineOrder(int32_t aLine, bool* aIsReordered,
                             nsIFrame** aFirstVisual,
-                            nsIFrame** aLastVisual) override;
+                            nsIFrame** aLastVisual) final;
 
   // row cursor methods to speed up searching for the row(s)
   // containing a point. The basic idea is that we set the cursor
@@ -297,7 +288,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   bool CanProvideLineIterator() const final { return true; }
   nsILineIterator* GetLineIterator() final { return this; }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+  bool IsFrameOfType(uint32_t aFlags) const override {
     if (aFlags & (eSupportsContainLayoutAndPaint | eSupportsAspectRatio)) {
       return false;
     }
@@ -305,27 +296,26 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
     return nsContainerFrame::IsFrameOfType(aFlags & ~(nsIFrame::eTablePart));
   }
 
-  virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0,
+  void InvalidateFrame(uint32_t aDisplayItemKey = 0,
+                       bool aRebuildDisplayItems = true) override;
+  void InvalidateFrameWithRect(const nsRect& aRect,
+                               uint32_t aDisplayItemKey = 0,
                                bool aRebuildDisplayItems = true) override;
-  virtual void InvalidateFrameWithRect(
-      const nsRect& aRect, uint32_t aDisplayItemKey = 0,
-      bool aRebuildDisplayItems = true) override;
-  virtual void InvalidateFrameForRemoval() override {
-    InvalidateFrameSubtree();
-  }
+  void InvalidateFrameForRemoval() override { InvalidateFrameSubtree(); }
 
  protected:
   explicit nsTableRowGroupFrame(ComputedStyle* aStyle,
                                 nsPresContext* aPresContext);
 
-  void InitChildReflowInput(nsPresContext& aPresContext, bool aBorderCollapse,
+  void InitChildReflowInput(nsPresContext* aPresContext, bool aBorderCollapse,
                             ReflowInput& aReflowInput);
 
   LogicalSides GetLogicalSkipSides() const override;
 
   void PlaceChild(nsPresContext* aPresContext,
-                  TableRowGroupReflowInput& aReflowInput, nsIFrame* aKidFrame,
-                  const ReflowInput& aKidReflowInput, mozilla::WritingMode aWM,
+                  mozilla::TableRowGroupReflowInput& aReflowInput,
+                  nsIFrame* aKidFrame, const ReflowInput& aKidReflowInput,
+                  mozilla::WritingMode aWM,
                   const mozilla::LogicalPoint& aKidPosition,
                   const nsSize& aContainerSize, ReflowOutput& aDesiredSize,
                   const nsRect& aOriginalKidRect,
@@ -337,8 +327,6 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
   void DidResizeRows(ReflowOutput& aDesiredSize);
 
-  void SlideChild(TableRowGroupReflowInput& aReflowInput, nsIFrame* aKidFrame);
-
   /**
    * Reflow the frames we've already created
    *
@@ -346,26 +334,29 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    * @param   aReflowInput current inline state
    */
   void ReflowChildren(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      TableRowGroupReflowInput& aReflowInput,
+                      mozilla::TableRowGroupReflowInput& aReflowInput,
                       nsReflowStatus& aStatus,
                       bool* aPageBreakBeforeEnd = nullptr);
 
-  nsresult SplitRowGroup(nsPresContext* aPresContext,
-                         ReflowOutput& aDesiredSize,
-                         const ReflowInput& aReflowInput,
-                         nsTableFrame* aTableFrame, nsReflowStatus& aStatus,
-                         bool aRowForcedPageBreak);
+  void SplitRowGroup(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                     const ReflowInput& aReflowInput, nsTableFrame* aTableFrame,
+                     nsReflowStatus& aStatus, bool aRowForcedPageBreak);
 
-  void SplitSpanningCells(nsPresContext& aPresContext,
+  void SplitSpanningCells(nsPresContext* aPresContext,
                           const ReflowInput& aReflowInput,
-                          nsTableFrame& aTableFrame, nsTableRowFrame& aFirstRow,
-                          nsTableRowFrame& aLastRow, bool aFirstRowIsTopOfPage,
-                          nscoord aSpanningRowBottom,
+                          nsTableFrame* aTableFrame, nsTableRowFrame* aFirstRow,
+                          nsTableRowFrame* aLastRow, bool aFirstRowIsTopOfPage,
+                          nscoord aSpanningRowBEnd,
+                          const nsSize& aContainerSize,
                           nsTableRowFrame*& aContRowFrame,
                           nsTableRowFrame*& aFirstTruncatedRow,
-                          nscoord& aDesiredHeight);
+                          nscoord& aDesiredBSize);
 
-  void CreateContinuingRowFrame(nsIFrame& aRowFrame, nsIFrame** aContRowFrame);
+  /**
+   * Create a continuing table row frame, add it to the child list, and then
+   * push it and its later siblings to our overflow frames list.
+   */
+  nsTableRowFrame* CreateContinuingRowFrame(nsIFrame* aRowFrame);
 
   bool IsSimpleRowFrame(nsTableFrame* aTableFrame, nsTableRowFrame* aRowFrame);
 
@@ -375,9 +366,9 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
  private:
   // border widths in pixels in the collapsing border model
-  BCPixelSize mIEndContBorderWidth;
-  BCPixelSize mBEndContBorderWidth;
-  BCPixelSize mIStartContBorderWidth;
+  BCPixelSize mIEndContBorderWidth = 0;
+  BCPixelSize mBEndContBorderWidth = 0;
+  BCPixelSize mIStartContBorderWidth = 0;
 
  public:
   bool IsRepeatable() const;

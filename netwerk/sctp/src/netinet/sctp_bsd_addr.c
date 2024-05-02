@@ -32,11 +32,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if defined(__FreeBSD__) && !defined(__Userspace__)
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_bsd_addr.c 358080 2020-02-18 19:41:55Z tuexen $");
-#endif
-
 #include <netinet/sctp_os.h>
 #include <netinet/sctp_var.h>
 #include <netinet/sctp_pcb.h>
@@ -78,8 +73,8 @@ MALLOC_DEFINE(SCTP_M_MCORE, "sctp_mcore", "sctp mcore queue");
 
 /* Global NON-VNET structure that controls the iterator */
 struct iterator_control sctp_it_ctl;
-
 #if !(defined(__FreeBSD__) && !defined(__Userspace__))
+
 static void
 sctp_cleanup_itqueue(void)
 {
@@ -195,7 +190,7 @@ sctp_startup_iterator(void)
 	kproc_create(sctp_iterator_thread,
 	             (void *)NULL,
 	             &sctp_it_ctl.thread_proc,
-	             RFPROC,
+	             0,
 	             SCTP_KTHREAD_PAGES,
 	             SCTP_KTRHEAD_NAME);
 #elif defined(__APPLE__)
@@ -243,7 +238,6 @@ sctp_gather_internal_ifa_flags(struct sctp_ifa *ifa)
 }
 #endif /* __Userspace__ */
 #endif /* INET6 */
-
 
 #if !defined(__Userspace__)
 static uint32_t
@@ -294,24 +288,18 @@ sctp_is_desired_interface_type(struct ifnet *ifn)
 	return (result);
 }
 #endif
-
 #if defined(__APPLE__) && !defined(__Userspace__)
+
 int
 sctp_is_vmware_interface(struct ifnet *ifn)
 {
 	return (strncmp(ifnet_name(ifn), "vmnet", 5) == 0);
 }
+
 #endif
 
 #if defined(_WIN32) && defined(__Userspace__)
-#ifdef MALLOC
-#undef MALLOC
-#define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
-#endif
-#ifdef FREE
-#undef FREE
-#define FREE(x) HeapFree(GetProcessHeap(), 0, (x))
-#endif
+#define SCTP_BSD_FREE(x) HeapFree(GetProcessHeap(), 0, (x))
 static void
 sctp_init_ifns_for_vrf(int vrfid)
 {
@@ -341,7 +329,7 @@ sctp_init_ifns_for_vrf(int vrfid)
 	/* Get actual adapter information */
 	if ((Err = GetAdaptersAddresses(AF_INET, 0, NULL, pAdapterAddrs, &AdapterAddrsSize)) != ERROR_SUCCESS) {
 		SCTP_PRINTF("GetAdaptersV4Addresses() failed with error code %d\n", Err);
-		FREE(pAdapterAddrs);
+		SCTP_BSD_FREE(pAdapterAddrs);
 		return;
 	}
 	/* Enumerate through each returned adapter and save its information */
@@ -366,7 +354,7 @@ sctp_init_ifns_for_vrf(int vrfid)
 			}
 		}
 	}
-	FREE(pAdapterAddrs);
+	SCTP_BSD_FREE(pAdapterAddrs);
 #endif
 #ifdef INET6
 	AdapterAddrsSize = 0;
@@ -386,7 +374,7 @@ sctp_init_ifns_for_vrf(int vrfid)
 	/* Get actual adapter information */
 	if ((Err = GetAdaptersAddresses(AF_INET6, 0, NULL, pAdapterAddrs, &AdapterAddrsSize)) != ERROR_SUCCESS) {
 		SCTP_PRINTF("GetAdaptersV6Addresses() failed with error code %d\n", Err);
-		FREE(pAdapterAddrs);
+		SCTP_BSD_FREE(pAdapterAddrs);
 		return;
 	}
 	/* Enumerate through each returned adapter and save its information */
@@ -408,7 +396,7 @@ sctp_init_ifns_for_vrf(int vrfid)
 			}
 		}
 	}
-	FREE(pAdapterAddrs);
+	SCTP_BSD_FREE(pAdapterAddrs);
 #endif
 }
 #elif defined(__Userspace__)
@@ -448,7 +436,7 @@ sctp_init_ifns_for_vrf(int vrfid)
 #if defined(INET6)
 		if ((ifa->ifa_addr->sa_family == AF_INET6) &&
 		    IN6_IS_ADDR_UNSPECIFIED(&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr)) {
-			/* skip unspecifed addresses */
+			/* skip unspecified addresses */
 			continue;
 		}
 #endif
@@ -476,7 +464,6 @@ sctp_init_ifns_for_vrf(int vrfid)
 #endif
 }
 #endif
-
 #if defined(__APPLE__) && !defined(__Userspace__)
 static void
 sctp_init_ifns_for_vrf(int vrfid)
@@ -522,7 +509,7 @@ sctp_init_ifns_for_vrf(int vrfid)
 			}
 			if (ifa->ifa_addr->sa_family == AF_INET6) {
 				if (IN6_IS_ADDR_UNSPECIFIED(&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr)) {
-					/* skip unspecifed addresses */
+					/* skip unspecified addresses */
 					continue;
 				}
 			} else {
@@ -555,7 +542,6 @@ sctp_init_ifns_for_vrf(int vrfid)
 	ifnet_list_free(ifnetlist);
 }
 #endif
-
 #if defined(__FreeBSD__) && !defined(__Userspace__)
 static void
 sctp_init_ifns_for_vrf(int vrfid)
@@ -596,7 +582,7 @@ sctp_init_ifns_for_vrf(int vrfid)
 #ifdef INET6
 			case AF_INET6:
 				if (IN6_IS_ADDR_UNSPECIFIED(&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr)) {
-					/* skip unspecifed addresses */
+					/* skip unspecified addresses */
 					continue;
 				}
 				break;
@@ -701,7 +687,7 @@ sctp_addr_change(struct ifaddr *ifa, int cmd)
 	case AF_INET6:
 		ifa_flags = ((struct in6_ifaddr *)ifa)->ia6_flags;
 		if (IN6_IS_ADDR_UNSPECIFIED(&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr)) {
-			/* skip unspecifed addresses */
+			/* skip unspecified addresses */
 			return;
 		}
 		break;
@@ -719,7 +705,6 @@ sctp_addr_change(struct ifaddr *ifa, int cmd)
 #endif
 		                           (void *)ifa, ifa->ifa_addr, ifa_flags, 1);
 	} else {
-
 		sctp_del_addr_from_vrf(SCTP_DEFAULT_VRFID, ifa->ifa_addr,
 #if defined(__APPLE__) && !defined(__Userspace__)
 		                       ifnet_index(ifa->ifa_ifp),
@@ -777,9 +762,9 @@ sctp_get_mbuf_for_msg(unsigned int space_needed, int want_header,
 	struct mbuf *m = NULL;
 #if defined(__FreeBSD__) || defined(__Userspace__)
 #if defined(__Userspace__)
-	m =  m_getm2(NULL, space_needed, how, type, want_header ? M_PKTHDR : 0, allonebuf);
+	m = m_getm2(NULL, space_needed, how, type, want_header ? M_PKTHDR : 0, allonebuf);
 #else
-	m =  m_getm2(NULL, space_needed, how, type, want_header ? M_PKTHDR : 0);
+	m = m_getm2(NULL, space_needed, how, type, want_header ? M_PKTHDR : 0);
 #endif
 	if (m == NULL) {
 		/* bad, no memory */
@@ -791,7 +776,7 @@ sctp_get_mbuf_for_msg(unsigned int space_needed, int want_header,
 			m_freem(m);
 			return (NULL);
 		}
-		KASSERT(SCTP_BUF_NEXT(m) == NULL, ("%s: no chain allowed", __FUNCTION__));
+		KASSERT(SCTP_BUF_NEXT(m) == NULL, ("%s: no chain allowed", __func__));
 	}
 #endif
 #ifdef SCTP_MBUF_LOGGING
@@ -844,7 +829,6 @@ sctp_get_mbuf_for_msg(unsigned int space_needed, int want_header,
 #endif
 	return (m);
 }
-
 
 #ifdef SCTP_PACKET_LOGGING
 void
@@ -921,7 +905,6 @@ sctp_packet_log(struct mbuf *m)
 		            SCTP_BASE_VAR(packet_log_end));
 		SCTP_BASE_VAR(packet_log_end) = 0;
 		goto no_log;
-
 	}
 	lenat = (int *)&SCTP_BASE_VAR(packet_log_buffer)[thisbegin];
 	*lenat = total_len;
@@ -947,7 +930,6 @@ sctp_packet_log(struct mbuf *m)
 	atomic_subtract_int(&SCTP_BASE_VAR(packet_log_writers), 1);
 }
 
-
 int
 sctp_copy_out_packet_log(uint8_t *target, int length)
 {
@@ -955,11 +937,10 @@ sctp_copy_out_packet_log(uint8_t *target, int length)
 	 * start copying up to length bytes out.
 	 * We return the number of bytes copied.
 	 */
-	int tocopy, this_copy;
+	int this_copy;
 	int *lenat;
 	int did_delay = 0;
 
-	tocopy = length;
 	if (length < (int)(2 * sizeof(int))) {
 		/* not enough room */
 		return (0);
@@ -987,7 +968,7 @@ sctp_copy_out_packet_log(uint8_t *target, int length)
 	memcpy((void *)lenat, (void *)SCTP_BASE_VAR(packet_log_buffer), this_copy);
 	if (SCTP_PKTLOG_WRITERS_NEED_LOCK) {
 		atomic_subtract_int(&SCTP_BASE_VAR(packet_log_writers),
-				    SCTP_PKTLOG_WRITERS_NEED_LOCK);
+		                    SCTP_PKTLOG_WRITERS_NEED_LOCK);
 	}
 	SCTP_IP_PKTLOG_UNLOCK();
 	return (this_copy + sizeof(int));

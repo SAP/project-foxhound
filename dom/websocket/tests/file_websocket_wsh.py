@@ -1,7 +1,7 @@
-from mod_pywebsocket import msgutil
-
 import time
+
 import six
+from mod_pywebsocket import msgutil
 
 # see the list of tests in test_websocket.html
 
@@ -81,7 +81,7 @@ def web_socket_transfer_data(request):
         msgutil.send_message(request, six.ensure_text(resp))
     elif request.ws_protocol == "test-12":
         msg = msgutil.receive_message(request)
-        if msg == u"a\ufffdb":
+        if msg == "a\ufffdb":
             # converted unpaired surrogate in UTF-16 to UTF-8 OK
             msgutil.send_message(request, "SUCCESS")
         else:

@@ -27,11 +27,11 @@ from . import tags
 from . import util
 
 
-from yamllint.config import YamlLintConfig  # type: ignore
-from yamllint import linter  # type: ignore
-
-
+# Yield only an error message
 LintGenerator = Generator[str, None, None]
+
+# Yield fully constructed GlinterNits
+NitGenerator = Generator["GlinterNit", None, None]
 
 
 class CheckType(enum.Enum):
@@ -238,7 +238,6 @@ def check_misspelled_pings(
 def check_tags_required(
     metric_or_ping: Union[metrics.Metric, pings.Ping], parser_config: Dict[str, Any]
 ) -> LintGenerator:
-
     if parser_config.get("require_tags", False) and not len(
         metric_or_ping.metadata.get("tags", [])
     ):
@@ -248,7 +247,6 @@ def check_tags_required(
 def check_user_lifetime_expiration(
     metric: metrics.Metric, parser_config: Dict[str, Any]
 ) -> LintGenerator:
-
     if metric.lifetime == metrics.Lifetime.user and metric.expires != "never":
         yield (
             "Metrics with 'user' lifetime cannot have an expiration date. "
@@ -273,6 +271,64 @@ def check_expired_metric(
         yield ("Metric has expired. Please consider removing it.")
 
 
+def check_old_event_api(
+    metric: metrics.Metric, parser_config: Dict[str, Any]
+) -> LintGenerator:
+    # Glean v52.0.0 removed the old events API.
+    # The metrics-2-0-0 schema still supports it.
+    # We want to warn about it.
+    # This can go when we introduce 3-0-0
+
+    if not isinstance(metric, metrics.Event):
+        return
+
+    if not all("type" in x for x in metric.extra_keys.values()):
+        yield ("The old event API is gone. Extra keys require a type.")
+
+
+def check_metric_on_events_lifetime(
+    metric: metrics.Metric, parser_config: Dict[str, Any]
+) -> LintGenerator:
+    """A non-event metric on the Events ping only makes sense if its value
+    is immutable over the life of the ping."""
+    if (
+        "events" in metric.send_in_pings
+        and "all_pings" not in metric.send_in_pings
+        and metric.type != "event"
+        and metric.lifetime == metrics.Lifetime.ping
+    ):
+        yield (
+            "Non-event metrics sent on the Events ping should not have the ping"
+            " lifetime."
+        )
+
+
+def check_unexpected_unit(
+    metric: metrics.Metric, parser_config: Dict[str, Any]
+) -> LintGenerator:
+    """
+    `unit` was allowed on all metrics and recently disallowed.
+    We now warn about its use on all but quantity and custom distribution
+    metrics.
+    """
+    allowed_types = [metrics.Quantity, metrics.CustomDistribution]
+    if not any([isinstance(metric, ty) for ty in allowed_types]) and metric.unit:
+        yield (
+            "The `unit` property is only allowed for quantity "
+            + "and custom distribution metrics."
+        )
+
+
+def check_empty_datareview(
+    metric: metrics.Metric, parser_config: Dict[str, Any]
+) -> LintGenerator:
+    disallowed_datareview = ["", "todo"]
+    data_reviews = [dr.lower() in disallowed_datareview for dr in metric.data_reviews]
+
+    if any(data_reviews):
+        yield "List of data reviews should not contain empty strings or TODO markers."
+
+
 def check_redundant_ping(
     pings: pings.Ping, parser_config: Dict[str, Any]
 ) -> LintGenerator:
@@ -293,6 +349,40 @@ def check_redundant_ping(
             yield ("The word 'ping' is redundant.")
         elif "custom" in ping_words:
             yield ("The word 'custom' is redundant.")
+
+
+def check_unknown_ping(
+    check_name: str,
+    check_type: CheckType,
+    all_pings: Dict[str, pings.Ping],
+    metrics: Dict[str, metrics.Metric],
+    parser_config: Dict[str, Any],
+) -> NitGenerator:
+    """
+    Check that all pings in `send_in_pings` for all metrics are either a builtin ping
+    or in the list of defined custom pings.
+    """
+    available_pings = [p for p in all_pings]
+
+    for _, metric in metrics.items():
+        if check_name in metric.no_lint:
+            continue
+
+        send_in_pings = metric.send_in_pings
+        for target_ping in send_in_pings:
+            if target_ping in pings.RESERVED_PING_NAMES:
+                continue
+
+            if target_ping not in available_pings:
+                msg = f"Ping `{target_ping} `in `send_in_pings` is unknown."
+                name = ".".join([metric.category, metric.name])
+                nit = GlinterNit(
+                    check_name,
+                    name,
+                    msg,
+                    check_type,
+                )
+                yield nit
 
 
 # The checks that operate on an entire category of metrics:
@@ -318,6 +408,10 @@ METRIC_CHECKS: Dict[
     "EXPIRATION_DATE_TOO_FAR": (check_expired_date, CheckType.warning),
     "USER_LIFETIME_EXPIRATION": (check_user_lifetime_expiration, CheckType.warning),
     "EXPIRED": (check_expired_metric, CheckType.warning),
+    "OLD_EVENT_API": (check_old_event_api, CheckType.warning),
+    "METRIC_ON_EVENTS_LIFETIME": (check_metric_on_events_lifetime, CheckType.error),
+    "UNEXPECTED_UNIT": (check_unexpected_unit, CheckType.warning),
+    "EMPTY_DATAREVIEW": (check_empty_datareview, CheckType.warning),
 }
 
 
@@ -329,6 +423,20 @@ PING_CHECKS: Dict[
     "BUG_NUMBER": (check_bug_number, CheckType.error),
     "TAGS_REQUIRED": (check_tags_required, CheckType.error),
     "REDUNDANT_PING": (check_redundant_ping, CheckType.error),
+}
+
+ALL_OBJECT_CHECKS: Dict[
+    str,
+    Tuple[
+        Callable[
+            # check name, check type, pings, metrics, config
+            [str, CheckType, dict, dict, dict],
+            NitGenerator,
+        ],
+        CheckType,
+    ],
+] = {
+    "UNKNOWN_PING_REFERENCED": (check_unknown_ping, CheckType.error),
 }
 
 
@@ -374,9 +482,9 @@ def _lint_pings(
 ) -> List[GlinterNit]:
     nits: List[GlinterNit] = []
 
-    for (ping_name, ping) in sorted(list(category.items())):
+    for ping_name, ping in sorted(list(category.items())):
         assert isinstance(ping, pings.Ping)
-        for (check_name, (check_func, check_type)) in PING_CHECKS.items():
+        for check_name, (check_func, check_type) in PING_CHECKS.items():
             new_nits = list(check_func(ping, parser_config))
             if len(new_nits):
                 if check_name not in ping.no_lint:
@@ -400,6 +508,29 @@ def _lint_pings(
     return nits
 
 
+def _lint_all_objects(
+    objects: Dict[str, Dict[str, Union[metrics.Metric, pings.Ping, tags.Tag]]],
+    parser_config: Dict[str, Any],
+) -> List[GlinterNit]:
+    nits: List[GlinterNit] = []
+
+    pings = objects.get("pings")
+    if not pings:
+        return []
+
+    metrics = objects.get("all_metrics")
+    if not metrics:
+        return []
+
+    for check_name, (check_func, check_type) in ALL_OBJECT_CHECKS.items():
+        new_nits = list(
+            check_func(check_name, check_type, pings, metrics, parser_config)
+        )
+        nits.extend(new_nits)
+
+    return nits
+
+
 def lint_metrics(
     objs: metrics.ObjectTree,
     parser_config: Optional[Dict[str, Any]] = None,
@@ -417,7 +548,10 @@ def lint_metrics(
 
     nits: List[GlinterNit] = []
     valid_tag_names = [tag for tag in objs.get("tags", [])]
-    for (category_name, category) in sorted(list(objs.items())):
+
+    nits.extend(_lint_all_objects(objs, parser_config))
+
+    for category_name, category in sorted(list(objs.items())):
         if category_name == "pings":
             nits.extend(_lint_pings(category, parser_config, valid_tag_names))
             continue
@@ -433,7 +567,7 @@ def lint_metrics(
             if isinstance(metric, metrics.Metric)
         )
 
-        for (cat_check_name, (cat_check_func, check_type)) in CATEGORY_CHECKS.items():
+        for cat_check_name, (cat_check_func, check_type) in CATEGORY_CHECKS.items():
             if any(
                 cat_check_name in metric.no_lint for metric in category_metrics.values()
             ):
@@ -443,8 +577,8 @@ def lint_metrics(
                 for msg in cat_check_func(category_name, category_metrics.values())
             )
 
-        for (_metric_name, metric) in sorted(list(category_metrics.items())):
-            for (check_name, (check_func, check_type)) in METRIC_CHECKS.items():
+        for _metric_name, metric in sorted(list(category_metrics.items())):
+            for check_name, (check_func, check_type) in METRIC_CHECKS.items():
                 new_nits = list(check_func(metric, parser_config))
                 if len(new_nits):
                     if check_name not in metric.no_lint:
@@ -485,47 +619,6 @@ def lint_metrics(
     return nits
 
 
-def lint_yaml_files(
-    input_filepaths: Iterable[Path],
-    file=sys.stderr,
-    parser_config: Dict[str, Any] = None,
-) -> List:
-    """
-    Performs glinter YAML lint on a set of files.
-
-    :param input_filepaths: List of input files to lint.
-    :param file: The stream to write errors to.
-    :returns: List of nits.
-    """
-
-    if parser_config is None:
-        parser_config = {}
-
-    # Generic type since the actual type comes from yamllint, which we don't
-    # control.
-    nits: List = []
-    for path in input_filepaths:
-        if not path.is_file() and parser_config.get("allow_missing_files", False):
-            continue
-
-        # yamllint needs both the file content and the path.
-        file_content = None
-        with path.open("r", encoding="utf-8") as fd:
-            file_content = fd.read()
-
-        problems = linter.run(file_content, YamlLintConfig("extends: default"), path)
-        nits.extend((path, p) for p in problems)
-
-    if len(nits):
-        print("Sorry, Glean found some glinter nits:", file=file)
-        for (path, p) in nits:
-            print(f"{path} ({p.line}:{p.column}) - {p.message}", file=file)
-        print("", file=file)
-        print("Please fix the above nits to continue.", file=file)
-
-    return [x[1] for x in nits]
-
-
 def glinter(
     input_filepaths: Iterable[Path],
     parser_config: Optional[Dict[str, Any]] = None,
@@ -544,9 +637,6 @@ def glinter(
         parser_config = {}
 
     errors = 0
-
-    nits = lint_yaml_files(input_filepaths, file=file, parser_config=parser_config)
-    errors += len(nits)
 
     objs = parser.parse_objects(input_filepaths, parser_config)
     errors += util.report_validation_errors(objs)

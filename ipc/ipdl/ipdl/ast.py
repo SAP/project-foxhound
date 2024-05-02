@@ -9,25 +9,18 @@ NOT_NESTED = 1
 INSIDE_SYNC_NESTED = 2
 INSIDE_CPOW_NESTED = 3
 
-NORMAL_PRIORITY = 1
-INPUT_PRIORITY = 2
-VSYNC_PRIORITY = 3
-MEDIUMHIGH_PRIORITY = 4
-CONTROL_PRIORITY = 5
-
 NESTED_ATTR_MAP = {
     "not": NOT_NESTED,
     "inside_sync": INSIDE_SYNC_NESTED,
     "inside_cpow": INSIDE_CPOW_NESTED,
 }
 
-PRIORITY_ATTR_MAP = {
-    "normal": NORMAL_PRIORITY,
-    "input": INPUT_PRIORITY,
-    "vsync": VSYNC_PRIORITY,
-    "mediumhigh": MEDIUMHIGH_PRIORITY,
-    "control": CONTROL_PRIORITY,
-}
+# Each element of this list is the IPDL source representation of a priority.
+priorityList = ["normal", "input", "vsync", "mediumhigh", "control"]
+
+priorityAttrMap = {src: idx for idx, src in enumerate(priorityList)}
+
+NORMAL_PRIORITY = priorityAttrMap["normal"]
 
 
 class Visitor:
@@ -61,6 +54,8 @@ class Visitor:
     def visitStructDecl(self, struct):
         for f in struct.fields:
             f.accept(self)
+        for a in struct.attributes.values():
+            a.accept(self)
 
     def visitStructField(self, field):
         field.typespec.accept(self)
@@ -68,11 +63,12 @@ class Visitor:
     def visitUnionDecl(self, union):
         for t in union.components:
             t.accept(self)
+        for a in union.attributes.values():
+            a.accept(self)
 
     def visitUsingStmt(self, using):
         for a in using.attributes.values():
             a.accept(self)
-        pass
 
     def visitProtocol(self, p):
         for namespace in p.namespaces:
@@ -83,6 +79,8 @@ class Visitor:
             managed.accept(self)
         for msgDecl in p.messageDecls:
             msgDecl.accept(self)
+        for a in p.attributes.values():
+            a.accept(self)
 
     def visitNamespace(self, ns):
         pass
@@ -98,18 +96,26 @@ class Visitor:
             inParam.accept(self)
         for outParam in md.outParams:
             outParam.accept(self)
+        for a in md.attributes.values():
+            a.accept(self)
 
     def visitParam(self, decl):
-        pass
+        for a in decl.attributes.values():
+            a.accept(self)
 
     def visitTypeSpec(self, ts):
         pass
 
     def visitAttribute(self, a):
+        if isinstance(a.value, Node):
+            a.value.accept(self)
+
+    def visitStringLiteral(self, sl):
         pass
 
     def visitDecl(self, d):
-        pass
+        for a in d.attributes.values():
+            a.accept(self)
 
 
 class Loc:
@@ -216,7 +222,7 @@ class UsingStmt(Node):
         attributes={},
     ):
         Node.__init__(self, loc)
-        assert not isinstance(cxxTypeSpec, str)
+        assert isinstance(cxxTypeSpec, QualifiedId)
         assert cxxHeader is None or isinstance(cxxHeader, str)
         assert kind is None or kind == "class" or kind == "struct"
         self.type = cxxTypeSpec
@@ -303,6 +309,13 @@ class Protocol(NamespacedNode):
 
         return NESTED_ATTR_MAP.get(self.attributes["NestedUpTo"].value, NOT_NESTED)
 
+    def implAttribute(self, side):
+        assert side in ("parent", "child")
+        attr = self.attributes.get(side.capitalize() + "Impl")
+        if attr is not None:
+            return attr.value
+        return None
+
 
 class StructField(Node):
     def __init__(self, loc, type, name):
@@ -365,10 +378,18 @@ class MessageDecl(Node):
         return NESTED_ATTR_MAP.get(self.attributes["Nested"].value, NOT_NESTED)
 
     def priority(self):
-        if "Priority" not in self.attributes:
-            return NORMAL_PRIORITY
+        if "Priority" in self.attributes:
+            sourcePriority = self.attributes["Priority"].value
+        else:
+            sourcePriority = "normal"
+        return priorityAttrMap.get(sourcePriority, NORMAL_PRIORITY)
 
-        return PRIORITY_ATTR_MAP.get(self.attributes["Priority"].value, NORMAL_PRIORITY)
+    def replyPriority(self):
+        if "ReplyPriority" in self.attributes:
+            sourcePriority = self.attributes["ReplyPriority"].value
+            if sourcePriority in priorityAttrMap:
+                return priorityAttrMap[sourcePriority]
+        return self.priority()
 
 
 class Param(Node):
@@ -382,17 +403,18 @@ class Param(Node):
 class TypeSpec(Node):
     def __init__(self, loc, spec):
         Node.__init__(self, loc)
-        self.spec = spec  # QualifiedId
+        assert isinstance(spec, str)
+        self.spec = spec  # str
         self.array = False  # bool
         self.maybe = False  # bool
         self.nullable = False  # bool
         self.uniqueptr = False  # bool
 
     def basename(self):
-        return self.spec.baseid
+        return self.spec
 
     def __str__(self):
-        return str(self.spec)
+        return self.spec
 
 
 class Attribute(Node):
@@ -400,6 +422,15 @@ class Attribute(Node):
         Node.__init__(self, loc)
         self.name = name
         self.value = value
+
+
+class StringLiteral(Node):
+    def __init__(self, loc, value):
+        Node.__init__(self, loc)
+        self.value = value
+
+    def __str__(self):
+        return '"%s"' % self.value
 
 
 class QualifiedId:  # FIXME inherit from node?
@@ -417,9 +448,9 @@ class QualifiedId:  # FIXME inherit from node?
         self.baseid = id
 
     def __str__(self):
-        if 0 == len(self.quals):
-            return self.baseid
-        return "::".join(self.quals) + "::" + self.baseid
+        # NOTE: include a leading "::" in order to force all QualifiedIds to be
+        # fully qualified types in C++
+        return "::" + "::".join(self.quals + [self.baseid])
 
 
 # added by type checking passes

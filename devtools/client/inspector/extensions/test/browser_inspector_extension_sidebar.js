@@ -3,12 +3,6 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ContentTaskUtils",
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 const SIDEBAR_ID = "an-extension-sidebar";
 const SIDEBAR_TITLE = "Sidebar Title";
 
@@ -187,12 +181,12 @@ add_task(async function testSidebarSetExpressionResult() {
   ok(cyclicNode.innerText.includes("cyclic"), "Found the expected node");
   cyclicNode.click();
 
-  await ContentTaskUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => oi.querySelectorAll(".node").length === 7,
     "Wait for the 'cyclic' node to be expanded"
   );
 
-  await ContentTaskUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => oi.querySelector(".tree-node.focused"),
     "Wait for the 'cyclic' node to be focused"
   );
@@ -203,7 +197,7 @@ add_task(async function testSidebarSetExpressionResult() {
 
   info("Test keyboard navigation");
   EventUtils.synthesizeKey("KEY_ArrowLeft", {}, oi.ownerDocument.defaultView);
-  await ContentTaskUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => oi.querySelectorAll(".node").length === 4,
     "Wait for the 'cyclic' node to be collapsed"
   );
@@ -213,7 +207,7 @@ add_task(async function testSidebarSetExpressionResult() {
   );
 
   EventUtils.synthesizeKey("KEY_ArrowDown", {}, oi.ownerDocument.defaultView);
-  await ContentTaskUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => oi.querySelectorAll(".tree-node")[2].classList.contains("focused"),
     "Wait for the 'prop1' node to be focused"
   );
@@ -235,7 +229,7 @@ add_task(async function testSidebarSetExpressionResult() {
   );
   sidebar.setExpressionResult(evalResult);
 
-  await ContentTaskUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     const longStringEl = sidebarPanelContent.querySelector(
       ".tree .objectBox-string"
     );
@@ -256,7 +250,7 @@ add_task(async function testSidebarSetExpressionResult() {
     }
   );
   sidebar.setExpressionResult(evalResult);
-  const numberEl = await ContentTaskUtils.waitForCondition(
+  const numberEl = await TestUtils.waitForCondition(
     () => sidebarPanelContent.querySelector(".objectBox-number"),
     "Wait for the result number element to be rendered"
   );
@@ -268,10 +262,8 @@ add_task(async function testSidebarDOMNodeHighlighting() {
   const sidebar = inspector.getPanel(SIDEBAR_ID);
   const sidebarPanelContent = inspector.sidebar.getTabPanel(SIDEBAR_ID);
 
-  const {
-    waitForHighlighterTypeShown,
-    waitForHighlighterTypeHidden,
-  } = getHighlighterTestHelpers(inspector);
+  const { waitForHighlighterTypeShown, waitForHighlighterTypeHidden } =
+    getHighlighterTestHelpers(inspector);
 
   const expression = "({ body: document.body })";
 
@@ -291,7 +283,7 @@ add_task(async function testSidebarDOMNodeHighlighting() {
 
   // Wait for the object to be expanded so we only target the "body" property node, and
   // not the root object element.
-  await ContentTaskUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () =>
       sidebarPanelContent.querySelectorAll(".object-inspector .tree-node")
         .length > 1
@@ -353,10 +345,8 @@ add_task(async function testSidebarDOMNodeOpenInspector() {
     inspector.HIGHLIGHTER_AUTOHIDE_TIMER = HIGHLIGHTER_AUTOHIDE_TIMER;
   });
 
-  const {
-    waitForHighlighterTypeShown,
-    waitForHighlighterTypeHidden,
-  } = getHighlighterTestHelpers(inspector);
+  const { waitForHighlighterTypeShown, waitForHighlighterTypeHidden } =
+    getHighlighterTestHelpers(inspector);
 
   // Once we click the open-inspector icon we expect a new node front to be selected
   // and the node to have been highlighted and unhighlighted.

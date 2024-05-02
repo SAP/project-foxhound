@@ -6,32 +6,34 @@
 
 "use strict";
 
-let { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+let { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Assert: AssertCls } = ChromeUtils.import(
-  "resource://testing-common/Assert.jsm"
+const { Assert: AssertCls } = ChromeUtils.importESModule(
+  "resource://testing-common/Assert.sys.mjs"
+);
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
 // Injects EventUtils into ContentTask scope. To avoid leaks, this does not hold on
 // to the window global. This means you **need** to pass the window as an argument to
 // the individual EventUtils functions.
 // See SimpleTest/EventUtils.js for documentation.
-var EventUtils = {};
-
-EventUtils.window = {};
-EventUtils.parent = EventUtils.window;
-EventUtils._EU_Ci = Ci;
-EventUtils._EU_Cc = Cc;
-EventUtils.KeyboardEvent = content.KeyboardEvent;
-EventUtils.navigator = content.navigator;
+var EventUtils = {
+  _EU_Ci: Ci,
+  _EU_Cc: Cc,
+  KeyboardEvent: content.KeyboardEvent,
+  navigator: content.navigator,
+  setTimeout,
+  window: {},
+};
 
 EventUtils.synthesizeClick = element =>
   new Promise(resolve => {
     element.addEventListener(
       "click",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -61,7 +63,7 @@ try {
   EventUtils = null;
 }
 
-addMessageListener("content-task:spawn", async function(msg) {
+addMessageListener("content-task:spawn", async function (msg) {
   let id = msg.data.id;
   let source = msg.data.runnable || "()=>{}";
 

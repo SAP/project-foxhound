@@ -9,17 +9,53 @@
 #include "nsXULAppAPI.h"
 #include "nsExceptionHandler.h"
 #include "nsDebug.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 #include "mozilla/X11Util.h"
 #include <X11/Xlib.h>
 
 #define BUFSIZE 2048  // What Xlib uses with XGetErrorDatabaseText
 
+struct XExtension {
+  nsCString name;
+  int major_opcode;
+
+  XExtension(const char* aName, int aCode) : name(aName), major_opcode(aCode) {}
+};
+
+static nsTArray<XExtension> sXExtensions;
+
+// man XSetErrorHandler says "the error handler should not call any
+// functions (directly or indirectly) on the display that will generate
+// protocol requests or that will look for input events" so we query the
+// extension list early to avoid problems.
+static void QueryXExtensions(Display* aDisplay) {
+  if (!sXExtensions.IsEmpty() || !aDisplay) {
+    return;
+  }
+  int nExts = 0;
+  char** extNames = XListExtensions(aDisplay, &nExts);
+  if (!extNames) {
+    return;
+  }
+  for (int i = 0; i < nExts; ++i) {
+    int major_opcode, first_event, first_error;
+    if (XQueryExtension(aDisplay, extNames[i], &major_opcode, &first_event,
+                        &first_error)) {
+      sXExtensions.EmplaceBack(extNames[i], major_opcode);
+    }
+  }
+  XFreeExtensionList(extNames);
+}
+
 extern "C" {
 int X11Error(Display* display, XErrorEvent* event) {
+#ifdef DEBUG
   // Get an indication of how long ago the request that caused the error was
   // made.
   unsigned long age = NextRequest(display) - event->serial;
+#endif
 
   // Get a string to represent the request that caused the error.
   nsAutoCString message;
@@ -28,34 +64,13 @@ int X11Error(Display* display, XErrorEvent* event) {
     message.AppendInt(event->request_code);
   } else {
     // Extension request
-
-    // man XSetErrorHandler says "the error handler should not call any
-    // functions (directly or indirectly) on the display that will generate
-    // protocol requests or that will look for input events" so we use another
-    // temporary Display to request extension information.  This assumes on
-    // the DISPLAY environment variable has been set and matches what was used
-    // to open |display|.
-    Display* tmpDisplay = XOpenDisplay(nullptr);
-    if (tmpDisplay) {
-      int nExts;
-      char** extNames = XListExtensions(tmpDisplay, &nExts);
-      int first_error;
-      if (extNames) {
-        for (int i = 0; i < nExts; ++i) {
-          int major_opcode, first_event;
-          if (XQueryExtension(tmpDisplay, extNames[i], &major_opcode,
-                              &first_event, &first_error) &&
-              major_opcode == event->request_code) {
-            message.Append(extNames[i]);
-            message.Append('.');
-            message.AppendInt(event->minor_code);
-            break;
-          }
-        }
-
-        XFreeExtensionList(extNames);
+    for (XExtension& ext : sXExtensions) {
+      if (ext.major_opcode == event->request_code) {
+        message.Append(ext.name);
+        message.Append('.');
+        message.AppendInt(event->minor_code);
+        break;
       }
-      XCloseDisplay(tmpDisplay);
     }
   }
 
@@ -83,6 +98,7 @@ int X11Error(Display* display, XErrorEvent* event) {
   XGetErrorText(display, event->error_code, buffer, sizeof(buffer));
   notes.Append(buffer);
 
+#ifdef DEBUG
   // For requests where Xlib gets the reply synchronously, |age| will be 1
   // and the stack will include the function making the request.  For
   // asynchronous requests, the current stack will often be unrelated to the
@@ -105,15 +121,6 @@ int X11Error(Display* display, XErrorEvent* event) {
     }
   }
 
-  switch (XRE_GetProcessType()) {
-    case GeckoProcessType_Default:
-    case GeckoProcessType_Content:
-      CrashReporter::AppendAppNotesToCrashReport(notes);
-      break;
-    default:;  // crash report notes not supported.
-  }
-
-#ifdef DEBUG
   // The resource id is unlikely to be useful in a crash report without
   // context of other ids, but add it to the debug console output.
   notes.AppendLiteral("; id=0x");
@@ -130,16 +137,20 @@ int X11Error(Display* display, XErrorEvent* event) {
 #  endif
 #endif
 
-  MOZ_CRASH_UNSAFE(notes.get());
+  NS_WARNING(notes.get());
+  return 0;
 }
 }
 
 void InstallX11ErrorHandler() {
   XSetErrorHandler(X11Error);
 
-  Display* display = mozilla::DefaultXDisplay();
-  NS_ASSERTION(display, "No X display");
-  if (PR_GetEnv("MOZ_X_SYNC")) {
-    XSynchronize(display, X11True);
+  if (Display* display = mozilla::DefaultXDisplay()) {
+    QueryXExtensions(display);
+    if (PR_GetEnv("MOZ_X_SYNC")) {
+      XSynchronize(display, X11True);
+    }
   }
 }
+
+void CleanupX11ErrorHandler() { sXExtensions.Clear(); }

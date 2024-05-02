@@ -9,8 +9,10 @@
 
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/OriginTrials.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ChannelInfo.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/dom/ServiceWorkerRegistrationDescriptor.h"
 #include "mozilla/dom/WorkerCommon.h"
 
@@ -19,6 +21,7 @@
 #include "nsIRequest.h"
 #include "nsISupportsImpl.h"
 #include "nsIWeakReferenceUtils.h"
+#include "nsRFPService.h"
 #include "nsTArray.h"
 
 class nsIChannel;
@@ -60,6 +63,10 @@ struct WorkerLoadInfoData {
 
   // Taken from the parent context.
   nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
+
+  // The CookieJarSettingsArgs of mCookieJarSettings.
+  // This is specific for accessing on worker thread.
+  net::CookieJarSettingsArgs mCookieJarSettingsArgs;
 
   nsCOMPtr<nsIScriptContext> mScriptContext;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
@@ -108,11 +115,6 @@ struct WorkerLoadInfoData {
   UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
   UniquePtr<mozilla::ipc::PrincipalInfo> mPartitionedPrincipalInfo;
   nsCString mDomain;
-  nsString mOriginNoSuffix;  // Derived from mPrincipal; can be used on worker
-                             // thread.
-  nsCString mOrigin;  // Derived from mPrincipal; can be used on worker thread.
-  nsCString mPartitionedOrigin;  // Derived from mPartitionedPrincipal; can be
-                                 // used on worker thread.
 
   nsString mServiceWorkerCacheName;
   Maybe<ServiceWorkerDescriptor> mServiceWorkerDescriptor;
@@ -127,21 +129,23 @@ struct WorkerLoadInfoData {
   nsLoadFlags mLoadFlags;
 
   uint64_t mWindowID;
+  uint64_t mAssociatedBrowsingContextID;
 
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
-  uint32_t mPrincipalHashValue;
+  OriginTrials mTrials;
   bool mFromWindow;
   bool mEvalAllowed;
-  bool mReportCSPViolations;
+  bool mReportEvalCSPViolations;
+  bool mWasmEvalAllowed;
+  bool mReportWasmEvalCSPViolations;
   bool mXHRParamsAllowed;
-  bool mPrincipalIsSystem;
-  bool mPrincipalIsAddonOrExpandedAddon;
   bool mWatchedByDevTools;
   StorageAccess mStorageAccess;
   bool mUseRegularPrincipal;
-  bool mHasStorageAccessPermissionGranted;
+  bool mUsingStorageAccess;
   bool mServiceWorkersTestingInWindow;
   bool mShouldResistFingerprinting;
+  Maybe<RFPTarget> mOverriddenFingerprintingSettings;
   OriginAttributes mOriginAttributes;
   bool mIsThirdPartyContextToTopWindow;
 

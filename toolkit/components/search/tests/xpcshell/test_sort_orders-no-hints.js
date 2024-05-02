@@ -8,13 +8,15 @@
 
 "use strict";
 
-add_task(async function setup() {
+add_setup(async function () {
   await AddonTestUtils.promiseStartupManager();
 
   await SearchTestUtils.useTestEngines(
     "data",
     null,
-    (await readJSONFile(do_get_file("data/engines-no-order-hint.json"))).data
+    (
+      await readJSONFile(do_get_file("data/engines-no-order-hint.json"))
+    ).data
   );
 
   Services.prefs.setBoolPref(
@@ -25,7 +27,7 @@ add_task(async function setup() {
 
 async function checkOrder(type, expectedOrder) {
   // Reset the sorted list.
-  Services.search.wrappedJSObject.__sortedEngines = null;
+  Services.search.wrappedJSObject._cachedSortedEngines = null;
 
   const sortedEngines = await Services.search[type]();
   Assert.deepEqual(
@@ -40,7 +42,7 @@ add_task(async function test_engine_sort_with_non_builtins_sort() {
 
   // As we've added an engine, the pref will have been set to true, but
   // we do really want to test the default sort.
-  Services.search.wrappedJSObject._settings.setAttribute(
+  Services.search.wrappedJSObject._settings.setMetaDataAttribute(
     "useSavedOrder",
     false
   );

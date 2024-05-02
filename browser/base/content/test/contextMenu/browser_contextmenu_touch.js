@@ -34,9 +34,9 @@ async function openAndCheckContextMenu(contextMenu, target) {
   contextMenu.hidePopup();
 }
 
-// Ensure that we can run touch events properly for windows [10]
-add_task(async function setup() {
-  let isWindows = AppConstants.isPlatformAndVersionAtLeast("win", "10.0");
+// Ensure that we can run touch events properly for windows
+add_setup(async function () {
+  let isWindows = AppConstants.platform == "win";
   await SpecialPowers.pushPrefEnv({
     set: [["apz.test.fails_with_native_injection", isWindows]],
   });
@@ -44,7 +44,7 @@ add_task(async function setup() {
 
 // Test the content area context menu.
 add_task(async function test_contentarea_contextmenu_touch() {
-  await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:blank", async function (browser) {
     let contextMenu = document.getElementById("contentAreaContextMenu");
     await openAndCheckContextMenu(contextMenu, browser);
   });
@@ -52,27 +52,30 @@ add_task(async function test_contentarea_contextmenu_touch() {
 
 // Test the back and forward buttons.
 add_task(async function test_back_forward_button_contextmenu_touch() {
-  await BrowserTestUtils.withNewTab("http://example.com", async function(
-    browser
-  ) {
-    let contextMenu = document.getElementById("backForwardMenu");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  await BrowserTestUtils.withNewTab(
+    "http://example.com",
+    async function (browser) {
+      let contextMenu = document.getElementById("backForwardMenu");
 
-    let backbutton = document.getElementById("back-button");
-    let notDisabled = TestUtils.waitForCondition(
-      () => !backbutton.hasAttribute("disabled")
-    );
-    BrowserTestUtils.loadURI(browser, "http://example.org");
-    await notDisabled;
-    await openAndCheckContextMenu(contextMenu, backbutton);
+      let backbutton = document.getElementById("back-button");
+      let notDisabled = TestUtils.waitForCondition(
+        () => !backbutton.hasAttribute("disabled")
+      );
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      BrowserTestUtils.startLoadingURIString(browser, "http://example.org");
+      await notDisabled;
+      await openAndCheckContextMenu(contextMenu, backbutton);
 
-    let forwardbutton = document.getElementById("forward-button");
-    notDisabled = TestUtils.waitForCondition(
-      () => !forwardbutton.hasAttribute("disabled")
-    );
-    backbutton.click();
-    await notDisabled;
-    await openAndCheckContextMenu(contextMenu, forwardbutton);
-  });
+      let forwardbutton = document.getElementById("forward-button");
+      notDisabled = TestUtils.waitForCondition(
+        () => !forwardbutton.hasAttribute("disabled")
+      );
+      backbutton.click();
+      await notDisabled;
+      await openAndCheckContextMenu(contextMenu, forwardbutton);
+    }
+  );
 });
 
 // Test the toolbar context menu.

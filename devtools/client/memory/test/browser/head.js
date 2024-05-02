@@ -4,16 +4,8 @@
 "use strict";
 
 // Load the shared test helpers into this compartment.
-/* import-globals-from ../../../shared/test/shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
-  this
-);
-
-// Load the shared Redux helpers into this compartment.
-/* import-globals-from ../../../shared/test/shared-redux-head.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
   this
 );
 
@@ -21,15 +13,15 @@ var {
   censusDisplays,
   censusState,
   snapshotState: states,
-} = require("devtools/client/memory/constants");
-var { L10N } = require("devtools/client/memory/utils");
+} = require("resource://devtools/client/memory/constants.js");
+var { L10N } = require("resource://devtools/client/memory/utils.js");
 
 Services.prefs.setBoolPref("devtools.memory.enabled", true);
 
 /**
  * Open the memory panel for the given tab.
  */
-this.openMemoryPanel = async function(tab) {
+this.openMemoryPanel = async function (tab) {
   info("Opening memory panel.");
   const toolbox = await gDevTools.showToolboxForTab(tab, { toolId: "memory" });
   info("Memory panel shown successfully.");
@@ -40,9 +32,9 @@ this.openMemoryPanel = async function(tab) {
 /**
  * Close the memory panel for the given tab.
  */
-this.closeMemoryPanel = async function(tab) {
+this.closeMemoryPanel = async function (tab) {
   info("Closing memory panel.");
-  const toolbox = await gDevTools.getToolboxForTab(tab);
+  const toolbox = gDevTools.getToolboxForTab(tab);
   await toolbox.destroy();
   info("Closed memory panel successfully.");
 };
@@ -59,7 +51,7 @@ this.closeMemoryPanel = async function(tab) {
  *     });
  */
 function makeMemoryTest(url, generator) {
-  return async function() {
+  return async function () {
     waitForExplicitFinish();
 
     // It can take a long time to save a snapshot to disk, read the snapshots
@@ -146,7 +138,7 @@ function setCensusDisplay(window, display) {
   // fire the onChange event, so just change it in the store.
   // window.document.querySelector(`.select-display`).value = type;
   gStore.dispatch(
-    require("devtools/client/memory/actions/census-display").setCensusDisplayAndRefresh(
+    require("resource://devtools/client/memory/actions/census-display.js").setCensusDisplayAndRefresh(
       gHeapAnalysesClient,
       display
     )
@@ -245,7 +237,7 @@ function createRAFMock() {
   let queuedFns = [];
   const mock = { timesCalled: 0 };
 
-  mock.nextFrame = function() {
+  mock.nextFrame = function () {
     const thisQueue = queuedFns;
     queuedFns = [];
     for (let i = 0; i < thisQueue.length; i++) {
@@ -253,7 +245,7 @@ function createRAFMock() {
     }
   };
 
-  mock.raf = function(fn) {
+  mock.raf = function (fn) {
     mock.timesCalled++;
     queuedFns.push(fn);
   };

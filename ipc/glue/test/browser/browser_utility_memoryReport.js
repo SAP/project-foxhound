@@ -3,33 +3,25 @@
 
 "use strict";
 
-var utilityPid = undefined;
-var utilityReports = [];
-
-add_task(async () => {
-  const utilityProcessTest = Cc[
-    "@mozilla.org/utility-process-test;1"
-  ].createInstance(Ci.nsIUtilityProcessTest);
-  await utilityProcessTest
-    .startProcess()
-    .then(async pid => {
-      utilityPid = pid;
-      ok(true, "Could start Utility process: " + pid);
-    })
-    .catch(async () => {
-      ok(false, "Cannot start Utility process?");
-    });
+// When running full suite, previous audio decoding tests might have left some
+// running and this might interfere with our testing
+add_setup(async function ensureNoExistingProcess() {
+  await killUtilityProcesses();
 });
 
 add_task(async () => {
+  const utilityPid = await startUtilityProcess();
+
   const gMgr = Cc["@mozilla.org/memory-reporter-manager;1"].getService(
     Ci.nsIMemoryReporterManager
   );
-  ok(utilityPid !== undefined, "Utility process is running");
+  ok(utilityPid !== undefined, `Utility process is running as ${utilityPid}`);
+
+  var utilityReports = [];
 
   const performCollection = new Promise((resolve, reject) => {
     // Record the reports from the live memory reporters then process them.
-    let handleReport = function(
+    let handleReport = function (
       aProcess,
       aUnsafePath,
       aKind,
@@ -37,7 +29,7 @@ add_task(async () => {
       aAmount,
       aDescription
     ) {
-      const expectedProcess = `Utility (pid ${utilityPid})`;
+      const expectedProcess = `Utility (pid ${utilityPid}, sandboxingKind ${kGenericUtilitySandbox})`;
       if (aProcess !== expectedProcess) {
         return;
       }
@@ -60,7 +52,9 @@ add_task(async () => {
 
   await performCollection;
 
-  info("Collected", utilityReports.length, "reports from utility process");
+  info(
+    `Collected ${utilityReports.length} reports from utility process ${utilityPid}`
+  );
   ok(!!utilityReports.length, "Collected some reports");
   ok(
     utilityReports.filter(r => r.path === "vsize" && r.amount > 0).length === 1,
@@ -77,4 +71,6 @@ add_task(async () => {
     ).length,
     "Collected some explicit/ report"
   );
+
+  await cleanUtilityProcessShutdown();
 });

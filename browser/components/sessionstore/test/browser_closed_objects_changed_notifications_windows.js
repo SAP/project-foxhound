@@ -14,7 +14,9 @@ let notificationsCount = 0;
 async function openWindow(url) {
   let win = await promiseNewWindowLoaded();
   let flags = Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY;
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, url, { flags });
+  BrowserTestUtils.startLoadingURIString(win.gBrowser.selectedBrowser, url, {
+    flags,
+  });
   await promiseBrowserLoaded(win.gBrowser.selectedBrowser, true, url);
   return win;
 }
@@ -81,7 +83,7 @@ add_task(async function test_closedObjectsChangedNotifications() {
   assertNotificationCount(4);
 
   info(`Changing the ${MAX_WINDOWS_UNDO_PREF} pref.`);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref(MAX_WINDOWS_UNDO_PREF);
   });
   await awaitNotification(() =>

@@ -5,7 +5,9 @@
 // the original search string to the docshell and not a search url.
 
 add_task(async function test() {
-  const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+  const { sinon } = ChromeUtils.importESModule(
+    "resource://testing-common/Sinon.sys.mjs"
+  );
   const sandbox = sinon.createSandbox();
 
   await SpecialPowers.pushPrefEnv({
@@ -16,6 +18,7 @@ add_task(async function test() {
 
   /**
    * Tests the given search string.
+   *
    * @param {string} str The search string
    * @param {boolean} passthrough whether the value should be passed unchanged
    * to the docshell that will first execute a DNS request.

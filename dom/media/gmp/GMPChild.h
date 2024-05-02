@@ -25,11 +25,13 @@ class GMPChild : public PGMPChild {
   friend class PGMPChild;
 
  public:
-  GMPChild();
-  virtual ~GMPChild();
+  NS_INLINE_DECL_REFCOUNTING(GMPChild, override)
 
-  bool Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
-            mozilla::ipc::ScopedPort aPort);
+  GMPChild();
+
+  bool Init(const nsAString& aPluginPath, const char* aParentBuildID,
+            mozilla::ipc::UntypedEndpoint&& aEndpoint);
+  void Shutdown();
   MessageLoop* GMPMessageLoop();
 
   // Main thread only.
@@ -43,7 +45,11 @@ class GMPChild : public PGMPChild {
  private:
   friend class GMPContentChild;
 
+  virtual ~GMPChild();
+
   bool GetUTF8LibPath(nsACString& aOutLibPath);
+
+  bool GetPluginName(nsACString& aPluginName) const;
 
   mozilla::ipc::IPCResult RecvProvideStorageId(const nsCString& aStorageId);
 
@@ -72,13 +78,28 @@ class GMPChild : public PGMPChild {
   mozilla::ipc::IPCResult RecvInitProfiler(
       Endpoint<mozilla::PProfilerChild>&& aEndpoint);
 
+  mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& aPref);
+
+  mozilla::ipc::IPCResult RecvShutdown(ShutdownResolver&& aResolver);
+
+#if defined(XP_WIN)
+  mozilla::ipc::IPCResult RecvInitDllServices(
+      const bool& aCanRecordReleaseTelemetry,
+      const bool& aIsReadyForBackgroundProcessing);
+
+  mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
+      GetUntrustedModulesDataResolver&& aResolver);
+  mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();
+#endif  // defined(XP_WIN)
+
   void ActorDestroy(ActorDestroyReason aWhy) override;
   void ProcessingError(Result aCode, const char* aReason) override;
 
   GMPErr GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
-                const nsCString aKeySystem = ""_ns);
+                const nsACString& aKeySystem = ""_ns);
 
-  nsTArray<std::pair<nsCString, nsCString>> MakeCDMHostVerificationPaths();
+  nsTArray<std::pair<nsCString, nsCString>> MakeCDMHostVerificationPaths(
+      const nsACString& aPluginLibPath);
 
   nsTArray<RefPtr<GMPContentChild>> mGMPContentChildren;
 

@@ -5,11 +5,9 @@
 
 // Globals
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+});
 
 const gAppRep = Cc[
   "@mozilla.org/reputationservice/application-reputation-service;1"
@@ -46,7 +44,7 @@ function registerTableUpdate(aTable, aFilename) {
   // process an update request.
   gTables[aTable].push(redirectUrl);
 
-  gHttpServer.registerPathHandler(redirectPath, function(request, response) {
+  gHttpServer.registerPathHandler(redirectPath, function (request, response) {
     info("Mock safebrowsing server handling request for " + redirectPath);
     let contents = readFileToString(aFilename);
     info("Length of " + aFilename + ": " + contents.length);
@@ -64,7 +62,7 @@ function registerTableUpdate(aTable, aFilename) {
 
 add_task(function test_setup() {
   // Wait 10 minutes, that is half of the external xpcshell timeout.
-  do_timeout(10 * 60 * 1000, function() {
+  do_timeout(10 * 60 * 1000, function () {
     if (gStillRunning) {
       do_throw("Test timed out.");
     }
@@ -84,7 +82,7 @@ add_task(function test_setup() {
   let originalReqLocales = Services.locale.requestedLocales;
   Services.locale.requestedLocales = ["en-US"];
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.safebrowsing.malware.enabled");
     Services.prefs.clearUserPref("browser.safebrowsing.downloads.enabled");
     Services.prefs.clearUserPref("urlclassifier.downloadBlockTable");
@@ -108,11 +106,11 @@ add_task(function test_setup() {
     return blob;
   }
 
-  gHttpServer.registerPathHandler("/throw", function(request, response) {
+  gHttpServer.registerPathHandler("/throw", function (request, response) {
     do_throw("We shouldn't be getting here");
   });
 
-  gHttpServer.registerPathHandler("/download", function(request, response) {
+  gHttpServer.registerPathHandler("/download", function (request, response) {
     info("Querying remote server for verdict");
     response.setHeader("Content-Type", "application/octet-stream", false);
     let buf = NetUtil.readInputStreamToString(
@@ -138,8 +136,8 @@ add_task(function test_setup() {
 
   gHttpServer.start(4444);
 
-  registerCleanupFunction(function() {
-    return (async function() {
+  registerCleanupFunction(function () {
+    return (async function () {
       await new Promise(resolve => {
         gHttpServer.stop(resolve);
       });
@@ -163,7 +161,7 @@ function processUpdateRequest() {
 // Set up the local whitelist.
 function waitForUpdates() {
   return new Promise((resolve, reject) => {
-    gHttpServer.registerPathHandler("/downloads", function(request, response) {
+    gHttpServer.registerPathHandler("/downloads", function (request, response) {
       let blob = processUpdateRequest();
       response.setHeader(
         "Content-Type",
@@ -219,7 +217,7 @@ function promiseQueryReputation(query, expected) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   // Wait for Safebrowsing local list updates to complete.
   await waitForUpdates();
 });

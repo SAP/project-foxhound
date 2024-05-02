@@ -3,9 +3,9 @@
 
 "use strict";
 
-const { ELLIPSIS } = require("devtools/shared/l10n");
+const { ELLIPSIS } = require("resource://devtools/shared/l10n.js");
 
-add_task(async function() {
+add_task(async function () {
   info("Test short URL linkification JSON started");
 
   const url = "https://example.com/";
@@ -24,7 +24,7 @@ add_task(async function() {
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   info("Test long URL linkification JSON started");
 
   const url = "https://example.com/" + "a".repeat(100);

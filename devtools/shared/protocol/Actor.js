@@ -4,8 +4,7 @@
 
 "use strict";
 
-const { extend } = require("devtools/shared/extend");
-var { Pool } = require("devtools/shared/protocol/Pool");
+var { Pool } = require("resource://devtools/shared/protocol/Pool.js");
 
 /**
  * Keep track of which actorSpecs have been created. If a replica of a spec
@@ -25,23 +24,25 @@ exports.actorSpecs = actorSpecs;
  *   conn can be null if the subclass provides a conn property.
  * @constructor
  */
+
 class Actor extends Pool {
-  // Existing Actors extending this class expect initialize to contain constructor logic.
-  initialize(conn) {
-    // Repeat Pool.constructor here as we can't call it from initialize
-    // This is to be removed once actors switch to es classes and are able to call
-    // Actor's contructor.
-    if (conn) {
-      this.conn = conn;
-    }
+  constructor(conn, spec) {
+    super(conn);
+
+    this.typeName = spec.typeName;
 
     // Will contain the actor's ID
     this.actorID = null;
 
-    this._actorSpec = actorSpecs.get(Object.getPrototypeOf(this));
+    // Ensure computing requestTypes only one time per class
+    const proto = Object.getPrototypeOf(this);
+    if (!proto.requestTypes) {
+      proto.requestTypes = generateRequestTypes(spec);
+    }
+
     // Forward events to the connection.
-    if (this._actorSpec && this._actorSpec.events) {
-      for (const [name, request] of this._actorSpec.events.entries()) {
+    if (spec.events) {
+      for (const [name, request] of spec.events.entries()) {
         this.on(name, (...args) => {
           this._sendEvent(name, request, ...args);
         });
@@ -70,6 +71,18 @@ class Actor extends Pool {
     }
     packet.from = packet.from || this.actorID;
     this.conn.send(packet);
+
+    // This can really be a hot path, even computing the marker label can
+    // have some performance impact.
+    // Guard against missing `Services.profiler` because Services is mocked to
+    // an empty object in the worker loader.
+    if (Services.profiler?.IsActive()) {
+      ChromeUtils.addProfilerMarker(
+        "DevTools:RDP Actor",
+        null,
+        `${this.typeName}.${name}`
+      );
+    }
   }
 
   destroy() {
@@ -147,17 +160,27 @@ class Actor extends Pool {
 exports.Actor = Actor;
 
 /**
- * Generates request handlers as described by the given actor specification on
- * the given actor prototype. Returns the actor prototype.
+ * Generate the "requestTypes" object used by DevToolsServerConnection to implement RDP.
+ * When a RDP packet is received for calling an actor method, this lookup for
+ * the method name in this object and call the function holded on this attribute.
+ *
+ * @params {Object} actorSpec
+ *         The procotol-js actor specific coming from devtools/shared/specs/*.js files
+ *         This describes the types for methods and events implemented by all actors.
+ * @return {Object} requestTypes
+ *         An object where attributes are actor method names
+ *         and values are function implementing these methods.
+ *         These methods receive a RDP Packet (JSON-serializable object) and a DevToolsServerConnection.
+ *         We expect them to return a promise that reserves with the response object
+ *         to send back to the client (JSON-serializable object).
  */
-var generateRequestHandlers = function(actorSpec, actorProto) {
-  actorProto.typeName = actorSpec.typeName;
-
+var generateRequestTypes = function (actorSpec) {
   // Generate request handlers for each method definition
-  actorProto.requestTypes = Object.create(null);
+  const requestTypes = Object.create(null);
   actorSpec.methods.forEach(spec => {
-    const handler = function(packet, conn) {
+    const handler = function (packet, conn) {
       try {
+        const startTime = isWorker ? null : Cu.now();
         let args;
         try {
           args = spec.request.read(packet, this);
@@ -168,7 +191,7 @@ var generateRequestHandlers = function(actorSpec, actorProto) {
 
         if (!this[spec.name]) {
           throw new Error(
-            `Spec for '${actorProto.typeName}' specifies a '${spec.name}'` +
+            `Spec for '${actorSpec.typeName}' specifies a '${spec.name}'` +
               ` method that isn't implemented by the actor`
           );
         }
@@ -200,62 +223,38 @@ var generateRequestHandlers = function(actorSpec, actorProto) {
             try {
               this.destroy();
             } catch (e) {
-              this.writeError(e, actorProto.typeName, spec.name);
+              this.writeError(e, actorSpec.typeName, spec.name);
               return;
             }
           }
 
           conn.send(response);
+
+          ChromeUtils.addProfilerMarker(
+            "DevTools:RDP Actor",
+            startTime,
+            `${actorSpec.typeName}:${spec.name}()`
+          );
         };
 
         this._queueResponse(p => {
           return p
             .then(() => ret)
             .then(sendReturn)
-            .catch(e => this.writeError(e, actorProto.typeName, spec.name));
+            .catch(e => this.writeError(e, actorSpec.typeName, spec.name));
         });
       } catch (e) {
         this._queueResponse(p => {
           return p.then(() =>
-            this.writeError(e, actorProto.typeName, spec.name)
+            this.writeError(e, actorSpec.typeName, spec.name)
           );
         });
       }
     };
 
-    actorProto.requestTypes[spec.request.type] = handler;
+    requestTypes[spec.request.type] = handler;
   });
 
-  return actorProto;
+  return requestTypes;
 };
-
-/**
- * Create an actor class for the given actor specification and prototype.
- *
- * @param object actorSpec
- *    The actor specification. Must have a 'typeName' property.
- * @param object actorProto
- *    The actor prototype. Should have method definitions, can have event
- *    definitions.
- */
-var ActorClassWithSpec = function(actorSpec, actorProto) {
-  if (!actorSpec.typeName) {
-    throw Error("Actor specification must have a typeName member.");
-  }
-
-  // Existing Actors are relying on the initialize instead of constructor methods.
-  const cls = function() {
-    const instance = Object.create(cls.prototype);
-    instance.initialize.apply(instance, arguments);
-    return instance;
-  };
-  cls.prototype = extend(
-    Actor.prototype,
-    generateRequestHandlers(actorSpec, actorProto)
-  );
-
-  actorSpecs.set(cls.prototype, actorSpec);
-
-  return cls;
-};
-exports.ActorClassWithSpec = ActorClassWithSpec;
+exports.generateRequestTypes = generateRequestTypes;

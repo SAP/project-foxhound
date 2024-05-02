@@ -4,35 +4,30 @@
 
 "use strict";
 
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
-const { networkContentSpec } = require("devtools/shared/specs/network-content");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  networkContentSpec,
+} = require("resource://devtools/shared/specs/network-content.js");
 
-const { Cc, Ci } = require("chrome");
+const lazy = {};
 
-loader.lazyRequireGetter(
-  this,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm",
-  true
-);
-
-loader.lazyRequireGetter(
-  this,
-  "NetworkUtils",
-  "devtools/server/actors/network-monitor/utils/network-utils"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  NetworkUtils:
+    "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
+});
 
 loader.lazyRequireGetter(
   this,
   "WebConsoleUtils",
-  "devtools/server/actors/webconsole/utils",
+  "resource://devtools/server/actors/webconsole/utils.js",
   true
 );
 
 const {
   TYPES: { NETWORK_EVENT_STACKTRACE },
   getResourceWatcher,
-} = require("devtools/server/actors/resources/index");
+} = require("resource://devtools/server/actors/resources/index.js");
 
 /**
  * This actor manages all network functionality runnning
@@ -41,19 +36,15 @@ const {
  * @constructor
  *
  */
-const NetworkContentActor = ActorClassWithSpec(networkContentSpec, {
-  initialize(conn, targetActor) {
-    Actor.prototype.initialize.call(this, conn);
+class NetworkContentActor extends Actor {
+  constructor(conn, targetActor) {
+    super(conn, networkContentSpec);
     this.targetActor = targetActor;
-  },
-
-  destroy(conn) {
-    Actor.prototype.destroy.call(this, conn);
-  },
+  }
 
   get networkEventStackTraceWatcher() {
     return getResourceWatcher(this.targetActor, NETWORK_EVENT_STACKTRACE);
-  },
+  }
 
   /**
    *  Send an HTTP request
@@ -70,13 +61,13 @@ const NetworkContentActor = ActorClassWithSpec(networkContentSpec, {
       // request won't show up in the opened netmonitor.
       const doc = this.targetActor.window.document;
 
-      const channel = NetUtil.newChannel({
-        uri: NetUtil.newURI(url),
+      const channel = lazy.NetUtil.newChannel({
+        uri: lazy.NetUtil.newURI(url),
         loadingNode: doc,
         securityFlags:
-          Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+          Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
         contentPolicyType:
-          NetworkUtils.stringToCauseType(cause.type) ||
+          lazy.NetworkUtils.stringToCauseType(cause.type) ||
           Ci.nsIContentPolicy.TYPE_OTHER,
       });
 
@@ -87,7 +78,13 @@ const NetworkContentActor = ActorClassWithSpec(networkContentSpec, {
         Ci.nsIRequest.INHIBIT_CACHING |
         Ci.nsIRequest.LOAD_ANONYMOUS;
 
+      if (method == "CONNECT") {
+        throw new Error(
+          "The CONNECT method is restricted and cannot be sent by devtools"
+        );
+      }
       channel.requestMethod = method;
+
       if (headers) {
         for (const { name, value } of headers) {
           if (name.toLowerCase() == "referer") {
@@ -117,11 +114,11 @@ const NetworkContentActor = ActorClassWithSpec(networkContentSpec, {
       // Make sure the fetch has completed before sending the channel id,
       // so that there is a higher possibilty that the request get into the
       // redux store beforehand (but this does not gurantee that).
-      NetUtil.asyncFetch(channel, () =>
+      lazy.NetUtil.asyncFetch(channel, () =>
         resolve({ channelId: channel.channelId })
       );
     });
-  },
+  }
 
   /**
    * Gets the stacktrace for the specified network resource.
@@ -134,11 +131,10 @@ const NetworkContentActor = ActorClassWithSpec(networkContentSpec, {
     if (!this.networkEventStackTraceWatcher) {
       throw new Error("Not listening for network event stacktraces");
     }
-    const stacktrace = this.networkEventStackTraceWatcher.getStackTrace(
-      resourceId
-    );
+    const stacktrace =
+      this.networkEventStackTraceWatcher.getStackTrace(resourceId);
     return WebConsoleUtils.removeFramesAboveDebuggerEval(stacktrace);
-  },
-});
+  }
+}
 
 exports.NetworkContentActor = NetworkContentActor;

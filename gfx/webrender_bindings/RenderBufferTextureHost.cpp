@@ -47,12 +47,14 @@ RenderBufferTextureHost::~RenderBufferTextureHost() {
   MOZ_COUNT_DTOR_INHERITED(RenderBufferTextureHost, RenderTextureHost);
 }
 
-wr::WrExternalImage RenderBufferTextureHost::Lock(
-    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
+wr::WrExternalImage RenderBufferTextureHost::Lock(uint8_t aChannelIndex,
+                                                  gl::GLContext* aGL) {
   if (!mLocked) {
     if (!GetBuffer()) {
-      // We hit some problems to get the shmem.
-      gfxCriticalNote << "GetBuffer Failed";
+      if (!mDestroyed) {
+        // We hit some problems to get the shmem.
+        gfxCriticalNote << "GetBuffer Failed";
+      }
       return InvalidToWrExternalImage();
     }
     if (mFormat != gfx::SurfaceFormat::YUV) {
@@ -73,16 +75,17 @@ wr::WrExternalImage RenderBufferTextureHost::Lock(
       }
     } else {
       const layers::YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+      auto cbcrSize = layers::ImageDataSerializer::GetCroppedCbCrSize(desc);
 
       mYSurface = gfx::Factory::CreateWrappingDataSourceSurface(
           layers::ImageDataSerializer::GetYChannel(GetBuffer(), desc),
-          desc.yStride(), desc.ySize(), gfx::SurfaceFormat::A8);
+          desc.yStride(), desc.display().Size(), gfx::SurfaceFormat::A8);
       mCbSurface = gfx::Factory::CreateWrappingDataSourceSurface(
           layers::ImageDataSerializer::GetCbChannel(GetBuffer(), desc),
-          desc.cbCrStride(), desc.cbCrSize(), gfx::SurfaceFormat::A8);
+          desc.cbCrStride(), cbcrSize, gfx::SurfaceFormat::A8);
       mCrSurface = gfx::Factory::CreateWrappingDataSourceSurface(
           layers::ImageDataSerializer::GetCrChannel(GetBuffer(), desc),
-          desc.cbCrStride(), desc.cbCrSize(), gfx::SurfaceFormat::A8);
+          desc.cbCrStride(), cbcrSize, gfx::SurfaceFormat::A8);
       if (NS_WARN_IF(!mYSurface || !mCbSurface || !mCrSurface)) {
         mYSurface = mCbSurface = mCrSurface = nullptr;
         gfxCriticalNote << "YCbCr Surface is null";
@@ -195,8 +198,10 @@ bool RenderBufferTextureHost::MapPlane(RenderCompositor* aCompositor,
                                        uint8_t aChannelIndex,
                                        PlaneInfo& aPlaneInfo) {
   if (!mBuffer) {
-    // We hit some problems to get the shmem.
-    gfxCriticalNote << "GetBuffer Failed";
+    if (!mDestroyed) {
+      // We hit some problems to get the shmem.
+      gfxCriticalNote << "GetBuffer Failed";
+    }
     return false;
   }
 
@@ -208,19 +213,21 @@ bool RenderBufferTextureHost::MapPlane(RenderCompositor* aCompositor,
           aPlaneInfo.mData =
               layers::ImageDataSerializer::GetYChannel(mBuffer, desc);
           aPlaneInfo.mStride = desc.yStride();
-          aPlaneInfo.mSize = desc.ySize();
+          aPlaneInfo.mSize = desc.display().Size();
           break;
         case 1:
           aPlaneInfo.mData =
               layers::ImageDataSerializer::GetCbChannel(mBuffer, desc);
           aPlaneInfo.mStride = desc.cbCrStride();
-          aPlaneInfo.mSize = desc.cbCrSize();
+          aPlaneInfo.mSize =
+              layers::ImageDataSerializer::GetCroppedCbCrSize(desc);
           break;
         case 2:
           aPlaneInfo.mData =
               layers::ImageDataSerializer::GetCrChannel(mBuffer, desc);
           aPlaneInfo.mStride = desc.cbCrStride();
-          aPlaneInfo.mSize = desc.cbCrSize();
+          aPlaneInfo.mSize =
+              layers::ImageDataSerializer::GetCroppedCbCrSize(desc);
           break;
       }
       break;
@@ -237,6 +244,11 @@ bool RenderBufferTextureHost::MapPlane(RenderCompositor* aCompositor,
 }
 
 void RenderBufferTextureHost::UnmapPlanes() {}
+
+void RenderBufferTextureHost::Destroy() {
+  mBuffer = nullptr;
+  mDestroyed = true;
+}
 
 }  // namespace wr
 }  // namespace mozilla

@@ -11,7 +11,7 @@ NSS 3.20.1 release notes
    Network Security Services (NSS) 3.20.1 is a patch release for NSS 3.20. The bug fixes in NSS
    3.20.1 are described in the "Security Advisories" section below.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -57,8 +57,6 @@ NSS 3.20.1 release notes
 
 `New in NSS 3.20.1 <#new_in_nss_3.20.1>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

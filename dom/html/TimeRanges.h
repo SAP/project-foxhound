@@ -27,12 +27,14 @@ namespace dom {
 class TimeRanges final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TimeRanges)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(TimeRanges)
 
   TimeRanges();
   explicit TimeRanges(nsISupports* aParent);
   explicit TimeRanges(const media::TimeIntervals& aTimeIntervals);
+  explicit TimeRanges(const media::TimeRanges& aTimeRanges);
   TimeRanges(nsISupports* aParent, const media::TimeIntervals& aTimeIntervals);
+  TimeRanges(nsISupports* aParent, const media::TimeRanges& aTimeRanges);
 
   media::TimeIntervals ToTimeIntervals() const;
 

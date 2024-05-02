@@ -25,6 +25,9 @@
 #include "RequestContextService.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/Unused.h"
+#include "mozilla/net/NeckoCommon.h"
+#include "mozilla/net/NeckoChild.h"
+#include "mozilla/StaticPrefs_network.h"
 
 namespace mozilla {
 namespace net {
@@ -91,7 +94,8 @@ nsLoadGroup::nsLoadGroup()
 }
 
 nsLoadGroup::~nsLoadGroup() {
-  DebugOnly<nsresult> rv = Cancel(NS_BINDING_ABORTED);
+  DebugOnly<nsresult> rv =
+      CancelWithReason(NS_BINDING_ABORTED, "nsLoadGroup::~nsLoadGroup"_ns);
   NS_ASSERTION(NS_SUCCEEDED(rv), "Cancel failed");
 
   mDefaultLoadRequest = nullptr;
@@ -153,7 +157,7 @@ static bool AppendRequestsToArray(PLDHashTable* aTable,
   for (auto iter = aTable->Iter(); !iter.Done(); iter.Next()) {
     auto* e = static_cast<RequestMapEntry*>(iter.Get());
     nsIRequest* request = e->mKey;
-    NS_ASSERTION(request, "What? Null key in PLDHashTable entry?");
+    MOZ_DIAGNOSTIC_ASSERT(request, "Null key in mRequests PLDHashTable entry");
 
     // XXX(Bug 1631371) Check if this should use a fallible operation as it
     // pretended earlier.
@@ -168,6 +172,19 @@ static bool AppendRequestsToArray(PLDHashTable* aTable,
     return false;
   }
   return true;
+}
+
+NS_IMETHODIMP nsLoadGroup::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsLoadGroup::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsLoadGroup::CancelWithReason(nsresult aStatus,
+                                            const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -218,7 +235,7 @@ nsLoadGroup::Cancel(nsresult status) {
     }
 
     // Cancel the request...
-    rv = request->Cancel(status);
+    rv = request->CancelWithReason(status, mCanceledReason);
 
     // Remember the first failure and return it...
     if (NS_FAILED(rv) && NS_SUCCEEDED(firstError)) firstError = rv;
@@ -982,23 +999,6 @@ void nsLoadGroup::TelemetryReportChannel(nsITimedChannel* aTimedChannel,
                                                       : "no_https_rr_sub"_ns);
     Telemetry::AccumulateTimeDelta(Telemetry::HTTPS_RR_OPEN_TO_FIRST_SENT, key,
                                    asyncOpen, requestStart);
-  }
-
-  if (StaticPrefs::network_trr_odoh_enabled() && !domainLookupStart.IsNull() &&
-      !domainLookupEnd.IsNull()) {
-    nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
-    bool ODoHActivated = false;
-    if (dns && NS_SUCCEEDED(dns->GetODoHActivated(&ODoHActivated)) &&
-        ODoHActivated) {
-      if (aDefaultRequest) {
-        Telemetry::AccumulateTimeDelta(
-            Telemetry::HTTP_PAGE_DNS_ODOH_LOOKUP_TIME, domainLookupStart,
-            domainLookupEnd);
-      } else {
-        Telemetry::AccumulateTimeDelta(Telemetry::HTTP_SUB_DNS_ODOH_LOOKUP_TIME,
-                                       domainLookupStart, domainLookupEnd);
-      }
-    }
   }
 
 #undef HTTP_REQUEST_HISTOGRAMS

@@ -13,22 +13,25 @@ void a11y::PlatformInit() {}
 
 void a11y::PlatformShutdown() {}
 
-void a11y::ProxyCreated(RemoteAccessible*, uint32_t) {}
+void a11y::ProxyCreated(RemoteAccessible*) {}
 
 void a11y::ProxyDestroyed(RemoteAccessible*) {}
 
-void a11y::ProxyEvent(RemoteAccessible*, uint32_t) {}
+void a11y::PlatformEvent(Accessible*, uint32_t) {}
 
-void a11y::ProxyStateChangeEvent(RemoteAccessible*, uint64_t, bool) {}
+void a11y::PlatformStateChangeEvent(Accessible*, uint64_t, bool) {}
 
-void a11y::ProxyCaretMoveEvent(RemoteAccessible* aTarget, int32_t aOffset,
-                               bool aIsSelectionCollapsed) {}
+void a11y::PlatformFocusEvent(Accessible* aTarget,
+                              const LayoutDeviceIntRect& aCaretRect) {}
 
-void a11y::ProxyTextChangeEvent(RemoteAccessible*, const nsString&, int32_t,
-                                uint32_t, bool, bool) {}
+void a11y::PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
+                                  bool aIsSelectionCollapsed,
+                                  int32_t aGranularity,
+                                  const LayoutDeviceIntRect& aCaretRect) {}
 
-void a11y::ProxyShowHideEvent(RemoteAccessible*, RemoteAccessible*, bool,
-                              bool) {}
+void a11y::PlatformTextChangeEvent(Accessible*, const nsAString&, int32_t,
+                                   uint32_t, bool, bool) {}
 
-void a11y::ProxySelectionEvent(RemoteAccessible*, RemoteAccessible*, uint32_t) {
-}
+void a11y::PlatformShowHideEvent(Accessible*, Accessible*, bool, bool) {}
+
+void a11y::PlatformSelectionEvent(Accessible*, Accessible*, uint32_t) {}

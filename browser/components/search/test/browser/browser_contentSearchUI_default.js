@@ -9,7 +9,7 @@ let extension;
 let defaultEngine;
 let addedEngine;
 
-add_task(async function setup() {
+add_setup(async function () {
   // Disable window occlusion. Bug 1733955
   if (navigator.platform.indexOf("Win") == 0) {
     await SpecialPowers.pushPrefEnv({
@@ -36,35 +36,42 @@ add_task(async function setup() {
   });
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(defaultEngine);
+    await Services.search.setDefault(
+      defaultEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   });
 });
 
 async function ensureIcon(tab, expectedIcon) {
-  await SpecialPowers.spawn(tab.linkedBrowser, [expectedIcon], async function(
-    icon
-  ) {
-    await ContentTaskUtils.waitForCondition(() => !content.document.hidden);
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [expectedIcon],
+    async function (icon) {
+      await ContentTaskUtils.waitForCondition(() => !content.document.hidden);
 
-    let computedStyle = content.window.getComputedStyle(content.document.body);
-    await ContentTaskUtils.waitForCondition(
-      () => computedStyle.getPropertyValue("--newtab-search-icon") != "null",
-      "Search Icon not set."
-    );
+      let computedStyle = content.window.getComputedStyle(
+        content.document.body
+      );
+      await ContentTaskUtils.waitForCondition(
+        () => computedStyle.getPropertyValue("--newtab-search-icon") != "null",
+        "Search Icon not set."
+      );
 
-    Assert.equal(
-      computedStyle.getPropertyValue("--newtab-search-icon"),
-      `url(${icon})`,
-      "Should have the expected icon"
-    );
-  });
+      Assert.equal(
+        computedStyle.getPropertyValue("--newtab-search-icon"),
+        `url(${icon})`,
+        "Should have the expected icon"
+      );
+    }
+  );
 }
 
 async function ensurePlaceholder(tab, expectedId, expectedEngine) {
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [expectedId, expectedEngine],
-    async function(id, engine) {
+    async function (id, engine) {
       await ContentTaskUtils.waitForCondition(() => !content.document.hidden);
 
       await ContentTaskUtils.waitForCondition(
@@ -100,7 +107,10 @@ async function runNewTabTest(isHandoff) {
     );
   }
 
-  await Services.search.setDefault(addedEngine);
+  await Services.search.setDefault(
+    addedEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   // We only show the engine's own icon for app provided engines, otherwise show
   // a default. xref https://bugzilla.mozilla.org/show_bug.cgi?id=1449338#c19
@@ -119,7 +129,10 @@ async function runNewTabTest(isHandoff) {
     await SpecialPowers.popPrefEnv();
   }
 
-  await Services.search.setDefault(defaultEngine);
+  await Services.search.setDefault(
+    defaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   BrowserTestUtils.removeTab(tab);
 }
@@ -158,7 +171,10 @@ add_task(async function test_content_search_attributes_in_private_window() {
     Services.search.defaultEngine.name
   );
 
-  await Services.search.setDefault(addedEngine);
+  await Services.search.setDefault(
+    addedEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   // We only show the engine's own icon for app provided engines, otherwise show
   // a default. xref https://bugzilla.mozilla.org/show_bug.cgi?id=1449338#c19
@@ -171,7 +187,10 @@ add_task(async function test_content_search_attributes_in_private_window() {
   await ensurePlaceholder(tab, "about-private-browsing-search-btn");
   await SpecialPowers.popPrefEnv();
 
-  await Services.search.setDefault(defaultEngine);
+  await Services.search.setDefault(
+    defaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   await BrowserTestUtils.closeWindow(win);
 });

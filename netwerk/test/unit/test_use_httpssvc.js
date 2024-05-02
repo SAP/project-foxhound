@@ -4,37 +4,37 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-
 let h2Port;
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
 
-function setup() {
+add_setup(async function setup() {
   trr_test_setup();
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  h2Port = env.get("MOZHTTP2_PORT");
+  h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
-  Services.prefs.setIntPref("network.trr.mode", 2); // TRR first
 
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
-}
 
-setup();
-registerCleanupFunction(() => {
-  trr_clear_prefs();
-  Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
-  Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
+  registerCleanupFunction(() => {
+    trr_clear_prefs();
+    Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
+    Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
+  });
+
+  if (mozinfo.socketprocess_networking) {
+    Services.dns; // Needed to trigger socket process.
+    await TestUtils.waitForCondition(() => Services.io.socketProcessLaunched);
+  }
+
+  Services.prefs.setIntPref("network.trr.mode", 2); // TRR first
 });
 
 function makeChan(url) {
@@ -65,7 +65,7 @@ add_task(async function testUseHTTPSSVCForHttpsUpgrade() {
     "network.trr.uri",
     "https://foo.example.com:" + h2Port + "/httpssvc_as_altsvc"
   );
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyData(
     true
@@ -85,6 +85,7 @@ class EventSinkListener {
     if (iid.equals(Ci.nsIChannelEventSink)) {
       return this;
     }
+    throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
   }
   asyncOnChannelRedirect(oldChan, newChan, flags, callback) {
     Assert.equal(oldChan.URI.hostPort, newChan.URI.hostPort);
@@ -106,7 +107,7 @@ add_task(async function testUseHTTPSSVCAsHSTS() {
     "network.trr.uri",
     "https://foo.example.com:" + h2Port + "/httpssvc_as_altsvc"
   );
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyData(
     true
@@ -151,7 +152,7 @@ add_task(async function testUseHTTPSSVC() {
   // Do DNS resolution before creating the channel, so the HTTPSSVC record will
   // be resolved from the cache.
   await new TRRDNSListener("test.httpssvc.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
   // We need to skip the security check, since our test cert is signed for
@@ -181,7 +182,7 @@ add_task(async function testFallback() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
 
   await trrServer.registerDoHAnswers("test.fallback.com", "A", {
@@ -213,7 +214,7 @@ add_task(async function testFallback() {
   });
 
   let { inRecord } = await new TRRDNSListener("test.fallback.com", {
-    type: dns.RESOLVE_TYPE_HTTPSSVC,
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
   let record = inRecord

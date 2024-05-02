@@ -9,6 +9,7 @@
 #include "xpcprivate.h"
 #include "xpc_make_class.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "js/CharacterEncoding.h"
 #include "js/Class.h"
@@ -17,8 +18,11 @@
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_GetProperty, JS_GetPropertyById
 #include "js/Symbol.h"
 
+#include <string_view>
+
 using namespace mozilla;
 using namespace JS;
+using namespace xpc;
 
 /***************************************************************************/
 
@@ -85,8 +89,8 @@ static bool XPC_WN_Shared_ToString(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool XPC_WN_Shared_ToSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  static const char empty[] = "({})";
-  JSString* str = JS_NewStringCopyN(cx, empty, sizeof(empty) - 1);
+  static constexpr std::string_view empty = "({})";
+  JSString* str = JS_NewStringCopyN(cx, empty.data(), empty.length());
   if (!str) {
     return false;
   }
@@ -343,11 +347,11 @@ static bool DefinePropertyIfFound(
 
       bool defineProperty = false;
       do {
-        if (!JSID_IS_STRING(id)) {
+        if (!id.isString()) {
           break;
         }
 
-        name = JS_EncodeStringToLatin1(ccx, JSID_TO_STRING(id));
+        name = JS_EncodeStringToLatin1(ccx, id.toString());
         if (!name) {
           break;
         }
@@ -565,7 +569,7 @@ bool XPC_WN_Shared_Enumerate(JSContext* cx, HandleObject obj) {
 
 enum WNHelperType { WN_NOHELPER, WN_HELPER };
 
-static void WrappedNativeFinalize(JSFreeOp* fop, JSObject* obj,
+static void WrappedNativeFinalize(JS::GCContext* gcx, JSObject* obj,
                                   WNHelperType helperType) {
   const JSClass* clazz = JS::GetClass(obj);
   if (clazz->flags & JSCLASS_DOM_GLOBAL) {
@@ -577,7 +581,7 @@ static void WrappedNativeFinalize(JSFreeOp* fop, JSObject* obj,
   }
 
   if (helperType == WN_HELPER) {
-    wrapper->GetScriptable()->Finalize(wrapper, fop, obj);
+    wrapper->GetScriptable()->Finalize(wrapper, gcx, obj);
   }
   wrapper->FlatJSObjectFinalized();
 }
@@ -592,8 +596,8 @@ static size_t WrappedNativeObjectMoved(JSObject* obj, JSObject* old) {
   return 0;
 }
 
-void XPC_WN_NoHelper_Finalize(JSFreeOp* fop, JSObject* obj) {
-  WrappedNativeFinalize(fop, obj, WN_NOHELPER);
+void XPC_WN_NoHelper_Finalize(JS::GCContext* gcx, JSObject* obj) {
+  WrappedNativeFinalize(gcx, obj, WN_NOHELPER);
 }
 
 /*
@@ -610,7 +614,7 @@ void XPCWrappedNative::Trace(JSTracer* trc, JSObject* obj) {
   if (clazz->flags & JSCLASS_DOM_GLOBAL) {
     mozilla::dom::TraceProtoAndIfaceCache(trc, obj);
   }
-  MOZ_ASSERT(IS_WN_CLASS(clazz));
+  MOZ_ASSERT(clazz->isWrappedNative());
 
   XPCWrappedNative* wrapper = XPCWrappedNative::Get(obj);
   if (wrapper && wrapper->IsValid()) {
@@ -653,7 +657,6 @@ static const JSClassOps XPC_WN_NoHelper_JSClassOps = {
     nullptr,                            // mayResolve
     XPC_WN_NoHelper_Finalize,           // finalize
     nullptr,                            // call
-    nullptr,                            // hasInstance
     nullptr,                            // construct
     XPCWrappedNative::Trace,            // trace
 };
@@ -706,7 +709,7 @@ bool XPC_WN_MaybeResolvingDeletePropertyStub(JSContext* cx, HandleObject obj,
     JS_ReportErrorASCII(cx, "Permission denied to operate on object."); \
     return false;                                                       \
   }                                                                     \
-  if (!IS_WN_REFLECTOR(unwrapped)) {                                    \
+  if (!IsWrappedNativeReflector(unwrapped)) {                           \
     return Throw(NS_ERROR_XPC_BAD_OP_ON_WN_PROTO, cx);                  \
   }                                                                     \
   XPCWrappedNative* wrapper = XPCWrappedNative::Get(unwrapped);         \
@@ -723,7 +726,7 @@ bool XPC_WN_Helper_Call(JSContext* cx, unsigned argc, Value* vp) {
   // N.B. we want obj to be the callee, not JS_THIS(cx, vp)
   RootedObject obj(cx, &args.callee());
 
-  XPCCallContext ccx(cx, obj, nullptr, JSID_VOIDHANDLE, args.length(),
+  XPCCallContext ccx(cx, obj, nullptr, JS::VoidHandlePropertyKey, args.length(),
                      args.array(), args.rval().address());
   if (!ccx.IsValid()) {
     return false;
@@ -741,7 +744,7 @@ bool XPC_WN_Helper_Construct(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  XPCCallContext ccx(cx, obj, nullptr, JSID_VOIDHANDLE, args.length(),
+  XPCCallContext ccx(cx, obj, nullptr, JS::VoidHandlePropertyKey, args.length(),
                      args.array(), args.rval().address());
   if (!ccx.IsValid()) {
     return false;
@@ -752,18 +755,48 @@ bool XPC_WN_Helper_Construct(JSContext* cx, unsigned argc, Value* vp) {
   POST_HELPER_STUB
 }
 
-bool XPC_WN_Helper_HasInstance(JSContext* cx, HandleObject obj,
-                               MutableHandleValue valp, bool* bp) {
+static bool XPC_WN_Helper_HasInstance(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (!args.requireAtLeast(cx, "WrappedNative[Symbol.hasInstance]", 1)) {
+    return false;
+  }
+
+  if (!args.thisv().isObject()) {
+    JS_ReportErrorASCII(
+        cx, "WrappedNative[Symbol.hasInstance]: unexpected this value");
+    return false;
+  }
+
+  RootedObject obj(cx, &args.thisv().toObject());
+  RootedValue val(cx, args.get(0));
+
   bool retval2;
   PRE_HELPER_STUB
-  HasInstance(wrapper, cx, obj, valp, &retval2, &retval);
-  *bp = retval2;
+  HasInstance(wrapper, cx, obj, val, &retval2, &retval);
+  args.rval().setBoolean(retval2);
   POST_HELPER_STUB
 }
 
-void XPC_WN_Helper_Finalize(JSFreeOp* fop, JSObject* obj) {
-  WrappedNativeFinalize(fop, obj, WN_HELPER);
+void XPC_WN_Helper_Finalize(JS::GCContext* gcx, JSObject* obj) {
+  WrappedNativeFinalize(gcx, obj, WN_HELPER);
 }
+
+// RAII class used to store the wrapper in the context when resolving a lazy
+// property on its JS reflector. This is used by XPC_WN_MaybeResolving to allow
+// adding properties while resolving.
+class MOZ_RAII AutoSetResolvingWrapper {
+ public:
+  AutoSetResolvingWrapper(XPCCallContext& ccx, XPCWrappedNative* wrapper)
+      : mCcx(ccx), mOldResolvingWrapper(ccx.SetResolvingWrapper(wrapper)) {}
+
+  ~AutoSetResolvingWrapper() {
+    (void)mCcx.SetResolvingWrapper(mOldResolvingWrapper);
+  }
+
+ private:
+  XPCCallContext& mCcx;
+  XPCWrappedNative* mOldResolvingWrapper;
+};
 
 bool XPC_WN_Helper_Resolve(JSContext* cx, HandleObject obj, HandleId id,
                            bool* resolvedp) {
@@ -777,19 +810,30 @@ bool XPC_WN_Helper_Resolve(JSContext* cx, HandleObject obj, HandleId id,
   RootedId old(cx, ccx.SetResolveName(id));
 
   nsCOMPtr<nsIXPCScriptable> scr = wrapper->GetScriptable();
+
+  // Resolve a Symbol.hasInstance property if we want custom `instanceof`
+  // behavior.
+  if (scr && scr->WantHasInstance() &&
+      id.isWellKnownSymbol(SymbolCode::hasInstance)) {
+    mozilla::Maybe<AutoSetResolvingWrapper> asrw;
+    if (scr->AllowPropModsDuringResolve()) {
+      asrw.emplace(ccx, wrapper);
+    }
+    if (!JS_DefineFunctionById(
+            cx, obj, id, XPC_WN_Helper_HasInstance, 1,
+            JSPROP_READONLY | JSPROP_PERMANENT | JSPROP_RESOLVING)) {
+      rv = NS_ERROR_FAILURE;
+    } else {
+      resolved = true;
+    }
+  }
+
   if (scr && scr->WantResolve()) {
-    XPCWrappedNative* oldResolvingWrapper;
-    bool allowPropMods = scr->AllowPropModsDuringResolve();
-
-    if (allowPropMods) {
-      oldResolvingWrapper = ccx.SetResolvingWrapper(wrapper);
+    mozilla::Maybe<AutoSetResolvingWrapper> asrw;
+    if (scr->AllowPropModsDuringResolve()) {
+      asrw.emplace(ccx, wrapper);
     }
-
     rv = scr->Resolve(wrapper, cx, obj, id, &resolved, &retval);
-
-    if (allowPropMods) {
-      (void)ccx.SetResolvingWrapper(oldResolvingWrapper);
-    }
   }
 
   old = ccx.SetResolveName(old);
@@ -816,11 +860,10 @@ bool XPC_WN_Helper_Resolve(JSContext* cx, HandleObject obj, HandleId id,
       XPCWrappedNative* wrapperForInterfaceNames =
           (scr && scr->DontReflectInterfaceNames()) ? nullptr : wrapper;
 
-      XPCWrappedNative* oldResolvingWrapper = ccx.SetResolvingWrapper(wrapper);
+      AutoSetResolvingWrapper asrw(ccx, wrapper);
       retval = DefinePropertyIfFound(
           ccx, obj, id, set, iface, member, wrapper->GetScope(), false,
           wrapperForInterfaceNames, nullptr, scr, JSPROP_ENUMERATE, resolvedp);
-      (void)ccx.SetResolvingWrapper(oldResolvingWrapper);
     }
   }
 
@@ -908,7 +951,7 @@ bool XPC_WN_CallMethod(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   obj = FixUpThisIfBroken(obj, funobj);
-  XPCCallContext ccx(cx, obj, funobj, JSID_VOIDHANDLE, args.length(),
+  XPCCallContext ccx(cx, obj, funobj, JS::VoidHandlePropertyKey, args.length(),
                      args.array(), vp);
   XPCWrappedNative* wrapper = ccx.GetWrapper();
   THROW_AND_RETURN_IF_BAD_WRAPPER(cx, wrapper);
@@ -937,7 +980,7 @@ bool XPC_WN_GetterSetter(JSContext* cx, unsigned argc, Value* vp) {
   RootedObject obj(cx, &args.thisv().toObject());
 
   obj = FixUpThisIfBroken(obj, funobj);
-  XPCCallContext ccx(cx, obj, funobj, JSID_VOIDHANDLE, args.length(),
+  XPCCallContext ccx(cx, obj, funobj, JS::VoidHandlePropertyKey, args.length(),
                      args.array(), vp);
   XPCWrappedNative* wrapper = ccx.GetWrapper();
   THROW_AND_RETURN_IF_BAD_WRAPPER(cx, wrapper);
@@ -1013,11 +1056,11 @@ static bool XPC_WN_Proto_Enumerate(JSContext* cx, HandleObject obj) {
   return true;
 }
 
-static void XPC_WN_Proto_Finalize(JSFreeOp* fop, JSObject* obj) {
+static void XPC_WN_Proto_Finalize(JS::GCContext* gcx, JSObject* obj) {
   // This can be null if xpc shutdown has already happened
   XPCWrappedNativeProto* p = XPCWrappedNativeProto::Get(obj);
   if (p) {
-    p->JSProtoObjectFinalized(fop, obj);
+    p->JSProtoObjectFinalized(gcx, obj);
   }
 }
 
@@ -1089,7 +1132,6 @@ static const JSClassOps XPC_WN_Proto_JSClassOps = {
     nullptr,                                  // mayResolve
     XPC_WN_Proto_Finalize,                    // finalize
     nullptr,                                  // call
-    nullptr,                                  // hasInstance
     nullptr,                                  // construct
     nullptr,                                  // trace
 };
@@ -1152,7 +1194,7 @@ static bool XPC_WN_TearOff_Resolve(JSContext* cx, HandleObject obj, HandleId id,
       resolvedp);
 }
 
-static void XPC_WN_TearOff_Finalize(JSFreeOp* fop, JSObject* obj) {
+static void XPC_WN_TearOff_Finalize(JS::GCContext* gcx, JSObject* obj) {
   XPCWrappedNativeTearOff* p = XPCWrappedNativeTearOff::Get(obj);
   if (!p) {
     return;
@@ -1178,7 +1220,6 @@ static const JSClassOps XPC_WN_Tearoff_JSClassOps = {
     nullptr,                            // mayResolve
     XPC_WN_TearOff_Finalize,            // finalize
     nullptr,                            // call
-    nullptr,                            // hasInstance
     nullptr,                            // construct
     nullptr,                            // trace
 };

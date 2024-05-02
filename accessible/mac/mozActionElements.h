@@ -70,6 +70,18 @@
 @interface mozIncrementableAccessible : mozAccessible
 
 // override
+- (id)moxValue;
+
+// override
+- (NSString*)moxValueDescription;
+
+// override
+- (id)moxMinValue;
+
+// override
+- (id)moxMaxValue;
+
+// override
 - (void)moxSetValue:(id)value;
 
 // override
@@ -79,8 +91,18 @@
 - (void)moxPerformDecrement;
 
 // override
+- (NSString*)moxOrientation;
+
+// override
 - (void)handleAccessibleEvent:(uint32_t)eventType;
 
 - (void)changeValueBySteps:(int)factor;
+
+@end
+
+@interface mozDatePickerAccessible : mozAccessible
+
+// override
+- (NSString*)moxTitle;
 
 @end

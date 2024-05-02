@@ -3,24 +3,15 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadsViewUI",
-  "resource:///modules/DownloadsViewUI.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
+});
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
-
-const { DownloadIntegration } = ChromeUtils.import(
-  "resource://gre/modules/DownloadIntegration.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 add_task(async function test_download_opens_on_click() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.download.improvements_to_download_panel", true]],
-  });
   Services.telemetry.clearScalars();
 
   startServer();
@@ -38,7 +29,7 @@ add_task(async function test_download_opens_on_click() {
     };
   });
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     DownloadIntegration.launchFile = oldLaunchFile;
     await task_resetState();
     Services.telemetry.clearScalars();

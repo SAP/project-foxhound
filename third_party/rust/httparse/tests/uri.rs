@@ -1,4 +1,3 @@
-extern crate httparse;
 
 use httparse::{Error, Request, Status, EMPTY_HEADER};
 
@@ -17,7 +16,7 @@ macro_rules! req {
         assert_eq!(status, $len);
         closure(req);
 
-        fn closure($arg: Request) {
+        fn closure($arg: Request<'_, '_>) {
             $body
         }
     }
@@ -111,7 +110,7 @@ req! {
 req! {
     urltest_007,
     b"GET  foo.com HTTP/1.1\r\nHost: \r\n\r\n",
-    Err(Error::Version),
+    Err(Error::Token),
     |_r| {}
 }
 

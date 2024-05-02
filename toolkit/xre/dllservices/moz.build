@@ -12,6 +12,7 @@ Library("dllservices")
 FINAL_LIBRARY = "xul"
 
 EXPORTS.mozilla += [
+    "DynamicBlocklist.h",
     "ModuleVersionInfo.h",
     "UntrustedModulesData.h",
     "UntrustedModulesProcessor.h",
@@ -30,10 +31,13 @@ UNIFIED_SOURCES += [
     "WinDllServices.cpp",
 ]
 
+if CONFIG["MOZ_LAUNCHER_PROCESS"]:
+    UNIFIED_SOURCES += [
+        "DynamicBlocklistWriter.cpp",
+    ]
+
 TEST_DIRS += [
     "tests",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")
-
-REQUIRES_UNIFIED_BUILD = True

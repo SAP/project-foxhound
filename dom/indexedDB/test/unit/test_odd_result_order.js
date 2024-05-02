@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -37,7 +38,7 @@ function* testSteps() {
   event = yield undefined;
 
   let key;
-  executeSoon(function() {
+  executeSoon(function () {
     key = request.result;
     continueToNextStep();
   });
@@ -50,7 +51,7 @@ function* testSteps() {
   event = yield undefined;
 
   let obj;
-  executeSoon(function() {
+  executeSoon(function () {
     obj = event.target.result;
     continueToNextStep();
   });
@@ -65,7 +66,7 @@ function* testSteps() {
   event = yield undefined;
 
   key = undefined;
-  executeSoon(function() {
+  executeSoon(function () {
     key = request.result;
     continueToNextStep();
   }, 0);

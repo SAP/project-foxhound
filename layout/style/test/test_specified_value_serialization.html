@@ -45,8 +45,8 @@
     ["tranSlatex( 16px )rotatez(-90deg)  rotate(100grad)\ttranslate3d(12pt, 0pc, 0.0em)",
      "translateX(16px) rotateZ(-90deg) rotate(100grad) translate3d(12pt, 0pc, 0em)"],
   ].forEach(function(arr) {
-    document.documentElement.style.MozTransform = arr[0];
-    is(document.documentElement.style.MozTransform, arr[1],
+    document.documentElement.style.transform = arr[0];
+    is(document.documentElement.style.transform, arr[1],
       "bug-721136 incorrect serialization");
   });
 
@@ -61,8 +61,8 @@
   elt.setAttribute("style",
                    "font-variant-alternates: SWASH(fOo) stYLIStiC(Bar)");
   is(elt.style.getPropertyValue("font-variant-alternates"),
-     "swash(fOo) stylistic(Bar)",
-     "bug-721136 expected case canonicalization of transform functions");
+     "stylistic(Bar) swash(fOo)",
+     "expected case and ordering canonicalization of font-variant-alternates functions");
 
   elt.setAttribute("style", ""); // leave the page in a useful state
 })();

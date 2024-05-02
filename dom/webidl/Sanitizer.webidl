@@ -4,15 +4,35 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * https://wicg.github.io/purification/
+ * https://wicg.github.io/sanitizer-api/#sanitizer
+ * https://wicg.github.io/sanitizer-api/#config
  *
  * * Copyright © 2020 the Contributors to the HTML Sanitizer API Specification,
  * published by the Web Platform Incubator Community Group under the W3C Community Contributor License Agreement (CLA).
  */
 
+// NOTE: This IDL is still under development:
+// https://github.com/WICG/sanitizer-api/issues/181
 
 typedef (DocumentFragment or Document) SanitizerInput;
-typedef record<DOMString, sequence<DOMString>> AttributeMatchList;
+
+[GenerateConversionToJS]
+dictionary SanitizerElementNamespace {
+  required DOMString name;
+  required DOMString _namespace;
+};
+
+typedef (DOMString or SanitizerElementNamespace) SanitizerElement;
+
+enum Star {
+  "*"
+};
+
+dictionary SanitizerAttribute {
+  required DOMString name;
+  DOMString? _namespace = null;
+  required (Star or sequence<SanitizerElement>) elements;
+};
 
 [Exposed=Window, SecureContext, Pref="dom.security.sanitizer.enabled"]
 interface Sanitizer {
@@ -20,16 +40,15 @@ interface Sanitizer {
   constructor(optional SanitizerConfig sanitizerConfig = {});
   [UseCounter, Throws]
   DocumentFragment sanitize(SanitizerInput input);
-  [UseCounter, Throws]
-  Element? sanitizeFor(DOMString element, DOMString input);
 };
 
 dictionary SanitizerConfig {
-  sequence<DOMString> allowElements;
-  sequence<DOMString> blockElements;
-  sequence<DOMString> dropElements;
-  AttributeMatchList allowAttributes;
-  AttributeMatchList dropAttributes;
+  sequence<SanitizerElement> allowElements;
+  sequence<SanitizerElement> blockElements;
+  sequence<SanitizerElement> dropElements;
+  sequence<SanitizerAttribute> allowAttributes;
+  sequence<SanitizerAttribute> dropAttributes;
   boolean allowCustomElements;
+  boolean allowUnknownMarkup;
   boolean allowComments;
 };

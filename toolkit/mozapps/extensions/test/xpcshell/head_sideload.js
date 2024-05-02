@@ -3,11 +3,6 @@
 
 /* import-globals-from head_addons.js */
 
-Services.prefs.setBoolPref(
-  "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer",
-  true
-);
-
 // Enable all scopes.
 Services.prefs.setIntPref("extensions.enabledScopes", AddonManager.SCOPE_ALL);
 // Setting this to all enables the same behavior as before disabling sideloading.
@@ -67,7 +62,7 @@ async function createWebExtension(id, version, dir) {
   let xpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       version,
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
   await AddonTestUtils.manuallyInstall(xpi, dir);

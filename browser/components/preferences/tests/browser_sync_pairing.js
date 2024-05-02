@@ -3,21 +3,21 @@
 
 "use strict";
 
-const { UIState } = ChromeUtils.import(
-  "resource://services-sync/UIState.jsm",
-  {}
+const { UIState } = ChromeUtils.importESModule(
+  "resource://services-sync/UIState.sys.mjs"
 );
-const { FxAccountsPairingFlow } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsPairing.jsm",
-  {}
+const { FxAccountsPairingFlow } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsPairing.sys.mjs"
 );
 
 // Use sinon for mocking.
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 let flowCounter = 0;
 
-add_task(async function setup() {
+add_setup(async function () {
   Services.prefs.setBoolPref("identity.fxaccounts.pairing.enabled", true);
   // Sync start-up might interfere with our tests, don't let UIState send UI updates.
   const origNotifyStateUpdated = UIState._internal.notifyStateUpdated;

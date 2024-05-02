@@ -3,12 +3,8 @@
 
 "use strict";
 
-const { TabState } = ChromeUtils.import(
-  "resource:///modules/sessionstore/TabState.jsm"
-);
-
 async function checkLoginDisplayed(browser, testGuid) {
-  await SpecialPowers.spawn(browser, [testGuid], async function(guid) {
+  await SpecialPowers.spawn(browser, [testGuid], async function (guid) {
     let loginList = Cu.waiveXrays(content.document.querySelector("login-list"));
     let loginFound = await ContentTaskUtils.waitForCondition(() => {
       return (
@@ -16,11 +12,11 @@ async function checkLoginDisplayed(browser, testGuid) {
         loginList._loginGuidsSortedOrder[0] == guid
       );
     }, "Waiting for login to be displayed in page");
-    ok(loginFound, "Confirming that login is displayed in page");
+    Assert.ok(loginFound, "Confirming that login is displayed in page");
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   TEST_LOGIN1 = await addLogin(TEST_LOGIN1);
   registerCleanupFunction(() => {
     Services.logins.removeAllUserFacingLogins();
@@ -39,7 +35,7 @@ add_task(async function() {
     createLazyBrowser: true,
   });
 
-  is(lazyTab.linkedPanel, "", "Tab is lazy");
+  Assert.equal(lazyTab.linkedPanel, "", "Tab is lazy");
   let tabLoaded = new Promise(resolve => {
     gBrowser.addTabsProgressListener({
       async onLocationChange(aBrowser) {
@@ -53,9 +49,11 @@ add_task(async function() {
   });
 
   info("Switching tab to cause it to get restored");
+  const browserLoaded = BrowserTestUtils.browserLoaded(lazyTab.linkedBrowser);
   await BrowserTestUtils.switchTab(gBrowser, lazyTab);
 
   await tabLoaded;
+  await browserLoaded;
 
   let lazyBrowser = lazyTab.linkedBrowser;
   await checkLoginDisplayed(lazyBrowser, testGuid);

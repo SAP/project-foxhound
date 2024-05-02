@@ -95,7 +95,7 @@ interface, you need to do the following:
    instance by the compiler via one of that class's non-explicit
    constructors.)
    If many instances of `MyInterface` are expected to be created
-   quicky, the return value of `GetParentObject` should itself inherit
+   quickly, the return value of `GetParentObject` should itself inherit
    from `nsWrapperCache` for optimal performance. Returning null from
    `GetParentObject` is allowed in situations in which it's OK to
    associate the resulting object with a random global object for
@@ -184,19 +184,19 @@ For example, this Web IDL:
 ``` webidl
 interface MyInterface
 {
-  void doSomething(long number);
+  undefined doSomething(long number);
   double doSomething(MyInterface? otherInstance);
 
   [Throws]
   MyInterface doSomethingElse(optional long maybeNumber);
   [Throws]
-  void doSomethingElse(MyInterface otherInstance);
+  undefined doSomethingElse(MyInterface otherInstance);
 
-  void doTheOther(any something);
+  undefined doTheOther(any something);
 
-  void doYetAnotherThing(optional boolean actuallyDoIt = false);
+  undefined doYetAnotherThing(optional boolean actuallyDoIt = false);
 
-  static void staticOperation(any arg);
+  static undefined staticOperation(any arg);
 };
 ```
 
@@ -205,18 +205,18 @@ will require these method declarations:
 ``` cpp
 class MyClass
 {
-  void DoSomething(int32_t aNumber);
+  void DoSomething(int32_t a number);
   double DoSomething(MyClass* aOtherInstance);
 
   already_AddRefed<MyInterface> DoSomethingElse(Optional<int32_t> aMaybeNumber,
                                                 ErrorResult& rv);
   void DoSomethingElse(MyClass& aOtherInstance, ErrorResult& rv);
 
-  void DoTheOther(JSContext* cx, JS::Value aSomething);
+  void DoTheOther(JSContext* cx, JS::Handle<JS::Value> aSomething);
 
   void DoYetAnotherThing(bool aActuallyDoIt);
 
-  static void StaticOperation(const GlobalObject& aGlobal, JS::Value aSomething);
+  static void StaticOperation(const GlobalObject& aGlobal, JS::Handle<JS::Value> aSomething);
 }
 ```
 
@@ -240,8 +240,8 @@ arguments and the attribute's type as the return type.
 
 The setter's name is `Set` followed by the name of the attribute with
 the first letter converted to uppercase. The method signature looks just
-like an operation with a void return value and a single argument whose
-type is the attribute's type.
+like an operation with an undefined return value and a single argument
+whose type is the attribute's type.
 
 ### C++ reflections of Web IDL constructors
 
@@ -387,7 +387,7 @@ will correspond to these C++ function declarations:
 ``` cpp
 bool MyAttr();
 void SetMyAttr(bool value);
-JS::Value MyMethod(const Optional<bool>& arg);
+bool MyMethod(const Optional<bool>& arg);
 ```
 
 #### Integer types
@@ -736,7 +736,7 @@ For example, this Web IDL:
 ``` webidl
 interface MyInterface {
   attribute MyInterface myAttr;
-  void passNullable(MyInterface? arg);
+  undefined passNullable(MyInterface? arg);
   MyInterface? doSomething(sequence<MyInterface> arg);
   MyInterface doTheOther(sequence<MyInterface?> arg);
   readonly attribute MyInterface? nullableAttr;
@@ -766,9 +766,9 @@ example, this Web IDL:
 
 ``` webidl
 interface Test {
-  void passTypedArrayBuffer(ArrayBuffer arg);
-  void passTypedArray(ArrayBufferView arg);
-  void passInt16Array(Int16Array? arg);
+  undefined passTypedArrayBuffer(ArrayBuffer arg);
+  undefined passTypedArray(ArrayBufferView arg);
+  undefined passInt16Array(Int16Array? arg);
 }
 ```
 
@@ -831,7 +831,7 @@ dictionary Dict {
 };
 
 interface Test {
-  void initSomething(optional Dict arg = {});
+  undefined initSomething(optional Dict arg = {});
 };
 ```
 
@@ -1046,10 +1046,10 @@ union, with "Or" inserted between them, and for an owning struct
 "Owning" prepended. So for example, this IDL:
 
 ``` webidl
-void passUnion((object or long) arg);
+undefined passUnion((object or long) arg);
 (object or long) receiveUnion();
-void passSequenceOfUnions(sequence<(object or long)> arg);
-void passOtherUnion((HTMLDivElement or ArrayBuffer or EventInit) arg);
+undefined passSequenceOfUnions(sequence<(object or long)> arg);
+undefined passOtherUnion((HTMLDivElement or ArrayBuffer or EventInit) arg);
 ```
 
 would correspond to these C++ function declarations:
@@ -1288,7 +1288,7 @@ class InterfaceWithNamedGetter
 public:
   int32_t NamedGetter(const nsAString& aName, bool& aFound);
   bool NameIsEnumerable(const nsAString& aName);
-  void GetSupportedNames(unsigned aFlags, nsTArray<nsString>& aNames);
+  undefined GetSupportedNames(unsigned aFlags, nsTArray<nsString>& aNames);
 };
 ```
 
@@ -1349,7 +1349,7 @@ as the property for the method. For example:
 
 ``` webidl
 interface MyInterface {
-  [Alias=performSomething] void doSomething();
+  [Alias=performSomething] undefined doSomething();
 };
 ```
 
@@ -1389,6 +1389,25 @@ implementing `MyInterface`.
 
 Multiple `[BindingAlias]` extended attributes can be used on a single
 attribute.
+
+### `[BindingTemplate=(name, value)]`
+
+This extended attribute can be specified on an attribute, and causes the getter
+and setter for this attribute to forward to a common generated implementation,
+shared with all other attributes that have a `[BindingTemplate]` with the same
+value for the `name` argument. The `TemplatedAttributes` dictionary in
+Bindings.conf needs to contain a definition for the template with the name
+`name`. The `value` will be passed as an argument when calling the common
+generated implementation.
+
+This is aimed at very specialized use cases where an interface has a
+large number of attributes that all have the same type, and for which we have a
+native implementation that's common to all these attributes, and typically uses
+some id based on the attribute's name in the implementation. All the attributes
+that use the same template need to mostly have the same extended attributes,
+except form a small number that are allowed to differ (`[BindingTemplate]`,
+`[BindingAlias]`, `[Pure]`, [`Pref`] and [`Func`], and the annotations for
+whether the getter and setter throws exceptions).
 
 ### `[ChromeOnly]`
 
@@ -1775,7 +1794,7 @@ For example, given this IDL:
 ``` webidl
 interface InterfaceWithRenamedThings {
   [BinaryName="renamedMethod"]
-  void someMethod();
+  undefined someMethod();
   [BinaryName="renamedAttribute"]
   attribute long someAttribute;
 };
@@ -1840,22 +1859,20 @@ details specific to Gecko:
 ### `[NeedsSubjectPrincipal]`, `[GetterNeedsSubjectPrincipal]`, `[SetterNeedsSubjectPrincipal]`
 
 Used to flag a method or an attribute that needs to know the subject
-principal. This principal will be passed as argument.  If the interface
-is not exposed on any worker global, the argument will be a
-`nsIPrincipal&` because a subject principal is always available in
-mainthread globals.  If the interface is exposed on some worker global,
-the argument will be a `const Maybe<nsIPrincipal*>&`. This `Maybe<>`
-object contains the principal *only* on the main thread; when the method
-is called on a {{domxref("Worker")}} thread, the value of the object
-will be `Nothing()`.  Note that, in workers, it is always possible to
-retrieve the correct subject principal from the `WorkerPrivate`
-object, though it cannot be used on the worker thread.
+principal. This principal will be passed as argument.  The argument
+will be a `nsIPrincipal&` because a subject principal is always
+available.
 
 `[NeedsSubjectPrincipal]` applies to both methods and attributes; for
 attributes it means both the getter and the setter need a subject
 principal. `[GetterNeedsSubjectPrincipal]` applies only to attributes.
 `[SetterNeedsSubjectPrincipal]` applies only to non-readonly
 attributes.
+
+These attributes may also be constrained to non-system principals using
+`[{Getter,Setter,}NeedsSubjectPrincipal=NonSystem]`. This changes the argument
+type to `nsIPrincipal*`, and passes `nullptr` when called with a system
+principal.
 
 ### `[NeedsCallerType]`
 
@@ -2180,7 +2197,7 @@ interface MyNumber {
   constructor(optional long firstNumber);
   attribute long value;
   readonly attribute long otherValue;
-  void doNothing();
+  undefined doNothing();
 };
 ```
 
@@ -2226,7 +2243,7 @@ found in a directory based on its name.
 [JSImplementation="@mozilla.org/dom/foo;1"]
 interface Foo {
   [StaticClassOverride="mozilla::dom::OtherClass"]
-  static Promise<void> doSomething();
+  static Promise<undefined> doSomething();
 };
 ```
 
@@ -2239,7 +2256,7 @@ Rather than calling into a method on the JS implementation; calling
 With JS-implemented Web IDL, the `init` method should only return
 undefined. If any other value, such as `null`, is returned, the
 bindings code will assert or crash. In other words, it acts like it has
-a "void" return type. Preference or permission checking should be
+an "undefined" return type. Preference or permission checking should be
 implemented by adding an extended attribute to the Web IDL interface.
 This has the advantage that if the check fails, the constructor or
 object will not show up at all.
@@ -2261,8 +2278,6 @@ Here's an example JS implementation of the above interface. The
 usable by the doNothing() method.
 
 ``` js
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
 function MyNumberInner() {
   this.value = 111;
   this.invisibleValue = 12345;
@@ -2270,9 +2285,8 @@ function MyNumberInner() {
 
 MyNumberInner.prototype = {
   classDescription: "Get my number XPCOM Component",
-  classID: Components.ID("{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}"), // dummy UUID
   contractID: "@mozilla.org/my-number;1",
-  QueryInterface: XPCOMUtils.generateQI([Components.interfaces.nsISupports]),
+  QueryInterface: ChromeUtils.generateQI([]),
   doNothing: function() {},
   get otherValue() { return this.invisibleValue - 4; },
   __init: function(firstNumber) {
@@ -2281,9 +2295,6 @@ MyNumberInner.prototype = {
     }
   }
 }
-
-var components = [MyNumberInner];
-var NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
 ```
 
 Finally, add a component and a contract and whatever other manifest
@@ -2389,7 +2400,7 @@ JavaScript:
 [JSImplementation="some-contract"]
 interface MyEventTarget : EventTarget {
   attribute EventHandler onmyevent;
-  void dispatchTheEvent(); // Sends a "myevent" event to this EventTarget
+  undefined dispatchTheEvent(); // Sends a "myevent" event to this EventTarget
 }
 ```
 
@@ -2401,7 +2412,7 @@ function MyEventTargetImpl() {
 }
 MyEventTargetImpl.prototype = {
   // QI to nsIDOMGlobalPropertyInitializer so we get init() called on us.
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIDOMGlobalPropertyInitializer]),
+  QueryInterface: ChromeUtils.generateQI(["nsIDOMGlobalPropertyInitializer"]),
 
   init: function(contentWindow) {
     this.contentWindow = contentWindow;

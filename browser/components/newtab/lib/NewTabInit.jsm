@@ -3,15 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
+const { actionCreators: ac, actionTypes: at } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Actions.sys.mjs"
 );
 
 /**
  * NewTabInit - A placeholder for now. This will send a copy of the state to all
  *              newly opened tabs.
  */
-this.NewTabInit = class NewTabInit {
+class NewTabInit {
   constructor() {
     this._repliedEarlyTabs = new Map();
   }
@@ -52,6 +52,6 @@ this.NewTabInit = class NewTabInit {
         break;
     }
   }
-};
+}
 
 const EXPORTED_SYMBOLS = ["NewTabInit"];

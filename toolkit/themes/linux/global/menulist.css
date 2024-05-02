@@ -2,21 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@import url("chrome://global/skin/menulist-shared.css");
 
-%include ../../shared/menulist.inc.css
-
-label {
-  margin: 1px 3px;
-}
-
-:host([native])  {
-  appearance: auto;
-  -moz-default-appearance: menulist;
+:host([native]) {
   margin: 2px 4px;
   color: -moz-DialogText;
   font: menu;
-  text-shadow: none;
 }
 
 :host([native]:not([disabled="true"]):hover) {
@@ -28,22 +19,10 @@ label {
   color: -moz-buttonactivetext;
 }
 
-:host([native][disabled="true"]) {
-  color: GrayText;
+:host([native]) label {
+  margin: 1px 3px;
 }
 
-/* Label box */
-
-#label-box[native] {
-  appearance: auto;
-  -moz-default-appearance: menulist-text;
-  -moz-box-align: center;
-  -moz-box-pack: center;
-  color: inherit;
-}
-
-/* Dropmarker */
-
-dropmarker[native] {
+:host([native]) dropmarker {
   display: none;
 }

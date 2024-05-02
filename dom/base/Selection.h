@@ -7,7 +7,6 @@
 #ifndef mozilla_Selection_h__
 #define mozilla_Selection_h__
 
-#include "mozilla/dom/StyledRange.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/PresShellForwards.h"
@@ -15,6 +14,8 @@
 #include "mozilla/SelectionChangeEventDispatcher.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/Highlight.h"
+#include "mozilla/dom/StyledRange.h"
 #include "nsDirection.h"
 #include "nsISelectionController.h"
 #include "nsISelectionListener.h"
@@ -72,14 +73,27 @@ class Selection final : public nsSupportsWeakReference,
                      nsFrameSelection* aFrameSelection);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Selection)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Selection)
 
-  // match this up with EndbatchChanges. will stop ui updates while multiple
-  // selection methods are called
-  void StartBatchChanges();
+  /**
+   * Match this up with EndbatchChanges. will stop ui updates while multiple
+   * selection methods are called
+   *
+   * @param aDetails string to explian why this is called.  This won't be
+   * stored nor exposed to selection listeners etc.  Just for logging.
+   */
+  void StartBatchChanges(const char* aDetails);
 
-  // match this up with StartBatchChanges
-  void EndBatchChanges(int16_t aReason = nsISelectionListener::NO_REASON);
+  /**
+   * Match this up with StartBatchChanges
+   *
+   * @param aDetails string to explian why this is called.  This won't be
+   * stored nor exposed to selection listeners etc.  Just for logging.
+   * @param aReasons potentially multiple of the reasons defined in
+   * nsISelectionListener.idl
+   */
+  void EndBatchChanges(const char* aDetails,
+                       int16_t aReason = nsISelectionListener::NO_REASON);
 
   /**
    * NotifyAutoCopy() starts to notify AutoCopyListener of selection changes.
@@ -206,9 +220,7 @@ class Selection final : public nsSupportsWeakReference,
     return result.StealNSResult();
   }
   MOZ_CAN_RUN_SCRIPT void CollapseInLimiter(const RawRangeBoundary& aPoint,
-                                            ErrorResult& aRv) {
-    CollapseInternal(InLimiter::eYes, aPoint, aRv);
-  }
+                                            ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT nsresult Extend(nsINode* aContainer, uint32_t aOffset);
 
@@ -217,6 +229,17 @@ class Selection final : public nsSupportsWeakReference,
    */
   nsRange* GetRangeAt(uint32_t aIndex) const;
 
+  /**
+   * @brief Get the |AbstractRange| at |aIndex|.
+   *
+   * This method is safe to be called for every selection type.
+   * However, |StaticRange|s only occur for |SelectionType::eHighlight|.
+   * If the SelectionType may be eHighlight, this method must be called instead
+   * of |GetRangeAt()|.
+   *
+   * Returns null if |aIndex| is out of bounds.
+   */
+  AbstractRange* GetAbstractRangeAt(uint32_t aIndex) const;
   // Get the anchor-to-focus range if we don't care which end is
   // anchor and which end is focus.
   const nsRange* GetAnchorFocusRange() const { return mAnchorFocusRange; }
@@ -352,7 +375,7 @@ class Selection final : public nsSupportsWeakReference,
    * Callers need to keep `aRange` alive.
    */
   MOZ_CAN_RUN_SCRIPT void RemoveRangeAndUnselectFramesAndNotifyListeners(
-      nsRange& aRange, mozilla::ErrorResult& aRv);
+      AbstractRange& aRange, mozilla::ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT void RemoveAllRanges(mozilla::ErrorResult& aRv);
 
@@ -409,8 +432,24 @@ class Selection final : public nsSupportsWeakReference,
                           nsINode& aFocusNode, uint32_t aFocusOffset,
                           mozilla::ErrorResult& aRv);
 
-  bool GetInterlinePosition(mozilla::ErrorResult& aRv);
-  void SetInterlinePosition(bool aValue, mozilla::ErrorResult& aRv);
+  bool GetInterlinePositionJS(mozilla::ErrorResult& aRv) const;
+  void SetInterlinePositionJS(bool aHintRight, mozilla::ErrorResult& aRv);
+
+  enum class InterlinePosition : uint8_t {
+    // Caret should be put at end of line (i.e., before the line break)
+    EndOfLine,
+    // Caret should be put at start of next line (i.e., after the line break)
+    StartOfNextLine,
+    // Undefined means only what is not EndOfLine nor StartOfNextLine.
+    // `SetInterlinePosition` should never be called with this value, and
+    // if `GetInterlinePosition` returns this, it means that the instance has
+    // not been initialized or cleared by the cycle collector or something.
+    // If a method needs to consider whether to call `SetInterlinePosition` or
+    // not call, this value can be used for the latter.
+    Undefined,
+  };
+  InterlinePosition GetInterlinePosition() const;
+  nsresult SetInterlinePosition(InterlinePosition aInterlinePosition);
 
   Nullable<int16_t> GetCaretBidiLevel(mozilla::ErrorResult& aRv) const;
   void SetCaretBidiLevel(const Nullable<int16_t>& aCaretBidiLevel,
@@ -428,6 +467,14 @@ class Selection final : public nsSupportsWeakReference,
   SelectionType Type() const { return mSelectionType; }
 
   /**
+   * @brief Sets highlight selection properties.
+   *
+   * This includes the highlight name as well as its priority and type.
+   */
+  void SetHighlightSelectionData(
+      HighlightSelectionData aHighlightSelectionData);
+
+  /**
    * See documentation of `GetRangesForInterval` in Selection.webidl.
    *
    * @param aReturn references, not copies, of the internal ranges.
@@ -436,18 +483,17 @@ class Selection final : public nsSupportsWeakReference,
                             nsINode& aEndNode, uint32_t aEndOffset,
                             bool aAllowAdjacent,
                             nsTArray<RefPtr<nsRange>>& aReturn,
-                            mozilla::ErrorResult& aRv);
+                            ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT void ScrollIntoView(int16_t aRegion, bool aIsSynchronous,
-                                         WhereToScroll aVPercent,
-                                         WhereToScroll aHPercent,
-                                         mozilla::ErrorResult& aRv);
+                                         int16_t aVPercent, int16_t aHPercent,
+                                         ErrorResult& aRv);
 
   void SetColors(const nsAString& aForeColor, const nsAString& aBackColor,
                  const nsAString& aAltForeColor, const nsAString& aAltBackColor,
-                 mozilla::ErrorResult& aRv);
+                 ErrorResult& aRv);
 
-  void ResetColors(mozilla::ErrorResult& aRv);
+  void ResetColors();
 
   /**
    * Non-JS callers should use the following
@@ -466,8 +512,7 @@ class Selection final : public nsSupportsWeakReference,
   MOZ_CAN_RUN_SCRIPT void CollapseInLimiter(nsINode& aContainer,
                                             uint32_t aOffset,
                                             ErrorResult& aRv) {
-    CollapseInternal(InLimiter::eYes, RawRangeBoundary(&aContainer, aOffset),
-                     aRv);
+    CollapseInLimiter(RawRangeBoundary(&aContainer, aOffset), aRv);
   }
 
  private:
@@ -514,6 +559,9 @@ class Selection final : public nsSupportsWeakReference,
   MOZ_CAN_RUN_SCRIPT void AddRangeAndSelectFramesAndNotifyListeners(
       nsRange& aRange, mozilla::ErrorResult& aRv);
 
+  MOZ_CAN_RUN_SCRIPT void AddHighlightRangeAndSelectFramesAndNotifyListeners(
+      AbstractRange& aRange);
+
   /**
    * Adds all children of the specified node to the selection.
    * @param aNode the parent of the children to be added to the selection.
@@ -530,9 +578,7 @@ class Selection final : public nsSupportsWeakReference,
    */
   MOZ_CAN_RUN_SCRIPT
   void SetStartAndEnd(const RawRangeBoundary& aStartRef,
-                      const RawRangeBoundary& aEndRef, ErrorResult& aRv) {
-    SetStartAndEndInternal(InLimiter::eNo, aStartRef, aEndRef, eDirNext, aRv);
-  }
+                      const RawRangeBoundary& aEndRef, ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT
   void SetStartAndEnd(nsINode& aStartContainer, uint32_t aStartOffset,
                       nsINode& aEndContainer, uint32_t aEndOffset,
@@ -549,9 +595,7 @@ class Selection final : public nsSupportsWeakReference,
   MOZ_CAN_RUN_SCRIPT
   void SetStartAndEndInLimiter(const RawRangeBoundary& aStartRef,
                                const RawRangeBoundary& aEndRef,
-                               ErrorResult& aRv) {
-    SetStartAndEndInternal(InLimiter::eYes, aStartRef, aEndRef, eDirNext, aRv);
-  }
+                               ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT
   void SetStartAndEndInLimiter(nsINode& aStartContainer, uint32_t aStartOffset,
                                nsINode& aEndContainer, uint32_t aEndOffset,
@@ -578,9 +622,7 @@ class Selection final : public nsSupportsWeakReference,
                         ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT
   void SetBaseAndExtent(const RawRangeBoundary& aAnchorRef,
-                        const RawRangeBoundary& aFocusRef, ErrorResult& aRv) {
-    SetBaseAndExtentInternal(InLimiter::eNo, aAnchorRef, aFocusRef, aRv);
-  }
+                        const RawRangeBoundary& aFocusRef, ErrorResult& aRv);
 
   /**
    * SetBaseAndExtentInLimiter() is similar to SetBaseAndExtent(), but this
@@ -597,9 +639,7 @@ class Selection final : public nsSupportsWeakReference,
   MOZ_CAN_RUN_SCRIPT
   void SetBaseAndExtentInLimiter(const RawRangeBoundary& aAnchorRef,
                                  const RawRangeBoundary& aFocusRef,
-                                 ErrorResult& aRv) {
-    SetBaseAndExtentInternal(InLimiter::eYes, aAnchorRef, aFocusRef, aRv);
-  }
+                                 ErrorResult& aRv);
 
   void AddSelectionChangeBlocker();
   void RemoveSelectionChangeBlocker();
@@ -629,7 +669,7 @@ class Selection final : public nsSupportsWeakReference,
    */
   void SetCanCacheFrameOffset(bool aCanCacheFrameOffset);
 
-  // Selection::GetRangesForIntervalArray
+  // Selection::GetAbstractRangesForIntervalArray
   //
   //    Fills a nsTArray with the ranges overlapping the range specified by
   //    the given endpoints. Ranges in the selection exactly adjacent to the
@@ -648,10 +688,23 @@ class Selection final : public nsSupportsWeakReference,
   //
   //    Now that overlapping ranges are disallowed, there can be a maximum of
   //    2 adjacent ranges
-  nsresult GetRangesForIntervalArray(nsINode* aBeginNode, uint32_t aBeginOffset,
-                                     nsINode* aEndNode, uint32_t aEndOffset,
-                                     bool aAllowAdjacent,
-                                     nsTArray<nsRange*>* aRanges);
+  nsresult GetAbstractRangesForIntervalArray(nsINode* aBeginNode,
+                                             uint32_t aBeginOffset,
+                                             nsINode* aEndNode,
+                                             uint32_t aEndOffset,
+                                             bool aAllowAdjacent,
+                                             nsTArray<AbstractRange*>* aRanges);
+
+  /**
+   * Converts the results of |GetAbstractRangesForIntervalArray()| to |nsRange|.
+   *
+   * |StaticRange|s can only occur in Selections of type |eHighlight|.
+   * Therefore, this method must not be called for this selection type
+   * as not every |AbstractRange| can be cast to |nsRange|.
+   */
+  nsresult GetDynamicRangesForIntervalArray(
+      nsINode* aBeginNode, uint32_t aBeginOffset, nsINode* aEndNode,
+      uint32_t aEndOffset, bool aAllowAdjacent, nsTArray<nsRange*>* aRanges);
 
   /**
    * Modifies the cursor Bidi level after a change in keyboard direction
@@ -668,9 +721,9 @@ class Selection final : public nsSupportsWeakReference,
   friend class ::nsCopySupport;
   friend class ::nsHTMLCopyEncoder;
   MOZ_CAN_RUN_SCRIPT
-  void AddRangeAndSelectFramesAndNotifyListeners(nsRange& aRange,
-                                                 Document* aDocument,
-                                                 ErrorResult&);
+  void AddRangeAndSelectFramesAndNotifyListenersInternal(nsRange& aRange,
+                                                         Document* aDocument,
+                                                         ErrorResult&);
 
   // This is helper method for GetPrimaryFrameForFocusNode.
   // If aVisual is true, this returns caret frame.
@@ -759,7 +812,7 @@ class Selection final : public nsSupportsWeakReference,
       PostContentIterator& aPostOrderIter, nsIContent* aContent,
       bool aSelected) const;
 
-  nsresult SelectFrames(nsPresContext* aPresContext, nsRange* aRange,
+  nsresult SelectFrames(nsPresContext* aPresContext, AbstractRange& aRange,
                         bool aSelect) const;
 
   /**
@@ -778,12 +831,15 @@ class Selection final : public nsSupportsWeakReference,
 
   Document* GetDocument() const;
 
+  MOZ_CAN_RUN_SCRIPT void RemoveAllRangesInternal(mozilla::ErrorResult& aRv);
+
   void Disconnect();
 
   struct StyledRanges {
+    explicit StyledRanges(Selection& aSelection) : mSelection(aSelection) {}
     void Clear();
 
-    StyledRange* FindRangeData(nsRange* aRange);
+    StyledRange* FindRangeData(AbstractRange* aRange);
 
     using Elements = AutoTArray<StyledRange, 1>;
 
@@ -791,7 +847,7 @@ class Selection final : public nsSupportsWeakReference,
 
     nsresult RemoveCollapsedRanges();
 
-    nsresult RemoveRangeAndUnregisterSelection(nsRange& aRange);
+    nsresult RemoveRangeAndUnregisterSelection(AbstractRange& aRange);
 
     /**
      * Binary searches the given sorted array of ranges for the insertion point
@@ -807,7 +863,7 @@ class Selection final : public nsSupportsWeakReference,
     static size_t FindInsertionPoint(
         const nsTArray<StyledRange>* aElementArray, const nsINode& aPointNode,
         uint32_t aPointOffset,
-        int32_t (*aComparator)(const nsINode&, uint32_t, const nsRange&));
+        int32_t (*aComparator)(const nsINode&, uint32_t, const AbstractRange&));
 
     /**
      * Works on the same principle as GetRangesForIntervalArray, however
@@ -838,8 +894,8 @@ class Selection final : public nsSupportsWeakReference,
      *                  it. Hence it'll always be in [0, mRanges.Length()).
      *                  This is nothing only when the method returns an error.
      */
-    MOZ_CAN_RUN_SCRIPT nsresult MaybeAddRangeAndTruncateOverlaps(
-        nsRange* aRange, Maybe<size_t>* aOutIndex, Selection& aSelection);
+    MOZ_CAN_RUN_SCRIPT nsresult
+    MaybeAddRangeAndTruncateOverlaps(nsRange* aRange, Maybe<size_t>* aOutIndex);
 
     /**
      * GetCommonEditingHost() returns common editing host of all
@@ -896,9 +952,11 @@ class Selection final : public nsSupportsWeakReference,
     // a possible solution, allowing the calculation of the overlap interval in
     // O(log n) time, though this would require rebalancing and other overhead.
     Elements mRanges;
+
+    Selection& mSelection;
   };
 
-  StyledRanges mStyledRanges;
+  StyledRanges mStyledRanges{*this};
 
   RefPtr<nsRange> mAnchorFocusRange;
   RefPtr<nsFrameSelection> mFrameSelection;
@@ -910,6 +968,7 @@ class Selection final : public nsSupportsWeakReference,
   CachedOffsetForFrame* mCachedOffsetForFrame;
   nsDirection mDirection;
   const SelectionType mSelectionType;
+  HighlightSelectionData mHighlightData;
   UniquePtr<SelectionCustomColors> mCustomColors;
 
   // Non-zero if we don't want any changes we make to the selection to be
@@ -938,24 +997,36 @@ class Selection final : public nsSupportsWeakReference,
 // Stack-class to turn on/off selection batching.
 class MOZ_STACK_CLASS SelectionBatcher final {
  private:
-  RefPtr<Selection> mSelection;
-  int16_t mReason;
+  const RefPtr<Selection> mSelection;
+  const int16_t mReasons;
+  const char* const mRequesterFuncName;
 
  public:
-  explicit SelectionBatcher(Selection& aSelectionRef)
-      : SelectionBatcher(&aSelectionRef) {}
+  /**
+   * @param aRequesterFuncName function name which wants the selection batch.
+   * This won't be stored nor exposed to selection listeners etc, used only for
+   * logging.  This MUST be living when the destructor runs.
+   */
+  // TODO: Mark these constructors `MOZ_CAN_RUN_SCRIPT` because the destructor
+  //       may run script via nsISelectionListener.
+  explicit SelectionBatcher(Selection& aSelectionRef,
+                            const char* aRequesterFuncName,
+                            int16_t aReasons = nsISelectionListener::NO_REASON)
+      : SelectionBatcher(&aSelectionRef, aRequesterFuncName, aReasons) {}
   explicit SelectionBatcher(Selection* aSelection,
-                            int16_t aReason = nsISelectionListener::NO_REASON) {
-    mSelection = aSelection;
-    mReason = aReason;
+                            const char* aRequesterFuncName,
+                            int16_t aReasons = nsISelectionListener::NO_REASON)
+      : mSelection(aSelection),
+        mReasons(aReasons),
+        mRequesterFuncName(aRequesterFuncName) {
     if (mSelection) {
-      mSelection->StartBatchChanges();
+      mSelection->StartBatchChanges(mRequesterFuncName);
     }
   }
 
   ~SelectionBatcher() {
     if (mSelection) {
-      mSelection->EndBatchChanges(mReason);
+      mSelection->EndBatchChanges(mRequesterFuncName, mReasons);
     }
   }
 };
@@ -1013,6 +1084,22 @@ inline SelectionTypeMask ToSelectionTypeMask(SelectionType aSelectionType) {
              ? 0
              : static_cast<SelectionTypeMask>(
                    1 << (static_cast<uint8_t>(aSelectionType) - 1));
+}
+
+inline std::ostream& operator<<(
+    std::ostream& aStream, const dom::Selection::InterlinePosition& aPosition) {
+  using InterlinePosition = dom::Selection::InterlinePosition;
+  switch (aPosition) {
+    case InterlinePosition::EndOfLine:
+      return aStream << "InterlinePosition::EndOfLine";
+    case InterlinePosition::StartOfNextLine:
+      return aStream << "InterlinePosition::StartOfNextLine";
+    case InterlinePosition::Undefined:
+      return aStream << "InterlinePosition::Undefined";
+    default:
+      MOZ_ASSERT_UNREACHABLE("Illegal value");
+      return aStream << "<Illegal value>";
+  }
 }
 
 }  // namespace mozilla

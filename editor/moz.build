@@ -27,7 +27,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = "editor"
 
 TESTING_JS_MODULES += [
-    "AsyncSpellCheckTestHelper.jsm",
+    "AsyncSpellCheckTestHelper.sys.mjs",
 ]
 
 with Files("**"):
@@ -37,3 +37,5 @@ SPHINX_TREES["/editor"] = "docs"
 
 with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
+
+CXXFLAGS += CONFIG["MOZ_TRIVIAL_AUTO_VAR_INIT"]

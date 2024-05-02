@@ -76,7 +76,7 @@ GetFTPFallbackEncodingDoNotAddNewCallersToThisFunction() {
   if (BinarySearchIf(
           localesFallbacks, 0, ArrayLength(localesFallbacks),
           [&locale](const EncodingProp& aProperty) {
-            return locale.Compare(aProperty.mKey);
+            return Compare(locale, nsDependentCString(aProperty.mKey));
           },
           &index)) {
     return localesFallbacks[index].mValue;
@@ -350,10 +350,13 @@ nsDirIndexParser::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
                                   uint64_t aSourceOffset, uint32_t aCount) {
   if (aCount < 1) return NS_OK;
 
-  int32_t len = mBuf.Length();
+  uint32_t len = mBuf.Length();
 
   // Ensure that our mBuf has capacity to hold the data we're about to
   // read.
+  // Before adjusting the capacity, guard against any potential overflow
+  // resulting from the addition of aCount with len. See Bug 1823551.
+  NS_ENSURE_TRUE((UINT32_MAX - aCount) >= len, NS_ERROR_FAILURE);
   if (!mBuf.SetLength(len + aCount, fallible)) return NS_ERROR_OUT_OF_MEMORY;
 
   // Now read the data into our buffer.
@@ -373,11 +376,7 @@ nsDirIndexParser::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
 nsresult nsDirIndexParser::ProcessData(nsIRequest* aRequest) {
   if (!mListener) return NS_ERROR_FAILURE;
 
-  int32_t numItems = 0;
-
   while (true) {
-    ++numItems;
-
     int32_t eol = mBuf.FindCharInSet("\n\r", mLineStart);
     if (eol < 0) break;
     mBuf.SetCharAt(char16_t('\0'), eol);

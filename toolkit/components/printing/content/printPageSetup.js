@@ -4,8 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var gDialog;
 var paramBlock;
 var gPrintService = null;
@@ -395,7 +393,7 @@ async function loadDialog() {
 
   // Give initial focus to the orientation radio group.
   // Done on a timeout due to to bug 103197.
-  setTimeout(function() {
+  setTimeout(function () {
     gDialog.orientation.focus();
   }, 0);
 }
@@ -524,7 +522,7 @@ function onAccept() {
   // XXX Should we do this in nsPrintDialogServiceWin::ShowPageSetup (the code
   // that invokes us), since ShowPageSetup is where we do the saving for the
   // other platforms?
-  gPrintService.savePrintSettingsToPrefs(gPrintSettings, true, flags);
+  gPrintService.maybeSavePrintSettingsToPrefs(gPrintSettings, flags);
 }
 
 // ---------------------------------------------------

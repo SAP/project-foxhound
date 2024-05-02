@@ -32,16 +32,7 @@ add_task(async function slowHeuristicSelected() {
 
   // Second, add another provider that adds a non-heuristic result immediately
   // with suggestedIndex = 1.
-  let nonHeuristicResult = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TIP,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
-      text: "This is a test tip.",
-      buttonText: "Done",
-      type: "test",
-      helpUrl: "http://example.com/",
-    }
-  );
+  let nonHeuristicResult = makeTipResult();
   nonHeuristicResult.suggestedIndex = 1;
   let nonHeuristicProvider = new UrlbarTestUtils.TestProvider({
     results: [nonHeuristicResult],
@@ -60,10 +51,6 @@ add_task(async function slowHeuristicSelected() {
   // The first result should be the heuristic and it should be selected.
   let actualHeuristic = await UrlbarTestUtils.getDetailsOfResultAt(win, 0);
   Assert.equal(actualHeuristic.type, UrlbarUtils.RESULT_TYPE.SEARCH);
-  Assert.equal(
-    UrlbarTestUtils.getSelectedElement(win),
-    actualHeuristic.element.row
-  );
   Assert.equal(UrlbarTestUtils.getSelectedElementIndex(win), 0);
 
   // Check the second result for good measure.
@@ -103,16 +90,7 @@ add_task(async function oneOffRemainsSelected() {
 
   // Second, add another provider that adds a non-heuristic result immediately
   // with suggestedIndex = 1.
-  let nonHeuristicResult = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TIP,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
-      text: "This is a test tip.",
-      buttonText: "Done",
-      type: "test",
-      helpUrl: "http://example.com/",
-    }
-  );
+  let nonHeuristicResult = makeTipResult();
   nonHeuristicResult.suggestedIndex = 1;
   let nonHeuristicProvider = new UrlbarTestUtils.TestProvider({
     results: [nonHeuristicResult],
@@ -161,3 +139,21 @@ add_task(async function oneOffRemainsSelected() {
   UrlbarProvidersManager.unregisterProvider(nonHeuristicProvider);
   await BrowserTestUtils.closeWindow(win);
 });
+
+function makeTipResult() {
+  return new UrlbarResult(
+    UrlbarUtils.RESULT_TYPE.TIP,
+    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    {
+      helpUrl: "http://example.com/",
+      type: "test",
+      titleL10n: { id: "urlbar-search-tips-confirm" },
+      buttons: [
+        {
+          url: "http://example.com/",
+          l10n: { id: "urlbar-search-tips-confirm" },
+        },
+      ],
+    }
+  );
+}

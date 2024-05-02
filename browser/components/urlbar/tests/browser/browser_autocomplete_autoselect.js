@@ -20,13 +20,6 @@ function assertSelected(index) {
     index,
     "Should have selected the correct item"
   );
-  // Also check the "selected" attribute, to ensure it is not a "fake" selection
-  // due to binding misbehaviors.
-  let element = UrlbarTestUtils.getSelectedRow(window);
-  Assert.ok(
-    element.hasAttribute("selected"),
-    "Should have the selected attribute on the row element"
-  );
 
   // This is true because although both the listbox and the one-offs can have
   // selections, the test doesn't check that.
@@ -53,13 +46,13 @@ function assertSelected_one_off(index) {
   );
 }
 
-add_task(async function() {
+add_task(async function () {
   let maxResults = Services.prefs.getIntPref("browser.urlbar.maxRichResults");
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     "about:mozilla"
   );
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     BrowserTestUtils.removeTab(tab);
   });
@@ -96,9 +89,10 @@ add_task(async function() {
   assertSelected_one_off(0);
 
   info("Key Down numButtons-1 should select the last one-off");
-  let numButtons = UrlbarTestUtils.getOneOffSearchButtons(
-    window
-  ).getSelectableButtons(true).length;
+  let numButtons =
+    UrlbarTestUtils.getOneOffSearchButtons(window).getSelectableButtons(
+      true
+    ).length;
   repeat(numButtons - 1, () => EventUtils.synthesizeKey("KEY_ArrowDown"));
   assertSelected_one_off(numButtons - 1);
 

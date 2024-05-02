@@ -1,5 +1,5 @@
 /**
- * Test for LoginAutoComplete._isProbablyANewPasswordField.
+ * Test for LoginAutoComplete.isProbablyANewPasswordField.
  */
 
 "use strict";
@@ -43,7 +43,7 @@ const LABELLEDBY_SHADOW_TESTCASE = labelledByDocument();
 
 const TESTCASES = [
   // Note there is no test case for `<input type="password" autocomplete="new-password">`
-  // since _isProbablyANewPasswordField explicitly does not run in that case.
+  // since isProbablyANewPasswordField explicitly does not run in that case.
   {
     description: "Basic login form",
     document: `
@@ -137,16 +137,15 @@ add_task(async function test_returns_false_when_pref_disabled() {
   // Use registration form test case, where we know it should return true if enabled
   const testcase = TESTCASES[1];
   info("Starting testcase: " + testcase.description);
-  const document =
-    testcase.document instanceof Document
-      ? testcase.document
-      : MockDocument.createTestDocument(
-          "http://localhost:8080/test/",
-          testcase.document
-        );
+  const document = Document.isInstance(testcase.document)
+    ? testcase.document
+    : MockDocument.createTestDocument(
+        "http://localhost:8080/test/",
+        testcase.document
+      );
   for (let [i, input] of testcase.inputs ||
     document.querySelectorAll(`input[type="password"]`).entries()) {
-    const result = LoginAutoComplete._isProbablyANewPasswordField(input);
+    const result = LoginAutoComplete.isProbablyANewPasswordField(input);
     Assert.strictEqual(
       result,
       false,
@@ -161,23 +160,22 @@ add_task(async function test_returns_false_when_pref_disabled() {
 for (let testcase of TESTCASES) {
   info("Sanity checking the testcase: " + testcase.description);
 
-  (function() {
-    add_task(async function() {
+  (function () {
+    add_task(async function () {
       info("Starting testcase: " + testcase.description);
-      let document =
-        testcase.document instanceof Document
-          ? testcase.document
-          : MockDocument.createTestDocument(
-              "http://localhost:8080/test/",
-              testcase.document
-            );
+      let document = Document.isInstance(testcase.document)
+        ? testcase.document
+        : MockDocument.createTestDocument(
+            "http://localhost:8080/test/",
+            testcase.document
+          );
 
       document = makeDocumentVisibleToFathom(document);
 
       const results = [];
       for (let input of testcase.inputs ||
         document.querySelectorAll(`input[type="password"]`)) {
-        const result = LoginAutoComplete._isProbablyANewPasswordField(input);
+        const result = LoginAutoComplete.isProbablyANewPasswordField(input);
         results.push(result);
       }
 

@@ -64,19 +64,19 @@ extern "C" {
 #elif defined(SCTP_STDINT_INCLUDE)
 #include SCTP_STDINT_INCLUDE
 #else
-#define uint8_t   unsigned __int8
-#define uint16_t  unsigned __int16
-#define uint32_t  unsigned __int32
-#define uint64_t  unsigned __int64
-#define int16_t   __int16
-#define int32_t   __int32
+typedef unsigned __int8  uint8_t;
+typedef unsigned __int16 uint16_t;
+typedef unsigned __int32 uint32_t;
+typedef unsigned __int64 uint64_t;
+typedef          __int16 int16_t;
+typedef          __int32 int32_t;
 #endif
 
 #ifndef ssize_t
 #ifdef _WIN64
-#define ssize_t __int64
+typedef __int64 ssize_t;
 #elif defined _WIN32
-#define ssize_t int
+typedef int ssize_t;
 #else
 #error "Unknown platform!"
 #endif
@@ -560,6 +560,7 @@ struct sctp_event_subscribe {
 #define SCTP_NRSACK_SUPPORTED           0x00000030
 #define SCTP_PKTDROP_SUPPORTED          0x00000031
 #define SCTP_MAX_CWND                   0x00000032
+#define SCTP_ACCEPT_ZERO_CHECKSUM       0x00000033
 
 #define SCTP_ENABLE_STREAM_RESET        0x00000900 /* struct sctp_assoc_value */
 
@@ -767,6 +768,10 @@ struct sctp_get_nonce_values {
 	uint32_t gn_local_tag;
 };
 
+/* Values for SCTP_ACCEPT_ZERO_CHECKSUM */
+#define SCTP_EDMID_NONE             0
+#define SCTP_EDMID_LOWER_LAYER_DTLS 1
+
 
 /*
  * Main SCTP chunk types
@@ -904,7 +909,7 @@ struct socket *
 usrsctp_socket(int domain, int type, int protocol,
                int (*receive_cb)(struct socket *sock, union sctp_sockstore addr, void *data,
                                  size_t datalen, struct sctp_rcvinfo, int flags, void *ulp_info),
-               int (*send_cb)(struct socket *sock, uint32_t sb_free),
+               int (*send_cb)(struct socket *sock, uint32_t sb_free, void *ulp_info),
                uint32_t sb_threshold,
                void *ulp_info);
 
@@ -1146,6 +1151,7 @@ USRSCTP_SYSCTL_DECL(sctp_steady_step)
 USRSCTP_SYSCTL_DECL(sctp_use_dccc_ecn)
 USRSCTP_SYSCTL_DECL(sctp_buffer_splitting)
 USRSCTP_SYSCTL_DECL(sctp_initial_cwnd)
+USRSCTP_SYSCTL_DECL(sctp_ootb_with_zero_cksum)
 #ifdef SCTP_DEBUG
 USRSCTP_SYSCTL_DECL(sctp_debug_on)
 /* More specific values can be found in sctp_constants, but
@@ -1304,7 +1310,9 @@ struct sctpstat {
 	uint32_t  sctps_send_cwnd_avoid;     /* Send cwnd full  avoidance, already max burst inflight to net */
 	uint32_t  sctps_fwdtsn_map_over;     /* number of map array over-runs via fwd-tsn's */
 	uint32_t  sctps_queue_upd_ecne;      /* Number of times we queued or updated an ECN chunk on send queue */
-	uint32_t  sctps_reserved[31];        /* Future ABI compat - remove int's from here when adding new */
+	uint32_t  sctps_recvzerocrc;         /* Number of accepted packets with zero CRC */
+	uint32_t  sctps_sendzerocrc;         /* Number of packets sent with zero CRC */
+	uint32_t  sctps_reserved[29];        /* Future ABI compat - remove int's from here when adding new */
 };
 
 void

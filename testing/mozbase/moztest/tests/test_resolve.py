@@ -3,8 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 # flake8: noqa: E501
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 try:
     import cPickle as pickle
 except ImportError:
@@ -25,12 +23,11 @@ from mozbuild.base import MozbuildObject
 from mozbuild.frontend.reader import BuildReader
 from mozbuild.test.common import MockConfig
 from mozfile import NamedTemporaryFile
-
 from moztest.resolve import (
+    TEST_SUITES,
     BuildBackendLoader,
     TestManifestLoader,
     TestResolver,
-    TEST_SUITES,
 )
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -108,6 +105,7 @@ def all_tests(create_tests):
                 "apple/test_a11y.html",
                 {
                     "expected": "pass",
+                    "manifest": "apple/a11y.toml",
                     "flavor": "a11y",
                 },
             ),
@@ -358,13 +356,13 @@ def test_resolve_path_prefix(resolver):
     assert len(tests) == 1
 
     # relative manifest
-    tests = list(resolver._resolve(paths=["apple/a11y.ini"]))
+    tests = list(resolver._resolve(paths=["apple/a11y.toml"]))
     assert len(tests) == 1
     assert tests[0]["name"] == "test_a11y.html"
 
     # absolute manifest
     tests = list(
-        resolver._resolve(paths=[os.path.join(resolver.topsrcdir, "apple/a11y.ini")])
+        resolver._resolve(paths=[os.path.join(resolver.topsrcdir, "apple/a11y.toml")])
     )
     assert len(tests) == 1
     assert tests[0]["name"] == "test_a11y.html"

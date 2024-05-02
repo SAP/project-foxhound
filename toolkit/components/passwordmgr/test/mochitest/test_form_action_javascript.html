@@ -10,25 +10,18 @@
 <body>
 Login Manager test: form with JS submit action
 <script>
-runChecksAfterCommonInit(() => startTest());
 
-runInParent(function setup() {
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-  let jslogin = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(Ci.nsILoginInfo);
-  jslogin.init("http://mochi.test:8888", "javascript:", null,
-               "jsuser", "jspass123", "uname", "pword");
-  Services.logins.addLogin(jslogin);
+add_setup(async () => {
+  await setStoredLoginsAsync(
+    [location.origin, "javascript:", null, "jsuser", "jspass123", "uname", "pword"]
+  );
 });
 
-let DEFAULT_ORIGIN = window.location.origin;
-
 /** Test for Login Manager: JS action URL **/
-
-async function startTest() {
-  let win = window.open("about:blank");
+add_task(async function startTest() {
+  const win = window.open("about:blank");
   SimpleTest.registerCleanupFunction(() => win.close());
-  await loadFormIntoWindow(DEFAULT_ORIGIN, `
+  await loadFormIntoWindow(location.origin, `
     <form id='form1' action='javascript:alert("never shows")'> 1
       <input name="uname">
       <input name="pword" type="password">
@@ -38,9 +31,7 @@ async function startTest() {
     </form>`, win);
 
   await checkLoginFormInFrameWithElementValues(win, 1, "jsuser", "jspass123");
-
-  SimpleTest.finish();
-}
+});
 </script>
 
 <p id="display"></p>

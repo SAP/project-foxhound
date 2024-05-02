@@ -3,11 +3,11 @@
 
 "use strict";
 
-const { WebChannel } = ChromeUtils.import(
-  "resource://gre/modules/WebChannel.jsm"
+const { WebChannel } = ChromeUtils.importESModule(
+  "resource://gre/modules/WebChannel.sys.mjs"
 );
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const ERROR_ID_ORIGIN_REQUIRED =
@@ -53,7 +53,7 @@ add_task(function test_web_channel_listen() {
     );
     Assert.equal(channel._deliverCallback, null);
 
-    channel.listen(function(id, message, target) {
+    channel.listen(function (id, message, target) {
       Assert.equal(id, VALID_WEB_CHANNEL_ID);
       Assert.ok(message);
       Assert.ok(message.command);
@@ -112,7 +112,7 @@ add_task(function test_web_channel_listen_permission() {
     Assert.equal(channel._originOrPermission, TEST_PERMISSION_NAME);
     Assert.equal(channel._deliverCallback, null);
 
-    channel.listen(function(id, message, target) {
+    channel.listen(function (id, message, target) {
       Assert.equal(id, VALID_WEB_CHANNEL_ID);
       Assert.ok(message);
       Assert.ok(message.command);

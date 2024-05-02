@@ -11,15 +11,22 @@
 #include "mozilla/dom/PermissionStatusBinding.h"
 #include "mozilla/Maybe.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 const nsLiteralCString& PermissionNameToType(PermissionName aName);
+
+/**
+ * Returns the permission name given a permission type.
+ *
+ * Note: the "midi" permission is implemented with two internal permissions
+ * ("midi" and "midi-sysex"). For this reason, when we pass "midi-sysex" to
+ * this function, it unconditionally returns the "midi" permission name,
+ * because that's the only public permission name.
+ */
 Maybe<PermissionName> TypeToPermissionName(const nsACString& aType);
 
 PermissionState ActionToPermissionState(uint32_t aAction);
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

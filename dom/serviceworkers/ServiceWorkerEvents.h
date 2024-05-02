@@ -22,8 +22,7 @@
 
 class nsIInterceptedChannel;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Blob;
 class Client;
@@ -203,7 +202,7 @@ class FetchEvent final : public ExtendableEvent {
 class PushMessageData final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PushMessageData)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PushMessageData)
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -305,7 +304,6 @@ class ExtendableMessageEvent final : public ExtendableEvent {
   void GetPorts(nsTArray<RefPtr<MessagePort>>& aPorts);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_serviceworkerevents_h__ */

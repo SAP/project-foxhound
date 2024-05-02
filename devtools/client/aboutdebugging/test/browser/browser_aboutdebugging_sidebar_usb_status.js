@@ -5,13 +5,13 @@
 
 const {
   adbAddon,
-} = require("devtools/client/shared/remote-debugging/adb/adb-addon");
+} = require("resource://devtools/client/shared/remote-debugging/adb/adb-addon.js");
 
 /**
  * This test asserts that the sidebar shows a message describing the status of the USB
  * devices scanning.
  */
-add_task(async function() {
+add_task(async function () {
   const mocks = new Mocks();
 
   await pushPref(

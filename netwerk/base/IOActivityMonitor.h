@@ -8,11 +8,13 @@
 #define IOActivityMonitor_h___
 
 #include "mozilla/dom/ChromeUtilsBinding.h"
+#include "mozilla/Mutex.h"
 #include "nsCOMPtr.h"
 #include "nscore.h"
 #include "nsClassHashtable.h"
 #include "nsTHashMap.h"
 #include "nsHashKeys.h"
+#include "nsINamed.h"
 #include "nsISupports.h"
 #include "prinrval.h"
 #include "prio.h"
@@ -59,6 +61,9 @@ class IOActivityMonitor final : public nsINamed {
 
  private:
   ~IOActivityMonitor() = default;
+
+  static already_AddRefed<IOActivityMonitor> Get();
+
   nsresult InitInternal();
   nsresult ShutdownInternal();
   bool IncrementActivity(const nsACString& location, uint32_t aRx,
@@ -69,7 +74,7 @@ class IOActivityMonitor final : public nsINamed {
 
   Activities mActivities;
   // protects mActivities accesses
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
 };
 
 }  // namespace net

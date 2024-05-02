@@ -2,25 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import logging
 import os
-import sys
 import subprocess
+import sys
 
-from mach.decorators import (
-    CommandArgument,
-    Command,
-    SettingsProvider,
-    SubCommand,
-)
-
-from mozbuild.base import (
-    BuildEnvironmentNotFoundException,
-    MachCommandConditions as conditions,
-)
+import requests
+from mach.decorators import Command, CommandArgument, SettingsProvider, SubCommand
+from mozbuild.base import BuildEnvironmentNotFoundException
+from mozbuild.base import MachCommandConditions as conditions
 
 UNKNOWN_TEST = """
 I was unable to find tests from the given argument(s).
@@ -98,6 +89,7 @@ ADD_TEST_SUPPORTED_SUITES = [
     "mochitest-chrome",
     "mochitest-plain",
     "mochitest-browser-chrome",
+    "web-platform-tests-privatebrowsing",
     "web-platform-tests-testharness",
     "web-platform-tests-reftest",
     "xpcshell",
@@ -106,6 +98,7 @@ ADD_TEST_SUPPORTED_DOCS = ["js", "html", "xhtml", "xul"]
 
 SUITE_SYNONYMS = {
     "wpt": "web-platform-tests-testharness",
+    "wpt-privatebrowsing": "web-platform-tests-privatebrowsing",
     "wpt-testharness": "web-platform-tests-testharness",
     "wpt-reftest": "web-platform-tests-reftest",
 }
@@ -173,8 +166,9 @@ def addtest(
     editor=MISSING_ARG,
     **kwargs,
 ):
-    import addtest
     import io
+
+    import addtest
     from moztest.resolve import TEST_SUITES
 
     if not suite and not test:
@@ -307,9 +301,13 @@ def guess_suite(abs_test):
     filename = os.path.basename(abs_test)
 
     has_browser_ini = os.path.isfile(os.path.join(parent, "browser.ini"))
+    has_browser_toml = os.path.isfile(os.path.join(parent, "browser.toml"))
     has_chrome_ini = os.path.isfile(os.path.join(parent, "chrome.ini"))
+    has_chrome_toml = os.path.isfile(os.path.join(parent, "chrome.toml"))
     has_plain_ini = os.path.isfile(os.path.join(parent, "mochitest.ini"))
+    has_plain_toml = os.path.isfile(os.path.join(parent, "mochitest.toml"))
     has_xpcshell_ini = os.path.isfile(os.path.join(parent, "xpcshell.ini"))
+    has_xpcshell_toml = os.path.isfile(os.path.join(parent, "xpcshell.toml"))
 
     in_wpt_folder = abs_test.startswith(
         os.path.abspath(os.path.join("testing", "web-platform"))
@@ -321,24 +319,33 @@ def guess_suite(abs_test):
             guessed_suite = "web-platform-tests-reftest"
     elif (
         filename.startswith("test_")
-        and has_xpcshell_ini
+        and (has_xpcshell_ini or has_xpcshell_toml)
         and guess_doc(abs_test) == "js"
     ):
         guessed_suite = "xpcshell"
     else:
-        if filename.startswith("browser_") and has_browser_ini:
+        if filename.startswith("browser_") and (has_browser_ini or has_browser_toml):
             guessed_suite = "mochitest-browser-chrome"
         elif filename.startswith("test_"):
-            if has_chrome_ini and has_plain_ini:
+            if (has_chrome_ini or has_chrome_toml) and (
+                has_plain_ini or has_plain_toml
+            ):
                 err = (
-                    "Error: directory contains both a chrome.ini and mochitest.ini. "
+                    "Error: directory contains both a chrome.{ini|toml} and mochitest.{ini|toml}. "
                     "Please set --suite=mochitest-chrome or --suite=mochitest-plain."
                 )
-            elif has_chrome_ini:
+            elif has_chrome_ini or has_chrome_toml:
                 guessed_suite = "mochitest-chrome"
-            elif has_plain_ini:
+            elif has_plain_ini or has_plain_toml:
                 guessed_suite = "mochitest-plain"
     return guessed_suite, err
+
+
+class MachTestRunner:
+    """Adapter for mach test to simplify it's import externally."""
+
+    def test(command_context, what, extra_args, **log_args):
+        return test(command_context, what, extra_args, **log_args)
 
 
 @Command(
@@ -357,6 +364,7 @@ def test(command_context, what, extra_args, **log_args):
     * A directory containing tests
     * A test suite name
     * An alias to a test suite name (codes used on TreeHerder)
+    * path to a test manifest
 
     When paths or directories are given, they are first resolved to test
     files known to the build system.
@@ -381,10 +389,13 @@ def test(command_context, what, extra_args, **log_args):
     Do not forget the - (minus sign) after --log-grouped!
 
     `./mach test --log-grouped - devtools/client/shared/redux/middleware/xpcshell/`
+
+    To learn more about arguments for each test type/flavor/harness, please run
+    `./mach <test-harness> --help`. For example, `./mach mochitest --help`.
     """
     from mozlog.commandline import setup_logging
     from mozlog.handlers import StreamHandler
-    from moztest.resolve import get_suite_definition, TestResolver, TEST_SUITES
+    from moztest.resolve import TEST_SUITES, TestResolver, get_suite_definition
 
     resolver = command_context._spawn(TestResolver)
     run_suites, run_tests = resolver.resolve_metadata(what)
@@ -419,6 +430,9 @@ def test(command_context, what, extra_args, **log_args):
     for handler in log.handlers:
         if isinstance(handler, StreamHandler):
             handler.formatter.inner.summary_on_shutdown = True
+
+    if log_args.get("custom_handler", None) is not None:
+        log.add_handler(log_args.get("custom_handler"))
 
     status = None
     for suite_name in run_suites:
@@ -464,7 +478,8 @@ def test(command_context, what, extra_args, **log_args):
         if res:
             status = res
 
-    log.shutdown()
+    if not log.has_shutdown:
+        log.shutdown()
     return status
 
 
@@ -505,8 +520,8 @@ def run_cppunit_test(command_context, **params):
 
     if conditions.is_android(command_context):
         from mozrunner.devices.android_device import (
-            verify_android_device,
             InstallIntent,
+            verify_android_device,
         )
 
         verify_android_device(command_context, install=InstallIntent.NO)
@@ -543,7 +558,7 @@ def run_desktop_test(
 
 
 def run_android_test(command_context, tests, symbols_path, manifest_path, log):
-    import remotecppunittests as remotecppunittests
+    import remotecppunittests
     from mozlog import commandline
 
     parser = remotecppunittests.RemoteCPPUnittestOptions()
@@ -582,6 +597,7 @@ def executable_name(name):
     "jstests",
     category="testing",
     description="Run SpiderMonkey JS tests in the JS shell.",
+    ok_if_tests_disabled=True,
 )
 @CommandArgument("--shell", help="The shell to be used")
 @CommandArgument(
@@ -645,18 +661,34 @@ def run_jittests(command_context, shell, cgc, params):
 
 @Command("jsapi-tests", category="testing", description="Run SpiderMonkey JSAPI tests.")
 @CommandArgument(
+    "--list",
+    action="store_true",
+    default=False,
+    help="List all tests",
+)
+@CommandArgument(
+    "--frontend-only",
+    action="store_true",
+    default=False,
+    help="Run tests for frontend-only APIs, with light-weight entry point",
+)
+@CommandArgument(
     "test_name",
     nargs="?",
     metavar="N",
     help="Test to run. Can be a prefix or omitted. If "
     "omitted, the entire test suite is executed.",
 )
-def run_jsapitests(command_context, test_name=None):
+def run_jsapitests(command_context, list=False, frontend_only=False, test_name=None):
     import subprocess
 
     jsapi_tests_cmd = [
         os.path.join(command_context.bindir, executable_name("jsapi-tests"))
     ]
+    if list:
+        jsapi_tests_cmd.append("--list")
+    if frontend_only:
+        jsapi_tests_cmd.append("--frontend-only")
     if test_name:
         jsapi_tests_cmd.append(test_name)
 
@@ -696,7 +728,6 @@ def get_jsshell_parser():
     description="Run benchmarks in the SpiderMonkey JS shell.",
 )
 def run_jsshelltests(command_context, **kwargs):
-    command_context.activate_virtualenv()
     from jsshell import benchmark
 
     return benchmark.run(**kwargs)
@@ -849,6 +880,11 @@ def test_info_tests(
     help="Include list of manifest annotation conditions in report.",
 )
 @CommandArgument(
+    "--show-testruns",
+    action="store_true",
+    help="Include total number of runs the test has if there are failures.",
+)
+@CommandArgument(
     "--filter-values",
     help="Comma-separated list of value regular expressions to filter on; "
     "displayed tests contain all specified values.",
@@ -868,6 +904,14 @@ def test_info_tests(
 )
 @CommandArgument("--output-file", help="Path to report file.")
 @CommandArgument("--verbose", action="store_true", help="Enable debug logging.")
+@CommandArgument(
+    "--start",
+    default=(date.today() - timedelta(30)).strftime("%Y-%m-%d"),
+    help="Start date (YYYY-MM-DD)",
+)
+@CommandArgument(
+    "--end", default=date.today().strftime("%Y-%m-%d"), help="End date (YYYY-MM-DD)"
+)
 def test_report(
     command_context,
     components,
@@ -883,6 +927,9 @@ def test_report(
     show_components,
     output_file,
     verbose,
+    start,
+    end,
+    show_testruns,
 ):
     import testinfo
     from mozbuild import build_commands
@@ -907,6 +954,9 @@ def test_report(
         filter_keys,
         show_components,
         output_file,
+        start,
+        end,
+        show_testruns,
     )
 
 
@@ -934,6 +984,199 @@ def test_report_diff(command_context, before, after, output_file, verbose):
 
     ti = testinfo.TestInfoReport(verbose)
     ti.report_diff(before, after, output_file)
+
+
+@SubCommand(
+    "test-info",
+    "testrun-report",
+    description="Generate report of number of runs for each test group (manifest)",
+)
+@CommandArgument("--output-file", help="Path to report file.")
+def test_info_testrun_report(command_context, output_file):
+    import json
+
+    import testinfo
+
+    ti = testinfo.TestInfoReport(verbose=True)
+    if os.environ.get("GECKO_HEAD_REPOSITORY", "") in [
+        "https://hg.mozilla.org/mozilla-central",
+        "https://hg.mozilla.org/try",
+    ]:
+        runcounts = ti.get_runcounts()
+        if output_file:
+            output_file = os.path.abspath(output_file)
+            output_dir = os.path.dirname(output_file)
+            if not os.path.isdir(output_dir):
+                os.makedirs(output_dir)
+            with open(output_file, "w") as f:
+                json.dump(runcounts, f)
+        else:
+            print(runcounts)
+
+
+@SubCommand(
+    "test-info",
+    "failure-report",
+    description="Display failure line groupings and frequencies for "
+    "single tracking intermittent bugs.",
+)
+@CommandArgument(
+    "--start",
+    default=(date.today() - timedelta(30)).strftime("%Y-%m-%d"),
+    help="Start date (YYYY-MM-DD)",
+)
+@CommandArgument(
+    "--end", default=date.today().strftime("%Y-%m-%d"), help="End date (YYYY-MM-DD)"
+)
+@CommandArgument(
+    "--bugid",
+    default=None,
+    help="bugid for treeherder intermittent failures data query.",
+)
+def test_info_failures(
+    command_context,
+    start,
+    end,
+    bugid,
+):
+    # bugid comes in as a string, we need an int:
+    try:
+        bugid = int(bugid)
+    except ValueError:
+        bugid = None
+    if not bugid:
+        print("Please enter a valid bugid (i.e. '1760132')")
+        return
+
+    # get bug info
+    url = (
+        "https://bugzilla.mozilla.org/rest/bug?include_fields=summary,depends_on&id=%s"
+        % bugid
+    )
+    r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+    if r.status_code != 200:
+        print("%s error retrieving url: %s" % (r.status_code, url))
+
+    data = r.json()
+    if not data:
+        print("unable to get bugzilla information for %s" % bugid)
+        return
+
+    summary = data["bugs"][0]["summary"]
+    parts = summary.split("|")
+    if not summary.endswith("single tracking bug") or len(parts) != 2:
+        print("this query only works with single tracking bugs")
+        return
+
+    # get depends_on bugs:
+    buglist = [bugid]
+    if "depends_on" in data["bugs"][0]:
+        buglist.extend(data["bugs"][0]["depends_on"])
+
+    testname = parts[0].strip().split(" ")[-1]
+
+    # now query treeherder to get details about annotations
+    data = []
+    for b in buglist:
+        url = "https://treeherder.mozilla.org/api/failuresbybug/"
+        url += "?startday=%s&endday=%s&tree=trunk&bug=%s" % (start, end, b)
+        r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+        r.raise_for_status()
+
+        bdata = r.json()
+        data.extend(bdata)
+
+    if len(data) == 0:
+        print("no failures were found for given bugid, please ensure bug is")
+        print("accessible via: https://treeherder.mozilla.org/intermittent-failures")
+        return
+
+    # query VCS to get current list of variants:
+    import yaml
+
+    url = "https://hg.mozilla.org/mozilla-central/raw-file/tip/taskcluster/ci/test/variants.yml"
+    r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
+    variants = yaml.safe_load(r.text)
+
+    print(
+        "\nQuerying data for bug %s annotated from %s to %s on trunk.\n\n"
+        % (buglist, start, end)
+    )
+    jobs = {}
+    lines = {}
+    for failure in data:
+        # config = platform/buildtype
+        # testsuite (<suite>[-variant][-<chunk>])
+        # lines - group by patterns that contain test name
+        config = "%s/%s" % (failure["platform"], failure["build_type"])
+
+        variant = ""
+        suite = ""
+        varpos = len(failure["test_suite"])
+        for v in variants.keys():
+            var = "-%s" % variants[v]["suffix"]
+            if var in failure["test_suite"]:
+                if failure["test_suite"].find(var) < varpos:
+                    variant = var
+
+        if variant:
+            suite = failure["test_suite"].split(variant)[0]
+
+        parts = failure["test_suite"].split("-")
+        try:
+            int(parts[-1])
+            suite = "-".join(parts[:-1])
+        except ValueError:
+            pass  # if this works, then the last '-X' is a number :)
+
+        if suite == "":
+            print("Error: failure to find variant in %s" % failure["test_suite"])
+
+        job = "%s-%s%s" % (config, suite, variant)
+        if job not in jobs.keys():
+            jobs[job] = 0
+        jobs[job] += 1
+
+        # lines - sum(hash) of all lines where we match testname
+        hvalue = 0
+        for line in failure["lines"]:
+            if len(line.split(testname)) <= 1:
+                continue
+            # strip off timestamp and mozharness status
+            parts = line.split("TEST-UNEXPECTED")
+            l = "TEST-UNEXPECTED%s" % parts[-1]
+
+            # only keep 25 characters of the failure, often longer is random numbers
+            parts = l.split(testname)
+            l = "%s%s%s" % (parts[0], testname, parts[1][:25])
+
+            hvalue += hash(l)
+
+        if not failure["lines"]:
+            hvalue = 1
+
+        if not hvalue:
+            continue
+
+        if hvalue not in lines.keys():
+            lines[hvalue] = {"lines": failure["lines"], "config": []}
+        lines[hvalue]["config"].append(job)
+
+    for h in lines.keys():
+        print("%s errors with:" % (len(lines[h]["config"])))
+        for l in lines[h]["lines"]:
+            print(l)
+        else:
+            print(
+                "... no failure lines recorded in"
+                " https://treeherder.mozilla.org/intermittent-failures ..."
+            )
+
+        for job in jobs:
+            count = len([x for x in lines[h]["config"] if x == job])
+            if count > 0:
+                print("  %s: %s" % (job, count))
+        print("")
 
 
 @Command(

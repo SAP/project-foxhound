@@ -13,27 +13,9 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(GamepadTouch)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(GamepadTouch)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  tmp->mPosition = nullptr;
-  tmp->mSurfaceDimensions = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(GamepadTouch)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(GamepadTouch)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mPosition)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mSurfaceDimensions)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(GamepadTouch, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(GamepadTouch, Release)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(GamepadTouch, (mParent),
+                                                      (mPosition,
+                                                       mSurfaceDimensions))
 
 GamepadTouch::GamepadTouch(nsISupports* aParent)
     : mParent(aParent), mPosition(nullptr), mSurfaceDimensions(nullptr) {
@@ -51,9 +33,8 @@ GamepadTouch::~GamepadTouch() { mozilla::DropJSObjects(this); }
 void GamepadTouch::GetPosition(JSContext* aCx,
                                JS::MutableHandle<JSObject*> aRetval,
                                ErrorResult& aRv) {
-  mPosition = Float32Array::Create(aCx, this, 2, mTouchState.position);
-  if (!mPosition) {
-    aRv.NoteJSContextException(aCx);
+  mPosition = Float32Array::Create(aCx, this, mTouchState.position, aRv);
+  if (aRv.Failed()) {
     return;
   }
 
@@ -63,10 +44,13 @@ void GamepadTouch::GetPosition(JSContext* aCx,
 void GamepadTouch::GetSurfaceDimensions(JSContext* aCx,
                                         JS::MutableHandle<JSObject*> aRetval,
                                         ErrorResult& aRv) {
-  mSurfaceDimensions = Uint32Array::Create(aCx, this, 2,
-                                           mTouchState.isSurfaceDimensionsValid
-                                               ? mTouchState.surfaceDimensions
-                                               : nullptr);
+  if (mTouchState.isSurfaceDimensionsValid) {
+    mSurfaceDimensions =
+        Uint32Array::Create(aCx, this, mTouchState.surfaceDimensions, aRv);
+  } else {
+    mSurfaceDimensions = Uint32Array::Create(
+        aCx, this, std::size(mTouchState.surfaceDimensions), aRv);
+  }
 
   if (!mSurfaceDimensions) {
     aRv.NoteJSContextException(aCx);

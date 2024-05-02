@@ -1,14 +1,13 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-
 import itertools
 import os
 import re
 import threading
 import time
 from bisect import bisect
+
 from mozlog import get_proxy_logger
 
 LOG = get_proxy_logger("profiler")
@@ -249,7 +248,7 @@ class SymFileManager:
         self.sCacheLock.acquire()
         try:
             for pdbName in symDirsToInspect:
-                for (mtime, symbolDirPath) in symDirsToInspect[pdbName]:
+                for mtime, symbolDirPath in symDirsToInspect[pdbName]:
                     pdbId = os.path.basename(symbolDirPath)
                     if pdbName in self.sCache and pdbId in self.sCache[pdbName]:
                         symDirsToInspect[pdbName].remove((mtime, symbolDirPath))
@@ -263,7 +262,7 @@ class SymFileManager:
             # The corresponding symbol file name ends with .sym
             symFileName = re.sub(r"\.[^\.]+$", ".sym", pdbName)
 
-            for (mtime, symbolDirPath) in symDirsToInspect[pdbName]:
+            for mtime, symbolDirPath in symDirsToInspect[pdbName]:
                 pdbId = os.path.basename(symbolDirPath)
                 symbolFilePath = symbolDirPath + os.sep + symFileName
                 symbolInfo = self.FetchSymbolsFromFile(symbolFilePath)
@@ -286,7 +285,7 @@ class SymFileManager:
             # Make room for the new symbols
             self.MaybeEvict(fetchedCount)
 
-            for (pdbName, pdbId) in fetchedSymbols:
+            for pdbName, pdbId in fetchedSymbols:
                 if pdbName not in self.sCache:
                     self.sCache[pdbName] = {}
 
@@ -334,7 +333,7 @@ class SymFileManager:
 
         # Evict symbols until evict quota is met, starting with least recently
         # used
-        for (pdbName, pdbId) in reversed(self.sMruSymbols):
+        for pdbName, pdbId in reversed(self.sMruSymbols):
             if numToEvict <= 0:
                 break
 

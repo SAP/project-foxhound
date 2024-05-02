@@ -6,9 +6,6 @@
 
 #include "xpcAccessibleHyperLink.h"
 
-#include "LocalAccessible-inl.h"
-#include "mozilla/StaticPrefs_accessibility.h"
-#include "nsNetUtil.h"
 #include "xpcAccessibleDocument.h"
 
 using namespace mozilla::a11y;
@@ -19,13 +16,6 @@ xpcAccessibleHyperLink::GetStartIndex(int32_t* aStartIndex) {
   *aStartIndex = 0;
 
   if (!Intl()) return NS_ERROR_FAILURE;
-
-#if defined(XP_WIN)
-  if (Intl()->IsRemote() &&
-      !StaticPrefs::accessibility_cache_enabled_AtStartup()) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-#endif
 
   *aStartIndex = static_cast<int32_t>(Intl()->StartOffset());
   return NS_OK;
@@ -38,20 +28,7 @@ xpcAccessibleHyperLink::GetEndIndex(int32_t* aEndIndex) {
 
   if (!Intl()) return NS_ERROR_FAILURE;
 
-  if (Intl()->IsLocal()) {
-    *aEndIndex = Intl()->AsLocal()->EndOffset();
-  } else {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    bool isIndexValid = false;
-    uint32_t endOffset = Intl()->AsRemote()->EndOffset(&isIndexValid);
-    if (!isIndexValid) return NS_ERROR_FAILURE;
-
-    *aEndIndex = endOffset;
-#endif
-  }
-
+  *aEndIndex = static_cast<int32_t>(Intl()->EndOffset());
   return NS_OK;
 }
 
@@ -62,19 +39,7 @@ xpcAccessibleHyperLink::GetAnchorCount(int32_t* aAnchorCount) {
 
   if (!Intl()) return NS_ERROR_FAILURE;
 
-  if (Intl()->IsLocal()) {
-    *aAnchorCount = Intl()->AsLocal()->AnchorCount();
-  } else {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    bool isCountValid = false;
-    uint32_t anchorCount = Intl()->AsRemote()->AnchorCount(&isCountValid);
-    if (!isCountValid) return NS_ERROR_FAILURE;
-
-    *aAnchorCount = anchorCount;
-#endif
-  }
+  *aAnchorCount = Intl()->AnchorCount();
 
   return NS_OK;
 }
@@ -83,32 +48,15 @@ NS_IMETHODIMP
 xpcAccessibleHyperLink::GetURI(int32_t aIndex, nsIURI** aURI) {
   NS_ENSURE_ARG_POINTER(aURI);
 
-  if (!Intl()) return NS_ERROR_FAILURE;
-
-  if (aIndex < 0) return NS_ERROR_INVALID_ARG;
-
-  if (Intl()->IsLocal()) {
-    if (aIndex >= static_cast<int32_t>(Intl()->AsLocal()->AnchorCount())) {
-      return NS_ERROR_INVALID_ARG;
-    }
-
-    RefPtr<nsIURI>(Intl()->AsLocal()->AnchorURIAt(aIndex)).forget(aURI);
-  } else {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    nsCString spec;
-    bool isURIValid = false;
-    Intl()->AsRemote()->AnchorURIAt(aIndex, spec, &isURIValid);
-    if (!isURIValid) return NS_ERROR_FAILURE;
-
-    nsCOMPtr<nsIURI> uri;
-    nsresult rv = NS_NewURI(getter_AddRefs(uri), spec);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    uri.forget(aURI);
-#endif
+  if (!Intl()) {
+    return NS_ERROR_FAILURE;
   }
+
+  if (aIndex < 0 || aIndex >= static_cast<int32_t>(Intl()->AnchorCount())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  RefPtr<nsIURI>(Intl()->AnchorURIAt(aIndex)).forget(aURI);
 
   return NS_OK;
 }
@@ -122,19 +70,11 @@ xpcAccessibleHyperLink::GetAnchor(int32_t aIndex, nsIAccessible** aAccessible) {
 
   if (aIndex < 0) return NS_ERROR_INVALID_ARG;
 
-  if (Intl()->IsLocal()) {
-    if (aIndex >= static_cast<int32_t>(Intl()->AsLocal()->AnchorCount())) {
-      return NS_ERROR_INVALID_ARG;
-    }
-
-    NS_IF_ADDREF(*aAccessible = ToXPC(Intl()->AsLocal()->AnchorAt(aIndex)));
-  } else {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    NS_IF_ADDREF(*aAccessible = ToXPC(Intl()->AsRemote()->AnchorAt(aIndex)));
-#endif
+  if (aIndex >= static_cast<int32_t>(Intl()->AnchorCount())) {
+    return NS_ERROR_INVALID_ARG;
   }
+
+  NS_IF_ADDREF(*aAccessible = ToXPC(Intl()->AnchorAt(aIndex)));
 
   return NS_OK;
 }
@@ -146,15 +86,7 @@ xpcAccessibleHyperLink::GetValid(bool* aValid) {
 
   if (!Intl()) return NS_ERROR_FAILURE;
 
-  if (Intl()->IsLocal()) {
-    *aValid = Intl()->AsLocal()->IsLinkValid();
-  } else {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    *aValid = Intl()->AsRemote()->IsLinkValid();
-#endif
-  }
+  *aValid = Intl()->IsLinkValid();
 
   return NS_OK;
 }

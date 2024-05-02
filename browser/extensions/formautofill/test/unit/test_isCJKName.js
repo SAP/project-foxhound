@@ -5,9 +5,9 @@
 "use strict";
 
 var FormAutofillNameUtils;
-add_task(async function setup() {
-  ({ FormAutofillNameUtils } = ChromeUtils.import(
-    "resource://autofill/FormAutofillNameUtils.jsm"
+add_setup(async () => {
+  ({ FormAutofillNameUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs"
   ));
 });
 

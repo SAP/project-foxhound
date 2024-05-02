@@ -18,14 +18,18 @@ const TEST_GENERATED_URI =
   TEST_ROOT + "test-click-function-to-source.unmapped.min.js";
 const TEST_PRETTYPRINTED_URI = TEST_GENERATED_URI + ":formatted";
 
-add_task(async function() {
+add_task(async function () {
   await clearDebuggerPreferences();
 
   info("Open the console");
   const hud = await openNewTabAndConsole(TEST_URI);
   const toolbox = hud.toolbox;
 
-  const onLoggedFunction = waitForMessage(hud, "function foo");
+  const onLoggedFunction = waitForMessageByType(
+    hud,
+    "function foo",
+    ".console-api"
+  );
   invokeInTab("foo");
   const { node } = await onLoggedFunction;
   const jumpIcon = node.querySelector(".jump-definition");

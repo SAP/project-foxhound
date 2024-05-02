@@ -10,18 +10,11 @@ const TEST_URI =
   "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-error-worklet.html";
 
-add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["dom.audioworklet.enabled", true],
-      ["dom.worklet.enabled", true],
-    ],
-  });
-
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await waitFor(() =>
-    findMessage(hud, "SyntaxError: duplicate formal argument")
+    findErrorMessage(hud, "SyntaxError: duplicate formal argument")
   );
   ok(true, "Received expected SyntaxError");
   await checkMessageStack(hud, "addModule", [18, 21]);

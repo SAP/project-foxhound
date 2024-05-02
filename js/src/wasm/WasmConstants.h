@@ -43,9 +43,7 @@ enum class SectionId {
   Code = 10,
   Data = 11,
   DataCount = 12,
-#ifdef ENABLE_WASM_EXCEPTIONS
   Tag = 13,
-#endif
 };
 
 // WebAssembly type encodings are all single-byte negative SLEB128s, hence:
@@ -65,8 +63,8 @@ enum class TypeCode {
   F64 = 0x7c,   // SLEB128(-0x04)
   V128 = 0x7b,  // SLEB128(-0x05)
 
-  I8 = 0x7a,   // SLEB128(-0x06)
-  I16 = 0x79,  // SLEB128(-0x07)
+  I8 = 0x78,   // SLEB128(-0x08)
+  I16 = 0x77,  // SLEB128(-0x09)
 
   // A function pointer with any signature
   FuncRef = 0x70,  // SLEB128(-0x10)
@@ -74,18 +72,35 @@ enum class TypeCode {
   // A reference to any host value.
   ExternRef = 0x6f,  // SLEB128(-0x11)
 
+  // A reference to any wasm gc value.
+  AnyRef = 0x6e,  // SLEB128(-0x12)
+
   // A reference to a struct/array value.
-  EqRef = 0x6d,  // SLEB128(-0x12)
+  EqRef = 0x6d,  // SLEB128(-0x13)
 
   // Type constructor for nullable reference types.
-  NullableRef = 0x6c,  // SLEB128(-0x14)
+  NullableRef = 0x63,  // SLEB128(-0x1D)
 
   // Type constructor for non-nullable reference types.
-  Ref = 0x6b,  // SLEB128(-0x15)
+  Ref = 0x64,  // SLEB128(-0x1C)
 
-  // Type constructors for rtt types.
-  RttWithDepth = 0x69,  // SLEB128(-0x17)
-  Rtt = 0x68,           // SLEB128(-0x18)
+  // A reference to an unboxed 31-bit integer.
+  I31Ref = 0x6c,  // SLEB128(-0x14)
+
+  // A null reference in the extern hierarchy.
+  NullExternRef = 0x72,  // SLEB128(-0x0E)
+
+  // A null reference in the func hierarchy.
+  NullFuncRef = 0x73,  // SLEB128(-0x0D)
+
+  // A reference to any struct value.
+  StructRef = 0x6b,  // SLEB128(-0x15)
+
+  // A reference to any array value.
+  ArrayRef = 0x6a,  // SLEB128(-0x16)
+
+  // A null reference in the any hierarchy.
+  NullAnyRef = 0x71,  // SLEB128(-0x0F)
 
   // Type constructor for function types
   Func = 0x60,  // SLEB128(-0x20)
@@ -96,8 +111,20 @@ enum class TypeCode {
   // Type constructor for array types - gc proposal
   Array = 0x5e,  // SLEB128(-0x22)
 
+  // Value for non-nullable type present.
+  TableHasInitExpr = 0x40,
+
   // The 'empty' case of blocktype.
   BlockVoid = 0x40,  // SLEB128(-0x40)
+
+  // Type constructor for recursion groups - gc proposal
+  RecGroup = 0x4e,  // SLEB128(-0x31)
+
+  // Type prefix for parent types - gc proposal
+  SubNoFinalType = 0x50,  // SLEB128(-0x30)
+
+  // Type prefix for final types - gc proposal
+  SubFinalType = 0x4f,  // SLEB128(-0x32)
 
   Limit = 0x80
 };
@@ -113,23 +140,31 @@ static constexpr TypeCode LowestPrimitiveTypeCode = TypeCode::I16;
 
 static constexpr TypeCode AbstractReferenceTypeCode = TypeCode::ExternRef;
 
-// A type code used to represent (ref null? typeindex) whether or not the type
+// A type code used to represent (ref null? T) whether or not the type
 // is encoded with 'Ref' or 'NullableRef'.
 
-static constexpr TypeCode AbstractReferenceTypeIndexCode = TypeCode::Ref;
+static constexpr TypeCode AbstractTypeRefCode = TypeCode::Ref;
 
-// A type code used to represent (rtt depth? typeindex) whether or not the type
-// is encoded with 'Rtt' or 'RttWithDepth'.
-
-static constexpr TypeCode AbstractRttCode = TypeCode::Rtt;
-
-enum class TypeIdDescKind { None, Immediate, Global };
-
-// A wasm::Trap represents a wasm-defined trap that can occur during execution
-// which triggers a WebAssembly.RuntimeError. Generated code may jump to a Trap
-// symbolically, passing the bytecode offset to report as the trap offset. The
-// generated jump will be bound to a tiny stub which fills the offset and
+// wasm traps are machine instructions that can fail to execute for reasons
+// that have to do with some condition in the wasm that they were compiled
+// from.  The failure manifests as a (machine-level) exception of some sort,
+// which leads execution to a signal handler, and is eventually reported as a
+// WebAssembly.RuntimeError.  Generated code may also jump to a Trap
+// symbolically, passing the bytecode offset to report as the trap offset.
+// The generated jump will be bound to a tiny stub which fills the offset and
 // then jumps to a per-Trap shared stub at the end of the module.
+//
+// Traps are described by a value from Trap and, in debug builds only, a value
+// from TrapInsn.
+//
+// * A Trap indicates why the trap has happened and is used to construct the
+//   WebAssembly.Runtime message.
+//
+// * A TrapMachineInsn (not defined in this file) describes roughly what kind
+//   of machine instruction has caused the trap.  This is used only for
+//   validation of trap placement in debug builds, in
+//   ModuleGenerator::finishMetadataTier, and is not necessary for execution
+//   of wasm code.
 
 enum class Trap {
   // The Unreachable opcode has been executed.
@@ -168,18 +203,12 @@ enum class Trap {
   Limit
 };
 
-// The representation of a null reference value throughout the compiler.
-
-static const intptr_t NULLREF_VALUE = intptr_t((void*)nullptr);
-
 enum class DefinitionKind {
   Function = 0x00,
   Table = 0x01,
   Memory = 0x02,
   Global = 0x03,
-#ifdef ENABLE_WASM_EXCEPTIONS
   Tag = 0x04,
-#endif
 };
 
 enum class GlobalTypeImmediate { IsMutable = 0x1, AllowedMask = 0x1 };
@@ -215,15 +244,13 @@ enum class ElemSegmentKind : uint32_t {
 };
 
 enum class ElemSegmentPayload : uint32_t {
-  ExternIndex = 0x0,
-  ElemExpression = 0x4,
+  Indices = 0x0,
+  Expressions = 0x4,
 };
 
-#ifdef ENABLE_WASM_EXCEPTIONS
 enum class TagKind {
   Exception = 0x0,
 };
-#endif
 
 enum class Op {
   // Control flow operators
@@ -233,12 +260,10 @@ enum class Op {
   Loop = 0x03,
   If = 0x04,
   Else = 0x05,
-#ifdef ENABLE_WASM_EXCEPTIONS
   Try = 0x06,
   Catch = 0x07,
   Throw = 0x08,
   Rethrow = 0x09,
-#endif
   End = 0x0b,
   Br = 0x0c,
   BrIf = 0x0d,
@@ -248,12 +273,14 @@ enum class Op {
   // Call operators
   Call = 0x10,
   CallIndirect = 0x11,
+  ReturnCall = 0x12,
+  ReturnCallIndirect = 0x13,
+  CallRef = 0x14,
+  ReturnCallRef = 0x15,
 
-// Additional exception operators
-#ifdef ENABLE_WASM_EXCEPTIONS
+  // Additional exception operators
   Delegate = 0x18,
   CatchAll = 0x19,
-#endif
 
   // Parametric operators
   Drop = 0x1a,
@@ -446,14 +473,16 @@ enum class Op {
   RefFunc = 0xd2,
 
   // Function references
-  RefAsNonNull = 0xd3,
-  BrOnNull = 0xd4,
+  RefAsNonNull = 0xd4,
+  BrOnNull = 0xd5,
 
   // GC (experimental)
-  RefEq = 0xd5,
+  RefEq = 0xd3,
+
+  // Function references
+  BrOnNonNull = 0xd6,
 
   FirstPrefix = 0xfa,
-  IntrinsicPrefix = 0xfa,
   GcPrefix = 0xfb,
   MiscPrefix = 0xfc,
   SimdPrefix = 0xfd,
@@ -468,30 +497,45 @@ inline bool IsPrefixByte(uint8_t b) { return b >= uint8_t(Op::FirstPrefix); }
 // Opcodes in the GC opcode space.
 enum class GcOp {
   // Structure operations
-  StructNewWithRtt = 0x1,
-  StructNewDefaultWithRtt = 0x2,
-  StructGet = 0x03,
-  StructGetS = 0x04,
-  StructGetU = 0x05,
-  StructSet = 0x06,
+  StructNew = 0x0,
+  StructNewDefault = 0x1,
+  StructGet = 0x02,
+  StructGetS = 0x03,
+  StructGetU = 0x04,
+  StructSet = 0x05,
 
   // Array operations
-  ArrayNewWithRtt = 0x11,
-  ArrayNewDefaultWithRtt = 0x12,
-  ArrayGet = 0x13,
-  ArrayGetS = 0x14,
-  ArrayGetU = 0x15,
-  ArraySet = 0x16,
-  ArrayLen = 0x17,
-
-  // Rtt operations
-  RttCanon = 0x30,
-  RttSub = 0x31,
+  ArrayNew = 0x6,
+  ArrayNewDefault = 0x7,
+  ArrayNewFixed = 0x8,
+  ArrayNewData = 0x9,
+  ArrayNewElem = 0xa,
+  ArrayGet = 0xb,
+  ArrayGetS = 0xc,
+  ArrayGetU = 0xd,
+  ArraySet = 0xe,
+  ArrayLen = 0xf,
+  ArrayFill = 0x10,
+  ArrayCopy = 0x11,
+  ArrayInitData = 0x12,
+  ArrayInitElem = 0x13,
 
   // Ref operations
-  RefTest = 0x40,
-  RefCast = 0x41,
-  BrOnCast = 0x42,
+  RefTest = 0x14,
+  RefTestNull = 0x15,
+  RefCast = 0x16,
+  RefCastNull = 0x17,
+  BrOnCast = 0x18,
+  BrOnCastFail = 0x19,
+
+  // Extern/any coercion operations
+  ExternInternalize = 0x1a,
+  ExternExternalize = 0x1b,
+
+  // I31 operations
+  RefI31 = 0x1c,
+  I31GetS = 0x1d,
+  I31GetU = 0x1e,
 
   Limit
 };
@@ -665,11 +709,11 @@ enum class SimdOp {
   I16x8ExtmulHighI8x16U = 0x9f,
   I32x4Abs = 0xa0,
   I32x4Neg = 0xa1,
-  V8x16RelaxedSwizzle = 0xa2,
+  // Unused = 0xa2
   I32x4AllTrue = 0xa3,
   I32x4Bitmask = 0xa4,
-  I32x4RelaxedTruncSSatF32x4 = 0xa5,
-  I32x4RelaxedTruncUSatF32x4 = 0xa6,
+  // Unused = 0xa5
+  // Unused = 0xa6
   I32x4ExtendLowI16x8S = 0xa7,
   I32x4ExtendHighI16x8S = 0xa8,
   I32x4ExtendLowI16x8U = 0xa9,
@@ -678,12 +722,12 @@ enum class SimdOp {
   I32x4ShrS = 0xac,
   I32x4ShrU = 0xad,
   I32x4Add = 0xae,
-  F32x4RelaxedFma = 0xaf,
-  F32x4RelaxedFms = 0xb0,
+  // Unused = 0xaf
+  // Unused = 0xb0
   I32x4Sub = 0xb1,
-  I8x16LaneSelect = 0xb2,
-  I16x8LaneSelect = 0xb3,
-  F32x4RelaxedMin = 0xb4,
+  // Unused = 0xb2
+  // Unused = 0xb3
+  // Unused = 0xb4
   I32x4Mul = 0xb5,
   I32x4MinS = 0xb6,
   I32x4MinU = 0xb7,
@@ -700,8 +744,8 @@ enum class SimdOp {
   // AnyTrue = 0xc2
   I64x2AllTrue = 0xc3,
   I64x2Bitmask = 0xc4,
-  I32x4RelaxedTruncSatF64x2SZero = 0xc5,
-  I32x4RelaxedTruncSatF64x2UZero = 0xc6,
+  // Unused = 0xc5
+  // Unused = 0xc6
   I64x2ExtendLowI32x4S = 0xc7,
   I64x2ExtendHighI32x4S = 0xc8,
   I64x2ExtendLowI32x4U = 0xc9,
@@ -710,12 +754,12 @@ enum class SimdOp {
   I64x2ShrS = 0xcc,
   I64x2ShrU = 0xcd,
   I64x2Add = 0xce,
-  F64x2RelaxedFma = 0xcf,
-  F64x2RelaxedFms = 0xd0,
+  // Unused = 0xcf
+  // Unused = 0xd0
   I64x2Sub = 0xd1,
-  I32x4LaneSelect = 0xd2,
-  I64x2LaneSelect = 0xd3,
-  F64x2RelaxedMin = 0xd4,
+  // Unused = 0xd2
+  // Unused = 0xd3
+  // Unused = 0xd4
   I64x2Mul = 0xd5,
   I64x2Eq = 0xd6,
   I64x2Ne = 0xd7,
@@ -729,7 +773,7 @@ enum class SimdOp {
   I64x2ExtmulHighI32x4U = 0xdf,
   F32x4Abs = 0xe0,
   F32x4Neg = 0xe1,
-  F32x4RelaxedMax = 0xe2,
+  // Unused = 0xe2
   F32x4Sqrt = 0xe3,
   F32x4Add = 0xe4,
   F32x4Sub = 0xe5,
@@ -741,7 +785,7 @@ enum class SimdOp {
   F32x4PMax = 0xeb,
   F64x2Abs = 0xec,
   F64x2Neg = 0xed,
-  F64x2RelaxedMax = 0xee,
+  // Unused = 0xee
   F64x2Sqrt = 0xef,
   F64x2Add = 0xf0,
   F64x2Sub = 0xf1,
@@ -759,69 +803,33 @@ enum class SimdOp {
   I32x4TruncSatF64x2UZero = 0xfd,
   F64x2ConvertLowI32x4S = 0xfe,
   F64x2ConvertLowI32x4U = 0xff,
-// Unused = 0x100 and up
+  I8x16RelaxedSwizzle = 0x100,
+  I32x4RelaxedTruncF32x4S = 0x101,
+  I32x4RelaxedTruncF32x4U = 0x102,
+  I32x4RelaxedTruncF64x2SZero = 0x103,
+  I32x4RelaxedTruncF64x2UZero = 0x104,
+  F32x4RelaxedMadd = 0x105,
+  F32x4RelaxedNmadd = 0x106,
+  F64x2RelaxedMadd = 0x107,
+  F64x2RelaxedNmadd = 0x108,
+  I8x16RelaxedLaneSelect = 0x109,
+  I16x8RelaxedLaneSelect = 0x10a,
+  I32x4RelaxedLaneSelect = 0x10b,
+  I64x2RelaxedLaneSelect = 0x10c,
+  F32x4RelaxedMin = 0x10d,
+  F32x4RelaxedMax = 0x10e,
+  F64x2RelaxedMin = 0x10f,
+  F64x2RelaxedMax = 0x110,
+  I16x8RelaxedQ15MulrS = 0x111,
+  I16x8DotI8x16I7x16S = 0x112,
+  I32x4DotI8x16I7x16AddS = 0x113,
 
-// Mozilla extensions, highly experimental and platform-specific
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  // The wormhole is a mechanism for injecting experimental, possibly
-  // platform-dependent, opcodes into the generated code.  A wormhole op is
-  // expressed as a two-operation SIMD shuffle op with the pattern <31, 0, 30,
-  // 2, 29, 4, 28, 6, 27, 8, 26, 10, 25, 12, 24, X> where X is the opcode,
-  // 0..31, from the set below.  If an operation uses no operands, the operands
-  // to the shuffle opcode should be v128.const 0.  If an operation uses one
-  // operand, the operands to the shuffle opcode should both be that operand.
-  //
-  // The wormhole must be enabled by a flag (see below) and is only supported on
-  // x64 and x86 (though with both compilers).
-  //
-  // The benefit of this mechanism is that it allows experimental opcodes to be
-  // used without updating other tools (compilers, linkers, optimizers).
-  //
-  // Controlling the wormhole:
-  //
-  // - Under the correct circumstances, an options bag that is passed as an
-  //   additional and nonstandard argument to any function that validates or
-  //   compiles wasm will be inspected for carrying additional compilation
-  //   options. The options bag always follows any fixed and optional arguments
-  //   already in the signature.  The functions are: WA.validate, WA.compile,
-  //   WA.instantiate when called on a BufferSource, WA.compileStreaming,
-  //   WA.instantiateStreaming, and WA.Module.constructor.  If compiled code can
-  //   be cached, the presence of the options bag forces recompilation.
-  //
-  // - If the bag is inspected and contains the property `simdWormhole` and that
-  //   property has the boolean value `true` (and not just any truthy value),
-  //   then wasm SIMD will be enabled and the wormhole functionality will also
-  //   be enabled for the affected compilation only.
-  //
-  // - The options bag is parsed under these circumstances:
-  //
-  //   - In the shell, if the switch `--wasm-simd-wormhole` is set.
-  //
-  //   - In Nightly and early Beta browsers, if the flag
-  //     `j.o.wasm_simd_wormhole` is set.
-  //
-  //   - In all browsers, if the content passing the options bag is privileged
-  //     (in a way that is TBD).
-  //
-  // - As per normal, wasm SIMD can be enabled by setting `j.o.wasm_simd` to
-  //   true, but in that case the wormhole functionality will not be enabled.
-  //   Note that `j.o.wasm_simd_wormhole` does not enable the wormhole
-  //   functionality directly; it must be enabled by passing an options bag as
-  //   described above.
+  // Reserved for Relaxed SIMD = 0x114-0x12f
 
-  // These opcodes can be rearranged but the X values associated with them must
-  // remain fixed.
+  // Unused = 0x130 and up
 
-  // X=0, selftest opcode.  No operands.  The result is an 8x16 hex value:
-  // DEADD00DCAFEBABE.
-  MozWHSELFTEST = 0x200,
-
-  // X=1, Intel SSE3 PMADDUBSW instruction. Two operands.
-  MozWHPMADDUBSW = 0x201,
-
-  // X=2, Intel SSE2 PMADDWD instruction. Two operands.
-  MozWHPMADDWD = 0x202,
-#endif
+  // Mozilla extensions
+  MozPMADDUBSW = 0x201,
 
   Limit
 };
@@ -851,6 +859,8 @@ enum class MiscOp {
   TableGrow = 0x0f,
   TableSize = 0x10,
   TableFill = 0x11,
+
+  MemoryDiscard = 0x12,
 
   Limit
 };
@@ -940,11 +950,12 @@ enum class ThreadOp {
   Limit
 };
 
-enum class IntrinsicOp {
+enum class IntrinsicId {
 // ------------------------------------------------------------------------
-// These operators are emitted internally when compiling intrinsic modules
-// and are rejected by wasm validation.  They are prefixed by
-// IntrinsicPrefix. See wasm/WasmIntrinsic.yaml for the list.
+// These are part/suffix of the MozOp::Intrinsic operators that are emitted
+// internally when compiling intrinsic modules and are rejected by wasm
+// validation.
+// See wasm/WasmIntrinsic.yaml for the list.
 #define DECL_INTRINSIC_OP(op, export, sa_name, abitype, entry, idx) \
   op = idx,  // NOLINT
   FOR_EACH_INTRINSIC(DECL_INTRINSIC_OP)
@@ -979,9 +990,12 @@ enum class MozOp {
   F32TeeStore,
   F64TeeStore,
   F64Mod,
-  F64Sin,
-  F64Cos,
-  F64Tan,
+  F64SinNative,
+  F64SinFdlibm,
+  F64CosNative,
+  F64CosFdlibm,
+  F64TanNative,
+  F64TanFdlibm,
   F64Asin,
   F64Acos,
   F64Atan,
@@ -993,6 +1007,10 @@ enum class MozOp {
   // asm.js-style call_indirect with the callee evaluated first.
   OldCallDirect,
   OldCallIndirect,
+
+  // Intrinsic modules operations. The operator has argument leb u32 to specify
+  // particular operation id. See IntrinsicId above.
+  Intrinsic,
 
   Limit
 };
@@ -1009,6 +1027,38 @@ struct OpBytes {
     b1 = 0;
   }
   OpBytes() = default;
+
+  // Whether this opcode should have a breakpoint site inserted directly before
+  // the opcode in baseline when debugging. We use this as a heuristic to
+  // reduce the number of breakpoint sites.
+  bool shouldHaveBreakpoint() const {
+    switch (Op(b0)) {
+      // Block-like instructions don't get their own breakpoint site, a
+      // breakpoint can be used on instructions in the block.
+      case Op::Block:
+      case Op::Loop:
+      case Op::If:
+      case Op::Else:
+      case Op::Try:
+      case Op::Delegate:
+      case Op::Catch:
+      case Op::CatchAll:
+      case Op::End:
+      // Effect-less instructions without inputs are leaf nodes in expressions,
+      // a breakpoint can be used on instructions that consume these values.
+      case Op::LocalGet:
+      case Op::GlobalGet:
+      case Op::I32Const:
+      case Op::I64Const:
+      case Op::F32Const:
+      case Op::F64Const:
+      case Op::RefNull:
+      case Op::Drop:
+        return false;
+      default:
+        return true;
+    }
+  }
 };
 
 static const char NameSectionName[] = "name";
@@ -1018,7 +1068,7 @@ enum class NameType { Module = 0, Function = 1, Local = 2 };
 
 enum class FieldFlags { Mutable = 0x01, AllowedMask = 0x01 };
 
-enum class FieldExtension { None, Signed, Unsigned };
+enum class FieldWideningOp { None, Signed, Unsigned };
 
 // The WebAssembly spec hard-codes the virtual page size to be 64KiB and
 // requires the size of linear memory to always be a multiple of 64KiB.
@@ -1031,9 +1081,13 @@ static const unsigned PageMask = ((1u << PageBits) - 1);
 
 // These limits are agreed upon with other engines for consistency.
 
+static const unsigned MaxRecGroups = 1000000;
 static const unsigned MaxTypes = 1000000;
+static const unsigned MaxSubTypingDepth = 63;
+static const unsigned MaxTags = 1000000;
 static const unsigned MaxFuncs = 1000000;
 static const unsigned MaxTables = 100000;
+static const unsigned MaxMemories = 100000;
 static const unsigned MaxImports = 100000;
 static const unsigned MaxExports = 100000;
 static const unsigned MaxGlobals = 1000000;
@@ -1046,27 +1100,22 @@ static const unsigned MaxTableLength = 10000000;
 static const unsigned MaxLocals = 50000;
 static const unsigned MaxParams = 1000;
 static const unsigned MaxResults = 1000;
-static const unsigned MaxStructFields = 1000;
+static const unsigned MaxStructFields = 10000;
 static const uint64_t MaxMemory32LimitField = uint64_t(1) << 16;
 static const uint64_t MaxMemory64LimitField = uint64_t(1) << 48;
 static const unsigned MaxStringBytes = 100000;
 static const unsigned MaxModuleBytes = 1024 * 1024 * 1024;
 static const unsigned MaxFunctionBytes = 7654321;
+static const unsigned MaxArrayNewFixedElements = 10000;
 
-// These limits pertain to our WebAssembly implementation only, but may make
-// sense to get into the shared limits spec eventually.
-
-// See PackedTypeCode for exact bits available for these fields depending on
-// platform
-#ifdef JS_64BIT
-static const unsigned MaxTypeIndex = 1000000;
-static const unsigned MaxRttDepth = 1000;
-#else
-static const unsigned MaxTypeIndex = 15000;
-static const unsigned MaxRttDepth = 100;
-#endif
-
-static const unsigned MaxTags = 1000000;
+// Maximum payload size, in bytes, of a gc-proposal Array.  Puts it fairly
+// close to 2^31 without exposing us to potential danger at the signed-i32
+// wraparound boundary.  Note that gc-proposal Struct sizes are limited by
+// MaxStructFields above.  Some code assumes that the payload size will fit in
+// a uint32_t, hence the static assert.
+static const unsigned MaxArrayPayloadBytes = 1987654321;
+static_assert(uint64_t(MaxArrayPayloadBytes) <
+              (uint64_t(1) << (8 * sizeof(uint32_t))));
 
 // These limits pertain to our WebAssembly implementation only.
 
@@ -1084,20 +1133,9 @@ static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
 
 static const unsigned MaxFrameSize = 512 * 1024;
 
-// A magic value of rtt depth to signify that it was not specified.
-
-static const uint32_t RttDepthNone = MaxRttDepth + 1;
-
 // Asserted by Decoder::readVarU32.
 
 static const unsigned MaxVarU32DecodedBytes = 5;
-
-// Which backend to use in the case of the optimized tier.
-
-enum class OptimizedBackend {
-  Ion,
-  Cranelift,
-};
 
 // The CompileMode controls how compilation of a module is performed (notably,
 // how many times we compile it).

@@ -1,29 +1,50 @@
 use core::ffi::c_void;
-use core::ptr;
+use core::ptr::NonNull;
 
-/// Raw window handle for AppKit.
-///
-/// ## Construction
-/// ```
-/// # use raw_window_handle::AppKitHandle;
-/// let mut handle = AppKitHandle::empty();
-/// /* set fields */
-/// ```
+/// Raw display handle for AppKit.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AppKitHandle {
-    /// A pointer to an `NSWindow` object.
-    pub ns_window: *mut c_void,
-    /// A pointer to an `NSView` object.
-    pub ns_view: *mut c_void,
-    // TODO: WHAT ABOUT ns_window_controller and ns_view_controller?
+pub struct AppKitDisplayHandle {}
+
+impl AppKitDisplayHandle {
+    /// Create a new empty display handle.
+    ///
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use raw_window_handle::AppKitDisplayHandle;
+    /// let handle = AppKitDisplayHandle::new();
+    /// ```
+    pub fn new() -> Self {
+        Self {}
+    }
 }
 
-impl AppKitHandle {
-    pub fn empty() -> Self {
-        Self {
-            ns_window: ptr::null_mut(),
-            ns_view: ptr::null_mut(),
-        }
+/// Raw window handle for AppKit.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AppKitWindowHandle {
+    /// A pointer to an `NSView` object.
+    pub ns_view: NonNull<c_void>,
+}
+
+impl AppKitWindowHandle {
+    /// Create a new handle to a view.
+    ///
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use core::ptr::NonNull;
+    /// # use raw_window_handle::AppKitWindowHandle;
+    /// # type NSView = ();
+    /// #
+    /// let view: &NSView;
+    /// # view = &();
+    /// let handle = AppKitWindowHandle::new(NonNull::from(view).cast());
+    /// ```
+    pub fn new(ns_view: NonNull<c_void>) -> Self {
+        Self { ns_view }
     }
 }

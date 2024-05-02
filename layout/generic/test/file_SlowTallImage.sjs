@@ -1,7 +1,8 @@
 "use strict";
 
-/* eslint-disable-next-line mozilla/use-chromeutils-import */
-let { setTimeout } = Cu.import("resource://gre/modules/Timer.jsm", {});
+let { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 // A tall 1x1000 black png.
 const IMG_BYTES = atob(
@@ -13,7 +14,7 @@ function handleRequest(request, response) {
   response.processAsync();
   response.setHeader("Content-Type", "image/png");
   let delay = request.queryString.indexOf("slow") >= 0 ? 600 : 200;
-  setTimeout(function() {
+  setTimeout(function () {
     response.write(IMG_BYTES);
     response.finish();
   }, delay);

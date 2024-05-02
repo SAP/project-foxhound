@@ -2,13 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import json
 import os
 import sys
 import types
-
 
 SEARCH_PATHS = [
     "gtest",
@@ -32,6 +29,7 @@ SEARCH_PATHS = [
     "mozbase/mozprofile",
     "mozbase/mozrunner",
     "mozbase/mozscreenshot",
+    "mozbase/mozserve",
     "mozbase/mozsystemmonitor",
     "mozbase/moztest",
     "mozbase/mozversion",
@@ -167,8 +165,7 @@ def bootstrap(test_package_root):
 
     sys.path[0:0] = [os.path.join(test_package_root, path) for path in SEARCH_PATHS]
     import mach.main
-
-    from mach.main import MachCommandReference
+    from mach.command_util import MachCommandReference, load_commands_from_spec
 
     # Centralized registry of available mach commands
     MACH_COMMANDS = {
@@ -247,6 +244,6 @@ def bootstrap(test_package_root):
 
     # Depending on which test zips were extracted,
     # the command module might not exist
-    mach.load_commands_from_spec(MACH_COMMANDS, test_package_root, missing_ok=True)
+    load_commands_from_spec(MACH_COMMANDS, test_package_root, missing_ok=True)
 
     return mach

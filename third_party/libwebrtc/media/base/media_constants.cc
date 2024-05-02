@@ -13,14 +13,15 @@
 namespace cricket {
 
 const int kVideoCodecClockrate = 90000;
-const int kDataCodecClockrate = 90000;
-const int kDataMaxBandwidth = 30720;  // bps
+
+const int kVideoMtu = 1200;
+const int kVideoRtpSendBufferSize = 262144;
+const int kVideoRtpRecvBufferSize = 262144;
 
 const float kHighSystemCpuThreshold = 0.85f;
 const float kLowSystemCpuThreshold = 0.65f;
 const float kProcessCpuThreshold = 0.10f;
 
-const char kRtxCodecName[] = "rtx";
 const char kRedCodecName[] = "red";
 const char kUlpfecCodecName[] = "ulpfec";
 const char kMultiplexCodecName[] = "multiplex";
@@ -32,11 +33,17 @@ const char kFlexfecCodecName[] = "flexfec-03";
 // draft-ietf-payload-flexible-fec-scheme-02.txt
 const char kFlexfecFmtpRepairWindow[] = "repair-window";
 
+// RFC 4588 RTP Retransmission Payload Format
+const char kRtxCodecName[] = "rtx";
+const char kCodecParamRtxTime[] = "rtx-time";
 const char kCodecParamAssociatedPayloadType[] = "apt";
+
 const char kCodecParamAssociatedCodecName[] = "acn";
+// Parameters that do not follow the key-value convention
+// are treated as having the empty string as key.
+const char kCodecParamNotInNameValueFormat[] = "";
 
 const char kOpusCodecName[] = "opus";
-const char kIsacCodecName[] = "ISAC";
 const char kL16CodecName[] = "L16";
 const char kG722CodecName[] = "G722";
 const char kIlbcCodecName[] = "ILBC";
@@ -55,9 +62,6 @@ const char kCodecParamUseInbandFec[] = "useinbandfec";
 const char kCodecParamUseDtx[] = "usedtx";
 const char kCodecParamMaxAverageBitrate[] = "maxaveragebitrate";
 const char kCodecParamMaxPlaybackRate[] = "maxplaybackrate";
-
-const char kCodecParamSctpProtocol[] = "protocol";
-const char kCodecParamSctpStreams[] = "streams";
 
 const char kParamValueTrue[] = "1";
 const char kParamValueEmpty[] = "";
@@ -92,17 +96,12 @@ const char kCodecParamMaxBitrate[] = "x-google-max-bitrate";
 const char kCodecParamMinBitrate[] = "x-google-min-bitrate";
 const char kCodecParamStartBitrate[] = "x-google-start-bitrate";
 const char kCodecParamMaxQuantization[] = "x-google-max-quantization";
-const char kCodecParamPort[] = "x-google-port";
-const char kCodecParamMaxMessageSize[] = "x-google-max-message-size";
-
-const int kGoogleRtpDataCodecPlType = 109;
-const char kGoogleRtpDataCodecName[] = "google-data";
 
 const char kComfortNoiseCodecName[] = "CN";
 
 const char kVp8CodecName[] = "VP8";
 const char kVp9CodecName[] = "VP9";
-const char kAv1CodecName[] = "AV1X";
+const char kAv1CodecName[] = "AV1";
 const char kH264CodecName[] = "H264";
 
 // RFC 6184 RTP Payload Format for H.264 video
@@ -113,6 +112,8 @@ const char kH264FmtpSpropParameterSets[] = "sprop-parameter-sets";
 const char kH264FmtpSpsPpsIdrInKeyframe[] = "sps-pps-idr-in-keyframe";
 const char kH264ProfileLevelConstrainedBaseline[] = "42e01f";
 const char kH264ProfileLevelConstrainedHigh[] = "640c1f";
+
+const char kVP9ProfileId[] = "profile-id";
 
 const int kDefaultVideoMaxFramerate = 60;
 

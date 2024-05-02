@@ -9,9 +9,12 @@ package org.mozilla.geckoview;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Matrix;
+import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
@@ -25,6 +28,8 @@ import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
+import java.util.ArrayList;
+import java.util.List;
 import org.mozilla.gecko.util.ThreadUtils;
 
 /**
@@ -67,8 +72,6 @@ public class BasicSelectionActionDelegate
 
   protected final @NonNull Activity mActivity;
   protected final boolean mUseFloatingToolbar;
-  protected final @NonNull Matrix mTempMatrix = new Matrix();
-  protected final @NonNull RectF mTempRect = new RectF();
 
   private boolean mExternalActionsEnabled;
 
@@ -76,6 +79,8 @@ public class BasicSelectionActionDelegate
   protected @Nullable GeckoSession mSession;
   protected @Nullable Selection mSelection;
   protected boolean mRepopulatedMenu;
+
+  private @Nullable ActionMode mActionModeForClipboardPermission;
 
   @TargetApi(Build.VERSION_CODES.M)
   private class Callback2Wrapper extends ActionMode.Callback2 {
@@ -169,10 +174,31 @@ public class BasicSelectionActionDelegate
     }
 
     if (mExternalActionsEnabled && !mSelection.text.isEmpty() && ACTION_PROCESS_TEXT.equals(id)) {
-      final PackageManager pm = mActivity.getPackageManager();
-      return pm.resolveActivity(getProcessTextIntent(), PackageManager.MATCH_DEFAULT_ONLY) != null;
+      return !getProcessTextExportedActivities().isEmpty();
     }
+
     return mSelection.isActionAvailable(id);
+  }
+
+  /**
+   * Get exported activities for {@link BasicSelectionActionDelegate#ACTION_PROCESS_TEXT} when text
+   * is selected.
+   *
+   * @return list of exported activities
+   */
+  private @NonNull List<ResolveInfo> getProcessTextExportedActivities() {
+    final PackageManager pm = mActivity.getPackageManager();
+    final List<ResolveInfo> resolvedList =
+        pm.queryIntentActivityOptions(
+            null, null, getProcessTextIntent(null), PackageManager.MATCH_DEFAULT_ONLY);
+    final ArrayList<ResolveInfo> exportedList = new ArrayList<>();
+    for (final ResolveInfo info : resolvedList) {
+      if (info.activityInfo.exported) {
+        exportedList.add(info);
+      }
+    }
+
+    return exportedList;
   }
 
   /**
@@ -293,8 +319,12 @@ public class BasicSelectionActionDelegate
     return mSelection.text.substring(0, maxLength);
   }
 
-  private Intent getProcessTextIntent() {
+  private Intent getProcessTextIntent(@Nullable final ResolveInfo resolveInfo) {
     final Intent intent = new Intent(Intent.ACTION_PROCESS_TEXT);
+    if (resolveInfo != null) {
+      intent.setComponent(
+          new ComponentName(resolveInfo.activityInfo.packageName, resolveInfo.activityInfo.name));
+    }
     intent.addCategory(Intent.CATEGORY_DEFAULT);
     intent.setType("text/plain");
     // If using large text, anything intent may throw RemoteException.
@@ -336,24 +366,14 @@ public class BasicSelectionActionDelegate
       final int menuId = i + Menu.FIRST;
 
       if (ACTION_PROCESS_TEXT.equals(actionId)) {
-        if (mExternalActionsEnabled && !mSelection.text.isEmpty()) {
-          try {
-            menu.addIntentOptions(
-                menuId,
-                menuId,
-                menuId,
-                mActivity.getComponentName(),
-                /* specifiec */ null,
-                getProcessTextIntent(),
-                /* flags */ 0, /* items */
-                null);
-            changed = true;
-          } catch (final RuntimeException e) {
-            if (e.getCause() instanceof TransactionTooLargeException) {
-              // Binder size error. MAX_INTENT_TEXT_LENGTH is still large?
-              Log.e(LOGTAG, "Cannot add intent option", e);
-            } else {
-              throw e;
+        if (mExternalActionsEnabled && mSelection != null && !mSelection.text.isEmpty()) {
+          final List<ResolveInfo> exportedPackageInfo = getProcessTextExportedActivities();
+          if (!exportedPackageInfo.isEmpty()) {
+            for (final ResolveInfo info : exportedPackageInfo) {
+              final boolean isMenuItemAdded = addProcessTextMenuItem(menu, menuId, info);
+              if (isMenuItemAdded) {
+                changed = true;
+              }
             }
           }
         } else if (menu.findItem(menuId) != null) {
@@ -374,6 +394,31 @@ public class BasicSelectionActionDelegate
       }
     }
     return changed;
+  }
+
+  private boolean addProcessTextMenuItem(
+      final Menu menu, final int menuId, final ResolveInfo info) {
+    boolean isMenuItemAdded = false;
+    try {
+      menu.addIntentOptions(
+          menuId,
+          menuId,
+          menuId,
+          mActivity.getComponentName(),
+          /* specifiec */ null,
+          getProcessTextIntent(info),
+          /* flags */ Menu.FLAG_APPEND_TO_GROUP, /* items */
+          null);
+      isMenuItemAdded = true;
+    } catch (final RuntimeException e) {
+      if (e.getCause() instanceof TransactionTooLargeException) {
+        // Binder size error. MAX_INTENT_TEXT_LENGTH is still large?
+        Log.e(LOGTAG, "Cannot add intent option", e);
+      } else {
+        throw e;
+      }
+    }
+    return isMenuItemAdded;
   }
 
   @Override
@@ -420,12 +465,16 @@ public class BasicSelectionActionDelegate
   public void onGetContentRect(
       final @Nullable ActionMode mode, final @Nullable View view, final @NonNull Rect outRect) {
     ThreadUtils.assertOnUiThread();
-    if (mSelection == null || mSelection.clientRect == null) {
+    if (mSelection == null || mSelection.screenRect == null) {
       return;
     }
-    mSession.getClientToScreenMatrix(mTempMatrix);
-    mTempMatrix.mapRect(mTempRect, mSelection.clientRect);
-    mTempRect.roundOut(outRect);
+
+    // outRect has to convert to current window coordinate.
+    final Matrix matrix = new Matrix();
+    mSession.getScreenToWindowManagerOffsetMatrix(matrix);
+    final RectF transformedRect = new RectF();
+    matrix.mapRect(transformedRect, mSelection.screenRect);
+    transformedRect.roundOut(outRect);
   }
 
   @TargetApi(Build.VERSION_CODES.M)
@@ -441,6 +490,11 @@ public class BasicSelectionActionDelegate
       } else {
         mActionMode.finish();
       }
+      return;
+    }
+
+    if (mActionModeForClipboardPermission != null) {
+      mActionModeForClipboardPermission.finish();
       return;
     }
 
@@ -472,5 +526,160 @@ public class BasicSelectionActionDelegate
         mActionMode.finish();
         break;
     }
+  }
+
+  /** Callback class of clipboard permission. This is used on pre-M only */
+  private class ClipboardPermissionCallback implements ActionMode.Callback {
+    private GeckoResult<AllowOrDeny> mResult;
+
+    public ClipboardPermissionCallback(final GeckoResult<AllowOrDeny> result) {
+      mResult = result;
+    }
+
+    @Override
+    public boolean onCreateActionMode(final ActionMode actionMode, final Menu menu) {
+      return BasicSelectionActionDelegate.this.onCreateActionModeForClipboardPermission(
+          actionMode, menu);
+    }
+
+    @Override
+    public boolean onPrepareActionMode(final ActionMode actionMode, final Menu menu) {
+      return false;
+    }
+
+    @Override
+    public boolean onActionItemClicked(final ActionMode actionMode, final MenuItem menuItem) {
+      mResult.complete(AllowOrDeny.ALLOW);
+      mResult = null;
+      actionMode.finish();
+      return true;
+    }
+
+    @Override
+    public void onDestroyActionMode(final ActionMode actionMode) {
+      if (mResult != null) {
+        mResult.complete(AllowOrDeny.DENY);
+      }
+      BasicSelectionActionDelegate.this.onDestroyActionModeForClipboardPermission(actionMode);
+    }
+  }
+
+  /** Callback class of clipboard permission for Android M+ */
+  @TargetApi(Build.VERSION_CODES.M)
+  private class ClipboardPermissionCallbackM extends ActionMode.Callback2 {
+    private @Nullable GeckoResult<AllowOrDeny> mResult;
+    private final @NonNull GeckoSession mSession;
+    private final @Nullable Point mPoint;
+
+    public ClipboardPermissionCallbackM(
+        final @NonNull GeckoSession session,
+        final @Nullable Point screenPoint,
+        final @NonNull GeckoResult<AllowOrDeny> result) {
+      mSession = session;
+      mPoint = screenPoint;
+      mResult = result;
+    }
+
+    @Override
+    public boolean onCreateActionMode(final ActionMode actionMode, final Menu menu) {
+      return BasicSelectionActionDelegate.this.onCreateActionModeForClipboardPermission(
+          actionMode, menu);
+    }
+
+    @Override
+    public boolean onPrepareActionMode(final ActionMode actionMode, final Menu menu) {
+      return false;
+    }
+
+    @Override
+    public boolean onActionItemClicked(final ActionMode actionMode, final MenuItem menuItem) {
+      mResult.complete(AllowOrDeny.ALLOW);
+      mResult = null;
+      actionMode.finish();
+      return true;
+    }
+
+    @Override
+    public void onDestroyActionMode(final ActionMode actionMode) {
+      if (mResult != null) {
+        mResult.complete(AllowOrDeny.DENY);
+      }
+      BasicSelectionActionDelegate.this.onDestroyActionModeForClipboardPermission(actionMode);
+    }
+
+    @Override
+    public void onGetContentRect(final ActionMode mode, final View view, final Rect outRect) {
+      super.onGetContentRect(mode, view, outRect);
+
+      if (mPoint == null) {
+        return;
+      }
+
+      outRect.set(mPoint.x, mPoint.y, mPoint.x + 1, mPoint.y + 1);
+    }
+  }
+
+  /**
+   * Show action mode bar to request clipboard permission
+   *
+   * @param session The GeckoSession that initiated the callback.
+   * @param permission An {@link ClipboardPermission} describing the permission being requested.
+   * @return A {@link GeckoResult} with {@link AllowOrDeny}, determining the response to the
+   *     permission request for this site.
+   */
+  @TargetApi(Build.VERSION_CODES.M)
+  @Override
+  public GeckoResult<AllowOrDeny> onShowClipboardPermissionRequest(
+      final GeckoSession session, final ClipboardPermission permission) {
+    ThreadUtils.assertOnUiThread();
+
+    final GeckoResult<AllowOrDeny> result = new GeckoResult<>();
+
+    if (mActionMode != null) {
+      mActionMode.finish();
+      mActionMode = null;
+    }
+    if (mActionModeForClipboardPermission != null) {
+      mActionModeForClipboardPermission.finish();
+      mActionModeForClipboardPermission = null;
+    }
+
+    if (mUseFloatingToolbar) {
+      mActionModeForClipboardPermission =
+          mActivity.startActionMode(
+              new ClipboardPermissionCallbackM(session, permission.screenPoint, result),
+              ActionMode.TYPE_FLOATING);
+    } else {
+      mActionModeForClipboardPermission =
+          mActivity.startActionMode(new ClipboardPermissionCallback(result));
+    }
+
+    return result;
+  }
+
+  /**
+   * Dismiss action mode for requesting clipboard permission popup or model.
+   *
+   * @param session The GeckoSession that initiated the callback.
+   */
+  @Override
+  public void onDismissClipboardPermissionRequest(final GeckoSession session) {
+    ThreadUtils.assertOnUiThread();
+
+    if (mActionModeForClipboardPermission != null) {
+      mActionModeForClipboardPermission.finish();
+      mActionModeForClipboardPermission = null;
+    }
+  }
+
+  /* package */ boolean onCreateActionModeForClipboardPermission(
+      final ActionMode actionMode, final Menu menu) {
+    final MenuItem item = menu.add(/* group */ Menu.NONE, Menu.FIRST, Menu.FIRST, /* title */ "");
+    item.setTitle(android.R.string.paste);
+    return true;
+  }
+
+  /* package */ void onDestroyActionModeForClipboardPermission(final ActionMode actionMode) {
+    mActionModeForClipboardPermission = null;
   }
 }

@@ -22,7 +22,6 @@
 #include "nsStandardURL.h"
 #include "mozilla/net/BackgroundChannelRegistrar.h"
 #include "mozilla/net/NeckoChild.h"
-#include "RedirectChannelRegistrar.h"
 #ifdef MOZ_AUTH_EXTENSION
 #  include "nsAuthGSSAPI.h"
 #endif
@@ -88,20 +87,13 @@ static BaseWebSocketChannel* WebSocketChannelConstructor(bool aSecure) {
   return new WebSocketChannel;
 }
 
-#define WEB_SOCKET_HANDLER_CONSTRUCTOR(type, secure)             \
-  nsresult type##Constructor(nsISupports* aOuter, REFNSIID aIID, \
-                             void** aResult) {                   \
-    nsresult rv;                                                 \
-                                                                 \
-    RefPtr<BaseWebSocketChannel> inst;                           \
-                                                                 \
-    *aResult = nullptr;                                          \
-    if (nullptr != aOuter) {                                     \
-      rv = NS_ERROR_NO_AGGREGATION;                              \
-      return rv;                                                 \
-    }                                                            \
-    inst = WebSocketChannelConstructor(secure);                  \
-    return inst->QueryInterface(aIID, aResult);                  \
+#define WEB_SOCKET_HANDLER_CONSTRUCTOR(type, secure)          \
+  nsresult type##Constructor(REFNSIID aIID, void** aResult) { \
+    RefPtr<BaseWebSocketChannel> inst;                        \
+                                                              \
+    *aResult = nullptr;                                       \
+    inst = WebSocketChannelConstructor(secure);               \
+    return inst->QueryInterface(aIID, aResult);               \
   }
 
 WEB_SOCKET_HANDLER_CONSTRUCTOR(WebSocketChannel, false)
@@ -126,41 +118,9 @@ nsresult MOZ_NewTXTToHTMLConv(mozTXTToHTMLConv** result);
 nsresult NS_NewHTTPCompressConv(mozilla::net::nsHTTPCompressConv** result);
 nsresult NS_NewStreamConv(nsStreamConverterService** aStreamConv);
 
-#define INDEX_TO_HTML "?from=application/http-index-format&to=text/html"
-#define MULTI_MIXED_X "?from=multipart/x-mixed-replace&to=*/*"
-#define MULTI_MIXED "?from=multipart/mixed&to=*/*"
-#define MULTI_BYTERANGES "?from=multipart/byteranges&to=*/*"
-#define UNKNOWN_CONTENT "?from=" UNKNOWN_CONTENT_TYPE "&to=*/*"
-#define GZIP_TO_UNCOMPRESSED "?from=gzip&to=uncompressed"
-#define XGZIP_TO_UNCOMPRESSED "?from=x-gzip&to=uncompressed"
-#define BROTLI_TO_UNCOMPRESSED "?from=br&to=uncompressed"
-#define COMPRESS_TO_UNCOMPRESSED "?from=compress&to=uncompressed"
-#define XCOMPRESS_TO_UNCOMPRESSED "?from=x-compress&to=uncompressed"
-#define DEFLATE_TO_UNCOMPRESSED "?from=deflate&to=uncompressed"
-
-static const mozilla::Module::CategoryEntry kNeckoCategories[] = {
-    {NS_ISTREAMCONVERTER_KEY, INDEX_TO_HTML, ""},
-    {NS_ISTREAMCONVERTER_KEY, MULTI_MIXED_X, ""},
-    {NS_ISTREAMCONVERTER_KEY, MULTI_MIXED, ""},
-    {NS_ISTREAMCONVERTER_KEY, MULTI_BYTERANGES, ""},
-    {NS_ISTREAMCONVERTER_KEY, UNKNOWN_CONTENT, ""},
-    {NS_ISTREAMCONVERTER_KEY, GZIP_TO_UNCOMPRESSED, ""},
-    {NS_ISTREAMCONVERTER_KEY, XGZIP_TO_UNCOMPRESSED, ""},
-    {NS_ISTREAMCONVERTER_KEY, BROTLI_TO_UNCOMPRESSED, ""},
-    {NS_ISTREAMCONVERTER_KEY, COMPRESS_TO_UNCOMPRESSED, ""},
-    {NS_ISTREAMCONVERTER_KEY, XCOMPRESS_TO_UNCOMPRESSED, ""},
-    {NS_ISTREAMCONVERTER_KEY, DEFLATE_TO_UNCOMPRESSED, ""},
-    NS_BINARYDETECTOR_CATEGORYENTRY,
-    {nullptr}};
-
-nsresult CreateNewStreamConvServiceFactory(nsISupports* aOuter, REFNSIID aIID,
-                                           void** aResult) {
+nsresult CreateNewStreamConvServiceFactory(REFNSIID aIID, void** aResult) {
   if (!aResult) {
     return NS_ERROR_INVALID_POINTER;
-  }
-  if (aOuter) {
-    *aResult = nullptr;
-    return NS_ERROR_NO_AGGREGATION;
   }
   RefPtr<nsStreamConverterService> inst;
   nsresult rv = NS_NewStreamConv(getter_AddRefs(inst));
@@ -175,14 +135,9 @@ nsresult CreateNewStreamConvServiceFactory(nsISupports* aOuter, REFNSIID aIID,
   return rv;
 }
 
-nsresult CreateNewMultiMixedConvFactory(nsISupports* aOuter, REFNSIID aIID,
-                                        void** aResult) {
+nsresult CreateNewMultiMixedConvFactory(REFNSIID aIID, void** aResult) {
   if (!aResult) {
     return NS_ERROR_INVALID_POINTER;
-  }
-  if (aOuter) {
-    *aResult = nullptr;
-    return NS_ERROR_NO_AGGREGATION;
   }
   RefPtr<nsMultiMixedConv> inst;
   nsresult rv = NS_NewMultiMixedConv(getter_AddRefs(inst));
@@ -197,14 +152,9 @@ nsresult CreateNewMultiMixedConvFactory(nsISupports* aOuter, REFNSIID aIID,
   return rv;
 }
 
-nsresult CreateNewTXTToHTMLConvFactory(nsISupports* aOuter, REFNSIID aIID,
-                                       void** aResult) {
+nsresult CreateNewTXTToHTMLConvFactory(REFNSIID aIID, void** aResult) {
   if (!aResult) {
     return NS_ERROR_INVALID_POINTER;
-  }
-  if (aOuter) {
-    *aResult = nullptr;
-    return NS_ERROR_NO_AGGREGATION;
   }
   RefPtr<mozTXTToHTMLConv> inst;
   nsresult rv = MOZ_NewTXTToHTMLConv(getter_AddRefs(inst));
@@ -219,14 +169,9 @@ nsresult CreateNewTXTToHTMLConvFactory(nsISupports* aOuter, REFNSIID aIID,
   return rv;
 }
 
-nsresult CreateNewHTTPCompressConvFactory(nsISupports* aOuter, REFNSIID aIID,
-                                          void** aResult) {
+nsresult CreateNewHTTPCompressConvFactory(REFNSIID aIID, void** aResult) {
   if (!aResult) {
     return NS_ERROR_INVALID_POINTER;
-  }
-  if (aOuter) {
-    *aResult = nullptr;
-    return NS_ERROR_NO_AGGREGATION;
   }
   RefPtr<mozilla::net::nsHTTPCompressConv> inst;
   nsresult rv = NS_NewHTTPCompressConv(getter_AddRefs(inst));
@@ -241,31 +186,21 @@ nsresult CreateNewHTTPCompressConvFactory(nsISupports* aOuter, REFNSIID aIID,
   return rv;
 }
 
-nsresult CreateNewUnknownDecoderFactory(nsISupports* aOuter, REFNSIID aIID,
-                                        void** aResult) {
+nsresult CreateNewUnknownDecoderFactory(REFNSIID aIID, void** aResult) {
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
   *aResult = nullptr;
-
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
 
   RefPtr<nsUnknownDecoder> inst = new nsUnknownDecoder();
   return inst->QueryInterface(aIID, aResult);
 }
 
-nsresult CreateNewBinaryDetectorFactory(nsISupports* aOuter, REFNSIID aIID,
-                                        void** aResult) {
+nsresult CreateNewBinaryDetectorFactory(REFNSIID aIID, void** aResult) {
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
   *aResult = nullptr;
-
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
 
   RefPtr<nsBinaryDetector> inst = new nsBinaryDetector();
   return inst->QueryInterface(aIID, aResult);
@@ -299,10 +234,6 @@ void nsNetShutdown() {
 
   mozilla::net::Http2CompressionCleanup();
 
-  mozilla::net::RedirectChannelRegistrar::Shutdown();
-
-  mozilla::net::BackgroundChannelRegistrar::Shutdown();
-
 #ifdef MOZ_AUTH_EXTENSION
   nsAuthGSSAPI::Shutdown();
 #endif
@@ -316,13 +247,3 @@ void nsNetShutdown() {
   delete gNetAndORBSniffers;
   gNetAndORBSniffers = nullptr;
 }
-
-extern const mozilla::Module kNeckoModule = {
-    mozilla::Module::kVersion,
-    nullptr,
-    nullptr,
-    kNeckoCategories,
-    nullptr,
-    nullptr,
-    nullptr,
-    mozilla::Module::ALLOW_IN_SOCKET_PROCESS};

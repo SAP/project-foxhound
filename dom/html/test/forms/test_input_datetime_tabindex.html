@@ -16,16 +16,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1288591
   <input id="time1" type="time" tabindex="0">
   <input id="time2" type="time" tabindex="-1">
   <input id="time3" type="time" tabindex="0">
+  <input id="time4" type="time" disabled>
   <input id="date1" type="date" tabindex="0">
   <input id="date2" type="date" tabindex="-1">
   <input id="date3" type="date" tabindex="0">
+  <input id="date4" type="date" disabled>
   <input id="datetime-local1" type="datetime-local" tabindex="0">
   <input id="datetime-local2" type="datetime-local" tabindex="-1">
   <input id="datetime-local3" type="datetime-local" tabindex="0">
+  <input id="datetime-local4" type="datetime-local" disabled>
 </div>
 <pre id="test">
-<script type="application/javascript">
-
+<script>
 /**
  * Test for Bug 1288591.
  * This test checks whether date/time input types tabindex attribute works
@@ -50,12 +52,21 @@ function testTabindex(type) {
   let input1 = document.getElementById(type + "1");
   let input2 = document.getElementById(type + "2");
   let input3 = document.getElementById(type + "3");
+  let input4 = document.getElementById(type + "4");
 
   input1.focus();
   is(document.activeElement, input1,
      "input element with tabindex=0 is focusable");
 
-  let fieldCount = type == "datetime-local" ? 6 : 3;
+  // Time input does not include a Calendar button
+  let fieldCount;
+  if (type == "datetime-local") {
+    fieldCount = 7;
+  } else if (type == "date") {
+    fieldCount = 4;
+  } else {
+    fieldCount = 3;
+  };
 
   // Advance through inner fields.
   for (let i = 0; i < fieldCount - 1; ++i) {
@@ -79,9 +90,13 @@ function testTabindex(type) {
 
   // Changing the tabindex attribute dynamically.
   input3.setAttribute("tabindex", "-1");
+
   synthesizeKey("KEY_Tab"); // need only one TAB since input2 is not tabbable
+
   isnot(document.activeElement, input3,
         "element with tabindex changed to -1 should not be tabbable");
+  isnot(document.activeElement, input4,
+        "disabled element should not be tabbable");
 
   checkInnerTextboxTabindex(input3, -1);
 }

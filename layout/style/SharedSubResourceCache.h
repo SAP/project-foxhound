@@ -50,8 +50,13 @@ struct SharedSubResourceCacheLoadingValueBase {
   // Whether we're in the "loading" hash table.
   RefPtr<Derived> mNext;
 
-  bool mIsLoading = false;
-  bool mIsCancelled = false;
+  virtual bool IsLoading() const = 0;
+  virtual bool IsCancelled() const = 0;
+  virtual bool IsSyncLoad() const = 0;
+
+  virtual void StartLoading() = 0;
+  virtual void SetLoadCompleted() = 0;
+  virtual void Cancel() = 0;
 
   ~SharedSubResourceCacheLoadingValueBase() {
     // Do this iteratively to avoid blowing up the stack.
@@ -157,8 +162,9 @@ class SharedSubResourceCache {
   }
 
   struct CompleteSubResource {
-    uint32_t mExpirationTime = 0;
     RefPtr<Value> mResource;
+    uint32_t mExpirationTime = 0;
+    bool mWasSyncLoad = false;
 
     inline bool Expired() const;
   };
@@ -307,7 +313,8 @@ void SharedSubResourceCache<Traits, Derived>::CancelLoadsForLoader(
                           "incorrectly dropped on the floor");
     for (; data; data = data->mNext) {
       if (&data->Loader() == &aLoader) {
-        data->mIsCancelled = true;
+        data->Cancel();
+        MOZ_ASSERT(data->IsCancelled());
       }
     }
   }
@@ -355,19 +362,26 @@ void SharedSubResourceCache<Traits, Derived>::StartPendingLoadsForLoader(
 template <typename Traits, typename Derived>
 void SharedSubResourceCache<Traits, Derived>::Insert(LoadingValue& aValue) {
   auto key = KeyFromLoadingValue(aValue);
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#ifdef DEBUG
+  // We only expect a complete entry to be overriding when:
+  //  * It's expired.
+  //  * We're explicitly bypassing the cache.
+  //  * Our entry is a sync load that was completed after aValue started loading
+  //    async.
   for (const auto& entry : mComplete) {
     if (key.KeyEquals(entry.GetKey())) {
-      MOZ_ASSERT(
-          entry.GetData().Expired() || aValue.Loader().ShouldBypassCache(),
-          "Overriding existing complete entry?");
+      MOZ_ASSERT(entry.GetData().Expired() ||
+                     aValue.Loader().ShouldBypassCache() ||
+                     (entry.GetData().mWasSyncLoad && !aValue.IsSyncLoad()),
+                 "Overriding existing complete entry?");
     }
   }
 #endif
 
   // TODO(emilio): Use counters!
-  mComplete.InsertOrUpdate(key, CompleteSubResource{aValue.ExpirationTime(),
-                                                    aValue.ValueForCache()});
+  mComplete.InsertOrUpdate(
+      key, CompleteSubResource{aValue.ValueForCache(), aValue.ExpirationTime(),
+                               aValue.IsSyncLoad()});
 }
 
 template <typename Traits, typename Derived>
@@ -458,9 +472,11 @@ size_t SharedSubResourceCache<Traits, Derived>::SizeOfIncludingThis(
 template <typename Traits, typename Derived>
 void SharedSubResourceCache<Traits, Derived>::LoadStarted(
     const Key& aKey, LoadingValue& aValue) {
-  MOZ_ASSERT(!aValue.mIsLoading, "Already loading? How?");
-  MOZ_ASSERT(KeyFromLoadingValue(aValue).KeyEquals(aKey));
-  aValue.mIsLoading = true;
+  MOZ_DIAGNOSTIC_ASSERT(!aValue.IsLoading(), "Already loading? How?");
+  MOZ_DIAGNOSTIC_ASSERT(KeyFromLoadingValue(aValue).KeyEquals(aKey));
+  MOZ_DIAGNOSTIC_ASSERT(!mLoading.Contains(aKey), "Load not coalesced?");
+  aValue.StartLoading();
+  MOZ_ASSERT(aValue.IsLoading(), "Check that StartLoading is effectful.");
   mLoading.InsertOrUpdate(aKey, &aValue);
 }
 
@@ -474,7 +490,7 @@ bool SharedSubResourceCache<Traits, Derived>::CompleteSubResource::Expired()
 template <typename Traits, typename Derived>
 void SharedSubResourceCache<Traits, Derived>::LoadCompleted(
     LoadingValue& aValue) {
-  if (!aValue.mIsLoading) {
+  if (!aValue.IsLoading()) {
     return;
   }
   auto key = KeyFromLoadingValue(aValue);
@@ -482,7 +498,8 @@ void SharedSubResourceCache<Traits, Derived>::LoadCompleted(
   MOZ_DIAGNOSTIC_ASSERT(value);
   MOZ_DIAGNOSTIC_ASSERT(value.value() == &aValue);
   Unused << value;
-  aValue.mIsLoading = false;
+  aValue.SetLoadCompleted();
+  MOZ_ASSERT(!aValue.IsLoading(), "Check that SetLoadCompleted is effectful.");
 }
 
 }  // namespace mozilla

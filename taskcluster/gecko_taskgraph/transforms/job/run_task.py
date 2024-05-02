@@ -6,13 +6,17 @@ Support for running jobs that are invoked via the `run-task` script.
 """
 
 
-from mozpack import path
+import os
 
-from gecko_taskgraph.transforms.task import taskref_or_string
-from gecko_taskgraph.transforms.job import run_job_using
-from gecko_taskgraph.util.schema import Schema
-from gecko_taskgraph.transforms.job.common import add_tooltool, support_vcs_checkout
+from mozbuild.util import memoize
+from mozpack import path
+from taskgraph.util.schema import Schema
+from taskgraph.util.yaml import load_yaml
 from voluptuous import Any, Optional, Required
+
+from gecko_taskgraph.transforms.job import run_job_using
+from gecko_taskgraph.transforms.job.common import add_tooltool, support_vcs_checkout
+from gecko_taskgraph.transforms.task import taskref_or_string
 
 run_task_schema = Schema(
     {
@@ -42,10 +46,6 @@ run_task_schema = Schema(
         # checkout arguments.  If a list, it will be passed directly; otherwise
         # it will be included in a single argument to `bash -cx`.
         Required("command"): Any([taskref_or_string], taskref_or_string),
-        # Context to substitute into the command using format string
-        # substitution (e.g {value}). This is useful if certain aspects of the
-        # command need to be generated in transforms.
-        Optional("command-context"): dict,
         # Base work directory used to set up the task.
         Optional("workdir"): str,
         # If not false, tooltool downloads will be enabled via relengAPIProxy
@@ -90,10 +90,15 @@ worker_defaults = {
 }
 
 
+load_yaml = memoize(load_yaml)
+
+
 def script_url(config, script):
-    return config.params.file_url(
-        f"taskcluster/scripts/{script}",
-    )
+    if "MOZ_AUTOMATION" in os.environ and "TASK_ID" not in os.environ:
+        raise Exception("TASK_ID must be defined to use run-task on generic-worker")
+    task_id = os.environ.get("TASK_ID", "<TASK_ID>")
+    tc_url = "http://firefox-ci-tc.services.mozilla.com"
+    return f"{tc_url}/api/queue/v1/task/{task_id}/artifacts/public/{script}"
 
 
 @run_job_using(
@@ -121,10 +126,6 @@ def docker_worker_run_task(config, job, taskdesc):
 
     run_command = run["command"]
 
-    command_context = run.get("command-context")
-    if command_context:
-        run_command = run_command.format(**command_context)
-
     run_cwd = run.get("cwd")
     if run_cwd and run["checkout"]:
         run_cwd = path.normpath(
@@ -145,7 +146,6 @@ def docker_worker_run_task(config, job, taskdesc):
         command.append(
             "--comm-checkout={}/comm".format(taskdesc["worker"]["env"]["GECKO_PATH"])
         )
-    command.append("--fetch-hgfingerprint")
     if run["run-as-root"]:
         command.extend(("--user", "root", "--group", "root"))
     if run_cwd:
@@ -198,7 +198,7 @@ def generic_worker_run_task(config, job, taskdesc):
         worker["mounts"].append(
             {
                 "content": {
-                    "url": script_url(config, "misc/fetch-content"),
+                    "url": script_url(config, "fetch-content"),
                 },
                 "file": "./fetch-content",
             }
@@ -227,11 +227,6 @@ def generic_worker_run_task(config, job, taskdesc):
             else:
                 run_command = f'"{run_command}"'
         run_command = ["bash", "-cx", run_command]
-
-    command_context = run.get("command-context")
-    if command_context:
-        for i in range(len(run_command)):
-            run_command[i] = run_command[i].format(**command_context)
 
     if run["comm-checkout"]:
         command.append(

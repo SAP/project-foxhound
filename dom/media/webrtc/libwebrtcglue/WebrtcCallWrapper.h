@@ -17,6 +17,7 @@
 // libwebrtc includes
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "call/call.h"
+#include "call/call_config.h"
 
 namespace mozilla {
 class AbstractThread;
@@ -30,7 +31,7 @@ class ShutdownBlockingTicket;
 // Wrap the webrtc.org Call class adding mozilla add/ref support.
 class WebrtcCallWrapper {
  public:
-  typedef webrtc::Call::Config Config;
+  typedef webrtc::CallConfig Config;
 
   static RefPtr<WebrtcCallWrapper> Create(
       const dom::RTCStatsTimestampMaker& aTimestampMaker,
@@ -91,7 +92,7 @@ class WebrtcCallWrapper {
 
   // Allows conduits to know about one another, to avoid remote SSRC
   // collisions.
-  std::set<MediaSessionConduit*> mConduits;
+  std::set<RefPtr<MediaSessionConduit>> mConduits;
   RTCStatsTimestampMakerRealtimeClock mClock;
   UniquePtr<media::ShutdownBlockingTicket> mShutdownTicket;
 

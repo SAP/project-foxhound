@@ -6,59 +6,61 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const Services = require("Services");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   decodeUnicodeBase64,
   fetchNetworkUpdatePacket,
   parseJSON,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   getCORSErrorURL,
-} = require("devtools/client/netmonitor/src/utils/mdn-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/doc-utils.js");
 const {
   Filters,
-} = require("devtools/client/netmonitor/src/utils/filter-predicates");
+} = require("resource://devtools/client/netmonitor/src/utils/filter-predicates.js");
 const {
   FILTER_SEARCH_DELAY,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 const {
   BLOCKED_REASON_MESSAGES,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 // Components
 const PropertiesView = createFactory(
-  require("devtools/client/netmonitor/src/components/request-details/PropertiesView")
+  require("resource://devtools/client/netmonitor/src/components/request-details/PropertiesView.js")
 );
 const ImagePreview = createFactory(
-  require("devtools/client/netmonitor/src/components/previews/ImagePreview")
+  require("resource://devtools/client/netmonitor/src/components/previews/ImagePreview.js")
 );
 const FontPreview = createFactory(
-  require("devtools/client/netmonitor/src/components/previews/FontPreview")
+  require("resource://devtools/client/netmonitor/src/components/previews/FontPreview.js")
 );
 const SourcePreview = createFactory(
-  require("devtools/client/netmonitor/src/components/previews/SourcePreview")
+  require("resource://devtools/client/netmonitor/src/components/previews/SourcePreview.js")
 );
 const HtmlPreview = createFactory(
-  require("devtools/client/netmonitor/src/components/previews/HtmlPreview")
+  require("resource://devtools/client/netmonitor/src/components/previews/HtmlPreview.js")
 );
 let {
   NotificationBox,
   PriorityLevels,
-} = require("devtools/client/shared/components/NotificationBox");
+} = require("resource://devtools/client/shared/components/NotificationBox.js");
 NotificationBox = createFactory(NotificationBox);
 const MessagesView = createFactory(
-  require("devtools/client/netmonitor/src/components/messages/MessagesView")
+  require("resource://devtools/client/netmonitor/src/components/messages/MessagesView.js")
 );
 const SearchBox = createFactory(
-  require("devtools/client/shared/components/SearchBox")
+  require("resource://devtools/client/shared/components/SearchBox.js")
 );
 
-loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/index").MODE;
+loader.lazyGetter(this, "MODE", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
+    .MODE;
 });
 
 const { div, input, label, span, h2 } = dom;
@@ -97,9 +99,10 @@ class ResponsePanel extends Component {
 
     this.toggleRawResponsePayload = this.toggleRawResponsePayload.bind(this);
     this.renderCORSBlockedReason = this.renderCORSBlockedReason.bind(this);
-    this.renderRawResponsePayloadBtn = this.renderRawResponsePayloadBtn.bind(
-      this
-    );
+    this.renderRawResponsePayloadBtn =
+      this.renderRawResponsePayloadBtn.bind(this);
+    this.renderJsonHtmlAndSource = this.renderJsonHtmlAndSource.bind(this);
+    this.handleJSONResponse = this.handleJSONResponse.bind(this);
   }
 
   componentDidMount() {
@@ -109,11 +112,19 @@ class ResponsePanel extends Component {
     ]);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { request, connector } = nextProps;
     fetchNetworkUpdatePacket(connector.requestData, request, [
       "responseContent",
     ]);
+
+    // If the response contains XSSI stripped chars default to raw view
+    const text = nextProps.request?.responseContent?.content?.text;
+    const xssiStrippedChars = text && parseJSON(text)?.strippedChars;
+    if (xssiStrippedChars && !this.state.rawResponsePayloadDisplayed) {
+      this.toggleRawResponsePayload();
+    }
 
     if (nextProps.targetSearchResult !== null) {
       this.setState({
@@ -159,7 +170,7 @@ class ResponsePanel extends Component {
       return result;
     }
 
-    const { json, error, jsonpCallback } = parseJSON(response);
+    const { json, error, jsonpCallback, strippedChars } = parseJSON(response);
 
     if (/\bjson/.test(mimeType) || json) {
       const result = {};
@@ -177,6 +188,10 @@ class ResponsePanel extends Component {
       // Malformed JSON
       if (error) {
         result.error = "" + error;
+      }
+      // XSSI protection sequence
+      if (strippedChars) {
+        result.strippedChars = strippedChars;
       }
 
       return result;
@@ -236,6 +251,96 @@ class ResponsePanel extends Component {
     });
   }
 
+  /**
+   * Pick correct component, componentprops, and other needed data to render
+   * the given response
+   *
+   * @returns {Object} shape:
+   *  {component}: React component used to render response
+   *  {Object} componetProps: Props passed to component
+   *  {Error} error: JSON parsing error
+   *  {Object} json: parsed JSON payload
+   *  {bool} hasFormattedDisplay: whether the given payload has a formatted
+   *         display or if it should be rendered raw
+   *  {string} responsePayloadLabel: describes type in response panel
+   *  {component} xssiStrippedCharsInfoBox: React component to notifiy users
+   *              that XSSI characters were stripped from the response
+   */
+  renderJsonHtmlAndSource() {
+    const { request, targetSearchResult } = this.props;
+    const { responseContent } = request;
+    let { encoding, mimeType, text } = responseContent.content;
+    const { filterText, rawResponsePayloadDisplayed } = this.state;
+
+    // Decode response if it's coming from JSONView.
+    if (mimeType?.includes(JSON_VIEW_MIME_TYPE) && encoding === "base64") {
+      text = decodeUnicodeBase64(text);
+    }
+    const { json, jsonpCallback, error, strippedChars } =
+      this.handleJSONResponse(mimeType, text) || {};
+
+    let component;
+    let componentProps;
+    let xssiStrippedCharsInfoBox;
+    let responsePayloadLabel = RESPONSE_PAYLOAD;
+    let hasFormattedDisplay = false;
+
+    if (json) {
+      if (jsonpCallback) {
+        responsePayloadLabel = L10N.getFormatStr(
+          "jsonpScopeName",
+          jsonpCallback
+        );
+      } else {
+        responsePayloadLabel = JSON_SCOPE_NAME;
+      }
+
+      // If raw response payload is not displayed render xssi info box if
+      // there are stripped chars
+      if (!rawResponsePayloadDisplayed) {
+        xssiStrippedCharsInfoBox =
+          this.renderXssiStrippedCharsInfoBox(strippedChars);
+      } else {
+        xssiStrippedCharsInfoBox = null;
+      }
+
+      component = PropertiesView;
+      componentProps = {
+        object: json,
+        useQuotes: true,
+        filterText,
+        targetSearchResult,
+        defaultSelectFirstNode: false,
+        mode: MODE.LONG,
+        useBaseTreeViewExpand: true,
+      };
+      hasFormattedDisplay = true;
+    } else if (Filters.html(this.props.request)) {
+      // Display HTML
+      responsePayloadLabel = HTML_RESPONSE;
+      component = HtmlPreview;
+      componentProps = { responseContent };
+      hasFormattedDisplay = true;
+    }
+    if (!hasFormattedDisplay || rawResponsePayloadDisplayed) {
+      component = SourcePreview;
+      componentProps = {
+        text,
+        mode: json ? "application/json" : mimeType.replace(/;.+/, ""),
+        targetSearchResult,
+      };
+    }
+    return {
+      component,
+      componentProps,
+      error,
+      hasFormattedDisplay,
+      json,
+      responsePayloadLabel,
+      xssiStrippedCharsInfoBox,
+    };
+  }
+
   renderRawResponsePayloadBtn(key, checked, onChange) {
     return [
       label(
@@ -267,20 +372,48 @@ class ResponsePanel extends Component {
     return component(componentProps);
   }
 
+  /**
+   * This function takes a string of the XSSI protection characters
+   * removed from a JSON payload and produces a notification component
+   * letting the user know that they were removed
+   *
+   * @param {string} strippedChars: string of XSSI protection characters
+   *                                removed from JSON payload
+   * @returns {component} NotificationBox component
+   */
+  renderXssiStrippedCharsInfoBox(strippedChars) {
+    if (!strippedChars || this.state.rawRequestPayloadDisplayed) {
+      return null;
+    }
+    const message = L10N.getFormatStr("jsonXssiStripped", strippedChars);
+
+    const notifications = new Map();
+    notifications.set("xssi-string-removed-info-box", {
+      label: message,
+      value: "xssi-string-removed-info-box",
+      image: "",
+      priority: PriorityLevels.PRIORITY_INFO_MEDIUM,
+      type: "info",
+      eventCallback: e => {},
+      buttons: [],
+    });
+
+    return NotificationBox({
+      notifications,
+      displayBorderTop: false,
+      displayBorderBottom: true,
+      displayCloseButton: false,
+    });
+  }
+
   render() {
-    const {
-      connector,
-      showMessagesView,
-      request,
-      targetSearchResult,
-    } = this.props;
+    const { connector, showMessagesView, request } = this.props;
     const { blockedReason, responseContent, url } = request;
     const { filterText, rawResponsePayloadDisplayed } = this.state;
 
     // Display CORS blocked Reason info box
-    const CORSBlockedReasonDetails = this.renderCORSBlockedReason(
-      blockedReason
-    );
+    const CORSBlockedReasonDetails =
+      this.renderCORSBlockedReason(blockedReason);
 
     if (showMessagesView) {
       return MessagesView({ connector });
@@ -298,7 +431,7 @@ class ResponsePanel extends Component {
       );
     }
 
-    let { encoding, mimeType, text } = responseContent.content;
+    const { encoding, mimeType, text } = responseContent.content;
 
     if (Filters.images({ mimeType })) {
       return ImagePreview({ encoding, mimeType, text, url });
@@ -308,57 +441,16 @@ class ResponsePanel extends Component {
       return FontPreview({ connector, mimeType, url });
     }
 
-    // Decode response if it's coming from JSONView.
-    if (mimeType?.includes(JSON_VIEW_MIME_TYPE) && encoding === "base64") {
-      text = decodeUnicodeBase64(text);
-    }
-
-    // Display Properties View
-    const { json, jsonpCallback, error } =
-      this.handleJSONResponse(mimeType, text) || {};
-
-    let component;
-    let componentProps;
-    let responsePayloadLabel = RESPONSE_PAYLOAD;
-    let hasFormattedDisplay = false;
-
-    if (json) {
-      if (jsonpCallback) {
-        responsePayloadLabel = L10N.getFormatStr(
-          "jsonpScopeName",
-          jsonpCallback
-        );
-      } else {
-        responsePayloadLabel = JSON_SCOPE_NAME;
-      }
-
-      component = PropertiesView;
-      componentProps = {
-        object: json,
-        useQuotes: true,
-        filterText,
-        targetSearchResult,
-        defaultSelectFirstNode: false,
-        mode: MODE.LONG,
-        useBaseTreeViewExpand: true,
-      };
-      hasFormattedDisplay = true;
-    } else if (Filters.html(this.props.request)) {
-      // Display HTML
-      responsePayloadLabel = HTML_RESPONSE;
-      component = HtmlPreview;
-      componentProps = { responseContent };
-      hasFormattedDisplay = true;
-    }
-
-    if (!hasFormattedDisplay || this.state.rawResponsePayloadDisplayed) {
-      component = SourcePreview;
-      componentProps = {
-        text,
-        mode: json ? "application/json" : mimeType?.replace(/;.+/, ""),
-        targetSearchResult,
-      };
-    }
+    // Get Data needed for formatted display
+    const {
+      component,
+      componentProps,
+      error,
+      hasFormattedDisplay,
+      json,
+      responsePayloadLabel,
+      xssiStrippedCharsInfoBox,
+    } = this.renderJsonHtmlAndSource();
 
     const classList = ["panel-container"];
     if (Filters.html(this.props.request)) {
@@ -395,6 +487,7 @@ class ResponsePanel extends Component {
             this.toggleRawResponsePayload
           ),
       ]),
+      xssiStrippedCharsInfoBox,
       this.renderResponsePayload(component, componentProps)
     );
   }

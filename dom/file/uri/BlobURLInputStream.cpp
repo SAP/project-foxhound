@@ -13,6 +13,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "nsStreamUtils.h"
+#include "nsMimeTypes.h"
 
 namespace mozilla::dom {
 
@@ -69,7 +70,27 @@ NS_IMETHODIMP BlobURLInputStream::Available(uint64_t* aLength) {
     return mAsyncInputStream->Available(aLength);
   }
 
-  return NS_BASE_STREAM_WOULD_BLOCK;
+  return NS_OK;
+}
+
+NS_IMETHODIMP BlobURLInputStream::StreamStatus() {
+  MutexAutoLock lock(mStateMachineMutex);
+
+  if (mState == State::ERROR) {
+    MOZ_ASSERT(NS_FAILED(mError));
+    return mError;
+  }
+
+  if (mState == State::CLOSED) {
+    return NS_BASE_STREAM_CLOSED;
+  }
+
+  if (mState == State::READY) {
+    MOZ_ASSERT(mAsyncInputStream);
+    return mAsyncInputStream->StreamStatus();
+  }
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP BlobURLInputStream::Read(char* aBuffer, uint32_t aCount,
@@ -140,7 +161,8 @@ NS_IMETHODIMP BlobURLInputStream::AsyncWait(nsIInputStreamCallback* aCallback,
   }
 
   // Pre-empting a valid callback with another is not allowed.
-  if (NS_WARN_IF(mAsyncWaitCallback && aCallback)) {
+  if (NS_WARN_IF(mAsyncWaitCallback && aCallback &&
+                 mAsyncWaitCallback != aCallback)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -361,11 +383,11 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
     return;
   }
 
-  Maybe<nsID> agentClusterId;
-  Maybe<ClientInfo> clientInfo = loadInfo->GetClientInfo();
-  if (clientInfo.isSome()) {
-    agentClusterId = clientInfo->AgentClusterId();
-  }
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+  loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
+
+  nsAutoString partKey;
+  cookieJarSettings->GetPartitionKey(partKey);
 
   if (XRE_IsParentProcess() || !BlobURLSchemeIsHTTPOrHTTPS(mBlobURLSpec)) {
     RefPtr<BlobImpl> blobImpl;
@@ -375,7 +397,7 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
     if (!BlobURLProtocolHandler::GetDataEntry(
             mBlobURLSpec, getter_AddRefs(blobImpl), loadingPrincipal,
             triggeringPrincipal, loadInfo->GetOriginAttributes(),
-            loadInfo->GetInnerWindowID(), agentClusterId,
+            loadInfo->GetInnerWindowID(), NS_ConvertUTF16toUTF8(partKey),
             true /* AlsoIfRevoked */)) {
       NS_WARNING("Failed to get data entry principal. URL revoked?");
       return;
@@ -406,10 +428,10 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
   cleanupOnEarlyExit.release();
 
   contentChild
-      ->SendBlobURLDataRequest(mBlobURLSpec, triggeringPrincipal,
-                               loadingPrincipal,
-                               loadInfo->GetOriginAttributes(),
-                               loadInfo->GetInnerWindowID(), agentClusterId)
+      ->SendBlobURLDataRequest(
+          mBlobURLSpec, triggeringPrincipal, loadingPrincipal,
+          loadInfo->GetOriginAttributes(), loadInfo->GetInnerWindowID(),
+          NS_ConvertUTF16toUTF8(partKey))
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [self](const BlobURLDataRequestResult& aResult) {
@@ -459,10 +481,37 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
 nsresult BlobURLInputStream::StoreBlobImplStream(
     already_AddRefed<BlobImpl> aBlobImpl, const MutexAutoLock& aProofOfLock) {
   MOZ_ASSERT(NS_IsMainThread(), "Only call on main thread");
-  const RefPtr<BlobImpl> blobImpl = aBlobImpl;
-  nsAutoString contentType;
-  blobImpl->GetType(contentType);
-  mChannel->SetContentType(NS_ConvertUTF16toUTF8(contentType));
+  RefPtr<BlobImpl> blobImpl = aBlobImpl;
+  nsAutoString blobContentType;
+  nsAutoCString channelContentType;
+
+  // If a Range header was in the request then fetch/XHR will have set a
+  // ContentRange on the channel earlier so we may slice the blob now.
+  blobImpl->GetType(blobContentType);
+  const Maybe<nsBaseChannel::ContentRange>& contentRange =
+      mChannel->GetContentRange();
+  if (contentRange.isSome()) {
+    IgnoredErrorResult result;
+    uint64_t start = contentRange->Start();
+    uint64_t end = contentRange->End();
+    RefPtr<BlobImpl> slice =
+        blobImpl->CreateSlice(start, end - start + 1, blobContentType, result);
+    if (!result.Failed()) {
+      blobImpl = slice;
+    }
+  }
+
+  mChannel->GetContentType(channelContentType);
+  // A empty content type is the correct channel content type in the case of a
+  // fetch of a blob where the type was not set. It is invalid in others cases
+  // such as a XHR (See https://xhr.spec.whatwg.org/#response-mime-type). The
+  // XMLHttpRequestMainThread will set the channel content type to the correct
+  // fallback value before this point, so we need to be careful to only override
+  // it when the blob type is valid.
+  if (!blobContentType.IsEmpty() ||
+      channelContentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
+    mChannel->SetContentType(NS_ConvertUTF16toUTF8(blobContentType));
+  }
 
   auto cleanupOnExit = MakeScopeExit([&] { mChannel = nullptr; });
 

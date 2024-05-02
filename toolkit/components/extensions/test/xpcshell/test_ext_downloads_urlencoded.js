@@ -2,8 +2,8 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { Downloads } = ChromeUtils.import(
-  "resource://gre/modules/Downloads.jsm"
+const { Downloads } = ChromeUtils.importESModule(
+  "resource://gre/modules/Downloads.sys.mjs"
 );
 
 function backgroundScript() {
@@ -167,7 +167,7 @@ add_task(async function test_decoded_filename_download() {
     let item = await search({ id });
     equal(item.status, "success", "search() succeeded");
     equal(item.downloads.length, 1, "search() found exactly 1 download");
-    Object.keys(expect).forEach(function(field) {
+    Object.keys(expect).forEach(function (field) {
       equal(
         item.downloads[0][field],
         expect[field],

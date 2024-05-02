@@ -5,7 +5,7 @@
 
 function checkArrayIsSorted(array, msg) {
   let sorted = true;
-  let sortedArray = array.slice().sort(function(a, b) {
+  let sortedArray = array.slice().sort(function (a, b) {
     return a.localeCompare(b);
   });
 
@@ -19,11 +19,11 @@ function checkArrayIsSorted(array, msg) {
 }
 
 add_task(async function test_policies_sorted() {
-  let { schema } = ChromeUtils.import(
-    "resource:///modules/policies/schema.jsm"
+  let { schema } = ChromeUtils.importESModule(
+    "resource:///modules/policies/schema.sys.mjs"
   );
-  let { Policies } = ChromeUtils.import(
-    "resource:///modules/policies/Policies.jsm"
+  let { Policies } = ChromeUtils.importESModule(
+    "resource:///modules/policies/Policies.sys.mjs"
   );
 
   checkArrayIsSorted(
@@ -37,8 +37,8 @@ add_task(async function test_policies_sorted() {
 });
 
 add_task(async function check_naming_conventions() {
-  let { schema } = ChromeUtils.import(
-    "resource:///modules/policies/schema.jsm"
+  let { schema } = ChromeUtils.importESModule(
+    "resource:///modules/policies/schema.sys.mjs"
   );
   equal(
     Object.keys(schema.properties).some(key => key.includes("__")),

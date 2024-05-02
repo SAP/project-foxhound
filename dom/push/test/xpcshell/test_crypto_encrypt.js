@@ -1,10 +1,8 @@
 // Test PushCrypto.encrypt()
 "use strict";
 
-Cu.importGlobalProperties(["crypto"]);
-
-const { PushCrypto } = ChromeUtils.import(
-  "resource://gre/modules/PushCrypto.jsm"
+const { PushCrypto } = ChromeUtils.importESModule(
+  "resource://gre/modules/PushCrypto.sys.mjs"
 );
 
 let from64 = v => {
@@ -49,10 +47,11 @@ async function importKeyPair(publicKeyBuffer, privateKeyBuffer) {
 // The example from draft-ietf-webpush-encryption-09.
 add_task(async function static_aes128gcm() {
   let fixture = {
-    ciphertext: from64(`DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27ml
+    ciphertext:
+      from64(`DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27ml
                         mlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPT
                         pK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN`),
-    plaintext: new TextEncoder("utf-8").encode(
+    plaintext: new TextEncoder().encode(
       "When I grow up, I want to be a watermelon"
     ),
     authSecret: from64("BTBZMqHH6r4Tts7J_aSIgg"),
@@ -107,7 +106,7 @@ add_task(async function static_aes128gcm() {
 add_task(async function aes128gcm_simple() {
   let [recvPublicKey, recvPrivateKey] = await PushCrypto.generateKeys();
 
-  let message = new TextEncoder("utf-8").encode("Fast for good.");
+  let message = new TextEncoder().encode("Fast for good.");
   let authSecret = crypto.getRandomValues(new Uint8Array(16));
   let { ciphertext, encoding } = await PushCrypto.encrypt(
     message,
@@ -133,7 +132,7 @@ add_task(async function aes128gcm_rs() {
   for (let rs of [-1, 0, 1, 17]) {
     let payload = "x".repeat(1024);
     info(`testing expected failure with rs=${rs}`);
-    let message = new TextEncoder("utf-8").encode(payload);
+    let message = new TextEncoder().encode(payload);
     let authSecret = crypto.getRandomValues(new Uint8Array(16));
     await Assert.rejects(
       PushCrypto.encrypt(message, recvPublicKey, authSecret, { rs }),
@@ -143,7 +142,7 @@ add_task(async function aes128gcm_rs() {
   for (let rs of [18, 50, 1024, 4096, 16384]) {
     info(`testing expected success with rs=${rs}`);
     let payload = "x".repeat(rs * 3);
-    let message = new TextEncoder("utf-8").encode(payload);
+    let message = new TextEncoder().encode(payload);
     let authSecret = crypto.getRandomValues(new Uint8Array(16));
     let { ciphertext, encoding } = await PushCrypto.encrypt(
       message,
@@ -179,7 +178,7 @@ add_task(async function aes128gcm_edgecases() {
     10240,
   ]) {
     info(`testing encryption of ${size} byte payload`);
-    let message = new TextEncoder("utf-8").encode("x".repeat(size));
+    let message = new TextEncoder().encode("x".repeat(size));
     let authSecret = crypto.getRandomValues(new Uint8Array(16));
     let { ciphertext, encoding } = await PushCrypto.encrypt(
       message,

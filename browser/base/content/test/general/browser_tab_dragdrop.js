@@ -30,16 +30,16 @@ function checkBrowserIds(expected) {
   }
 }
 
-var getClicks = function(tab) {
-  return SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+var getClicks = function (tab) {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     return content.wrappedJSObject.clicks;
   });
 };
 
-var clickTest = async function(tab) {
+var clickTest = async function (tab) {
   let clicks = await getClicks(tab);
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     let target = content.document.body;
     let rect = target.getBoundingClientRect();
     let left = (rect.left + rect.right) / 2;
@@ -55,7 +55,7 @@ var clickTest = async function(tab) {
 };
 
 function loadURI(tab, url) {
-  BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
   return BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 }
 
@@ -112,7 +112,7 @@ async function checkObjectValue(browser) {
   }
 }
 
-add_task(async function() {
+add_task(async function () {
   // create a few tabs
   let tabs = [
     gBrowser.tabs[0],
@@ -134,6 +134,7 @@ add_task(async function() {
   );
   await loadURI(
     tabs[4],
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/browser/browser/base/content/test/general/browser_tab_dragdrop_embed.html"
   );
   await BrowserTestUtils.switchTab(gBrowser, tabs[3]);

@@ -19,7 +19,6 @@ class nsICanvasRenderingContextInternal;
 namespace mozilla {
 
 namespace layers {
-class CanvasRenderer;
 class Image;
 }  // namespace layers
 
@@ -27,6 +26,7 @@ namespace dom {
 
 class EncodeCompleteCallback;
 class EncodingRunnable;
+class OffscreenCanvasDisplayHelper;
 
 class ImageEncoder {
  public:
@@ -39,7 +39,7 @@ class ImageEncoder {
   static nsresult ExtractData(nsAString& aType, const nsAString& aOptions,
                               const nsIntSize aSize, bool aUsePlaceholder,
                               nsICanvasRenderingContextInternal* aContext,
-                              layers::CanvasRenderer* aRenderer,
+                              OffscreenCanvasDisplayHelper* aOffscreenDisplay,
                               nsIInputStream** aStream);
 
   // Extracts data asynchronously. aType may change to "image/png" if we had to
@@ -85,7 +85,7 @@ class ImageEncoder {
       const nsAString& aType, const nsAString& aOptions, uint8_t* aImageBuffer,
       int32_t aFormat, const nsIntSize aSize, bool aUsePlaceholder,
       layers::Image* aImage, nsICanvasRenderingContextInternal* aContext,
-      layers::CanvasRenderer* aRenderer, nsIInputStream** aStream,
+      OffscreenCanvasDisplayHelper* aOffscreenDisplay, nsIInputStream** aStream,
       imgIEncoder* aEncoder);
 
   // Creates and returns an encoder instance of the type specified in aType.
@@ -110,6 +110,11 @@ class EncodeCompleteCallback {
 
   MOZ_CAN_RUN_SCRIPT
   virtual nsresult ReceiveBlobImpl(already_AddRefed<BlobImpl> aBlobImpl) = 0;
+
+  // CanBeDeletedOnAnyThread is pure virtual, so that whoever extends this class
+  // needs to think how to handle cases like the owning DOM worker thread
+  // shutting down.
+  virtual bool CanBeDeletedOnAnyThread() = 0;
 
  protected:
   virtual ~EncodeCompleteCallback() = default;

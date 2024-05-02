@@ -29,12 +29,12 @@ def WebIDLTest(parser, harness):
           [Global, Exposed=Foo]
           interface Foo {
             getter any(DOMString name);
-            setter void(DOMString name, any arg);
+            setter undefined(DOMString name, any arg);
           };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(
@@ -50,12 +50,12 @@ def WebIDLTest(parser, harness):
           [Global, Exposed=Foo]
           interface Foo {
             getter any(DOMString name);
-            deleter void(DOMString name);
+            deleter undefined(DOMString name);
           };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(
@@ -73,8 +73,8 @@ def WebIDLTest(parser, harness):
           };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(
@@ -96,8 +96,8 @@ def WebIDLTest(parser, harness):
           };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(
@@ -119,8 +119,8 @@ def WebIDLTest(parser, harness):
           };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(

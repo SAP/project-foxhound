@@ -6,8 +6,10 @@
 
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/DocAccessibleParent.h"
+#  include "nsAccessibilityService.h"
 #endif
 
+#include "mozilla/Monitor.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -83,6 +85,9 @@ nsresult BrowserBridgeParent::InitWithProcess(
   }
 
   ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
+  if (!cpm) {
+    return NS_ERROR_UNEXPECTED;
+  }
   cpm->RegisterRemoteFrame(browserParent);
 
   RefPtr<WindowGlobalParent> windowParent =
@@ -161,7 +166,7 @@ IPCResult BrowserBridgeParent::RecvScrollbarPreferenceChanged(
 }
 
 IPCResult BrowserBridgeParent::RecvLoadURL(nsDocShellLoadState* aLoadState) {
-  Unused << mBrowserParent->SendLoadURL(aLoadState,
+  Unused << mBrowserParent->SendLoadURL(WrapNotNull(aLoadState),
                                         mBrowserParent->GetShowInfo());
   return IPC_OK();
 }
@@ -188,9 +193,8 @@ IPCResult BrowserBridgeParent::RecvUpdateRemotePrintSettings(
   return IPC_OK();
 }
 
-IPCResult BrowserBridgeParent::RecvRenderLayers(
-    const bool& aEnabled, const layers::LayersObserverEpoch& aEpoch) {
-  Unused << mBrowserParent->SendRenderLayers(aEnabled, aEpoch);
+IPCResult BrowserBridgeParent::RecvRenderLayers(const bool& aEnabled) {
+  Unused << mBrowserParent->SendRenderLayers(aEnabled);
   return IPC_OK();
 }
 
@@ -245,10 +249,9 @@ IPCResult BrowserBridgeParent::RecvDeactivate(const bool& aWindowLowering,
   return IPC_OK();
 }
 
-IPCResult BrowserBridgeParent::RecvSetIsUnderHiddenEmbedderElement(
-    const bool& aIsUnderHiddenEmbedderElement) {
-  Unused << mBrowserParent->SendSetIsUnderHiddenEmbedderElement(
-      aIsUnderHiddenEmbedderElement);
+mozilla::ipc::IPCResult BrowserBridgeParent::RecvUpdateRemoteStyle(
+    const StyleImageRendering& aImageRendering) {
+  Unused << mBrowserParent->SendUpdateRemoteStyle(aImageRendering);
   return IPC_OK();
 }
 
@@ -265,6 +268,9 @@ a11y::DocAccessibleParent* BrowserBridgeParent::GetDocAccessibleParent() {
 
 IPCResult BrowserBridgeParent::RecvSetEmbedderAccessible(
     PDocAccessibleParent* aDoc, uint64_t aID) {
+#  if defined(ANDROID)
+  MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+#  endif
   MOZ_ASSERT(aDoc || mEmbedderAccessibleDoc,
              "Embedder doc shouldn't be cleared if it wasn't set");
   MOZ_ASSERT(!mEmbedderAccessibleDoc || !aDoc || mEmbedderAccessibleDoc == aDoc,

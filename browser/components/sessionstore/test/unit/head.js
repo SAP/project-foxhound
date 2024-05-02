@@ -1,15 +1,11 @@
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "SessionStartup",
-  "resource:///modules/sessionstore/SessionStartup.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
+});
 
 // Call a function once initialization of SessionStartup is complete
 function afterSessionStartupInitialization(cb) {
   info("Waiting for session startup initialization");
-  let observer = function() {
+  let observer = function () {
     try {
       info("Session startup initialization observed");
       Services.obs.removeObserver(observer, "sessionstore-state-finalized");
@@ -22,8 +18,8 @@ function afterSessionStartupInitialization(cb) {
 
   // We need the Crash Monitor initialized for sessionstartup to run
   // successfully.
-  const { CrashMonitor } = ChromeUtils.import(
-    "resource://gre/modules/CrashMonitor.jsm"
+  const { CrashMonitor } = ChromeUtils.importESModule(
+    "resource://gre/modules/CrashMonitor.sys.mjs"
   );
   CrashMonitor.init();
 

@@ -72,23 +72,31 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
    */
   @Override // IProcessManager
   public ISurfaceAllocator getSurfaceAllocator() {
-    final GeckoResult<Boolean> gpuReady = GeckoAppShell.ensureGpuProcessReady();
+    final GeckoResult<Boolean> gpuEnabled = GeckoAppShell.isGpuProcessEnabled();
 
     try {
       final GeckoResult<ISurfaceAllocator> allocator = new GeckoResult<>();
-      if (gpuReady.poll(1000)) {
-        // The GPU process is enabled and ready, so ask it for its surface allocator.
+      if (gpuEnabled.poll(1000)) {
+        // The GPU process is enabled, so look it up and ask it for its surface allocator.
         XPCOMEventTarget.runOnLauncherThread(
             () -> {
               final Selector selector = new Selector(GeckoProcessType.GPU);
               final GpuProcessConnection conn =
                   (GpuProcessConnection) INSTANCE.mConnections.getExistingConnection(selector);
-
-              allocator.complete(conn.getSurfaceAllocator());
+              if (conn != null) {
+                allocator.complete(conn.getSurfaceAllocator());
+              } else {
+                // If we cannot find a GPU process, it has probably been killed and not yet
+                // restarted. Return null here, and allow the caller to try again later.
+                // We definitely do *not* want to return the parent process allocator instead, as
+                // that will result in surfaces being allocated in the parent process, which
+                // therefore won't be usable when the GPU process is eventually launched.
+                allocator.complete(null);
+              }
             });
       } else {
         // The GPU process is disabled, so return the parent process allocator instance.
-        allocator.complete(RemoteSurfaceAllocator.getInstance());
+        allocator.complete(RemoteSurfaceAllocator.getInstance(0));
       }
       return allocator.poll(100);
     } catch (final Throwable e) {
@@ -102,6 +110,9 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     final Selector selector = new Selector(GeckoProcessType.GPU);
     final GpuProcessConnection conn =
         (GpuProcessConnection) INSTANCE.mConnections.getExistingConnection(selector);
+    if (conn == null) {
+      return null;
+    }
     return conn.getCompositorSurfaceManager();
   }
 
@@ -307,7 +318,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     }
 
     protected void onAppBackground() {
-      setPriorityLevel(PriorityLevel.BACKGROUND);
+      setPriorityLevel(PriorityLevel.IDLE);
     }
   }
 
@@ -315,14 +326,27 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     private CompositorSurfaceManager mCompositorSurfaceManager;
     private ISurfaceAllocator mSurfaceAllocator;
 
+    // Unique ID used to identify each GPU process instance. Will always be non-zero,
+    // and unlike the process' pid cannot be the same value for successive instances.
+    private int mUniqueGpuProcessId;
+    // Static counter used to initialize each instance's mUniqueGpuProcessId
+    private static int sUniqueGpuProcessIdCounter = 0;
+
     public GpuProcessConnection(@NonNull final ServiceAllocator allocator) {
       super(allocator, GeckoProcessType.GPU);
+
+      // Initialize the unique ID ensuring we skip 0 (as that is reserved for parent process
+      // allocators).
+      if (sUniqueGpuProcessIdCounter == 0) {
+        sUniqueGpuProcessIdCounter++;
+      }
+      mUniqueGpuProcessId = sUniqueGpuProcessIdCounter++;
     }
 
     @Override
     protected void onBinderConnected(@NonNull final IChildProcess child) throws RemoteException {
       mCompositorSurfaceManager = new CompositorSurfaceManager(child.getCompositorSurfaceManager());
-      mSurfaceAllocator = child.getSurfaceAllocator();
+      mSurfaceAllocator = child.getSurfaceAllocator(mUniqueGpuProcessId);
     }
 
     public CompositorSurfaceManager getCompositorSurfaceManager() {
@@ -729,8 +753,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
       final int prefsFd,
       final int prefMapFd,
       final int ipcFd,
-      final int crashFd,
-      final int crashAnnotationFd) {
+      final int crashFd) {
     final GeckoResult<Integer> result = new GeckoResult<>();
     final StartInfo info =
         new StartInfo(
@@ -746,7 +769,6 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
                         .prefMap(prefMapFd)
                         .ipc(ipcFd)
                         .crashReporter(crashFd)
-                        .crashAnnotation(crashAnnotationFd)
                         .build())
                 .build());
 
@@ -875,8 +897,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
                       info.pfds.prefs,
                       info.pfds.prefMap,
                       info.pfds.ipc,
-                      info.pfds.crashReporter,
-                      info.pfds.crashAnnotation);
+                      info.pfds.crashReporter);
               if (result == IChildProcess.STARTED_OK) {
                 return connection.getPid();
               } else {

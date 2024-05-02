@@ -3,11 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import attr
 import collections
+from dataclasses import dataclass
+from typing import FrozenSet
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class Graph:
     """Generic representation of a directed acyclic graph with labeled edges
     connecting the nodes. Graph operations are implemented in a functional
@@ -23,8 +24,8 @@ class Graph:
     node `left` to node `right`..
     """
 
-    nodes = attr.ib(converter=frozenset)
-    edges = attr.ib(converter=frozenset)
+    nodes: FrozenSet
+    edges: FrozenSet
 
     def transitive_closure(self, nodes, reverse=False):
         """Return the transitive closure of <nodes>: the graph containing all

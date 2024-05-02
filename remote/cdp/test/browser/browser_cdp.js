@@ -17,13 +17,26 @@ add_task(async function testCDP({ client }) {
   );
   is(
     version.product,
-    isHeadless ? "Headless Firefox" : Services.appinfo.name,
+    (isHeadless ? "Headless" : "") +
+      `${Services.appinfo.name}/${Services.appinfo.version}`,
     "Browser.getVersion works and depends on headless mode"
   );
   is(
     version.userAgent,
     window.navigator.userAgent,
     "Browser.getVersion().userAgent is correct"
+  );
+
+  is(
+    version.revision,
+    Services.appinfo.sourceURL.split("/").pop(),
+    "Browser.getVersion().revision is correct"
+  );
+
+  is(
+    version.jsVersion,
+    Services.appinfo.version,
+    "Browser.getVersion().jsVersion is correct"
   );
 
   // receive console.log messages and print them
@@ -43,7 +56,7 @@ add_task(async function testCDP({ client }) {
   Assert.deepEqual(result, {}, "Got expected result value");
 
   const frameStoppedLoading = Page.frameStoppedLoading();
-  const navigatedWithinDocument = Page.navigatedWithinDocument();
+  const frameNavigated = Page.frameNavigated();
   const loadEventFired = Page.loadEventFired();
   await Page.navigate({
     url: toDataURL(`<script>console.log("foo")</script>`),
@@ -56,6 +69,6 @@ add_task(async function testCDP({ client }) {
   await frameStoppedLoading;
   info("`Page.frameStoppedLoading` fired");
 
-  await navigatedWithinDocument;
-  info("`Page.navigatedWithinDocument` fired");
+  await frameNavigated;
+  info("`Page.frameNavigated` fired");
 });

@@ -32,6 +32,7 @@ class nsHttpRequestHead {
  public:
   nsHttpRequestHead();
   explicit nsHttpRequestHead(const nsHttpRequestHead& aRequestHead);
+  nsHttpRequestHead(nsHttpRequestHead&& aRequestHead);
   ~nsHttpRequestHead();
 
   nsHttpRequestHead& operator=(const nsHttpRequestHead& aRequestHead);
@@ -39,9 +40,13 @@ class nsHttpRequestHead {
   // The following function is only used in HttpChannelParent to avoid
   // copying headers. If you use it be careful to do it only under
   // nsHttpRequestHead lock!!!
-  const nsHttpHeaderArray& Headers() const;
-  void Enter() { mRecursiveMutex.Lock(); }
-  void Exit() { mRecursiveMutex.Unlock(); }
+  const nsHttpHeaderArray& Headers() const MOZ_REQUIRES(mRecursiveMutex);
+  void Enter() const MOZ_CAPABILITY_ACQUIRE(mRecursiveMutex) {
+    mRecursiveMutex.Lock();
+  }
+  void Exit() const MOZ_CAPABILITY_RELEASE(mRecursiveMutex) {
+    mRecursiveMutex.Unlock();
+  }
 
   void SetHeaders(const nsHttpHeaderArray& aHeaders);
 
@@ -119,25 +124,27 @@ class nsHttpRequestHead {
 
  private:
   // All members must be copy-constructable and assignable
-  nsHttpHeaderArray mHeaders;
-  nsCString mMethod{"GET"_ns};
-  HttpVersion mVersion{HttpVersion::v1_1};
+  nsHttpHeaderArray mHeaders MOZ_GUARDED_BY(mRecursiveMutex);
+  nsCString mMethod MOZ_GUARDED_BY(mRecursiveMutex){"GET"_ns};
+  HttpVersion mVersion MOZ_GUARDED_BY(mRecursiveMutex){HttpVersion::v1_1};
 
   // mRequestURI and mPath are strings instead of an nsIURI
   // because this is used off the main thread
-  nsCString mRequestURI;
-  nsCString mPath;
+  // TODO: nsIURI is thread-safe now, should be fixable.
+  nsCString mRequestURI MOZ_GUARDED_BY(mRecursiveMutex);
+  nsCString mPath MOZ_GUARDED_BY(mRecursiveMutex);
 
-  nsCString mOrigin;
-  ParsedMethodType mParsedMethod{kMethod_Get};
-  bool mHTTPS{false};
+  nsCString mOrigin MOZ_GUARDED_BY(mRecursiveMutex);
+  ParsedMethodType mParsedMethod MOZ_GUARDED_BY(mRecursiveMutex){kMethod_Get};
+  bool mHTTPS MOZ_GUARDED_BY(mRecursiveMutex){false};
 
   // We are using RecursiveMutex instead of a Mutex because VisitHeader
   // function calls nsIHttpHeaderVisitor::VisitHeader while under lock.
-  RecursiveMutex mRecursiveMutex{"nsHttpRequestHead.mRecursiveMutex"};
+  mutable RecursiveMutex mRecursiveMutex MOZ_UNANNOTATED{
+      "nsHttpRequestHead.mRecursiveMutex"};
 
-  // During VisitHeader we sould not allow cal to SetHeader.
-  bool mInVisitHeaders{false};
+  // During VisitHeader we sould not allow call to SetHeader.
+  bool mInVisitHeaders MOZ_GUARDED_BY(mRecursiveMutex){false};
 
   friend struct IPC::ParamTraits<nsHttpRequestHead>;
 };

@@ -22,11 +22,10 @@ Step 4:
 """
 
 # includes
-from typing import List  # mypy!
-
 import pathlib
 import sys
 import xml.etree.ElementTree
+from typing import List  # mypy!
 
 # -
 

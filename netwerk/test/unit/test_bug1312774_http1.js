@@ -15,13 +15,14 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 var server = new HttpServer();
 server.start(-1);
 var baseURL = "http://localhost:" + server.identity.primaryPort + "/";
 var maxConnections = 0;
 var urgentRequests = 0;
-var totalRequests = 0;
 var debug = false;
 
 function log(msg) {
@@ -88,7 +89,6 @@ function HttpResponseListener(id) {
   this.id = id;
 }
 
-var testOrder = 0;
 HttpResponseListener.prototype = {
   onStartRequest(request) {},
 
@@ -107,10 +107,9 @@ function setup_http_server() {
     "network.http.max-persistent-connections-per-server"
   );
   urgentRequests = 2;
-  totalRequests = maxConnections + urgentRequests;
   var allCommonHttpRequestReceived = false;
   // Start server; will be stopped at test cleanup time.
-  server.registerPathHandler("/", function(metadata, response) {
+  server.registerPathHandler("/", function (metadata, response) {
     var id = metadata.getHeader("X-ID");
     log("Server recived the response id=" + id);
     response.processAsync();
@@ -132,7 +131,7 @@ function setup_http_server() {
     }
   });
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     server.stop(serverStopListener);
   });
 }

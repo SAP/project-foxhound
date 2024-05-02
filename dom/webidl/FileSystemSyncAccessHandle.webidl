@@ -10,11 +10,11 @@ dictionary FileSystemReadWriteOptions {
 [Exposed=(DedicatedWorker), SecureContext, Pref="dom.fs.enabled"]
 interface FileSystemSyncAccessHandle {
   // TODO: Use `[AllowShared] BufferSource data` once it works (bug 1696216)
-  unsigned long long read(([AllowShared] ArrayBufferView or [AllowShared] ArrayBuffer) buffer, optional FileSystemReadWriteOptions options = {});
-  unsigned long long write(([AllowShared] ArrayBufferView or [AllowShared] ArrayBuffer) buffer, optional FileSystemReadWriteOptions options = {});
+  [Throws] unsigned long long read(([AllowShared] ArrayBufferView or [AllowShared] ArrayBuffer) buffer, optional FileSystemReadWriteOptions options = {});
+  [Throws] unsigned long long write(([AllowShared] ArrayBufferView or [AllowShared] ArrayBuffer) buffer, optional FileSystemReadWriteOptions options = {});
 
-  Promise<void> truncate([EnforceRange] unsigned long long size);
-  Promise<unsigned long long> getSize();
-  Promise<void> flush();
-  Promise<void> close();
+  [Throws] undefined truncate([EnforceRange] unsigned long long size);
+  [Throws] unsigned long long getSize();
+  [Throws] undefined flush();
+  undefined close();
 };

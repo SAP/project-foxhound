@@ -36,8 +36,6 @@ enum class ReferrerPolicy : uint8_t;
 }  // namespace dom
 }  // namespace mozilla
 
-#define XSLT_MSGS_URL "chrome://global/locale/xslt/xslt.properties"
-
 /**
  * txMozillaXSLTProcessor is a front-end to the XSLT Processor.
  */
@@ -45,6 +43,13 @@ class txMozillaXSLTProcessor final : public nsIDocumentTransformer,
                                      public nsStubMutationObserver,
                                      public nsWrapperCache {
  public:
+  typedef mozilla::dom::
+      UnrestrictedDoubleOrBooleanOrStringOrNodeOrNodeSequenceOrXPathResult
+          XSLTParameterValue;
+  typedef mozilla::dom::
+      OwningUnrestrictedDoubleOrBooleanOrStringOrNodeOrNodeSequenceOrXPathResult
+          OwningXSLTParameterValue;
+
   /**
    * Creates a new txMozillaXSLTProcessor
    */
@@ -52,8 +57,8 @@ class txMozillaXSLTProcessor final : public nsIDocumentTransformer,
 
   // nsISupports interface
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(txMozillaXSLTProcessor,
-                                                         nsIDocumentTransformer)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(txMozillaXSLTProcessor,
+                                                        nsIDocumentTransformer)
 
   // nsIDocumentTransformer interface
   NS_IMETHOD SetTransformObserver(nsITransformObserver* aObserver) override;
@@ -94,12 +99,12 @@ class txMozillaXSLTProcessor final : public nsIDocumentTransformer,
   already_AddRefed<mozilla::dom::Document> TransformToDocument(
       nsINode& source, mozilla::ErrorResult& aRv);
 
-  void SetParameter(JSContext* aCx, const nsAString& aNamespaceURI,
-                    const nsAString& aLocalName, JS::Handle<JS::Value> aValue,
+  void SetParameter(const nsAString& aNamespaceURI, const nsAString& aLocalName,
+                    const XSLTParameterValue& aValue,
+                    mozilla::ErrorResult& aError);
+  void GetParameter(const nsAString& aNamespaceURI, const nsAString& aLocalName,
+                    mozilla::dom::Nullable<OwningXSLTParameterValue>& aValue,
                     mozilla::ErrorResult& aRv);
-  already_AddRefed<nsIVariant> GetParameter(const nsAString& aNamespaceURI,
-                                            const nsAString& aLocalName,
-                                            mozilla::ErrorResult& aRv);
   void RemoveParameter(const nsAString& aNamespaceURI,
                        const nsAString& aLocalName, mozilla::ErrorResult& aRv);
   void ClearParameters();
@@ -135,10 +140,6 @@ class txMozillaXSLTProcessor final : public nsIDocumentTransformer,
   nsresult DoTransform();
   void notifyError();
   nsresult ensureStylesheet();
-
-  // Helper method for the WebIDL SetParameter.
-  nsresult SetParameter(const nsAString& aNamespaceURI,
-                        const nsAString& aLocalName, nsIVariant* aValue);
 
   nsCOMPtr<nsISupports> mOwner;
 

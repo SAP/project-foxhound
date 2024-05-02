@@ -16,16 +16,22 @@
   background-color: var(--rdm-browser-container-background);
 }
 
-.browserContainer.responsive-mode .browserStack > .rdm-toolbar {
+.browserContainer.responsive-mode > .rdm-toolbar {
   border: none;
-  position: fixed;
-  z-index: 1;
+  position: absolute;
+  z-index: var(--browser-stack-z-index-rdm-toolbar);
   height: 30px;
-  width: var(--rdm-stack-width);
+  top: 0;
+  left: 0;
+  width: 100%;
 }
 
-.browserContainer.responsive-mode .browserStack > .rdm-toolbar.accomodate-ua {
+.browserContainer.responsive-mode > .rdm-toolbar.accomodate-ua {
   height: 60px;
+}
+
+.browserContainer.responsive-mode > .rdm-toolbar.device-modal-opened {
+  height: 100%;
 }
 
 .browserContainer.responsive-mode > .browserStack {
@@ -37,24 +43,17 @@
   min-height: 0;
   min-width: 0;
   overflow: auto;
+  contain: size;
   grid-template-columns: 15px 1fr [center-align] var(--browser-viewport-width) 1fr;
   grid-template-rows: 65px [margin-top-offset] var(--browser-viewport-height);
 }
 
-.browserContainer.responsive-mode > .browserStack > * {
-  box-sizing: content-box; /* This is important to ensure that the pane has the
-                              precise number of pixels defined by --rdm-width
-                              and --rdm-height. */
-  height: var(--rdm-height);
-  width: var(--rdm-width);
-}
-
-.browserContainer.responsive-mode > .browserStack > *:not(.rdm-toolbar) {
+.browserContainer.responsive-mode > .browserStack > :is(browser, .rdm-viewport-resize-handle) {
   grid-column: center-align;
   grid-row: margin-top-offset;
 }
 
-.browserContainer.responsive-mode.left-aligned > .browserStack > *:not(.rdm-toolbar) {
+.browserContainer.responsive-mode.left-aligned > .browserStack > :is(browser, .rdm-viewport-resize-handle) {
   grid-column: left-align;
 }
 
@@ -71,6 +70,12 @@ html[dir="rtl"] .browserContainer.responsive-mode.left-aligned > .browserStack {
   box-shadow: var(--rdm-browser-box-shadow);
   transform-origin: 50% 0;
   transform: scale(var(--rdm-zoom), var(--rdm-zoom));
+
+  box-sizing: content-box; /* This is important to ensure that the pane has the
+                              precise number of pixels defined by --rdm-width
+                              and --rdm-height. */
+  height: var(--rdm-height);
+  width: var(--rdm-width);
 }
 
 .browserContainer.responsive-mode.left-aligned > .browserStack > browser {
@@ -124,17 +129,4 @@ html[dir="rtl"] .browserContainer.responsive-mode.left-aligned > .browserStack {
 
 .browserContainer.responsive-mode.left-aligned > .browserStack > .viewport-vertical-resize-handle {
   left: 0;
-}
-
-/* tabdialogbox handling - it needs to not be treated as part of the grid: */
-.browserContainer.responsive-mode > .browserStack > .dialogStack {
-  position: fixed;
-  width: var(--rdm-stack-width);
-}
-
-/* handle height for tabdialogbox and RDM device modal. Both are position:fixed and so
-   are taken from the grid layout when RDM is opened. */
-.browserContainer.responsive-mode .browserStack.device-modal-opened > .rdm-toolbar,
-.browserContainer.responsive-mode > .browserStack > .dialogStack {
-  height: var(--rdm-stack-height);
 }

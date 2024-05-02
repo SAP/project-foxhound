@@ -7,7 +7,11 @@
 const {
   FILTER_FLAGS,
   SUPPORTED_HTTP_CODES,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
+
+const {
+  getRequestPriorityAsText,
+} = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
 
 /**
  * Generates a value for the given filter
@@ -49,6 +53,9 @@ function getAutocompleteValuesForFlag(flag, request) {
       break;
     case "set-cookie-value":
       values = responseCookies.map(c => c.value);
+      break;
+    case "priority":
+      values.push(getRequestPriorityAsText(request.priority));
       break;
     case "set-cookie-domain":
       values = responseCookies.map(c =>
@@ -163,7 +170,7 @@ function autocompleteProvider(filter, requests) {
 
   let autocompleteList;
   const availableValues = getLastTokenFlagValues(lastToken, requests);
-  if (availableValues.length > 0) {
+  if (availableValues.length) {
     autocompleteList = availableValues;
   } else {
     const isNegativeFlag = lastToken.startsWith("-");
@@ -174,7 +181,7 @@ function autocompleteProvider(filter, requests) {
       return item.toLowerCase().startsWith(lastToken.toLowerCase());
     });
 
-    if (filteredStatusCodes.length > 0) {
+    if (filteredStatusCodes.length) {
       // Shows an autocomplete list of "status-code" values from filteredStatusCodes
       autocompleteList = isNegativeFlag
         ? filteredStatusCodes.map(item => `-status-code:${item}`)

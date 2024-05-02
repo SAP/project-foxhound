@@ -7,21 +7,24 @@
 
 use crate::context::SharedStyleContext;
 use crate::data::ElementData;
-use crate::dom::TElement;
-use crate::element_state::ElementState;
+use crate::dom::{TElement, TNode};
 use crate::invalidation::element::element_wrapper::{ElementSnapshot, ElementWrapper};
 use crate::invalidation::element::invalidation_map::*;
-use crate::invalidation::element::invalidator::{DescendantInvalidationLists, InvalidationVector};
+use crate::invalidation::element::invalidator::{
+    DescendantInvalidationLists, InvalidationVector, SiblingTraversalMap,
+};
 use crate::invalidation::element::invalidator::{Invalidation, InvalidationProcessor};
 use crate::invalidation::element::restyle_hints::RestyleHint;
 use crate::selector_map::SelectorMap;
 use crate::selector_parser::Snapshot;
 use crate::stylesheets::origin::OriginSet;
 use crate::{Atom, WeakAtom};
+use dom::ElementState;
 use selectors::attr::CaseSensitivity;
-use selectors::matching::matches_selector;
-use selectors::matching::{MatchingContext, MatchingMode, VisitedHandlingMode};
-use selectors::NthIndexCache;
+use selectors::matching::{
+    matches_selector, MatchingForInvalidation, MatchingContext, MatchingMode,
+    NeedsSelectorFlags, SelectorCaches, VisitedHandlingMode,
+};
 use smallvec::SmallVec;
 
 /// The collector implementation.
@@ -51,6 +54,7 @@ pub struct StateAndAttrInvalidationProcessor<'a, 'b: 'a, E: TElement> {
     element: E,
     data: &'a mut ElementData,
     matching_context: MatchingContext<'a, E::Impl>,
+    traversal_map: SiblingTraversalMap<E>,
 }
 
 impl<'a, 'b: 'a, E: TElement + 'b> StateAndAttrInvalidationProcessor<'a, 'b, E> {
@@ -59,14 +63,16 @@ impl<'a, 'b: 'a, E: TElement + 'b> StateAndAttrInvalidationProcessor<'a, 'b, E> 
         shared_context: &'a SharedStyleContext<'b>,
         element: E,
         data: &'a mut ElementData,
-        nth_index_cache: &'a mut NthIndexCache,
+        selector_caches: &'a mut SelectorCaches,
     ) -> Self {
         let matching_context = MatchingContext::new_for_visited(
             MatchingMode::Normal,
             None,
-            Some(nth_index_cache),
+            selector_caches,
             VisitedHandlingMode::AllLinksVisitedAndUnvisited,
             shared_context.quirks_mode(),
+            NeedsSelectorFlags::No,
+            MatchingForInvalidation::Yes,
         );
 
         Self {
@@ -74,6 +80,7 @@ impl<'a, 'b: 'a, E: TElement + 'b> StateAndAttrInvalidationProcessor<'a, 'b, E> 
             element,
             data,
             matching_context,
+            traversal_map: SiblingTraversalMap::default(),
         }
     }
 }
@@ -84,7 +91,7 @@ pub fn check_dependency<E, W>(
     dependency: &Dependency,
     element: &E,
     wrapper: &W,
-    mut context: &mut MatchingContext<'_, E::Impl>,
+    context: &mut MatchingContext<'_, E::Impl>,
 ) -> bool
 where
     E: TElement,
@@ -95,8 +102,7 @@ where
         dependency.selector_offset,
         None,
         element,
-        &mut context,
-        &mut |_, _| {},
+        context,
     );
 
     let matched_then = matches_selector(
@@ -104,8 +110,7 @@ where
         dependency.selector_offset,
         None,
         wrapper,
-        &mut context,
-        &mut |_, _| {},
+        context,
     );
 
     matched_then != matches_now
@@ -118,14 +123,10 @@ pub fn should_process_descendants(data: &ElementData) -> bool {
 }
 
 /// Propagates the bits after invalidating a descendant child.
-pub fn invalidated_descendants<E>(element: E, child: E)
+pub fn propagate_dirty_bit_up_to<E>(ancestor: E, child: E)
 where
     E: TElement,
 {
-    if !child.has_data() {
-        return;
-    }
-
     // The child may not be a flattened tree child of the current element,
     // but may be arbitrarily deep.
     //
@@ -136,24 +137,68 @@ where
         unsafe { parent.set_dirty_descendants() };
         current = parent.traversal_parent();
 
-        if parent == element {
-            break;
+        if parent == ancestor {
+            return;
         }
     }
+    debug_assert!(
+        false,
+        "Should've found {:?} as an ancestor of {:?}",
+        ancestor, child
+    );
+}
+
+/// Propagates the bits after invalidating a descendant child, if needed.
+pub fn invalidated_descendants<E>(element: E, child: E)
+where
+    E: TElement,
+{
+    if !child.has_data() {
+        return;
+    }
+    propagate_dirty_bit_up_to(element, child)
 }
 
 /// Sets the appropriate restyle hint after invalidating the style of a given
 /// element.
-pub fn invalidated_self<E>(element: E)
+pub fn invalidated_self<E>(element: E) -> bool
 where
     E: TElement,
 {
-    if let Some(mut data) = element.mutate_data() {
-        data.hint.insert(RestyleHint::RESTYLE_SELF);
+    let mut data = match element.mutate_data() {
+        Some(data) => data,
+        None => return false,
+    };
+    data.hint.insert(RestyleHint::RESTYLE_SELF);
+    true
+}
+
+/// Sets the appropriate hint after invalidating the style of a sibling.
+pub fn invalidated_sibling<E>(element: E, of: E)
+where
+    E: TElement,
+{
+    debug_assert_eq!(
+        element.as_node().parent_node(),
+        of.as_node().parent_node(),
+        "Should be siblings"
+    );
+    if !invalidated_self(element) {
+        return;
+    }
+    if element.traversal_parent() != of.traversal_parent() {
+        let parent = element.as_node().parent_element_or_host();
+        debug_assert!(
+            parent.is_some(),
+            "How can we have siblings without parent nodes?"
+        );
+        if let Some(e) = parent {
+            propagate_dirty_bit_up_to(e, element)
+        }
     }
 }
 
-impl<'a, 'b: 'a, E: 'a> InvalidationProcessor<'a, E>
+impl<'a, 'b: 'a, E: 'a> InvalidationProcessor<'a, 'a, E>
     for StateAndAttrInvalidationProcessor<'a, 'b, E>
 where
     E: TElement,
@@ -177,6 +222,10 @@ where
         &mut self.matching_context
     }
 
+    fn sibling_traversal_map(&self) -> &SiblingTraversalMap<E> {
+        &self.traversal_map
+    }
+
     fn collect_invalidations(
         &mut self,
         element: E,
@@ -190,24 +239,10 @@ where
         let wrapper = ElementWrapper::new(element, &*self.shared_context.snapshot_map);
 
         let state_changes = wrapper.state_changes();
-        let snapshot = wrapper.snapshot().expect("has_snapshot lied");
+        let Some(snapshot) = wrapper.snapshot() else { return false };
 
         if !snapshot.has_attrs() && state_changes.is_empty() {
             return false;
-        }
-
-        // If we the visited state changed, we force a restyle here. Matching
-        // doesn't depend on the actual visited state at all, so we can't look
-        // at matching results to decide what to do for this case.
-        //
-        // TODO(emilio): This piece of code should be removed when
-        // layout.css.always-repaint-on-unvisited is true, since we cannot get
-        // into this situation in that case.
-        if state_changes.contains(ElementState::IN_VISITED_OR_UNVISITED_STATE) {
-            trace!(" > visitedness change, force subtree restyle");
-            // We can't just return here because there may also be attribute
-            // changes as well that imply additional hints for siblings.
-            self.data.hint.insert(RestyleHint::restyle_subtree());
         }
 
         let mut classes_removed = SmallVec::<[Atom; 8]>::new();
@@ -366,6 +401,11 @@ where
         debug_assert_ne!(element, self.element);
         invalidated_self(element);
     }
+
+    fn invalidated_sibling(&mut self, element: E, of: E) {
+        debug_assert_ne!(element, self.element);
+        invalidated_sibling(element, of);
+    }
 }
 
 impl<'a, 'b, 'selectors, E> Collector<'a, 'b, 'selectors, E>
@@ -409,24 +449,21 @@ where
             }
         });
 
-        let state_changes = self.state_changes;
-        if !state_changes.is_empty() {
-            self.collect_state_dependencies(&map.state_affecting_selectors, state_changes)
-        }
+        self.collect_state_dependencies(&map.state_affecting_selectors)
     }
 
-    fn collect_state_dependencies(
-        &mut self,
-        map: &'selectors SelectorMap<StateDependency>,
-        state_changes: ElementState,
-    ) {
+    fn collect_state_dependencies(&mut self, map: &'selectors SelectorMap<StateDependency>) {
+        if self.state_changes.is_empty() {
+            return;
+        }
         map.lookup_with_additional(
             self.lookup_element,
             self.matching_context.quirks_mode(),
             self.removed_id,
             self.classes_removed,
+            self.state_changes,
             |dependency| {
-                if !dependency.state.intersects(state_changes) {
+                if !dependency.state.intersects(self.state_changes) {
                     return true;
                 }
                 self.scan_dependency(&dependency.dep);
@@ -447,6 +484,9 @@ where
     }
 
     fn scan_dependency(&mut self, dependency: &'selectors Dependency) {
+        debug_assert!(
+            matches!(dependency.invalidation_kind(), DependencyInvalidationKind::Normal(_)),
+            "Found relative selector dependency");
         debug!(
             "TreeStyleInvalidator::scan_dependency({:?}, {:?})",
             self.element, dependency
@@ -464,8 +504,8 @@ where
     fn note_dependency(&mut self, dependency: &'selectors Dependency) {
         debug_assert!(self.dependency_may_be_relevant(dependency));
 
-        let invalidation_kind = dependency.invalidation_kind();
-        if matches!(invalidation_kind, DependencyInvalidationKind::Element) {
+        let invalidation_kind = dependency.normal_invalidation_kind();
+        if matches!(invalidation_kind, NormalDependencyInvalidationKind::Element) {
             if let Some(ref parent) = dependency.parent {
                 // We know something changed in the inner selector, go outwards
                 // now.
@@ -482,43 +522,72 @@ where
         let invalidation =
             Invalidation::new(&dependency, self.matching_context.current_host.clone());
 
-        match invalidation_kind {
-            DependencyInvalidationKind::Element => unreachable!(),
-            DependencyInvalidationKind::ElementAndDescendants => {
-                self.invalidates_self = true;
-                self.descendant_invalidations
-                    .dom_descendants
-                    .push(invalidation);
-            },
-            DependencyInvalidationKind::Descendants => {
-                self.descendant_invalidations
-                    .dom_descendants
-                    .push(invalidation);
-            },
-            DependencyInvalidationKind::Siblings => {
-                self.sibling_invalidations.push(invalidation);
-            },
-            DependencyInvalidationKind::Parts => {
-                self.descendant_invalidations.parts.push(invalidation);
-            },
-            DependencyInvalidationKind::SlottedElements => {
-                self.descendant_invalidations
-                    .slotted_descendants
-                    .push(invalidation);
-            },
-        }
+        self.invalidates_self |= push_invalidation(
+            invalidation,
+            invalidation_kind,
+            self.descendant_invalidations,
+            self.sibling_invalidations,
+        );
     }
 
     /// Returns whether `dependency` may cause us to invalidate the style of
     /// more elements than what we've already invalidated.
     fn dependency_may_be_relevant(&self, dependency: &Dependency) -> bool {
-        match dependency.invalidation_kind() {
-            DependencyInvalidationKind::Element => !self.invalidates_self,
-            DependencyInvalidationKind::SlottedElements => self.element.is_html_slot_element(),
-            DependencyInvalidationKind::Parts => self.element.shadow_root().is_some(),
-            DependencyInvalidationKind::ElementAndDescendants |
-            DependencyInvalidationKind::Siblings |
-            DependencyInvalidationKind::Descendants => true,
+        match dependency.normal_invalidation_kind() {
+            NormalDependencyInvalidationKind::Element => !self.invalidates_self,
+            NormalDependencyInvalidationKind::SlottedElements => self.element.is_html_slot_element(),
+            NormalDependencyInvalidationKind::Parts => self.element.shadow_root().is_some(),
+            NormalDependencyInvalidationKind::ElementAndDescendants |
+            NormalDependencyInvalidationKind::Siblings |
+            NormalDependencyInvalidationKind::Descendants => true,
         }
+    }
+}
+
+pub(crate) fn push_invalidation<'a>(
+    invalidation: Invalidation<'a>,
+    invalidation_kind: NormalDependencyInvalidationKind,
+    descendant_invalidations: &mut DescendantInvalidationLists<'a>,
+    sibling_invalidations: &mut InvalidationVector<'a>,
+) -> bool {
+    match invalidation_kind {
+        NormalDependencyInvalidationKind::Element => unreachable!(),
+        NormalDependencyInvalidationKind::ElementAndDescendants => {
+            descendant_invalidations.dom_descendants.push(invalidation);
+            true
+        },
+        NormalDependencyInvalidationKind::Descendants => {
+            descendant_invalidations.dom_descendants.push(invalidation);
+            false
+        },
+        NormalDependencyInvalidationKind::Siblings => {
+            sibling_invalidations.push(invalidation);
+            false
+        },
+        NormalDependencyInvalidationKind::Parts => {
+            descendant_invalidations.parts.push(invalidation);
+            false
+        },
+        NormalDependencyInvalidationKind::SlottedElements => {
+            descendant_invalidations
+                .slotted_descendants
+                .push(invalidation);
+            false
+        },
+    }
+}
+
+pub(crate) fn dependency_may_be_relevant<E: TElement>(
+    dependency: &Dependency,
+    element: &E,
+    already_invalidated_self: bool,
+) -> bool {
+    match dependency.normal_invalidation_kind() {
+        NormalDependencyInvalidationKind::Element => !already_invalidated_self,
+        NormalDependencyInvalidationKind::SlottedElements => element.is_html_slot_element(),
+        NormalDependencyInvalidationKind::Parts => element.shadow_root().is_some(),
+        NormalDependencyInvalidationKind::ElementAndDescendants |
+        NormalDependencyInvalidationKind::Siblings |
+        NormalDependencyInvalidationKind::Descendants => true,
     }
 }

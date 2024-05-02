@@ -1,13 +1,14 @@
 // |jit-test| skip-if: !wasmGcEnabled()
 
 // White-box test for bug 1617908.  The significance of this test is that the
-// type $S is too large to fit in an inline TypedObject, and the write barrier
+// type $S is too large to fit in an inline WasmGcObject, and the write barrier
 // logic must take this into account when storing the (ref $S2) into the last
 // field of the object.
 
 const wat = `
 (module
-  (type $S
+  (type $S2 (sub (struct)))
+  (type $S (sub $S2
     (struct
       (field (mut i64))
       (field (mut i64))
@@ -27,12 +28,11 @@ const wat = `
       (field (mut i64))
       (field (mut i64))
       (field (mut i64))
-      (field (mut eqref))))
-  (type $S2 (struct))
+      (field (mut eqref)))))
 
   (func $main
     (struct.set $S 18
-      (struct.new_with_rtt $S
+      (struct.new $S
         (i64.const 0)
         (i64.const 0)
         (i64.const 0)
@@ -51,9 +51,8 @@ const wat = `
         (i64.const 0)
         (i64.const 0)
         (i64.const 0)
-        (ref.null eq)
-        (rtt.canon $S))
-      (struct.new_with_rtt $S2 (rtt.canon $S2))))
+        (ref.null eq))
+      (struct.new $S2)))
   (start $main))
 `
 wasmEvalText(wat);
@@ -62,42 +61,42 @@ wasmEvalText(wat);
 
 wasmEvalText(`
 (module
-  (type $outline
-    (struct
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))
-      (field (mut i64))))
   (type $inline
+    (sub (struct
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+    )))
+  (type $outline (sub $inline
     (struct
       (field (mut i64))
       (field (mut i64))
       (field (mut i64))
       (field (mut i64))
       (field (mut i64))
-    ))
-
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64))
+      (field (mut i64)))))
+  
   (func $main
     (local $outline (ref null $outline))
     (local $inline (ref null $inline))
 
     (; create an outline object and acquire multiple views to it ;)
-    (struct.new_with_rtt $outline
+    (struct.new $outline
           (i64.const 0xFF)
           (i64.const 0)
           (i64.const 0)
@@ -116,8 +115,7 @@ wasmEvalText(`
           (i64.const 0)
           (i64.const 0)
           (i64.const 0)
-          (i64.const 0)
-          (rtt.canon $outline))
+          (i64.const 0))
     local.tee $outline
     local.set $inline
 

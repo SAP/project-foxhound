@@ -124,7 +124,6 @@ sftkdb_isAuthenticatedAttribute(CK_ATTRIBUTE_TYPE type)
     }
     return PR_FALSE;
 }
-
 /*
  * convert a native ULONG to a database ulong. Database ulong's
  * are all 4 byte big endian values.
@@ -141,7 +140,7 @@ sftk_ULong2SDBULong(unsigned char *data, CK_ULONG value)
 
 /*
  * convert a database ulong back to a native ULONG. (reverse of the above
- * function.
+ * function).
  */
 static CK_ULONG
 sftk_SDBULong2ULong(unsigned char *data)
@@ -153,6 +152,39 @@ sftk_SDBULong2ULong(unsigned char *data)
         value |= (((CK_ULONG)data[i]) << (SDB_ULONG_SIZE - 1 - i) * BBP);
     }
     return value;
+}
+
+/* certain trust records are default values, which are the values
+ * returned if the signature check fails anyway.
+ * In those cases, we can skip the signature check. */
+PRBool
+sftkdb_isNullTrust(const CK_ATTRIBUTE *template)
+{
+    switch (template->type) {
+        case CKA_TRUST_SERVER_AUTH:
+        case CKA_TRUST_CLIENT_AUTH:
+        case CKA_TRUST_EMAIL_PROTECTION:
+        case CKA_TRUST_CODE_SIGNING:
+            if (template->ulValueLen != SDB_ULONG_SIZE) {
+                break;
+            }
+            if (sftk_SDBULong2ULong(template->pValue) ==
+                CKT_NSS_TRUST_UNKNOWN) {
+                return PR_TRUE;
+            }
+            break;
+        case CKA_TRUST_STEP_UP_APPROVED:
+            if (template->ulValueLen != 1) {
+                break;
+            }
+            if (*((unsigned char *)(template->pValue)) == 0) {
+                return PR_TRUE;
+            }
+            break;
+        default:
+            break;
+    }
+    return PR_FALSE;
 }
 
 /*
@@ -255,9 +287,9 @@ sftkdb_getRawAttributeSignature(SFTKDBHandle *handle, SDB *db,
     char id[30];
     CK_RV crv;
 
-    sprintf(id, SFTKDB_META_SIG_TEMPLATE,
-            sftkdb_TypeString(handle),
-            (unsigned int)objectID, (unsigned int)type);
+    snprintf(id, sizeof(id), SFTKDB_META_SIG_TEMPLATE,
+             sftkdb_TypeString(handle),
+             (unsigned int)objectID, (unsigned int)type);
 
     crv = (*db->sdb_GetMetaData)(db, id, signText, NULL);
     return crv;
@@ -280,9 +312,9 @@ sftkdb_DestroyAttributeSignature(SFTKDBHandle *handle, SDB *db,
     char id[30];
     CK_RV crv;
 
-    sprintf(id, SFTKDB_META_SIG_TEMPLATE,
-            sftkdb_TypeString(handle),
-            (unsigned int)objectID, (unsigned int)type);
+    snprintf(id, sizeof(id), SFTKDB_META_SIG_TEMPLATE,
+             sftkdb_TypeString(handle),
+             (unsigned int)objectID, (unsigned int)type);
 
     crv = (*db->sdb_DestroyMetaData)(db, id);
     return crv;
@@ -306,9 +338,9 @@ sftkdb_PutAttributeSignature(SFTKDBHandle *handle, SDB *keyTarget,
     char id[30];
     CK_RV crv;
 
-    sprintf(id, SFTKDB_META_SIG_TEMPLATE,
-            sftkdb_TypeString(handle),
-            (unsigned int)objectID, (unsigned int)type);
+    snprintf(id, sizeof(id), SFTKDB_META_SIG_TEMPLATE,
+             sftkdb_TypeString(handle),
+             (unsigned int)objectID, (unsigned int)type);
 
     crv = (*keyTarget->sdb_PutMetaData)(keyTarget, id, signText, NULL);
     return crv;
@@ -339,7 +371,7 @@ sftkdb_fixupTemplateOut(CK_ATTRIBUTE *template, CK_OBJECT_HANDLE objectID,
 
     if ((keyHandle == NULL) ||
         ((SFTK_GET_SDB(keyHandle)->sdb_flags & SDB_HAS_META) == 0) ||
-        (keyHandle->passwordKey.data == NULL)) {
+        (sftkdb_PWCached(keyHandle) != SECSuccess)) {
         checkSig = PR_FALSE;
     }
 
@@ -415,7 +447,7 @@ sftkdb_fixupTemplateOut(CK_ATTRIBUTE *template, CK_OBJECT_HANDLE objectID,
             SECITEM_ZfreeItem(plainText, PR_TRUE);
         }
         /* make sure signed attributes are valid */
-        if (checkSig && sftkdb_isAuthenticatedAttribute(ntemplate[i].type)) {
+        if (checkSig && sftkdb_isAuthenticatedAttribute(ntemplate[i].type) && !sftkdb_isNullTrust(&ntemplate[i])) {
             SECStatus rv;
             CK_RV local_crv;
             SECItem signText;
@@ -1606,10 +1638,14 @@ sftkdb_CloseDB(SFTKDBHandle *handle)
         }
         (*handle->db->sdb_Close)(handle->db);
     }
+    if (handle->passwordLock) {
+        PZ_Lock(handle->passwordLock);
+    }
     if (handle->passwordKey.data) {
         SECITEM_ZfreeItem(&handle->passwordKey, PR_FALSE);
     }
     if (handle->passwordLock) {
+        PZ_Unlock(handle->passwordLock);
         SKIP_AFTER_FORK(PZ_DestroyLock(handle->passwordLock));
     }
     if (handle->updatePasswordKey) {
@@ -2043,11 +2079,10 @@ sftkdb_reconcileTrustEntry(PLArenaPool *arena, CK_ATTRIBUTE *target,
     return SFTKDB_DROP_ATTRIBUTE;
 }
 
-const CK_ATTRIBUTE_TYPE sftkdb_trustList[] =
-    { CKA_TRUST_SERVER_AUTH, CKA_TRUST_CLIENT_AUTH,
-      CKA_TRUST_CODE_SIGNING, CKA_TRUST_EMAIL_PROTECTION,
-      CKA_TRUST_IPSEC_TUNNEL, CKA_TRUST_IPSEC_USER,
-      CKA_TRUST_TIME_STAMPING };
+const CK_ATTRIBUTE_TYPE sftkdb_trustList[] = { CKA_TRUST_SERVER_AUTH, CKA_TRUST_CLIENT_AUTH,
+                                               CKA_TRUST_CODE_SIGNING, CKA_TRUST_EMAIL_PROTECTION,
+                                               CKA_TRUST_IPSEC_TUNNEL, CKA_TRUST_IPSEC_USER,
+                                               CKA_TRUST_TIME_STAMPING };
 
 #define SFTK_TRUST_TEMPLATE_COUNT \
     (sizeof(sftkdb_trustList) / sizeof(sftkdb_trustList[0]))
@@ -2322,7 +2357,7 @@ sftkdb_updateIntegrity(PLArenaPool *arena, SFTKDBHandle *handle,
             crv = sftkdb_getRawAttributeSignature(handle, source, sourceID, type,
                                                   &signature);
             if (crv != CKR_OK) {
-                /* old databases don't have signature IDs because they are 
+                /* old databases don't have signature IDs because they are
                  * 3DES encrypted. Since we know not to look for integrity
                  * for 3DES records it's OK not to find one here. A new record
                  * will be created when we reencrypt using AES CBC */
@@ -2392,7 +2427,6 @@ sftkdb_mergeObject(SFTKDBHandle *handle, CK_OBJECT_HANDLE id,
 
     objectType = sftkdb_getULongFromTemplate(CKA_CLASS, ptemplate,
                                              max_attributes);
-
     /*
      * Update Object updates the object template if necessary then returns
      * whether or not we need to actually write the object out to our target
@@ -2695,10 +2729,12 @@ sftkdb_ResetKeyDB(SFTKDBHandle *handle)
         /* set error */
         return SECFailure;
     }
+    PZ_Lock(handle->passwordLock);
     if (handle->passwordKey.data) {
         SECITEM_ZfreeItem(&handle->passwordKey, PR_FALSE);
         handle->passwordKey.data = NULL;
     }
+    PZ_Unlock(handle->passwordLock);
     return SECSuccess;
 }
 

@@ -4,18 +4,11 @@
 
 "use strict";
 
-loader.lazyRequireGetter(
-  this,
-  "isWebRenderEnabled",
-  "devtools/server/actors/utils/accessibility",
-  true
-);
-
 const {
   accessibility: {
     SIMULATION_TYPE: { PROTANOPIA },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 const {
   simulation: {
     COLOR_TRANSFORMATION_MATRICES: {
@@ -23,13 +16,13 @@ const {
       NONE: DEFAULT_MATRIX,
     },
   },
-} = require("devtools/server/actors/accessibility/constants");
+} = require("resource://devtools/server/actors/accessibility/constants.js");
 
 // Checks for the SimulatorActor
 
 async function setup() {
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    content.window.testColorMatrix = function(actual, expected) {
+    content.window.testColorMatrix = function (actual, expected) {
       for (const idx in actual) {
         is(
           actual[idx].toFixed(3),
@@ -39,7 +32,7 @@ async function setup() {
       }
     };
   });
-  SimpleTest.registerCleanupFunction(async function() {
+  SimpleTest.registerCleanupFunction(async function () {
     await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
       content.window.testColorMatrix = null;
     });
@@ -56,8 +49,9 @@ async function testSimulate(simulator, matrix, type = null) {
     ([simulationType, simulationMatrix]) => {
       const { window } = content;
       info(
-        `Test that color matrix is set to ${simulationType ||
-          "default"} simulation values.`
+        `Test that color matrix is set to ${
+          simulationType || "default"
+        } simulation values.`
       );
       window.testColorMatrix(
         window.docShell.getColorMatrix(),
@@ -67,21 +61,15 @@ async function testSimulate(simulator, matrix, type = null) {
   );
 }
 
-add_task(async function() {
-  const {
-    target,
-    accessibility,
-  } = await initAccessibilityFrontsForUrl(
+add_task(async function () {
+  const { target, accessibility } = await initAccessibilityFrontsForUrl(
     MAIN_DOMAIN + "doc_accessibility.html",
     { enableByDefault: false }
   );
 
   const simulator = accessibility.simulatorFront;
-
   if (!simulator) {
-    ok(!isWebRenderEnabled(window), "Web render is disabled.");
-
-    // If web render is disabled, we can't test the simulator actor, so return early
+    ok(false, "Missing simulator actor.");
     return;
   }
 

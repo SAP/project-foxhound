@@ -1,15 +1,22 @@
-import { EventEmitter, FakePrefs, GlobalOverrider } from "test/unit/utils";
+import {
+  EventEmitter,
+  FakePrefs,
+  FakensIPrefService,
+  GlobalOverrider,
+  FakeConsoleAPI,
+  FakeLogger,
+} from "test/unit/utils";
 import Adapter from "enzyme-adapter-react-16";
 import { chaiAssertions } from "test/schemas/pings";
 import chaiJsonSchema from "chai-json-schema";
 import enzyme from "enzyme";
+import FxMSCommonSchema from "../../content-src/asrouter/schemas/FxMSCommon.schema.json";
+
 enzyme.configure({ adapter: new Adapter() });
 
 // Cause React warnings to make tests that trigger them fail
-const origConsoleError = console.error; // eslint-disable-line no-console
-// eslint-disable-next-line no-console
-console.error = function(msg, ...args) {
-  // eslint-disable-next-line no-console
+const origConsoleError = console.error;
+console.error = function (msg, ...args) {
   origConsoleError.apply(console, [msg, ...args]);
 
   if (
@@ -29,6 +36,7 @@ sinon.assert.expose(assert, { prefix: "" });
 
 chai.use(chaiAssertions);
 chai.use(chaiJsonSchema);
+chai.tv4.addSchema("file:///FxMSCommon.schema.json", FxMSCommonSchema);
 
 const overrider = new GlobalOverrider();
 
@@ -66,12 +74,27 @@ class JSWindowActorChild {
   }
 }
 
-class Logger {
-  constructor(name) {
-    this.name = name;
+// Detect plain object passed to lazy getter APIs, and set its prototype to
+// global object, and return the global object for further modification.
+// Returns the object if it's not plain object.
+//
+// This is a workaround to make the existing testharness and testcase keep
+// working even after lazy getters are moved to plain `lazy` object.
+const cachedPlainObject = new Set();
+function updateGlobalOrObject(object) {
+  // Given this function modifies the prototype, and the following
+  // condition doesn't meet on the second call, cache the result.
+  if (cachedPlainObject.has(object)) {
+    return global;
   }
 
-  warn() {}
+  if (Object.getPrototypeOf(object).constructor.name !== "Object") {
+    return object;
+  }
+
+  cachedPlainObject.add(object);
+  Object.setPrototypeOf(object, global);
+  return global;
 }
 
 const TEST_GLOBAL = {
@@ -81,6 +104,9 @@ const TEST_GLOBAL = {
     addMessageListener: (messageName, listener) => {},
     removeMessageListener: (messageName, listener) => {},
   },
+  AboutWelcomeTelemetry: class {
+    submitGleanPingForPing() {}
+  },
   AddonManager: {
     getActiveAddons() {
       return Promise.resolve({ addons: [], fullData: false });
@@ -89,10 +115,35 @@ const TEST_GLOBAL = {
   AppConstants: {
     MOZILLA_OFFICIAL: true,
     MOZ_APP_VERSION: "69.0a1",
+    isChinaRepack() {
+      return false;
+    },
     isPlatformAndVersionAtMost() {
       return false;
     },
     platform: "win",
+  },
+  ASRouterPreferences: {
+    console: new FakeConsoleAPI({
+      maxLogLevel: "off", // set this to "debug" or "all" to get more ASRouter logging in tests
+      prefix: "ASRouter",
+    }),
+  },
+  AWScreenUtils: {
+    evaluateTargetingAndRemoveScreens() {
+      return true;
+    },
+    async removeScreens() {
+      return true;
+    },
+    evaluateScreenTargeting() {
+      return true;
+    },
+  },
+  BrowserUtils: {
+    sendToDeviceEmailsSupported() {
+      return true;
+    },
   },
   UpdateUtils: { getUpdateChannel() {} },
   BasePromiseWorker: class {
@@ -104,11 +155,15 @@ const TEST_GLOBAL = {
   browserSearchRegion: "US",
   BrowserWindowTracker: { getTopWindow() {} },
   ChromeUtils: {
-    defineModuleGetter() {},
+    defineModuleGetter: updateGlobalOrObject,
+    defineESModuleGetters: updateGlobalOrObject,
     generateQI() {
       return {};
     },
     import() {
+      return global;
+    },
+    importESModule() {
       return global;
     },
   },
@@ -121,21 +176,22 @@ const TEST_GLOBAL = {
     Constructor(classId) {
       switch (classId) {
         case "@mozilla.org/referrer-info;1":
-          return function(referrerPolicy, sendReferrer, originalReferrer) {
+          return function (referrerPolicy, sendReferrer, originalReferrer) {
             this.referrerPolicy = referrerPolicy;
             this.sendReferrer = sendReferrer;
             this.originalReferrer = originalReferrer;
           };
       }
-      return function() {};
+      return function () {};
     },
     isSuccessCode: () => true,
   },
+  ConsoleAPI: FakeConsoleAPI,
   // NB: These are functions/constructors
   // eslint-disable-next-line object-shorthand
-  ContentSearchUIController: function() {},
+  ContentSearchUIController: function () {},
   // eslint-disable-next-line object-shorthand
-  ContentSearchHandoffUIController: function() {},
+  ContentSearchHandoffUIController: function () {},
   Cc: {
     "@mozilla.org/browser/nav-bookmarks-service;1": {
       addObserver() {},
@@ -175,6 +231,15 @@ const TEST_GLOBAL = {
       },
     },
     "@mozilla.org/updates/update-checker;1": { createInstance() {} },
+    "@mozilla.org/widget/useridleservice;1": {
+      getService() {
+        return {
+          idleTime: 0,
+          addIdleObserver() {},
+          removeIdleObserver() {},
+        };
+      },
+    },
     "@mozilla.org/streamConverters;1": {
       getService() {
         return this;
@@ -199,21 +264,32 @@ const TEST_GLOBAL = {
       FINGERPRINTERS_ID: 4,
       SOCIAL_ID: 5,
     },
+    nsICookieBannerService: {
+      MODE_DISABLED: 0,
+      MODE_REJECT: 1,
+      MODE_REJECT_OR_ACCEPT: 2,
+      MODE_UNSET: 3,
+    },
   },
   Cu: {
     importGlobalProperties() {},
     now: () => window.performance.now(),
-    reportError() {},
     cloneInto: o => JSON.parse(JSON.stringify(o)),
+  },
+  console: {
+    ...console,
+    error() {},
   },
   dump() {},
   EveryWindow: {
     registerCallback: (id, init, uninit) => {},
     unregisterCallback: id => {},
   },
+  setTimeout: window.setTimeout.bind(window),
+  clearTimeout: window.clearTimeout.bind(window),
   fetch() {},
   // eslint-disable-next-line object-shorthand
-  Image: function() {}, // NB: This is a function/constructor
+  Image: function () {}, // NB: This is a function/constructor
   IOUtils: {
     writeJSON() {
       return Promise.resolve(0);
@@ -294,11 +370,11 @@ const TEST_GLOBAL = {
       removeListener() {},
     },
   },
-  PluralForm: { get() {} },
   Preferences: FakePrefs,
   PrivateBrowsingUtils: {
     isBrowserPrivate: () => false,
     isWindowPrivate: () => false,
+    permanentPrivateBrowsing: false,
   },
   DownloadsViewUI: {
     getDisplayName: () => "filename.ext",
@@ -306,7 +382,7 @@ const TEST_GLOBAL = {
   },
   FileUtils: {
     // eslint-disable-next-line object-shorthand
-    File: function() {}, // NB: This is a function/constructor
+    File: function () {}, // NB: This is a function/constructor
   },
   Region: {
     home: "US",
@@ -315,6 +391,9 @@ const TEST_GLOBAL = {
   Services: {
     dirsvc: {
       get: () => ({ parent: { parent: { path: "appPath" } } }),
+    },
+    env: {
+      set: () => undefined,
     },
     locale: {
       get appLocaleAsBCP47() {
@@ -344,37 +423,7 @@ const TEST_GLOBAL = {
       },
     },
     console: { logStringMessage: () => {} },
-    prefs: {
-      addObserver() {},
-      prefHasUserValue() {},
-      removeObserver() {},
-      getPrefType() {},
-      clearUserPref() {},
-      getChildList() {
-        return [];
-      },
-      getStringPref() {},
-      setStringPref() {},
-      getIntPref() {},
-      getBoolPref() {},
-      getCharPref() {},
-      setBoolPref() {},
-      setCharPref() {},
-      setIntPref() {},
-      getBranch() {},
-      PREF_BOOL: "boolean",
-      PREF_INT: "integer",
-      PREF_STRING: "string",
-      getDefaultBranch() {
-        return {
-          setBoolPref() {},
-          setIntPref() {},
-          setStringPref() {},
-          clearUserPref() {},
-        };
-      },
-      prefIsLocked() {},
-    },
+    prefs: new FakensIPrefService(),
     tm: {
       dispatchToMainThread: cb => cb(),
       idleDispatchToMainThread: cb => cb(),
@@ -446,22 +495,14 @@ const TEST_GLOBAL = {
   },
   XPCOMUtils: {
     defineLazyGetter(object, name, f) {
-      if (object && name) {
-        object[name] = f();
-      } else {
-        f();
-      }
+      updateGlobalOrObject(object)[name] = f();
     },
-    defineLazyGlobalGetters() {},
-    defineLazyModuleGetter() {},
-    defineLazyModuleGetters() {},
-    defineLazyServiceGetter() {},
-    defineLazyServiceGetters() {},
-    defineLazyPreferenceGetter(obj, name) {
-      Object.defineProperty(obj, name, {
-        configurable: true,
-        get: () => "",
-      });
+    defineLazyGlobalGetters: updateGlobalOrObject,
+    defineLazyModuleGetters: updateGlobalOrObject,
+    defineLazyServiceGetter: updateGlobalOrObject,
+    defineLazyServiceGetters: updateGlobalOrObject,
+    defineLazyPreferenceGetter(object, name) {
+      updateGlobalOrObject(object)[name] = "";
     },
     generateQI() {
       return {};
@@ -496,23 +537,27 @@ const TEST_GLOBAL = {
   FX_MONITOR_OAUTH_CLIENT_ID: "fake_client_id",
   ExperimentAPI: {
     getExperiment() {},
-    on: () => {},
-    off: () => {},
+    getExperimentMetaData() {},
+    getRolloutMetaData() {},
   },
   NimbusFeatures: {
+    glean: {
+      getVariable() {},
+    },
     newtab: {
-      isEnabled() {},
       getVariable() {},
       getAllVariables() {},
       onUpdate() {},
-      off() {},
+      offUpdate() {},
     },
     pocketNewtab: {
-      isEnabled() {},
       getVariable() {},
       getAllVariables() {},
       onUpdate() {},
-      off() {},
+      offUpdate() {},
+    },
+    cookieBannerHandling: {
+      getVariable() {},
     },
   },
   TelemetryEnvironment: {
@@ -550,7 +595,128 @@ const TEST_GLOBAL = {
     addExpirationFilter() {},
     removeExpirationFilter() {},
   },
-  Logger,
+  Logger: FakeLogger,
+  getFxAccountsSingleton() {},
+  AboutNewTab: {},
+  Glean: {
+    newtab: {
+      opened: {
+        record() {},
+      },
+      closed: {
+        record() {},
+      },
+      locale: {
+        set() {},
+      },
+      newtabCategory: {
+        set() {},
+      },
+      homepageCategory: {
+        set() {},
+      },
+      blockedSponsors: {
+        set() {},
+      },
+      sovAllocation: {
+        set() {},
+      },
+    },
+    newtabSearch: {
+      enabled: {
+        set() {},
+      },
+    },
+    pocket: {
+      enabled: {
+        set() {},
+      },
+      impression: {
+        record() {},
+      },
+      isSignedIn: {
+        set() {},
+      },
+      sponsoredStoriesEnabled: {
+        set() {},
+      },
+      click: {
+        record() {},
+      },
+      save: {
+        record() {},
+      },
+      topicClick: {
+        record() {},
+      },
+      shim: {
+        set() {},
+      },
+    },
+    topsites: {
+      enabled: {
+        set() {},
+      },
+      sponsoredEnabled: {
+        set() {},
+      },
+      impression: {
+        record() {},
+      },
+      click: {
+        record() {},
+      },
+      rows: {
+        set() {},
+      },
+      showPrivacyClick: {
+        record() {},
+      },
+      dismiss: {
+        record() {},
+      },
+      prefChanged: {
+        record() {},
+      },
+    },
+    topSites: {
+      pingType: {
+        set() {},
+      },
+      position: {
+        set() {},
+      },
+      source: {
+        set() {},
+      },
+      tileId: {
+        set() {},
+      },
+      reportingUrl: {
+        set() {},
+      },
+      advertiser: {
+        set() {},
+      },
+      contextId: {
+        set() {},
+      },
+    },
+  },
+  GleanPings: {
+    newtab: {
+      submit() {},
+    },
+    topSites: {
+      submit() {},
+    },
+    spoc: {
+      submit() {},
+    },
+  },
+  Utils: {
+    SERVER_URL: "bogus://foo",
+  },
 };
 overrider.set(TEST_GLOBAL);
 

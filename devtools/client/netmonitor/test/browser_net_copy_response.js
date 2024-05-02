@@ -7,7 +7,7 @@
  * Tests if copying a request's response works.
  */
 
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(
     CONTENT_TYPE_WITHOUT_CACHE_URL,
     { requestCount: 1 }
@@ -30,8 +30,8 @@ add_task(async function() {
     document.querySelectorAll(".request-list-item")[3]
   );
 
-  await waitForClipboardPromise(function setup() {
-    getContextMenuItem(monitor, "request-list-context-copy-response").click();
+  await waitForClipboardPromise(async function setup() {
+    await selectContextMenuItem(monitor, "request-list-context-copy-response");
   }, EXPECTED_RESULT);
 
   await teardown(monitor);

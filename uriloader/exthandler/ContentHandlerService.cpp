@@ -11,6 +11,8 @@
 #include "nsIMIMEInfo.h"
 #include "nsIStringEnumerator.h"
 #include "nsReadableUtils.h"
+#include "nsMIMEInfoImpl.h"
+#include "nsMIMEInfoChild.h"
 
 using mozilla::dom::ContentChild;
 using mozilla::dom::HandlerInfo;
@@ -23,6 +25,21 @@ NS_IMPL_ISUPPORTS(ContentHandlerService, nsIHandlerService)
 
 ContentHandlerService::ContentHandlerService() {}
 
+/* static */ already_AddRefed<nsIHandlerService>
+ContentHandlerService::Create() {
+  if (XRE_IsContentProcess()) {
+    RefPtr service = new ContentHandlerService();
+    if (NS_SUCCEEDED(service->Init())) {
+      return service.forget();
+    }
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIHandlerService> service =
+      do_GetService("@mozilla.org/uriloader/handler-service-parent;1");
+  return service.forget();
+}
+
 nsresult ContentHandlerService::Init() {
   if (!XRE_IsContentProcess()) {
     return NS_ERROR_FAILURE;
@@ -32,6 +49,7 @@ nsresult ContentHandlerService::Init() {
   mHandlerServiceChild = new HandlerServiceChild();
   if (!cpc->SendPHandlerServiceConstructor(mHandlerServiceChild)) {
     mHandlerServiceChild = nullptr;
+    return NS_ERROR_UNEXPECTED;
   }
   return NS_OK;
 }
@@ -160,19 +178,17 @@ NS_IMETHODIMP ContentHandlerService::FillHandlerInfo(
     nsIHandlerInfo* aHandlerInfo, const nsACString& aOverrideType) {
   HandlerInfo info, returnedInfo;
   nsIHandlerInfoToHandlerInfo(aHandlerInfo, &info);
-  mHandlerServiceChild->SendFillHandlerInfo(info, nsCString(aOverrideType),
-                                            &returnedInfo);
+  mHandlerServiceChild->SendFillHandlerInfo(info, aOverrideType, &returnedInfo);
   CopyHandlerInfoTonsIHandlerInfo(returnedInfo, aHandlerInfo);
   return NS_OK;
 }
 
 NS_IMETHODIMP ContentHandlerService::GetMIMEInfoFromOS(
-    nsIHandlerInfo* aHandlerInfo, const nsACString& aMIMEType,
-    const nsACString& aExtension, bool* aFound) {
+    const nsACString& aMIMEType, const nsACString& aFileExt, bool* aFound,
+    nsIMIMEInfo** aMIMEInfo) {
   nsresult rv = NS_ERROR_FAILURE;
   HandlerInfo returnedInfo;
-  if (!mHandlerServiceChild->SendGetMIMEInfoFromOS(nsCString(aMIMEType),
-                                                   nsCString(aExtension), &rv,
+  if (!mHandlerServiceChild->SendGetMIMEInfoFromOS(aMIMEType, aFileExt, &rv,
                                                    &returnedInfo, aFound)) {
     return NS_ERROR_FAILURE;
   }
@@ -181,7 +197,10 @@ NS_IMETHODIMP ContentHandlerService::GetMIMEInfoFromOS(
     return rv;
   }
 
-  CopyHandlerInfoTonsIHandlerInfo(returnedInfo, aHandlerInfo);
+  RefPtr<nsChildProcessMIMEInfo> mimeInfo =
+      new nsChildProcessMIMEInfo(returnedInfo.type());
+  CopyHandlerInfoTonsIHandlerInfo(returnedInfo, mimeInfo);
+  mimeInfo.forget(aMIMEInfo);
   return NS_OK;
 }
 
@@ -204,7 +223,7 @@ NS_IMETHODIMP ContentHandlerService::Remove(nsIHandlerInfo* aHandlerInfo) {
 NS_IMETHODIMP
 ContentHandlerService::ExistsForProtocolOS(const nsACString& aProtocolScheme,
                                            bool* aRetval) {
-  if (!mHandlerServiceChild->SendExistsForProtocolOS(nsCString(aProtocolScheme),
+  if (!mHandlerServiceChild->SendExistsForProtocolOS(aProtocolScheme,
                                                      aRetval)) {
     return NS_ERROR_FAILURE;
   }
@@ -214,8 +233,7 @@ ContentHandlerService::ExistsForProtocolOS(const nsACString& aProtocolScheme,
 NS_IMETHODIMP
 ContentHandlerService::ExistsForProtocol(const nsACString& aProtocolScheme,
                                          bool* aRetval) {
-  if (!mHandlerServiceChild->SendExistsForProtocol(nsCString(aProtocolScheme),
-                                                   aRetval)) {
+  if (!mHandlerServiceChild->SendExistsForProtocol(aProtocolScheme, aRetval)) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
@@ -225,8 +243,7 @@ NS_IMETHODIMP ContentHandlerService::GetTypeFromExtension(
     const nsACString& aFileExtension, nsACString& _retval) {
   _retval.Assign(*mExtToTypeMap.LookupOrInsertWith(aFileExtension, [&] {
     nsCString type;
-    mHandlerServiceChild->SendGetTypeFromExtension(nsCString(aFileExtension),
-                                                   &type);
+    mHandlerServiceChild->SendGetTypeFromExtension(aFileExtension, &type);
     return MakeUnique<nsCString>(type);
   }));
   return NS_OK;

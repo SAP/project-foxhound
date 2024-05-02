@@ -38,7 +38,35 @@ dictionary ElementCreationOptions {
 };
 
 /* https://dom.spec.whatwg.org/#interface-document */
-[Exposed=Window]
+[Exposed=Window,
+ InstrumentedProps=(caretRangeFromPoint,
+                    exitPictureInPicture,
+                    featurePolicy,
+                    onbeforecopy,
+                    onbeforecut,
+                    onbeforepaste,
+                    oncancel,
+                    onfreeze,
+                    onmousewheel,
+                    onresume,
+                    onsearch,
+                    onwebkitfullscreenchange,
+                    onwebkitfullscreenerror,
+                    pictureInPictureElement,
+                    pictureInPictureEnabled,
+                    registerElement,
+                    wasDiscarded,
+                    webkitCancelFullScreen,
+                    webkitCurrentFullScreenElement,
+                    webkitExitFullscreen,
+                    webkitFullscreenElement,
+                    webkitFullscreenEnabled,
+                    webkitHidden,
+                    webkitIsFullScreen,
+                    webkitVisibilityState,
+                    xmlEncoding,
+                    xmlStandalone,
+                    xmlVersion)]
 interface Document : Node {
   [Throws]
   constructor();
@@ -108,8 +136,8 @@ interface Document : Node {
 
   // NEW
   // No support for prepend/append yet
-  // void prepend((Node or DOMString)... nodes);
-  // void append((Node or DOMString)... nodes);
+  // undefined prepend((Node or DOMString)... nodes);
+  // undefined append((Node or DOMString)... nodes);
 
   // These are not in the spec, but leave them for now for backwards compat.
   // So sort of like Gecko extensions
@@ -156,11 +184,11 @@ partial interface Document {
   [CEReactions, Throws]
   WindowProxy? open(USVString url, DOMString name, DOMString features);
   [CEReactions, Throws]
-  void close();
+  undefined close();
   [CEReactions, Throws]
-  void write(DOMString... text);
+  undefined write(DOMString... text);
   [CEReactions, Throws]
-  void writeln(DOMString... text);
+  undefined writeln(DOMString... text);
 
   // user interaction
   [Pure]
@@ -210,7 +238,7 @@ partial interface Document {
    * @see <https://developer.mozilla.org/en/DOM/document.releaseCapture>
    */
   [Deprecated=DocumentReleaseCapture, Pref="dom.mouse_capture.enabled"]
-  void releaseCapture();
+  undefined releaseCapture();
   /**
    * Use the given DOM element as the source image of target |-moz-element()|.
    *
@@ -241,8 +269,8 @@ partial interface Document {
    * @see <https://developer.mozilla.org/en/DOM/document.mozSetImageElement>
    */
   [UseCounter]
-  void mozSetImageElement(DOMString aImageElementId,
-                          Element? aImageElement);
+  undefined mozSetImageElement(DOMString aImageElementId,
+                               Element? aImageElement);
 
   [ChromeOnly]
   readonly attribute URI? documentURIObject;
@@ -274,12 +302,12 @@ partial interface Document {
   [SameObject] readonly attribute HTMLCollection anchors;
   [SameObject] readonly attribute HTMLCollection applets;
 
-  void clear();
+  undefined clear();
   // @deprecated These are old Netscape 4 methods. Do not use,
   //             the implementation is no-op.
   // XXXbz do we actually need these anymore?
-  void captureEvents();
-  void releaseEvents();
+  undefined captureEvents();
+  undefined releaseEvents();
 
   [SameObject] readonly attribute HTMLAllCollection all;
 };
@@ -297,10 +325,10 @@ partial interface Document {
   [BinaryName="fullscreenEnabled", NeedsCallerType]
   readonly attribute boolean mozFullScreenEnabled;
 
-  [Throws]
-  Promise<void> exitFullscreen();
-  [Throws, BinaryName="exitFullscreen"]
-  Promise<void> mozCancelFullScreen();
+  [NewObject]
+  Promise<undefined> exitFullscreen();
+  [NewObject, BinaryName="exitFullscreen"]
+  Promise<undefined> mozCancelFullScreen();
 
   // Events handlers
   attribute EventHandler onfullscreenchange;
@@ -310,7 +338,7 @@ partial interface Document {
 // https://w3c.github.io/pointerlock/#extensions-to-the-document-interface
 // https://w3c.github.io/pointerlock/#extensions-to-the-documentorshadowroot-mixin
 partial interface Document {
-  void exitPointerLock();
+  undefined exitPointerLock();
 
   // Event handlers
   attribute EventHandler onpointerlockchange;
@@ -319,20 +347,17 @@ partial interface Document {
 
 // Mozilla-internal document extensions specific to error pages.
 partial interface Document {
-  [Func="Document::CallerIsTrustedAboutCertError"]
+  [Func="Document::CallerIsTrustedAboutCertError", NewObject]
   Promise<any> addCertException(boolean isTemporary);
 
   [Func="Document::CallerIsTrustedAboutHttpsOnlyError"]
-  void reloadWithHttpsOnlyException();
+  undefined reloadWithHttpsOnlyException();
 
   [Func="Document::CallerIsTrustedAboutCertError", Throws]
   FailedCertSecurityInfo getFailedCertSecurityInfo();
 
   [Func="Document::CallerIsTrustedAboutNetError", Throws]
   NetErrorInfo getNetErrorInfo();
-
-  [Func="Document::CallerIsTrustedAboutNetError"]
-  attribute boolean allowDeprecatedTls;
 };
 
 // https://w3c.github.io/page-visibility/#extensions-to-the-document-interface
@@ -349,7 +374,7 @@ partial interface Document {
     readonly attribute DOMString? preferredStyleSheetSet;
     [Constant]
     readonly attribute DOMStringList styleSheetSets;
-    void enableStyleSheetsForSet (DOMString? name);
+    undefined enableStyleSheetsForSet (DOMString? name);
 };
 
 // https://drafts.csswg.org/cssom-view/#extensions-to-the-document-interface
@@ -441,19 +466,19 @@ partial interface Document {
   attribute boolean styleSheetChangeEventsEnabled;
 
   [ChromeOnly]
-  attribute boolean shadowRootAttachedEventEnabled;
+  attribute boolean devToolsAnonymousAndShadowEventsEnabled;
 
-  [ChromeOnly] readonly attribute DOMString contentLanguage;
+  [ChromeOnly, BinaryName="contentLanguageForBindings"] readonly attribute DOMString contentLanguage;
 
   [ChromeOnly] readonly attribute nsILoadGroup? documentLoadGroup;
 
   // Blocks the initial document parser until the given promise is settled.
-  [ChromeOnly, Throws]
+  [ChromeOnly, NewObject]
   Promise<any> blockParsing(Promise<any> promise,
                             optional BlockParsingOptions options = {});
 
-  [Func="nsContentUtils::IsPDFJS", BinaryName="blockUnblockOnloadForPDFJS"]
-  void blockUnblockOnload(boolean block);
+  [Func="nsContentUtils::IsSystemOrPDFJS", BinaryName="blockUnblockOnloadForSystemOrPDFJS"]
+  undefined blockUnblockOnload(boolean block);
 
   // like documentURI, except that for error pages, it returns the URI we were
   // trying to load when we hit an error, rather than the error page's own URI.
@@ -463,7 +488,7 @@ partial interface Document {
   // are ready to start layout.
   // This is used for the  "document_idle" webextension script injection point.
   [ChromeOnly, Throws]
-  readonly attribute Promise<void> documentReadyForIdle;
+  readonly attribute Promise<undefined> documentReadyForIdle;
 
   // Lazily created command dispatcher, returns null if the document is not
   // chrome privileged.
@@ -509,27 +534,21 @@ partial interface Document {
  * Chrome document anonymous content management.
  * This is a Chrome-only API that allows inserting fixed positioned anonymous
  * content on top of the current page displayed in the document.
- * The supplied content is cloned and inserted into the document's CanvasFrame.
- * Note that this only works for HTML documents.
  */
 partial interface Document {
   /**
-   * Deep-clones the provided element and inserts it into the CanvasFrame.
-   * Returns an AnonymousContent instance that can be used to manipulate the
-   * inserted element.
-   *
    * If aForce is true, tries to update layout to be able to insert the element
    * synchronously.
    */
   [ChromeOnly, NewObject, Throws]
-  AnonymousContent insertAnonymousContent(Element aElement, optional boolean aForce = false);
+  AnonymousContent insertAnonymousContent(optional boolean aForce = false);
 
   /**
    * Removes the element inserted into the CanvasFrame given an AnonymousContent
    * instance.
    */
-  [ChromeOnly, Throws]
-  void removeAnonymousContent(AnonymousContent aContent);
+  [ChromeOnly]
+  undefined removeAnonymousContent(AnonymousContent aContent);
 };
 
 // http://w3c.github.io/selection-api/#extensions-to-document-interface
@@ -540,30 +559,23 @@ partial interface Document {
 
 // https://github.com/whatwg/html/issues/3338
 partial interface Document {
-  [Pref="dom.storage_access.enabled", Throws]
+  [Pref="dom.storage_access.enabled", NewObject]
   Promise<boolean> hasStorageAccess();
-  [Pref="dom.storage_access.enabled", Throws]
-  Promise<void> requestStorageAccess();
+  [Pref="dom.storage_access.enabled", NewObject]
+  Promise<undefined> requestStorageAccess();
+  // https://github.com/privacycg/storage-access/pull/100
+  [Pref="dom.storage_access.forward_declared.enabled", NewObject]
+  Promise<undefined> requestStorageAccessUnderSite(DOMString serializedSite);
+  [Pref="dom.storage_access.forward_declared.enabled", NewObject]
+  Promise<undefined> completeStorageAccessRequestFromSite(DOMString serializedSite);
 };
 
 // A privileged API to give chrome privileged code and the content script of the
 // webcompat extension the ability to request the storage access for a given
 // third party.
 partial interface Document {
-  [Func="Document::CallerCanAccessPrivilegeSSA", Throws]
-  Promise<void> requestStorageAccessForOrigin(DOMString thirdPartyOrigin, optional boolean requireUserInteraction = true);
-};
-
-enum DocumentAutoplayPolicy {
-  "allowed",       // autoplay is currently allowed
-  "allowed-muted", // muted video autoplay is currently allowed
-  "disallowed"     // autoplay is not current allowed
-};
-
-// https://github.com/WICG/autoplay/issues/1
-partial interface Document {
-  [Pref="dom.media.autoplay.autoplay-policy-api"]
-  readonly attribute DocumentAutoplayPolicy autoplayPolicy;
+  [Func="Document::CallerCanAccessPrivilegeSSA", NewObject]
+  Promise<undefined> requestStorageAccessForOrigin(DOMString thirdPartyOrigin, optional boolean requireUserInteraction = true);
 };
 
 // Extension to give chrome JS the ability to determine whether
@@ -576,14 +588,16 @@ partial interface Document {
 // by user gesture.
 partial interface Document {
   [ChromeOnly]
-  void notifyUserGestureActivation();
+  undefined notifyUserGestureActivation();
   // For testing only.
   [ChromeOnly]
-  void clearUserGestureActivation();
+  undefined clearUserGestureActivation();
   [ChromeOnly]
   readonly attribute boolean hasBeenUserGestureActivated;
   [ChromeOnly]
   readonly attribute boolean hasValidTransientUserGestureActivation;
+  [ChromeOnly]
+  readonly attribute DOMHighResTimeStamp lastUserGestureTimeStamp;
   [ChromeOnly]
   boolean consumeTransientUserGestureActivation();
 };
@@ -593,7 +607,7 @@ partial interface Document {
 // document or one of its subdocuments.
 partial interface Document {
   [ChromeOnly]
-  void setSuppressedEventListener(EventListener? aListener);
+  undefined setSuppressedEventListener(EventListener? aListener);
 };
 
 // Allows frontend code to query a CSP which needs to be passed for a
@@ -604,30 +618,18 @@ partial interface Document {
   [ChromeOnly] readonly attribute DOMString cspJSON;
 };
 
-// For more information on Flash classification, see
-// toolkit/components/url-classifier/flash-block-lists.rst
-enum FlashClassification {
-  "unknown",        // Site is not on the whitelist or blacklist
-  "allowed",        // Site is on the Flash whitelist
-  "denied"          // Site is on the Flash blacklist
-};
-partial interface Document {
-  [ChromeOnly]
-  readonly attribute FlashClassification documentFlashClassification;
-};
-
 partial interface Document {
   [Func="Document::DocumentSupportsL10n"] readonly attribute DocumentL10n? l10n;
+  [Func="Document::DocumentSupportsL10n"] readonly attribute boolean hasPendingL10nMutations;
 };
 
 Document includes XPathEvaluatorMixin;
 Document includes GlobalEventHandlers;
-Document includes DocumentAndElementEventHandlers;
 Document includes TouchEventHandlers;
 Document includes ParentNode;
 Document includes OnErrorEventHandlerForNodes;
 Document includes GeometryUtils;
-Document includes  FontFaceSource;
+Document includes FontFaceSource;
 Document includes DocumentOrShadowRoot;
 
 // https://w3c.github.io/webappsec-feature-policy/#idl-index
@@ -662,7 +664,7 @@ partial interface Document {
   [ChromeOnly]
   const unsigned short KEYPRESS_EVENT_MODEL_CONFLATED = 2;
   [ChromeOnly]
-  void setKeyPressEventModel(unsigned short aKeyPressEventModel);
+  undefined setKeyPressEventModel(unsigned short aKeyPressEventModel);
 };
 
 // Extensions to return information about about the nodes blocked by the
@@ -688,7 +690,7 @@ partial interface Document {
 // used for testing.
 partial interface Document {
   [ChromeOnly, BinaryName="setUserHasInteracted"]
-  void userInteractionForTesting();
+  undefined userInteractionForTesting();
 };
 
 // Extension for permission delegation.
@@ -704,14 +706,14 @@ partial interface Document {
    * XHR completes successfully.
    */
   [ChromeOnly]
-  void setNotifyFetchSuccess(boolean aShouldNotify);
+  undefined setNotifyFetchSuccess(boolean aShouldNotify);
 
   /*
    * Set whether a form and a password field notify an event when it is
    * removed from the DOM tree.
    */
   [ChromeOnly]
-  void setNotifyFormOrPasswordRemoved(boolean aShouldNotify);
+  undefined setNotifyFormOrPasswordRemoved(boolean aShouldNotify);
 };
 
 // Extension to allow chrome code to detect initial about:blank documents.
@@ -732,15 +734,24 @@ dictionary WireframeTaggedRect {
   unrestricted double y = 0;
   unrestricted double width = 0;
   unrestricted double height = 0;
-  DOMString? color; /* Only relevant for "background" rects */
+  unsigned long color = 0; // in nscolor format
   WireframeRectType type;
   Node? node;
 };
+[GenerateInit]
 dictionary Wireframe {
-  DOMString canvasBackground;
+  unsigned long canvasBackground = 0; // in nscolor format
   sequence<WireframeTaggedRect> rects;
+  unsigned long version = 1; // Increment when the wireframe structure changes in backwards-incompatible ways
 };
 partial interface Document {
   [ChromeOnly]
   Wireframe? getWireframe(optional boolean aIncludeNodes = false);
+};
+
+partial interface Document {
+  // Returns true if the document is the current active document in a browsing
+  // context which isn't in bfcache.
+  [ChromeOnly]
+  boolean isActive();
 };

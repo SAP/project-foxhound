@@ -7,15 +7,16 @@
 #ifndef nsINode_h___
 #define nsINode_h___
 
+#include "mozilla/DoublyLinkedList.h"
 #include "mozilla/Likely.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"              // for member, local
 #include "nsGkAtoms.h"             // for nsGkAtoms::baseURIProperty
 #include "mozilla/dom/NodeInfo.h"  // member (in nsCOMPtr)
 #include "nsIWeakReference.h"
+#include "nsIMutationObserver.h"
 #include "nsNodeInfoManager.h"  // for use in NodePrincipal()
 #include "nsPropertyTable.h"    // for typedefs
-#include "nsTObserverArray.h"   // for member
 #include "mozilla/ErrorResult.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
@@ -39,12 +40,13 @@ class nsAttrChildContentList;
 template <typename T>
 class nsCOMArray;
 class nsDOMAttributeMap;
+class nsGenericHTMLElement;
 class nsIAnimationObserver;
 class nsIContent;
 class nsIContentSecurityPolicy;
 class nsIFrame;
 class nsIHTMLCollection;
-class nsIMutationObserver;
+class nsMultiMutationObserver;
 class nsINode;
 class nsINodeList;
 class nsIPrincipal;
@@ -53,10 +55,10 @@ class nsNodeSupportsWeakRefTearoff;
 class nsDOMMutationObserver;
 class nsRange;
 class nsWindowSizes;
-struct RawServoSelectorList;
 
 namespace mozilla {
 class EventListenerManager;
+struct StyleSelectorList;
 template <typename T>
 class Maybe;
 class PresShell;
@@ -74,6 +76,7 @@ inline bool IsSpaceCharacter(char aChar) {
   return aChar == ' ' || aChar == '\t' || aChar == '\n' || aChar == '\r' ||
          aChar == '\f';
 }
+class AbstractRange;
 class AccessibleNode;
 template <typename T>
 class AncestorsOfTypeIterator;
@@ -114,7 +117,7 @@ enum class CallerType : uint32_t;
 #define NODE_FLAG_BIT(n_) \
   (nsWrapperCache::FlagsType(1U) << (WRAPPER_CACHE_FLAGS_BITS_USED + (n_)))
 
-enum {
+enum : uint32_t {
   // This bit will be set if the node has a listener manager.
   NODE_HAS_LISTENERMANAGER = NODE_FLAG_BIT(0),
 
@@ -140,59 +143,98 @@ enum {
   // Whether the node participates in a shadow tree.
   NODE_IS_IN_SHADOW_TREE = NODE_FLAG_BIT(5),
 
-  // Node has an :empty or :-moz-only-whitespace selector
-  NODE_HAS_EMPTY_SELECTOR = NODE_FLAG_BIT(6),
-
-  // A child of the node has a selector such that any insertion,
-  // removal, or appending of children requires restyling the parent.
-  NODE_HAS_SLOW_SELECTOR = NODE_FLAG_BIT(7),
-
-  // A child of the node has a :first-child, :-moz-first-node,
-  // :only-child, :last-child or :-moz-last-node selector.
-  NODE_HAS_EDGE_CHILD_SELECTOR = NODE_FLAG_BIT(8),
-
-  // A child of the node has a selector such that any insertion or
-  // removal of children requires restyling later siblings of that
-  // element.  Additionally (in this manner it is stronger than
-  // NODE_HAS_SLOW_SELECTOR), if a child's style changes due to any
-  // other content tree changes (e.g., the child changes to or from
-  // matching :empty due to a grandchild insertion or removal), the
-  // child's later siblings must also be restyled.
-  NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS = NODE_FLAG_BIT(9),
-
-  NODE_ALL_SELECTOR_FLAGS = NODE_HAS_EMPTY_SELECTOR | NODE_HAS_SLOW_SELECTOR |
-                            NODE_HAS_EDGE_CHILD_SELECTOR |
-                            NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS,
-
   // This node needs to go through frame construction to get a frame (or
   // undisplayed entry).
-  NODE_NEEDS_FRAME = NODE_FLAG_BIT(10),
+  NODE_NEEDS_FRAME = NODE_FLAG_BIT(6),
 
   // At least one descendant in the flattened tree has NODE_NEEDS_FRAME set.
   // This should be set on every node on the flattened tree path between the
   // node(s) with NODE_NEEDS_FRAME and the root content.
-  NODE_DESCENDANTS_NEED_FRAMES = NODE_FLAG_BIT(11),
+  NODE_DESCENDANTS_NEED_FRAMES = NODE_FLAG_BIT(7),
 
   // Set if the node has the accesskey attribute set.
-  NODE_HAS_ACCESSKEY = NODE_FLAG_BIT(12),
+  NODE_HAS_ACCESSKEY = NODE_FLAG_BIT(8),
 
-  // Set if the node has right-to-left directionality
-  NODE_HAS_DIRECTION_RTL = NODE_FLAG_BIT(13),
-
-  // Set if the node has left-to-right directionality
-  NODE_HAS_DIRECTION_LTR = NODE_FLAG_BIT(14),
-
-  NODE_ALL_DIRECTION_FLAGS = NODE_HAS_DIRECTION_LTR | NODE_HAS_DIRECTION_RTL,
-
-  NODE_HAS_BEEN_IN_UA_WIDGET = NODE_FLAG_BIT(15),
+  NODE_HAS_BEEN_IN_UA_WIDGET = NODE_FLAG_BIT(9),
 
   // Set if the node has a nonce value and a header delivered CSP.
-  NODE_HAS_NONCE_AND_HEADER_CSP = NODE_FLAG_BIT(16),
+  NODE_HAS_NONCE_AND_HEADER_CSP = NODE_FLAG_BIT(10),
 
-  NODE_KEEPS_DOMARENA = NODE_FLAG_BIT(17),
+  NODE_KEEPS_DOMARENA = NODE_FLAG_BIT(11),
+
+  NODE_MAY_HAVE_ELEMENT_CHILDREN = NODE_FLAG_BIT(12),
+
   // Remaining bits are node type specific.
-  NODE_TYPE_SPECIFIC_BITS_OFFSET = 18
+  NODE_TYPE_SPECIFIC_BITS_OFFSET = 13
 };
+
+// Flags for selectors that persist to the DOM node.
+enum class NodeSelectorFlags : uint32_t {
+  // Node has an :empty or :-moz-only-whitespace selector
+  HasEmptySelector = 1 << 0,
+
+  /// A child of the node has a selector such that any insertion,
+  /// removal, or appending of children requires restyling the parent, if the
+  /// parent is an element. If the parent is the shadow root, the child's
+  /// siblings are restyled.
+  HasSlowSelector = 1 << 1,
+
+  /// A child of the node has a :first-child, :-moz-first-node,
+  /// :only-child, :last-child or :-moz-last-node selector.
+  HasEdgeChildSelector = 1 << 2,
+
+  /// A child of the node has a selector such that any insertion or
+  /// removal of children requires restyling later siblings of that
+  /// element.  Additionally (in this manner it is stronger than
+  /// NODE_HAS_SLOW_SELECTOR), if a child's style changes due to any
+  /// other content tree changes (e.g., the child changes to or from
+  /// matching :empty due to a grandchild insertion or removal), the
+  /// child's later siblings must also be restyled.
+  HasSlowSelectorLaterSiblings = 1 << 3,
+
+  /// HasSlowSelector* was set by the presence of :nth (But not of).
+  HasSlowSelectorNth = 1 << 4,
+
+  /// A child of this node might be matched by :nth-child(.. of <selector>) or
+  /// :nth-last-child(.. of <selector>). If a DOM mutation may have caused the
+  /// selector to either match or no longer match that child, the child's
+  /// siblings are restyled.
+  HasSlowSelectorNthOf = 1 << 5,
+
+  /// All instances of :nth flags.
+  HasSlowSelectorNthAll = HasSlowSelectorNthOf | HasSlowSelectorNth,
+
+  /// Set of selector flags that may trigger a restyle on DOM append, with
+  /// restyle on siblings or a single parent (And perhaps their subtrees).
+  AllSimpleRestyleFlagsForAppend = HasEmptySelector | HasSlowSelector |
+                                   HasEdgeChildSelector | HasSlowSelectorNthAll,
+
+  /// Set of selector flags that may trigger a restyle as a result of any
+  /// DOM mutation.
+  AllSimpleRestyleFlags =
+      AllSimpleRestyleFlagsForAppend | HasSlowSelectorLaterSiblings,
+
+  // This node was evaluated as an anchor for a relative selector.
+  RelativeSelectorAnchor = 1 << 6,
+
+  // This node was evaluated as an anchor for a relative selector, and that
+  // relative selector was not the subject of the overall selector.
+  RelativeSelectorAnchorNonSubject = 1 << 7,
+
+  // This node's sibling(s) performed a relative selector search to this node.
+  RelativeSelectorSearchDirectionSibling = 1 << 8,
+
+  // This node's ancestor(s) performed a relative selector search to this node.
+  RelativeSelectorSearchDirectionAncestor = 1 << 9,
+
+  // This node's sibling(s) and ancestor(s), and/or this node's ancestor's
+  // sibling(s) performed a relative selector search to this node.
+  RelativeSelectorSearchDirectionAncestorSibling =
+      RelativeSelectorSearchDirectionSibling |
+      RelativeSelectorSearchDirectionAncestor,
+};
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(NodeSelectorFlags);
 
 // Make sure we have space for our bits
 #define ASSERT_NODE_FLAGS_SPACE(n)                         \
@@ -252,7 +294,6 @@ class nsNodeWeakReference final : public nsIWeakReference {
 
   // nsIWeakReference
   NS_DECL_NSIWEAKREFERENCE
-  size_t SizeOfOnlyThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
   void NoticeNodeDestruction() { mObject = nullptr; }
 
@@ -377,28 +418,6 @@ class nsINode : public mozilla::dom::EventTarget {
 
   virtual ~nsINode();
 
-  /**
-   * Bit-flags to pass (or'ed together) to IsNodeOfType()
-   */
-  enum {
-    /** form control elements */
-    eHTML_FORM_CONTROL = 1 << 6,
-    /** SVG use targets */
-    eUSE_TARGET = 1 << 9,
-    /** SVG shapes such as lines and polygons, but not images */
-    eSHAPE = 1 << 12
-  };
-
-  /**
-   * API for doing a quick check if a content is of a given
-   * type, such as Text, Document, Comment ...  Use this when you can instead of
-   * checking the tag.
-   *
-   * @param aFlags what types you want to test for (see above)
-   * @return whether the content matches ALL flags passed in
-   */
-  virtual bool IsNodeOfType(uint32_t aFlags) const = 0;
-
   bool IsContainerNode() const {
     return IsElement() || IsDocument() || IsDocumentFragment();
   }
@@ -433,6 +452,8 @@ class nsINode : public mozilla::dom::EventTarget {
     return NodeType() == DOCUMENT_FRAGMENT_NODE;
   }
 
+  virtual bool IsHTMLFormControlElement() const { return false; }
+
   /**
    * https://dom.spec.whatwg.org/#concept-tree-inclusive-descendant
    *
@@ -446,6 +467,14 @@ class nsINode : public mozilla::dom::EventTarget {
    * @param aNode must not be nullptr.
    */
   bool IsShadowIncludingInclusiveDescendantOf(const nsINode* aNode) const;
+
+  /**
+   * Returns true if the given node is this node or one of its descendants
+   * in the "flat tree."
+   *
+   * @param aNode must not be nullptr.
+   */
+  bool IsInclusiveFlatTreeDescendantOf(const nsINode* aNode) const;
 
   /**
    * Return this node as a document fragment. Asserts IsDocumentFragment().
@@ -502,6 +531,27 @@ class nsINode : public mozilla::dom::EventTarget {
 
   MOZ_CAN_RUN_SCRIPT mozilla::dom::Element* GetParentFlexElement();
 
+  /**
+   * Returns the nearest inclusive open popover for a given node, see
+   * https://html.spec.whatwg.org/multipage/popover.html#nearest-inclusive-open-popover
+   */
+  mozilla::dom::Element* GetNearestInclusiveOpenPopover() const;
+
+  /**
+   * https://html.spec.whatwg.org/multipage/popover.html#nearest-inclusive-target-popover-for-invoker
+   */
+  mozilla::dom::Element* GetNearestInclusiveTargetPopoverForInvoker() const;
+
+  /**
+   * https://html.spec.whatwg.org/multipage/popover.html#popover-target-element
+   */
+  nsGenericHTMLElement* GetEffectivePopoverTargetElement() const;
+
+  /**
+   * https://html.spec.whatwg.org/multipage/popover.html#topmost-clicked-popover
+   */
+  mozilla::dom::Element* GetTopmostClickedPopover() const;
+
   bool IsNode() const final { return true; }
 
   NS_IMPL_FROMEVENTTARGET_HELPER(nsINode, IsNode())
@@ -512,6 +562,9 @@ class nsINode : public mozilla::dom::EventTarget {
   bool IsElement() const { return GetBoolFlag(NodeIsElement); }
 
   virtual bool IsTextControlElement() const { return false; }
+  virtual bool IsGenericHTMLFormControlElementWithState() const {
+    return false;
+  }
 
   // Returns non-null if this element subclasses `LinkStyle`.
   virtual const mozilla::dom::LinkStyle* AsLinkStyle() const { return nullptr; }
@@ -721,6 +774,12 @@ class nsINode : public mozilla::dom::EventTarget {
 
   /**
    * Returns OwnerDoc() if the node is in uncomposed document and ShadowRoot if
+   * the node is in Shadow DOM.
+   */
+  mozilla::dom::DocumentOrShadowRoot* GetContainingDocumentOrShadowRoot() const;
+
+  /**
+   * Returns OwnerDoc() if the node is in uncomposed document and ShadowRoot if
    * the node is in Shadow DOM and is in composed document.
    */
   mozilla::dom::DocumentOrShadowRoot* GetUncomposedDocOrConnectedShadowRoot()
@@ -814,6 +873,13 @@ class nsINode : public mozilla::dom::EventTarget {
     return IsSVGElement() && IsNodeInternal(aFirst, aArgs...);
   }
 
+  virtual bool IsSVGAnimationElement() const { return false; }
+  virtual bool IsSVGComponentTransferFunctionElement() const { return false; }
+  virtual bool IsSVGFilterPrimitiveElement() const { return false; }
+  virtual bool IsSVGFilterPrimitiveChildElement() const { return false; }
+  virtual bool IsSVGGeometryElement() const { return false; }
+  virtual bool IsSVGGraphicsElement() const { return false; }
+
   inline bool IsXULElement() const {
     return IsElement() && IsInNamespace(kNameSpaceID_XUL);
   }
@@ -850,6 +916,14 @@ class nsINode : public mozilla::dom::EventTarget {
     return IsAnyOfHTMLElements(nsGkAtoms::h1, nsGkAtoms::h2, nsGkAtoms::h3,
                                nsGkAtoms::h4, nsGkAtoms::h5, nsGkAtoms::h6);
   }
+
+  /**
+   * Check whether the conditional processing attributes other than
+   * systemLanguage "return true" if they apply to and are specified
+   * on the given SVG element. Returns true if this element should be
+   * rendered, false if it should not.
+   */
+  virtual bool PassesConditionalProcessingTests() const { return true; }
 
   /**
    * Insert a content node before another or at the end.
@@ -1000,7 +1074,19 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   nsINode* GetParentNode() const { return mParent; }
 
-  nsINode* GetParentOrShadowHostNode() const;
+ private:
+  nsIContent* DoGetShadowHost() const;
+
+ public:
+  nsINode* GetParentOrShadowHostNode() const {
+    if (MOZ_LIKELY(mParent)) {
+      return mParent;
+    }
+    // We could put this in nsIContentInlines.h or such to avoid this
+    // reinterpret_cast, but it doesn't seem worth it.
+    return IsInShadowTree() ? reinterpret_cast<nsINode*>(DoGetShadowHost())
+                            : nullptr;
+  }
 
   enum FlattenedParentType { eNotForStyle, eForStyle };
 
@@ -1099,11 +1185,15 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   void AddMutationObserver(nsIMutationObserver* aMutationObserver) {
     nsSlots* s = Slots();
-    NS_ASSERTION(s->mMutationObservers.IndexOf(aMutationObserver) ==
-                     nsTArray<int>::NoIndex,
-                 "Observer already in the list");
-    s->mMutationObservers.AppendElement(aMutationObserver);
+    if (aMutationObserver) {
+      NS_ASSERTION(!s->mMutationObservers.contains(aMutationObserver),
+                   "Observer already in the list");
+
+      s->mMutationObservers.pushBack(aMutationObserver);
+    }
   }
+
+  void AddMutationObserver(nsMultiMutationObserver* aMultiMutationObserver);
 
   /**
    * Same as above, but only adds the observer if its not observing
@@ -1114,9 +1204,14 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   void AddMutationObserverUnlessExists(nsIMutationObserver* aMutationObserver) {
     nsSlots* s = Slots();
-    s->mMutationObservers.AppendElementUnlessExists(aMutationObserver);
+    if (aMutationObserver &&
+        !s->mMutationObservers.contains(aMutationObserver)) {
+      s->mMutationObservers.pushBack(aMutationObserver);
+    }
   }
 
+  void AddMutationObserverUnlessExists(
+      nsMultiMutationObserver* aMultiMutationObserver);
   /**
    * Same as AddMutationObserver, but for nsIAnimationObservers.  This
    * additionally records on the document that animation observers have
@@ -1138,13 +1233,13 @@ class nsINode : public mozilla::dom::EventTarget {
   void RemoveMutationObserver(nsIMutationObserver* aMutationObserver) {
     nsSlots* s = GetExistingSlots();
     if (s) {
-      s->mMutationObservers.RemoveElement(aMutationObserver);
+      s->mMutationObservers.remove(aMutationObserver);
     }
   }
 
-  nsAutoTObserverArray<nsIMutationObserver*, 1>* GetMutationObservers() {
-    return HasSlots() ? &GetExistingSlots()->mMutationObservers : nullptr;
-  }
+  void RemoveMutationObserver(nsMultiMutationObserver* aMultiMutationObserver);
+
+  mozilla::SafeDoublyLinkedList<nsIMutationObserver>* GetMutationObservers();
 
   /**
    * Helper methods to access ancestor node(s) of type T.
@@ -1261,12 +1356,12 @@ class nsINode : public mozilla::dom::EventTarget {
     virtual ~nsSlots();
 
     virtual void Traverse(nsCycleCollectionTraversalCallback&);
-    virtual void Unlink();
+    virtual void Unlink(nsINode&);
 
     /**
      * A list of mutation observers
      */
-    nsAutoTObserverArray<nsIMutationObserver*, 1> mMutationObservers;
+    mozilla::SafeDoublyLinkedList<nsIMutationObserver> mMutationObservers;
 
     /**
      * An object implementing NodeList for this content (childNodes)
@@ -1289,7 +1384,7 @@ class nsINode : public mozilla::dom::EventTarget {
      * pushing DOMSlots up to the next allocation bucket size, at the cost of
      * some complexity.
      */
-    mozilla::UniquePtr<mozilla::LinkedList<nsRange>>
+    mozilla::UniquePtr<mozilla::LinkedList<mozilla::dom::AbstractRange>>
         mClosestCommonInclusiveAncestorRanges;
   };
 
@@ -1354,9 +1449,15 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   nsIContent* GetClosestNativeAnonymousSubtreeRoot() const {
     if (!IsInNativeAnonymousSubtree()) {
+      MOZ_ASSERT(!HasBeenInUAWidget(), "UA widget implies anonymous");
       return nullptr;
     }
     MOZ_ASSERT(IsContent(), "How did non-content end up in NAC?");
+    if (HasBeenInUAWidget()) {
+      // reinterpret_cast because in this header we don't know ShadowRoot is an
+      // nsIContent. ShadowRoot constructor asserts this is correct.
+      return reinterpret_cast<nsIContent*>(GetContainingShadow());
+    }
     for (const nsINode* node = this; node; node = node->GetParentNode()) {
       if (node->IsRootOfNativeAnonymousSubtree()) {
         return const_cast<nsINode*>(node)->AsContent();
@@ -1373,16 +1474,24 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * If |this| or any ancestor is native anonymous, return the parent of the
    * native anonymous subtree. Note that in case of nested native anonymous
-   * content, this returns the parent of the innermost root, not the outermost.
+   * content, this returns the parent or host of the innermost root, not the
+   * outermost.
    */
-  nsIContent* GetClosestNativeAnonymousSubtreeRootParent() const {
-    const nsIContent* root = GetClosestNativeAnonymousSubtreeRoot();
+  nsIContent* GetClosestNativeAnonymousSubtreeRootParentOrHost() const {
+    // We could put this in nsIContentInlines.h or such to avoid this
+    // reinterpret_cast, but it doesn't seem worth it.
+    const auto* root = reinterpret_cast<const nsINode*>(
+        GetClosestNativeAnonymousSubtreeRoot());
     if (!root) {
       return nullptr;
     }
-    // We could put this in nsIContentInlines.h or such to avoid this
-    // reinterpret_cast, but it doesn't seem worth it.
-    return reinterpret_cast<const nsINode*>(root)->GetParent();
+    if (nsIContent* parent = root->GetParent()) {
+      return parent;
+    }
+    if (MOZ_UNLIKELY(root->IsInShadowTree())) {
+      return root->DoGetShadowHost();
+    }
+    return nullptr;
   }
 
   /**
@@ -1413,20 +1522,10 @@ class nsINode : public mozilla::dom::EventTarget {
 
   // True for native anonymous content and for content in UA widgets.
   // Only nsIContent can fulfill this condition.
-  bool ChromeOnlyAccess() const {
-    return HasFlag(NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE |
-                   NODE_HAS_BEEN_IN_UA_WIDGET);
-  }
+  bool ChromeOnlyAccess() const { return IsInNativeAnonymousSubtree(); }
 
   const nsIContent* GetChromeOnlyAccessSubtreeRootParent() const {
-    if (!ChromeOnlyAccess()) {
-      return nullptr;
-    }
-    // We can have NAC in UA widgets, but not the other way around.
-    if (IsInNativeAnonymousSubtree()) {
-      return GetClosestNativeAnonymousSubtreeRootParent();
-    }
-    return GetContainingShadowHost();
+    return GetClosestNativeAnonymousSubtreeRootParentOrHost();
   }
 
   bool IsInShadowTree() const { return HasFlag(NODE_IS_IN_SHADOW_TREE); }
@@ -1443,12 +1542,10 @@ class nsINode : public mozilla::dom::EventTarget {
     return HasFlag(NODE_IS_NATIVE_ANONYMOUS_ROOT);
   }
 
-  // Whether this node is a UA Widget ShadowRoot.
-  inline bool IsUAWidget() const;
-  // Whether this node is currently in a UA Widget Shadow tree.
-  inline bool IsInUAWidget() const;
   // Whether this node is the root of a ChromeOnlyAccess DOM subtree.
-  inline bool IsRootOfChromeAccessOnlySubtree() const;
+  bool IsRootOfChromeAccessOnlySubtree() const {
+    return IsRootOfNativeAnonymousSubtree();
+  }
 
   /**
    * Returns true if |this| node is the closest common inclusive ancestor
@@ -1627,6 +1724,14 @@ class nsINode : public mozilla::dom::EventTarget {
   bool Contains(const nsINode* aOther) const;
 
   bool UnoptimizableCCNode() const;
+
+  /**
+   * Fire a DOMNodeRemoved mutation event for all children of this node
+   * TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void FireNodeRemovedForChildren();
+
+  void QueueDevtoolsAnonymousEvent(bool aIsRemove);
 
  private:
   mozilla::dom::SVGUseElement* DoGetContainingSVGUseShadowHost() const;
@@ -1884,6 +1989,7 @@ class nsINode : public mozilla::dom::EventTarget {
   void ClearPointerLock() { ClearBoolFlag(ElementHasPointerLock); }
   bool MayHaveAnimations() const { return GetBoolFlag(ElementHasAnimations); }
   void SetMayHaveAnimations() { SetBoolFlag(ElementHasAnimations); }
+  void ClearMayHaveAnimations() { ClearBoolFlag(ElementHasAnimations); }
   void SetHasValidDir() { SetBoolFlag(NodeHasValidDirAttribute); }
   void ClearHasValidDir() { ClearBoolFlag(NodeHasValidDirAttribute); }
   bool HasValidDir() const { return GetBoolFlag(NodeHasValidDirAttribute); }
@@ -2139,7 +2245,7 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * See nsSlots::mClosestCommonInclusiveAncestorRanges.
    */
-  const mozilla::LinkedList<nsRange>*
+  const mozilla::LinkedList<mozilla::dom::AbstractRange>*
   GetExistingClosestCommonInclusiveAncestorRanges() const {
     if (!HasSlots()) {
       return nullptr;
@@ -2150,7 +2256,7 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * See nsSlots::mClosestCommonInclusiveAncestorRanges.
    */
-  mozilla::LinkedList<nsRange>*
+  mozilla::LinkedList<mozilla::dom::AbstractRange>*
   GetExistingClosestCommonInclusiveAncestorRanges() {
     if (!HasSlots()) {
       return nullptr;
@@ -2161,7 +2267,7 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * See nsSlots::mClosestCommonInclusiveAncestorRanges.
    */
-  mozilla::UniquePtr<mozilla::LinkedList<nsRange>>&
+  mozilla::UniquePtr<mozilla::LinkedList<mozilla::dom::AbstractRange>>&
   GetClosestCommonInclusiveAncestorRangesPtr() {
     return Slots()->mClosestCommonInclusiveAncestorRanges;
   }
@@ -2224,7 +2330,7 @@ class nsINode : public mozilla::dom::EventTarget {
    * Note that the selector list returned here is owned by the owner doc's
    * selector cache.
    */
-  const RawServoSelectorList* ParseSelectorList(
+  const mozilla::StyleSelectorList* ParseSelectorList(
       const nsACString& aSelectorString, mozilla::ErrorResult&);
 
  public:
@@ -2247,6 +2353,10 @@ class nsINode : public mozilla::dom::EventTarget {
 #undef TOUCH_EVENT
 #undef EVENT
 
+  NodeSelectorFlags GetSelectorFlags() const {
+    return static_cast<NodeSelectorFlags>(mSelectorFlags.Get());
+  }
+
  protected:
   static bool Traverse(nsINode* tmp, nsCycleCollectionTraversalCallback& cb);
   static void Unlink(nsINode* tmp);
@@ -2264,7 +2374,7 @@ class nsINode : public mozilla::dom::EventTarget {
   uint32_t mBoolFlags;
 #endif
 
-  // NOTE, there are 32 bits left here, at least in 64 bit builds.
+  mozilla::RustCell<uint32_t> mSelectorFlags{0};
 
   uint32_t mChildCount;
 
@@ -2289,6 +2399,8 @@ class nsINode : public mozilla::dom::EventTarget {
   // Storage for more members that are usually not needed; allocated lazily.
   nsSlots* mSlots;
 };
+
+NON_VIRTUAL_ADDREF_RELEASE(nsINode)
 
 inline nsINode* mozilla::dom::EventTarget::GetAsNode() {
   return IsNode() ? AsNode() : nullptr;
@@ -2328,7 +2440,7 @@ inline nsISupports* ToSupports(nsINode* aPointer) { return aPointer; }
 #define NS_IMPL_FROMNODE_GENERIC(_class, _check, _const)                 \
   template <typename T>                                                  \
   static auto FromNode(_const T& aNode)                                  \
-      ->decltype(static_cast<_const _class*>(&aNode)) {                  \
+      -> decltype(static_cast<_const _class*>(&aNode)) {                 \
     return aNode._check ? static_cast<_const _class*>(&aNode) : nullptr; \
   }                                                                      \
   template <typename T>                                                  \
@@ -2341,7 +2453,7 @@ inline nsISupports* ToSupports(nsINode* aPointer) { return aPointer; }
   }                                                                      \
   template <typename T>                                                  \
   static auto FromEventTarget(_const T& aEventTarget)                    \
-      ->decltype(static_cast<_const _class*>(&aEventTarget)) {           \
+      -> decltype(static_cast<_const _class*>(&aEventTarget)) {          \
     return aEventTarget.IsNode() && aEventTarget.AsNode()->_check        \
                ? static_cast<_const _class*>(&aEventTarget)              \
                : nullptr;                                                \

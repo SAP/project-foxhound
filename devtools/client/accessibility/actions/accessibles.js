@@ -8,52 +8,63 @@ const {
   SELECT,
   HIGHLIGHT,
   UNHIGHLIGHT,
-} = require("devtools/client/accessibility/constants");
+} = require("resource://devtools/client/accessibility/constants.js");
 
 /**
  * Fetch child accessibles for a given accessible object.
  * @param {Object} accessible front
  */
-exports.fetchChildren = accessible => ({ dispatch }) =>
-  accessible
-    .children()
-    .then(response => dispatch({ accessible, type: FETCH_CHILDREN, response }))
-    .catch(error => dispatch({ accessible, type: FETCH_CHILDREN, error }));
+exports.fetchChildren =
+  accessible =>
+  ({ dispatch }) =>
+    accessible
+      .children()
+      .then(response =>
+        dispatch({ accessible, type: FETCH_CHILDREN, response })
+      )
+      .catch(error => dispatch({ accessible, type: FETCH_CHILDREN, error }));
 
-exports.select = accessible => ({ dispatch }) => {
-  const accessibleWalkerFront = accessible.getParent();
-  if (!accessibleWalkerFront) {
-    dispatch({
-      accessible,
-      type: SELECT,
-      error: new Error("AccessibleWalker front is not available."),
-    });
+exports.select =
+  accessible =>
+  ({ dispatch }) => {
+    const accessibleWalkerFront = accessible.getParent();
+    if (!accessibleWalkerFront) {
+      dispatch({
+        accessible,
+        type: SELECT,
+        error: new Error("AccessibleWalker front is not available."),
+      });
 
-    return Promise.reject();
-  }
+      return Promise.reject();
+    }
 
-  return accessibleWalkerFront
-    .getAncestry(accessible)
-    .then(response => dispatch({ accessible, type: SELECT, response }))
-    .catch(error => dispatch({ accessible, type: SELECT, error }));
-};
+    return accessibleWalkerFront
+      .getAncestry(accessible)
+      .then(response => dispatch({ accessible, type: SELECT, response }))
+      .catch(error => dispatch({ accessible, type: SELECT, error }));
+  };
 
-exports.highlight = accessible => ({ dispatch }) => {
-  const accessibleWalkerFront = accessible.getParent();
-  if (!accessibleWalkerFront) {
-    dispatch({
-      accessible,
-      type: SELECT,
-      error: new Error("AccessibleWalker front is not available."),
-    });
+exports.highlight =
+  accessible =>
+  ({ dispatch }) => {
+    const accessibleWalkerFront = accessible.getParent();
+    if (!accessibleWalkerFront) {
+      dispatch({
+        accessible,
+        type: SELECT,
+        error: new Error("AccessibleWalker front is not available."),
+      });
 
-    return Promise.reject();
-  }
+      return Promise.reject();
+    }
 
-  return accessibleWalkerFront
-    .getAncestry(accessible)
-    .then(response => dispatch({ accessible, type: HIGHLIGHT, response }))
-    .catch(error => dispatch({ accessible, type: HIGHLIGHT, error }));
-};
+    return accessibleWalkerFront
+      .getAncestry(accessible)
+      .then(response => dispatch({ accessible, type: HIGHLIGHT, response }))
+      .catch(error => dispatch({ accessible, type: HIGHLIGHT, error }));
+  };
 
-exports.unhighlight = () => ({ dispatch }) => dispatch({ type: UNHIGHLIGHT });
+exports.unhighlight =
+  () =>
+  ({ dispatch }) =>
+    dispatch({ type: UNHIGHLIGHT });

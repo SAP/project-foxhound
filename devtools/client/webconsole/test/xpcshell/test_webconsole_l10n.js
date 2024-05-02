@@ -3,13 +3,13 @@
 
 "use strict";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 
 function run_test() {
   const TEST_TIMESTAMP = 12345678;
-  const WCUL10n = require("devtools/client/webconsole/utils/l10n");
+  const WCUL10n = require("resource://devtools/client/webconsole/utils/l10n.js");
   const date = new Date(TEST_TIMESTAMP);
   const localizedString = WCUL10n.timestampString(TEST_TIMESTAMP);
   ok(

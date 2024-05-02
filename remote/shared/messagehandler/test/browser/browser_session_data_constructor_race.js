@@ -3,17 +3,13 @@
 
 "use strict";
 
-const { WindowGlobalMessageHandler } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.jsm"
-);
-
 const TEST_PAGE = "https://example.com/document-builder.sjs?html=tab";
 
 /**
  * Check that modules created early for session data are still created with a
  * fully initialized MessageHandler. See Bug 1743083.
  */
-add_task(async function() {
+add_task(async function () {
   const tab = BrowserTestUtils.addTab(gBrowser, TEST_PAGE);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   const browsingContext = tab.linkedBrowser.browsingContext;
@@ -21,7 +17,7 @@ add_task(async function() {
   const root = createRootMessageHandler("session-id-event");
 
   info("Add some session data for the command module");
-  await root.addSessionData({
+  await root.addSessionDataItem({
     moduleName: "command",
     category: "testCategory",
     contextDescriptor: contextDescriptorAll,
@@ -29,9 +25,7 @@ add_task(async function() {
   });
 
   info("Reload the current tab to create new message handlers and modules");
-  const finished = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  gBrowser.reloadTab(tab);
-  await finished;
+  await BrowserTestUtils.reloadTab(tab);
 
   info(
     "Check if the command module was created by the MessageHandler constructor"

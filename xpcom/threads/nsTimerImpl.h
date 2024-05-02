@@ -30,7 +30,6 @@ extern mozilla::LogModule* GetTimerLog();
   }
 
 class nsIObserver;
-class nsTimerImplHolder;
 
 namespace mozilla {
 class LogModule;
@@ -41,7 +40,7 @@ class LogModule;
 // the nsTimer has let go of its last reference.
 class nsTimerImpl {
   ~nsTimerImpl() {
-    MOZ_ASSERT(!mHolder);
+    MOZ_ASSERT(!mIsInTimerThread);
 
     // The nsITimer interface requires that its users keep a reference to the
     // timers they use while those timers are initialized but have not yet
@@ -101,9 +100,10 @@ class nsTimerImpl {
 
   nsresult InitCommon(const mozilla::TimeDuration& aDelay, uint32_t aType,
                       Callback&& newCallback,
-                      const mozilla::MutexAutoLock& aProofOfLock);
+                      const mozilla::MutexAutoLock& aProofOfLock)
+      MOZ_REQUIRES(mMutex);
 
-  Callback& GetCallback() {
+  Callback& GetCallback() MOZ_REQUIRES(mMutex) {
     mMutex.AssertCurrentThreadOwns();
     return mCallback;
   }
@@ -131,11 +131,13 @@ class nsTimerImpl {
            mType == nsITimer::TYPE_REPEATING_SLACK_LOW_PRIORITY;
   }
 
-  void GetName(nsACString& aName, const mozilla::MutexAutoLock& aProofOfLock);
+  void GetName(nsACString& aName, const mozilla::MutexAutoLock& aProofOfLock)
+      MOZ_REQUIRES(mMutex);
 
-  void GetName(nsACString& aName);
-
-  void SetHolder(nsTimerImplHolder* aHolder);
+  bool IsInTimerThread() const { return mIsInTimerThread; }
+  void SetIsInTimerThread(bool aIsInTimerThread) {
+    mIsInTimerThread = aIsInTimerThread;
+  }
 
   nsCOMPtr<nsIEventTarget> mEventTarget;
 
@@ -145,15 +147,14 @@ class nsTimerImpl {
                                    const mozilla::TimeDuration& aDelay,
                                    uint32_t aType, const char* aNameString);
 
-  // This weak reference must be cleared by the nsTimerImplHolder by
-  // calling SetHolder(nullptr) before the holder is destroyed.  Take()
-  // also sets this to null, to indicate it's no longer in the
-  // TimerThread's list.  This Take() call is NOT made under the
-  // nsTimerImpl's mutex (all other SetHolder calls are under the mutex,
-  // and all references other than in the constructor or destructor of
-  // nsTimerImpl).  However, ALL uses and references to the holder are
-  // under the TimerThread's Monitor lock, so consistency is guaranteed by that.
-  nsTimerImplHolder* mHolder;
+  // Is this timer currently referenced from a TimerThread::Entry?
+  // Note: It is cleared before the Entry is destroyed.  Take() also sets it to
+  // false, to indicate it's no longer in the TimerThread's list. This Take()
+  // call is NOT made under the nsTimerImpl's mutex (all other
+  // SetIsInTimerThread calls are under the mutex).  However, ALL accesses to
+  // mIsInTimerThread are under the TimerThread's Monitor lock, so consistency
+  // is guaranteed by that.
+  bool mIsInTimerThread;
 
   // These members are set by the initiating thread, when the timer's type is
   // changed and during the period where it fires on that thread.
@@ -165,23 +166,23 @@ class nsTimerImpl {
   // Updated only after this timer has been removed from the timer thread.
   int32_t mGeneration;
 
-  mozilla::TimeDuration mDelay;
+  mozilla::TimeDuration mDelay MOZ_GUARDED_BY(mMutex);
   // Never updated while in the TimerThread's timer list.  Only updated
   // before adding to that list or during nsTimerImpl::Fire(), when it has
   // been removed from the TimerThread's list.  TimerThread can access
   // mTimeout of any timer in the list safely
   mozilla::TimeStamp mTimeout;
 
-  RefPtr<nsITimer> mITimer;
+  RefPtr<nsITimer> mITimer MOZ_GUARDED_BY(mMutex);
   mozilla::Mutex mMutex;
-  Callback mCallback;
+  Callback mCallback MOZ_GUARDED_BY(mMutex);
   // Counter because in rare cases we can Fire reentrantly
-  unsigned int mFiring;
+  unsigned int mFiring MOZ_GUARDED_BY(mMutex);
 
   static mozilla::StaticMutex sDeltaMutex;
-  static double sDeltaSum;
-  static double sDeltaSumSquared;
-  static double sDeltaNum;
+  static double sDeltaSum MOZ_GUARDED_BY(sDeltaMutex);
+  static double sDeltaSumSquared MOZ_GUARDED_BY(sDeltaMutex);
+  static double sDeltaNum MOZ_GUARDED_BY(sDeltaMutex);
 };
 
 class nsTimer final : public nsITimer {
@@ -207,15 +208,11 @@ class nsTimer final : public nsITimer {
                  : NS_ERROR_NULL_POINTER;
   }
 
-  virtual size_t SizeOfIncludingThis(
-      mozilla::MallocSizeOf aMallocSizeOf) const override;
-
   // Create a timer targeting the given target.  nullptr indicates that the
   // current thread should be used as the timer's target.
   static RefPtr<nsTimer> WithEventTarget(nsIEventTarget* aTarget);
 
-  static nsresult XPCOMConstructor(nsISupports* aOuter, REFNSIID aIID,
-                                   void** aResult);
+  static nsresult XPCOMConstructor(REFNSIID aIID, void** aResult);
 
  private:
   // nsTimerImpl holds a strong ref to us. When our refcount goes to 1, we will
@@ -223,36 +220,12 @@ class nsTimer final : public nsITimer {
   RefPtr<nsTimerImpl> mImpl;
 };
 
-// A class that holds on to an nsTimerImpl.  This lets the nsTimerImpl object
-// directly instruct its holder to forget the timer, avoiding list lookups.
-class nsTimerImplHolder {
+class nsTimerManager final : public nsITimerManager {
  public:
-  explicit nsTimerImplHolder(nsTimerImpl* aTimerImpl) : mTimerImpl(aTimerImpl) {
-    if (mTimerImpl) {
-      mTimerImpl->mMutex.AssertCurrentThreadOwns();
-      mTimerImpl->SetHolder(this);
-    }
-  }
-
-  ~nsTimerImplHolder() {
-    if (mTimerImpl) {
-      mTimerImpl->mMutex.AssertCurrentThreadOwns();
-      mTimerImpl->SetHolder(nullptr);
-    }
-  }
-
-  void Forget(nsTimerImpl* aTimerImpl) {
-    if (MOZ_UNLIKELY(!mTimerImpl)) {
-      return;
-    }
-    MOZ_ASSERT(aTimerImpl == mTimerImpl);
-    mTimerImpl->mMutex.AssertCurrentThreadOwns();
-    mTimerImpl->SetHolder(nullptr);
-    mTimerImpl = nullptr;
-  }
-
- protected:
-  RefPtr<nsTimerImpl> mTimerImpl;
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSITIMERMANAGER
+ private:
+  ~nsTimerManager() = default;
 };
 
 #endif /* nsTimerImpl_h___ */

@@ -9,6 +9,7 @@
 #include "gfxConfig.h"
 #include "nsDebugImpl.h"
 #include "nsThreadManager.h"
+#include "nsPrintfCString.h"
 
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -131,8 +132,8 @@ void VRParent::ActorDestroy(ActorDestroyReason aWhy) {
   XRE_ShutdownChildProcess();
 }
 
-bool VRParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
-                    mozilla::ipc::ScopedPort aPort) {
+bool VRParent::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+                    const char* aParentBuildID) {
   // Initialize the thread manager before starting IPC. Otherwise, messages
   // may be posted to the main thread and we won't be able to process them.
   if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
@@ -140,7 +141,7 @@ bool VRParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
   }
 
   // Now it's safe to start IPC.
-  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
+  if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return false;
   }
 

@@ -2,19 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals, print_function
-
 import io
 import mimetypes
 import os
 import sys
-
-import botocore
-import boto3
-import concurrent.futures as futures
-import requests
+from concurrent import futures
 from pprint import pprint
 
+import boto3
+import botocore
+import requests
 from mozbuild.util import memoize
 
 
@@ -74,7 +71,6 @@ def get_s3_keys(s3, bucket):
 
 
 def s3_set_redirects(redirects):
-
     s3, bucket = create_aws_session()
 
     configuration = {"IndexDocument": {"Suffix": "index.html"}, "RoutingRules": []}

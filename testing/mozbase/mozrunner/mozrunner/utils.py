@@ -6,8 +6,6 @@
 
 """Utility functions for mozrunner"""
 
-from __future__ import absolute_import, division, print_function
-
 import os
 import sys
 
@@ -48,7 +46,6 @@ try:
         if dist.has_metadata("requires.txt"):
             ret["Dependencies"] = "\n" + dist.get_metadata("requires.txt")
         return ret
-
 
 except ImportError:
     # package resources not avaialable
@@ -121,6 +118,10 @@ def test_environment(
         )
         env[envVar] = os.path.pathsep.join([path for path in envValue if path])
 
+    # Allow non-packaged builds to access symlinked modules in the source dir
+    env["MOZ_DEVELOPER_REPO_DIR"] = mozinfo.info.get("topsrcdir")
+    env["MOZ_DEVELOPER_OBJ_DIR"] = mozinfo.info.get("topobjdir")
+
     # crashreporter
     env["GNOME_DISABLE_CRASH_DIALOG"] = "1"
     env["XRE_NO_WINDOWS_CRASH_DIALOG"] = "1"
@@ -148,17 +149,20 @@ def test_environment(
     env.setdefault("NSS_MAX_MP_PBE_ITERATION_COUNT", "10")
 
     # ASan specific environment stuff
+    if "ASAN_SYMBOLIZER_PATH" in env and os.path.isfile(env["ASAN_SYMBOLIZER_PATH"]):
+        llvmsym = env["ASAN_SYMBOLIZER_PATH"]
+    else:
+        if mozinfo.isMac:
+            llvmSymbolizerDir = ldLibraryPath
+        else:
+            llvmSymbolizerDir = xrePath
+        llvmsym = os.path.join(
+            llvmSymbolizerDir, "llvm-symbolizer" + mozinfo.info["bin_suffix"]
+        )
     asan = bool(mozinfo.info.get("asan"))
     if asan:
         try:
             # Symbolizer support
-            if mozinfo.isMac:
-                llvmSymbolizerDir = ldLibraryPath
-            else:
-                llvmSymbolizerDir = xrePath
-            llvmsym = os.path.join(
-                llvmSymbolizerDir, "llvm-symbolizer" + mozinfo.info["bin_suffix"]
-            )
             if os.path.isfile(llvmsym):
                 env["ASAN_SYMBOLIZER_PATH"] = llvmsym
                 log.info("INFO | runtests.py | ASan using symbolizer at %s" % llvmsym)
@@ -225,7 +229,6 @@ def test_environment(
     tsan = bool(mozinfo.info.get("tsan"))
     if tsan and mozinfo.isLinux:
         # Symbolizer support.
-        llvmsym = os.path.join(xrePath, "llvm-symbolizer")
         if os.path.isfile(llvmsym):
             env["TSAN_OPTIONS"] = "external_symbolizer_path=%s" % llvmsym
             log.info("INFO | runtests.py | TSan using symbolizer at %s" % llvmsym)

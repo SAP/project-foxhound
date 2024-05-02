@@ -91,7 +91,9 @@ double Java2Native(mozilla::jni::Object::Param aData, JNIEnv* aEnv) {
 
 template <>
 ipc::LaunchError Java2Native(mozilla::jni::Object::Param aData, JNIEnv* aEnv) {
-  return ipc::LaunchError{};
+  // Bug 1819311: there is not much we can really catch due to how Android
+  // services are started, so for now we just expose it this way.
+  return ipc::LaunchError("Java2Native");
 }
 
 template <>
@@ -101,6 +103,12 @@ nsString Java2Native(mozilla::jni::Object::Param aData, JNIEnv* aEnv) {
     result = jni::String::Ref::From(aData)->ToString();
   }
   return result;
+}
+
+template <>
+nsresult Java2Native(mozilla::jni::Object::Param aData, JNIEnv* aEnv) {
+  MOZ_ASSERT(aData.IsInstanceOf<jni::Throwable>());
+  return NS_ERROR_FAILURE;
 }
 
 }  // namespace jni

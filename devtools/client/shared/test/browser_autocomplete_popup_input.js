@@ -3,7 +3,7 @@
 
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   // Prevent the URL Bar to steal the focus.
   const preventUrlBarFocus = e => {
     e.preventDefault();
@@ -13,7 +13,7 @@ add_task(async function() {
     window.gURLBar.removeEventListener("beforefocus", preventUrlBarFocus);
   });
 
-  const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
+  const AutocompletePopup = require("resource://devtools/client/shared/autocomplete-popup.js");
 
   info("Create an autocompletion popup and an input that will be bound to it");
   const { doc } = await createHost();

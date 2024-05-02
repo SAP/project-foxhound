@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_AnimationUtils_h
 #define mozilla_dom_AnimationUtils_h
 
+#include "mozilla/PseudoStyleType.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/Nullable.h"
 #include "nsRFPService.h"
@@ -18,8 +19,6 @@ struct JSContext;
 
 namespace mozilla {
 
-enum class PseudoStyleType : uint8_t;
-class ComputedTimingFunction;
 class EffectSet;
 
 namespace dom {
@@ -32,7 +31,7 @@ class AnimationUtils {
   using Document = dom::Document;
 
   static dom::Nullable<double> TimeDurationToDouble(
-      const dom::Nullable<TimeDuration>& aTime) {
+      const dom::Nullable<TimeDuration>& aTime, RTPCallerType aRTPCallerType) {
     dom::Nullable<double> result;
 
     if (!aTime.IsNull()) {
@@ -41,7 +40,7 @@ class AnimationUtils {
       // only clamping for RFP mode. RFP mode gives a much lower time precision,
       // so we accept the security leak here for now
       result.SetValue(nsRFPService::ReduceTimePrecisionAsMSecsRFPOnly(
-          aTime.Value().ToMilliseconds(), 0));
+          aTime.Value().ToMilliseconds(), 0, aRTPCallerType));
     }
 
     return result;
@@ -84,6 +83,50 @@ class AnimationUtils {
    */
   static bool HasCurrentTransitions(const dom::Element* aElement,
                                     PseudoStyleType aPseudoType);
+
+  /**
+   * Returns true if this pseudo style type is supported by animations.
+   * Note: This doesn't include PseudoStyleType::NotPseudo.
+   */
+  static bool IsSupportedPseudoForAnimations(PseudoStyleType aType) {
+    // FIXME: Bug 1615469: Support first-line and first-letter for Animation.
+    return aType == PseudoStyleType::before ||
+           aType == PseudoStyleType::after || aType == PseudoStyleType::marker;
+  }
+
+  /**
+   * Returns true if the difference between |aFirst| and |aSecond| is within
+   * the animation time tolerance (i.e. 1 microsecond).
+   */
+  static bool IsWithinAnimationTimeTolerance(const TimeDuration& aFirst,
+                                             const TimeDuration& aSecond) {
+    if (aFirst == TimeDuration::Forever() ||
+        aSecond == TimeDuration::Forever()) {
+      return aFirst == aSecond;
+    }
+
+    TimeDuration diff = aFirst >= aSecond ? aFirst - aSecond : aSecond - aFirst;
+    return diff <= TimeDuration::FromMicroseconds(1);
+  }
+
+  // Returns the target element for restyling.
+  //
+  // If |aPseudoType| is ::after, ::before or ::marker, returns the generated
+  // content element of which |aElement| is the parent. If |aPseudoType| is any
+  // other pseudo type (other than PseudoStyleType::NotPseudo) returns nullptr.
+  // Otherwise, returns |aElement|.
+  static dom::Element* GetElementForRestyle(dom::Element* aElement,
+                                            PseudoStyleType aPseudoType);
+
+  // Returns the pair of |Element, PseudoStyleType| from an element which could
+  // be an element or a pseudo element (i.e. an element used for restyling and
+  // DOM tree).
+  //
+  // Animation module usually uses a pair of (Element*, PseudoStyleType) to
+  // represent the animation target, and the |Element| in the pair is the
+  // generated content container if it's a pseudo element.
+  static std::pair<const dom::Element*, PseudoStyleType> GetElementPseudoPair(
+      const dom::Element* aElementOrPseudo);
 };
 
 }  // namespace mozilla

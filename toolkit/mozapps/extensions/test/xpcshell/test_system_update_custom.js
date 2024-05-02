@@ -2,12 +2,13 @@
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "2");
 
-let distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "empty"], true);
+let distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "empty"]);
+distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 registerDirectory("XREAppFeat", distroDir);
 
 AddonTestUtils.usePrivilegedSignatures = id => "system";
 
-add_task(() => initSystemAddonDirs());
+add_task(initSystemAddonDirs);
 
 /**
  * Defines the set of initial conditions to run each test against. Each should
@@ -97,11 +98,16 @@ add_task(async function test_addon_update() {
       xpi: await getSystemAddonXPI(3, "2.0"),
     },
   ]);
+
+  const promiseInstallsEnded = createInstallsEndedPromise(2);
+
   await Promise.all([
     updateAllSystemAddons(updateXML),
     promiseWebExtensionStartup("system2@tests.mozilla.org"),
     promiseWebExtensionStartup("system3@tests.mozilla.org"),
   ]);
+
+  await promiseInstallsEnded;
 
   await verifySystemAddonState(
     TEST_CONDITIONS.blank.initialState,
@@ -304,10 +310,21 @@ add_task(async function test_no_download() {
       xpi: await getSystemAddonXPI(4, "1.0"),
     },
   ]);
+
+  const promiseInstallsEnded = createInstallsEndedPromise(2);
+
   await Promise.all([
     installSystemAddons(installXML),
     promiseWebExtensionStartup("system4@tests.mozilla.org"),
   ]);
+
+  // NOTE: verifySystemAddonState does call AddonTestUtils.promiseShutdownManager
+  // internally, and so we need to wait for the system addons to be fully
+  // installed and the system addon location's stating dir to have been released.
+  info("Wait for system addon installs to be completed");
+  await promiseInstallsEnded;
+  info("Wait for system addons stating dir to be released");
+  await waitForSystemAddonStagingDirReleased();
 
   await verifySystemAddonState(
     TEST_CONDITIONS.withBothSets.initialState,
@@ -429,3 +446,48 @@ add_task(async function test_update_purges() {
 
   await promiseShutdownManager();
 });
+
+function createInstallsEndedPromise(expectedCount) {
+  // Addon installation triggers the execution of an un-awaited promise. We need
+  // to keep track of addon installs so that we can tell when these async
+  // processes have finished.
+
+  return new Promise(resolve => {
+    let installsEnded = 0;
+
+    const listener = {
+      onInstallStarted() {},
+      onInstallEnded() {
+        installsEnded++;
+
+        if (installsEnded === expectedCount) {
+          AddonManager.removeInstallListener(listener);
+          resolve();
+        }
+      },
+      onInstallCancelled() {},
+      onInstallFailed() {},
+    };
+
+    AddonManager.addInstallListener(listener);
+  });
+}
+
+async function waitForSystemAddonStagingDirReleased() {
+  // Wait for the staging dir to be released, which prevents unexpected test failure due to
+  // AddonTestUtils.promiseShutdownManager being mocking an AddonManager shutdown by using
+  // Cu.unload to unload all XPIProvider jsm modules, which would hit unexpected failures
+  // if done while system addon updates are still running in the background (due to the
+  // fact that the jsm global to have been already nuked while AddonInstall startInstall
+  // method may still being executed asynchronously).
+
+  const { XPIInternal } = ChromeUtils.import(
+    "resource://gre/modules/addons/XPIProvider.jsm"
+  );
+  let systemAddonLocation = XPIInternal.XPIStates.getLocation(
+    XPIInternal.KEY_APP_SYSTEM_ADDONS
+  );
+  await TestUtils.waitForCondition(() => {
+    return systemAddonLocation.installer._stagingDirLock == 0;
+  }, "Wait for staging dir to be released");
+}

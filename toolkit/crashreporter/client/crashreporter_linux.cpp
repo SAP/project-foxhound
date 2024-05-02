@@ -39,19 +39,24 @@ static void LoadSettings() {
    *       code in in nsExceptionHandler.cpp.
    */
 
+  bool includeURL = true;
+  bool submitReport = true;
   StringTable settings;
   if (ReadStringsFromFile(gSettingsPath + "/" + kIniFile, settings, true)) {
-    if (settings.find("IncludeURL") != settings.end() &&
-        gIncludeURLCheck != 0) {
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(gIncludeURLCheck),
-                                   settings["IncludeURL"][0] != '0');
+    if (settings.find("IncludeURL") != settings.end()) {
+      includeURL = settings["IncludeURL"][0] != '0';
     }
-    bool enabled = true;
-    if (settings.find("SubmitReport") != settings.end())
-      enabled = settings["SubmitReport"][0] != '0';
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(gSubmitReportCheck),
-                                 enabled);
+    if (settings.find("SubmitReport") != settings.end()) {
+      submitReport = settings["SubmitReport"][0] != '0';
+    }
   }
+
+  if (gIncludeURLCheck) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(gIncludeURLCheck),
+                                 includeURL);
+  }
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(gSubmitReportCheck),
+                               submitReport);
 }
 
 static string Escape(const string& str) {
@@ -71,9 +76,9 @@ static string Escape(const string& str) {
   return ret;
 }
 
-static bool WriteStrings(ostream& out, const string& header,
+static bool WriteStrings(std::ostream& out, const string& header,
                          StringTable& strings, bool escape) {
-  out << "[" << header << "]" << std::endl;
+  out << "[" << header << "]\n";
   for (const auto& iter : strings) {
     out << iter.first << "=";
     if (escape) {
@@ -82,7 +87,7 @@ static bool WriteStrings(ostream& out, const string& header,
       out << iter.second;
     }
 
-    out << std::endl;
+    out << '\n';
   }
 
   return true;
@@ -90,7 +95,7 @@ static bool WriteStrings(ostream& out, const string& header,
 
 static bool WriteStringsToFile(const string& path, const string& header,
                                StringTable& strings, bool escape) {
-  ofstream* f = UIOpenWrite(path, ios::trunc);
+  std::ofstream* f = UIOpenWrite(path, ios::trunc);
   bool success = false;
   if (f->is_open()) {
     success = WriteStrings(*f, header, strings, escape);

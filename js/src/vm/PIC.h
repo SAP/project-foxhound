@@ -105,14 +105,14 @@ struct ForOfPIC {
   class Stub : public BaseStub {
    private:
     // Shape of matching array object.
-    Shape* shape_;
+    const HeapPtr<Shape*> shape_;
 
    public:
-    explicit Stub(Shape* shape) : BaseStub(), shape_(shape) {
-      MOZ_ASSERT(shape_);
-    }
+    explicit Stub(Shape* shape) : shape_(shape) { MOZ_ASSERT(shape_); }
 
     Shape* shape() { return shape_; }
+
+    void trace(JSTracer* trc);
   };
 
   /*
@@ -144,23 +144,31 @@ struct ForOfPIC {
   class Chain : public BaseChain {
    private:
     // Pointer to owning JSObject for memory accounting purposes.
-    const GCPtrObject picObject_;
+    const GCPtr<JSObject*> picObject_;
 
-    // Pointer to canonical Array.prototype and ArrayIterator.prototype
-    GCPtrNativeObject arrayProto_;
-    GCPtrNativeObject arrayIteratorProto_;
+    // Pointer to canonical Array.prototype, ArrayIterator.prototype,
+    // Iterator.prototype, and Object.prototype
+    GCPtr<NativeObject*> arrayProto_;
+    GCPtr<NativeObject*> arrayIteratorProto_;
+    GCPtr<NativeObject*> iteratorProto_;
+    GCPtr<NativeObject*> objectProto_;
 
     // Shape of matching Array.prototype object, and slot containing
     // the @@iterator for it, and the canonical value.
-    GCPtrShape arrayProtoShape_;
+    GCPtr<Shape*> arrayProtoShape_;
     uint32_t arrayProtoIteratorSlot_;
-    GCPtrValue canonicalIteratorFunc_;
+    GCPtr<Value> canonicalIteratorFunc_;
 
     // Shape of matching ArrayIteratorProto, and slot containing
     // the 'next' property, and the canonical value.
-    GCPtrShape arrayIteratorProtoShape_;
+    GCPtr<Shape*> arrayIteratorProtoShape_;
     uint32_t arrayIteratorProtoNextSlot_;
-    GCPtrValue canonicalNextFunc_;
+    GCPtr<Value> canonicalNextFunc_;
+
+    // Shape of matching Iterator.prototype object.
+    GCPtr<Shape*> iteratorProtoShape_;
+    // Shape of matching Object.prototype object.
+    GCPtr<Shape*> objectProtoShape_;
 
     // Initialization flag marking lazy initialization of above fields.
     bool initialized_;
@@ -173,8 +181,7 @@ struct ForOfPIC {
 
    public:
     explicit Chain(JSObject* picObject)
-        : BaseChain(),
-          picObject_(picObject),
+        : picObject_(picObject),
           arrayProto_(nullptr),
           arrayIteratorProto_(nullptr),
           arrayProtoShape_(nullptr),
@@ -188,26 +195,45 @@ struct ForOfPIC {
     // Initialize the canonical iterator function.
     bool initialize(JSContext* cx);
 
+    // Try to optimize this chain for a newly allocated array.
+    bool tryOptimizeArray(JSContext* cx, bool* optimized);
+
     // Try to optimize this chain for an object.
-    bool tryOptimizeArray(JSContext* cx, HandleArrayObject array,
+    bool tryOptimizeArray(JSContext* cx, Handle<ArrayObject*> array,
                           bool* optimized);
 
     // Check if %ArrayIteratorPrototype% still uses the default "next" method.
     bool tryOptimizeArrayIteratorNext(JSContext* cx, bool* optimized);
 
     void trace(JSTracer* trc);
-    void finalize(JSFreeOp* fop, JSObject* obj);
+    void finalize(JS::GCContext* gcx, JSObject* obj);
+
+    void freeAllStubs(JS::GCContext* gcx);
 
    private:
     // Check if the global array-related objects have not been messed with
     // in a way that would disable this PIC.
     bool isArrayStateStillSane();
 
-    // Check if ArrayIterator.next is still optimizable.
-    inline bool isArrayNextStillSane() {
-      return (arrayIteratorProto_->shape() == arrayIteratorProtoShape_) &&
-             (arrayIteratorProto_->getSlot(arrayIteratorProtoNextSlot_) ==
-              canonicalNextFunc_);
+    // Check if ArrayIterator.next and ArrayIterator.return are still
+    // optimizable.
+    inline bool isArrayIteratorStateStillSane() {
+      // Ensure the prototype chain is intact, which will ensure that "return"
+      // has not been defined.
+      if (arrayIteratorProto_->shape() != arrayIteratorProtoShape_) {
+        return false;
+      }
+
+      if (iteratorProto_->shape() != iteratorProtoShape_) {
+        return false;
+      }
+
+      if (objectProto_->shape() != objectProtoShape_) {
+        return false;
+      }
+
+      return arrayIteratorProto_->getSlot(arrayIteratorProtoNextSlot_) ==
+             canonicalNextFunc_;
     }
 
     // Check if a matching optimized stub for the given object exists.
@@ -218,8 +244,6 @@ struct ForOfPIC {
 
     // Erase the stub chain.
     void eraseChain(JSContext* cx);
-
-    void freeAllStubs(JSFreeOp* fop);
   };
 
   static NativeObject* createForOfPICObject(JSContext* cx,

@@ -36,7 +36,7 @@ void SetDefaultAllowedTouchBehavior(const RefPtr<InputReceiver>& aTarget,
         mozilla::layers::AllowedTouchBehavior::HORIZONTAL_PAN |
         mozilla::layers::AllowedTouchBehavior::VERTICAL_PAN |
         mozilla::layers::AllowedTouchBehavior::PINCH_ZOOM |
-        mozilla::layers::AllowedTouchBehavior::DOUBLE_TAP_ZOOM);
+        mozilla::layers::AllowedTouchBehavior::ANIMATING_ZOOM);
   }
   aTarget->SetAllowedTouchBehavior(aInputBlockId, defaultBehaviors);
 }
@@ -77,19 +77,19 @@ template <class InputReceiver>
 APZEventResult Wheel(const RefPtr<InputReceiver>& aTarget,
                      const ScreenIntPoint& aPoint, const ScreenPoint& aDelta,
                      TimeStamp aTime) {
-  ScrollWheelInput input(MillisecondsSinceStartup(aTime), aTime, 0,
-                         ScrollWheelInput::SCROLLMODE_INSTANT,
+  ScrollWheelInput input(aTime, 0, ScrollWheelInput::SCROLLMODE_INSTANT,
                          ScrollWheelInput::SCROLLDELTA_PIXEL, aPoint, aDelta.x,
                          aDelta.y, false, WheelDeltaAdjustmentStrategy::eNone);
   return aTarget->ReceiveInputEvent(input);
 }
 
+// Tests that use this function should set general.smoothScroll=true, otherwise
+// the smooth scroll animation code will set the animation duration to 0.
 template <class InputReceiver>
 APZEventResult SmoothWheel(const RefPtr<InputReceiver>& aTarget,
                            const ScreenIntPoint& aPoint,
                            const ScreenPoint& aDelta, TimeStamp aTime) {
-  ScrollWheelInput input(MillisecondsSinceStartup(aTime), aTime, 0,
-                         ScrollWheelInput::SCROLLMODE_SMOOTH,
+  ScrollWheelInput input(aTime, 0, ScrollWheelInput::SCROLLMODE_SMOOTH,
                          ScrollWheelInput::SCROLLDELTA_LINE, aPoint, aDelta.x,
                          aDelta.y, false, WheelDeltaAdjustmentStrategy::eNone);
   return aTarget->ReceiveInputEvent(input);
@@ -99,8 +99,8 @@ template <class InputReceiver>
 APZEventResult MouseDown(const RefPtr<InputReceiver>& aTarget,
                          const ScreenIntPoint& aPoint, TimeStamp aTime) {
   MouseInput input(MouseInput::MOUSE_DOWN,
-                   MouseInput::ButtonType::PRIMARY_BUTTON, 0, 0, aPoint,
-                   MillisecondsSinceStartup(aTime), aTime, 0);
+                   MouseInput::ButtonType::PRIMARY_BUTTON, 0, 0, aPoint, aTime,
+                   0);
   return aTarget->ReceiveInputEvent(input);
 }
 
@@ -108,8 +108,8 @@ template <class InputReceiver>
 APZEventResult MouseMove(const RefPtr<InputReceiver>& aTarget,
                          const ScreenIntPoint& aPoint, TimeStamp aTime) {
   MouseInput input(MouseInput::MOUSE_MOVE,
-                   MouseInput::ButtonType::PRIMARY_BUTTON, 0, 0, aPoint,
-                   MillisecondsSinceStartup(aTime), aTime, 0);
+                   MouseInput::ButtonType::PRIMARY_BUTTON, 0, 0, aPoint, aTime,
+                   0);
   return aTarget->ReceiveInputEvent(input);
 }
 
@@ -117,7 +117,7 @@ template <class InputReceiver>
 APZEventResult MouseUp(const RefPtr<InputReceiver>& aTarget,
                        const ScreenIntPoint& aPoint, TimeStamp aTime) {
   MouseInput input(MouseInput::MOUSE_UP, MouseInput::ButtonType::PRIMARY_BUTTON,
-                   0, 0, aPoint, MillisecondsSinceStartup(aTime), aTime, 0);
+                   0, 0, aPoint, aTime, 0);
   return aTarget->ReceiveInputEvent(input);
 }
 
@@ -126,13 +126,15 @@ APZEventResult PanGesture(PanGestureInput::PanGestureType aType,
                           const RefPtr<InputReceiver>& aTarget,
                           const ScreenIntPoint& aPoint,
                           const ScreenPoint& aDelta, TimeStamp aTime,
-                          Modifiers aModifiers = MODIFIER_NONE) {
-  PanGestureInput input(aType, MillisecondsSinceStartup(aTime), aTime, aPoint,
-                        aDelta, aModifiers);
-  if (aType == PanGestureInput::PANGESTURE_END) {
-    input.mFollowedByMomentum = true;
+                          Modifiers aModifiers = MODIFIER_NONE,
+                          bool aSimulateMomentum = false) {
+  PanGestureInput input(aType, aTime, aPoint, aDelta, aModifiers);
+  input.mSimulateMomentum = aSimulateMomentum;
+  if constexpr (std::is_same_v<InputReceiver, TestAsyncPanZoomController>) {
+    // In the case of TestAsyncPanZoomController we know for sure that the
+    // event will be handled by APZ so set it explicitly.
+    input.mHandledByAPZ = true;
   }
-
   return aTarget->ReceiveInputEvent(input);
 }
 

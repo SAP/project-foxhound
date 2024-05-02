@@ -1,14 +1,12 @@
 const BASE_URL =
-  "http://mochi.test:8888/browser/browser/components/originattributes/test/browser/";
-const EXAMPLE_BASE_URL = BASE_URL.replace("mochi.test:8888", "example.com");
-const BASE_DOMAIN = "mochi.test";
+  "https://example.net/browser/browser/components/originattributes/test/browser/";
+const EXAMPLE_BASE_URL = BASE_URL.replace("example.net", "example.com");
+const BASE_DOMAIN = "example.net";
 
-add_task(async function setup() {
+add_setup(async function () {
   Services.prefs.setBoolPref("privacy.firstparty.isolate", true);
-  Services.prefs.setBoolPref("dom.security.https_first", false);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("privacy.firstparty.isolate");
-    Services.prefs.clearUserPref("dom.security.https_first");
     Services.cookies.removeAll();
     Services.cache2.clear();
   });
@@ -23,14 +21,14 @@ add_task(async function principal_test() {
     gBrowser,
     BASE_URL + "test_firstParty.html"
   );
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, true, function(url) {
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, true, function (url) {
     return url == BASE_URL + "test_firstParty.html";
   });
 
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [{ firstPartyDomain: BASE_DOMAIN }],
-    async function(attrs) {
+    async function (attrs) {
       Assert.ok(
         true,
         "document principal: " + content.document.nodePrincipal.origin
@@ -48,26 +46,28 @@ add_task(async function principal_test() {
 
       for (let i = 1; i < 4; i++) {
         let iframe = content.document.getElementById("iframe" + i);
-        await SpecialPowers.spawn(iframe, [attrs.firstPartyDomain], function(
-          firstPartyDomain
-        ) {
-          Assert.ok(
-            true,
-            "iframe principal: " + content.document.nodePrincipal.origin
-          );
+        await SpecialPowers.spawn(
+          iframe,
+          [attrs.firstPartyDomain],
+          function (firstPartyDomain) {
+            Assert.ok(
+              true,
+              "iframe principal: " + content.document.nodePrincipal.origin
+            );
 
-          Assert.equal(
-            content.docShell.getOriginAttributes().firstPartyDomain,
-            firstPartyDomain,
-            "iframe's docshell should have firstPartyDomain"
-          );
+            Assert.equal(
+              content.docShell.getOriginAttributes().firstPartyDomain,
+              firstPartyDomain,
+              "iframe's docshell should have firstPartyDomain"
+            );
 
-          Assert.equal(
-            content.document.nodePrincipal.originAttributes.firstPartyDomain,
-            firstPartyDomain,
-            "iframe should have firstPartyDomain"
-          );
-        });
+            Assert.equal(
+              content.document.nodePrincipal.originAttributes.firstPartyDomain,
+              firstPartyDomain,
+              "iframe should have firstPartyDomain"
+            );
+          }
+        );
       }
     }
   );
@@ -118,7 +118,7 @@ add_task(async function redirect_test() {
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [{ firstPartyDomain: "example.com" }],
-    async function(attrs) {
+    async function (attrs) {
       Assert.ok(
         true,
         "document principal: " + content.document.nodePrincipal.origin
@@ -127,8 +127,8 @@ add_task(async function redirect_test() {
 
       Assert.equal(
         content.document.documentURI,
-        "http://example.com/browser/browser/components/originattributes/test/browser/dummy.html",
-        "The page should have been redirected to http://example.com/browser/browser/components/originattributes/test/browser/dummy.html"
+        "https://example.com/browser/browser/components/originattributes/test/browser/dummy.html",
+        "The page should have been redirected to https://example.com/browser/browser/components/originattributes/test/browser/dummy.html"
       );
       Assert.equal(
         content.document.nodePrincipal.originAttributes.firstPartyDomain,
@@ -143,16 +143,18 @@ add_task(async function redirect_test() {
     gBrowser,
     BASE_URL + "test_firstParty_html_redirect.html"
   );
-  await BrowserTestUtils.browserLoaded(tab2.linkedBrowser, false, function(
-    url
-  ) {
-    return url == "http://example.com/";
-  });
+  await BrowserTestUtils.browserLoaded(
+    tab2.linkedBrowser,
+    false,
+    function (url) {
+      return url == "https://example.com/";
+    }
+  );
 
   await SpecialPowers.spawn(
     tab2.linkedBrowser,
     [{ firstPartyDomain: "example.com" }],
-    async function(attrs) {
+    async function (attrs) {
       Assert.ok(
         true,
         "2nd tab document principal: " + content.document.nodePrincipal.origin
@@ -160,8 +162,8 @@ add_task(async function redirect_test() {
       Assert.ok(true, "2nd tab document uri: " + content.document.documentURI);
       Assert.equal(
         content.document.documentURI,
-        "http://example.com/",
-        "The page should have been redirected to http://example.com"
+        "https://example.com/",
+        "The page should have been redirected to https://example.com"
       );
       Assert.equal(
         content.document.nodePrincipal.originAttributes.firstPartyDomain,
@@ -175,39 +177,49 @@ add_task(async function redirect_test() {
     gBrowser,
     BASE_URL + "test_firstParty_iframe_http_redirect.html"
   );
-  await BrowserTestUtils.browserLoaded(tab3.linkedBrowser, true, function(url) {
-    return url == BASE_URL + "test_firstParty_iframe_http_redirect.html";
-  });
+  await BrowserTestUtils.browserLoaded(
+    tab3.linkedBrowser,
+    true,
+    function (url) {
+      return url == BASE_URL + "test_firstParty_iframe_http_redirect.html";
+    }
+  );
 
   // This redirect happens on the iframe, so unlike the two redirect tests above,
   // the firstPartyDomain should still stick to the current top-level document,
-  // which is mochi.test.
+  // which is example.net.
   await SpecialPowers.spawn(
     tab3.linkedBrowser,
-    [{ firstPartyDomain: "mochi.test" }],
-    async function(attrs) {
+    [{ firstPartyDomain: BASE_DOMAIN }],
+    async function (attrs) {
       let iframe = content.document.getElementById("iframe1");
-      SpecialPowers.spawn(iframe, [attrs.firstPartyDomain], function(
-        firstPartyDomain
-      ) {
-        Assert.ok(
-          true,
-          "iframe document principal: " + content.document.nodePrincipal.origin
-        );
-        Assert.ok(true, "iframe document uri: " + content.document.documentURI);
+      SpecialPowers.spawn(
+        iframe,
+        [attrs.firstPartyDomain],
+        function (firstPartyDomain) {
+          Assert.ok(
+            true,
+            "iframe document principal: " +
+              content.document.nodePrincipal.origin
+          );
+          Assert.ok(
+            true,
+            "iframe document uri: " + content.document.documentURI
+          );
 
-        Assert.equal(
-          content.document.documentURI,
-          "http://example.com/browser/browser/components/originattributes/test/browser/dummy.html",
-          "The page should have been redirected to http://example.com/browser/browser/components/originattributes/test/browser/dummy.html"
-        );
+          Assert.equal(
+            content.document.documentURI,
+            "https://example.com/browser/browser/components/originattributes/test/browser/dummy.html",
+            "The page should have been redirected to https://example.com/browser/browser/components/originattributes/test/browser/dummy.html"
+          );
 
-        Assert.equal(
-          content.document.nodePrincipal.originAttributes.firstPartyDomain,
-          firstPartyDomain,
-          "The iframe should have firstPartyDomain: " + firstPartyDomain
-        );
-      });
+          Assert.equal(
+            content.document.nodePrincipal.originAttributes.firstPartyDomain,
+            firstPartyDomain,
+            "The iframe should have firstPartyDomain: " + firstPartyDomain
+          );
+        }
+      );
     }
   );
 
@@ -229,11 +241,11 @@ add_task(async function postMessage_test() {
   // another message from the iframe, once it receives the message, it will
   // create another iframe, dummy.html.
   // So we wait until dummy.html is loaded
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, true, function(url) {
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, true, function (url) {
     return url == BASE_URL + "dummy.html";
   });
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     Assert.ok(
       true,
       "document principal: " + content.document.nodePrincipal.origin
@@ -251,7 +263,7 @@ add_task(async function postMessage_test() {
  */
 add_task(async function openWindow_test() {
   Services.prefs.setIntPref("browser.link.open_newwindow", 2);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.link.open_newwindow");
   });
 
@@ -260,8 +272,8 @@ add_task(async function openWindow_test() {
 
   await SpecialPowers.spawn(
     tab.linkedBrowser,
-    [{ firstPartyDomain: "mochi.test" }],
-    async function(attrs) {
+    [{ firstPartyDomain: BASE_DOMAIN }],
+    async function (attrs) {
       let promise = new Promise(resolve => {
         content.addEventListener("message", resolve, { once: true });
       });
@@ -282,21 +294,23 @@ add_task(async function openWindow_test() {
       );
 
       let iframe = w.document.getElementById("iframe1");
-      await SpecialPowers.spawn(iframe, [attrs.firstPartyDomain], function(
-        firstPartyDomain
-      ) {
-        Assert.equal(
-          content.docShell.getOriginAttributes().firstPartyDomain,
-          firstPartyDomain,
-          "iframe's docshell should have correct rirstPartyDomain"
-        );
+      await SpecialPowers.spawn(
+        iframe,
+        [attrs.firstPartyDomain],
+        function (firstPartyDomain) {
+          Assert.equal(
+            content.docShell.getOriginAttributes().firstPartyDomain,
+            firstPartyDomain,
+            "iframe's docshell should have correct rirstPartyDomain"
+          );
 
-        Assert.equal(
-          content.document.nodePrincipal.originAttributes.firstPartyDomain,
-          firstPartyDomain,
-          "iframe should have correct firstPartyDomain"
-        );
-      });
+          Assert.equal(
+            content.document.nodePrincipal.originAttributes.firstPartyDomain,
+            firstPartyDomain,
+            "iframe should have correct firstPartyDomain"
+          );
+        }
+      );
 
       w.close();
     }
@@ -311,7 +325,7 @@ add_task(async function openWindow_test() {
  */
 add_task(async function window_open_redirect_test() {
   Services.prefs.setIntPref("browser.link.open_newwindow", 2);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.link.open_newwindow");
   });
 
@@ -325,8 +339,8 @@ add_task(async function window_open_redirect_test() {
 
   await SpecialPowers.spawn(
     win.gBrowser.selectedBrowser,
-    [{ firstPartyDomain: "mochi.test" }],
-    async function(attrs) {
+    [{ firstPartyDomain: BASE_DOMAIN }],
+    async function (attrs) {
       Assert.equal(
         content.docShell.getOriginAttributes().firstPartyDomain,
         attrs.firstPartyDomain,
@@ -352,7 +366,7 @@ add_task(async function window_open_redirect_test() {
  */
 add_task(async function window_open_iframe_test() {
   Services.prefs.setIntPref("browser.link.open_newwindow", 2);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.link.open_newwindow");
   });
 
@@ -363,15 +377,15 @@ add_task(async function window_open_iframe_test() {
 
   await SpecialPowers.spawn(
     win.gBrowser.selectedBrowser,
-    [{ firstPartyDomain: "mochi.test" }],
-    async function(attrs) {
+    [{ firstPartyDomain: BASE_DOMAIN }],
+    async function (attrs) {
       Assert.equal(
         content.docShell.getOriginAttributes().firstPartyDomain,
         attrs.firstPartyDomain,
         "window.open() should have firstPartyDomain attribute"
       );
 
-      // The document is http://example.com/browser/browser/components/originattributes/test/browser/test_firstParty.html
+      // The document is https://example.com/browser/browser/components/originattributes/test/browser/test_firstParty.html
       // so the firstPartyDomain will be overriden to 'example.com'.
       Assert.equal(
         content.document.nodePrincipal.originAttributes.firstPartyDomain,
@@ -380,7 +394,7 @@ add_task(async function window_open_iframe_test() {
       );
 
       let iframe = content.document.getElementById("iframe1");
-      SpecialPowers.spawn(iframe, [], function() {
+      SpecialPowers.spawn(iframe, [], function () {
         Assert.equal(
           content.docShell.getOriginAttributes().firstPartyDomain,
           "example.com",
@@ -408,8 +422,8 @@ add_task(async function form_test() {
 
   await SpecialPowers.spawn(
     tab.linkedBrowser,
-    [{ firstPartyDomain: "mochi.test" }],
-    async function(attrs) {
+    [{ firstPartyDomain: BASE_DOMAIN }],
+    async function (attrs) {
       Assert.equal(
         content.document.nodePrincipal.originAttributes.firstPartyDomain,
         attrs.firstPartyDomain,
@@ -429,7 +443,7 @@ add_task(async function form_test() {
  */
 add_task(async function window_open_form_test() {
   Services.prefs.setIntPref("browser.link.open_newwindow", 2);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.link.open_newwindow");
   });
 
@@ -440,8 +454,8 @@ add_task(async function window_open_form_test() {
 
   await SpecialPowers.spawn(
     win.gBrowser.selectedBrowser,
-    [{ firstPartyDomain: "mochi.test" }],
-    async function(attrs) {
+    [{ firstPartyDomain: BASE_DOMAIN }],
+    async function (attrs) {
       Assert.equal(
         content.docShell.getOriginAttributes().firstPartyDomain,
         attrs.firstPartyDomain,
@@ -470,7 +484,7 @@ add_task(async function ip_address_test() {
   const ipHost = `http://${ipAddr}/browser/browser/components/originattributes/test/browser/`;
 
   Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
   });
 
@@ -480,7 +494,7 @@ add_task(async function ip_address_test() {
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [{ firstPartyDomain: ipAddr }],
-    async function(attrs) {
+    async function (attrs) {
       Assert.ok(
         true,
         "document principal: " + content.document.nodePrincipal.origin

@@ -20,109 +20,19 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpserver = null;
 
 const clearTextBody = "This is a slightly longer test\n";
 const encodedBody = [
-  0x1f,
-  0x8b,
-  0x08,
-  0x08,
-  0xef,
-  0x70,
-  0xe6,
-  0x4c,
-  0x00,
-  0x03,
-  0x74,
-  0x65,
-  0x78,
-  0x74,
-  0x66,
-  0x69,
-  0x6c,
-  0x65,
-  0x2e,
-  0x74,
-  0x78,
-  0x74,
-  0x00,
-  0x0b,
-  0xc9,
-  0xc8,
-  0x2c,
-  0x56,
-  0x00,
-  0xa2,
-  0x44,
-  0x85,
-  0xe2,
-  0x9c,
-  0xcc,
-  0xf4,
-  0x8c,
-  0x92,
-  0x9c,
-  0x4a,
-  0x85,
-  0x9c,
-  0xfc,
-  0xbc,
-  0xf4,
-  0xd4,
-  0x22,
-  0x85,
-  0x92,
-  0xd4,
-  0xe2,
-  0x12,
-  0x2e,
-  0x2e,
-  0x00,
-  0x00,
-  0xe5,
-  0xe6,
-  0xf0,
-  0x20,
-  0x00,
-  0x00,
-  0x00,
-];
-const decodedBody = [
-  0x54,
-  0x68,
-  0x69,
-  0x73,
-  0x20,
-  0x69,
-  0x73,
-  0x20,
-  0x61,
-  0x20,
-  0x73,
-  0x6c,
-  0x69,
-  0x67,
-  0x68,
-  0x74,
-  0x6c,
-  0x79,
-  0x20,
-  0x6c,
-  0x6f,
-  0x6e,
-  0x67,
-  0x65,
-  0x72,
-  0x20,
-  0x74,
-  0x65,
-  0x73,
-  0x74,
-  0x0a,
-  0x0a,
+  0x1f, 0x8b, 0x08, 0x08, 0xef, 0x70, 0xe6, 0x4c, 0x00, 0x03, 0x74, 0x65, 0x78,
+  0x74, 0x66, 0x69, 0x6c, 0x65, 0x2e, 0x74, 0x78, 0x74, 0x00, 0x0b, 0xc9, 0xc8,
+  0x2c, 0x56, 0x00, 0xa2, 0x44, 0x85, 0xe2, 0x9c, 0xcc, 0xf4, 0x8c, 0x92, 0x9c,
+  0x4a, 0x85, 0x9c, 0xfc, 0xbc, 0xf4, 0xd4, 0x22, 0x85, 0x92, 0xd4, 0xe2, 0x12,
+  0x2e, 0x2e, 0x00, 0x00, 0xe5, 0xe6, 0xf0, 0x20, 0x00, 0x00, 0x00,
 ];
 
 const partial_data_length = 4;
@@ -147,6 +57,10 @@ Canceler.prototype = {
   onStartRequest(request) {},
 
   onDataAvailable(request, stream, offset, count) {
+    // Read stream so we don't assert for not reading from the stream
+    // if cancelling the channel is slow.
+    read_stream(stream, count);
+
     request.QueryInterface(Ci.nsIChannel).cancel(Cr.NS_BINDING_ABORTED);
   },
   onStopRequest(request, status) {
@@ -187,7 +101,9 @@ FailedChannelListener.prototype = {
   ]),
   onStartRequest(request) {},
 
-  onDataAvailable(request, stream, offset, count) {},
+  onDataAvailable(request, stream, offset, count) {
+    read_stream(stream, count);
+  },
 
   onStopRequest(request, status) {
     if (case_8_range_request) {
@@ -492,35 +408,35 @@ function run_test() {
   evict_cache_entries();
 
   // Case 2: zero-length partial entry must not trigger range-request
-  var chan = make_channel("http://localhost:" + port + "/test_2");
+  let chan = make_channel("http://localhost:" + port + "/test_2");
   chan.asyncOpen(new Canceler(received_partial_2));
 
   // Case 3: no-store response must not trigger range-request
-  var chan = make_channel("http://localhost:" + port + "/test_3");
+  chan = make_channel("http://localhost:" + port + "/test_3");
   chan.asyncOpen(new MyListener(received_partial_3));
 
   // Case 4: response with content-encoding must not trigger range-request
-  var chan = make_channel("http://localhost:" + port + "/test_4");
+  chan = make_channel("http://localhost:" + port + "/test_4");
   chan.asyncOpen(new MyListener(received_partial_4));
 
   // Case 5: conditional request-header set by client
-  var chan = make_channel("http://localhost:" + port + "/test_5");
+  chan = make_channel("http://localhost:" + port + "/test_5");
   chan.asyncOpen(new MyListener(received_partial_5));
 
   // Case 6: response is not resumable (drop the Accept-Ranges header)
-  var chan = make_channel("http://localhost:" + port + "/test_6");
+  chan = make_channel("http://localhost:" + port + "/test_6");
   chan.asyncOpen(new MyListener(received_partial_6));
 
   // Case 7: a basic positive test
-  var chan = make_channel("http://localhost:" + port + "/test_7");
+  chan = make_channel("http://localhost:" + port + "/test_7");
   chan.asyncOpen(new MyListener(received_partial_7));
 
   // Case 8: check that mismatched 206 and 200 sizes throw error
-  var chan = make_channel("http://localhost:" + port + "/test_8");
+  chan = make_channel("http://localhost:" + port + "/test_8");
   chan.asyncOpen(new MyListener(received_partial_8));
 
   // Case 9: check that weak etag is not used for a range request
-  var chan = make_channel("http://localhost:" + port + "/test_9");
+  chan = make_channel("http://localhost:" + port + "/test_9");
   chan.asyncOpen(new MyListener(received_partial_9));
 
   do_test_pending();

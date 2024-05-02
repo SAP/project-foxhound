@@ -14,15 +14,30 @@ UNIFIED_SOURCES += [
     "RelativeTimeline.cpp",
 ]
 
+SPHINX_TREES["resistfingerprinting"] = "docs"
+
 FINAL_LIBRARY = "xul"
 
-EXPORTS += ["nsRFPService.h"]
+EXPORTS += ["nsRFPService.h", "RFPTargets.inc"]
 EXPORTS.mozilla += [
     "RelativeTimeline.h",
+    "RFPTargetIPCUtils.h",
 ]
 
 EXTRA_JS_MODULES += [
-    "RFPHelper.jsm",
+    "FingerprintingWebCompatService.sys.mjs",
+    "RFPHelper.sys.mjs",
 ]
 
-REQUIRES_UNIFIED_BUILD = True
+XPIDL_MODULE = "toolkit_resistfingerprinting"
+
+XPCOM_MANIFESTS += [
+    "components.conf",
+]
+
+XPIDL_SOURCES += [
+    "nsIFingerprintingWebCompatService.idl",
+    "nsIRFPService.idl",
+]
+
+include("/ipc/chromium/chromium-config.mozbuild")

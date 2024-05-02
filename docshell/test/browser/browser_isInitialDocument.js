@@ -10,7 +10,7 @@ function wasInitialDocumentObserver(subject) {
   subject._test_wasInitialDocument = subject.isInitialDocument;
 }
 Services.obs.addObserver(wasInitialDocumentObserver, "window-global-created");
-SimpleTest.registerCleanupFunction(function() {
+SimpleTest.registerCleanupFunction(function () {
   Services.obs.removeObserver(
     wasInitialDocumentObserver,
     "window-global-created"
@@ -29,6 +29,7 @@ add_task(async function new_about_blank_tab() {
 
 add_task(async function iframe_initial_about_blank() {
   await BrowserTestUtils.withNewTab(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/document-builder.sjs?html=com",
     async browser => {
       info("Create an iframe without any explicit location");
@@ -83,6 +84,7 @@ add_task(async function iframe_initial_about_blank() {
         await new Promise(resolve => {
           iframe.addEventListener("load", resolve, { once: true });
           iframe.src =
+            // eslint-disable-next-line @microsoft/sdl/no-insecure-url
             "http://example.org/document-builder.sjs?html=org-iframe";
           content.document.body.appendChild(iframe);
         });
@@ -163,11 +165,13 @@ add_task(async function window_open() {
   }
 
   await BrowserTestUtils.withNewTab(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/document-builder.sjs?html=com",
     async browser => {
       info("Use window.open() with cross-origin document");
       await testWindowOpen({
         browser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         args: ["http://example.org/document-builder.sjs?html=org-popup"],
         isCrossOrigin: true,
         willLoad: true,
@@ -176,6 +180,7 @@ add_task(async function window_open() {
       info("Use window.open() with same-origin document");
       await testWindowOpen({
         browser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         args: ["http://example.com/document-builder.sjs?html=com-popup"],
         isCrossOrigin: false,
         willLoad: true,
@@ -202,6 +207,7 @@ add_task(async function window_open() {
 
 add_task(async function document_open() {
   await BrowserTestUtils.withNewTab(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/document-builder.sjs?html=com",
     async browser => {
       is(browser.browsingContext.currentWindowGlobal.isInitialDocument, false);
@@ -238,20 +244,14 @@ add_task(async function document_open() {
           false,
           "Is no longer an initial document after calling document.open"
         );
-        let [
-          afterIsInitial,
-          afterWasInitial,
-          afterID,
-        ] = await SpecialPowers.spawnChrome([browsingContext], bc => [
-          bc.currentWindowGlobal.isInitialDocument,
-          bc.currentWindowGlobal._test_wasInitialDocument,
-          bc.currentWindowGlobal.innerWindowId,
-        ]);
-        let [
-          beforeIsInitial,
-          beforeWasInitial,
-          beforeID,
-        ] = await beforeOpenParentPromise;
+        let [afterIsInitial, afterWasInitial, afterID] =
+          await SpecialPowers.spawnChrome([browsingContext], bc => [
+            bc.currentWindowGlobal.isInitialDocument,
+            bc.currentWindowGlobal._test_wasInitialDocument,
+            bc.currentWindowGlobal.innerWindowId,
+          ]);
+        let [beforeIsInitial, beforeWasInitial, beforeID] =
+          await beforeOpenParentPromise;
         is(beforeIsInitial, true, "Should be initial before in the parent");
         is(beforeWasInitial, true, "Was initial before in the parent");
         is(afterIsInitial, false, "Should not be initial after in the parent");
@@ -305,7 +305,9 @@ add_task(async function windowless_browser() {
       Ci.nsIWebProgress.NOTIFY_ALL
     );
   });
-  browser.loadURI("about:blank", { triggeringPrincipal: principal });
+  browser.loadURI(Services.io.newURI("about:blank"), {
+    triggeringPrincipal: principal,
+  });
   info("Wait for the location change");
   await onLocationChange;
   is(

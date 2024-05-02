@@ -10,7 +10,6 @@ provides a base class for fx desktop builds
 author: Jordan Lund
 
 """
-from __future__ import absolute_import
 import copy
 import json
 import os
@@ -21,6 +20,8 @@ import uuid
 from datetime import datetime
 
 import six
+import yaml
+from yaml import YAMLError
 
 from mozharness.base.config import DEFAULT_CONFIG_PATH, BaseConfig, parse_config_file
 from mozharness.base.errors import MakefileErrorList
@@ -311,7 +312,6 @@ class BuildOptionParser(object):
         "x86-beta-debug": path_base + "%s_x86_beta_debug.py",
         "x86-debug": path_base + "%s_x86_debug.py",
         "x86-lite-debug": path_base + "%s_x86_debug_lite.py",
-        "x86-fuzzing-debug": path_base + "%s_x86_fuzzing_debug.py",
         "x86-profile-generate": path_base + "%s_x86_profile_generate.py",
         "x86_64": path_base + "%s_x86_64.py",
         "x86_64-lite": path_base + "%s_x86_64_lite.py",
@@ -321,7 +321,6 @@ class BuildOptionParser(object):
         "x86_64-lite-debug": path_base + "%s_x86_64_debug_lite.py",
         "x86_64-debug-isolated-process": path_base
         + "%s_x86_64_debug_isolated_process.py",
-        "x86_64-fuzzing-asan": path_base + "%s_x86_64_fuzzing_asan.py",
         "x86_64-profile-generate": path_base + "%s_x86_64_profile_generate.py",
         "arm-partner-sample1": path_base + "%s_arm_partner_sample1.py",
         "aarch64": path_base + "%s_aarch64.py",
@@ -730,14 +729,18 @@ items from that key's value."
 
         # print its contents
         content = self.read_from_file(abs_mozconfig_path, error_level=FATAL)
+
+        extra_content = self.config.get("extra_mozconfig_content")
+        if extra_content:
+            content += "\n".join(extra_content)
+
         self.info("mozconfig content:")
         self.info(content)
 
         # finally, copy the mozconfig to a path that 'mach build' expects it to
         # be
-        self.copyfile(
-            abs_mozconfig_path, os.path.join(dirs["abs_src_dir"], ".mozconfig")
-        )
+        with open(os.path.join(dirs["abs_src_dir"], ".mozconfig"), "w") as fh:
+            fh.write(content)
 
     def _run_tooltool(self):
         env = self.query_build_env()
@@ -808,13 +811,13 @@ items from that key's value."
         self.preflight_build()
         self._run_mach_command_in_build_env(["configure"])
         self._run_mach_command_in_build_env(
-            ["static-analysis", "autotest", "--intree-tool"], use_subprocess=True
+            ["static-analysis", "autotest", "--intree-tool"]
         )
 
     def _query_mach(self):
         return [sys.executable, "mach"]
 
-    def _run_mach_command_in_build_env(self, args, use_subprocess=False):
+    def _run_mach_command_in_build_env(self, args):
         """Run a mach command in a build context."""
         env = self.query_build_env()
         env.update(self.query_mach_build_env())
@@ -823,23 +826,13 @@ items from that key's value."
 
         mach = self._query_mach()
 
-        # XXX See bug 1483883
-        # Work around an interaction between Gradle and mozharness
-        # Not using `subprocess` causes gradle to hang
-        if use_subprocess:
-            import subprocess
-
-            return_code = subprocess.call(
-                mach + ["--log-no-times"] + args, env=env, cwd=dirs["abs_src_dir"]
-            )
-        else:
-            return_code = self.run_command(
-                command=mach + ["--log-no-times"] + args,
-                cwd=dirs["abs_src_dir"],
-                env=env,
-                error_list=MakefileErrorList,
-                output_timeout=self.config.get("max_build_output_timeout", 60 * 40),
-            )
+        return_code = self.run_command(
+            command=mach + ["--log-no-times"] + args,
+            cwd=dirs["abs_src_dir"],
+            env=env,
+            error_list=MakefileErrorList,
+            output_timeout=self.config.get("max_build_output_timeout", 60 * 40),
+        )
 
         if return_code:
             self.return_code = self.worst_level(
@@ -1008,16 +1001,27 @@ items from that key's value."
         return False
 
     def _load_build_resources(self):
-        p = self.config.get("build_resources_path") % self.query_abs_dirs()
+        p = self.config.get("profile_build_resources_path") % self.query_abs_dirs()
         if not os.path.exists(p):
-            self.info("%s does not exist; not loading build resources" % p)
+            self.info("%s does not exist; not loading build profile data" % p)
             return None
 
         with open(p, "r") as fh:
-            resources = json.load(fh)
+            profile = json.load(fh)
 
-        if "duration" not in resources:
-            self.info("resource usage lacks duration; ignoring")
+        try:
+            thread = profile.get("threads", [])[0]
+            times = thread.get("samples", {}).get("time", [])
+            duration = times[-1] / 1000
+            markers = thread["markers"]
+            phases = {}
+            for n, marker in enumerate(markers["data"]):
+                if marker.get("type") == "Phase":
+                    phases[marker["phase"]] = (
+                        markers["endTime"][n] - markers["startTime"][n]
+                    ) / 1000
+        except Exception:
+            self.info("build profile lacks data; ignoring")
             return None
 
         # We want to always collect metrics. But alerts with sccache enabled
@@ -1026,19 +1030,17 @@ items from that key's value."
 
         data = {
             "name": "build times",
-            "value": resources["duration"],
+            "value": duration,
             "extraOptions": self.perfherder_resource_options(),
             "shouldAlert": should_alert,
             "subtests": [],
         }
 
-        for phase in resources["phases"]:
-            if "duration" not in phase:
-                continue
+        for name, duration in phases.items():
             data["subtests"].append(
                 {
-                    "name": phase["name"],
-                    "value": phase["duration"],
+                    "name": name,
+                    "value": duration,
                 }
             )
 
@@ -1046,11 +1048,20 @@ items from that key's value."
 
     def _load_sccache_stats(self):
         stats_file = os.path.join(
-            self.query_abs_dirs()["abs_obj_dir"], "sccache-stats.json"
+            self.query_abs_dirs()["base_work_dir"], "artifacts", "sccache-stats.json"
         )
         if not os.path.exists(stats_file):
-            self.info("%s does not exist; not loading sccache stats" % stats_file)
-            return
+            msg = "%s does not exist; not loading sccache stats" % stats_file
+            if (
+                os.environ.get("USE_SCCACHE") == "1"
+                and not os.environ.get("SCCACHE_DISABLE") == "1"
+            ):
+                # We know we use sccache but we didn't find it.
+                # Fails to make sure the dev knows it
+                self.fatal(msg)
+            else:
+                self.info(msg)
+                return
 
         with open(stats_file, "r") as fh:
             stats = json.load(fh)
@@ -1424,7 +1435,7 @@ items from that key's value."
 
         env = self.query_build_env()
 
-        grcov_path = os.path.join(os.environ["MOZ_FETCHES_DIR"], "grcov")
+        grcov_path = os.path.join(os.environ["MOZ_FETCHES_DIR"], "grcov", "grcov")
         if not os.path.isabs(grcov_path):
             grcov_path = os.path.join(base_work_dir, grcov_path)
         if self._is_windows():
@@ -1436,3 +1447,89 @@ items from that key's value."
             os.path.join("testing", "parse_build_tests_ccov.py"),
         ]
         self.run_command(command=cmd, cwd=topsrcdir, env=env, halt_on_failure=True)
+
+    @PostScriptRun
+    def _relocate_artifacts(self):
+        """Move certain artifacts out of the default upload directory.
+
+        These artifacts will be moved to a secondary directory called `cidata`.
+        Then they will be uploaded with different expiration values."""
+        dirs = self.query_abs_dirs()
+        topsrcdir = dirs["abs_src_dir"]
+        base_work_dir = dirs["base_work_dir"]
+
+        build_platform = os.environ.get("MOZ_ARTIFACT_PLATFORM")
+        if build_platform is not None:
+            build_platform = build_platform.lower()
+        else:
+            return
+        try:
+            upload_dir = os.environ["UPLOAD_DIR"]
+        except KeyError:
+            self.fatal("The env. var. UPLOAD_DIR is not set.")
+
+        artifact_yml_path = os.path.join(
+            topsrcdir, "taskcluster/gecko_taskgraph/transforms/artifacts.yml"
+        )
+
+        upload_short_dir = os.path.join(base_work_dir, "cidata")
+
+        # Choose artifacts based on build platform
+        if build_platform.startswith("win"):
+            main_platform = "win"
+        elif build_platform.startswith("linux"):
+            main_platform = "linux"
+        elif build_platform.startswith("mac"):
+            main_platform = "macos"
+        elif build_platform.startswith("android"):
+            if build_platform == "android-geckoview-docs":
+                return
+            main_platform = "android"
+        else:
+            err = "Build platform {} didn't start with 'mac', 'linux', 'win', or 'android'".format(
+                build_platform
+            )
+            self.fatal(err)
+        try:
+            with open(artifact_yml_path) as artfile:
+                arts = []
+                platforms = yaml.safe_load(artfile.read())
+                for artifact in platforms[main_platform]:
+                    arts.append(artifact)
+        except FileNotFoundError:
+            self.fatal("Could not read artifacts.yml; file not found. Exiting.")
+        except PermissionError:
+            self.fatal("Could not read artifacts.yml; permission error.")
+        except YAMLError as ye:
+            self.fatal(f"Failed to parse artifacts.yml with error:\n{ye}")
+
+        try:
+            os.makedirs(upload_short_dir)
+        except FileExistsError:
+            pass
+        except PermissionError:
+            self.fatal(f'Failed to create dir. "{upload_short_dir}"; permission error.')
+
+        for art in arts:
+            source_file = os.path.join(upload_dir, art)
+            if not os.path.exists(source_file):
+                self.info(
+                    f"The artifact {source_file} is not present in this build. Skipping"
+                )
+                continue
+            dest_file = os.path.join(upload_short_dir, art)
+            try:
+                os.rename(source_file, dest_file)
+                if os.path.exists(dest_file):
+                    self.info(
+                        f"Successfully moved artifact {source_file} to {dest_file}"
+                    )
+                else:
+                    self.fatal(
+                        f"Move of {source_file} to {dest_file} was not successful."
+                    )
+            except (PermissionError, FileNotFoundError) as err:
+                self.fatal(
+                    f'Failed to move file "{art}" from {source_file} to {dest_file}:\n{err}'
+                )
+                continue

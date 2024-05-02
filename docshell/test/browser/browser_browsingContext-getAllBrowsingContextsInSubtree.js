@@ -13,13 +13,14 @@ async function addFrame(url) {
   return iframe.browsingContext;
 }
 
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
     async browser => {
       // Add 15 example.com frames to the toplevel document.
       let frames = await Promise.all(
         Array.from({ length: 15 }).map(_ =>
+          // eslint-disable-next-line @microsoft/sdl/no-insecure-url
           SpecialPowers.spawn(browser, ["http://example.com/"], addFrame)
         )
       );
@@ -27,6 +28,7 @@ add_task(async function() {
       // Add an example.org subframe to each example.com frame.
       let subframes = await Promise.all(
         Array.from({ length: 15 }).map((_, i) =>
+          // eslint-disable-next-line @microsoft/sdl/no-insecure-url
           SpecialPowers.spawn(frames[i], ["http://example.org/"], addFrame)
         )
       );
