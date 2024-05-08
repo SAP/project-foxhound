@@ -847,8 +847,8 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
 
   res.setNumber(lhs.toNumber() - rhs.toNumber());
   // TaintFox: Taint propagation when subtracting tainted numbers.
-  if (isAnyTaintedNumber(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  if (isAnyTaintedValue(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -871,8 +871,8 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
 
   res.setNumber(lhs.toNumber() * rhs.toNumber());
   // TaintFox: Taint propagation when multiplying tainted numbers.
-  if (isAnyTaintedNumber(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  if (isAnyTaintedValue(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -895,8 +895,8 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
 
   res.setNumber(NumberDiv(lhs.toNumber(), rhs.toNumber()));
   // TaintFox: Taint propagation when dividing tainted numbers.
-  if (isAnyTaintedNumber(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  if (isAnyTaintedValue(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
   }
   return true;
 }
