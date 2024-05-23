@@ -12171,6 +12171,12 @@ void CodeGenerator::visitLinearizeString(LLinearizeString* lir) {
   auto* ool = oolCallVM<Fn, jit::LinearizeForCharAccess>(
       lir, ArgList(str), StoreRegisterTo(output));
 
+  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(str, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr),
+                 ool->entry());
+
   masm.branchIfRope(str, ool->entry());
 
   masm.movePtr(str, output);
