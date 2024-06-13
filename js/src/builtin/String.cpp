@@ -3192,7 +3192,25 @@ static JSLinearString* TrimString(JSContext* cx, JSString* str, bool trimStart,
                &end);
   }
 
-  return NewDependentString(cx, linear, begin, end - begin);
+  JSLinearString* result = NewDependentString(cx, linear, begin, end - begin);
+
+  // TaintFox: Add trim operation to current taint flow.
+  // the acutal trimming of taint ranges has been done in
+  // NewDependentString (StringType-inl.h, JSDependentString::init)
+  if (result && result->isTainted()) {
+    AutoCheckCannotGC nogc;
+    if (trimStart && trimEnd) {
+      result->taint().extend(TaintOperationFromContext(cx, "trim", true));
+    } else if (trimStart) {
+      result->taint().extend(TaintOperationFromContext(cx, "trimStart", true));
+    } else if (trimEnd) {
+      result->taint().extend(TaintOperationFromContext(cx, "trimEnd", true));
+    } else {
+      result->taint().extend(TaintOperationFromContext(cx, "trim", true));
+    }
+  }
+
+  return result;
 }
 
 JSString* js::StringTrim(JSContext* cx, HandleString string) {
@@ -3217,22 +3235,6 @@ static bool TrimString(JSContext* cx, const CallArgs& args, const char* funName,
   JSLinearString* result = TrimString(cx, str, trimStart, trimEnd);
   if (!result) {
     return false;
-  }
-
-  // TaintFox: Add trim operation to current taint flow.
-  // the acutal trimming of taint ranges has been done in
-  // NewDependentString (StringType-inl.h, JSDependentString::init)
-  if (result->isTainted()) {
-    AutoCheckCannotGC nogc;
-    if (trimStart && trimEnd) {
-      result->taint().extend(TaintOperationFromContext(cx, "trim", true));
-    } else if (trimStart) {
-      result->taint().extend(TaintOperationFromContext(cx, "trimLeft", true));
-    } else if (trimEnd) {
-      result->taint().extend(TaintOperationFromContext(cx, "trimRight", true));
-    } else {
-      result->taint().extend(TaintOperationFromContext(cx, "trim", true));
-    }
   }
 
   args.rval().setString(result);

@@ -13056,6 +13056,12 @@ void CodeGenerator::visitStringTrimStartIndex(LStringTrimStartIndex* lir) {
   Register string = ToRegister(lir->string());
   Register output = ToRegister(lir->output());
 
+  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  bailoutCmpPtr(Assembler::NotEqual,
+                Address(string, JSString::offsetOfTaint()),
+                ImmPtr(nullptr),
+                lir->snapshot());
+
   auto volatileRegs = liveVolatileRegs(lir);
   volatileRegs.takeUnchecked(output);
 
@@ -13074,6 +13080,12 @@ void CodeGenerator::visitStringTrimEndIndex(LStringTrimEndIndex* lir) {
   Register string = ToRegister(lir->string());
   Register start = ToRegister(lir->start());
   Register output = ToRegister(lir->output());
+
+  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  bailoutCmpPtr(Assembler::NotEqual,
+                Address(string, JSString::offsetOfTaint()),
+                ImmPtr(nullptr),
+                lir->snapshot());
 
   auto volatileRegs = liveVolatileRegs(lir);
   volatileRegs.takeUnchecked(output);

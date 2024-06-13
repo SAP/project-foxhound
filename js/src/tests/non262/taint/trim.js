@@ -7,13 +7,13 @@ function trimTaintTest() {
     assertEqualTaint(trimMe.trim(), str);
     assertNotHasTaintOperation(trimMe, 'trim');
 
-    assertLastTaintOperationEquals(trimMe.trimLeft(), 'trimLeft');
+    assertLastTaintOperationEquals(trimMe.trimStart(), 'trimStart');
     assertEqualTaint(trimMe.trimLeft(), str+rpad);
-    assertNotHasTaintOperation(trimMe, 'trimLeft');
+    assertNotHasTaintOperation(trimMe, 'trimStart');
 
-    assertLastTaintOperationEquals(trimMe.trimRight(), 'trimRight');
+    assertLastTaintOperationEquals(trimMe.trimEnd(), 'trimEnd');
     assertEqualTaint(trimMe.trimRight(), lpad+str);
-    assertNotHasTaintOperation(trimMe, 'trimRight');
+    assertNotHasTaintOperation(trimMe, 'trimEnd');
 }
 
 function trimLeftTaintTest() {
@@ -22,9 +22,10 @@ function trimLeftTaintTest() {
   var rpad = "  " + taint("           ") + " ";
   var trimMe = lpad + str + rpad;
 
-  assertLastTaintOperationEquals(trimMe.trimLeft(), 'trimLeft');
+  // trimLeft is now deprecated and just redirected to trimStart
+  assertLastTaintOperationEquals(trimMe.trimLeft(), 'trimStart');
   assertEqualTaint(trimMe.trimLeft(), str+rpad);
-  assertNotHasTaintOperation(trimMe, 'trimLeft');
+  assertNotHasTaintOperation(trimMe, 'trimStart');
 }
 
 function trimRightTaintTest() {
@@ -33,9 +34,10 @@ function trimRightTaintTest() {
   var rpad = "  " + taint("           ") + " ";
   var trimMe = lpad + str + rpad;
 
-  assertLastTaintOperationEquals(trimMe.trimRight(), 'trimRight');
+  // trimRight is now deprecated and just redirected to trimEnd
+  assertLastTaintOperationEquals(trimMe.trimRight(), 'trimEnd');
   assertEqualTaint(trimMe.trimRight(), lpad+str);
-  assertNotHasTaintOperation(trimMe, 'trimRight');
+  assertNotHasTaintOperation(trimMe, 'trimEnd');
 }
 
 function trimStartTaintTest() {
@@ -60,7 +62,7 @@ function trimEndTaintTest() {
   assertNotHasTaintOperation(trimMe, 'trimEnd');
 }
 
-//runTaintTest(trimTaintTest);
+runTaintTest(trimTaintTest);
 runTaintTest(trimLeftTaintTest);
 runTaintTest(trimRightTaintTest);
 runTaintTest(trimStartTaintTest);

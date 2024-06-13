@@ -222,22 +222,25 @@ if (typeof assertNotHasTaintOperation === 'undefined') {
 
 if (typeof assertLastTaintOperationEquals === 'undefined') {
     var assertLastTaintOperationEquals = function(str, opName) {
+        var lastOp = "Unknown";
         for (var i = 0; i < str.taint.length; i++) {
             var range = str.taint[i];
 
             // Quirk: ignore "function call arguments" nodes for now...
             var index = 0;
             while (index < range.flow.length &&
-		   range.flow[index].operation == "function" &&
-		   range.flow[index].arguments[0].startsWith("assert"))
+		        range.flow[index].operation == "function" &&
+		        range.flow[index].arguments[0].startsWith("assert")) {
                 index++;
+            }
 
             var node = range.flow[index];
             if (node.operation === opName) {
                 return true;
             }
+            lastOp = node.operation;
         }
-        throw Error("String '" + str + "' does not contain \"" + opName + "\" as last taint operation. Taint: " + JSON.stringify(str.taint));
+        throw Error("String '" + str + "' does not contain \"" + opName + "\" as last taint operation (\"" + lastOp + "\"). Taint: " + JSON.stringify(str.taint));
     }
 }
 
@@ -247,7 +250,7 @@ if (typeof runTaintTest === 'undefined') {
         // Separate function so it's visible in the backtrace
         var runJITTest = function(doTest) {
             // Force JIT compilation
-            for (var i = 0; i < 100; i++) {
+            for (var i = 0; i < 1000; i++) {
                 //console.log(i);
                 doTest();
             }
