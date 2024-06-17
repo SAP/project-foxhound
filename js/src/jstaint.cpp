@@ -380,10 +380,8 @@ bool JS::isTaintedValue(const Value& val)
 {
     if (val.isObject() && val.toObject().is<NumberObject>()) {
         NumberObject& number = val.toObject().as<NumberObject>();
-        printf("isTaintedNum!!!!\n");
         return number.isTainted();
     } else if (val.isString()) {
-        printf("isTaintedStr!!!!\n");
         return val.toString()->isTainted();
     }
     return false;
