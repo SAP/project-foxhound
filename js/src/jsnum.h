@@ -13,6 +13,8 @@
 
 #include <limits>
 
+#include "jstaint.h"
+
 #include "NamespaceImports.h"
 
 #include "js/Conversions.h"
@@ -262,6 +264,24 @@ bool ToNumericSlow(JSContext* cx, JS::MutableHandleValue vp);
     return true;
   }
   return ToNumericSlow(cx, vp);
+}
+
+// Additional function to also convert tainted numbers to real numerics (to toNumber() works as expected)
+[[nodiscard]] MOZ_ALWAYS_INLINE bool ToNumericUnboxTainted(JSContext* cx,
+                                                           JS::MutableHandleValue vp) {
+  if (!ToNumeric(cx, vp)) {
+    return false;
+  }
+
+  if (JS::isTaintedNumber(vp)) {
+    // Also unbox the tainted numbers
+    double d;
+    if (!ToNumber(cx, vp, &d))
+      return false;
+    vp.setNumber(d);
+  }
+
+  return true;
 }
 
 bool ToInt32OrBigIntSlow(JSContext* cx, JS::MutableHandleValue vp);

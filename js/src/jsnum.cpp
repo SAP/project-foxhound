@@ -2227,7 +2227,7 @@ bool js::ToNumericSlow(JSContext* cx, MutableHandleValue vp) {
   MOZ_ASSERT(!vp.isNumeric());
 
   // Step 1.
-  if (!vp.isPrimitive()) {
+  if (!vp.isPrimitive() && !isTaintedNumber(vp)) {
     if (!ToPrimitive(cx, JSTYPE_NUMBER, vp)) {
       return false;
     }
@@ -2361,7 +2361,7 @@ bool js::ToInt32OrBigIntSlow(JSContext* cx, MutableHandleValue vp) {
     return true;
   }
 
-  if (!ToNumeric(cx, vp)) {
+  if (!ToNumericUnboxTainted(cx, vp)) {
     return false;
   }
 

@@ -315,7 +315,8 @@ static MOZ_ALWAYS_INLINE bool NegOperation(JSContext* cx,
     double d;
     if (!ToNumber(cx, val, &d))
       return false;
-    res.setObject(*NumberObject::createTainted(cx, d, getNumberTaint(val)));
+    res.setObject(*NumberObject::createTainted(cx, -d, getNumberTaint(val)));
+    return true;
   }
 
   int32_t i;
@@ -349,6 +350,15 @@ static MOZ_ALWAYS_INLINE bool IncOperation(JSContext* cx, HandleValue val,
     return true;
   }
 
+  if (isTaintedNumber(val)) {
+    double d;
+    if (!ToNumber(cx, val, &d)) {
+      return false;
+    }
+    res.setObject(*NumberObject::createTainted(cx, d + 1, getNumberTaint(val)));
+    return true;
+  }
+
   MOZ_ASSERT(val.isBigInt(), "+1 only callable on result of JSOp::ToNumeric");
   return BigInt::incValue(cx, val, res);
 }
@@ -363,6 +373,15 @@ static MOZ_ALWAYS_INLINE bool DecOperation(JSContext* cx, HandleValue val,
 
   if (val.isNumber()) {
     res.setNumber(val.toNumber() - 1);
+    return true;
+  }
+
+  if (isTaintedNumber(val)) {
+    double d;
+    if (!ToNumber(cx, val, &d)) {
+      return false;
+    }
+    res.setObject(*NumberObject::createTainted(cx, d - 1, getNumberTaint(val)));
     return true;
   }
 
@@ -837,13 +856,15 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
   RootedValue origLhs(cx, lhs);
   RootedValue origRhs(cx, rhs);
 
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
   if (lhs.isBigInt() || rhs.isBigInt()) {
     return BigInt::subValue(cx, lhs, rhs, res);
   }
+
+
 
   res.setNumber(lhs.toNumber() - rhs.toNumber());
   // TaintFox: Taint propagation when subtracting tainted numbers.
@@ -861,7 +882,7 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
   RootedValue origLhs(cx, lhs);
   RootedValue origRhs(cx, rhs);
 
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -885,7 +906,7 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
   RootedValue origLhs(cx, lhs);
   RootedValue origRhs(cx, rhs);
 
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -917,7 +938,7 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
     return true;
   }
 
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -941,7 +962,7 @@ static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
   RootedValue origLhs(cx, lhs);
   RootedValue origRhs(cx, rhs);
 
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 

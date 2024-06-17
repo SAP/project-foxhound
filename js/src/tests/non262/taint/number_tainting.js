@@ -6,6 +6,8 @@ function numberTaintingTest() {
 
     //
     // Basic arithmetic tests
+    assertNumberTainted(a + 1);
+
     assertNumberTainted(a + 13.37);
     assertNumberTainted(13.37 + a);
     assertNumberTainted(a + b);
@@ -19,7 +21,9 @@ function numberTaintingTest() {
     assertEq(a - b == 42 - 13.37, true);
 
     assertNumberTainted(a * 13.37);
+    assertEq(a * 13.37, 561.54);
     assertNumberTainted(13.37 * a);
+    assertEq(13.37 * a, 13.37 * 42);
     assertNumberTainted(a * b);
     assertEq(a * b, 42 * 13.37);
     assertEq(a * b == 42 * 13.37, true);
@@ -41,22 +45,43 @@ function numberTaintingTest() {
     assertEq(a ** b, 42 ** 13.37);
     assertEq(a ** b == 42 ** 13.37, true);
 
+}
 
-    //
+function incrementNumberTaintingTest() {
+
     // Number increment/decrement
-    assertNumberTainted(a++);
+    var a = taint(42);
     assertNumberTainted(a);
+    assertNumberTainted(a++);
+    assertEq(43, a);
     assertNumberTainted(a--);
+    assertEq(42, a);
     assertNumberTainted(a);
     assertNumberTainted(++a);
+    assertEq(43, a);
     assertNumberTainted(a);
     assertNumberTainted(--a);
+    assertEq(42, a);
     assertNumberTainted(a);
 
-    
+    // Number increment/decrement
+    var b = taint(3.14159);
+    assertNumberTainted(b);
+    assertNumberTainted(b++);
+    assertNumberTainted(b--);
+    assertNumberTainted(b);
+    assertNumberTainted(++b);
+    assertNumberTainted(b);
+    assertNumberTainted(--b);
+    assertNumberTainted(b);
+
+}
+
+function bitwiseNumberTaintingTest() {
     //
     // Bitwise operations
-    b = taint(3);
+    var a = taint(42);
+    var b = taint(3);
     assertNumberTainted(a << 1);
     assertNumberTainted(a << b);
     assertEq(a << b, 42 << 3);
@@ -91,6 +116,8 @@ function numberTaintingTest() {
 }
 
 runTaintTest(numberTaintingTest);
+runTaintTest(incrementNumberTaintingTest);
+runTaintTest(bitwiseNumberTaintingTest);
 
 if (typeof reportCompare === 'function')
   reportCompare(true, true);

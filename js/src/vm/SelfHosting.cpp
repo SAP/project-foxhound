@@ -1883,10 +1883,10 @@ static bool taint_getNumberObjectValueIfTainted(JSContext* cx, unsigned argc,
   // String, operation, args...
   CallArgs args = CallArgsFromVp(argc, vp);
   if (JS::isTaintedNumber(args[0])) {
-    if (!ToNumeric(cx, args[0])) {
+    double value;
+    if (!ToNumber(cx, args[0], &value)) {
       return false;
     }
-    auto value = args[0].toNumber();
     args.rval().setNumber(value);
   } else {
     args.rval().set(args[0]);
