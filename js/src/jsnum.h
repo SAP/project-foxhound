@@ -13,6 +13,8 @@
 
 #include <limits>
 
+#include "jstaint.h"
+
 #include "NamespaceImports.h"
 
 #include "js/Conversions.h"
@@ -28,6 +30,10 @@ class TaggedParserAtomIndex;
 }  // namespace frontend
 
 class GlobalObject;
+
+// TaintFox: Exported for the js shell: taint(number).
+bool Number_tainted(JSContext* cx, unsigned argc, Value* vp);
+
 class StringBuffer;
 
 [[nodiscard]] extern bool InitRuntimeNumberState(JSRuntime* rt);
@@ -232,9 +238,10 @@ extern bool NumberParseInt(JSContext* cx, JS::HandleString str, int32_t radix,
                            JS::MutableHandleValue result);
 
 /* ES5 9.3 ToNumber, overwriting *vp with the appropriate number value. */
+
 [[nodiscard]] MOZ_ALWAYS_INLINE bool ToNumber(JSContext* cx,
                                               JS::MutableHandleValue vp) {
-  if (vp.isNumber()) {
+  if (vp.isNumber() || isTaintedNumber(vp)) {
     return true;
   }
   double d;
@@ -257,6 +264,24 @@ bool ToNumericSlow(JSContext* cx, JS::MutableHandleValue vp);
     return true;
   }
   return ToNumericSlow(cx, vp);
+}
+
+// Additional function to also convert tainted numbers to real numerics (to toNumber() works as expected)
+[[nodiscard]] MOZ_ALWAYS_INLINE bool ToNumericUnboxTainted(JSContext* cx,
+                                                           JS::MutableHandleValue vp) {
+  if (!ToNumeric(cx, vp)) {
+    return false;
+  }
+
+  if (JS::isTaintedNumber(vp)) {
+    // Also unbox the tainted numbers
+    double d;
+    if (!ToNumber(cx, vp, &d))
+      return false;
+    vp.setNumber(d);
+  }
+
+  return true;
 }
 
 bool ToInt32OrBigIntSlow(JSContext* cx, JS::MutableHandleValue vp);

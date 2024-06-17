@@ -22,7 +22,9 @@ enum AudioContextState {
 [Exposed=Window]
 interface BaseAudioContext : EventTarget {
     readonly        attribute AudioDestinationNode destination;
+    [TaintSource]
     readonly        attribute float                sampleRate;
+    [TaintSource]
     readonly        attribute double               currentTime;
     readonly        attribute AudioListener        listener;
     readonly        attribute AudioContextState    state;

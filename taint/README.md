@@ -83,6 +83,9 @@ going to [](about:config) and looking for the ```dom.storage.next_gen``` option.
 TODO: intercept the local storage call and add the taint information to storage
 as well (e.g. via JSON?)
 
+#### WebIDL Sources
+It is now possible to add taint sources to WebIDL getters by adding the TaintSource attribute.
+See dom/webidl/Screen.webidl for an example.
 
 ### Sinks
 

@@ -9,15 +9,22 @@
 
 [Exposed=Window]
 interface VisualViewport : EventTarget {
+  [TaintSource]
   readonly attribute double offsetLeft;
+  [TaintSource]
   readonly attribute double offsetTop;
 
+  [TaintSource]
   readonly attribute double pageLeft;
+  [TaintSource]
   readonly attribute double pageTop;
 
+  [TaintSource]
   readonly attribute double width;
+  [TaintSource]
   readonly attribute double height;
 
+  [TaintSource]
   readonly attribute double scale;
 
   attribute EventHandler onresize;

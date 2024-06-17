@@ -19,6 +19,7 @@
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
+#include "vm/NumberObject.h"
 #include "vm/StringType.h"
 
 using namespace JS;
@@ -362,12 +363,88 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
   for (unsigned i = 0; i < args.length(); i++) {
     if (args[i].isString()) {
       RootedString arg(cx, args[i].toString());
-      if (arg->isTainted()) {
-        arg->taint().extend(
-          TaintOperation("function", location,
-                         { taintarg(cx, name), sourceinfo, taintarg(cx, i), taintarg(cx, args.length()) } ));
-      }
     }
+  }
+}
+
+bool JS::isTaintedNumber(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.isTainted();
+    }
+    return false;
+}
+
+bool JS::isTaintedValue(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.isTainted();
+    } else if (val.isString()) {
+        return val.toString()->isTainted();
+    }
+    return false;
+}
+
+const TaintFlow& JS::getValueTaint(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.taint();
+    } else if (val.isString()) {
+        printf("isTaintedStr!!!!\n");
+        for (auto range: val.toString()->Taint()) {
+          return range.flow();
+        }
+    }
+    return TaintFlow::getEmptyTaintFlow();
+}
+
+const TaintFlow& JS::getNumberTaint(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.taint();
+    }
+    return TaintFlow::getEmptyTaintFlow();
+}
+
+bool JS::isAnyTaintedNumber(const Value& val1, const Value& val2)
+{
+    return isTaintedNumber(val1) || isTaintedNumber(val2);
+}
+
+bool JS::isAnyTaintedValue(const Value& val1, const Value& val2)
+{
+    return isTaintedValue(val1) || isTaintedValue(val2);
+}
+
+TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2)
+{
+  // add info for operation
+  // add getting combined taint flow 
+  if (isTaintedNumber(val1) && isTaintedNumber(val2)) {
+    return TaintFlow::append(getNumberTaint(val1), getNumberTaint(val2));
+  }
+  else if (isTaintedNumber(val1)) {
+    return getNumberTaint(val1);
+  } else {
+    return getNumberTaint(val2);
+  }
+}
+
+TaintFlow JS::getAnyValueTaint(const Value& val1, const Value& val2)
+{
+  // add info for operation
+  // add getting combined taint flow 
+  //if (isTaintedValue(val1) && isTaintedValue(val2)) {
+  //  return TaintFlow::append(getValueTaint(val1), getValueTaint(val2));
+  //} else
+  if (isTaintedValue(val1)) {
+    return getValueTaint(val1);
+  } else {
+    return getValueTaint(val2);
   }
 }
 

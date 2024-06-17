@@ -328,8 +328,8 @@ partial interface Window {
   [Throws, NeedsCallerType] undefined resizeBy(long x, long y);
 
   // viewport
-  [Replaceable, Throws] readonly attribute double innerWidth;
-  [Replaceable, Throws] readonly attribute double innerHeight;
+  [Replaceable, Throws, TaintSource] readonly attribute double innerWidth;
+  [Replaceable, Throws, TaintSource] readonly attribute double innerHeight;
 
   // viewport scrolling
   undefined scroll(unrestricted double x, unrestricted double y);
@@ -345,20 +345,20 @@ partial interface Window {
   [ChromeOnly] undefined mozScrollSnap();
   // The four properties below are double per spec at the moment, but whether
   // that will continue is unclear.
-  [Replaceable, Throws] readonly attribute double scrollX;
-  [Replaceable, Throws] readonly attribute double pageXOffset;
-  [Replaceable, Throws] readonly attribute double scrollY;
-  [Replaceable, Throws] readonly attribute double pageYOffset;
+  [Replaceable, Throws, TaintSource] readonly attribute double scrollX;
+  [Replaceable, Throws, TaintSource] readonly attribute double pageXOffset;
+  [Replaceable, Throws, TaintSource] readonly attribute double scrollY;
+  [Replaceable, Throws, TaintSource] readonly attribute double pageYOffset;
 
   // Aliases for screenX / screenY.
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenLeft;
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenTop;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenLeft;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenTop;
 
   // client
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenX;
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenY;
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double outerWidth;
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double outerHeight;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenX;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenY;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double outerWidth;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double outerHeight;
 };
 
 // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#animation-frames
@@ -429,7 +429,7 @@ partial interface Window {
   readonly attribute float mozInnerScreenX;
   [Throws, NeedsCallerType]
   readonly attribute float mozInnerScreenY;
-  [Replaceable, Throws, NeedsCallerType]
+  [Replaceable, Throws, NeedsCallerType, TaintSource]
   readonly attribute double devicePixelRatio;
 
   // Allows chrome code to convert desktop pixels to device pixels and vice

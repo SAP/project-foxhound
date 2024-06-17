@@ -52,6 +52,7 @@
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
+#include "vm/NumberObject.h"
 #include "vm/RegExpObject.h"
 #include "vm/SelfHosting.h"
 #include "vm/StaticStrings.h"
@@ -60,6 +61,7 @@
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/InlineCharBuffer-inl.h"
 #include "vm/NativeObject-inl.h"
+#include "vm/NumberObject-inl.h"
 #include "vm/StringObject-inl.h"
 #include "vm/StringType-inl.h"
 
@@ -297,9 +299,10 @@ construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
     // TODO process arguments as well
     UniqueChars op_str = JS_EncodeStringToUTF8(cx, operation);
 
-    *flow = new TaintNode(*flow, TaintOperation(op_str.get()));
-    if ((*flow)->parent())
-      (*flow)->parent()->release();
+    *flow = new TaintNode(TaintOperation(op_str.get()));
+    // Foxhound: Commented out for testing 2022-10-20
+    // if ((*flow)->parent())
+    //   (*flow)->parent()->release();
   }
 
   return true;
@@ -2173,6 +2176,13 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   RootedString str(cx);
   size_t i;
+
+  // TaintFox: try to get taint from parameter
+  SafeStringTaint parameterTaint;
+  if(args.length() != 0 && isTaintedNumber(args[0])){
+    parameterTaint.set(0, getNumberTaint(args[0]));
+  }
+
   if (args.thisv().isString() && args.length() != 0 && args[0].isInt32()) {
     str = args.thisv().toString();
     i = size_t(args[0].toInt32());
@@ -2197,10 +2207,15 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
+  // Taintfox: there is currently no branch for both the this-string and the
+  // parameter-number being tainted; should be added later once model is expanded
   str = NewDependentString(cx, str, i, 1);
   if (str->isTainted()) {
     str->taint().extend(TaintOperation("charAt", true, TaintLocationFromContext(cx), { taintarg(cx, i) }));
+  } else if(parameterTaint.hasTaint()) {
+    str->setTaint(cx,parameterTaint);
   }
+
   // Taintfox: avoid creating atoms
   //str = cx->staticStrings().getUnitStringForElement(cx, str, i);
 
@@ -2240,6 +2255,12 @@ bool js::str_charCodeAt_impl(JSContext* cx, HandleString string,
     return false;
   }
   res.setInt32(c);
+
+  // TaintFox: Taint propagation for char codes of tainted strings via charCodeAt().
+  if (string->taint().at(i)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), string->taint().at(i)));
+  }
+
   return true;
 
 out_of_range:
@@ -4348,10 +4369,13 @@ bool js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
 
   MOZ_ASSERT(args.length() <= ARGS_LENGTH_MAX);
 
+  // FoxHound: Disable optimization to simplify changes needed
+  /*
   // Optimize the single-char case.
   if (args.length() == 1) {
     return str_fromCharCode_one_arg(cx, args[0], args.rval());
   }
+  */
 
   // Optimize the case where the result will definitely fit in an inline
   // string (thin or fat) and so we don't need to malloc the chars. (We could
@@ -4376,6 +4400,13 @@ bool js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
   JSString* str = chars.toString(cx, args.length());
   if (!str) {
     return false;
+  }
+
+  // TaintFox: loop at input args, scan for tainted numbers and propagate taint to string
+  for (unsigned i = 0; i < args.length(); i++) {
+    if (isTaintedNumber(args[i])) {
+      str->taint().set(i, getNumberTaint(args[i]));
+    }
   }
 
   args.rval().setString(str);

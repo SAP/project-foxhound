@@ -20,9 +20,26 @@ inline NumberObject* NumberObject::create(JSContext* cx, double d,
     return nullptr;
   }
   obj->setPrimitiveValue(d);
+
+  // Taintfox: initialize the taint slot to null
+  obj->initReservedSlot(TAINT_SLOT, PrivateValue(nullptr));
+
   return obj;
 }
 
-}  // namespace js
+
+  
+inline NumberObject*
+NumberObject::createTainted(JSContext* cx, double d, const TaintFlow& taint, HandleObject proto /* = nullptr */)
+{
+  NumberObject* obj = create(cx, d, proto);
+  if (!obj) {
+    return nullptr;
+  }  
+  obj->setTaint(taint);
+  return obj;
+}
+
+} // namespace js
 
 #endif /* vm_NumberObject_inl_h */

@@ -32,6 +32,7 @@
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
+#include "vm/NumberObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/StringType-inl.h"
 
@@ -309,6 +310,15 @@ static MOZ_ALWAYS_INLINE bool NegOperation(JSContext* cx,
    * INT32_FITS_IN_JSVAL(-i) unless i is 0 or INT32_MIN when the
    * results, -0.0 or INT32_MAX + 1, are double values.
    */
+  // TaintFox: handle tainted numbers
+  if (isTaintedNumber(val)) {
+    double d;
+    if (!ToNumber(cx, val, &d))
+      return false;
+    res.setObject(*NumberObject::createTainted(cx, -d, getNumberTaint(val)));
+    return true;
+  }
+
   int32_t i;
   if (val.isInt32() && (i = val.toInt32()) != 0 && i != INT32_MIN) {
     res.setInt32(-i);
@@ -340,6 +350,15 @@ static MOZ_ALWAYS_INLINE bool IncOperation(JSContext* cx, HandleValue val,
     return true;
   }
 
+  if (isTaintedNumber(val)) {
+    double d;
+    if (!ToNumber(cx, val, &d)) {
+      return false;
+    }
+    res.setObject(*NumberObject::createTainted(cx, d + 1, getNumberTaint(val)));
+    return true;
+  }
+
   MOZ_ASSERT(val.isBigInt(), "+1 only callable on result of JSOp::ToNumeric");
   return BigInt::incValue(cx, val, res);
 }
@@ -354,6 +373,15 @@ static MOZ_ALWAYS_INLINE bool DecOperation(JSContext* cx, HandleValue val,
 
   if (val.isNumber()) {
     res.setNumber(val.toNumber() - 1);
+    return true;
+  }
+
+  if (isTaintedNumber(val)) {
+    double d;
+    if (!ToNumber(cx, val, &d)) {
+      return false;
+    }
+    res.setObject(*NumberObject::createTainted(cx, d - 1, getNumberTaint(val)));
     return true;
   }
 
@@ -384,6 +412,10 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
   MOZ_ASSERT(op == JSOp::GetElem || op == JSOp::GetElemSuper);
   MOZ_ASSERT_IF(op == JSOp::GetElem, obj == &receiver.toObject());
 
+  // TaintFox: tainted numbers or strings might be used for element access. In that case, also
+  // try to taint the resulting value.
+  TaintFlow taint;
+  
   do {
     uint32_t index;
     if (IsDefinitelyIndex(key, &index)) {
@@ -399,6 +431,12 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
 
     if (key.isString()) {
       JSString* str = key.toString();
+
+      // TaintFox: if tainted, just pick the first taintflow.
+      if (str->isTainted()) {
+        taint = str->taint().begin()->flow();
+      }
+
       JSAtom* name = str->isAtom() ? &str->asAtom() : AtomizeString(cx, str);
       if (!name) {
         return false;
@@ -415,6 +453,10 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
       }
     }
 
+    if (isTaintedNumber(key)) {
+      taint = getNumberTaint(key);
+    }
+    
     RootedId id(cx);
     if (!ToPropertyKey(cx, key, &id)) {
       return false;
@@ -424,6 +466,36 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
     }
   } while (false);
 
+  // TaintFox: add taint information to looked up element.
+  if (taint) {
+    if (res.isString()) {
+      // Simple heuristic. In essence we want to apply taint in case of a
+      // lookup table or similar, since there the resulting string is completely controlled
+      // if the index is controlled.
+      // On the other hand, here is an example where we probably don't want to apply taint:
+      //
+      //   var fortunes = [ //.. array of strings ];
+      //   function fortune(i) {
+      //     return fortunes[i];
+      //   }
+      //
+      // In this case we aren't able to control the content of the string but only which
+      // string is choosen, which probably isn't relevant security wise.
+      //
+      // Our heuristic here tries to differentiate both cases simply by looking at the length
+      // of the returned string.
+      if (res.toString()->length() < 3) {
+        // We only want to taint the returned string, not the element of the object.
+        RootedString str(cx, res.toString());
+        JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
+        tainted_str->setTaint(cx, SafeStringTaint(taint, str->length()));
+        res.setString(tainted_str);
+      }
+    } else if (res.isNumber()) {
+      res.setObject(*NumberObject::createTainted(cx, res.toNumber(), taint));
+    }
+  }
+  
   cx->debugOnlyCheck(res);
   return true;
 }
@@ -489,6 +561,17 @@ static MOZ_ALWAYS_INLINE bool GetPrimitiveElementOperation(
     if (!GetProperty(cx, boxed, receiver, id, res)) {
       return false;
     }
+
+    // TaintFox:Like with arrays, taint should be propagated here
+    // if the index is a tainted number and the receiver a string.
+    if (isTaintedNumber(key) && res.isString()) {
+      RootedString str(cx, res.toString());
+      SafeStringTaint taint(getNumberTaint(key), str->length());
+      JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
+      tainted_str->setTaint(cx, taint);
+      res.setString(tainted_str);
+    }
+
   } while (false);
 
   cx->debugOnlyCheck(res);
@@ -658,6 +741,10 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (lhs.isInt32() && rhs.isInt32()) {
     int32_t l = lhs.toInt32(), r = rhs.toInt32();
     int32_t t;
@@ -667,15 +754,38 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
     }
   }
 
+  // TaintFox: Deactivate generic ToPrimitive() without preffered type here.
+  // This would cause taintedNumber objects to be converted to primitive numbers
+  // without taint. This is bad, if we later have to convert to String.
+  // ToString() is internally using ToPrimitive() with a preffered type, which
+  // supports taint propagation.
+  /*
   if (!ToPrimitive(cx, lhs)) {
     return false;
   }
   if (!ToPrimitive(cx, rhs)) {
     return false;
   }
+  */
 
   bool lIsString = lhs.isString();
   bool rIsString = rhs.isString();
+
+  // TaintFox: Cast to primitive if values are neither strings nor tainted numbers
+  // Required for some special cases like arrays
+  if (!lIsString && !isTaintedNumber(lhs)) {
+    if (!ToPrimitive(cx, lhs)) {
+      return false;
+    }
+    lIsString = lhs.isString();
+  }
+  if (!rIsString && !isTaintedNumber(rhs)) {
+    if (!ToPrimitive(cx, rhs)) {
+      return false;
+    }
+    rIsString = rhs.isString();
+  }
+
   if (lIsString || rIsString) {
     JSString* lstr;
     if (lIsString) {
@@ -711,6 +821,16 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
     return true;
   }
 
+  // TaintFox: If no string conversion of numbers is needed, we can safely
+  // use the generic ToPrimitive() taint is also lost in this case but will
+  // later be added based on origLhs and origRhs
+  if (!ToPrimitive(cx, lhs)) {
+    return false;
+  }
+  if (!ToPrimitive(cx, rhs)) {
+    return false;
+  }
+
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
     return false;
   }
@@ -720,6 +840,11 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
   }
 
   res.setNumber(lhs.toNumber() + rhs.toNumber());
+
+  // TaintFox: Taint propagation when adding tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -727,7 +852,11 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -735,7 +864,13 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
     return BigInt::subValue(cx, lhs, rhs, res);
   }
 
+
+
   res.setNumber(lhs.toNumber() - rhs.toNumber());
+  // TaintFox: Taint propagation when subtracting tainted numbers.
+  if (isAnyTaintedValue(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -743,7 +878,11 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -752,6 +891,10 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
   }
 
   res.setNumber(lhs.toNumber() * rhs.toNumber());
+  // TaintFox: Taint propagation when multiplying tainted numbers.
+  if (isAnyTaintedValue(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -759,7 +902,11 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -768,6 +915,10 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
   }
 
   res.setNumber(NumberDiv(lhs.toNumber(), rhs.toNumber()));
+  // TaintFox: Taint propagation when dividing tainted numbers.
+  if (isAnyTaintedValue(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -775,6 +926,10 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   int32_t l, r;
   if (lhs.isInt32() && rhs.isInt32() && (l = lhs.toInt32()) >= 0 &&
       (r = rhs.toInt32()) > 0) {
@@ -783,7 +938,7 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
     return true;
   }
 
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -792,14 +947,22 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
   }
 
   res.setNumber(NumberMod(lhs.toNumber(), rhs.toNumber()));
+  // TaintFox: Taint propagation when modding tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
-
+  
 static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumericUnboxTainted(cx, lhs) || !ToNumericUnboxTainted(cx, rhs)) {
     return false;
   }
 
@@ -808,12 +971,19 @@ static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
   }
 
   res.setNumber(ecmaPow(lhs.toNumber(), rhs.toNumber()));
+  // TaintFox: Taint propagation when taking power of tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
 static MOZ_ALWAYS_INLINE bool BitNotOperation(JSContext* cx,
                                               MutableHandleValue in,
                                               MutableHandleValue out) {
+  // TaintFox: copy in since it is mutable.
+  RootedValue origIn(cx, in);
+
   if (!ToInt32OrBigInt(cx, in)) {
     return false;
   }
@@ -823,6 +993,11 @@ static MOZ_ALWAYS_INLINE bool BitNotOperation(JSContext* cx,
   }
 
   out.setInt32(~in.toInt32());
+
+  // TaintFox: Taint propagation for bitwise not.
+  if (isTaintedNumber(origIn)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getNumberTaint(origIn)));
+  }
   return true;
 }
 
@@ -830,6 +1005,10 @@ static MOZ_ALWAYS_INLINE bool BitXorOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -839,6 +1018,11 @@ static MOZ_ALWAYS_INLINE bool BitXorOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() ^ rhs.toInt32());
+
+  // TaintFox: Taint propagation for bitwise xor.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -846,6 +1030,10 @@ static MOZ_ALWAYS_INLINE bool BitOrOperation(JSContext* cx,
                                              MutableHandleValue lhs,
                                              MutableHandleValue rhs,
                                              MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -855,6 +1043,11 @@ static MOZ_ALWAYS_INLINE bool BitOrOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() | rhs.toInt32());
+
+  // TaintFox: Taint propagation for bitwise or.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -862,6 +1055,10 @@ static MOZ_ALWAYS_INLINE bool BitAndOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -871,6 +1068,11 @@ static MOZ_ALWAYS_INLINE bool BitAndOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() & rhs.toInt32());
+
+  // TaintFox: Taint propagation for bitwise and.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -878,6 +1080,10 @@ static MOZ_ALWAYS_INLINE bool BitLshOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -892,6 +1098,11 @@ static MOZ_ALWAYS_INLINE bool BitLshOperation(JSContext* cx,
   uint32_t left = static_cast<uint32_t>(lhs.toInt32());
   uint8_t right = rhs.toInt32() & 31;
   out.setInt32(mozilla::WrapToSigned(left << right));
+
+  // TaintFox: Taint propagation for bitwise left shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -899,6 +1110,10 @@ static MOZ_ALWAYS_INLINE bool BitRshOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -908,6 +1123,11 @@ static MOZ_ALWAYS_INLINE bool BitRshOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() >> (rhs.toInt32() & 31));
+
+  // TaintFox: Taint propagation for bitwise right shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
@@ -915,6 +1135,10 @@ static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx,
                                             MutableHandleValue lhs,
                                             MutableHandleValue rhs,
                                             MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
     return false;
   }
@@ -932,6 +1156,11 @@ static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx,
   }
   left >>= right & 31;
   out.setNumber(uint32_t(left));
+
+  // TaintFox: Taint propagation for unsigned right shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
   return true;
 }
 
