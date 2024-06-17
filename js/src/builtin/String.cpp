@@ -1209,6 +1209,9 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   InlineCharBuffer<CharT> newChars;
   // Taintfox: cache the taint up here to prevent GC issues
   SafeStringTaint taint = str->taint();
+  if (taint.hasTaint()) {
+    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
+  }
   const size_t length = str->length();
   size_t resultLength;
   {
@@ -1620,6 +1623,9 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
 
   mozilla::MaybeOneOf<Latin1Buffer, TwoByteBuffer> newChars;
   SafeStringTaint taint = str->taint();
+  if (taint.hasTaint()) {
+    taint.extend(TaintOperationFromContextJSString(cx, "toUpperCase", true, str));
+  }
   const size_t length = str->length();
   size_t resultLength;
   {
