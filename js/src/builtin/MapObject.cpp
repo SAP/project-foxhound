@@ -82,6 +82,17 @@ bool HashableValue::setValue(JSContext* cx, HandleValue v) {
     value = v;
   }
 
+  // Additional check to unbox if we have a tainted Number
+  // Required to fix breakage with playwright integration
+  // But only if tainted as default JavaScript behaviour is that
+  // primitive and NumberObject keys are distinct.
+  if (value.isObject() && value.toObject().is<NumberObject>()) {
+    NumberObject& number = value.toObject().as<NumberObject>();
+    if (number.taint()) {
+      value = NumberValue(number.unbox());
+    }
+  }
+
   MOZ_ASSERT(value.isUndefined() || value.isNull() || value.isBoolean() ||
              value.isNumber() || value.isString() || value.isSymbol() ||
              value.isObject() || value.isBigInt() ||
