@@ -61,6 +61,7 @@ struct NurseryChunk;
 class HeapSlot;
 class JSONPrinter;
 class MapObject;
+class NumberObject;
 class SetObject;
 class JS_PUBLIC_API Sprinter;
 
@@ -323,6 +324,12 @@ class Nursery {
 
   bool enableProfiling() const { return enableProfiling_; }
 
+  bool addNumberObjectWithNurseryMemory(NumberObject* num) {
+    MOZ_ASSERT_IF(!numberObjectsWithNurseryMemory_.empty(),
+                  numberObjectsWithNurseryMemory_.back() != num);
+    return numberObjectsWithNurseryMemory_.append(num);
+  }
+
   bool addStringWithNurseryMemory(JSString* str) {
     MOZ_ASSERT_IF(!stringsWithNurseryMemory_.empty(),
                   stringsWithNurseryMemory_.back() != str);
@@ -478,7 +485,7 @@ class Nursery {
   void sweepMapAndSetObjects();
 
   // Taintfox: we also need to sweep strings to clean up taint information
-  void sweepStrings();
+  void sweepTaintableThings();
   // Allocate a buffer for a given zone, using the nursery if possible.
   void* allocateBuffer(JS::Zone* zone, size_t nbytes);
 
@@ -634,6 +641,7 @@ class Nursery {
   Vector<MapObject*, 0, SystemAllocPolicy> mapsWithNurseryMemory_;
   Vector<SetObject*, 0, SystemAllocPolicy> setsWithNurseryMemory_;
   Vector<JSString*,  0, SystemAllocPolicy> stringsWithNurseryMemory_;
+  Vector<NumberObject*,  0, SystemAllocPolicy> numberObjectsWithNurseryMemory_;
 
   UniquePtr<NurseryDecommitTask> decommitTask;
 

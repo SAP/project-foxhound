@@ -424,10 +424,11 @@ TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2)
 {
   // add info for operation
   // add getting combined taint flow 
-  if (isTaintedNumber(val1) && isTaintedNumber(val2)) {
-    return TaintFlow::append(getNumberTaint(val1), getNumberTaint(val2));
-  }
-  else if (isTaintedNumber(val1)) {
+  //if (isTaintedNumber(val1) && isTaintedNumber(val2)) {
+  //  return TaintFlow::append(getNumberTaint(val1), getNumberTaint(val2));
+  //}
+  //else
+  if (isTaintedNumber(val1)) {
     return getNumberTaint(val1);
   } else {
     return getNumberTaint(val2);
