@@ -44,12 +44,15 @@ class NumberObject : public NativeObject {
                                             const TaintFlow& taint,
                                             HandleObject proto = nullptr);
 
-  // TaintFox: A finalizer is required for correct memory handling.
   void finalize(JS::GCContext* gcx) {
-    TaintFlow* flow = getTaintFlow();
-    delete flow;
-    setReservedSlot(TAINT_SLOT, PrivateValue(nullptr));
+    NumberObject::finalize(gcx, this);
+    JSObject::finalize(gcx);
   }
+
+  // TaintFox: A finalizer is required for correct memory handling.
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
+
+  static void sweepAfterMinorGC(JS::GCContext* gcx, NumberObject* numobj);
 
   const TaintFlow& taint() const {
     TaintFlow* flow = getTaintFlow();
@@ -69,6 +72,10 @@ class NumberObject : public NativeObject {
     // if (head) {
     //   head->addref();
     // }
+    TaintFlow* flow = getTaintFlow();
+    if (flow) {
+      delete flow;
+    }
     setTaintFlow(taint);
   }
 

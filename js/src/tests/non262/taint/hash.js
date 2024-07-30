@@ -9,8 +9,8 @@ simpleHash = (inputString)=>{
 	var hash = 0;
 	if (inputString.length == 0) return hash;
 	for (i = 0; i < inputString.length; i++) {
-		char = inputString.charCodeAt(i);
-		hash = ((hash<<5)-hash)+char;
+		var c = inputString.charCodeAt(i);
+		hash = ((hash << 5) - hash) + c;
 		hash = hash & hash; // Convert to 32bit integer
 	}
 	return hash;
@@ -389,16 +389,32 @@ fpFlow4Hash = (inputString)=>{
 }
 
 
-hashTaintTest = () => {
+hashTaintTest = (hashFunction) => {
     var s = randomTaintedString() + randomTaintedString() + randomTaintedString();
-
-    assertTainted(simpleHash(s));
-    assertTainted(md5Hash(s));
-    assertTainted(fingerprintJsHash(s));
-    assertTainted(fpFlow4Hash(s));
+    assertTainted(hashFunction(s));
 }
 
-runTaintTest(hashTaintTest);
+simpleHashtest = () => {
+    hashTaintTest(simpleHash);
+}
+
+md5Hashtest = () => {
+    hashTaintTest(md5Hash);
+}
+
+fingerprintHashtest = () => {
+    hashTaintTest(fingerprintJsHash);
+}
+
+fpFlow4HashTest = () => {
+    hashTaintTest(fpFlow4Hash);
+}
+
+runTaintTest(simpleHashtest);
+runTaintTest(md5Hashtest);
+runTaintTest(fingerprintHashtest);
+runTaintTest(fpFlow4HashTest);
+
 
 if (typeof reportCompare === 'function')
     reportCompare(true, true);

@@ -24,6 +24,13 @@ inline NumberObject* NumberObject::create(JSContext* cx, double d,
   // Taintfox: initialize the taint slot to null
   obj->initReservedSlot(TAINT_SLOT, PrivateValue(nullptr));
 
+  bool insideNursery = IsInsideNursery(obj);
+  if (insideNursery) {
+    if (!cx->nursery().addNumberObjectWithNurseryMemory(obj)) {
+      ReportOutOfMemory(cx);
+      return nullptr;
+    }
+  }
   return obj;
 }
 
@@ -37,8 +44,32 @@ NumberObject::createTainted(JSContext* cx, double d, const TaintFlow& taint, Han
     return nullptr;
   }  
   obj->setTaint(taint);
+  
   return obj;
 }
+
+
+inline void NumberObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  MOZ_ASSERT(gcx->onMainThread());
+  NumberObject* numobj = static_cast<NumberObject*>(obj);
+  if (obj) {
+    TaintFlow* flow = numobj->getTaintFlow();
+    if (flow) {
+      delete flow;
+      numobj->setReservedSlot(TAINT_SLOT, PrivateValue(nullptr));
+    }
+  }
+}
+
+
+inline void NumberObject::sweepAfterMinorGC(JS::GCContext* gcx, NumberObject *obj) {
+  bool wasInsideNursery = IsInsideNursery(obj);
+  if (wasInsideNursery && !IsForwarded(obj)) {
+    finalize(gcx, obj);
+    return;
+  }
+}
+
 
 } // namespace js
 
