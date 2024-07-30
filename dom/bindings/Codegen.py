@@ -53,12 +53,40 @@ MAY_RESOLVE_HOOK_NAME = "_mayResolve"
 NEW_ENUMERATE_HOOK_NAME = "_newEnumerate"
 ENUM_ENTRY_VARIABLE_NAME = "strings"
 INSTANCE_RESERVED_SLOTS = 1
+PREFERENCE_PREFIX = "tainting.source."
+
 
 # This size is arbitrary. It is a power of 2 to make using it as a modulo
 # operand cheap, and is usually around 1/3-1/5th of the set size (sometimes
 # smaller for very large sets).
 GLOBAL_NAMES_PHF_SIZE = 256
 
+def format_preference_entry(taintSource):
+    return "%s%s" % (PREFERENCE_PREFIX, taintSource)
+
+def format_preference(taintSource):
+    return (
+        "pref(\"%s\", true);"
+        % (format_preference_entry(taintSource))
+    )
+
+def maybe_add_preference(taintSource):
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent.parent.resolve()
+    prefs = root / 'modules' / 'libpref' / 'init' / 'all.js'
+    prefs = prefs.resolve()
+    if(prefs.exists()):
+        preference_entry = format_preference_entry(taintSource)
+        with prefs.open(mode='r+') as pf:
+            if preference_entry in pf.read():
+                print("%s already defined in %s... Skipping...\n" % (preference_entry, prefs))
+            else:
+                pf.write("%s\n" % (format_preference(taintSource)))
+                print("Added preference '%s' to '%s'..\n" % (preference_entry, prefs))
+        return True
+    else:
+        print("Preference file does not exist: %s!\n"% prefs)
+        return False
 
 def memberReservedSlot(member, descriptor):
     return (
@@ -7823,6 +7851,7 @@ def getWrapTemplateForType(
         # Attach taint metadata to the return value if it is a source
         if taintSource is not None:
             print("Generating taint source:", taintSource)
+            maybe_add_preference(taintSource)
             taintHandler = dedent(
                 (
                     """
@@ -7846,6 +7875,7 @@ def getWrapTemplateForType(
         markTaintSnippet = ""
         if taintSource is not None:
             print("Generating taint source for wrapped value:", taintSource)
+            maybe_add_preference(taintSource)
             markTaintSnippet = dedent(
                 f"""
                 // Add taint source for wrapped value
@@ -11189,6 +11219,7 @@ class CGSpecializedGetterCommon(CGAbstractStaticMethod):
             markTaintSnippet = ""
             if self.taintSource is not None:
                 print("Generating taint source for cached value:", self.taintSource)
+                maybe_add_preference(self.taintSource)
                 markTaintSnippet = dedent(
                     f"""
                     // Add taint source for cached value
