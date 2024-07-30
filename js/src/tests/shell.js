@@ -131,6 +131,17 @@
     global.assertEq = assertEq;
   }
 
+  var assertNotEq = global.assertNotEq;
+  if (typeof assertNotEq !== "function") {
+    assertNotEq = function assertNotEq(actual, expected, message) {
+      if (SameValue(actual, expected)) {
+        throw new TypeError(`Assertion failed: got "${actual}", expected "${expected}"` +
+                            (message ? ": " + message : ""));
+      }
+    };
+    global.assertNotEq = assertNotEq;
+  }
+
   function assertEqArray(actual, expected) {
     var len = actual.length;
     assertEq(len, expected.length, "mismatching array lengths");
