@@ -167,30 +167,25 @@ static bool math_atan2(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  double z = ecmaAtan2(y, x);
+
   // TaintFox
-  //TODO Make this a method and also simplify
-  if(args[0].isObject() && args[0].toObject().is<NumberObject>() && ((args[1].isObject() && !args[1].toObject().is<NumberObject>()) || !args[1].isObject())){
-    NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(ecmaAtan2(y,x)));
-    args.rval().setObjectOrNull(obj);
-    return true;
+  NumberObject *taintedResult = NumberObject::create(cx, 0);
+  bool isTainted = false;
+
+  for (unsigned i = 0; i < args.length(); i++) {
+    if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+      isTainted = true;
+      NumberObject *obj = &args[i].toObject().as<NumberObject>();
+      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+    }
   }
-  if(((args[0].isObject() && !args[0].toObject().is<NumberObject>()) || !args[0].isObject()) && args[1].isObject() && args[1].toObject().is<NumberObject>()){
-    NumberObject *obj = &args[1].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(ecmaAtan2(y,x)));
-    args.rval().setObjectOrNull(obj);
-    return true;
-  }
-  if(args[0].isObject() && args[0].toObject().is<NumberObject>() && args[1].isObject() && args[1].toObject().is<NumberObject>()){
-    NumberObject *obj0 = &args[0].toObject().as<NumberObject>();
-    NumberObject *obj1 = &args[1].toObject().as<NumberObject>();
-    obj0->setPrimitiveValue(JS::NumberValue(ecmaAtan2(y,x)));
-    obj0->setTaint(TaintFlow::append(obj0->getTaintFlow(), obj1->getTaintFlow()));
-    args.rval().setObjectOrNull(obj0);
+  if(isTainted){
+    taintedResult->setPrimitiveValue(JS::NumberValue(z));
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
-  double z = ecmaAtan2(y, x);
   args.rval().setDouble(z);
   return true;
 }
@@ -325,25 +320,23 @@ bool js::math_imul_handle(JSContext* cx, HandleValue lhs, HandleValue rhs,
   }
 
   // TaintFox
-  //TODO make a method for this
-  if(lhs.isObject() && lhs.toObject().is<NumberObject>() && ((rhs.isObject() && !rhs.toObject().is<NumberObject>()) || !rhs.isObject())){
+  NumberObject *taintedResult = NumberObject::create(cx, 0);
+  bool isTainted = false;
+
+  if(lhs.isObject() && lhs.toObject().is<NumberObject>()){
+    isTainted = true;
     NumberObject *obj = &lhs.toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(WrappingMultiply(a,b)));
-    res.setObjectOrNull(obj);
-    return true;
+    taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
   }
-  if(((lhs.isObject() && !lhs.toObject().is<NumberObject>()) || !lhs.isObject()) && rhs.isObject() && rhs.toObject().is<NumberObject>()){
+  if(rhs.isObject() && rhs.toObject().is<NumberObject>()){
+    isTainted = true;
     NumberObject *obj = &rhs.toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(WrappingMultiply(a,b)));
-    res.setObjectOrNull(obj);
-    return true;
+    taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
   }
-  if(lhs.isObject() && lhs.toObject().is<NumberObject>() && rhs.isObject() && rhs.toObject().is<NumberObject>()){
-    NumberObject *obj0 = &lhs.toObject().as<NumberObject>();
-    NumberObject *obj1 = &rhs.toObject().as<NumberObject>();
-    obj0->setPrimitiveValue(JS::NumberValue(WrappingMultiply(a,b)));
-    obj0->setTaint(TaintFlow::append(obj0->getTaintFlow(), obj1->getTaintFlow()));
-    res.setObjectOrNull(obj0);
+
+  if(isTainted){
+    taintedResult->setPrimitiveValue(JS::NumberValue(WrappingMultiply(a, b)));
+    res.setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -384,6 +377,19 @@ static bool math_fround(JSContext* cx, unsigned argc, Value* vp) {
 
   if (args.length() == 0) {
     args.rval().setNaN();
+    return true;
+  }
+
+  // TaintFox
+  if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
+    double x;
+    if (!ToNumber(cx, args[0], &x)) {
+      return false;
+    }
+
+    NumberObject *obj = &args[0].toObject().as<NumberObject>();
+    obj->setPrimitiveValue(JS::NumberValue(RoundFloat32(x)));
+    args.rval().setObjectOrNull(obj);
     return true;
   }
 
@@ -605,25 +611,19 @@ static bool math_pow(JSContext* cx, unsigned argc, Value* vp) {
   double z = ecmaPow(x, y);
 
   // TaintFox
-  //TODO Make this a method and also simplify
-  if(args[0].isObject() && args[0].toObject().is<NumberObject>() && ((args[1].isObject() && !args[1].toObject().is<NumberObject>()) || !args[1].isObject())){
-    NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(z));
-    args.rval().setObjectOrNull(obj);
-    return true;
+  NumberObject *taintedResult = NumberObject::create(cx, 0);
+  bool isTainted = false;
+
+  for (unsigned i = 0; i < args.length(); i++) {
+    if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+      isTainted = true;
+      NumberObject *obj = &args[i].toObject().as<NumberObject>();
+      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+    }
   }
-  if(((args[0].isObject() && !args[0].toObject().is<NumberObject>()) || !args[0].isObject()) && args[1].isObject() && args[1].toObject().is<NumberObject>()){
-    NumberObject *obj = &args[1].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(z));
-    args.rval().setObjectOrNull(obj);
-    return true;
-  }
-  if(args[0].isObject() && args[0].toObject().is<NumberObject>() && args[1].isObject() && args[1].toObject().is<NumberObject>()){
-    NumberObject *obj0 = &args[0].toObject().as<NumberObject>();
-    NumberObject *obj1 = &args[1].toObject().as<NumberObject>();
-    obj0->setPrimitiveValue(JS::NumberValue(z));
-    obj0->setTaint(TaintFlow::append(obj0->getTaintFlow(), obj1->getTaintFlow()));
-    args.rval().setObjectOrNull(obj0);
+  if(isTainted){
+    taintedResult->setPrimitiveValue(JS::NumberValue(z));
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -1078,6 +1078,14 @@ static bool math_sign(JSContext* cx, unsigned argc, Value* vp) {
   double x;
   if (!ToNumber(cx, args[0], &x)) {
     return false;
+  }
+
+  // TaintFox
+  if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
+    NumberObject *obj = &args[0].toObject().as<NumberObject>();
+    obj->setPrimitiveValue(JS::NumberValue(math_sign_impl(x)));
+    args.rval().setObjectOrNull(obj);
+    return true;
   }
 
   args.rval().setNumber(math_sign_impl(x));
