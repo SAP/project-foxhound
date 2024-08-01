@@ -83,8 +83,8 @@ static bool math_function(JSContext* cx, CallArgs& args) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(z));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, z, obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -110,8 +110,8 @@ bool js::math_abs(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(math_abs_impl(x)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, math_abs_impl(x), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -211,8 +211,8 @@ static bool math_ceil(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(math_ceil_impl(x)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, math_ceil_impl(x), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -236,8 +236,8 @@ static bool math_clz32(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(n == 0? 32: mozilla::CountLeadingZeroes32(n)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, n == 0? 32: mozilla::CountLeadingZeroes32(n), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -300,8 +300,8 @@ bool js::math_floor(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(math_floor_impl(x)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, math_floor_impl(x), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -388,8 +388,8 @@ static bool math_fround(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(RoundFloat32(x)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, RoundFloat32(x), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -740,8 +740,8 @@ static bool math_round(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(math_round_impl(x)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, math_round_impl(x), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -1049,8 +1049,8 @@ bool js::math_trunc(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(math_trunc_impl(x)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, math_trunc_impl(x), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
@@ -1083,8 +1083,8 @@ static bool math_sign(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox
   if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
     NumberObject *obj = &args[0].toObject().as<NumberObject>();
-    obj->setPrimitiveValue(JS::NumberValue(math_sign_impl(x)));
-    args.rval().setObjectOrNull(obj);
+    NumberObject *taintedResult = NumberObject::createTainted(cx, math_sign_impl(x), obj->getTaintFlow());
+    args.rval().setObjectOrNull(taintedResult);
     return true;
   }
 
