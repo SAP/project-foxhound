@@ -84,16 +84,16 @@ class NumberObject : public NativeObject {
     return !!getTaintFlow();
   }
 
+  inline TaintFlow* getTaintFlow() const {
+    TaintFlow* n = maybePtrFromReservedSlot<TaintFlow>(TAINT_SLOT);
+    return n;
+  }
+
 private:
   static JSObject* createPrototype(JSContext* cx, JSProtoKey key);
 
   inline void setPrimitiveValue(double d) {
     setFixedSlot(PRIMITIVE_VALUE_SLOT, NumberValue(d));
-  }
-
-  inline TaintFlow* getTaintFlow() const {
-    TaintFlow* n = maybePtrFromReservedSlot<TaintFlow>(TAINT_SLOT);
-    return n;
   }
 
   inline void setTaintFlow(const TaintFlow& flow) {
