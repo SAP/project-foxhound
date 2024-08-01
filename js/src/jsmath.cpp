@@ -413,14 +413,32 @@ double js::math_max_impl(double x, double y) {
 bool js::math_max(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
+  NumberObject *taintedResult = NumberObject::create(cx, 0);
+  bool isTainted = false;
+
   double maxval = NegativeInfinity<double>();
   for (unsigned i = 0; i < args.length(); i++) {
     double x;
     if (!ToNumber(cx, args[i], &x)) {
       return false;
     }
+
+    // TaintFox
+    if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+      isTainted = true;
+      NumberObject *obj = &args[i].toObject().as<NumberObject>();
+      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+    }
+
     maxval = math_max_impl(x, maxval);
   }
+
+  if(isTainted){
+    taintedResult->setPrimitiveValue(JS::NumberValue(maxval));
+    args.rval().setObjectOrNull(taintedResult);
+    return true;
+  }
+
   args.rval().setNumber(maxval);
   return true;
 }
@@ -438,14 +456,32 @@ double js::math_min_impl(double x, double y) {
 bool js::math_min(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
+  NumberObject *taintedResult = NumberObject::create(cx, 0);
+  bool isTainted = false;
+
   double minval = PositiveInfinity<double>();
   for (unsigned i = 0; i < args.length(); i++) {
     double x;
     if (!ToNumber(cx, args[i], &x)) {
       return false;
     }
+
+    // TaintFox
+    if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+      isTainted = true;
+      NumberObject *obj = &args[i].toObject().as<NumberObject>();
+      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+    }
+
     minval = math_min_impl(x, minval);
   }
+
+  if(isTainted){
+    taintedResult->setPrimitiveValue(JS::NumberValue(minval));
+    args.rval().setObjectOrNull(taintedResult);
+    return true;
+  }
+
   args.rval().setNumber(minval);
   return true;
 }
@@ -911,6 +947,10 @@ static bool math_hypot(JSContext* cx, unsigned argc, Value* vp) {
 
 bool js::math_hypot_handle(JSContext* cx, HandleValueArray args,
                            MutableHandleValue res) {
+
+    NumberObject *taintedResult = NumberObject::create(cx, 0);
+    bool isTainted = false;
+
   // IonMonkey calls the ecmaHypot function directly if two arguments are
   // given. Do that here as well to get the same results.
   if (args.length() == 2) {
@@ -923,6 +963,21 @@ bool js::math_hypot_handle(JSContext* cx, HandleValueArray args,
     }
 
     double result = ecmaHypot(x, y);
+
+    // TaintFox
+    for (unsigned i = 0; i < args.length(); i++) {
+      if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+        isTainted = true;
+        NumberObject *obj = &args[i].toObject().as<NumberObject>();
+        taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+      }
+    }
+    if(isTainted){
+      taintedResult->setPrimitiveValue(JS::NumberValue(result));
+      res.setObjectOrNull(taintedResult);
+      return true;
+    }
+
     res.setDouble(result);
     return true;
   }
@@ -945,12 +1000,26 @@ bool js::math_hypot_handle(JSContext* cx, HandleValueArray args,
       continue;
     }
 
+    // TaintFox
+    if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+      isTainted = true;
+      NumberObject *obj = &args[i].toObject().as<NumberObject>();
+      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+    }
+
     hypot_step(scale, sumsq, x);
   }
 
   double result = isInfinite ? PositiveInfinity<double>()
                   : isNaN    ? GenericNaN()
                              : scale * std::sqrt(sumsq);
+
+  if(isTainted){
+    taintedResult->setPrimitiveValue(JS::NumberValue(result));
+    res.setObjectOrNull(taintedResult);
+    return true;
+  }
+
   res.setDouble(result);
   return true;
 }
