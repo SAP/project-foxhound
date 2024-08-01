@@ -39,6 +39,7 @@ class NumberObject : public NativeObject {
                                      HandleObject proto = nullptr);
 
   double unbox() const { return getFixedSlot(PRIMITIVE_VALUE_SLOT).toNumber(); }
+  void setPrimitiveValue(JS::Value value) { setFixedSlot(PRIMITIVE_VALUE_SLOT, value);}
 
   static inline NumberObject* createTainted(JSContext* cx, double d,
                                             const TaintFlow& taint,
@@ -98,7 +99,7 @@ private:
   inline void setTaintFlow(const TaintFlow& flow) {
     setReservedSlot(TAINT_SLOT, PrivateValue(new TaintFlow(flow)));
   }
-  
+
 };
 
 }  // namespace js
