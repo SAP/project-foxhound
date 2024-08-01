@@ -182,14 +182,26 @@ function log2NumberTaintingTest(){
 function maxNumberTaintingTest(){
     var a = taint(10);
     var b = taint(20);
+    var c = 30;
+    var d = 0;
     assertNumberTainted(Math.max(a, b));
+    assertNumberTainted(Math.max(a, d));
+    assertNumberTainted(Math.max(a, d, b));
+    assertNumberNotTainted(Math.max(a, c));
+    assertNumberNotTainted(Math.max(c, b, d));
     assertEq(20, Math.max(a, b));
 }
 
 function minNumberTaintingTest(){
     var a = taint(10);
     var b = taint(20);
+    var c = 30;
+    var d = 0;
     assertNumberTainted(Math.min(a, b));
+    assertNumberTainted(Math.min(a, c));
+    assertNumberTainted(Math.min(b, c, a));
+    assertNumberNotTainted(Math.min(a, d));
+    assertNumberNotTainted(Math.min(c, b, d));
     assertEq(10, Math.min(a, b));
 }
 
