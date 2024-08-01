@@ -429,14 +429,19 @@ bool js::math_max(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
+    maxval = math_max_impl(x, maxval);
+
     // TaintFox
-    if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+    if(args[i].isObject() && args[i].toObject().is<NumberObject>() && maxval == x){
       isTainted = true;
       NumberObject *obj = &args[i].toObject().as<NumberObject>();
-      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+      taintedResult->setTaint(obj->getTaintFlow());
     }
-
-    maxval = math_max_impl(x, maxval);
+    else if(maxval == x){
+      //This is done since we only want to propogate the taint if it is the biggest value
+      // if a non tainted value is the biggest, we do not propogate the taint
+      isTainted = false;
+    }
   }
 
   if(isTainted){
@@ -472,14 +477,19 @@ bool js::math_min(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
+    minval = math_min_impl(x, minval);
+
     // TaintFox
-    if(args[i].isObject() && args[i].toObject().is<NumberObject>()){
+    if(args[i].isObject() && args[i].toObject().is<NumberObject>() && minval == x){
       isTainted = true;
       NumberObject *obj = &args[i].toObject().as<NumberObject>();
-      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
+      taintedResult->setTaint(obj->getTaintFlow());
     }
-
-    minval = math_min_impl(x, minval);
+    else if(minval == x){
+      //This is done since we only want to propogate the taint if it is the lowest value
+      // if a non tainted value is the lowest, we do not propogate the taint
+      isTainted = false;
+    }
   }
 
   if(isTainted){
