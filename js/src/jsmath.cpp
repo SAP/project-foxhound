@@ -27,6 +27,7 @@
 #include "js/PropertySpec.h"
 #include "util/DifferentialTesting.h"
 #include "vm/JSContext.h"
+#include "vm/NumberObject.h"
 #include "vm/Realm.h"
 #include "vm/Time.h"
 
@@ -587,6 +588,14 @@ static bool math_round(JSContext* cx, unsigned argc, Value* vp) {
   double x;
   if (!ToNumber(cx, args[0], &x)) {
     return false;
+  }
+
+  // TaintFox
+  if(args[0].isObject() && args[0].toObject().is<NumberObject>()){
+    NumberObject *obj = &args[0].toObject().as<NumberObject>();
+    obj->setPrimitiveValue(JS::NumberValue(math_round_impl(x)));
+    args.rval().setObjectOrNull(obj);
+    return true;
   }
 
   args.rval().setNumber(math_round_impl(x));
