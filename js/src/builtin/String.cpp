@@ -169,103 +169,15 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
   if (!str)
     return false;
 
-  // Wrap all taint ranges of the string.
-  RootedValueVector ranges(cx);
-  for (const TaintRange& taint_range : str->taint()) {
-    RootedObject range(cx, JS_NewObject(cx, nullptr));
-    if(!range)
-      return false;
-
-    if (!JS_DefineProperty(cx, range, "begin", taint_range.begin(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-        !JS_DefineProperty(cx, range, "end", taint_range.end(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-      return false;
-
-    // Wrap the taint flow for the current range.
-    RootedValueVector taint_flow(cx);
-    for (TaintNode& taint_node : taint_range.flow()) {
-      RootedObject node(cx, JS_NewObject(cx, nullptr));
-      if (!node)
-        return false;
-
-      RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node.operation().name()));
-      if (!operation)
-        return false;
-
-      if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-        return false;
-
-      RootedValue isBuiltIn(cx);
-      isBuiltIn.setBoolean(taint_node.operation().is_native());
-
-      if (!JS_DefineProperty(cx, node, "builtin", isBuiltIn, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-        return false;
-
-      RootedValue isSource(cx);
-      isSource.setBoolean(taint_node.operation().isSource());
-
-      if (!JS_DefineProperty(cx, node, "source", isSource, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-        return false;
-
-      // Wrap the location
-      RootedObject location(cx, JS_NewObject(cx, nullptr));
-      if (!location)
-        return false;
-      RootedString filename(cx, JS_NewUCStringCopyZ(cx, taint_node.operation().location().filename().c_str()));
-      if (!filename)
-        return false;
-      RootedString function(cx, JS_NewUCStringCopyZ(cx, taint_node.operation().location().function().c_str()));
-      if (!function)
-        return false;
-      // Also add the MD5 hash of the containing function
-      RootedString hash(cx, JS_NewStringCopyZ(cx, JS::convertDigestToHexString(taint_node.operation().location().scriptHash()).c_str()));
-      if (!hash)
-        return false;
-
-      if (!JS_DefineProperty(cx, location, "filename", filename, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "function", function, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "line", taint_node.operation().location().line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "pos", taint_node.operation().location().pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "scriptline", taint_node.operation().location().scriptStartLine(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "scripthash", hash, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-        return false;
-
-      if (!JS_DefineProperty(cx, node, "location", location, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-        return false;
-
-      // Wrap the arguments
-      RootedValueVector taint_arguments(cx);
-      for (auto& taint_argument : taint_node.operation().arguments()) {
-        RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
-        if (!argument)
-          return false;
-
-        if (!taint_arguments.append(StringValue(argument)))
-          return false;
-      }
-
-      RootedObject arguments(cx, NewDenseCopiedArray(cx, taint_arguments.length(), taint_arguments.begin()));
-      if (!JS_DefineProperty(cx, node, "arguments", arguments, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-        return false;
-
-      if (!taint_flow.append(ObjectValue(*node)))
-        return false;
-    }
-
-    RootedObject flow(cx, NewDenseCopiedArray(cx, taint_flow.length(), taint_flow.begin()));
-    if (!flow)
-      return false;
-    if (!JS_DefineProperty(cx, range, "flow", flow, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-      return false;
-
-    if (!ranges.append(ObjectValue(*range)))
-      return false;
+  RootedObject taint_obj(cx, JS_NewObject(cx, nullptr));
+  if (!getStringTaintObject(cx, str->taint(), taint_obj)) {
+    return false;
   }
 
-  JSObject* array = NewDenseCopiedArray(cx, ranges.length(), ranges.begin());
-  if (!array)
+  if (!JS_GetProperty(cx, taint_obj, "ranges", args.rval())) {
     return false;
+  }
 
-  args.rval().setObject(*array);
   return true;
 }
 

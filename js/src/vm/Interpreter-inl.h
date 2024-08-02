@@ -842,8 +842,8 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
   res.setNumber(lhs.toNumber() + rhs.toNumber());
 
   // TaintFox: Taint propagation when adding tainted numbers.
-  if (isAnyTaintedNumber(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  if (isAnyTaintedValue(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs, "+")));
   }
   return true;
 }
@@ -869,7 +869,7 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
   res.setNumber(lhs.toNumber() - rhs.toNumber());
   // TaintFox: Taint propagation when subtracting tainted numbers.
   if (isAnyTaintedValue(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs, "-")));
   }
   return true;
 }
@@ -893,7 +893,7 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
   res.setNumber(lhs.toNumber() * rhs.toNumber());
   // TaintFox: Taint propagation when multiplying tainted numbers.
   if (isAnyTaintedValue(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs, "*")));
   }
   return true;
 }
@@ -917,7 +917,7 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
   res.setNumber(NumberDiv(lhs.toNumber(), rhs.toNumber()));
   // TaintFox: Taint propagation when dividing tainted numbers.
   if (isAnyTaintedValue(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs)));
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyValueTaint(origLhs, origRhs, "/")));
   }
   return true;
 }
@@ -949,7 +949,7 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
   res.setNumber(NumberMod(lhs.toNumber(), rhs.toNumber()));
   // TaintFox: Taint propagation when modding tainted numbers.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs, "%")));
   }
   return true;
 }
@@ -973,7 +973,7 @@ static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
   res.setNumber(ecmaPow(lhs.toNumber(), rhs.toNumber()));
   // TaintFox: Taint propagation when taking power of tainted numbers.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs, "**")));
   }
   return true;
 }
@@ -1021,7 +1021,7 @@ static MOZ_ALWAYS_INLINE bool BitXorOperation(JSContext* cx,
 
   // TaintFox: Taint propagation for bitwise xor.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs, "^")));
   }
   return true;
 }
@@ -1046,7 +1046,7 @@ static MOZ_ALWAYS_INLINE bool BitOrOperation(JSContext* cx,
 
   // TaintFox: Taint propagation for bitwise or.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs, "|")));
   }
   return true;
 }
@@ -1071,7 +1071,7 @@ static MOZ_ALWAYS_INLINE bool BitAndOperation(JSContext* cx,
 
   // TaintFox: Taint propagation for bitwise and.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs, "&")));
   }
   return true;
 }
@@ -1101,7 +1101,7 @@ static MOZ_ALWAYS_INLINE bool BitLshOperation(JSContext* cx,
 
   // TaintFox: Taint propagation for bitwise left shift.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs, "<<")));
   }
   return true;
 }
@@ -1126,7 +1126,7 @@ static MOZ_ALWAYS_INLINE bool BitRshOperation(JSContext* cx,
 
   // TaintFox: Taint propagation for bitwise right shift.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs, ">>")));
   }
   return true;
 }
@@ -1159,7 +1159,7 @@ static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx,
 
   // TaintFox: Taint propagation for unsigned right shift.
   if (isAnyTaintedNumber(origLhs, origRhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+    out.setObject(*NumberObject::createTainted(cx, out.toNumber(), getAnyNumberTaint(origLhs, origRhs, ">>")));
   }
   return true;
 }

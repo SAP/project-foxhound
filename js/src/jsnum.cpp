@@ -1528,42 +1528,13 @@ static bool num_taint_getter(JSContext* cx, unsigned argc, Value* vp)
   }
 
   const TaintFlow& taint = number->as<NumberObject>().taint();
-  // TODO(samuel) refactor into separate function
-  RootedValueVector taint_flow(cx);
-  for (auto& taint_node : taint) {
-    RootedObject node(cx, JS_NewObject(cx, nullptr));
-    if (!node)
-      return false;
 
-    RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node.operation().name()));
-    if (!operation)
-      return false;
-
-    if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-      return false;
-
-    // Wrap the arguments.
-    RootedValueVector taint_arguments(cx);
-    for (auto& taint_argument : taint_node.operation().arguments()) {
-      RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
-      if (!argument)
-        return false;
-
-      if (!taint_arguments.append(StringValue(argument)))
-        return false;
-    }
-
-    RootedObject arguments(cx, NewDenseCopiedArray(cx, taint_arguments.length(), taint_arguments.begin()));
-    if (!JS_DefineProperty(cx, node, "arguments", arguments, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-      return false;
-
-    if (!taint_flow.append(ObjectValue(*node))) {
-      return false;
-    }
+  RootedObject taint_obj(cx, JS_NewObject(cx, nullptr));
+  if (!getTaintFlowObject(cx, taint, taint_obj)) {
+    return false;
   }
 
-  args.rval().setObject(*NewDenseCopiedArray(cx, taint_flow.length(), taint_flow.begin()));
-
+  args.rval().setObject(*taint_obj);
   return true;
 }
 
@@ -1584,8 +1555,10 @@ js::Number_tainted(JSContext* cx, unsigned argc, Value* vp)
   if (!ToNumber(cx, args.get(0), &d)) {
     return false;
   }
+  TaintOperation op("manual taint source", { taintarg(cx, d) });
+  op.setSource();
+  JSObject* number = NumberObject::createTainted(cx, d, TaintFlow(op));
 
-  JSObject* number = NumberObject::createTainted(cx, d, TaintFlow(TaintOperation("manual taint source", { taintarg(cx, d) })));
   args.rval().setObject(*number);
 
   return true;
