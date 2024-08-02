@@ -4,6 +4,18 @@
     Some are based on the hashing functions used by fingerprinting scripts.
 */
 
+noHash = (inputString)=>{
+	var hash = 0;
+	if (inputString.length == 0) return hash;
+	for (i = 0; i < inputString.length; i++) {
+		var c = inputString.charCodeAt(i);
+		hash = hash + c;
+		hash = hash & hash; // Convert to 32bit integer
+	}
+	return hash;
+}
+
+
 // Based on: https://werxltd.com/wp/2010/05/13/javascript-implementation-of-javas-string-hashcode-method/
 simpleHash = (inputString)=>{
 	var hash = 0;
@@ -394,6 +406,10 @@ hashTaintTest = (hashFunction) => {
     assertTainted(hashFunction(s));
 }
 
+noHashtest = () => {
+    hashTaintTest(noHash);
+}
+
 simpleHashtest = () => {
     hashTaintTest(simpleHash);
 }
@@ -410,6 +426,7 @@ fpFlow4HashTest = () => {
     hashTaintTest(fpFlow4Hash);
 }
 
+runTaintTest(noHashtest);
 runTaintTest(simpleHashtest);
 runTaintTest(md5Hashtest);
 runTaintTest(fingerprintHashtest);

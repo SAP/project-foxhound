@@ -11,10 +11,13 @@
 #include <string>
 #include <utility>
 
+
 #include "jsapi.h"
+#include "NamespaceImports.h"
 #include "js/Array.h"
 #include "js/CharacterEncoding.h"
 #include "js/ErrorReport.h"
+#include "js/PropertyAndElement.h"  // JS_DefineFunctions
 #include "js/UniquePtr.h"
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"
@@ -393,8 +396,8 @@ const TaintFlow& JS::getValueTaint(const Value& val)
         NumberObject& number = val.toObject().as<NumberObject>();
         return number.taint();
     } else if (val.isString()) {
-        printf("isTaintedStr!!!!\n");
-        for (auto range: val.toString()->Taint()) {
+        for (auto& range: val.toString()->Taint()) {
+          // Just return first taint range
           return range.flow();
         }
     }
@@ -420,33 +423,179 @@ bool JS::isAnyTaintedValue(const Value& val1, const Value& val2)
     return isTaintedValue(val1) || isTaintedValue(val2);
 }
 
-TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2)
+TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2, const char* name)
 {
   // add info for operation
-  // add getting combined taint flow 
-  //if (isTaintedNumber(val1) && isTaintedNumber(val2)) {
-  //  return TaintFlow::append(getNumberTaint(val1), getNumberTaint(val2));
-  //}
-  //else
-  if (isTaintedNumber(val1)) {
+  // add getting combined taint flow
+  if (isTaintedNumber(val1) && isTaintedNumber(val2) && (val1 != val2)) {
+    // Use a very simple taint operation here to keep things fast
+    return TaintFlow::append(getNumberTaint(val1), getNumberTaint(val2), TaintOperation(name));
+  } else if (isTaintedNumber(val1)) {
     return getNumberTaint(val1);
   } else {
     return getNumberTaint(val2);
   }
 }
 
-TaintFlow JS::getAnyValueTaint(const Value& val1, const Value& val2)
+TaintFlow JS::getAnyValueTaint(const Value& val1, const Value& val2, const char* name)
 {
   // add info for operation
   // add getting combined taint flow 
-  //if (isTaintedValue(val1) && isTaintedValue(val2)) {
-  //  return TaintFlow::append(getValueTaint(val1), getValueTaint(val2));
-  //} else
-  if (isTaintedValue(val1)) {
+  if (isTaintedValue(val1) && isTaintedValue(val2) && (val1 != val2)) {
+    // Use a very simple taint operation here to keep things fast
+    return TaintFlow::append(getValueTaint(val1), getValueTaint(val2), TaintOperation(name));
+  } else if (isTaintedValue(val1)) {
     return getValueTaint(val1);
   } else {
     return getValueTaint(val2);
   }
+}
+
+bool JS::getTaintOperationObject(JSContext* cx, const TaintOperation& op, JS::Handle<JSObject*> node)
+{
+  if (!node)
+    return false;
+
+  RootedString operation(cx, JS_NewStringCopyZ(cx, op.name()));
+  if (!operation)
+    return false;
+
+  if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  RootedValue isBuiltIn(cx);
+  isBuiltIn.setBoolean(op.is_native());
+
+  if (!JS_DefineProperty(cx, node, "builtin", isBuiltIn, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  RootedValue isSource(cx);
+  isSource.setBoolean(op.isSource());
+
+  if (!JS_DefineProperty(cx, node, "source", isSource, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  // Wrap the location
+  RootedObject location(cx, JS_NewObject(cx, nullptr));
+  if (!location)
+    return false;
+  RootedString filename(cx, JS_NewUCStringCopyZ(cx, op.location().filename().c_str()));
+  if (!filename)
+    return false;
+  RootedString function(cx, JS_NewUCStringCopyZ(cx, op.location().function().c_str()));
+  if (!function)
+    return false;
+  // Also add the MD5 hash of the containing function
+  RootedString hash(cx, JS_NewStringCopyZ(cx, JS::convertDigestToHexString(op.location().scriptHash()).c_str()));
+  if (!hash)
+    return false;
+
+  if (!JS_DefineProperty(cx, location, "filename", filename, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+      !JS_DefineProperty(cx, location, "function", function, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+      !JS_DefineProperty(cx, location, "line", op.location().line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+      !JS_DefineProperty(cx, location, "pos", op.location().pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+      !JS_DefineProperty(cx, location, "scriptline", op.location().scriptStartLine(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+      !JS_DefineProperty(cx, location, "scripthash", hash, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  if (!JS_DefineProperty(cx, node, "location", location, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  // Wrap the arguments
+  RootedValueVector taint_arguments(cx);
+  for (auto& taint_argument : op.arguments()) {
+    RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
+    if (!argument)
+      return false;
+
+    if (!taint_arguments.append(StringValue(argument)))
+      return false;
+  }
+
+  RootedObject arguments(cx, NewDenseCopiedArray(cx, taint_arguments.length(), taint_arguments.begin()));
+  if (!JS_DefineProperty(cx, node, "arguments", arguments, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  return true;
+}
+
+bool JS::getTaintFlowObject(JSContext* cx, const TaintFlow& flow, JS::Handle<JSObject*> obj)
+{
+  if(!obj)
+    return false;
+
+  // Wrap the taint flow for the current range.
+  RootedValueVector taint_flow(cx);
+  for (TaintNodeBase& taint_node : flow) {
+    RootedObject node(cx, JS_NewObject(cx, nullptr));
+    if (!node)
+      return false;
+    if (!getTaintOperationObject(cx, taint_node.operation(), node)) {
+      return false;
+    }
+    if (!taint_flow.append(ObjectValue(*node))) {
+      return false;
+    }
+  }
+
+  RootedObject flow_obj(cx, NewDenseCopiedArray(cx, taint_flow.length(), taint_flow.begin()));
+  if (!flow_obj)
+    return false;
+  if (!JS_DefineProperty(cx, obj, "flow", flow_obj, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  // Also output the sources
+  RootedValueVector sources(cx);
+  for (TaintOperation op: flow.getSources()) {
+    RootedObject node(cx, JS_NewObject(cx, nullptr));
+    if (!node)
+      return false;
+    if (!getTaintOperationObject(cx, op, node)) {
+      return false;
+    }
+    if (!sources.append(ObjectValue(*node))) {
+      return false;
+    }
+  }
+
+  RootedObject sources_obj(cx, NewDenseCopiedArray(cx, sources.length(), sources.begin()));
+  if (!sources_obj) {
+    return false;
+  }
+  if (!JS_DefineProperty(cx, obj, "sources", sources_obj, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+
+  return true;
+}
+
+bool JS::getStringTaintObject(JSContext* cx, const StringTaint& taint, JS::Handle<JSObject*> result)
+{
+  // Wrap all taint ranges of the string.
+  RootedValueVector ranges(cx);
+  for (const TaintRange& taint_range : taint) {
+    RootedObject range(cx, JS_NewObject(cx, nullptr));
+    if(!range)
+      return false;
+
+    if (!JS_DefineProperty(cx, range, "begin", taint_range.begin(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+        !JS_DefineProperty(cx, range, "end", taint_range.end(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+      return false;
+
+    if (!getTaintFlowObject(cx, taint_range.flow(), range)) {
+      return false;
+    }
+
+    if (!ranges.append(ObjectValue(*range)))
+      return false;
+  }
+
+  RootedObject ranges_obj(cx, NewDenseCopiedArray(cx, ranges.length(), ranges.begin()));
+  if (!ranges_obj)
+    return false;
+  if (!JS_DefineProperty(cx, result, "ranges", ranges_obj, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    return false;
+  
+  return true;
 }
 
 // Print a message to stdout.

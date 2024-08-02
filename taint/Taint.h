@@ -16,14 +16,23 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <unordered_set>
 #include <atomic>
 #include <string_view>
+
+#define TAINT_DEBUG
 
 // It appears that source_location is not supported as standard and
 // breaks windows builds. Keep it behind a debug macro for now.
 #ifdef TAINT_DEBUG
 #include <experimental/source_location>
 #endif
+
+// Forward Declarations
+class TaintNode;
+class BinaryTaintNode;
+class TaintFlow;
+class TaintNodeBase;
 
 /*
  * How to taint:
@@ -48,8 +57,12 @@
  *                      as well as a set of operations that were performed on
  *                      the original data.
  *
- *   TaintNode          A node in a taint flow. These represent either a taint
- *                      source or an operation.
+ *   TaintNodeBase      A node in a taint flow. These represent either a taint
+ *                      source or an operation. This is the base class.
+ *
+ *   TaintNode          A node in a taint flow with a single parent.
+ *
+ *   BinaryTaintNode    A node in a taint flow with two parents.
  *
  *   TaintRange         A range of tainted bytes within a string that all share
  *                      the same taint flow.
@@ -95,6 +108,15 @@ class TaintLocation
     uint32_t scriptStartLine() const { return scriptStartLine_; }
     const TaintMd5& scriptHash() const { return scriptHash_; }
     const std::u16string& function() const { return function_; }
+
+    bool operator==(const TaintLocation& other) const {
+      return (filename_ == other.filename_) &&
+             (line_ == other.line_) &&
+             (pos_ == other.pos_) &&
+             (scriptStartLine_ == other.scriptStartLine_) &&
+             (scriptHash_ == other.scriptHash_) &&
+             (function_ == other.function_);
+    };
 
   private:
     std::u16string filename_;
@@ -154,7 +176,15 @@ class TaintOperation
     void set_native() { is_native_ = 1; }
 
     static void dump(const TaintOperation& op);
-    
+
+    bool operator==(const TaintOperation& other) const {
+      return (name_ == other.name_) &&
+             (arguments_ == other.arguments_) &&
+             (source_ == other.source_) &&
+             (is_native_ == other.is_native_) &&
+             (location_ == other.location_);
+    };
+
   private:
     // The operation name is owned by this instance. It will be copied from the
     // argument string during construction.
@@ -172,6 +202,94 @@ class TaintOperation
     TaintLocation location_;
 };
 
+// The following are all hash implementations required to use TaintOperation in a std::hash
+namespace std {
+    template <>
+    struct hash<TaintMd5> {
+      size_t operator()(const TaintMd5& digest) const {
+        size_t h = 0;
+        size_t i = 0;
+        for (const auto& byte : digest) {
+          if (i == 0) {
+            h = hash<unsigned char>()(byte);
+          }
+          h = h ^ (hash<unsigned char>()(byte) << i);
+          i++;
+        }
+        return h;
+      }
+    };
+    template <>
+    struct hash<TaintLocation> {
+        size_t operator()(const TaintLocation& p) const {
+          size_t h1 = 0;
+          h1 = hash<std::u16string>()(p.filename());
+          h1 = h1 ^ (hash<uint32_t>()(p.line()) << 1);
+          h1 = h1 ^ (hash<uint32_t>()(p.line()) << 2);
+          h1 = h1 ^ (hash<uint32_t>()(p.pos()) << 3);
+          h1 = h1 ^ (hash<uint32_t>()(p.scriptStartLine()) << 4);
+          h1 = h1 ^ (hash<TaintMd5>()(p.scriptHash()) << 5);
+          h1 = h1 ^ (hash<std::u16string>()(p.function()) << 6);
+          return h1;
+        }
+    };
+
+    template <>
+    struct hash<std::vector<std::u16string>> {
+      size_t operator()(const std::vector<std::u16string>& v) const {
+        size_t h = 0;
+        size_t i = 0;
+        for (const auto& s : v) {
+          if (i == 0) {
+            h = hash<std::u16string>()(s);
+          }
+          h = h ^ (hash<std::u16string>()(s) << i);
+          i++;
+        }
+        return h;
+      }
+    };
+
+    template <>
+    struct hash<TaintOperation> {
+        size_t operator()(const TaintOperation& p) const {
+          size_t h1 = 0;
+          h1 = hash<std::string>()(p.name());
+          h1 = h1 ^ (hash<std::vector<std::u16string>>()(p.arguments()) << 1);
+          h1 = h1 ^ (hash<bool>()(p.isSource()) << 2);
+          h1 = h1 ^ (hash<bool>()(p.is_native()) << 3);
+          h1 = h1 ^ (hash<TaintLocation>()(p.location()) << 4);
+          return h1;
+        }
+    };
+}
+
+// Base class to visit all nodes of a TaintFlow
+class TaintNodeVisitor
+{
+  public:
+    virtual bool visit(TaintNode& node) = 0;
+    virtual bool visit(BinaryTaintNode& node) = 0;
+};
+
+// Concrete implementation to collect unique sources in a TaintFlow
+class TaintNodeSourceCollector : public TaintNodeVisitor
+{
+  public:
+    TaintNodeSourceCollector() : n(0), sources_(), visited_() {};
+    
+    virtual bool visit(TaintNode& node);
+    virtual bool visit(BinaryTaintNode& node);
+
+    // Use an unordered set to prevent duplication of same sources
+    std::unordered_set<TaintOperation>& getSources() { return sources_; }
+    int n;
+  private:
+    std::unordered_set<TaintOperation> sources_;
+    std::unordered_set<TaintNodeBase*> visited_;
+};
+
+
 
 /*
  * The nodes of the taint flow graph.
@@ -186,21 +304,13 @@ class TaintOperation
  * integrated into other engines) we are implementing our own reference counting
  * here.
  */
-class TaintNode
+class TaintNodeBase
 {
   public:
-    // Constructing a taint node sets the initial reference count to 1.
-    // Constructs an intermediate node.
-    TaintNode(TaintNode* parent, const TaintOperation& operation);
-    // Constructs a root node.
-    TaintNode(const TaintOperation& operation);
+    TaintNodeBase(const TaintOperation& operation);
 
-    // Constructing a taint node sets the initial reference count to 1.
-    // Constructs an intermediate node.
-    TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept;
-    // Constructs a root node.
-    TaintNode(TaintOperation&& operation) noexcept;
-    
+    TaintNodeBase(TaintOperation&& operation);
+
     // Increments the reference count of this object by one.
     void addref();
 
@@ -208,30 +318,97 @@ class TaintNode
     // count drops to zero then this instance will be destroyed.
     void release();
 
-    // Returns the parent node of this node or nullptr if this is a root node.
-    TaintNode* parent() { return parent_; }
+    virtual TaintNodeBase* parent() = 0;
+
+    virtual void accept(TaintNodeVisitor& visitor) = 0;
 
     // Returns the operation associated with this taint node.
     const TaintOperation& operation() const { return operation_; }
 
-  private:
-    // Prevent clients from deleting us. TaintNodes can only be destroyed
-    // through release().
-    ~TaintNode();
+  protected:
 
-    // A node takes care of correctly addref()ing and release()ing its parent node.
-    TaintNode* parent_;
+    virtual ~TaintNodeBase() {};
 
     std::atomic_uint32_t refcount_;
 
     // The operation that led to the creation of this node.
     TaintOperation operation_;
 
+};
+
+
+// A TaintNode has a single parent, mostly used to model unary operations
+// e.g. most string operations
+class TaintNode : public TaintNodeBase
+{
+  public:
+    // Constructing a taint node sets the initial reference count to 1.
+    // Constructs an intermediate node.
+    TaintNode(TaintNodeBase* parent, const TaintOperation& operation);
+    // Constructs a root node.
+    TaintNode(const TaintOperation& operation);
+
+    // Constructing a taint node sets the initial reference count to 1.
+    // Constructs an intermediate node.
+    TaintNode(TaintNodeBase* parent, TaintOperation&& operation) noexcept;
+    // Constructs a root node.
+    TaintNode(TaintOperation&& operation) noexcept;
+    
+    // Returns the parent node of this node or nullptr if this is a root node.
+    TaintNodeBase* parent() { return parent_; }
+
+    virtual void accept(TaintNodeVisitor& visitor);
+    
+  private:
+    // Prevent clients from deleting us. TaintNodes can only be destroyed
+    // through release().
+    ~TaintNode();
+
+    // A node takes care of correctly addref()ing and release()ing its parent node.
+    TaintNodeBase* parent_;
+
     // TaintNodes aren't supposed to be copied or assigned to (that's why we
     // refcount them), so these operations are unavailable.
     TaintNode(const TaintNode& other) = delete;
     TaintNode& operator=(const TaintNode& other) = delete;
 };
+
+
+// A BinaryTaintNode has two parents, common for all numeric operations
+class BinaryTaintNode : public TaintNodeBase
+{
+  public:
+    // Constructing a taint node sets the initial reference count to 1.
+    // Constructs an intermediate node.
+    BinaryTaintNode(TaintNodeBase* p1, TaintNodeBase* p2, const TaintOperation& operation);
+
+    // Constructing a taint node sets the initial reference count to 1.
+    // Constructs an intermediate node.
+    BinaryTaintNode(TaintNodeBase* p1, TaintNodeBase* p2, TaintOperation&& operation) noexcept;
+
+    // Always return the first parent
+    TaintNodeBase* parent() { return parent1_; }
+
+    virtual void accept(TaintNodeVisitor& visitor);
+    
+    TaintNodeBase* parent1() { return parent1_; }
+    TaintNodeBase* parent2() { return parent2_; }
+
+  private:
+    // Prevent clients from deleting us. TaintNodes can only be destroyed
+    // through release().
+    ~BinaryTaintNode();
+
+    // A node takes care of correctly addref()ing and release()ing its parent node.
+    TaintNodeBase* parent1_;
+    TaintNodeBase* parent2_;
+
+    // TaintNodes aren't supposed to be copied or assigned to (that's why we
+    // refcount them), so these operations are unavailable.
+    BinaryTaintNode(const BinaryTaintNode& other) = delete;
+    BinaryTaintNode& operator=(const BinaryTaintNode& other) = delete;
+};
+
 
 /*
  * Taint flows.
@@ -275,23 +452,27 @@ class TaintFlow
   private:
     // Iterate over the nodes in this flow.
     //
-    // Note: The iterator does not increment the reference count. Instead, the
+    // Warning: The iterator does not increment the reference count. Instead, the
     // caller must ensure that the TaintFlow instance is alive during the
     // lifetime of any iterator instance.
+    //
+    // Note: In the presence of binary nodes, the iterator will only visit the
+    // first parent in each case. This is to maintain backward compatibility with
+    // previous versions which only contained single-parent Nodes.
     class Iterator {
       public:
-        Iterator(TaintNode* head);
+        Iterator(TaintNodeBase* head);
         Iterator();
 
         Iterator(const Iterator& other);
 
         Iterator& operator++();
-        TaintNode& operator*() const;
+        TaintNodeBase& operator*() const;
         bool operator==(const Iterator& other) const;
         bool operator!=(const Iterator& other) const;
 
       private:
-        TaintNode* current_;
+        TaintNodeBase* current_;
     };
 
   public:
@@ -303,7 +484,7 @@ class TaintFlow
     // *not* increment its refcount.
     // This is usually what the caller wants:
     //    TaintFlow flow(new TaintNode(...));
-    explicit TaintFlow(TaintNode* head);
+    explicit TaintFlow(TaintNodeBase* head);
 
     // Construct a new taint flow from the provided taint source.
     TaintFlow(const TaintOperation& source);
@@ -322,7 +503,7 @@ class TaintFlow
     TaintFlow& operator=(const TaintFlow& other);
 
     // Returns the head of this flow, i.e. the newest node in the path.
-    TaintNode* head() const { return head_; }
+    TaintNodeBase* head() const { return head_; }
 
     // Returns the source of this taint flow.
     const TaintOperation& source() const;
@@ -353,6 +534,7 @@ class TaintFlow
     static TaintFlow extend(const TaintFlow& flow, const TaintOperation& operation);
 
     // Append two taint flows together
+    static TaintFlow append(const TaintFlow& first, const TaintFlow& second, const TaintOperation& operation);
     static TaintFlow append(const TaintFlow& first, const TaintFlow& second);
 
     // Two TaintFlows are equal if they point to the same taint node.
@@ -366,9 +548,12 @@ class TaintFlow
 
     static const TaintFlow& getEmptyTaintFlow();
 
+    // Traverse the entire TaintFlow tree and extract unique sources
+    std::unordered_set<TaintOperation> getSources() const;
+
   private:
     // Last (newest) node of this flow.
-    TaintNode* head_;
+    TaintNodeBase* head_;
 
     static TaintFlow empty_flow_;
 };

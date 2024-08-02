@@ -88,7 +88,6 @@ void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS:
 // Check if the argument value is a tainted number object.
 bool isTaintedNumber(const JS::Value& val);
 
-
 // Check if the argument value is a tainted number object.
 bool isTaintedValue(const JS::Value& val);
 
@@ -108,10 +107,16 @@ bool isAnyTaintedValue(const JS::Value& val1, const JS::Value& val2);
 
 // Extract the taint information from the first tainted number argument.
 // TODO make this accept a variable amount of arguments using variadic templates
-TaintFlow getAnyNumberTaint(const JS::Value& val1, const JS::Value& val2);
+TaintFlow getAnyNumberTaint(const JS::Value& val1, const JS::Value& val2, const char* name);
 
 // Extract the taint information from the first tainted argument.
-TaintFlow getAnyValueTaint(const JS::Value& val1, const JS::Value& val2);
+TaintFlow getAnyValueTaint(const JS::Value& val1, const JS::Value& val2, const char* name);
+
+bool getTaintOperationObject(JSContext* cx, const TaintOperation& op, JS::Handle<JSObject*> result);
+
+bool getTaintFlowObject(JSContext* cx, const TaintFlow& flow, JS::Handle<JSObject*> result);
+
+bool getStringTaintObject(JSContext* cx, const StringTaint& taint, JS::Handle<JSObject*> result);
 
 // Print a message to stdout.
 void TaintFoxReport(JSContext* cx, const char* msg);

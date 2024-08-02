@@ -142,37 +142,39 @@ void TaintOperation::dump(const TaintOperation& op) {
 void TaintOperation::dump(const TaintOperation& op) {}
 #endif
 
-TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation)
-    : parent_(parent), refcount_(1), operation_(operation)
-{
-    MOZ_COUNT_CTOR(TaintNode);
-    if (parent_) {
-        parent_->addref();
+bool TaintNodeSourceCollector::visit(TaintNode& node) {
+    n++;
+    if (visited_.count(&node)) {
+        return false;
     }
-}
-
-TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept
-    : parent_(parent), refcount_(1), operation_(std::move(operation))
-{
-    MOZ_COUNT_CTOR(TaintNode);
-    if (parent_) {
-        parent_->addref();
+    if (node.operation().isSource()) {
+        sources_.insert(node.operation());
     }
+    visited_.insert(&node);
+    return true;
 }
 
-TaintNode::TaintNode(const TaintOperation& operation)
-    : parent_(nullptr), refcount_(1), operation_(operation)
-{
-    MOZ_COUNT_CTOR(TaintNode);
+bool TaintNodeSourceCollector::visit(BinaryTaintNode& node) {
+    n++;
+    if (visited_.count(&node)) {
+        return false;
+    }
+    if (node.operation().isSource()) {
+        sources_.insert(node.operation());
+    }
+    visited_.insert(&node);
+    return true;
 }
 
-TaintNode::TaintNode(TaintOperation&& operation) noexcept
-    : parent_(nullptr), refcount_(1), operation_(std::move(operation))
-{
-    MOZ_COUNT_CTOR(TaintNode);
-}
+TaintNodeBase::TaintNodeBase(const TaintOperation& operation)
+    : refcount_(1), operation_(operation)
+{}
 
-void TaintNode::addref()
+TaintNodeBase::TaintNodeBase(TaintOperation&& operation)
+    : refcount_(1), operation_(std::move(operation))
+{}
+
+void TaintNodeBase::addref()
 {
     if (refcount_ == 0xffffffff) {
         MOZ_CRASH("TaintNode refcount overflow");
@@ -181,7 +183,7 @@ void TaintNode::addref()
     ++refcount_;
 }
 
-void TaintNode::release()
+void TaintNodeBase::release()
 {
     MOZ_ASSERT(refcount_ > 0);
 
@@ -189,6 +191,36 @@ void TaintNode::release()
     if (refcount_ == 0) {
         delete this;
     }
+}
+
+TaintNode::TaintNode(TaintNodeBase* parent, const TaintOperation& operation)
+    : TaintNodeBase(operation), parent_(parent)
+{
+    MOZ_COUNT_CTOR(TaintNode);
+    if (parent_) {
+        parent_->addref();
+    }
+}
+
+TaintNode::TaintNode(TaintNodeBase* parent, TaintOperation&& operation) noexcept
+    : TaintNodeBase(operation), parent_(parent)
+{
+    MOZ_COUNT_CTOR(TaintNode);
+    if (parent_) {
+        parent_->addref();
+    }
+}
+
+TaintNode::TaintNode(const TaintOperation& operation)
+    : TaintNodeBase(operation), parent_(nullptr)
+{
+    MOZ_COUNT_CTOR(TaintNode);
+}
+
+TaintNode::TaintNode(TaintOperation&& operation) noexcept
+    : TaintNodeBase(operation), parent_(nullptr)
+{
+    MOZ_COUNT_CTOR(TaintNode);
 }
 
 TaintNode::~TaintNode()
@@ -199,8 +231,65 @@ TaintNode::~TaintNode()
     }
 }
 
+void TaintNode::accept(TaintNodeVisitor& visitor)
+{
+    if (visitor.visit(*this)) {
+        if (parent_) {
+            parent_->accept(visitor);
+        }
+    }
+}
 
-TaintFlow::Iterator::Iterator(TaintNode* head) : current_(head) { }
+
+BinaryTaintNode::BinaryTaintNode(TaintNodeBase* p1, TaintNodeBase* p2, const TaintOperation& operation)
+    : TaintNodeBase(operation), parent1_(p1), parent2_(p2)
+{
+    MOZ_COUNT_CTOR(BinaryTaintNode);
+    if (parent1_) {
+        parent1_->addref();
+    }
+    if (parent2_) {
+        parent2_->addref();
+    }
+}
+
+BinaryTaintNode::BinaryTaintNode(TaintNodeBase* p1, TaintNodeBase* p2, TaintOperation&& operation) noexcept
+    : TaintNodeBase(operation), parent1_(p1), parent2_(p2)
+{
+    MOZ_COUNT_CTOR(BinaryTaintNode);
+    if (parent1_) {
+        parent1_->addref();
+    }
+    if (parent2_) {
+        parent2_->addref();
+    }
+}
+
+BinaryTaintNode::~BinaryTaintNode()
+{
+    MOZ_COUNT_DTOR(BinaryTaintNode);
+    if (parent1_) {
+        parent1_->release();
+    }
+    if (parent2_) {
+        parent2_->release();
+    }
+}
+
+void BinaryTaintNode::accept(TaintNodeVisitor& visitor)
+{
+    if (visitor.visit(*this)) {
+        if (parent1_) {
+            parent1_->accept(visitor);
+        }
+        if (parent2_) {
+            parent2_->accept(visitor);
+        }
+    }
+}
+
+
+TaintFlow::Iterator::Iterator(TaintNodeBase* head) : current_(head) { }
 
 TaintFlow::Iterator::Iterator() : current_(nullptr) { }
 
@@ -212,7 +301,7 @@ TaintFlow::Iterator& TaintFlow::Iterator::operator++()
     return *this;
 }
 
-TaintNode& TaintFlow::Iterator::operator*() const
+TaintNodeBase& TaintFlow::Iterator::operator*() const
 {
     return *current_;
 }
@@ -233,7 +322,7 @@ TaintFlow::TaintFlow()
     MOZ_COUNT_CTOR(TaintFlow);
 }
 
-TaintFlow::TaintFlow(TaintNode* head)
+TaintFlow::TaintFlow(TaintNodeBase* head)
     : head_(head)
 {
     MOZ_COUNT_CTOR(TaintFlow);
@@ -307,7 +396,7 @@ const TaintFlow& TaintFlow::getEmptyTaintFlow() {
 
 const TaintOperation& TaintFlow::source() const
 {
-    TaintNode* source = head_;
+    TaintNodeBase* source = head_;
     while (source->parent() != nullptr) {
         source = source->parent();
     }
@@ -357,18 +446,35 @@ TaintFlow TaintFlow::extend(const TaintFlow& flow, const TaintOperation& operati
     return TaintFlow(new TaintNode(flow.head_, operation));
 }
 
+TaintFlow TaintFlow::append(const TaintFlow& first, const TaintFlow& second, const TaintOperation& operation)
+{
+    if (first.head_ == second.head_) {
+        return TaintFlow(new TaintNode(first.head_, operation));
+    }
+    return TaintFlow(new BinaryTaintNode(first.head_, second.head_, operation));
+}
+
 TaintFlow TaintFlow::append(const TaintFlow& first, const TaintFlow& second)
 {
     TaintFlow outFlow(first);
-    std::stack<const TaintNode*> q;
-    for (const TaintNode& node : second) {
+    std::stack<const TaintNodeBase*> q;
+    for (const TaintNodeBase& node : second) {
         q.push(&node);
     }
      for (; !q.empty(); q.pop()) {
-        const TaintNode* node = q.top();
+        const TaintNodeBase* node = q.top();
         outFlow.extend(node->operation());
     }
     return outFlow;
+}
+
+std::unordered_set<TaintOperation> TaintFlow::getSources() const {
+    if (!head_) {
+        return std::unordered_set<TaintOperation>();
+    }
+    TaintNodeSourceCollector collector;
+    head_->accept(collector);
+    return collector.getSources();
 }
 
 TaintRange::TaintRange()
