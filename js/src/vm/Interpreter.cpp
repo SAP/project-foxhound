@@ -3330,6 +3330,9 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       int32_t i;
       if (rref.isInt32()) {
         i = rref.toInt32();
+      }
+      else if (isTaintedNumber(rref)) {
+        i = rref.toObject().as<NumberObject>().unbox();
       } else {
         /* Use mozilla::NumberEqualsInt32 to treat -0 (double) as 0. */
         if (!rref.isDouble() || !NumberEqualsInt32(rref.toDouble(), &i)) {
