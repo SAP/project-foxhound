@@ -169,20 +169,9 @@ static bool math_atan2(JSContext* cx, unsigned argc, Value* vp) {
 
   double z = ecmaAtan2(y, x);
 
-  // TaintFox
-  NumberObject *taintedResult = NumberObject::create(cx, 0);
-  bool isTainted = false;
-
-  for (unsigned i = 0; i < args.length(); i++) {
-    if(isTaintedNumber(args[i])){
-      isTainted = true;
-      NumberObject *obj = &args[i].toObject().as<NumberObject>();
-      taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
-    }
-  }
-  if(isTainted){
-    taintedResult->setPrimitiveValue(JS::NumberValue(z));
-    args.rval().setObjectOrNull(taintedResult);
+  // TaintFox: Taint propagation for math.atan2
+  if (isAnyTaintedNumber(args[0], args[1])) {
+    args.rval().setObject(*NumberObject::createTainted(cx, z, getAnyNumberTaint(args[0], args[1], "Math.atan2")));
     return true;
   }
 
@@ -319,24 +308,9 @@ bool js::math_imul_handle(JSContext* cx, HandleValue lhs, HandleValue rhs,
     return false;
   }
 
-  // TaintFox
-  NumberObject *taintedResult = NumberObject::create(cx, 0);
-  bool isTainted = false;
-
-  if(isTaintedNumber(lhs)){
-    isTainted = true;
-    NumberObject *obj = &lhs.toObject().as<NumberObject>();
-    taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
-  }
-  if(isTaintedNumber(rhs)){
-    isTainted = true;
-    NumberObject *obj = &rhs.toObject().as<NumberObject>();
-    taintedResult->setTaint(TaintFlow::append(taintedResult->getTaintFlow(), obj->getTaintFlow()));
-  }
-
-  if(isTainted){
-    taintedResult->setPrimitiveValue(JS::NumberValue(WrappingMultiply(a, b)));
-    res.setObjectOrNull(taintedResult);
+  // TaintFox: Taint propagation for math.imul.
+  if (isAnyTaintedNumber(lhs, rhs)) {
+    res.setObject(*NumberObject::createTainted(cx, WrappingMultiply(a, b), getAnyNumberTaint(lhs, rhs, "Math.imul")));
     return true;
   }
 
