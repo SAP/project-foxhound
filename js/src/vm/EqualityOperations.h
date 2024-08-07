@@ -18,6 +18,7 @@
 #ifndef vm_EqualityOperations_h
 #define vm_EqualityOperations_h
 
+#include "jstaint.h"        // JS::isTaintedNUmber
 #include "jstypes.h"        // JS_PUBLIC_API
 #include "js/RootingAPI.h"  // JS::Handle
 #include "js/Value.h"       // JS::Value
@@ -64,7 +65,7 @@ extern bool SameValueZero(JSContext* cx, JS::Handle<JS::Value> v1,
  * integers too.
  */
 inline bool CanUseBitwiseCompareForStrictlyEqual(const JS::Value& v) {
-  return v.isObject() || v.isSymbol() || v.isNullOrUndefined() || v.isBoolean();
+  return (v.isObject() || v.isSymbol() || v.isNullOrUndefined() || v.isBoolean()) && (!JS::isTaintedNumber(v));
 }
 
 }  // namespace js

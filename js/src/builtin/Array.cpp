@@ -41,6 +41,7 @@
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
+#include "vm/NumberObject.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/SelfHosting.h"
 #include "vm/Shape.h"
@@ -4087,7 +4088,6 @@ enum class SearchKind {
   // semantics are used.
   Includes,
 };
-
 template <SearchKind Kind, typename Iter>
 static bool SearchElementDense(JSContext* cx, HandleValue val, Iter iterator,
                                MutableHandleValue rval) {
@@ -4118,8 +4118,15 @@ static bool SearchElementDense(JSContext* cx, HandleValue val, Iter iterator,
   }
 
   // Fast path for numbers.
-  if (val.isNumber()) {
-    double dval = val.toNumber();
+  if (val.isNumber() || isTaintedNumber(val)) {
+    double dval;
+    if(isTaintedNumber(val)) {
+      if (!ToNumber(cx, val, &dval)) {
+        return false;
+      }
+    } else {
+      dval  = val.toNumber();
+    }
     // For |includes|, two NaN values are considered equal, so we use a
     // different implementation for NaN.
     if (Kind == SearchKind::Includes && std::isnan(dval)) {
@@ -4129,8 +4136,15 @@ static bool SearchElementDense(JSContext* cx, HandleValue val, Iter iterator,
       };
       return iterator(cx, cmp, rval);
     }
-    auto cmp = [dval](JSContext*, const Value& element, bool* equal) {
-      *equal = (element.isNumber() && element.toNumber() == dval);
+    auto cmp = [dval](JSContext* context, const Value& element, bool* equal) {
+      if(isTaintedNumber(element)) {
+	NumberObject* obj = &element.toObject().as<NumberObject>();
+        double x = obj->unbox();;
+
+	*equal = x == dval;
+      } else {
+        *equal  = (element.isNumber() && element.toNumber() == dval);
+      }
       return true;
     };
     return iterator(cx, cmp, rval);
